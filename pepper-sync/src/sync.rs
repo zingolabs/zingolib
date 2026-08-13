@@ -467,238 +467,270 @@ where
             .map_err(SyncError::WalletError)?,
     );
 
-    // CONT SYNC LOOP STARTS HERE
-    //
-    //
-    // NOTE: there needs to be some protection for checking for re-org when new blocks are mined. there could be a bug
-    // where the chain tip is still being scanned, a new mined block is detected and the verify range is not set to the
-    // new block as the chain tip is not within the highest scanned range yet. a potential solution is to wait until all
-    // currently scanning ranges are scanned before including the newly mined block in the scan span but this has efficiency
-    // costs.
+    let mut nullifier_map_limit_exceeded = false;
+    let mut continuous_sync_interval = tokio::time::interval(Duration::from_secs(30));
+    continuous_sync_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut interval = tokio::time::interval(Duration::from_millis(50));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    'continuous_sync: loop {
+        // NOTE: there needs to be some protection for checking for re-org when new blocks are mined. there could be a bug
+        // where the chain tip is still being scanned, a new mined block is detected and the verify range is not set to the
+        // new block as the chain tip is not within the highest scanned range yet. a potential solution is to wait until all
+        // currently scanning ranges are scanned before including the newly mined block in the scan span but this has efficiency
+        // costs.
 
-    scanner.state.reverify();
-    let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
-    if chain_height == 0.into() {
-        return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
-    }
-    let last_known_chain_height = checked_wallet_height(
-        &mut *wallet.write().await,
-        chain_height,
-        consensus_parameters,
-    )?;
-    let mut reorg_detection_start_height_opt = wallet
-        .read()
-        .await
-        .get_sync_state()
-        .map_err(SyncError::WalletError)?
-        .highest_scanned_height()
-        .map(|highest_scanned_height| highest_scanned_height + 1);
-    if let Some(initial_reorg_detection_start_height) = reorg_detection_start_height_opt {
-        let mut wallet_guard = wallet.write().await;
-        if initial_reorg_detection_start_height <= chain_height {
-            state::set_verify_scan_range(
-                wallet_guard
-                    .get_sync_state_mut()
-                    .map_err(SyncError::WalletError)?,
-                initial_reorg_detection_start_height,
-                VerifyEnd::VerifyLowest,
-            );
-        } else {
-            let chain_height_server_block =
-                client::get_compact_block(fetch_request_sender.clone(), chain_height).await?;
-            let chain_height_wallet_block = wallet_guard
-                .get_wallet_block(chain_height)
-                .map_err(SyncError::WalletError)?;
-            if chain_height_wallet_block.block_hash().0.to_vec() != chain_height_server_block.hash {
-                tracing::info!("Re-org detected.");
-                let scan_range_to_verify = state::set_verify_scan_range(
+        scanner.state.reverify();
+        let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
+        if chain_height == 0.into() {
+            return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
+        }
+        let last_known_chain_height = checked_wallet_height(
+            &mut *wallet.write().await,
+            chain_height,
+            consensus_parameters,
+        )?;
+        let new_blocks_mined = chain_height > last_known_chain_height;
+        let mut reorg_occured = false;
+        let mut initial_reorg_detection_start_height_opt = wallet
+            .read()
+            .await
+            .get_sync_state()
+            .map_err(SyncError::WalletError)?
+            .highest_scanned_height()
+            .map(|highest_scanned_height| highest_scanned_height + 1);
+        if let Some(initial_reorg_detection_start_height) = initial_reorg_detection_start_height_opt
+        {
+            let mut wallet_guard = wallet.write().await;
+            if initial_reorg_detection_start_height <= chain_height {
+                // NOTE: if the chain tip was not fully scanned before continuous sync enters another loop, it will inefficiently
+                // verify blocks below the top 100 blocks. consider the case where we are verifying a wallets current blocks
+                // on a first time pass of continuous sync when adding logic to mitigate this.
+                state::set_verify_scan_range(
                     wallet_guard
                         .get_sync_state_mut()
                         .map_err(SyncError::WalletError)?,
-                    chain_height,
-                    VerifyEnd::VerifyHighest,
-                );
-                reorg_detection_start_height_opt = Some(scan_range_to_verify.block_range().start);
-                truncate_wallet_data(
-                    &mut *wallet_guard,
-                    reorg_detection_start_height_opt.expect("value must exist in this scope") - 1,
-                )?;
-            }
-        }
-    } else {
-        // if this is a first time sync there are no previously synced blocks to verify
-        scanner.state.verified();
-    }
-
-    // NOTE: this will work however it will check all addresses past the gap limit for the top 100 blocks everytime
-    // there is a new block mined. this should be improved. a potential solution is to use transparent data in compact
-    // blocks after the first pass i.e. once the first new mined block is detected.
-    transparent::update_addresses_and_scan_targets(
-        consensus_parameters,
-        wallet.clone(),
-        fetch_request_sender.clone(),
-        &ufvks,
-        last_known_chain_height,,
-        chain_height,
-        config.transparent_address_discovery,
-    )
-    .await?;
-
-    update_subtree_roots(
-        consensus_parameters,
-        fetch_request_sender.clone(),
-        &mut *wallet.write().await,
-    )
-    .await?;
-
-    state::update_scan_ranges(
-        consensus_parameters,
-        last_known_chain_height,
-        chain_height,
-        &mut *wallet.write().await,
-    )
-    .await?;
-
-    state::set_initial_state(
-        consensus_parameters,
-        fetch_request_sender.clone(),
-        &mut *wallet.write().await,
-        chain_height,
-    )
-    .await?;
-
-    expire_transactions(&mut *wallet.write().await)?;
-
-    publish_sync_status(&*wallet.read().await, &progress).await;
-
-    let mut nullifier_map_limit_exceeded = false;
-    let mut interval = tokio::time::interval(Duration::from_millis(50));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    loop {
-        tokio::select! {
-            Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
-                let mut wallet_guard = wallet.write().await;
-                process_scan_results(
-                    consensus_parameters,
-                    &mut *wallet_guard,
-                    fetch_request_sender.clone(),
-                    &ufvks,
-                    scan_range,
-                    scan_results,
                     initial_reorg_detection_start_height,
-                    config.performance_level,
-                    &mut nullifier_map_limit_exceeded,
-                )
-                .await?;
-                wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
-                publish_sync_status(&*wallet_guard, &progress).await;
-                drop(wallet_guard);
+                    VerifyEnd::VerifyLowest,
+                );
+            } else {
+                // in this case, no blocks have been mined since last sync but a re-org may have occured
+                let chain_height_server_block =
+                    client::get_compact_block(fetch_request_sender.clone(), chain_height).await?;
+                let chain_height_wallet_block = wallet_guard
+                    .get_wallet_block(chain_height)
+                    .map_err(SyncError::WalletError)?;
+                if chain_height_wallet_block.block_hash().0.to_vec()
+                    != chain_height_server_block.hash
+                {
+                    tracing::info!("Re-org detected.");
+                    reorg_occured = true;
+                    let scan_range_to_verify = state::set_verify_scan_range(
+                        wallet_guard
+                            .get_sync_state_mut()
+                            .map_err(SyncError::WalletError)?,
+                        chain_height,
+                        VerifyEnd::VerifyHighest,
+                    );
+                    initial_reorg_detection_start_height_opt =
+                        Some(scan_range_to_verify.block_range().start);
+                    truncate_wallet_data(
+                        &mut *wallet_guard,
+                        initial_reorg_detection_start_height_opt
+                            .expect("value must exist in this scope")
+                            - 1,
+                    )?;
+                } else {
+                    // there are no new blocks to verify and no re-org has occured
+                    scanner.state.verified();
+                }
             }
+        } else {
+            // first time sync, there are no previously synced blocks to verify
+            scanner.state.verified();
+        }
 
-            Some(raw_transaction) = mempool_transaction_receiver.recv() => {
-                let mut wallet_guard = wallet.write().await;
-                process_mempool_transaction(
-                    consensus_parameters,
-                    &ufvks,
-                    &mut *wallet_guard,
-                    raw_transaction,
-                )
-                .await?;
-                unprocessed_mempool_transactions_count.fetch_sub(1, atomic::Ordering::Release);
-                wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
-                drop(wallet_guard);
-            }
+        if new_blocks_mined || reorg_occured {
+            // NOTE: this will work however it will check all addresses past the gap limit for the top 100 blocks everytime
+            // there is a new block mined. this should be improved. a potential solution is to use transparent data in compact
+            // blocks after the first pass i.e. once the first new mined block is detected.
+            transparent::update_addresses_and_scan_targets(
+                consensus_parameters,
+                wallet.clone(),
+                fetch_request_sender.clone(),
+                &ufvks,
+                last_known_chain_height,
+                chain_height,
+                config.transparent_address_discovery.clone(),
+            )
+            .await?;
 
-            _update_scanner = interval.tick() => {
-                sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
-                match sync_mode_enum {
-                    SyncMode::Paused => {
-                        let mut pause_interval = tokio::time::interval(Duration::from_secs(1));
-                        pause_interval.tick().await;
-                        while sync_mode_enum == SyncMode::Paused {
+            update_subtree_roots(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                &mut *wallet.write().await,
+            )
+            .await?;
+
+            state::update_scan_ranges(
+                consensus_parameters,
+                last_known_chain_height,
+                chain_height,
+                &mut *wallet.write().await,
+            )
+            .await?;
+
+            // FIXME: truncation may have occured earlier without updating the initial state. this means calls to sync status
+            // could cause subtraction underflows if not protected.
+            state::set_initial_state(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                &mut *wallet.write().await,
+                chain_height,
+            )
+            .await?;
+
+            expire_transactions(&mut *wallet.write().await)?;
+
+            publish_sync_status(&*wallet.read().await, &progress).await;
+        }
+
+        // main scan loop
+        loop {
+            tokio::select! {
+                Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
+                    let mut wallet_guard = wallet.write().await;
+                    process_scan_results(
+                        consensus_parameters,
+                        &mut *wallet_guard,
+                        fetch_request_sender.clone(),
+                        &ufvks,
+                        scan_range,
+                        scan_results,
+                        initial_reorg_detection_start_height_opt,
+                        config.performance_level,
+                        &mut nullifier_map_limit_exceeded,
+                    )
+                    .await?;
+                    wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
+                    publish_sync_status(&*wallet_guard, &progress).await;
+                    drop(wallet_guard);
+                }
+
+                Some(raw_transaction) = mempool_transaction_receiver.recv() => {
+                    let mut wallet_guard = wallet.write().await;
+                    process_mempool_transaction(
+                        consensus_parameters,
+                        &ufvks,
+                        &mut *wallet_guard,
+                        raw_transaction,
+                    )
+                    .await?;
+                    unprocessed_mempool_transactions_count.fetch_sub(1, atomic::Ordering::Release);
+                    wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
+                    drop(wallet_guard);
+                }
+
+                _update_scanner = interval.tick() => {
+                    sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
+                    match sync_mode_enum {
+                        SyncMode::Paused => {
+                            let mut pause_interval = tokio::time::interval(Duration::from_secs(1));
                             pause_interval.tick().await;
-                            sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
-                        }
-                    },
-                    SyncMode::Shutdown => {
-                        let mut wallet_guard = wallet.write().await;
-                        let sync_status = match sync_status(&*wallet_guard).await {
-                            Ok(status) => status,
-                            Err(SyncStatusError::WalletError(e)) => {
-                                return Err(SyncError::WalletError(e));
+                            while sync_mode_enum == SyncMode::Paused {
+                                pause_interval.tick().await;
+                                sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
                             }
-                            Err(SyncStatusError::NoSyncData) => {
-                                panic!("sync data must exist!");
+                        },
+                        SyncMode::Shutdown => {
+                            let mut wallet_guard = wallet.write().await;
+                            let sync_status = match sync_status(&*wallet_guard).await {
+                                Ok(status) => status,
+                                Err(SyncStatusError::WalletError(e)) => {
+                                    return Err(SyncError::WalletError(e));
+                                }
+                                Err(SyncStatusError::NoSyncData) => {
+                                    panic!("sync data must exist!");
+                                }
+                            };
+                            wallet_guard
+                                .set_save_flag()
+                                .map_err(SyncError::WalletError)?;
+                            let _ = progress.send(Some(sync_status.clone()));
+                            drop(wallet_guard);
+                            mempool_handle.abort();
+                            fetcher_handle.abort();
+                            tracing::info!("Sync successfully shutdown.");
+
+                            return Ok(SyncResult {
+                                sync_start_height: sync_status.sync_start_height,
+                                sync_end_height: (sync_status
+                                    .scan_ranges
+                                    .last()
+                                    .expect("should be non-empty after syncing")
+                                   .block_range()
+                                    .end
+                                    - 1),
+                                blocks_scanned: sync_status.session_blocks_scanned,
+                                sapling_outputs_scanned: sync_status.session_sapling_outputs_scanned,
+                                orchard_outputs_scanned: sync_status.session_orchard_outputs_scanned,
+                                ironwood_outputs_scanned: sync_status.session_ironwood_outputs_scanned,
+                                percentage_total_outputs_scanned: sync_status.percentage_total_outputs_scanned,
+                            });
+                        }
+                        SyncMode::Running => (),
+                        SyncMode::NotRunning => {
+                            panic!("sync mode should not be manually set to NotRunning!");
+                        },
+                    }
+
+                    scanner.update(&mut *wallet.write().await, shutdown_mempool.clone(), nullifier_map_limit_exceeded).await?;
+
+                    if matches!(scanner.state, ScannerState::Complete) && config.shutdown_on_completion {
+                        // TODO: move all shutdown logic to one place (SyncMode::Shutdown arm line 643) and set sync mode to shutdown here
+
+
+                        // Drain check on a 25ms cadence instead of the old
+                        // unconditional one-second sleep. The policy lives in
+                        // [`drain_verdict`]: shutdown requires a drained
+                        // scanner AND a mempool stream that has been connected
+                        // long enough to have served pre-existing content, so
+                        // a first-loop shutdown on a fully synced chain waits
+                        // for the subscription instead of closing the session
+                        // before the monitor ever connects. The old one-second
+                        // ceiling remains the worst case.
+                        let shutdown_poll_started = std::time::Instant::now();
+                        let mempool_drained = loop {
+                            let verdict = drain_verdict(
+                                scanner.worker_poolsize(),
+                                unprocessed_mempool_transactions_count
+                                    .load(atomic::Ordering::Acquire),
+                                mempool_stream_connected_at.get().map(|at| at.elapsed()),
+                                shutdown_poll_started.elapsed(),
+                            );
+                            match verdict {
+                                DrainVerdict::Shutdown => break true,
+                                DrainVerdict::Reenter => break false,
+                                DrainVerdict::KeepPolling => {
+                                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                                }
                             }
                         };
-                        wallet_guard
-                            .set_save_flag()
-                            .map_err(SyncError::WalletError)?;
-                        let _ = progress.send(Some(sync_status.clone()));
-                        drop(wallet_guard);
-                        mempool_handle.abort();
-                        fetcher_handle.abort();
-                        tracing::info!("Sync successfully shutdown.");
-
-                        return Ok(SyncResult {
-                            sync_start_height: sync_status.sync_start_height,
-                            sync_end_height: (sync_status
-                                .scan_ranges
-                                .last()
-                                .expect("should be non-empty after syncing")
-                                .block_range()
-                                .end
-                                - 1),
-                            blocks_scanned: sync_status.session_blocks_scanned,
-                            sapling_outputs_scanned: sync_status.session_sapling_outputs_scanned,
-                            orchard_outputs_scanned: sync_status.session_orchard_outputs_scanned,
-                            ironwood_outputs_scanned: sync_status.session_ironwood_outputs_scanned,
-                            percentage_total_outputs_scanned: sync_status.percentage_total_outputs_scanned,
-                        });
+                        if mempool_drained {
+                            tracing::info!("Sync successfully shutdown.");
+                            break 'continuous_sync;
+                        }
                     }
-                    SyncMode::Running => (),
-                    SyncMode::NotRunning => {
-                        panic!("sync mode should not be manually set to NotRunning!");
-                    },
                 }
 
-                scanner.update(&mut *wallet.write().await, shutdown_mempool.clone(), nullifier_map_limit_exceeded).await?;
-
-                if matches!(scanner.state, ScannerState::Shutdown) {
-                    // Drain check on a 25ms cadence instead of the old
-                    // unconditional one-second sleep. The policy lives in
-                    // [`drain_verdict`]: shutdown requires a drained
-                    // scanner AND a mempool stream that has been connected
-                    // long enough to have served pre-existing content, so
-                    // a first-loop shutdown on a fully synced chain waits
-                    // for the subscription instead of closing the session
-                    // before the monitor ever connects. The old one-second
-                    // ceiling remains the worst case.
-                    let shutdown_poll_started = std::time::Instant::now();
-                    let mempool_drained = loop {
-                        let verdict = drain_verdict(
-                            scanner.worker_poolsize(),
-                            unprocessed_mempool_transactions_count
-                                .load(atomic::Ordering::Acquire),
-                            mempool_stream_connected_at.get().map(|at| at.elapsed()),
-                            shutdown_poll_started.elapsed(),
-                        );
-                        match verdict {
-                            DrainVerdict::Shutdown => break true,
-                            DrainVerdict::Reenter => break false,
-                            DrainVerdict::KeepPolling => {
-                                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-                            }
-                        }
-                    };
-                    if mempool_drained {
-                        tracing::info!("Sync successfully shutdown.");
-                        break;
-                    }
+                _check_new_block_mined = continuous_sync_interval.tick() => {
+                    continue 'continuous_sync;
                 }
             }
         }
     }
+
+    // TODO: see comment on line 689 for moving all shutdown logic to one place under SyncMode::Shutdown arm
+
     let mut wallet_guard = wallet.write().await;
     let sync_status = match sync_status(&*wallet_guard).await {
         Ok(status) => status,
@@ -1317,7 +1349,7 @@ async fn process_scan_results<W>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: ScanRange,
     scan_results: Result<ScanResults, ScanError>,
-    initial_reorg_detection_start_height: BlockHeight,
+    initial_reorg_detection_start_height: Option<BlockHeight>,
     performance_level: PerformanceLevel,
     nullifier_map_limit_exceeded: &mut bool,
 ) -> Result<(), SyncError<W::Error>>
@@ -1601,7 +1633,9 @@ where
                 .start;
                 state::merge_scan_ranges(sync_state, ScanPriority::Verify);
 
-                if initial_reorg_detection_start_height - current_reorg_detection_start_height
+                if initial_reorg_detection_start_height
+                    .expect("re-org can only be detected in wallets that have synced previously!")
+                    - current_reorg_detection_start_height
                     > MAX_REORG_ALLOWANCE
                 {
                     clear_wallet_data(wallet)?;
@@ -2279,6 +2313,7 @@ where
         Vec::new()
     };
 
+    // TODO: check shard ranges are resilient to re-orgs
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;

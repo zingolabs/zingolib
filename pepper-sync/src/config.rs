@@ -86,6 +86,15 @@ pub struct SyncConfig {
     pub transparent_address_discovery: TransparentAddressDiscovery,
     /// Performance level
     pub performance_level: PerformanceLevel,
+    /// Shutdown on completion
+    ///
+    /// If not set, sync will not shutdown until the consumer sets the `SyncMode` to `Shutdown` variant.
+    /// The sync engine will regularly check for new blocks mined so the wallet will always be updated to the state
+    /// of the latest chain.
+    ///
+    /// If set, sync will still check for any newly mined blocks during scanning. But when the wallet is completely
+    /// up-to-date with the latest chain, sync will shtudown.
+    pub shutdown_on_completion: bool,
 }
 
 #[cfg(feature = "wallet_essentials")]

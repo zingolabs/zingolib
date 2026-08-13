@@ -44,7 +44,7 @@ use zingo_netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
 pub(crate) enum ScannerState {
     Verification,
     Scan,
-    Shutdown,
+    Complete,
 }
 
 impl ScannerState {
@@ -52,8 +52,8 @@ impl ScannerState {
         *self = ScannerState::Scan;
     }
 
-    fn shutdown(&mut self) {
-        *self = ScannerState::Shutdown;
+    fn completed(&mut self) {
+        *self = ScannerState::Complete;
     }
 
     pub(crate) fn reverify(&mut self) {
@@ -251,7 +251,8 @@ where
                 self.update_loader(wallet, nullifier_map_limit_exceeded)
                     .map_err(SyncError::WalletError)?;
             }
-            ScannerState::Shutdown => {
+            ScannerState::Complete => {
+                // TODO: dont shut down mempool, workers and loader until shutdown. this is now a "complete" closure *not* shutdown
                 shutdown_mempool.store(true, atomic::Ordering::Release);
                 while let Some(worker) = self.idle_worker() {
                     self.shutdown_worker(worker.id).await;
@@ -294,7 +295,7 @@ where
             )? {
                 loader.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
-                self.state.shutdown();
+                self.state.completed();
             }
         }
 

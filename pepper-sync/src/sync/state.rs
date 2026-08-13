@@ -61,7 +61,6 @@ fn find_scan_targets(
 }
 
 /// Update scan ranges for scanning.
-/// Returns the block height that reorg detection will start from.
 pub(super) async fn update_scan_ranges<W>(
     consensus_parameters: &impl consensus::Parameters,
     last_known_chain_height: BlockHeight,
