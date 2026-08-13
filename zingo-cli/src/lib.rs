@@ -72,7 +72,9 @@ pub fn build_clap_app() -> clap::Command {
                 .long("seed")
                 .value_name("SEED PHRASE")
                 .value_parser(parse_seed)
-                .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists"))
+                .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists. \
+A seed passed here is visible in this host's process list and shell history; export ZINGO_SEED instead to \
+keep it to this process and its child."))
             .arg(Arg::new("viewkey")
                 .long("viewkey")
                 .value_name("UFVK")
@@ -199,6 +201,16 @@ pub fn misplaced_session_option(args: &[String]) -> Option<String> {
             None
         }
     })
+}
+
+/// The environment variable a seed phrase may arrive in, so a caller need
+/// not put it where the process list and the shell history can read it.
+const SEED_ENV: &str = "ZINGO_SEED";
+
+/// The seed a session starts from: the flag when given, otherwise the
+/// environment, and neither when what arrives is blank.
+fn resolve_seed(flag: Option<String>, from_env: Option<String>) -> Option<String> {
+    flag.or(from_env).filter(|phrase| !phrase.trim().is_empty())
 }
 
 /// Custom function to parse a string into an `http::Uri`
@@ -937,7 +949,10 @@ impl ConfigTemplate {
         communication_mode: CommunicationMode,
         matches: clap::ArgMatches,
     ) -> Result<Self, ConfigTemplateError> {
-        let seed = matches.get_one::<String>("seed").cloned();
+        let seed = resolve_seed(
+            matches.get_one::<String>("seed").cloned(),
+            std::env::var(SEED_ENV).ok(),
+        );
         let ufvk = matches.get_one::<String>("viewkey").cloned();
         if seed.is_some() && ufvk.is_some() {
             return Err(ConfigTemplateError::BothSeedAndViewkey);

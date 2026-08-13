@@ -816,6 +816,36 @@ mod config_template {
         ConfigTemplate::fill(mode, communication_mode, matches).map_err(|e| e.to_string())
     }
 
+    /// HYPOTHESIS: the flag outranks the environment, the environment
+    /// serves when the flag is absent, and a blank phrase from either names
+    /// no seed — so a caller may keep a seed out of the process list
+    /// without changing what the flag means. Falsified if the environment
+    /// overrides the flag, or if a blank phrase restores a wallet.
+    #[test]
+    fn a_seed_may_arrive_through_the_environment() {
+        use crate::resolve_seed;
+        let flag = || Some("flag phrase".to_string());
+        let env = || Some("environment phrase".to_string());
+
+        assert_eq!(resolve_seed(flag(), None).as_deref(), Some("flag phrase"));
+        assert_eq!(
+            resolve_seed(None, env()).as_deref(),
+            Some("environment phrase"),
+            "the environment serves when the flag is absent"
+        );
+        assert_eq!(
+            resolve_seed(flag(), env()).as_deref(),
+            Some("flag phrase"),
+            "an explicit flag outranks the environment"
+        );
+        assert_eq!(resolve_seed(None, None), None);
+        assert_eq!(
+            resolve_seed(None, Some("   ".to_string())),
+            None,
+            "a blank phrase names no seed"
+        );
+    }
+
     /// Helper: build the ZingoConfig for a filled template. The builder is
     /// async, so the tests hold their own crossing into the runtime.
     #[allow(clippy::disallowed_methods)]

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A seed phrase may arrive in the `ZINGO_SEED` environment variable when
+  `--seed` is absent. A seed on the command line is visible in the host's
+  process list for as long as the session runs, and in the shell history
+  afterwards; the environment carries it to this process and its child
+  alone. An explicit `--seed` still outranks the variable, and a blank
+  phrase from either names no seed. The variable is read once, where the
+  flag is read, and never logged.
+
+
 ### Deprecated
 
 ### Added
