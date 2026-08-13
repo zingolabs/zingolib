@@ -64,6 +64,10 @@ pub enum NymProxyError {
     #[error("exit node connect attempt timed out after {0}s")]
     AttemptTimeout(u64),
 
+    /// A bound Exit Node carried no round trip within the Sentinel's budget.
+    #[error("the bound exit node carried nothing within {0}ms")]
+    CarriesNothing(u64),
+
     /// Every raced connect attempt failed. Each attempt is a typed
     /// [`zingo_net_diag::NetOpFailure`] — the stage, the shortened Exit Node
     /// name as the target, and the cause chain as a vector — so a consumer

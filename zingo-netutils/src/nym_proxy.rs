@@ -147,7 +147,30 @@ impl NymProxy {
                             &NymProxyError::AttemptTimeout(PER_ATTEMPT_CONNECT_TIMEOUT.as_secs()),
                             &target,
                         )),
-                        Ok(outcome) => outcome.map_err(|e| exit_node_attempt_failure(&e, &target)),
+                        Ok(Err(e)) => Err(exit_node_attempt_failure(&e, &target)),
+                        // An arm wins by carrying a round trip, never by
+                        // building a client: connecting never contacts the
+                        // exit, so a dead one connects exactly as fast as a
+                        // live one and would otherwise win the race.
+                        Ok(Ok(proxy)) => {
+                            if class == ResponsivenessClass::PrioritiseSpeed
+                                && !crate::sentinel::probe_sentinel(
+                                    proxy.socks5_addr(),
+                                    crate::time::SENTINEL_BUDGET,
+                                )
+                                .await
+                                .proves_the_exit()
+                            {
+                                proxy.disconnect().await;
+                                return Err(exit_node_attempt_failure(
+                                    &NymProxyError::CarriesNothing(
+                                        crate::time::SENTINEL_BUDGET.as_millis() as u64,
+                                    ),
+                                    &target,
+                                ));
+                            }
+                            Ok(proxy)
+                        }
                     }
                 }
             },
@@ -391,6 +414,9 @@ fn exit_node_attempt_stage(error: &NymProxyError) -> NetOpStage {
         NymProxyError::AttemptTimeout(secs) => NetOpStage::TimedOut {
             after_ms: secs * 1000,
         },
+        // The tunnel stood and carried nothing, which is the exit's failure
+        // and never the destination's.
+        NymProxyError::CarriesNothing(_) => NetOpStage::TunnelTransport,
     }
 }
 

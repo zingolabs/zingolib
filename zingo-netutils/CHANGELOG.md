@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- BREAKING: an acquisition's clutch grows from three Exit Node reservations
+  to four, and a racing arm now wins by carrying a round trip rather than by
+  binding a socket. Building a mixnet client never contacts the exit, so a
+  dead exit won the race as readily as a live one. Under the speed priority
+  each arm carries a Sentinel round trip before it can win, and an arm whose
+  exit stays silent loses with the new `NymProxyError::CarriesNothing`,
+  classified at `NetOpStage::TunnelTransport`.
+
 ### Added
 - `sentinel` module (with the `socks5-transmit` feature): `probe_sentinel`
   carries an ordinary DNS lookup of a constant name to a reliable public

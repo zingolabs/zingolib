@@ -8,7 +8,7 @@ use crate::time::HEDGE_INTERVAL;
 
 /// The number of exit reservations an acquisition draws to attempt one
 /// connection.
-pub const RESERVATION_CLUTCH_SIZE: usize = 3;
+pub const RESERVATION_CLUTCH_SIZE: usize = 4;
 
 mod sealed {
     pub trait Sealed {}
