@@ -2450,6 +2450,8 @@ async fn mempool_monitor<C>(
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
+    // TODO: improve this logic to utilize the `None` return when a new block is mined and reset the continuous sync loop
+
     // The tick only bounds how quickly the monitor notices the shutdown
     // flag; sync() joins this task at session end, so the tick interval
     // is paid on the critical path of every sync session.
