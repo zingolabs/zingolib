@@ -68,6 +68,26 @@ pub const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 /// without yet giving up on it.
 pub const HEDGE_INTERVAL: Duration = Duration::from_secs(5);
 
+/// How long the readiness gate waits for the transport's first Exit Node
+/// announcement once the address has arrived: one Exit Node connect attempt
+/// plus the hedge interval that would have launched another, so a transport
+/// still finishing its exit connect is waited through while one that never
+/// binds an exit is refused long before the lifecycle budget.
+///
+/// ```
+/// use zingo_netutils::time::{
+///     EXIT_ANNOUNCEMENT_GRACE, HEDGE_INTERVAL, NYM_LIFECYCLE_TIMEOUT, PER_ATTEMPT_CONNECT_TIMEOUT,
+/// };
+///
+/// assert_eq!(
+///     EXIT_ANNOUNCEMENT_GRACE,
+///     PER_ATTEMPT_CONNECT_TIMEOUT + HEDGE_INTERVAL,
+/// );
+/// assert!(EXIT_ANNOUNCEMENT_GRACE < NYM_LIFECYCLE_TIMEOUT);
+/// ```
+pub const EXIT_ANNOUNCEMENT_GRACE: Duration =
+    Duration::from_secs(PER_ATTEMPT_CONNECT_TIMEOUT.as_secs() + HEDGE_INTERVAL.as_secs());
+
 /// The silence interval before a send's escalation launches a further
 /// Correspondent arm: the sum of a connect attempt's bound and one mixnet
 /// round trip, so a responsive Correspondent's confirmed delivery beats the
