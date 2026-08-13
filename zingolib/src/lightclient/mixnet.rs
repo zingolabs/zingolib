@@ -626,7 +626,7 @@ mod tests {
                     // the driver lands Died.
                     crate::mixnet::ProvisionStrategy::Attach {
                         socks5_addr: "127.0.0.1:9",
-                        exits: &[],
+                        exits: &[crate::mixnet::ExitNodeId::from("host-bound-exit")],
                     },
                     crate::mixnet::MixnetStartPolicy::ForcedOn,
                 )
