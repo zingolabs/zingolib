@@ -48,6 +48,15 @@ pub enum ServerSelectionError {
     /// The sweep could not draw a ledgered Clutch for its transport.
     #[error("the sweep could not acquire a transport")]
     TransportAcquisition(#[source] crate::mixnet::acquire::TransportError),
+    /// The ready sweep transport bound an Exit Node outside the drawn Clutch.
+    #[error(
+        "the sweep transport bound an exit outside the drawn clutch ({} reported)",
+        reported.len()
+    )]
+    ExitOutsideClutch {
+        /// The exit identities the ready transport reported as bound.
+        reported: Vec<crate::mixnet::ExitNodeId>,
+    },
     /// The dedicated sweep proxy could not be spawned.
     #[error("the sweep proxy could not start")]
     ProxyStart(#[source] crate::mixnet::MixnetProxyError),
@@ -128,9 +137,7 @@ impl LightClient {
             crate::correspondent::pool::exit_pool::take_bound_lease(&mut clutch, &exits)
         else {
             proxy.stop().await;
-            return Err(ServerSelectionError::TransportAcquisition(
-                crate::mixnet::acquire::TransportError::ExitOutsideClutch { reported: exits },
-            ));
+            return Err(ServerSelectionError::ExitOutsideClutch { reported: exits });
         };
         drop(clutch);
         let member: crate::correspondent::pool::Member<
@@ -152,13 +159,16 @@ impl LightClient {
             SWEEP_HEIGHT_TOLERANCE,
             pin,
             &mut rand::rngs::OsRng,
-        )?;
+        );
 
         // Exit Recycling: retiring the member kills the child and recycles
         // its lease, so no later traffic rides the exit that observed the
-        // survey.
+        // survey. The judgment's verdict is held rather than propagated with
+        // the question mark, because a refusal that returned early would drop
+        // the member instead, recycling the reservation before the child's
+        // death is confirmed. Retiring here covers every post-bind exit.
         member.retire().await;
-        Ok(selection)
+        selection.map_err(ServerSelectionError::Selection)
     }
 }
 
@@ -182,18 +192,33 @@ async fn await_sweep_ready(
         zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT,
     )
     .await
-    .map_err(|refusal| match refusal {
-        crate::mixnet::acquire::TransportError::DiedDuringBootstrap { detail } => {
+    .map_err(sweep_refusal)
+}
+
+/// The sweep's own name for one transport refusal, mapping every variant by
+/// hand so a new one is a compile error rather than a silent acquisition
+/// story.
+fn sweep_refusal(refusal: crate::mixnet::acquire::TransportError) -> ServerSelectionError {
+    use crate::mixnet::acquire::TransportError;
+    match refusal {
+        TransportError::DiedDuringBootstrap { detail } => {
             ServerSelectionError::TransportDied { detail }
         }
-        crate::mixnet::acquire::TransportError::StatusChannelClosed => {
-            ServerSelectionError::TransportStatusClosed
+        TransportError::StatusChannelClosed => ServerSelectionError::TransportStatusClosed,
+        TransportError::NotReady { budget } => ServerSelectionError::TransportTimeout { budget },
+        TransportError::ExitOutsideClutch { reported } => {
+            ServerSelectionError::ExitOutsideClutch { reported }
         }
-        crate::mixnet::acquire::TransportError::NotReady { budget } => {
-            ServerSelectionError::TransportTimeout { budget }
-        }
-        other => ServerSelectionError::TransportAcquisition(other),
-    })
+        acquisition @ (TransportError::NoAcquirer
+        | TransportError::DiscoverySpawn(_)
+        | TransportError::DiscoveryFailed { .. }
+        | TransportError::ExitPoolNotSeeded
+        | TransportError::ExitPoolExhausted { .. }
+        | TransportError::Proxy(_)
+        | TransportError::HostUnavailable(_)
+        | TransportError::HostRefused(_)
+        | TransportError::DiedBeforeUse) => ServerSelectionError::TransportAcquisition(acquisition),
+    }
 }
 
 /// Survey every candidate over the sweep exit concurrently, recording each
@@ -320,12 +345,15 @@ mod tests {
     /// Falsified if the waiter returns the empty announcement.
     #[tokio::test(start_paused = true)]
     async fn a_ready_without_an_exit_is_awaited_through() {
+        /// Scheduler turns given to the waiter task, enough for it to
+        /// observe the exitless Ready and park on the channel.
+        const PARKING_YIELDS: usize = 8;
+
         let publisher = crate::mixnet::status_publisher();
         publisher.send_replace(ready_with(Vec::new()));
         let mut receiver = publisher.subscribe();
         let waiter = tokio::spawn(async move { await_sweep_ready(&mut receiver).await });
-        // Let the waiter observe the exitless Ready and park on the channel.
-        for _ in 0..8 {
+        for _ in 0..PARKING_YIELDS {
             tokio::task::yield_now().await;
         }
         publisher.send_replace(ready_with(vec![crate::mixnet::ExitNodeId::from(
@@ -343,8 +371,9 @@ mod tests {
     }
 
     /// HYPOTHESIS: a transport that reaches Ready but never announces an
-    /// exit exceeds the bootstrap budget as a typed timeout, so an empty
-    /// announcement is a wait, never an ExitOutsideClutch refusal.
+    /// exit refuses as a typed timeout naming the exit-announcement grace,
+    /// so an empty announcement is a bounded wait, never an
+    /// ExitOutsideClutch refusal and never the whole lifecycle budget.
     /// Falsified if the waiter yields the empty announcement to the bind.
     #[tokio::test(start_paused = true)]
     async fn a_ready_that_never_announces_an_exit_times_out() {
@@ -355,8 +384,33 @@ mod tests {
             .await
             .expect_err("no exit ever arrives");
         assert!(
-            matches!(refusal, ServerSelectionError::TransportTimeout { .. }),
-            "an exitless Ready exhausts the budget as a timeout, got: {refusal}"
+            matches!(
+                refusal,
+                ServerSelectionError::TransportTimeout { budget }
+                    if budget == zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE
+            ),
+            "an exitless Ready refuses at the grace, got: {refusal}"
+        );
+    }
+
+    /// HYPOTHESIS: the bind refusal tells its own story, naming the exit
+    /// the ready transport bound outside the drawn Clutch, and never the
+    /// acquisition's story of a Clutch that could not be drawn. Falsified
+    /// if the refusal a foreign exit report produces reads as an
+    /// acquisition failure.
+    #[test]
+    fn the_bind_refusal_never_tells_the_acquisition_story() {
+        let refusal = sweep_refusal(crate::mixnet::acquire::TransportError::ExitOutsideClutch {
+            reported: vec![crate::mixnet::ExitNodeId::from("exit-foreign")],
+        });
+        let told = refusal.to_string();
+        assert!(
+            !told.contains("could not acquire a transport"),
+            "the bind refusal must not borrow the acquisition's story, got: {told}"
+        );
+        assert!(
+            told.contains("outside the drawn clutch"),
+            "the bind refusal names the exit outside the clutch, got: {told}"
         );
     }
 
