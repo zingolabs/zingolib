@@ -33,7 +33,7 @@ const HARNESS_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon 
 struct Round {
     elapsed: Duration,
     quote: Option<String>,
-    failure: Option<String>,
+    failure: Option<(String, String)>,
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -87,14 +87,18 @@ async fn price_rounds_report_their_outcomes() {
             Ok(fetch) => (Some(format!("{:?} {}", fetch.source, fetch.usd)), None),
             // The top layer renders only its own link, so the per-source
             // failures live further down the chain: walk every layer.
-            Err(e) => (None, Some(zingo_net_diag::chain_texts(&e).join(" <- "))),
+            Err(e) => (
+                None,
+                Some((mode_tally(&e), zingo_net_diag::chain_texts(&e).join(" <- "))),
+            ),
         };
         println!(
             "PRICE_HARNESS round {round}: {:.1}s -> {}",
             elapsed.as_secs_f64(),
-            quote
+            quote.clone().unwrap_or_else(|| failure
                 .clone()
-                .unwrap_or_else(|| failure.clone().unwrap_or_default())
+                .map(|(mode, report)| format!("[{mode}] {report}"))
+                .unwrap_or_default())
         );
         results.push(Round {
             elapsed,
@@ -120,54 +124,70 @@ async fn price_rounds_report_their_outcomes() {
         mean(|r| r.quote.is_some()),
         mean(|r| r.quote.is_none())
     );
-    for round in results.iter().filter(|r| r.failure.is_some()) {
-        let report = round.failure.clone().unwrap_or_default();
+    for round in results
+        .iter()
+        .filter_map(|r| r.failure.as_ref().map(|f| (r, f)))
+    {
+        let (round, (mode, report)) = round;
         println!(
-            "PRICE_HARNESS FAILURE: {:.1}s | {} | {}",
+            "PRICE_HARNESS FAILURE: {:.1}s | {mode} | {}",
             round.elapsed.as_secs_f64(),
-            mode_tally(&report),
             report.chars().take(400).collect::<String>()
         );
     }
-    let modes = results
+    let modes: Vec<String> = results
         .iter()
-        .filter_map(|r| r.failure.as_ref())
-        .map(|report| mode_tally(report))
-        .collect::<Vec<_>>();
+        .filter_map(|r| r.failure.as_ref().map(|(mode, _)| mode.clone()))
+        .collect();
     println!("PRICE_HARNESS MODES: {}", modes.join(" ;; "));
 }
 
-/// Counts the failure modes a race report names, so a round says whether
-/// its tunnel died, its sources refused, or its answers would not parse.
-fn mode_tally(report: &str) -> String {
-    let lowered = report.to_ascii_lowercase();
-    let count = |needle: &str| lowered.matches(needle).count();
-    let modes = [
-        (
-            "tunnel",
-            count("tunneltransport") + count("tunnel transport"),
-        ),
-        ("connect", count("remoteconnect") + count("remote connect")),
-        (
-            "timeout",
-            count("timed out") + count("timeout") + count("deadline"),
-        ),
-        (
-            "tls",
-            count("tls") + count("handshake") + count("certificate"),
-        ),
-        ("http", count("status") + count("http")),
-        ("decode", count("deserial") + count("parse")),
-        ("trades", count("insufficient")),
-    ];
-    let named: Vec<String> = modes
-        .iter()
-        .filter(|(_, n)| *n > 0)
-        .map(|(name, n)| format!("{n} {name}"))
-        .collect();
-    if named.is_empty() {
-        "no mode named".to_string()
-    } else {
-        named.join(", ")
+/// The failure mode one round ended in, read from the typed error rather
+/// than from its rendering, so a cause that changes its prose keeps its
+/// classification and a cause that gains a variant fails to compile here
+/// instead of silently reporting nothing.
+fn mode_tally(error: &zingolib::lightclient::error::LightClientError) -> String {
+    use zingolib::wallet::error::PriceError as WalletPriceError;
+
+    let zingolib::lightclient::error::LightClientError::PriceError(price) = error else {
+        return format!("not a price failure: {error}");
+    };
+    match price {
+        WalletPriceError::ExitCarriesNothing { budget } => {
+            format!("exit carried nothing in {}ms", budget.as_millis())
+        }
+        WalletPriceError::TransportAcquisition(_) => "no transport acquired".to_string(),
+        WalletPriceError::NotInitialised => "price list not initialised".to_string(),
+        WalletPriceError::PriceError(one) => format!("one source: {}", source_mode(one)),
+        WalletPriceError::RaceFailed(report) => {
+            let mut counts: std::collections::BTreeMap<String, usize> =
+                std::collections::BTreeMap::new();
+            for (_, failure) in &report.failures {
+                *counts.entry(source_mode(failure)).or_default() += 1;
+            }
+            counts
+                .into_iter()
+                .map(|(mode, count)| format!("{count} {mode}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+    }
+}
+
+/// One source's failure named by its own kind, and for a transport failure
+/// by the stage it reached, which is what separates a tunnel that carried
+/// nothing from an operator that refused.
+fn source_mode(failure: &zingo_price::PriceError) -> String {
+    match failure {
+        zingo_price::PriceError::RequestFailed { failure, .. } => {
+            format!("at {}", failure.stage)
+        }
+        zingo_price::PriceError::InsufficientTrades { .. } => "too few trades".to_string(),
+        zingo_price::PriceError::DeserializationFailed(_) => "undecodable body".to_string(),
+        zingo_price::PriceError::ParseError(_) => "unparsable number".to_string(),
+        zingo_price::PriceError::PriceListNotInitialized => "no price list".to_string(),
+        zingo_price::PriceError::InvalidPrice => "invalid price".to_string(),
+        zingo_price::PriceError::SourceReportedError(_) => "source refused".to_string(),
+        zingo_price::PriceError::UnexpectedShape(_) => "unexpected shape".to_string(),
     }
 }
