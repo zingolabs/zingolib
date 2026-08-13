@@ -588,7 +588,7 @@ mod tests {
         assert_eq!(indexer_lanes(2), 1);
         assert_eq!(indexer_lanes(1), 1, "a single lane is never starved");
         assert_eq!(indexer_lanes(0), 1);
-        for width in 1..=crate::lightclient::select::MAX_SURVEY_TUNNEL_WIDTH {
+        for width in 1..=crate::lightclient::select::SURVEY_WAVE_WIDTH {
             assert!(
                 indexer_lanes(width) <= width,
                 "the split never widens the wave"

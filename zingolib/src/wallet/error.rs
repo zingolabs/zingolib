@@ -163,6 +163,16 @@ pub enum PriceError {
     /// The Price Source Pool could not supply a transport for the run.
     #[error("price transport acquisition failed.")]
     TransportAcquisition(#[source] acquire::TransportError),
+    /// The run's Exit Node carried no round trip, so no source could have
+    /// answered and none is charged for the silence.
+    #[error(
+        "the run's exit node carried nothing within {}ms, so no price source was reached",
+        budget.as_millis()
+    )]
+    ExitCarriesNothing {
+        /// The budget the Sentinel gave the exit before condemning it.
+        budget: std::time::Duration,
+    },
 }
 
 /// Summary error

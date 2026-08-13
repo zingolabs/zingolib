@@ -132,6 +132,15 @@ answer, so the cost is a marginally later verdict in the healthy case,
 paid to make the failed case fast on every platform including the one
 that hosts its mixnet client in-process.
 
+The pattern is cheap on the platform with the least headroom. Proving an
+exit costs one connection carrying a few dozen bytes each way, resolved in
+about a second, and it is the only proof shape that does: racing more Exit
+Nodes costs whole mixnet clients, and widening the wave costs concurrent
+connections through the one client a mobile app hosts in its own process,
+alongside its UI and under a memory cap. A platform that cannot afford
+breadth can still afford one round trip, so the same proof serves desktop's
+spawned child and the mobile host without a per-platform budget.
+
 `ExitProven` must be reified — a type whose only route to existence is
 evidence of a completed round trip — or this ADR describes an intention
 rather than a guarantee. The glossary lost an entry on 2026-08-13 for

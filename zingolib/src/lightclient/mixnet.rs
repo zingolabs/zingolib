@@ -9,6 +9,48 @@
 use super::error::LightClientError;
 use super::{LightClient, MixnetPriceFetch};
 
+/// The price run as a speed-priority operation: it races the price census
+/// through one Exit Node and settles on the first quote, whichever operator
+/// answers.
+#[cfg(feature = "nym")]
+pub struct PriceRun;
+
+#[cfg(feature = "nym")]
+impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
+    type Target = zingo_price::PriceSource;
+    type Outcome = (
+        zingo_price::PriceSource,
+        Result<zingo_price::Price, zingo_price::PriceError>,
+    );
+
+    fn targets(&self) -> Vec<Self::Target> {
+        zingo_price::RACED_SOURCES.to_vec()
+    }
+
+    fn probe(
+        &self,
+        socks5: std::net::SocketAddr,
+        target: Self::Target,
+    ) -> impl std::future::Future<Output = Self::Outcome> + Send {
+        let dial = socks5.to_string();
+        async move {
+            let outcome = zingo_price::get_source_price(
+                target,
+                Some(&dial),
+                target.url(),
+                zingo_price::REQUEST_TIMEOUT,
+                zingo_price::CONNECT_TIMEOUT,
+            )
+            .await;
+            (target, outcome)
+        }
+    }
+
+    fn settled(&self, outcomes: &[Self::Outcome]) -> bool {
+        outcomes.iter().any(|(_, outcome)| outcome.is_ok())
+    }
+}
+
 impl LightClient {
     /// Take whatever transport the slot holds and shut it down, leaving the
     /// `Unattached` that a failed enable also deliberately leaves behind,
@@ -392,16 +434,30 @@ impl LightClient {
 
         // The fetch runs outside the wallet lock (the net-diag
         // polling-blackout remedy), so a hung tunnel can no longer freeze
-        // every wallet-state observer. All sources race through the one
-        // tunnel at full width; the first answer wins and the losing legs
-        // are cancelled.
+        // every wallet-state observer. The race is the one speed-priority
+        // wave every such operation runs: the sources ride its target lanes,
+        // a Sentinel rides the remaining one, and the first quote settles it.
         let dispatched = std::time::Instant::now();
-        let raced = zingo_price::race_current_price(Some(&via_socks5.to_string())).await;
+        let budget = zingo_netutils::time::SENTINEL_BUDGET;
+        let wave = crate::mixnet::speed::run_wave(&PriceRun, via_socks5).await;
         if let Some(member) = pooled {
             member.retire().await;
             self.correspondent_pools.ensure_filled();
         }
-        let raced = raced.map_err(crate::wallet::error::PriceError::from)?;
+        let raced = match wave {
+            // The exit carried nothing, so no source was reached and none is
+            // charged for the silence.
+            crate::mixnet::speed::WaveEnd::ExitCarriesNothing => {
+                return Err(LightClientError::from(
+                    crate::wallet::error::PriceError::ExitCarriesNothing { budget },
+                ));
+            }
+            crate::mixnet::speed::WaveEnd::Settled(outcomes)
+            | crate::mixnet::speed::WaveEnd::Exhausted(outcomes) => {
+                zingo_price::first_quote(outcomes)
+                    .map_err(crate::wallet::error::PriceError::from)?
+            }
+        };
         let round_trip = dispatched.elapsed();
         self.wallet().write().await.record_price_update(raced.price);
         Ok(MixnetPriceFetch {

@@ -126,6 +126,8 @@ pub mod provision;
 #[cfg(feature = "nym")]
 pub mod route;
 #[cfg(feature = "nym")]
+pub mod speed;
+#[cfg(feature = "nym")]
 pub mod supervisor;
 #[cfg(feature = "nym")]
 pub mod sweep;

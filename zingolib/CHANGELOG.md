@@ -58,6 +58,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: one wave serves every speed-priority operation. The new
+  `mixnet::speed` module holds `SpeedPrioritized` — an operation's targets,
+  how it probes one, and what settles it — and `run_wave`, which opens
+  `lightclient::select::SURVEY_WAVE_WIDTH` lanes with a Sentinel holding one
+  of them, ends the moment the operation settles, and abandons the whole
+  wave when the Sentinel proves the Exit Node carries nothing. The
+  Server-Selection Sweep and the price run are its two implementations, so
+  the width, the Sentinel, and the abandonment rule have one definition
+  rather than one apiece. `lightclient::select::survey_tunnel_width` is
+  replaced by the `SURVEY_WAVE_WIDTH` constant: the width counts
+  connections through the one Nym client, which does not vary with how many
+  targets there are.
+- BREAKING: `wallet::error::PriceError` gains `ExitCarriesNothing`, which a
+  price run returns when its exit carried no round trip. The run previously
+  reported every source as having timed out, charging nine operators for a
+  tunnel that reached none of them.
 - BREAKING: a speed-priority survey now carries a Sentinel in its opening
   wave and restarts on a dead exit. The Sentinel is a reliable public
   address, probed with an ordinary DNS lookup through the same tunnel; it
