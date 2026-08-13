@@ -58,6 +58,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: `lightclient::LightClient::switch_on_mixnet_for_tests` takes a
+  `std::net::SocketAddr` instead of a `&str`. The helper used to parse the
+  text and abort the process on a placeholder, which killed an external
+  harness. The contract is now checked at compile time. A caller passes a
+  parsed address, so `"127.0.0.1:1"` becomes `"127.0.0.1:1".parse().unwrap()`
+  or an address constant of its own.
+- The indexer diary tolerates a corrupt exit column per column. A stored row
+  whose exit column no longer names an Exit Node now loads with every other
+  field intact and no exit, where it was previously dropped whole.
 - BREAKING: `lightclient::LightClient::shutdown_save_task` returns
   `std::io::Result<SaveShutdown>` instead of `std::io::Result<()>`, where the
   new `lightclient::SaveShutdown` enum distinguishes a stopped task
