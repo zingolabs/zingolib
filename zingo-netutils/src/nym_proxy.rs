@@ -45,7 +45,7 @@ use zingo_net_diag::{NetOpFailure, NetOpStage};
 
 use crate::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceProgress, RaceState};
 use crate::error::NymProxyError;
-use crate::mixnet_connect::{seeded_shuffle, strip_socks5_scheme};
+use crate::mixnet_connect::seeded_shuffle;
 use crate::responsiveness::{Responsiveness, ResponsivenessClass};
 
 /// Default Nym API URL for mainnet.
@@ -67,7 +67,9 @@ use crate::time::{DISCOVERY_TIMEOUT, NYM_LIFECYCLE_TIMEOUT, PER_ATTEMPT_CONNECT_
 /// public exit gateway. The proxy listens on a localhost port.
 pub struct NymProxy {
     client: Socks5MixnetClient,
-    bind_port: u16,
+    /// The loopback address this proxy told the mixnet client to bind, which
+    /// is the address it announces to every caller.
+    socks5_addr: SocketAddr,
     exit_node: String,
     /// The clutch this acquisition raced, reused by a later redraw.
     clutch: Vec<String>,
@@ -193,9 +195,10 @@ impl NymProxy {
         bind_port: u16,
     ) -> Result<Self, NymProxyError> {
         let socks5_cfg = Socks5::new(exit_node_address);
+        let socks5_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), bind_port);
         let client = MixnetClientBuilder::new_ephemeral()
             .socks5_config(Socks5 {
-                bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), bind_port),
+                bind_address: socks5_addr,
                 ..socks5_cfg
             })
             .build()
@@ -205,7 +208,7 @@ impl NymProxy {
             .map_err(|e| NymProxyError::Connect(Box::new(e)))?;
         Ok(Self {
             client,
-            bind_port,
+            socks5_addr,
             exit_node: exit_node_address.to_string(),
             clutch: Vec::new(),
             // A pinned-Exit-Node start never races; the class only governs
@@ -220,14 +223,15 @@ impl NymProxy {
         &self.exit_node
     }
 
-    /// The local SOCKS5 proxy address (e.g., `"127.0.0.1:43210"`).
-    pub fn socks5_addr(&self) -> String {
-        strip_socks5_scheme(&self.client.socks5_url()).to_string()
+    /// The local SOCKS5 proxy address, the loopback socket address this proxy
+    /// listens on.
+    pub fn socks5_addr(&self) -> SocketAddr {
+        self.socks5_addr
     }
 
     /// The local bind port the SOCKS5 proxy listens on.
     pub fn bind_port(&self) -> u16 {
-        self.bind_port
+        self.socks5_addr.port()
     }
 
     /// Verify that a TCP connection can be established through this proxy to
@@ -241,10 +245,10 @@ impl NymProxy {
         target_host: &str,
         target_port: u16,
     ) -> Result<(), NymProxyError> {
-        let addr = self.socks5_addr();
-        let _stream = tokio_socks::tcp::Socks5Stream::connect(&*addr, (target_host, target_port))
-            .await
-            .map_err(|e| NymProxyError::ConnectivityCheck(e.to_string()))?;
+        let _stream =
+            tokio_socks::tcp::Socks5Stream::connect(self.socks5_addr(), (target_host, target_port))
+                .await
+                .map_err(|e| NymProxyError::ConnectivityCheck(e.to_string()))?;
         Ok(())
     }
 
@@ -286,7 +290,7 @@ impl NymProxy {
         // Swap only after the new client succeeded, so a failed reconnect
         // leaves the old client untouched.
         let old_client = std::mem::replace(&mut self.client, new_proxy.client);
-        self.bind_port = new_proxy.bind_port;
+        self.socks5_addr = new_proxy.socks5_addr;
         self.exit_node = new_proxy.exit_node;
         self.clutch = clutch;
         old_client.disconnect().await;
@@ -601,15 +605,25 @@ mod tests {
     use crate::responsiveness::{PrioritiseSpeed, RESERVATION_CLUTCH_SIZE};
     use crate::time::HEDGE_INTERVAL;
 
-    // The scheme-stripping and retry-engine logic is tested in
-    // `mixnet_connect`, where the tests call the REAL functions in the
-    // default build; the earlier copies of that logic here tested a
-    // transcription of the expression, not the code.
+    // The shuffling and retry-engine logic is tested in `mixnet_connect`,
+    // where the tests call the REAL functions in the default build; the
+    // earlier copies of that logic here tested a transcription of the
+    // expression, not the code.
 
     #[test]
     fn find_available_port_returns_nonzero() {
         let port = NymProxy::find_available_port().expect("find_available_port");
         assert!(port > 0);
+    }
+
+    /// HYPOTHESIS: the proxy announces the socket address it listens on, so
+    /// no caller ever parses an address out of text; falsified if
+    /// [`NymProxy::socks5_addr`] returns anything other than a
+    /// [`SocketAddr`].
+    #[test]
+    fn the_proxy_announces_a_typed_socket_address() {
+        let announce: fn(&NymProxy) -> SocketAddr = NymProxy::socks5_addr;
+        let _ = announce;
     }
 
     /// The arm count the paused-time races below run over; the clutch is
@@ -902,17 +916,13 @@ mod tests {
             .await
             .expect("NymProxy::start");
         let addr = proxy.socks5_addr();
-        assert!(
-            addr.starts_with("127.0.0.1:"),
-            "expected localhost address, got {addr}"
+        assert_eq!(
+            addr.ip(),
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            "expected a loopback address, got {addr}"
         );
-        let port: u16 = addr
-            .split(':')
-            .next_back()
-            .unwrap()
-            .parse()
-            .expect("port should be numeric");
-        assert!(port > 0, "port should be non-zero");
+        assert!(addr.port() > 0, "port should be non-zero");
+        assert_eq!(addr.port(), proxy.bind_port(), "one bound port, one report");
         proxy.disconnect().await;
     }
 
@@ -923,9 +933,7 @@ mod tests {
         let proxy = NymProxy::start::<PrioritiseSpeed>()
             .await
             .expect("NymProxy::start");
-        let addr = proxy.socks5_addr();
-
-        let stream = tokio_socks::tcp::Socks5Stream::connect(&*addr, "zec.rocks:443")
+        let stream = tokio_socks::tcp::Socks5Stream::connect(proxy.socks5_addr(), "zec.rocks:443")
             .await
             .expect("SOCKS5 connect");
 
