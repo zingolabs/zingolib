@@ -35,7 +35,7 @@ use crate::scan::ScanResults;
 use crate::scan::task::{Scanner, ScannerState};
 use crate::scan::transactions::scan_transaction;
 use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
-use crate::sync::state::truncate_scan_ranges;
+use crate::sync::state::{VerifyEnd, truncate_scan_ranges};
 use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
@@ -378,6 +378,8 @@ impl ScanRange {
 /// times in quick sucession without the sync engine interrupting.
 /// Set `sync_mode` back to `Running` to resume scanning.
 /// Set `sync_mode` to `Shutdown` to stop the sync process.
+/// Wallet keys must not change while sync is running. Sync must be stoppped and run again after the key material has
+/// been updated.
 pub async fn sync<C, P, W>(
     client: C,
     consensus_parameters: &P,
@@ -435,6 +437,22 @@ where
         .await
     });
 
+    // create channel for receiving scan results and launch scanner
+    let ufvks = wallet
+        .read()
+        .await
+        .get_unified_full_viewing_keys()
+        .map_err(SyncError::WalletError)?;
+    let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
+    let mut scanner = Scanner::new(
+        consensus_parameters.clone(),
+        scan_results_sender,
+        fetch_request_sender.clone(),
+        ufvks.clone(),
+    );
+    scanner.launch(config.performance_level);
+
+    // pre-scan initialisation
     add_initial_frontier(
         consensus_parameters,
         fetch_request_sender.clone(),
@@ -449,7 +467,16 @@ where
             .map_err(SyncError::WalletError)?,
     );
 
-    // pre-scan initialisation
+    // CONT SYNC LOOP STARTS HERE
+    //
+    //
+    // NOTE: there needs to be some protection for checking for re-org when new blocks are mined. there could be a bug
+    // where the chain tip is still being scanned, a new mined block is detected and the verify range is not set to the
+    // new block as the chain tip is not within the highest scanned range yet. a potential solution is to wait until all
+    // currently scanning ranges are scanned before including the newly mined block in the scan span but this has efficiency
+    // costs.
+
+    scanner.state.reverify();
     let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
     if chain_height == 0.into() {
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
@@ -459,20 +486,59 @@ where
         chain_height,
         consensus_parameters,
     )?;
-
-    // get the wallet keys again when a new block is mined in case the wallet has created an account while syncing.
-    let ufvks = wallet
+    let mut reorg_detection_start_height_opt = wallet
         .read()
         .await
-        .get_unified_full_viewing_keys()
-        .map_err(SyncError::WalletError)?;
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .highest_scanned_height()
+        .map(|highest_scanned_height| highest_scanned_height + 1);
+    if let Some(initial_reorg_detection_start_height) = reorg_detection_start_height_opt {
+        let mut wallet_guard = wallet.write().await;
+        if initial_reorg_detection_start_height <= chain_height {
+            state::set_verify_scan_range(
+                wallet_guard
+                    .get_sync_state_mut()
+                    .map_err(SyncError::WalletError)?,
+                initial_reorg_detection_start_height,
+                VerifyEnd::VerifyLowest,
+            );
+        } else {
+            let chain_height_server_block =
+                client::get_compact_block(fetch_request_sender.clone(), chain_height).await?;
+            let chain_height_wallet_block = wallet_guard
+                .get_wallet_block(chain_height)
+                .map_err(SyncError::WalletError)?;
+            if chain_height_wallet_block.block_hash().0.to_vec() != chain_height_server_block.hash {
+                tracing::info!("Re-org detected.");
+                let scan_range_to_verify = state::set_verify_scan_range(
+                    wallet_guard
+                        .get_sync_state_mut()
+                        .map_err(SyncError::WalletError)?,
+                    chain_height,
+                    VerifyEnd::VerifyHighest,
+                );
+                reorg_detection_start_height_opt = Some(scan_range_to_verify.block_range().start);
+                truncate_wallet_data(
+                    &mut *wallet_guard,
+                    reorg_detection_start_height_opt.expect("value must exist in this scope") - 1,
+                )?;
+            }
+        }
+    } else {
+        // if this is a first time sync there are no previously synced blocks to verify
+        scanner.state.verified();
+    }
 
+    // NOTE: this will work however it will check all addresses past the gap limit for the top 100 blocks everytime
+    // there is a new block mined. this should be improved. a potential solution is to use transparent data in compact
+    // blocks after the first pass i.e. once the first new mined block is detected.
     transparent::update_addresses_and_scan_targets(
         consensus_parameters,
         wallet.clone(),
         fetch_request_sender.clone(),
         &ufvks,
-        last_known_chain_height,
+        last_known_chain_height,,
         chain_height,
         config.transparent_address_discovery,
     )
@@ -485,9 +551,8 @@ where
     )
     .await?;
 
-    let initial_reorg_detection_start_height = state::update_scan_ranges(
+    state::update_scan_ranges(
         consensus_parameters,
-        fetch_request_sender.clone(),
         last_known_chain_height,
         chain_height,
         &mut *wallet.write().await,
@@ -505,16 +570,6 @@ where
     expire_transactions(&mut *wallet.write().await)?;
 
     publish_sync_status(&*wallet.read().await, &progress).await;
-
-    // create channel for receiving scan results and launch scanner
-    let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
-    let mut scanner = Scanner::new(
-        consensus_parameters.clone(),
-        scan_results_sender,
-        fetch_request_sender.clone(),
-        ufvks.clone(),
-    );
-    scanner.launch(config.performance_level);
 
     let mut nullifier_map_limit_exceeded = false;
     let mut interval = tokio::time::interval(Duration::from_millis(50));

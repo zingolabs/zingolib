@@ -48,12 +48,16 @@ pub(crate) enum ScannerState {
 }
 
 impl ScannerState {
-    fn verified(&mut self) {
+    pub(crate) fn verified(&mut self) {
         *self = ScannerState::Scan;
     }
 
     fn shutdown(&mut self) {
         *self = ScannerState::Shutdown;
+    }
+
+    pub(crate) fn reverify(&mut self) {
+        *self = ScannerState::Verification;
     }
 }
 
