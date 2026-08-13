@@ -58,6 +58,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: the redraw of a dead Exit Node serves every speed-priority
+  operation. `mixnet::speed::run_speed_prioritized` owns the loop an
+  operation used to carry itself: acquire a transport, run the wave, and on
+  a Sentinel's silence hold the dead exit until its replacement binds so the
+  pool cannot offer it again, up to `MAX_SPEED_EXIT_DRAWS`. An operation
+  supplies `acquire`, `dispose`, and `narrate`; the price run gains the
+  redraw the sweep already had, and both dispose of a spent transport in the
+  background rather than making a caller wait on teardown. Measured over
+  twenty live rounds each: the price run failed nine of twenty before, and
+  none of twenty after, at a mean of 7.9 seconds against about 5; the sweep
+  is unchanged at twenty verdicts of twenty and a 9.5-second mean.
+- BREAKING: `lightclient::select::ServerSelectionError` falls from seven
+  variants to two, `Speed` and `Selection`. Four of the removed variants
+  renamed failures `mixnet::acquire::TransportError` already carried, and
+  `ProxyStart` and `ExitOutsideClutch` were among them; a consumer matching
+  on those now matches `Speed`, whose source chain carries the transport's
+  own error. `wallet::error::PriceError` likewise replaces
+  `TransportAcquisition` and `ExitCarriesNothing` with `Speed`.
+- `mixnet::acquire::TransportError::DiedDuringBootstrap` carries its death
+  detail as a `#[source]` rather than formatting it into the message, so a
+  caller reaches the typed `zingo_net_diag::NetOpFailure` whole. Its message
+  no longer repeats the detail.
 - BREAKING: one wave serves every speed-priority operation. The new
   `mixnet::speed` module holds `SpeedPrioritized` — an operation's targets,
   how it probes one, and what settles it — and `run_wave`, which opens

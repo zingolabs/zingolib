@@ -121,6 +121,22 @@ exit in four dead, a sweep that burns six exits before refusing reaches
 that bound about once in four thousand attempts, while a typical sweep
 burns none.
 
+Measured on 2026-08-13, twenty rounds of each operation against a live
+mainnet mixnet. The sweep refused three of twelve surveys before this
+decision, each after 104 seconds; it now refuses none of twenty, at a mean
+of 9.5 seconds to a verdict, with six rounds running long because they
+burned a dead exit and surveyed again. The price run failed nine of twenty
+before it carried a Sentinel and five to seven of twenty once it did but
+could not redraw; sharing the redraw it now fails none of twenty, at a mean
+of 7.9 seconds against about 5 seconds before. Both numbers say the same
+thing: the exits die at the same rate as ever, and neither operation loses
+a session to one.
+
+The cost is latency on the unlucky round. A price run that draws two dead
+exits before a live one takes twenty seconds where it used to fail in ten,
+and the sweep's slowest round took 27 seconds. That trade — a slower answer
+for an answer at all — is the decision this ADR records.
+
 The Sentinel's address becomes a dependency of every speed-priority
 survey. It is reached by a request of the shape that address ordinarily
 serves, so neither the exit nor the destination sees anything unusual,
