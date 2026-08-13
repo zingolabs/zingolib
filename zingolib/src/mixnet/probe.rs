@@ -86,7 +86,8 @@ async fn mixnet_leg(
     host: &crate::correspondent::Host,
 ) -> ProbeLeg {
     let started = Instant::now();
-    let outcome = zingo_netutils::get_latest_block_via_socks5(socks5_addr, indexer, timeout)
+    let outcome = zingo_netutils::Socks5Indexer::new(socks5_addr, indexer.clone(), timeout)
+        .get_latest_block()
         .await
         .map(|tip| ProbeSuccess { height: tip.height })
         .map_err(|e| super::socks5_transmit_failure(&e, host));

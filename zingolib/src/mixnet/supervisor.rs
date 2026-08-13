@@ -401,18 +401,13 @@ async fn attach_readiness(socks5_addr: SocketAddr) -> Result<(), zingo_net_diag:
     let indexer: http::Uri = ATTACH_HEALTH_INDEXER
         .parse()
         .expect("the static health-check URI parses");
+    let probe = zingo_netutils::Socks5Indexer::new(socks5_addr, indexer, MIXNET_ROUND_TRIP_BOUND);
     let mut last_failure = None;
     for attempt in 0..ATTACH_HEALTH_ATTEMPTS {
         if attempt > 0 {
             tokio::time::sleep(ATTACH_LISTENER_RETRY_PAUSE).await;
         }
-        match zingo_netutils::get_latest_block_via_socks5(
-            socks5_addr,
-            &indexer,
-            MIXNET_ROUND_TRIP_BOUND,
-        )
-        .await
-        {
+        match probe.get_latest_block().await {
             Ok(_) => return Ok(()),
             Err(error) => {
                 let stage = crate::mixnet::socks5_transmit_stage(&error);

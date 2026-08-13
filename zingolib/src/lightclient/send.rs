@@ -231,18 +231,11 @@ impl TransmitTarget for ClearnetTarget {
     }
 }
 
-/// A single Correspondent reached through the local SOCKS5 proxy, as a
-/// [`TransmitTarget`]: it submits and delivery-checks over the mixnet tunnel,
-/// running the same [`resilient_transmit`] policy as the clearnet path. The
-/// escalation builds one of these per pick.
+/// A [`zingo_netutils::Socks5Indexer`] is the mixnet [`TransmitTarget`]:
+/// one Correspondent that submits and delivery-checks over its own tunnel,
+/// running the same [`resilient_transmit`] policy as the clearnet path.
 #[cfg(feature = "nym")]
-struct SocksTarget {
-    socks5_addr: std::net::SocketAddr,
-    indexer: http::Uri,
-}
-
-#[cfg(feature = "nym")]
-impl TransmitTarget for SocksTarget {
+impl TransmitTarget for zingo_netutils::Socks5Indexer {
     type Failure = zingo_netutils::Socks5TransmitError;
 
     async fn submit(
@@ -250,27 +243,12 @@ impl TransmitTarget for SocksTarget {
         raw_tx: &[u8],
         height: u64,
     ) -> Result<String, zingo_netutils::Socks5TransmitError> {
-        zingo_netutils::send_transaction_via_socks5(
-            self.socks5_addr,
-            &self.indexer,
-            raw_tx,
-            height,
-            DEFAULT_REQUEST_TIMEOUT,
-        )
-        .await
+        self.send_transaction(raw_tx, height).await
     }
 
     fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send {
         let hash = txid.as_ref().to_vec();
-        async move {
-            zingo_netutils::transaction_known_via_socks5(
-                self.socks5_addr,
-                &self.indexer,
-                &hash,
-                DEFAULT_REQUEST_TIMEOUT,
-            )
-            .await
-        }
+        async move { self.transaction_known(&hash).await }
     }
 }
 
@@ -462,10 +440,8 @@ async fn mixnet_escalating_transmit(
                 }
                 None => (shared_addr, None),
             };
-            let target = SocksTarget {
-                socks5_addr,
-                indexer,
-            };
+            let target =
+                zingo_netutils::Socks5Indexer::new(socks5_addr, indexer, DEFAULT_REQUEST_TIMEOUT);
             let started = std::time::Instant::now();
             // The pull's failure becomes the taxonomy record — stage by typed
             // match, cause chain captured layer by layer, target the
@@ -509,7 +485,7 @@ async fn mixnet_escalating_transmit(
                     server_txid,
                     TransmitRoute::Mixnet {
                         correspondent: host.to_string(),
-                        via_socks5: target.socks5_addr.to_string(),
+                        via_socks5: socks5_addr.to_string(),
                     },
                 )
             })

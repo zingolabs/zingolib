@@ -58,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+<<<<<<< HEAD
 - BREAKING: `lightclient::select::ServerSelectionError` gains the
   `ExitOutsideClutch` variant, which carries the exits the ready transport
   reported. The bind refusal previously reached callers wrapped in
@@ -114,6 +115,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the candidate list like any other, and the caller judges the pin against
   the returned cohort: it is chosen when it answered, and an unanswered pin
   is reported with the sweep's verdict offered as the alternative.
+||||||| b1c81c398
+=======
+- BREAKING: the sweep offers the first healthy indexer immediately. The
+  survey assigns candidates to lanes at random with the pinned server
+  guaranteed an opening lane, opens at most
+  `lightclient::select::survey_tunnel_width(candidates)` tunnels at once —
+  a bounded function of the census, calibrated for the one shared Nym
+  client every platform hosts — and binds the first healthy answer as the
+  sync indexer the moment it arrives, the pin preempting while its own
+  probe is pending. Every unresolved candidate continues in the background
+  as the health sweep, whose handle the session holds: `go_offline` aborts
+  it, so revoking consent stops all networking. A pinned session whose pin
+  did not answer binds the first healthy alternative and says so. The
+  runner no longer draws from a median-judged cohort and no longer fails
+  `DeadPin` (the accepted tradeoff: random lane assignment already forces
+  an adversary to be lucky).
+>>>>>>> zingolabs/first_healthy_sweep
 - BREAKING: `lightclient::LightClient::switch_on_mixnet_for_tests` takes a
   `std::net::SocketAddr` instead of a `&str`. The helper used to parse the
   text and abort the process on a placeholder, which killed an external

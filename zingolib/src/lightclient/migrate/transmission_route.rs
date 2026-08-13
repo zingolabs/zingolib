@@ -99,13 +99,12 @@ impl TransmissionClient for MixnetTransmissionClient {
             .ok_or_else(|| {
                 PartTransmissionError::Transport("no transmission candidates".to_string())
             })?;
-        let txid_hex = zingo_netutils::send_transaction_via_socks5(
+        let txid_hex = zingo_netutils::Socks5Indexer::new(
             self.socks5_addr,
-            indexer,
-            &raw_tx,
-            u64::from(u32::from(expiry_height)),
+            indexer.clone(),
             super::transmission_grpc::MIGRATION_SUBMIT_TIMEOUT,
         )
+        .send_transaction(&raw_tx, u64::from(u32::from(expiry_height)))
         .await
         .map_err(|error| {
             // The taxonomy's own failover reading maps onto PartTransmissionError's
