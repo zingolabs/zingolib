@@ -1264,12 +1264,19 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
         }
     }
 
-    let save_run = commands::CliCommand::Save {
-        sub: commands::SaveSubCommand::Run,
-    };
-    match commands::dispatch_parsed(save_run, &mut lightclient).await {
-        Ok(update) => eprintln!("{update}"),
-        Err(e) => eprintln!("Error: {}", commands::render_error_chain(&e)),
+    if std::env::var_os("ZINGO_DISABLE_SAVER").is_none() {
+        let save_run = commands::CliCommand::Save {
+            sub: commands::SaveSubCommand::Run,
+        };
+        match commands::dispatch_parsed(save_run, &mut lightclient).await {
+            Ok(update) => eprintln!("{update}"),
+            Err(e) => eprintln!("Error: {}", commands::render_error_chain(&e)),
+        }
+    } else {
+        eprintln!(
+            "ZINGO_DISABLE_SAVER is set: the save task will not run, so nothing \
+             persists this session."
+        );
     }
 
     if filled_template.sync
