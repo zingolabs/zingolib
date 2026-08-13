@@ -58,6 +58,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- A survey whose opening wave times out to a leg now ends there. Every leg
+  timing out is evidence about the tunnel rather than about the candidates,
+  which the remaining waves can only repeat at the same cost, so a dead
+  sweep exit refuses the cohort after one wave instead of after all of
+  them. The new `mixnet::sweep::opening_wave_timed_out` states the reading.
+- A transport failure whose text says its deadline has elapsed now
+  classifies as a timeout. Tonic reports an exhausted leg budget that way,
+  and the classifier matched only the other spellings, so genuine timeouts
+  reached the sweep's cause tally and the indexer history as `other`.
 - BREAKING: the sweep offers the first healthy indexer immediately. The
   survey assigns candidates to lanes at random with the pinned server
   guaranteed an opening lane, opens at most

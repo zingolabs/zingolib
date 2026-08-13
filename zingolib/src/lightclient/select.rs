@@ -176,6 +176,9 @@ impl LightClient {
                     verdict = Some(chosen);
                     break;
                 }
+                if sweep::opening_wave_timed_out(&results, width) {
+                    break;
+                }
             }
         }
         progress(SweepProgress::Judging {

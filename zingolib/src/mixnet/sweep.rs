@@ -26,6 +26,17 @@ pub struct SurveyResult {
     pub refusal: Option<FailureKind>,
 }
 
+/// Whether the survey's opening wave of `width` legs timed out to a leg, the
+/// evidence that the tunnel carries nothing and the remaining waves would
+/// only repeat it.
+pub fn opening_wave_timed_out(results: &[SurveyResult], width: usize) -> bool {
+    results.len() >= width
+        && results
+            .iter()
+            .take(width)
+            .all(|result| result.refusal == Some(FailureKind::Timeout))
+}
+
 /// A per-kind count of the survey's refusals, rendered as a parenthesized
 /// suffix like " (14 timeout, 3 unreachable)" and as nothing when the
 /// survey had no refusals.
@@ -556,6 +567,34 @@ mod tests {
             "no live indexer: 0 of 3 answered, none within the cohort \
              (2 timeout, 1 unreachable)"
         );
+    }
+
+    /// HYPOTHESIS: an opening wave whose every leg timed out is evidence
+    /// about the tunnel rather than about the candidates, so the survey
+    /// stops there instead of spending the same budget on each remaining
+    /// wave. Falsified if a partial wave, an answered wave, or a wave whose
+    /// refusals differ in kind is read as the same evidence.
+    #[test]
+    fn an_all_timeout_opening_wave_ends_the_survey() {
+        let width = 4;
+        let timed_out: Vec<SurveyResult> = ["a", "b", "c", "d"]
+            .iter()
+            .map(|host| refused(&format!("https://{host}.example:443"), FailureKind::Timeout))
+            .collect();
+        assert!(opening_wave_timed_out(&timed_out, width));
+
+        // A wave still in flight decides nothing.
+        assert!(!opening_wave_timed_out(&timed_out[..width - 1], width));
+
+        // One answer means the tunnel carries traffic.
+        let mut with_answer = timed_out.clone();
+        with_answer[2] = answered("https://c.example:443", "main", 100);
+        assert!(!opening_wave_timed_out(&with_answer, width));
+
+        // Refusals of mixed kind indict the candidates, not the tunnel.
+        let mut mixed = timed_out.clone();
+        mixed[1] = refused("https://b.example:443", FailureKind::Unreachable);
+        assert!(!opening_wave_timed_out(&mixed, width));
     }
 
     /// A survey with no refusals renders no cause suffix.
