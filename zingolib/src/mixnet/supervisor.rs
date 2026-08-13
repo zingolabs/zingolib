@@ -95,6 +95,9 @@ pub enum MixnetProxyError {
         /// The address that failed to parse.
         addr: String,
     },
+    /// The exit report handed to `MixnetProxy::attach` names no Exit Node.
+    #[error("the attached endpoint reported no bound exit node")]
+    NoExits,
     /// The session could not draw a ledgered Clutch for the spawn.
     #[error(transparent)]
     Acquisition(Box<acquire::TransportError>),
@@ -284,6 +287,12 @@ impl MixnetProxy {
         exits: &[crate::mixnet::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Result<Self, MixnetProxyError> {
+        // Ready means the address AND a bound exit, at every door: an
+        // attach that accepted an empty report would mint an exitless Ready
+        // that no later announcement can correct.
+        if exits.is_empty() {
+            return Err(MixnetProxyError::NoExits);
+        }
         let state = Arc::new(Mutex::new(ProxyState {
             mode: MixnetMode::Bootstrapping,
             socks5_addr: None,
@@ -495,10 +504,14 @@ async fn drive_state<R: AsyncRead + Unpin>(
     while let Ok(Some(line)) = lines.next_line().await {
         if let Some(exit) = parse_exit_line(&line) {
             spoke_protocol = true;
-            // Recorded silently: the exit becomes visible evidence in the
-            // Ready snapshot the address announcement publishes.
             let mut guarded = state.lock().expect("proxy state mutex");
             guarded.exits.push(exit);
+            // An exit announced after the address changes the Ready
+            // snapshot, so it is published: a readiness waiter parked on an
+            // address-first Ready wakes on this publication alone.
+            if guarded.mode == MixnetMode::Ready {
+                publish_locked(&guarded, &publisher);
+            }
             continue;
         }
         if let Some(addr) = parse_socks5_addr_line(&line) {
@@ -679,14 +692,20 @@ fn parse_discovery_output(stdout: &str) -> HashSet<crate::mixnet::ExitNodeId> {
 
 /// Waits until the status channel reports Ready with an announced address
 /// and at least one bound exit, yielding both, or fails typed when the
-/// transport dies, the channel closes, or `budget` elapses.
+/// transport dies, the channel closes, `budget` elapses, or the first exit
+/// misses its grace after the address.
 pub(crate) async fn await_ready_endpoint(
     receiver: &mut tokio::sync::watch::Receiver<MixnetStatus>,
     budget: Duration,
 ) -> Result<(SocketAddr, Vec<crate::mixnet::ExitNodeId>), acquire::TransportError> {
+    // The grace runs from the first addressed Ready, so a transport that
+    // latches Ready and never binds an exit is refused well inside the
+    // lifecycle budget instead of holding the user's go-online moment for
+    // the whole of it.
+    let mut exit_deadline: Option<tokio::time::Instant> = None;
     let outcome = tokio::time::timeout(budget, async {
         loop {
-            {
+            let addressed = {
                 let status = receiver.borrow_and_update();
                 match status.mode {
                     MixnetMode::Ready => {
@@ -697,16 +716,35 @@ pub(crate) async fn await_ready_endpoint(
                         if let (Some(addr), Some(_)) = (status.socks5_addr, status.exits.first()) {
                             return Ok((addr, status.exits.clone()));
                         }
+                        status.socks5_addr.is_some()
                     }
                     MixnetMode::Died => {
                         return Err(acquire::TransportError::DiedDuringBootstrap {
                             detail: status.death.as_ref().and_then(|death| death.detail.clone()),
                         });
                     }
-                    _ => {}
+                    _ => false,
                 }
+            };
+            if addressed && exit_deadline.is_none() {
+                exit_deadline = Some(
+                    tokio::time::Instant::now() + zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE,
+                );
             }
-            if receiver.changed().await.is_err() {
+            let changed = match exit_deadline {
+                Some(deadline) => {
+                    match tokio::time::timeout_at(deadline, receiver.changed()).await {
+                        Ok(changed) => changed,
+                        Err(_elapsed) => {
+                            return Err(acquire::TransportError::NotReady {
+                                budget: zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE,
+                            });
+                        }
+                    }
+                }
+                None => receiver.changed().await,
+            };
+            if changed.is_err() {
                 return Err(acquire::TransportError::StatusChannelClosed);
             }
         }
@@ -1276,6 +1314,25 @@ mod tests {
         driver.abort();
     }
 
+    /// HYPOTHESIS: an attach whose report names no Exit Node refuses typed,
+    /// so the attach door and the acquisition gate share one definition of
+    /// Ready. Falsified if an exitless report mints a permanent Ready.
+    #[tokio::test]
+    async fn an_exitless_report_refuses_the_attach() {
+        match MixnetProxy::attach(
+            "127.0.0.1:1080".parse().expect("the test address parses"),
+            &[],
+            test_publisher(),
+        ) {
+            Err(MixnetProxyError::NoExits) => {}
+            Err(other) => panic!("the attach refused with '{other}' rather than the empty report"),
+            Ok(proxy) => {
+                proxy.stop().await;
+                panic!("an exitless report must never mint an attached transport")
+            }
+        }
+    }
+
     /// HYPOTHESIS: stop() on an attached transport is a deliberate teardown
     /// to Unattached — never Died, and never the wallet's SwitchedOff.
     /// Falsified if a live attachment reports anything but the transport
@@ -1287,10 +1344,10 @@ mod tests {
         // win regardless of where the driver is when it lands.
         let proxy = MixnetProxy::attach(
             "127.0.0.1:9".parse().expect("the test address parses"),
-            &[],
+            &[crate::mixnet::ExitNodeId::from("host-bound-exit")],
             test_publisher(),
         )
-        .expect("a valid address attaches");
+        .expect("a valid address and a named exit attach");
         // The readiness gate races this assert (a refused port can land Died
         // fast), so assert only what is invariant: a live attachment is in
         // the transport lifecycle, never in a wallet slot state.
@@ -1318,10 +1375,10 @@ mod tests {
         // fails fast and the driver lands Died.
         let proxy = MixnetProxy::attach(
             "127.0.0.1:9".parse().expect("the test address parses"),
-            &[],
+            &[crate::mixnet::ExitNodeId::from("host-bound-exit")],
             test_publisher(),
         )
-        .expect("a valid address attaches");
+        .expect("a valid address and a named exit attach");
         let deadline = std::time::Instant::now() + Duration::from_secs(60);
         while proxy.mode() != MixnetMode::Died {
             assert!(
@@ -1339,6 +1396,71 @@ mod tests {
     }
 
     // ----- session-channel publication falsifiers (the driver arc) -----
+
+    /// HYPOTHESIS: an exit announced after the address wakes a readiness
+    /// waiter that is already parked on the session channel, so a healthy
+    /// transport is never stopped as not ready for its announcement order.
+    #[tokio::test(start_paused = true)]
+    async fn an_exit_after_the_address_wakes_the_parked_waiter() {
+        let publisher = test_publisher();
+        let mut receiver = publisher.subscribe();
+        let state = bootstrapping();
+        let handle = tokio::spawn(drive_state(
+            OpenAfter::new(b"SOCKS5_ADDR=127.0.0.1:43210\nNYM_EXIT=exit-alpha\n"),
+            Arc::clone(&state),
+            Arc::clone(&publisher),
+            None,
+        ));
+        let (addr, exits) =
+            await_ready_endpoint(&mut receiver, zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT)
+                .await
+                .expect("the announced exit reaches the parked waiter");
+        assert_eq!(
+            addr,
+            "127.0.0.1:43210".parse().expect("the test address parses"),
+            "the waiter yields the announced address"
+        );
+        assert_eq!(
+            exits,
+            vec![crate::mixnet::ExitNodeId::from("exit-alpha")],
+            "the waiter yields the exit announced after the address"
+        );
+        handle.abort();
+    }
+
+    /// HYPOTHESIS: a Ready that announces its address but never an Exit
+    /// Node refuses once the exit-announcement grace elapses, so the
+    /// go-online moment is not held for the whole lifecycle budget.
+    #[tokio::test(start_paused = true)]
+    async fn an_exitless_ready_refuses_after_the_grace() {
+        let publisher = test_publisher();
+        let mut receiver = publisher.subscribe();
+        publisher.send_replace(MixnetStatus {
+            mode: MixnetMode::Ready,
+            socks5_addr: Some("127.0.0.1:1080".parse().expect("the test address parses")),
+            exits: Vec::new(),
+            bootstrap_detail: None,
+            death: None,
+        });
+        let started = tokio::time::Instant::now();
+        let refusal =
+            await_ready_endpoint(&mut receiver, zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT)
+                .await
+                .expect_err("no exit ever arrives");
+        assert!(
+            matches!(
+                refusal,
+                acquire::TransportError::NotReady { budget }
+                    if budget == zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE
+            ),
+            "the refusal names the grace it exceeded, got: {refusal}"
+        );
+        assert_eq!(
+            started.elapsed(),
+            zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE,
+            "the wait ends at the grace, never at the lifecycle budget"
+        );
+    }
 
     /// HYPOTHESIS: transport transitions are published into the session
     /// channel as they happen — a subscriber observes Ready with the

@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `transaction_known` run the operations through one private
   dial-and-bound pipeline. Every operation still opens its own SOCKS5
   tunnel.
+- BREAKING: `NymProxy::socks5_addr` returns a `std::net::SocketAddr`
+  instead of a `String`. The proxy announces the loopback address it
+  bound, so a caller dials the typed address it is handed and never
+  parses one out of text.
+
 - BREAKING: `send_transaction_via_socks5`, `get_lightd_info_via_socks5`,
   and `transaction_known_via_socks5` take the SOCKS5 proxy address as a
   `std::net::SocketAddr` instead of a `&str`. The one dial-string
