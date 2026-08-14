@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `time::NYM_EPOCH`: one Nym network epoch, the hourly topology rotation
   that bounds how long an observation about an Exit Node stays meaningful.
 
+### Removed
+- BREAKING: the responsiveness partition is retired. The `Responsiveness`
+  trait, the `PrioritiseSpeed` and `PrioritisePrivacy` marker types,
+  `ResponsivenessClass`, its wire token, and the proxy binary's
+  `--responsiveness` argument are gone; `NymProxy::start` and `start_over`
+  lose their type parameter. Every acquisition now races under the one
+  hedged launch policy (`responsiveness::acquisition_launch_policy`), an
+  arm wins by binding, and the child-side Sentinel gate is deleted: proof
+  of the bound exit belongs to the layer above the SOCKS5 seam, which
+  probes once per birth instead of once per losing arm. The speed class's
+  in-race proving starved acquisitions whenever no arm could complete a
+  round trip quickly, stalling the session tunnel at `Bootstrapping`
+  past 90 seconds in three consecutive measured runs.
+
 ### Changed
 - BREAKING: an acquisition's clutch grows from three Exit Node reservations
   to four, and a racing arm now wins by carrying a round trip rather than by

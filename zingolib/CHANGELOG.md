@@ -70,6 +70,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: the session's standing client is born as a Proven Client.
+  `enable_mixnet` and `enable_mixnet_via_host` lose their responsiveness
+  type parameter and return once the client is bound and its exit proven,
+  instead of returning while an unproven transport bootstraps; the slot
+  holds only the bound exit's lease rather than the whole Clutch, and
+  `ProxyHost::start_transport` loses its class parameter. The retired
+  speed-class enable race stalled at `Bootstrapping` past 90 seconds in
+  three consecutive measured runs; the proven birth reached `Ready` and
+  quoted prices on its first live run.
 - BREAKING: the Correspondent Pools' member-keeping is retired. Go-online
   no longer launches background refills, the Indexer and Price complements
   are gone, and a Transmission's pulls multiplex over the session's standing

@@ -134,16 +134,21 @@ impl Pools {
         );
     }
 
-    /// Acquires one ready transport over a fresh Clutch, keeping only the
-    /// bound exit's lease.
+    /// Acquires one ready transport over a fresh Clutch, publishing its
+    /// lifecycle into `publisher` and keeping only the bound exit's lease.
     pub(crate) async fn acquire_bound(
         &self,
         acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
+        publisher: &crate::mixnet::driver::StatusPublisher,
     ) -> Result<(crate::mixnet::MixnetProxy, exit_pool::Reservation), acquire::TransportError> {
         let mut clutch = self.draw_clutch(acquirer).await?;
         let nodes = exit_pool::clutch_nodes(&clutch);
-        let (transport, exits) =
-            crate::mixnet::supervisor::acquire_ready_transport(acquirer, &nodes).await?;
+        let (transport, exits) = crate::mixnet::supervisor::acquire_ready_transport(
+            acquirer,
+            &nodes,
+            std::sync::Arc::clone(publisher),
+        )
+        .await?;
         // Bind-time recycle: keeping only the bound lease drops the rest. A
         // report naming no drawn node (a defective host or child) refuses
         // typed, with the transport stopped and every reservation recycled.
@@ -162,9 +167,10 @@ impl Pools {
     pub(crate) async fn acquire_proven(
         &self,
         acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
+        publisher: &crate::mixnet::driver::StatusPublisher,
     ) -> Result<(crate::mixnet::MixnetProxy, exit_pool::Reservation), acquire::TransportError> {
         for _birth in 0..MAX_PROVING_BIRTHS {
-            let (transport, lease) = self.acquire_bound(acquirer).await?;
+            let (transport, lease) = self.acquire_bound(acquirer, publisher).await?;
             let trusted = {
                 let exits = self.exits.lock().expect("exit pool mutex");
                 exits.proven(lease.node(), std::time::Instant::now())

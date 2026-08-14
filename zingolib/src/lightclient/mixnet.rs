@@ -73,7 +73,10 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
             let acquirer = pools
                 .acquirer()
                 .ok_or(crate::mixnet::acquire::TransportError::NoAcquirer)?;
-            let (transport, lease) = pools.acquire_proven(acquirer.as_ref()).await?;
+            // The price client's lifecycle publishes into its own channel,
+            // never the session's: subscribers watch the standing client.
+            let publisher = crate::mixnet::status_publisher();
+            let (transport, lease) = pools.acquire_proven(acquirer.as_ref(), &publisher).await?;
             let member = crate::mixnet::speed::Member::new(transport, lease);
             let addr = member
                 .addr()
@@ -122,86 +125,63 @@ impl LightClient {
         {
             running.stop().await;
         }
-        // Dropping the slot's Clutch recycles the session tunnel's
-        // reservations after the transport is gone.
-        self.slot_clutch.clear();
+        // Dropping the slot's lease recycles the standing client's exit
+        // after the transport is gone.
+        self.slot_lease = None;
     }
 
-    /// Enable Mixnet Mode by spawning the bundled `nym-proxy` binary at
-    /// `binary_path`, returning immediately while [`Self::mixnet_mode`]
-    /// reports `Bootstrapping` until the proxy announces its SOCKS5 address
-    /// and becomes `Ready`, replacing any already-running proxy, and leaving
-    /// a spawn failure `Unattached` — refusing the mixnet surfaces, never
-    /// falling back to clearnet.
-    pub async fn enable_mixnet<R: zingo_netutils::responsiveness::Responsiveness>(
+    /// Enables Mixnet Mode by birthing the standing client from the bundled
+    /// `nym-proxy` binary at `binary_path`, returning once the client is
+    /// bound and its exit proven.
+    pub async fn enable_mixnet(
         &mut self,
         binary_path: &std::path::Path,
     ) -> Result<(), crate::mixnet::acquire::TransportError> {
-        self.enable_mixnet_from(
-            std::sync::Arc::new(crate::mixnet::acquire::SpawnedBinary::at(
-                binary_path.to_path_buf(),
-            )),
-            R::CLASS,
-        )
+        self.enable_mixnet_from(std::sync::Arc::new(
+            crate::mixnet::acquire::SpawnedBinary::at(binary_path.to_path_buf()),
+        ))
         .await
     }
 
-    /// Enables Mixnet Mode on a mobile platform that forbids subprocesses, taking
-    /// every transport from `host` instead of spawning one.
-    pub async fn enable_mixnet_via_host<R: zingo_netutils::responsiveness::Responsiveness>(
+    /// Enables Mixnet Mode on a mobile platform that forbids subprocesses,
+    /// birthing the standing client from `host` instead of spawning one.
+    pub async fn enable_mixnet_via_host(
         &mut self,
         host: std::sync::Arc<dyn crate::mixnet::acquire::ProxyHost>,
     ) -> Result<(), crate::mixnet::acquire::TransportError> {
-        self.enable_mixnet_from(
-            std::sync::Arc::new(crate::mixnet::acquire::HostedProxy::owned_by(host)),
-            R::CLASS,
-        )
+        self.enable_mixnet_from(std::sync::Arc::new(
+            crate::mixnet::acquire::HostedProxy::owned_by(host),
+        ))
         .await
     }
 
-    /// Enables Mixnet Mode over `acquirer`, the one seam both platforms fill.
+    /// Enables Mixnet Mode over `acquirer` by birthing the session's
+    /// standing Proven Client — the same trust-or-probe birth every client
+    /// gets — publishing its lifecycle into the session channel, holding
+    /// only the bound exit's lease, and leaving any failure `Unattached`.
     async fn enable_mixnet_from(
         &mut self,
         acquirer: std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>,
-        class: zingo_netutils::responsiveness::ResponsivenessClass,
     ) -> Result<(), crate::mixnet::acquire::TransportError> {
         self.vacate_mixnet_slot().await;
-        let clutch = match self
+        match self
             .correspondent_pools
-            .draw_clutch(acquirer.as_ref())
+            .acquire_proven(acquirer.as_ref(), &self.mixnet_status)
             .await
         {
-            Ok(clutch) => clutch,
-            Err(refusal) => {
-                // A session that cannot draw a ledgered Clutch refuses;
-                // the spawned binary must never self-draw outside the
-                // reservation ledger.
-                self.publish_mixnet_slot_state();
-                return Err(refusal);
-            }
-        };
-        let nodes = crate::correspondent::pool::exit_pool::clutch_nodes(&clutch);
-        match crate::mixnet::acquire::TransportAcquirable::acquire(
-            acquirer.as_ref(),
-            class,
-            &nodes,
-            std::sync::Arc::clone(&self.mixnet_status),
-        )
-        .await
-        {
-            Ok(proxy) => {
-                // The spawn already published Bootstrapping into the session
-                // channel; nothing further to announce here. The Clutch is
-                // held for the tunnel's life and recycled on vacate.
+            Ok((proxy, lease)) => {
                 self.mixnet_slot = crate::mixnet::MixnetSlot::Attached(proxy);
-                self.slot_clutch = clutch;
+                self.slot_lease = Some(lease);
                 self.correspondent_pools.set_acquirer(acquirer);
+                // The birth published Bootstrapping and Ready into the
+                // session channel as it went; the settled slot publishes
+                // last so subscribers read the attached state whole.
+                self.publish_mixnet_slot_state();
                 Ok(())
             }
             Err(error) => {
                 // A failed enable leaves Unattached (the user's enable revoked
                 // any standing clearnet consent); subscribers must see it.
-                // The drawn Clutch drops here, recycling its reservations.
                 self.publish_mixnet_slot_state();
                 Err(error)
             }
@@ -295,10 +275,7 @@ impl LightClient {
                     let path = crate::mixnet::provision::resolve_proxy_path(&hints);
                     log::info!("mixnet session start: spawning nym-proxy at {path}");
                     // The go-online moment is a user act: someone is waiting.
-                    self.enable_mixnet::<zingo_netutils::responsiveness::PrioritiseSpeed>(
-                        std::path::Path::new(&path),
-                    )
-                    .await
+                    self.enable_mixnet(std::path::Path::new(&path)).await
                 }
                 crate::mixnet::ProvisionStrategy::Attach { socks5_addr, exits } => self
                     .attach_mixnet(socks5_addr, exits)

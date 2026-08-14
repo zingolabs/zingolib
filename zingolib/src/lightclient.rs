@@ -179,14 +179,13 @@ pub struct LightClient {
     /// deliberate disable stays distinguishable from a transport's absence.
     #[cfg(feature = "nym")]
     mixnet_slot: crate::mixnet::MixnetSlot,
-    /// The Correspondent Pools: ready transports Exit Rotation consumes per
-    /// run, refilled in the background under PrioritisePrivacy.
+    /// The session's exit authority: Reservations, the NodeHealthIndex, and
+    /// the acquirer Proven Clients are born from.
     #[cfg(feature = "nym")]
     correspondent_pools: std::sync::Arc<crate::correspondent::pool::Pools>,
-    /// The session tunnel's Clutch, held for the spawned slot proxy's life
-    /// and recycled by drop on vacate.
+    /// The standing client's bound-exit lease, recycled by drop on vacate.
     #[cfg(feature = "nym")]
-    slot_clutch: std::collections::HashSet<crate::correspondent::pool::exit_pool::Reservation>,
+    slot_lease: Option<crate::correspondent::pool::exit_pool::Reservation>,
     /// The session-level Mixnet Mode status channel (ADR 0024, decision 2):
     /// the one shared watch every subscriber reads. Transport transitions
     /// publish from the supervisor's tasks, slot transitions from the
@@ -271,7 +270,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
             #[cfg(feature = "nym")]
-            slot_clutch: std::collections::HashSet::new(),
+            slot_lease: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
@@ -314,7 +313,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
             #[cfg(feature = "nym")]
-            slot_clutch: std::collections::HashSet::new(),
+            slot_lease: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
@@ -378,7 +377,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
             #[cfg(feature = "nym")]
-            slot_clutch: std::collections::HashSet::new(),
+            slot_lease: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
