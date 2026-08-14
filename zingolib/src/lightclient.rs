@@ -199,6 +199,26 @@ pub struct LightClient {
     /// held so revoking consent aborts its traffic with everything else.
     #[cfg(feature = "nym")]
     health_sweep: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// The in-flight failover birth, held so a vacate aborts it and a
+    /// consent revoked mid-birth is never raced by an untracked task.
+    #[cfg(feature = "nym")]
+    proof_acquisition: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+#[cfg(feature = "nym")]
+impl Drop for LightClient {
+    fn drop(&mut self) {
+        // A dropped session must strand no networking task: each held
+        // handle is aborted, without awaiting, so the drop stays sync.
+        if let Some(watchdog) = self.standing_watchdog.take() {
+            watchdog.abort();
+        }
+        for slot in [&self.health_sweep, &self.proof_acquisition] {
+            if let Some(task) = slot.lock().expect("a task slot is never poisoned").take() {
+                task.abort();
+            }
+        }
+    }
 }
 
 impl LightClient {
@@ -280,6 +300,8 @@ impl LightClient {
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
             health_sweep: std::sync::Mutex::new(None),
+            #[cfg(feature = "nym")]
+            proof_acquisition: std::sync::Mutex::new(None),
         })
     }
 
@@ -325,6 +347,8 @@ impl LightClient {
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
             health_sweep: std::sync::Mutex::new(None),
+            #[cfg(feature = "nym")]
+            proof_acquisition: std::sync::Mutex::new(None),
         }
     }
 
@@ -391,6 +415,8 @@ impl LightClient {
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
             health_sweep: std::sync::Mutex::new(None),
+            #[cfg(feature = "nym")]
+            proof_acquisition: std::sync::Mutex::new(None),
         })
     }
 

@@ -138,10 +138,10 @@ fn publish_slot(
 /// Forwards a settled birth's later transitions from its birth channel into
 /// the session channel, ending when the client's driver drops its publisher.
 fn forward_client_transitions(
-    birth: &crate::correspondent::pool::ProvenBirth,
+    birth_channel: &crate::mixnet::driver::StatusPublisher,
     session: &crate::mixnet::driver::StatusPublisher,
 ) {
-    let mut future_transitions = birth.lifecycle.subscribe();
+    let mut future_transitions = birth_channel.subscribe();
     let session = std::sync::Arc::clone(session);
     tokio::spawn(async move {
         while future_transitions.changed().await.is_ok() {
@@ -149,6 +149,25 @@ fn forward_client_transitions(
             session.send_replace(status);
         }
     });
+}
+
+/// Installs the failover's replacement only while the slot still holds the
+/// condemned client whose enable it continues, refusing when consent
+/// changed shape mid-birth.
+// The Err carries the refused client back to its caller for teardown, one
+// move that never rides an error chain, so its size costs nothing.
+#[allow(clippy::result_large_err)]
+fn install_failover_client(
+    slot: &std::sync::Arc<std::sync::Mutex<crate::mixnet::MixnetSlot>>,
+    client: crate::mixnet::StandingClient,
+) -> Result<crate::mixnet::MixnetSlot, crate::mixnet::StandingClient> {
+    let mut guarded = slot.lock().expect("mixnet slot mutex");
+    match &*guarded {
+        crate::mixnet::MixnetSlot::Attached(current) if current.is_condemned() => Ok(
+            std::mem::replace(&mut *guarded, crate::mixnet::MixnetSlot::Attached(client)),
+        ),
+        _ => Err(client),
+    }
 }
 
 /// Builds the Standing Client a birth installs, its proof deadline set to
@@ -233,14 +252,25 @@ async fn adjudicate_standing_proof(
     };
     match pools.acquire_proven(acquirer.as_ref()).await {
         Ok(birth) => {
-            // The replacement's candidate churn stays on its birth channel;
-            // only its settled transitions reach the session's subscribers.
-            forward_client_transitions(&birth, &status);
+            let birth_channel = std::sync::Arc::clone(&birth.lifecycle);
             let client = standing_client_from_birth(birth, &pools);
-            let replaced = swap_slot(&slot, crate::mixnet::MixnetSlot::Attached(client));
-            publish_slot(&slot, &status);
-            if let crate::mixnet::MixnetSlot::Attached(old) = replaced {
-                old.stop().await;
+            match install_failover_client(&slot, client) {
+                Ok(replaced) => {
+                    // The replacement's candidate churn stayed on its birth
+                    // channel; its settled transitions reach the session's
+                    // subscribers from here on.
+                    forward_client_transitions(&birth_channel, &status);
+                    publish_slot(&slot, &status);
+                    if let crate::mixnet::MixnetSlot::Attached(old) = replaced {
+                        old.stop().await;
+                    }
+                }
+                Err(refused) => {
+                    // Consent changed shape mid-birth: the enable this
+                    // failover continues is gone, so the replacement dies
+                    // unused and its lease recycles.
+                    refused.stop().await;
+                }
             }
         }
         Err(exhausted) => {
@@ -328,6 +358,14 @@ impl LightClient {
         if let Some(watchdog) = self.standing_watchdog.take() {
             watchdog.abort();
         }
+        if let Some(acquisition) = self
+            .proof_acquisition
+            .lock()
+            .expect("the proof-acquisition slot is never poisoned")
+            .take()
+        {
+            acquisition.abort();
+        }
         if let crate::mixnet::MixnetSlot::Attached(client) =
             swap_slot(&self.mixnet_slot, crate::mixnet::MixnetSlot::Unattached)
         {
@@ -353,11 +391,21 @@ impl LightClient {
     /// Raises the suspicion that the Standing Client's exit is dead,
     /// spawning a ProofAcquisition whose arbiter probe adjudicates it.
     pub(crate) fn note_standing_exit_suspicion(&self) {
-        tokio::spawn(run_proof_acquisition(
+        let mut held = self
+            .proof_acquisition
+            .lock()
+            .expect("the proof-acquisition slot is never poisoned");
+        // Single flight: a running acquisition already owns the adjudication,
+        // and tracking the handle lets a vacate abort it, so a consent
+        // revoked mid-birth is never raced by an untracked task.
+        if held.as_ref().is_some_and(|task| !task.is_finished()) {
+            return;
+        }
+        *held = Some(tokio::spawn(run_proof_acquisition(
             self.mixnet_slot.clone(),
             self.correspondent_pools.clone(),
             std::sync::Arc::clone(&self.mixnet_status),
-        ));
+        )));
     }
 
     /// ```
@@ -503,7 +551,7 @@ impl LightClient {
             Ok(birth) => {
                 // The Standing Client's later transitions — above all
                 // Died — must still reach the session's subscribers.
-                forward_client_transitions(&birth, &self.mixnet_status);
+                forward_client_transitions(&birth.lifecycle, &self.mixnet_status);
                 let client = standing_client_from_birth(birth, &self.correspondent_pools);
                 let superseded = swap_slot(
                     &self.mixnet_slot,
@@ -651,6 +699,9 @@ impl LightClient {
     /// down any running transport so the mixnet-only surfaces route over
     /// clearnet as informed consent.
     pub async fn disable_mixnet(&mut self) {
+        // Revoked consent stops every networking act this session started:
+        // the health sweep's survey halts with the standing transport.
+        self.abort_health_sweep().await;
         self.vacate_mixnet_slot().await;
         swap_slot(&self.mixnet_slot, crate::mixnet::MixnetSlot::SwitchedOff);
         self.publish_mixnet_slot_state();
@@ -994,6 +1045,123 @@ mod tests {
                 client.mixnet_route(),
                 Ok(crate::mixnet::MixnetRoute::Clearnet)
             ));
+        }
+    }
+
+    mod consent_holds {
+        //! Revoked consent stops every networking act the session started
+        //! (findings 2 and 9 of the 2026-08-14 PR #2695 review).
+        use crate::lightclient::LightClient;
+        use crate::mixnet::ExitNodeId;
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        fn wallet() -> crate::wallet::LightWallet {
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
+        }
+
+        /// A Standing Client over an attach to `addr`, for slot tests.
+        fn attached_client(addr: std::net::SocketAddr) -> crate::mixnet::StandingClient {
+            let proxy = crate::mixnet::MixnetProxy::attach(
+                addr,
+                &[ExitNodeId::from("exit-alpha")],
+                crate::mixnet::status_publisher(),
+            )
+            .expect("the attach accepts a bound exit");
+            crate::mixnet::StandingClient::new(proxy, None, true)
+        }
+
+        /// HYPOTHESIS: disabling the mixnet halts the health sweep, so the
+        /// consent revocation stops the census probing the session started.
+        /// Falsified if the sweep's task survives the disable.
+        #[tokio::test]
+        async fn disable_mixnet_halts_the_health_sweep() {
+            let mut client = LightClient::new_for_test(wallet()).await;
+            let (held_tx, cancelled_rx) = tokio::sync::oneshot::channel::<()>();
+            let sweep = tokio::spawn(async move {
+                let _held = held_tx;
+                std::future::pending::<()>().await
+            });
+            *client
+                .health_sweep
+                .lock()
+                .expect("the health-sweep slot is never poisoned") = Some(sweep);
+
+            client.disable_mixnet().await;
+
+            assert!(
+                client
+                    .health_sweep
+                    .lock()
+                    .expect("the health-sweep slot is never poisoned")
+                    .is_none(),
+                "the disable takes and halts the sweep"
+            );
+            assert!(
+                cancelled_rx.await.is_err(),
+                "the sweep task was cancelled, not left surveying"
+            );
+        }
+
+        /// HYPOTHESIS: a failover's replacement installs only while the slot
+        /// still holds the condemned client whose enable it continues, so a
+        /// consent revoked mid-birth is never reversed. Falsified if the
+        /// install overwrites a SwitchedOff slot.
+        #[tokio::test]
+        async fn a_switched_off_slot_refuses_the_failover_client() {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind an ephemeral port");
+            let addr = listener.local_addr().expect("local addr");
+            let slot = std::sync::Arc::new(std::sync::Mutex::new(
+                crate::mixnet::MixnetSlot::SwitchedOff,
+            ));
+
+            let Err(refused) = super::super::install_failover_client(&slot, attached_client(addr))
+            else {
+                panic!("a switched-off slot must refuse the continuation");
+            };
+            refused.stop().await;
+
+            assert!(
+                matches!(
+                    &*slot.lock().expect("mixnet slot mutex"),
+                    crate::mixnet::MixnetSlot::SwitchedOff
+                ),
+                "the revoked consent stands"
+            );
+        }
+
+        /// HYPOTHESIS: the install succeeds exactly when the slot holds the
+        /// condemned client the failover replaces, yielding the superseded
+        /// slot for teardown. Falsified if a condemned slot refuses.
+        #[tokio::test]
+        async fn a_condemned_slot_accepts_the_failover_client() {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind an ephemeral port");
+            let addr = listener.local_addr().expect("local addr");
+            let old = attached_client(addr);
+            old.condemn();
+            let slot = std::sync::Arc::new(std::sync::Mutex::new(
+                crate::mixnet::MixnetSlot::Attached(old),
+            ));
+
+            let Ok(superseded) =
+                super::super::install_failover_client(&slot, attached_client(addr))
+            else {
+                panic!("the condemned slot must accept its continuation");
+            };
+            if let crate::mixnet::MixnetSlot::Attached(old) = superseded {
+                old.stop().await;
+            }
+
+            assert!(
+                matches!(
+                    &*slot.lock().expect("mixnet slot mutex"),
+                    crate::mixnet::MixnetSlot::Attached(client) if !client.is_condemned()
+                ),
+                "the replacement stands in the slot"
+            );
         }
     }
 
