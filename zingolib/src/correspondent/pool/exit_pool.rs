@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, Weak};
 
-use rand::seq::IteratorRandom as _;
+use rand::seq::SliceRandom as _;
 
 /// Why the pool could issue no clutch.
 #[derive(Debug, thiserror::Error)]
@@ -286,15 +286,14 @@ impl ExitPool {
                 unknown.push(node);
             }
         }
-        // Each preference tier is sampled uniformly within itself, so the
-        // index orders tiers while chance still spreads load inside one.
+        // Each preference tier is shuffled for real within itself, so the
+        // index orders tiers while chance still spreads load inside one:
+        // sampling a tier at its own size returns iteration order verbatim,
+        // which is why the shuffle is explicit.
         let mut ordered: Vec<crate::mixnet::ExitNodeId> = Vec::new();
-        for tier in [proven, unknown, failed] {
-            let count = tier.len();
-            ordered.extend(
-                tier.into_iter()
-                    .choose_multiple(&mut rand::rngs::OsRng, count),
-            );
+        for mut tier in [proven, unknown, failed] {
+            tier.shuffle(&mut rand::rngs::OsRng);
+            ordered.extend(tier);
         }
         let clutch: HashSet<Reservation> = ordered
             .into_iter()
@@ -392,6 +391,33 @@ mod tests {
         assert!(take_bound_lease(&mut clutch, &foreign).is_none());
         assert!(take_bound_lease(&mut clutch, &[]).is_none());
         assert_eq!(clutch.len(), 1, "the clutch is undisturbed");
+    }
+
+    /// A tier three clutches wide, so a fixed four-exit subset is provable.
+    const TIER_SPREAD_POPULATION: usize = RESERVATION_CLUTCH_SIZE * 3;
+
+    /// Draws enough to make an unshuffled tier's repetition unmistakable.
+    const TIER_SPREAD_DRAWS: usize = 10;
+
+    /// HYPOTHESIS: the draw spreads load inside a tier by chance, so
+    /// repeated draws over one wide tier reach beyond any fixed
+    /// clutch-sized subset. Falsified if every draw binds the same exits.
+    #[test]
+    fn repeated_draws_spread_across_the_tier() {
+        let pool = seeded(TIER_SPREAD_POPULATION);
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..TIER_SPREAD_DRAWS {
+            let clutch = ExitPool::draw_clutch(&pool).expect("the tier draws");
+            for reservation in &clutch {
+                seen.insert(reservation.node().clone());
+            }
+            drop(clutch);
+        }
+        assert!(
+            seen.len() > RESERVATION_CLUTCH_SIZE,
+            "every draw bound the same {RESERVATION_CLUTCH_SIZE} exits of \
+             {TIER_SPREAD_POPULATION}: the tier is unshuffled"
+        );
     }
 
     /// HYPOTHESIS: a drawn clutch is clutch-sized, and every reservation in
