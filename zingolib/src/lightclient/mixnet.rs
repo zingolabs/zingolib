@@ -129,7 +129,9 @@ fn publish_slot(
         socks5_addr: guarded.socks5_addr(),
         exits: guarded.exits(),
         bootstrap_detail: None,
-        death: None,
+        // A latched death crosses whole, so subscribers render its typed
+        // story and never a bare "died".
+        death: guarded.death_report(),
     });
 }
 
@@ -219,7 +221,12 @@ async fn adjudicate_standing_proof(
         if let crate::mixnet::MixnetSlot::Attached(client) =
             &*slot.lock().expect("mixnet slot mutex")
         {
-            client.forsake();
+            client.forsake(zingo_net_diag::NetOpFailure::message(
+                zingo_net_diag::NetOpStage::RouteResolution,
+                "the attached transport",
+                "the exit failed under an attached session, which cannot \
+                 rebirth its transport locally",
+            ));
         }
         publish_slot(&slot, &status);
         return;
@@ -241,7 +248,11 @@ async fn adjudicate_standing_proof(
             if let crate::mixnet::MixnetSlot::Attached(client) =
                 &*slot.lock().expect("mixnet slot mutex")
             {
-                client.forsake();
+                client.forsake(zingo_net_diag::NetOpFailure::from_error(
+                    zingo_net_diag::NetOpStage::RouteResolution,
+                    "the session's exit census",
+                    &exhausted,
+                ));
             }
             publish_slot(&slot, &status);
         }
@@ -1124,6 +1135,61 @@ mod tests {
                     "the narration is the slot owner's, never a candidate's"
                 );
             }
+        }
+    }
+
+    mod death_story {
+        //! A latched death reaches subscribers with its typed cause (finding
+        //! F6 of the PR #2705 review, item 2 of the 2026-08-14 split).
+        use crate::mixnet::{ExitNodeId, MixnetMode};
+
+        /// HYPOTHESIS: a forsaken Standing Client's Died reaches the status
+        /// channel carrying the exhaustion's typed story, so a consumer
+        /// renders the cause and never a bare "died". Falsified if the
+        /// published death is None.
+        #[tokio::test]
+        async fn a_forsaken_client_publishes_its_death_story() {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind an ephemeral port");
+            let addr = listener.local_addr().expect("local addr");
+            let birth_channel = crate::mixnet::status_publisher();
+            let proxy = crate::mixnet::MixnetProxy::attach(
+                addr,
+                &[ExitNodeId::from("exit-alpha")],
+                birth_channel,
+            )
+            .expect("the attach accepts a bound exit");
+            let client = crate::mixnet::StandingClient::new(proxy, None, true);
+            let exhausted = crate::mixnet::acquire::TransportError::NoProvenExit {
+                probed: crate::correspondent::pool::MAX_PROVING_BIRTHS,
+                budget: zingo_netutils::time::SENTINEL_BUDGET,
+            };
+            client.forsake(zingo_net_diag::NetOpFailure::from_error(
+                zingo_net_diag::NetOpStage::RouteResolution,
+                "the session's exit census",
+                &exhausted,
+            ));
+            let slot = std::sync::Arc::new(std::sync::Mutex::new(
+                crate::mixnet::MixnetSlot::Attached(client),
+            ));
+
+            let session = crate::mixnet::status_publisher();
+            super::super::publish_slot(&slot, &session);
+
+            let published = session.subscribe().borrow().clone();
+            assert_eq!(published.mode, MixnetMode::Died, "forsaken latches Died");
+            let death = published
+                .death
+                .expect("the published death carries its report");
+            let detail = death.detail.expect("the report holds the typed cause");
+            assert!(
+                detail
+                    .cause_chain
+                    .iter()
+                    .any(|layer| layer.contains("no proven exit")),
+                "the exhaustion's own words reach the subscriber: {detail:?}"
+            );
         }
     }
 

@@ -1,7 +1,7 @@
 //! The five-state runtime state of the Nym mixnet (Mixnet Mode).
 #![forbid(unsafe_code)]
 
-use crate::mixnet::MixnetProxy;
+use crate::mixnet::{DeathReport, MixnetProxy};
 
 /// The runtime state of the Nym mixnet transport that carries the
 /// Transmission and price-fetch surfaces.
@@ -192,7 +192,7 @@ pub(crate) struct StandingClient {
     condemned: std::sync::atomic::AtomicBool,
     /// Whether the failover exhausted every birth, the unconsented loss
     /// that latches Died until an explicit re-enable.
-    forsaken: std::sync::atomic::AtomicBool,
+    forsaken: std::sync::Mutex<Option<DeathReport>>,
     /// The instant this client's proof stops being epoch-fresh, when a new
     /// ProofAcquisition is due.
     proof_deadline: std::sync::Mutex<std::time::Instant>,
@@ -213,7 +213,7 @@ impl StandingClient {
             born_probed,
             confirmed: std::sync::atomic::AtomicBool::new(false),
             condemned: std::sync::atomic::AtomicBool::new(false),
-            forsaken: std::sync::atomic::AtomicBool::new(false),
+            forsaken: std::sync::Mutex::new(None),
             proof_deadline: std::sync::Mutex::new(
                 std::time::Instant::now() + zingo_netutils::time::NYM_EPOCH,
             ),
@@ -238,11 +238,23 @@ impl StandingClient {
         self.condemned.load(std::sync::atomic::Ordering::Acquire)
     }
 
-    /// Latches the failover's exhaustion, the unconsented loss of the
-    /// transport.
-    pub(crate) fn forsake(&self) {
+    /// Latches the failover's exhaustion — the unconsented loss of the
+    /// transport — holding `cause` as the death's typed story.
+    pub(crate) fn forsake(&self, cause: zingo_net_diag::NetOpFailure) {
+        *self.forsaken.lock().expect("forsaken mutex") = Some(DeathReport {
+            at: std::time::SystemTime::now(),
+            detail: Some(cause),
+        });
+    }
+
+    /// The typed death this client latched: the forsaken exhaustion when
+    /// one was ruled, otherwise whatever death its transport reports.
+    pub(crate) fn death_report(&self) -> Option<DeathReport> {
         self.forsaken
-            .store(true, std::sync::atomic::Ordering::Release);
+            .lock()
+            .expect("forsaken mutex")
+            .clone()
+            .or_else(|| self.proxy.death_report())
     }
 
     /// The instant this client's proof stops being epoch-fresh.
@@ -296,7 +308,7 @@ impl MixnetSlot {
             MixnetSlot::Unattached => MixnetMode::Unattached,
             MixnetSlot::SwitchedOff => MixnetMode::SwitchedOff,
             MixnetSlot::Attached(client) => {
-                if client.forsaken.load(std::sync::atomic::Ordering::Acquire) {
+                if client.forsaken.lock().expect("forsaken mutex").is_some() {
                     return MixnetMode::Died;
                 }
                 if client.is_condemned() {
@@ -311,6 +323,15 @@ impl MixnetSlot {
             }
             #[cfg(any(test, feature = "testutils"))]
             MixnetSlot::AttachedForTests { .. } => MixnetMode::Ready,
+        }
+    }
+
+    /// The slot's typed death story, present exactly when a held client has
+    /// latched one.
+    pub(crate) fn death_report(&self) -> Option<DeathReport> {
+        match self {
+            MixnetSlot::Attached(client) => client.death_report(),
+            _ => None,
         }
     }
 
@@ -527,8 +548,17 @@ mod demotion {
         let slot = attached(true);
         if let MixnetSlot::Attached(client) = &slot {
             client.condemn();
-            client.forsake();
+            client.forsake(zingo_net_diag::NetOpFailure::message(
+                zingo_net_diag::NetOpStage::RouteResolution,
+                "the session's exit census",
+                "every failover birth failed its proof",
+            ));
         }
         assert_eq!(slot.mode(), MixnetMode::Died);
+        assert!(
+            slot.death_report()
+                .is_some_and(|death| death.detail.is_some()),
+            "the latched death holds its typed story"
+        );
     }
 }
