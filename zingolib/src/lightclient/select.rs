@@ -241,7 +241,7 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
         // renews as the client retires.
         self.pools.remember(
             spent.node().clone(),
-            crate::correspondent::pool::exit_pool::Verdict::Proven,
+            crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::Proven,
         );
         tokio::spawn(async move {
             spent.retire().await;
@@ -251,7 +251,7 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
     fn abandon(&self, dead: crate::mixnet::speed::Member) {
         self.pools.remember(
             dead.node().clone(),
-            crate::correspondent::pool::exit_pool::Verdict::Failed,
+            crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::Failed,
         );
         tokio::spawn(async move {
             dead.retire().await;

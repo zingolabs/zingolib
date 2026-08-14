@@ -127,7 +127,11 @@ impl Pools {
     }
 
     /// Keeps `verdict` as `exit`'s current observation, earned now.
-    pub(crate) fn remember(&self, exit: crate::mixnet::ExitNodeId, verdict: exit_pool::Verdict) {
+    pub(crate) fn remember(
+        &self,
+        exit: crate::mixnet::ExitNodeId,
+        verdict: exit_pool::ExitNodeHealthVerdict,
+    ) {
         self.exits.lock().expect("exit pool mutex").remember(
             exit,
             exit_pool::Observation::earned(verdict, std::time::Instant::now()),
@@ -188,10 +192,16 @@ impl Pools {
             )
             .await;
             if evidence.proves_the_exit() {
-                self.remember(lease.node().clone(), exit_pool::Verdict::Proven);
+                self.remember(
+                    lease.node().clone(),
+                    exit_pool::ExitNodeHealthVerdict::Proven,
+                );
                 return Ok((transport, lease));
             }
-            self.remember(lease.node().clone(), exit_pool::Verdict::Failed);
+            self.remember(
+                lease.node().clone(),
+                exit_pool::ExitNodeHealthVerdict::Failed,
+            );
             transport.stop().await;
         }
         Err(acquire::TransportError::NoProvenExit {

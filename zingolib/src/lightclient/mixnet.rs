@@ -91,7 +91,7 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
         // fetches must not share a client.
         self.pools.remember(
             spent.node().clone(),
-            crate::correspondent::pool::exit_pool::Verdict::Proven,
+            crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::Proven,
         );
         tokio::spawn(async move {
             spent.retire().await;
@@ -101,7 +101,7 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
     fn abandon(&self, dead: crate::mixnet::speed::Member) {
         self.pools.remember(
             dead.node().clone(),
-            crate::correspondent::pool::exit_pool::Verdict::Failed,
+            crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::Failed,
         );
         tokio::spawn(async move {
             dead.retire().await;

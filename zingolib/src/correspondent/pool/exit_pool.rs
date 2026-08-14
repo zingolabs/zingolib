@@ -107,7 +107,7 @@ pub(crate) fn take_bound_lease(
 
 /// What one completed or refused round trip showed about an Exit Node.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Verdict {
+pub(crate) enum ExitNodeHealthVerdict {
     /// A round trip completed through the exit: it answered the Sentinel
     /// or carried a task.
     Proven,
@@ -118,13 +118,13 @@ pub(crate) enum Verdict {
 /// One exit's most recent verdict with the instant it was earned.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Observation {
-    verdict: Verdict,
+    verdict: ExitNodeHealthVerdict,
     at: std::time::Instant,
 }
 
 impl Observation {
     /// A verdict earned now.
-    pub(crate) fn earned(verdict: Verdict, at: std::time::Instant) -> Self {
+    pub(crate) fn earned(verdict: ExitNodeHealthVerdict, at: std::time::Instant) -> Self {
         Observation { verdict, at }
     }
 }
@@ -145,7 +145,7 @@ impl NodeHealthIndex {
     /// Whether the node's proof completed within the last Nym epoch.
     pub(crate) fn proven(&self, exit: &crate::mixnet::ExitNodeId, now: std::time::Instant) -> bool {
         self.0.get(exit).is_some_and(|seen| {
-            seen.verdict == Verdict::Proven
+            seen.verdict == ExitNodeHealthVerdict::Proven
                 && now.saturating_duration_since(seen.at) < zingo_netutils::time::NYM_EPOCH
         })
     }
@@ -154,7 +154,7 @@ impl NodeHealthIndex {
     pub(crate) fn failed(&self, exit: &crate::mixnet::ExitNodeId) -> bool {
         self.0
             .get(exit)
-            .is_some_and(|seen| seen.verdict == Verdict::Failed)
+            .is_some_and(|seen| seen.verdict == ExitNodeHealthVerdict::Failed)
     }
 }
 
