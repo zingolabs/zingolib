@@ -1511,30 +1511,21 @@ async fn network_command(
                     path: path.clone(),
                     source,
                 })?;
-            // Block until the bootstrap resolves so the return is the
-            // outcome, not a promise to poll; the dispatch seam's progress
-            // heartbeat narrates the wait. The supervisor's own lifecycle
-            // timeout flips a stuck bootstrap to died, and the outer
-            // timeout is the backstop.
-            let outcome = tokio::time::timeout(
-                zingolib::netutils::time::NYM_LIFECYCLE_TIMEOUT,
-                await_bootstrap_outcome(lightclient.subscribe_mixnet_status()),
-            )
-            .await;
+            // The enable itself waited out the proven birth — the six-birth
+            // budget bounds the wait, the supervisor's lifecycle timeout
+            // bounds each bootstrap inside it, and the dispatch seam's
+            // progress heartbeat narrates it — so the session channel holds
+            // the settled outcome and reading it does not block.
+            let outcome = await_bootstrap_outcome(lightclient.subscribe_mixnet_status()).await;
             let readiness = match outcome {
-                Ok(BootstrapOutcome::Ready { exits }) => format!(
+                BootstrapOutcome::Ready { exits } => format!(
                     "Mixnet Mode ready; the nym proxy at '{path}' serves send and \
                      price-fetch over the mixnet.{}",
                     render_exit_nodes(&exits)
                 ),
-                Ok(BootstrapOutcome::Failed { report }) => {
+                BootstrapOutcome::Failed { report } => {
                     return Err(NetworkCommandError::Bootstrap { report });
                 }
-                Err(_elapsed) => format!(
-                    "Mixnet Mode still bootstrapping after {}s; run `network status` \
-                     to check readiness.",
-                    zingolib::netutils::time::NYM_LIFECYCLE_TIMEOUT.as_secs()
-                ),
             };
             Ok(match went_online {
                 Some(server) => format!(
