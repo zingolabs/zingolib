@@ -73,10 +73,7 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
             let acquirer = pools
                 .acquirer()
                 .ok_or(crate::mixnet::acquire::TransportError::NoAcquirer)?;
-            // The price client's lifecycle publishes into its own channel,
-            // never the session's: subscribers watch the standing client.
-            let publisher = crate::mixnet::status_publisher();
-            let birth = pools.acquire_proven(acquirer.as_ref(), &publisher).await?;
+            let birth = pools.acquire_proven(acquirer.as_ref()).await?;
             let member = crate::mixnet::speed::Member::new(birth.transport, birth.lease);
             let addr = member
                 .addr()
@@ -133,6 +130,22 @@ fn publish_slot(
         exits: guarded.exits(),
         bootstrap_detail: None,
         death: None,
+    });
+}
+
+/// Forwards a settled birth's later transitions from its birth channel into
+/// the session channel, ending when the client's driver drops its publisher.
+fn forward_client_transitions(
+    birth: &crate::correspondent::pool::ProvenBirth,
+    session: &crate::mixnet::driver::StatusPublisher,
+) {
+    let mut future_transitions = birth.lifecycle.subscribe();
+    let session = std::sync::Arc::clone(session);
+    tokio::spawn(async move {
+        while future_transitions.changed().await.is_ok() {
+            let status = future_transitions.borrow_and_update().clone();
+            session.send_replace(status);
+        }
     });
 }
 
@@ -211,8 +224,11 @@ async fn adjudicate_standing_proof(
         publish_slot(&slot, &status);
         return;
     };
-    match pools.acquire_proven(acquirer.as_ref(), &status).await {
+    match pools.acquire_proven(acquirer.as_ref()).await {
         Ok(birth) => {
+            // The replacement's candidate churn stays on its birth channel;
+            // only its settled transitions reach the session's subscribers.
+            forward_client_transitions(&birth, &status);
             let client = standing_client_from_birth(birth, &pools);
             let replaced = swap_slot(&slot, crate::mixnet::MixnetSlot::Attached(client));
             publish_slot(&slot, &status);
@@ -449,19 +465,34 @@ impl LightClient {
 
     /// Enables Mixnet Mode over `acquirer` by birthing the session's
     /// standing Proven Client — the same trust-or-probe birth every client
-    /// gets — publishing its lifecycle into the session channel, holding
-    /// only the bound exit's lease, and leaving any failure `Unattached`.
+    /// gets — narrating on the session channel as the slot owner while the
+    /// birth runs on its own channel, holding only the bound exit's lease,
+    /// and leaving any failure `Unattached`.
     async fn enable_mixnet_from(
         &mut self,
         acquirer: std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>,
     ) -> Result<(), crate::mixnet::acquire::TransportError> {
         self.vacate_mixnet_slot().await;
+        // The slot owner alone speaks on the session channel: one
+        // Bootstrapping for the whole enable, the settled state after it,
+        // and never a candidate's churn.
+        self.mixnet_status
+            .send_replace(crate::mixnet::MixnetStatus {
+                mode: crate::mixnet::MixnetMode::Bootstrapping,
+                socks5_addr: None,
+                exits: Vec::new(),
+                bootstrap_detail: None,
+                death: None,
+            });
         match self
             .correspondent_pools
-            .acquire_proven(acquirer.as_ref(), &self.mixnet_status)
+            .acquire_proven(acquirer.as_ref())
             .await
         {
             Ok(birth) => {
+                // The Standing Client's later transitions — above all
+                // Died — must still reach the session's subscribers.
+                forward_client_transitions(&birth, &self.mixnet_status);
                 let client = standing_client_from_birth(birth, &self.correspondent_pools);
                 let superseded = swap_slot(
                     &self.mixnet_slot,
@@ -470,9 +501,8 @@ impl LightClient {
                 debug_assert!(matches!(superseded, crate::mixnet::MixnetSlot::Unattached));
                 self.correspondent_pools.set_acquirer(acquirer);
                 self.arm_standing_watchdog();
-                // The birth published Bootstrapping and Ready into the
-                // session channel as it went; the settled slot publishes
-                // last so subscribers read the attached state whole.
+                // The settled slot publishes last so subscribers read the
+                // attached state whole.
                 self.publish_mixnet_slot_state();
                 Ok(())
             }
@@ -953,6 +983,147 @@ mod tests {
                 client.mixnet_route(),
                 Ok(crate::mixnet::MixnetRoute::Clearnet)
             ));
+        }
+    }
+
+    mod birth_channel_isolation {
+        //! The birth-channel rule (finding 3 of the PR #2705 review): a
+        //! birth's candidate lifecycle belongs to the birth's own channel,
+        //! and the session channel speaks only for the slot.
+        use std::sync::{Arc, Mutex};
+
+        use crate::lightclient::LightClient;
+        use crate::mixnet::acquire::{TransportAcquirable, TransportError};
+        use crate::mixnet::driver::StatusPublisher;
+        use crate::mixnet::{ExitNodeId, MixnetMode, MixnetStatus};
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        fn wallet() -> crate::wallet::LightWallet {
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
+        }
+
+        /// The one exit this harness discovers and announces.
+        const HARNESS_EXIT: &str = "exit-alpha";
+
+        /// Yields granted after a publication so a subscriber on another
+        /// worker observes it before the watch channel coalesces.
+        const ANNOUNCEMENT_YIELDS: usize = 8;
+
+        /// An acquirer whose transport announces its lifecycle into the
+        /// publisher it is handed, exactly as a spawned child would.
+        struct AnnouncingAcquirer {
+            socks5_addr: std::net::SocketAddr,
+        }
+
+        impl TransportAcquirable for AnnouncingAcquirer {
+            fn discover(
+                &self,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = Result<std::collections::HashSet<ExitNodeId>, TransportError>,
+                        > + Send
+                        + '_,
+                >,
+            > {
+                Box::pin(async { Ok([ExitNodeId::from(HARNESS_EXIT)].into_iter().collect()) })
+            }
+
+            fn acquire<'a>(
+                &'a self,
+                clutch: &'a [ExitNodeId],
+                publisher: StatusPublisher,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = Result<crate::mixnet::MixnetProxy, TransportError>,
+                        > + Send
+                        + 'a,
+                >,
+            > {
+                let addr = self.socks5_addr;
+                let clutch = clutch.to_vec();
+                Box::pin(async move {
+                    let proxy =
+                        crate::mixnet::MixnetProxy::attach(addr, &clutch, Arc::clone(&publisher))?;
+                    // The candidate announces readiness where a child
+                    // would: into the publisher its acquisition was handed.
+                    publisher.send_replace(MixnetStatus {
+                        mode: MixnetMode::Ready,
+                        socks5_addr: Some(addr),
+                        exits: clutch,
+                        bootstrap_detail: None,
+                        death: None,
+                    });
+                    for _ in 0..ANNOUNCEMENT_YIELDS {
+                        tokio::task::yield_now().await;
+                    }
+                    Ok(proxy)
+                })
+            }
+        }
+
+        /// HYPOTHESIS: during an enable the session channel narrates the
+        /// slot owner's Bootstrapping and never a candidate's Ready, so a
+        /// subscriber cannot observe a client the slot does not hold.
+        /// Falsified if any Ready reaches the session channel mid-enable.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn the_enable_narrates_without_relaying_candidates() {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind an ephemeral port");
+            let addr = listener.local_addr().expect("local addr");
+            let mut client = LightClient::new_for_test(wallet()).await;
+            client.correspondent_pools.remember(
+                ExitNodeId::from(HARNESS_EXIT),
+                crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
+            );
+            let mut feed = client.subscribe_mixnet_status();
+            let seen: Arc<Mutex<Vec<MixnetStatus>>> = Arc::default();
+            let sink = Arc::clone(&seen);
+            // The collector must be parked on the channel before the enable
+            // begins, or coalescing hides the transients it exists to catch.
+            let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+            let collector = tokio::spawn(async move {
+                started_tx.send(()).expect("the test task is waiting");
+                while feed.changed().await.is_ok() {
+                    let status = feed.borrow_and_update().clone();
+                    sink.lock().expect("collector mutex").push(status);
+                }
+            });
+            started_rx.await.expect("the collector starts");
+
+            client
+                .enable_mixnet_from(std::sync::Arc::new(AnnouncingAcquirer {
+                    socks5_addr: addr,
+                }))
+                .await
+                .expect("the trusted birth settles the enable");
+
+            for _ in 0..ANNOUNCEMENT_YIELDS {
+                tokio::task::yield_now().await;
+            }
+            collector.abort();
+            let seen = seen.lock().expect("collector mutex");
+            assert!(
+                seen.iter().all(|status| status.mode != MixnetMode::Ready),
+                "no candidate Ready reaches the session channel: {seen:?}"
+            );
+            // A watch channel promises the latest state, not every event, so
+            // the narration clause asserts only what any subscriber is
+            // guaranteed: whatever it observes first is the slot owner's
+            // plain Bootstrapping, never a candidate's detailed one.
+            if let Some(first) = seen.first() {
+                assert_eq!(
+                    first.mode,
+                    MixnetMode::Bootstrapping,
+                    "the channel's first mid-enable state is the slot owner's"
+                );
+                assert_eq!(
+                    first.bootstrap_detail, None,
+                    "the narration is the slot owner's, never a candidate's"
+                );
+            }
         }
     }
 

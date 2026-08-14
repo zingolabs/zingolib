@@ -184,10 +184,14 @@ impl Pools {
     pub(crate) async fn acquire_proven(
         &self,
         acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
-        publisher: &crate::mixnet::driver::StatusPublisher,
     ) -> Result<ProvenBirth, acquire::TransportError> {
+        // The birth channel is minted here, never taken from the caller, so
+        // no candidate lifecycle can reach the session's subscribers: the
+        // returned birth carries the channel, and the slot owner alone
+        // decides what the session hears.
+        let lifecycle = crate::mixnet::status_publisher();
         for _birth in 0..MAX_PROVING_BIRTHS {
-            let (transport, lease) = self.acquire_bound(acquirer, publisher).await?;
+            let (transport, lease) = self.acquire_bound(acquirer, &lifecycle).await?;
             let trusted = {
                 let exits = self.exits.lock().expect("exit pool mutex");
                 exits.epoch_proven(lease.node(), std::time::Instant::now())
@@ -197,6 +201,7 @@ impl Pools {
                     transport,
                     lease,
                     probed: false,
+                    lifecycle,
                 });
             }
             let Some(socks5) = transport.socks5_addr() else {
@@ -217,6 +222,7 @@ impl Pools {
                     transport,
                     lease,
                     probed: true,
+                    lifecycle,
                 });
             }
             self.remember(
@@ -242,6 +248,9 @@ pub(crate) struct ProvenBirth {
     pub(crate) lease: exit_pool::Reservation,
     /// Whether this birth answered the Sentinel itself.
     pub(crate) probed: bool,
+    /// The birth's own status channel, carrying the condemned candidates'
+    /// churn and the settled client's later transitions.
+    pub(crate) lifecycle: crate::mixnet::driver::StatusPublisher,
 }
 
 #[cfg(test)]

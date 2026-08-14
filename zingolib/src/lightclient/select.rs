@@ -224,10 +224,7 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
         let pools = self.pools.clone();
         let acquirer = self.acquirer.clone();
         async move {
-            // The sweep client's lifecycle publishes into its own channel,
-            // never the session's: subscribers watch the standing client.
-            let publisher = crate::mixnet::status_publisher();
-            let birth = pools.acquire_proven(acquirer.as_ref(), &publisher).await?;
+            let birth = pools.acquire_proven(acquirer.as_ref()).await?;
             let member = crate::mixnet::speed::Member::new(birth.transport, birth.lease);
             let addr = member
                 .addr()
