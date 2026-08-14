@@ -64,7 +64,7 @@ impl ScannerState {
 pub(crate) struct Scanner<P> {
     pub(crate) state: ScannerState,
     loader: Option<Loader<P>>,
-    workers: Vec<ScanWorker<P>>,
+    pub(crate) workers: Vec<ScanWorker<P>>,
     unique_id: usize,
     scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
@@ -135,7 +135,7 @@ where
         Ok(())
     }
 
-    async fn shutdown_loader(&mut self) -> Result<(), ServerError> {
+    pub(crate) async fn shutdown_loader(&mut self) -> Result<(), ServerError> {
         let loader = self.loader.take();
         if let Some(mut loader) = loader {
             loader.shutdown().await
@@ -170,7 +170,7 @@ where
         }
     }
 
-    fn idle_worker(&self) -> Option<&ScanWorker<P>> {
+    pub(crate) fn idle_worker(&self) -> Option<&ScanWorker<P>> {
         if let Some(idle_worker) = self.workers.iter().find(|worker| !worker.is_scanning()) {
             Some(idle_worker)
         } else {
@@ -181,7 +181,7 @@ where
     /// Shutdown worker by `worker_id`.
     ///
     /// Panics if worker with given `worker_id` is not found.
-    async fn shutdown_worker(&mut self, worker_id: usize) {
+    pub(crate) async fn shutdown_worker(&mut self, worker_id: usize) {
         let worker_index = self
             .workers
             .iter()
@@ -203,7 +203,6 @@ where
     pub(crate) async fn update<W>(
         &mut self,
         wallet: &mut W,
-        shutdown_mempool: Arc<AtomicBool>,
         nullifier_map_limit_exceeded: bool,
     ) -> Result<(), SyncError<W::Error>>
     where
@@ -251,14 +250,7 @@ where
                 self.update_loader(wallet, nullifier_map_limit_exceeded)
                     .map_err(SyncError::WalletError)?;
             }
-            ScannerState::Complete => {
-                // TODO: dont shut down mempool, workers and loader until shutdown. this is now a "complete" closure *not* shutdown
-                shutdown_mempool.store(true, atomic::Ordering::Release);
-                while let Some(worker) = self.idle_worker() {
-                    self.shutdown_worker(worker.id).await;
-                }
-                self.shutdown_loader().await?;
-            }
+            ScannerState::Complete => {}
         }
 
         Ok(())
@@ -300,6 +292,10 @@ where
         }
 
         Ok(())
+    }
+
+    pub(crate) fn is_complete(&self) -> bool {
+        matches!(self.state, ScannerState::Complete)
     }
 }
 
@@ -663,6 +659,10 @@ where
         }
     }
 
+    pub(crate) fn id(&self) -> usize {
+        self.id
+    }
+
     /// Runs the worker in a new tokio task.
     ///
     /// Waits for a scan task and then calls [`crate::scan::scan`] on the given range.
@@ -714,7 +714,8 @@ where
 
     /// Shuts down worker by dropping the sender to the worker task and awaiting the handle.
     ///
-    /// This should always be called in the context of the scanner as it must be also be removed from the worker pool.
+    /// This should always be called in the context of the scanner as it must be also be removed from the worker pool
+    /// (See `Scanner::shutdown_worker`).
     async fn shutdown(&mut self) -> Result<(), JoinError> {
         tracing::debug!("Shutting down worker {}", self.id);
         if let Some(sender) = self.scan_task_sender.take() {
