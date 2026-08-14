@@ -129,9 +129,42 @@ impl LightClient {
         }
     }
 
-    /// Enables Mixnet Mode by birthing the standing client from the bundled
-    /// `nym-proxy` binary at `binary_path`, returning once the client is
-    /// bound and its exit proven.
+    /// ```
+    /// use zingolib::config::{ClientConfig, WalletConfig};
+    /// use zingolib::lightclient::LightClient;
+    /// use zingolib::mixnet::{MixnetMode, TransportError};
+    ///
+    /// tokio::runtime::Runtime::new().unwrap().block_on(async {
+    ///     let wallet_dir = tempfile::tempdir().unwrap();
+    ///     let config = ClientConfig::builder()
+    ///         .set_wallet_dir(wallet_dir.path().to_path_buf())
+    ///         .set_wallet_config(WalletConfig::MnemonicPhrase {
+    ///             mnemonic_phrase: "abandon abandon abandon abandon abandon \
+    ///                 abandon abandon abandon abandon abandon abandon abandon \
+    ///                 abandon abandon abandon abandon abandon abandon abandon \
+    ///                 abandon abandon abandon abandon art"
+    ///                 .to_string(),
+    ///             no_of_accounts: std::num::NonZeroU32::new(1).unwrap(),
+    ///             birthday: 2_000_000,
+    ///             wallet_settings: Default::default(),
+    ///         })
+    ///         .build()
+    ///         .unwrap();
+    ///     let mut client = LightClient::new(config, true).await.unwrap();
+    ///
+    ///     // Enabling births the standing client from the binary at the
+    ///     // given path; a binary that cannot run refuses typed at the
+    ///     // first step (the exit-directory discovery), and the failed
+    ///     // enable leaves Unattached — a refusal, never clearnet.
+    ///     let missing = std::path::Path::new("/nonexistent/nym-proxy");
+    ///     let refused = client.enable_mixnet(missing).await;
+    ///     assert!(matches!(
+    ///         refused,
+    ///         Err(TransportError::DiscoverySpawn(_))
+    ///     ));
+    ///     assert_eq!(client.mixnet_mode(), MixnetMode::Unattached);
+    /// });
+    /// ```
     pub async fn enable_mixnet(
         &mut self,
         binary_path: &std::path::Path,
@@ -142,8 +175,64 @@ impl LightClient {
         .await
     }
 
-    /// Enables Mixnet Mode on a mobile platform that forbids subprocesses,
-    /// birthing the standing client from `host` instead of spawning one.
+    /// ```
+    /// use zingolib::config::{ClientConfig, WalletConfig};
+    /// use zingolib::lightclient::LightClient;
+    /// use zingolib::mixnet::acquire::{HostRefusal, HostedTransport, ProxyHost};
+    /// use zingolib::mixnet::{ExitNodeId, MixnetMode, TransportError};
+    ///
+    /// // A host that declines every request, standing in for the platform
+    /// // that owns the proxy where subprocesses are forbidden.
+    /// struct DecliningHost;
+    ///
+    /// impl ProxyHost for DecliningHost {
+    ///     fn discover_exit_nodes(&self) -> Result<Vec<ExitNodeId>, HostRefusal> {
+    ///         Err(HostRefusal::Declined {
+    ///             detail: "the platform is in low-power mode".to_string(),
+    ///         })
+    ///     }
+    ///
+    ///     fn start_transport(
+    ///         &self,
+    ///         _clutch: &[ExitNodeId],
+    ///     ) -> Result<HostedTransport, HostRefusal> {
+    ///         Err(HostRefusal::Declined {
+    ///             detail: "the platform is in low-power mode".to_string(),
+    ///         })
+    ///     }
+    /// }
+    ///
+    /// tokio::runtime::Runtime::new().unwrap().block_on(async {
+    ///     let wallet_dir = tempfile::tempdir().unwrap();
+    ///     let config = ClientConfig::builder()
+    ///         .set_wallet_dir(wallet_dir.path().to_path_buf())
+    ///         .set_wallet_config(WalletConfig::MnemonicPhrase {
+    ///             mnemonic_phrase: "abandon abandon abandon abandon abandon \
+    ///                 abandon abandon abandon abandon abandon abandon abandon \
+    ///                 abandon abandon abandon abandon abandon abandon abandon \
+    ///                 abandon abandon abandon abandon art"
+    ///                 .to_string(),
+    ///             no_of_accounts: std::num::NonZeroU32::new(1).unwrap(),
+    ///             birthday: 2_000_000,
+    ///             wallet_settings: Default::default(),
+    ///         })
+    ///         .build()
+    ///         .unwrap();
+    ///     let mut client = LightClient::new(config, true).await.unwrap();
+    ///
+    ///     // The standing client births from the host instead of a spawned
+    ///     // binary; the host's refusal surfaces typed and the failed
+    ///     // enable leaves Unattached — a refusal, never clearnet.
+    ///     let refused = client
+    ///         .enable_mixnet_via_host(std::sync::Arc::new(DecliningHost))
+    ///         .await;
+    ///     assert!(matches!(
+    ///         refused,
+    ///         Err(TransportError::HostRefused(HostRefusal::Declined { .. }))
+    ///     ));
+    ///     assert_eq!(client.mixnet_mode(), MixnetMode::Unattached);
+    /// });
+    /// ```
     pub async fn enable_mixnet_via_host(
         &mut self,
         host: std::sync::Arc<dyn crate::mixnet::acquire::ProxyHost>,
