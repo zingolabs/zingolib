@@ -251,7 +251,7 @@ impl TransmitTarget for zingo_netutils::Socks5Indexer {
 }
 
 /// The mixnet route one Transmission's pulls take: the session's standing
-/// tunnel, which every pull multiplexes over.
+/// client, which every pull multiplexes over.
 #[derive(Clone, Copy)]
 #[cfg_attr(not(feature = "nym"), allow(dead_code))]
 pub(crate) struct PullRoute {
@@ -374,8 +374,8 @@ async fn mixnet_escalating_transmit(
         let txid = *txid;
         let host = crate::correspondent::Host::of_uri(&indexer);
         async move {
-            // Every pull multiplexes over the session's standing tunnel,
-            // whose exit was proven at the client's birth; the standing
+            // Every pull multiplexes over the session's standing client,
+            // whose exit was proven at its birth; the standing
             // client is one egress for all wallet-correlated streams.
             let target =
                 zingo_netutils::Socks5Indexer::new(socks5_addr, indexer, DEFAULT_REQUEST_TIMEOUT);
@@ -807,7 +807,7 @@ impl LightClient {
             resolve_transmit_route(indexer.is_some(), self.mixnet_route())?;
         #[cfg(not(feature = "nym"))]
         let socks5_proxy: Option<std::net::SocketAddr> = None;
-        // Every pull rides the session's standing tunnel on both platforms:
+        // Every pull rides the session's standing client on both platforms:
         // one proven egress for all wallet-correlated streams.
         let pull_route = socks5_proxy.map(|shared_socks5| PullRoute { shared_socks5 });
         if socks5_proxy.is_none() && indexer.is_none() {

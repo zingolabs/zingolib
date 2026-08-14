@@ -26,26 +26,6 @@ pub struct SurveyResult {
     pub refusal: Option<FailureKind>,
 }
 
-/// How many Survey Lanes the indexers hold while the Sentinel holds one —
-/// the Sentinel displaces a lane rather than widening the wave, because the
-/// width is a ceiling measured for the one Nym client a mobile host runs
-/// in-process, and a wider wave risks a saturation indistinguishable from a
-/// dead exit.
-pub fn indexer_lanes(width: usize) -> usize {
-    width.saturating_sub(1).max(1)
-}
-
-/// Whether the survey's opening wave of `width` legs timed out to a leg, the
-/// evidence that the tunnel carries nothing and the remaining waves would
-/// only repeat it.
-pub fn opening_wave_timed_out(results: &[SurveyResult], width: usize) -> bool {
-    results.len() >= width
-        && results
-            .iter()
-            .take(width)
-            .all(|result| result.refusal == Some(FailureKind::Timeout))
-}
-
 /// A per-kind count of the survey's refusals, rendered as a parenthesized
 /// suffix like " (14 timeout, 3 unreachable)" and as nothing when the
 /// survey had no refusals.
@@ -576,52 +556,6 @@ mod tests {
             "no live indexer: 0 of 3 answered, none within the cohort \
              (2 timeout, 1 unreachable)"
         );
-    }
-
-    /// HYPOTHESIS: the Sentinel takes one of the wave's lanes rather than
-    /// adding one, so total concurrency never exceeds the measured width,
-    /// and a width of one still leaves the indexers a lane to probe in.
-    /// Falsified if the split widens the wave or starves the indexers.
-    #[test]
-    fn the_sentinel_displaces_a_lane_rather_than_adding_one() {
-        assert_eq!(indexer_lanes(4), 3, "the Sentinel holds the fourth");
-        assert_eq!(indexer_lanes(2), 1);
-        assert_eq!(indexer_lanes(1), 1, "a single lane is never starved");
-        assert_eq!(indexer_lanes(0), 1);
-        for width in 1..=crate::lightclient::select::SURVEY_WAVE_WIDTH {
-            assert!(
-                indexer_lanes(width) <= width,
-                "the split never widens the wave"
-            );
-        }
-    }
-
-    /// HYPOTHESIS: an opening wave whose every leg timed out is evidence
-    /// about the tunnel rather than about the candidates, so the survey
-    /// stops there instead of spending the same budget on each remaining
-    /// wave. Falsified if a partial wave, an answered wave, or a wave whose
-    /// refusals differ in kind is read as the same evidence.
-    #[test]
-    fn an_all_timeout_opening_wave_ends_the_survey() {
-        let width = 4;
-        let timed_out: Vec<SurveyResult> = ["a", "b", "c", "d"]
-            .iter()
-            .map(|host| refused(&format!("https://{host}.example:443"), FailureKind::Timeout))
-            .collect();
-        assert!(opening_wave_timed_out(&timed_out, width));
-
-        // A wave still in flight decides nothing.
-        assert!(!opening_wave_timed_out(&timed_out[..width - 1], width));
-
-        // One answer means the tunnel carries traffic.
-        let mut with_answer = timed_out.clone();
-        with_answer[2] = answered("https://c.example:443", "main", 100);
-        assert!(!opening_wave_timed_out(&with_answer, width));
-
-        // Refusals of mixed kind indict the candidates, not the tunnel.
-        let mut mixed = timed_out.clone();
-        mixed[1] = refused("https://b.example:443", FailureKind::Unreachable);
-        assert!(!opening_wave_timed_out(&mixed, width));
     }
 
     /// A survey with no refusals renders no cause suffix.

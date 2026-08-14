@@ -1,12 +1,12 @@
 //! The Sentinel probe: evidence that a bound Exit Node carries traffic.
 //!
-//! A speed-priority survey carries one Sentinel in its opening wave. The
-//! Sentinel is not Correspondable and is never eligible for a cohort or a
-//! verdict: it exists so a survey can tell an exit that carries nothing
-//! from indexers that will not answer. The request is the shape its
-//! address ordinarily serves — a DNS lookup — so neither the exit nor the
-//! destination observes anything unusual, and the name looked up is a
-//! constant that names nothing the wallet is interested in.
+//! A proving birth answers the Sentinel before its client takes any work
+//! (ADR 0044). The Sentinel is not Correspondable and is never eligible
+//! for a cohort or a verdict: it exists so a birth can tell an exit that
+//! carries nothing from indexers that will not answer. The request is the
+//! shape its address ordinarily serves — a DNS lookup — so neither the
+//! exit nor the destination observes anything unusual, and the name
+//! looked up is a constant that names nothing the wallet is interested in.
 
 #![forbid(unsafe_code)]
 

@@ -1,6 +1,9 @@
 # A survey proves its exit with a Sentinel, and restarts when the proof fails
 
-Status: draft — ratified in session 2026-08-13, pending review
+Status: draft — ratified in session 2026-08-13, pending review;
+superseded in part by ADR 0044 the same day: the Sentinel and its budget
+survive, but the proof moved from a displaced lane inside every wave to
+the client's birth, and the wave returned to full indexer width
 
 ## Context
 

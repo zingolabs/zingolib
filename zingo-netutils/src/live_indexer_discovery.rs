@@ -1,5 +1,5 @@
-//! One-exit-per-probe liveness discovery: the boot phase of the Maintained
-//! Indexer Pool (ADR 0029).
+//! One-exit-per-probe liveness discovery over the maintained indexer
+//! census (ADR 0029).
 //!
 //! Every mixnet-eligible census endpoint is probed through its own exit,
 //! uniformly sampled without replacement from the directory's Exit
