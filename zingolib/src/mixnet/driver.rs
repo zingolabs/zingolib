@@ -72,10 +72,12 @@ impl TryFrom<RawMixnetStatus> for MixnetStatus {
         fn stray(field: &str, mode: MixnetMode) -> String {
             format!("{field} is not evidence for mode {}", mode.as_str())
         }
-        if raw.socks5_addr.is_some() && raw.mode != MixnetMode::Ready {
+        // Route evidence rides every routable mode: earned Ready and
+        // stale-proven PreviouslyProvenThisEpoch, which routes the same.
+        if raw.socks5_addr.is_some() && !raw.mode.is_ready() {
             return Err(stray("socks5_addr", raw.mode));
         }
-        if !raw.exits.is_empty() && raw.mode != MixnetMode::Ready {
+        if !raw.exits.is_empty() && !raw.mode.is_ready() {
             return Err(stray("exits", raw.mode));
         }
         if raw.bootstrap_detail.is_some() && raw.mode != MixnetMode::Bootstrapping {
@@ -104,6 +106,29 @@ impl MixnetStatus {
             exits: Vec::new(),
             bootstrap_detail: None,
             death: None,
+        }
+    }
+
+    /// A status carrying only the evidence its mode offers — route fields
+    /// ride the routable modes and the death rides `Died` alone — so every
+    /// published shape satisfies the wire guard by construction.
+    pub(crate) fn evidenced(
+        mode: MixnetMode,
+        socks5_addr: Option<std::net::SocketAddr>,
+        exits: Vec<crate::mixnet::ExitNodeId>,
+        death: Option<DeathReport>,
+    ) -> Self {
+        let routable = mode.is_ready();
+        MixnetStatus {
+            mode,
+            socks5_addr: if routable { socks5_addr } else { None },
+            exits: if routable { exits } else { Vec::new() },
+            bootstrap_detail: None,
+            death: if mode == MixnetMode::Died {
+                death
+            } else {
+                None
+            },
         }
     }
 }

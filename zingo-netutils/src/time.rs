@@ -68,6 +68,26 @@ pub const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 /// without yet giving up on it.
 pub const HEDGE_INTERVAL: Duration = Duration::from_secs(5);
 
+/// How long the readiness gate waits for the transport's first Exit Node
+/// announcement once the address has arrived: one Exit Node connect attempt
+/// plus the hedge interval that would have launched another, so a transport
+/// still finishing its exit connect is waited through while one that never
+/// binds an exit is refused long before the lifecycle budget.
+///
+/// ```
+/// use zingo_netutils::time::{
+///     EXIT_ANNOUNCEMENT_GRACE, HEDGE_INTERVAL, NYM_LIFECYCLE_TIMEOUT, PER_ATTEMPT_CONNECT_TIMEOUT,
+/// };
+///
+/// assert_eq!(
+///     EXIT_ANNOUNCEMENT_GRACE,
+///     PER_ATTEMPT_CONNECT_TIMEOUT + HEDGE_INTERVAL,
+/// );
+/// assert!(EXIT_ANNOUNCEMENT_GRACE < NYM_LIFECYCLE_TIMEOUT);
+/// ```
+pub const EXIT_ANNOUNCEMENT_GRACE: Duration =
+    Duration::from_secs(PER_ATTEMPT_CONNECT_TIMEOUT.as_secs() + HEDGE_INTERVAL.as_secs());
+
 /// The silence interval before a send's escalation launches a further
 /// Correspondent arm: the sum of a connect attempt's bound and one mixnet
 /// round trip, so a responsive Correspondent's confirmed delivery beats the
@@ -197,6 +217,50 @@ pub const PROGRESS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(2);
 /// tunnel establishment. A hanging exit is reported as a timeout, not
 /// waited out.
 pub const PROBE_LEG_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// How long the Sentinel may take before its silence indicts the exit.
+/// Shorter than a probe leg because the Sentinel's address is reliable
+/// enough that silence is evidence about the tunnel, and measured round
+/// trips through a live exit landed under two seconds.
+pub const SENTINEL_BUDGET: Duration = Duration::from_millis(3_500);
+
+/// How many expected proof cycles a whole speed-prioritized acquisition —
+/// every redraw, birth, and wave together — may spend (ruled 2026-08-14).
+pub const SPEED_ACQUISITION_PROOFS: u64 = 10;
+
+/// ```
+/// // One shared deadline bounds a speed-prioritized operation end to end:
+/// // ten expected proof cycles, each an unremarkable bootstrap's exit
+/// // announcement plus the Sentinel exchange (285 seconds, ruled
+/// // 2026-08-14).
+/// use zingo_netutils::time::{
+///     EXIT_ANNOUNCEMENT_GRACE, SENTINEL_BUDGET, SPEED_ACQUISITION_DEADLINE,
+///     SPEED_ACQUISITION_PROOFS,
+/// };
+/// assert_eq!(
+///     SPEED_ACQUISITION_DEADLINE.as_millis(),
+///     (EXIT_ANNOUNCEMENT_GRACE.as_millis() + SENTINEL_BUDGET.as_millis())
+///         * SPEED_ACQUISITION_PROOFS as u128
+/// );
+/// assert_eq!(SPEED_ACQUISITION_DEADLINE.as_secs(), 285);
+/// ```
+pub const SPEED_ACQUISITION_DEADLINE: Duration = Duration::from_millis(
+    (EXIT_ANNOUNCEMENT_GRACE.as_millis() as u64 + SENTINEL_BUDGET.as_millis() as u64)
+        * SPEED_ACQUISITION_PROOFS,
+);
+
+/// ```
+/// // One Nym network epoch: the hourly topology rotation after which an
+/// // observation about an Exit Node describes a network that no longer
+/// // exists.
+/// use zingo_netutils::time::NYM_EPOCH;
+/// assert_eq!(NYM_EPOCH, std::time::Duration::from_secs(60 * 60));
+/// ```
+// TODO: implement sensitivity to, and policy around, real Nym epoch
+// boundaries: the live epoch's bounds are queryable from the same API the
+// exit discovery uses, and this constant approximates the rotation cadence
+// as a sliding window.
+pub const NYM_EPOCH: Duration = Duration::from_secs(60 * 60);
 
 /// Per-server bound on the ranking `get_info` sweep, deliberately tight so
 /// one slow server cannot block the fastest-first ordering.

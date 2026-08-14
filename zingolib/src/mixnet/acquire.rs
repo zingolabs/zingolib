@@ -6,8 +6,6 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 
-use zingo_netutils::responsiveness::ResponsivenessClass;
-
 use crate::correspondent::pool::exit_pool::ExitPoolError;
 use crate::mixnet::driver::StatusPublisher;
 use crate::mixnet::supervisor::{MixnetProxy, MixnetProxyError};
@@ -60,12 +58,12 @@ pub enum TransportError {
         reported: Vec<crate::mixnet::ExitNodeId>,
     },
     /// The transport died during bootstrap.
-    #[error(
-        "the pool transport died during bootstrap: {}",
-        detail.as_ref().map_or_else(|| "no detail reported".to_string(), ToString::to_string)
-    )]
+    #[error("the transport died before it became ready")]
     DiedDuringBootstrap {
-        /// The death detail the status channel carried, when it carried one.
+        /// The death detail the status channel carried, when it carried one,
+        /// kept as a source so the typed failure reaches a caller whole
+        /// rather than flattened into this message.
+        #[source]
         detail: Option<zingo_net_diag::NetOpFailure>,
     },
     /// The transport's status channel closed before readiness.
@@ -79,6 +77,17 @@ pub enum TransportError {
     #[error("the pool transport did not become ready within {}s", budget.as_secs())]
     NotReady {
         /// The lifecycle budget the transport missed.
+        budget: std::time::Duration,
+    },
+    /// Every birth this acquisition attempted failed its proof.
+    #[error(
+        "no proven exit: {probed} births each proved nothing within {}ms",
+        budget.as_millis()
+    )]
+    NoProvenExit {
+        /// How many proving births were attempted.
+        probed: usize,
+        /// The Sentinel budget each birth's proof was given.
         budget: std::time::Duration,
     },
 }
@@ -109,10 +118,10 @@ pub(crate) trait TransportAcquirable: Send + Sync + 'static {
         >,
     >;
 
-    /// Acquires one transport that races `clutch` under `class`.
+    /// Acquires one transport that races `clutch` under the one hedged
+    /// launch policy.
     fn acquire<'a>(
         &'a self,
-        class: ResponsivenessClass,
         clutch: &'a [crate::mixnet::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>>;
@@ -151,11 +160,10 @@ pub trait ProxyHost: Send + Sync + 'static {
     /// The Exit Nodes the host's directory query reports.
     fn discover_exit_nodes(&self) -> Result<Vec<crate::mixnet::ExitNodeId>, HostRefusal>;
 
-    /// Starts one proxy racing `clutch` under `class`, returning where it
-    /// listens and which exit it bound.
+    /// Starts one proxy racing `clutch`, returning where it listens and
+    /// which exit it bound.
     fn start_transport(
         &self,
-        class: ResponsivenessClass,
         clutch: &[crate::mixnet::ExitNodeId],
     ) -> Result<HostedTransport, HostRefusal>;
 }
@@ -196,14 +204,13 @@ impl TransportAcquirable for HostedProxy {
 
     fn acquire<'a>(
         &'a self,
-        class: ResponsivenessClass,
         clutch: &'a [crate::mixnet::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>> {
         let host = std::sync::Arc::clone(&self.host);
         let clutch = clutch.to_vec();
         Box::pin(async move {
-            let hosted = tokio::task::spawn_blocking(move || host.start_transport(class, &clutch))
+            let hosted = tokio::task::spawn_blocking(move || host.start_transport(&clutch))
                 .await
                 .map_err(|join| TransportError::HostUnavailable(join.to_string()))?
                 .map_err(TransportError::HostRefused)?;
@@ -240,12 +247,11 @@ impl TransportAcquirable for SpawnedBinary {
 
     fn acquire<'a>(
         &'a self,
-        class: ResponsivenessClass,
         clutch: &'a [crate::mixnet::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>> {
         Box::pin(async move {
-            MixnetProxy::spawn(&self.path, class, publisher, clutch).map_err(TransportError::from)
+            MixnetProxy::spawn(&self.path, publisher, clutch).map_err(TransportError::from)
         })
     }
 }
@@ -287,7 +293,6 @@ mod tests {
 
         fn start_transport(
             &self,
-            _class: ResponsivenessClass,
             _clutch: &[crate::mixnet::ExitNodeId],
         ) -> Result<HostedTransport, HostRefusal> {
             self.transport.clone()
@@ -355,11 +360,7 @@ mod tests {
             TransportError::HostRefused(_)
         ));
         let Err(refusal) = acquirer
-            .acquire(
-                ResponsivenessClass::PrioritisePrivacy,
-                &["exit-a".into()],
-                crate::mixnet::status_publisher(),
-            )
+            .acquire(&["exit-a".into()], crate::mixnet::status_publisher())
             .await
         else {
             panic!("a declining host must not yield a transport");
@@ -379,11 +380,7 @@ mod tests {
             }),
         });
         let proxy = acquirer
-            .acquire(
-                ResponsivenessClass::PrioritisePrivacy,
-                &["exit-a".into()],
-                crate::mixnet::status_publisher(),
-            )
+            .acquire(&["exit-a".into()], crate::mixnet::status_publisher())
             .await
             .expect("a typed endpoint always constructs the attached transport");
         proxy.stop().await;

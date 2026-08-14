@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, Weak};
 
-use rand::seq::IteratorRandom as _;
+use rand::seq::SliceRandom as _;
 
 /// Why the pool could issue no clutch.
 #[derive(Debug, thiserror::Error)]
@@ -92,19 +92,106 @@ pub(crate) fn clutch_nodes(clutch: &HashSet<Reservation>) -> Vec<crate::mixnet::
         .collect()
 }
 
-/// Takes the one reservation a ready transport reports as bound out of
+/// Takes the first reservation a ready transport reports as bound out of
 /// `clutch`, recycling the rest, or `None` when the report names no drawn
 /// node.
 pub(crate) fn take_bound_lease(
     clutch: &mut HashSet<Reservation>,
     reported: &[crate::mixnet::ExitNodeId],
 ) -> Option<Reservation> {
-    let bound = clutch
-        .iter()
-        .find(|reservation| reported.contains(reservation.node()))?
-        .node()
-        .clone();
-    clutch.take(&bound)
+    // The report is walked in announcement order, not the set's arbitrary
+    // one, so a transport that names several drawn exits binds the one it
+    // announced first and the same report always binds the same exit.
+    reported.iter().find_map(|node| clutch.take(node))
+}
+
+/// What one completed or refused round trip showed about an Exit Node,
+/// within the epoch that observation survives.
+// TODO: implement sensitivity to, and policy around, Nym epochs: the
+// network's epoch boundaries are queryable, and the sliding one-hour
+// window from the observation instant is a stand-in for the real
+// rotation edge.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExitNodeHealthVerdict {
+    /// A round trip completed through the exit within the current epoch:
+    /// it answered the Sentinel or carried a task.
+    EpochProven,
+    /// The exit refused, timed out, or stayed silent past budget, within
+    /// the current epoch.
+    Failed,
+}
+
+/// One exit's most recent verdict with the instant it was earned.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Observation {
+    verdict: ExitNodeHealthVerdict,
+    at: std::time::Instant,
+}
+
+impl Observation {
+    /// A verdict earned now.
+    pub(crate) fn earned(verdict: ExitNodeHealthVerdict, at: std::time::Instant) -> Self {
+        Observation { verdict, at }
+    }
+}
+
+/// The epoch-scoped health record of the exit census, keyed by node.
+#[derive(Default)]
+pub(crate) struct NodeHealthIndex(
+    std::collections::HashMap<crate::mixnet::ExitNodeId, Observation>,
+);
+
+impl NodeHealthIndex {
+    /// Keeps `observation` as the node's current verdict, superseding any
+    /// earlier one.
+    pub(crate) fn remember(&mut self, exit: crate::mixnet::ExitNodeId, observation: Observation) {
+        self.0.insert(exit, observation);
+    }
+
+    /// Whether the node's proof completed within the last Nym epoch.
+    pub(crate) fn epoch_proven(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+    ) -> bool {
+        self.observed(exit, now, ExitNodeHealthVerdict::EpochProven)
+    }
+
+    /// Whether the node failed within the last Nym epoch, so a convicted
+    /// node stands trial again once the topology that convicted it has
+    /// rotated away.
+    pub(crate) fn epoch_failed(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+    ) -> bool {
+        self.observed(exit, now, ExitNodeHealthVerdict::Failed)
+    }
+
+    /// The instant the node's EpochProven observation stops being fresh,
+    /// when one stands.
+    pub(crate) fn proven_until(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+    ) -> Option<std::time::Instant> {
+        self.0.get(exit).and_then(|seen| {
+            (seen.verdict == ExitNodeHealthVerdict::EpochProven)
+                .then(|| seen.at + zingo_netutils::time::NYM_EPOCH)
+        })
+    }
+
+    /// Whether the node's current observation is `verdict`, still fresh.
+    fn observed(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+        verdict: ExitNodeHealthVerdict,
+    ) -> bool {
+        self.0.get(exit).is_some_and(|seen| {
+            seen.verdict == verdict
+                && now.saturating_duration_since(seen.at) < zingo_netutils::time::NYM_EPOCH
+        })
+    }
 }
 
 /// The session's Exit Pool: one reservation per discovered node, issued to
@@ -113,6 +200,7 @@ pub(crate) fn take_bound_lease(
 pub(crate) struct ExitPool {
     population: HashSet<crate::mixnet::ExitNodeId>,
     issued: HashSet<crate::mixnet::ExitNodeId>,
+    health: NodeHealthIndex,
 }
 
 impl ExitPool {
@@ -126,11 +214,48 @@ impl ExitPool {
         !self.population.is_empty()
     }
 
+    /// Keeps `observation` as `exit`'s current verdict.
+    pub(crate) fn remember(&mut self, exit: crate::mixnet::ExitNodeId, observation: Observation) {
+        self.health.remember(exit, observation);
+    }
+
+    /// Whether `exit`'s proof completed within the last Nym epoch.
+    pub(crate) fn epoch_proven(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+    ) -> bool {
+        self.health.epoch_proven(exit, now)
+    }
+
+    /// The instant `exit`'s EpochProven observation stops being fresh,
+    /// when one stands.
+    pub(crate) fn proven_until(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+    ) -> Option<std::time::Instant> {
+        self.health.proven_until(exit)
+    }
+
+    /// Whether `exit` failed within the last Nym epoch.
+    // Exercised by the ProofAcquisition contract tests; production reads
+    // failures only through the draw's own partition.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn epoch_failed(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+    ) -> bool {
+        self.health.epoch_failed(exit, now)
+    }
+
     /// Draws a Clutch of owning reservations, each of which recycles
-    /// itself into `pool` when dropped.
+    /// itself into `pool` when dropped, sampling fresh-Proven exits first,
+    /// unknown ones next, and Failed ones only at exhaustion.
     pub(crate) fn draw_clutch(
         pool: &Arc<Mutex<ExitPool>>,
     ) -> Result<HashSet<Reservation>, ExitPoolError> {
+        let now = std::time::Instant::now();
         let mut guarded = pool.lock().expect("exit pool mutex");
         if guarded.population.is_empty() {
             return Err(ExitPoolError::NotSeeded);
@@ -149,13 +274,30 @@ impl ExitPool {
                 population: guarded.population.len(),
             });
         }
-        let clutch: HashSet<Reservation> = drawable
+        let mut proven = Vec::new();
+        let mut unknown = Vec::new();
+        let mut failed = Vec::new();
+        for node in drawable {
+            if guarded.health.epoch_proven(&node, now) {
+                proven.push(node);
+            } else if guarded.health.epoch_failed(&node, now) {
+                failed.push(node);
+            } else {
+                unknown.push(node);
+            }
+        }
+        // Each preference tier is shuffled for real within itself, so the
+        // index orders tiers while chance still spreads load inside one:
+        // sampling a tier at its own size returns iteration order verbatim,
+        // which is why the shuffle is explicit.
+        let mut ordered: Vec<crate::mixnet::ExitNodeId> = Vec::new();
+        for mut tier in [proven, unknown, failed] {
+            tier.shuffle(&mut rand::rngs::OsRng);
+            ordered.extend(tier);
+        }
+        let clutch: HashSet<Reservation> = ordered
             .into_iter()
-            .choose_multiple(
-                &mut rand::rngs::OsRng,
-                zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE,
-            )
-            .into_iter()
+            .take(zingo_netutils::arm_race::RESERVATION_CLUTCH_SIZE)
             .map(|node| {
                 guarded.issued.insert(node.clone());
                 Reservation {
@@ -171,7 +313,7 @@ impl ExitPool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE;
+    use zingo_netutils::arm_race::RESERVATION_CLUTCH_SIZE;
 
     fn seeded(count: usize) -> Arc<Mutex<ExitPool>> {
         let pool = Arc::new(Mutex::new(ExitPool::default()));
@@ -203,6 +345,40 @@ mod tests {
         assert_eq!(clutch.len(), 2, "the unbound reservations remain");
     }
 
+    /// HYPOTHESIS: a report naming several drawn exits binds the
+    /// first-announced one, so the bind follows the transport's own order
+    /// rather than the set's arbitrary one. Falsified if any trial binds a
+    /// later announcement.
+    #[test]
+    fn the_bound_lease_follows_the_announcement_order() {
+        /// Independently ordered clutches, enough that an arbitrary pick
+        /// cannot agree with the announcement order by chance.
+        const ORDER_TRIALS: usize = 16;
+
+        let announced = [
+            crate::mixnet::ExitNodeId::from("exit-b"),
+            crate::mixnet::ExitNodeId::from("exit-c"),
+            crate::mixnet::ExitNodeId::from("exit-a"),
+        ];
+        let first = announced.first().expect("the announcement names exits");
+        for trial in 0..ORDER_TRIALS {
+            let mut clutch: HashSet<Reservation> = [
+                Reservation::dangling_for_test("exit-a"),
+                Reservation::dangling_for_test("exit-b"),
+                Reservation::dangling_for_test("exit-c"),
+            ]
+            .into_iter()
+            .collect();
+            let lease =
+                take_bound_lease(&mut clutch, &announced).expect("the report names drawn exits");
+            assert_eq!(
+                lease.node(),
+                first,
+                "trial {trial} bound a later announcement"
+            );
+        }
+    }
+
     /// HYPOTHESIS: a report naming no drawn node (foreign or empty) takes
     /// nothing, so the caller can refuse typed. Falsified if a lease is
     /// yielded or the clutch shrinks.
@@ -215,6 +391,33 @@ mod tests {
         assert!(take_bound_lease(&mut clutch, &foreign).is_none());
         assert!(take_bound_lease(&mut clutch, &[]).is_none());
         assert_eq!(clutch.len(), 1, "the clutch is undisturbed");
+    }
+
+    /// A tier three clutches wide, so a fixed four-exit subset is provable.
+    const TIER_SPREAD_POPULATION: usize = RESERVATION_CLUTCH_SIZE * 3;
+
+    /// Draws enough to make an unshuffled tier's repetition unmistakable.
+    const TIER_SPREAD_DRAWS: usize = 10;
+
+    /// HYPOTHESIS: the draw spreads load inside a tier by chance, so
+    /// repeated draws over one wide tier reach beyond any fixed
+    /// clutch-sized subset. Falsified if every draw binds the same exits.
+    #[test]
+    fn repeated_draws_spread_across_the_tier() {
+        let pool = seeded(TIER_SPREAD_POPULATION);
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..TIER_SPREAD_DRAWS {
+            let clutch = ExitPool::draw_clutch(&pool).expect("the tier draws");
+            for reservation in &clutch {
+                seen.insert(reservation.node().clone());
+            }
+            drop(clutch);
+        }
+        assert!(
+            seen.len() > RESERVATION_CLUTCH_SIZE,
+            "every draw bound the same {RESERVATION_CLUTCH_SIZE} exits of \
+             {TIER_SPREAD_POPULATION}: the tier is unshuffled"
+        );
     }
 
     /// HYPOTHESIS: a drawn clutch is clutch-sized, and every reservation in

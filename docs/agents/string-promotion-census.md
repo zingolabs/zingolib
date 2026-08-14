@@ -31,10 +31,10 @@ zingo-netutils dial calls, whose `&str` parameters are a possible
 future cross-workspace promotion outside this census's scope.
 
 **Responsiveness class across the host seam → `ResponsivenessClass`.**
-*Implemented 2026-08-10.*
-Site: `ProxyHost::start_transport(class: &str, …)` and the `class.wire()`
-flattening in `HostedProxy::acquire`. The enum crosses the ADR 0041
-request channel intact; `wire()` renders only inside the mobile FFI crate.
+*Implemented 2026-08-10; deleted 2026-08-13.* The partition retired with
+ADR 0044's single hedged acquisition policy, so no class token crosses
+the seam any longer; `ProxyHost::start_transport` lost its `class`
+parameter with the type.
 
 **Host refusals → typed `HostRefusal`.** *Implemented 2026-08-10; the
 name and its two-variant shape (`Failed` versus `Declined`) are ratified
