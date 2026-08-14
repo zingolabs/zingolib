@@ -8,7 +8,6 @@ use zcash_keys::keys::DerivationError;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
 
-#[cfg(feature = "nym")]
 use super::output::OutputRef;
 
 /// Top level wallet errors
