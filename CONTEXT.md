@@ -27,6 +27,28 @@ _Avoid_: bare "platform" for this sense; the bare word stays only for
 the generic OS sense and for the desktop-or-mobile provisioning axis
 (ADR 0041's platform-typed session)
 
+**Exit-Proven** (ratified 2026-08-13):
+The one validation an Exit Node carries: a completed round trip
+through it — it answered the Sentinel, or it carried a task. The only
+rung; readiness proves nothing about the exit.
+_Avoid_: "Exit-Bound" as a validation rung (deleted); "healthy" for
+this fact
+
+**Proven Client** (ratified 2026-08-13):
+A client whose exit is Exit-Proven — by its own birth probe, or by
+drawing an exit whose fresh proof is trusted.
+_Avoid_: "ShownHealthy", "ProvenHealthy"
+
+**Observation** (ratified 2026-08-13):
+One exit's most recent verdict — Proven or Failed — with its
+timestamp; a later verdict for the same exit supersedes it. Proven
+lapses after one Nym epoch; Failed stands for the session.
+
+**NodeHealthIndex** (ratified 2026-08-13):
+The session's memory of Observations, one per Exit Node, remembered
+only through the Exit Pool's own draws and consulted to order
+sampling: fresh-Proven first, then unknown, Failed only at exhaustion.
+
 ### Command classes
 
 **Transmitting command**:
