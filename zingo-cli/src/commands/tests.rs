@@ -400,6 +400,12 @@ mod typed_argument_parsing {
                 sub: Some(SettingsSubCommand::MinConfirmations { .. })
             }
         ));
+        assert!(matches!(
+            parse(&["settings", "transparent_gap_limit", "20"]).expect("a gap limit parses"),
+            CliCommand::Settings {
+                sub: Some(SettingsSubCommand::TransparentGapLimit { gap_limit: 20, .. })
+            }
+        ));
         for junk in [
             &["settings", "bogus"][..],
             &["settings", "performance"][..],

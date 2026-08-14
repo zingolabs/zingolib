@@ -695,6 +695,11 @@ pub(crate) enum SettingsSubCommand {
         #[arg(value_name = "count")]
         count: NonZeroU32,
     },
+    #[command(about = "Set the gap limit for transparent address and fund discovery")]
+    TransparentGapLimit {
+        #[arg(value_name = "gap limit")]
+        gap_limit: u8,
+    },
 }
 
 /// The sync performance levels as a clap grammar, minting CLI value names
@@ -729,9 +734,15 @@ async fn settings(
             r"
 performance: {}
 min confirmations: {}
+transparent gap limit: {}
             ",
             wallet.wallet_settings.sync_config.performance_level,
             wallet.wallet_settings.min_confirmations,
+            wallet
+                .wallet_settings
+                .sync_config
+                .transparent_address_discovery
+                .gap_limit
         ));
     };
 
@@ -741,6 +752,13 @@ min confirmations: {}
         }
         SettingsSubCommand::MinConfirmations { count } => {
             wallet.wallet_settings.min_confirmations = count;
+        }
+        SettingsSubCommand::TransparentGapLimit { gap_limit } => {
+            wallet
+                .wallet_settings
+                .sync_config
+                .transparent_address_discovery
+                .gap_limit = gap_limit;
         }
     }
 
@@ -2521,8 +2539,9 @@ pub(crate) enum CliCommand {
             Show or set wallet settings. With no argument, prints them all. To set one,
             name it and give a value.
 
-            performance        low | medium | high | maximum
-            min_confirmations  1 or greater
+            performance            low | medium | high | maximum
+            min_confirmations      1 or greater
+            transparent_gap_limit  0-255
         "}
     )]
     Settings {

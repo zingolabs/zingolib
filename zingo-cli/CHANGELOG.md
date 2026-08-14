@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- `transparent_gap_limit` to `settings` command.
 
 ### Changed
 - **Breaking.** `network probe` wraps the single `GetLatestBlock` RPC, the
