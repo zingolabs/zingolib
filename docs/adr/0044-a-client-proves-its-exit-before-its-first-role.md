@@ -1,6 +1,7 @@
 # A client proves its exit before its first role, and later clients trust fresh proof
 
-Status: draft — ratified in session 2026-08-13, pending review
+Status: draft — ratified in session 2026-08-13, pending review; the
+two-layer failover ruling was added in session 2026-08-14
 
 ## Context
 
@@ -86,6 +87,23 @@ the live exit's `Proven` entry refreshes through the recycle path and
 only the standby exits' proof decays with the epoch — an expired
 standby is simply an unknown again, re-proven by the next proving
 birth that draws it.
+
+The failover lives below the Mixnet Mode, by the two-layer ruling of
+2026-08-14. An exit failing under a live client and the transport
+itself dying are different events, and only the second is `Died`: the
+exit failure leaves the proxy process and its SOCKS5 listener
+standing, so it writes `Failed` and triggers the failover, while ADR
+0011's `Died` keeps naming exactly one thing — the unconsented loss
+of the transport — and stays latched until an explicit re-enable.
+While the failover's replacement client bootstraps the session cannot
+truthfully claim readiness, so the mode shows `Bootstrapping`, whose
+surfaces already refuse, and returns to `Ready` only when a Proven
+Client stands again. A failover that exhausts — `NoProvenExit` —
+lands `Died`. ADR 0024's rule that the driver owns the recovery
+predicate is preserved rather than amended: the driver never leaves
+`Died` on its own, because the failover is not a recovery but the
+continuation of the enable the user already consented to, carried
+over a different exit.
 
 Every draw passes through the Exit Pool's Reservation gate, which the
 index never bypasses: the index orders sampling — fresh-`Proven`
@@ -173,7 +191,11 @@ ADR 0043 is superseded in part: the Sentinel and its budget survive,
 but the proof moves from a displaced lane inside every wave to the
 client's birth, and the wave returns to full indexer width. ADR 0038/
 0039's Reservation and lease semantics are unchanged and now mediate
-every draw including probes. The `NodeHealthIndex` is in-memory and
+every draw including probes. ADR 0011's five-state mode and ADR
+0024's driver-owned recovery predicate are likewise unchanged: the
+failover passes through `Bootstrapping`, and `Died` — now reachable
+from failover exhaustion as well as proxy death — is still left only
+by an explicit re-enable. The `NodeHealthIndex` is in-memory and
 epoch-scoped by design; issue #2703's persistent Exit History becomes a
 second consumer of the same recycle-path evidence when its `Memorable`
 extraction lands. Issue #2704 (an edge-carrying sync-lifecycle surface)
