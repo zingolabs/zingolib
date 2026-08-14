@@ -1194,22 +1194,6 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     #[cfg(feature = "nym")]
     if filled_template.communication_mode == CommunicationMode::Online {
         use zingolib::mixnet::{MixnetStartPolicy, ProvisionStrategy};
-        lightclient
-            .start_mixnet_session(
-                ProvisionStrategy::Spawn(commands::spawn_hints(
-                    filled_template.nym_proxy_path.as_deref(),
-                )),
-                MixnetStartPolicy::ForcedOn,
-            )
-            .await
-            .map_err(|e| {
-                std::io::Error::other(format!(
-                    "Failed to start the Nym mixnet proxy: {}. Mixnet Mode is required for a \
-                     connected session; install the nym-proxy binary, pass --nym-proxy <path>, \
-                     or set $ZINGO_NYM_PROXY.",
-                    commands::render_error_chain(&e),
-                ))
-            })?;
         info!(
             "Mixnet Mode enabling; the nym proxy is bootstrapping. Send and price-fetch \
              become available once it is ready (see `network status`)."
@@ -1218,10 +1202,12 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
         // subscription (push, not poll): mode changes at info/warn through
         // the standard log path, bootstrap progress at debug. Rendering is
         // this consumer's own (ADR 0024, decision 8) — variant matching,
-        // never prose matching.
+        // never prose matching. The subscription precedes the blocking
+        // enable so the startup birth itself is narrated, and the seed is
+        // Bootstrapping because the line above already announced it.
         let mut status_rx = lightclient.subscribe_mixnet_status();
         tokio::spawn(async move {
-            let mut last_mode = status_rx.borrow().mode;
+            let mut last_mode = zingolib::mixnet::MixnetMode::Bootstrapping;
             while status_rx.changed().await.is_ok() {
                 let status = status_rx.borrow_and_update().clone();
                 if status.mode == last_mode {
@@ -1232,7 +1218,8 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
                 }
                 last_mode = status.mode;
                 match status.mode {
-                    zingolib::mixnet::MixnetMode::Ready => info!(
+                    zingolib::mixnet::MixnetMode::Ready
+                    | zingolib::mixnet::MixnetMode::PreviouslyProvenThisEpoch => info!(
                         "Mixnet Mode ready; send and price-fetch route over the mixnet \
                          (see `network status`).{}",
                         commands::render_exit_nodes(&status.exits)
@@ -1253,6 +1240,22 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
                 }
             }
         });
+        lightclient
+            .start_mixnet_session(
+                ProvisionStrategy::Spawn(commands::spawn_hints(
+                    filled_template.nym_proxy_path.as_deref(),
+                )),
+                MixnetStartPolicy::ForcedOn,
+            )
+            .await
+            .map_err(|e| {
+                std::io::Error::other(format!(
+                    "Failed to start the Nym mixnet proxy: {}. Mixnet Mode is required for a \
+                     connected session; install the nym-proxy binary, pass --nym-proxy <path>, \
+                     or set $ZINGO_NYM_PROXY.",
+                    commands::render_error_chain(&e),
+                ))
+            })?;
     }
 
     // The sweep binds the session's indexer, so it runs for every online
