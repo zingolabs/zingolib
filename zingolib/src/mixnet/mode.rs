@@ -443,6 +443,52 @@ mod wire_contract {
         assert!(serde_json::from_str::<MixnetMode>("\"off\"").is_err());
     }
 
+    /// HYPOTHESIS: a status in stale-proven mode carries its address and
+    /// exits across the wire whole, because the mode routes exactly as
+    /// Ready. Falsified if the guard rejects the evidence.
+    #[test]
+    fn a_stale_proven_status_round_trips_with_its_evidence() {
+        let status = crate::mixnet::MixnetStatus {
+            mode: MixnetMode::PreviouslyProvenThisEpoch,
+            socks5_addr: Some("127.0.0.1:1080".parse().expect("the test address parses")),
+            exits: vec![crate::mixnet::ExitNodeId::from("exit-alpha")],
+            bootstrap_detail: None,
+            death: None,
+        };
+        let json = serde_json::to_string(&status).expect("serialization is infallible");
+        let back: crate::mixnet::MixnetStatus =
+            serde_json::from_str(&json).expect("a published status parses back");
+        assert_eq!(back.mode, MixnetMode::PreviouslyProvenThisEpoch);
+        assert_eq!(back.socks5_addr, status.socks5_addr);
+        assert_eq!(back.exits, status.exits);
+    }
+
+    /// HYPOTHESIS: whatever raw fields a slot holds, the evidenced
+    /// constructor emits a status every mode round-trips, so the publisher
+    /// and the wire guard agree by construction. Falsified if any mode's
+    /// published shape fails to deserialize.
+    #[test]
+    fn every_published_shape_round_trips() {
+        for mode in MixnetMode::ALL {
+            let published = crate::mixnet::MixnetStatus::evidenced(
+                mode,
+                Some("127.0.0.1:1080".parse().expect("the test address parses")),
+                vec![crate::mixnet::ExitNodeId::from("exit-alpha")],
+                Some(crate::mixnet::DeathReport {
+                    at: std::time::SystemTime::UNIX_EPOCH,
+                    detail: None,
+                }),
+            );
+            let json = serde_json::to_string(&published).expect("serialization is infallible");
+            let back: Result<crate::mixnet::MixnetStatus, _> = serde_json::from_str(&json);
+            assert!(
+                back.is_ok(),
+                "mode {} publishes a shape its own wire refuses: {json}",
+                mode.as_str()
+            );
+        }
+    }
+
     #[test]
     fn all_is_exhaustive() {
         // A new variant must join ALL: this match goes non-exhaustive the

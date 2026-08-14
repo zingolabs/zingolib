@@ -124,15 +124,15 @@ fn publish_slot(
     status: &crate::mixnet::driver::StatusPublisher,
 ) {
     let guarded = slot.lock().expect("mixnet slot mutex");
-    status.send_replace(crate::mixnet::MixnetStatus {
-        mode: guarded.mode(),
-        socks5_addr: guarded.socks5_addr(),
-        exits: guarded.exits(),
-        bootstrap_detail: None,
-        // A latched death crosses whole, so subscribers render its typed
-        // story and never a bare "died".
-        death: guarded.death_report(),
-    });
+    // The evidenced constructor keeps only what the mode offers, so the
+    // condemned dip publishes no stale address and a latched death crosses
+    // whole for subscribers to render its typed story.
+    status.send_replace(crate::mixnet::MixnetStatus::evidenced(
+        guarded.mode(),
+        guarded.socks5_addr(),
+        guarded.exits(),
+        guarded.death_report(),
+    ));
 }
 
 /// Forwards a settled birth's later transitions from its birth channel into
