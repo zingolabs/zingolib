@@ -126,8 +126,24 @@ impl Pools {
         self.acquirer.lock().expect("pool acquirer mutex").clone()
     }
 
+    /// The instant `exit`'s EpochProven observation stops being fresh,
+    /// when one stands.
+    pub(crate) fn proven_until(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+    ) -> Option<std::time::Instant> {
+        self.exits
+            .lock()
+            .expect("exit pool mutex")
+            .proven_until(exit)
+    }
+
     /// Keeps `verdict` as `exit`'s current observation, earned now.
-    pub(crate) fn remember(&self, exit: crate::mixnet::ExitNodeId, verdict: exit_pool::ExitNodeHealthVerdict) {
+    pub(crate) fn remember(
+        &self,
+        exit: crate::mixnet::ExitNodeId,
+        verdict: exit_pool::ExitNodeHealthVerdict,
+    ) {
         self.exits.lock().expect("exit pool mutex").remember(
             exit,
             exit_pool::Observation::earned(verdict, std::time::Instant::now()),
@@ -193,14 +209,20 @@ impl Pools {
             )
             .await;
             if evidence.proves_the_exit() {
-                self.remember(lease.node().clone(), exit_pool::ExitNodeHealthVerdict::EpochProven);
+                self.remember(
+                    lease.node().clone(),
+                    exit_pool::ExitNodeHealthVerdict::EpochProven,
+                );
                 return Ok(ProvenBirth {
                     transport,
                     lease,
                     probed: true,
                 });
             }
-            self.remember(lease.node().clone(), exit_pool::ExitNodeHealthVerdict::Failed);
+            self.remember(
+                lease.node().clone(),
+                exit_pool::ExitNodeHealthVerdict::Failed,
+            );
             transport.stop().await;
         }
         Err(acquire::TransportError::NoProvenExit {

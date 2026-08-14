@@ -70,6 +70,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- The F1 demotion loop lands whole. An exit-implicating failure on the
+  Standing Client — a failed mixnet transmission, or a correspondent
+  probe wave nobody answered — raises a suspicion that spawns a
+  ProofAcquisition: one arbiter Sentinel exchange dialed into the
+  client's tunnel. An answer promotes and refreshes the exit's
+  EpochProven observation; silence convicts the exit
+  (`ExitNodeHealthVerdict::Failed`) and runs the two-layer failover —
+  the mode dips to `Bootstrapping` while a replacement Proven Client
+  births over a preference-ordered draw, `Ready` on success, `Died`
+  latched when every birth exhausts or no acquirer exists to rebirth
+  from. An expiry watchdog fires the same ProofAcquisition unprompted
+  the moment the client's proof stops being epoch-fresh, a trusting
+  birth inheriting the stale observation's original expiry as its
+  deadline. The slot moved behind a mutex so the loop runs from the
+  operation paths that observe the failures.
 - BREAKING: `MixnetMode` gains a sixth state, `PreviouslyProvenThisEpoch`
   (wire token `previously_proven_this_epoch`), adjacent to `Ready`: the
   Standing Client is up on stale proof — born trusting an EpochProven

@@ -187,6 +187,15 @@ pub(crate) struct StandingClient {
     /// Whether a round trip of this client's own has confirmed the exit,
     /// which promotes stale proof to earned.
     confirmed: std::sync::atomic::AtomicBool,
+    /// Whether the exit was convicted under this client, the state the
+    /// failover's replacement birth runs in.
+    condemned: std::sync::atomic::AtomicBool,
+    /// Whether the failover exhausted every birth, the unconsented loss
+    /// that latches Died until an explicit re-enable.
+    forsaken: std::sync::atomic::AtomicBool,
+    /// The instant this client's proof stops being epoch-fresh, when a new
+    /// ProofAcquisition is due.
+    proof_deadline: std::sync::Mutex<std::time::Instant>,
 }
 
 impl StandingClient {
@@ -203,12 +212,47 @@ impl StandingClient {
             exit_reservation,
             born_probed,
             confirmed: std::sync::atomic::AtomicBool::new(false),
+            condemned: std::sync::atomic::AtomicBool::new(false),
+            forsaken: std::sync::atomic::AtomicBool::new(false),
+            proof_deadline: std::sync::Mutex::new(
+                std::time::Instant::now() + zingo_netutils::time::NYM_EPOCH,
+            ),
         }
     }
 
     /// The client's transport.
     pub(crate) fn proxy(&self) -> &MixnetProxy {
         &self.proxy
+    }
+
+    /// Convicts the exit under this client, returning whether this call was
+    /// the convicting one.
+    pub(crate) fn condemn(&self) -> bool {
+        !self
+            .condemned
+            .swap(true, std::sync::atomic::Ordering::AcqRel)
+    }
+
+    /// Whether the exit was convicted under this client.
+    pub(crate) fn is_condemned(&self) -> bool {
+        self.condemned.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Latches the failover's exhaustion, the unconsented loss of the
+    /// transport.
+    pub(crate) fn forsake(&self) {
+        self.forsaken
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    /// The instant this client's proof stops being epoch-fresh.
+    pub(crate) fn proof_deadline(&self) -> std::time::Instant {
+        *self.proof_deadline.lock().expect("proof deadline mutex")
+    }
+
+    /// Moves the proof deadline to `deadline`, after a fresh proof.
+    pub(crate) fn set_proof_deadline(&self, deadline: std::time::Instant) {
+        *self.proof_deadline.lock().expect("proof deadline mutex") = deadline;
     }
 
     /// The bound exit's identity, when this session's Exit Pool issued it.
@@ -223,9 +267,11 @@ impl StandingClient {
         !self.born_probed && !self.confirmed.load(std::sync::atomic::Ordering::Acquire)
     }
 
-    /// Records a completed round trip of this client's own, returning
-    /// whether this call was the promoting one.
+    /// Records a completed round trip of this client's own — resetting the
+    /// proof deadline one epoch out — and returns whether this call was the
+    /// promoting one.
     pub(crate) fn note_round_trip(&self) -> bool {
+        self.set_proof_deadline(std::time::Instant::now() + zingo_netutils::time::NYM_EPOCH);
         !self
             .confirmed
             .swap(true, std::sync::atomic::Ordering::AcqRel)
@@ -240,19 +286,29 @@ impl StandingClient {
 
 impl MixnetSlot {
     /// The Mixnet Mode this slot is in: the slot's own state when no
-    /// Standing Client is attached, otherwise the client's lifecycle state,
-    /// with a live client on stale unconfirmed proof typed as
-    /// [`MixnetMode::PreviouslyProvenThisEpoch`] rather than earned Ready.
+    /// Standing Client is attached, otherwise the client's lifecycle state
+    /// refined by its proof — forsaken latches Died, a condemned exit dips
+    /// to Bootstrapping while the failover births a replacement, and stale
+    /// unconfirmed proof is typed [`MixnetMode::PreviouslyProvenThisEpoch`]
+    /// rather than earned Ready.
     pub(crate) fn mode(&self) -> MixnetMode {
         match self {
             MixnetSlot::Unattached => MixnetMode::Unattached,
             MixnetSlot::SwitchedOff => MixnetMode::SwitchedOff,
-            MixnetSlot::Attached(client) => match client.proxy().mode() {
-                MixnetMode::Ready if client.stale_unconfirmed() => {
-                    MixnetMode::PreviouslyProvenThisEpoch
+            MixnetSlot::Attached(client) => {
+                if client.forsaken.load(std::sync::atomic::Ordering::Acquire) {
+                    return MixnetMode::Died;
                 }
-                lifecycle => lifecycle,
-            },
+                if client.is_condemned() {
+                    return MixnetMode::Bootstrapping;
+                }
+                match client.proxy().mode() {
+                    MixnetMode::Ready if client.stale_unconfirmed() => {
+                        MixnetMode::PreviouslyProvenThisEpoch
+                    }
+                    lifecycle => lifecycle,
+                }
+            }
             #[cfg(any(test, feature = "testutils"))]
             MixnetSlot::AttachedForTests { .. } => MixnetMode::Ready,
         }
@@ -429,5 +485,50 @@ mod stale_proof {
         );
         let slot = MixnetSlot::Attached(StandingClient::new(proxy, None, true));
         assert_eq!(slot.mode(), MixnetMode::Ready);
+    }
+}
+
+#[cfg(test)]
+mod demotion {
+    use super::{MixnetMode, MixnetSlot, StandingClient};
+
+    fn attached(born_probed: bool) -> MixnetSlot {
+        let proxy = crate::mixnet::MixnetProxy::ready_for_slot_tests(
+            "127.0.0.1:1080".parse().expect("the test address parses"),
+            vec![crate::mixnet::ExitNodeId::from("exit-under-trial")],
+        );
+        MixnetSlot::Attached(StandingClient::new(proxy, None, born_probed))
+    }
+
+    /// HYPOTHESIS: convicting the exit under a live client dips the mode to
+    /// Bootstrapping — the ruled state while the failover's replacement
+    /// births — and never to Died, which names only the transport's own
+    /// loss. Falsified if a condemned client still claims readiness.
+    #[tokio::test]
+    async fn a_condemned_client_dips_to_bootstrapping() {
+        let slot = attached(true);
+        assert_eq!(slot.mode(), MixnetMode::Ready);
+        if let MixnetSlot::Attached(client) = &slot {
+            assert!(client.condemn(), "the first conviction reports itself");
+            assert!(!client.condemn(), "a second conviction is idempotent");
+        }
+        assert_eq!(
+            slot.mode(),
+            MixnetMode::Bootstrapping,
+            "a convicted exit means the session cannot truthfully claim readiness"
+        );
+    }
+
+    /// HYPOTHESIS: a failover that exhausts every birth latches Died — the
+    /// unconsented loss — which only an explicit re-enable leaves.
+    /// Falsified if exhaustion reads as anything softer.
+    #[tokio::test]
+    async fn an_exhausted_failover_latches_died() {
+        let slot = attached(true);
+        if let MixnetSlot::Attached(client) = &slot {
+            client.condemn();
+            client.forsake();
+        }
+        assert_eq!(slot.mode(), MixnetMode::Died);
     }
 }

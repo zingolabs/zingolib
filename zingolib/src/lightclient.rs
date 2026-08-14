@@ -178,7 +178,11 @@ pub struct LightClient {
     /// or an attached transport. Explicit rather than `Option` so a
     /// deliberate disable stays distinguishable from a transport's absence.
     #[cfg(feature = "nym")]
-    mixnet_slot: crate::mixnet::MixnetSlot,
+    mixnet_slot: std::sync::Arc<std::sync::Mutex<crate::mixnet::MixnetSlot>>,
+    /// The expiry watchdog driving a new ProofAcquisition the moment the
+    /// Standing Client's proof stops being epoch-fresh.
+    #[cfg(feature = "nym")]
+    standing_watchdog: Option<tokio::task::JoinHandle<()>>,
     /// The session's exit authority: Reservations, the NodeHealthIndex, and
     /// the acquirer Proven Clients are born from.
     #[cfg(feature = "nym")]
@@ -265,7 +269,11 @@ impl LightClient {
             #[cfg(not(feature = "nym-diary"))]
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
-            mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
+            mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::mixnet::MixnetSlot::Unattached,
+            )),
+            #[cfg(feature = "nym")]
+            standing_watchdog: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
@@ -306,7 +314,11 @@ impl LightClient {
             // handle records nowhere and loads empty.
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
-            mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
+            mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::mixnet::MixnetSlot::Unattached,
+            )),
+            #[cfg(feature = "nym")]
+            standing_watchdog: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
@@ -368,7 +380,11 @@ impl LightClient {
             #[cfg(not(feature = "nym-diary"))]
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
-            mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
+            mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::mixnet::MixnetSlot::Unattached,
+            )),
+            #[cfg(feature = "nym")]
+            standing_watchdog: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]

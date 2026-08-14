@@ -820,7 +820,7 @@ impl LightClient {
         // this distinction does not exist there.
         #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
         let mock_arms = matches!(
-            self.mixnet_slot,
+            *self.mixnet_slot.lock().expect("mixnet slot mutex"),
             crate::mixnet::MixnetSlot::AttachedForTests { .. }
         );
 
@@ -928,6 +928,13 @@ impl LightClient {
                     server_txid_and_route
                 }
                 Err(failure) => {
+                    // A failed mixnet transmission raises the suspicion that
+                    // the standing exit is dead; the arbiter probe
+                    // adjudicates rather than convicting on one failure.
+                    #[cfg(feature = "nym")]
+                    if pull_route.is_some() {
+                        self.note_standing_exit_suspicion();
+                    }
                     pepper_sync::set_transactions_failed(
                         &mut wallet.wallet_transactions,
                         vec![*txid],

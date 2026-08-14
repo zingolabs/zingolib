@@ -168,6 +168,18 @@ impl NodeHealthIndex {
         self.observed(exit, now, ExitNodeHealthVerdict::Failed)
     }
 
+    /// The instant the node's EpochProven observation stops being fresh,
+    /// when one stands.
+    pub(crate) fn proven_until(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+    ) -> Option<std::time::Instant> {
+        self.0.get(exit).and_then(|seen| {
+            (seen.verdict == ExitNodeHealthVerdict::EpochProven)
+                .then(|| seen.at + zingo_netutils::time::NYM_EPOCH)
+        })
+    }
+
     /// Whether the node's current observation is `verdict`, still fresh.
     fn observed(
         &self,
@@ -214,6 +226,27 @@ impl ExitPool {
         now: std::time::Instant,
     ) -> bool {
         self.health.epoch_proven(exit, now)
+    }
+
+    /// The instant `exit`'s EpochProven observation stops being fresh,
+    /// when one stands.
+    pub(crate) fn proven_until(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+    ) -> Option<std::time::Instant> {
+        self.health.proven_until(exit)
+    }
+
+    /// Whether `exit` failed within the last Nym epoch.
+    // Exercised by the ProofAcquisition contract tests; production reads
+    // failures only through the draw's own partition.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn epoch_failed(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+    ) -> bool {
+        self.health.epoch_failed(exit, now)
     }
 
     /// Draws a Clutch of owning reservations, each of which recycles
