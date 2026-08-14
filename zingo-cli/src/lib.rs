@@ -1382,47 +1382,19 @@ async fn sweep_select_sync_indexer(
             },
         )
         .await;
-    match selection {
-        Ok(selection) => {
-            if let Some(pinned) = &pin {
-                if selection.cohort.iter().any(|live| &live.uri == pinned) {
-                    // The user's selection answered the survey: it is chosen,
-                    // and it is already bound from config.
-                    eprintln!(
-                        "Server-Selection Sweep: sync attaches to the pinned server {pinned} \
-                         (live cohort of {}).",
-                        selection.cohort.len(),
-                    );
-                    return true;
-                }
-                eprintln!(
-                    "Server-Selection Sweep: the pinned server {pinned} did not answer the \
-                     survey or lags the live cohort of {}. A live alternative: {}. This Sync \
-                     Session does not open; run `changeserver {}` at the prompt, or relaunch \
-                     pinning a live server.",
-                    selection.cohort.len(),
-                    selection.sync_indexer,
-                    selection.sync_indexer,
-                );
-                return false;
-            }
-            let chosen = selection.sync_indexer.clone();
-            if let Some(pinned) = &pin
-                && *pinned != chosen
-            {
-                eprintln!(
-                    "Server-Selection Sweep: the pinned server {pinned} did not answer the \
-                     survey; sync attaches to the first healthy indexer instead."
-                );
-            }
+    match judge_sweep_outcome(&selection, pin.as_ref()) {
+        SweepVerdict::PinStands { notice } => {
+            eprintln!("{notice}");
+            true
+        }
+        SweepVerdict::Refuse { notice } => {
+            eprintln!("{notice}");
+            false
+        }
+        SweepVerdict::BindWinner { chosen, notice } => {
             match lightclient.set_indexer_uri(chosen.clone()).await {
                 Ok(()) => {
-                    eprintln!(
-                        "Server-Selection Sweep: sync attaches to {chosen} (live cohort of {}, \
-                         {} transmit candidates exclude its operator).",
-                        selection.cohort.len(),
-                        selection.transmit_candidates.len(),
-                    );
+                    eprintln!("{notice}");
                     true
                 }
                 Err(e) => {
@@ -1435,17 +1407,167 @@ async fn sweep_select_sync_indexer(
                 }
             }
         }
-        Err(e) => {
-            if let Some(pinned) = &pin {
+        SweepVerdict::RecommendFallback {
+            alternative,
+            notice,
+        } => {
+            eprintln!("{notice}");
+            if !consent_to_fallback(&filled_template.mode, &alternative) {
                 eprintln!(
-                    "Server-Selection Sweep: no verdict: {}. The survey never judged the pinned \
-                     server {pinned}; it stands, and this Sync Session opens against it.",
-                    commands::render_error_chain(&e),
+                    "Server-Selection Sweep: fallback declined. This Sync Session does not \
+                     open; run `changeserver {alternative}` at the prompt, or relaunch \
+                     pinning a live server."
                 );
-                return true;
+                return false;
             }
-            eprintln!("{}", sweep_refusal_notice(&e));
-            false
+            match lightclient.set_indexer_uri(alternative.clone()).await {
+                Ok(()) => {
+                    eprintln!(
+                        "Server-Selection Sweep: sync attaches to {alternative} by your \
+                         explicit consent."
+                    );
+                    true
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Server-Selection Sweep: consented to {alternative}, but binding it \
+                         failed: {}. This Sync Session does not open.",
+                        commands::render_error_chain(&e),
+                    );
+                    false
+                }
+            }
+        }
+    }
+}
+
+/// The decision a finished Server-Selection Sweep leaves the Sync Session
+/// with.
+#[cfg(feature = "nym")]
+#[derive(Debug)]
+enum SweepVerdict {
+    /// The pinned, already-bound server stands and the Sync Session opens.
+    PinStands {
+        /// The narration this decision prints.
+        notice: String,
+    },
+    /// The sweep's winner binds and the Sync Session opens on it.
+    BindWinner {
+        /// The indexer to bind.
+        chosen: http::Uri,
+        /// The narration a successful bind prints.
+        notice: String,
+    },
+    /// The Sync Session does not open.
+    Refuse {
+        /// The narration this refusal prints.
+        notice: String,
+    },
+    /// The survey refused the pin but holds a healthy alternative, which
+    /// binds only by the user's explicit consent, refusing by default.
+    RecommendFallback {
+        /// The healthy indexer the sweep selected.
+        alternative: http::Uri,
+        /// The narration recommending the fallback before the consent ask.
+        notice: String,
+    },
+}
+
+/// Asks explicit consent to open the Sync Session on `alternative` instead
+/// of the refused pin, defaulting to No wherever no interactive terminal
+/// can answer.
+#[cfg(feature = "nym")]
+fn consent_to_fallback(mode: &ModeOfOperation, alternative: &http::Uri) -> bool {
+    use std::io::IsTerminal as _;
+    if !matches!(mode, ModeOfOperation::Interactive) || !std::io::stdin().is_terminal() {
+        return false;
+    }
+    eprint!("Server-Selection Sweep: use {alternative} for this Sync Session instead? [y/N] ");
+    let mut answer = String::new();
+    if std::io::stdin().read_line(&mut answer).is_err() {
+        return false;
+    }
+    matches!(answer.trim(), "y" | "Y" | "yes" | "Yes")
+}
+
+/// Judges a finished sweep against the pin, deciding whether the Sync
+/// Session opens and on which indexer.
+#[cfg(feature = "nym")]
+fn judge_sweep_outcome(
+    selection: &Result<
+        zingolib::mixnet::sweep::Selection,
+        zingolib::lightclient::select::ServerSelectionError,
+    >,
+    pin: Option<&http::Uri>,
+) -> SweepVerdict {
+    match selection {
+        Ok(selection) => {
+            if let Some(pinned) = pin {
+                if selection.cohort.iter().any(|live| &live.uri == pinned) {
+                    // The user's selection answered the survey: it is chosen,
+                    // and it is already bound from config.
+                    return SweepVerdict::PinStands {
+                        notice: format!(
+                            "Server-Selection Sweep: sync attaches to the pinned server \
+                             {pinned} (live cohort of {}).",
+                            selection.cohort.len(),
+                        ),
+                    };
+                }
+                // The ruled default is No: the recommendation binds the
+                // alternative only through the caller's explicit consent.
+                return SweepVerdict::RecommendFallback {
+                    alternative: selection.sync_indexer.clone(),
+                    notice: format!(
+                        "Server-Selection Sweep: the pinned server {pinned} did not answer the \
+                         survey or lags the live cohort of {}. The sweep selected a healthy \
+                         alternative: {}.",
+                        selection.cohort.len(),
+                        selection.sync_indexer,
+                    ),
+                };
+            }
+            SweepVerdict::BindWinner {
+                chosen: selection.sync_indexer.clone(),
+                notice: format!(
+                    "Server-Selection Sweep: sync attaches to {} (live cohort of {}, \
+                     {} transmit candidates exclude its operator).",
+                    selection.sync_indexer,
+                    selection.cohort.len(),
+                    selection.transmit_candidates.len(),
+                ),
+            }
+        }
+        Err(e) => {
+            let judged_the_pin = matches!(
+                e,
+                zingolib::lightclient::select::ServerSelectionError::Selection(_)
+            );
+            match pin {
+                // A Selection error means the survey ran through a proven
+                // exit and the pinned candidate was judged with the rest:
+                // opening against it would trust a server just refused.
+                Some(pinned) if judged_the_pin => SweepVerdict::Refuse {
+                    notice: format!(
+                        "Server-Selection Sweep: the survey ran and selected nothing — the \
+                         pinned server {pinned} was judged and refused: {}. This Sync Session \
+                         does not open; run `changeserver` at the prompt, or relaunch pinning \
+                         a live server.",
+                        commands::render_error_chain(e),
+                    ),
+                },
+                Some(pinned) => SweepVerdict::PinStands {
+                    notice: format!(
+                        "Server-Selection Sweep: no verdict: {}. The survey never judged the \
+                         pinned server {pinned}; it stands, and this Sync Session opens \
+                         against it.",
+                        commands::render_error_chain(e),
+                    ),
+                },
+                None => SweepVerdict::Refuse {
+                    notice: sweep_refusal_notice(e),
+                },
+            }
         }
     }
 }

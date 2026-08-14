@@ -1431,3 +1431,132 @@ mod sweep_refusal_notice {
         );
     }
 }
+
+#[cfg(feature = "nym")]
+mod sweep_pin_policy {
+    //! The pin's judgment discipline (finding 4 of the 2026-08-14 PR #2695
+    //! review): a survey that ran and refused judged its pinned candidate,
+    //! while a sweep that never surveyed judged nothing.
+    use crate::{SweepVerdict, judge_sweep_outcome};
+    use zingolib::lightclient::select::ServerSelectionError;
+    use zingolib::mixnet::TransportError;
+    use zingolib::mixnet::speed::SpeedError;
+    use zingolib::mixnet::sweep::{RefusalTally, SweepError};
+
+    /// The candidate count a refused survey reports in these tests.
+    const SURVEYED: usize = 3;
+
+    /// The answer count of a survey every candidate refused.
+    const NONE_ANSWERED: usize = 0;
+
+    /// The pinned server these tests judge.
+    fn pin() -> http::Uri {
+        "https://pinned.example:443/"
+            .parse()
+            .expect("the pin parses")
+    }
+
+    /// A sweep failure from below the survey, which judged no candidate.
+    fn unsurveyed_failure() -> ServerSelectionError {
+        ServerSelectionError::Speed(SpeedError::Transport(TransportError::DiscoverySpawn(
+            std::io::Error::other("the discover binary is absent"),
+        )))
+    }
+
+    /// HYPOTHESIS: a survey that ran through a proven exit and selected
+    /// nothing judged the pinned server among its candidates, so the Sync
+    /// Session refuses instead of opening against the refused pin.
+    /// Falsified if the judged pin stands.
+    #[test]
+    fn a_surveyed_and_refused_pin_refuses_the_session() {
+        let outcome = Err(ServerSelectionError::Selection(SweepError::EmptyCohort {
+            surveyed: SURVEYED,
+            answered: NONE_ANSWERED,
+            causes: RefusalTally::of(&[]),
+        }));
+        assert!(matches!(
+            judge_sweep_outcome(&outcome, Some(&pin())),
+            SweepVerdict::Refuse { .. }
+        ));
+    }
+
+    /// HYPOTHESIS: a sweep whose transport failed below the survey judged
+    /// nothing, so the pinned server stands and the Sync Session opens.
+    /// Falsified if an unjudged failure condemns the pin.
+    #[test]
+    fn an_unsurveyed_sweep_leaves_the_pin_standing() {
+        assert!(matches!(
+            judge_sweep_outcome(&Err(unsurveyed_failure()), Some(&pin())),
+            SweepVerdict::PinStands { .. }
+        ));
+    }
+
+    /// HYPOTHESIS: with no pin, every sweep failure refuses the Sync
+    /// Session. Falsified if an unpinned failure opens one.
+    #[test]
+    fn an_unpinned_sweep_failure_refuses_the_session() {
+        assert!(matches!(
+            judge_sweep_outcome(&Err(unsurveyed_failure()), None),
+            SweepVerdict::Refuse { .. }
+        ));
+    }
+
+    /// The cohort height these tests report for a live candidate.
+    const LIVE_HEIGHT: u64 = 3_000_000;
+
+    /// A sweep that succeeded on `alternative` with the pin absent from
+    /// its one-candidate cohort.
+    fn success_without_the_pin(alternative: &http::Uri) -> zingolib::mixnet::sweep::Selection {
+        zingolib::mixnet::sweep::Selection {
+            sync_indexer: alternative.clone(),
+            transmit_candidates: Vec::new(),
+            cohort: vec![zingolib::mixnet::sweep::LiveCandidate {
+                uri: alternative.clone(),
+                height: LIVE_HEIGHT,
+            }],
+        }
+    }
+
+    /// HYPOTHESIS: a surveyed-and-refused pin beside a healthy winner
+    /// recommends the fallback for explicit consent instead of silently
+    /// refusing or silently binding. Falsified if the verdict is anything
+    /// but RecommendFallback naming the winner.
+    #[test]
+    fn a_refused_pin_beside_a_healthy_winner_recommends_the_fallback() {
+        let alternative: http::Uri = "https://healthy.example:443/"
+            .parse()
+            .expect("the alternative parses");
+        let outcome = Ok(success_without_the_pin(&alternative));
+        assert!(matches!(
+            judge_sweep_outcome(&outcome, Some(&pin())),
+            SweepVerdict::RecommendFallback { alternative: a, .. } if a == alternative
+        ));
+    }
+
+    /// HYPOTHESIS: a pin inside the live cohort stands and the session
+    /// opens on it. Falsified if a live pin is second-guessed.
+    #[test]
+    fn a_live_pin_stands() {
+        let pinned = pin();
+        let mut selection = success_without_the_pin(&pinned);
+        selection.sync_indexer = pinned.clone();
+        assert!(matches!(
+            judge_sweep_outcome(&Ok(selection), Some(&pinned)),
+            SweepVerdict::PinStands { .. }
+        ));
+    }
+
+    /// HYPOTHESIS: without an interactive terminal the fallback consent
+    /// defaults to No, immediately and without reading anything. Falsified
+    /// if a command-mode session consents or hangs awaiting input.
+    #[test]
+    fn consent_defaults_to_no_without_a_terminal() {
+        let alternative: http::Uri = "https://healthy.example:443/"
+            .parse()
+            .expect("the alternative parses");
+        let command_mode = crate::ModeOfOperation::Command {
+            command: crate::commands::CliCommand::Balance,
+        };
+        assert!(!crate::consent_to_fallback(&command_mode, &alternative));
+    }
+}
