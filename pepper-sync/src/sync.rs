@@ -3,9 +3,9 @@
 use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
 use std::ops::Range;
-use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool, AtomicU8, AtomicU32};
-use std::time::{Duration, SystemTime};
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant, SystemTime};
 
 use shardtree::ShardTree;
 use shardtree::store::memory::MemoryShardStore;
@@ -19,7 +19,6 @@ use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_protocol::{PoolType, ShieldedPool};
 use zingo_netutils::lightwallet_protocol::RawTransaction;
-use zingo_netutils::time::{MEMPOOL_DRAIN_CEILING, MEMPOOL_DRAIN_SETTLE};
 use zingo_netutils::{Indexer, TransparentIndexer};
 use zip32::AccountId;
 
@@ -427,7 +426,6 @@ where
         unprocessed_mempool_transactions_count.clone();
     let mempool_stream_connected_at = Arc::new(std::sync::OnceLock::new());
     let mempool_stream_connected_at_clone = mempool_stream_connected_at.clone();
-    // TODO: check mempool handle for errors
     let mempool_handle = tokio::spawn(async move {
         mempool_monitor(
             client,
@@ -646,27 +644,15 @@ where
                             }
                         },
                         SyncMode::Shutdown => {
-                            let timer = mempool_shutdown_timer.get_or_insert_with(|| std::time::Instant::now());
-                            if timer.elapsed() < MEMPOOL_DRAIN_CEILING {
-                                let Some(mempool_elapsed) = mempool_stream_connected_at.get().map(|at| at.elapsed()) else {
-                                    // if mempool stream has not connected yet, continue scanning unless its timed out
+                            match mempool_drain_verdict(shutdown_mempool.clone(), unprocessed_mempool_transactions_count.clone(), mempool_shutdown_timer.get_or_insert_with(Instant::now), mempool_stream_connected_at.clone()).await {
+                                MempoolDrainVerdict::ContinueScanning => {
                                     continue 'scan;
-                                };
-                                // wait if the mempool stream has not been connected for sufficient time to receive mempool transactions
-                                if let Some(mempool_startup_remaining) = MEMPOOL_DRAIN_SETTLE.checked_sub(mempool_elapsed) {
-                                    tokio::time::sleep(mempool_startup_remaining).await;
-                                }
-                            }
-
-                            // shutdown mempool
-                            shutdown_mempool.store(true, atomic::Ordering::Release);
-
-                            // continue scanning if mempool transaction have been received but haven't finished being preocessed
-                            if unprocessed_mempool_transactions_count.load(atomic::Ordering::Acquire) > 0 {
-                                continue 'scan;
-                            }
+                                    }
+                                    MempoolDrainVerdict::Shutdown => {
 
                             break 'continuous_sync;
+                                    }
+                            }
                         }
                         SyncMode::Running => (),
                         SyncMode::NotRunning => {
@@ -674,9 +660,10 @@ where
                         },
                     }
 
-                    scanner.update(&mut *wallet.write().await, shutdown_mempool.clone(), nullifier_map_limit_exceeded).await?;
+                    scanner.update(&mut *wallet.write().await, nullifier_map_limit_exceeded).await?;
 
                     if matches!(scanner.state, ScannerState::Complete) && config.shutdown_on_completion {
+                        // TODO: when shutting down on completion we should check there are no new mempool txs for a duration (MEMPOOL_DRAIN_SETTLE)
                         sync_mode_enum = SyncMode::Shutdown;
                         sync_mode.store(sync_mode_enum as u8, atomic::Ordering::Release);
 
@@ -1264,52 +1251,42 @@ pub(crate) fn set_transactions_failed_unchecked(
     reset_spends(wallet_transactions, failed_txids);
 }
 
-/// Returns true if the scanner and mempool are shutdown.
-/// Verdict for one pass of the scanner-shutdown drain poll. Pure over a
-/// snapshot: the caller loads the atomics and clocks. This only
-/// decides, so the whole policy is table-testable without a runtime.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DrainVerdict {
-    /// Drained and the mempool stream has settled: end the session.
+enum MempoolDrainVerdict {
+    ///  The mempool stream has been connected for sufficient duration and all recieved mempool transactions are processed.
     Shutdown,
-    /// Work appeared, or the ceiling expired with workers running:
-    /// re-enter the processing loop.
-    Reenter,
-    /// Undecided: sleep one cadence and poll again.
-    KeepPolling,
+    /// Continue scanning until we can safely finish shutting down the mempool.
+    ContinueScanning,
 }
 
-/// The drain policy for scanner shutdown.
-///
-/// `connected_for` is the age of the mempool stream subscription
-/// (`None` until it is established). Connection, not first delivery,
-/// is deliberately the grace trigger: an empty mempool never delivers,
-/// and a delivery-based grace would hold every such session for the
-/// full ceiling, restoring the fixed second c90f8d309 removed. The
-/// settle window covers the gap between subscribing and receiving
-/// pre-existing mempool content (served within ~100ms of connect).
-fn drain_verdict(
-    scan_workers: usize,
-    unprocessed_mempool_transactions: u32,
-    connected_for: Option<Duration>,
-    poll_elapsed: Duration,
-) -> DrainVerdict {
+async fn mempool_drain_verdict(
+    shutdown_mempool: Arc<AtomicBool>,
+    unprocessed_mempool_transactions_count: Arc<AtomicU32>,
+    mempool_shutdown_timer: &mut Instant,
+    mempool_stream_connected_at: Arc<OnceLock<Instant>>,
+) -> MempoolDrainVerdict {
     use zingo_netutils::time::{MEMPOOL_DRAIN_CEILING, MEMPOOL_DRAIN_SETTLE};
 
-    if unprocessed_mempool_transactions > 0 {
-        return DrainVerdict::Reenter;
-    }
-    if poll_elapsed >= MEMPOOL_DRAIN_CEILING {
-        return if scan_workers == 0 {
-            DrainVerdict::Shutdown
-        } else {
-            DrainVerdict::Reenter
+    if mempool_shutdown_timer.elapsed() < MEMPOOL_DRAIN_CEILING {
+        let Some(mempool_elapsed) = mempool_stream_connected_at.get().map(|at| at.elapsed()) else {
+            // if mempool stream has not connected yet, continue scanning unless its timed out
+            return MempoolDrainVerdict::ContinueScanning;
         };
+        // wait if the mempool stream has not been connected for sufficient time to receive mempool transactions
+        if let Some(mempool_startup_remaining) = MEMPOOL_DRAIN_SETTLE.checked_sub(mempool_elapsed) {
+            tokio::time::sleep(mempool_startup_remaining).await;
+        }
     }
-    match connected_for {
-        Some(age) if age >= MEMPOOL_DRAIN_SETTLE && scan_workers == 0 => DrainVerdict::Shutdown,
-        _ => DrainVerdict::KeepPolling,
+
+    // shutdown mempool monitor
+    shutdown_mempool.store(true, atomic::Ordering::Release);
+
+    // continue scanning if mempool transaction have been received but haven't finished being preocessed
+    if unprocessed_mempool_transactions_count.load(atomic::Ordering::Acquire) > 0 {
+        return MempoolDrainVerdict::ContinueScanning;
     }
+
+    MempoolDrainVerdict::Shutdown
 }
 
 /// Scan post-processing
@@ -2898,8 +2875,7 @@ mod test {
     mod drain_verdict {
         use std::time::Duration;
 
-        use crate::sync::DrainVerdict::{self, KeepPolling, Reenter, Shutdown};
-        use crate::sync::drain_verdict;
+        use crate::sync::mempool_drain_verdict;
 
         fn ms(millis: u64) -> Duration {
             Duration::from_millis(millis)
@@ -2907,7 +2883,14 @@ mod test {
 
         /// One row of the drain-policy table:
         /// (workers, unprocessed, connected_for, poll_elapsed, verdict, label).
-        type DrainCase = (usize, u32, Option<u64>, u64, DrainVerdict, &'static str);
+        type DrainCase = (
+            usize,
+            u32,
+            Option<u64>,
+            u64,
+            MempoolDrainVerdict,
+            &'static str,
+        );
 
         #[test]
         fn table() {
@@ -2939,7 +2922,7 @@ mod test {
             ];
             for (workers, unprocessed, connected_ms, elapsed_ms, expected, name) in cases {
                 assert_eq!(
-                    drain_verdict(
+                    mempool_drain_verdict(
                         *workers,
                         *unprocessed,
                         connected_ms.map(ms),

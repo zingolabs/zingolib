@@ -100,7 +100,7 @@ pub struct SyncConfig {
 #[cfg(feature = "wallet_essentials")]
 impl SyncConfig {
     fn serialized_version() -> u8 {
-        1
+        2
     }
 
     /// Deserialize into `reader`
@@ -110,10 +110,16 @@ impl SyncConfig {
         let gap_limit = reader.read_u8()?;
         let scopes = reader.read_u8()?;
         let performance_level = if version >= 1 {
-            PerformanceLevel::read(reader)?
+            PerformanceLevel::read(&mut reader)?
         } else {
             PerformanceLevel::High
         };
+        let shutdown_on_completion = if version >= 2 {
+            reader.read_u8()? != 0
+        } else {
+            true
+        };
+
         Ok(Self {
             transparent_address_discovery: TransparentAddressDiscovery {
                 gap_limit,
@@ -124,6 +130,7 @@ impl SyncConfig {
                 },
             },
             performance_level,
+            shutdown_on_completion,
         })
     }
 
@@ -142,7 +149,8 @@ impl SyncConfig {
             scopes |= 0b100;
         }
         writer.write_u8(scopes)?;
-        self.performance_level.write(writer)?;
+        self.performance_level.write(&mut writer)?;
+        writer.write_u8(self.shutdown_on_completion as u8)?;
 
         Ok(())
     }
