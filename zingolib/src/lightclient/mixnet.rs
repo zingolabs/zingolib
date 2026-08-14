@@ -188,8 +188,11 @@ impl LightClient {
         }
     }
 
-    /// Attaches Mixnet Mode to an already-running, mobile-platform-hosted SOCKS5
-    /// endpoint that bound `exits`, replacing any running transport.
+    /// Installs a caller-provisioned SOCKS5 endpoint that bound `exits` as
+    /// the session's Standing Client — vacating any prior transport,
+    /// refusing an unparseable address or an empty `exits`, validating
+    /// readiness asynchronously, and holding no exit_reservation because
+    /// the endpoint's exit was drawn outside this session's Exit Pool.
     pub async fn attach_mixnet(
         &mut self,
         socks5_addr: &str,
