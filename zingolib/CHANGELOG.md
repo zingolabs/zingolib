@@ -70,6 +70,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- A bind-stage failure spends a proving birth instead of escaping the
+  acquisition. A Clutch that never produced a ready bound transport —
+  the readiness budget missed, the child dead mid-bootstrap, the status
+  channel closed — convicts its drawn exits in the NodeHealthIndex and
+  a fresh Clutch is drawn, up to the six-birth budget; only the
+  environment's own refusals (a missing binary, an unreachable host, an
+  unseeded or exhausted pool) still abort at once, and a defective exit
+  report retries without convicting the exits it failed to name.
+  Previously one 120-second `NotReady` aborted the whole acquisition
+  fatally with nothing learned, and the unbootstrappable exits stayed
+  eligible for the very next draw.
 - The F1 demotion loop lands whole. An exit-implicating failure on the
   Standing Client — a failed mixnet transmission, or a correspondent
   probe wave nobody answered — raises a suspicion that spawns a

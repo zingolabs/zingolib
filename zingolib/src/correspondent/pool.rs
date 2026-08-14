@@ -151,26 +151,43 @@ impl Pools {
     }
 
     /// Acquires one ready transport over a fresh Clutch, publishing its
-    /// lifecycle into `publisher` and keeping only the bound exit's lease.
-    pub(crate) async fn acquire_bound(
+    /// lifecycle into `publisher` and keeping only the bound exit's lease;
+    /// a bind failure names the exits the failed Clutch drew, so the birth
+    /// loop can convict them.
+    async fn acquire_bound(
         &self,
         acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
         publisher: &crate::mixnet::driver::StatusPublisher,
-    ) -> Result<(crate::mixnet::MixnetProxy, exit_pool::Reservation), acquire::TransportError> {
-        let mut clutch = self.draw_clutch(acquirer).await?;
+    ) -> Result<(crate::mixnet::MixnetProxy, exit_pool::Reservation), BindFailure> {
+        let mut clutch = self
+            .draw_clutch(acquirer)
+            .await
+            .map_err(BindFailure::undrawn)?;
         let nodes = exit_pool::clutch_nodes(&clutch);
-        let (transport, exits) = crate::mixnet::supervisor::acquire_ready_transport(
+        let (transport, exits) = match crate::mixnet::supervisor::acquire_ready_transport(
             acquirer,
             &nodes,
             std::sync::Arc::clone(publisher),
         )
-        .await?;
+        .await
+        {
+            Ok(bound) => bound,
+            Err(cause) => {
+                return Err(BindFailure {
+                    cause,
+                    drawn: nodes,
+                });
+            }
+        };
         // Bind-time recycle: keeping only the bound lease drops the rest. A
         // report naming no drawn node (a defective host or child) refuses
         // typed, with the transport stopped and every reservation recycled.
         let Some(lease) = exit_pool::take_bound_lease(&mut clutch, &exits) else {
             transport.stop().await;
-            return Err(acquire::TransportError::ExitOutsideClutch { reported: exits });
+            return Err(BindFailure {
+                cause: acquire::TransportError::ExitOutsideClutch { reported: exits },
+                drawn: nodes,
+            });
         };
         drop(clutch);
         Ok((transport, lease))
@@ -180,7 +197,11 @@ impl Pools {
     /// fresh proof is trusted, otherwise a proving birth whose Sentinel
     /// refusal condemns the exit and tries a successor, refusing typed when
     /// every birth failed its proof — returning `probed: false` for a
-    /// trusting birth so the caller can type the stale proof.
+    /// trusting birth so the caller can type the stale proof. A bind-stage
+    /// failure spends a birth too: the drawn exits are convicted and a
+    /// fresh Clutch drawn, so one slow or dead Clutch is absorbed by the
+    /// budget instead of aborting the whole acquisition with nothing
+    /// learned.
     pub(crate) async fn acquire_proven(
         &self,
         acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
@@ -191,7 +212,23 @@ impl Pools {
         // decides what the session hears.
         let lifecycle = crate::mixnet::status_publisher();
         for _birth in 0..MAX_PROVING_BIRTHS {
-            let (transport, lease) = self.acquire_bound(acquirer, &lifecycle).await?;
+            let (transport, lease) = match self.acquire_bound(acquirer, &lifecycle).await {
+                Ok(bound) => bound,
+                Err(failure) if failure.retryable() => {
+                    // The whole drawn Clutch produced no ready bound
+                    // transport within budget: convict its exits so the
+                    // next draw learns — unless the child's own report was
+                    // defective — and spend a birth on it.
+                    log::warn!("a birth failed at the bind stage: {}", failure.cause);
+                    if failure.condemns_drawn() {
+                        for node in failure.drawn {
+                            self.remember(node, exit_pool::ExitNodeHealthVerdict::Failed);
+                        }
+                    }
+                    continue;
+                }
+                Err(failure) => return Err(failure.cause),
+            };
             let trusted = {
                 let exits = self.exits.lock().expect("exit pool mutex");
                 exits.epoch_proven(lease.node(), std::time::Instant::now())
@@ -235,6 +272,48 @@ impl Pools {
             probed: MAX_PROVING_BIRTHS,
             budget: zingo_netutils::time::SENTINEL_BUDGET,
         })
+    }
+}
+
+/// One failed bind: its typed cause, and the exits the failed Clutch drew.
+struct BindFailure {
+    /// The typed failure the bind stage produced.
+    cause: acquire::TransportError,
+    /// The drawn exits, none of which produced a ready bound transport.
+    drawn: Vec<crate::mixnet::ExitNodeId>,
+}
+
+impl BindFailure {
+    /// A failure from before any Clutch was drawn, which no retry helps.
+    fn undrawn(cause: acquire::TransportError) -> Self {
+        BindFailure {
+            cause,
+            drawn: Vec::new(),
+        }
+    }
+
+    /// Whether spending another birth can help: true for the failures of a
+    /// drawn Clutch that would not repeat on fresh exits, false for the
+    /// environment's own refusals — a missing binary, an unreachable host,
+    /// an unseeded or exhausted pool.
+    fn retryable(&self) -> bool {
+        match &self.cause {
+            acquire::TransportError::NotReady { .. }
+            | acquire::TransportError::DiedDuringBootstrap { .. }
+            | acquire::TransportError::StatusChannelClosed
+            | acquire::TransportError::ExitOutsideClutch { .. } => !self.drawn.is_empty(),
+            _ => false,
+        }
+    }
+
+    /// Whether the failure indicts the drawn exits themselves: a Clutch
+    /// that never became ready condemns its exits, while a defective exit
+    /// report indicts the child, not the exits it failed to name.
+    fn condemns_drawn(&self) -> bool {
+        !matches!(
+            self.cause,
+            acquire::TransportError::ExitOutsideClutch { .. }
+        )
     }
 }
 
@@ -297,5 +376,112 @@ mod tests {
         );
         pools.clear_acquirer();
         assert!(pools.acquirer().is_none(), "clearing is idempotent");
+    }
+}
+
+#[cfg(test)]
+mod bind_failure_absorption {
+    //! Finding F2's contract: a bind-stage failure spends a birth and
+    //! convicts the drawn exits instead of escaping the six-birth loop.
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+
+    /// An acquirer whose every acquisition fails at the bind stage, with a
+    /// census large enough that no draw repeats an exit.
+    struct BindRefusingAcquirer {
+        census: usize,
+        acquisitions: AtomicUsize,
+    }
+
+    impl crate::mixnet::acquire::TransportAcquirable for BindRefusingAcquirer {
+        fn discover(
+            &self,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<
+                            std::collections::HashSet<crate::mixnet::ExitNodeId>,
+                            acquire::TransportError,
+                        >,
+                    > + Send
+                    + '_,
+            >,
+        > {
+            let census = self.census;
+            Box::pin(async move {
+                Ok((0..census)
+                    .map(|index| crate::mixnet::ExitNodeId::from(format!("exit-{index}").as_str()))
+                    .collect())
+            })
+        }
+
+        fn acquire<'a>(
+            &'a self,
+            _clutch: &'a [crate::mixnet::ExitNodeId],
+            _publisher: crate::mixnet::driver::StatusPublisher,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<crate::mixnet::MixnetProxy, acquire::TransportError>,
+                    > + Send
+                    + 'a,
+            >,
+        > {
+            self.acquisitions.fetch_add(1, Ordering::AcqRel);
+            Box::pin(async {
+                Err(acquire::TransportError::NotReady {
+                    budget: zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT,
+                })
+            })
+        }
+    }
+
+    /// HYPOTHESIS: a bind-stage failure spends one of the six births and
+    /// convicts every drawn exit, so the loop absorbs it and the final
+    /// refusal is the typed NoProvenExit — never the first bind error
+    /// escaping with nothing learned. Falsified if the loop exits early or
+    /// the drawn-and-dead exits stay eligible.
+    #[tokio::test]
+    async fn a_bind_failure_spends_a_birth_and_convicts_the_drawn() {
+        let pools = Pools::new();
+        let acquirer = BindRefusingAcquirer {
+            census: MAX_PROVING_BIRTHS * zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE,
+            acquisitions: AtomicUsize::new(0),
+        };
+        let Err(refusal) = pools.acquire_proven(&acquirer).await else {
+            panic!("every bind fails, so no birth can succeed");
+        };
+
+        assert!(
+            matches!(
+                refusal,
+                acquire::TransportError::NoProvenExit { probed, .. }
+                    if probed == MAX_PROVING_BIRTHS
+            ),
+            "the loop absorbs bind failures into its budget, got: {refusal}"
+        );
+        assert_eq!(
+            acquirer.acquisitions.load(Ordering::Acquire),
+            MAX_PROVING_BIRTHS,
+            "every birth was spent on an acquisition"
+        );
+        let convicted = {
+            let exits = pools.exits.lock().expect("exit pool mutex");
+            let now = std::time::Instant::now();
+            (0..acquirer.census)
+                .filter(|index| {
+                    exits.epoch_failed(
+                        &crate::mixnet::ExitNodeId::from(format!("exit-{index}").as_str()),
+                        now,
+                    )
+                })
+                .count()
+        };
+        assert_eq!(
+            convicted, acquirer.census,
+            "every drawn-and-dead exit is convicted rather than staying eligible"
+        );
     }
 }
