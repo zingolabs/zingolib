@@ -188,11 +188,57 @@ impl LightClient {
         }
     }
 
-    /// Installs a caller-provisioned SOCKS5 endpoint that bound `exits` as
-    /// the session's Standing Client — vacating any prior transport,
-    /// refusing an unparseable address or an empty `exits`, validating
-    /// readiness asynchronously, and holding no exit_reservation because
-    /// the endpoint's exit was drawn outside this session's Exit Pool.
+    /// ```
+    /// use zingolib::config::{ClientConfig, WalletConfig};
+    /// use zingolib::lightclient::LightClient;
+    /// use zingolib::mixnet::{ExitNodeId, MixnetMode, MixnetProxyError};
+    ///
+    /// tokio::runtime::Runtime::new().unwrap().block_on(async {
+    ///     let wallet_dir = tempfile::tempdir().unwrap();
+    ///     let config = ClientConfig::builder()
+    ///         .set_wallet_dir(wallet_dir.path().to_path_buf())
+    ///         .set_wallet_config(WalletConfig::MnemonicPhrase {
+    ///             mnemonic_phrase: "abandon abandon abandon abandon abandon \
+    ///                 abandon abandon abandon abandon abandon abandon abandon \
+    ///                 abandon abandon abandon abandon abandon abandon abandon \
+    ///                 abandon abandon abandon abandon art"
+    ///                 .to_string(),
+    ///             no_of_accounts: std::num::NonZeroU32::new(1).unwrap(),
+    ///             birthday: 2_000_000,
+    ///             wallet_settings: Default::default(),
+    ///         })
+    ///         .build()
+    ///         .unwrap();
+    ///     let mut client = LightClient::new(config, true).await.unwrap();
+    ///
+    ///     // An unparseable address refuses typed, leaving Unattached.
+    ///     let refused = client.attach_mixnet("not-an-address", &[]).await;
+    ///     assert!(matches!(
+    ///         refused,
+    ///         Err(MixnetProxyError::InvalidAddress { .. })
+    ///     ));
+    ///     assert_eq!(client.mixnet_mode(), MixnetMode::Unattached);
+    ///
+    ///     // Empty `exits` refuses typed before anything is dialed.
+    ///     let exitless = client.attach_mixnet("127.0.0.1:9", &[]).await;
+    ///     assert!(matches!(exitless, Err(MixnetProxyError::NoExits)));
+    ///
+    ///     // A well-formed endpoint installs as the Standing Client, and
+    ///     // readiness is validated asynchronously: the call returns before
+    ///     // any probe, so the mode is not yet Ready.
+    ///     let host_drawn = ExitNodeId::parse("host-drawn-exit").unwrap();
+    ///     client
+    ///         .attach_mixnet("127.0.0.1:9", std::slice::from_ref(&host_drawn))
+    ///         .await
+    ///         .unwrap();
+    ///     assert_ne!(client.mixnet_mode(), MixnetMode::Ready);
+    ///
+    ///     // A later attach vacates the standing transport first, so its
+    ///     // failure leaves Unattached rather than the prior client.
+    ///     client.attach_mixnet("not-an-address", &[]).await.unwrap_err();
+    ///     assert_eq!(client.mixnet_mode(), MixnetMode::Unattached);
+    /// });
+    /// ```
     pub async fn attach_mixnet(
         &mut self,
         socks5_addr: &str,
