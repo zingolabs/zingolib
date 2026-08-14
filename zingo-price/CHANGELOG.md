@@ -10,6 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- `first_quote` turns a driven race's outcomes into the first quote, or the
+  report naming every source's typed failure when none answered.
+- `RACED_SOURCES`, the price census a run races, so a caller driving the
+  race asks the same operators in the same order.
+- `get_source_price` is public: one source's fetch, which a caller composes
+  into a race of its own.
+
+### Removed
+- BREAKING: `race_current_price` and the private `race_sources` are gone.
+  The wallet runs one speed-priority wave for every operation that races
+  targets through an Exit Node — the Server-Selection Sweep and the price
+  run alike — so this crate no longer carries a second racing mechanism of
+  its own. It says what to fetch; the wallet says how to race it. A caller
+  that raced through this crate now races `RACED_SOURCES` with
+  `get_source_price` and collects the outcomes with `first_quote`, or, in
+  the wallet, runs `zingolib::mixnet::speed::run_wave` over `PriceRun`.
+
 - `PriceSource::url` is public, so a Correspondable implementation can
   name the endpoint a source answers at.
 

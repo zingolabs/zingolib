@@ -7,7 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `time::NYM_EPOCH`: one Nym network epoch, the hourly topology rotation
+  that bounds how long an observation about an Exit Node stays meaningful.
+
+### Removed
+- BREAKING: the responsiveness partition is retired. The `Responsiveness`
+  trait, the `PrioritiseSpeed` and `PrioritisePrivacy` marker types,
+  `ResponsivenessClass`, its wire token, and the proxy binary's
+  `--responsiveness` argument are gone; `NymProxy::start` and `start_over`
+  lose their type parameter. Every acquisition now races under the one
+  hedged launch policy (`arm_race::acquisition_launch_policy`), an
+  arm wins by binding, and the child-side Sentinel gate is deleted: proof
+  of the bound exit belongs to the layer above the SOCKS5 seam, which
+  probes once per birth instead of once per losing arm. The speed class's
+  in-race proving starved acquisitions whenever no arm could complete a
+  round trip quickly, stalling the session tunnel at `Bootstrapping`
+  past 90 seconds in three consecutive measured runs.
+- BREAKING: the retirement's residue is gone with it. The `responsiveness`
+  module is deleted, with `RESERVATION_CLUTCH_SIZE` and
+  `acquisition_launch_policy` re-homed in `arm_race` beside the policy they
+  configure; `LaunchPolicy::Saturating`, which nothing outside its own
+  tests constructed, is removed; and `NymProxyError::CarriesNothing`, whose
+  only mint left with the child-side Sentinel gate, is removed.
+
 ### Changed
+- BREAKING: an acquisition's clutch grows from three Exit Node reservations
+  to four, and a racing arm now wins by carrying a round trip rather than by
+  binding a socket. Building a mixnet client never contacts the exit, so a
+  dead exit won the race as readily as a live one. Under the speed priority
+  each arm carries a Sentinel round trip before it can win, and an arm
+  whose exit stays silent loses the race.
+
+### Added
+- `sentinel` module (with the `socks5-transmit` feature): `probe_sentinel`
+  carries an ordinary DNS lookup of a constant name to a reliable public
+  resolver through a SOCKS5 tunnel, and reports `ExitEvidence` — whether the
+  bound Exit Node carried a round trip at all. A survey uses it to tell an
+  exit that carries nothing from indexers that will not answer; binding an
+  exit proves neither, because the mixnet client reports success against a
+  dead exit. `time::SENTINEL_BUDGET` bounds the probe.
+
+
+### Changed
+
+- BREAKING: the free functions `send_transaction_via_socks5`,
+  `get_lightd_info_via_socks5`, and `transaction_known_via_socks5` are
+  replaced by the `Socks5Indexer` struct. `Socks5Indexer::new` groups
+  the proxy address, the indexer URI, and the round-trip bound once,
+  and the methods `send_transaction`, `get_lightd_info`, and
+  `transaction_known` run the operations through one private
+  dial-and-bound pipeline. Every operation still opens its own SOCKS5
+  tunnel.
+- BREAKING: `NymProxy::socks5_addr` returns a `std::net::SocketAddr`
+  instead of a `String`. The proxy announces the loopback address it
+  bound, so a caller dials the typed address it is handed and never
+  parses one out of text.
 
 - BREAKING: `send_transaction_via_socks5`, `get_lightd_info_via_socks5`,
   and `transaction_known_via_socks5` take the SOCKS5 proxy address as a
@@ -17,12 +72,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- BREAKING: `live_indexer_discovery::DiscoveredIndexer` carries `tip: BlockId`
+  where it carried `info: LightdInfo`, because discovery now probes the tip.
 - BREAKING: the `zingo-nym-proxy-ffi` crate and the `uniffi-bindgen`
   helper leave this workspace; zingo-mobile now hosts the mobile UniFFI
   proxy shim in its own `nym-host` workspace (zingo-mobile PR #1251).
 
 ### Added
 
+- `Socks5Indexer::get_latest_block`: the `GetLatestBlock` tip fetch through
+  the local SOCKS5 proxy, the lightest liveness probe an indexer answers,
+  used by the attach readiness round trip and by live-indexer discovery.
 - The `responsiveness` module partitions network operations at compile
   time: the sealed `Responsiveness` trait with the `Critical` and
   `NonCritical` marker types, the `ResponsivenessClass` enum with

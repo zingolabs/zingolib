@@ -46,7 +46,7 @@ pub enum MixnetRoute {
     /// [`SwitchedOff`](MixnetMode::SwitchedOff), i.e. the user deliberately
     /// toggled it off.
     Clearnet,
-    /// Route through the session slot's tunnel.
+    /// Route through the Standing Client's tunnel.
     Mixnet(SlotTunnel),
 }
 
@@ -89,7 +89,10 @@ pub fn resolve_route(
     match mode {
         MixnetMode::Unattached => Err(MixnetNotReady::Unattached),
         MixnetMode::SwitchedOff => Ok(MixnetRoute::Clearnet),
-        MixnetMode::Ready => socks5_addr
+        // Stale-proven routes exactly as earned Ready: the difference is
+        // evidentiary, resolved by the promotion and demotion loop, never
+        // by refusing the surface.
+        MixnetMode::Ready | MixnetMode::PreviouslyProvenThisEpoch => socks5_addr
             .map(SlotTunnel::over)
             .map(MixnetRoute::Mixnet)
             .ok_or(MixnetNotReady::Bootstrapping),

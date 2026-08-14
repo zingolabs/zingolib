@@ -14,8 +14,8 @@
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use zingo_netutils::Socks5Indexer;
 use zingo_netutils::ensure_default_crypto_provider;
-use zingo_netutils::get_lightd_info_via_socks5;
 use zingo_netutils::indexers::IndexerChain;
 use zingo_netutils::live_indexer_discovery::{DiscoveryFailureKind, discover_live_indexers};
 use zingo_netutils::time::MIXNET_ROUND_TRIP_BOUND;
@@ -67,11 +67,10 @@ async fn main() -> ExitCode {
     );
     for found in &report.live {
         println!(
-            "  LIVE {} operator={} height={} vendor={} ({:.1?})",
+            "  LIVE {} operator={} height={} ({:.1?})",
             found.indexer.uri,
             found.indexer.operator(),
-            found.info.block_height,
-            found.info.vendor,
+            found.tip.height,
             found.elapsed
         );
     }
@@ -95,17 +94,12 @@ async fn main() -> ExitCode {
             .uri
             .parse()
             .expect("the census tests pin every entry parseable");
-        let Ok(socks5_addr) = found.transport.socks5_addr().parse() else {
-            println!(
-                "  LOST {} (the proxy announced a non-socket address)",
-                found.indexer.uri
-            );
-            continue;
-        };
-        match get_lightd_info_via_socks5(socks5_addr, &uri, MIXNET_ROUND_TRIP_BOUND).await {
-            Ok(info) => println!(
+        let socks5_addr = found.transport.socks5_addr();
+        let heartbeat = Socks5Indexer::new(socks5_addr, uri, MIXNET_ROUND_TRIP_BOUND);
+        match heartbeat.get_latest_block().await {
+            Ok(tip) => println!(
                 "  OK {} height={} (same transport, same exit)",
-                found.indexer.uri, info.block_height
+                found.indexer.uri, tip.height
             ),
             Err(source) => println!("  LOST {} ({source})", found.indexer.uri),
         }

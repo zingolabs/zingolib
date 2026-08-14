@@ -679,7 +679,7 @@ mod network_command_parsing {
         };
         assert_eq!(
             render_mixnet_probe(&live),
-            "zec.rocks\n  mixnet:   ok in 180ms: chain main, height 3420400"
+            "zec.rocks\n  mixnet:   ok in 180ms: height 3420400"
         );
 
         let dead = MixnetProbe {

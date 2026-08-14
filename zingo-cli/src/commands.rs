@@ -30,7 +30,7 @@ use zingolib::lightclient::migrate::{
     ImmediateMigrationPhase, ImmediateMigrationStatus, PartSendResult, SplitOutcome, SplitPhase,
     SplitStatus, SplitStep,
 };
-use zingolib::lightclient::{LightClient, TransmitProgressHandle};
+use zingolib::lightclient::{LightClient, SaveShutdown, TransmitProgressHandle};
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
@@ -547,7 +547,8 @@ async fn quickshield(lightclient: &mut LightClient) -> Result<String, CommandErr
 
 async fn quit(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.shutdown_save_task().await {
-        Ok(()) => eprintln!("Save task shutdown successfully."),
+        Ok(SaveShutdown::ShutDown) => eprintln!("Save task shutdown successfully."),
+        Ok(SaveShutdown::NotRunning) => eprintln!("No save task was running."),
         Err(e) => eprintln!("Error: save failed. {}", render_error_chain(&e)),
     }
     Ok("Zingo CLI quit successfully.".to_string())
@@ -619,7 +620,8 @@ async fn save(sub: SaveSubCommand, lightclient: &mut LightClient) -> Result<Stri
             )),
         },
         SaveSubCommand::Shutdown => match lightclient.shutdown_save_task().await {
-            Ok(()) => Ok("Save task shutdown successfully.".to_string()),
+            Ok(SaveShutdown::ShutDown) => Ok("Save task shutdown successfully.".to_string()),
+            Ok(SaveShutdown::NotRunning) => Ok("No save task was running.".to_string()),
             Err(e) => Err(CommandError::NotYetTyped(
                 format!("save failed. {}", render_error_chain(&e)).into(),
             )),
@@ -1227,10 +1229,7 @@ use zingolib::netutils::time::PROBE_LEG_TIMEOUT;
 #[cfg(feature = "nym")]
 fn render_mixnet_probe(probe: &zingolib::mixnet::probe::MixnetProbe) -> String {
     let leg = |leg: &zingolib::mixnet::probe::ProbeLeg| match &leg.outcome {
-        Ok(success) => format!(
-            "ok in {}ms: chain {}, height {}",
-            leg.millis, success.chain, success.height
-        ),
+        Ok(success) => format!("ok in {}ms: height {}", leg.millis, success.height),
         Err(failure) => format!("FAILED after {}ms: {failure}", leg.millis),
     };
     format!("{}\n  mixnet:   {}", probe.host, leg(&probe.leg))
@@ -1369,6 +1368,13 @@ fn render_status(
             Some(addr) => format!("Mixnet Mode: ready (SOCKS5 {addr})"),
             None => "Mixnet Mode: ready".to_string(),
         },
+        MixnetMode::PreviouslyProvenThisEpoch => match socks5_addr {
+            Some(addr) => format!(
+                "Mixnet Mode: previously proven this epoch (SOCKS5 {addr}; the exit's \
+                 proof is stale until a round trip of this session confirms it)"
+            ),
+            None => "Mixnet Mode: previously proven this epoch".to_string(),
+        },
         MixnetMode::Died => "Mixnet Mode: died. The proxy exited unexpectedly. Send and \
              price-fetch refuse and will not fall back to clearnet. Run `network on` to \
              restart the proxy."
@@ -1439,7 +1445,7 @@ async fn await_bootstrap_outcome(
     loop {
         let status = rx.borrow_and_update().clone();
         match status.mode {
-            MixnetMode::Ready => {
+            MixnetMode::Ready | MixnetMode::PreviouslyProvenThisEpoch => {
                 return BootstrapOutcome::Ready {
                     exits: status.exits.clone(),
                 };
@@ -1514,38 +1520,30 @@ async fn network_command(
             #[cfg(not(feature = "clearnet-test-mode"))]
             let went_online: Option<http::Uri> = None;
             let path = resolve_proxy_path(path.as_deref());
-            // `network on` is an interactive act: the user sits at the prompt.
+            // `network on` waits out the standing client's proven birth: the
+            // command returns with a client whose exit carried a round trip.
             lightclient
-                .enable_mixnet::<zingolib::mixnet::PrioritiseSpeed>(std::path::Path::new(&path))
+                .enable_mixnet(std::path::Path::new(&path))
                 .await
                 .map_err(|source| NetworkCommandError::ProxyStart {
                     path: path.clone(),
                     source,
                 })?;
-            // Block until the bootstrap resolves so the return is the
-            // outcome, not a promise to poll; the dispatch seam's progress
-            // heartbeat narrates the wait. The supervisor's own lifecycle
-            // timeout flips a stuck bootstrap to died, and the outer
-            // timeout is the backstop.
-            let outcome = tokio::time::timeout(
-                zingolib::netutils::time::NYM_LIFECYCLE_TIMEOUT,
-                await_bootstrap_outcome(lightclient.subscribe_mixnet_status()),
-            )
-            .await;
+            // The enable itself waited out the proven birth — the six-birth
+            // budget bounds the wait, the supervisor's lifecycle timeout
+            // bounds each bootstrap inside it, and the dispatch seam's
+            // progress heartbeat narrates it — so the session channel holds
+            // the settled outcome and reading it does not block.
+            let outcome = await_bootstrap_outcome(lightclient.subscribe_mixnet_status()).await;
             let readiness = match outcome {
-                Ok(BootstrapOutcome::Ready { exits }) => format!(
+                BootstrapOutcome::Ready { exits } => format!(
                     "Mixnet Mode ready; the nym proxy at '{path}' serves send and \
                      price-fetch over the mixnet.{}",
                     render_exit_nodes(&exits)
                 ),
-                Ok(BootstrapOutcome::Failed { report }) => {
+                BootstrapOutcome::Failed { report } => {
                     return Err(NetworkCommandError::Bootstrap { report });
                 }
-                Err(_elapsed) => format!(
-                    "Mixnet Mode still bootstrapping after {}s; run `network status` \
-                     to check readiness.",
-                    zingolib::netutils::time::NYM_LIFECYCLE_TIMEOUT.as_secs()
-                ),
             };
             Ok(match went_online {
                 Some(server) => format!(
@@ -2328,7 +2326,7 @@ pub(crate) enum CliCommand {
             $ZINGO_NYM_PROXY, else one bundled beside this binary, else PATH.
             `off` disconnects every network capability of the session, keeping
             any stored standing consent; `network on` re-consents (ADR 0032).
-            `probe` runs GetLightdInfo over the mixnet route to establish an
+            `probe` runs GetLatestBlock over the mixnet route to establish an
             indexer's liveness; it requires the mixnet and touches no
             clearnet endpoint. `history` shows per-indexer attempts across
             sessions, and needs the nym-diary feature plus --indexer-diary.
