@@ -799,6 +799,72 @@ mod sync {
     }
 }
 
+#[cfg(feature = "nym")]
+mod sync_recovery {
+    use pepper_sync::error::SyncRecoveryObservables;
+
+    use crate::{RecoveryAction, SYNC_RECOVERY_ATTEMPT_BUDGET, plan_recovery};
+
+    #[test]
+    fn a_condemned_server_redraws_when_the_session_may() {
+        assert_eq!(
+            plan_recovery(
+                SyncRecoveryObservables::ServerUnavailable,
+                SYNC_RECOVERY_ATTEMPT_BUDGET,
+                true,
+            ),
+            RecoveryAction::Redraw
+        );
+    }
+
+    #[test]
+    fn a_condemned_server_parks_a_session_that_may_not_redraw() {
+        assert_eq!(
+            plan_recovery(
+                SyncRecoveryObservables::ServerUnavailable,
+                SYNC_RECOVERY_ATTEMPT_BUDGET,
+                false,
+            ),
+            RecoveryAction::Park
+        );
+    }
+
+    #[test]
+    fn a_recoverable_error_relaunches_against_the_same_server() {
+        assert_eq!(
+            plan_recovery(
+                SyncRecoveryObservables::MaybeRecoverableServer,
+                SYNC_RECOVERY_ATTEMPT_BUDGET,
+                false,
+            ),
+            RecoveryAction::Relaunch
+        );
+    }
+
+    #[test]
+    fn an_abort_parks_regardless_of_budget_and_redraw() {
+        assert_eq!(
+            plan_recovery(
+                SyncRecoveryObservables::Abort,
+                SYNC_RECOVERY_ATTEMPT_BUDGET,
+                true,
+            ),
+            RecoveryAction::Park
+        );
+    }
+
+    #[test]
+    fn an_exhausted_budget_parks_every_class() {
+        for observable in [
+            SyncRecoveryObservables::MaybeRecoverableServer,
+            SyncRecoveryObservables::ServerUnavailable,
+            SyncRecoveryObservables::Abort,
+        ] {
+            assert_eq!(plan_recovery(observable, 0, true), RecoveryAction::Park);
+        }
+    }
+}
+
 mod config_template {
     use super::*;
     use crate::{
