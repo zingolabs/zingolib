@@ -43,10 +43,10 @@ use std::{
 use nym_sdk::mixnet::{MixnetClientBuilder, Socks5, Socks5MixnetClient};
 use zingo_net_diag::{NetOpFailure, NetOpStage};
 
+use crate::arm_race::acquisition_launch_policy;
 use crate::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceProgress, RaceState};
 use crate::error::NymProxyError;
 use crate::mixnet_connect::seeded_shuffle;
-use crate::arm_race::acquisition_launch_policy;
 
 /// Default Nym API URL for mainnet.
 const DEFAULT_NYM_API_URL: &str = "https://validator.nymtech.net/api/";

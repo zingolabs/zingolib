@@ -169,7 +169,7 @@ fn best_recorded(indexer: &http::Uri) -> Option<f64> {
                 fields.next()?,
                 fields.next()?,
             );
-            (window.parse::<u32>().ok()? == GUARD_WINDOW && host == indexer.to_string())
+            (window.parse::<u32>().ok()? == GUARD_WINDOW && host == *indexer)
                 .then(|| seconds.parse::<f64>().ok())?
         })
         .fold(None, |best, seconds| match best {

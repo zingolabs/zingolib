@@ -82,7 +82,6 @@ mod mixnet_connect;
 // mixnet bootstrap here and zingolib's send escalation (ADR 0011).
 pub mod arm_race;
 
-
 #[cfg(feature = "nym")]
 mod nym_proxy;
 #[cfg(feature = "nym")]
