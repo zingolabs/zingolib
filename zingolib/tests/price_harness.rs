@@ -64,9 +64,9 @@ async fn price_rounds_report_their_outcomes() {
         .enable_mixnet(std::path::Path::new(&proxy))
         .await
         .expect("the mixnet attaches");
-    // Attaching returns before the session's status reaches Ready, and the
-    // price fetch refuses anything less, so the harness waits it out rather
-    // than reporting the guard as a network outcome.
+    // The enable blocks until the standing client is born proven, so Ready
+    // is expected at once; the wait survives as a cheap guard so a status
+    // lag is never reported as a network outcome.
     let ready_by = Instant::now() + READY_BUDGET;
     while client.mixnet_mode() != zingolib::mixnet::MixnetMode::Ready {
         assert!(

@@ -253,7 +253,7 @@ impl LightClient {
     /// [`MixnetStartPolicy::ForcedOn`](crate::mixnet::MixnetStartPolicy)
     /// provisions the transport by `strategy` (the bundled binary spawned
     /// from the consumer's platform hints, or an attach to a mobile-platform-hosted
-    /// endpoint) so the bootstrap overlaps sync, under
+    /// endpoint) and blocks until the standing client is born proven, under
     /// [`MixnetStartPolicy::OptedOutThisSession`](crate::mixnet::MixnetStartPolicy)
     /// records the startup opt-out as the explicit act that reaches switched
     /// off, returns any provisioning failure typed while leaving the mode
@@ -425,11 +425,11 @@ impl LightClient {
             }
         };
 
-        // A spawned session runs the race over its own Price Source Pool
-        // member — one fresh Shared exit per run, never the slot's shared
-        // tunnel — while an attached session's single mobile-platform endpoint
-        // carries it as before. The consumed member is stopped whatever
-        // the outcome, and the refill draw excludes its exit.
+        // A spawned session births a per-run Proven Client — one fresh
+        // Shared exit per run, never the standing client's — while an
+        // attached session's single mobile-platform endpoint carries it as
+        // before. The per-run client is stopped whatever the outcome, and
+        // its lease recycles into the Exit Pool.
         // The run is the one speed-priority operation shape: it acquires a
         // transport, races its sources through that exit in a wave a
         // Sentinel rides, and redraws whenever an exit proves to carry

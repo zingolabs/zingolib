@@ -421,6 +421,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a prefix-only salvage read so `recovery_info` still works.
 
 ### Removed
+- The `mixnet` re-export of `zingo_netutils::responsiveness::{PrioritisePrivacy,
+  PrioritiseSpeed, Responsiveness}` - the responsiveness partition retired with
+  ADR 0044's single hedged acquisition policy, and no class reaches the API.
+- `mixnet::sweep::indexer_lanes` and `mixnet::sweep::opening_wave_timed_out` -
+  dead remnants of the wave-carried Sentinel. The Sentinel proof moved to the
+  client's birth (ADR 0044), so the wave runs at its full width with no lane
+  displaced, and a dead exit is condemned at birth rather than read off an
+  all-timeout opening wave.
 - `wallet::LightWallet::update_current_price` - the deprecated lock-holding
   price fetch. Its only callers were two tests, and the sequential
   `zingo_price` path it rode is itself removed; production fetches with
