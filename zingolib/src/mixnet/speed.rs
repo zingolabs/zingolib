@@ -1,23 +1,20 @@
 //! The one wave every speed-priority operation runs.
 //!
 //! The Server-Selection Sweep and the price run differ in what they race
-//! and in what settles them, and in nothing else: both open a fixed-width
-//! wave through one Exit Node, both carry a Sentinel in a lane of that
-//! wave, and both end the moment the Sentinel proves the exit carries
-//! nothing, because an exit that carries nothing makes every remaining leg
-//! spend its whole budget for an answer that indicts no target. This module
-//! holds that behaviour once; [`SpeedPrioritized`] is the seam each
-//! operation implements.
+//! and in what settles them, and in nothing else: both ride a Proven
+//! Client and open a fixed-width wave through its Exit Node. Proof belongs
+//! to the client's birth now, so no Sentinel rides the wave; the redraw
+//! survives as the safety net for an exit dying inside its epoch, keyed on
+//! a wave that not one target answered.
 
 #![forbid(unsafe_code)]
 
 use std::net::SocketAddr;
 
 use crate::lightclient::select::SURVEY_WAVE_WIDTH;
-use crate::mixnet::sweep::indexer_lanes;
 
-/// An operation that races targets through one Exit Node in a fixed-width
-/// wave, ending early when the Sentinel proves the exit carries nothing.
+/// An operation that races targets through one Proven Client in a
+/// fixed-width wave, redrawing when a wave proves the exit died under it.
 pub(crate) trait SpeedPrioritized {
     /// What this operation races: an indexer's endpoint, a price source.
     type Target: Send;
@@ -39,7 +36,12 @@ pub(crate) trait SpeedPrioritized {
     /// wave with every remaining leg cancelled.
     fn settled(&self, outcomes: &[Self::Outcome]) -> bool;
 
-    /// Acquires a transport for one attempt, with the address it listens on.
+    /// Whether any target answered at all, the evidence separating a live
+    /// exit over unhealthy targets from an exit that died under the wave.
+    fn answered(&self, outcomes: &[Self::Outcome]) -> bool;
+
+    /// Acquires a Proven Client for one attempt, with the address it
+    /// listens on.
     fn acquire(
         &self,
     ) -> impl std::future::Future<
@@ -51,6 +53,10 @@ pub(crate) trait SpeedPrioritized {
     /// to keep a caller waiting.
     fn dispose(&self, spent: Member);
 
+    /// Condemns a transport whose exit died under the operation, in the
+    /// background, remembering the failure before teardown.
+    fn abandon(&self, dead: Member);
+
     /// Narrates one phase of the attempt.
     fn narrate(&self, phase: SpeedProgress) {
         let _ = phase;
@@ -58,7 +64,7 @@ pub(crate) trait SpeedPrioritized {
 }
 
 /// The transport every speed-priority operation rides: one Shared-exit
-/// member, whether its operation drew it fresh or took it from a pool.
+/// Proven Client.
 pub(crate) type Member = crate::correspondent::pool::Member<
     crate::mixnet::MixnetProxy,
     crate::correspondent::pool::Shared,
@@ -72,44 +78,31 @@ pub(crate) enum SpeedProgress {
         /// Which draw this is.
         draw: usize,
     },
-    /// The attempt's Sentinel proved its exit carries nothing, so the exit
-    /// is abandoned, its outcomes dropped, and a fresh one drawn.
+    /// The wave went wholly unanswered, so the exit is condemned, its
+    /// outcomes dropped, and a fresh Proven Client drawn.
     ExitAbandoned {
-        /// Which draw proved its exit carries nothing.
+        /// Which draw's wave went unanswered.
         draw: usize,
     },
 }
 
-/// Runs `operation` until it settles, redrawing an exit whenever the
-/// Sentinel proves the one in hand carries nothing.
-///
-/// The dead exit is held until its replacement binds, so the pool cannot
-/// offer it again, and the surviving transport is returned with the
-/// outcomes for the operation to dispose of.
+/// Runs `operation` until it settles or exhausts its targets, redrawing a
+/// fresh Proven Client whenever a wave goes wholly unanswered.
 pub(crate) async fn run_speed_prioritized<T: SpeedPrioritized>(
     operation: &T,
 ) -> Result<(Vec<T::Outcome>, Member), SpeedError> {
-    let mut abandoned: Option<Member> = None;
     for draw in 1..=MAX_SPEED_EXIT_DRAWS {
         operation.narrate(SpeedProgress::Acquiring { draw });
         let (member, socks5) = operation.acquire().await?;
-        // The replacement holds its own exit now, so the dead predecessor
-        // can go back to the pool without risking its own reissue.
-        if let Some(dead) = abandoned.take() {
-            operation.dispose(dead);
-        }
         match run_wave(operation, socks5).await {
-            WaveEnd::ExitCarriesNothing => {
+            WaveEnd::Exhausted(outcomes) if !operation.answered(&outcomes) => {
                 operation.narrate(SpeedProgress::ExitAbandoned { draw });
-                abandoned = Some(member);
+                operation.abandon(member);
             }
             WaveEnd::Settled(outcomes) | WaveEnd::Exhausted(outcomes) => {
                 return Ok((outcomes, member));
             }
         }
-    }
-    if let Some(dead) = abandoned.take() {
-        operation.dispose(dead);
     }
     Err(SpeedError::NoLiveExit {
         draws: MAX_SPEED_EXIT_DRAWS,
@@ -140,9 +133,8 @@ pub enum SpeedError {
 }
 
 /// How many exits one operation may draw: the first, and a fresh one for
-/// each draw whose Sentinel proved its exit carries nothing, bounded so a
-/// mixnet failing everywhere refuses in a stated time rather than drawing
-/// forever.
+/// each wave that went wholly unanswered, bounded so a mixnet failing
+/// everywhere refuses in a stated time rather than drawing forever.
 pub(crate) const MAX_SPEED_EXIT_DRAWS: usize = 6;
 
 /// How a wave ended.
@@ -152,13 +144,9 @@ pub(crate) enum WaveEnd<O> {
     Settled(Vec<O>),
     /// Every target was raced and none settled the operation.
     Exhausted(Vec<O>),
-    /// The Sentinel proved the Exit Node carries nothing, so the outcomes
-    /// gathered describe the tunnel rather than any target and are dropped.
-    ExitCarriesNothing,
 }
 
-/// Races `operation`'s targets through `socks5` in one wave, the Sentinel
-/// holding a lane of it.
+/// Races `operation`'s targets through `socks5` in one full-width wave.
 pub(crate) async fn run_wave<T: SpeedPrioritized>(
     operation: &T,
     socks5: SocketAddr,
@@ -166,31 +154,13 @@ pub(crate) async fn run_wave<T: SpeedPrioritized>(
     use futures::StreamExt as _;
 
     let mut outcomes: Vec<T::Outcome> = Vec::new();
-    let sentinel =
-        zingo_netutils::sentinel::probe_sentinel(socks5, zingo_netutils::time::SENTINEL_BUDGET);
-    tokio::pin!(sentinel);
-    let mut sentinel_pending = true;
     let mut legs = futures::stream::iter(operation.targets())
         .map(|target| operation.probe(socks5, target))
-        .buffer_unordered(indexer_lanes(SURVEY_WAVE_WIDTH));
-
-    loop {
-        tokio::select! {
-            evidence = &mut sentinel, if sentinel_pending => {
-                sentinel_pending = false;
-                if !evidence.proves_the_exit() {
-                    return WaveEnd::ExitCarriesNothing;
-                }
-            }
-            raced = legs.next() => {
-                let Some(outcome) = raced else {
-                    break;
-                };
-                outcomes.push(outcome);
-                if operation.settled(&outcomes) {
-                    return WaveEnd::Settled(outcomes);
-                }
-            }
+        .buffer_unordered(SURVEY_WAVE_WIDTH);
+    while let Some(outcome) = legs.next().await {
+        outcomes.push(outcome);
+        if operation.settled(&outcomes) {
+            return WaveEnd::Settled(outcomes);
         }
     }
     WaveEnd::Exhausted(outcomes)
@@ -227,6 +197,10 @@ mod tests {
             outcomes.iter().any(|answered| *answered)
         }
 
+        fn answered(&self, outcomes: &[bool]) -> bool {
+            outcomes.iter().any(|answered| *answered)
+        }
+
         // The scripted operation exercises the wave alone, never the redraw
         // loop, so it acquires nothing and disposes of nothing.
         async fn acquire(
@@ -236,16 +210,16 @@ mod tests {
         }
 
         fn dispose(&self, _spent: Member) {}
+
+        fn abandon(&self, _dead: Member) {}
     }
 
-    /// HYPOTHESIS: the wave leaves the Sentinel a lane, so the targets hold
-    /// one fewer than the width and the total never exceeds it. Falsified
-    /// if the split widens the wave or starves the targets.
+    /// HYPOTHESIS: the wave runs at its full fixed width, no lane withheld,
+    /// now that proof belongs to the client's birth. Falsified if the width
+    /// varies with the work.
     #[test]
-    fn the_sentinel_holds_one_lane_of_the_wave() {
+    fn the_wave_runs_at_full_width() {
         assert_eq!(SURVEY_WAVE_WIDTH, 4);
-        assert_eq!(indexer_lanes(SURVEY_WAVE_WIDTH), 3);
-        assert!(indexer_lanes(SURVEY_WAVE_WIDTH) < SURVEY_WAVE_WIDTH);
     }
 
     /// HYPOTHESIS: a wave ends the moment its operation settles, carrying

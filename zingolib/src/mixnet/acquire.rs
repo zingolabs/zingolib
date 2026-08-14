@@ -81,6 +81,17 @@ pub enum TransportError {
         /// The lifecycle budget the transport missed.
         budget: std::time::Duration,
     },
+    /// Every birth this acquisition attempted failed its proof.
+    #[error(
+        "no proven exit: {probed} births each proved nothing within {}ms",
+        budget.as_millis()
+    )]
+    NoProvenExit {
+        /// How many proving births were attempted.
+        probed: usize,
+        /// The Sentinel budget each birth's proof was given.
+        budget: std::time::Duration,
+    },
 }
 
 impl From<ExitPoolError> for TransportError {

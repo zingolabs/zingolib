@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `time::NYM_EPOCH`: one Nym network epoch, the hourly topology rotation
+  that bounds how long an observation about an Exit Node stays meaningful.
+
 ### Changed
 - BREAKING: an acquisition's clutch grows from three Exit Node reservations
   to four, and a racing arm now wins by carrying a round trip rather than by

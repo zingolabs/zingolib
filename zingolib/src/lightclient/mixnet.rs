@@ -53,6 +53,10 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
         outcomes.iter().any(|(_, outcome)| outcome.is_ok())
     }
 
+    fn answered(&self, outcomes: &[Self::Outcome]) -> bool {
+        outcomes.iter().any(|(_, outcome)| outcome.is_ok())
+    }
+
     fn acquire(
         &self,
     ) -> impl std::future::Future<
@@ -61,9 +65,16 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
             crate::mixnet::acquire::TransportError,
         >,
     > + Send {
+        // The price fetch keeps its own client: a Proven Client born per
+        // run, so priced traffic never shares an egress with the
+        // wallet-correlated streams on the standing client.
         let pools = self.pools.clone();
         async move {
-            let member = pools.take_or_acquire(|pools| &pools.price).await?;
+            let acquirer = pools
+                .acquirer()
+                .ok_or(crate::mixnet::acquire::TransportError::NoAcquirer)?;
+            let (transport, lease) = pools.acquire_proven(acquirer.as_ref()).await?;
+            let member = crate::mixnet::speed::Member::new(transport, lease);
             let addr = member
                 .addr()
                 .ok_or(crate::mixnet::acquire::TransportError::DiedBeforeUse)?;
@@ -72,13 +83,25 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
     }
 
     fn dispose(&self, spent: crate::mixnet::speed::Member) {
-        // The quote is already in hand, so teardown and the refill run
-        // behind the caller rather than in front of it. The member never
-        // returns to the pool: consecutive runs must not share an exit.
-        let pools = self.pools.clone();
+        // The quote is a completed round trip, so the exit's proof renews;
+        // the client still turns off behind the run, because consecutive
+        // fetches must not share a client.
+        self.pools.remember(
+            spent.node().clone(),
+            crate::correspondent::pool::exit_pool::Verdict::Proven,
+        );
         tokio::spawn(async move {
             spent.retire().await;
-            pools.ensure_filled();
+        });
+    }
+
+    fn abandon(&self, dead: crate::mixnet::speed::Member) {
+        self.pools.remember(
+            dead.node().clone(),
+            crate::correspondent::pool::exit_pool::Verdict::Failed,
+        );
+        tokio::spawn(async move {
+            dead.retire().await;
         });
     }
 
@@ -93,7 +116,7 @@ impl LightClient {
     /// because the enable act revoked any standing clearnet consent and a
     /// failure must not silently reinstate a prior `SwitchedOff`.
     pub(super) async fn vacate_mixnet_slot(&mut self) {
-        self.correspondent_pools.drain_all().await;
+        self.correspondent_pools.clear_acquirer();
         if let crate::mixnet::MixnetSlot::Attached(running) =
             std::mem::replace(&mut self.mixnet_slot, crate::mixnet::MixnetSlot::Unattached)
         {
@@ -173,7 +196,6 @@ impl LightClient {
                 self.mixnet_slot = crate::mixnet::MixnetSlot::Attached(proxy);
                 self.slot_clutch = clutch;
                 self.correspondent_pools.set_acquirer(acquirer);
-                self.correspondent_pools.ensure_filled();
                 Ok(())
             }
             Err(error) => {
@@ -456,16 +478,6 @@ impl LightClient {
             (outcomes, dial)
         } else {
             match crate::mixnet::speed::run_wave(&run, socks5_addr).await {
-                crate::mixnet::speed::WaveEnd::ExitCarriesNothing => {
-                    return Err(LightClientError::from(
-                        crate::wallet::error::PriceError::Speed(
-                            crate::mixnet::speed::SpeedError::NoLiveExit {
-                                draws: 1,
-                                budget: zingo_netutils::time::SENTINEL_BUDGET,
-                            },
-                        ),
-                    ));
-                }
                 crate::mixnet::speed::WaveEnd::Settled(outcomes)
                 | crate::mixnet::speed::WaveEnd::Exhausted(outcomes) => {
                     (outcomes, socks5_addr.to_string())

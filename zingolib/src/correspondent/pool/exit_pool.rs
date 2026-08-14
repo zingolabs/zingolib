@@ -105,12 +105,66 @@ pub(crate) fn take_bound_lease(
     reported.iter().find_map(|node| clutch.take(node))
 }
 
+/// What one completed or refused round trip showed about an Exit Node.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Verdict {
+    /// A round trip completed through the exit: it answered the Sentinel
+    /// or carried a task.
+    Proven,
+    /// The exit refused, timed out, or stayed silent past budget.
+    Failed,
+}
+
+/// One exit's most recent verdict with the instant it was earned.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Observation {
+    verdict: Verdict,
+    at: std::time::Instant,
+}
+
+impl Observation {
+    /// A verdict earned now.
+    pub(crate) fn earned(verdict: Verdict, at: std::time::Instant) -> Self {
+        Observation { verdict, at }
+    }
+}
+
+/// The epoch-scoped health record of the exit census, keyed by node.
+#[derive(Default)]
+pub(crate) struct NodeHealthIndex(
+    std::collections::HashMap<crate::mixnet::ExitNodeId, Observation>,
+);
+
+impl NodeHealthIndex {
+    /// Keeps `observation` as the node's current verdict, superseding any
+    /// earlier one.
+    pub(crate) fn remember(&mut self, exit: crate::mixnet::ExitNodeId, observation: Observation) {
+        self.0.insert(exit, observation);
+    }
+
+    /// Whether the node's proof completed within the last Nym epoch.
+    pub(crate) fn proven(&self, exit: &crate::mixnet::ExitNodeId, now: std::time::Instant) -> bool {
+        self.0.get(exit).is_some_and(|seen| {
+            seen.verdict == Verdict::Proven
+                && now.saturating_duration_since(seen.at) < zingo_netutils::time::NYM_EPOCH
+        })
+    }
+
+    /// Whether the node failed at any point in this session.
+    pub(crate) fn failed(&self, exit: &crate::mixnet::ExitNodeId) -> bool {
+        self.0
+            .get(exit)
+            .is_some_and(|seen| seen.verdict == Verdict::Failed)
+    }
+}
+
 /// The session's Exit Pool: one reservation per discovered node, issued to
 /// at most one holder at a time.
 #[derive(Default)]
 pub(crate) struct ExitPool {
     population: HashSet<crate::mixnet::ExitNodeId>,
     issued: HashSet<crate::mixnet::ExitNodeId>,
+    health: NodeHealthIndex,
 }
 
 impl ExitPool {
@@ -124,11 +178,23 @@ impl ExitPool {
         !self.population.is_empty()
     }
 
+    /// Keeps `observation` as `exit`'s current verdict.
+    pub(crate) fn remember(&mut self, exit: crate::mixnet::ExitNodeId, observation: Observation) {
+        self.health.remember(exit, observation);
+    }
+
+    /// Whether `exit`'s proof completed within the last Nym epoch.
+    pub(crate) fn proven(&self, exit: &crate::mixnet::ExitNodeId, now: std::time::Instant) -> bool {
+        self.health.proven(exit, now)
+    }
+
     /// Draws a Clutch of owning reservations, each of which recycles
-    /// itself into `pool` when dropped.
+    /// itself into `pool` when dropped, sampling fresh-Proven exits first,
+    /// unknown ones next, and Failed ones only at exhaustion.
     pub(crate) fn draw_clutch(
         pool: &Arc<Mutex<ExitPool>>,
     ) -> Result<HashSet<Reservation>, ExitPoolError> {
+        let now = std::time::Instant::now();
         let mut guarded = pool.lock().expect("exit pool mutex");
         if guarded.population.is_empty() {
             return Err(ExitPoolError::NotSeeded);
@@ -147,13 +213,31 @@ impl ExitPool {
                 population: guarded.population.len(),
             });
         }
-        let clutch: HashSet<Reservation> = drawable
+        let mut proven = Vec::new();
+        let mut unknown = Vec::new();
+        let mut failed = Vec::new();
+        for node in drawable {
+            if guarded.health.proven(&node, now) {
+                proven.push(node);
+            } else if guarded.health.failed(&node) {
+                failed.push(node);
+            } else {
+                unknown.push(node);
+            }
+        }
+        // Each preference tier is sampled uniformly within itself, so the
+        // index orders tiers while chance still spreads load inside one.
+        let mut ordered: Vec<crate::mixnet::ExitNodeId> = Vec::new();
+        for tier in [proven, unknown, failed] {
+            let count = tier.len();
+            ordered.extend(
+                tier.into_iter()
+                    .choose_multiple(&mut rand::rngs::OsRng, count),
+            );
+        }
+        let clutch: HashSet<Reservation> = ordered
             .into_iter()
-            .choose_multiple(
-                &mut rand::rngs::OsRng,
-                zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE,
-            )
-            .into_iter()
+            .take(zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE)
             .map(|node| {
                 guarded.issued.insert(node.clone());
                 Reservation {

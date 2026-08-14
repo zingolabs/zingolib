@@ -320,12 +320,6 @@ impl MixnetProxy {
         self.state.lock().expect("proxy state mutex").mode
     }
 
-    /// Whether this transport is a spawned child rather than a
-    /// mobile-platform-attached endpoint.
-    pub(crate) fn is_spawned(&self) -> bool {
-        matches!(self.transport, Transport::Spawned { .. })
-    }
-
     /// The local SOCKS5 address, once the mode is [`MixnetMode::Ready`].
     pub fn socks5_addr(&self) -> Option<SocketAddr> {
         self.state.lock().expect("proxy state mutex").socks5_addr
@@ -650,10 +644,6 @@ fn parse_exit_line(line: &str) -> Option<crate::mixnet::ExitNodeId> {
 }
 
 impl crate::correspondent::pool::PoolTransport for MixnetProxy {
-    fn is_ready(&self) -> bool {
-        self.mode() == MixnetMode::Ready
-    }
-
     fn socks5_addr(&self) -> Option<std::net::SocketAddr> {
         MixnetProxy::socks5_addr(self)
     }

@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- The session keeps a `NodeHealthIndex`: one epoch-scoped observation per
+  Exit Node, written only by the Exit Pool's own acquisition and recycle
+  paths. A `Proven` observation (a completed round trip: a Sentinel answer
+  or a carried task) is trusted for one Nym epoch; a `Failed` observation
+  (a refusal, a timeout, or silence past budget) stands for the session.
+  Clutch draws sample fresh-Proven exits first, unknown ones next, and
+  Failed ones only at exhaustion.
+- Every mixnet client is a Proven Client: an acquisition whose bound exit
+  carries no trusted fresh proof must answer the Sentinel before its first
+  use, a refusal condemns the exit and births a successor, and an
+  acquisition whose every birth failed its proof refuses with the new typed
+  `TransportError::NoProvenExit`.
 - A spawned `nym-proxy` that dies before speaking its stdout protocol now
   latches a typed `proxy-launch` death detail (new `NetOpStage::ProxyLaunch`)
   naming the binary, the launch arguments, and the child's stderr tail, so a
@@ -58,6 +70,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: the Correspondent Pools' member-keeping is retired. Go-online
+  no longer launches background refills, the Indexer and Price complements
+  are gone, and a Transmission's pulls multiplex over the session's standing
+  tunnel instead of consuming per-pull Exclusive members; the price fetch
+  keeps its own per-run Proven Client, so priced traffic never shares an
+  egress with wallet-correlated streams. The go-online refills measurably
+  contended with the scan: knocking them out returned a 5,000-block sync
+  from 80.3–82.3 seconds to 70.8–73.3 under identical conditions.
+- BREAKING: the Sentinel leaves the survey and price waves. Proof belongs
+  to a client's birth, so waves run at full indexer width, and the redraw
+  survives as the safety net keyed on a wave that not one target answered.
 - BREAKING: the redraw of a dead Exit Node serves every speed-priority
   operation. `mixnet::speed::run_speed_prioritized` owns the loop an
   operation used to carry itself: acquire a transport, run the wave, and on

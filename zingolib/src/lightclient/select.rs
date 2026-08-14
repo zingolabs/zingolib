@@ -206,6 +206,10 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
         sweep::first_healthy_verdict(outcomes, &self.chain, self.pin.as_ref()).is_some()
     }
 
+    fn answered(&self, outcomes: &[SurveyResult]) -> bool {
+        outcomes.iter().any(|result| result.reported.is_some())
+    }
+
     fn acquire(
         &self,
     ) -> impl std::future::Future<
@@ -214,13 +218,13 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
             crate::mixnet::acquire::TransportError,
         >,
     > + Send {
-        // The sweep's transport is its own, drawn and bound over the one
-        // acquisition the pools already define, never taken from a pool: its
-        // exit must be distinct from every exit a send or a price run holds.
+        // The sweep's client is its own Proven Client, born over the one
+        // acquisition the exit authority defines, never shared: its exit
+        // must be distinct from every exit another operation holds.
         let pools = self.pools.clone();
         let acquirer = self.acquirer.clone();
         async move {
-            let (transport, lease) = pools.acquire_bound(acquirer.as_ref()).await?;
+            let (transport, lease) = pools.acquire_proven(acquirer.as_ref()).await?;
             let member = crate::mixnet::speed::Member::new(transport, lease);
             let addr = member
                 .addr()
@@ -230,8 +234,24 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
     }
 
     fn dispose(&self, spent: crate::mixnet::speed::Member) {
+        // A finished survey is a completed round trip, so the exit's proof
+        // renews as the client retires.
+        self.pools.remember(
+            spent.node().clone(),
+            crate::correspondent::pool::exit_pool::Verdict::Proven,
+        );
         tokio::spawn(async move {
             spent.retire().await;
+        });
+    }
+
+    fn abandon(&self, dead: crate::mixnet::speed::Member) {
+        self.pools.remember(
+            dead.node().clone(),
+            crate::correspondent::pool::exit_pool::Verdict::Failed,
+        );
+        tokio::spawn(async move {
+            dead.retire().await;
         });
     }
 
@@ -340,11 +360,6 @@ mod tests {
     #[test]
     fn the_wave_width_is_fixed() {
         assert_eq!(SURVEY_WAVE_WIDTH, 4);
-        assert_eq!(
-            crate::mixnet::sweep::indexer_lanes(SURVEY_WAVE_WIDTH),
-            3,
-            "the Sentinel holds the fourth lane"
-        );
     }
 
     /// HYPOTHESIS: the judgment compares against the wire's chain

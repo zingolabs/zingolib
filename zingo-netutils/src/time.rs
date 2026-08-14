@@ -224,6 +224,11 @@ pub const PROBE_LEG_TIMEOUT: Duration = Duration::from_secs(20);
 /// trips through a live exit landed under two seconds.
 pub const SENTINEL_BUDGET: Duration = Duration::from_millis(3_500);
 
+/// One Nym network epoch, the hourly topology rotation after which an
+/// observation about an Exit Node describes a network that no longer
+/// exists.
+pub const NYM_EPOCH: Duration = Duration::from_secs(60 * 60);
+
 /// Per-server bound on the ranking `get_info` sweep, deliberately tight so
 /// one slow server cannot block the fastest-first ordering.
 pub const SERVER_RANKING_TIMEOUT: Duration = Duration::from_secs(5);
