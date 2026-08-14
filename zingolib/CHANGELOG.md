@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The Server-Selection Sweep probes and assigns every indexer before its
+  verdict (ruled 2026-08-14): no healthy answer ends the survey early, a
+  healthy pinned server still wins outright, and otherwise the sync
+  indexer is drawn among every healthy answer, all of which are
+  draw-eligible, with the transmit candidates excluding the sync
+  operator so different operations select different indexers.
+
 ### Deprecated
 
 ### Added
