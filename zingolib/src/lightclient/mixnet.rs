@@ -210,8 +210,9 @@ impl LightClient {
             });
         match attached {
             Ok(proxy) => {
-                // The mobile host owns the attached endpoint's exit, so the
-                // Standing Client carries no lease of its own.
+                // The mobile host drew the attached endpoint's exit outside
+                // this session's Exit Pool, so the Standing Client holds no
+                // exit_reservation.
                 self.mixnet_slot = crate::mixnet::MixnetSlot::Attached(
                     crate::mixnet::StandingClient::new(proxy, None),
                 );
