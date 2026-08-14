@@ -46,7 +46,7 @@ use zingo_net_diag::{NetOpFailure, NetOpStage};
 use crate::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceProgress, RaceState};
 use crate::error::NymProxyError;
 use crate::mixnet_connect::seeded_shuffle;
-use crate::responsiveness::acquisition_launch_policy;
+use crate::arm_race::acquisition_launch_policy;
 
 /// Default Nym API URL for mainnet.
 const DEFAULT_NYM_API_URL: &str = "https://validator.nymtech.net/api/";
@@ -55,7 +55,7 @@ const DEFAULT_NYM_API_URL: &str = "https://validator.nymtech.net/api/";
 /// discovered node when the population is smaller.
 fn draw_clutch(mut discovered: Vec<String>) -> Vec<String> {
     seeded_shuffle(&mut discovered, time_entropy_seed());
-    discovered.truncate(crate::responsiveness::RESERVATION_CLUTCH_SIZE);
+    discovered.truncate(crate::arm_race::RESERVATION_CLUTCH_SIZE);
     discovered
 }
 
@@ -384,9 +384,6 @@ fn exit_node_attempt_stage(error: &NymProxyError) -> NetOpStage {
         NymProxyError::AttemptTimeout(secs) => NetOpStage::TimedOut {
             after_ms: secs * 1000,
         },
-        // The tunnel stood and carried nothing, which is the exit's failure
-        // and never the destination's.
-        NymProxyError::CarriesNothing(_) => NetOpStage::TunnelTransport,
     }
 }
 
@@ -598,7 +595,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::responsiveness::RESERVATION_CLUTCH_SIZE;
+    use crate::arm_race::RESERVATION_CLUTCH_SIZE;
     use crate::time::HEDGE_INTERVAL;
 
     // The shuffling and retry-engine logic is tested in `mixnet_connect`,

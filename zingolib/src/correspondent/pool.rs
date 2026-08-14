@@ -19,35 +19,17 @@ pub(crate) trait PoolTransport: Send + 'static {
     fn stop(self) -> impl std::future::Future<Output = ()> + Send;
 }
 
-/// The sealed category of a bound exit's Correspondent exposure.
-pub(crate) trait ExitUse: sealed::Sealed + Send + 'static {}
-
-/// The category fanning out to many Correspondents for its one holder.
-pub(crate) enum Shared {}
-
-mod sealed {
-    pub(crate) trait Sealed {}
-    impl Sealed for super::Shared {}
-}
-
-impl ExitUse for Shared {}
-
 /// One ready client: a transport with a bound exit and the owning lease of
-/// the Exit Node it bound, in the exit-use category `U`.
-pub(crate) struct Member<T, U: ExitUse> {
+/// the Exit Node it bound.
+pub(crate) struct Member<T> {
     transport: T,
     lease: exit_pool::Reservation,
-    category: std::marker::PhantomData<U>,
 }
 
-impl<T: PoolTransport, U: ExitUse> Member<T, U> {
-    /// A member in the exit-use category its acquisition site declares.
+impl<T: PoolTransport> Member<T> {
+    /// A member over `transport`, holding `lease` for its life.
     pub(crate) fn new(transport: T, lease: exit_pool::Reservation) -> Self {
-        Member {
-            transport,
-            lease,
-            category: std::marker::PhantomData,
-        }
+        Member { transport, lease }
     }
 
     /// The bound Exit Node's identity.
@@ -59,11 +41,8 @@ impl<T: PoolTransport, U: ExitUse> Member<T, U> {
     pub(crate) async fn retire(self) {
         self.transport.stop().await;
     }
-}
 
-impl<T: PoolTransport> Member<T, Shared> {
-    /// The tunnel address for one more Correspondent contact, while the
-    /// transport lives.
+    /// The tunnel address for one more contact, while the transport lives.
     pub(crate) fn addr(&self) -> Option<std::net::SocketAddr> {
         self.transport.socks5_addr()
     }
@@ -351,11 +330,11 @@ mod tests {
         }
     }
 
-    /// HYPOTHESIS: a Shared member serves repeated dials for its one
-    /// holder, then retires once.
+    /// HYPOTHESIS: a member serves repeated dials for its one holder, then
+    /// retires once.
     #[tokio::test]
-    async fn a_shared_member_serves_repeated_dials() {
-        let member: Member<FakeTransport, Shared> = Member::new(
+    async fn a_member_serves_repeated_dials() {
+        let member: Member<FakeTransport> = Member::new(
             FakeTransport { ready: true },
             exit_pool::Reservation::dangling_for_test("exit-shared"),
         );
@@ -447,7 +426,7 @@ mod bind_failure_absorption {
     async fn a_bind_failure_spends_a_birth_and_convicts_the_drawn() {
         let pools = Pools::new();
         let acquirer = BindRefusingAcquirer {
-            census: MAX_PROVING_BIRTHS * zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE,
+            census: MAX_PROVING_BIRTHS * zingo_netutils::arm_race::RESERVATION_CLUTCH_SIZE,
             acquisitions: AtomicUsize::new(0),
         };
         let Err(refusal) = pools.acquire_proven(&acquirer).await else {

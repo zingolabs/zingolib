@@ -298,7 +298,7 @@ impl ExitPool {
         }
         let clutch: HashSet<Reservation> = ordered
             .into_iter()
-            .take(zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE)
+            .take(zingo_netutils::arm_race::RESERVATION_CLUTCH_SIZE)
             .map(|node| {
                 guarded.issued.insert(node.clone());
                 Reservation {
@@ -314,7 +314,7 @@ impl ExitPool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE;
+    use zingo_netutils::arm_race::RESERVATION_CLUTCH_SIZE;
 
     fn seeded(count: usize) -> Arc<Mutex<ExitPool>> {
         let pool = Arc::new(Mutex::new(ExitPool::default()));

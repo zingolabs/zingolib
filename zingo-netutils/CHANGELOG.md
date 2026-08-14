@@ -17,22 +17,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ResponsivenessClass`, its wire token, and the proxy binary's
   `--responsiveness` argument are gone; `NymProxy::start` and `start_over`
   lose their type parameter. Every acquisition now races under the one
-  hedged launch policy (`responsiveness::acquisition_launch_policy`), an
+  hedged launch policy (`arm_race::acquisition_launch_policy`), an
   arm wins by binding, and the child-side Sentinel gate is deleted: proof
   of the bound exit belongs to the layer above the SOCKS5 seam, which
   probes once per birth instead of once per losing arm. The speed class's
   in-race proving starved acquisitions whenever no arm could complete a
   round trip quickly, stalling the session tunnel at `Bootstrapping`
   past 90 seconds in three consecutive measured runs.
+- BREAKING: the retirement's residue is gone with it. The `responsiveness`
+  module is deleted, with `RESERVATION_CLUTCH_SIZE` and
+  `acquisition_launch_policy` re-homed in `arm_race` beside the policy they
+  configure; `LaunchPolicy::Saturating`, which nothing outside its own
+  tests constructed, is removed; and `NymProxyError::CarriesNothing`, whose
+  only mint left with the child-side Sentinel gate, is removed.
 
 ### Changed
 - BREAKING: an acquisition's clutch grows from three Exit Node reservations
   to four, and a racing arm now wins by carrying a round trip rather than by
   binding a socket. Building a mixnet client never contacts the exit, so a
   dead exit won the race as readily as a live one. Under the speed priority
-  each arm carries a Sentinel round trip before it can win, and an arm whose
-  exit stays silent loses with the new `NymProxyError::CarriesNothing`,
-  classified at `NetOpStage::TunnelTransport`.
+  each arm carries a Sentinel round trip before it can win, and an arm
+  whose exit stays silent loses the race.
 
 ### Added
 - `sentinel` module (with the `socks5-transmit` feature): `probe_sentinel`
