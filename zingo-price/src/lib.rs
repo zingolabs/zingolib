@@ -153,9 +153,9 @@ impl PriceList {
     /// and [`Self::current_price`] reflects the latest fetch.
     ///
     /// This is the storage half of a price update. A caller that must not
-    /// hold a lock across the network wait runs [`race_current_price`]
-    /// first, then records the result here under a briefly-held lock (the
-    /// net-diag polling-blackout remedy).
+    /// hold a lock across the network wait runs the wallet's speed-priority
+    /// wave first, then records the result here under a briefly-held lock
+    /// (the net-diag polling-blackout remedy).
     pub fn record_current_price(&mut self, price: Price) {
         self.current_price = Some(price);
     }
