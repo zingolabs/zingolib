@@ -314,14 +314,17 @@ async fn run_proof_acquisition(
     adjudicate_standing_proof(slot, pools, status, evidence).await;
 }
 
-/// The expiry watchdog: sleeps until the Standing Client's proof deadline
-/// and fires a new ProofAcquisition at that earliest feasible moment,
-/// following replacement clients in the slot until the slot empties.
+/// The expiry watchdog: sleeps until the Standing Client's proof deadline,
+/// fires a new ProofAcquisition at that earliest feasible moment, follows
+/// replacement clients in the slot until the slot empties, and parks on the
+/// status channel whenever an acquisition leaves a lapsed deadline
+/// unadvanced.
 async fn standing_proof_watchdog(
     slot: std::sync::Arc<std::sync::Mutex<crate::mixnet::MixnetSlot>>,
     pools: std::sync::Arc<crate::correspondent::pool::Pools>,
     status: crate::mixnet::driver::StatusPublisher,
 ) {
+    let mut wake = status.subscribe();
     loop {
         let deadline = {
             let guarded = slot.lock().expect("mixnet slot mutex");
@@ -344,6 +347,26 @@ async fn standing_proof_watchdog(
         };
         if due {
             run_proof_acquisition(slot.clone(), pools.clone(), status.clone()).await;
+            // Mark the channel seen before the progress read, so an install
+            // landing after the read still wakes the park below.
+            wake.borrow_and_update();
+            let advanced = {
+                let guarded = slot.lock().expect("mixnet slot mutex");
+                match &*guarded {
+                    crate::mixnet::MixnetSlot::Attached(client) => {
+                        client.proof_deadline() > deadline
+                    }
+                    _ => return,
+                }
+            };
+            // An acquisition that could not act — a condemned client
+            // mid-failover, a forsaken exhaustion, an address-less proxy —
+            // left the lapsed deadline in place, and re-arming on it would
+            // spin a core until vacate: park until the slot's next
+            // published transition instead.
+            if !advanced && wake.changed().await.is_err() {
+                return;
+            }
         }
     }
 }
@@ -1162,6 +1185,62 @@ mod tests {
                 ),
                 "the replacement stands in the slot"
             );
+        }
+    }
+
+    mod expiry_watchdog_parks {
+        //! The watchdog's progress discipline (finding 3 of the 2026-08-14
+        //! PR #2695 review): an acquisition that cannot advance a lapsed
+        //! proof deadline parks the watchdog on the status channel instead
+        //! of spinning it against a deadline nothing will move.
+        use crate::mixnet::ExitNodeId;
+
+        /// How long the test observes the armed watchdog for starvation.
+        const PARK_OBSERVATION: std::time::Duration = std::time::Duration::from_millis(50);
+
+        /// A Standing Client over an attach to `addr`, for slot tests.
+        fn attached_client(addr: std::net::SocketAddr) -> crate::mixnet::StandingClient {
+            let proxy = crate::mixnet::MixnetProxy::attach(
+                addr,
+                &[ExitNodeId::from("exit-alpha")],
+                crate::mixnet::status_publisher(),
+            )
+            .expect("the attach accepts a bound exit");
+            crate::mixnet::StandingClient::new(proxy, None, true)
+        }
+
+        /// HYPOTHESIS: a lapsed deadline the acquisition cannot advance — a
+        /// condemned client mid-failover — parks the watchdog awaiting the
+        /// slot's next published transition. Falsified if the watchdog's
+        /// hot loop starves this current-thread runtime, so the sleep below
+        /// never completes and the test dies by timeout.
+        #[tokio::test]
+        async fn a_stalled_acquisition_parks_the_watchdog() {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind an ephemeral port");
+            let addr = listener.local_addr().expect("local addr");
+            let client = attached_client(addr);
+            client.condemn();
+            client.set_proof_deadline(std::time::Instant::now());
+            let slot = std::sync::Arc::new(std::sync::Mutex::new(
+                crate::mixnet::MixnetSlot::Attached(client),
+            ));
+            let pools = crate::correspondent::pool::Pools::new();
+            let status = crate::mixnet::status_publisher();
+
+            let watchdog = tokio::spawn(super::super::standing_proof_watchdog(
+                slot.clone(),
+                pools,
+                status,
+            ));
+
+            tokio::time::sleep(PARK_OBSERVATION).await;
+            assert!(
+                !watchdog.is_finished(),
+                "the parked watchdog still guards the slot"
+            );
+            watchdog.abort();
         }
     }
 
