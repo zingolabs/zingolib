@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only mint left with the child-side Sentinel gate, is removed.
 
 ### Changed
+- `time::PROGRESS_HEARTBEAT_INTERVAL` settles on a ten-second cadence. The
+  two-second value was a temporary diagnostic aid for the silent-phase
+  reports, and its narration crowded the interactive session it served.
 - BREAKING: an acquisition's clutch grows from three Exit Node reservations
   to four, and a racing arm now wins by carrying a round trip rather than by
   binding a socket. Building a mixnet client never contacts the exit, so a

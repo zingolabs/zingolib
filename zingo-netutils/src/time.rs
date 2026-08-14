@@ -203,11 +203,9 @@ pub const MIGRATION_SUBMIT_TIMEOUT: Duration = Duration::from_secs(30);
 pub const CONFIRMATION_POLL_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Every dispatched CLI command narrates its latest progress line at this
-/// interval while it runs, so no command is silent past one interval; a
-/// command that completes before the first tick stays silent. Temporarily
-/// two seconds to strengthen the diagnostic signal while the silent-phase
-/// reports are investigated; the ratified cadence is eight.
-pub const PROGRESS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(2);
+/// interval while it runs, so no command is silent past one interval and a
+/// command that completes before the first tick stays silent.
+pub const PROGRESS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
 
 // ---------------------------------------------------------------------------
 // Diagnostics and server selection
