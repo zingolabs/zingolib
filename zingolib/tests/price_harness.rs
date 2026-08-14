@@ -179,6 +179,12 @@ fn speed_mode(failure: &zingolib::mixnet::speed::SpeedError) -> String {
         zingolib::mixnet::speed::SpeedError::NoLiveExit { draws, budget } => {
             format!("no live exit in {draws} draws of {}ms", budget.as_millis())
         }
+        zingolib::mixnet::speed::SpeedError::DeadlineExhausted { draws, budget } => {
+            format!(
+                "deadline exhausted after {draws} draws of a {}s budget",
+                budget.as_secs()
+            )
+        }
     }
 }
 

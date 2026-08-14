@@ -224,6 +224,31 @@ pub const PROBE_LEG_TIMEOUT: Duration = Duration::from_secs(20);
 /// trips through a live exit landed under two seconds.
 pub const SENTINEL_BUDGET: Duration = Duration::from_millis(3_500);
 
+/// How many expected proof cycles a whole speed-prioritized acquisition —
+/// every redraw, birth, and wave together — may spend (ruled 2026-08-14).
+pub const SPEED_ACQUISITION_PROOFS: u64 = 10;
+
+/// ```
+/// // One shared deadline bounds a speed-prioritized operation end to end:
+/// // ten expected proof cycles, each an unremarkable bootstrap's exit
+/// // announcement plus the Sentinel exchange (285 seconds, ruled
+/// // 2026-08-14).
+/// use zingo_netutils::time::{
+///     EXIT_ANNOUNCEMENT_GRACE, SENTINEL_BUDGET, SPEED_ACQUISITION_DEADLINE,
+///     SPEED_ACQUISITION_PROOFS,
+/// };
+/// assert_eq!(
+///     SPEED_ACQUISITION_DEADLINE.as_millis(),
+///     (EXIT_ANNOUNCEMENT_GRACE.as_millis() + SENTINEL_BUDGET.as_millis())
+///         * SPEED_ACQUISITION_PROOFS as u128
+/// );
+/// assert_eq!(SPEED_ACQUISITION_DEADLINE.as_secs(), 285);
+/// ```
+pub const SPEED_ACQUISITION_DEADLINE: Duration = Duration::from_millis(
+    (EXIT_ANNOUNCEMENT_GRACE.as_millis() as u64 + SENTINEL_BUDGET.as_millis() as u64)
+        * SPEED_ACQUISITION_PROOFS,
+);
+
 /// ```
 /// // One Nym network epoch: the hourly topology rotation after which an
 /// // observation about an Exit Node describes a network that no longer

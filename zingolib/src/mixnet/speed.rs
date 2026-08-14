@@ -88,10 +88,27 @@ pub(crate) enum SpeedProgress {
 pub(crate) async fn run_speed_prioritized<T: SpeedPrioritized>(
     operation: &T,
 ) -> Result<(Vec<T::Outcome>, Member), SpeedError> {
+    // One shared deadline bounds the whole run — every redraw, birth, and
+    // wave together — so the draw and birth budgets can no longer multiply
+    // into an unbounded go-online wait.
+    let deadline = tokio::time::Instant::now() + zingo_netutils::time::SPEED_ACQUISITION_DEADLINE;
+    let refusal = |draws: usize| SpeedError::DeadlineExhausted {
+        draws,
+        budget: zingo_netutils::time::SPEED_ACQUISITION_DEADLINE,
+    };
     for draw in 1..=MAX_SPEED_EXIT_DRAWS {
         operation.narrate(SpeedProgress::Acquiring { draw });
-        let (member, socks5) = operation.acquire().await?;
-        match run_wave(operation, socks5).await {
+        let Ok(acquired) = tokio::time::timeout_at(deadline, operation.acquire()).await else {
+            return Err(refusal(draw - 1));
+        };
+        let (member, socks5) = acquired?;
+        let Ok(wave) = tokio::time::timeout_at(deadline, run_wave(operation, socks5)).await else {
+            // The deadline, not the exit, ended this wave: the member
+            // retires without a verdict, because nothing was proven.
+            member.retire().await;
+            return Err(refusal(draw));
+        };
+        match wave {
             WaveEnd::Exhausted(outcomes) if !operation.answered(&outcomes) => {
                 operation.narrate(SpeedProgress::ExitAbandoned { draw });
                 operation.abandon(member);
@@ -125,6 +142,17 @@ pub enum SpeedError {
         /// How many exits were drawn and proven silent.
         draws: usize,
         /// The budget each was given before it was condemned.
+        budget: std::time::Duration,
+    },
+    /// The operation's one shared deadline elapsed before any wave settled.
+    #[error(
+        "the speed-prioritized operation exceeded its {}s acquisition deadline after {draws} draws",
+        budget.as_secs()
+    )]
+    DeadlineExhausted {
+        /// How many draws completed before the deadline elapsed.
+        draws: usize,
+        /// The whole operation's shared deadline.
         budget: std::time::Duration,
     },
 }
@@ -166,6 +194,74 @@ pub(crate) async fn run_wave<T: SpeedPrioritized>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An operation whose acquisition never completes, so only a shared
+    /// deadline can end the run.
+    struct HangingAcquire;
+
+    impl SpeedPrioritized for HangingAcquire {
+        type Target = usize;
+        type Outcome = bool;
+
+        fn targets(&self) -> Vec<usize> {
+            Vec::new()
+        }
+
+        fn probe(
+            &self,
+            _socks5: SocketAddr,
+            _target: usize,
+        ) -> impl std::future::Future<Output = bool> + Send {
+            std::future::ready(false)
+        }
+
+        fn settled(&self, _outcomes: &[bool]) -> bool {
+            false
+        }
+
+        fn answered(&self, _outcomes: &[bool]) -> bool {
+            false
+        }
+
+        fn acquire(
+            &self,
+        ) -> impl std::future::Future<
+            Output = Result<(Member, SocketAddr), crate::mixnet::acquire::TransportError>,
+        > + Send {
+            std::future::pending()
+        }
+
+        fn dispose(&self, _spent: Member) {}
+
+        fn abandon(&self, _dead: Member) {}
+
+        fn narrate(&self, _phase: SpeedProgress) {}
+    }
+
+    /// HYPOTHESIS: one shared deadline bounds the whole run, so an
+    /// acquisition that never completes refuses at the ruled ten-proof
+    /// budget instead of holding the go-online moment open. Falsified if
+    /// the run outlives the deadline.
+    #[tokio::test(start_paused = true)]
+    async fn the_shared_deadline_ends_a_hanging_acquisition() {
+        let outcome = tokio::time::timeout(
+            zingo_netutils::time::SPEED_ACQUISITION_DEADLINE
+                + zingo_netutils::time::SENTINEL_BUDGET,
+            run_speed_prioritized(&HangingAcquire),
+        )
+        .await;
+        let Ok(Err(refusal)) = outcome else {
+            panic!("the run must refuse at its deadline, not hang past it");
+        };
+        assert!(
+            matches!(
+                refusal,
+                SpeedError::DeadlineExhausted { budget, .. }
+                    if budget == zingo_netutils::time::SPEED_ACQUISITION_DEADLINE
+            ),
+            "the refusal names the ruled deadline, got: {refusal}"
+        );
+    }
 
     /// An operation whose targets answer from a script, so the wave's own
     /// rules are testable without a tunnel.
