@@ -42,6 +42,12 @@ pub enum MixnetMode {
     Bootstrapping,
     /// The mixnet is up. Mixnet-only surfaces route through it.
     Ready,
+    /// The mixnet is up on stale proof: the Standing Client was born
+    /// trusting an EpochProven observation some earlier client earned, and
+    /// no round trip of its own has yet confirmed the exit. Routes exactly
+    /// as [`MixnetMode::Ready`]; the first confirmed round trip promotes,
+    /// and an exit-implicating failure demotes through the failover.
+    PreviouslyProvenThisEpoch,
     /// The proxy exited unexpectedly after being spawned, during bootstrap or
     /// after reaching ready. Distinct from [`MixnetMode::SwitchedOff`]: this
     /// is an unconsented loss of the transport, so mixnet-only surfaces
@@ -55,18 +61,23 @@ impl MixnetMode {
     /// wire round-trip tests iterate this array, so a new state that is not
     /// added here fails the exhaustiveness test rather than shipping
     /// untested.
-    pub const ALL: [MixnetMode; 5] = [
+    pub const ALL: [MixnetMode; 6] = [
         MixnetMode::Unattached,
         MixnetMode::SwitchedOff,
         MixnetMode::Bootstrapping,
         MixnetMode::Ready,
+        MixnetMode::PreviouslyProvenThisEpoch,
         MixnetMode::Died,
     ];
 
-    /// Whether a mixnet-only surface may proceed over the mixnet right now.
-    /// True only in [`MixnetMode::Ready`].
+    /// Whether a mixnet-only surface may proceed over the mixnet right
+    /// now: true for earned [`MixnetMode::Ready`] and for stale-proven
+    /// [`MixnetMode::PreviouslyProvenThisEpoch`], which routes the same.
     pub fn is_ready(self) -> bool {
-        matches!(self, MixnetMode::Ready)
+        matches!(
+            self,
+            MixnetMode::Ready | MixnetMode::PreviouslyProvenThisEpoch
+        )
     }
 
     /// Whether this mode is the recovery affordance's target: true exactly
@@ -98,6 +109,7 @@ impl MixnetMode {
             MixnetMode::SwitchedOff => "switched_off",
             MixnetMode::Bootstrapping => "bootstrapping",
             MixnetMode::Ready => "ready",
+            MixnetMode::PreviouslyProvenThisEpoch => "previously_proven_this_epoch",
             MixnetMode::Died => "died",
         }
     }
@@ -168,27 +180,56 @@ pub(crate) struct StandingClient {
     /// The bound exit's Reservation, recycled by drop; `None` for a
     /// mobile-attached endpoint, whose exit the host drew outside this
     /// session's Exit Pool.
-    // Held for its Drop alone today; the failover clause will read it.
-    #[allow(dead_code)]
     exit_reservation: Option<crate::correspondent::pool::exit_pool::Reservation>,
+    /// Whether this client's birth answered the Sentinel itself; a
+    /// trusting birth stands on a stale EpochProven observation instead.
+    born_probed: bool,
+    /// Whether a round trip of this client's own has confirmed the exit,
+    /// which promotes stale proof to earned.
+    confirmed: std::sync::atomic::AtomicBool,
 }
 
 impl StandingClient {
     /// A Standing Client over `proxy`, holding `exit_reservation` for its
-    /// life.
+    /// life, with `born_probed` recording whether its birth answered the
+    /// Sentinel or trusted a stale EpochProven observation.
     pub(crate) fn new(
         proxy: MixnetProxy,
         exit_reservation: Option<crate::correspondent::pool::exit_pool::Reservation>,
+        born_probed: bool,
     ) -> Self {
         StandingClient {
             proxy,
             exit_reservation,
+            born_probed,
+            confirmed: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
     /// The client's transport.
     pub(crate) fn proxy(&self) -> &MixnetProxy {
         &self.proxy
+    }
+
+    /// The bound exit's identity, when this session's Exit Pool issued it.
+    pub(crate) fn exit_node(&self) -> Option<&crate::mixnet::ExitNodeId> {
+        self.exit_reservation
+            .as_ref()
+            .map(crate::correspondent::pool::exit_pool::Reservation::node)
+    }
+
+    /// Whether this client still stands on stale, unconfirmed proof.
+    pub(crate) fn stale_unconfirmed(&self) -> bool {
+        !self.born_probed && !self.confirmed.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Records a completed round trip of this client's own, returning
+    /// whether this call was the promoting one.
+    pub(crate) fn note_round_trip(&self) -> bool {
+        !self
+            .confirmed
+            .swap(true, std::sync::atomic::Ordering::AcqRel)
+            && !self.born_probed
     }
 
     /// Stops the transport; dropping self recycles the reservation after.
@@ -199,12 +240,19 @@ impl StandingClient {
 
 impl MixnetSlot {
     /// The Mixnet Mode this slot is in: the slot's own state when no
-    /// Standing Client is attached, otherwise the client's lifecycle state.
+    /// Standing Client is attached, otherwise the client's lifecycle state,
+    /// with a live client on stale unconfirmed proof typed as
+    /// [`MixnetMode::PreviouslyProvenThisEpoch`] rather than earned Ready.
     pub(crate) fn mode(&self) -> MixnetMode {
         match self {
             MixnetSlot::Unattached => MixnetMode::Unattached,
             MixnetSlot::SwitchedOff => MixnetMode::SwitchedOff,
-            MixnetSlot::Attached(client) => client.proxy().mode(),
+            MixnetSlot::Attached(client) => match client.proxy().mode() {
+                MixnetMode::Ready if client.stale_unconfirmed() => {
+                    MixnetMode::PreviouslyProvenThisEpoch
+                }
+                lifecycle => lifecycle,
+            },
             #[cfg(any(test, feature = "testutils"))]
             MixnetSlot::AttachedForTests { .. } => MixnetMode::Ready,
         }
@@ -272,11 +320,15 @@ mod wire_contract {
 
     /// The ratified tokens, pinned literally so a rename in `as_str` cannot
     /// pass silently: this list is the wire contract of ADR 0024.
-    const RATIFIED_TOKENS: [(MixnetMode, &str); 5] = [
+    const RATIFIED_TOKENS: [(MixnetMode, &str); 6] = [
         (MixnetMode::Unattached, "unattached"),
         (MixnetMode::SwitchedOff, "switched_off"),
         (MixnetMode::Bootstrapping, "bootstrapping"),
         (MixnetMode::Ready, "ready"),
+        (
+            MixnetMode::PreviouslyProvenThisEpoch,
+            "previously_proven_this_epoch",
+        ),
         (MixnetMode::Died, "died"),
     ];
 
@@ -324,8 +376,58 @@ mod wire_contract {
                 | MixnetMode::SwitchedOff
                 | MixnetMode::Bootstrapping
                 | MixnetMode::Ready
+                | MixnetMode::PreviouslyProvenThisEpoch
                 | MixnetMode::Died => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod stale_proof {
+    use super::{MixnetMode, MixnetSlot, StandingClient};
+
+    /// HYPOTHESIS: a Standing Client born on stale proof reports
+    /// PreviouslyProvenThisEpoch until a round trip of its own confirms
+    /// the exit, and Ready after — falsified if stale proof masquerades
+    /// as earned Ready, the trust hazard of a trusting birth.
+    #[tokio::test]
+    async fn stale_proof_is_typed_until_a_round_trip_confirms_it() {
+        let proxy = crate::mixnet::MixnetProxy::ready_for_slot_tests(
+            "127.0.0.1:1080".parse().expect("the test address parses"),
+            vec![crate::mixnet::ExitNodeId::from("exit-stale-proven")],
+        );
+        let slot = MixnetSlot::Attached(StandingClient::new(proxy, None, false));
+
+        assert_eq!(
+            slot.mode(),
+            MixnetMode::PreviouslyProvenThisEpoch,
+            "stale proof must not masquerade as earned Ready"
+        );
+
+        if let MixnetSlot::Attached(client) = &slot {
+            assert!(
+                client.note_round_trip(),
+                "the first confirmed round trip is the promoting one"
+            );
+        }
+        assert_eq!(
+            slot.mode(),
+            MixnetMode::Ready,
+            "a confirmed round trip promotes stale proof to earned"
+        );
+    }
+
+    /// HYPOTHESIS: a Standing Client whose birth answered the Sentinel
+    /// reports earned Ready from its first instant — falsified if a probed
+    /// birth is typed stale.
+    #[tokio::test]
+    async fn a_probed_birth_is_ready_from_its_first_instant() {
+        let proxy = crate::mixnet::MixnetProxy::ready_for_slot_tests(
+            "127.0.0.1:1080".parse().expect("the test address parses"),
+            vec![crate::mixnet::ExitNodeId::from("exit-earned")],
+        );
+        let slot = MixnetSlot::Attached(StandingClient::new(proxy, None, true));
+        assert_eq!(slot.mode(), MixnetMode::Ready);
     }
 }

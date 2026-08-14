@@ -70,6 +70,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: `MixnetMode` gains a sixth state, `PreviouslyProvenThisEpoch`
+  (wire token `previously_proven_this_epoch`), adjacent to `Ready`: the
+  Standing Client is up on stale proof — born trusting an EpochProven
+  observation an earlier client earned — and no round trip of its own has
+  yet confirmed the exit. It routes exactly as `Ready`; the first
+  confirmed round trip (a delivered mixnet transmission or an answered
+  correspondent probe) promotes it to earned `Ready` and refreshes the
+  exit's EpochProven observation. Consumers matching `MixnetMode`
+  exhaustively, including mobile's FFI mapping, must add the state.
 - BREAKING: the session's standing client is born as a Proven Client.
   `enable_mixnet` and `enable_mixnet_via_host` lose their responsiveness
   type parameter and return once the client is bound and its exit proven,

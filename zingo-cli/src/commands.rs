@@ -1350,6 +1350,13 @@ fn render_status(
             Some(addr) => format!("Mixnet Mode: ready (SOCKS5 {addr})"),
             None => "Mixnet Mode: ready".to_string(),
         },
+        MixnetMode::PreviouslyProvenThisEpoch => match socks5_addr {
+            Some(addr) => format!(
+                "Mixnet Mode: previously proven this epoch (SOCKS5 {addr}; the exit's \
+                 proof is stale until a round trip of this session confirms it)"
+            ),
+            None => "Mixnet Mode: previously proven this epoch".to_string(),
+        },
         MixnetMode::Died => "Mixnet Mode: died. The proxy exited unexpectedly. Send and \
              price-fetch refuse and will not fall back to clearnet. Run `network on` to \
              restart the proxy."
@@ -1420,7 +1427,7 @@ async fn await_bootstrap_outcome(
     loop {
         let status = rx.borrow_and_update().clone();
         match status.mode {
-            MixnetMode::Ready => {
+            MixnetMode::Ready | MixnetMode::PreviouslyProvenThisEpoch => {
                 return BootstrapOutcome::Ready {
                     exits: status.exits.clone(),
                 };

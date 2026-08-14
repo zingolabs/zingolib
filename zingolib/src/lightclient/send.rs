@@ -917,7 +917,16 @@ impl LightClient {
             )
             .await;
             let (txid_from_server, route) = match transmit_outcome {
-                Ok(server_txid_and_route) => server_txid_and_route,
+                Ok(server_txid_and_route) => {
+                    // A delivered mixnet transmission is a completed round
+                    // trip through the Standing Client, promoting stale
+                    // proof to earned.
+                    #[cfg(feature = "nym")]
+                    if matches!(server_txid_and_route.1, TransmitRoute::Mixnet { .. }) {
+                        self.note_standing_round_trip();
+                    }
+                    server_txid_and_route
+                }
                 Err(failure) => {
                     pepper_sync::set_transactions_failed(
                         &mut wallet.wallet_transactions,

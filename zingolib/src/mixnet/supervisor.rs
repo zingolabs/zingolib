@@ -642,6 +642,29 @@ fn parse_exit_line(line: &str) -> Option<crate::mixnet::ExitNodeId> {
         .and_then(|identity| crate::mixnet::ExitNodeId::parse(identity).ok())
 }
 
+#[cfg(test)]
+impl MixnetProxy {
+    /// A transport already in [`MixnetMode::Ready`] with no child, watcher,
+    /// or network behind it, for slot-mapping unit tests.
+    pub(crate) fn ready_for_slot_tests(
+        socks5_addr: SocketAddr,
+        exits: Vec<crate::mixnet::ExitNodeId>,
+    ) -> Self {
+        MixnetProxy {
+            state: Arc::new(Mutex::new(ProxyState {
+                mode: MixnetMode::Ready,
+                socks5_addr: Some(socks5_addr),
+                exits,
+                bootstrap_detail: None,
+                death: None,
+            })),
+            transport: Transport::Attached {
+                driver: tokio::spawn(async {}),
+            },
+        }
+    }
+}
+
 impl crate::correspondent::pool::PoolTransport for MixnetProxy {
     fn socks5_addr(&self) -> Option<std::net::SocketAddr> {
         MixnetProxy::socks5_addr(self)

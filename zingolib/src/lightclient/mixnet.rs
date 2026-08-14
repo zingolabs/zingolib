@@ -76,8 +76,8 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
             // The price client's lifecycle publishes into its own channel,
             // never the session's: subscribers watch the standing client.
             let publisher = crate::mixnet::status_publisher();
-            let (transport, lease) = pools.acquire_proven(acquirer.as_ref(), &publisher).await?;
-            let member = crate::mixnet::speed::Member::new(transport, lease);
+            let birth = pools.acquire_proven(acquirer.as_ref(), &publisher).await?;
+            let member = crate::mixnet::speed::Member::new(birth.transport, birth.lease);
             let addr = member
                 .addr()
                 .ok_or(crate::mixnet::acquire::TransportError::DiedBeforeUse)?;
@@ -257,10 +257,13 @@ impl LightClient {
             .acquire_proven(acquirer.as_ref(), &self.mixnet_status)
             .await
         {
-            Ok((proxy, lease)) => {
-                self.mixnet_slot = crate::mixnet::MixnetSlot::Attached(
-                    crate::mixnet::StandingClient::new(proxy, Some(lease)),
-                );
+            Ok(birth) => {
+                self.mixnet_slot =
+                    crate::mixnet::MixnetSlot::Attached(crate::mixnet::StandingClient::new(
+                        birth.transport,
+                        Some(birth.lease),
+                        birth.probed,
+                    ));
                 self.correspondent_pools.set_acquirer(acquirer);
                 // The birth published Bootstrapping and Ready into the
                 // session channel as it went; the settled slot publishes
@@ -274,6 +277,24 @@ impl LightClient {
                 self.publish_mixnet_slot_state();
                 Err(error)
             }
+        }
+    }
+
+    /// Records a completed round trip carried by the Standing Client,
+    /// promoting stale proof to earned Ready and refreshing the exit's
+    /// EpochProven observation.
+    pub(crate) fn note_standing_round_trip(&self) {
+        if let crate::mixnet::MixnetSlot::Attached(client) = &self.mixnet_slot
+            && client.note_round_trip()
+        {
+            if let Some(node) = client.exit_node() {
+                self.correspondent_pools.remember(
+                    node.clone(),
+                    crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
+                );
+            }
+            // Subscribers watching the session channel see the promotion.
+            self.publish_mixnet_slot_state();
         }
     }
 
@@ -351,8 +372,10 @@ impl LightClient {
                 // The mobile host drew the attached endpoint's exit outside
                 // this session's Exit Pool, so the Standing Client holds no
                 // exit_reservation.
+                // The attach readiness gate earns the proof end to end, so
+                // the hosted Standing Client is born probed.
                 self.mixnet_slot = crate::mixnet::MixnetSlot::Attached(
-                    crate::mixnet::StandingClient::new(proxy, None),
+                    crate::mixnet::StandingClient::new(proxy, None, true),
                 );
                 Ok(())
             }
@@ -543,10 +566,16 @@ impl LightClient {
             .filter(crate::mixnet::probe::probe_eligible)
             .collect();
         let history = self.indexer_history.clone();
-        Ok(futures::future::join_all(targets.iter().map(|indexer| {
+        let probes = futures::future::join_all(targets.iter().map(|indexer| {
             crate::mixnet::probe::probe_indexer(indexer, socks5_addr, timeout, &history)
         }))
-        .await)
+        .await;
+        // Any answered probe is a completed round trip through the Standing
+        // Client, promoting stale proof to earned.
+        if probes.iter().any(|probe| probe.leg.outcome.is_ok()) {
+            self.note_standing_round_trip();
+        }
+        Ok(probes)
     }
 
     /// Update and return the current ZEC price in USD by racing the three

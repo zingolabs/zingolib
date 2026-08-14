@@ -160,15 +160,16 @@ impl Pools {
         Ok((transport, lease))
     }
 
-    /// Births one Proven Client: a trusting birth when the bound exit's
+    /// Births one Proven Client — a trusting birth when the bound exit's
     /// fresh proof is trusted, otherwise a proving birth whose Sentinel
     /// refusal condemns the exit and tries a successor, refusing typed when
-    /// every birth failed its proof.
+    /// every birth failed its proof — returning `probed: false` for a
+    /// trusting birth so the caller can type the stale proof.
     pub(crate) async fn acquire_proven(
         &self,
         acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
         publisher: &crate::mixnet::driver::StatusPublisher,
-    ) -> Result<(crate::mixnet::MixnetProxy, exit_pool::Reservation), acquire::TransportError> {
+    ) -> Result<ProvenBirth, acquire::TransportError> {
         for _birth in 0..MAX_PROVING_BIRTHS {
             let (transport, lease) = self.acquire_bound(acquirer, publisher).await?;
             let trusted = {
@@ -176,7 +177,11 @@ impl Pools {
                 exits.epoch_proven(lease.node(), std::time::Instant::now())
             };
             if trusted {
-                return Ok((transport, lease));
+                return Ok(ProvenBirth {
+                    transport,
+                    lease,
+                    probed: false,
+                });
             }
             let Some(socks5) = transport.socks5_addr() else {
                 transport.stop().await;
@@ -189,7 +194,11 @@ impl Pools {
             .await;
             if evidence.proves_the_exit() {
                 self.remember(lease.node().clone(), exit_pool::ExitNodeHealthVerdict::EpochProven);
-                return Ok((transport, lease));
+                return Ok(ProvenBirth {
+                    transport,
+                    lease,
+                    probed: true,
+                });
             }
             self.remember(lease.node().clone(), exit_pool::ExitNodeHealthVerdict::Failed);
             transport.stop().await;
@@ -199,6 +208,18 @@ impl Pools {
             budget: zingo_netutils::time::SENTINEL_BUDGET,
         })
     }
+}
+
+/// One Proven Client's birth: the transport, its bound exit's lease, and
+/// whether the proof was earned by this birth's own Sentinel answer rather
+/// than trusted from a stale EpochProven observation.
+pub(crate) struct ProvenBirth {
+    /// The ready transport.
+    pub(crate) transport: crate::mixnet::MixnetProxy,
+    /// The bound exit's lease.
+    pub(crate) lease: exit_pool::Reservation,
+    /// Whether this birth answered the Sentinel itself.
+    pub(crate) probed: bool,
 }
 
 #[cfg(test)]
