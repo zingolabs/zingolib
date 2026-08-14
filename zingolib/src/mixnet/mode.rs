@@ -165,20 +165,25 @@ pub(crate) enum MixnetSlot {
 /// exit it was born proven on.
 pub(crate) struct StandingClient {
     proxy: MixnetProxy,
-    /// The bound exit's lease, recycled by drop; `None` for a
-    /// mobile-attached endpoint, whose exit the host owns.
+    /// The bound exit's Reservation, recycled by drop; `None` for a
+    /// mobile-attached endpoint, whose exit the host drew outside this
+    /// session's Exit Pool.
     // Held for its Drop alone today; the failover clause will read it.
     #[allow(dead_code)]
-    lease: Option<crate::correspondent::pool::exit_pool::Reservation>,
+    exit_reservation: Option<crate::correspondent::pool::exit_pool::Reservation>,
 }
 
 impl StandingClient {
-    /// A Standing Client over `proxy`, holding `lease` for its life.
+    /// A Standing Client over `proxy`, holding `exit_reservation` for its
+    /// life.
     pub(crate) fn new(
         proxy: MixnetProxy,
-        lease: Option<crate::correspondent::pool::exit_pool::Reservation>,
+        exit_reservation: Option<crate::correspondent::pool::exit_pool::Reservation>,
     ) -> Self {
-        StandingClient { proxy, lease }
+        StandingClient {
+            proxy,
+            exit_reservation,
+        }
     }
 
     /// The client's transport.
@@ -186,7 +191,7 @@ impl StandingClient {
         &self.proxy
     }
 
-    /// Stops the transport; dropping self recycles the lease after.
+    /// Stops the transport; dropping self recycles the reservation after.
     pub(crate) async fn stop(self) {
         self.proxy.stop().await;
     }
