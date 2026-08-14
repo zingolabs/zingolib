@@ -141,6 +141,8 @@ pub(crate) use driver::{StatusPublisher, status_publisher};
 #[cfg(feature = "nym")]
 pub(crate) use mode::MixnetSlot;
 #[cfg(feature = "nym")]
+pub(crate) use mode::StandingClient;
+#[cfg(feature = "nym")]
 pub use mode::{IP_CORRELATION_DISCLAIMER, MixnetMode};
 #[cfg(feature = "nym")]
 pub use route::{MixnetNotReady, MixnetRoute, SlotTunnel, resolve_route};

@@ -183,9 +183,6 @@ pub struct LightClient {
     /// the acquirer Proven Clients are born from.
     #[cfg(feature = "nym")]
     correspondent_pools: std::sync::Arc<crate::correspondent::pool::Pools>,
-    /// The standing client's bound-exit lease, recycled by drop on vacate.
-    #[cfg(feature = "nym")]
-    slot_lease: Option<crate::correspondent::pool::exit_pool::Reservation>,
     /// The session-level Mixnet Mode status channel (ADR 0024, decision 2):
     /// the one shared watch every subscriber reads. Transport transitions
     /// publish from the supervisor's tasks, slot transitions from the
@@ -270,8 +267,6 @@ impl LightClient {
             #[cfg(feature = "nym")]
             mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
             #[cfg(feature = "nym")]
-            slot_lease: None,
-            #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
@@ -312,8 +307,6 @@ impl LightClient {
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
-            #[cfg(feature = "nym")]
-            slot_lease: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
@@ -376,8 +369,6 @@ impl LightClient {
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             #[cfg(feature = "nym")]
             mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
-            #[cfg(feature = "nym")]
-            slot_lease: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]

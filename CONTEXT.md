@@ -39,6 +39,13 @@ A client whose exit is Exit-Proven — by its own birth probe, or by
 drawing an exit whose fresh proof is trusted.
 _Avoid_: "ShownHealthy", "ProvenHealthy"
 
+**Standing Client** (ratified 2026-08-14):
+The session's one long-lived Proven Client — the transport every
+operation but the price fetch multiplexes over, born at go-online and
+holding its bound exit's lease for its life.
+_Avoid_: "session tunnel", "slot tunnel" for the client itself; "the
+tunnel" names only its local SOCKS5 face
+
 **Observation** (ratified 2026-08-13):
 One exit's most recent verdict — Proven or Failed — with its
 timestamp; a later verdict for the same exit supersedes it. Proven

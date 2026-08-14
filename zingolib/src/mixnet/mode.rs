@@ -143,9 +143,9 @@ pub(crate) enum MixnetSlot {
     /// The user's deliberate per-session disable. The one slot state that
     /// consents to clearnet.
     SwitchedOff,
-    /// A spawned or attached transport, in whatever lifecycle state it
-    /// reports (bootstrapping, ready, or died).
-    Attached(MixnetProxy),
+    /// The session's Standing Client, in whatever lifecycle state its
+    /// transport reports.
+    Attached(StandingClient),
     /// A stand-in transport for chain-mock tests: reports
     /// [`MixnetMode::Ready`] at the given address without a child, watcher,
     /// or probe, so the tests exercise the fail-closed route resolver and
@@ -160,23 +160,55 @@ pub(crate) enum MixnetSlot {
     },
 }
 
+/// The session's one long-lived mixnet client: the transport every
+/// operation but the price fetch multiplexes over, holding the lease of the
+/// exit it was born proven on.
+pub(crate) struct StandingClient {
+    proxy: MixnetProxy,
+    /// The bound exit's lease, recycled by drop; `None` for a
+    /// mobile-attached endpoint, whose exit the host owns.
+    // Held for its Drop alone today; the failover clause will read it.
+    #[allow(dead_code)]
+    lease: Option<crate::correspondent::pool::exit_pool::Reservation>,
+}
+
+impl StandingClient {
+    /// A Standing Client over `proxy`, holding `lease` for its life.
+    pub(crate) fn new(
+        proxy: MixnetProxy,
+        lease: Option<crate::correspondent::pool::exit_pool::Reservation>,
+    ) -> Self {
+        StandingClient { proxy, lease }
+    }
+
+    /// The client's transport.
+    pub(crate) fn proxy(&self) -> &MixnetProxy {
+        &self.proxy
+    }
+
+    /// Stops the transport; dropping self recycles the lease after.
+    pub(crate) async fn stop(self) {
+        self.proxy.stop().await;
+    }
+}
+
 impl MixnetSlot {
     /// The Mixnet Mode this slot is in: the slot's own state when no
-    /// transport is attached, otherwise the transport's lifecycle state.
+    /// Standing Client is attached, otherwise the client's lifecycle state.
     pub(crate) fn mode(&self) -> MixnetMode {
         match self {
             MixnetSlot::Unattached => MixnetMode::Unattached,
             MixnetSlot::SwitchedOff => MixnetMode::SwitchedOff,
-            MixnetSlot::Attached(proxy) => proxy.mode(),
+            MixnetSlot::Attached(client) => client.proxy().mode(),
             #[cfg(any(test, feature = "testutils"))]
             MixnetSlot::AttachedForTests { .. } => MixnetMode::Ready,
         }
     }
 
-    /// The attached transport, when one is present.
+    /// The Standing Client's transport, when one is attached.
     pub(crate) fn proxy(&self) -> Option<&MixnetProxy> {
         match self {
-            MixnetSlot::Attached(proxy) => Some(proxy),
+            MixnetSlot::Attached(client) => Some(client.proxy()),
             MixnetSlot::Unattached | MixnetSlot::SwitchedOff => None,
             #[cfg(any(test, feature = "testutils"))]
             MixnetSlot::AttachedForTests { .. } => None,
@@ -184,21 +216,21 @@ impl MixnetSlot {
     }
 
     /// The local SOCKS5 address the route resolver hands to Ready-mode
-    /// surfaces, wherever the slot keeps it: the transport's announced
+    /// surfaces, wherever the slot keeps it: the Standing Client's announced
     /// address when one is attached, the pinned address of a test stand-in.
     pub(crate) fn socks5_addr(&self) -> Option<std::net::SocketAddr> {
         match self {
-            MixnetSlot::Attached(proxy) => proxy.socks5_addr(),
+            MixnetSlot::Attached(client) => client.proxy().socks5_addr(),
             MixnetSlot::Unattached | MixnetSlot::SwitchedOff => None,
             #[cfg(any(test, feature = "testutils"))]
             MixnetSlot::AttachedForTests { socks5_addr } => Some(*socks5_addr),
         }
     }
 
-    /// The bound Exit Node identities, when an attached transport is ready.
+    /// The bound Exit Node identities, when the Standing Client is ready.
     pub(crate) fn exits(&self) -> Vec<crate::mixnet::ExitNodeId> {
         match self {
-            MixnetSlot::Attached(proxy) => proxy.exits(),
+            MixnetSlot::Attached(client) => client.proxy().exits(),
             MixnetSlot::Unattached | MixnetSlot::SwitchedOff => Vec::new(),
             #[cfg(any(test, feature = "testutils"))]
             MixnetSlot::AttachedForTests { .. } => Vec::new(),

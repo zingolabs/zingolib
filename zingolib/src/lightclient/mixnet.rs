@@ -120,14 +120,13 @@ impl LightClient {
     /// failure must not silently reinstate a prior `SwitchedOff`.
     pub(super) async fn vacate_mixnet_slot(&mut self) {
         self.correspondent_pools.clear_acquirer();
-        if let crate::mixnet::MixnetSlot::Attached(running) =
+        if let crate::mixnet::MixnetSlot::Attached(client) =
             std::mem::replace(&mut self.mixnet_slot, crate::mixnet::MixnetSlot::Unattached)
         {
-            running.stop().await;
+            // Stopping the Standing Client recycles its exit's lease by
+            // drop after the transport is gone.
+            client.stop().await;
         }
-        // Dropping the slot's lease recycles the standing client's exit
-        // after the transport is gone.
-        self.slot_lease = None;
     }
 
     /// Enables Mixnet Mode by birthing the standing client from the bundled
@@ -170,8 +169,9 @@ impl LightClient {
             .await
         {
             Ok((proxy, lease)) => {
-                self.mixnet_slot = crate::mixnet::MixnetSlot::Attached(proxy);
-                self.slot_lease = Some(lease);
+                self.mixnet_slot = crate::mixnet::MixnetSlot::Attached(
+                    crate::mixnet::StandingClient::new(proxy, Some(lease)),
+                );
                 self.correspondent_pools.set_acquirer(acquirer);
                 // The birth published Bootstrapping and Ready into the
                 // session channel as it went; the settled slot publishes
@@ -210,7 +210,11 @@ impl LightClient {
             });
         match attached {
             Ok(proxy) => {
-                self.mixnet_slot = crate::mixnet::MixnetSlot::Attached(proxy);
+                // The mobile host owns the attached endpoint's exit, so the
+                // Standing Client carries no lease of its own.
+                self.mixnet_slot = crate::mixnet::MixnetSlot::Attached(
+                    crate::mixnet::StandingClient::new(proxy, None),
+                );
                 Ok(())
             }
             Err(error) => {
