@@ -46,7 +46,7 @@ use zingo_net_diag::{NetOpFailure, NetOpStage};
 use crate::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceProgress, RaceState};
 use crate::error::NymProxyError;
 use crate::mixnet_connect::seeded_shuffle;
-use crate::responsiveness::{Responsiveness, ResponsivenessClass};
+use crate::arm_race::acquisition_launch_policy;
 
 /// Default Nym API URL for mainnet.
 const DEFAULT_NYM_API_URL: &str = "https://validator.nymtech.net/api/";
@@ -55,7 +55,7 @@ const DEFAULT_NYM_API_URL: &str = "https://validator.nymtech.net/api/";
 /// discovered node when the population is smaller.
 fn draw_clutch(mut discovered: Vec<String>) -> Vec<String> {
     seeded_shuffle(&mut discovered, time_entropy_seed());
-    discovered.truncate(crate::responsiveness::RESERVATION_CLUTCH_SIZE);
+    discovered.truncate(crate::arm_race::RESERVATION_CLUTCH_SIZE);
     discovered
 }
 
@@ -73,28 +73,25 @@ pub struct NymProxy {
     exit_node: String,
     /// The clutch this acquisition raced, reused by a later redraw.
     clutch: Vec<String>,
-    /// The acquisition's responsiveness class, reused by every later redraw
-    /// of this proxy.
-    class: ResponsivenessClass,
 }
 
 impl NymProxy {
     /// Start an embedded Nym SOCKS5 proxy over a clutch this call draws for
     /// itself, for a standalone run with no parent to draw one.
-    pub async fn start<R: Responsiveness>() -> Result<Self, NymProxyError> {
+    pub async fn start() -> Result<Self, NymProxyError> {
         let discovered = Self::discover_exit_nodes_at(DEFAULT_NYM_API_URL).await?;
-        Self::start_over::<R>(draw_clutch(discovered), |_| {}).await
+        Self::start_over(draw_clutch(discovered), |_| {}).await
     }
 
     /// Start over exactly `clutch`, the Exit Node Reservations the parent
     /// drew, reporting each bootstrap step to `on_progress`.
-    pub async fn start_over<R: Responsiveness>(
+    pub async fn start_over(
         clutch: Vec<String>,
         on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
         tokio::time::timeout(
             NYM_LIFECYCLE_TIMEOUT,
-            Self::start_inner(R::CLASS, clutch, on_progress),
+            Self::start_inner(clutch, on_progress),
         )
         .await
         .map_err(|_| {
@@ -106,7 +103,6 @@ impl NymProxy {
     }
 
     async fn start_inner(
-        class: ResponsivenessClass,
         clutch: Vec<String>,
         mut on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
@@ -114,23 +110,23 @@ impl NymProxy {
             return Err(NymProxyError::NoExitNode);
         }
         on_progress(format!("racing a clutch of {} exits", clutch.len()));
-        let mut proxy = Self::connect_across_exit_nodes(&clutch, class, on_progress).await?;
+        let mut proxy = Self::connect_across_exit_nodes(&clutch, on_progress).await?;
         proxy.clutch = clutch;
-        proxy.class = class;
         Ok(proxy)
     }
 
-    /// Race the clutch under `class`'s launch policy, each pull bounded by
-    /// [`PER_ATTEMPT_CONNECT_TIMEOUT`] and binding its own fresh port.
+    /// Race the clutch under the one hedged launch policy, each pull bounded
+    /// by [`PER_ATTEMPT_CONNECT_TIMEOUT`] and binding its own fresh port; an
+    /// arm wins by binding, and proof of the bound exit belongs to the layer
+    /// above the SOCKS5 seam.
     async fn connect_across_exit_nodes(
         exit_nodes: &[String],
-        class: ResponsivenessClass,
         mut on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
         drive_acq_race(
             exit_nodes.len(),
             exit_nodes.len(),
-            class.launch_policy(),
+            acquisition_launch_policy(),
             |arm| {
                 let exit_node = exit_nodes[arm].clone();
                 let target = short_exit_node_name(exit_nodes, arm);
@@ -148,29 +144,7 @@ impl NymProxy {
                             &target,
                         )),
                         Ok(Err(e)) => Err(exit_node_attempt_failure(&e, &target)),
-                        // An arm wins by carrying a round trip, never by
-                        // building a client: connecting never contacts the
-                        // exit, so a dead one connects exactly as fast as a
-                        // live one and would otherwise win the race.
-                        Ok(Ok(proxy)) => {
-                            if class == ResponsivenessClass::PrioritiseSpeed
-                                && !crate::sentinel::probe_sentinel(
-                                    proxy.socks5_addr(),
-                                    crate::time::SENTINEL_BUDGET,
-                                )
-                                .await
-                                .proves_the_exit()
-                            {
-                                proxy.disconnect().await;
-                                return Err(exit_node_attempt_failure(
-                                    &NymProxyError::CarriesNothing(
-                                        crate::time::SENTINEL_BUDGET.as_millis() as u64,
-                                    ),
-                                    &target,
-                                ));
-                            }
-                            Ok(proxy)
-                        }
+                        Ok(Ok(proxy)) => Ok(proxy),
                     }
                 }
             },
@@ -234,10 +208,6 @@ impl NymProxy {
             socks5_addr,
             exit_node: exit_node_address.to_string(),
             clutch: Vec::new(),
-            // A pinned-Exit-Node start never races; the class only governs
-            // this proxy's later redraws, which default to the speed
-            // priority.
-            class: ResponsivenessClass::PrioritiseSpeed,
         })
     }
 
@@ -308,7 +278,7 @@ impl NymProxy {
         }
         // Each attempt binds its own fresh port, which cannot collide with
         // the old client's still-bound port.
-        let new_proxy = Self::connect_across_exit_nodes(&clutch, self.class, |_| {}).await?;
+        let new_proxy = Self::connect_across_exit_nodes(&clutch, |_| {}).await?;
 
         // Swap only after the new client succeeded, so a failed reconnect
         // leaves the old client untouched.
@@ -414,9 +384,6 @@ fn exit_node_attempt_stage(error: &NymProxyError) -> NetOpStage {
         NymProxyError::AttemptTimeout(secs) => NetOpStage::TimedOut {
             after_ms: secs * 1000,
         },
-        // The tunnel stood and carried nothing, which is the exit's failure
-        // and never the destination's.
-        NymProxyError::CarriesNothing(_) => NetOpStage::TunnelTransport,
     }
 }
 
@@ -628,7 +595,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::responsiveness::{PrioritiseSpeed, RESERVATION_CLUTCH_SIZE};
+    use crate::arm_race::RESERVATION_CLUTCH_SIZE;
     use crate::time::HEDGE_INTERVAL;
 
     // The shuffling and retry-engine logic is tested in `mixnet_connect`,
@@ -938,9 +905,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "requires live Nym network"]
     async fn nym_proxy_starts_and_reports_address() {
-        let proxy = NymProxy::start::<PrioritiseSpeed>()
-            .await
-            .expect("NymProxy::start");
+        let proxy = NymProxy::start().await.expect("NymProxy::start");
         let addr = proxy.socks5_addr();
         assert_eq!(
             addr.ip(),
@@ -956,9 +921,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "requires live Nym network"]
     async fn nym_proxy_socks5_tunnel_works() {
-        let proxy = NymProxy::start::<PrioritiseSpeed>()
-            .await
-            .expect("NymProxy::start");
+        let proxy = NymProxy::start().await.expect("NymProxy::start");
         let stream = tokio_socks::tcp::Socks5Stream::connect(proxy.socks5_addr(), "zec.rocks:443")
             .await
             .expect("SOCKS5 connect");
@@ -971,9 +934,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "requires live Nym network"]
     async fn nym_proxy_disconnect_clean() {
-        let proxy = NymProxy::start::<PrioritiseSpeed>()
-            .await
-            .expect("NymProxy::start");
+        let proxy = NymProxy::start().await.expect("NymProxy::start");
         proxy.disconnect().await;
     }
 }

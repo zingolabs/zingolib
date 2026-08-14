@@ -224,9 +224,17 @@ pub const PROBE_LEG_TIMEOUT: Duration = Duration::from_secs(20);
 /// trips through a live exit landed under two seconds.
 pub const SENTINEL_BUDGET: Duration = Duration::from_millis(3_500);
 
-/// One Nym network epoch, the hourly topology rotation after which an
-/// observation about an Exit Node describes a network that no longer
-/// exists.
+/// ```
+/// // One Nym network epoch: the hourly topology rotation after which an
+/// // observation about an Exit Node describes a network that no longer
+/// // exists.
+/// use zingo_netutils::time::NYM_EPOCH;
+/// assert_eq!(NYM_EPOCH, std::time::Duration::from_secs(60 * 60));
+/// ```
+// TODO: implement sensitivity to, and policy around, real Nym epoch
+// boundaries: the live epoch's bounds are queryable from the same API the
+// exit discovery uses, and this constant approximates the rotation cadence
+// as a sliding window.
 pub const NYM_EPOCH: Duration = Duration::from_secs(60 * 60);
 
 /// Per-server bound on the ranking `get_info` sweep, deliberately tight so

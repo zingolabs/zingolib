@@ -70,6 +70,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- A bind-stage failure spends a proving birth instead of escaping the
+  acquisition. A Clutch that never produced a ready bound transport —
+  the readiness budget missed, the child dead mid-bootstrap, the status
+  channel closed — convicts its drawn exits in the NodeHealthIndex and
+  a fresh Clutch is drawn, up to the six-birth budget; only the
+  environment's own refusals (a missing binary, an unreachable host, an
+  unseeded or exhausted pool) still abort at once, and a defective exit
+  report retries without convicting the exits it failed to name.
+  Previously one 120-second `NotReady` aborted the whole acquisition
+  fatally with nothing learned, and the unbootstrappable exits stayed
+  eligible for the very next draw.
+- The F1 demotion loop lands whole. An exit-implicating failure on the
+  Standing Client — a failed mixnet transmission, or a correspondent
+  probe wave nobody answered — raises a suspicion that spawns a
+  ProofAcquisition: one arbiter Sentinel exchange dialed into the
+  client's tunnel. An answer promotes and refreshes the exit's
+  EpochProven observation; silence convicts the exit
+  (`ExitNodeHealthVerdict::Failed`) and runs the two-layer failover —
+  the mode dips to `Bootstrapping` while a replacement Proven Client
+  births over a preference-ordered draw, `Ready` on success, `Died`
+  latched when every birth exhausts or no acquirer exists to rebirth
+  from. An expiry watchdog fires the same ProofAcquisition unprompted
+  the moment the client's proof stops being epoch-fresh, a trusting
+  birth inheriting the stale observation's original expiry as its
+  deadline. The slot moved behind a mutex so the loop runs from the
+  operation paths that observe the failures.
+- BREAKING: `MixnetMode` gains a sixth state, `PreviouslyProvenThisEpoch`
+  (wire token `previously_proven_this_epoch`), adjacent to `Ready`: the
+  Standing Client is up on stale proof — born trusting an EpochProven
+  observation an earlier client earned — and no round trip of its own has
+  yet confirmed the exit. It routes exactly as `Ready`; the first
+  confirmed round trip (a delivered mixnet transmission or an answered
+  correspondent probe) promotes it to earned `Ready` and refreshes the
+  exit's EpochProven observation. Consumers matching `MixnetMode`
+  exhaustively, including mobile's FFI mapping, must add the state.
+- BREAKING: the session's standing client is born as a Proven Client.
+  `enable_mixnet` and `enable_mixnet_via_host` lose their responsiveness
+  type parameter and return once the client is bound and its exit proven,
+  instead of returning while an unproven transport bootstraps; the slot
+  holds only the bound exit's lease rather than the whole Clutch, and
+  `ProxyHost::start_transport` loses its class parameter. The retired
+  speed-class enable race stalled at `Bootstrapping` past 90 seconds in
+  three consecutive measured runs; the proven birth reached `Ready` and
+  quoted prices on its first live run.
 - BREAKING: the Correspondent Pools' member-keeping is retired. Go-online
   no longer launches background refills, the Indexer and Price complements
   are gone, and a Transmission's pulls multiplex over the session's standing

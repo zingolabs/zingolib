@@ -224,8 +224,8 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
         let pools = self.pools.clone();
         let acquirer = self.acquirer.clone();
         async move {
-            let (transport, lease) = pools.acquire_proven(acquirer.as_ref()).await?;
-            let member = crate::mixnet::speed::Member::new(transport, lease);
+            let birth = pools.acquire_proven(acquirer.as_ref()).await?;
+            let member = crate::mixnet::speed::Member::new(birth.transport, birth.lease);
             let addr = member
                 .addr()
                 .ok_or(crate::mixnet::acquire::TransportError::DiedBeforeUse)?;
@@ -238,7 +238,7 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
         // renews as the client retires.
         self.pools.remember(
             spent.node().clone(),
-            crate::correspondent::pool::exit_pool::Verdict::Proven,
+            crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
         );
         tokio::spawn(async move {
             spent.retire().await;
@@ -248,7 +248,7 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
     fn abandon(&self, dead: crate::mixnet::speed::Member) {
         self.pools.remember(
             dead.node().clone(),
-            crate::correspondent::pool::exit_pool::Verdict::Failed,
+            crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::Failed,
         );
         tokio::spawn(async move {
             dead.retire().await;

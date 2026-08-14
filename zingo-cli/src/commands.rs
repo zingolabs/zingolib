@@ -1350,6 +1350,13 @@ fn render_status(
             Some(addr) => format!("Mixnet Mode: ready (SOCKS5 {addr})"),
             None => "Mixnet Mode: ready".to_string(),
         },
+        MixnetMode::PreviouslyProvenThisEpoch => match socks5_addr {
+            Some(addr) => format!(
+                "Mixnet Mode: previously proven this epoch (SOCKS5 {addr}; the exit's \
+                 proof is stale until a round trip of this session confirms it)"
+            ),
+            None => "Mixnet Mode: previously proven this epoch".to_string(),
+        },
         MixnetMode::Died => "Mixnet Mode: died. The proxy exited unexpectedly. Send and \
              price-fetch refuse and will not fall back to clearnet. Run `network on` to \
              restart the proxy."
@@ -1420,7 +1427,7 @@ async fn await_bootstrap_outcome(
     loop {
         let status = rx.borrow_and_update().clone();
         match status.mode {
-            MixnetMode::Ready => {
+            MixnetMode::Ready | MixnetMode::PreviouslyProvenThisEpoch => {
                 return BootstrapOutcome::Ready {
                     exits: status.exits.clone(),
                 };
@@ -1495,38 +1502,30 @@ async fn network_command(
             #[cfg(not(feature = "clearnet-test-mode"))]
             let went_online: Option<http::Uri> = None;
             let path = resolve_proxy_path(path.as_deref());
-            // `network on` is an interactive act: the user sits at the prompt.
+            // `network on` waits out the standing client's proven birth: the
+            // command returns with a client whose exit carried a round trip.
             lightclient
-                .enable_mixnet::<zingolib::mixnet::PrioritiseSpeed>(std::path::Path::new(&path))
+                .enable_mixnet(std::path::Path::new(&path))
                 .await
                 .map_err(|source| NetworkCommandError::ProxyStart {
                     path: path.clone(),
                     source,
                 })?;
-            // Block until the bootstrap resolves so the return is the
-            // outcome, not a promise to poll; the dispatch seam's progress
-            // heartbeat narrates the wait. The supervisor's own lifecycle
-            // timeout flips a stuck bootstrap to died, and the outer
-            // timeout is the backstop.
-            let outcome = tokio::time::timeout(
-                zingolib::netutils::time::NYM_LIFECYCLE_TIMEOUT,
-                await_bootstrap_outcome(lightclient.subscribe_mixnet_status()),
-            )
-            .await;
+            // The enable itself waited out the proven birth — the six-birth
+            // budget bounds the wait, the supervisor's lifecycle timeout
+            // bounds each bootstrap inside it, and the dispatch seam's
+            // progress heartbeat narrates it — so the session channel holds
+            // the settled outcome and reading it does not block.
+            let outcome = await_bootstrap_outcome(lightclient.subscribe_mixnet_status()).await;
             let readiness = match outcome {
-                Ok(BootstrapOutcome::Ready { exits }) => format!(
+                BootstrapOutcome::Ready { exits } => format!(
                     "Mixnet Mode ready; the nym proxy at '{path}' serves send and \
                      price-fetch over the mixnet.{}",
                     render_exit_nodes(&exits)
                 ),
-                Ok(BootstrapOutcome::Failed { report }) => {
+                BootstrapOutcome::Failed { report } => {
                     return Err(NetworkCommandError::Bootstrap { report });
                 }
-                Err(_elapsed) => format!(
-                    "Mixnet Mode still bootstrapping after {}s; run `network status` \
-                     to check readiness.",
-                    zingolib::netutils::time::NYM_LIFECYCLE_TIMEOUT.as_secs()
-                ),
             };
             Ok(match went_online {
                 Some(server) => format!(

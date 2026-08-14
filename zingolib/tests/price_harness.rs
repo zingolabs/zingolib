@@ -61,7 +61,7 @@ async fn price_rounds_report_their_outcomes() {
         .await
         .expect("the wallet creates");
     client
-        .enable_mixnet::<zingolib::mixnet::PrioritiseSpeed>(std::path::Path::new(&proxy))
+        .enable_mixnet(std::path::Path::new(&proxy))
         .await
         .expect("the mixnet attaches");
     // Attaching returns before the session's status reaches Ready, and the

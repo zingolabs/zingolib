@@ -105,26 +105,32 @@ pub(crate) fn take_bound_lease(
     reported.iter().find_map(|node| clutch.take(node))
 }
 
-/// What one completed or refused round trip showed about an Exit Node.
+/// What one completed or refused round trip showed about an Exit Node,
+/// within the epoch that observation survives.
+// TODO: implement sensitivity to, and policy around, Nym epochs: the
+// network's epoch boundaries are queryable, and the sliding one-hour
+// window from the observation instant is a stand-in for the real
+// rotation edge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Verdict {
-    /// A round trip completed through the exit: it answered the Sentinel
-    /// or carried a task.
-    Proven,
-    /// The exit refused, timed out, or stayed silent past budget.
+pub(crate) enum ExitNodeHealthVerdict {
+    /// A round trip completed through the exit within the current epoch:
+    /// it answered the Sentinel or carried a task.
+    EpochProven,
+    /// The exit refused, timed out, or stayed silent past budget, within
+    /// the current epoch.
     Failed,
 }
 
 /// One exit's most recent verdict with the instant it was earned.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Observation {
-    verdict: Verdict,
+    verdict: ExitNodeHealthVerdict,
     at: std::time::Instant,
 }
 
 impl Observation {
     /// A verdict earned now.
-    pub(crate) fn earned(verdict: Verdict, at: std::time::Instant) -> Self {
+    pub(crate) fn earned(verdict: ExitNodeHealthVerdict, at: std::time::Instant) -> Self {
         Observation { verdict, at }
     }
 }
@@ -143,18 +149,48 @@ impl NodeHealthIndex {
     }
 
     /// Whether the node's proof completed within the last Nym epoch.
-    pub(crate) fn proven(&self, exit: &crate::mixnet::ExitNodeId, now: std::time::Instant) -> bool {
-        self.0.get(exit).is_some_and(|seen| {
-            seen.verdict == Verdict::Proven
-                && now.saturating_duration_since(seen.at) < zingo_netutils::time::NYM_EPOCH
+    pub(crate) fn epoch_proven(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+    ) -> bool {
+        self.observed(exit, now, ExitNodeHealthVerdict::EpochProven)
+    }
+
+    /// Whether the node failed within the last Nym epoch, so a convicted
+    /// node stands trial again once the topology that convicted it has
+    /// rotated away.
+    pub(crate) fn epoch_failed(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+    ) -> bool {
+        self.observed(exit, now, ExitNodeHealthVerdict::Failed)
+    }
+
+    /// The instant the node's EpochProven observation stops being fresh,
+    /// when one stands.
+    pub(crate) fn proven_until(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+    ) -> Option<std::time::Instant> {
+        self.0.get(exit).and_then(|seen| {
+            (seen.verdict == ExitNodeHealthVerdict::EpochProven)
+                .then(|| seen.at + zingo_netutils::time::NYM_EPOCH)
         })
     }
 
-    /// Whether the node failed at any point in this session.
-    pub(crate) fn failed(&self, exit: &crate::mixnet::ExitNodeId) -> bool {
-        self.0
-            .get(exit)
-            .is_some_and(|seen| seen.verdict == Verdict::Failed)
+    /// Whether the node's current observation is `verdict`, still fresh.
+    fn observed(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+        verdict: ExitNodeHealthVerdict,
+    ) -> bool {
+        self.0.get(exit).is_some_and(|seen| {
+            seen.verdict == verdict
+                && now.saturating_duration_since(seen.at) < zingo_netutils::time::NYM_EPOCH
+        })
     }
 }
 
@@ -184,8 +220,33 @@ impl ExitPool {
     }
 
     /// Whether `exit`'s proof completed within the last Nym epoch.
-    pub(crate) fn proven(&self, exit: &crate::mixnet::ExitNodeId, now: std::time::Instant) -> bool {
-        self.health.proven(exit, now)
+    pub(crate) fn epoch_proven(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+    ) -> bool {
+        self.health.epoch_proven(exit, now)
+    }
+
+    /// The instant `exit`'s EpochProven observation stops being fresh,
+    /// when one stands.
+    pub(crate) fn proven_until(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+    ) -> Option<std::time::Instant> {
+        self.health.proven_until(exit)
+    }
+
+    /// Whether `exit` failed within the last Nym epoch.
+    // Exercised by the ProofAcquisition contract tests; production reads
+    // failures only through the draw's own partition.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn epoch_failed(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+    ) -> bool {
+        self.health.epoch_failed(exit, now)
     }
 
     /// Draws a Clutch of owning reservations, each of which recycles
@@ -217,9 +278,9 @@ impl ExitPool {
         let mut unknown = Vec::new();
         let mut failed = Vec::new();
         for node in drawable {
-            if guarded.health.proven(&node, now) {
+            if guarded.health.epoch_proven(&node, now) {
                 proven.push(node);
-            } else if guarded.health.failed(&node) {
+            } else if guarded.health.epoch_failed(&node, now) {
                 failed.push(node);
             } else {
                 unknown.push(node);
@@ -237,7 +298,7 @@ impl ExitPool {
         }
         let clutch: HashSet<Reservation> = ordered
             .into_iter()
-            .take(zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE)
+            .take(zingo_netutils::arm_race::RESERVATION_CLUTCH_SIZE)
             .map(|node| {
                 guarded.issued.insert(node.clone());
                 Reservation {
@@ -253,7 +314,7 @@ impl ExitPool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE;
+    use zingo_netutils::arm_race::RESERVATION_CLUTCH_SIZE;
 
     fn seeded(count: usize) -> Arc<Mutex<ExitPool>> {
         let pool = Arc::new(Mutex::new(ExitPool::default()));

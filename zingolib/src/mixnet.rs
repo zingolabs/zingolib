@@ -141,13 +141,13 @@ pub(crate) use driver::{StatusPublisher, status_publisher};
 #[cfg(feature = "nym")]
 pub(crate) use mode::MixnetSlot;
 #[cfg(feature = "nym")]
+pub(crate) use mode::StandingClient;
+#[cfg(feature = "nym")]
 pub use mode::{IP_CORRELATION_DISCLAIMER, MixnetMode};
 #[cfg(feature = "nym")]
 pub use route::{MixnetNotReady, MixnetRoute, SlotTunnel, resolve_route};
 #[cfg(feature = "nym")]
 pub use supervisor::{DeathReport, MixnetProxy, MixnetProxyError};
-#[cfg(feature = "nym")]
-pub use zingo_netutils::responsiveness::{PrioritisePrivacy, PrioritiseSpeed, Responsiveness};
 
 /// The temporal calibration a consumer of the mixnet transport reads from
 /// the wallet, so a user interface paces itself from the same source of

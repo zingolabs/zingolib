@@ -133,10 +133,10 @@ impl TransmissionClient for MixnetTransmissionClient {
 
 /// The mixnet targets migration parts may go to: the configured
 /// `migration_transmission_uri` alone when set, otherwise the curated
-/// Correspondent pool, in both cases with the synchronization endpoint's operator
-/// forbidden (ADR 0022), so no server correlates a wallet's sync stream with
-/// its migration cohort. An exclusion that empties the pool refuses with a
-/// typed error rather than falling back.
+/// Correspondent census, in both cases with the synchronization endpoint's
+/// operator forbidden (ADR 0022), so no server correlates a wallet's sync
+/// stream with its migration cohort. An exclusion that empties the
+/// candidates refuses with a typed error rather than falling back.
 #[cfg(feature = "nym")]
 pub(crate) fn eligible_candidates(
     configured: Option<http::Uri>,
