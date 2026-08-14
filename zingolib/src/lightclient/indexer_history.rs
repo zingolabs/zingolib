@@ -116,7 +116,7 @@ pub enum FailureKind {
 }
 
 impl FailureKind {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             FailureKind::Timeout => "timeout",
             FailureKind::Unreachable => "unreachable",
@@ -151,6 +151,7 @@ impl FailureKind {
             || lowered.contains("timeout")
             || lowered.contains("deadlineexceeded")
             || lowered.contains("deadline exceeded")
+            || lowered.contains("deadline has elapsed")
         {
             return FailureKind::Timeout;
         }
@@ -472,6 +473,25 @@ mod tests {
         .expect("write a legacy line");
 
         assert_eq!(handle.load()[0].outcome, Err(FailureKind::Timeout));
+    }
+
+    /// HYPOTHESIS: a probe that exhausts its leg budget classifies as a
+    /// timeout whichever wording the transport uses to say so, including
+    /// tonic's elapsed deadline, so the sweep's cause tally and the stored
+    /// history name the real cause. Falsified if an elapsed deadline lands
+    /// in any other family.
+    #[test]
+    fn an_elapsed_deadline_is_a_timeout() {
+        assert_eq!(
+            FailureKind::classify(
+                "transport to zec.rocks:443 failed (transport error: deadline has elapsed)"
+            ),
+            FailureKind::Timeout
+        );
+        assert_eq!(
+            FailureKind::classify("deadline has elapsed"),
+            FailureKind::Timeout
+        );
     }
 
     /// The classifier maps each failure family onto its token and never
