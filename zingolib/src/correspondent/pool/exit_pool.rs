@@ -105,13 +105,19 @@ pub(crate) fn take_bound_lease(
     reported.iter().find_map(|node| clutch.take(node))
 }
 
-/// What one completed or refused round trip showed about an Exit Node.
+/// What one completed or refused round trip showed about an Exit Node,
+/// within the epoch that observation survives.
+// TODO: implement sensitivity to, and policy around, Nym epochs: the
+// network's epoch boundaries are queryable, and the sliding one-hour
+// window from the observation instant is a stand-in for the real
+// rotation edge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ExitNodeHealthVerdict {
-    /// A round trip completed through the exit: it answered the Sentinel
-    /// or carried a task.
-    Proven,
-    /// The exit refused, timed out, or stayed silent past budget.
+    /// A round trip completed through the exit within the current epoch:
+    /// it answered the Sentinel or carried a task.
+    EpochProven,
+    /// The exit refused, timed out, or stayed silent past budget, within
+    /// the current epoch.
     Failed,
 }
 
@@ -143,18 +149,36 @@ impl NodeHealthIndex {
     }
 
     /// Whether the node's proof completed within the last Nym epoch.
-    pub(crate) fn proven(&self, exit: &crate::mixnet::ExitNodeId, now: std::time::Instant) -> bool {
-        self.0.get(exit).is_some_and(|seen| {
-            seen.verdict == ExitNodeHealthVerdict::Proven
-                && now.saturating_duration_since(seen.at) < zingo_netutils::time::NYM_EPOCH
-        })
+    pub(crate) fn epoch_proven(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+    ) -> bool {
+        self.observed(exit, now, ExitNodeHealthVerdict::EpochProven)
     }
 
-    /// Whether the node failed at any point in this session.
-    pub(crate) fn failed(&self, exit: &crate::mixnet::ExitNodeId) -> bool {
-        self.0
-            .get(exit)
-            .is_some_and(|seen| seen.verdict == ExitNodeHealthVerdict::Failed)
+    /// Whether the node failed within the last Nym epoch, so a convicted
+    /// node stands trial again once the topology that convicted it has
+    /// rotated away.
+    pub(crate) fn epoch_failed(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+    ) -> bool {
+        self.observed(exit, now, ExitNodeHealthVerdict::Failed)
+    }
+
+    /// Whether the node's current observation is `verdict`, still fresh.
+    fn observed(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+        verdict: ExitNodeHealthVerdict,
+    ) -> bool {
+        self.0.get(exit).is_some_and(|seen| {
+            seen.verdict == verdict
+                && now.saturating_duration_since(seen.at) < zingo_netutils::time::NYM_EPOCH
+        })
     }
 }
 
@@ -184,8 +208,12 @@ impl ExitPool {
     }
 
     /// Whether `exit`'s proof completed within the last Nym epoch.
-    pub(crate) fn proven(&self, exit: &crate::mixnet::ExitNodeId, now: std::time::Instant) -> bool {
-        self.health.proven(exit, now)
+    pub(crate) fn epoch_proven(
+        &self,
+        exit: &crate::mixnet::ExitNodeId,
+        now: std::time::Instant,
+    ) -> bool {
+        self.health.epoch_proven(exit, now)
     }
 
     /// Draws a Clutch of owning reservations, each of which recycles
@@ -217,9 +245,9 @@ impl ExitPool {
         let mut unknown = Vec::new();
         let mut failed = Vec::new();
         for node in drawable {
-            if guarded.health.proven(&node, now) {
+            if guarded.health.epoch_proven(&node, now) {
                 proven.push(node);
-            } else if guarded.health.failed(&node) {
+            } else if guarded.health.epoch_failed(&node, now) {
                 failed.push(node);
             } else {
                 unknown.push(node);

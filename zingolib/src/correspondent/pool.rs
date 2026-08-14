@@ -127,11 +127,7 @@ impl Pools {
     }
 
     /// Keeps `verdict` as `exit`'s current observation, earned now.
-    pub(crate) fn remember(
-        &self,
-        exit: crate::mixnet::ExitNodeId,
-        verdict: exit_pool::ExitNodeHealthVerdict,
-    ) {
+    pub(crate) fn remember(&self, exit: crate::mixnet::ExitNodeId, verdict: exit_pool::ExitNodeHealthVerdict) {
         self.exits.lock().expect("exit pool mutex").remember(
             exit,
             exit_pool::Observation::earned(verdict, std::time::Instant::now()),
@@ -177,7 +173,7 @@ impl Pools {
             let (transport, lease) = self.acquire_bound(acquirer, publisher).await?;
             let trusted = {
                 let exits = self.exits.lock().expect("exit pool mutex");
-                exits.proven(lease.node(), std::time::Instant::now())
+                exits.epoch_proven(lease.node(), std::time::Instant::now())
             };
             if trusted {
                 return Ok((transport, lease));
@@ -192,16 +188,10 @@ impl Pools {
             )
             .await;
             if evidence.proves_the_exit() {
-                self.remember(
-                    lease.node().clone(),
-                    exit_pool::ExitNodeHealthVerdict::Proven,
-                );
+                self.remember(lease.node().clone(), exit_pool::ExitNodeHealthVerdict::EpochProven);
                 return Ok((transport, lease));
             }
-            self.remember(
-                lease.node().clone(),
-                exit_pool::ExitNodeHealthVerdict::Failed,
-            );
+            self.remember(lease.node().clone(), exit_pool::ExitNodeHealthVerdict::Failed);
             transport.stop().await;
         }
         Err(acquire::TransportError::NoProvenExit {

@@ -91,7 +91,7 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
         // fetches must not share a client.
         self.pools.remember(
             spent.node().clone(),
-            crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::Proven,
+            crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
         );
         tokio::spawn(async move {
             spent.retire().await;

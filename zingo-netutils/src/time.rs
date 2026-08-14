@@ -231,6 +231,10 @@ pub const SENTINEL_BUDGET: Duration = Duration::from_millis(3_500);
 /// use zingo_netutils::time::NYM_EPOCH;
 /// assert_eq!(NYM_EPOCH, std::time::Duration::from_secs(60 * 60));
 /// ```
+// TODO: implement sensitivity to, and policy around, real Nym epoch
+// boundaries: the live epoch's bounds are queryable from the same API the
+// exit discovery uses, and this constant approximates the rotation cadence
+// as a sliding window.
 pub const NYM_EPOCH: Duration = Duration::from_secs(60 * 60);
 
 /// Per-server bound on the ranking `get_info` sweep, deliberately tight so
