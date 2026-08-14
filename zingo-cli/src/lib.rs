@@ -1466,7 +1466,7 @@ enum SweepVerdict {
     /// The survey refused the pin but holds a healthy alternative, which
     /// binds only by the user's explicit consent, refusing by default.
     RecommendFallback {
-        /// The healthy indexer the sweep selected.
+        /// The healthy indexer the sweep drew.
         alternative: http::Uri,
         /// The narration recommending the fallback before the consent ask.
         notice: String,
@@ -1520,7 +1520,7 @@ fn judge_sweep_outcome(
                     alternative: selection.sync_indexer.clone(),
                     notice: format!(
                         "Server-Selection Sweep: the pinned server {pinned} did not answer the \
-                         survey or lags the live cohort of {}. The sweep selected a healthy \
+                         survey or lags the live cohort of {}. The sweep drew a healthy \
                          alternative: {}.",
                         selection.cohort.len(),
                         selection.sync_indexer,
