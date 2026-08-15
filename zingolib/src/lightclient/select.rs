@@ -51,6 +51,13 @@ pub enum SweepProgress {
         /// How many candidates were surveyed.
         surveyed: usize,
     },
+    /// One candidate's result arrived: it is healthy, or it is not.
+    Surveyed {
+        /// The surveyed indexer.
+        indexer: Uri,
+        /// Whether it answered healthily on the session's chain.
+        healthy: bool,
+    },
 }
 
 /// Why a Server-Selection Sweep produced no sync indexer.
@@ -84,7 +91,7 @@ impl LightClient {
         binary_path: &Path,
         candidates: &[Uri],
         pin: Option<&Uri>,
-        progress: impl Fn(SweepProgress),
+        progress: impl Fn(SweepProgress) + Send + Sync + 'static,
     ) -> Result<Selection, ServerSelectionError> {
         let chain = lightd_chain_name(&self.chain_type());
         let acquirer: std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable> =
@@ -96,12 +103,18 @@ impl LightClient {
         // the redraw of an exit that carries nothing are the shared
         // speed-priority loop's; this runner owns only the judgment.
         let order = sweep::wave_order(candidates, pin, SURVEY_WAVE_WIDTH, &mut rand::rngs::OsRng);
+        // One shared narration closure: the runner speaks the phases and the
+        // survey speaks each arriving result through the same voice.
+        let progress: std::sync::Arc<dyn Fn(SweepProgress) + Send + Sync> =
+            std::sync::Arc::new(progress);
         let survey = IndexerSurvey {
             pools: self.correspondent_pools.clone(),
             acquirer,
             order: order.clone(),
+            chain: chain.to_string(),
             timeout: zingo_netutils::time::PROBE_LEG_TIMEOUT,
             history: self.indexer_history.clone(),
+            progress: std::sync::Arc::clone(&progress),
         };
         progress(SweepProgress::TransportBootstrapping);
         let (results, member) = crate::mixnet::speed::run_speed_prioritized(&survey)
@@ -169,8 +182,10 @@ struct IndexerSurvey {
     pools: std::sync::Arc<crate::correspondent::pool::Pools>,
     acquirer: std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>,
     order: Vec<Uri>,
+    chain: String,
     timeout: Duration,
     history: crate::lightclient::indexer_history::IndexerHistoryHandle,
+    progress: std::sync::Arc<dyn Fn(SweepProgress) + Send + Sync>,
 }
 
 impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
@@ -188,13 +203,22 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
     ) -> impl std::future::Future<Output = SurveyResult> + Send {
         let timeout = self.timeout;
         let history = self.history.clone();
+        let chain = self.chain.clone();
+        let progress = std::sync::Arc::clone(&self.progress);
         async move {
             let (reported, refusal) = probe_one(socks5, &target, timeout, &history).await;
-            SurveyResult {
+            let result = SurveyResult {
                 uri: target,
                 reported,
                 refusal,
-            }
+            };
+            // Each result narrates as it arrives, so an interactive session
+            // watches the census fill in rather than a silent survey.
+            (progress)(SweepProgress::Surveyed {
+                indexer: result.uri.clone(),
+                healthy: sweep::healthy(&result, &chain),
+            });
+            result
         }
     }
 
@@ -337,8 +361,10 @@ mod tests {
                 std::path::PathBuf::from("/nonexistent/nym-proxy"),
             )),
             order: Vec::new(),
+            chain: "main".to_string(),
             timeout: zingo_netutils::time::PROBE_LEG_TIMEOUT,
             history: crate::lightclient::indexer_history::IndexerHistoryHandle::default(),
+            progress: std::sync::Arc::new(|_| {}),
         };
         let healthy = crate::mixnet::sweep::SurveyResult {
             uri: "https://a.example:443"

@@ -1375,6 +1375,9 @@ async fn sweep_select_sync_indexer(
                      a reliable address stayed silent through it; abandoning that exit and \
                      surveying again from the start..."
                 ),
+                SweepProgress::Surveyed { indexer, healthy } => {
+                    eprintln!("{}", commands::surveyed_line(&indexer, healthy));
+                }
                 SweepProgress::Judging { answered, surveyed } => eprintln!(
                     "Server-Selection Sweep: {answered} of {surveyed} candidates answered; \
                      judging the live cohort..."

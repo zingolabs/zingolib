@@ -213,7 +213,7 @@ pub fn select(
 
 /// Whether `result` is a healthy answer for `chain`: it answered the survey
 /// and its reported chain matches.
-fn healthy(result: &SurveyResult, chain: &str) -> bool {
+pub(crate) fn healthy(result: &SurveyResult, chain: &str) -> bool {
     result
         .reported
         .as_ref()

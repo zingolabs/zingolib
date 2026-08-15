@@ -1574,6 +1574,24 @@ mod pure_helpers {
         );
     }
 
+    /// HYPOTHESIS: an arriving sweep result prints its indexer with exactly
+    /// the ruled pair of labels, healthy or unresponsive. Falsified if
+    /// either label drifts.
+    #[test]
+    fn a_surveyed_result_prints_its_ruled_label() {
+        let indexer: http::Uri = "https://zec.rocks:443"
+            .parse()
+            .expect("the static uri parses");
+        assert_eq!(
+            super::super::surveyed_line(&indexer, true),
+            "  https://zec.rocks:443/: healthy"
+        );
+        assert_eq!(
+            super::super::surveyed_line(&indexer, false),
+            "  https://zec.rocks:443/: unresponsive"
+        );
+    }
+
     /// HYPOTHESIS: a migration sync failure keeps the LightClient failure
     /// as its source, so the chain walk reaches the innermost detail; a
     /// rendering that stops at the wrapper line falsifies it.

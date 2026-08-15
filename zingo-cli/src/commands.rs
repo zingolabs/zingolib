@@ -153,6 +153,15 @@ pub(crate) fn render_error_chain(error: &(impl std::error::Error + 'static)) -> 
     zingo_net_diag::chain_texts(error).join(DISPATCH_CHAIN_SEPARATOR)
 }
 
+/// The one line an arriving sweep result prints: the indexer, and whether
+/// it answered healthily.
+pub(crate) fn surveyed_line(indexer: &http::Uri, healthy: bool) -> String {
+    format!(
+        "  {indexer}: {}",
+        if healthy { "healthy" } else { "unresponsive" }
+    )
+}
+
 /// A usage failure carrying the standard "Try 'help `<command>`'" pointer,
 /// with the command name drawn from the caller instead of re-typed prose.
 fn usage(command: &str, detail: impl std::fmt::Display) -> CommandError {

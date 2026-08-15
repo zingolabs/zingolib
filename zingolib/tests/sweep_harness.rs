@@ -78,22 +78,24 @@ async fn sweep_rounds_report_their_outcomes() {
 
     let mut results: Vec<Round> = Vec::new();
     for round in 1..=rounds {
-        let seen = std::cell::Cell::new((0usize, 0usize));
+        let seen = std::sync::Arc::new(std::sync::Mutex::new((0usize, 0usize)));
+        let seen_sink = std::sync::Arc::clone(&seen);
         let started = Instant::now();
         let outcome = client
             .run_server_selection_sweep(
                 std::path::Path::new(&proxy),
                 &candidates,
                 pin.as_ref(),
-                |phase| {
+                move |phase| {
                     if let SweepProgress::Judging { answered, surveyed } = phase {
-                        seen.set((answered, surveyed));
+                        *seen_sink.lock().expect("the tally mutex is never poisoned") =
+                            (answered, surveyed);
                     }
                 },
             )
             .await;
         let elapsed = started.elapsed();
-        let (answered, surveyed) = seen.get();
+        let (answered, surveyed) = *seen.lock().expect("the tally mutex is never poisoned");
         let (verdict, refusal) = match outcome {
             Ok(selection) => (Some(selection.sync_indexer.to_string()), None),
             Err(e) => (None, Some(format!("{e}"))),
