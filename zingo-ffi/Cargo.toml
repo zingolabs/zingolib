@@ -14,13 +14,13 @@ exclude = ["nym-proxy-ffi"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "dev", features = [
+zingolib = { git = "https://github.com/zingolabs/zingolib", rev = "80134660ec8f6217c211e72b1b17d8f613227b0f", features = [
     "nym",
     "perspective",
 ] }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "dev" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "dev" }
-zingo-price = { git = "https://github.com/zingolabs/zingolib", branch = "dev", features = [
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", rev = "80134660ec8f6217c211e72b1b17d8f613227b0f" }
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "80134660ec8f6217c211e72b1b17d8f613227b0f" }
+zingo-price = { git = "https://github.com/zingolabs/zingolib", rev = "80134660ec8f6217c211e72b1b17d8f613227b0f", features = [
     "socks5-fetch",
 ] }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
