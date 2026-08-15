@@ -3,8 +3,8 @@
 //! [`plan_transfer`] and [`plan_shield`] map a read-only wallet view and a
 //! payment request to an owned [`Proposal`] — note selection, change,
 //! ZIP 317 fee sizing, and ZIP 320 TEX step-splitting — with no wallet
-//! mutation. Fee arithmetic stays upstream ([`super::fee`]); this module
-//! decides only what the fee rule is fed.
+//! mutation. Fee arithmetic stays upstream in `super::fee`, which is
+//! crate-private, and this module decides only what the fee rule is fed.
 //!
 //! The migration's comparative equivalence suite proved this planner
 //! fee-for-fee and input-for-input equal to `zcash_client_backend`
@@ -422,9 +422,10 @@ fn compute_step_balance(
 /// step otherwise.
 ///
 /// `route_via_ephemeral` routes ordinary transparent recipients through
-/// the ephemeral hop as well, which a swap deposit needs (see
-/// [`route_request`]). The two travel together: the OP_RETURN memo and
-/// the wallet-controlled origin must reach the vault in one transaction.
+/// the ephemeral hop as well, which a swap deposit needs: Mayachain and
+/// THORChain read the refund destination from the inbound transaction's
+/// origin, and a shielded spend exposes none. It travels with the
+/// OP_RETURN memo, because both must reach the vault in one transaction.
 pub fn plan_transfer(
     wallet: &LightWallet,
     request: TransactionRequest,
