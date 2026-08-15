@@ -34,6 +34,8 @@ use log::{error, info};
 use log::{debug, warn};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+#[cfg(feature = "nym")]
+use pepper_sync::error::{SyncError, SyncRecoveryObservables};
 use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
 use zingolib::data::PollReport;
 use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
@@ -72,7 +74,9 @@ pub fn build_clap_app() -> clap::Command {
                 .long("seed")
                 .value_name("SEED PHRASE")
                 .value_parser(parse_seed)
-                .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists"))
+                .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists. \
+A seed passed here is visible in this host's process list and shell history; export ZINGO_SEED instead to \
+keep it to this process and its child."))
             .arg(Arg::new("viewkey")
                 .long("viewkey")
                 .value_name("UFVK")
@@ -201,6 +205,16 @@ pub fn misplaced_session_option(args: &[String]) -> Option<String> {
     })
 }
 
+/// The environment variable a seed phrase may arrive in, so a caller need
+/// not put it where the process list and the shell history can read it.
+const SEED_ENV: &str = "ZINGO_SEED";
+
+/// The seed a session starts from: the flag when given, otherwise the
+/// environment, and neither when what arrives is blank.
+fn resolve_seed(flag: Option<String>, from_env: Option<String>) -> Option<String> {
+    flag.or(from_env).filter(|phrase| !phrase.trim().is_empty())
+}
+
 /// Custom function to parse a string into an `http::Uri`
 fn parse_uri(s: &str) -> Result<http::Uri, String> {
     s.parse::<http::Uri>().map_err(|e| e.to_string())
@@ -240,8 +254,9 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
 
 /// Performs the per-prompt housekeeping, awaited on the command-loop
 /// thread where the [`LightClient`] lives: polls the sync task, reports
-/// any save-task failure, and returns the sync indicator to embed in the
-/// interactive prompt: `" [Syncing X / Y outputs]"` while sync is in
+/// any save-task failure, and returns the prompt's status segment,
+/// `Block:{height}` followed by the sync indicator:
+/// `" [Syncing X / Y outputs]"` while sync is in
 /// progress, `" [Synced X / X outputs]"` when fully synced,
 /// `" [Sync error]"` on failure, or `" [Sync stopped at X / Y outputs]"`
 /// when no sync task is running and the wallet is not fully synced.
@@ -250,20 +265,37 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
 /// [`pepper_sync::sync_status`], `check_save_error`), never by inspecting
 /// a command's output string. Every line this function prints is
 /// narration, so all of it goes to stderr (ADR 0031).
-async fn prompt_indicator(lightclient: &mut LightClient) -> String {
+async fn prompt_indicator(
+    lightclient: &mut LightClient,
+    sync_recovery: &mut SyncRecovery,
+) -> String {
+    let height = prompt_height(lightclient).await;
     let indicator = match lightclient.poll_sync() {
         PollReport::Ready(Err(e)) => {
             // The doubled "Sync error: Error:" is deliberate: it reproduces
             // the historical output byte for byte, where the polled command
             // string (itself prefixed "Error:") was interpolated after
             // "Sync error: ".
-            eprintln!(
-                "Sync error: Error: {}\nPlease restart sync with `sync run`.",
-                commands::render_error_chain(&e)
-            );
-            " [Sync error]".to_string()
+            eprintln!("Sync error: Error: {}", commands::render_error_chain(&e));
+            #[cfg(feature = "nym")]
+            let recovered = attempt_sync_recovery(lightclient, sync_recovery, &e).await;
+            #[cfg(not(feature = "nym"))]
+            let recovered = {
+                let _ = &sync_recovery;
+                false
+            };
+            if recovered {
+                syncing_indicator(scan_progress(lightclient).await)
+            } else {
+                eprintln!("Please restart sync with `sync run`.");
+                " [Sync error]".to_string()
+            }
         }
         PollReport::Ready(Ok(sync_result)) => {
+            #[cfg(feature = "nym")]
+            {
+                sync_recovery.attempts_left = SYNC_RECOVERY_ATTEMPT_BUDGET;
+            }
             eprintln!("{sync_result}");
             synced_indicator(scan_progress(lightclient).await)
         }
@@ -273,7 +305,7 @@ async fn prompt_indicator(lightclient: &mut LightClient) -> String {
     if let Err(e) = lightclient.check_save_error().await {
         eprintln!("Error: save failed. {e}\nRestarting save task...");
     }
-    indicator
+    format!("Block:{height}{indicator}")
 }
 
 /// Waits on the loop thread for the launched sync task to finish, narrating
@@ -310,6 +342,25 @@ struct ScanProgress {
     outputs_scanned: u64,
     total_outputs: u64,
     complete: bool,
+}
+
+/// Reads the prompt's chain height from the sync engine's progress channel while sync runs, from the wallet otherwise, or zero when neither knows a height yet.
+async fn prompt_height(lightclient: &LightClient) -> u32 {
+    if lightclient.sync_mode() == pepper_sync::wallet::SyncMode::NotRunning {
+        lightclient
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .last_known_chain_height()
+            .map_or(0, u32::from)
+    } else {
+        lightclient
+            .latest_sync_status()
+            .as_ref()
+            .and_then(|status| status.scan_ranges.last())
+            .map_or(0, |range| u32::from(range.block_range().end - 1))
+    }
 }
 
 /// Reads the scan progress from the sync engine's progress channel while sync runs, from the wallet otherwise, or `None` if sync status is unavailable.
@@ -431,18 +482,9 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
     };
 
     loop {
-        // Read the height first
-        let height = send_request(Request::Command(commands::CliCommand::Height))
-            .ok()
-            .and_then(|s| json::parse(&s).ok())
-            .and_then(|v| v["height"].as_i64())
-            .unwrap_or(0);
+        let prompt_status = send_request(Request::PromptIndicator).unwrap_or_default();
 
-        let sync_indicator = send_request(Request::PromptIndicator).unwrap_or_default();
-
-        let readline = rl.readline(&format!(
-            "({chain_name}) Block:{height}{sync_indicator} >> "
-        ));
+        let readline = rl.readline(&format!("({chain_name}) {prompt_status} >> "));
         match readline {
             Ok(line) => {
                 rl.add_history_entry(line.as_str())
@@ -512,8 +554,9 @@ enum Request {
     /// with the command's output or `Err` with the rendered error line.
     Command(commands::CliCommand),
     /// Perform the per-prompt housekeeping (sync poll, save check) via
-    /// typed calls on the loop thread. The reply is the sync indicator
-    /// to embed in the interactive prompt.
+    /// typed calls on the loop thread. The reply is the prompt's status
+    /// segment: the chain height and the sync indicator, read without
+    /// contending with a running sync for the wallet lock.
     PromptIndicator,
     /// Block on the loop thread until the launched sync task finishes,
     /// narrating scan progress on stderr, and reply with the sync result.
@@ -533,6 +576,60 @@ struct CommandChannel {
     receiver: Receiver<Result<String, String>>,
 }
 
+/// How many automatic sync recoveries may run back-to-back before the
+/// session parks on the reported error and waits for `sync run`.
+#[cfg(feature = "nym")]
+const SYNC_RECOVERY_ATTEMPT_BUDGET: usize = 3;
+
+/// What the command loop needs to recover a dead sync without the user.
+#[cfg(feature = "nym")]
+pub(crate) struct SyncRecovery {
+    /// The census chain a redraw surveys; `None` withholds the redraw
+    /// (a pinned, offline, or regtest session), leaving only same-server
+    /// relaunches.
+    redraw_chain: Option<zingolib::indexers::IndexerChain>,
+    /// The `nym-proxy` binary a redraw's sweep spawns.
+    proxy_path: String,
+    /// The automatic recoveries left before the session parks.
+    attempts_left: usize,
+}
+
+/// What the command loop needs to recover a dead sync without the user.
+#[cfg(not(feature = "nym"))]
+pub(crate) struct SyncRecovery;
+
+/// The move one automatic sync-recovery attempt makes.
+#[cfg(feature = "nym")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecoveryAction {
+    /// Report the error and wait for the user's `sync run`.
+    Park,
+    /// Launch a fresh sync task against the still-bound indexer.
+    Relaunch,
+    /// Redraw the sync indexer with a Server-Selection Sweep, then launch
+    /// a fresh sync task against the winner.
+    Redraw,
+}
+
+/// Plans one automatic recovery from the error's typed recommendation, the
+/// attempts left, and whether this session may redraw its indexer.
+#[cfg(feature = "nym")]
+fn plan_recovery(
+    observable: SyncRecoveryObservables,
+    attempts_left: usize,
+    redraw_available: bool,
+) -> RecoveryAction {
+    if attempts_left == 0 {
+        return RecoveryAction::Park;
+    }
+    match observable {
+        SyncRecoveryObservables::Abort => RecoveryAction::Park,
+        SyncRecoveryObservables::MaybeRecoverableServer => RecoveryAction::Relaunch,
+        SyncRecoveryObservables::ServerUnavailable if redraw_available => RecoveryAction::Redraw,
+        SyncRecoveryObservables::ServerUnavailable => RecoveryAction::Park,
+    }
+}
+
 /// Spawns a background thread that executes each parsed-command message
 /// against the [`LightClient`] and replies through the returned
 /// [`CommandChannel`], exiting on [`commands::CliCommand::Quit`].
@@ -540,6 +637,7 @@ struct CommandChannel {
 pub(crate) fn command_loop(
     mut lightclient: LightClient,
     communication_mode: CommunicationMode,
+    mut sync_recovery: SyncRecovery,
 ) -> CommandChannel {
     let (command_transmitter, command_receiver) = channel::<Request>();
     let (resp_transmitter, resp_receiver) = channel::<Result<String, String>>();
@@ -550,7 +648,10 @@ pub(crate) fn command_loop(
                 Request::Command(command) => command,
                 Request::PromptIndicator => {
                     resp_transmitter
-                        .send(Ok(RT.block_on(prompt_indicator(&mut lightclient))))
+                        .send(Ok(RT.block_on(prompt_indicator(
+                            &mut lightclient,
+                            &mut sync_recovery,
+                        ))))
                         .unwrap();
                     continue;
                 }
@@ -937,7 +1038,10 @@ impl ConfigTemplate {
         communication_mode: CommunicationMode,
         matches: clap::ArgMatches,
     ) -> Result<Self, ConfigTemplateError> {
-        let seed = matches.get_one::<String>("seed").cloned();
+        let seed = resolve_seed(
+            matches.get_one::<String>("seed").cloned(),
+            std::env::var(SEED_ENV).ok(),
+        );
         let ufvk = matches.get_one::<String>("viewkey").cloned();
         if seed.is_some() && ufvk.is_some() {
             return Err(ConfigTemplateError::BothSeedAndViewkey);
@@ -1125,9 +1229,23 @@ async fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result
 #[allow(clippy::disallowed_methods)]
 pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<CommandChannel> {
     let lightclient = RT.block_on(startup_async(filled_template))?;
+    #[cfg(feature = "nym")]
+    let sync_recovery = SyncRecovery {
+        redraw_chain: (matches!(
+            filled_template.communication_mode,
+            CommunicationMode::Online
+        ) && !filled_template.server_pinned)
+            .then(|| census_chain(&filled_template.chaintype))
+            .flatten(),
+        proxy_path: commands::resolve_proxy_path(filled_template.nym_proxy_path.as_deref()),
+        attempts_left: SYNC_RECOVERY_ATTEMPT_BUDGET,
+    };
+    #[cfg(not(feature = "nym"))]
+    let sync_recovery = SyncRecovery;
     Ok(command_loop(
         lightclient,
         filled_template.communication_mode,
+        sync_recovery,
     ))
 }
 
@@ -1179,22 +1297,6 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     #[cfg(feature = "nym")]
     if filled_template.communication_mode == CommunicationMode::Online {
         use zingolib::mixnet::{MixnetStartPolicy, ProvisionStrategy};
-        lightclient
-            .start_mixnet_session(
-                ProvisionStrategy::Spawn(commands::spawn_hints(
-                    filled_template.nym_proxy_path.as_deref(),
-                )),
-                MixnetStartPolicy::ForcedOn,
-            )
-            .await
-            .map_err(|e| {
-                std::io::Error::other(format!(
-                    "Failed to start the Nym mixnet proxy: {}. Mixnet Mode is required for a \
-                     connected session; install the nym-proxy binary, pass --nym-proxy <path>, \
-                     or set $ZINGO_NYM_PROXY.",
-                    commands::render_error_chain(&e),
-                ))
-            })?;
         info!(
             "Mixnet Mode enabling; the nym proxy is bootstrapping. Send and price-fetch \
              become available once it is ready (see `network status`)."
@@ -1203,10 +1305,12 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
         // subscription (push, not poll): mode changes at info/warn through
         // the standard log path, bootstrap progress at debug. Rendering is
         // this consumer's own (ADR 0024, decision 8) — variant matching,
-        // never prose matching.
+        // never prose matching. The subscription precedes the blocking
+        // enable so the startup birth itself is narrated, and the seed is
+        // Bootstrapping because the line above already announced it.
         let mut status_rx = lightclient.subscribe_mixnet_status();
         tokio::spawn(async move {
-            let mut last_mode = status_rx.borrow().mode;
+            let mut last_mode = zingolib::mixnet::MixnetMode::Bootstrapping;
             while status_rx.changed().await.is_ok() {
                 let status = status_rx.borrow_and_update().clone();
                 if status.mode == last_mode {
@@ -1217,7 +1321,8 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
                 }
                 last_mode = status.mode;
                 match status.mode {
-                    zingolib::mixnet::MixnetMode::Ready => info!(
+                    zingolib::mixnet::MixnetMode::Ready
+                    | zingolib::mixnet::MixnetMode::PreviouslyProvenThisEpoch => info!(
                         "Mixnet Mode ready; send and price-fetch route over the mixnet \
                          (see `network status`).{}",
                         commands::render_exit_nodes(&status.exits)
@@ -1238,6 +1343,22 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
                 }
             }
         });
+        lightclient
+            .start_mixnet_session(
+                ProvisionStrategy::Spawn(commands::spawn_hints(
+                    filled_template.nym_proxy_path.as_deref(),
+                )),
+                MixnetStartPolicy::ForcedOn,
+            )
+            .await
+            .map_err(|e| {
+                std::io::Error::other(format!(
+                    "Failed to start the Nym mixnet proxy: {}. Mixnet Mode is required for a \
+                     connected session; install the nym-proxy binary, pass --nym-proxy <path>, \
+                     or set $ZINGO_NYM_PROXY.",
+                    commands::render_error_chain(&e),
+                ))
+            })?;
     }
 
     // The sweep binds the session's indexer, so it runs for every online
@@ -1264,12 +1385,19 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
         }
     }
 
-    let save_run = commands::CliCommand::Save {
-        sub: commands::SaveSubCommand::Run,
-    };
-    match commands::dispatch_parsed(save_run, &mut lightclient).await {
-        Ok(update) => eprintln!("{update}"),
-        Err(e) => eprintln!("Error: {}", commands::render_error_chain(&e)),
+    if std::env::var_os("ZINGO_DISABLE_SAVER").is_none() {
+        let save_run = commands::CliCommand::Save {
+            sub: commands::SaveSubCommand::Run,
+        };
+        match commands::dispatch_parsed(save_run, &mut lightclient).await {
+            Ok(update) => eprintln!("{update}"),
+            Err(e) => eprintln!("Error: {}", commands::render_error_chain(&e)),
+        }
+    } else {
+        eprintln!(
+            "ZINGO_DISABLE_SAVER is set: the save task will not run, so nothing \
+             persists this session."
+        );
     }
 
     if filled_template.sync
@@ -1295,15 +1423,16 @@ fn census_chain(chain: &ChainType) -> Option<zingolib::indexers::IndexerChain> {
 }
 
 /// Runs the Server-Selection Sweep (ADR 0034), narrating each phase, and
-/// binds its verdict as the sync indexer; returns whether this Sync Session
-/// may open.
+/// binds a sync indexer; returns whether this Sync Session may open. A
+/// pinned server rides the survey and is chosen when it answers; a pin the
+/// survey found unresponsive is reported with the sweep's verdict offered
+/// as the alternative, and a sweep whose own transport failed never counts
+/// against the pin.
 #[cfg(feature = "nym")]
 async fn sweep_select_sync_indexer(
     lightclient: &mut LightClient,
     filled_template: &ConfigTemplate,
 ) -> bool {
-    use zingolib::lightclient::select::SweepProgress;
-
     let Some(chain) = census_chain(&filled_template.chaintype) else {
         return true;
     };
@@ -1334,32 +1463,22 @@ async fn sweep_select_sync_indexer(
             std::path::Path::new(&proxy_path),
             &candidates,
             pin.as_ref(),
-            |phase| match phase {
-                SweepProgress::TransportBootstrapping => eprintln!(
-                    "Server-Selection Sweep: bootstrapping a dedicated sweep transport \
-                     (its Exit Node is recycled when the sweep completes)..."
-                ),
-                SweepProgress::Surveying { candidates } => eprintln!(
-                    "Server-Selection Sweep: surveying {candidates} candidates over the mixnet..."
-                ),
-                SweepProgress::Judging { answered, surveyed } => eprintln!(
-                    "Server-Selection Sweep: {answered} of {surveyed} candidates answered; \
-                     judging the live cohort..."
-                ),
-            },
+            narrate_sweep_progress,
         )
         .await;
-    match selection {
-        Ok(selection) => {
-            let chosen = selection.sync_indexer.clone();
+    match judge_sweep_outcome(&selection, pin.as_ref()) {
+        SweepVerdict::PinStands { notice } => {
+            eprintln!("{notice}");
+            true
+        }
+        SweepVerdict::Refuse { notice } => {
+            eprintln!("{notice}");
+            false
+        }
+        SweepVerdict::BindWinner { chosen, notice } => {
             match lightclient.set_indexer_uri(chosen.clone()).await {
                 Ok(()) => {
-                    eprintln!(
-                        "Server-Selection Sweep: sync attaches to {chosen} (live cohort of {}, \
-                         {} transmit candidates exclude its operator).",
-                        selection.cohort.len(),
-                        selection.transmit_candidates.len(),
-                    );
+                    eprintln!("{notice}");
                     true
                 }
                 Err(e) => {
@@ -1372,9 +1491,303 @@ async fn sweep_select_sync_indexer(
                 }
             }
         }
+        SweepVerdict::RecommendFallback {
+            alternative,
+            notice,
+        } => {
+            eprintln!("{notice}");
+            if !consent_to_fallback(&filled_template.mode, &alternative) {
+                eprintln!(
+                    "Server-Selection Sweep: fallback declined. This Sync Session does not \
+                     open; run `changeserver {alternative}` at the prompt, or relaunch \
+                     pinning a live server."
+                );
+                return false;
+            }
+            match lightclient.set_indexer_uri(alternative.clone()).await {
+                Ok(()) => {
+                    eprintln!(
+                        "Server-Selection Sweep: sync attaches to {alternative} by your \
+                         explicit consent."
+                    );
+                    true
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Server-Selection Sweep: consented to {alternative}, but binding it \
+                         failed: {}. This Sync Session does not open.",
+                        commands::render_error_chain(&e),
+                    );
+                    false
+                }
+            }
+        }
+    }
+}
+
+/// Narrates one Server-Selection Sweep phase transition on stderr.
+#[cfg(feature = "nym")]
+fn narrate_sweep_progress(phase: zingolib::lightclient::select::SweepProgress) {
+    use zingolib::lightclient::select::SweepProgress;
+    match phase {
+        SweepProgress::TransportBootstrapping => eprintln!(
+            "Server-Selection Sweep: bootstrapping a dedicated sweep transport \
+             (its Exit Node is recycled when the sweep completes)..."
+        ),
+        SweepProgress::Surveying { candidates } => eprintln!(
+            "Server-Selection Sweep: surveying {candidates} candidates over the mixnet..."
+        ),
+        SweepProgress::ExitAbandoned { draw } => eprintln!(
+            "Server-Selection Sweep: the Exit Node of draw {draw} carries nothing — \
+             a reliable address stayed silent through it; abandoning that exit and \
+             surveying again from the start..."
+        ),
+        SweepProgress::Judging { answered, surveyed } => eprintln!(
+            "Server-Selection Sweep: {answered} of {surveyed} candidates answered; \
+             judging the live cohort..."
+        ),
+    }
+}
+
+/// Reports whether two URIs name the same indexer endpoint by scheme, host,
+/// and port, so a bound URI's path rendering never defeats the comparison.
+#[cfg(feature = "nym")]
+fn same_endpoint(a: &http::Uri, b: &http::Uri) -> bool {
+    a.scheme_str() == b.scheme_str() && a.host() == b.host() && a.port_u16() == b.port_u16()
+}
+
+/// Attempts one automatic recovery of a dead sync, returning whether a new
+/// sync task is running.
+#[cfg(feature = "nym")]
+async fn attempt_sync_recovery<E: std::fmt::Debug + std::fmt::Display>(
+    lightclient: &mut LightClient,
+    recovery: &mut SyncRecovery,
+    error: &SyncError<E>,
+) -> bool {
+    let Some(bound) = lightclient.indexer_uri() else {
+        return false;
+    };
+    let action = plan_recovery(
+        error.recovery_recommendation(),
+        recovery.attempts_left,
+        recovery.redraw_chain.is_some(),
+    );
+    let attempt = SYNC_RECOVERY_ATTEMPT_BUDGET - recovery.attempts_left + 1;
+    match action {
+        RecoveryAction::Park => return false,
+        RecoveryAction::Relaunch => {
+            recovery.attempts_left -= 1;
+            eprintln!(
+                "Sync relaunches against {bound}: the error class says the same server may \
+                 recover (automatic recovery {attempt} of {SYNC_RECOVERY_ATTEMPT_BUDGET})."
+            );
+        }
+        RecoveryAction::Redraw => {
+            recovery.attempts_left -= 1;
+            eprintln!(
+                "Sync's indexer {bound} failed and the error class condemns the server; \
+                 abandoning it and redrawing \
+                 (automatic recovery {attempt} of {SYNC_RECOVERY_ATTEMPT_BUDGET})..."
+            );
+            let chain = recovery
+                .redraw_chain
+                .expect("plan_recovery only redraws when a census chain is present");
+            if !redraw_sync_indexer(lightclient, chain, &recovery.proxy_path, &bound).await {
+                return false;
+            }
+        }
+    }
+    let sync_run = commands::CliCommand::Sync {
+        sub: commands::SyncSubCommand::Run,
+    };
+    match commands::dispatch_parsed(sync_run, lightclient).await {
+        Ok(update) => {
+            eprintln!("{update}");
+            true
+        }
         Err(e) => {
-            eprintln!("{}", sweep_refusal_notice(&e));
+            eprintln!("Error: {}", commands::render_error_chain(&e));
             false
+        }
+    }
+}
+
+/// Runs a redraw Server-Selection Sweep that demotes the failed indexer,
+/// surveying it again only when it is the sole candidate, and returns
+/// whether a fresh winner is bound.
+#[cfg(feature = "nym")]
+async fn redraw_sync_indexer(
+    lightclient: &mut LightClient,
+    chain: zingolib::indexers::IndexerChain,
+    proxy_path: &str,
+    failed: &http::Uri,
+) -> bool {
+    let mut candidates: Vec<http::Uri> = zingolib::indexers::mixnet_eligible(chain)
+        .map(|indexer| indexer.uri.parse().expect("census URIs parse"))
+        .collect();
+    if candidates.len() > 1 {
+        candidates.retain(|candidate| !same_endpoint(candidate, failed));
+    }
+    let selection = lightclient
+        .run_server_selection_sweep(
+            std::path::Path::new(proxy_path),
+            &candidates,
+            None,
+            narrate_sweep_progress,
+        )
+        .await;
+    match judge_sweep_outcome(&selection, None) {
+        SweepVerdict::BindWinner { chosen, notice } => {
+            match lightclient.set_indexer_uri(chosen.clone()).await {
+                Ok(()) => {
+                    eprintln!("{notice}");
+                    true
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Server-Selection Sweep: selected {chosen}, but binding it failed: {}.",
+                        commands::render_error_chain(&e),
+                    );
+                    false
+                }
+            }
+        }
+        SweepVerdict::Refuse { notice }
+        | SweepVerdict::PinStands { notice }
+        | SweepVerdict::RecommendFallback { notice, .. } => {
+            eprintln!("{notice}");
+            false
+        }
+    }
+}
+
+/// The decision a finished Server-Selection Sweep leaves the Sync Session
+/// with.
+#[cfg(feature = "nym")]
+#[derive(Debug)]
+enum SweepVerdict {
+    /// The pinned, already-bound server stands and the Sync Session opens.
+    PinStands {
+        /// The narration this decision prints.
+        notice: String,
+    },
+    /// The sweep's winner binds and the Sync Session opens on it.
+    BindWinner {
+        /// The indexer to bind.
+        chosen: http::Uri,
+        /// The narration a successful bind prints.
+        notice: String,
+    },
+    /// The Sync Session does not open.
+    Refuse {
+        /// The narration this refusal prints.
+        notice: String,
+    },
+    /// The survey refused the pin but holds a healthy alternative, which
+    /// binds only by the user's explicit consent, refusing by default.
+    RecommendFallback {
+        /// The healthy indexer the sweep drew.
+        alternative: http::Uri,
+        /// The narration recommending the fallback before the consent ask.
+        notice: String,
+    },
+}
+
+/// Asks explicit consent to open the Sync Session on `alternative` instead
+/// of the refused pin, defaulting to No wherever no interactive terminal
+/// can answer.
+#[cfg(feature = "nym")]
+fn consent_to_fallback(mode: &ModeOfOperation, alternative: &http::Uri) -> bool {
+    use std::io::IsTerminal as _;
+    if !matches!(mode, ModeOfOperation::Interactive) || !std::io::stdin().is_terminal() {
+        return false;
+    }
+    eprint!("Server-Selection Sweep: use {alternative} for this Sync Session instead? [y/N] ");
+    let mut answer = String::new();
+    if std::io::stdin().read_line(&mut answer).is_err() {
+        return false;
+    }
+    matches!(answer.trim(), "y" | "Y" | "yes" | "Yes")
+}
+
+/// Judges a finished sweep against the pin, deciding whether the Sync
+/// Session opens and on which indexer.
+#[cfg(feature = "nym")]
+fn judge_sweep_outcome(
+    selection: &Result<
+        zingolib::mixnet::sweep::Selection,
+        zingolib::lightclient::select::ServerSelectionError,
+    >,
+    pin: Option<&http::Uri>,
+) -> SweepVerdict {
+    match selection {
+        Ok(selection) => {
+            if let Some(pinned) = pin {
+                if selection.cohort.iter().any(|live| &live.uri == pinned) {
+                    // The user's selection answered the survey: it is chosen,
+                    // and it is already bound from config.
+                    return SweepVerdict::PinStands {
+                        notice: format!(
+                            "Server-Selection Sweep: sync attaches to the pinned server \
+                             {pinned} (live cohort of {}).",
+                            selection.cohort.len(),
+                        ),
+                    };
+                }
+                // The ruled default is No: the recommendation binds the
+                // alternative only through the caller's explicit consent.
+                return SweepVerdict::RecommendFallback {
+                    alternative: selection.sync_indexer.clone(),
+                    notice: format!(
+                        "Server-Selection Sweep: the pinned server {pinned} did not answer the \
+                         survey or lags the live cohort of {}. The sweep drew a healthy \
+                         alternative: {}.",
+                        selection.cohort.len(),
+                        selection.sync_indexer,
+                    ),
+                };
+            }
+            SweepVerdict::BindWinner {
+                chosen: selection.sync_indexer.clone(),
+                notice: format!(
+                    "Server-Selection Sweep: sync attaches to {} (live cohort of {}, \
+                     {} transmit candidates exclude its operator).",
+                    selection.sync_indexer,
+                    selection.cohort.len(),
+                    selection.transmit_candidates.len(),
+                ),
+            }
+        }
+        Err(e) => {
+            let judged_the_pin = matches!(
+                e,
+                zingolib::lightclient::select::ServerSelectionError::Selection(_)
+            );
+            match pin {
+                // A Selection error means the survey ran through a proven
+                // exit and the pinned candidate was judged with the rest:
+                // opening against it would trust a server just refused.
+                Some(pinned) if judged_the_pin => SweepVerdict::Refuse {
+                    notice: format!(
+                        "Server-Selection Sweep: the survey ran and selected nothing — the \
+                         pinned server {pinned} was judged and refused: {}. This Sync Session \
+                         does not open; run `changeserver` at the prompt, or relaunch pinning \
+                         a live server.",
+                        commands::render_error_chain(e),
+                    ),
+                },
+                Some(pinned) => SweepVerdict::PinStands {
+                    notice: format!(
+                        "Server-Selection Sweep: no verdict: {}. The survey never judged the \
+                         pinned server {pinned}; it stands, and this Sync Session opens \
+                         against it.",
+                        commands::render_error_chain(e),
+                    ),
+                },
+                None => SweepVerdict::Refuse {
+                    notice: sweep_refusal_notice(e),
+                },
+            }
         }
     }
 }

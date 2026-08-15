@@ -10,8 +10,6 @@ use zcash_protocol::consensus::BranchId;
 use zcash_transparent::keys::NonHardenedChildIndex;
 use zip321::TransactionRequest;
 
-#[cfg(feature = "nym")]
-use crate::mixnet::acquire;
 use pepper_sync::keys::transparent::{TransparentAddressId, TransparentScope};
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
@@ -221,18 +219,11 @@ impl TransmitTarget for ClearnetTarget {
     }
 }
 
-/// A single Correspondent reached through the local SOCKS5 proxy, as a
-/// [`TransmitTarget`]: it submits and delivery-checks over the mixnet tunnel,
-/// running the same [`resilient_transmit`] policy as the clearnet path. The
-/// escalation builds one of these per pick.
+/// A [`zingo_netutils::Socks5Indexer`] is the mixnet [`TransmitTarget`]:
+/// one Correspondent that submits and delivery-checks over its own tunnel,
+/// running the same [`resilient_transmit`] policy as the clearnet path.
 #[cfg(feature = "nym")]
-struct SocksTarget {
-    socks5_addr: std::net::SocketAddr,
-    indexer: http::Uri,
-}
-
-#[cfg(feature = "nym")]
-impl TransmitTarget for SocksTarget {
+impl TransmitTarget for zingo_netutils::Socks5Indexer {
     type Failure = zingo_netutils::Socks5TransmitError;
 
     async fn submit(
@@ -240,70 +231,21 @@ impl TransmitTarget for SocksTarget {
         raw_tx: &[u8],
         height: u64,
     ) -> Result<String, zingo_netutils::Socks5TransmitError> {
-        zingo_netutils::send_transaction_via_socks5(
-            self.socks5_addr,
-            &self.indexer,
-            raw_tx,
-            height,
-            DEFAULT_REQUEST_TIMEOUT,
-        )
-        .await
+        self.send_transaction(raw_tx, height).await
     }
 
     fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send {
         let hash = txid.as_ref().to_vec();
-        async move {
-            zingo_netutils::transaction_known_via_socks5(
-                self.socks5_addr,
-                &self.indexer,
-                &hash,
-                DEFAULT_REQUEST_TIMEOUT,
-            )
-            .await
-        }
+        async move { self.transaction_known(&hash).await }
     }
 }
 
-/// The session's Correspondent Pools, from which a Transmission's pulls
-/// draw their own Exclusive exits.
-#[cfg(feature = "nym")]
-pub(crate) struct PullTransports {
-    pools: std::sync::Arc<crate::correspondent::pool::Pools>,
-}
-
-/// The placeholder a build without the mixnet carries in its place.
-#[cfg(not(feature = "nym"))]
-pub(crate) struct PullTransports;
-
-#[cfg(feature = "nym")]
-impl PullTransports {
-    /// One pull's own Exclusive-exit transport: the Indexer Pool's next
-    /// member, or a fresh acquisition when the pool is empty.
-    async fn acquire(
-        &self,
-    ) -> Result<
-        crate::correspondent::pool::Member<
-            crate::mixnet::MixnetProxy,
-            crate::correspondent::pool::Exclusive,
-        >,
-        acquire::TransportError,
-    > {
-        self.pools.take_or_acquire(|pools| &pools.indexer).await
-    }
-
-    /// Tops the pools back up after a pull consumed a member.
-    fn refill(&self) {
-        self.pools.ensure_filled();
-    }
-}
-
-/// The mixnet route one Transmission's pulls take: the session tunnel a
-/// pull falls back to, and the pools it draws its own Exclusive exit from.
+/// The mixnet route one Transmission's pulls take: the session's standing
+/// client, which every pull multiplexes over.
 #[derive(Clone, Copy)]
 #[cfg_attr(not(feature = "nym"), allow(dead_code))]
-pub(crate) struct PullRoute<'a> {
+pub(crate) struct PullRoute {
     shared_socks5: std::net::SocketAddr,
-    transports: Option<&'a PullTransports>,
 }
 
 /// Submit one transaction under the route the Mixnet Mode policy resolved:
@@ -311,7 +253,7 @@ pub(crate) struct PullRoute<'a> {
 /// mixnet escalation over the Correspondents when it is `Some`. Returns the
 /// server-reported txid or the last failure message.
 async fn transmit_one_transaction(
-    route: Option<PullRoute<'_>>,
+    route: Option<PullRoute>,
     indexer: Option<&zingo_netutils::GrpcIndexer>,
     tx_bytes: &[u8],
     height: u64,
@@ -399,7 +341,7 @@ async fn transmit_one_transaction(
 /// rather than falling back.
 #[cfg(feature = "nym")]
 async fn mixnet_escalating_transmit(
-    route: PullRoute<'_>,
+    route: PullRoute,
     sync_indexer: Option<&http::Uri>,
     tx_bytes: &[u8],
     height: u64,
@@ -417,45 +359,16 @@ async fn mixnet_escalating_transmit(
         &history.health().lock().expect("health mutex"),
     )?;
     let run_pull = |indexer: http::Uri| {
-        let shared_addr = route.shared_socks5;
-        let pulls = route.transports;
+        let socks5_addr = route.shared_socks5;
         let tx_bytes = tx_bytes.to_vec();
         let txid = *txid;
         let host = crate::correspondent::Host::of_uri(&indexer);
         async move {
-            // Each pull binds its own Exclusive exit when this session pools
-            // transports; an attached session shares the slot's tunnel.
-            let member = match pulls {
-                Some(context) => Some(context.acquire().await.map_err(|cause| {
-                    zingo_net_diag::NetOpFailure::message(
-                        zingo_net_diag::NetOpStage::RouteResolution,
-                        host.clone(),
-                        cause.to_string(),
-                    )
-                })?),
-                None => None,
-            };
-            // A pooled member carries its own Exclusive exit, and the one
-            // consuming dial is the only way to read its tunnel; only an
-            // attached session (no member) rides the shared slot tunnel. A
-            // member whose transport reports no address died between take
-            // and use, so the pull refuses rather than silently degrading
-            // to the shared tunnel and mislabeling the diary.
-            let (socks5_addr, spent) = match member.map(crate::correspondent::pool::Member::dial) {
-                Some((Some(addr), spent)) => (addr, Some(spent)),
-                Some((None, _spent)) => {
-                    return Err(zingo_net_diag::NetOpFailure::message(
-                        zingo_net_diag::NetOpStage::LocalProxyConnect,
-                        host.clone(),
-                        "the pooled transport died before its pull could use it",
-                    ));
-                }
-                None => (shared_addr, None),
-            };
-            let target = SocksTarget {
-                socks5_addr,
-                indexer,
-            };
+            // Every pull multiplexes over the session's standing client,
+            // whose exit was proven at its birth; the standing
+            // client is one egress for all wallet-correlated streams.
+            let target =
+                zingo_netutils::Socks5Indexer::new(socks5_addr, indexer, DEFAULT_REQUEST_TIMEOUT);
             let started = std::time::Instant::now();
             // The pull's failure becomes the taxonomy record — stage by typed
             // match, cause chain captured layer by layer, target the
@@ -471,17 +384,7 @@ async fn mixnet_escalating_transmit(
             )
             .await
             .map_err(|TransmitFailed(error)| crate::mixnet::socks5_transmit_failure(&error, &host));
-            // The consumed transport dies with its pull, whatever the
-            // outcome, so its exit carries exactly this one Transmission;
-            // dropping the spent holder recycles its lease even when the
-            // pull is cancelled mid-await.
-            let bound_exit = spent.as_ref().map(|spent| spent.node().clone());
-            if let Some(spent) = spent {
-                spent.retire().await;
-                if let Some(context) = pulls {
-                    context.refill();
-                }
-            }
+            let bound_exit = None;
             record_send_attempt(
                 history,
                 &host,
@@ -499,7 +402,7 @@ async fn mixnet_escalating_transmit(
                     server_txid,
                     TransmitRoute::Mixnet {
                         correspondent: host.to_string(),
-                        via_socks5: target.socks5_addr.to_string(),
+                        via_socks5: socks5_addr.to_string(),
                     },
                 )
             })
@@ -868,23 +771,9 @@ impl LightClient {
             resolve_transmit_route(indexer.is_some(), self.mixnet_route())?;
         #[cfg(not(feature = "nym"))]
         let socks5_proxy: Option<std::net::SocketAddr> = None;
-        // A spawned session gives every pull its own Exclusive exit; an
-        // attached session has no pools and shares the slot's tunnel.
-        #[cfg(feature = "nym")]
-        let pull_transports: Option<PullTransports> = self
-            .mixnet_slot
-            .proxy()
-            .is_some_and(crate::mixnet::MixnetProxy::is_spawned)
-            .then(|| PullTransports {
-                pools: std::sync::Arc::clone(&self.correspondent_pools),
-            })
-            .filter(|context| context.pools.acquirer().is_some());
-        #[cfg(not(feature = "nym"))]
-        let pull_transports: Option<PullTransports> = None;
-        let pull_route = socks5_proxy.map(|shared_socks5| PullRoute {
-            shared_socks5,
-            transports: pull_transports.as_ref(),
-        });
+        // Every pull rides the session's standing client on both platforms:
+        // one proven egress for all wallet-correlated streams.
+        let pull_route = socks5_proxy.map(|shared_socks5| PullRoute { shared_socks5 });
         if socks5_proxy.is_none() && indexer.is_none() {
             return Err(LightClientError::Offline);
         }
@@ -895,7 +784,7 @@ impl LightClient {
         // this distinction does not exist there.
         #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
         let mock_arms = matches!(
-            self.mixnet_slot,
+            *self.mixnet_slot.lock().expect("mixnet slot mutex"),
             crate::mixnet::MixnetSlot::AttachedForTests { .. }
         );
 
@@ -992,8 +881,24 @@ impl LightClient {
             )
             .await;
             let (txid_from_server, route) = match transmit_outcome {
-                Ok(server_txid_and_route) => server_txid_and_route,
+                Ok(server_txid_and_route) => {
+                    // A delivered mixnet transmission is a completed round
+                    // trip through the Standing Client, promoting stale
+                    // proof to earned.
+                    #[cfg(feature = "nym")]
+                    if matches!(server_txid_and_route.1, TransmitRoute::Mixnet { .. }) {
+                        self.note_standing_round_trip();
+                    }
+                    server_txid_and_route
+                }
                 Err(failure) => {
+                    // A failed mixnet transmission raises the suspicion that
+                    // the standing exit is dead; the arbiter probe
+                    // adjudicates rather than convicting on one failure.
+                    #[cfg(feature = "nym")]
+                    if pull_route.is_some() {
+                        self.note_standing_exit_suspicion();
+                    }
                     pepper_sync::set_transactions_failed(
                         &mut wallet.wallet_transactions,
                         vec![*txid],

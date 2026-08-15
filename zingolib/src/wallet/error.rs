@@ -8,9 +8,6 @@ use zcash_keys::keys::DerivationError;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
 
-#[cfg(feature = "nym")]
-use crate::mixnet::acquire;
-
 /// Top level wallet errors
 // TODO: remove external types from public API
 #[derive(Debug, thiserror::Error)]
@@ -158,9 +155,11 @@ pub enum PriceError {
     /// Price list not initialised
     #[error("price list not initialised. please wait for sync to obtain time of wallet birthday")]
     NotInitialised,
-    /// The Price Source Pool could not supply a transport for the run.
-    #[error("price transport acquisition failed.")]
-    TransportAcquisition(#[source] acquire::TransportError),
+    /// The run reached no source at all: it acquired no transport, or every
+    /// exit it drew carried nothing. Shared with every speed-priority
+    /// operation, because neither failure is about prices.
+    #[error("the price run reached no source.")]
+    Speed(#[source] crate::mixnet::speed::SpeedError),
 }
 
 /// Summary error

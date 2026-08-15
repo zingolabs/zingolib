@@ -385,7 +385,7 @@ mod tests {
             pool.iter()
                 .all(|entry| Operator::of_host(entry.host().unwrap())
                     != Operator::of_host("zec.rocks")),
-            "the sync indexer's operator must never appear in the Correspondent pool"
+            "the sync indexer's operator must never appear among the eligible Correspondents"
         );
     }
 

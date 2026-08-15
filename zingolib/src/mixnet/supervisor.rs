@@ -213,16 +213,15 @@ enum Transport {
 }
 
 impl MixnetProxy {
-    /// Spawns the `nym-proxy` binary at `binary_path` under `class`'s launch
-    /// policy, returning immediately with mode [`MixnetMode::Bootstrapping`]
+    /// Spawns the `nym-proxy` binary at `binary_path` over `clutch`,
+    /// returning immediately with mode [`MixnetMode::Bootstrapping`]
     /// published into `publisher` along with every later transition.
     pub(crate) fn spawn(
         binary_path: &Path,
-        class: zingo_netutils::responsiveness::ResponsivenessClass,
         publisher: StatusPublisher,
         clutch: &[crate::mixnet::ExitNodeId],
     ) -> Result<Self, MixnetProxyError> {
-        let mut launch_args = vec!["--responsiveness".to_string(), class.wire().to_string()];
+        let mut launch_args = Vec::new();
         for exit in clutch {
             launch_args.push("--exit".to_string());
             launch_args.push(exit.as_str().to_string());
@@ -320,12 +319,6 @@ impl MixnetProxy {
         self.state.lock().expect("proxy state mutex").mode
     }
 
-    /// Whether this transport is a spawned child rather than a
-    /// mobile-platform-attached endpoint.
-    pub(crate) fn is_spawned(&self) -> bool {
-        matches!(self.transport, Transport::Spawned { .. })
-    }
-
     /// The local SOCKS5 address, once the mode is [`MixnetMode::Ready`].
     pub fn socks5_addr(&self) -> Option<SocketAddr> {
         self.state.lock().expect("proxy state mutex").socks5_addr
@@ -401,18 +394,13 @@ async fn attach_readiness(socks5_addr: SocketAddr) -> Result<(), zingo_net_diag:
     let indexer: http::Uri = ATTACH_HEALTH_INDEXER
         .parse()
         .expect("the static health-check URI parses");
+    let probe = zingo_netutils::Socks5Indexer::new(socks5_addr, indexer, MIXNET_ROUND_TRIP_BOUND);
     let mut last_failure = None;
     for attempt in 0..ATTACH_HEALTH_ATTEMPTS {
         if attempt > 0 {
             tokio::time::sleep(ATTACH_LISTENER_RETRY_PAUSE).await;
         }
-        match zingo_netutils::get_lightd_info_via_socks5(
-            socks5_addr,
-            &indexer,
-            MIXNET_ROUND_TRIP_BOUND,
-        )
-        .await
-        {
+        match probe.get_latest_block().await {
             Ok(_) => return Ok(()),
             Err(error) => {
                 let stage = crate::mixnet::socks5_transmit_stage(&error);
@@ -654,11 +642,30 @@ fn parse_exit_line(line: &str) -> Option<crate::mixnet::ExitNodeId> {
         .and_then(|identity| crate::mixnet::ExitNodeId::parse(identity).ok())
 }
 
-impl crate::correspondent::pool::PoolTransport for MixnetProxy {
-    fn is_ready(&self) -> bool {
-        self.mode() == MixnetMode::Ready
+#[cfg(test)]
+impl MixnetProxy {
+    /// A transport already in [`MixnetMode::Ready`] with no child, watcher,
+    /// or network behind it, for slot-mapping unit tests.
+    pub(crate) fn ready_for_slot_tests(
+        socks5_addr: SocketAddr,
+        exits: Vec<crate::mixnet::ExitNodeId>,
+    ) -> Self {
+        MixnetProxy {
+            state: Arc::new(Mutex::new(ProxyState {
+                mode: MixnetMode::Ready,
+                socks5_addr: Some(socks5_addr),
+                exits,
+                bootstrap_detail: None,
+                death: None,
+            })),
+            transport: Transport::Attached {
+                driver: tokio::spawn(async {}),
+            },
+        }
     }
+}
 
+impl crate::correspondent::pool::PoolTransport for MixnetProxy {
     fn socks5_addr(&self) -> Option<std::net::SocketAddr> {
         MixnetProxy::socks5_addr(self)
     }
@@ -761,18 +768,16 @@ pub(crate) async fn await_ready_endpoint(
     }
 }
 
-/// Acquires one pool transport under `PrioritisePrivacy` and waits until it
-/// is ready, yielding the transport with the exits it announced as bound.
+/// Acquires one transport over `clutch`, publishing its lifecycle into
+/// `publisher`, and waits until it is ready, yielding the transport with the
+/// exits it announced as bound.
 pub(crate) async fn acquire_ready_transport(
     acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
     clutch: &[crate::mixnet::ExitNodeId],
+    publisher: StatusPublisher,
 ) -> Result<(MixnetProxy, Vec<crate::mixnet::ExitNodeId>), acquire::TransportError> {
-    use zingo_netutils::responsiveness::{PrioritisePrivacy, Responsiveness as _};
-    let publisher = crate::mixnet::status_publisher();
     let mut receiver = publisher.subscribe();
-    let proxy = acquirer
-        .acquire(PrioritisePrivacy::CLASS, clutch, publisher)
-        .await?;
+    let proxy = acquirer.acquire(clutch, publisher).await?;
     match await_ready_endpoint(&mut receiver, zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT).await {
         Ok((_addr, exits)) => Ok((proxy, exits)),
         Err(cause) => {
@@ -1115,10 +1120,7 @@ mod tests {
     fn launch_context(lines: &[&str]) -> LaunchContext {
         LaunchContext {
             binary: "/opt/zingo/nym-proxy".to_string(),
-            args: vec![
-                "--responsiveness".to_string(),
-                "prioritise-speed".to_string(),
-            ],
+            args: vec!["--exit".to_string(), "exit-alpha".to_string()],
             stderr_tail: Arc::new(Mutex::new(
                 lines.iter().map(|line| line.to_string()).collect(),
             )),
@@ -1136,7 +1138,7 @@ mod tests {
             b"error: unrecognized flag\n".as_slice(),
             Arc::clone(&state),
             test_publisher(),
-            Some(launch_context(&["unexpected argument '--responsiveness'"])),
+            Some(launch_context(&["unknown argument: --frobnicate"])),
         )
         .await;
         let s = state.lock().unwrap();
@@ -1158,13 +1160,13 @@ mod tests {
             detail
                 .cause_chain
                 .iter()
-                .any(|text| text.contains("--responsiveness prioritise-speed"))
+                .any(|text| text.contains("--exit exit-alpha"))
         );
         assert!(
             detail
                 .cause_chain
                 .iter()
-                .any(|text| text.contains("unexpected argument '--responsiveness'"))
+                .any(|text| text.contains("unknown argument: --frobnicate"))
         );
     }
 

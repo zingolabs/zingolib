@@ -7,11 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A dead sync recovers without the user when the error's typed
+  recommendation allows it. A transient error relaunches sync against the
+  bound indexer. An error that condemns the server redraws the sync
+  indexer with a Server-Selection Sweep, in which the failed indexer is
+  surveyed again only when it is the sole candidate; the redraw serves
+  only an online session with no pinned server. Three automatic
+  recoveries may run back to back before the session parks on the
+  reported error, and a completed sync restores the budget.
+- A seed phrase may arrive in the `ZINGO_SEED` environment variable when
+  `--seed` is absent. A seed on the command line is visible in the host's
+  process list for as long as the session runs, and in the shell history
+  afterwards; the environment carries it to this process and its child
+  alone. An explicit `--seed` still outranks the variable, and a blank
+  phrase from either names no seed. The variable is read once, where the
+  flag is read, and never logged.
+
+
 ### Deprecated
 
 ### Added
+- `transparent_gap_limit` to `settings` command.
 
 ### Changed
+- The interactive prompt never contends with a running sync for the
+  wallet lock. Its chain height now rides the same lock-free progress
+  channel the sync indicator reads, and the prompt's dedicated height
+  query is gone, so Enter returns a prompt immediately while sync scans.
+- Every dispatched CLI command narrates its progress every ten seconds
+  while it runs, where the diagnostic interval was two.
+- **Breaking.** `network probe` wraps the single `GetLatestBlock` RPC, the
+  same tip call the Server-Selection Sweep surveys with, and reports the
+  tip height alone: there is no chain name in the reply to print.
 - A failed command renders its whole cause chain at the dispatch seam,
   one `caused by:` line per source link, over the sanctioned
   `zingo-net-diag` chain walk; the closing save's failure renders the
