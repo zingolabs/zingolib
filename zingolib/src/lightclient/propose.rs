@@ -34,17 +34,22 @@ impl LightClient {
     /// selected against cannot shift before the send builds it. A proposal
     /// that fails to come into existence releases the pause on the way
     /// out, restoring the engine to the mode it was found in.
+    ///
+    /// `route_via_ephemeral` routes a transparent recipient through the
+    /// ZIP 320 ephemeral hop, which a swap deposit needs so the vault can
+    /// see an origin to refund to.
     pub async fn propose_send(
         &mut self,
         request: TransactionRequest,
         account_id: zip32::AccountId,
         op_return_data: Option<OpReturnData>,
+        route_via_ephemeral: bool,
     ) -> Result<Proposal, ProposeSendError> {
         let minted = self.hold_proposal_pause();
         let result = {
             let mut wallet = self.wallet().write().await;
             wallet
-                .create_send_proposal(request, account_id, op_return_data)
+                .create_send_proposal(request, account_id, op_return_data, route_via_ephemeral)
                 .inspect(|proposal| {
                     wallet.store_proposal(proposal.clone());
                 })
@@ -104,7 +109,9 @@ impl LightClient {
         let request = transaction_request_from_receivers(receivers)
             .map_err(ProposeSendError::TransactionRequestFailed)?;
         let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_send_proposal(request, account_id, op_return_data)?;
+        // A send-all is a self-spend at heart: no vault reads its origin,
+        // so it stays single-hop.
+        let proposal = wallet.create_send_proposal(request, account_id, op_return_data, false)?;
         wallet.store_proposal(proposal.clone());
 
         Ok(proposal)
@@ -162,7 +169,7 @@ impl LightClient {
                 self.append_zingo_zenny_receiver(&mut receivers);
             }
             let request = transaction_request_from_receivers(receivers)?;
-            let trial_proposal = wallet.create_send_proposal(request, account_id, None);
+            let trial_proposal = wallet.create_send_proposal(request, account_id, None, false);
 
             match trial_proposal {
                 Err(ProposeSendError::Plan(PlanError::InsufficientFunds {
@@ -1405,7 +1412,7 @@ mod proposal_shape {
         )])
         .unwrap();
         let proposal = client
-            .propose_send(request, zip32::AccountId::ZERO, None)
+            .propose_send(request, zip32::AccountId::ZERO, None, false)
             .await
             .unwrap();
 
@@ -1566,7 +1573,7 @@ mod sync_pause_contract {
         .unwrap();
 
         let result = client
-            .propose_send(request, zip32::AccountId::ZERO, None)
+            .propose_send(request, zip32::AccountId::ZERO, None, false)
             .await;
 
         assert!(result.is_err(), "a 50_000 send from 10_000 must fail");
@@ -1679,7 +1686,7 @@ mod sync_pause_contract {
         )])
         .unwrap();
         client
-            .propose_send(request, zip32::AccountId::ZERO, None)
+            .propose_send(request, zip32::AccountId::ZERO, None, false)
             .await
             .unwrap();
         client

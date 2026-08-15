@@ -777,11 +777,18 @@ impl LightClient {
         request: TransactionRequest,
         account_id: zip32::AccountId,
         op_return_data: Option<OpReturnData>,
+        route_via_ephemeral: bool,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.quick_send_reported(request, account_id, op_return_data, resume_sync)
-            .await
-            .map(|reports| reports.map(|report| report.txid))
+        self.quick_send_reported(
+            request,
+            account_id,
+            op_return_data,
+            route_via_ephemeral,
+            resume_sync,
+        )
+        .await
+        .map(|reports| reports.map(|report| report.txid))
     }
 
     /// [`Self::quick_send`] with the transmission attested: each
@@ -792,6 +799,7 @@ impl LightClient {
         request: TransactionRequest,
         account_id: zip32::AccountId,
         op_return_data: Option<OpReturnData>,
+        route_via_ephemeral: bool,
         resume_sync: bool,
     ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
         // Proposing is an Indexerless capability; only the calculate/transmit
@@ -801,7 +809,7 @@ impl LightClient {
             .wallet()
             .write()
             .await
-            .create_send_proposal(request, account_id, op_return_data)
+            .create_send_proposal(request, account_id, op_return_data, route_via_ephemeral)
             .map_err(SendError::ProposeSendError);
         let reports = match proposal_result {
             Ok(proposal) => self.send(proposal).await,
@@ -1274,7 +1282,7 @@ mod built_transaction_shape {
         )])
         .unwrap();
         let proposal = client
-            .propose_send(request, zip32::AccountId::ZERO, None)
+            .propose_send(request, zip32::AccountId::ZERO, None, false)
             .await
             .unwrap();
         let step = proposal.final_step();
@@ -1361,7 +1369,7 @@ mod built_transaction_shape {
         )])
         .unwrap();
         let proposal = client
-            .propose_send(request, zip32::AccountId::ZERO, None)
+            .propose_send(request, zip32::AccountId::ZERO, None, false)
             .await
             .unwrap();
         let step = proposal.final_step();
@@ -1464,7 +1472,7 @@ mod built_transaction_shape {
         )])
         .unwrap();
         let proposal = client
-            .propose_send(request, zip32::AccountId::ZERO, None)
+            .propose_send(request, zip32::AccountId::ZERO, None, false)
             .await
             .unwrap();
         let txids = client

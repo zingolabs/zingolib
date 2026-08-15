@@ -832,6 +832,7 @@ mod tests {
             request,
             zip32::AccountId::ZERO,
             Some(OpReturnData::new(payload.clone()).unwrap()),
+            false,
         )
         .expect("planner plans with OP_RETURN Data");
         let built = build_ours(&mut wallet, &proposal);
@@ -892,7 +893,7 @@ mod tests {
         )])
         .unwrap();
 
-        let proposal = plan_transfer(&wallet, request, zip32::AccountId::ZERO, None)
+        let proposal = plan_transfer(&wallet, request, zip32::AccountId::ZERO, None, false)
             .expect("planner plans the TEX flow");
         let built = build_ours(&mut wallet, &proposal);
         assert_eq!(built.len(), 2, "two steps");

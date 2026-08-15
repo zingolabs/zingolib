@@ -118,10 +118,17 @@ fn sum_payments<'a>(
 
 /// Routes each payment to the pool that will pay it, splitting TEX
 /// payments (whose memos ZIP 320 forbids) into the exposure step.
+///
+/// `route_via_ephemeral` sends ordinary transparent recipients down that
+/// same exposure step. A swap deposit to a Mayachain or THORChain vault
+/// needs one: those protocols read the refund destination from the
+/// inbound transaction's origin, which a shielded spend does not expose,
+/// so the deposit must come from an address the wallet controls.
 fn route_request(
     request: &TransactionRequest,
     wallet: &LightWallet,
     ironwood_active: bool,
+    route_via_ephemeral: bool,
 ) -> Result<RoutedRequest, PlanError> {
     let network = wallet.chain_type.network_type();
     let orchard_family_pool = if ironwood_active {
@@ -143,11 +150,28 @@ fn route_request(
             .map_err(|_| PlanError::UnsupportedAddress(index))?;
 
         match address {
-            Address::Transparent(transparent_address) => standard.push(RoutedPayment {
-                payment: payment.clone(),
-                pool: PoolType::TRANSPARENT,
-                transparent_output_size: Some(transparent_output_size(&transparent_address)),
-            }),
+            Address::Transparent(transparent_address) => {
+                let routed = RoutedPayment {
+                    // The ephemeral hop makes this payment a ZIP 320
+                    // exposure, so it drops its memo like a TEX payment.
+                    // A transparent output cannot deliver one anyway.
+                    payment: if route_via_ephemeral {
+                        Payment::without_memo(
+                            payment.recipient_address().clone(),
+                            payment.amount().expect("checked above"),
+                        )
+                    } else {
+                        payment.clone()
+                    },
+                    pool: PoolType::TRANSPARENT,
+                    transparent_output_size: Some(transparent_output_size(&transparent_address)),
+                };
+                if route_via_ephemeral {
+                    tex.push(routed);
+                } else {
+                    standard.push(routed);
+                }
+            }
             Address::Tex(_) => tex.push(RoutedPayment {
                 // ZIP 320 forbids a memo on a TEX payment.
                 payment: Payment::without_memo(
@@ -396,11 +420,17 @@ fn compute_step_balance(
 /// payment request to a proposal. OP_RETURN Data, if given, rides the
 /// final transaction — the exposure step of a TEX flow, or the single
 /// step otherwise.
+///
+/// `route_via_ephemeral` routes ordinary transparent recipients through
+/// the ephemeral hop as well, which a swap deposit needs (see
+/// [`route_request`]). The two travel together: the OP_RETURN memo and
+/// the wallet-controlled origin must reach the vault in one transaction.
 pub fn plan_transfer(
     wallet: &LightWallet,
     request: TransactionRequest,
     account_id: zip32::AccountId,
     op_return_data: Option<OpReturnData>,
+    route_via_ephemeral: bool,
 ) -> Result<Proposal, PlanError> {
     let (target_height, anchor_height) = wallet
         .target_and_anchor_heights(wallet.wallet_settings.min_confirmations)
@@ -415,7 +445,7 @@ pub fn plan_transfer(
         ShieldedPool::Orchard
     };
 
-    let routed = route_request(&request, wallet, ironwood_active)?;
+    let routed = route_request(&request, wallet, ironwood_active, route_via_ephemeral)?;
     let change_memo = wallet.change_memo_from_transaction_request(&request);
 
     // The exposure step's fee and the ephemeral output that funds it are
@@ -913,13 +943,20 @@ mod tests {
         let request = transaction_request_from_send_inputs(vec![(address.as_str(), 100_000, None)])
             .expect("valid send inputs form a request");
 
-        let without = plan_transfer(&wallet, request.clone(), zip32::AccountId::ZERO, None)
-            .expect("plans without data");
+        let without = plan_transfer(
+            &wallet,
+            request.clone(),
+            zip32::AccountId::ZERO,
+            None,
+            false,
+        )
+        .expect("plans without data");
         let with = plan_transfer(
             &wallet,
             request,
             zip32::AccountId::ZERO,
             Some(OpReturnData::new(vec![0xAB; 80]).expect("80 bytes is within the limit")),
+            false,
         )
         .expect("plans with data");
 
@@ -964,7 +1001,7 @@ mod tests {
         )])
         .unwrap();
 
-        let proposal = plan_transfer(&wallet, request, zip32::AccountId::ZERO, None)
+        let proposal = plan_transfer(&wallet, request, zip32::AccountId::ZERO, None, false)
             .expect("planner plans the TEX flow");
         let super::Proposal::TexTransfer(tex) = &proposal else {
             panic!("a TEX payment plans a TexTransfer");
@@ -975,5 +1012,73 @@ mod tests {
             (tex.exposure().payment_total().unwrap() + tex.exposure().fee()).unwrap(),
         );
         assert!(tex.exposure().change().is_empty(), "no exposure change");
+    }
+
+    /// A swap deposit asks for the ephemeral hop on an ordinary
+    /// transparent address, and gets the TEX shape: the vault is paid
+    /// from an address the wallet controls, and the OP_RETURN memo
+    /// that names the swap rides that same exposure transaction. Both
+    /// have to hold, or Mayachain and THORChain cannot refund a failed
+    /// swap.
+    #[test]
+    fn route_via_ephemeral_gives_a_transparent_payment_the_tex_shape() {
+        use zip321::{Payment, TransactionRequest};
+
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(5_000_000)
+            .build();
+        let external =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let vault = external
+            .transparent_addresses()
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        let payload = b"=:ZEC.ZEC:maya-swap-memo".to_vec();
+        let request = TransactionRequest::new(vec![Payment::without_memo(
+            zcash_address::ZcashAddress::try_from_encoded(&vault).unwrap(),
+            Zatoshis::const_from_u64(100_000),
+        )])
+        .unwrap();
+
+        let direct = plan_transfer(
+            &wallet,
+            request.clone(),
+            zip32::AccountId::ZERO,
+            None,
+            false,
+        )
+        .expect("plans the single-hop transfer");
+        assert!(
+            matches!(direct, super::Proposal::Transfer(_)),
+            "without the flag a transparent payment stays single-hop"
+        );
+
+        let routed = plan_transfer(
+            &wallet,
+            request,
+            zip32::AccountId::ZERO,
+            Some(OpReturnData::new(payload.clone()).expect("within the relay limit")),
+            true,
+        )
+        .expect("plans the ephemeral route");
+        let super::Proposal::TexTransfer(tex) = &routed else {
+            panic!("the ephemeral route plans a TexTransfer");
+        };
+
+        assert_eq!(
+            tex.ephemeral_value().unwrap(),
+            (tex.exposure().payment_total().unwrap() + tex.exposure().fee()).unwrap(),
+        );
+        assert_eq!(
+            tex.exposure().op_return_data().map(OpReturnData::as_bytes),
+            Some(payload.as_slice()),
+            "the memo rides the transaction that pays the vault"
+        );
+        assert!(
+            tex.shielding().op_return_data().is_none(),
+            "the shielding step carries no memo"
+        );
     }
 }

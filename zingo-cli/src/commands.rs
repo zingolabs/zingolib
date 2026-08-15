@@ -529,7 +529,7 @@ async fn quicksend(
     let request = zingolib::data::receivers::transaction_request_from_receivers(receivers)
         .map_err(|e| usage(name, e))?;
     match lightclient
-        .quick_send_reported(request, zip32::AccountId::ZERO, None, true)
+        .quick_send_reported(request, zip32::AccountId::ZERO, None, false, true)
         .await
     {
         Ok(reports) => Ok(object! {
@@ -638,7 +638,7 @@ async fn send(
     let request = zingolib::data::receivers::transaction_request_from_receivers(receivers)
         .map_err(|e| usage(name, e))?;
     match lightclient
-        .propose_send(request, zip32::AccountId::ZERO, None)
+        .propose_send(request, zip32::AccountId::ZERO, None, false)
         .await
     {
         Ok(proposal) => match proposal.total_fee() {

@@ -146,6 +146,7 @@ mod tests {
             tex_request(&external),
             zip32::AccountId::ZERO,
             None,
+            false,
         )
         .expect("planner plans the TEX flow");
         let _materials = wallet.spend_materials(&abandoned).unwrap();
@@ -161,6 +162,7 @@ mod tests {
             tex_request(&external),
             zip32::AccountId::ZERO,
             None,
+            false,
         )
         .expect("planner plans the TEX flow");
         let txids = wallet.calculate_transactions(proposal).await.unwrap();

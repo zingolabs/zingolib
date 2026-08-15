@@ -1782,6 +1782,7 @@ async fn op_return_data_confirms_on_chain() {
                 zingolib::wallet::spend::op_return::OpReturnData::new(payload.clone())
                     .expect("the payload is within the relay limit"),
             ),
+            false,
             true,
         )
         .await

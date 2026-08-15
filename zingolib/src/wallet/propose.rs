@@ -22,13 +22,25 @@ impl LightWallet {
     /// Creates a proposal from a transaction request — the in-tree plan
     /// layer (ADR 0010), pure over the wallet's current view. OP_RETURN
     /// Data, if given, rides the final transaction of the send.
+    ///
+    /// `route_via_ephemeral` puts a transparent recipient behind the
+    /// ZIP 320 ephemeral hop, giving the final transaction an origin the
+    /// wallet controls. Swap deposits to Mayachain and THORChain vaults
+    /// need it to have a refund destination.
     pub(crate) fn create_send_proposal(
         &self,
         request: TransactionRequest,
         account_id: zip32::AccountId,
         op_return_data: Option<OpReturnData>,
+        route_via_ephemeral: bool,
     ) -> Result<Proposal, ProposeSendError> {
-        Ok(plan_transfer(self, request, account_id, op_return_data)?)
+        Ok(plan_transfer(
+            self,
+            request,
+            account_id,
+            op_return_data,
+            route_via_ephemeral,
+        )?)
     }
 
     /// The shield operation consumes a proposal that transfers value
@@ -211,7 +223,7 @@ mod test {
         .expect("valid send inputs form a request");
 
         let proposal = wallet
-            .create_send_proposal(request, zip32::AccountId::ZERO, None)
+            .create_send_proposal(request, zip32::AccountId::ZERO, None, false)
             .expect("synthetic wallet data supports proposing");
 
         let step = proposal.final_step();
@@ -260,7 +272,7 @@ mod test {
         .expect("valid send inputs form a request");
 
         wallet
-            .create_send_proposal(request, zip32::AccountId::ZERO, None)
+            .create_send_proposal(request, zip32::AccountId::ZERO, None, false)
             .expect("orchard funds propose cleanly to a sapling destination");
     }
 
@@ -283,7 +295,7 @@ mod test {
             .expect("actually all of this logic oughta be internal to propose");
 
         wallet
-            .create_send_proposal(request, zip32::AccountId::ZERO, None)
+            .create_send_proposal(request, zip32::AccountId::ZERO, None, false)
             .expect("can propose from existing data");
     }
 }
