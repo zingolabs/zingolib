@@ -1,32 +1,151 @@
 //! TODO: Add Mod Description Here!
 
+use std::future::Future;
+
 use nonempty::NonEmpty;
 
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
 use zcash_protocol::consensus::BranchId;
+use zcash_transparent::keys::NonHardenedChildIndex;
 use zip321::TransactionRequest;
 
+#[cfg(feature = "nym")]
+use crate::mixnet::acquire;
+use pepper_sync::keys::transparent::{TransparentAddressId, TransparentScope};
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::config::ChainType;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
+use crate::lightclient::indexer_history::{
+    AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, IndexerHistoryHandle, now_unix_secs,
+};
+use crate::lightclient::transmit::{
+    TransmitFailed, TransmitProgressHandle, TransmitProgressScope, TransmitTarget,
+    resilient_transmit,
+};
+
+/// Records one finished send attempt against `host` into the cross-session
+/// history: route, elapsed time, and the sanitized failure category when it
+/// failed, never the raw failure prose, which can embed the txid.
+fn record_send_attempt(
+    history: &IndexerHistoryHandle,
+    host: &crate::correspondent::Host,
+    route: AttemptRoute,
+    started: std::time::Instant,
+    outcome: &Result<String, zingo_net_diag::NetOpFailure>,
+    phase: Option<crate::correspondent::health::FailurePhase>,
+    exit: Option<crate::mixnet::ExitNodeId>,
+) {
+    history.record(&IndexerAttempt {
+        unix_secs: now_unix_secs(),
+        host: host.clone(),
+        route,
+        kind: AttemptKind::Send,
+        millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
+        phase,
+        exit,
+        outcome: match outcome {
+            Ok(_) => Ok(()),
+            Err(failure) => Err(FailureKind::classify(&failure.to_string())),
+        },
+    });
+}
+
+/// Why one transaction's transmission failed.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum TransmitError {
+    /// The clearnet arm has no configured indexer.
+    #[error("clearnet transmission requires a configured indexer")]
+    NoClearnetIndexer,
+    /// A mixnet route arrived in a build without the `nym` feature.
+    #[cfg(not(feature = "nym"))]
+    #[error("a mixnet route requires the nym feature")]
+    MixnetUnbuilt,
+    /// The single-target transmit's taxonomy record.
+    #[error(transparent)]
+    Failure(#[from] zingo_net_diag::NetOpFailure),
+    /// The Correspondent draw refused.
+    #[cfg(feature = "nym")]
+    #[error(transparent)]
+    Draw(#[from] crate::correspondent::NoEligibleCorrespondents),
+    /// Every arm of the escalation failed, reported whole.
+    #[cfg(feature = "nym")]
+    #[error("{0}")]
+    Escalation(
+        crate::mixnet::correspondent_rotation::EscalationError<zingo_net_diag::NetOpFailure>,
+    ),
+}
+
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use crate::wallet::error::{CalculateTransactionError, WalletError};
 use crate::wallet::spend::op_return::OpReturnData;
 use crate::wallet::spend::proposal::Proposal;
 
-const MAX_RETRIES: u8 = 3;
+/// Attestation of one transmitted transaction: the route the bytes
+/// traveled, the endpoint that accepted them, and the transmission's
+/// round-trip time. It rides the success value — not a log — the same
+/// doctrine as the nym-gated `MixnetPriceFetch` price attestation
+/// (ADR 0011), so every consumer of a send holds per-transaction
+/// evidence of the route.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TransmitReport {
+    /// The transmitted transaction.
+    pub txid: TxId,
+    /// The route the transaction traveled and the endpoint that accepted
+    /// it.
+    pub route: TransmitRoute,
+    /// Wall-clock time from dispatching the transmission to its delivery
+    /// confirmation, retries and Correspondent escalation included.
+    pub round_trip: std::time::Duration,
+}
 
-/// A "queued for download" duplicate rejection proves delivery but not
-/// minability: zebra is still verifying the earlier submission
-/// (observed to lag it by seconds under load). Each resubmission is a
-/// free probe of zebra's own state; wait up to this many probes, on
-/// the retry loop's one-second cadence, for the verdict to become
-/// storage-backed (issue #2450).
-const MAX_QUEUED_PROBES: u8 = 30;
+/// Resolves whether a transmission runs over the mixnet tunnel (`Some`
+/// SOCKS5 address) or clearnet through the configured sync indexer
+/// (`None`), from the session's connectivity and its Mixnet Mode route.
+///
+/// An Indexerless session transmits only over a ready mixnet (ruling
+/// 2026-07-29): the Correspondent escalation needs no sync indexer, so
+/// the ADR 0022 exclusion holds vacuously. A mixnet-less offline session
+/// keeps the typed [`LightClientError::Offline`] refusal — an unattached
+/// mixnet carries no online intent — while attached-but-not-ready states
+/// (bootstrapping, died) surface their own typed error, so the caller
+/// learns to wait or repair rather than to connect an indexer.
+#[cfg(feature = "nym")]
+fn resolve_transmit_route(
+    has_indexer: bool,
+    route: Result<crate::mixnet::MixnetRoute, crate::mixnet::MixnetNotReady>,
+) -> Result<Option<std::net::SocketAddr>, LightClientError> {
+    use crate::mixnet::{MixnetNotReady, MixnetRoute};
+    match (has_indexer, route) {
+        (_, Ok(MixnetRoute::Mixnet(tunnel))) => Ok(Some(tunnel.into_addr())),
+        (true, Ok(MixnetRoute::Clearnet)) => Ok(None),
+        (false, Ok(MixnetRoute::Clearnet)) => Err(LightClientError::Offline),
+        (false, Err(MixnetNotReady::Unattached)) => Err(LightClientError::Offline),
+        (_, Err(e)) => Err(LightClientError::MixnetNotReady(e)),
+    }
+}
+
+/// The route one transmitted transaction traveled (ADR 0011).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TransmitRoute {
+    /// Clearnet submission through the session's configured sync indexer.
+    Clearnet {
+        /// The sync indexer's host.
+        indexer: String,
+    },
+    /// Mixnet escalation over the Correspondents (ADR 0022), reached
+    /// through the local SOCKS5 tunnel endpoint.
+    Mixnet {
+        /// The host of the Correspondent whose delivery confirmation
+        /// won the escalation.
+        correspondent: String,
+        /// The local SOCKS5 endpoint of the mixnet tunnel.
+        via_socks5: String,
+    },
+}
 
 /// ZIP 203: `nExpiryHeight` values at or above this threshold are
 /// interpreted as a block time rather than a block height, so a
@@ -40,7 +159,7 @@ pub(crate) const ZIP_203_EXPIRY_HEIGHT_THRESHOLD: u32 = 500_000_000;
 /// The transaction built from a proposal expires at its target height plus
 /// [`DEFAULT_TX_EXPIRY_DELTA`], so the lift gives it the longest expiry the
 /// epoch permits: it stays transmittable until the next scheduled network
-/// upgrade. That is the outer limit for any pre-signed Zcash transaction —
+/// upgrade. That is the outer limit for any pre-signed Zcash transaction:
 /// the signature commits to the epoch's consensus branch ID, so no expiry
 /// height can carry it past the upgrade. When the params schedule no
 /// upgrade above the stored target, the cap is instead the highest target
@@ -60,40 +179,495 @@ fn retarget_for_offline_signing(proposal: Proposal, chain_type: &ChainType) -> P
     proposal.with_target_height(lifted_target.into())
 }
 
-/// The [`SendError`] variant that reports a proposal kind's calculation
-/// failure.
-fn wrap_calculate_error(proposal: &Proposal) -> fn(CalculateTransactionError) -> SendError {
-    match proposal {
-        Proposal::Shield(_) => SendError::CalculateShieldError,
-        Proposal::Transfer(_) | Proposal::TexTransfer(_) => SendError::CalculateSendError,
+/// The configured clearnet indexer as a [`TransmitTarget`]: it submits over the
+/// ordinary gRPC channel and delivery-checks with `get_transaction`. The Nym
+/// path supplies a SOCKS5-backed target to the same [`resilient_transmit`]
+/// policy.
+struct ClearnetTarget(zingo_netutils::GrpcIndexer);
+
+impl TransmitTarget for ClearnetTarget {
+    type Failure = zingo_netutils::Status;
+
+    fn submit(
+        &self,
+        raw_tx: &[u8],
+        height: u64,
+    ) -> impl Future<Output = Result<String, zingo_netutils::Status>> + Send {
+        let mut client = self.0.clone();
+        let data = raw_tx.to_vec();
+        async move {
+            client
+                .send_transaction(RawTransaction { data, height }, DEFAULT_REQUEST_TIMEOUT)
+                .await
+        }
+    }
+
+    fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send {
+        let mut client = self.0.clone();
+        let hash = txid.as_ref().to_vec();
+        async move {
+            client
+                .get_transaction(
+                    TxFilter {
+                        block: None,
+                        index: 0,
+                        hash,
+                    },
+                    DEFAULT_REQUEST_TIMEOUT,
+                )
+                .await
+                .is_ok()
+        }
     }
 }
 
+/// A single Correspondent reached through the local SOCKS5 proxy, as a
+/// [`TransmitTarget`]: it submits and delivery-checks over the mixnet tunnel,
+/// running the same [`resilient_transmit`] policy as the clearnet path. The
+/// escalation builds one of these per pick.
+#[cfg(feature = "nym")]
+struct SocksTarget {
+    socks5_addr: std::net::SocketAddr,
+    indexer: http::Uri,
+}
+
+#[cfg(feature = "nym")]
+impl TransmitTarget for SocksTarget {
+    type Failure = zingo_netutils::Socks5TransmitError;
+
+    async fn submit(
+        &self,
+        raw_tx: &[u8],
+        height: u64,
+    ) -> Result<String, zingo_netutils::Socks5TransmitError> {
+        zingo_netutils::send_transaction_via_socks5(
+            self.socks5_addr,
+            &self.indexer,
+            raw_tx,
+            height,
+            DEFAULT_REQUEST_TIMEOUT,
+        )
+        .await
+    }
+
+    fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send {
+        let hash = txid.as_ref().to_vec();
+        async move {
+            zingo_netutils::transaction_known_via_socks5(
+                self.socks5_addr,
+                &self.indexer,
+                &hash,
+                DEFAULT_REQUEST_TIMEOUT,
+            )
+            .await
+        }
+    }
+}
+
+/// The session's Correspondent Pools, from which a Transmission's pulls
+/// draw their own Exclusive exits.
+#[cfg(feature = "nym")]
+pub(crate) struct PullTransports {
+    pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+}
+
+/// The placeholder a build without the mixnet carries in its place.
+#[cfg(not(feature = "nym"))]
+pub(crate) struct PullTransports;
+
+#[cfg(feature = "nym")]
+impl PullTransports {
+    /// One pull's own Exclusive-exit transport: the Indexer Pool's next
+    /// member, or a fresh acquisition when the pool is empty.
+    async fn acquire(
+        &self,
+    ) -> Result<
+        crate::correspondent::pool::Member<
+            crate::mixnet::MixnetProxy,
+            crate::correspondent::pool::Exclusive,
+        >,
+        acquire::TransportError,
+    > {
+        self.pools.take_or_acquire(|pools| &pools.indexer).await
+    }
+
+    /// Tops the pools back up after a pull consumed a member.
+    fn refill(&self) {
+        self.pools.ensure_filled();
+    }
+}
+
+/// The mixnet route one Transmission's pulls take: the session tunnel a
+/// pull falls back to, and the pools it draws its own Exclusive exit from.
+#[derive(Clone, Copy)]
+#[cfg_attr(not(feature = "nym"), allow(dead_code))]
+pub(crate) struct PullRoute<'a> {
+    shared_socks5: std::net::SocketAddr,
+    transports: Option<&'a PullTransports>,
+}
+
+/// Submit one transaction under the route the Mixnet Mode policy resolved:
+/// clearnet through the configured indexer when `route` is `None`, or the
+/// mixnet escalation over the Correspondents when it is `Some`. Returns the
+/// server-reported txid or the last failure message.
+async fn transmit_one_transaction(
+    route: Option<PullRoute<'_>>,
+    indexer: Option<&zingo_netutils::GrpcIndexer>,
+    tx_bytes: &[u8],
+    height: u64,
+    txid: &TxId,
+    progress: &TransmitProgressHandle,
+    history: &IndexerHistoryHandle,
+) -> Result<(String, TransmitRoute), TransmitError> {
+    match route {
+        None => {
+            // The route resolver refuses an Indexerless clearnet route
+            // before any transaction is built, so this arm always holds one.
+            let Some(indexer) = indexer else {
+                return Err(TransmitError::NoClearnetIndexer);
+            };
+            let host = crate::correspondent::Host::of_uri(indexer.uri());
+            let started = std::time::Instant::now();
+            let outcome = resilient_transmit(
+                &ClearnetTarget(indexer.clone()),
+                tx_bytes,
+                height,
+                txid,
+                |interval| tokio::time::sleep(interval),
+                |event| progress.set(format!("indexer {host}: {event}")),
+            )
+            .await
+            .map_err(|TransmitFailed(status)| {
+                zingo_net_diag::NetOpFailure::from_error(
+                    zingo_net_diag::NetOpStage::RemoteHttp,
+                    &host,
+                    &status,
+                )
+            });
+            record_send_attempt(
+                history,
+                &host,
+                AttemptRoute::Clearnet,
+                started,
+                &outcome,
+                // A clearnet attempt rides no tunnel, so every failure it
+                // sees is the indexer's own.
+                outcome
+                    .is_err()
+                    .then_some(crate::correspondent::health::FailurePhase::Correspondent),
+                None,
+            );
+            outcome
+                .map(|server_txid| {
+                    (
+                        server_txid,
+                        TransmitRoute::Clearnet {
+                            indexer: host.to_string(),
+                        },
+                    )
+                })
+                .map_err(TransmitError::from)
+        }
+        #[cfg(feature = "nym")]
+        Some(route) => {
+            mixnet_escalating_transmit(
+                route,
+                indexer.map(|indexer| indexer.uri()),
+                tx_bytes,
+                height,
+                txid,
+                progress,
+                history,
+            )
+            .await
+        }
+        #[cfg(not(feature = "nym"))]
+        Some(_) => Err(TransmitError::MixnetUnbuilt),
+    }
+}
+
+/// Transmit one transaction over the mixnet as the escalating, serially gated
+/// Correspondent Rotation (ADR 0011): each arm runs the shared
+/// [`resilient_transmit`] policy against one Correspondent through the SOCKS5
+/// proxy, and the escalation widens round by round until a Correspondent
+/// confirms delivery or the cap is reached.
+///
+/// The draw comes from [`crate::correspondent::eligible_correspondents`],
+/// never the raw curated list: a Correspondent is never the sync indexer's
+/// operator (ADR 0022), because that party already holds the wallet's address
+/// set and must not receive the transmission too. An emptied pool refuses
+/// rather than falling back.
+#[cfg(feature = "nym")]
+async fn mixnet_escalating_transmit(
+    route: PullRoute<'_>,
+    sync_indexer: Option<&http::Uri>,
+    tx_bytes: &[u8],
+    height: u64,
+    txid: &TxId,
+    progress: &TransmitProgressHandle,
+    history: &IndexerHistoryHandle,
+) -> Result<(String, TransmitRoute), TransmitError> {
+    use crate::correspondent::eligible_correspondents;
+    use crate::mixnet::correspondent_rotation::{
+        MAX_TRANSMISSION_CORRESPONDENTS, escalating_transmit,
+    };
+
+    let indexers = eligible_correspondents(
+        sync_indexer,
+        &history.health().lock().expect("health mutex"),
+    )?;
+    let run_pull = |indexer: http::Uri| {
+        let shared_addr = route.shared_socks5;
+        let pulls = route.transports;
+        let tx_bytes = tx_bytes.to_vec();
+        let txid = *txid;
+        let host = crate::correspondent::Host::of_uri(&indexer);
+        async move {
+            // Each pull binds its own Exclusive exit when this session pools
+            // transports; an attached session shares the slot's tunnel.
+            let member = match pulls {
+                Some(context) => Some(context.acquire().await.map_err(|cause| {
+                    zingo_net_diag::NetOpFailure::message(
+                        zingo_net_diag::NetOpStage::RouteResolution,
+                        host.clone(),
+                        cause.to_string(),
+                    )
+                })?),
+                None => None,
+            };
+            // A pooled member carries its own Exclusive exit, and the one
+            // consuming dial is the only way to read its tunnel; only an
+            // attached session (no member) rides the shared slot tunnel. A
+            // member whose transport reports no address died between take
+            // and use, so the pull refuses rather than silently degrading
+            // to the shared tunnel and mislabeling the diary.
+            let (socks5_addr, spent) = match member.map(crate::correspondent::pool::Member::dial) {
+                Some((Some(addr), spent)) => (addr, Some(spent)),
+                Some((None, _spent)) => {
+                    return Err(zingo_net_diag::NetOpFailure::message(
+                        zingo_net_diag::NetOpStage::LocalProxyConnect,
+                        host.clone(),
+                        "the pooled transport died before its pull could use it",
+                    ));
+                }
+                None => (shared_addr, None),
+            };
+            let target = SocksTarget {
+                socks5_addr,
+                indexer,
+            };
+            let started = std::time::Instant::now();
+            // The pull's failure becomes the taxonomy record — stage by typed
+            // match, cause chain captured layer by layer, target the
+            // Correspondent host — which the escalation collects whole per
+            // Correspondent.
+            let outcome = resilient_transmit(
+                &target,
+                &tx_bytes,
+                height,
+                &txid,
+                |interval| tokio::time::sleep(interval),
+                |event| progress.set(format!("correspondent {host}: {event}")),
+            )
+            .await
+            .map_err(|TransmitFailed(error)| crate::mixnet::socks5_transmit_failure(&error, &host));
+            // The consumed transport dies with its pull, whatever the
+            // outcome, so its exit carries exactly this one Transmission;
+            // dropping the spent holder recycles its lease even when the
+            // pull is cancelled mid-await.
+            let bound_exit = spent.as_ref().map(|spent| spent.node().clone());
+            if let Some(spent) = spent {
+                spent.retire().await;
+                if let Some(context) = pulls {
+                    context.refill();
+                }
+            }
+            record_send_attempt(
+                history,
+                &host,
+                AttemptRoute::Mixnet,
+                started,
+                &outcome,
+                outcome
+                    .as_ref()
+                    .err()
+                    .map(|failure| crate::mixnet::charge_phase(&failure.stage)),
+                bound_exit,
+            );
+            outcome.map(|server_txid| {
+                (
+                    server_txid,
+                    TransmitRoute::Mixnet {
+                        correspondent: host.to_string(),
+                        via_socks5: target.socks5_addr.to_string(),
+                    },
+                )
+            })
+        }
+    };
+
+    escalating_transmit(
+        &indexers,
+        &mut rand::rngs::OsRng,
+        MAX_TRANSMISSION_CORRESPONDENTS,
+        run_pull,
+        |line| progress.set(format!("mixnet escalation: {line}")),
+    )
+    .await
+    .map_err(TransmitError::Escalation)
+}
+
+/// The chain-mock twin of [`mixnet_escalating_transmit`], paired with the
+/// test-attached slot state behind
+/// [`LightClient::switch_on_mixnet_for_tests`]: the Correspondent draw, the
+/// escalation rounds, and the cap run for real over the curated Correspondent
+/// pool, while each arm's bytes travel the mock indexer's channel
+/// instead of a SOCKS5 tunnel. The tunnel's byte transport is pinned by
+/// zingo-netutils' own tests, so no packet leaves the process here.
+#[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+async fn mock_escalating_transmit(
+    indexer: &zingo_netutils::GrpcIndexer,
+    tx_bytes: &[u8],
+    height: u64,
+    txid: &TxId,
+    progress: &TransmitProgressHandle,
+    history: &IndexerHistoryHandle,
+) -> Result<(String, String), TransmitError> {
+    use crate::correspondent::eligible_correspondents;
+    use crate::mixnet::correspondent_rotation::{
+        MAX_TRANSMISSION_CORRESPONDENTS, escalating_transmit,
+    };
+
+    let correspondents = eligible_correspondents(
+        Some(indexer.uri()),
+        &history.health().lock().expect("health mutex"),
+    )?;
+    let run_arm = |correspondent: http::Uri| {
+        let target = ClearnetTarget(indexer.clone());
+        let tx_bytes = tx_bytes.to_vec();
+        let txid = *txid;
+        let host = crate::correspondent::Host::of_uri(&correspondent);
+        async move {
+            let started = std::time::Instant::now();
+            let outcome = resilient_transmit(
+                &target,
+                &tx_bytes,
+                height,
+                &txid,
+                |interval| tokio::time::sleep(interval),
+                |event| progress.set(format!("correspondent {host}: {event}")),
+            )
+            .await
+            .map_err(|TransmitFailed(status)| {
+                zingo_net_diag::NetOpFailure::from_error(
+                    zingo_net_diag::NetOpStage::RemoteHttp,
+                    &host,
+                    &status,
+                )
+            });
+            record_send_attempt(
+                history,
+                &host,
+                AttemptRoute::Mixnet,
+                started,
+                &outcome,
+                None,
+                None,
+            );
+            outcome.map(|server_txid| (server_txid, host.to_string()))
+        }
+    };
+
+    escalating_transmit(
+        &correspondents,
+        &mut rand::rngs::OsRng,
+        MAX_TRANSMISSION_CORRESPONDENTS,
+        run_arm,
+        |line| progress.set(format!("mixnet escalation: {line}")),
+    )
+    .await
+    .map_err(TransmitError::Escalation)
+}
+
 impl LightClient {
-    /// Calculates transactions from a proposal and transmits them. The gate
-    /// on a connected Indexer sits here, before calculation, so a doomed
-    /// send fails without storing Calculated transactions it cannot
-    /// transmit.
-    async fn calculate_and_transmit(
+    async fn send(
         &mut self,
         proposal: Proposal,
-    ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.require_indexer()?;
-        let wrap = wrap_calculate_error(&proposal);
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        self.preflight_transmit()?;
+        let sending_account = proposal.account_id();
+        let indexerless = self.indexer.is_none();
+        let mut wallet = self.wallet().write().await;
+        // An Indexerless calculation cannot trust the wallet's stale chain
+        // view for an ordinary tip-plus-delta expiry, so it takes the
+        // epoch-limit retarget the offline-signing flow uses (issue #2455).
+        let proposal = if indexerless {
+            let chain_type = wallet.chain_type();
+            retarget_for_offline_signing(proposal, &chain_type)
+        } else {
+            proposal
+        };
+        let highest_refund_address_index = wallet.highest_refund_address_index();
+        let calculated_txids = wallet.calculate_transactions(proposal).await.map_err(|e| {
+            wallet.truncate_refund_addresses(highest_refund_address_index);
+
+            SendError::CalculateSendError(e)
+        })?;
+        drop(wallet);
+
+        let transmission_result = self.transmit_transactions(calculated_txids).await;
+        if transmission_result.is_err() {
+            let mut wallet = self.wallet().write().await;
+            let new_refund_address_index = highest_refund_address_index
+                .map_or(Some(NonHardenedChildIndex::ZERO), |i| i.next());
+            let new_refund_address = new_refund_address_index.and_then(|i| {
+                wallet
+                    .transparent_addresses()
+                    .get(&TransparentAddressId::new(
+                        sending_account,
+                        TransparentScope::Refund,
+                        i,
+                    ))
+                    .cloned()
+            });
+            let truncate = new_refund_address.is_some_and(|addr| {
+                let deshielding_tx = wallet.wallet_transactions.values().find(|tx| {
+                    tx.transparent_coins()
+                        .iter()
+                        .any(|coin| coin.address() == addr)
+                });
+                deshielding_tx.is_some_and(|tx| tx.status().is_failed())
+            });
+            if truncate {
+                wallet.truncate_refund_addresses(highest_refund_address_index);
+            }
+        }
+
+        transmission_result
+    }
+
+    async fn shield(
+        &mut self,
+        proposal: Proposal,
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
         let calculated_txids = self
             .wallet()
             .write()
             .await
             .calculate_transactions(proposal)
             .await
-            .map_err(wrap)?;
+            .map_err(SendError::CalculateShieldError)?;
 
         self.transmit_transactions(calculated_txids).await
     }
 
     /// Creates and transmits transactions from a stored proposal.
     ///
-    /// If sync was running prior to creating a send proposal, sync will have been paused. If `resume_sync` is `true`, sync will be resumed after sending the stored proposal.
+    /// If sync was running prior to creating a send proposal, sync will have
+    /// been paused. If `resume_sync` is `true`, the engine is restored to
+    /// the mode it held before the proposal was created, so a pause the
+    /// caller established before proposing is preserved, not overridden. If
+    /// `false`, the engine stays paused for the caller to resume.
     pub async fn send_stored_proposal(
         &mut self,
         resume_sync: bool,
@@ -101,23 +675,25 @@ impl LightClient {
         self.require_indexer()?;
         let opt_proposal = self.wallet().write().await.take_proposal();
         if let Some(proposal) = opt_proposal {
-            let txids = self.calculate_and_transmit(proposal).await;
+            let reports = if matches!(proposal, Proposal::Shield(_)) {
+                self.shield(proposal).await
+            } else {
+                self.send(proposal).await
+            };
 
-            if resume_sync {
-                let _ignore_error = self.resume_sync();
-            }
+            self.release_proposal_pause(resume_sync);
 
-            txids
+            reports.map(|reports| reports.map(|report| report.txid))
         } else {
             Err(SendError::NoStoredProposal.into())
         }
     }
 
     /// Calculates (signs) transactions from the stored proposal without an
-    /// Indexer — the offline-signing half of the Indexerless capability set
+    /// Indexer, the offline-signing half of the Indexerless capability set
     /// (ADR 0006). The stored proposal is consumed, exactly as
     /// [`Self::send_stored_proposal`] consumes it, and the signed
-    /// transactions land in the wallet with `Calculated` status; transmit
+    /// transactions land in the wallet with `Calculated` status. Transmit
     /// them with [`Self::transmit_calculated`] once an Indexer is
     /// configured.
     ///
@@ -125,9 +701,9 @@ impl LightClient {
     /// retargeted: its target height is lifted to the last height of the
     /// consensus-branch epoch the wallet believes it is in, so the built
     /// transaction carries the longest expiry that epoch permits. It stays
-    /// transmittable until the next scheduled network upgrade — the outer
+    /// transmittable until the next scheduled network upgrade, the outer
     /// limit for any pre-signed Zcash transaction, whose signature commits
-    /// to the epoch's consensus branch ID — and a stale offline chain view
+    /// to the epoch's consensus branch ID, and a stale offline chain view
     /// cannot expire it before an Indexer is available (issue #2455). An
     /// Indexer-connected calculation keeps the proposal's ordinary expiry,
     /// [`DEFAULT_TX_EXPIRY_DELTA`] blocks past the target: connected
@@ -136,39 +712,66 @@ impl LightClient {
         let indexerless = self.indexer.is_none();
         let mut wallet = self.wallet().write().await;
         let opt_proposal = wallet.take_proposal();
-        if let Some(proposal) = opt_proposal {
-            let chain_type = wallet.chain_type();
-            let proposal = if indexerless {
-                retarget_for_offline_signing(proposal, &chain_type)
+        let Some(proposal) = opt_proposal else {
+            return Err(SendError::NoStoredProposal.into());
+        };
+        let chain_type = wallet.chain_type();
+        let wrap: fn(CalculateTransactionError) -> SendError =
+            if matches!(proposal, Proposal::Shield(_)) {
+                SendError::CalculateShieldError
             } else {
-                proposal
+                SendError::CalculateSendError
             };
-            let wrap = wrap_calculate_error(&proposal);
-            let txids = wallet
-                .calculate_transactions(proposal)
-                .await
-                .map_err(wrap)?;
-            Ok(txids)
+        let proposal = if indexerless {
+            retarget_for_offline_signing(proposal, &chain_type)
         } else {
-            Err(SendError::NoStoredProposal.into())
+            proposal
+        };
+        let result = wallet.calculate_transactions(proposal).await.map_err(wrap);
+        drop(wallet);
+        // The proposal is consumed on every path above, so its pause
+        // has nothing left to guard; the engine returns to its prior mode.
+        self.release_proposal_pause(true);
+        result.map_err(LightClientError::from)
+    }
+
+    /// Pre-flights the transmission route without transmitting, so a route
+    /// that would refuse is caught before any transaction is built and no
+    /// freshly Calculated transaction is stranded. The same resolution
+    /// [`Self::transmit_transactions`] performs for real: clearnet demands
+    /// the configured indexer, and an Indexerless session passes only with
+    /// a ready mixnet (ruling 2026-07-29).
+    fn preflight_transmit(&self) -> Result<(), LightClientError> {
+        #[cfg(feature = "nym")]
+        {
+            resolve_transmit_route(self.indexer.is_some(), self.mixnet_route()).map(|_| ())
+        }
+        #[cfg(not(feature = "nym"))]
+        {
+            self.require_indexer().map(|_| ())
         }
     }
 
     /// Transmits previously calculated transactions to the Indexer, in the
-    /// given order — the transmission half of the offline-signing flow.
-    /// Requires an Indexer; an Indexerless attempt fails with
+    /// given order, the transmission half of the offline-signing flow.
+    /// Requires an Indexer. An Indexerless attempt fails with
     /// [`LightClientError::Offline`] and the Calculated transactions remain
     /// in the wallet, ready to transmit once connected.
     pub async fn transmit_calculated(
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.transmit_transactions(calculated_txids).await
+        self.transmit_transactions(calculated_txids)
+            .await
+            .map(|reports| reports.map(|report| report.txid))
     }
 
     /// Proposes and transmits transactions from a transaction request skipping proposal confirmation.
     ///
-    /// If sync is running, sync will be paused before creating the send proposal. If `resume_sync` is `true`, sync will be resumed after send.
+    /// If sync is running, it is paused before creating the send proposal.
+    /// If `resume_sync` is `true`, the engine is restored to its prior mode
+    /// after the send, on every exit path. If `false`, it stays paused for
+    /// the caller to resume.
     pub async fn quick_send(
         &mut self,
         request: TransactionRequest,
@@ -176,33 +779,55 @@ impl LightClient {
         op_return_data: Option<OpReturnData>,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.quick_send_reported(request, account_id, op_return_data, resume_sync)
+            .await
+            .map(|reports| reports.map(|report| report.txid))
+    }
+
+    /// [`Self::quick_send`] with the transmission attested: each
+    /// transaction's [`TransmitReport`] carries the route it traveled, the
+    /// endpoint that accepted it, and the transmission's round-trip time.
+    pub async fn quick_send_reported(
+        &mut self,
+        request: TransactionRequest,
+        account_id: zip32::AccountId,
+        op_return_data: Option<OpReturnData>,
+        resume_sync: bool,
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
         // Proposing is an Indexerless capability; only the calculate/transmit
         // stage below demands a connection.
-        let _ignore_error = self.pause_sync();
+        let guard = self.pause_sync_scoped().ok();
         let proposal_result = self
             .wallet()
             .write()
             .await
             .create_send_proposal(request, account_id, op_return_data)
             .map_err(SendError::ProposeSendError);
-        let txids = match proposal_result {
-            Ok(proposal) => self.calculate_and_transmit(proposal).await,
+        let reports = match proposal_result {
+            Ok(proposal) => self.send(proposal).await,
             Err(e) => Err(e.into()),
         };
-        if resume_sync {
-            let _ignore_error = self.resume_sync();
+        if let Some(guard) = guard
+            && !resume_sync
+        {
+            guard.disarm();
         }
 
-        txids
+        reports
     }
 
-    /// Shields all transparent funds skipping proposal confirmation.
+    /// Shields all transparent funds skipping proposal confirmation. The
+    /// sync engine is paused before the proposal's wallet reads and
+    /// restored to its prior mode when the call returns. The shield path
+    /// previously proposed, built, and stored transactions under a running
+    /// engine.
     pub async fn quick_shield(
         &mut self,
         account_id: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         // Proposing is an Indexerless capability; only the calculate/transmit
         // stage below demands a connection.
+        let _guard = self.pause_sync_scoped().ok();
         let proposal = self
             .wallet()
             .write()
@@ -210,7 +835,9 @@ impl LightClient {
             .create_shield_proposal(account_id)
             .map_err(SendError::ProposeShieldError)?;
 
-        self.calculate_and_transmit(proposal).await
+        self.shield(proposal)
+            .await
+            .map(|reports| reports.map(|report| report.txid))
     }
 
     /// Tranmits calculated transactions stored in the wallet matching txids of `calculated_txids` in the given order.
@@ -218,10 +845,63 @@ impl LightClient {
     pub(crate) async fn transmit_transactions(
         &mut self,
         calculated_txids: NonEmpty<TxId>,
-    ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let indexer = self.require_indexer()?.clone();
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        let indexer = self.indexer.clone();
+
+        // Resolve the Mixnet Mode route once for the whole send (ADR 0011).
+        // `Clearnet` submits through the configured indexer; `Mixnet(tunnel)`
+        // routes the escalation through the tunnel's SOCKS5 proxy — with or without a
+        // sync indexer (ruling 2026-07-29); `Bootstrapping` fails closed
+        // here, before any submission, rather than leaking to clearnet.
+        // Without the `nym` feature there is no mixnet, so the route is
+        // clearnet and demands the indexer.
+        #[cfg(feature = "nym")]
+        let socks5_proxy: Option<std::net::SocketAddr> =
+            resolve_transmit_route(indexer.is_some(), self.mixnet_route())?;
+        #[cfg(not(feature = "nym"))]
+        let socks5_proxy: Option<std::net::SocketAddr> = None;
+        // A spawned session gives every pull its own Exclusive exit; an
+        // attached session has no pools and shares the slot's tunnel.
+        #[cfg(feature = "nym")]
+        let pull_transports: Option<PullTransports> = self
+            .mixnet_slot
+            .proxy()
+            .is_some_and(crate::mixnet::MixnetProxy::is_spawned)
+            .then(|| PullTransports {
+                pools: std::sync::Arc::clone(&self.correspondent_pools),
+            })
+            .filter(|context| context.pools.acquirer().is_some());
+        #[cfg(not(feature = "nym"))]
+        let pull_transports: Option<PullTransports> = None;
+        let pull_route = socks5_proxy.map(|shared_socks5| PullRoute {
+            shared_socks5,
+            transports: pull_transports.as_ref(),
+        });
+        if socks5_proxy.is_none() && indexer.is_none() {
+            return Err(LightClientError::Offline);
+        }
+
+        // A test-attached slot pairs its Ready route with arms that submit
+        // over the mock indexer's channel; a live Ready session keeps the
+        // SOCKS5 escalation. Production builds carry no test slot state, so
+        // this distinction does not exist there.
+        #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+        let mock_arms = matches!(
+            self.mixnet_slot,
+            crate::mixnet::MixnetSlot::AttachedForTests { .. }
+        );
+
+        // Narrate the transmission into the side channel; the scope clears it
+        // on every exit so no stale line outlives this call.
+        let progress = self.transmit_progress.clone();
+        let _progress_scope = TransmitProgressScope(progress.clone());
+        let history = self.indexer_history.clone();
+        let total = calculated_txids.len();
+        let mut reports: Vec<TransmitReport> = Vec::with_capacity(total);
+
         let mut wallet = self.wallet().write().await;
-        for txid in calculated_txids.iter() {
+        for (index, txid) in calculated_txids.iter().enumerate() {
+            progress.set(format!("transaction {} of {total}: preparing", index + 1));
             let calculated_transaction = wallet
                 .wallet_transactions
                 .get(txid)
@@ -251,106 +931,74 @@ impl LightClient {
                     WalletError::TransactionWrite(e)
                 })?;
 
-            let mut retry_count = 0;
-            let mut queued_probes = 0;
-            let txid_from_server = loop {
-                let transmission_result = indexer
-                    .clone()
-                    .send_transaction(
-                        RawTransaction {
-                            data: transaction_bytes.clone(),
-                            height: height.into(),
+            // The retry / duplicate-in-mempool / queued-probe policy is defined
+            // once in `transmit::resilient_transmit`; the clearnet path runs it
+            // directly and the mixnet path runs it per escalation arm.
+            // Wallet-state effects stay here, around the pure transmission.
+            let dispatched = std::time::Instant::now();
+            #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+            let transmit_outcome = if mock_arms {
+                mock_escalating_transmit(
+                    indexer
+                        .as_ref()
+                        .expect("the test-attached slot always carries a mock indexer"),
+                    &transaction_bytes,
+                    height.into(),
+                    txid,
+                    &progress,
+                    &history,
+                )
+                .await
+                .map(|(server_txid, correspondent)| {
+                    (
+                        server_txid,
+                        TransmitRoute::Mixnet {
+                            correspondent,
+                            via_socks5: socks5_proxy
+                                .map(|addr| addr.to_string())
+                                .unwrap_or_default(),
                         },
-                        DEFAULT_REQUEST_TIMEOUT,
                     )
-                    .await
-                    .map_err(|e| {
-                        SendError::TransmissionError(TransmissionError::TransmissionFailed(
-                            format!("{e:?}"),
-                        ))
-                    });
-
-                match transmission_result {
-                    Ok(txid) => {
-                        break Ok(txid);
-                    }
-                    Err(e) => {
-                        // The node's rejections of resubmitted bytes
-                        // are positive confirmation that an earlier
-                        // submission was received (issue #2450).
-                        // Substring matches because zainod surfaces
-                        // the rejections untyped (zingolabs/zaino#1392);
-                        // upgrade to typed checks when that lands.
-                        if let SendError::TransmissionError(
-                            TransmissionError::TransmissionFailed(message),
-                        ) = &e
-                        {
-                            // Storage-backed duplicates: the earlier
-                            // submission is minable (in the mempool)
-                            // or already mined, so transmission is
-                            // complete.
-                            if message.contains("transaction already exists in mempool")
-                                || message.contains("transaction already in block chain")
-                            {
-                                break Ok(txid.to_string());
-                            }
-                            // "Queued for download" proves delivery,
-                            // not minability: zebra is still verifying
-                            // the earlier submission. Hold success
-                            // until the verdict is storage-backed, so
-                            // send-Ok keeps meaning the transaction is
-                            // minable now.
-                            if message.contains("already queued for download") {
-                                if queued_probes >= MAX_QUEUED_PROBES {
-                                    pepper_sync::set_transactions_failed(
-                                        &mut wallet.wallet_transactions,
-                                        vec![*txid],
-                                    );
-                                    wallet.save_required = true;
-                                    break Err(e);
-                                }
-                                queued_probes += 1;
-                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                                continue;
-                            }
-                        }
-                        if retry_count >= MAX_RETRIES {
-                            // a transmission error does not prove the transaction failed to reach
-                            // the network. an earlier attempt may have been accepted with its
-                            // response lost (e.g. a timeout), causing rebroadcasts to be rejected
-                            // as duplicates. only mark the transaction failed if the server does
-                            // not know it.
-                            if indexer
-                                .clone()
-                                .get_transaction(
-                                    TxFilter {
-                                        block: None,
-                                        index: 0,
-                                        hash: txid.as_ref().to_vec(),
-                                    },
-                                    DEFAULT_REQUEST_TIMEOUT,
-                                )
-                                .await
-                                .is_ok()
-                            {
-                                break Ok(txid.to_string());
-                            }
-
-                            pepper_sync::set_transactions_failed(
-                                &mut wallet.wallet_transactions,
-                                vec![*txid],
-                            );
-                            wallet.save_required = true;
-                            break Err(e);
-                        } else {
-                            retry_count += 1;
-                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-                            continue;
-                        }
-                    }
+                })
+            } else {
+                transmit_one_transaction(
+                    pull_route,
+                    indexer.as_ref(),
+                    &transaction_bytes,
+                    height.into(),
+                    txid,
+                    &progress,
+                    &history,
+                )
+                .await
+            };
+            #[cfg(not(all(feature = "nym", any(test, feature = "testutils"))))]
+            let transmit_outcome = transmit_one_transaction(
+                pull_route,
+                indexer.as_ref(),
+                &transaction_bytes,
+                height.into(),
+                txid,
+                &progress,
+                &history,
+            )
+            .await;
+            let (txid_from_server, route) = match transmit_outcome {
+                Ok(server_txid_and_route) => server_txid_and_route,
+                Err(failure) => {
+                    pepper_sync::set_transactions_failed(
+                        &mut wallet.wallet_transactions,
+                        vec![*txid],
+                    );
+                    wallet.save_required = true;
+                    // The typed failure is rendered only here, at the
+                    // report's existing prose field.
+                    return Err(SendError::TransmissionError(
+                        TransmissionError::TransmissionFailed(failure.to_string()),
+                    )
+                    .into());
                 }
-            }?;
+            };
 
             wallet
                 .wallet_transactions
@@ -372,9 +1020,22 @@ impl LightClient {
                 )
                 .into());
             }
+
+            // Published after the transaction is confirmed transmitted and its
+            // server txid verified. Each is a no-op unless its owner armed the
+            // side channel (an immediate migration or a note-splitting round),
+            // and the two are mutually exclusive in practice.
+            self.immediate_migration_progress.set_sent(index as u32 + 1);
+            self.split_progress.set_sent(index as u32 + 1);
+
+            reports.push(TransmitReport {
+                txid: *txid,
+                route,
+                round_trip: dispatched.elapsed(),
+            });
         }
 
-        Ok(calculated_txids)
+        Ok(NonEmpty::from_vec(reports).expect("one report per calculated transaction"))
     }
 }
 
@@ -382,9 +1043,71 @@ impl LightClient {
 /// (docs/testing/test-protection-audit-dev-to-ironwood.md § Gap
 /// remediation plan): the built transaction's expiry and consensus
 /// branch id must derive from the wallet's synced height + 1.
-/// `LightWallet::calculate_transactions` is the build-without-broadcast
-/// seam — it proves and stores the transaction without transmitting —
+/// `LightWallet::calculate_transactions` is the build-without-transmit
+/// seam (it proves and stores the transaction without transmitting),
 /// so these cells run offline over a synthetic wallet.
+#[cfg(test)]
+mod transmit_error_seam {
+    use super::*;
+
+    /// The chain height a seam test hands the transmitter; nothing on the
+    /// refusal path reads it.
+    const ARBITRARY_HEIGHT: u64 = 0;
+
+    /// HYPOTHESIS: a send attempt's failure reaches the diary as the typed
+    /// taxonomy record, classified whole rather than from hand-rendered
+    /// prose. Falsified if the recorded category drifts.
+    #[test]
+    fn send_attempt_failure_is_classified_from_the_record() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let history = IndexerHistoryHandle::beside_wallet(&dir.path().join("zingo-wallet.dat"));
+        history.set_recording(true);
+        let failure = zingo_net_diag::NetOpFailure::message(
+            zingo_net_diag::NetOpStage::RemoteConnect,
+            "indexer.example",
+            "connection refused",
+        );
+        record_send_attempt(
+            &history,
+            &crate::correspondent::Host::of_host_str("indexer.example"),
+            AttemptRoute::Clearnet,
+            std::time::Instant::now(),
+            &Err(failure),
+            None,
+            None,
+        );
+        let recorded = history.load();
+        assert_eq!(recorded.len(), 1, "one attempt is recorded");
+        assert_eq!(
+            recorded[0].outcome,
+            Err(crate::lightclient::indexer_history::FailureKind::Unreachable),
+            "the category comes from the typed record"
+        );
+    }
+
+    /// HYPOTHESIS: the clearnet arm without a configured indexer refuses as
+    /// the typed variant before any network touch. Falsified if the refusal
+    /// is any other variant.
+    #[tokio::test]
+    async fn missing_clearnet_indexer_refuses_typed() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let history = IndexerHistoryHandle::beside_wallet(&dir.path().join("zingo-wallet.dat"));
+        let progress = TransmitProgressHandle::default();
+        let refusal = transmit_one_transaction(
+            None,
+            None,
+            &[],
+            ARBITRARY_HEIGHT,
+            &TxId::from_bytes([0u8; 32]),
+            &progress,
+            &history,
+        )
+        .await
+        .expect_err("no indexer must refuse");
+        assert!(matches!(refusal, TransmitError::NoClearnetIndexer));
+    }
+}
+
 #[cfg(test)]
 mod built_transaction_shape {
     use zcash_protocol::consensus::{BlockHeight, BranchId};
@@ -407,7 +1130,7 @@ mod built_transaction_shape {
         address_from_str(&unified_address.encode(&external_wallet.chain_type())).unwrap()
     }
 
-    /// Builds (without broadcasting) one send-all from the given wallet
+    /// Builds (without transmitting) one send-all from the given wallet
     /// and returns the stored transaction's (target, expiry, branch id).
     async fn build_one_send(wallet: LightWallet) -> (u32, u32, BranchId) {
         let mut client = LightClient::new_for_test(wallet).await;
@@ -472,7 +1195,7 @@ mod built_transaction_shape {
     /// built transaction nets exactly their sum minus the 30_000
     /// four-input shield fee into the Ironwood pool (a V6 shield's
     /// change lands in the ironwood bundle, ADR 0009). The live assert
-    /// is the post-confirmation balance; the offline equivalent is the
+    /// is the post-confirmation balance. The offline equivalent is the
     /// ironwood bundle's value balance on the built transaction.
     #[tokio::test]
     async fn four_coin_shield_builds_and_nets_input_minus_fee() {
@@ -525,9 +1248,9 @@ mod built_transaction_shape {
     /// Gap-1b cell of the remediation plan, mirroring the live
     /// multi_input_sapling_send_with_orchard_change_no_panic offline: a
     /// payment that no single sapling note covers builds (proves) a
-    /// two-input sapling spend. Under V6 the change stays in Sapling —
-    /// the upstream change selector avoids pool-crossing when no orchard
-    /// flow exists (ADR 0009) — while the payment to the orchard receiver
+    /// two-input sapling spend. Under V6 the change stays in Sapling (the
+    /// upstream change selector avoids pool-crossing when no orchard
+    /// flow exists, ADR 0009) while the payment to the orchard receiver
     /// lands in the ironwood bundle. The sapling proving parameters are
     /// embedded in the crate, so the plan's parameters precondition is
     /// satisfied in the unit environment.
@@ -601,8 +1324,101 @@ mod built_transaction_shape {
         );
     }
 
+    /// Privacy invariant: spending a legacy (V5) Orchard note on a post-NU6.3
+    /// chain must keep the **change** in the Orchard pool as a real Orchard
+    /// output, not migrate it to Ironwood. ZIP 318 disables ordinary *payments*
+    /// into the Orchard pool "while still permitting change"; the turnstile
+    /// (ZIP 2006) only blocks value *entering* Orchard, and change funded by an
+    /// Orchard input nets the pool *down*, so the Orchard change output is
+    /// consensus-valid. Upstream's `SingleOutputChangeStrategy` already keeps
+    /// change in the spent note's pool to avoid a pool-crossing (the
+    /// `ShieldedPool::Ironwood` passed by the proposer is only the *fallback*
+    /// for transactions with no shielded inputs, e.g. shields, ADR 0009);
+    /// deliberate Orchard->Ironwood movement is the migration engine's job.
+    ///
+    /// The proof is at the built-transaction level, not the proposal label:
+    /// the Orchard bundle carries the spend *and* the change output (its value
+    /// balance nets out only the payment plus fee, so the change stays in the
+    /// pool), while only the payment to the recipient's Orchard receiver routes
+    /// through the Ironwood bundle (turnstiled per ZIP 318). Had the change
+    /// crossed to Ironwood, the Orchard value balance would equal the whole
+    /// spent note.
+    #[tokio::test]
+    async fn orchard_note_send_keeps_change_in_orchard_pool_post_nu6_3() {
+        use zcash_protocol::{PoolType, value::Zatoshis};
+        use zip321::{Payment, TransactionRequest};
+
+        let note_value = 200_000u64;
+        let sent_value = 50_000u64;
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(note_value)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let request = TransactionRequest::new(vec![Payment::without_memo(
+            external_orchard_address(),
+            Zatoshis::const_from_u64(sent_value),
+        )])
+        .unwrap();
+        let proposal = client
+            .propose_send(request, zip32::AccountId::ZERO, None)
+            .await
+            .unwrap();
+        let step = proposal.final_step();
+        let change = step.change();
+        assert_eq!(change.len(), 1);
+        let change_value = u64::from(change[0].value());
+        assert!(change_value > 0, "the send must leave real change to place");
+        assert_eq!(
+            change[0].pool(),
+            PoolType::ORCHARD,
+            "the proposer must select the Orchard pool for change when spending an Orchard note"
+        );
+
+        let txids = client
+            .wallet()
+            .write()
+            .await
+            .calculate_transactions(proposal)
+            .await
+            .unwrap();
+        assert_eq!(txids.len(), 1);
+        let wallet = client.wallet();
+        let wallet = wallet.read().await;
+        let transaction = wallet
+            .wallet_transactions
+            .get(&txids[0])
+            .unwrap()
+            .transaction();
+
+        // Orchard bundle: spends the note and holds the change output. Its
+        // value balance is (note - change) = payment + fee, which is strictly
+        // less than the whole note — the discriminator proving the change is a
+        // real Orchard output that stayed in the pool rather than crossing to
+        // Ironwood (which would leave the value balance at the full note value).
+        let orchard = transaction
+            .orchard_bundle()
+            .expect("spending a legacy Orchard note keeps a real Orchard bundle");
+        assert_eq!(
+            i64::from(*orchard.value_balance()),
+            i64::try_from(note_value - change_value).unwrap(),
+            "Orchard value balance must net out only payment + fee, leaving the change in Orchard"
+        );
+
+        // Ironwood bundle: carries only the payment to the recipient's Orchard
+        // receiver, turnstiled per ZIP 318 — never the change.
+        let ironwood = transaction
+            .ironwood_bundle()
+            .expect("the payment to an Orchard receiver routes via Ironwood post-NU6.3");
+        assert_eq!(
+            i64::from(*ironwood.value_balance()),
+            -i64::try_from(sent_value).unwrap(),
+            "Ironwood carries only the payment value, not the change"
+        );
+    }
+
     /// Gap-3 cell of the remediation plan: the entire ZIP-320 two-step
-    /// builds offline behind the seam — `zcash_client_backend` chains
+    /// builds offline behind the seam: `zcash_client_backend` chains
     /// step one's ephemeral transparent output into step two before
     /// anything touches a network. Step two's sole transparent input
     /// spends step one's ephemeral output, and the TEX-decoded P2PKH
@@ -778,15 +1594,16 @@ mod test {
                 birthday: 419200,
                 wallet_settings: default_test_wallet_settings(),
             })
-            .build();
+            .build()
+            .unwrap();
         LightClient::new(config, true).await.unwrap()
     }
 
     #[tokio::test]
-    async fn complete_and_broadcast_unconnected_error() {
+    async fn complete_and_transmit_unconnected_error() {
         let mut lc = create_basic_client().await;
         let proposal = crate::mocks::proposal::minimal_transfer_proposal();
-        let err = lc.calculate_and_transmit(proposal).await.unwrap_err();
+        let err = lc.send(proposal).await.unwrap_err();
         assert!(matches!(err, LightClientError::Offline));
     }
 
@@ -933,7 +1750,7 @@ mod test {
 /// Migrated from libtonode `slow::t_incoming_t_outgoing_disallowed`: a
 /// received transparent coin appears in the transaction summaries with its
 /// height and value, and spending transparent funds through an ordinary
-/// send is refused — the wallet demands a shield first, surfacing as an
+/// send is refused, since the wallet demands a shield first, surfacing as an
 /// insufficient-funds proposal error because transparent coins are not
 /// send-spendable.
 #[cfg(test)]

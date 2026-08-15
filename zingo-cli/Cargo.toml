@@ -3,11 +3,33 @@ name = "zingo-cli"
 version = "0.4.0"
 edition = "2024"
 
+[features]
+# The mixnet transport is a default capability: every ordinary build carries
+# it, so `network on|off|status` never demands a rebuild (ADR 0026). Compiling it
+# starts nothing — an offline session executes no proxy and touches no network
+# (ADR 0025); only an Online session's go-online moment provisions (ADR 0024).
+# Opt out with `--no-default-features` (or run-cli's `--clearnet`); the
+# command then reports the capability was switched off at build time.
+default = ["nym"]
+nym = ["zingolib/nym"]
+# The quarantined clearnet server-selection sweep (ADR 0029 deletes it from
+# ordinary builds). Never a default: a session that goes online engages
+# clearnet only for sync, so compiling this back in is a deliberate,
+# review-gated test act (2026-08-06 ruling).
+clearnet-test-mode = []
+# Compile in the on-disk indexer diary so `--indexer-diary` can opt a session
+# in to recording and `network history` can display it. Off by default; without
+# it the flag warns and records nothing.
+nym-diary = ["zingolib/nym-diary"]
+
 [dependencies]
 pepper-sync = { workspace = true }
 zingo_common_components = { workspace = true }
-zingo-netutils = { workspace = true }
-zingolib = { workspace = true }
+# No direct zingo-netutils dependency: this consumer funnels through
+# zingolib's re-exports (`zingolib::netutils`, ADR 0024 decision 7). The
+# dev-dependency below reaches netutils' test scaffolding directly, which
+# ships nothing and creates no duplicate copy.
+zingolib = { workspace = true, features = ["perspective"] }
 
 zcash_address = { workspace = true }
 zcash_keys = { workspace = true }
@@ -23,13 +45,26 @@ nonempty = { workspace = true }
 rustyline = { workspace = true }
 zingo-status = { workspace = true }
 shellwords = { workspace = true }
-tokio = { workspace = true }
+# macros + time back the transmit heartbeat's select!/interval; rt-multi-thread
+# backs the command runtime (previously inherited via feature unification).
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 tracing-subscriber = { workspace = true }
 zip32 = { workspace = true }
+thiserror.workspace = true
+zingo-net-diag.workspace = true
 
 [dev-dependencies]
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros"] }
+# The offline-contract tests build Indexerless clients from synthetic
+# wallets, so every command's offline behavior is pinned without a network.
+zingolib = { workspace = true, features = ["testutils"] }
+zingo_test_vectors = { workspace = true }
+# The heartbeat and log-file tests read their temporal parameters from
+# `time::test`.
+zingo-netutils = { workspace = true, features = ["testutils"] }
+# test-util powers the paused-clock heartbeat tests.
+tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros", "test-util"] }
 tokio-stream = "0.1"
 tonic = { workspace = true }
+zingo-net-diag.workspace = true
 zingo_grpc_proxy = { git = "https://github.com/zingolabs/grpc_proxy.git", rev = "bad24e29529a0bb381f71f02f977752c20c26613" }

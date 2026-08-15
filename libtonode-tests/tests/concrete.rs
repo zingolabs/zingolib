@@ -252,7 +252,7 @@ async fn unified_address_discovery() {
         panic!("ua should not be in fresh wallet yet!");
     }
 
-    // sync recipient (to the Validator's tip — a bare sync races the
+    // sync recipient (to the Validator's tip, since a bare sync races the
     // Indexer's ingestion of the block confirming the sends) and check
     // the UAs have been discovered
     scenarios::sync_client_to_validator_tip(&local_net, &mut recipient).await;
@@ -303,11 +303,11 @@ async fn unified_address_discovery() {
 /// Diagnostic probe for the Core-stack coinbase model. Each assert tests
 /// one hypothesis, and each failure mode has a distinct quantized delta:
 /// - orchard off by one POST_STREAM_BLOCK_REWARD (618_750_000):
-///   ORCHARD_COINBASE_START_HEIGHT is wrong (flip 2 <-> 3);
+///   ORCHARD_COINBASE_START_HEIGHT is wrong (flip 2 <-> 3)
 /// - sapling delta of BLOCK_ONE_SAPLING_COINBASE (625_000_000): the
-///   block-1-pays-the-sapling-receiver rule is wrong;
+///   block-1-pays-the-sapling-receiver rule is wrong
 /// - transparent nonzero: pre-NU5 or activation-block coinbase pays a
-///   transparent output instead;
+///   transparent output instead
 /// - balances short by whole blocks: the deterministic
 ///   sync_client_to_validator_tip is not actually deterministic.
 #[tokio::test]
@@ -479,14 +479,14 @@ async fn mine_to_orchard() {
     .await;
     check_client_balances!(
         faucet,
-        i: 0 o: (scenarios::funded_faucet_ironwood_balance()) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        i: 0 o: 1_237_500_000 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
     check_client_balances!(
         faucet,
-        i: 0 o: (scenarios::funded_faucet_ironwood_balance() + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
+        i: 0 o: (1_237_500_000 + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
 }
 
@@ -531,7 +531,7 @@ async fn mine_to_transparent() {
 async fn sync_all_expressible_epochs() {
     // The zebrad config writer requires every upgrade through Canopy
     // active at height 1, and the harness subsidy fixtures pair only
-    // with the fixture shape — so the expressible epoch boundaries are
+    // with the fixture shape, so the expressible epoch boundaries are
     // NU5/NU6 at height 2 and NU6.1/NU6.2 at height 5. Sync across all
     // of them with room to spare.
     let (local_net, mut lightclient) = scenarios::unfunded_client(
@@ -548,12 +548,12 @@ use zcash_local_net::validator::Validator;
 use zingolib::config::{ChainType, ClientConfig};
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::{LightClientError, SendError};
+use zingolib::perspective::value_transfer::{
+    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
+};
 use zingolib::testutils::build_fvks_from_unified_keystore;
 use zingolib::wallet::error::CalculateTransactionError;
 use zingolib::wallet::output::SpendStatus;
-use zingolib::wallet::summary::data::{
-    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
-};
 
 #[tokio::test]
 async fn test_scanning_in_watch_only_mode() {
@@ -672,8 +672,11 @@ async fn test_scanning_in_watch_only_mode() {
                 birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             })
-            .build();
-        let mut watch_client = LightClient::new(zingo_config, false).await.unwrap();
+            .build()
+            .unwrap();
+        let mut watch_client = LightClient::new_clearnet_consented(zingo_config, false)
+            .await
+            .unwrap();
         // assert empty wallet before rescan
         let balance = watch_client
             .account_balance(zip32::AccountId::ZERO)
@@ -962,7 +965,7 @@ async fn send_mined_ironwood_to_ironwood() {
         balance.unconfirmed_ironwood_balance,
         Some(0.try_into().unwrap())
     );
-    // The send is to self, so only the fee leaves the wallet — and the
+    // The send is to self, so only the fee leaves the wallet, and the
     // faucet mines the confirming block, collecting a fresh coinbase
     // reward plus that same fee back.
     assert_eq!(
@@ -1041,7 +1044,7 @@ mod rescan_still_have_outgoing_notes {
 /// sapling notes (10_000, 20_000, 30_000) to cover 30_000 plus the fee,
 /// making this the suite's only live broadcast of a multi-input sapling
 /// spend with cross-pool (orchard) change. The unwraps assert proposal,
-/// proving, and the validator's acceptance of the bundle; the closing
+/// proving, and the validator's acceptance of the bundle. The closing
 /// balance check pins the spend's post-state (gap 1a of the audit's
 /// remediation plan). Note-selection ordering itself is asserted
 /// offline by `note_selection_covers_target_with_minimal_change` in
@@ -1155,12 +1158,12 @@ async fn assert_ironwood_note_statuses(
 /// `mempool_spends_correctly_marked_pending_spent`
 /// (protection-dominance analysis): one funded recipient walks two
 /// complete mempool-then-confirmed spend cycles, asserted at BOTH
-/// granularities — the three-way orchard balance split and per-note
-/// `SpendStatus` — at every phase, including the pre-spend steady
+/// granularities (the three-way orchard balance split and per-note
+/// `SpendStatus`) at every phase, including the pre-spend steady
 /// state and a post-confirmation stability window neither original
 /// covered at note level. Both former send amounts survive the
 /// merge deliberately: the 2_000-zat cycle preserves near-dust
-/// change arithmetic; the 100_000 cycle preserves the note-status
+/// change arithmetic. The 100_000 cycle preserves the note-status
 /// shape of the original per-note test.
 #[tokio::test]
 async fn mempool_spend_balance_and_note_status_accounting() {
@@ -1690,10 +1693,13 @@ mod testnet_test {
     use pepper_sync::sync_status;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::{
-        config::{ChainType, ClientConfig, DEFAULT_INDEXER_URI_TESTNET, WalletConfig},
+        config::{ChainType, ClientConfig, WalletConfig},
         lightclient::LightClient,
         testutils::{default_test_wallet_settings, tempfile::TempDir},
     };
+
+    /// The testnet indexer these wallet-load tests pin explicitly.
+    const TESTNET_INDEXER: &str = "https://testnet.zec.rocks:443";
 
     #[ignore = "testnet cannot be run offline"]
     #[tokio::test]
@@ -1707,7 +1713,7 @@ mod testnet_test {
             let wallet_dir = TempDir::new().unwrap();
             let config = ClientConfig::builder()
                 .set_chain_type(ChainType::Testnet)
-                .set_indexer_uri((DEFAULT_INDEXER_URI_TESTNET).parse::<http::Uri>().unwrap())
+                .set_indexer_uri((TESTNET_INDEXER).parse::<http::Uri>().unwrap())
                 .set_wallet_config(WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
@@ -1715,7 +1721,8 @@ mod testnet_test {
                     wallet_settings: default_test_wallet_settings(),
                 })
                 .set_wallet_dir(wallet_dir.path().to_path_buf())
-                .build();
+                .build()
+                .unwrap();
 
             let mut lightclient = LightClient::new(config, true).await.unwrap();
             lightclient.save_task().await;
@@ -1738,10 +1745,11 @@ mod testnet_test {
             // will fail if there were any reload errors due to bad file write code i.e. no flushing or file syncing
             let config = ClientConfig::builder()
                 .set_chain_type(ChainType::Testnet)
-                .set_indexer_uri((DEFAULT_INDEXER_URI_TESTNET).parse::<http::Uri>().unwrap())
+                .set_indexer_uri((TESTNET_INDEXER).parse::<http::Uri>().unwrap())
                 .set_wallet_config(WalletConfig::Read)
                 .set_wallet_dir(wallet_dir.path().to_path_buf())
-                .build();
+                .build()
+                .unwrap();
             LightClient::new(config, true).await.unwrap();
 
             test_count += 1;

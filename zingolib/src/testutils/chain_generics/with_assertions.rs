@@ -59,7 +59,7 @@ where
     // Mine one block and sync the sender to the real tip before proposing.
     // This cures zebra's "could not validate orchard proof ... until the
     // next chain tip block" rejection, but not because tip-block notes are
-    // unspendable — tip_spend_rejection's tip_note_to_orchard proves those
+    // unspendable: tip_spend_rejection's tip_note_to_orchard proves those
     // spend fine. The rejection hits orchard-output transactions built
     // adjacent to the height-5 NU6.1/6.2 co-activation (a wrong consensus
     // branch id from a stale wallet view); syncing to the true tip keeps
@@ -116,7 +116,7 @@ where
     Ok((total_fee, s_shielded))
 }
 
-/// given a just-broadcast proposal, confirms that it achieves all expected checkpoints.
+/// given a just-transmitted proposal, confirms that it achieves all expected checkpoints.
 /// returns `Ok(total_fee`, `total_received`, `total_change`)
 pub async fn follow_proposal<ChainConductor>(
     environment: &mut ChainConductor,

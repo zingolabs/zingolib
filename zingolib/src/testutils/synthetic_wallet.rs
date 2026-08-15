@@ -1,5 +1,5 @@
 //! Assembles offline wallets with fabricated, spendable-and-proposable
-//! funds — no network, no chain, no fixture files.
+//! funds, with no network, no chain, and no fixture files.
 //!
 //! Proposal creation gates on: a known chain height (fully scanned scan
 //! ranges), anchor checkpoints in BOTH shard-tree stores, and notes that
@@ -7,7 +7,7 @@
 //! and no spend. This builder fabricates exactly those invariants.
 //!
 //! Beyond proposing, the wallets can BUILD transactions offline
-//! (`LightWallet::calculate_transactions` — the build-without-broadcast
+//! (`LightWallet::calculate_transactions`, the build-without-transmit
 //! seam of the protection audit's gap remediation plan): each fabricated
 //! note is addressed to the wallet's own keys and its commitment is
 //! appended to the corresponding shard tree at the note's claimed
@@ -354,4 +354,81 @@ impl SyntheticWalletBuilder {
 
         wallet
     }
+}
+
+/// Injects `count` confirmed, unspent legacy-Orchard (V2) notes of `value`
+/// zatoshis into an already-synced wallet, replacing the orchard anchor
+/// checkpoint at `tip` so it covers the appended leaves.
+///
+/// The builder above fabricates whole wallets and assigns fabricated
+/// nullifiers, which proposing never checks. This sibling serves tests that
+/// drive pepper-sync's spend bookkeeping on a mock net: each nullifier is
+/// derived from the wallet's own orchard key, so a transaction that later
+/// spends one of these notes is matched by nullifier and the note is marked
+/// spent.
+pub fn inject_confirmed_orchard_notes(wallet: &mut LightWallet, count: u32, value: u64, tip: u32) {
+    let orchard_fvk: orchard::keys::FullViewingKey = wallet
+        .unified_key_store
+        .get(&zip32::AccountId::ZERO)
+        .expect("account zero exists")
+        .try_into()
+        .expect("mnemonic wallets carry an orchard key");
+    let recipient = orchard_fvk.address_at(0u32, zip32::Scope::External);
+
+    for index in 0..count {
+        // The same txid range the builder uses for orchard notes, clear of
+        // its ironwood (1..) and sapling (0x80..) ranges.
+        let txid = TxId::from_bytes([0x40 + u8::try_from(index).expect("small note corpus"); 32]);
+        let crypto_note = OrchardCryptoNoteBuilder::default()
+            .recipient(recipient)
+            .value(NoteValue::from_raw(value))
+            .note_version(orchard::NoteVersion::V2)
+            .build();
+        wallet
+            .shard_trees
+            .orchard
+            .append(
+                MerkleHashOrchard::from_cmx(&crypto_note.commitment().into()),
+                Retention::Marked,
+            )
+            .expect("appending to the in-memory orchard tree succeeds");
+        let nullifier = crypto_note.nullifier(&orchard_fvk);
+        let note = OrchardNote::new_for_test(
+            OutputId::new(txid, 0),
+            zip32::AccountId::ZERO,
+            zip32::Scope::External,
+            crypto_note,
+            Memo::Empty,
+            Some(Position::from(u64::from(index))),
+        )
+        .with_nullifier_for_test(nullifier);
+        wallet.wallet_transactions.insert(
+            txid,
+            WalletTransaction::new_for_test_with_orchard_notes(
+                txid,
+                ConfirmationStatus::Confirmed(BlockHeight::from_u32(2 + index)),
+                vec![note],
+                vec![],
+            ),
+        );
+    }
+
+    // The synced checkpoint at the tip predates the appended leaves; replace
+    // it so the anchor covers them.
+    let tip = BlockHeight::from_u32(tip);
+    wallet
+        .shard_trees
+        .orchard
+        .store_mut()
+        .remove_checkpoint(&tip)
+        .expect("infallible on the memory store");
+    wallet
+        .shard_trees
+        .orchard
+        .store_mut()
+        .add_checkpoint(
+            tip,
+            Checkpoint::at_position(Position::from(u64::from(count) - 1)),
+        )
+        .expect("infallible on the memory store");
 }

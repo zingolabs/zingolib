@@ -58,7 +58,7 @@ pub struct BoundaryWitness {
 /// How Phase 2 transactions are signed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SigningStrategy {
-    /// Build and sign each part at its broadcast boundary. The only sound
+    /// Build and sign each part at its transmission boundary. The only sound
     /// strategy while ZIP 244 commits the anchor into the signature hash.
     LazyAtBoundary,
     /// Sign every part at consent time and persist the raw transactions.
@@ -73,13 +73,13 @@ pub enum SigningStrategy {
 pub enum PartState {
     /// Note bound, no bucket assigned yet.
     Bound,
-    /// Assigned to an anchor-height bucket.
+    /// Assigned to a transmission window, with an anchor drawn below it.
     Assigned,
     /// Built and signed (txid and expiry recorded). Transient under
     /// [`SigningStrategy::LazyAtBoundary`], durable under
     /// [`SigningStrategy::PreSigned`].
     Signed,
-    /// Submitted to the broadcast endpoint at least once.
+    /// Submitted to the transmission endpoint at least once.
     Broadcast,
     /// Mined and confirmed at this height. Terminal.
     Confirmed {
@@ -87,7 +87,7 @@ pub enum PartState {
         height: BlockHeight,
     },
     /// Reached its expiry height unmined. Rebuilt with the same denomination
-    /// and a fresh bucket via [`PartRecord::reassign`].
+    /// and a fresh bucket via `PartRecord::reassign`.
     Expired,
     /// The bound note was spent outside the migration. Terminal. The
     /// remaining balance is replanned under fresh consent.
@@ -118,9 +118,21 @@ pub struct PartRecord {
     /// The split note this part spends. Set at binding time and kept through
     /// every rebuild (the note does not change on expiry, only the anchor).
     pub note: Option<BoundNote>,
-    /// The anchor-height bucket this part broadcasts in
-    /// (boundary = `bucket_index * M`).
+    /// The bucket this part transmits in: it is due while the chain tip is
+    /// inside the window `[bucket_index · M, (bucket_index + 1) · M)`. The
+    /// builder's target height comes from here. Distinct from
+    /// `Self::anchor_bucket`, which is where the part *proves*.
     pub bucket_index: Option<u64>,
+    /// The bucket whose opening boundary this part anchors its Orchard spend
+    /// to, always at least one bucket below [`Self::bucket_index`] (see
+    /// [`super::schedule::draw_anchor_bucket`]). Drawn per part at placement
+    /// time, so two parts of one batch usually carry different anchors.
+    ///
+    /// `None` on a part read from a migration section written before anchors
+    /// were drawn separately (inner version 3 and below) whose transaction is
+    /// not yet signed; the next placement, or
+    /// `crate::wallet::LightWallet::refresh_part_witnesses`, draws one.
+    pub(crate) anchor_bucket: Option<u64>,
     /// A randomly chosen block within the bucket window at which the part
     /// fires. Randomizing the target within `[boundary, boundary + M)`
     /// prevents the server from seeing all parts cluster at the boundary.
@@ -133,14 +145,16 @@ pub struct PartRecord {
     /// Expiry height of the built transaction, set when signed.
     pub expiry_height: Option<BlockHeight>,
     /// The raw signed transaction under [`SigningStrategy::PreSigned`].
-    /// `None` under the lazy strategy: between signing and broadcast the
+    /// `None` under the lazy strategy: between signing and transmission the
     /// bytes are recoverable from the wallet's transaction record by txid.
-    pub signed_blob: Option<Vec<u8>>,
-    /// The boundary anchor and witness, cached while the boundary checkpoint
-    /// is retained. Cleared on reassignment (a fresh bucket means a fresh
-    /// boundary).
+    pub(crate) signed_blob: Option<Vec<u8>>,
+    /// The anchor root and witness at `Self::anchor_bucket`'s boundary,
+    /// cached while that checkpoint is retained. Cleared on every bucket
+    /// transition, since a fresh anchor bucket means a fresh boundary, and
+    /// discarded when a pre-anchor-age schedule is read, where it proves the
+    /// note under the *window's* boundary instead.
     pub anchor_witness: Option<BoundaryWitness>,
-    /// Broadcast attempts so far. Incremented (and persisted) before every
+    /// Transmission attempts so far. Incremented (and persisted) before every
     /// submit so a crash between submit and record is detectable.
     pub attempts: u8,
 }
@@ -153,6 +167,7 @@ impl PartRecord {
             denomination,
             note: Some(note),
             bucket_index: None,
+            anchor_bucket: None,
             target_height: None,
             state: PartState::Bound,
             txid: None,
@@ -176,11 +191,33 @@ impl PartRecord {
         Ok(())
     }
 
-    /// `Bound → Assigned`: the schedule placed this part in a bucket.
+    /// `Bound → Assigned`: the schedule placed this part in a transmission
+    /// window.
+    ///
+    /// Clears `Self::anchor_bucket`, as every bucket transition does: the
+    /// placement operations in `super::schedule` are the only writers of an
+    /// anchor, and they set it immediately after transitioning. A caller that
+    /// assigns directly leaves the part anchorless rather than carrying an
+    /// anchor drawn against a different window.
     #[allow(clippy::result_large_err)]
     pub fn assign(&mut self, bucket_index: u64) -> Result<(), WalletError> {
         self.transition(&["Bound"], PartState::Assigned)?;
         self.bucket_index = Some(bucket_index);
+        self.anchor_bucket = None;
+        Ok(())
+    }
+
+    /// `Assigned → Bound`: return the part to the unscheduled pool so a
+    /// fresh schedule can re-bucket it (a cadence change before Phase 2
+    /// begins). Clears every scheduling artifact. The binding to its note
+    /// stands.
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn unassign(&mut self) -> Result<(), WalletError> {
+        self.transition(&["Assigned"], PartState::Bound)?;
+        self.bucket_index = None;
+        self.anchor_bucket = None;
+        self.target_height = None;
+        self.anchor_witness = None;
         Ok(())
     }
 
@@ -188,9 +225,10 @@ impl PartRecord {
     /// fresh bucket, clearing the stale transaction artifacts (FR15, no fresh
     /// consent needed since the denomination and total are unchanged).
     #[allow(clippy::result_large_err)]
-    pub fn reassign(&mut self, bucket_index: u64) -> Result<(), WalletError> {
+    pub(crate) fn reassign(&mut self, bucket_index: u64) -> Result<(), WalletError> {
         self.transition(&["Expired"], PartState::Assigned)?;
         self.bucket_index = Some(bucket_index);
+        self.anchor_bucket = None;
         self.txid = None;
         self.expiry_height = None;
         self.signed_blob = None;
@@ -200,7 +238,7 @@ impl PartRecord {
 
     /// `Assigned → Signed`: the canonical transaction is built and signed.
     #[allow(clippy::result_large_err)]
-    pub fn mark_signed(
+    pub(crate) fn mark_signed(
         &mut self,
         txid: TxId,
         expiry_height: BlockHeight,
@@ -215,22 +253,22 @@ impl PartRecord {
 
     /// Records a submit attempt. Persist the record between this and the
     /// actual submission, so an unrecorded-but-mined part is detectable.
-    pub fn record_attempt(&mut self) {
+    pub(crate) fn record_attempt(&mut self) {
         self.attempts = self.attempts.saturating_add(1);
     }
 
     /// `Signed → Broadcast`: the transaction was submitted.
     #[allow(clippy::result_large_err)]
-    pub fn mark_broadcast(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn mark_broadcast(&mut self) -> Result<(), WalletError> {
         self.transition(&["Signed"], PartState::Broadcast)
     }
 
     /// `{Assigned, Signed, Broadcast, Expired} → Confirmed`: the bound note's
     /// nullifier was revealed by this part's own transaction. Reachable from
-    /// pre-broadcast states because a crash between submit and record leaves
+    /// pre-transmission states because a crash between submit and record leaves
     /// the persisted state behind the chain.
     #[allow(clippy::result_large_err)]
-    pub fn mark_confirmed(&mut self, height: BlockHeight) -> Result<(), WalletError> {
+    pub(crate) fn mark_confirmed(&mut self, height: BlockHeight) -> Result<(), WalletError> {
         self.transition(
             &["Assigned", "Signed", "Broadcast", "Expired"],
             PartState::Confirmed { height },
@@ -240,14 +278,14 @@ impl PartRecord {
     /// `{Assigned, Signed, Broadcast} → Expired`: the signed transaction
     /// reached its expiry height unmined.
     #[allow(clippy::result_large_err)]
-    pub fn mark_expired(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn mark_expired(&mut self) -> Result<(), WalletError> {
         self.transition(&["Assigned", "Signed", "Broadcast"], PartState::Expired)
     }
 
     /// `{Bound, Assigned, Signed, Broadcast, Expired} → Invalidated`: the
     /// bound note was spent by a non-migration transaction.
     #[allow(clippy::result_large_err)]
-    pub fn mark_invalidated(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn mark_invalidated(&mut self) -> Result<(), WalletError> {
         self.transition(
             &["Bound", "Assigned", "Signed", "Broadcast", "Expired"],
             PartState::Invalidated,
@@ -259,7 +297,7 @@ impl PartRecord {
     /// is already fixed to the old boundary, so they expire and reassign
     /// instead.
     #[allow(clippy::result_large_err)]
-    pub fn shift(&mut self, bucket_index: u64) -> Result<(), WalletError> {
+    pub(crate) fn shift(&mut self, bucket_index: u64) -> Result<(), WalletError> {
         if self.state != PartState::Assigned {
             return Err(WalletError::MigrationInvalidTransition {
                 from: self.state.name(),
@@ -267,6 +305,7 @@ impl PartRecord {
             });
         }
         self.bucket_index = Some(bucket_index);
+        self.anchor_bucket = None;
         self.target_height = None;
         self.anchor_witness = None;
         Ok(())
@@ -275,16 +314,17 @@ impl PartRecord {
 
 /// A part's proving closure: builds, proves, and signs the part's
 /// transaction, returning its txid and raw bytes. Takes ownership of all
-/// needed data; no wallet reference is captured. Safe to call on any thread.
-pub type ProveOnce = Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>;
+/// needed data. No wallet reference is captured. Safe to call on any thread.
+pub(crate) type ProveOnce =
+    Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>;
 
-/// Outcome of [`crate::wallet::LightWallet::prepare_part`]: either a ready
+/// Outcome of `crate::wallet::LightWallet::prepare_part`: either a ready
 /// proving closure or the reason the part must be skipped.
 pub enum PrepareResult {
-    /// All wallet data was extracted; the closure does the CPU-intensive
+    /// All wallet data was extracted. The closure does the CPU-intensive
     /// proving on a background thread.
     Ready {
-        /// Proving closure. Takes ownership of all needed data; no wallet
+        /// Proving closure. Takes ownership of all needed data. No wallet
         /// reference is captured. Safe to call on any thread.
         prove: ProveOnce,
         /// First block of the part's bucket window (the builder's target).
@@ -304,7 +344,7 @@ pub enum MaterializeOutcome {
         /// The transaction's id.
         txid: TxId,
         /// The raw transaction bytes, ready for
-        /// [`super::broadcast::BroadcastClient::submit`].
+        /// [`super::transmission::TransmissionClient::submit`].
         raw_tx: Vec<u8>,
     },
     /// The part cannot be materialized right now. Never triggers a
@@ -315,19 +355,55 @@ pub enum MaterializeOutcome {
 /// Why a part was skipped instead of materialized.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkipReason {
-    /// The wallet's Orchard tree has not reached the part's boundary yet.
+    /// The wallet has not scanned as far as the part's boundary, so the
+    /// tree state that anchors it is not yet known.
     StaleTreeState {
-        /// The tree's highest checkpoint, if any.
-        tree_tip: Option<BlockHeight>,
+        /// The height every block at or below which is scanned, if any.
+        scanned_to: Option<BlockHeight>,
         /// The boundary the part anchors to.
         boundary: BlockHeight,
     },
-    /// The tree passed the boundary but its checkpoint was never captured
-    /// (the wallet synced past it in one leap). Reconciliation reassigns the
+    /// Every checkpoint at or below the boundary has been pruned, so the
+    /// boundary's tree state is unrecoverable. Reconciliation reassigns the
     /// part to a coming bucket.
     MissedBoundary {
         /// The boundary whose tree state is unavailable.
         boundary: BlockHeight,
+    },
+    /// The part's anchor boundary predates the NU6.3 activation height. The
+    /// window such an anchor belongs to would commit to a pre-NU6.3
+    /// consensus branch, in which no Ironwood bundle exists. The schedule's
+    /// era floor keeps new placements out of this state and the immediate
+    /// path refuses too-young eras up front, so it survives only in a
+    /// schedule persisted before the floor existed. Such a part heals
+    /// through the overdue classification and the consented catch-up.
+    BoundaryBeforeActivation {
+        /// The boundary the part anchors to.
+        boundary: BlockHeight,
+        /// The NU6.3 activation height it fails to reach.
+        activation: BlockHeight,
+    },
+    /// The part carries no anchor bucket: a schedule persisted before
+    /// anchors were drawn separately from transmission windows (migration
+    /// section inner version 3 and below). Proving cannot invent one,
+    /// because the age draw is what keeps the anchor out of the open window.
+    /// `crate::wallet::LightWallet::refresh_part_witnesses` draws it at
+    /// the next synchronization, which is also when its witness becomes
+    /// capturable, so this reason clears itself.
+    AnchorNotDrawn,
+    /// The bound note is already spent (the user insistently spent it, or a
+    /// restart raced an earlier transmission). Reconciliation invalidates the
+    /// part and recommends a remainder replan.
+    BoundNoteSpent {
+        /// The spent note's wallet output id.
+        bound: OutputId,
+    },
+    /// The wallet's record of the bound note no longer matches the part
+    /// record (nullifier disagreement). Reconciliation resolves the
+    /// divergence.
+    BoundNoteMismatch {
+        /// The mismatched note's wallet output id.
+        bound: OutputId,
     },
 }
 
@@ -350,9 +426,65 @@ impl crate::wallet::LightWallet {
             .ok_or(WalletError::MigrationBoundNoteMissing(output_id))
     }
 
+    /// The confirmation height of one part's bound note, or `None` while it
+    /// is unconfirmed or unknown to the wallet.
+    ///
+    /// This is the lowest boundary *this part* can anchor at: a note has no
+    /// Merkle path under an anchor that predates it. It is the per-part half
+    /// of [`super::schedule::AnchorFloor`], matching ZIP 318's per-transfer
+    /// funding-creation condition. The floor was previously taken as a
+    /// maximum across every part, which forced the whole schedule up to the
+    /// newest note's boundary; each part now clears only its own.
+    #[must_use]
+    pub(crate) fn bound_note_confirmed_at(&self, part: &PartRecord) -> Option<BlockHeight> {
+        let bound = part.note?;
+        self.wallet_transactions
+            .get(&bound.output_id.txid())?
+            .status()
+            .get_confirmed_height()
+    }
+
+    /// The checkpoint whose tree state is the tree state at `boundary`: the
+    /// greatest one at or below it, or `None` once they are all pruned.
+    ///
+    /// A bucket boundary is an arbitrary height, and pepper-sync checkpoints
+    /// a block only when it carries an Orchard output, so the boundary
+    /// usually has no checkpoint of its own. The greatest checkpoint below it
+    /// still holds the boundary's tree: had any block in between carried an
+    /// Orchard output, that block would itself be a checkpoint. The anchor
+    /// this yields is therefore the same value every wallet sending into the
+    /// bucket computes, which is what anchoring at the boundary is for.
+    ///
+    /// Yields nothing until the wallet has scanned past `boundary`: above
+    /// the fully scanned height an intervening block's outputs may simply be
+    /// missing, and the tree would be short rather than merely older.
+    fn boundary_anchor_checkpoint(&self, boundary: BlockHeight) -> Option<BlockHeight> {
+        use shardtree::store::ShardStore as _;
+
+        if self
+            .sync_state
+            .fully_scanned_height()
+            .is_none_or(|scanned| scanned < boundary)
+        {
+            return None;
+        }
+
+        let store = self.shard_trees.orchard.store();
+        let count = store.checkpoint_count().expect("infallible");
+        // Depth counts back from the newest, so the first id at or below the
+        // boundary is the greatest one.
+        (0..count).find_map(|depth| {
+            store
+                .get_checkpoint_at_depth(depth)
+                .expect("infallible")
+                .map(|(id, _)| id)
+                .filter(|id| *id <= boundary)
+        })
+    }
+
     /// Captures the boundary anchor and witness for one part from the local
-    /// shard tree, if the boundary's checkpoint is retained. Local-only:
-    /// never touches the network.
+    /// shard tree, if a checkpoint holding the boundary's tree survives.
+    /// Local-only: never touches the network.
     #[allow(clippy::result_large_err)]
     fn capture_boundary_witness(
         &mut self,
@@ -368,14 +500,32 @@ impl crate::wallet::LightWallet {
             WalletError::MigrationStateCorrupt("bound note has no tree position".to_string()),
         )?;
 
-        let Some(root) = self.shard_trees.orchard.root_at_checkpoint_id(&boundary)? else {
+        let Some(checkpoint) = self.boundary_anchor_checkpoint(boundary) else {
             return Ok(None);
         };
-        let Some(witness) = self
+        let Some(root) = self
             .shard_trees
             .orchard
-            .witness_at_checkpoint_id_caching(position, &boundary)?
+            .root_at_checkpoint_id(&checkpoint)?
         else {
+            return Ok(None);
+        };
+        let witness = match self
+            .shard_trees
+            .orchard
+            .witness_at_checkpoint_id_caching(position, &checkpoint)
+        {
+            Ok(witness) => witness,
+            // The checkpoint predates the note, which no anchor there can
+            // contain. The same dead end as a pruned checkpoint, and
+            // [`super::schedule::AnchorFloor`]'s anchorability floor is what
+            // keeps a freshly split batch out of it.
+            Err(shardtree::error::ShardTreeError::Query(
+                shardtree::error::QueryError::NotContained(_),
+            )) => None,
+            Err(e) => return Err(e.into()),
+        };
+        let Some(witness) = witness else {
             return Ok(None);
         };
 
@@ -390,52 +540,100 @@ impl crate::wallet::LightWallet {
         }))
     }
 
-    /// Caches the boundary anchor and witness of every part whose boundary
+    /// Caches the boundary anchor and witness of every part whose anchor
     /// checkpoint is currently retained. Call after synchronization: the
     /// retention window is finite and a captured witness is good forever.
+    ///
+    /// Because a part's anchor sits at least one full bucket below its
+    /// transmission window, every part gets a whole window's worth of
+    /// synchronizations in which to capture its witness before it is due.
+    /// That runway is what makes it survivable that pepper-sync checkpoints
+    /// wherever Orchard outputs happen to land rather than on the boundary
+    /// grid (ADR 0018).
+    ///
+    /// Also draws the anchor of any part that has none: a schedule persisted
+    /// before anchors were drawn separately from windows. Drawing it here
+    /// rather than at proving time keeps the placement and the capture in the
+    /// same pass, so the part is ready before its window opens.
+    ///
+    /// A wallet with no witness work — no migration state at all, or no
+    /// [`PartState::Assigned`] part awaiting its witness — returns without
+    /// consulting the activation schedule, so this ambient post-sync call
+    /// never blocks synchronization on a network that never activates NU6.3
+    /// (where the start paths refuse loudly, so such work cannot arise).
+    /// With work present, a missing NU6.3 activation is a real fault and
+    /// errors.
     #[allow(clippy::result_large_err)]
-    pub fn refresh_part_witnesses(&mut self) -> Result<(), WalletError> {
-        let Some(mut state) = self.migration.take() else {
-            return Ok(());
-        };
-        let result = (|| {
-            for part in state
+    pub(crate) fn refresh_part_witnesses(&mut self) -> Result<(), WalletError> {
+        self.with_migration_state(|wallet, state| {
+            let mut pending = state
                 .parts
                 .iter_mut()
                 .filter(|part| part.state == PartState::Assigned && part.anchor_witness.is_none())
-            {
+                .peekable();
+            if pending.peek().is_none() {
+                return Ok(());
+            }
+            let activation = wallet.ironwood_activation()?;
+            for part in pending {
                 let Some(bucket) = part.bucket_index else {
                     continue;
                 };
-                let boundary = super::schedule::boundary_of(bucket, state.params.bucket_modulus);
-                if let Some(witness) = self.capture_boundary_witness(part, boundary)? {
+                if part.anchor_bucket.is_none() {
+                    let floor = super::schedule::AnchorFloor::new(
+                        activation,
+                        wallet.bound_note_confirmed_at(part),
+                    );
+                    // A legacy part whose window is now too close for any
+                    // legal anchor is left alone: reconciliation classifies
+                    // it overdue and catch-up re-places it into a window
+                    // that has room.
+                    if let Some(anchor) = super::schedule::draw_anchor_bucket(
+                        bucket,
+                        &floor,
+                        &mut rand::rngs::OsRng,
+                        state.params.bucket_modulus,
+                    ) {
+                        part.anchor_bucket = Some(anchor);
+                        wallet.save_required = true;
+                    } else {
+                        continue;
+                    }
+                }
+                let anchor_bucket = part
+                    .anchor_bucket
+                    .expect("just drawn or already present above");
+                let boundary =
+                    super::schedule::boundary_of(anchor_bucket, state.params.bucket_modulus);
+                if let Some(witness) = wallet.capture_boundary_witness(part, boundary)? {
                     part.anchor_witness = Some(witness);
-                    self.save_required = true;
+                    wallet.save_required = true;
                 }
             }
             Ok(())
-        })();
-        self.migration = Some(state);
-        result
+        })
+        .unwrap_or(Ok(()))
     }
 
     /// Extracts all wallet data needed to prove one [`PartState::Assigned`]
     /// part and returns it as an owned proving closure. Returns
-    /// [`PrepareResult::Skip`] when the tree state is unavailable.
+    /// [`PrepareResult::Skip`] when the part cannot be materialized in this
+    /// pass (the tree state is unavailable, the boundary predates the
+    /// NU6.3 activation, or the bound note is spent or has diverged from
+    /// the part record), so one part's condition never aborts the whole
+    /// transmission pass. Skipped parts fall to reconciliation.
     ///
     /// The returned closure does not reference the wallet, so callers can run
     /// multiple closures concurrently on background threads. Mutates
     /// `part.anchor_witness` if the boundary witness needs capturing.
     #[allow(clippy::result_large_err)]
-    pub fn prepare_part(
+    pub(crate) fn prepare_part(
         &mut self,
         account: zip32::AccountId,
         part: &mut PartRecord,
         params: &super::MigrationParams,
     ) -> Result<PrepareResult, WalletError> {
         use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
-        use shardtree::store::ShardStore as _;
-        use zcash_protocol::consensus::{NetworkUpgrade, Parameters as _};
 
         if part.state != PartState::Assigned {
             return Err(WalletError::MigrationInvalidTransition {
@@ -443,32 +641,38 @@ impl crate::wallet::LightWallet {
                 to: "Signed",
             });
         }
-        let bucket = part
+        let window = part
             .bucket_index
             .expect("assigned parts always carry a bucket");
-        let boundary = super::schedule::boundary_of(bucket, params.bucket_modulus);
+        // The anchor is where the part proves; the window is where it fires
+        // and what its target height (and so its consensus branch) comes
+        // from. They are different buckets, the anchor always the lower.
+        let Some(anchor_bucket) = part.anchor_bucket else {
+            return Ok(PrepareResult::Skip(SkipReason::AnchorNotDrawn));
+        };
+        let boundary = super::schedule::boundary_of(anchor_bucket, params.bucket_modulus);
 
-        let activation = self
-            .chain_type
-            .activation_height(NetworkUpgrade::Nu6_3)
-            .ok_or_else(|| {
-                WalletError::MigrationBuild("NU6.3 has no activation height".to_string())
-            })?;
+        let activation = pepper_sync::wallet::PoolActivation::of(
+            &self.chain_type,
+            zcash_protocol::ShieldedPool::Ironwood,
+        )
+        .ok_or_else(|| WalletError::MigrationBuild("NU6.3 has no activation height".to_string()))?
+        .height();
         if boundary < activation {
-            return Err(WalletError::MigrationBuild(format!(
-                "part boundary {boundary} is below the NU6.3 activation height {activation}"
-            )));
+            return Ok(PrepareResult::Skip(SkipReason::BoundaryBeforeActivation {
+                boundary,
+                activation,
+            }));
         }
 
-        let tree_tip = self
-            .shard_trees
-            .orchard
-            .store()
-            .max_checkpoint_id()
-            .expect("infallible");
-        if tree_tip.is_none_or(|tip| tip < boundary) {
+        // The scanned height, not the tree's newest checkpoint: on a chain
+        // whose recent blocks carry no Orchard output the tree checkpoints
+        // well below a boundary the wallet has long since scanned past, and
+        // the boundary's tree state is known all the same.
+        let scanned_to = self.sync_state.fully_scanned_height();
+        if scanned_to.is_none_or(|scanned| scanned < boundary) {
             return Ok(PrepareResult::Skip(SkipReason::StaleTreeState {
-                tree_tip,
+                scanned_to,
                 boundary,
             }));
         }
@@ -493,14 +697,14 @@ impl crate::wallet::LightWallet {
                 .nullifier()
                 .is_none_or(|nullifier| nullifier.to_bytes() != bound.nullifier)
             {
-                return Err(WalletError::MigrationDeviation(
-                    "bound note's nullifier does not match the part record".to_string(),
-                ));
+                return Ok(PrepareResult::Skip(SkipReason::BoundNoteMismatch {
+                    bound: bound.output_id,
+                }));
             }
             if wallet_note.spending_transaction().is_some() {
-                return Err(WalletError::MigrationBuild(
-                    "bound note is already spent; reconciliation required".to_string(),
-                ));
+                return Ok(PrepareResult::Skip(SkipReason::BoundNoteSpent {
+                    bound: bound.output_id,
+                }));
             }
             (*wallet_note.note(), wallet_note.value())
         };
@@ -536,7 +740,7 @@ impl crate::wallet::LightWallet {
             })?,
         );
 
-        // Extract owned keys from the key store — wallet access ends here.
+        // Extract owned keys from the key store. Wallet access ends here.
         let usk: zcash_keys::keys::UnifiedSpendingKey = self
             .unified_key_store
             .get(&account)
@@ -546,8 +750,14 @@ impl crate::wallet::LightWallet {
         let chain_type = self.chain_type;
         let denomination = part.denomination;
         let part_fee = params.part_fee;
-        let target_height = boundary + 1;
-        let expiry_height = boundary + params.expiry_delta;
+        // The target comes from the transmission window, not the anchor. It
+        // selects the consensus branch the transaction commits to, so it must
+        // sit in the Ironwood era; the anchor is a historical Orchard root
+        // and is legal at any retained boundary above the part's own note.
+        // Deriving the target from the anchor was what made a pre-activation
+        // anchor look like a consensus problem (ADR 0014, ADR 0018).
+        let target_height = super::schedule::boundary_of(window, params.bucket_modulus) + 1;
+        let expiry_height = super::schedule::canonical_expiry_height(target_height);
         let params_clone = params.clone();
 
         let prove: ProveOnce = Box::new(move || {
@@ -589,8 +799,7 @@ impl crate::wallet::LightWallet {
                 )
                 .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
 
-            let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params()
-                .map_err(|e| WalletError::MigrationBuild(format!("sapling params: {e}")))?;
+            let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
             let sapling_prover =
                 zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
             let build_result = builder
@@ -633,7 +842,7 @@ impl crate::wallet::LightWallet {
     ///
     /// Called sequentially in Phase C after all parallel proving is complete.
     #[allow(clippy::result_large_err)]
-    pub fn record_part_result(
+    pub(crate) fn record_part_result(
         &mut self,
         part: &mut PartRecord,
         txid: TxId,
@@ -667,8 +876,8 @@ impl crate::wallet::LightWallet {
     /// unavailable it returns [`MaterializeOutcome::Skip`] without writing
     /// anything.
     ///
-    /// For parallel proving of multiple parts, see [`Self::prepare_part`] and
-    /// [`Self::record_part_result`].
+    /// For parallel proving of multiple parts, see `Self::prepare_part` and
+    /// `Self::record_part_result`.
     #[allow(clippy::result_large_err)]
     pub fn materialize_part(
         &mut self,
@@ -843,6 +1052,30 @@ mod tests {
         }
     }
 
+    /// Issue #2493, finding 7 (ratified form): placement goes through the
+    /// schedule module's operations, and the jittered one draws a fresh
+    /// target inside the new window, see
+    /// `schedule::tests::place_draws_a_fresh_target_inside_the_new_window`.
+    /// The raw `reassign` transition deliberately does not manage the
+    /// target. Placement does. Here, the full complement: every state
+    /// except `Expired` refuses the transition.
+    #[test]
+    fn reassign_is_reachable_only_from_expired() {
+        for state in ALL_STATES {
+            let is_expired = matches!(state, PartState::Expired);
+            let mut part = part_in(state);
+            if is_expired {
+                part.reassign(5).expect("expired parts reassign");
+            } else {
+                assert!(
+                    part.reassign(5).is_err(),
+                    "reassign must be illegal from {:?}",
+                    part.state,
+                );
+            }
+        }
+    }
+
     fn part_in(state: PartState) -> PartRecord {
         let mut part = PartRecord::new(PartId(0), 100_000, bound_note());
         part.state = state;
@@ -889,10 +1122,10 @@ mod tests {
                 "mark_signed from {from:?}"
             );
 
-            let legal_broadcast = matches!(from, PartState::Signed);
+            let legal_transmission = matches!(from, PartState::Signed);
             assert_eq!(
                 part_in(from).mark_broadcast().is_ok(),
-                legal_broadcast,
+                legal_transmission,
                 "mark_broadcast from {from:?}"
             );
 
@@ -958,5 +1191,92 @@ mod tests {
         let before = part.clone();
         assert!(part.mark_broadcast().is_err());
         assert_eq!(part, before);
+    }
+
+    /// A regtest wallet on a chain that never activates NU6.3: the custom-chain
+    /// shape whose ambient post-sync refresh must not block synchronization
+    /// (branch `fix/refresh_part_witnesses`).
+    fn no_nu6_3_wallet() -> crate::wallet::LightWallet {
+        let heights = zingo_common_components::protocol::ActivationHeights::builder()
+            .set_overwinter(Some(1))
+            .set_sapling(Some(1))
+            .set_blossom(Some(1))
+            .set_heartwood(Some(1))
+            .set_canopy(Some(1))
+            .set_nu5(Some(1))
+            .set_nu6(Some(1))
+            .set_nu6_1(Some(1))
+            .set_nu6_2(Some(1))
+            .set_nu6_3(None)
+            .set_nu7(None)
+            .build();
+        crate::testutils::synthetic_wallet::SyntheticWalletBuilder::new(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+        )
+        .activation_heights(heights)
+        .build()
+    }
+
+    fn scheduled_state(parts: Vec<PartRecord>) -> crate::wallet::migration::MigrationState {
+        let params = crate::wallet::migration::MigrationParams::provisional(
+            crate::config::ChainType::Mainnet,
+        );
+        crate::wallet::migration::MigrationState {
+            consent: crate::wallet::migration::ConsentBinding {
+                params_hash: params.params_hash(),
+                plan_hash: [0; 32],
+                consented_at: 0,
+            },
+            params,
+            strategy: crate::wallet::migration::SigningStrategy::LazyAtBoundary,
+            mode: crate::wallet::migration::MigrationMode::Scheduled,
+            account: zip32::AccountId::ZERO,
+            phase: crate::wallet::migration::MigrationPhase::PartsScheduled,
+            parts,
+        }
+    }
+
+    /// The inert arm: with no migration state the refresh returns without
+    /// consulting the activation schedule, so every sync on a chain without
+    /// NU6.3 succeeds. This is the bug the branch fixes — before it, the
+    /// lookup ran unconditionally and failed every `await_sync`.
+    #[test]
+    fn refresh_without_migration_state_is_inert_on_no_nu6_3_chain() {
+        let mut wallet = no_nu6_3_wallet();
+        wallet
+            .refresh_part_witnesses()
+            .expect("a wallet with no migration state must sync on a no-NU6.3 chain");
+    }
+
+    /// The gate's grain: migration state whose parts carry no witness work
+    /// (nothing Assigned-and-unwitnessed) is likewise inert, so terminal or
+    /// fully-witnessed migration history never blocks synchronization even
+    /// if the activation lookup breaks.
+    #[test]
+    fn refresh_without_actionable_parts_is_inert_on_no_nu6_3_chain() {
+        let mut wallet = no_nu6_3_wallet();
+        wallet.migration = Some(scheduled_state(vec![part_in(PartState::Bound)]));
+        wallet
+            .refresh_part_witnesses()
+            .expect("migration state without witness work must not consult the activation");
+    }
+
+    /// The loud arm: an Assigned part awaiting its witness on a chain with
+    /// no NU6.3 activation can only mean a real fault (the start paths
+    /// refuse on such chains), so the refresh errors instead of silently
+    /// stalling the migration.
+    #[test]
+    fn refresh_with_pending_work_errors_on_no_nu6_3_chain() {
+        let mut wallet = no_nu6_3_wallet();
+        let mut part = PartRecord::new(PartId(0), 100_000, bound_note());
+        part.assign(3).expect("bound parts assign");
+        wallet.migration = Some(scheduled_state(vec![part]));
+        assert!(
+            matches!(
+                wallet.refresh_part_witnesses(),
+                Err(WalletError::MigrationBuild(_))
+            ),
+            "pending witness work with no NU6.3 activation must error loudly"
+        );
     }
 }

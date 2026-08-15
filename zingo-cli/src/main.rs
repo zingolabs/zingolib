@@ -8,6 +8,13 @@ use tracing_subscriber::EnvFilter;
 /// The help check is tightly coupled with argument parsing so that the
 /// two cannot be accidentally reordered in `main`.
 fn parse_args_or_exit_for_help() -> clap::ArgMatches {
+    // Catch a session option placed after the command before clap rejects it
+    // with an opaque "unexpected argument": name the misplacement and the fix.
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(guidance) = zingo_cli::misplaced_session_option(&args) {
+        eprintln!("error: {guidance}");
+        std::process::exit(0x0002);
+    }
     let matches = zingo_cli::build_clap_app().get_matches();
     if let Some(help_text) = zingo_cli::help_output(&matches) {
         for line in help_text.lines() {
@@ -81,11 +88,15 @@ fn handle_error(e: std::io::Error) {
     }
 }
 
-pub fn main() {
-    zingo_netutils::ensure_default_crypto_provider();
+pub fn main() -> std::process::ExitCode {
+    zingolib::netutils::ensure_default_crypto_provider();
     let matches = parse_args_or_exit_for_help();
     init_tracing(&matches);
-    if let Err(e) = zingo_cli::run_cli(matches) {
-        handle_error(e);
+    match zingo_cli::run_cli(matches) {
+        Ok(code) => code,
+        Err(e) => {
+            handle_error(e);
+            std::process::ExitCode::FAILURE
+        }
     }
 }

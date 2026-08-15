@@ -326,12 +326,6 @@ pub(crate) fn scan_transaction(
             .map(|action| (IronwoodDomain::for_action(action), action.clone()))
             .collect();
 
-        // The decrypted-note-data lookup is deliberately lenient here, unlike
-        // the sapling and orchard passes: an ironwood output can decrypt in a
-        // confirmed transaction the compact scan never saw (a server that
-        // does not serve ironwood actions yet), so a missing entry falls back
-        // to deriving the nullifier from the full viewing key and leaving the
-        // position unset until a compact scan supplies it.
         scan_incoming_notes::<
             IronwoodDomain,
             Action<Signature<SpendAuth>>,
@@ -343,21 +337,8 @@ pub(crate) fn scan_transaction(
             txid,
             ironwood_ivks,
             &ironwood_actions,
-            None,
+            decrypted_note_data.map(|d| &d.ironwood_nullifiers_and_positions),
         )?;
-        for note in &mut ironwood_notes {
-            if let Some((nullifier, position)) = decrypted_note_data
-                .and_then(|d| d.ironwood_nullifiers_and_positions.get(&note.output_id))
-            {
-                note.nullifier = Some(*nullifier);
-                note.position = Some(*position);
-            } else if let Some(fvk) = ufvks
-                .get(&note.key_id.account_id)
-                .and_then(zcash_keys::keys::UnifiedFullViewingKey::orchard)
-            {
-                note.nullifier = Some(note.note.nullifier(fvk));
-            }
-        }
 
         scan_outgoing_notes(
             &mut outgoing_ironwood_notes,
@@ -621,12 +602,12 @@ where
                     address,
                 ))
             }),
-            ShieldedPool::Orchard => unified_address
-                .orchard()
-                .map(|address| keys::encode_orchard_receiver(consensus_parameters, address)),
-            // The ironwood receiver of a unified address is its orchard
-            // receiver.
-            ShieldedPool::Ironwood => unified_address
+            // A unified address has no distinct ironwood receiver:
+            // receivers (and their incoming viewing keys) are scoped
+            // to the Orchard PROTOCOL, not to a pool, so the orchard
+            // receiver serves both the orchard and ironwood pools.
+            // See ZIP 326, <https://zips.z.cash/zip-0326>.
+            ShieldedPool::Orchard | ShieldedPool::Ironwood => unified_address
                 .orchard()
                 .map(|address| keys::encode_orchard_receiver(consensus_parameters, address)),
         }

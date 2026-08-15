@@ -1,12 +1,12 @@
 //! Ports of chain-bound libtonode tests onto the stateful mock indexer
-//! ([`crate::testutils::mock_indexer`]): the real wallet pipeline —
-//! `GrpcIndexer`, pepper-sync scanning, record building, spend
-//! bookkeeping — driven against a fabricated in-process chain, with no
+//! ([`crate::testutils::mock_indexer`]): the real wallet pipeline
+//! (`GrpcIndexer`, pepper-sync scanning, record building, spend
+//! bookkeeping) driven against a fabricated in-process chain, with no
 //! zebrad or zainod.
 //!
 //! Every port here is an OFFLINE TWIN: the live original stays in
-//! libtonode-tests as the control group (user direction, 2026-07-08 —
-//! live versions are never removed; they eventually move to a gated
+//! libtonode-tests as the control group (user direction, 2026-07-08:
+//! live versions are never removed. They eventually move to a gated
 //! "pre-migration" mod once side-by-side equivalence is documented).
 
 use pepper_sync::wallet::IronwoodNote;
@@ -77,69 +77,13 @@ async fn funded_send_confirms_on_the_mock_chain() {
     check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
 }
 
-/// Mock-chain twin of libtonode `slow::zero_value_receipts` (live
-/// original kept as the control): a zero-value receipt must surface as
-/// exactly one Received{0, Orchard} value transfer and must not perturb
-/// spendable arithmetic across a subsequent send.
-#[tokio::test]
-async fn zero_value_receipts() {
-    use crate::wallet::summary::data::{SentValueTransfer, ValueTransferKind};
-
-    let mut net = MockNet::launch().await;
-    let mut recipient = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-        .await;
-    let recipient_ua = get_base_address(&recipient, PoolType::IRONWOOD).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
-    // The zero-value receipt, in its own block as on the live chain.
-    fund(&net, vec![(&recipient_ua, 0, None)], 1).await;
-
-    recipient.sync_and_await().await.unwrap();
-    from_inputs::quick_send(
-        &mut recipient,
-        vec![(&external_address(PoolType::IRONWOOD), 1_000, None)],
-    )
-    .await
-    .unwrap();
-    net.chain.write().await.mine_mempool();
-    net.chain.write().await.mine_empty_blocks(1);
-    recipient.sync_and_await().await.unwrap();
-
-    // Identical to the live pin: the recipient holds the 100_000 funding
-    // note less the 1_000 payment and its 10_000 ZIP-317 fee.
-    check_client_balances!(recipient, i: 89_000 o: 0 s: 0 t: 0);
-
-    let value_transfers = recipient.value_transfers(true).await.unwrap();
-    assert!(
-        value_transfers
-            .iter()
-            .any(|vt| vt.kind == ValueTransferKind::Received && vt.value == 100_000)
-    );
-    assert_eq!(
-        value_transfers
-            .iter()
-            .filter(|vt| vt.kind == ValueTransferKind::Received
-                && vt.value == 0
-                && vt.pools_received == [PoolType::IRONWOOD])
-            .count(),
-        1
-    );
-    assert!(value_transfers.iter().any(|vt| {
-        vt.kind == ValueTransferKind::Sent(SentValueTransfer::Send)
-            && vt.value == 1_000
-            && vt.transaction_fee == Some(10_000)
-    }));
-}
-
 /// Mock-chain twin of libtonode `slow::list_value_transfers_check_fees`
 /// (live original kept as the control): a two-output cross-pool send to
 /// the wallet's own transparent and sapling addresses costs the exact
-/// composite ZIP-317 fee — 5_000 for the transparent output, 10_000 for
+/// composite ZIP-317 fee: 5_000 for the transparent output, 10_000 for
 /// the orchard bundle view carrying the ironwood spend, 10_000 for the
 /// sapling output pair, 10_000 for the ironwood change pair (ADR
-/// 0007) — and every pool balance lands where the arithmetic says. The
+/// 0007). Every pool balance lands where the arithmetic says. The
 /// self-receipts arrive through real scanning of the mock blocks.
 #[tokio::test]
 async fn list_value_transfers_check_fees() {
@@ -177,8 +121,8 @@ async fn list_value_transfers_check_fees() {
 /// Mock-chain twin of libtonode
 /// `slow::self_send_to_t_displays_as_one_transaction` (live original
 /// kept as the control): mixed self-sends to the wallet's own
-/// transparent, sapling, and orchard addresses — plus an incoming
-/// mixed send mined in the same block — must each surface as ONE
+/// transparent, sapling, and orchard addresses (plus an incoming
+/// mixed send mined in the same block) must each surface as ONE
 /// transaction, so every transaction-summary txid is unique.
 #[tokio::test]
 async fn self_send_to_t_displays_as_one_transaction() {
@@ -241,11 +185,13 @@ async fn self_send_to_t_displays_as_one_transaction() {
     }
     recipient.sync_and_await().await.unwrap();
 
-    let txids = recipient
+    let txids: Vec<_> = recipient
         .transaction_summaries(false)
         .await
         .unwrap()
-        .txids();
+        .iter()
+        .map(|summary| summary.txid)
+        .collect();
     let unique: std::collections::HashSet<_> = txids.iter().collect();
     assert_eq!(
         unique.len(),
@@ -263,7 +209,7 @@ async fn self_send_to_t_displays_as_one_transaction() {
 /// One deliberate divergence from the live literals: the second
 /// funding wave's fee is Some(10_000) here, not the live Some(20_000).
 /// That fee belongs to the FAUCET's economics (its live note pool is
-/// fragmented by earlier waves; the mock faucet is fresh each wave) and
+/// fragmented by earlier waves. The mock faucet is fresh each wave) and
 /// says nothing about the recipient behavior this test protects.
 #[tokio::test]
 async fn send_to_transparent_and_sapling_maintain_balance() {
@@ -288,7 +234,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         .await;
     let recipient_ua = get_base_address(&recipient, PoolType::IRONWOOD).await;
     // The external destinations: the abandon-art wallet's sapling UA and
-    // first taddr — the same derivations the live faucet answers with.
+    // first taddr, the same derivations the live faucet answers with.
     let external_sapling = external_address(PoolType::SAPLING);
     let external_taddr = {
         let external_wallet =
@@ -635,18 +581,18 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 }
 
 /// Mock-chain twin of libtonode `slow::from_t_z_o_tz_to_zo_tzo_to_orchard`
-/// (live original kept as the control): the full pool-promotion ledger —
+/// (live original kept as the control): the full pool-promotion ledger,
 /// every funding source and self-send combination, two shields, exact
-/// per-step balances, and the cumulative confirmed-fee total — driven
+/// per-step balances, and the cumulative confirmed-fee total, driven
 /// through real scanning of the mock chain.
 ///
 /// The `darkside_test` hazard of zingolabs/zingolib#2447 is gone: that
 /// subtractive feature compiled out the transparent-address discovery
 /// this test's funding depends on whenever feature unification enabled
 /// it in multi-package builds, and the feature and its gates are now
-/// deleted. The test stays ignored for an unrelated reason — its ledger
+/// deleted. The test stays ignored for an unrelated reason: its ledger
 /// predates V6 and every step needs re-deriving per ADR 0009.
-#[ignore = "The ledger's fees and amounts predate V6 — re-derive every step per ADR 0009 \
+#[ignore = "The ledger's fees and amounts predate V6. Re-derive every step per ADR 0009 \
             before un-ignoring (step 10 under-drains, stranding 10_000 in sapling, because \
             V6's two-bundle fees lead the planner to leave the sapling note unspent)"]
 #[tokio::test]
@@ -831,10 +777,10 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
 }
 
 /// Deterministic reproduction of issue #2450 (no live original: the
-/// live shape is a load-dependent flake — three libtonode tests
+/// live shape is a load-dependent flake, three libtonode tests
 /// failing whenever a slow validator response crosses the wallet's
 /// send timeout). The first submission is accepted into the mock
-/// mempool but its response is lost; the wallet's retry then receives
+/// mempool but its response is lost. The wallet's retry then receives
 /// the validator's duplicate rejection, verbatim as zainod surfaces it
 /// (zingolabs/zaino#1392). That rejection is proof of successful
 /// transmission: the send must return Ok, the transaction must not be
@@ -893,14 +839,14 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
 /// the validator's earlier phase: the lost-response submission is
 /// still in the download/verification queue when the retry arrives, so
 /// the rejection reads "transaction dropped because it is already
-/// queued for download" (zebra's pre-acceptance duplicate check) —
+/// queued for download" (zebra's pre-acceptance duplicate check),
 /// observed live in the 2026-07-11 container runs, where verification
 /// lagged the send by seconds under load. That rejection proves
 /// delivery but not minability, so the wallet must hold success until
-/// its probes see the storage-backed mempool rejection — and only then
+/// its probes see the storage-backed mempool rejection, and only then
 /// return Ok, keeping send-Ok ⇒ minable-now. The mock answers two
 /// queued rejections before promoting, so the probe loop is exercised
-/// deterministically; mining immediately after the send must therefore
+/// deterministically. Mining immediately after the send must therefore
 /// confirm the transaction.
 #[tokio::test]
 async fn send_survives_lost_response_and_queued_duplicate_rejection() {
@@ -948,10 +894,297 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
         }
     }
 
-    // send-Ok means minable NOW: mining immediately — the very race
-    // that broke test_scanning_in_watch_only_mode live — must include
+    // send-Ok means minable NOW: mining immediately (the very race
+    // that broke test_scanning_in_watch_only_mode live) must include
     // the transaction, with no verification-delay allowance.
     net.chain.write().await.mine_mempool();
     recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
+}
+
+/// A failed transmit inside a note-splitting round must not leave any
+/// transaction stranded in `Calculated`. The immediate migration sibling
+/// (`migrate_immediately`) fails every unsent transaction so the
+/// notes it reserved become spendable again. The split round in
+/// `migrate_to_ironwood` must enforce the same invariant, or the
+/// transactions queued behind the failing one keep their notes marked
+/// spent by transactions that never reached the network, and a replan
+/// silently excludes that value until expiry self-heals it (~40 blocks
+/// plus a sync).
+///
+/// Setup: 34 fabricated legacy-Orchard (V2) notes make the provisional
+/// planner (16-action total budget) emit a first reduction round of several
+/// merge transactions — more than one, so a failure of the first can strand
+/// the rest. The mock indexer's lost-response fault plus an
+/// effectively-infinite download-queue rejection budget makes the FIRST
+/// submission fail deterministically after the wallet's probe budget. The
+/// transactions behind it must not stay stranded.
+#[tokio::test]
+async fn failed_split_round_transmit_strands_calculated_transactions() {
+    use zcash_primitives::transaction::TxId;
+    use zip32::AccountId;
+
+    use pepper_sync::wallet::{OrchardNote, OutputInterface as _};
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use crate::testutils::mock_indexer::LostSendDestination;
+    use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
+
+    const NOTES: u32 = 34;
+    const NOTE_VALUE: u64 = 60_000;
+    const TIP: u32 = 41;
+
+    // A real mock-net client, synced over an empty chain so the wallet
+    // carries genuine wallet blocks and scan state, then handed 34
+    // spendable legacy-Orchard notes whose nullifiers are really derived,
+    // so pepper-sync's spend detection marks them when the round spends
+    // them.
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(TIP);
+    let mut client = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+    client
+        .sync_and_await()
+        .await
+        .expect("initial sync succeeds");
+    {
+        let wallet_lock = client.wallet().clone();
+        let mut wallet = wallet_lock.write().await;
+        inject_confirmed_orchard_notes(&mut wallet, NOTES, NOTE_VALUE, TIP);
+    }
+
+    // Arm the deterministic transmit failure: the first send's response is
+    // lost while the bytes sit in the validator's download queue, and the
+    // queue never promotes, so every duplicate probe is rejected until the
+    // wallet's probe budget is exhausted and it marks that transaction
+    // Failed and errors out of transmit_transactions.
+    {
+        let mut chain = net.chain.write().await;
+        chain.lose_next_send_response = Some(LostSendDestination::DownloadQueue);
+        chain.queued_rejections_before_promotion = u8::MAX;
+    }
+
+    let err = client
+        .migrate_to_ironwood(AccountId::ZERO)
+        .await
+        .expect_err("the first split transaction's transmit fails");
+    eprintln!("migrate_to_ironwood returned: {err:?}");
+
+    // Diagnostics and precondition: the round must have reached the
+    // transmit stage (exactly one transaction Failed there).
+    let wallet = client.wallet().read().await;
+    let mut failed = Vec::new();
+    let mut calculated = Vec::new();
+    for tx in wallet.wallet_transactions.values() {
+        match tx.status() {
+            ConfirmationStatus::Calculated(_) => {
+                let spent_inputs: Vec<(TxId, u64)> = wallet
+                    .wallet_transactions
+                    .values()
+                    .flat_map(OrchardNote::transaction_outputs)
+                    .filter(|note| note.spending_transaction() == Some(tx.txid()))
+                    .map(|note| (note.output_id().txid(), note.value()))
+                    .collect();
+                eprintln!(
+                    "stranded Calculated transaction {} spends {} notes still \
+                     marked spent: {spent_inputs:?}",
+                    tx.txid(),
+                    spent_inputs.len(),
+                );
+                calculated.push(tx.txid());
+            }
+            ConfirmationStatus::Failed(_) => failed.push(tx.txid()),
+            _ => (),
+        }
+    }
+    assert!(
+        !failed.is_empty(),
+        "precondition: the transmit stage must have failed the first split \
+         transaction (otherwise this test failed before transmit)"
+    );
+
+    // The invariant the immediate migration path enforces (fail_unsent_transactions) and
+    // the split path must too: after a failed round, nothing may remain
+    // Calculated. Its notes would stay spent by transactions that will
+    // never transmit, and a replan silently excludes them.
+    assert!(
+        calculated.is_empty(),
+        "a failed note-split round stranded {} transaction(s) in Calculated \
+         with their input notes marked spent: {calculated:?}",
+        calculated.len()
+    );
+}
+
+/// The offline twins whose assertions read the editorial surface.
+#[cfg(feature = "perspective")]
+mod perspective {
+    use crate::lightclient::LightClient;
+    use crate::perspective::value_transfer::{
+        SelfSendValueTransfer, SentValueTransfer, ValueTransfer, ValueTransferKind, ValueTransfers,
+    };
+    use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
+
+    use super::*;
+
+    const NOTE_VALUE: u64 = 1_000_000;
+    const TIP: u32 = 41;
+
+    /// A real mock-net client, synced over an empty chain, handed one
+    /// spendable legacy-Orchard note whose nullifier is really derived, so
+    /// pepper-sync's spend detection marks it when a migration spends it
+    /// and the summary sees the transaction as Orchard-funded.
+    async fn orchard_funded_client() -> (MockNet, LightClient) {
+        let mut net = MockNet::launch().await;
+        net.chain.write().await.mine_empty_blocks(TIP);
+        let mut client = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .await;
+        client
+            .sync_and_await()
+            .await
+            .expect("initial sync succeeds");
+        {
+            let wallet_lock = client.wallet().clone();
+            let mut wallet = wallet_lock.write().await;
+            inject_confirmed_orchard_notes(&mut wallet, 1, NOTE_VALUE, TIP);
+        }
+        (net, client)
+    }
+
+    /// The first value transfer classified as an Orchard→Ironwood migration.
+    fn migration_transfer(value_transfers: &ValueTransfers) -> Option<&ValueTransfer> {
+        value_transfers.iter().find(|vt| {
+            vt.kind
+                == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                    SelfSendValueTransfer::Migration,
+                ))
+        })
+    }
+
+    /// Mock-chain twin of libtonode `slow::zero_value_receipts` (live
+    /// original kept as the control): a zero-value receipt must surface as
+    /// exactly one Received{0, Orchard} value transfer and must not perturb
+    /// spendable arithmetic across a subsequent send.
+    #[tokio::test]
+    async fn zero_value_receipts() {
+        let mut net = MockNet::launch().await;
+        let mut recipient = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .await;
+        let recipient_ua = get_base_address(&recipient, PoolType::IRONWOOD).await;
+
+        net.chain.write().await.mine_empty_blocks(1);
+        fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+        // The zero-value receipt, in its own block as on the live chain.
+        fund(&net, vec![(&recipient_ua, 0, None)], 1).await;
+
+        recipient.sync_and_await().await.unwrap();
+        from_inputs::quick_send(
+            &mut recipient,
+            vec![(&external_address(PoolType::IRONWOOD), 1_000, None)],
+        )
+        .await
+        .unwrap();
+        net.chain.write().await.mine_mempool();
+        net.chain.write().await.mine_empty_blocks(1);
+        recipient.sync_and_await().await.unwrap();
+
+        // Identical to the live pin: the recipient holds the 100_000 funding
+        // note less the 1_000 payment and its 10_000 ZIP-317 fee.
+        check_client_balances!(recipient, i: 89_000 o: 0 s: 0 t: 0);
+
+        let value_transfers = recipient.value_transfers(true).await.unwrap();
+        assert!(
+            value_transfers
+                .iter()
+                .any(|vt| vt.kind == ValueTransferKind::Received && vt.value == 100_000)
+        );
+        assert_eq!(
+            value_transfers
+                .iter()
+                .filter(|vt| vt.kind == ValueTransferKind::Received
+                    && vt.value == 0
+                    && vt.pools_received == [PoolType::IRONWOOD])
+                .count(),
+            1
+        );
+        assert!(value_transfers.iter().any(|vt| {
+            vt.kind == ValueTransferKind::Sent(SentValueTransfer::Send)
+                && vt.value == 1_000
+                && vt.transaction_fee == Some(10_000)
+        }));
+    }
+
+    /// A confirmed Orchard→Ironwood immediate migration transaction must surface in the
+    /// history as a `migration` value transfer, not `memo-to-self` and not
+    /// `basic`. Its self-received Ironwood output carries the canonical empty
+    /// memo (`MemoBytes::empty()`), so this pins the self-send classification
+    /// order in `value_transfers()`: the migration predicate must win over the
+    /// received-memo check regardless of how that memo decodes.
+    #[tokio::test]
+    async fn immediate_migration_is_a_migration_value_transfer() {
+        use zip32::AccountId;
+
+        let (net, mut client) = orchard_funded_client().await;
+
+        let summary = client
+            .migrate_immediately(AccountId::ZERO)
+            .await
+            .expect("the immediate migration builds and transmits");
+        assert_eq!(
+            summary.txids.len(),
+            1,
+            "one note migrates in one transaction"
+        );
+
+        net.chain.write().await.mine_mempool();
+        client.sync_and_await().await.unwrap();
+
+        let value_transfers = client.value_transfers(false).await.unwrap();
+        assert!(
+            migration_transfer(&value_transfers).is_some(),
+            "the immediate migration transaction must classify as a migration value transfer; got {:?}",
+            value_transfers.iter().map(|vt| vt.kind).collect::<Vec<_>>(),
+        );
+    }
+
+    /// An Orchard-funded self-send that lands in the Ironwood pool AND carries a
+    /// received memo must still classify as `migration`, not `memo-to-self`: the
+    /// migration predicate wins the self-send classification regardless of
+    /// memos, and the memo itself stays on the value transfer. This is the
+    /// ordering pin for `value_transfers()`: before the reorder the memo check
+    /// fired first and relabeled the migration `memo-to-self`.
+    #[tokio::test]
+    async fn migration_with_memo_is_still_a_migration_value_transfer() {
+        const MEMO: &str = "moving my own funds";
+
+        let (_net, mut client) = orchard_funded_client().await;
+
+        // A send to the wallet's own orchard receiver lands in the Ironwood pool
+        // post-NU6.3, funded from the legacy Orchard note: an Orchard→Ironwood
+        // self-send carrying a real memo. Asserted on the pending (transmitted)
+        // record, the state the history shows right after transmission, and the
+        // same classification path as a confirmed transaction. (Mining it would
+        // conflict the injected note's fabricated orchard tree leaf with the
+        // send's real orchard commitments at the same positions.)
+        let own_ua = get_base_address(&client, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        from_inputs::quick_send(&mut client, vec![(&own_ua, 50_000, Some(MEMO))])
+            .await
+            .unwrap();
+
+        let value_transfers = client.value_transfers(false).await.unwrap();
+        let migration = migration_transfer(&value_transfers).unwrap_or_else(|| {
+            panic!(
+                "the memo-carrying Orchard→Ironwood self-send must classify as a \
+                 migration value transfer; got {:?}",
+                value_transfers.iter().map(|vt| vt.kind).collect::<Vec<_>>(),
+            )
+        });
+        assert!(
+            migration.memos.iter().any(|memo| memo == MEMO),
+            "the migration value transfer must keep its memo; got {:?}",
+            migration.memos,
+        );
+    }
 }

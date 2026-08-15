@@ -10,7 +10,7 @@ use pepper_sync::wallet::OutputId;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 
-use super::parts::{PartId, PartState};
+use super::parts::{PartId, PartRecord, PartState};
 use super::{MigrationPhase, MigrationState};
 
 /// About two hours at the 75-second target spacing: the slip a best-effort
@@ -23,6 +23,16 @@ const SLIP_TOLERANCE_BLOCKS: u32 = 96;
 pub trait ChainView {
     /// The highest block height the wallet knows of.
     fn chain_tip(&self) -> Option<BlockHeight>;
+
+    /// The Spend-Evidence Height: the height through which the wallet's
+    /// evidence of spends and transaction inclusion is complete, with every
+    /// block at or below it scanned with its nullifiers mapped. This is
+    /// the only lawful input to judgments that condemn (a transaction
+    /// expired-unmined, a part dead): the chain tip runs ahead of
+    /// scanning, and condemning against it invites false invalidation
+    /// (issue #2493, finding 8). Forward planning may use
+    /// [`Self::chain_tip`].
+    fn spend_evidence_height(&self) -> Option<BlockHeight>;
 
     /// The confirmed or pending spend of the given note, if the wallet has
     /// observed one: the spending txid and its confirmation height.
@@ -47,8 +57,19 @@ pub enum PartClass {
     /// Its window passed recently (within the slip tolerance). Normal
     /// operation, never surfaced as an error.
     SlippedWithinTolerance,
-    /// Its window passed beyond the slip tolerance without a broadcast.
+    /// Its window passed beyond the slip tolerance without a transmission.
     Overdue,
+    /// Signed, its window passed, and its transaction is still valid:
+    /// transmitting it now would mine a permanent lateness fingerprint
+    /// (the cleartext expiry and the stale anchor single the part out
+    /// within its denomination cohort), so it waits out its expiry and
+    /// rebuilds fresh, on-chain indistinguishable from an on-schedule
+    /// part. Not part of the catch-up batch. Surfaced so status can say
+    /// why nothing was sent and when the rebuild comes.
+    AwaitingExpiry {
+        /// The expiry height being waited out.
+        expiry: BlockHeight,
+    },
     /// Its transaction reached expiry unmined.
     Expired,
     /// Its bound note was spent outside the migration.
@@ -64,17 +85,21 @@ pub enum PartClass {
 pub enum RecommendedAction {
     /// A note-splitting round is still confirming. Keep waiting.
     AwaitSplitConfirmation,
-    /// A note-splitting transaction failed or expired. Rebuild it against a
-    /// fresh anchor.
+    /// A note-splitting transaction failed or expired. The failure released
+    /// its notes, so the retry is a replan: drive
+    /// [`crate::lightclient::LightClient::continue_note_splitting`] once the
+    /// round's remaining transactions resolve.
     RetrySplit {
         /// The failed transaction.
         txid: TxId,
     },
-    /// Every split confirmed: bind parts to notes and schedule them. Safe
-    /// unattended (the schedule was already consented to as part of the
-    /// plan).
-    BindAndSchedule,
-    /// Note splitting has not started yet. Drive the next round.
+    /// Note splitting needs driving: it has not started, or the pending
+    /// round fully confirmed.
+    /// [`crate::lightclient::LightClient::continue_note_splitting`] replans
+    /// from the wallet's notes and either executes the next round or, once
+    /// every note is part-ready, binds the parts and schedules them.
+    /// Whether the confirmed round was the last one is only decidable by
+    /// that replan, which pure reconciliation cannot perform.
     ContinueNoteSplitting,
     /// The part's own transaction mined but the record lagged (for example a
     /// crash between submit and record). Safe unattended.
@@ -102,7 +127,7 @@ pub enum RecommendedAction {
     ReplanRemainder,
     /// Overdue parts should be offered for immediate, sequenced sending.
     /// Requires the user-facing disclosure that sending at application-open
-    /// time correlates the broadcasts with the user's activity.
+    /// time correlates the transmissions with the user's activity.
     PromptCatchUp {
         /// The overdue parts.
         parts: Vec<PartId>,
@@ -161,7 +186,9 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
                 }
             }
             if all_confirmed {
-                report.actions.push(RecommendedAction::BindAndSchedule);
+                report
+                    .actions
+                    .push(RecommendedAction::ContinueNoteSplitting);
             } else if report.actions.is_empty() {
                 report
                     .actions
@@ -179,10 +206,12 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
     // Completion is judged on the persisted states only: promotions
     // recommended by this very pass complete on the next one, after they
     // have been applied and saved.
-    let all_confirmed = state
-        .parts
-        .iter()
-        .all(|part| matches!(part.state, PartState::Confirmed { .. }));
+    let all_terminal = state.parts.iter().all(|part| {
+        matches!(
+            part.state,
+            PartState::Confirmed { .. } | PartState::Invalidated
+        )
+    });
 
     for part in &state.parts {
         let class = classify(part, state, chain, chain_tip, &mut report);
@@ -202,25 +231,92 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
             disclosure_required: true,
         });
     }
-    if any_invalidated && chain.orchard_confirmed_spendable(state.account) > 0 {
-        // The ZIP 318 invalidation predicate: confirmed-spendable Orchard
-        // balance remains while a scheduled part is invalid.
+    let spendable = chain.orchard_confirmed_spendable(state.account);
+    if any_invalidated && spendable > state.params.sweep_min {
+        // The ZIP 318 invalidation predicate: a worthwhile
+        // confirmed-spendable Orchard balance remains while a scheduled
+        // part is invalid. At or below the Sweep Minimum a replan would
+        // leave everything it planned as residual, so no replan is offered.
         report.actions.push(RecommendedAction::ReplanRemainder);
     }
-    if all_confirmed && !state.parts.is_empty() {
-        let residual = chain.orchard_confirmed_spendable(state.account);
-        if residual <= state.params.sweep_min {
-            report
-                .actions
-                .push(RecommendedAction::MarkComplete { residual });
-        } else {
+    // The completion rule: when every part is terminal, the migration
+    // concludes unless a worthwhile remainder exists. Complete means
+    // "nothing left for this migration to do", not "everything migrated".
+    // An insistently spent-away migration completes with zero confirmed
+    // parts, reported faithfully by the status surface.
+    if all_terminal && !state.parts.is_empty() {
+        if spendable <= state.params.sweep_min {
+            report.actions.push(RecommendedAction::MarkComplete {
+                residual: spendable,
+            });
+        } else if !any_invalidated {
             // Fee rounding left an economic amount behind: quantize it into
-            // a final transfer (fresh consent, it is a new plan).
+            // a final transfer (fresh consent, it is a new plan). The
+            // invalidated case pushed ReplanRemainder above.
             report.actions.push(RecommendedAction::ReplanRemainder);
         }
     }
 
     report
+}
+
+/// The parts a user-triggered
+/// [`crate::lightclient::LightClient::execute_due_parts`] would transmit this
+/// instant, computed read-only from a reconcile `report` and the schedule.
+///
+/// This is the current window's parts whose random target the chain has
+/// reached, plus the overdue parts catch-up folds into the current window,
+/// only the [`PartState::Assigned`] ones, since a [`PartState::Signed`]
+/// overdue part keeps its stale anchor and is rebuilt rather than folded.
+/// Parts reconciliation would instead confirm, invalidate or rebuild are
+/// excluded: a natively-current part is admitted only while it is still
+/// classified [`PartClass::OnTrack`].
+///
+/// Mirrors `execute_due_parts` (which folds via the same reconcile pass) so a
+/// "batch due now" shown to the user can never name a part a send would not
+/// build. `report` must come from [`reconcile`] over the same `parts`.
+pub fn due_now_parts(
+    parts: &[PartRecord],
+    report: &ReconcileReport,
+    now_height: BlockHeight,
+    params: &super::params::MigrationParams,
+) -> Vec<PartId> {
+    let current_bucket = super::schedule::bucket_index(now_height, params.bucket_modulus);
+    let overdue: std::collections::HashSet<PartId> = report
+        .actions
+        .iter()
+        .find_map(|action| match action {
+            RecommendedAction::PromptCatchUp { parts, .. } => Some(parts.iter().copied().collect()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let on_track: std::collections::HashSet<PartId> = report
+        .assessments
+        .iter()
+        .filter(|assessment| assessment.class == PartClass::OnTrack)
+        .map(|assessment| assessment.id)
+        .collect();
+
+    parts
+        .iter()
+        .filter(|part| {
+            if overdue.contains(&part.id) {
+                // Catch-up folds only Assigned overdue parts into the current
+                // window (target reset, due at once); a Signed one is left for
+                // a rebuild against a fresh boundary and is not sent this batch.
+                part.state == PartState::Assigned
+            } else {
+                // A natively-current part goes out as soon as its window is
+                // open. Gating on OnTrack drops the parts reconciliation will
+                // confirm, invalidate or expire instead of sending. They
+                // would otherwise leak through the state/bucket check while
+                // still Assigned or Signed.
+                on_track.contains(&part.id)
+                    && super::schedule::part_in_current_bucket(part, current_bucket)
+            }
+        })
+        .map(|part| part.id)
+        .collect()
 }
 
 fn classify(
@@ -269,11 +365,18 @@ fn classify(
         return PartClass::OnTrack;
     };
 
-    // Expiry: a signed-or-broadcast transaction past its expiry is dead.
+    // Expiry: a signed-or-broadcast transaction is condemned as dead only
+    // on complete evidence. The Spend-Evidence Height must reach the
+    // expiry, so every block the transaction could have mined in has been
+    // scanned with its nullifiers mapped. Judging against the chain tip
+    // here condemned parts whose exonerating spend sat in the unscanned
+    // gap (issue #2493, finding 8).
     if matches!(part.state, PartState::Signed | PartState::Broadcast)
-        && part
-            .expiry_height
-            .is_some_and(|expiry_height| tip > expiry_height)
+        && part.expiry_height.is_some_and(|expiry_height| {
+            chain
+                .spend_evidence_height()
+                .is_some_and(|evidence| evidence >= expiry_height)
+        })
     {
         report
             .actions
@@ -281,7 +384,7 @@ fn classify(
         return PartClass::Expired;
     }
 
-    // Window position for parts that still await broadcast.
+    // Window position for parts that still await transmission.
     if matches!(part.state, PartState::Assigned | PartState::Signed)
         && let Some(bucket) = part.bucket_index
     {
@@ -290,6 +393,15 @@ fn classify(
             let blocks_past = u32::from(tip) - u32::from(window_end);
             return if blocks_past <= SLIP_TOLERANCE_BLOCKS {
                 PartClass::SlippedWithinTolerance
+            } else if part.state == PartState::Signed {
+                // An overdue signed part is not catch-up material: its
+                // still-valid transaction waits out its expiry rather than
+                // minting a lateness fingerprint (see
+                // [`PartClass::AwaitingExpiry`]).
+                match part.expiry_height {
+                    Some(expiry) => PartClass::AwaitingExpiry { expiry },
+                    None => PartClass::Overdue,
+                }
             } else {
                 PartClass::Overdue
             };
@@ -302,6 +414,14 @@ fn classify(
 impl ChainView for crate::wallet::LightWallet {
     fn chain_tip(&self) -> Option<BlockHeight> {
         self.sync_state.last_known_chain_height()
+    }
+
+    fn spend_evidence_height(&self) -> Option<BlockHeight> {
+        // `fully_scanned_height`, not `highest_scanned_height`: scan ranges
+        // complete out of order, and a scanned-but-unmapped block still
+        // lacks spend evidence. Only the gap-free, nullifier-mapped
+        // frontier is evidence-complete.
+        self.sync_state.fully_scanned_height()
     }
 
     fn note_spend(&self, output_id: OutputId) -> Option<(TxId, Option<BlockHeight>)> {
@@ -329,9 +449,13 @@ impl ChainView for crate::wallet::LightWallet {
     }
 
     fn transaction_failed(&self, txid: &TxId) -> bool {
+        // An absent record is *unknown*, not failed: after a restore from
+        // backup an in-flight split transaction has no wallet record yet may
+        // still confirm. Reporting it failed would retry the split and race
+        // the original.
         self.wallet_transactions
             .get(txid)
-            .is_none_or(|transaction| transaction.status().is_failed())
+            .is_some_and(|transaction| transaction.status().is_failed())
     }
 
     fn orchard_confirmed_spendable(&self, account: zip32::AccountId) -> u64 {
@@ -363,6 +487,7 @@ mod tests {
 
     struct MockChainView {
         tip: Option<BlockHeight>,
+        spend_evidence: Option<BlockHeight>,
         note_spends: HashMap<OutputId, (TxId, Option<BlockHeight>)>,
         confirmed: HashMap<TxId, BlockHeight>,
         failed: Vec<TxId>,
@@ -373,6 +498,9 @@ mod tests {
         fn default() -> Self {
             MockChainView {
                 tip: Some(BlockHeight::from_u32(10_000)),
+                // Evidence keeps pace with the tip unless a test says
+                // otherwise.
+                spend_evidence: Some(BlockHeight::from_u32(10_000)),
                 note_spends: HashMap::new(),
                 confirmed: HashMap::new(),
                 failed: Vec::new(),
@@ -384,6 +512,9 @@ mod tests {
     impl ChainView for MockChainView {
         fn chain_tip(&self) -> Option<BlockHeight> {
             self.tip
+        }
+        fn spend_evidence_height(&self) -> Option<BlockHeight> {
+            self.spend_evidence
         }
         fn note_spend(&self, output_id: OutputId) -> Option<(TxId, Option<BlockHeight>)> {
             self.note_spends.get(&output_id).copied()
@@ -417,6 +548,7 @@ mod tests {
             },
             params,
             strategy: SigningStrategy::LazyAtBoundary,
+            mode: crate::wallet::migration::MigrationMode::Scheduled,
             account: zip32::AccountId::ZERO,
             phase: MigrationPhase::PartsScheduled,
             parts,
@@ -437,9 +569,43 @@ mod tests {
         part
     }
 
-    /// Bucket arithmetic for the provisional M = 256 and tip 10_000: the tip
-    /// sits in bucket 39.
-    const TIP_BUCKET: u64 = 10_000 / 256;
+    /// Bucket arithmetic for the provisional M = 144 and tip 10_000: the tip
+    /// sits in bucket 69.
+    const M: u32 = 144;
+    const TIP_BUCKET: u64 = 10_000 / M as u64;
+
+    /// Issue #2493, finding 8: a migration whose every part is terminal
+    /// and whose replannable balance is zero must reach a terminal
+    /// recommendation. An `Invalidated` part with nothing left to replan
+    /// currently satisfies neither `MarkComplete` (not every part is
+    /// `Confirmed`) nor `ReplanRemainder` (no spendable balance), so
+    /// reconcile recommends nothing forever and the stuck state blocks
+    /// both the immediate migration and the immediate migration until the user finds
+    /// `cancel`.
+    #[test]
+    fn terminal_parts_with_nothing_replannable_reach_complete() {
+        let mut confirmed = assigned_part(0, TIP_BUCKET - 2);
+        confirmed
+            .mark_confirmed(BlockHeight::from_u32(9_000))
+            .unwrap();
+        let mut invalidated = assigned_part(1, TIP_BUCKET - 2);
+        invalidated.mark_invalidated().unwrap();
+        let state = scheduled_state(vec![confirmed, invalidated]);
+
+        // The default view's confirmed-spendable Orchard balance is zero:
+        // nothing remains to replan.
+        let report = reconcile(&state, &MockChainView::default());
+
+        assert!(
+            report
+                .actions
+                .iter()
+                .any(|action| matches!(action, RecommendedAction::MarkComplete { .. })),
+            "every part is terminal and nothing is replannable, yet the \
+             migration cannot conclude: {:?}",
+            report.actions,
+        );
+    }
 
     #[test]
     fn future_and_open_windows_are_on_track() {
@@ -464,7 +630,7 @@ mod tests {
         let state = scheduled_state(vec![assigned_part(0, TIP_BUCKET - 1)]);
         let mut chain = MockChainView {
             tip: Some(BlockHeight::from_u32(
-                (TIP_BUCKET as u32) * 256 + SLIP_TOLERANCE_BLOCKS,
+                (TIP_BUCKET as u32) * M + SLIP_TOLERANCE_BLOCKS,
             )),
             ..Default::default()
         };
@@ -476,7 +642,7 @@ mod tests {
         assert!(report.actions.is_empty(), "slips are not surfaced");
 
         chain.tip = Some(BlockHeight::from_u32(
-            (TIP_BUCKET as u32) * 256 + SLIP_TOLERANCE_BLOCKS + 1,
+            (TIP_BUCKET as u32) * M + SLIP_TOLERANCE_BLOCKS + 1,
         ));
         let report = reconcile(&state, &chain);
         assert_eq!(report.assessments[0].class, PartClass::Overdue);
@@ -486,6 +652,146 @@ mod tests {
                 parts: vec![PartId(0)],
                 disclosure_required: true,
             }]
+        );
+    }
+
+    #[test]
+    fn due_now_reports_the_current_window_regardless_of_the_target() {
+        // Tip 10_000 sits in bucket TIP_BUCKET; its window is
+        // [TIP_BUCKET*144, (TIP_BUCKET+1)*144) = [9936, 10080).
+        let mut part = assigned_part(0, TIP_BUCKET);
+        part.target_height = Some(BlockHeight::from_u32(10_040)); // advisory only
+        let state = scheduled_state(vec![part]);
+
+        // The tip is below the random target, yet the window is open: the part
+        // is due, because the target no longer gates sendability.
+        let chain = MockChainView::default();
+        let report = reconcile(&state, &chain);
+        assert_eq!(
+            due_now_parts(
+                &state.parts,
+                &report,
+                chain.chain_tip().unwrap(),
+                &state.params,
+            ),
+            vec![PartId(0)],
+            "a current-window part is due even with its target ahead",
+        );
+
+        // And it stays due later in the window, past the target.
+        let chain = MockChainView {
+            tip: Some(BlockHeight::from_u32(10_060)),
+            ..Default::default()
+        };
+        let report = reconcile(&state, &chain);
+        assert_eq!(
+            due_now_parts(
+                &state.parts,
+                &report,
+                BlockHeight::from_u32(10_060),
+                &state.params,
+            ),
+            vec![PartId(0)],
+        );
+    }
+
+    #[test]
+    fn due_now_folds_assigned_overdue_parts_but_not_signed_ones() {
+        // Bucket TIP_BUCKET - 2 closed well beyond the slip tolerance. The
+        // Assigned part is Overdue and folds into the batch; the Signed one is
+        // classified AwaitingExpiry (it waits out its expiry and rebuilds
+        // rather than transmitting late), so it is outside the catch-up batch
+        // and never folds.
+        let assigned = assigned_part(0, TIP_BUCKET - 2);
+        let mut signed = assigned_part(1, TIP_BUCKET - 2);
+        signed
+            .mark_signed(
+                TxId::from_bytes([9; 32]),
+                BlockHeight::from_u32(20_000),
+                None,
+            )
+            .unwrap();
+        let state = scheduled_state(vec![assigned, signed]);
+
+        let chain = MockChainView::default();
+        let report = reconcile(&state, &chain);
+        assert!(
+            report.actions.contains(&RecommendedAction::PromptCatchUp {
+                parts: vec![PartId(0)],
+                disclosure_required: true,
+            }),
+            "only the Assigned overdue part is surfaced for catch-up",
+        );
+        assert!(
+            matches!(
+                report
+                    .assessments
+                    .iter()
+                    .find(|assessment| assessment.id == PartId(1))
+                    .map(|assessment| assessment.class),
+                Some(PartClass::AwaitingExpiry { .. })
+            ),
+            "the signed overdue part awaits its expiry instead of catching up",
+        );
+        assert_eq!(
+            due_now_parts(
+                &state.parts,
+                &report,
+                chain.chain_tip().unwrap(),
+                &state.params,
+            ),
+            vec![PartId(0)],
+            "only the Assigned overdue part is sendable this instant",
+        );
+    }
+
+    #[test]
+    fn due_now_excludes_future_windows() {
+        let part = assigned_part(0, TIP_BUCKET + 3);
+        let state = scheduled_state(vec![part]);
+        let chain = MockChainView::default();
+        let report = reconcile(&state, &chain);
+        assert!(
+            due_now_parts(
+                &state.parts,
+                &report,
+                chain.chain_tip().unwrap(),
+                &state.params,
+            )
+            .is_empty(),
+            "a part whose window has not opened is a future window, not a due batch",
+        );
+    }
+
+    #[test]
+    fn due_now_omits_a_current_part_reconciliation_will_invalidate() {
+        // A current-window Assigned part whose bound note was spent outside the
+        // migration: reconcile classifies it Invalidated, so a tap would not
+        // send it and `due_now` must not advertise it. With no random target
+        // it clears the bucket predicate, so only the OnTrack class gate drops
+        // it, the property that gate exists for.
+        let mut part = assigned_part(0, TIP_BUCKET);
+        part.target_height = None;
+        let state = scheduled_state(vec![part]);
+        let mut chain = MockChainView::default();
+        chain.note_spends.insert(
+            output_id(0),
+            (
+                TxId::from_bytes([250; 32]),
+                Some(BlockHeight::from_u32(9_990)),
+            ),
+        );
+        let report = reconcile(&state, &chain);
+        assert_eq!(report.assessments[0].class, PartClass::Invalidated);
+        assert!(
+            due_now_parts(
+                &state.parts,
+                &report,
+                chain.chain_tip().unwrap(),
+                &state.params,
+            )
+            .is_empty(),
+            "an externally-spent part is not sendable and must not be advertised",
         );
     }
 
@@ -611,7 +917,12 @@ mod tests {
             .confirmed
             .insert(split_txid, BlockHeight::from_u32(9_000));
         let report = reconcile(&state, &chain);
-        assert_eq!(report.actions, vec![RecommendedAction::BindAndSchedule]);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::ContinueNoteSplitting],
+            "a fully confirmed round hands back to the splitting driver, \
+             which alone can tell a finished split from one needing more rounds"
+        );
     }
 
     #[test]
@@ -626,6 +937,43 @@ mod tests {
         assert_eq!(
             report.actions,
             vec![RecommendedAction::ContinueNoteSplitting]
+        );
+    }
+
+    /// After a restore from backup the wallet's transaction map no longer
+    /// contains an in-flight split transaction, but the persisted migration
+    /// state still names it in `pending_txids`. An unknown txid is not
+    /// *recorded as failed* (the `ChainView::transaction_failed` contract),
+    /// so reconciliation must keep waiting rather than retry the split and
+    /// race its own in-flight transaction. This exercises the real
+    /// `LightWallet` implementation, not `MockChainView`.
+    #[test]
+    fn unknown_txid_after_restore_is_not_classified_failed() {
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        let wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
+
+        let in_flight_txid = TxId::from_bytes([42; 32]);
+        assert!(!wallet.wallet_transactions.contains_key(&in_flight_txid));
+
+        // Contract-level assertion: an unknown transaction is not failed.
+        assert!(
+            !wallet.transaction_failed(&in_flight_txid),
+            "an unknown txid must not be reported as failed",
+        );
+
+        // Behavior-level assertion: reconciliation awaits confirmation
+        // instead of recommending a retry that races the in-flight split.
+        let mut state = scheduled_state(Vec::new());
+        state.phase = MigrationPhase::NoteSplitting {
+            round: 0,
+            pending_txids: vec![in_flight_txid],
+        };
+        let report = reconcile(&state, &wallet);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::AwaitSplitConfirmation],
         );
     }
 }

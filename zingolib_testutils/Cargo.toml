@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# zingolib
-zingolib = { workspace = true, features = ["testutils"] }
+zingolib = { workspace = true, features = ["perspective", "testutils"] }
 zingo_common_components.workspace = true
 
 # zingo infrastructure
@@ -28,3 +27,12 @@ http.workspace = true
 zip32.workspace = true
 tokio = { workspace = true, features = ["net", "time", "rt", "io-util", "sync", "macros"] }
 zingo-netutils.workspace = true
+
+[features]
+# Compile zingolib's mixnet surface for consumers (zingo-mobile's
+# integration harness) that exercise it. The scenarios' clearnet consent no
+# longer keys on this feature: it delegates to zingolib unconditionally
+# (`consent_to_clearnet_for_tests`), because feature unification can enable
+# `zingolib/nym` from any workspace member — zingo-cli carries it as a
+# default feature (ADR 0026) — and a local cfg desyncs exactly then.
+nym = ["zingolib/nym"]

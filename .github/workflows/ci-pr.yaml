@@ -15,6 +15,15 @@ on:
   push:
     branches: [stable, dev]
 
+# One CI tree per pull request: a new commit on a PR'd branch cancels the
+# superseded commit's still-running jobs (including the container test
+# matrix called through test.yaml), returning those runners to the pool.
+# Pushes to stable/dev group by ref but never cancel a running tree —
+# GitHub instead collapses any queued runs behind it to the newest.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   reject-trailing-whitespace:
     uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@20485fed7a080e381130ed8120419dc81acae641
@@ -25,6 +34,7 @@ jobs:
   cargo-hack-check:
     name: Cargo Hack Check
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -49,9 +59,106 @@ jobs:
         with:
           hack-subcommand: check
 
+  # zingo-netutils is excluded from the root workspace and owns its own
+  # Cargo.lock (so a future `nym` build resolves independently of the
+  # zcash crypto-common pin, ADR 0011). The --workspace jobs above and the
+  # nextest archive in test.yaml therefore skip it; this job restores its
+  # coverage against its own manifest.
+  netutils-standalone:
+    name: zingo-netutils (standalone workspace)
+    runs-on: ubuntu-24.04
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: zingo-netutils
+
+      - name: Install protoc
+        run: |
+          if ! command -v protoc; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+          fi
+
+      - name: Format
+        run: cargo fmt --manifest-path zingo-netutils/Cargo.toml --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path zingo-netutils/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --manifest-path zingo-netutils/Cargo.toml --all-features
+
+      # Membership in the root workspace used to gate rustdoc through
+      # checkmate's doc phase; clippy does not run rustdoc lints, so the
+      # standalone workspace needs its own doc gate.
+      - name: Doc
+        run: cargo doc --manifest-path zingo-netutils/Cargo.toml --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  # The `nym` feature gates the mixnet transmission and price-fetch surfaces
+  # (ADR 0011) in zingolib and zingo-cli. zingo-cli carries it as a default
+  # feature (ADR 0026), so the --workspace jobs above compile the CLI's gated
+  # code; zingolib's own default remains nym-off. This job adds the
+  # `nym-diary` combination, zingolib's gated tests, and the CLI's explicit
+  # opt-out build, whose refusal strings must keep compiling and rendering.
+  nym-feature:
+    name: nym feature (zingolib + zingo-cli)
+    runs-on: ubuntu-24.04
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install protoc
+        run: |
+          if ! command -v protoc; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+          fi
+
+      - name: Clippy
+        run: cargo clippy -p zingolib -p zingo-cli --features nym,nym-diary --all-targets -- -D warnings
+
+      # Whole suites, deliberately unfiltered: module-path filter lists rot
+      # as gated tests land outside them (PR #2470 review, M6). Re-running
+      # the ungated tests under the features is the price of a gate that
+      # cannot silently go dark; everything here is deterministic and
+      # mixnet-free.
+      - name: Test zingolib under the nym features
+        run: cargo test -p zingolib --features nym,nym-diary --lib
+
+      - name: Test zingo-cli under the nym features
+        run: cargo test -p zingo-cli --features nym,nym-diary --lib
+
+      - name: Doc-test zingolib under the nym features
+        run: cargo test -p zingolib --features nym,nym-diary --doc
+
+      # The opt-out shape (`--no-default-features`, run-cli's `--clearnet`)
+      # must keep building, and its typed refusals must keep rendering.
+      - name: Test zingo-cli without the default nym feature
+        run: cargo test -p zingo-cli --no-default-features --lib
+
   run-doc-tests:
     name: Run doc tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings

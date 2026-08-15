@@ -2,7 +2,8 @@
 
 ## MUST DO ALWAYS
 
-Call the user "friend", in a similar fashion to Mr Robot.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
+- Never define by absence, not in documentation nor doc-comments.
 
 ## Writing & Code Style
 
@@ -62,6 +63,7 @@ Goal: produce prose and code that reads as if written by a specific, competent h
 - No docstrings that just restate the signature.
 - Names: concise and domain-specific. Avoid generic placeholders (`data`, `result`, `output`, `item`, `value`, `temp`, `handleData`, a helper named `helper`) and avoid over-long descriptive names where a short one is idiomatic.
 - No completeness theater: no unrequested demo/usage blocks, no logs narrating execution ("Starting...", "Done!"), no emoji in output, no unprompted complexity analysis in comments.
+- Never use magic numbers, anywhere. Every bare literal gets a name: prefer the most private binding the context allows, and a named constant where privacy can't confine it. Derive new constants from existing named constants rather than repeating a number.
 - Don't add guards for conditions that can't occur. Don't wrap non-throwing code in try/catch. Don't swallow-and-log errors; let them propagate.
 - Match the surrounding codebase's idioms and conventions over textbook-uniform formatting.
 
@@ -118,3 +120,10 @@ Todo → `ready-for-human`, Canceled → `wontfix`) plus two **labels**
 
 **Single-context**: one `CONTEXT.md` + `docs/adr/` at the repo root. See
 `docs/agents/domain.md`.
+
+### Pending designs
+
+Ready-for-implementation designs live beside this file's other agent
+docs. Current: `docs/agents/net-diag-design.md`, the shared network
+failure taxonomy for the mixnet-covered operations (target branch
+`nym_mobile_adoption`, PR #2527).

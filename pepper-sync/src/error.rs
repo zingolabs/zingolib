@@ -9,6 +9,21 @@ use zcash_protocol::{PoolType, ShieldedPool};
 
 use crate::wallet::OutputId;
 
+/// The separator between two layers of a rendered cause chain.
+pub(crate) const CAUSE_CHAIN_SEPARATOR: &str = ": ";
+
+/// Renders `error` and every `source()` link as one separated line, so a log
+/// message keeps the whole cause chain.
+pub(crate) fn cause_chain_text(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut texts = vec![error.to_string()];
+    let mut link = error.source();
+    while let Some(cause) = link {
+        texts.push(cause.to_string());
+        link = cause.source();
+    }
+    texts.join(CAUSE_CHAIN_SEPARATOR)
+}
+
 /// Top level error enumerating any error that may occur during sync
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError<E>
@@ -16,16 +31,16 @@ where
     E: std::fmt::Debug + std::fmt::Display,
 {
     /// Mempool error.
-    #[error("mempool error. {0}")]
+    #[error("mempool error")]
     MempoolError(#[from] MempoolError),
     /// Scan error.
-    #[error("scan error. {0}")]
+    #[error("scan error")]
     ScanError(#[from] ScanError),
     /// Server error.
-    #[error("server error. {0}")]
+    #[error("server error")]
     ServerError(#[from] ServerError),
     /// Sync mode error.
-    #[error("sync mode error. {0}")]
+    #[error("sync mode error")]
     SyncModeError(#[from] SyncModeError),
     /// Chain error.
     #[error("wallet height {0} is more than {1} blocks ahead of best chain height {2}")]
@@ -36,13 +51,20 @@ where
     )]
     BirthdayBelowSapling(u32, u32),
     /// Shard tree error.
-    #[error("shard tree error. {0}")]
+    #[error("shard tree error")]
     ShardTreeError(#[from] ShardTreeError<Infallible>),
     /// Critical non-recoverable truncation error due to missing shard tree checkpoints.
     #[error(
         "critical non-recoverable truncation error at height {0} due to missing {1} shard tree checkpoints. wallet data cleared. rescan required."
     )]
     TruncationError(BlockHeight, PoolType),
+    /// One pool's recorded history could not account for the commitment
+    /// tree the chain reports, so that pool was reopened for rescanning
+    /// from the given height. The session ends here; the next one rescans.
+    #[error(
+        "{1} history could not account for the chain's commitment tree. that pool has been reopened for scanning from height {0}. the next sync rescans it."
+    )]
+    PoolHistoryReopened(BlockHeight, PoolType),
     /// Transparent address derivation error.
     #[error("transparent address derivation error. {0}")]
     TransparentAddressDerivationError(bip32::Error),
@@ -60,11 +82,15 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
     /// integrity failures are not.
     pub fn recommend_same_server(&self) -> bool {
         match self {
-            // Network/server issues — retry may help, especially with a different server.
+            // Network/server issues. Retrying may help, especially with a different server.
             SyncError::ServerError(e) => e.recommend_same_server(),
             SyncError::MempoolError(_) => true,
+            // Not the server's doing, but the wallet has already reopened
+            // the pool it could not account for, so the next sync against
+            // this same server makes progress.
+            SyncError::PoolHistoryReopened(..) => true,
 
-            // Local or configuration errors — retrying won't help.
+            // Local or configuration errors. Retrying won't help.
             SyncError::ScanError(_)
             | SyncError::SyncModeError(_)
             | SyncError::ChainError(..)
@@ -85,14 +111,14 @@ impl ServerError {
     /// avoided rather than retried.
     pub fn recommend_same_server(&self) -> bool {
         match self {
-            // Internal channel issue — retry may help after restart.
+            // Internal channel issue. Retrying may help after restart.
             ServerError::FetcherDropped => true,
 
-            // gRPC request failure — the server may be down or overloaded.
+            // gRPC request failure. The server may be down or overloaded.
             // Switch to a different server rather than retrying the same one.
             ServerError::RequestFailed(_) => false,
 
-            // Bad data from server — retrying the same server won't help.
+            // Bad data from server. Retrying the same server won't help.
             ServerError::InvalidFrontier(_)
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
@@ -133,6 +159,11 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
             SyncError::ScanError(ScanError::ServerError(e)) => e.recovery_recommendation(),
             SyncError::ScanError(_) => SyncRecoveryObservables::Abort,
 
+            // The wallet has already reopened the pool it could not account
+            // for, so syncing again against the same server is exactly the
+            // recovery.
+            SyncError::PoolHistoryReopened(..) => SyncRecoveryObservables::MaybeRecoverableServer,
+
             SyncError::SyncModeError(_)
             | SyncError::ChainError(..)
             | SyncError::BirthdayBelowSapling(..)
@@ -148,15 +179,15 @@ impl ServerError {
     /// Returns the recommended recovery action for this server error.
     pub fn recovery_recommendation(&self) -> SyncRecoveryObservables {
         match self {
-            // Internal channel issue — same server may work after restart.
+            // Internal channel issue. The same server may work after restart.
             ServerError::FetcherDropped => SyncRecoveryObservables::MaybeRecoverableServer,
-            // gRPC request failure or bad data — try a different server.
+            // gRPC request failure or bad data. Try a different server.
             ServerError::RequestFailed(_)
             | ServerError::InvalidFrontier(_)
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError => SyncRecoveryObservables::ServerUnavailable,
-            // Empty chain — no point retrying anywhere.
+            // Empty chain. No point retrying anywhere.
             ServerError::GenesisBlockOnly => SyncRecoveryObservables::Abort,
         }
     }
@@ -180,7 +211,7 @@ where
 #[derive(Debug, thiserror::Error)]
 pub enum MempoolError {
     /// Server error.
-    #[error("server error. {0}")]
+    #[error("server error")]
     ServerError(#[from] ServerError),
     /// Timed out fetching mempool stream during shutdown.
     #[error(
@@ -193,16 +224,16 @@ pub enum MempoolError {
 #[derive(Debug, thiserror::Error)]
 pub enum ScanError {
     /// Server error.
-    #[error("server error. {0}")]
+    #[error("server error")]
     ServerError(#[from] ServerError),
     /// Continuity error.
-    #[error("continuity error. {0}")]
+    #[error("continuity error")]
     ContinuityError(#[from] ContinuityError),
     /// Zcash client backend scan error
-    #[error("{0}")]
+    #[error(transparent)]
     EncodingError(#[from] EncodingInvalid),
     /// Invalid sapling nullifier
-    #[error("invalid sapling nullifier. {0}")]
+    #[error("invalid sapling nullifier")]
     InvalidSaplingNullifier(#[from] TryFromSliceError),
     /// Invalid orchard nullifier length
     #[error("invalid orchard nullifier length. should be 32 bytes, found {0}")]
@@ -244,10 +275,10 @@ pub enum ScanError {
     #[error("decrypted note nullifier and position data not found. output id: {0:?}")]
     DecryptedNoteDataNotFound(OutputId),
     /// Invalid memo bytes..
-    #[error("invalid memo bytes. {0}")]
+    #[error("invalid memo bytes")]
     InvalidMemoBytes(#[from] zcash_protocol::memo::Error),
     /// Failed to parse encoded address.
-    #[error("failed to parse encoded address. {0}")]
+    #[error("failed to parse encoded address")]
     AddressParseError(#[from] zcash_address::unified::ParseError),
 }
 
@@ -315,7 +346,7 @@ pub enum ContinuityError {
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
     /// Server request failed.
-    #[error("server request failed. {0}")]
+    #[error("server request failed")]
     RequestFailed(#[from] tonic::Status),
     /// Server returned invalid frontier.
     #[error("server returned invalid frontier. {0}")]
@@ -364,6 +395,38 @@ mod tests {
     /// Use `String` as the wallet error type for testing.
     type TestSyncError = SyncError<String>;
 
+    /// The number of times one detail may appear across a whole cause chain.
+    const DETAIL_RENDERINGS: usize = 1;
+
+    /// Renders `error` and every link of its source chain, one line per link.
+    fn chain_rendering(error: &(dyn std::error::Error + 'static)) -> String {
+        let mut rendered = error.to_string();
+        let mut cursor = error.source();
+        while let Some(cause) = cursor {
+            rendered.push('\n');
+            rendered.push_str(&cause.to_string());
+            cursor = cause.source();
+        }
+        rendered
+    }
+
+    /// HYPOTHESIS: every layer wrapping a failed server request states its
+    /// own layer only, so the transport status text reaches the reader
+    /// exactly once across the whole cause chain. Falsified if the status
+    /// text appears more than once.
+    #[test]
+    fn a_failed_server_request_renders_its_status_once() {
+        const DETAIL: &str = "the indexer refused the block range";
+        let failure: TestSyncError =
+            ServerError::RequestFailed(tonic::Status::unavailable(DETAIL)).into();
+        let rendered = chain_rendering(&failure);
+        assert_eq!(
+            rendered.matches(DETAIL).count(),
+            DETAIL_RENDERINGS,
+            "the chain rendered was {rendered}"
+        );
+    }
+
     mod recommend_same_server {
         use super::*;
 
@@ -382,6 +445,17 @@ mod tests {
             #[test]
             fn mempool_error() {
                 let e: TestSyncError = MempoolError::ShutdownWithoutStream.into();
+                assert!(e.recommend_same_server());
+            }
+
+            /// The wallet has already reopened the pool, so the very next
+            /// sync against this same server performs the rescan. Reporting
+            /// this as a reason to change server would send wallets hunting
+            /// for a server that was never at fault.
+            #[test]
+            fn pool_history_reopened() {
+                let e: TestSyncError =
+                    SyncError::PoolHistoryReopened(BlockHeight::from_u32(100), PoolType::IRONWOOD);
                 assert!(e.recommend_same_server());
             }
         }
@@ -480,6 +554,18 @@ mod tests {
             #[test]
             fn mempool_error() {
                 let e: TestSyncError = MempoolError::ShutdownWithoutStream.into();
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::MaybeRecoverableServer
+                );
+            }
+
+            /// Syncing again is the recovery, so this must never be reported
+            /// as needing the user to intervene.
+            #[test]
+            fn pool_history_reopened() {
+                let e: TestSyncError =
+                    SyncError::PoolHistoryReopened(BlockHeight::from_u32(100), PoolType::IRONWOOD);
                 assert_eq!(
                     e.recovery_recommendation(),
                     SyncRecoveryObservables::MaybeRecoverableServer

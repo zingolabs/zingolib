@@ -18,6 +18,31 @@ use super::quantize::decompose;
 /// to the crate constant by test.
 pub(crate) const MARGINAL_FEE: u64 = 5_000;
 
+/// One side's per-transaction note budget, derived from the total budget
+/// ([`MigrationParams::max_actions_per_split_tx`], ZIP 318's 16-action
+/// preparation shape at
+/// <https://zips.z.cash/zip-0318#notepreparationtransactions>): a split
+/// transaction's spends and outputs together must fit the budget, so each
+/// side's chunk is the budget less the one note on the other side (15
+/// spends merging into one note, or one note dividing into 15). The
+/// immediate migration chunks under the same law: many spends beside its
+/// single Ironwood output (see [`super::immediate`]).
+pub(crate) fn side_budget(params: &MigrationParams) -> usize {
+    params.max_actions_per_split_tx.saturating_sub(1).max(1)
+}
+
+/// The Sweep Minimum (ZIP 318 policy): a migration never selects a note worth
+/// at most this, and never manufactures an output worth at most this.
+/// Provisionally twice the marginal fee: a selected note must return strictly
+/// more than double the marginal action cost it adds, not merely break even.
+/// Shared by both migration paths through [`MigrationParams::sweep_min`],
+/// so the two leave identical residuals.
+///
+/// A local policy, not a ZIP 318 value: the ZIP leaves whether consuming a
+/// small note is economic to ZIP 317's marginal fee
+/// (<https://zips.z.cash/zip-0318#amountselectioncanonicalquantization>).
+pub(crate) const SWEEP_MIN: u64 = 2 * MARGINAL_FEE;
+
 /// Orchard pads every non-empty bundle to at least this many actions
 /// (`orchard::builder`'s `MIN_ACTIONS`, which is private). Pinned to
 /// `BundleType::num_actions` by test.
@@ -28,7 +53,15 @@ const MIN_BUNDLE_ACTIONS: u64 = 2;
 /// (1 output, padded to 2 actions), so it pays for 4 logical actions. Every
 /// split note is sized `denomination + part_fee` so the part balances
 /// exactly.
-pub const CANONICAL_PART_FEE: u64 = MARGINAL_FEE * 2 * MIN_BUNDLE_ACTIONS;
+///
+/// ZIP 318 says only "the canonical fee (provisionally the ZIP 317 minimum
+/// fee)" at
+/// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>,
+/// and the reference crate models a 2-source-action, 1-unpadded-destination
+/// shape, so the three readings price a part at 10 000, 15 000, and (here)
+/// 20 000 zatoshis. The value feeds part sizing and the consent hash, so
+/// aligning it is a ratification decision, not an import.
+pub(crate) const CANONICAL_PART_FEE: u64 = MARGINAL_FEE * 2 * MIN_BUNDLE_ACTIONS;
 
 /// The number of logical actions the builder will produce for a bundle of
 /// `n_in` spends and `n_out` outputs at the given bundle version, asked of the
@@ -86,7 +119,7 @@ fn orchard_version(post_activation: bool) -> orchard::bundle::BundleVersion {
 
 /// The ZIP-317 conventional fee for an Orchard-only note-splitting
 /// transaction with `n_in` spends and `n_out` outputs.
-pub fn note_split_fee(n_in: usize, n_out: usize, post_activation: bool) -> u64 {
+pub(crate) fn note_split_fee(n_in: usize, n_out: usize, post_activation: bool) -> u64 {
     zip317_fee(
         bundle_actions(orchard_version(post_activation), n_in, n_out),
         0,
@@ -95,7 +128,7 @@ pub fn note_split_fee(n_in: usize, n_out: usize, post_activation: bool) -> u64 {
 
 /// If a note of value `v` is already part-ready, sized exactly
 /// `denomination + part_fee`, returns that denomination.
-pub fn part_denomination(value: u64, params: &MigrationParams) -> Option<u64> {
+pub(crate) fn part_denomination(value: u64, params: &MigrationParams) -> Option<u64> {
     value
         .checked_sub(params.part_fee)
         .filter(|d| params.denominations.contains(d))
@@ -129,7 +162,7 @@ pub(in crate::wallet::migration) enum MigrationOutputs<'a> {
     /// value. Nothing crosses a pool boundary.
     Orchard(&'a [u64]),
     /// A pool-crossing transfer into Ironwood: exactly one output, no change.
-    /// Both the ZIP 318 parts and the immediate drain are built this way.
+    /// Both the ZIP 318 parts and the immediate migration are built this way.
     Ironwood(u64),
 }
 
@@ -155,10 +188,10 @@ pub struct MigrationPlan {
     /// (largest first). Includes denominations of notes that are already
     /// part-ready. Each costs one [`MigrationParams::part_fee`] on top.
     pub parts: Vec<u64>,
-    /// Total value stranded in dust notes (each at most
+    /// Total value residual in dust notes (each at most
     /// [`MigrationParams::sweep_min`]) plus any balance too small to form
     /// even the smallest denomination.
-    pub stranded: u64,
+    pub residual: u64,
 }
 
 impl MigrationPlan {
@@ -208,7 +241,7 @@ pub fn plan_hash(plan: &MigrationPlan) -> [u8; 32] {
     for denomination in &plan.parts {
         hasher.update(&denomination.to_le_bytes());
     }
-    hasher.update(&plan.stranded.to_le_bytes());
+    hasher.update(&plan.residual.to_le_bytes());
     hasher
         .finalize()
         .as_bytes()
@@ -224,17 +257,19 @@ pub fn plan_hash(plan: &MigrationPlan) -> [u8; 32] {
 /// replanned never re-splits finished notes. Everything else worth more than
 /// [`MigrationParams::sweep_min`] is split:
 ///
-/// 1. **Reduction**: while more than `max_actions_per_split_tx` notes remain,
-///    merge groups of at most that many notes into one note each (smallest
-///    first).
+/// 1. **Reduction**: while more notes remain than one transaction's spend
+///    budget, merge groups of at most that many notes into one note each
+///    (smallest first).
 /// 2. **Sizing**: spend the remaining notes into notes sized exactly
-///    `denomination + part_fee`, where the denominations are the
+///    `denomination + part_fee` — consolidating the smallest inputs into one
+///    funding note first whenever the pool plus the targets would exceed one
+///    transaction's total budget — where the denominations are the
 ///    [`decompose`]-ition of what is left after all fees. When the balance
 ///    needs more target notes than fit one transaction (whale balances),
 ///    splitting recurses through intermediate notes.
 ///
 /// `post_activation` selects the note-splitting fee model (see
-/// [`note_split_fee`]): pass whether the transactions will confirm at or
+/// `note_split_fee`): pass whether the transactions will confirm at or
 /// after the NU6.3 activation height.
 pub fn plan_migration(
     note_values: &[u64],
@@ -243,8 +278,8 @@ pub fn plan_migration(
 ) -> MigrationPlan {
     let mut parts: Vec<u64> = Vec::new();
     let mut pool: Vec<u64> = Vec::new();
-    let mut stranded: u64 = 0;
-    let max_notes = params.max_actions_per_split_tx;
+    let mut residual: u64 = 0;
+    let max_notes = side_budget(params);
 
     for &value in note_values {
         if let Some(denomination) = part_denomination(value, params) {
@@ -252,7 +287,7 @@ pub fn plan_migration(
         } else if value > params.sweep_min {
             pool.push(value);
         } else {
-            stranded += value;
+            residual += value;
         }
     }
 
@@ -271,6 +306,19 @@ pub fn plan_migration(
             }
             let merged =
                 group.iter().sum::<u64>() - note_split_fee(group.len(), 1, post_activation);
+            // Post-activation, a trailing pair of near-floor notes can merge
+            // to at most `sweep_min`: a note the residual policy refuses to
+            // spend, and one a replan after an interruption would leave as residual.
+            // Carry such a group unmerged: each note exceeds `sweep_min` on
+            // its own, and the skipped merge fee outweighs the marginal
+            // inputs it would have saved. Only a partial group may carry:
+            // full groups always merge (at three or more notes their merge
+            // always clears `sweep_min`), so every round still shrinks the
+            // pool and the loop terminates.
+            if group.len() < max_notes && merged <= params.sweep_min {
+                next.extend_from_slice(group);
+                continue;
+            }
             round.push(NoteSplitTx {
                 inputs: group.to_vec(),
                 outputs: vec![merged],
@@ -309,8 +357,8 @@ pub fn plan_migration(
 
         if denominations.is_empty() {
             // Not even the smallest denomination is fundable: the pooled
-            // value is stranded. Undo any pointless reduction rounds.
-            stranded += total
+            // value is residual. Undo any pointless consolidation rounds.
+            residual += total
                 + split_rounds
                     .iter()
                     .flatten()
@@ -331,17 +379,40 @@ pub fn plan_migration(
     MigrationPlan {
         split_rounds,
         parts,
-        stranded,
+        residual,
     }
+}
+
+/// The input-consolidation group a sizing transaction needs when its spends
+/// plus its outputs would exceed the total budget
+/// ([`MigrationParams::max_actions_per_split_tx`]): merging `k` inputs into
+/// one note removes `k − 1` spends, so the minimal group removes the excess
+/// exactly. At least three inputs merge whenever the pool has them: every
+/// pooled note strictly exceeds `sweep_min`, and three such notes clear the
+/// merge fee with a note the residual policy accepts, where a pair might
+/// not (the reduction loop guards the same hazard by carrying pairs).
+/// Count-based only, so [`split_into_fee`] models it exactly. Callers
+/// guarantee `n_in + m` exceeds the budget.
+fn merge_group_len(n_in: usize, m: usize, params: &MigrationParams) -> usize {
+    (n_in + m + 1 - params.max_actions_per_split_tx)
+        .max(3)
+        .min(n_in)
 }
 
 /// Total ZIP-317 fee of splitting `n_in` notes into `m` target notes,
 /// recursing through intermediates when `m` exceeds the per-transaction
-/// budget.
+/// budget, and consolidating inputs first when spends plus outputs would
+/// exceed the total budget (mirroring [`split_into`]).
 fn split_into_fee(n_in: usize, m: usize, post_activation: bool, params: &MigrationParams) -> u64 {
-    let max_notes = params.max_actions_per_split_tx;
+    let max_notes = side_budget(params);
     if m <= max_notes {
-        note_split_fee(n_in, m, post_activation)
+        if n_in + m > params.max_actions_per_split_tx {
+            let group_len = merge_group_len(n_in, m, params);
+            note_split_fee(group_len, 1, post_activation)
+                + note_split_fee(n_in - group_len + 1, m, post_activation)
+        } else {
+            note_split_fee(n_in, m, post_activation)
+        }
     } else {
         // One future transaction per chunk of `max_notes` targets, funded by
         // an intermediate note each. The intermediates are themselves split.
@@ -358,20 +429,41 @@ fn split_into_fee(n_in: usize, m: usize, post_activation: bool, params: &Migrati
 }
 
 /// Materializes the note-splitting rounds that turn `inputs` into exactly
-/// `targets`. Mirrors [`split_into_fee`]. The first transaction's fee absorbs
+/// `targets`. Mirrors [`split_into_fee`]. The final transaction's fee absorbs
 /// any slack between the input total and the exact target-side requirement.
+///
+/// The budget is a total: a transaction's spends and outputs together must
+/// fit [`MigrationParams::max_actions_per_split_tx`] (ZIP 318's 16-action
+/// preparation shape). When the pool plus the targets exceed it, the
+/// smallest inputs consolidate into one funding note first, in a round of
+/// their own, and the sizing transaction spends the consolidated note
+/// beside the survivors.
 fn split_into(
-    inputs: Vec<u64>,
+    mut inputs: Vec<u64>,
     targets: &[u64],
     post_activation: bool,
     params: &MigrationParams,
 ) -> Vec<Vec<NoteSplitTx>> {
-    let max_notes = params.max_actions_per_split_tx;
+    let max_notes = side_budget(params);
     if targets.len() <= max_notes {
-        return vec![vec![NoteSplitTx {
+        let mut rounds = Vec::new();
+        if inputs.len() + targets.len() > params.max_actions_per_split_tx {
+            let group_len = merge_group_len(inputs.len(), targets.len(), params);
+            inputs.sort_unstable();
+            let group: Vec<u64> = inputs.drain(..group_len).collect();
+            let merged =
+                group.iter().sum::<u64>() - note_split_fee(group.len(), 1, post_activation);
+            rounds.push(vec![NoteSplitTx {
+                inputs: group,
+                outputs: vec![merged],
+            }]);
+            inputs.push(merged);
+        }
+        rounds.push(vec![NoteSplitTx {
             inputs,
             outputs: targets.to_vec(),
-        }]];
+        }]);
+        return rounds;
     }
     let chunks: Vec<&[u64]> = targets.chunks(max_notes).collect();
     let intermediates: Vec<u64> = chunks
@@ -395,22 +487,73 @@ fn split_into(
 impl crate::wallet::LightWallet {
     /// The values (zatoshis) of the account's spendable pre-Ironwood (V2)
     /// Orchard notes, the input to [`plan_migration`].
+    ///
+    /// Errors with [`WalletError::SyncIncomplete`] when the spend horizon
+    /// withholds every V2 note the anchor would otherwise offer.
+    ///
+    /// [`WalletError::SyncIncomplete`]: crate::wallet::error::WalletError::SyncIncomplete
     #[allow(clippy::result_large_err)]
-    pub fn migration_note_values(
+    pub(crate) fn migration_note_values(
         &self,
         account: zip32::AccountId,
     ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
-        use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
-
         let (_, anchor_height) = self
             .get_migration_heights()?
             .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+        let known_unspent = self.anchored_v2_known_unspent(account, anchor_height)?;
+        let not_known_spent = self.anchored_v2_not_known_spent(account, anchor_height)?;
+        // The two sets differ only in the spend-confirmation filter, so
+        // an empty first with a non-empty second means spend detection
+        // is incomplete below the recorded tip for every note.
+        if known_unspent.is_empty() && !not_known_spent.is_empty() {
+            return Err(crate::wallet::error::WalletError::SyncIncomplete);
+        }
+        Ok(known_unspent)
+    }
+
+    /// The values of the account's anchored V2 notes that sync has proven
+    /// unspent: every block in each note's possible spend window is scanned
+    /// and no spend appeared. Only this set is safe to plan spends from.
+    #[allow(clippy::result_large_err)]
+    fn anchored_v2_known_unspent(
+        &self,
+        account: zip32::AccountId,
+        anchor_height: zcash_protocol::consensus::BlockHeight,
+    ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
+        self.anchored_v2_values(account, anchor_height, false)
+    }
+
+    /// The values of the account's anchored V2 notes with no recorded
+    /// spending transaction: the known-unspent set plus the notes whose
+    /// spend status sync cannot yet vouch for. A superset of
+    /// [`Self::anchored_v2_known_unspent`]; the difference is exactly the
+    /// notes awaiting spend detection.
+    #[allow(clippy::result_large_err)]
+    fn anchored_v2_not_known_spent(
+        &self,
+        account: zip32::AccountId,
+        anchor_height: zcash_protocol::consensus::BlockHeight,
+    ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
+        self.anchored_v2_values(account, anchor_height, true)
+    }
+
+    /// The shared query behind the named pair above; callers reach it
+    /// through them so the spend-certainty mode always has a name.
+    #[allow(clippy::result_large_err)]
+    fn anchored_v2_values(
+        &self,
+        account: zip32::AccountId,
+        anchor_height: zcash_protocol::consensus::BlockHeight,
+        include_potentially_spent: bool,
+    ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
+        use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
+
         Ok(self
             .spendable_notes::<pepper_sync::wallet::OrchardNote>(
                 anchor_height,
                 &[],
                 account,
-                false,
+                include_potentially_spent,
             )?
             .into_iter()
             .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
@@ -418,11 +561,102 @@ impl crate::wallet::LightWallet {
             .collect())
     }
 
+    /// The values of the account's live pre-Ironwood (V2) Orchard notes:
+    /// unspent, whether anchored, freshly confirmed, or still pending. The
+    /// Phase 1 status projection plans over this set, so a note-splitting
+    /// round in flight reads as its pending outputs instead of as vanished
+    /// value, the trap [`Self::note_split_in_flight`] documents rules the
+    /// anchored [`Self::migration_note_values`] out for status use. Failed
+    /// transactions' outputs never existed on chain and are excluded.
+    pub(crate) fn live_v2_note_values(&self, account: zip32::AccountId) -> Vec<u64> {
+        use pepper_sync::wallet::{KeyIdInterface as _, NoteInterface as _, OutputInterface as _};
+
+        self.wallet_transactions
+            .values()
+            .filter(|transaction| !transaction.status().is_failed())
+            .flat_map(|transaction| {
+                pepper_sync::wallet::OrchardNote::transaction_outputs(transaction)
+            })
+            .filter(|note| {
+                note.key_id().account_id() == account
+                    && note.note().version() == orchard::note::NoteVersion::V2
+                    && note.spending_transaction().is_none()
+            })
+            .map(|note| note.value())
+            .collect()
+    }
+
+    /// Given an account, returns whether any wallet transaction confirmed
+    /// above the migration anchor holds an unspent V2 (pre-Ironwood) Orchard
+    /// note that account owns, a note that is mined but not yet spendable.
+    /// Errors when the wallet holds no sync data to take the anchor from.
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn unanchored_v2_outputs(
+        &self,
+        account: zip32::AccountId,
+    ) -> Result<bool, crate::wallet::error::WalletError> {
+        use pepper_sync::wallet::{KeyIdInterface as _, NoteInterface as _, OutputInterface as _};
+
+        let (_, anchor_height) = self
+            .get_migration_heights()?
+            .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
+        // A failed transaction carries no confirmed height
+        Ok(self
+            .wallet_transactions
+            .values()
+            .filter(|transaction| {
+                transaction
+                    .status()
+                    .get_confirmed_height()
+                    .is_some_and(|height| height > anchor_height)
+            })
+            .flat_map(|transaction| {
+                pepper_sync::wallet::OrchardNote::transaction_outputs(transaction)
+            })
+            .any(|note| {
+                note.key_id().account_id() == account
+                    && note.note().version() == orchard::note::NoteVersion::V2
+                    && note.spending_transaction().is_none()
+            }))
+    }
+
+    /// True when a note-splitting round this account initiated is still
+    /// confirming: a pending (built, transmitted, or mempool, but not yet
+    /// confirmed) transaction holds account-owned pre-Ironwood (V2) Orchard
+    /// outputs. Those are the self-notes a round creates. While they are
+    /// unconfirmed the round's spent inputs have also left the spendable set,
+    /// so a replan sees an empty pool and would otherwise report the migration
+    /// falsely complete.
+    ///
+    /// This is the stateless, derived replacement for a round's stored
+    /// `pending_txids`: it lets [`crate::lightclient::LightClient::quick_split`]
+    /// tell "a round is still in flight, sync and retry" apart from "fully
+    /// split, done" without persisting any migration phase. It reads the
+    /// round's *outputs* rather than its inputs' spend marks, which a
+    /// not-yet-transmitted transaction does not carry. Under the flow's
+    /// sync-between-rounds contract there are no unrelated pending Orchard
+    /// receipts, so this is precise. Were there, treating them as "wait" is
+    /// the safe reading.
+    pub(crate) fn note_split_in_flight(&self, account: zip32::AccountId) -> bool {
+        use pepper_sync::wallet::{KeyIdInterface as _, NoteInterface as _, OutputInterface as _};
+
+        self.wallet_transactions
+            .values()
+            .filter(|transaction| transaction.status().is_pending())
+            .flat_map(|transaction| {
+                pepper_sync::wallet::OrchardNote::transaction_outputs(transaction)
+            })
+            .any(|note| {
+                note.key_id().account_id() == account
+                    && note.note().version() == orchard::note::NoteVersion::V2
+            })
+    }
+
     /// Builds, proves, signs and records one planned note-splitting
-    /// transaction (Orchard→Orchard self-send). Returns its txid. Broadcast
+    /// transaction (Orchard→Orchard self-send). Returns its txid. Transmission
     /// is the caller's step.
     #[allow(clippy::result_large_err)]
-    pub fn build_note_split_transaction(
+    pub(crate) fn build_note_split_transaction(
         &mut self,
         account: zip32::AccountId,
         planned: &NoteSplitTx,
@@ -434,7 +668,7 @@ impl crate::wallet::LightWallet {
         )
     }
 
-    pub(in crate::wallet::migration) fn get_migration_heights(
+    pub(crate) fn get_migration_heights(
         &self,
     ) -> Result<
         Option<(
@@ -597,8 +831,7 @@ impl crate::wallet::LightWallet {
             }
         }
 
-        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params()
-            .map_err(|e| WalletError::MigrationBuild(format!("sapling params: {e}")))?;
+        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
         let build_result = builder
@@ -668,10 +901,10 @@ impl crate::wallet::LightWallet {
 
 #[cfg(test)]
 mod tests {
-    use super::super::params::COIN;
     use super::*;
     use crate::config::ChainType;
     use proptest::prelude::*;
+    use zcash_protocol::value::COIN;
 
     fn params() -> MigrationParams {
         MigrationParams::provisional(ChainType::Mainnet)
@@ -696,6 +929,15 @@ mod tests {
             bundle_actions(BundleVersion::ironwood_v3(), 0, 1) as u64,
             MIN_BUNDLE_ACTIONS
         );
+    }
+
+    /// Economic pin for the residual policy: `sweep_min` may carry any
+    /// safety factor above the ZIP-317 marginal fee, but must never sit
+    /// below it: below that line a selected note could cost more to spend
+    /// than the value it provides.
+    #[test]
+    fn sweep_min_covers_the_marginal_input_cost() {
+        assert!(params().sweep_min >= MARGINAL_FEE);
     }
 
     /// The action-count rule the fee model rests on: an Orchard bundle from
@@ -731,13 +973,13 @@ mod tests {
     fn part_denomination_requires_exact_sizing() {
         let params = params();
         let fee = params.part_fee;
-        assert_eq!(part_denomination(100_000 + fee, &params), Some(100_000));
+        assert_eq!(part_denomination(1_000_000 + fee, &params), Some(1_000_000));
         assert_eq!(
             part_denomination(100 * COIN + fee, &params),
             Some(100 * COIN)
         );
-        assert_eq!(part_denomination(100_000, &params), None); // fee missing
-        assert_eq!(part_denomination(100_000 + fee + 1, &params), None);
+        assert_eq!(part_denomination(1_000_000, &params), None); // fee missing
+        assert_eq!(part_denomination(1_000_000 + fee + 1, &params), None);
         assert_eq!(part_denomination(0, &params), None);
     }
 
@@ -748,7 +990,7 @@ mod tests {
         assert_eq!(hash, plan_hash(&plan.clone()));
 
         let mut altered = plan.clone();
-        altered.stranded += 1;
+        altered.residual += 1;
         assert_ne!(hash, plan_hash(&altered));
     }
 
@@ -768,15 +1010,15 @@ mod tests {
         params: &MigrationParams,
     ) -> MigrationPlan {
         use std::collections::HashMap;
-        let max_notes = params.max_actions_per_split_tx;
+        let max_notes = side_budget(params);
         let plan = plan_migration(notes, post_activation, params);
 
         let mut available: HashMap<u64, i64> = HashMap::new();
         for &note in notes {
             if part_denomination(note, params).is_none() && note <= params.sweep_min {
-                continue; // stranded, never spent
+                continue; // residual, never spent
             }
-            // With empty splitting + empty parts, pooled notes are stranded.
+            // With empty splitting + empty parts, pooled notes are residual.
             if plan.split_rounds.is_empty()
                 && plan.parts.is_empty()
                 && part_denomination(note, params).is_none()
@@ -791,6 +1033,13 @@ mod tests {
                 assert!((2..=max_notes).contains(&tx.inputs.len()) || tx.inputs.len() == 1);
                 assert!(tx.inputs.len() <= max_notes, "too many inputs");
                 assert!(!tx.outputs.is_empty() && tx.outputs.len() <= max_notes);
+                assert!(
+                    tx.inputs.len() + tx.outputs.len() <= params.max_actions_per_split_tx,
+                    "spends plus outputs ({} + {}) exceed the total budget of {}",
+                    tx.inputs.len(),
+                    tx.outputs.len(),
+                    params.max_actions_per_split_tx
+                );
                 let min_fee = note_split_fee(tx.inputs.len(), tx.outputs.len(), post_activation);
                 assert!(tx.fee() >= min_fee, "fee below ZIP-317 conventional");
                 for input in &tx.inputs {
@@ -820,36 +1069,155 @@ mod tests {
         plan
     }
 
+    /// Asserts the selection invariant: no planned transaction spends a note
+    /// worth at most `sweep_min`, whether it is a wallet note or an
+    /// intermediate created by an earlier round.
+    fn assert_planned_inputs_exceed_sweep_min(plan: &MigrationPlan, params: &MigrationParams) {
+        for (round, transactions) in plan.split_rounds.iter().enumerate() {
+            for tx in transactions {
+                for &input in &tx.inputs {
+                    assert!(
+                        input > params.sweep_min,
+                        "round {round} spends a {input}-zatoshi note, \
+                         at or below sweep_min ({})",
+                        params.sweep_min
+                    );
+                }
+            }
+        }
+    }
+
+    /// ZIP 318's preparation shape is a total budget: a transaction's
+    /// spends and outputs together must fit
+    /// [`MigrationParams::max_actions_per_split_tx`]. A pool small enough
+    /// to skip reduction (at most one spend side's worth of notes) that
+    /// funds several denominations used to emit one sizing transaction
+    /// carrying the whole pool beside every target — up to 30 actions
+    /// post-NU6.3. The planner now consolidates the smallest inputs into
+    /// one funding note first, and every planned transaction fits the
+    /// budget (the executes-in-era validator asserts the bound for every
+    /// test in this module).
+    #[test]
+    fn sizing_respects_the_total_action_budget() {
+        let params = params();
+        // Fifteen unquantized ~11-ZEC notes: reduction is skipped, and the
+        // ~165-ZEC total decomposes into several denominations, so the
+        // sizing round mixes many spends with many outputs.
+        let notes = vec![1_100_000_007u64; 15];
+        for post_activation in [false, true] {
+            let plan = assert_plan_executes_in_era(&notes, post_activation, &params);
+            assert!(
+                plan.parts.len() >= 2,
+                "the shape under test needs several targets, got {:?}",
+                plan.parts
+            );
+            // The consolidation prepends its own round, and the sizing
+            // transaction still mixes multiple spends with multiple
+            // outputs — the shape that used to bust the budget.
+            assert!(
+                plan.split_rounds.len() >= 2,
+                "expected consolidation + sizing"
+            );
+            assert!(
+                plan.split_rounds
+                    .iter()
+                    .flatten()
+                    .any(|tx| tx.inputs.len() >= 2 && tx.outputs.len() >= 2),
+                "the plan under test must exercise a mixed spend/output transaction"
+            );
+        }
+    }
+
+    /// The selection boundary is strict: a note worth exactly `sweep_min` is
+    /// residual, one zatoshi more is selected. Fails whenever the planner's
+    /// residual filter admits a note at or below the threshold.
+    #[test]
+    fn notes_at_or_below_sweep_min_are_never_selected() {
+        let params = params();
+        let dust = [1, MARGINAL_FEE, params.sweep_min - 1, params.sweep_min];
+        let mut notes = dust.to_vec();
+        notes.extend([params.sweep_min + 1, 2_000_000, 3_000_000]);
+        for post_activation in [false, true] {
+            let plan = plan_migration(&notes, post_activation, &params);
+            assert_planned_inputs_exceed_sweep_min(&plan, &params);
+            assert_eq!(plan.residual, dust.iter().sum::<u64>());
+            // The note one zatoshi above the boundary is selected.
+            assert!(
+                plan.split_rounds[0]
+                    .iter()
+                    .any(|tx| tx.inputs.contains(&(params.sweep_min + 1)))
+            );
+        }
+    }
+
+    /// Guards the one shape where consolidation could violate the selection
+    /// invariant. Post-activation, a trailing group of exactly two notes,
+    /// each at most 12_500 zatoshis, would merge to `sum - 15_000` (a pair
+    /// of 12_000s to 9_000): at or below `sweep_min`. The sizing round
+    /// would then spend a note the residual policy refuses, and a replan
+    /// after an interruption would leave it as residual, abandoning the pair's value
+    /// after fees were paid to create it. The planner instead carries such
+    /// a group into the next pool unmerged. Every other shape merges clear
+    /// of the threshold: a group of three yields at least 10_003, and a
+    /// pre-activation pair at least 10_002, because spends and outputs
+    /// share actions there.
+    #[test]
+    fn consolidation_never_creates_a_sub_sweep_min_intermediate() {
+        let params = params();
+        // Twelve full consolidation groups (enough to fund a 0.01-ZEC part
+        // after the merge fees of the 16-action shape) plus a trailing pair
+        // that would merge to 9_000 zatoshis, below the sweep minimum.
+        let notes = vec![12_000u64; 12 * side_budget(&params) + 2];
+        for post_activation in [false, true] {
+            let plan = assert_plan_executes_in_era(&notes, post_activation, &params);
+            assert_planned_inputs_exceed_sweep_min(&plan, &params);
+        }
+
+        // Post-activation the pair is carried unmerged: the consolidation round
+        // merges only the full groups, and the sizing round spends the pair
+        // directly.
+        let plan = plan_migration(&notes, true, &params);
+        assert_eq!(plan.split_rounds[0].len(), 12);
+        assert_eq!(
+            plan.split_rounds[1][0]
+                .inputs
+                .iter()
+                .filter(|&&value| value == 12_000)
+                .count(),
+            2
+        );
+    }
+
     #[test]
     fn already_split_wallet_skips_splitting() {
         // Notes already sized denomination + fee: no splitting needed.
         let params = params();
         let fee = params.part_fee;
-        let notes = vec![COIN + fee, COIN / 10 + fee, 100_000 + fee];
+        let notes = vec![COIN + fee, COIN / 10 + fee, 1_000_000 + fee];
         let plan = assert_plan_executes(&notes, &params);
         assert!(plan.is_split());
-        assert_eq!(plan.parts, vec![COIN, COIN / 10, 100_000]);
-        assert_eq!(plan.stranded, 0);
+        assert_eq!(plan.parts, vec![COIN, COIN / 10, 1_000_000]);
+        assert_eq!(plan.residual, 0);
     }
 
     #[test]
-    fn dust_only_wallet_strands_everything() {
+    fn dust_only_wallet_leaves_everything_residual() {
         let params = params();
         let notes = vec![5_000, params.sweep_min, 1];
         let plan = assert_plan_executes(&notes, &params);
         assert!(plan.split_rounds.is_empty());
         assert!(plan.parts.is_empty());
-        assert_eq!(plan.stranded, 5_000 + params.sweep_min + 1);
+        assert_eq!(plan.residual, 5_000 + params.sweep_min + 1);
     }
 
     #[test]
-    fn sub_denomination_pool_is_stranded_without_splitting() {
+    fn sub_denomination_pool_is_residual_without_splitting() {
         // Two sweepable notes that cannot fund even the smallest target.
         let notes = vec![20_000, 30_000];
         let plan = assert_plan_executes(&notes, &params());
         assert!(plan.split_rounds.is_empty());
         assert!(plan.parts.is_empty());
-        assert_eq!(plan.stranded, 50_000);
+        assert_eq!(plan.residual, 50_000);
     }
 
     #[test]
@@ -866,23 +1234,23 @@ mod tests {
         let denomination_sum: u64 = plan.parts.iter().sum();
         assert_eq!(
             123_456_789,
-            denomination_sum + plan.parts_fee(&params) + plan.split_fee() + plan.stranded
+            denomination_sum + plan.parts_fee(&params) + plan.split_fee() + plan.residual
         );
     }
 
     #[test]
-    fn fragmented_wallet_reduces_in_rounds() {
-        // 500 notes of 0.0015 ZEC: reduction (500 → 16 at a budget of 32)
+    fn fragmented_wallet_consolidates_in_rounds() {
+        // 500 notes of 0.0015 ZEC: consolidation (500 → 16 at a budget of 32)
         // then sizing.
         let params = params();
         let notes = vec![150_000u64; 500];
         let plan = assert_plan_executes(&notes, &params);
         assert!(
             plan.split_rounds.len() >= 2,
-            "expected reduction + sizing rounds"
+            "expected consolidation + sizing rounds"
         );
-        // First round: one merge per full-or-partial chunk of the budget.
-        let max_notes = params.max_actions_per_split_tx;
+        // First round: one merge per full-or-partial chunk of the spend budget.
+        let max_notes = side_budget(&params);
         assert_eq!(plan.split_rounds[0].len(), 500usize.div_ceil(max_notes));
         for tx in &plan.split_rounds[0] {
             assert!(tx.inputs.len() <= max_notes);
@@ -893,24 +1261,24 @@ mod tests {
 
     #[test]
     fn whale_balance_splits_through_intermediates() {
-        // 5000 ZEC in one note: ~50 denominations of 100 ZEC.
+        // 500 000 ZEC in one note: ~50 denominations of 10 000 ZEC.
         let params = params();
-        let notes = vec![5_000 * COIN];
+        let notes = vec![500_000 * COIN];
         let plan = assert_plan_executes(&notes, &params);
         assert!(plan.parts.len() >= 49);
         for round in &plan.split_rounds {
             for tx in round {
-                assert!(tx.outputs.len() <= params.max_actions_per_split_tx);
+                assert!(tx.outputs.len() <= side_budget(&params));
             }
         }
     }
 
     #[test]
     fn very_large_balance_recurses_splitting() {
-        // 2,000,000 ZEC: ~20,000 targets of 100 ZEC → recursive splitting
+        // 12,000,000 ZEC: ~1,200 targets of 10 000 ZEC → recursive splitting
         // through intermediate levels, within the budget throughout.
         let params = params();
-        let notes = vec![2_000_000 * COIN];
+        let notes = vec![12_000_000 * COIN];
         let plan = assert_plan_executes(&notes, &params);
         assert!(plan.parts.len() > params.max_actions_per_split_tx);
         assert!(plan.split_rounds.len() >= 3);
@@ -942,11 +1310,11 @@ mod tests {
             let denomination_sum: u64 = plan.parts.iter().sum();
             prop_assert_eq!(
                 total,
-                denomination_sum + plan.parts_fee(&params) + plan.split_fee() + plan.stranded
+                denomination_sum + plan.parts_fee(&params) + plan.split_fee() + plan.residual
             );
         }
 
-        // Small-note-heavy wallets (the fragmentation case the reduction
+        // Small-note-heavy wallets (the fragmentation case the consolidation
         // rounds exist for).
         #[test]
         fn fragmented_plans_execute(
@@ -958,9 +1326,9 @@ mod tests {
             let denomination_sum: u64 = plan.parts.iter().sum();
             prop_assert_eq!(
                 total,
-                denomination_sum + plan.parts_fee(&params) + plan.split_fee() + plan.stranded
+                denomination_sum + plan.parts_fee(&params) + plan.split_fee() + plan.residual
             );
-            // log_K bound: 400 notes at a budget of 32 → one reduction round
+            // log_K bound: 400 notes at a budget of 32 → one consolidation round
             // plus sizing.
             prop_assert!(plan.split_rounds.len() <= 4);
         }

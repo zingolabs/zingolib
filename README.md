@@ -47,26 +47,28 @@ cargo build --release --package zingo-cli
 
 This will launch the interactive prompt. Type `help` to get a list of commands.
 
-## Testing
+## Reproducible builds via StageX
 
-Use `makers container-test` or `cargo make container-test` to run the same default nextest shape used by PR CI inside a reproducible local container image:
+A bootstrapped and reproducible build pipeline using StageX is included in this repo.
+If you meet all the compatibility requirements, to create `zingo-cli`, you can run
+`make` in the root directory. The resulting binary will be found in the `/build/`
+directory, along with an OCI image in the form of a tar ball.
 
-```
-makers container-test
-```
+This image can be loaded into docker with the `make load` convenience script, and
+contains the `zingo-cli` binary.
 
-The task builds the image if needed, symlinks the image-provided `zainod` and `zebrad` into `test_binaries/bins`, then runs the workspace with the `ci` nextest profile and zero retries. The image tag is derived from `.env.testing-artifacts`, `rust-toolchain.toml`, and `docker-ci`.
+To run interactively with a custom server:
+`docker run -it zingo-cli:latest ./zingo-cli --server https://zzz.stripest.online:443`
 
-Extra nextest flags are forwarded after the task name, so every nextest idiom works unchanged:
+`zingo-cli` runs with several defaults. Importantly, these include a data-dir
+with wallet file, which are created if they don't already exist:
+a `wallets` dir in location where executable is run, containing the wallet
+(`zingo-wallet.dat`) file. Other defaults inlcude setting the chain to mainnet,
+using a default lightwallet server, using clearnet for price fetching, and not
+executing commands prior to a complete chain sync.
 
-```
-makers container-test -p zingo-memo
-makers container-test -E 'package(zingolib) & not test(slow)'
-makers container-test --all-features
-makers rerun
-```
-
-Use `makers local-run` to run the same nextest command on the host.
+Any `docker run` will initialize a wallet if there was none in the container, and
+by default prints info and then help if no arguments are passed.
 
 ## Notes:
 * If you want to run your own server, please see [zaino](https://github.com/zingolabs/zaino), and then run `./zingo-cli --server <your server's URI>`

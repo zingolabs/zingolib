@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- `sync::sync_status`: a session with no scannable blocks or outputs no longer
+  reports a finished sync. A stale initial sync state, whose previously scanned
+  counts stand at or above the wallet's whole span, saturates the session
+  denominator to zero. The status now reports the wallet's total progress for
+  that session, where it previously divided zero by zero and coerced the
+  resulting `NaN` to one hundred percent. The pool totals and the block span are
+  saturated likewise, so a rewound tree bound can no longer underflow them.
+- BREAKING: a wrapper error variant renders only its own layer. The
+  `Display` texts of the `error::SyncError`, `error::MempoolError`, and
+  `error::ScanError` wrapper variants no longer embed the wrapped source's
+  text, and `ScanError::EncodingError` renders transparently. A consumer
+  recovers the full failure story by walking the `source()` chain.
 - `wallet::WalletTransaction::update_status`: added `fail_confirmed` bool for protecting against confirmed txs being
     set to failed in cases other than re-org truncation.
 

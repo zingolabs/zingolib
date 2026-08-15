@@ -18,7 +18,7 @@ use crate::{
     client::FetchRequest,
     error::{ScanError, ServerError},
     sync::ScanPriority,
-    utils::{get_compact_block_height, get_compact_tx_txid},
+    utils::{block, transaction},
     wallet::{NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
 };
@@ -125,7 +125,7 @@ pub(crate) async fn scan<P>(
     consensus_parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_task: ScanTask,
-    max_batch_outputs: usize,
+    max_outputs: usize,
 ) -> Result<ScanResults, ScanError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -159,7 +159,7 @@ where
             for transaction in &block.vtx {
                 collect_nullifiers(
                     &mut nullifiers,
-                    get_compact_block_height(block),
+                    block::get_compact_height(block),
                     transaction,
                 )?;
             }
@@ -195,7 +195,7 @@ where
             &consensus_parameters_clone,
             &ufvks_clone,
             initial_scan_data,
-            max_batch_outputs / 8,
+            max_outputs / 8,
         )
     })
     .await
@@ -239,17 +239,17 @@ where
                 witness::build_located_trees(
                     sapling_initial_position,
                     sapling_leaves_and_retentions,
-                    max_batch_outputs / 8,
+                    max_outputs / 8,
                 ),
                 witness::build_located_trees(
                     orchard_initial_position,
                     orchard_leaves_and_retentions,
-                    max_batch_outputs / 8,
+                    max_outputs / 8,
                 ),
                 witness::build_located_trees(
                     ironwood_initial_position,
                     ironwood_leaves_and_retentions,
-                    max_batch_outputs / 8,
+                    max_outputs / 8,
                 ),
             )
         })
@@ -284,7 +284,7 @@ fn collect_nullifiers(
                 nullifier,
                 ScanTarget {
                     block_height,
-                    txid: get_compact_tx_txid(transaction),
+                    txid: transaction::get_compact_txid(transaction),
                     narrow_scan_area: false,
                 },
             );
@@ -308,7 +308,7 @@ fn collect_nullifiers(
                 nullifier,
                 ScanTarget {
                     block_height,
-                    txid: get_compact_tx_txid(transaction),
+                    txid: transaction::get_compact_txid(transaction),
                     narrow_scan_area: false,
                 },
             );
@@ -332,7 +332,7 @@ fn collect_nullifiers(
                 nullifier,
                 ScanTarget {
                     block_height,
-                    txid: get_compact_tx_txid(transaction),
+                    txid: transaction::get_compact_txid(transaction),
                     narrow_scan_area: false,
                 },
             );

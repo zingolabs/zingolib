@@ -19,7 +19,8 @@ mod test {
                 wallet_settings: default_test_wallet_settings(),
             })
             // no .set_indexer_uri() → offline mode
-            .build();
+            .build()
+            .unwrap();
         LightClient::new(config, true).await.unwrap()
     }
 
@@ -37,7 +38,7 @@ mod test {
     #[tokio::test]
     async fn offline_balance_query_works() {
         let lc = create_offline_client().await;
-        // account_balance works offline — it reads cached wallet state.
+        // account_balance works offline: it reads cached wallet state.
         // An unsynced wallet succeeds with zero/None balances; it does NOT return Offline.
         let result = lc.account_balance(zip32::AccountId::ZERO).await;
         assert!(
@@ -89,21 +90,21 @@ mod test {
             Err(LightClientError::Offline)
         ));
 
-        // Proposal must still be present — take it out to verify.
+        // Proposal must still be present. Take it out to verify.
         assert!(
             lc.wallet().write().await.take_proposal().is_some(),
             "proposal must survive an offline send attempt"
         );
     }
 
-    /// Offline signing (ADR 0006): an Indexerless client calculates —
-    /// selects witnesses, proves, and signs — a real transaction from the
+    /// Offline signing (ADR 0006): an Indexerless client calculates (selects
+    /// witnesses, proves, and signs) a real transaction from the
     /// stored proposal over synthetic wallet state, with no Indexer
     /// anywhere. The signed transaction lands in the wallet with
     /// `Calculated` status with its expiry height retargeted to the top
     /// of the wallet's consensus-branch epoch (the longest expiry the
     /// epoch permits, so the stale offline chain view cannot invalidate
-    /// it before transmission; issue #2455), and only the transmission
+    /// it before transmission. Issue #2455), and only the transmission
     /// half demands a connection.
     #[tokio::test]
     async fn offline_calculate_signs_and_transmit_refuses() {
@@ -192,19 +193,21 @@ mod test {
                     birthday: 419200,
                     wallet_settings: default_test_wallet_settings(),
                 })
-                .build();
+                .build()
+                .unwrap();
             let mut lc = LightClient::new(config, true).await.unwrap();
             let addrs = lc.unified_addresses_json().await;
             lc.flush().await.unwrap();
             addrs
         };
 
-        // Reload from file path, offline — no set_indexer_uri().
+        // Reload from file path, offline, with no set_indexer_uri().
         let loaded_addrs = {
             let config = ClientConfig::builder()
                 .set_wallet_dir(dir.path().to_path_buf())
                 .set_wallet_config(WalletConfig::Read)
-                .build();
+                .build()
+                .unwrap();
             let lc = LightClient::new(config, false).await.unwrap();
             assert!(lc.indexer_uri().is_none(), "reload should be offline");
             assert_eq!(
@@ -230,11 +233,12 @@ mod test {
     #[tokio::test]
     async fn file_pointer_missing_file_returns_error() {
         let dir = tempfile::tempdir().unwrap();
-        // No wallet file written — Read should fail with FileError.
+        // No wallet file written, so Read should fail with FileError.
         let config = ClientConfig::builder()
             .set_wallet_dir(dir.path().to_path_buf())
             .set_wallet_config(WalletConfig::Read)
-            .build();
+            .build()
+            .unwrap();
         let result = LightClient::new(config, false).await;
         assert!(
             matches!(result, Err(LightClientError::FileError(_))),

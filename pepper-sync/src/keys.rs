@@ -172,7 +172,7 @@ pub(crate) struct ScanningKeys {
     pub(crate) sapling: HashMap<KeyId, ScanningKey<SaplingIvk, NullifierDerivingKey>>,
     pub(crate) orchard: HashMap<KeyId, ScanningKey<IncomingViewingKey, FullViewingKey>>,
     /// Ironwood scans with the same key material as Orchard, held separately
-    /// so the ironwood batch runner has its own key set.
+    /// so the ironwood decryption batch runner has its own key set.
     pub(crate) ironwood: HashMap<KeyId, ScanningKey<IncomingViewingKey, FullViewingKey>>,
 }
 

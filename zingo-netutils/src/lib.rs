@@ -4,7 +4,7 @@
 //! # Organizing principle
 //!
 //! The [`Indexer`] trait is the sole interface a Zcash wallet or tool needs
-//! to query, sync, and broadcast against a chain indexer. It is
+//! to query, sync, and transmit against a chain indexer. It is
 //! implementation-agnostic: production code uses the provided [`GrpcIndexer`]
 //! (gRPC over tonic), while tests can supply a mock implementor with no
 //! network dependency.
@@ -41,8 +41,30 @@ use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
 
 pub mod crypto;
 pub mod error;
+pub mod indexers;
 
 pub use crypto::ensure_default_crypto_provider;
+
+/// The stdout line prefix the spawnable `nym-proxy` binary uses to announce
+/// its local SOCKS5 address (ADR 0011, consumption model A). Defined here so
+/// the binary that emits it and the wallet supervisor that parses it share one
+/// definition. The full line is `SOCKS5_ADDR=127.0.0.1:<port>`.
+pub const SOCKS5_ADDR_LINE_PREFIX: &str = "SOCKS5_ADDR=";
+
+/// The stdout line prefix the spawnable `nym-proxy` binary uses for live
+/// bootstrap progress, before the address announcement. Defined here so the
+/// binary that emits it and the wallet supervisor that parses it share one
+/// definition. The full line is e.g.
+/// `NYM_STATUS=attempt 4/10: 2 in flight, 2 failed`.
+pub const NYM_STATUS_LINE_PREFIX: &str = "NYM_STATUS=";
+
+/// The stdout line prefix announcing the bound Exit Node identity, emitted
+/// before the address line so the ready snapshot carries it.
+pub const NYM_EXIT_LINE_PREFIX: &str = "NYM_EXIT=";
+
+// The temporal parameters of every crate that can see this one, including
+// the values owned by tests (`time::test`). See the module's registry.
+pub mod time;
 pub use error::*;
 pub use lightwallet_protocol;
 pub use tonic::{Status, Streaming};
@@ -51,6 +73,34 @@ pub use tonic::{Status, Streaming};
 mod globally_public;
 #[cfg(feature = "globally-public-transparent")]
 pub use globally_public::TransparentIndexer;
+
+// Deliberately ungated: the pure core of the nym proxy lifecycle, whose
+// unit tests run in the default build without the nym-sdk stack.
+mod mixnet_connect;
+
+// Deliberately ungated and public: the pure racing planner shared by the
+// mixnet bootstrap here and zingolib's send escalation (ADR 0011).
+pub mod arm_race;
+
+// Deliberately ungated and public: the wallet side names an acquisition's
+// class at compile time even in builds where the nym transport is off.
+pub mod responsiveness;
+
+#[cfg(feature = "nym")]
+mod nym_proxy;
+#[cfg(feature = "nym")]
+pub use nym_proxy::NymProxy;
+
+#[cfg(feature = "nym")]
+pub mod live_indexer_discovery;
+
+#[cfg(feature = "socks5-transmit")]
+mod socks5_transmit;
+#[cfg(feature = "socks5-transmit")]
+pub use socks5_transmit::{
+    ProxyDialFailure, Socks5TransmitError, TunnelFailure, get_lightd_info_via_socks5,
+    send_transaction_via_socks5, transaction_known_via_socks5,
+};
 
 fn client_tls_config() -> ClientTlsConfig {
     // The config built here is consumed by rustls at connect time; make
@@ -236,7 +286,6 @@ pub trait Indexer {
 pub struct GrpcIndexer {
     uri: http::Uri,
     clear_net_client: CompactTxStreamerClient<Channel>,
-    // TODO; add nym_client
 }
 
 impl GrpcIndexer {
@@ -270,7 +319,7 @@ impl GrpcIndexer {
 
     /// As [`Self::new`], but the underlying channel connects on first use
     /// instead of eagerly. Useful when the indexer may not be reachable at
-    /// construction time — including offline tests that never issue an RPC.
+    /// construction time, including offline tests that never issue an RPC.
     pub fn new_lazy(uri: http::Uri) -> Result<Self, GetClientError> {
         let scheme = uri
             .scheme_str()
@@ -310,6 +359,89 @@ impl GrpcIndexer {
     }
 }
 
+/// A lightwalletd `SendResponse` rejection: the server heard the submission
+/// and said no, reported with its complete data (the numeric code and the
+/// message), so the caller decides what to make of it.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("code {code}: {message}")]
+pub struct SendRejection {
+    /// The server's nonzero `error_code`.
+    pub code: i32,
+    /// The server's `error_message`, verbatim.
+    pub message: String,
+}
+
+/// Interpret a lightwalletd `SendResponse`: `error_code` 0 means the
+/// transaction was accepted and `error_message` carries the txid (sometimes
+/// quote-wrapped, which is stripped). Any other code is a rejection carrying
+/// both fields. The single definition shared by the clearnet
+/// [`GrpcIndexer::send_transaction`] and the SOCKS5 transmit path.
+pub(crate) fn parse_send_response(
+    error_code: i32,
+    error_message: String,
+) -> Result<String, SendRejection> {
+    if error_code == 0 {
+        let mut transaction_id = error_message;
+        // The length guard keeps a lone `"` from satisfying both quote
+        // checks with the same byte and panicking the slice below.
+        if transaction_id.starts_with('\"')
+            && transaction_id.ends_with('\"')
+            && transaction_id.len() >= 2
+        {
+            transaction_id = transaction_id[1..transaction_id.len() - 1].to_string();
+        }
+        Ok(transaction_id)
+    } else {
+        Err(SendRejection {
+            code: error_code,
+            message: error_message,
+        })
+    }
+}
+
+#[cfg(test)]
+mod send_response_parsing {
+    use super::*;
+
+    #[test]
+    fn acceptance_unquotes_the_txid() {
+        assert_eq!(
+            parse_send_response(0, "\"deadbeef\"".to_string()),
+            Ok("deadbeef".to_string())
+        );
+    }
+
+    #[test]
+    fn acceptance_passes_a_bare_txid_through() {
+        assert_eq!(
+            parse_send_response(0, "deadbeef".to_string()),
+            Ok("deadbeef".to_string())
+        );
+    }
+
+    #[test]
+    fn rejection_carries_the_code_and_the_server_message() {
+        assert_eq!(
+            parse_send_response(-25, "failed to validate".to_string()),
+            Err(SendRejection {
+                code: -25,
+                message: "failed to validate".to_string()
+            })
+        );
+    }
+
+    /// A one-character `"` message satisfies both `starts_with('"')` and
+    /// `ends_with('"')` (they see the same byte), so unquoting must not
+    /// slice `[1..0]`. Pins the review's finding 4.
+    #[test]
+    fn a_lone_quote_acceptance_does_not_panic() {
+        assert_eq!(
+            parse_send_response(0, "\"".to_string()),
+            Ok("\"".to_string())
+        );
+    }
+}
+
 impl Indexer for GrpcIndexer {
     async fn get_lightd_info(&mut self, timeout: Duration) -> Result<LightdInfo, tonic::Status> {
         let mut request = Request::new(Empty {});
@@ -343,18 +475,10 @@ impl Indexer for GrpcIndexer {
             .send_transaction(request)
             .await?
             .into_inner();
-        if sendresponse.error_code == 0 {
-            let mut transaction_id = sendresponse.error_message;
-            if transaction_id.starts_with('\"') && transaction_id.ends_with('\"') {
-                transaction_id = transaction_id[1..transaction_id.len() - 1].to_string();
-            }
-            Ok(transaction_id)
-        } else {
-            Err(tonic::Status::new(
-                tonic::Code::Unknown,
-                sendresponse.error_message,
-            ))
-        }
+        // The clearnet path keeps its historical error text: the bare server
+        // message, without the code prefix `SendRejection` renders.
+        parse_send_response(sendresponse.error_code, sendresponse.error_message)
+            .map_err(|rejection| tonic::Status::new(tonic::Code::Unknown, rejection.message))
     }
 
     async fn get_tree_state(
@@ -521,8 +645,6 @@ mod tests {
     //! - We explicitly install a rustls crypto provider to avoid
     //!   provider-selection panics in test binaries.
 
-    use std::time::Duration;
-
     use http::{Request, Response};
     use hyper::{
         body::{Bytes, Incoming},
@@ -536,7 +658,7 @@ mod tests {
 
     use tokio_rustls::rustls::RootCertStore;
 
-    const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+    use crate::time::test::LOCAL_TLS_TEST_BOUND;
 
     fn add_test_cert_to_roots(roots: &mut RootCertStore) {
         use tonic::transport::CertificateDer;
@@ -851,7 +973,7 @@ mod tests {
         let response = GrpcIndexer::new(uri)
             .await
             .expect("URI to be valid.")
-            .get_lightd_info(DEFAULT_TIMEOUT)
+            .get_lightd_info(LOCAL_TLS_TEST_BOUND)
             .await
             .expect("to get info");
         assert!(
@@ -887,7 +1009,7 @@ mod tests {
         let mut indexer = GrpcIndexer::new(uri).await.expect("valid URI");
 
         let tip = indexer
-            .get_latest_block(DEFAULT_TIMEOUT)
+            .get_latest_block(LOCAL_TLS_TEST_BOUND)
             .await
             .expect("get_latest_block");
         let start_height = tip.height;
@@ -907,7 +1029,7 @@ mod tests {
         };
 
         let mut stream = indexer
-            .get_block_range(range, DEFAULT_TIMEOUT)
+            .get_block_range(range, LOCAL_TLS_TEST_BOUND)
             .await
             .expect("get_block_range");
 

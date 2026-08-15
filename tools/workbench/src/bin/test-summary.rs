@@ -1,4 +1,4 @@
-//! `test-summary` — run the three test phases and print a combined summary.
+//! `test-summary` runs the three test phases and prints a combined summary.
 //!
 //! Invoked as `makers hierarchy-test`, which runs
 //! `cargo run --bin test-summary -- <nextest args>`.
@@ -13,7 +13,7 @@
 //! prevented from running.
 //!
 //! Adapted from zaino's `tools/test-runner` `live-summary` binary, which
-//! instead runs all partitions unconditionally; the gating is deliberate
+//! instead runs all partitions unconditionally. The gating is deliberate
 //! divergence.
 
 #![forbid(unsafe_code)]
@@ -35,11 +35,18 @@ fn is_package_selection_arg(arg: &str) -> bool {
 
 /// The phases, in order: the hermetic package tests first, then the live
 /// suites from fastest to slowest. Each entry is (display label, the
-/// `makers test` argv that selects the phase's scope).
+/// `makers test` invocation that selects the phase's TESTS).
+///
+/// Phases select tests with nextest filtersets, never with cargo package
+/// selections. Every phase then shares the front door's `--workspace`
+/// build scope, cargo unifies features identically across phases, and a
+/// hierarchy run after the first recompiles nothing. A `-p` phase scope
+/// re-unifies features per selection and compiles (then, after any source
+/// change, recompiles) a distinct variant of zingolib per phase.
 const PHASES: &[(&str, &str)] = &[
     ("packages", "packages"),
-    ("zingo-cli", "-p zingo-cli"),
-    ("libtonode", "-p libtonode-tests"),
+    ("zingo-cli", "-E 'package(zingo-cli)'"),
+    ("libtonode", "-E 'package(libtonode-tests)'"),
 ];
 
 /// One nextest run's tallies, zero where the summary line was absent.
@@ -181,7 +188,7 @@ fn parse_summary(log: &str) -> Summary {
 ///
 /// nextest prints e.g.:
 ///   FAIL [ 289.674s] (31/40) libtonode-tests::migration bound_note_reservation_and_external_spend_invalidation
-///   TIMEOUT [ 600.017s] (40/40) libtonode-tests::migration unavailable_boundary_tree_state_skips_without_sync
+///   TIMEOUT [ 600.017s] (40/40) libtonode-tests::migration anchorless_part_skips_without_sync
 /// and re-prints the same lines in its end-of-run failure recap, so entries
 /// deduplicate. `TRY n FAIL` retry lines are ignored: only a test's final
 /// status line carries the plain prefix.
@@ -277,6 +284,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     print_row("TOTAL:", &total);
     println!("==============================================================");
+    // Every phase runs the same --workspace build scope filtered to its
+    // own tests (one compiled variant, no per-phase feature re-unification),
+    // so nextest counts the other phases' tests as skipped in each row.
+    println!(
+        "  note: skipped counts include the other phases' tests, since phases share one \
+         --workspace build scope, filtered per phase."
+    );
 
     // Every non-passing test by name, so nobody scrolls a 20-minute log to
     // learn what actually failed.
@@ -298,7 +312,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             // as "all clear".
             if *exit_code != 0 && summary.run == 0 {
                 println!(
-                    "  warning: {phase} produced no nextest summary (build failure?) — see output above."
+                    "  warning: {phase} produced no nextest summary (build failure?). See output above."
                 );
             }
             // Tests counted as run but carrying a status this parser does
@@ -306,7 +320,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             if summary.unaccounted() > 0 {
                 println!(
                     "  warning: {phase}: {} of {} run tests carry a status test-summary does not \
-                     recognize — see the nextest summary line above.",
+                     recognize. See the nextest summary line above.",
                     summary.unaccounted(),
                     summary.run,
                 );
@@ -338,6 +352,23 @@ mod package_selection_guard {
             "--manifest-path=Cargo.toml",
         ] {
             assert!(is_package_selection_arg(arg), "should reject {arg}");
+        }
+    }
+
+    /// Phases must select tests (filtersets), never packages: a package
+    /// selection re-unifies features per phase and compiles a distinct
+    /// zingolib variant per phase, defeating the shared --workspace
+    /// build scope.
+    #[test]
+    fn phase_invocations_select_tests_not_packages() {
+        for (_, invocation) in PHASES {
+            for token in invocation.split_whitespace() {
+                let token = token.trim_matches('\'');
+                assert!(
+                    !is_package_selection_arg(token),
+                    "phase invocation {invocation:?} carries package-selection arg {token:?}"
+                );
+            }
         }
     }
 
@@ -447,13 +478,13 @@ mod parse_failures {
 
     /// Real lines from the 2026-07-15 container run: streamed FAIL and
     /// TIMEOUT statuses, the end-of-run recap re-printing one of them, a
-    /// retry line, and a PASS line — only final non-passing statuses
+    /// retry line, and a PASS line. Only final non-passing statuses
     /// survive, once each.
     #[test]
     fn collects_and_deduplicates_terminal_statuses() {
         let log = "        PASS [  50.205s] ( 1/40) libtonode-tests::concrete mine_to_transparent\n\
              \x20       FAIL [ 289.674s] (31/40) libtonode-tests::migration bound_note_reservation_and_external_spend_invalidation\n\
-             \x20    TIMEOUT [ 600.017s] (40/40) libtonode-tests::migration unavailable_boundary_tree_state_skips_without_sync\n\
+             \x20    TIMEOUT [ 600.017s] (40/40) libtonode-tests::migration anchorless_part_skips_without_sync\n\
              \x20   TRY 2 FAIL [  1.002s] ( 2/40) libtonode-tests::concrete retried_test\n\
              \x20       FAIL [ 289.674s] (31/40) libtonode-tests::migration bound_note_reservation_and_external_spend_invalidation\n";
         assert_eq!(
@@ -466,7 +497,7 @@ mod parse_failures {
                 ),
                 (
                     "TIMEOUT".to_string(),
-                    "libtonode-tests::migration unavailable_boundary_tree_state_skips_without_sync"
+                    "libtonode-tests::migration anchorless_part_skips_without_sync"
                         .to_string()
                 ),
             ]

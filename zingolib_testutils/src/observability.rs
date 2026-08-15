@@ -2,13 +2,13 @@
 //! wallet ↔ zainod ↔ zebrad ↔ harness.
 //!
 //! HYPOTHESIS (this module exists to adjudicate it): a regtest
-//! Validator's chain mutates only via its RPC surface — peer lists are
+//! Validator's chain mutates only via its RPC surface: peer lists are
 //! empty, no internal miner runs, and the Indexer only reads. If that
 //! holds, complete observation of chain *effects* plus a ledger of the
 //! RPC calls this crate *issues* attributes every mutation: a tip event
 //! with no matching ledger entry is foreign RPC traffic, by
-//! elimination. If it does not hold — the chain moves while every tap
-//! and the ledger are silent — the hypothesis is disproven and the
+//! elimination. If it does not hold (the chain moves while every tap
+//! and the ledger are silent) the hypothesis is disproven and the
 //! instrument has caught something bigger than a port collision.
 //!
 //! Two instruments compose the observatory:
@@ -22,14 +22,14 @@
 //!   observer. Since the front-proxy inversion (infrastructure commit
 //!   1a7bb7e), every port accessor on a launched process returns an
 //!   observing front bound *before* the process starts, so a
-//!   connected record sees every client of that process — including
+//!   connected record sees every client of that process, including
 //!   the launch-mine, which adjudicated the hypothesis above: the
 //!   once-invisible mutation is an ordinary RPC, now observed.
 //!   [`LinkTap`], the hand-wired TCP relay the fronts superseded,
 //!   remains available for hops no front covers.
 //!
 //! The state-watch half is still prototyped here rather than in
-//! `zcash_local_net`; its trait vocabulary mirrors the infra crate's
+//! `zcash_local_net`. Its trait vocabulary mirrors the infra crate's
 //! process model so it can migrate there alongside the launch-contract
 //! sentinels (`tests/sentinels.rs`) when the consolidation happens.
 
@@ -55,7 +55,7 @@ pub trait Observable: Send + 'static {
     const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
     /// One poll of the node's state fingerprint. `None` when the node
-    /// is unreachable (launch and teardown windows are normal); the
+    /// is unreachable (launch and teardown windows are normal). The
     /// watch polls through it.
     fn fingerprint(&self) -> impl std::future::Future<Output = Option<String>> + Send;
 }
@@ -71,7 +71,7 @@ pub struct StateEvent {
 
 /// Records every transition of an [`Observable`]'s fingerprint until
 /// dropped. The full timeline lands in the per-test observatory log at
-/// teardown (see `setup_metrics`); assertion messages embed it via
+/// teardown (see `setup_metrics`). Assertion messages embed it via
 /// [`StateWatch::render`].
 pub struct StateWatch<O: Observable> {
     events: Arc<Mutex<Vec<StateEvent>>>,
@@ -171,7 +171,7 @@ impl<O: Observable> Drop for StateWatch<O> {
 
 /// The Validator's externally observable chain state: best height, best
 /// block hash, and connected peer count. A nonzero peer count on
-/// regtest is itself a finding — it names a mutation channel the
+/// regtest is itself a finding: it names a mutation channel the
 /// isolation assumptions say cannot exist.
 pub struct ZebradState {
     /// The Validator's JSON-RPC port (the real one, not a tap: watch
@@ -190,7 +190,7 @@ impl Observable for ZebradState {
 }
 
 /// The Indexer's externally observable state: the tip its chain index
-/// serves. Lag behind [`ZebradState`] is normal (poll-based ingestion);
+/// serves. Lag behind [`ZebradState`] is normal (poll-based ingestion), but
 /// a tip zebrad never had is not.
 pub struct ZainodState {
     /// The Indexer's gRPC URI (the real one, not a tap).
@@ -214,7 +214,7 @@ impl Observable for ZainodState {
 }
 
 /// A wallet's externally observable state: its synced height. Prime one
-/// per wallet under scrutiny; scenario constructors do not prime these
+/// per wallet under scrutiny. Scenario constructors do not prime these
 /// automatically because wallets outlive and outnumber the net handle.
 pub struct WalletState {
     /// Name in reports (e.g. "faucet", "recipient").
@@ -234,12 +234,12 @@ impl Observable for WalletState {
     }
 }
 
-/// Recording observer for an infrastructure front proxy — the
+/// Recording observer for an infrastructure front proxy, the
 /// connected-observer successor to hand-wired [`LinkTap`]s. Since the
 /// front-proxy inversion (infrastructure commit 1a7bb7e), every port
 /// accessor on a launched process returns an observing front, so a
 /// connected `FrontRecord` receives every chunk from every client of
-/// that process — including traffic this crate never issues, such as
+/// that process, including traffic this crate never issues, such as
 /// the launch-mine and the Indexer's own validator connection, which
 /// no hand-wired tap could reach.
 pub struct FrontRecord {
@@ -314,7 +314,7 @@ pub struct TapEvent {
 }
 
 /// An interposable TCP relay recording all traffic on one hop. Clients
-/// dial [`LinkTap::port`]; the tap forwards to the upstream port and
+/// dial [`LinkTap::port`]. The tap forwards to the upstream port and
 /// records every chunk in both directions. The full record lands in
 /// the per-test observatory log at teardown (see `setup_metrics`).
 pub struct LinkTap {
@@ -326,7 +326,7 @@ pub struct LinkTap {
 
 impl LinkTap {
     /// Open a tap in front of `127.0.0.1:upstream_port`. Binding to
-    /// port 0 makes the OS pick a genuinely unused port — no
+    /// port 0 makes the OS pick a genuinely unused port, with no
     /// check-then-bind race.
     pub async fn open(label: &'static str, upstream_port: u16) -> Self {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
@@ -467,10 +467,7 @@ async fn relay(
     direction: &'static str,
 ) {
     let mut buffer = vec![0u8; 16 * 1024];
-    loop {
-        let Ok(n) = from.read(&mut buffer).await else {
-            break;
-        };
+    while let Ok(n) = from.read(&mut buffer).await {
         if n == 0 {
             break;
         }

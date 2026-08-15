@@ -1,8 +1,9 @@
 use std::cmp;
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
+use std::sync::Arc;
 
-use tokio::sync::mpsc;
+use tokio::sync::{RwLock, mpsc};
 
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::{self, BlockHeight};
@@ -24,7 +25,7 @@ use super::MAX_REORG_ALLOWANCE;
 /// `last_known_chain_height` should be the value before updating to latest chain height.
 pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
     consensus_parameters: &impl consensus::Parameters,
-    wallet: &mut W,
+    wallet: Arc<RwLock<W>>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     last_known_chain_height: BlockHeight,
@@ -36,8 +37,11 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
     }
 
     let wallet_addresses = wallet
-        .get_transparent_addresses_mut()
-        .map_err(SyncError::WalletError)?;
+        .read()
+        .await
+        .get_transparent_addresses()
+        .map_err(SyncError::WalletError)?
+        .clone();
     let mut scan_targets: BTreeSet<ScanTarget> = BTreeSet::new();
     let sapling_activation_height = consensus_parameters
         .activation_height(consensus::NetworkUpgrade::Sapling)
@@ -106,23 +110,20 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
                 // start with the first address index previously unused by the wallet
                 let mut address_index = if let Some(id) = wallet_addresses
                     .keys()
-                    .filter(|id| id.account_id() == *account_id && id.scope() == *scope)
-                    .next_back()
+                    .rfind(|id| id.account_id() == *account_id && id.scope() == *scope)
                 {
-                    id.address_index().index() + 1
+                    id.address_index().next()
                 } else {
-                    0
-                };
+                    Some(NonHardenedChildIndex::ZERO)
+                }
+                .ok_or_else(|| {
+                    SyncError::TransparentAddressDerivationError(bip32::Error::ChildNumber)
+                })?;
                 let mut unused_address_count: usize = 0;
                 let mut addresses: Vec<(TransparentAddressId, String)> = Vec::new();
 
                 while unused_address_count < config.gap_limit as usize {
-                    let address_id = TransparentAddressId::new(
-                        *account_id,
-                        *scope,
-                        NonHardenedChildIndex::from_index(address_index)
-                            .expect("all non-hardened addresses in use!"),
-                    );
+                    let address_id = TransparentAddressId::new(*account_id, *scope, address_index);
                     let address = keys::transparent::derive_address(
                         consensus_parameters,
                         account_pubkey,
@@ -152,23 +153,33 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
                         unused_address_count = 0;
                     }
 
-                    address_index += 1;
+                    address_index = address_index.next().ok_or_else(|| {
+                        SyncError::TransparentAddressDerivationError(bip32::Error::ChildNumber)
+                    })?;
                 }
 
                 addresses.truncate(addresses.len() - config.gap_limit as usize);
+
+                let mut wallet_guard = wallet.write().await;
+                let wallet_addresses_mut = wallet_guard
+                    .get_transparent_addresses_mut()
+                    .map_err(SyncError::WalletError)?;
                 for (id, address) in addresses {
-                    wallet_addresses.insert(id, address);
+                    wallet_addresses_mut.insert(id, address);
                 }
             }
         }
     }
 
-    wallet
+    let mut wallet_guard = wallet.write().await;
+    wallet_guard
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?
         .scan_targets
         .append(&mut scan_targets);
-    wallet.set_save_flag().map_err(SyncError::WalletError)?;
+    wallet_guard
+        .set_save_flag()
+        .map_err(SyncError::WalletError)?;
 
     Ok(())
 }

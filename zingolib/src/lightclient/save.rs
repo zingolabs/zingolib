@@ -8,6 +8,15 @@ use std::{borrow::BorrowMut as _, fs::remove_file, sync::atomic};
 use super::LightClient;
 use crate::data::PollReport;
 
+/// The outcome of a save-task shutdown request, distinguishing a stopped task from an absent one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveShutdown {
+    /// A running save task was stopped after its final save completed.
+    ShutDown,
+    /// No save task was running.
+    NotRunning,
+}
+
 /// Writes `bytes` to file at `wallet_path` using a blocking thread.
 ///
 /// The write is atomic: bytes go to a `.tmp` sibling file first, then renamed into place.
@@ -63,8 +72,10 @@ impl LightClient {
         let save_handle = tokio::spawn(async move {
             loop {
                 interval.tick().await;
-                if let Some(wallet_bytes) = wallet.write().await.save()? {
+                let mut wallet_guard = wallet.write().await;
+                if let Some(wallet_bytes) = wallet_guard.save()? {
                     write_to_path(&wallet_path, &wallet_bytes).await?;
+                    wallet_guard.save_required = false;
                 }
                 if !save_active.load(atomic::Ordering::Acquire) {
                     return Ok(());
@@ -114,12 +125,14 @@ impl LightClient {
         }
     }
 
-    pub async fn shutdown_save_task(&mut self) -> std::io::Result<()> {
+    /// Stops the save task after its in-flight save completes, reporting whether a task was running at all.
+    pub async fn shutdown_save_task(&mut self) -> std::io::Result<SaveShutdown> {
         self.save_active.store(false, atomic::Ordering::Release);
         if let Some(save_handle) = self.save_handle.take() {
-            save_handle.await.expect("task panicked")
+            save_handle.await.expect("task panicked")?;
+            Ok(SaveShutdown::ShutDown)
         } else {
-            Ok(())
+            Ok(SaveShutdown::NotRunning)
         }
     }
 

@@ -94,6 +94,48 @@ where
     located_tree_data
 }
 
+/// The number of subtree roots the shard store currently holds.
+pub(crate) fn stored_subtree_root_count<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    shard_tree: &shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
+) -> usize
+where
+    S: ShardStore<
+            H: incrementalmerkletree::Hashable + Clone + PartialEq,
+            CheckpointId: Clone + Ord + std::fmt::Debug,
+            Error = std::convert::Infallible,
+        >,
+{
+    shard_tree
+        .store()
+        .get_shard_roots()
+        .expect("infallible")
+        .len()
+}
+
+/// Returns the index to resume subtree-root fetching from for `shard_tree`:
+/// its stored-root count, less one when its newest stored root is bare
+pub(crate) fn subtree_fetch_start_index<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    shard_tree: &shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
+) -> u32
+where
+    S: ShardStore<
+            H: incrementalmerkletree::Hashable + Clone + PartialEq,
+            CheckpointId: Clone + Ord + std::fmt::Debug,
+            Error = std::convert::Infallible,
+        >,
+{
+    let roots = shard_tree.store().get_shard_roots().expect("infallible");
+    let Some(newest) = roots.last() else {
+        return 0;
+    };
+    let bare = shard_tree
+        .store()
+        .get_shard(*newest)
+        .expect("infallible")
+        .is_some_and(|shard| shard.root().is_leaf());
+    (roots.len() - usize::from(bare)) as u32
+}
+
 pub(crate) fn add_subtree_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     subtree_root_start_index: usize,
     subtree_roots: Vec<SubtreeRoot>,

@@ -7,9 +7,13 @@ use zcash_protocol::{PoolType, ShieldedPool};
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
 
-use crate::config::{
-    ChainType, ClientConfig, DEFAULT_INDEXER_URI, DEFAULT_INDEXER_URI_TESTNET, WalletConfig,
-};
+use crate::config::{ChainType, ClientConfig, WalletConfig};
+
+/// The mainnet indexer these example wallets pin explicitly.
+const MAINNET_INDEXER: &str = "https://zec.rocks:443";
+
+/// The testnet indexer these example wallets pin explicitly.
+const TESTNET_INDEXER: &str = "https://testnet.zec.rocks:443";
 use crate::lightclient::LightClient;
 use crate::testutils::paths::get_cargo_manifest_dir;
 
@@ -189,8 +193,7 @@ impl NetworkSeedVersion {
         let config = match self {
             NetworkSeedVersion::Regtest(_) => {
                 // Probably should be undefined. For the purpose of these tests, I hope it doesnt matter.
-                let indexer_uri = DEFAULT_INDEXER_URI.parse::<Uri>().unwrap();
-
+                let indexer_uri = MAINNET_INDEXER.parse::<Uri>().unwrap();
                 ClientConfig::builder()
                     .set_indexer_uri(indexer_uri)
                     .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
@@ -204,9 +207,10 @@ impl NetworkSeedVersion {
                     .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
                     .set_wallet_config(WalletConfig::Read)
                     .build()
+                    .unwrap()
             }
             NetworkSeedVersion::Testnet(_) => ClientConfig::builder()
-                .set_indexer_uri(DEFAULT_INDEXER_URI_TESTNET.parse::<Uri>().unwrap())
+                .set_indexer_uri(TESTNET_INDEXER.parse::<Uri>().unwrap())
                 .set_chain_type(ChainType::Testnet)
                 .set_wallet_name(
                     self.example_wallet_path()
@@ -217,9 +221,10 @@ impl NetworkSeedVersion {
                 )
                 .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
                 .set_wallet_config(WalletConfig::Read)
-                .build(),
+                .build()
+                .unwrap(),
             NetworkSeedVersion::Mainnet(_) => ClientConfig::builder()
-                .set_indexer_uri(DEFAULT_INDEXER_URI.parse::<Uri>().unwrap())
+                .set_indexer_uri(MAINNET_INDEXER.parse::<Uri>().unwrap())
                 .set_chain_type(ChainType::Mainnet)
                 .set_wallet_name(
                     self.example_wallet_path()
@@ -230,7 +235,8 @@ impl NetworkSeedVersion {
                 )
                 .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
                 .set_wallet_config(WalletConfig::Read)
-                .build(),
+                .build()
+                .unwrap(),
         };
 
         LightClient::new(config, false).await.unwrap()

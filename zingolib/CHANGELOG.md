@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- A spawned `nym-proxy` that dies before speaking its stdout protocol now
+  latches a typed `proxy-launch` death detail (new `NetOpStage::ProxyLaunch`)
+  naming the binary, the launch arguments, and the child's stderr tail, so a
+  version-skewed older binary is diagnosed instead of reported as a bare
+  death.
 - `lightclient::LightClient::from_bytes` constructor — creates a `LightClient` by
   deserializing wallet bytes from memory via `std::io::Cursor`, without reading any file.
   Intended for mobile platforms (iOS/Android) where the native layer owns all file I/O
@@ -17,10 +22,304 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   construction path that was lost when `create_from_wallet` and `WalletBase` were removed
   in 5.0.0; the new path uses the `WalletConfig` enum and the existing
   `LightWallet::read` deserializer, so consumers don't need a `Read` variant from a path.
+- ZIP 318 Orchard to Ironwood migration, in `lightclient::migrate`:
+  - Immediate path: `plan_immediate_migration`, `quick_immediate_migration`.
+  - Note splitting, stateless and one round per call: `plan_note_split`, `quick_split`.
+  - Scheduled path: `plan_ironwood_migration`, `start_ironwood_migration`,
+    `execute_due_parts`, `auto_transmit_if_due`, `reconcile_migration`,
+    `catch_up_migration`, `reschedule_parts`, `cancel_ironwood_migration`.
+  - Reporting: `migration_status`, `window_timeline`, and the
+    `split_progress_handle` / `batch_progress_handle` progress handles.
+- `wallet::migration`: plans, parts, denominations, buckets, schedule, persisted state.
+  - A Part carries two independent buckets: `bucket_index`, the window it is
+    transmitted in, and `anchor_bucket`, the lower bucket whose boundary it proves
+    against. `schedule::AnchorFloor` resolves the two floors a candidate anchor
+    must clear (strictly above the NU6.3 activation bucket; at or above the
+    boundary covering the Part's own bound note), and `draw_anchor_bucket`
+    reject-samples an age from `draw_anchor_age` against them.
+  - The anchor age is drawn per Part, `Geometric(1/2)` capped at
+    `schedule::ANCHOR_AGE_CAP`, and is never zero, so a Part never proves against
+    the boundary of the window it is still inside (the ZIP 318 anchor-age draw;
+    ADR 0018). The builder's target height, and so the consensus branch the Part
+    commits to, comes from the transmission window instead.
+  - Consequence for consumers: a wallet that schedules immediately after note
+    splitting waits one extra window (~3h at `M` = 144) before its first Batch is
+    due, because a fresh note floors the anchor at the next boundary and a legal
+    window sits a bucket above its anchor. A wallet whose notes confirmed at least
+    one bucket earlier has its first Batch due the moment it is scheduled. Read the
+    wait from `MigrationStatus::upcoming_windows`, whose `TransmissionWindow`s carry
+    `window_opens_unix_time`, rather than assuming a Batch is immediately sendable.
+  - The migration section of the wallet file carries its own version, independent
+    of the wallet format version, and ships at 4.
+- `nym` module: Nym mixnet transport, behind the new off-by-default `nym` feature.
+  Migration-part transmissions route by Mixnet Mode and never at the sync host.
+- `nym-diary` feature: per-indexer diary, a per-session runtime opt-in, capped and sanitized.
+- Ironwood pool in summaries: `ironwood_notes`, `outgoing_ironwood_notes`,
+  `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- BREAKING: `lightclient::LightClient::switch_on_mixnet_for_tests` takes a
+  `std::net::SocketAddr` instead of a `&str`. The helper used to parse the
+  text and abort the process on a placeholder, which killed an external
+  harness. The contract is now checked at compile time. A caller passes a
+  parsed address, so `"127.0.0.1:1"` becomes `"127.0.0.1:1".parse().unwrap()`
+  or an address constant of its own.
+- The indexer diary tolerates a corrupt exit column per column. A stored row
+  whose exit column no longer names an Exit Node now loads with every other
+  field intact and no exit, where it was previously dropped whole.
+- BREAKING: `lightclient::LightClient::shutdown_save_task` returns
+  `std::io::Result<SaveShutdown>` instead of `std::io::Result<()>`, where the
+  new `lightclient::SaveShutdown` enum distinguishes a stopped task
+  (`ShutDown`) from an absent one (`NotRunning`), so callers can report a
+  shutdown request against a never-launched saver accurately.
+- BREAKING: `lightclient::select::ServerSelectionError` gains the
+  `ExitOutsideClutch` variant, which carries the exits the ready transport
+  reported. The bind refusal previously reached callers wrapped in
+  `TransportAcquisition`, whose message names a Clutch that could not be
+  drawn, and an exhaustive match over the enum needs the new arm.
+- BREAKING: `lightclient::LightClient::attach_mixnet` now refuses an empty
+  exit report. `mixnet::MixnetProxyError` gains the `NoExits` variant, which
+  the attach returns when the host names no bound Exit Node, and an
+  exhaustive match over the enum needs the new arm. A host that attaches
+  must name the Exit Node its proxy bound, so Ready means the address and a
+  bound exit at every door.
+- The readiness gate now bounds its wait for the transport's first Exit Node
+  announcement with the new `zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE`,
+  which runs from the moment the address arrives. A proxy that latches ready
+  and never announces a usable exit refuses within the grace instead of
+  holding the go-online moment for the whole `NYM_LIFECYCLE_TIMEOUT`. The
+  refusal is the existing `NotReady` variant, carrying the grace as the
+  budget it exceeded.
+- BREAKING: `mixnet::acquire::TransportError` gains the `ExitOutsideClutch`
+  variant. A transport that reports ready without announcing an exit from
+  the drawn Clutch now refuses with this variant instead of panicking, and
+  an exhaustive match over the enum needs the new arm.
+- BREAKING: a refused Server-Selection Sweep names its transport failure by
+  type. `lightclient::select::ServerSelectionError::TransportUnready(String)`
+  is replaced by three variants: `TransportDied`, which carries the death
+  report's typed `zingo_net_diag::NetOpFailure` as a `source()` link;
+  `TransportTimeout`, which carries the bootstrap budget that elapsed; and
+  `TransportStatusClosed`, for a status channel that closed before
+  readiness. A caller now distinguishes a handshake-stage death from a
+  bootstrap timeout by matching, never by parsing prose.
+- BREAKING: a failure detail lives in exactly one chain link. The
+  wrapper variants of `LightClientError` and
+  `PriceError::TransportAcquisition` stop embedding their sources' text
+  and carry them as `source()` links (the pure `{0}` wrappers become
+  transparent), because every consumer walks the chain;
+  `TransportError::HostRefused` and the wrapper variants of
+  `lightclient::error::SendError` and `wallet::error::PriceError` follow
+  the same rule.
+  `LightClientError::NoEligibleCorrespondent` now carries the typed
+  `correspondent::NoEligibleCorrespondents` union — that union and
+  `correspondent::Operator` are public — so the empty-pool and
+  all-excluded stories reach consumers distinctly. The mixnet refusals
+  prescribe `network on` / `network off`, the commands that exist.
+- BREAKING: the `zingolib::nym` module is renamed `zingolib::mixnet`,
+  per the seam rule (ratified 2026-08-11): above the local SOCKS5 seam
+  the wallet's transport domain speaks "mixnet", while "Nym" stays the
+  name of the vendor stack below it (the `nym` cargo feature, the
+  `nym-proxy` binary, and the netutils Nym types are unchanged). Every
+  `zingolib::nym::…` import becomes `zingolib::mixnet::…`; no type,
+  function, or variant is renamed.
+- BREAKING: mixnet Exit Node identities travel as the typed
+  `mixnet::ExitNodeId` instead of bare strings — in `MixnetStatus::exits`,
+  `LightClient::attach_mixnet`, `ProvisionStrategy::Attach`,
+  `HostedTransport`, and the `ProxyHost` seam — and the operator key
+  behind Correspondent exclusion is the typed `correspondent::Operator`
+  (String-promotion census of the ADR 0041 arc). Construction is checked:
+  `ExitNodeId::parse` (and `TryFrom<String>`, which deserialization uses)
+  trims the candidate and refuses a blank with the typed
+  `BlankExitNodeId`, so no blank identity can enter the Ready snapshot or
+  the Exit Pool ledger. The serialized `MixnetStatus` wire is a plain
+  string, unchanged; a malformed exit entry on that wire now refuses
+  deserialization as suspicious, because producer and consumer are
+  pinned to one code revision.
+- BREAKING: the `ProxyHost` seam speaks types end-to-end — its
+  `start_transport` takes the `ResponsivenessClass` enum instead of the
+  wire string, and both host methods refuse with the typed
+  `mixnet::acquire::HostRefusal` instead of `String`, which
+  `TransportError::HostRefused` now carries as its source.
+- BREAKING: indexer endpoints are the typed `correspondent::Host` — the
+  Health ledger's key, `MixnetProbe::host`, and the diary's
+  `IndexerAttempt::host`, whose `exit` field is now the typed
+  `mixnet::ExitNodeId`. A Host is lowercased at construction because DNS
+  names compare case-insensitively, and the host-or-whole-URI fallback
+  that three call sites each derived by hand now lives in one
+  constructor. The `mixnet` module is declared in every build with its
+  transport machinery feature-gated item-by-item, so the identity
+  vocabulary is reachable from the always-compiled diary.
+- BREAKING: the SOCKS5 endpoint is `std::net::SocketAddr` everywhere the
+  wallet holds one — `MixnetStatus::socks5_addr`, `HostedTransport`,
+  `MixnetProxy::attach`, `LightClient::mixnet_socks5_addr`, and the probe
+  and sweep parameters. The address is parsed once where it enters: the
+  spawned child's announcement line, `attach_mixnet`'s string parameter,
+  and the typed host report; it renders back to a string only at the
+  netutils dial calls. A spawned child announcing a non-parsing address
+  now stays bootstrapping (refused by the readiness budget) instead of
+  reaching Ready and failing at the route. The serialized `MixnetStatus`
+  wire is unchanged: serde carries the address as the same string, and a
+  malformed address on that wire refuses deserialization as suspicious.
+- BREAKING: the mixnet route names the session slot's tunnel.
+  `MixnetRoute::Mixnet` carries a `mixnet::SlotTunnel` instead of a bare
+  address `String`. The tunnel refuses an address that does not parse as
+  a socket address, stores the parsed `std::net::SocketAddr`, yields it
+  once through `into_addr`, and lends it through `addr`; consumers render
+  the dial string at their own seams. The zero-caller
+  `MixnetRoute::socks5_proxy` accessor is removed.
+- BREAKING: probing Correspondents while Mixnet Mode is deliberately
+  switched off refuses with the new
+  `LightClientError::ProbeRequiresMixnet`, which names the toggle-off,
+  instead of mislabeling the state as `MixnetNotReady::Unattached`.
+- BREAKING: a mobile platform that forbids subprocesses can now supply the mixnet
+  transport. `mixnet::acquire` is public and adds the `ProxyHost` trait, which
+  a host implements to answer a directory query and to start one proxy over
+  a drawn Clutch, together with the `HostedTransport` record it answers
+  with. `LightClient` gains `enable_mixnet_via_host`, the mobile twin of
+  `enable_mixnet`. Both, and `start_mixnet_session`, now return
+  `mixnet::acquire::TransportError` rather than `MixnetProxyError`, because an
+  acquisition can fail before any proxy exists.
+- BREAKING: the attach path carries the mobile platform host's bound Exit Node
+  identities. `LightClient::attach_mixnet` takes an `exits: &[String]`
+  parameter and `mixnet::ProvisionStrategy::Attach` gains an `exits` field;
+  the attached transport's `Ready` publication reports them, so the
+  session's exits-in-use draw is no longer vacuous on the attach path.
+- BREAKING: the transport-acquisition path speaks the typed
+  `mixnet::TransportError` instead of `String`. The enum names the
+  missing acquirer, the discover mode's spawn and exit failures, the
+  unseeded and exhausted Exit Pool, and the transport's bootstrap death
+  (carrying the typed `NetOpFailure` detail), closed status channel, and
+  missed readiness budget, and it wraps `MixnetProxyError`.
+  `PriceError::TransportAcquisition` now carries it in place of `String`.
+- BREAKING: the editorial layer moved from `wallet::summary::data` to
+  `zingolib::perspective` (`ValueTransfer` and its kinds, the finsight
+  rollups, and the `value_transfers` / `messages_containing` / `finsight` /
+  `do_total_*` methods), behind the new `perspective` feature, which is off
+  by default. A consumer that renders value transfers enables the feature
+  and imports the types from `zingolib::perspective`.
+- The `testutils` feature enables `perspective`, so the chain-generics
+  value-transfer fixture is present whenever the test scaffolding is
+  compiled.
+- BREAKING: Health is implemented. `IndexerAttempt` gains a `phase` and an
+  `exit`, so a failure is charged to the party the evidence names rather
+  than to a category that cannot tell a tunnel failure from a server's.
+  Every attempt updates an always-on, in-memory, session-scoped Health,
+  whatever the diary's gates say; the feature-gated diary stays its
+  opt-in export view, and its line format grows two columns while still
+  loading six-column rows. The Correspondent draw consults Health as a
+  binary eligibility filter with a floor, never as a weight, so the draw
+  stays uniform and a partition cannot shrink the anonymity set.
+- BREAKING: the session holds an Exit Pool, the sole issuer of Exit Node
+  Reservations. Every acquisition draws a Clutch from it, recycles the
+  unbound reservations the moment it binds one, and returns the
+  Exclusive Lease when the transport's lifecycle ends, so two transports
+  can never hold one exit. Every discovered node stays eligible for the
+  whole session: population hygiene belongs to the upstream directory,
+  not to an in-wallet statistic. The exclusion lists this replaces are
+  gone. Reservations are owning values that recycle themselves when
+  dropped, so every path — success, failure, or a hedged pull's
+  cancellation — returns what it drew, and a session that cannot draw a
+  ledgered Clutch refuses instead of letting the spawned binary select
+  exits outside the ledger.
+- BREAKING: every pull of a mixnet Transmission binds its own Exclusive
+  exit (ADR 0039). A spawned session's send escalation consumes one
+  Indexer Pool member per pull, acquiring inline past the complement,
+  and tears each transport down when its pull ends, so an exit carries
+  exactly one Correspondent contact. `TransmitRoute::Mixnet` now
+  attests the winning pull's own tunnel rather than a shared one. An
+  attached session shares the slot's tunnel as before. A pooled member
+  whose transport died between take and use makes its pull refuse — and
+  the price run refuse with `TransportError::DiedBeforeUse` — rather than
+  silently degrading onto the slot's shared tunnel and mislabeling the
+  diary's bound exit.
+- BREAKING: the Correspondent Pools land. A spawned session keeps an
+  Indexer Pool (two Exit-Bound transports) and a Price Source
+  Pool (one Shared-exit transport), refilled in the background under
+  `PrioritisePrivacy` and drained on disable. A drain bumps a generation
+  and clears the acquirer, so a refill still in flight when the user
+  disables Mixnet Mode stops its child and recycles its exit rather than
+  admitting a live mixnet process into the drained pool. `update_current_price`
+  on a spawned session consumes the price member — one fresh Shared
+  exit per run, the refill draw excluding the spent exit — instead of
+  riding the slot's shared tunnel; an attached session is unchanged.
+  `PriceError` gains `TransportAcquisition`.
+- BREAKING: `mixnet::correspondents` is absorbed into the new top-level
+  `zingolib::correspondent` module, which compiles without the `nym`
+  feature and adds the `Correspondable` trait — the party a Transmission
+  addresses, implemented by the census `Indexer` and (under `nym`) by
+  `PriceSource`, each yielding an https address and an accountable
+  operator. The draw-eligibility functions stay `nym`-gated.
+- BREAKING: there is no default server. `config::construct_indexer_uri`
+  takes `String` instead of `Option<String>`, and the
+  `DEFAULT_INDEXER_URI` / `DEFAULT_INDEXER_URI_TESTNET` re-exports are
+  removed; an unpinned online session starts Indexerless and the
+  Server-Selection Sweep selects its sync indexer.
+- BREAKING: `LightClient::attach_mixnet` readiness is a data round trip
+  through the mobile-platform-hosted endpoint to a census health indexer, retried
+  once, because a listener that accepts TCP proves nothing about the mixnet
+  carrying data; a data-dead endpoint lands `Died` rather than `Ready`. The
+  loopback dial remains only as the cheap liveness watchdog after readiness.
+- BREAKING: the send escalation is a hedged race (ADR 0040): a further Correspondent
+  is contacted only after `TRANSMISSION_HEDGE_INTERVAL` of silence or a
+  pull's failure, holding at most `RESERVATION_CLUTCH_SIZE` pulls in
+  flight, replacing the serially gated one-two-three rounds. The
+  six-Correspondent cap and the happy path's single-Correspondent
+  discipline are unchanged.
+- `config::ClientConfigBuilder`: `build` method now returns result for improved error handling.
+- `config::construct_lightwalletd_uri`: `server` parameter changed from `Option<String>` to `String`. documentation
+  updated to include options for defaults.
+- BREAKING: the price fetch has no clearnet tier and compiles only with the `nym`
+  feature. Without it `zingo-price` is types-only.
+- BREAKING: `LightClient::enable_mixnet` takes a
+  `R: zingo_netutils::responsiveness::Responsiveness` type parameter that names
+  the acquisition's responsiveness class; `zingolib::nym` re-exports `Critical`,
+  `NonCritical`, and `Responsiveness` for callers.
+- BREAKING: the responsiveness classes are renamed for the tradeoff they
+  declare: `zingolib::nym` re-exports `PrioritiseSpeed` (was `Critical`) and
+  `PrioritisePrivacy` (was `NonCritical`). A class names the acquisition's
+  declared priority, never who waits.
+- BREAKING: the send-path vocabulary of ADRs 0036 and 0037 replaces "broadcast"
+  and "witness" throughout the API. The config key `migration_broadcast_uri` is
+  renamed `migration_transmission_uri` (builder:
+  `set_migration_transmission_uri`). `wallet::migration` re-exports
+  `TransmissionClient` and `PartTransmissionError` (were `BroadcastClient`,
+  `BroadcastError`) and `TransmissionWindow` (was `BroadcastWindow`).
+  `SplitStep::RoundBroadcast` is `SplitStep::RoundTransmitted`.
+  `LightClientError` renames `MigrationBroadcastTargetIsSyncEndpoint` to
+  `MigrationTransmissionTargetIsSyncEndpoint` and `NoEligibleBroadcastIndexer`
+  to `NoEligibleCorrespondent`. `LightClient::probe_broadcast_indexers` is
+  `probe_correspondents`, `broadcast_due_parts` is `transmit_due_parts`, and
+  `auto_broadcast_if_due` is `auto_transmit_if_due`.
+  `TransmitRoute::Mixnet`'s field `witness` is `correspondent`. The nym
+  modules rename: `mixnet::broadcast` to `mixnet::correspondent_rotation` and
+  `mixnet::broadcast_indexers` to `mixnet::correspondents`, with
+  `CORRESPONDENT_INDEXERS` (was `BROADCAST_INDEXERS`). The migration modules
+  `lightclient::migrate::{broadcast_grpc, broadcast_route}` rename to
+  `{transmission_grpc, transmission_route}` with `GrpcTransmissionClient`,
+  `RoutedTransmissionClient`, and `MixnetTransmissionClient`. The persisted
+  part-state grammar (`PartState::Broadcast` and its stored strings) is
+  deliberately unchanged: renaming a persisted token is a wallet-format event.
+- Wallet file format is version 42. Versions 32 to 43 are read, 43 being a burned
+  number carrying the final 42 layout (ADR 0015). An unreadable file falls back to
+  a prefix-only salvage read so `recovery_info` still works.
 
 ### Removed
+- `wallet::LightWallet::update_current_price` - the deprecated lock-holding
+  price fetch. Its only callers were two tests, and the sequential
+  `zingo_price` path it rode is itself removed; production fetches with
+  `LightClient::update_current_price`, which races the sources outside the
+  wallet lock and records the result under a briefly-held one.
+- `wallet::summary::data::TransactionSummary::balance_delta` - the method had no
+  callers and misreported a Zennies-donating self-send: `transaction_kind`
+  exempts the donation address, so the `SendToSelf` arm reported only the fee
+  while the wallet also moves the donation. A future consumer should derive
+  balance deltas after the Zennies exemption moves to the viewmodel projection
+  (#2612).
+- `wallet::summary::data::TransactionSummaries::paid_fees` - its only caller was
+  the `get_fees_paid_by_client` testutils helper, which now sums the fees itself
+  (#2612).
+- `wallet::summary::data::TransactionSummaries::txids` - called only by test
+  code, which now inlines the one-line map (#2612).
 
 ## [5.0.0] - 2026-06-10
 

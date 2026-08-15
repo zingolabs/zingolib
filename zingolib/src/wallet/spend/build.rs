@@ -779,8 +779,7 @@ mod tests {
         wallet: &mut LightWallet,
         proposal: &Proposal,
     ) -> Vec<zcash_primitives::transaction::Transaction> {
-        let (sapling_output, sapling_spend) =
-            crate::wallet::utils::read_sapling_params().expect("params embedded or fetched");
+        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
         let prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
         let materials = wallet

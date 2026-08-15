@@ -2,20 +2,19 @@
 //! environment contracts the suite's machinery assumes.
 //!
 //! These pin behaviors of zebrad and of `zcash_local_net`'s launch
-//! path, not this repository's code — no zls change can fail them, and
+//! path, not this repository's code: no zls change can fail them, and
 //! they only fire when the environment moves (an infrastructure pin
 //! bump, a container-image bump, an activation-height change). They
-//! are therefore feature-gated off the default suite; run them with
+//! are therefore feature-gated off the default suite. Run them with
 //! `--features sentinels` (or the `extra-credit-tests` aggregate)
 //! whenever one of those inputs changes.
 //!
-//! Each test names the claim its failure disproves; the claims and
+//! Each test names the claim its failure disproves. The claims and
 //! their history live in `docs/adr/0003-test-owned-chain-caches.md`
 //! and the Launch block entry of `CONTEXT.md`.
 #![cfg(feature = "sentinels")]
 
 use std::path::PathBuf;
-use std::time::Duration;
 
 use zcash_local_net::MinerPool;
 use zcash_local_net::process::Process;
@@ -45,7 +44,7 @@ async fn launch_bare_transparent_zebrad(chain_cache: Option<PathBuf>) -> Default
 /// mines unbidden afterward. Predictions under H1: a bare launch
 /// returns at exactly height 1, this test's own ledger holds no write
 /// calls, and the tip is byte-stable over an idle window. A rising or
-/// changing tip disproves H1 (something mines on its own); height ≠ 1
+/// changing tip disproves H1 (something mines on its own). Height ≠ 1
 /// at launch-return disproves the launch-mine account itself.
 #[tokio::test]
 async fn launch_mines_exactly_one_block_and_nothing_else_mines() {
@@ -57,7 +56,7 @@ async fn launch_mines_exactly_one_block_and_nothing_else_mines() {
         .expect("freshly launched zebrad must answer");
     assert_eq!(
         height, 1,
-        "launch returned at height {height}, not 1 — the launch-mine account is wrong"
+        "launch returned at height {height}, not 1, so the launch-mine account is wrong"
     );
     let writes: Vec<_> = validator_rpc::ledger_snapshot()
         .iter()
@@ -69,14 +68,14 @@ async fn launch_mines_exactly_one_block_and_nothing_else_mines() {
         "this test issued writes itself, so it cannot attribute block 1: {writes:?}"
     );
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(zingo_netutils::time::test::IDLE_OBSERVATION_WINDOW).await;
     let (idle_height, idle_tip) = validator_rpc::try_get_chain_info(rpc_port)
         .await
         .expect("idle zebrad must still answer");
     assert_eq!(
         (idle_height, &idle_tip),
         (1, &tip),
-        "the chain moved during an idle window with no client attached — \
+        "the chain moved during an idle window with no client attached. \
          H1 disproven: something mines without being asked"
     );
 
@@ -84,7 +83,7 @@ async fn launch_mines_exactly_one_block_and_nothing_else_mines() {
 }
 
 /// H2 falsification attempt: transparent-pool launch blocks are
-/// byte-deterministic — the mechanism behind the warm-run "duplicate"
+/// byte-deterministic, the mechanism behind the warm-run "duplicate"
 /// verdicts, whose inferred deterministic header timestamp is the
 /// least-verified link in the launch-block account. Two launches
 /// seconds apart must produce the same block-1 hash (the hash covers
@@ -104,8 +103,8 @@ async fn transparent_launch_block_is_byte_deterministic() {
 
     assert_eq!(
         first_tip, second_tip,
-        "two transparent launch blocks differ — H2 (byte-determinism) disproven; \
-         the warm-run duplicate verdicts need a different explanation"
+        "two transparent launch blocks differ, so H2 (byte-determinism) is disproven. \
+         The warm-run duplicate verdicts need a different explanation"
     );
 
     first.stop();
@@ -115,13 +114,13 @@ async fn transparent_launch_block_is_byte_deterministic() {
 /// H1 counterfactual: the launch-mine is skipped when the config
 /// carries a chain cache (`zebrad.rs` gates the generate on
 /// `chain_cache.is_none()`), and a state-dir cache of a 1-block chain
-/// holds essentially genesis (blocks within the finalization depth —
+/// holds essentially genesis (blocks within the finalization depth,
 /// zebra's `MAX_BLOCK_REORG_HEIGHT`, mirrored here by
-/// `pepper_sync::sync::MAX_REORG_ALLOWANCE` — live only in memory).
+/// `pepper_sync::sync::MAX_REORG_ALLOWANCE`, live only in memory).
 /// Launching from such a cache therefore removes the hypothesized
-/// cause; H1 predicts the effect disappears too: height 0, sustained.
+/// cause. H1 predicts the effect disappears too: height 0, sustained.
 /// Height 1 immediately would mean short-chain state persists after
-/// all (revising the finalization claim, not H1); height rising during
+/// all (revising the finalization claim, not H1). Height rising during
 /// the idle window would disprove H1 outright.
 #[tokio::test]
 async fn suppressed_launch_generate_leaves_genesis() {
@@ -141,18 +140,18 @@ async fn suppressed_launch_generate_leaves_genesis() {
         .expect("cache-loaded zebrad must answer");
     assert_eq!(
         height, 0,
-        "cause suppressed but chain at height {height} (tip {tip}) — either short-chain \
+        "cause suppressed but chain at height {height} (tip {tip}): either short-chain \
          state persists on disk after all, or something other than the launch generate mines"
     );
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(zingo_netutils::time::test::IDLE_OBSERVATION_WINDOW).await;
     let (idle_height, idle_tip) = validator_rpc::try_get_chain_info(rpc_port)
         .await
         .expect("idle cache-loaded zebrad must still answer");
     assert_eq!(
         (idle_height, &idle_tip),
         (0, &tip),
-        "the chain grew with the launch generate suppressed and no client attached — \
+        "the chain grew with the launch generate suppressed and no client attached. \
          H1 disproven: the launch generate is not the only unprompted mutation"
     );
 

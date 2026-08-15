@@ -4,12 +4,20 @@ members = [
     "pepper-sync",
     "zingo-cli",
     "zingo-memo",
-    "zingo-netutils",
+    "zingo-net-diag",
     "zingo-price",
     "zingo-status",
     "zingolib",
     "zingolib_testutils",
 ]
+# zingo-netutils is intentionally NOT a member: it carries its own [workspace]
+# and Cargo.lock so it can be built standalone with the `nym` feature, whose
+# nym-sdk stack needs `crypto-common ^0.2` — irreconcilable in a shared lock
+# with this workspace's `crypto-common =0.2.0-rc.1` pin (via zcash_primitives
+# 0.29). Members still consume netutils through the `zingo-netutils` path
+# dependency below, resolved in THIS lockfile with `nym` off. See
+# docs/adr/0011-nym-mixnet-transmission.md.
+exclude = ["zingo-netutils"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -17,7 +25,12 @@ resolver = "2"
 pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
 zingo-memo = { path = "zingo-memo" }   # NOTE: for development between releases
 # zingo-memo = "0.1.1"
-zingo-price = { path = "zingo-price" }
+zingo-net-diag = { path = "zingo-net-diag" }
+# default-features = false: the fetch machinery (socks5-fetch) is opt-in;
+# zingolib re-enables it only under its `nym` feature (the mixnet-only
+# price rule). The crate's own default keeps the fetch for standalone
+# builds and tests.
+zingo-price = { path = "zingo-price", default-features = false }
 zingo-status = { path = "zingo-status" } # NOTE: for development between releases
 # zingo-status = "0.2.1"
 zingolib = { path = "zingolib" }
@@ -44,31 +57,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ### Zingo-common
 zingo-netutils = { path = "zingo-netutils", features = ["globally-public-transparent"] }
 zingo_common_components = "0.4.0"
-
-### Netutils
-http-body-util = "0.1.3"
-hyper = "1"
-hyper-rustls = { version = "0.27", default-features = false, features = [
-    "aws-lc-rs",
-    "http1",
-    "tls12",
-    "logging",
-    "native-tokio",
-] }
-hyper-util = "0.1.20"
-# The `rebuild-proto` feature regenerates the bindings from the patched
-# crate's proto files (see the [patch.crates-io] entry), which carry the
-# Ironwood fields the checked-in generated code lacks. Requires `protoc`.
-# Drop the feature and the patch once upstream regenerates and publishes.
-lightwallet-protocol = { version = "0.3.0", features = ["rebuild-proto"] }
-rustls-pemfile = "2"
-tokio-rustls = { version = "0.26", default-features = false, features = [
-    "aws_lc_rs",
-    "logging",
-    "tls12",
-] }
 tokio-stream = "0.1"
-x509-parser = "0.18"
 
 ### Zcash
 incrementalmerkletree = "0.8.2"
@@ -76,7 +65,10 @@ orchard = "0.15.0"
 sapling-crypto = "0.7.0"
 shardtree = "0.7.0"
 zcash_address = "0.13.0"
-zcash_client_backend = { version = "0.24.0-rc.1", features = [
+# Exact-pinned: cargo treats later pre-releases (rc.7+) as compatible, and
+# those build on zcash_primitives 0.30, splitting HashSer away from this
+# workspace's 0.29 stack (see the crypto-common note above `exclude`).
+zcash_client_backend = { version = "=0.24.0-rc.1", features = [
     "orchard",
     "transparent-inputs",
 ] }
@@ -149,13 +141,12 @@ thiserror = "2"
 append-only-vec = "0.1.7"
 itertools = "0.14"
 nonempty = "0.11.0"
-rust_decimal = "1.37.2"
-rustyline = "17.0.2"
+rustyline = "18.0.0"
 shellwords = "1"
 
 ### OS hooks
 chrono = "0.4"
-clap = "4"
+clap = { version = "4.6.5", features = ["derive"] }
 dirs = "6"
 memuse = "0.2"
 rand = "0.8"
@@ -167,8 +158,6 @@ rust-embed = "8"
 opt-level = 3
 
 [patch.crates-io]
-time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
-
 # Ironwood (NU6.3) proto fields (CompactTx.ironwoodActions, TreeState.ironwoodTree,
 # ShieldedProtocol.ironwood, ChainMetadata.ironwoodCommitmentTreeSize). The rev is
 # upstream main after PR #5 merged the Ironwood protos; the crate version is still

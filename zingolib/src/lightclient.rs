@@ -8,7 +8,6 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU8},
     },
-    time::Duration,
 };
 
 use json::JsonValue;
@@ -20,7 +19,10 @@ use zcash_protocol::consensus::BlockHeight;
 use zcash_transparent::address::TransparentAddress;
 
 use pepper_sync::{
-    error::SyncError, keys::transparent::TransparentAddressId, sync::SyncResult, wallet::SyncMode,
+    error::SyncError,
+    keys::transparent::TransparentAddressId,
+    sync::{SyncResult, SyncStatus},
+    wallet::SyncMode,
 };
 use zingo_netutils::Indexer as _;
 
@@ -33,28 +35,34 @@ use crate::{
         balance::AccountBalance,
         error::{BalanceError, KeyError, SummaryError, WalletError},
         keys::unified::{ReceiverSelection, UnifiedAddressId},
-        summary::data::{
-            TransactionSummaries, ValueTransfers,
-            finsight::{TotalMemoBytesToAddress, TotalSendsToAddress, TotalValueToAddress},
-        },
+        summary::data::TransactionSummaries,
     },
 };
 use error::LightClientError;
 
 pub mod error;
+pub mod indexer_history;
 pub mod migrate;
+#[cfg(feature = "nym")]
+mod mixnet;
 pub mod offline;
 pub mod propose;
 pub mod save;
+#[cfg(feature = "nym")]
+pub mod select;
 pub mod send;
 pub mod sync;
+pub(crate) mod transmit;
+
+pub use save::SaveShutdown;
+pub use transmit::TransmitProgressHandle;
 
 #[cfg(test)]
 mod darkside;
 #[cfg(test)]
 mod mock_chain_tests;
 
-pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+pub use zingo_netutils::time::DEFAULT_REQUEST_TIMEOUT;
 
 /// Wallet struct owned by a [`crate::lightclient::LightClient`], with metadata and immutable wallet data stored outside
 /// the read/write lock.
@@ -96,6 +104,30 @@ impl WalletMeta {
     }
 }
 
+/// A successfully fetched ZEC price, attested with the route it traveled,
+/// the source that answered, and the time the answer took.
+///
+/// The route attestation is the mixnet tunnel's local SOCKS5 endpoint the
+/// fetch went through. It rides the success value — not a log — so every
+/// consumer of [`LightClient::update_current_price`] holds per-fetch
+/// evidence that this fetch ran over the mixnet (ADR 0011). The source and
+/// round trip ride beside it: the fetch races all three price sources and
+/// reports the one whose answer arrived first.
+#[cfg(feature = "nym")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct MixnetPriceFetch {
+    /// The current ZEC price in USD.
+    pub usd: f32,
+    /// The price source whose answer won the three-source race.
+    pub source: zingo_price::PriceSource,
+    /// Wall-clock time from dispatching the race to the winning answer,
+    /// tunnel traversal included.
+    pub round_trip: std::time::Duration,
+    /// The local SOCKS5 endpoint of the mixnet tunnel this fetch traveled
+    /// through.
+    pub via_socks5: String,
+}
+
 /// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
 /// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
 ///
@@ -106,12 +138,63 @@ impl WalletMeta {
 /// Call [`Self::set_indexer_uri`] to connect.
 pub struct LightClient {
     indexer: Option<zingo_netutils::GrpcIndexer>,
-    migration_broadcast_uri: Option<http::Uri>,
+    migration_transmission_uri: Option<http::Uri>,
     wallet: WalletMeta,
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
+    /// The receiving end of the sync engine's progress channel, answering status queries without the wallet lock.
+    sync_progress: tokio::sync::watch::Receiver<Option<SyncStatus>>,
     save_active: Arc<AtomicBool>,
     save_handle: Option<JoinHandle<std::io::Result<()>>>,
+    /// Held while a stored proposal is pending, so the wallet state the
+    /// proposal selected against cannot shift before the send builds it.
+    /// Process-lifetime state beside the stored proposal itself (ADR 0006):
+    /// never serialized, minted by the proposing calls, released when the
+    /// proposal is consumed, cleared, or fails to come into existence.
+    proposal_pause_guard: Option<sync::SyncPauseGuard>,
+    /// Live progress of an in-progress immediate migration, or `None` when idle.
+    /// A side channel off the wallet lock, so it stays pollable while build and
+    /// transmit hold the wallet write lock across their loops.
+    immediate_migration_progress: migrate::ImmediateMigrationProgressHandle,
+    /// Live progress of the note-splitting round a [`Self::quick_split`] call
+    /// is building/transmitting, or `None` when idle. The Phase 1 counterpart
+    /// to `immediate_migration_progress`, the same off-the-wallet-lock side channel.
+    split_progress: migrate::SplitProgressHandle,
+    /// Live progress of a running migration execute batch
+    /// ([`Self::execute_due_parts`]), the same side-channel pattern.
+    batch_progress: migrate::BatchProgressHandle,
+    /// The latest progress line of an in-flight Transmission, or `None` when
+    /// idle. A side channel like `immediate_migration_progress`, updated by
+    /// `transmit_transactions` (submissions, retries, probes, escalation rounds)
+    /// and cleared when the transmission ends.
+    transmit_progress: transmit::TransmitProgressHandle,
+    /// The cross-session per-indexer attempt history (the indexer diary).
+    /// Disk-backed only under the `nym-diary` feature, and recording only
+    /// after the session opts in via `set_indexer_diary`. Otherwise the
+    /// handle is inert.
+    indexer_history: indexer_history::IndexerHistoryHandle,
+    /// The mixnet transport slot (ADR 0011, amendment 2026-07-28): the
+    /// explicit state Mixnet Mode is read from — unattached, switched off,
+    /// or an attached transport. Explicit rather than `Option` so a
+    /// deliberate disable stays distinguishable from a transport's absence.
+    #[cfg(feature = "nym")]
+    mixnet_slot: crate::mixnet::MixnetSlot,
+    /// The Correspondent Pools: ready transports Exit Rotation consumes per
+    /// run, refilled in the background under PrioritisePrivacy.
+    #[cfg(feature = "nym")]
+    correspondent_pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+    /// The session tunnel's Clutch, held for the spawned slot proxy's life
+    /// and recycled by drop on vacate.
+    #[cfg(feature = "nym")]
+    slot_clutch: std::collections::HashSet<crate::correspondent::pool::exit_pool::Reservation>,
+    /// The session-level Mixnet Mode status channel (ADR 0024, decision 2):
+    /// the one shared watch every subscriber reads. Transport transitions
+    /// publish from the supervisor's tasks, slot transitions from the
+    /// `&mut` methods here; the channel outlives any individual transport,
+    /// so an enable after a disable publishes into the same channel a
+    /// subscriber already holds.
+    #[cfg(feature = "nym")]
+    mixnet_status: crate::mixnet::StatusPublisher,
 }
 
 impl LightClient {
@@ -163,36 +246,73 @@ impl LightClient {
 
         Ok(LightClient {
             indexer,
-            migration_broadcast_uri: config.migration_broadcast_uri(),
+            migration_transmission_uri: config.migration_transmission_uri(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
+            sync_progress: tokio::sync::watch::channel(None).1,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
+            proposal_pause_guard: None,
+            immediate_migration_progress: migrate::ImmediateMigrationProgressHandle::default(),
+            split_progress: migrate::SplitProgressHandle::default(),
+            batch_progress: migrate::BatchProgressHandle::default(),
+            transmit_progress: transmit::TransmitProgressHandle::default(),
+            #[cfg(feature = "nym-diary")]
+            indexer_history: indexer_history::IndexerHistoryHandle::beside_wallet(
+                &config.get_wallet_path(),
+            ),
+            #[cfg(not(feature = "nym-diary"))]
+            indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            #[cfg(feature = "nym")]
+            mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
+            #[cfg(feature = "nym")]
+            slot_clutch: std::collections::HashSet::new(),
+            #[cfg(feature = "nym")]
+            correspondent_pools: crate::correspondent::pool::Pools::new(),
+            #[cfg(feature = "nym")]
+            mixnet_status: crate::mixnet::status_publisher(),
         })
     }
 
-    /// Wraps an already-constructed wallet — typically from
-    /// [`crate::testutils::synthetic_wallet::SyntheticWalletBuilder`] — so
+    /// Wraps an already-constructed wallet, typically from
+    /// [`crate::testutils::synthetic_wallet::SyntheticWalletBuilder`], so
     /// client-level APIs that only read wallet state (proposing, balances,
-    /// summaries) can be exercised offline. No indexer is configured — the
+    /// summaries) can be exercised offline. No indexer is configured, so the
     /// client is genuinely offline rather than pointed at a never-contacted
-    /// placeholder; the wallet path lives under the OS temp directory and is
+    /// placeholder. The wallet path lives under the OS temp directory and is
     /// never written unless a test saves explicitly.
     #[cfg(any(test, feature = "testutils"))]
     pub async fn new_for_test(wallet: crate::wallet::LightWallet) -> Self {
         zingo_netutils::ensure_default_crypto_provider();
         LightClient {
             indexer: None,
-            migration_broadcast_uri: None,
+            migration_transmission_uri: None,
             wallet: WalletMeta::new(
                 std::env::temp_dir().join("zingolib-synthetic-wallet"),
                 wallet,
             ),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
+            sync_progress: tokio::sync::watch::channel(None).1,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
+            proposal_pause_guard: None,
+            immediate_migration_progress: migrate::ImmediateMigrationProgressHandle::default(),
+            split_progress: migrate::SplitProgressHandle::default(),
+            batch_progress: migrate::BatchProgressHandle::default(),
+            transmit_progress: transmit::TransmitProgressHandle::default(),
+            // Synthetic test wallets have no durable directory; the default
+            // handle records nowhere and loads empty.
+            indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            #[cfg(feature = "nym")]
+            mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
+            #[cfg(feature = "nym")]
+            slot_clutch: std::collections::HashSet::new(),
+            #[cfg(feature = "nym")]
+            correspondent_pools: crate::correspondent::pool::Pools::new(),
+            #[cfg(feature = "nym")]
+            mixnet_status: crate::mixnet::status_publisher(),
         }
     }
 
@@ -229,12 +349,32 @@ impl LightClient {
 
         Ok(LightClient {
             indexer,
-            migration_broadcast_uri: config.migration_broadcast_uri(),
+            migration_transmission_uri: config.migration_transmission_uri(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
+            sync_progress: tokio::sync::watch::channel(None).1,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
+            proposal_pause_guard: None,
+            immediate_migration_progress: migrate::ImmediateMigrationProgressHandle::default(),
+            split_progress: migrate::SplitProgressHandle::default(),
+            batch_progress: migrate::BatchProgressHandle::default(),
+            transmit_progress: transmit::TransmitProgressHandle::default(),
+            #[cfg(feature = "nym-diary")]
+            indexer_history: indexer_history::IndexerHistoryHandle::beside_wallet(
+                &config.get_wallet_path(),
+            ),
+            #[cfg(not(feature = "nym-diary"))]
+            indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            #[cfg(feature = "nym")]
+            mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
+            #[cfg(feature = "nym")]
+            slot_clutch: std::collections::HashSet::new(),
+            #[cfg(feature = "nym")]
+            correspondent_pools: crate::correspondent::pool::Pools::new(),
+            #[cfg(feature = "nym")]
+            mixnet_status: crate::mixnet::status_publisher(),
         })
     }
 
@@ -246,6 +386,106 @@ impl LightClient {
     /// Returns the wallet birthday height for lock-free access.
     pub fn birthday(&self) -> u32 {
         u32::from(self.wallet.birthday)
+    }
+
+    /// A cloneable handle to the in-flight Transmission's latest progress
+    /// line, or `None` while no transmission runs. Grab it *before* invoking a
+    /// transmitting call (send, shield, transmit, migrate), which borrow
+    /// `&mut self`, then poll [`transmit::TransmitProgressHandle::latest`]
+    /// concurrently, the same side-channel pattern as
+    /// [`Self::immediate_migration_progress_handle`]. The line narrates submissions,
+    /// retries, queued probes, and mixnet escalation rounds.
+    pub fn transmit_progress_handle(&self) -> transmit::TransmitProgressHandle {
+        self.transmit_progress.clone()
+    }
+
+    /// A cloneable handle to the cross-session per-indexer attempt history
+    /// (the indexer diary).
+    /// [`indexer_history::IndexerHistoryHandle::load`] reads the accumulated
+    /// record for display or scoring. Transmission arms and diagnostic probes
+    /// append to it only in a `nym-diary` build whose session has opted in
+    /// via `set_indexer_diary`. In every other configuration the handle is
+    /// inert and loads empty.
+    pub fn indexer_history_handle(&self) -> indexer_history::IndexerHistoryHandle {
+        self.indexer_history.clone()
+    }
+
+    /// Opt this session in to (or back out of) recording the indexer diary:
+    /// one sanitized line per transmission arm or probe leg, appended to
+    /// `indexer-history.tsv` beside the wallet. The choice is never
+    /// persisted, and every session starts with recording off.
+    #[cfg(feature = "nym-diary")]
+    pub fn set_indexer_diary(&self, record: bool) {
+        self.indexer_history.set_recording(record);
+    }
+
+    /// A cloneable handle to the migration's live progress. Grab it *before*
+    /// starting an immediate migration, then poll [`migrate::ImmediateMigrationProgressHandle::status`]
+    /// concurrently while the immediate migration holds `&mut self`.
+    ///
+    /// The handle reads a side channel, not the wallet, so it never blocks on
+    /// the wallet write lock the immediate migration holds. It is how a
+    /// concurrent poller (a spawned task, or the consumer's existing
+    /// sync-status loop) observes progress.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(
+    /// #     mut client: zingolib::lightclient::LightClient,
+    /// #     account: zip32::AccountId,
+    /// # ) -> Result<(), zingolib::lightclient::error::LightClientError> {
+    /// // Grab the handle up front. The immediate migration will borrow `client` exclusively.
+    /// let progress = client.immediate_migration_progress_handle();
+    ///
+    /// // Report from a second task. `status()` reads a side channel, so it
+    /// // never blocks on the wallet lock the immediate migration holds across its loops. It
+    /// // reads `None` before the immediate migration arms it and once the immediate migration finishes, so
+    /// // the `if let` simply skips those ticks.
+    /// let reporter = tokio::spawn(async move {
+    ///     loop {
+    ///         if let Some(p) = progress.status() {
+    ///             println!("built {}/{}  sent {}/{}", p.built, p.total, p.sent, p.total);
+    ///         }
+    ///         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    ///     }
+    /// });
+    ///
+    /// // The one-call entry pauses any running sync itself, migrates against
+    /// // that stable state, and resumes sync afterwards (the `true`).
+    /// // Completion is the returned summary (not a progress value), after
+    /// // which the handle reads `None` again.
+    /// let summary = client.quick_immediate_migration(account, true).await?;
+    /// reporter.abort();
+    ///
+    /// println!(
+    ///     "migrated {} zat across {} transactions",
+    ///     summary.migrated,
+    ///     summary.txids.len(),
+    /// );
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn immediate_migration_progress_handle(&self) -> migrate::ImmediateMigrationProgressHandle {
+        self.immediate_migration_progress.clone()
+    }
+
+    /// A cloneable handle to the note-splitting round's live progress. Grab it
+    /// *before* calling [`Self::quick_split`], then poll
+    /// [`migrate::SplitProgressHandle::status`] concurrently while the round
+    /// holds `&mut self`, the Phase 1 counterpart to
+    /// [`Self::immediate_migration_progress_handle`].
+    pub fn split_progress_handle(&self) -> migrate::SplitProgressHandle {
+        self.split_progress.clone()
+    }
+
+    /// A cloneable handle to the execute batch's live progress. Grab it
+    /// *before* starting the batch, then poll
+    /// [`migrate::BatchProgressHandle::status`] concurrently while the
+    /// batch holds `&mut self`, the same pattern as
+    /// [`Self::immediate_migration_progress_handle`].
+    pub fn batch_progress_handle(&self) -> migrate::BatchProgressHandle {
+        self.batch_progress.clone()
     }
 
     /// Returns the wallet's mnemonic phrase as a string.
@@ -295,6 +535,19 @@ impl LightClient {
         Ok(())
     }
 
+    /// Disconnects every network capability of the client, returning only
+    /// when teardown is complete.
+    pub async fn go_offline(&mut self) {
+        self.abort_sync().await;
+        #[cfg(feature = "nym")]
+        {
+            self.vacate_mixnet_slot().await;
+            self.publish_mixnet_slot_state();
+        }
+        self.indexer = None;
+        self.migration_transmission_uri = None;
+    }
+
     /// Returns a reference to the indexer, or `LightClientError::Offline` if none is configured.
     fn require_indexer(&self) -> Result<&zingo_netutils::GrpcIndexer, LightClientError> {
         self.indexer.as_ref().ok_or(LightClientError::Offline)
@@ -302,7 +555,7 @@ impl LightClient {
 
     /// Returns the connected server's diagnostics as typed data.
     ///
-    /// Failure travels on the error channel; the data channel carries a
+    /// Failure travels on the error channel. The data channel carries a
     /// [`ServerInfo`]. No caller ever inspects a returned value's content
     /// to learn whether the call succeeded (zingolabs/zingolib#2446).
     pub async fn info(&mut self) -> Result<ServerInfo, LightClientError> {
@@ -375,51 +628,6 @@ impl LightClient {
             .await
     }
 
-    /// Wrapper for [`crate::wallet::LightWallet::value_transfers`].
-    pub async fn value_transfers(
-        &self,
-        sort_highest_to_lowest: bool,
-    ) -> Result<ValueTransfers, SummaryError> {
-        self.wallet()
-            .read()
-            .await
-            .value_transfers(sort_highest_to_lowest)
-            .await
-    }
-
-    /// Wrapper for [`crate::wallet::LightWallet::messages_containing`].
-    pub async fn messages_containing(
-        &self,
-        filter: Option<&str>,
-    ) -> Result<ValueTransfers, SummaryError> {
-        self.wallet().read().await.messages_containing(filter).await
-    }
-
-    /// Wrapper for [`crate::wallet::LightWallet::do_total_memobytes_to_address`].
-    pub async fn do_total_memobytes_to_address(
-        &self,
-    ) -> Result<TotalMemoBytesToAddress, SummaryError> {
-        self.wallet()
-            .read()
-            .await
-            .do_total_memobytes_to_address()
-            .await
-    }
-
-    /// Wrapper for [`crate::wallet::LightWallet::do_total_spends_to_address`].
-    pub async fn do_total_spends_to_address(&self) -> Result<TotalSendsToAddress, SummaryError> {
-        self.wallet()
-            .read()
-            .await
-            .do_total_spends_to_address()
-            .await
-    }
-
-    /// Wrapper for [`crate::wallet::LightWallet::do_total_value_to_address`].
-    pub async fn do_total_value_to_address(&self) -> Result<TotalValueToAddress, SummaryError> {
-        self.wallet().read().await.do_total_value_to_address().await
-    }
-
     /// Creates an additional ZIP-32 account derived from the wallet seed.
     ///
     /// Returns an error if the wallet has no mnemonic (view-only wallets cannot create accounts
@@ -435,9 +643,13 @@ impl LightClient {
         self.wallet().read().await.recovery_info()
     }
 
-    /// Clears any stored send proposal.
+    /// Clears any stored send proposal and restores the sync engine to the
+    /// mode it held before the proposal was created, the decline path of
+    /// the two-phase send. Previously the pause a proposal took outlived a
+    /// declined proposal until some later send opted into resuming.
     pub async fn clear_proposal(&mut self) {
         self.wallet().write().await.clear_proposal();
+        self.release_proposal_pause(true);
     }
 
     /// Returns `true` if the wallet has unsaved changes.
@@ -466,6 +678,34 @@ impl LightClient {
             .map_err(LightClientError::FileError)?;
 
         Ok(())
+    }
+
+    /// Record the deliberate clearnet consent for a test client: with the
+    /// mixnet compiled in, the slot moves to
+    /// [`MixnetMode::SwitchedOff`](crate::mixnet::MixnetMode) — the same act
+    /// the CLI's `network off` performs — so scenario sends transmit over
+    /// clearnet instead of refusing `MixnetNotReady`. Without the `nym`
+    /// feature the wallet has no mixnet surface and this is a no-op.
+    ///
+    /// Deliberately unconditional (not `nym`-gated): feature unification
+    /// can enable `zingolib/nym` from any workspace member — zingo-cli
+    /// carries it as a default feature (ADR 0026) — so a caller keying the
+    /// consent on its *own* feature set desyncs from zingolib's and
+    /// compiles the consent out exactly when the refusal is compiled in.
+    #[cfg(any(test, feature = "testutils"))]
+    pub async fn consent_to_clearnet_for_tests(&mut self) {
+        #[cfg(feature = "nym")]
+        self.disable_mixnet().await;
+    }
+
+    #[cfg(any(test, feature = "testutils"))]
+    pub async fn new_clearnet_consented(
+        config: ClientConfig,
+        overwrite: bool,
+    ) -> Result<Self, LightClientError> {
+        let mut client = Self::new(config, overwrite).await?;
+        client.consent_to_clearnet_for_tests().await;
+        Ok(client)
     }
 }
 
@@ -506,7 +746,8 @@ mod tests {
                 birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             })
-            .build();
+            .build()
+            .unwrap();
 
         let mut lc = LightClient::new(config.clone(), false).await.unwrap();
 
@@ -534,9 +775,9 @@ mod tests {
 
     /// Round-trips a wallet through `save()` and `from_bytes`, asserting the deserialized
     /// `LightClient` exposes the same derived addresses as the source. Crucially, the
-    /// `from_bytes` config uses `WalletConfig::Read` with an empty wallet_dir — no file is
-    /// written or read; if `from_bytes` ever regresses into touching disk this assertion
-    /// would still pass but the call would fail to construct.
+    /// `from_bytes` config uses `WalletConfig::Read` with an empty wallet_dir, so no
+    /// file is written or read; if `from_bytes` ever regresses into touching disk this
+    /// assertion would still pass but the call would fail to construct.
     #[tokio::test]
     async fn from_bytes_roundtrip() {
         let temp_dir = TempDir::new().unwrap();
@@ -549,7 +790,8 @@ mod tests {
                 birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             })
-            .build();
+            .build()
+            .unwrap();
 
         // Source wallet → serialized bytes via the same in-memory `save()` that mobile
         // consumers use to ship the wallet across the FFI.
@@ -562,13 +804,14 @@ mod tests {
             .expect("save returned an error")
             .expect("nothing to save");
 
-        // Reconstruct purely from bytes — note the config carries no source file path,
+        // Reconstruct purely from bytes. Note the config carries no source file path,
         // confirming the constructor never touches the filesystem to load the wallet.
         let restored_config = ClientConfig::builder()
             .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
             .set_wallet_dir(temp_dir.path().to_path_buf())
             .set_wallet_config(WalletConfig::Read)
-            .build();
+            .build()
+            .unwrap();
         let restored = LightClient::from_bytes(bytes, restored_config)
             .await
             .unwrap();
@@ -585,21 +828,21 @@ mod tests {
 
     /// The `info` data/error channel contract (zingolabs/zingolib#2446).
     ///
-    /// Failure must travel on the error channel; the data channel carries
+    /// Failure must travel on the error channel. The data channel carries
     /// only typed data. Downstream FFIs must never have to inspect a
     /// returned value's content to learn whether the call succeeded.
     mod info_contract {
         use crate::lightclient::LightClient;
         use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-        /// The test client is Indexerless, so the info request must fail —
+        /// The test client is Indexerless, so the info request must fail,
         /// and that failure must not surface as prose in the data channel.
         ///
         /// This began as the red TDD test for the migration: `do_info`
         /// returned `String`, and the connection failure arrived as a
         /// `Status {..}` Debug string indistinguishable by type from
         /// data. It originally pinned a typed `IndexerError` from a
-        /// never-listening lazy endpoint; the offline-mode work replaced
+        /// never-listening lazy endpoint. The offline-mode work replaced
         /// that placeholder with a genuinely Indexerless client, whose
         /// typed failure is `Offline`. The migration ended with `do_info`
         /// deleted outright: `info()` returns a typed `ServerInfo`, and

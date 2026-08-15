@@ -241,7 +241,8 @@ async fn reload_wallet_from_file() {
         .set_chain_type(mid_client_network)
         .set_wallet_dir(mid_client.wallet_dir().unwrap())
         .set_wallet_config(WalletConfig::Read)
-        .build();
+        .build()
+        .unwrap();
     let loaded_client = LightClient::new(config, true).await.unwrap();
     let loaded_wallet = loaded_client.wallet().read().await;
 
@@ -347,6 +348,7 @@ async fn wallet_round_trips_migration_state_at_current_version() {
         },
         params,
         strategy: SigningStrategy::LazyAtBoundary,
+        mode: crate::wallet::migration::MigrationMode::Scheduled,
         account: zip32::AccountId::ZERO,
         phase: MigrationPhase::PartsScheduled,
         parts: vec![part],
@@ -361,4 +363,360 @@ async fn wallet_round_trips_migration_state_at_current_version() {
         LightWallet::serialized_version()
     );
     assert_eq!(recovered.migration, Some(state));
+}
+
+/// What the orphaned-layout tests below assert against: the wallet's chain
+/// type, its recovery info, the serialized tail (price list plus optional
+/// migration section), and the whole file saved at the current version.
+///
+/// The tail is returned in full, not merely as a length, because asserting
+/// on it is what makes these tests meaningful. Recovery info comes from the
+/// file *prefix* and so survives even a badly misparsed tail. Only comparing
+/// the tail proves the disambiguating reader chose the right layout.
+struct CurrentVersionWallet {
+    chain_type: crate::config::ChainType,
+    recovery_info: crate::wallet::RecoveryInfo,
+    tail: Vec<u8>,
+    bytes: Vec<u8>,
+}
+
+impl CurrentVersionWallet {
+    /// Offset at which the pre-release layout's `allow_v6_transactions`
+    /// byte sits, immediately before the price list.
+    fn tail_offset(&self) -> usize {
+        self.bytes.len() - self.tail.len()
+    }
+
+    /// Serializes the tail of `wallet` for comparison against this
+    /// expectation. `PriceList` has no `PartialEq`, so the round trip is
+    /// checked through the encoding, which is the property under test.
+    fn assert_tail_matches(&self, wallet: &crate::wallet::LightWallet, context: &str) {
+        use zcash_encoding::Optional;
+
+        let mut recovered_tail = Vec::new();
+        wallet.price_list.write(&mut recovered_tail).unwrap();
+        Optional::write(
+            &mut recovered_tail,
+            wallet.migration.as_ref(),
+            crate::wallet::migration::store::write,
+        )
+        .unwrap();
+
+        assert_eq!(
+            recovered_tail, self.tail,
+            "{context}: the price list and migration section must survive the read"
+        );
+    }
+}
+
+/// Saves an example wallet carrying a deliberately non-trivial tail: a price
+/// list with a start time and a populated migration state. A tail of all
+/// zeroes would be misparsed into an identical all-`None` value, so it could
+/// not detect a reader that picked the wrong layout.
+async fn current_version_wallet_bytes() -> CurrentVersionWallet {
+    use crate::wallet::migration::{
+        BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId,
+        PartRecord, SigningStrategy,
+    };
+    use pepper_sync::wallet::OutputId;
+    use zcash_encoding::Optional;
+    use zcash_primitives::transaction::TxId;
+
+    let client = NetworkSeedVersion::Regtest(RegtestSeedVersion::AbandonAbandon(
+        AbandonAbandonVersion::V26,
+    ))
+    .load_example_wallet()
+    .await;
+    let mut wallet = client.wallet().write().await;
+
+    wallet.price_list.set_start_time(1_782_000_000);
+
+    let params = MigrationParams::provisional(wallet.chain_type());
+    let mut part = PartRecord::new(
+        PartId(0),
+        100_000_000,
+        BoundNote {
+            output_id: OutputId::new(TxId::from_bytes([3; 32]), 1),
+            nullifier: [4; 32],
+            commitment: [5; 32],
+        },
+    );
+    part.assign(12).unwrap();
+    wallet.migration = Some(MigrationState {
+        consent: ConsentBinding {
+            params_hash: params.params_hash(),
+            plan_hash: [6; 32],
+            consented_at: 1_782_000_000,
+        },
+        params,
+        strategy: SigningStrategy::LazyAtBoundary,
+        mode: crate::wallet::migration::MigrationMode::Scheduled,
+        account: zip32::AccountId::ZERO,
+        phase: MigrationPhase::PartsScheduled,
+        parts: vec![part],
+    });
+
+    wallet.save_required = true;
+    let bytes = wallet.save().unwrap().expect("save required");
+
+    let mut tail = Vec::new();
+    wallet.price_list.write(&mut tail).unwrap();
+    Optional::write(&mut tail, wallet.migration.as_ref(), |w, migration| {
+        crate::wallet::migration::store::write(w, migration)
+    })
+    .unwrap();
+
+    CurrentVersionWallet {
+        chain_type: wallet.chain_type(),
+        recovery_info: wallet.recovery_info().unwrap(),
+        tail,
+        bytes,
+    }
+}
+
+/// Pre-release ironwood builds briefly wrote version 43 with the final
+/// version 42 layout. Those files must load as if they were version 42.
+#[tokio::test]
+async fn wallet_reads_retired_version_43_as_current() {
+    use crate::wallet::LightWallet;
+
+    let expected = current_version_wallet_bytes().await;
+    let mut bytes = expected.bytes.clone();
+    bytes[..8].copy_from_slice(&43u64.to_le_bytes());
+
+    let recovered = LightWallet::read(bytes.as_slice(), expected.chain_type)
+        .expect("retired version 43 must read as the final 42 layout");
+    assert_eq!(recovered.recovery_info().unwrap(), expected.recovery_info);
+    expected.assert_tail_matches(&recovered, "version 43");
+}
+
+/// Pre-release ironwood builds before the `allow_v6_transactions` removal
+/// wrote version 42 with an extra bool between `min_confirmations` and the
+/// price list. Both bool values must load under the disambiguating reader.
+#[tokio::test]
+async fn wallet_reads_pre_release_v42_with_allow_v6_byte() {
+    use crate::wallet::LightWallet;
+
+    let expected = current_version_wallet_bytes().await;
+
+    for allow_v6_byte in [0u8, 1u8] {
+        let mut pre_release = expected.bytes.clone();
+        pre_release.insert(expected.tail_offset(), allow_v6_byte);
+
+        let recovered = LightWallet::read(pre_release.as_slice(), expected.chain_type)
+            .expect("pre-release v42 layout must read via tail disambiguation");
+        assert_eq!(recovered.recovery_info().unwrap(), expected.recovery_info);
+        expected.assert_tail_matches(
+            &recovered,
+            &format!("pre-release version 42 with allow_v6_transactions={allow_v6_byte}"),
+        );
+    }
+}
+
+/// A file whose tail reads cleanly under *both* layouts is genuinely
+/// ambiguous, and the reader must refuse it rather than silently substitute
+/// one reading's price list and migration state for the other's.
+///
+/// The decision is exercised directly: constructing a byte string that
+/// satisfies both parses is not possible for a migration-free tail (see the
+/// parity argument on `resolve_v42_tail`) and impractical otherwise, so the
+/// test supplies the four parse outcomes the caller can hand it.
+#[test]
+fn ambiguous_version_42_tail_is_refused() {
+    use crate::wallet::LightWallet;
+    use zingo_price::PriceList;
+
+    let parsed = || Ok((PriceList::new(), None));
+    let failed = || {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "tail did not parse",
+        ))
+    };
+
+    let ambiguous = LightWallet::resolve_v42_tail(parsed(), Some(parsed()));
+    assert_eq!(
+        ambiguous.unwrap_err().kind(),
+        std::io::ErrorKind::InvalidData,
+        "a tail parsing both ways must be refused, not guessed"
+    );
+
+    assert!(
+        LightWallet::resolve_v42_tail(parsed(), Some(failed())).is_ok(),
+        "the canonical layout must win when only it parses"
+    );
+    assert!(
+        LightWallet::resolve_v42_tail(parsed(), None).is_ok(),
+        "a leading byte that is no bool rules out the pre-release layout"
+    );
+    assert!(
+        LightWallet::resolve_v42_tail(failed(), Some(parsed())).is_ok(),
+        "the pre-release layout must be accepted when only it parses"
+    );
+    assert!(
+        LightWallet::resolve_v42_tail(failed(), Some(failed())).is_err(),
+        "a tail parsing neither way must fail"
+    );
+}
+
+/// When the full parse fails (here simulated by a truncated file) the
+/// prefix-only salvage reader must still recover seed, birthday, and
+/// account count, so no format break can strand a wallet.
+#[tokio::test]
+async fn recovery_info_salvages_a_wallet_file_that_fails_to_read() {
+    use crate::wallet::LightWallet;
+
+    let expected = current_version_wallet_bytes().await;
+    let mut bytes = expected.bytes.clone();
+    bytes.truncate(bytes.len() - 10);
+
+    assert!(
+        LightWallet::read(bytes.as_slice(), expected.chain_type).is_err(),
+        "truncated file must fail the full parse for this test to be meaningful"
+    );
+    let salvaged = LightWallet::read_recovery_info(bytes.as_slice())
+        .expect("prefix salvage must survive a corrupt tail");
+    assert_eq!(salvaged, expected.recovery_info);
+}
+
+/// Sweeps the local corpus of real wallet files in `data_wallets/` at the
+/// workspace root: every file must either fully parse or yield recovery
+/// info from the prefix salvage, so no corpus wallet is stranded.
+///
+/// The corpus holds live seed material, so it is gitignored and this test
+/// never prints seeds. It reports only per-file outcomes. On machines
+/// without the corpus (CI included) the sweep is an empty pass.
+#[test]
+fn data_wallets_corpus_parses_or_salvages() {
+    use crate::config::ChainType;
+    use crate::wallet::LightWallet;
+
+    let corpus_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("zingolib lives one level below the workspace root")
+        .join("data_wallets");
+    if !corpus_dir.is_dir() {
+        eprintln!("no data_wallets corpus on this machine; nothing to sweep");
+        return;
+    }
+
+    let mut corpus_paths = std::fs::read_dir(&corpus_dir)
+        .expect("corpus directory must be listable")
+        .map(|entry| {
+            entry
+                .expect("corpus directory entries must be readable")
+                .path()
+        })
+        .filter(|path| path.extension().is_some_and(|extension| extension == "dat"))
+        .collect::<Vec<_>>();
+    corpus_paths.sort();
+    assert!(
+        !corpus_paths.is_empty(),
+        "data_wallets exists but holds no .dat files; nothing swept"
+    );
+
+    for path in corpus_paths {
+        let file_name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let bytes = std::fs::read(&path).expect("corpus files must be readable");
+
+        // Device wallets are mainnet or testnet; regtest wallets cannot
+        // occur in the corpus because their activation heights are not
+        // recoverable from the file alone.
+        let full_parse = LightWallet::read(bytes.as_slice(), ChainType::Mainnet)
+            .or_else(|_| LightWallet::read(bytes.as_slice(), ChainType::Testnet));
+
+        match full_parse {
+            Ok(wallet) => {
+                eprintln!(
+                    "{file_name}: parsed fully (stored version {})",
+                    wallet.read_version()
+                );
+            }
+            Err(read_error) => {
+                let salvaged = LightWallet::read_recovery_info(bytes.as_slice()).unwrap_or_else(
+                    |salvage_error| {
+                        panic!(
+                            "{file_name}: full parse failed ({read_error}) and prefix \
+                                 salvage also failed ({salvage_error})"
+                        )
+                    },
+                );
+                assert!(
+                    !salvaged.seed_phrase.is_empty(),
+                    "{file_name}: salvage produced an empty seed phrase"
+                );
+                eprintln!(
+                    "{file_name}: full parse failed ({read_error}); salvaged recovery info \
+                     (birthday {}, {} accounts)",
+                    salvaged.birthday, salvaged.no_of_accounts
+                );
+            }
+        }
+    }
+}
+
+mod version_forty {
+    use bip0039::Mnemonic;
+
+    use crate::config::ChainType;
+    use crate::wallet::{LightWallet, utils};
+
+    fn dev_v40_prefix() -> Vec<u8> {
+        let mut bytes = 40u64.to_le_bytes().to_vec();
+        bytes.push(0);
+        bytes.push(32);
+        bytes.extend_from_slice(&[0x55; 32]);
+        bytes
+    }
+
+    #[test]
+    fn dev_v40_truncated_file_errs_instead_of_aborting() {
+        let error = LightWallet::read(dev_v40_prefix().as_slice(), ChainType::Mainnet)
+            .expect_err("the prefix carries no body");
+        assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn dev_v40_chain_tag_mismatch_is_reported() {
+        let mut bytes = 40u64.to_le_bytes().to_vec();
+        bytes.push(1);
+        let error = LightWallet::read(bytes.as_slice(), ChainType::Mainnet)
+            .expect_err("a testnet tag must refuse a mainnet load");
+        assert!(
+            error
+                .to_string()
+                .contains("wallet chain name testnet doesn't match expected mainnet"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn stable_v40_chain_string_reads_as_before() {
+        let mut bytes = 40u64.to_le_bytes().to_vec();
+        utils::write_string(&mut bytes, &"test".to_string()).unwrap();
+        let error = LightWallet::read(bytes.as_slice(), ChainType::Mainnet)
+            .expect_err("a testnet name must refuse a mainnet load");
+        assert!(
+            error
+                .to_string()
+                .contains("wallet chain name testnet doesn't match expected mainnet"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn dev_v40_recovery_info_reaches_the_seed() {
+        let mut bytes = dev_v40_prefix();
+        bytes.extend_from_slice(&100u32.to_le_bytes());
+        bytes.push(1);
+        let info = LightWallet::read_recovery_info(bytes.as_slice()).unwrap();
+        assert_eq!(info.birthday, 100);
+        assert_eq!(info.no_of_accounts, 1);
+        assert_eq!(
+            info.seed_phrase,
+            <Mnemonic>::from_entropy([0x55; 32].to_vec())
+                .unwrap()
+                .phrase()
+        );
+    }
 }

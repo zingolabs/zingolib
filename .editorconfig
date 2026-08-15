@@ -19,3 +19,9 @@ trim_trailing_whitespace = false
 [*.json]
 indent_size = 4
 indent_style = space
+
+# The editorial goldens are byte-exact pins, captured once and never
+# regenerated; some pinned lines end in spaces and none end in a newline.
+[zingolib/tests/golden/*]
+trim_trailing_whitespace = false
+insert_final_newline = false

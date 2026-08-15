@@ -20,7 +20,7 @@ use pepper_sync::{
 use zingo_price::PriceList;
 
 use crate::config::{ChainType, WalletConfig};
-use error::{KeyError, PriceError, WalletError};
+use error::{KeyError, WalletError};
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 
 pub mod error;
@@ -137,6 +137,10 @@ pub struct LightWallet {
     /// Sync state
     pub sync_state: SyncState,
     /// Wallet settings
+    ///
+    /// Altering the sync config will not automatically restart sync which is needed for the changes to take effect.
+    /// It is recommended to rescan after altering the transparent address discovery settings as scanned ranges will
+    /// have been scanned with the previous configuration.
     pub wallet_settings: WalletSettings,
     /// The current and historical daily price of zec.
     pub price_list: PriceList,
@@ -312,6 +316,14 @@ impl LightWallet {
         &self.transparent_addresses
     }
 
+    /// Returns transparent addresses as mutable reference.
+    #[must_use]
+    pub(crate) fn transparent_addresses_mut(
+        &mut self,
+    ) -> &mut BTreeMap<TransparentAddressId, String> {
+        &mut self.transparent_addresses
+    }
+
     /// Returns transparent addresses in a JSON array.
     #[must_use]
     pub fn transparent_addresses_json(&self) -> json::JsonValue {
@@ -365,6 +377,7 @@ impl LightWallet {
                 account_id,
             )?,
         );
+        self.save_required = true;
 
         Ok(())
     }
@@ -375,26 +388,29 @@ impl LightWallet {
     ///
     /// Intended to be called from a save task which calls `save` in a loop, awaiting the wallet lock and checking
     /// `self.save_required` status, writing the returned wallet bytes to persistance.
+    /// `save_required` field must be manually set back to false after wallet data has been successfully persisted to disk.
     pub fn save(&mut self) -> std::io::Result<Option<Vec<u8>>> {
         if self.save_required {
             let chain_type = self.chain_type;
             let mut wallet_bytes: Vec<u8> = vec![];
             self.write(&mut wallet_bytes, &chain_type)?;
-            self.save_required = false;
+
             Ok(Some(wallet_bytes))
         } else {
             Ok(None)
         }
     }
 
-    /// Update and return current price of ZEC.
-    ///
-    /// Currently only USD is supported.
-    pub async fn update_current_price(&mut self) -> Result<f32, PriceError> {
-        let current_price = self.price_list.update_current_price().await?.price_usd;
+    /// Records a price fetched *outside* the wallet lock (the net-diag
+    /// polling-blackout remedy: the caller fetches with no lock held, then
+    /// re-acquires briefly and stores the result here). The price lands in
+    /// the price list, so it serializes with the wallet. Price fetching
+    /// exists only in `nym` builds (ADR 0011, amendment 2026-07-28), so the
+    /// recorder is gated with its only caller.
+    #[cfg(feature = "nym")]
+    pub(crate) fn record_price_update(&mut self, price: zingo_price::Price) {
+        self.price_list.record_current_price(price);
         self.save_required = true;
-
-        Ok(current_price)
     }
 
     /// Prunes historical prices to days containing transactions in the wallet.

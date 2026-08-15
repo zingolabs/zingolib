@@ -3,10 +3,59 @@
 **Directive (2026-07-08):** the eight portable libtonode tests gain
 offline twins; the live originals are never removed. After the
 side-by-side runs below, the originals moved into their permanent home:
-`libtonode-tests/tests/unit_test_twins.rs` — a non-default feature, a
+`libtonode-tests/tests/unit_test_twins.rs`, a non-default feature, a
 module, and a file all named `unit_test_twins` (also reachable through
 the `extra-credit-tests` bundle). Run them with
 `cargo nextest run -p libtonode-tests --features unit_test_twins`.
+
+**Amendment (2026-07-21, revised the same day):** the
+`bump_and_check_pmc!` and `bump_and_check!` macros of
+`list_value_transfers_check_fees` and
+`from_t_z_o_tz_to_zo_tzo_to_orchard` (rows 5 and 8) bit-rotted during
+the ironwood-era balance migration: each bound an `i:` argument but
+expanded to `i: 0`, silently replacing every recorded ironwood
+expectation with a zero assertion, invisible in default CI because the
+file sits behind the off-by-default `unit_test_twins` feature. The
+first remedy deleted both originals on the claim that the offline
+twins carried the same ledgers; review of PR #2495 disproved that
+claim. The ledgers diverge beyond the repaired column (the twin has
+seventeen bump calls to the original's sixteen, and from step 4 onward
+the original records `i: 45_000` where the twin asserts `i: 55_000`,
+`s: 5_000 t: 5_000` against `s: 10_000 t: 10_000`, `i: 485_000`
+against `i: 500_000`, through `s: 340_000` against `s: 395_000`; row
+5's original records `i: 5_000` where the twin asserts `i: 15_000`).
+Either the originals' recorded values were stale or the mock chain's
+fee/ledger model diverges from a live chain, and only a live run could
+adjudicate. Both originals were therefore restored with the
+five-character macro repair (`i: 0` → `i: $i`), and three live
+container runs adjudicated the dispute the same day. The chain ruled
+for the twins' fee model: a V6 ironwood spend carries no separate
+orchard-bundle-view charge. The originals' rewritten ledgers (which
+had assumed that phantom charge and shrunk their send amounts to fit
+it) were therefore corrected to the twins' amounts and arithmetic, and
+both originals now pass live. One genuine live-mock divergence
+surfaced at row 8's step 10: the live proposer selects ironwood alone
+for the transparent-destination drain (sapling stays put) and refuses
+the exact two-pool drain of 470_000 the mock accepts (exact drains
+are pricing-shape-sensitive live), so the live original drains 465_000
+at fee 15_000 and forks from the twin from that step onward, every
+subsequent cell chain-adjudicated through the 190_000 fee total. The
+prior "assertion-identical" verdicts for these rows were false and are
+withdrawn; the fork is now the documented record.
+
+**Second amendment (2026-07-21):** the first full sweep of the gated
+suite since the ironwood-era default (ADR 0009) exposed that the *other*
+balance-asserting originals had gone stale the same way: their twins
+were updated when the era flipped, the gated originals were not. Rows
+1, 3, 4, and 7's originals (`send_and_sync_with_multiple_notes`,
+`mine_to_transparent_and_shield`, `zero_value_receipts`,
+`send_to_transparent_and_sapling_maintain_balance`, plus
+`sapling_dust_fee_collection`) were corrected to ironwood-pool
+placement (every change a pool flip with fee arithmetic unchanged,
+guided by their continuously-validated twins), and the whole suite now
+passes live, 51 of 51. The lesson stands recorded: a gated suite's
+assertions rot silently across era flips, and only its scheduled run
+adjudicates them.
 
 **Census note:** the move takes the eight originals out of the default
 suite, so the default non-ignored census drops by eight relative to the
@@ -18,8 +67,8 @@ wallet rig alone: fabricated spendable funds, real proposal/build logic,
 no network of any kind. Tiers 2–3 (five tests) run on the **stateful
 mock indexer** (`zingolib/src/testutils/mock_indexer.rs`): an in-process
 `CompactTxStreamer` server over a fabricated chain, so the wallet's REAL
-pipeline — `GrpcIndexer`, pepper-sync scanning, record building, spend
-bookkeeping, transparent self-receipts — runs end to end with no zebrad
+pipeline (`GrpcIndexer`, pepper-sync scanning, record building, spend
+bookkeeping, transparent self-receipts) runs end to end with no zebrad
 or zainod. Funding transactions are built (not faked) by synthetic
 faucet wallets through the build-without-broadcast seam, so their
 outputs decrypt and spend like real ones.
@@ -33,7 +82,7 @@ outputs decrypt and spend like real ones.
    live `tip_spend_rejection` suite).
 2. **Activation schedule.** The mock/synthetic chains activate
    everything at height 1; the live harness activates NU6.1/NU6.2 at
-   height 5. Twins therefore never exercise upgrade boundaries — by
+   height 5. Twins therefore never exercise upgrade boundaries, by
    design; boundary behavior has dedicated coverage.
 3. **Coinbase is inexpressible.** Mock funding is ordinary
    transactions (compact indices deliberately start at 1 so nothing is
@@ -52,59 +101,71 @@ outputs decrypt and spend like real ones.
 | 2 | slow::sapling_dust_fee_collection | proposal_shape::sapling_dust_is_not_collected_toward_fees | EQUIVALENT-CORE |
 | 3 | fast::mine_to_transparent_and_shield | built_transaction_shape::four_coin_shield_builds_and_nets_input_minus_fee | NARROWED-BUT-SHARPENED; live stays load-bearing |
 | 4 | slow::zero_value_receipts | mock_chain_tests::zero_value_receipts | EQUIVALENT (assertion-identical) |
-| 5 | slow::list_value_transfers_check_fees | mock_chain_tests::list_value_transfers_check_fees | EQUIVALENT (assertion-identical) |
+| 5 | slow::list_value_transfers_check_fees | mock_chain_tests::list_value_transfers_check_fees | EQUIVALENT (assertion-identical; ledger adjudicated live 2026-07-21) |
 | 6 | slow::self_send_to_t_displays_as_one_transaction | mock_chain_tests::self_send_to_t_displays_as_one_transaction | EQUIVALENT (assertion-identical) |
-| 7 | slow::send_to_transparent_and_sapling_maintain_balance | mock_chain_tests::send_to_transparent_and_sapling_maintain_balance | EQUIVALENT-CORE, one documented literal divergence |
-| 8 | slow::from_t_z_o_tz_to_zo_tzo_to_orchard | mock_chain_tests::from_t_z_o_tz_to_zo_tzo_to_orchard | EQUIVALENT (assertion-identical, full 16-step ledger) |
+| 7 | slow::send_to_transparent_and_sapling_maintain_balance | mock_chain_tests::send_to_transparent_and_sapling_maintain_balance | EQUIVALENT (assertion-identical since 2026-07-21; the second-wave fee divergence closed with the era flip) |
+| 8 | slow::from_t_z_o_tz_to_zo_tzo_to_orchard | mock_chain_tests::from_t_z_o_tz_to_zo_tzo_to_orchard | EQUIVALENT-CORE; step-10 ledger fork adjudicated live 2026-07-21 (live proposer drains single-pool, refuses the mock's exact drain) |
 
-**1 — multi-note gathering.** The twin asserts strictly more than the
+**1: multi-note gathering.** The twin asserts strictly more than the
 live original at proposal time: exact selection (both 40_000 notes),
 fee equal to the fee table, and the 20_000 change the live test pins
 post-confirmation. Live-only residue: zebra accepting the two-input
 bundle and the balance arriving through a real scan.
 
-**2 — sapling dust.** The twin pins dust exclusion at selection plus
+**2: sapling dust.** The twin pins dust exclusion at selection plus
 the exact fee and the 40_000 closing value, derived at proposal time.
 The live original funds the dust note through a real cross-pool send;
 the twin fabricates it directly. Same asserted property.
 
-**3 — transparent shield.** The twin proves the four-coin shield
+**3: transparent shield.** The twin proves the four-coin shield
 BUILDS (first offline shield build) and nets exactly sum − 30_000 into
 orchard via the bundle's value balance. It cannot express the live
 test's coinbase provenance (mining, maturity, reward totals), and it is
 immune to the live test's documented intermittent shield-eligibility
-race — which is exactly why the live original remains load-bearing: it
+race. That is exactly why the live original remains load-bearing: it
 is the only place coinbase shielding and that race are observable.
 
-**4 — zero-value receipts.** Assertion-for-assertion identical
+**4: zero-value receipts.** Assertion-for-assertion identical
 (balances, the three value-transfer pins, including the single
 Received{0, Orchard} entry), through the real scan pipeline. The live
 original additionally proves zebra relays a zero-value output.
 
-**5 — value-transfer fees.** Identical balance and composite-fee
+**5: value-transfer fees.** Identical balance and composite-fee
 (25_000) assertions; the twin's self-receipts (own taddr, own sapling)
 arrive through genuine scanning of mock blocks, exercising the same
-wallet paths.
+wallet paths. *Adjudicated live 2026-07-21 (see the amendment above):
+the chain confirmed the twin's `i: 15_000`, and the repaired original
+passes with the identical ledger.*
 
-**6 — self-send display.** Identical flow (incoming mixed send mined in
+**6: self-send display.** Identical flow (incoming mixed send mined in
 the same block as the wallet's own mixed self-send) and the same
 txid-uniqueness contract.
 
-**7 — maintain balance.** The full TransactionSummary-equality pinning
+**7: maintain balance.** The full TransactionSummary-equality pinning
 survives, including the Transmitted(target)→Confirmed transition of an
 unmined send and the abandon-art recipient encodings, at renumbered
-heights. ONE literal diverges: the second funding wave's recipient-side
-fee is Some(10_000) offline versus Some(20_000) live — that number
-belongs to the live faucet's fragmented note pool, not to recipient
-behavior. Live-only residue: real mempool timing across the
+heights. The one former literal divergence (the second funding wave's
+recipient-side fee, Some(10_000) offline versus Some(20_000) live)
+closed on 2026-07-21: the ironwood-era faucet normalization drains the
+faucet into one consolidated note, so the fragmentation that made the
+live wave a four-action transaction is gone and both records assert
+Some(10_000). Live-only residue: real mempool timing across the
 mid-flight assertions.
 
-**8 — pool-promotion ledger.** All sixteen steps carry over: every
+**8: pool-promotion ledger.** All sixteen steps carry over: every
 funding source, both shields (including the two-coin shield), the two
 InsufficientFunds refusals with identical shortfall numbers (20_000 and
 60_000 against available 0), per-step balances, and the cumulative
 205_000 confirmed-fee total. Live-only residue: zebra accepting each of
-the twelve broadcasts.
+the twelve broadcasts. *Adjudicated live 2026-07-21 (see the amendment
+above): steps 1-9 are assertion-identical under the chain-confirmed fee
+model; from step 10 the ledgers fork deliberately, since the live
+proposer drains ironwood alone (465_000, fee 15_000) where the mock
+accepts the exact two-pool drain (470_000, fee 30_000). Every live cell
+through the 190_000 fee total is chain-adjudicated. The fork is a
+documented mock limitation: exact drains are pricing-shape-sensitive
+live, and the mock's funding shapes evidently differ enough to mask
+it.*
 
 **Status (2026-07-08): `#[ignore]`d pending zingolabs/zingolib#2447.**
 This twin's step-1 funding is purely transparent, and pepper-sync's
@@ -112,9 +173,9 @@ SUBTRACTIVE `darkside_test` feature deletes transparent-address
 discovery at compile time. Cargo feature unification enables that
 feature for every crate co-built with darkside-tests, so the twin fails
 deterministically in multi-package invocations (`makers test packages`,
-`--workspace`) while passing in `-p zingolib` ones — root-caused via the
-mock's taddr-request ledger (empty in failing builds, populated in
-passing ones) and reproduced both directions on one host. The twin
+`--workspace`) while passing in `-p zingolib` ones. That was root-caused
+via the mock's taddr-request ledger (empty in failing builds, populated
+in passing ones) and reproduced both directions on one host. The twin
 itself is sound: it runs green solo via `--run-ignored`. Un-ignore when
 #2447 converts the feature to runtime configuration. The same landmine
 would strip transparent discovery from the libtonode live suite in any
@@ -152,7 +213,7 @@ zainod + zebrad per test; total wall clock 244s):
 | from_t_z_o_tz_to_zo_tzo_to_orchard | PASS | 244.3s |
 
 After the move, the eight originals were re-run in their gated home
-(`--features unit_test_twins`): 8/8 pass, 275s wall clock — the
+(`--features unit_test_twins`): 8/8 pass, 275s wall clock. The
 relocation itself is verified, not assumed.
 
 Both sides green on the same tree, same day. The aggregate cost ratio:
@@ -160,6 +221,6 @@ the eight twins total ~191s (dominated by proving and repeated sync
 rounds, no processes spawned); the eight live originals total ~960s of
 test time across the parallel 244s wall clock, each spawning a
 zebrad + zainod pair. The twins' arithmetic matched the live pins
-without adjustment on first passing run — including every
+without adjustment on first passing run, including every
 transaction-summary literal in test 7 except the documented
 faucet-economics fee.

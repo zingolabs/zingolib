@@ -39,11 +39,9 @@ use crate::{
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
+    shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt as _},
     sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
-    utils::{
-        get_compact_block_hash, get_compact_block_height, get_compact_block_prev_hash,
-        get_compact_tx_txid,
-    },
+    utils::{block, transaction},
     witness,
 };
 
@@ -91,6 +89,8 @@ pub struct InitialSyncState {
     pub(crate) previously_scanned_sapling_outputs: u32,
     /// Total number of orchard outputs scanned in previous sync sessions.
     pub(crate) previously_scanned_orchard_outputs: u32,
+    /// Total number of ironwood outputs scanned in previous sync sessions.
+    pub(crate) previously_scanned_ironwood_outputs: u32,
 }
 
 impl InitialSyncState {
@@ -110,6 +110,7 @@ impl InitialSyncState {
             previously_scanned_blocks: 0,
             previously_scanned_sapling_outputs: 0,
             previously_scanned_orchard_outputs: 0,
+            previously_scanned_ironwood_outputs: 0,
         }
     }
 }
@@ -214,16 +215,11 @@ impl SyncState {
     /// Returns `None` if `self.scan_ranges` is empty.
     #[must_use]
     pub fn highest_scanned_height(&self) -> Option<BlockHeight> {
-        if let Some(last_scanned_range) = self
-            .scan_ranges
-            .iter()
-            .filter(|scan_range| {
-                scan_range.priority() == ScanPriority::Scanned
-                    || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                    || scan_range.priority() == ScanPriority::RefetchingNullifiers
-            })
-            .next_back()
-        {
+        if let Some(last_scanned_range) = self.scan_ranges.iter().rfind(|scan_range| {
+            scan_range.priority() == ScanPriority::Scanned
+                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                || scan_range.priority() == ScanPriority::RefetchingNullifiers
+        }) {
             Some(last_scanned_range.block_range().end - 1)
         } else {
             self.wallet_birthday().map(|start| start - 1)
@@ -416,11 +412,15 @@ impl WalletBlock {
             calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block).await?;
 
         Ok(Self {
-            block_height: get_compact_block_height(block),
-            block_hash: get_compact_block_hash(block),
-            prev_hash: get_compact_block_prev_hash(block),
+            block_height: block::get_compact_height(block),
+            block_hash: block::get_compact_hash(block),
+            prev_hash: block::get_compact_prev_hash(block),
             time: block.time,
-            txids: block.vtx.iter().map(get_compact_tx_txid).collect(),
+            txids: block
+                .vtx
+                .iter()
+                .map(transaction::get_compact_txid)
+                .collect(),
             tree_bounds,
         })
     }
@@ -782,7 +782,7 @@ impl WalletTransaction {
     }
 }
 
-#[cfg(feature = "test-features")]
+#[cfg(any(test, feature = "test-features"))]
 impl SyncState {
     /// Creates sync state with the given scan ranges, for tests exercising
     /// spendability/witness gating without a chain.
@@ -817,7 +817,7 @@ impl<N, Nf: Copy, P> WalletNote<N, Nf, P> {
         }
     }
 
-    /// Attaches a nullifier, for tests exercising spend paths — the
+    /// Attaches a nullifier, for tests exercising spend paths, since the
     /// spendable-note filter requires a known nullifier.
     #[must_use]
     pub fn with_nullifier_for_test(mut self, nullifier: Nf) -> Self {
@@ -1109,6 +1109,77 @@ impl OutputInterface for TransparentCoin {
 
     fn transaction_outputs(transaction: &WalletTransaction) -> &[Self] {
         &transaction.transparent_coins
+    }
+}
+
+/// The network upgrade at which a shielded pool begins to exist.
+///
+/// This is the workspace's single pool-to-upgrade mapping (ADR 0014,
+/// `docs/adr/0014-pool-activation-derived-in-pepper-sync.md` in the
+/// workspace root): upstream `zcash_protocol` deliberately ships
+/// `ShieldedPool` and `NetworkUpgrade` as unrelated enums, so the mapping
+/// is defined exactly once, here. Every height clamp involving a pool's
+/// existence derives from it. A second mapping anywhere in the workspace
+/// is a defect.
+#[must_use]
+pub fn pool_upgrade(pool: ShieldedPool) -> consensus::NetworkUpgrade {
+    match pool {
+        ShieldedPool::Sapling => consensus::NetworkUpgrade::Sapling,
+        ShieldedPool::Orchard => consensus::NetworkUpgrade::Nu5,
+        ShieldedPool::Ironwood => consensus::NetworkUpgrade::Nu6_3,
+    }
+}
+
+/// A pool's activation height: the block height at which the pool begins
+/// to exist on the chain.
+///
+/// The only constructor is the derivation [`PoolActivation::of`], so a
+/// value of this type carries its provenance: it came from the chain's
+/// consensus parameters through [`pool_upgrade`], never from arithmetic a
+/// call site invented. Seams that must not run without an activation floor
+/// (the migration schedule planner, for one) demand this type in their
+/// signatures, making floor omission unrepresentable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PoolActivation(BlockHeight);
+
+impl PoolActivation {
+    /// Derives the pool's activation height from the chain's consensus
+    /// parameters. `None` when the chain never activates the pool's
+    /// upgrade, a real state (regtest schedules may defer an upgrade
+    /// indefinitely), in which the pool simply cannot be scheduled
+    /// against.
+    pub fn of(
+        consensus_parameters: &impl consensus::Parameters,
+        pool: ShieldedPool,
+    ) -> Option<Self> {
+        consensus_parameters
+            .activation_height(pool_upgrade(pool))
+            .map(Self)
+    }
+
+    /// The activation height.
+    #[must_use]
+    pub fn height(&self) -> BlockHeight {
+        self.0
+    }
+
+    /// The later of the activation and `height`: the effective floor for
+    /// heights that must not precede the pool's existence (a wallet
+    /// Birthday clamped to the pool's activation, the lower bound of a
+    /// scan range). Birthday remains a wallet property throughout. The
+    /// pool contributes only its activation height.
+    #[must_use]
+    pub fn max_with(&self, height: BlockHeight) -> BlockHeight {
+        self.0.max(height)
+    }
+
+    /// A fabricated activation for tests exercising floor arithmetic
+    /// without a full parameter set. Production code has no path here:
+    /// the derivation constructor is the only other way in.
+    #[cfg(any(test, feature = "test-features"))]
+    #[must_use]
+    pub fn new_for_test(height: BlockHeight) -> Self {
+        Self(height)
     }
 }
 
@@ -1609,6 +1680,82 @@ impl OutgoingNoteInterface for OutgoingIronwoodNote {
     }
 }
 
+/// Reduces the wallet to what a build that never tracked `pool` would have
+/// left behind: the very same scanned ranges, and none of that pool's data.
+///
+/// This is the state a wallet reaches by syncing across a pool's activation
+/// on a build that predates the pool, which is not otherwise constructible
+/// from outside. Scan-range priorities are deliberately untouched, since the
+/// defect being reproduced is precisely that the ranges still claim to be
+/// scanned.
+#[cfg(any(test, feature = "test-features"))]
+pub fn strip_pool_tracking_for_test<W>(wallet: &mut W, pool: ShieldedPool) -> Result<(), W::Error>
+where
+    W: traits::SyncWallet
+        + traits::SyncBlocks
+        + traits::SyncTransactions
+        + traits::SyncNullifiers
+        + traits::SyncShardTrees,
+{
+    for block in wallet.get_wallet_blocks_mut()?.values_mut() {
+        let tree_bounds = &mut block.tree_bounds;
+        match pool {
+            ShieldedPool::Sapling => {
+                tree_bounds.sapling_initial_tree_size = 0;
+                tree_bounds.sapling_final_tree_size = 0;
+            }
+            ShieldedPool::Orchard => {
+                tree_bounds.orchard_initial_tree_size = 0;
+                tree_bounds.orchard_final_tree_size = 0;
+            }
+            ShieldedPool::Ironwood => {
+                tree_bounds.ironwood_initial_tree_size = 0;
+                tree_bounds.ironwood_final_tree_size = 0;
+            }
+        }
+    }
+    for transaction in wallet.get_wallet_transactions_mut()?.values_mut() {
+        match pool {
+            ShieldedPool::Sapling => {
+                transaction.sapling_notes.clear();
+                transaction.outgoing_sapling_notes.clear();
+            }
+            ShieldedPool::Orchard => {
+                transaction.orchard_notes.clear();
+                transaction.outgoing_orchard_notes.clear();
+            }
+            ShieldedPool::Ironwood => {
+                transaction.ironwood_notes.clear();
+                transaction.outgoing_ironwood_notes.clear();
+            }
+        }
+    }
+
+    let nullifiers = wallet.get_nullifiers_mut()?;
+    match pool {
+        ShieldedPool::Sapling => nullifiers.sapling.clear(),
+        ShieldedPool::Orchard => nullifiers.orchard.clear(),
+        ShieldedPool::Ironwood => nullifiers.ironwood.clear(),
+    }
+
+    let empty = ShardTrees::new();
+    let shard_trees = wallet.get_shard_trees_mut()?;
+    match pool {
+        ShieldedPool::Sapling => shard_trees.sapling = empty.sapling,
+        ShieldedPool::Orchard => shard_trees.orchard = empty.orchard,
+        ShieldedPool::Ironwood => shard_trees.ironwood = empty.ironwood,
+    }
+
+    let sync_state = wallet.get_sync_state_mut()?;
+    match pool {
+        ShieldedPool::Sapling => sync_state.sapling_shard_ranges.clear(),
+        ShieldedPool::Orchard => sync_state.orchard_shard_ranges.clear(),
+        ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.clear(),
+    }
+
+    Ok(())
+}
+
 // TODO: allow consumer to define shard store. memory shard store has infallible error type but other may not so error
 // handling will need to replace expects
 /// Type alias for sapling memory shard store
@@ -1645,24 +1792,25 @@ impl ShardTrees {
     /// Create new `ShardTrees`
     #[must_use]
     pub fn new() -> Self {
-        let mut sapling = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-        let mut orchard = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-        let mut ironwood = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-
-        sapling
-            .checkpoint(BlockHeight::from_u32(0))
-            .expect("should never fail");
-        orchard
-            .checkpoint(BlockHeight::from_u32(0))
-            .expect("should never fail");
-        ironwood
-            .checkpoint(BlockHeight::from_u32(0))
-            .expect("should never fail");
-
         Self {
-            sapling,
-            orchard,
-            ironwood,
+            sapling: empty_shard_tree(),
+            orchard: empty_shard_tree(),
+            ironwood: empty_shard_tree(),
+        }
+    }
+
+    /// Replaces one pool's shard tree with an empty tree, leaving the other
+    /// pools alone.
+    ///
+    /// The empty tree is that pool's correct state at its own activation, so
+    /// this is the rollback a pool needs when its recorded history cannot be
+    /// trusted and no checkpoint survives to roll back to.
+    pub(crate) fn clear_pool(&mut self, pool: ShieldedPool) {
+        tracing::info!("Clearing {pool:?} shard tree.");
+        match pool {
+            ShieldedPool::Sapling => self.sapling = empty_shard_tree(),
+            ShieldedPool::Orchard => self.orchard = empty_shard_tree(),
+            ShieldedPool::Ironwood => self.ironwood = empty_shard_tree(),
         }
     }
 }
@@ -1671,6 +1819,25 @@ impl Default for ShardTrees {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// An empty shard tree with the crate's standard checkpoint retention and
+/// the zero-height checkpoint that every fresh tree must carry.
+pub(crate) fn empty_shard_tree<H, const DEPTH: u8, const SHARD_HEIGHT: u8>()
+-> ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>
+where
+    H: incrementalmerkletree::Hashable + Clone + PartialEq,
+{
+    let mut tree = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+
+    // `NotAboveNewest` is impossible on an empty checkpoint store.
+    assert_eq!(
+        tree.append_checkpoint(BlockHeight::from_u32(0))
+            .expect("should never fail"),
+        CheckpointAppendOutcome::Appended
+    );
+
+    tree
 }
 
 use shardtree::store::ShardStore;

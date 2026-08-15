@@ -18,8 +18,8 @@ it via this table: set the Linear **status** and/or apply the **label** shown.
 
 Notes:
 
-- `needs-info` and `ready-for-agent` are labels that don't exist in the team yet —
-  create them on first use with `mcp__linear-server__create_issue_label`
+- `needs-info` and `ready-for-agent` are labels that don't exist in the team yet.
+  Create them on first use with `mcp__linear-server__create_issue_label`
   (`team: "Zingo Mobile"`), then apply via `save_issue`.
 - `ready-for-agent` and `ready-for-human` share the **Todo** status; the
   `ready-for-agent` **label** is what distinguishes an AFK-ready issue from one

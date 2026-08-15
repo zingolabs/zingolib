@@ -1,20 +1,23 @@
 //! Entrypoint for sync engine
 
 use std::collections::{BTreeMap, HashMap};
+use std::convert::Infallible;
 use std::ops::Range;
 use std::sync::Arc;
-use std::sync::atomic::{self, AtomicBool, AtomicU8};
+use std::sync::atomic::{self, AtomicBool, AtomicU8, AtomicU32};
 use std::time::{Duration, SystemTime};
 
-use tokio::sync::{RwLock, mpsc};
+use shardtree::ShardTree;
+use shardtree::store::memory::MemoryShardStore;
+use tokio::sync::{RwLock, mpsc, watch};
 
 use incrementalmerkletree::{Marking, Retention};
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::{PoolType, ShieldedPool};
 use zingo_netutils::lightwallet_protocol::RawTransaction;
 use zingo_netutils::{Indexer, TransparentIndexer};
 use zip32::AccountId;
@@ -31,32 +34,34 @@ use crate::keys::transparent::TransparentAddressId;
 use crate::scan::ScanResults;
 use crate::scan::task::{Scanner, ScannerState};
 use crate::scan::transactions::scan_transaction;
+use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
 use crate::sync::state::truncate_scan_ranges;
 use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
 use crate::wallet::{
-    KeyIdInterface, NoteInterface, NullifierMap, OutputId, OutputInterface, ScanTarget, SyncMode,
-    SyncState, WalletBlock, WalletTransaction,
+    KeyIdInterface, NoteInterface, NullifierMap, OutputId, OutputInterface, PoolActivation,
+    ScanTarget, SyncMode, SyncState, WalletBlock, WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
 
 use crate::witness;
 
-pub(crate) mod transparent;
-
 pub(crate) mod spend;
 pub(crate) mod state;
+pub(crate) mod transparent;
+pub mod truncate;
 
 /// The deepest chain reorganization the wallet tolerates, and the
 /// repository's single source of truth for that depth. It mirrors the
-/// validator's finalization boundary — zebra's
+/// validator's finalization boundary, zebra's
 /// `zebra_state::MAX_BLOCK_REORG_HEIGHT` (100), below which blocks are
 /// final and no deeper reorg can occur. Zebra crates are not
 /// dependencies of this workspace, so the value is pinned to its
-/// upstream by documentation rather than import; if zebra ever moves
+/// upstream by documentation rather than import. If zebra ever moves
 /// its boundary, this constant is the one place that follows it.
 pub const MAX_REORG_ALLOWANCE: u32 = 100;
+
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
@@ -76,6 +81,8 @@ pub struct SyncStatus {
     pub total_sapling_outputs_scanned: u32,
     pub session_orchard_outputs_scanned: u32,
     pub total_orchard_outputs_scanned: u32,
+    pub session_ironwood_outputs_scanned: u32,
+    pub total_ironwood_outputs_scanned: u32,
     pub percentage_session_outputs_scanned: f32,
     pub percentage_total_outputs_scanned: f32,
     /// Numerator of the exact scan-progress ratio: outputs scanned so far
@@ -143,6 +150,8 @@ impl From<SyncStatus> for json::JsonValue {
             "total_sapling_outputs_scanned" => value.total_sapling_outputs_scanned,
             "session_orchard_outputs_scanned" => value.session_orchard_outputs_scanned,
             "total_orchard_outputs_scanned" => value.total_orchard_outputs_scanned,
+            "session_ironwood_outputs_scanned" => value.session_ironwood_outputs_scanned,
+            "total_ironwood_outputs_scanned" => value.total_ironwood_outputs_scanned,
             "percentage_session_outputs_scanned" => value.percentage_session_outputs_scanned,
             "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
             "total_outputs_scanned" => value.total_outputs_scanned,
@@ -160,6 +169,7 @@ pub struct SyncResult {
     pub blocks_scanned: u32,
     pub sapling_outputs_scanned: u32,
     pub orchard_outputs_scanned: u32,
+    pub ironwood_outputs_scanned: u32,
     pub percentage_total_outputs_scanned: f32,
 }
 
@@ -174,6 +184,7 @@ impl std::fmt::Display for SyncResult {
     blocks scanned: {}
     sapling outputs scanned: {}
     orchard outputs scanned: {}
+    ironwood outputs scanned: {}
     percentage total outputs scanned: {}
 }}",
             self.sync_start_height,
@@ -181,6 +192,7 @@ impl std::fmt::Display for SyncResult {
             self.blocks_scanned,
             self.sapling_outputs_scanned,
             self.orchard_outputs_scanned,
+            self.ironwood_outputs_scanned,
             self.percentage_total_outputs_scanned,
         )
     }
@@ -194,6 +206,7 @@ impl From<SyncResult> for json::JsonValue {
             "blocks_scanned" => value.blocks_scanned,
             "sapling_outputs_scanned" => value.sapling_outputs_scanned,
             "orchard_outputs_scanned" => value.orchard_outputs_scanned,
+            "ironwood_outputs_scanned" => value.ironwood_outputs_scanned,
             "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
         }
     }
@@ -370,6 +383,7 @@ pub async fn sync<C, P, W>(
     consensus_parameters: &P,
     wallet: Arc<RwLock<W>>,
     sync_mode: Arc<AtomicU8>,
+    progress: watch::Sender<Option<SyncStatus>>,
     config: SyncConfig,
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
@@ -405,7 +419,7 @@ where
     let (mempool_transaction_sender, mut mempool_transaction_receiver) = mpsc::channel(100);
     let shutdown_mempool = Arc::new(AtomicBool::new(false));
     let shutdown_mempool_clone = shutdown_mempool.clone();
-    let unprocessed_mempool_transactions_count = Arc::new(AtomicU8::new(0));
+    let unprocessed_mempool_transactions_count = Arc::new(AtomicU32::new(0));
     let unprocessed_mempool_transactions_count_clone =
         unprocessed_mempool_transactions_count.clone();
     let mempool_stream_connected_at = Arc::new(std::sync::OnceLock::new());
@@ -422,22 +436,25 @@ where
     });
 
     // pre-scan initialisation
-    let mut wallet_guard = wallet.write().await;
-
     let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
     if chain_height == 0.into() {
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
     }
-    let last_known_chain_height =
-        checked_wallet_height(&mut *wallet_guard, chain_height, consensus_parameters)?;
+    let last_known_chain_height = checked_wallet_height(
+        &mut *wallet.write().await,
+        chain_height,
+        consensus_parameters,
+    )?;
 
-    let ufvks = wallet_guard
+    let ufvks = wallet
+        .read()
+        .await
         .get_unified_full_viewing_keys()
         .map_err(SyncError::WalletError)?;
 
     transparent::update_addresses_and_scan_targets(
         consensus_parameters,
-        &mut *wallet_guard,
+        wallet.clone(),
         fetch_request_sender.clone(),
         &ufvks,
         last_known_chain_height,
@@ -449,14 +466,14 @@ where
     update_subtree_roots(
         consensus_parameters,
         fetch_request_sender.clone(),
-        &mut *wallet_guard,
+        &mut *wallet.write().await,
     )
     .await?;
 
     add_initial_frontier(
         consensus_parameters,
         fetch_request_sender.clone(),
-        &mut *wallet_guard,
+        &mut *wallet.write().await,
     )
     .await?;
 
@@ -465,19 +482,22 @@ where
         fetch_request_sender.clone(),
         last_known_chain_height,
         chain_height,
-        &mut *wallet_guard,
+        &mut *wallet.write().await,
     )
     .await?;
 
     state::set_initial_state(
         consensus_parameters,
         fetch_request_sender.clone(),
-        &mut *wallet_guard,
+        &mut *wallet.write().await,
         chain_height,
     )
     .await?;
 
-    drop(wallet_guard);
+    expire_transactions(&mut *wallet.write().await)?;
+
+    publish_sync_status(&*wallet.read().await, &progress).await;
+
     // create channel for receiving scan results and launch scanner
     let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
     let mut scanner = Scanner::new(
@@ -510,6 +530,7 @@ where
                 )
                 .await?;
                 wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
+                publish_sync_status(&*wallet_guard, &progress).await;
                 drop(wallet_guard);
             }
 
@@ -552,6 +573,7 @@ where
                         wallet_guard
                             .set_save_flag()
                             .map_err(SyncError::WalletError)?;
+                        let _ = progress.send(Some(sync_status.clone()));
                         drop(wallet_guard);
                         mempool_handle.abort();
                         fetcher_handle.abort();
@@ -569,6 +591,7 @@ where
                             blocks_scanned: sync_status.session_blocks_scanned,
                             sapling_outputs_scanned: sync_status.session_sapling_outputs_scanned,
                             orchard_outputs_scanned: sync_status.session_orchard_outputs_scanned,
+                            ironwood_outputs_scanned: sync_status.session_ironwood_outputs_scanned,
                             percentage_total_outputs_scanned: sync_status.percentage_total_outputs_scanned,
                         });
                     }
@@ -671,6 +694,7 @@ where
         blocks_scanned: sync_status.session_blocks_scanned,
         sapling_outputs_scanned: sync_status.session_sapling_outputs_scanned,
         orchard_outputs_scanned: sync_status.session_orchard_outputs_scanned,
+        ironwood_outputs_scanned: sync_status.session_ironwood_outputs_scanned,
         percentage_total_outputs_scanned: sync_status.percentage_total_outputs_scanned,
     })
 }
@@ -760,9 +784,46 @@ pub async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, SyncStatusError<W:
 where
     W: SyncWallet + SyncBlocks,
 {
-    let (total_sapling_outputs_scanned, total_orchard_outputs_scanned) =
-        state::calculate_scanned_outputs(wallet).map_err(SyncStatusError::WalletError)?;
-    let total_outputs_scanned = total_sapling_outputs_scanned + total_orchard_outputs_scanned;
+    /// Sums one per-pool trio of output counts into the pool-agnostic
+    /// total. Pure and total: this is the single definition of which
+    /// pools participate in scan-progress accounting, so every
+    /// consumer (the percentages and the exact u64 ratio) agrees by
+    /// construction, and adding a pool touches exactly this function.
+    fn output_pool_total(sapling: u32, orchard: u32, ironwood: u32) -> u64 {
+        u64::from(sapling) + u64::from(orchard) + u64::from(ironwood)
+    }
+
+    /// The scale every scan-progress ratio is reported on.
+    const PERCENTAGE_SCALE: f32 = 100.0;
+    /// The percentage a fully scanned span reports.
+    const COMPLETE_PERCENTAGE: f32 = PERCENTAGE_SCALE;
+    /// The percentage an entirely unscanned span reports.
+    const NO_PROGRESS_PERCENTAGE: f32 = 0.0;
+    /// The smallest whole step a reported percentage moves by.
+    const PERCENTAGE_STEP: f32 = 1.0;
+    /// The percentage reported while scanning has finished but nullifiers await refetching.
+    const NULLIFIER_RETRIEVAL_PERCENTAGE: f32 = COMPLETE_PERCENTAGE - PERCENTAGE_STEP;
+    /// The block a span's own first height contributes to the span's inclusive length.
+    const INCLUSIVE_SPAN_ADJUSTMENT: u32 = 1;
+
+    /// Reports `scanned` as a percentage of `total`, and reports `None` where a zero denominator leaves that ratio undefined.
+    fn percentage_scanned(scanned: u64, total: u64) -> Option<f32> {
+        (total != 0).then(|| {
+            ((scanned as f32 / total as f32) * PERCENTAGE_SCALE)
+                .clamp(NO_PROGRESS_PERCENTAGE, COMPLETE_PERCENTAGE)
+        })
+    }
+
+    let (
+        total_sapling_outputs_scanned,
+        total_orchard_outputs_scanned,
+        total_ironwood_outputs_scanned,
+    ) = state::calculate_scanned_outputs(wallet).map_err(SyncStatusError::WalletError)?;
+    let total_outputs_scanned = output_pool_total(
+        total_sapling_outputs_scanned,
+        total_orchard_outputs_scanned,
+        total_ironwood_outputs_scanned,
+    );
 
     let sync_state = wallet
         .get_sync_state()
@@ -773,14 +834,16 @@ where
             sync_start_height: 0.into(),
             session_blocks_scanned: 0,
             total_blocks_scanned: 0,
-            percentage_session_blocks_scanned: 0.0,
-            percentage_total_blocks_scanned: 0.0,
+            percentage_session_blocks_scanned: NO_PROGRESS_PERCENTAGE,
+            percentage_total_blocks_scanned: NO_PROGRESS_PERCENTAGE,
             session_sapling_outputs_scanned: 0,
             session_orchard_outputs_scanned: 0,
+            session_ironwood_outputs_scanned: 0,
             total_sapling_outputs_scanned: 0,
             total_orchard_outputs_scanned: 0,
-            percentage_session_outputs_scanned: 0.0,
-            percentage_total_outputs_scanned: 0.0,
+            total_ironwood_outputs_scanned: 0,
+            percentage_session_outputs_scanned: NO_PROGRESS_PERCENTAGE,
+            percentage_total_outputs_scanned: NO_PROGRESS_PERCENTAGE,
             total_outputs_scanned: 0,
             total_outputs: 0,
         });
@@ -793,72 +856,110 @@ where
     let last_known_chain_height = sync_state
         .last_known_chain_height()
         .ok_or(SyncStatusError::NoSyncData)?;
-    let total_blocks = last_known_chain_height - birthday + 1;
+    let total_blocks = u32::from(last_known_chain_height)
+        .saturating_sub(u32::from(birthday))
+        .saturating_add(INCLUSIVE_SPAN_ADJUSTMENT);
     let total_sapling_outputs = sync_state
         .initial_sync_state
         .wallet_tree_bounds
         .sapling_final_tree_size
-        - sync_state
-            .initial_sync_state
-            .wallet_tree_bounds
-            .sapling_initial_tree_size;
+        .saturating_sub(
+            sync_state
+                .initial_sync_state
+                .wallet_tree_bounds
+                .sapling_initial_tree_size,
+        );
     let total_orchard_outputs = sync_state
         .initial_sync_state
         .wallet_tree_bounds
         .orchard_final_tree_size
-        - sync_state
-            .initial_sync_state
-            .wallet_tree_bounds
-            .orchard_initial_tree_size;
-    let total_outputs = total_sapling_outputs + total_orchard_outputs;
-
-    let session_blocks_scanned =
-        total_blocks_scanned - sync_state.initial_sync_state.previously_scanned_blocks;
-    let mut percentage_session_blocks_scanned = ((session_blocks_scanned as f32
-        / (total_blocks - sync_state.initial_sync_state.previously_scanned_blocks) as f32)
-        * 100.0)
-        .clamp(0.0, 100.0);
-    let mut percentage_total_blocks_scanned =
-        ((total_blocks_scanned as f32 / total_blocks as f32) * 100.0).clamp(0.0, 100.0);
-
-    let session_sapling_outputs_scanned = total_sapling_outputs_scanned
-        - sync_state
-            .initial_sync_state
-            .previously_scanned_sapling_outputs;
-    let session_orchard_outputs_scanned = total_orchard_outputs_scanned
-        - sync_state
-            .initial_sync_state
-            .previously_scanned_orchard_outputs;
-    let session_outputs_scanned = session_sapling_outputs_scanned + session_orchard_outputs_scanned;
-    let previously_scanned_outputs = sync_state
+        .saturating_sub(
+            sync_state
+                .initial_sync_state
+                .wallet_tree_bounds
+                .orchard_initial_tree_size,
+        );
+    let total_ironwood_outputs = sync_state
         .initial_sync_state
-        .previously_scanned_sapling_outputs
-        + sync_state
+        .wallet_tree_bounds
+        .ironwood_final_tree_size
+        .saturating_sub(
+            sync_state
+                .initial_sync_state
+                .wallet_tree_bounds
+                .ironwood_initial_tree_size,
+        );
+    let total_outputs = output_pool_total(
+        total_sapling_outputs,
+        total_orchard_outputs,
+        total_ironwood_outputs,
+    );
+
+    let session_blocks_scanned = total_blocks_scanned
+        .saturating_sub(sync_state.initial_sync_state.previously_scanned_blocks);
+    let session_blocks =
+        total_blocks.saturating_sub(sync_state.initial_sync_state.previously_scanned_blocks);
+    let mut percentage_total_blocks_scanned =
+        percentage_scanned(u64::from(total_blocks_scanned), u64::from(total_blocks))
+            .unwrap_or(COMPLETE_PERCENTAGE);
+    let mut percentage_session_blocks_scanned =
+        percentage_scanned(u64::from(session_blocks_scanned), u64::from(session_blocks))
+            .unwrap_or(percentage_total_blocks_scanned);
+
+    let session_sapling_outputs_scanned = total_sapling_outputs_scanned.saturating_sub(
+        sync_state
             .initial_sync_state
-            .previously_scanned_orchard_outputs;
-    let mut percentage_session_outputs_scanned = ((session_outputs_scanned as f32
-        / (total_outputs - previously_scanned_outputs) as f32)
-        * 100.0)
-        .clamp(0.0, 100.0);
+            .previously_scanned_sapling_outputs,
+    );
+    let session_orchard_outputs_scanned = total_orchard_outputs_scanned.saturating_sub(
+        sync_state
+            .initial_sync_state
+            .previously_scanned_orchard_outputs,
+    );
+    let session_ironwood_outputs_scanned = total_ironwood_outputs_scanned.saturating_sub(
+        sync_state
+            .initial_sync_state
+            .previously_scanned_ironwood_outputs,
+    );
+    let session_outputs_scanned = output_pool_total(
+        session_sapling_outputs_scanned,
+        session_orchard_outputs_scanned,
+        session_ironwood_outputs_scanned,
+    );
+    let previously_scanned_outputs = output_pool_total(
+        sync_state
+            .initial_sync_state
+            .previously_scanned_sapling_outputs,
+        sync_state
+            .initial_sync_state
+            .previously_scanned_orchard_outputs,
+        sync_state
+            .initial_sync_state
+            .previously_scanned_ironwood_outputs,
+    );
+    let session_outputs = total_outputs.saturating_sub(previously_scanned_outputs);
     let mut percentage_total_outputs_scanned =
-        ((total_outputs_scanned as f32 / total_outputs as f32) * 100.0).clamp(0.0, 100.0);
+        percentage_scanned(total_outputs_scanned, total_outputs).unwrap_or(COMPLETE_PERCENTAGE);
+    let mut percentage_session_outputs_scanned =
+        percentage_scanned(session_outputs_scanned, session_outputs)
+            .unwrap_or(percentage_total_outputs_scanned);
 
     if sync_state
         .scan_ranges()
         .iter()
         .any(|scan_range| scan_range.priority().awaits_nullifier_retrieval())
     {
-        if percentage_session_blocks_scanned == 100.0 {
-            percentage_session_blocks_scanned = 99.0;
+        if percentage_session_blocks_scanned == COMPLETE_PERCENTAGE {
+            percentage_session_blocks_scanned = NULLIFIER_RETRIEVAL_PERCENTAGE;
         }
-        if percentage_total_blocks_scanned == 100.0 {
-            percentage_total_blocks_scanned = 99.0;
+        if percentage_total_blocks_scanned == COMPLETE_PERCENTAGE {
+            percentage_total_blocks_scanned = NULLIFIER_RETRIEVAL_PERCENTAGE;
         }
-        if percentage_session_outputs_scanned == 100.0 {
-            percentage_session_outputs_scanned = 99.0;
+        if percentage_session_outputs_scanned == COMPLETE_PERCENTAGE {
+            percentage_session_outputs_scanned = NULLIFIER_RETRIEVAL_PERCENTAGE;
         }
-        if percentage_total_outputs_scanned == 100.0 {
-            percentage_total_outputs_scanned = 99.0;
+        if percentage_total_outputs_scanned == COMPLETE_PERCENTAGE {
+            percentage_total_outputs_scanned = NULLIFIER_RETRIEVAL_PERCENTAGE;
         }
     }
 
@@ -873,12 +974,23 @@ where
         total_sapling_outputs_scanned,
         session_orchard_outputs_scanned,
         total_orchard_outputs_scanned,
+        session_ironwood_outputs_scanned,
+        total_ironwood_outputs_scanned,
         percentage_session_outputs_scanned,
         percentage_total_outputs_scanned,
-        total_outputs_scanned: u64::from(total_sapling_outputs_scanned)
-            + u64::from(total_orchard_outputs_scanned),
-        total_outputs: u64::from(total_sapling_outputs) + u64::from(total_orchard_outputs),
+        total_outputs_scanned,
+        total_outputs,
     })
+}
+
+/// Publishes the wallet's current sync status to the progress channel, ignoring an unreadable status and a closed channel.
+async fn publish_sync_status<W>(wallet: &W, progress: &watch::Sender<Option<SyncStatus>>)
+where
+    W: SyncWallet + SyncBlocks,
+{
+    if let Ok(status) = sync_status(wallet).await {
+        let _ = progress.send(Some(status));
+    }
 }
 
 /// Scans a pending `transaction` of a given `status`, adding to the wallet and updating output spend statuses.
@@ -946,8 +1058,8 @@ where
         && pending_transaction.sapling_notes().is_empty()
         && pending_transaction.orchard_notes().is_empty()
         && pending_transaction.ironwood_notes().is_empty()
-        && pending_transaction.outgoing_orchard_notes().is_empty()
         && pending_transaction.outgoing_sapling_notes().is_empty()
+        && pending_transaction.outgoing_orchard_notes().is_empty()
         && pending_transaction.outgoing_ironwood_notes().is_empty()
         && transparent_spend_scan_targets.is_empty()
         && sapling_spend_scan_targets.is_empty()
@@ -1005,6 +1117,17 @@ pub fn reset_spends(
 ) {
     wallet_transactions
         .values_mut()
+        .flat_map(|transaction| transaction.ironwood_notes_mut())
+        .filter(|output| {
+            output
+                .spending_transaction
+                .is_some_and(|spending_txid| invalid_txids.contains(&spending_txid))
+        })
+        .for_each(|output| {
+            output.set_spending_transaction(None);
+        });
+    wallet_transactions
+        .values_mut()
         .flat_map(|transaction| transaction.orchard_notes_mut())
         .filter(|output| {
             output
@@ -1043,7 +1166,7 @@ pub fn reset_spends(
 /// Sets the `spending_transaction` fields of any outputs spent in these transactions to `None`.
 ///
 /// Transactions with `Confirmed` status are skipped with a warning. A mined transaction
-/// cannot fail — only a reorg can un-mine it, and reorgs are handled by truncation, which
+/// cannot fail, since only a reorg can un-mine it, and reorgs are handled by truncation, which
 /// reopens the affected scan ranges. For a confirmed transaction the note's
 /// `spending_transaction` field is the wallet's only durable record of the on-chain spend
 /// (detection consumed the nullifier-map entry when the spending block was scanned), so
@@ -1096,7 +1219,7 @@ pub(crate) fn set_transactions_failed_unchecked(
 
 /// Returns true if the scanner and mempool are shutdown.
 /// Verdict for one pass of the scanner-shutdown drain poll. Pure over a
-/// snapshot — the caller loads the atomics and clocks; this only
+/// snapshot: the caller loads the atomics and clocks. This only
 /// decides, so the whole policy is table-testable without a runtime.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DrainVerdict {
@@ -1112,7 +1235,7 @@ enum DrainVerdict {
 /// The drain policy for scanner shutdown.
 ///
 /// `connected_for` is the age of the mempool stream subscription
-/// (`None` until it is established). Connection — not first delivery —
+/// (`None` until it is established). Connection, not first delivery,
 /// is deliberately the grace trigger: an empty mempool never delivers,
 /// and a delivery-based grace would hold every such session for the
 /// full ceiling, restoring the fixed second c90f8d309 removed. The
@@ -1120,20 +1243,16 @@ enum DrainVerdict {
 /// pre-existing mempool content (served within ~100ms of connect).
 fn drain_verdict(
     scan_workers: usize,
-    unprocessed_mempool_transactions: u8,
+    unprocessed_mempool_transactions: u32,
     connected_for: Option<Duration>,
     poll_elapsed: Duration,
 ) -> DrainVerdict {
-    /// The pre-c90f8d309 unconditional sleep, demoted to worst case: a
-    /// stream that never connects must not hold the session open.
-    const CEILING: Duration = Duration::from_secs(1);
-    /// One settle window after subscription.
-    const SETTLE: Duration = Duration::from_millis(200);
+    use zingo_netutils::time::{MEMPOOL_DRAIN_CEILING, MEMPOOL_DRAIN_SETTLE};
 
     if unprocessed_mempool_transactions > 0 {
         return DrainVerdict::Reenter;
     }
-    if poll_elapsed >= CEILING {
+    if poll_elapsed >= MEMPOOL_DRAIN_CEILING {
         return if scan_workers == 0 {
             DrainVerdict::Shutdown
         } else {
@@ -1141,7 +1260,7 @@ fn drain_verdict(
         };
     }
     match connected_for {
-        Some(age) if age >= SETTLE && scan_workers == 0 => DrainVerdict::Shutdown,
+        Some(age) if age >= MEMPOOL_DRAIN_SETTLE && scan_workers == 0 => DrainVerdict::Shutdown,
         _ => DrainVerdict::KeepPolling,
     }
 }
@@ -1181,7 +1300,7 @@ where
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
-                // add missing block bounds in the case that nullifier batch limit was reached and the fetch nullifier
+                // add missing block bounds in the case that the load's nullifier budget was reached and the fetch nullifier
                 // scan range was split.
                 let full_refetching_nullifiers_range = wallet
                     .get_sync_state()
@@ -1460,7 +1579,154 @@ where
                 scan_results?;
             }
         }
+        Err(ScanError::IncorrectTreeSize {
+            shielded_protocol: PoolType::Shielded(pool),
+            block_metadata_size,
+            calculated_size,
+        }) => {
+            tracing::warn!(
+                "{pool:?} history recorded a commitment tree of {calculated_size} where the chain \
+                 reports {block_metadata_size}."
+            );
+            return Err(truncate_to_pool_activation_height(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                wallet,
+                pool,
+            )
+            .await?);
+        }
         Err(e) => return Err(e.into()),
+    }
+
+    Ok(())
+}
+
+/// Truncates the wallet back to the `target_pool` activation height.
+///
+/// Wallet blocks, transactions, nullifiers and outpoints are all cleared at or above the target pool's activation
+/// height.
+///
+/// The target pool and any pool that came in a later network upgrade have their shard trees cleared. Any earlier
+/// pool's will truncate back to the earliest checkpoint above the target pool's acitvation height. This means that
+/// some shard tree data above the target pool's activation height may be retained in the wallet. However, in the
+/// case of an older version of the sync engine scanning blocks from a new incompatible pool epoch, all shard tree data
+/// for earlier pool's will be correct. Re-insertion of this shard tree data on rescan will not cause any issues.
+async fn truncate_to_pool_activation_height<W>(
+    consensus_parameters: &impl consensus::Parameters,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    wallet: &mut W,
+    target_pool: ShieldedPool,
+) -> Result<SyncError<W::Error>, SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+{
+    let birthday = wallet.get_birthday().map_err(SyncError::WalletError)?;
+    let Some(activation) = PoolActivation::of(consensus_parameters, target_pool) else {
+        // A pool the chain never activates cannot have been served, so it
+        // cannot be the one that disagreed.
+        panic!("{target_pool:?} reported a tree size on a chain that never activates it");
+    };
+    let rescan_from = activation.max_with(birthday);
+    let rescan_targets = wallet
+        .get_wallet_transactions()
+        .map_err(SyncError::WalletError)?
+        .values()
+        .filter(|&transaction| transaction.status().is_confirmed_after_or_at(&rescan_from))
+        .map(|transaction| ScanTarget {
+            block_height: transaction.status().get_height(),
+            txid: transaction.txid(),
+            narrow_scan_area: true,
+        })
+        .collect::<Vec<_>>();
+
+    truncate_stores(wallet, rescan_from - 1, false)?;
+
+    let frontiers = client::get_frontiers(fetch_request_sender, birthday).await?;
+    let retention = Retention::Checkpoint {
+        id: birthday,
+        marking: Marking::None,
+    };
+    let shard_trees = wallet
+        .get_shard_trees_mut()
+        .map_err(SyncError::WalletError)?;
+    for pool in [
+        ShieldedPool::Sapling,
+        ShieldedPool::Orchard,
+        ShieldedPool::Ironwood,
+    ] {
+        if target_pool >= pool {
+            shard_trees.clear_pool(pool);
+            match pool {
+                ShieldedPool::Sapling => shard_trees
+                    .sapling
+                    .insert_frontier(frontiers.final_sapling_tree().clone(), retention),
+                ShieldedPool::Orchard => shard_trees
+                    .orchard
+                    .insert_frontier(frontiers.final_orchard_tree().clone(), retention),
+                ShieldedPool::Ironwood => shard_trees
+                    .ironwood
+                    .insert_frontier(frontiers.final_ironwood_tree().clone(), retention),
+            }
+            .expect("infallible");
+        } else {
+            match pool {
+                ShieldedPool::Sapling => {
+                    truncate_tree_to_next_checkpoint(rescan_from - 1, &mut shard_trees.sapling)?;
+                }
+                ShieldedPool::Orchard => {
+                    truncate_tree_to_next_checkpoint(rescan_from - 1, &mut shard_trees.orchard)?;
+                }
+                ShieldedPool::Ironwood => {
+                    truncate_tree_to_next_checkpoint(rescan_from - 1, &mut shard_trees.ironwood)?;
+                }
+            }
+        }
+    }
+
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
+    state::reopen_scan_ranges_from(sync_state, rescan_from);
+    add_scan_targets(sync_state, &rescan_targets);
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
+
+    Ok(SyncError::PoolHistoryReopened(
+        rescan_from,
+        PoolType::Shielded(target_pool),
+    ))
+}
+
+/// Truncate the shard tree to the lowest checkpoint equal to or above the `target_height`.
+///
+/// If all checkpoints are below target height, do not truncate. Shard tree data at the target height is
+/// never removed, only data above the target height.
+fn truncate_tree_to_next_checkpoint<H, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    target_height: BlockHeight,
+    tree: &mut ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>,
+) -> Result<(), shardtree::error::ShardTreeError<Infallible>>
+where
+    H: incrementalmerkletree::Hashable + Clone + PartialEq,
+{
+    let mut truncation_height = None;
+    tree.store()
+        .for_each_checkpoint((MAX_REORG_ALLOWANCE + 1) as usize, |height, _| {
+            if truncation_height.is_some() {
+                return Ok(());
+            }
+
+            if *height >= target_height {
+                truncation_height = Some(*height);
+            }
+
+            Ok(())
+        })
+        .expect("infallible");
+    if let Some(h) = truncation_height {
+        match tree.rollback_to_checkpoint(h)? {
+            RollbackOutcome::RolledBack => (),
+            RollbackOutcome::NoSuchCheckpoint => panic!("checkpoint must exist in this scope"),
+        }
     }
 
     Ok(())
@@ -1536,6 +1802,11 @@ where
 }
 
 /// Removes wallet blocks, transactions, nullifiers, outpoints and shard tree data above the given `truncate_height`.
+///
+/// The decision of what a correct truncation does is made purely by
+/// [`truncate::plan_truncation`] from the wallet state, the shard-tree
+/// state, and the truncation target. This function only applies the
+/// returned plan.
 fn truncate_wallet_data<W>(
     wallet: &mut W,
     truncate_height: BlockHeight,
@@ -1546,42 +1817,60 @@ where
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
-    let highest_scanned_height = sync_state
-        .highest_scanned_height()
-        .expect("should be non-empty in this scope");
-    let wallet_birthday = sync_state
-        .wallet_birthday()
-        .expect("should be non-empty in this scope");
-    let checked_truncate_height = match truncate_height.cmp(&wallet_birthday) {
-        std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => truncate_height,
-        std::cmp::Ordering::Less => consensus::H0,
+    let wallet_state = truncate::WalletTruncationState {
+        birthday: sync_state
+            .wallet_birthday()
+            .expect("should be non-empty in this scope"),
+        highest_scanned_height: sync_state
+            .highest_scanned_height()
+            .expect("should be non-empty in this scope"),
     };
-
-    if checked_truncate_height > highest_scanned_height {
-        return Ok(());
-    }
-
-    wallet
-        .truncate_wallet_blocks(checked_truncate_height)
-        .map_err(SyncError::WalletError)?;
-    wallet
-        .truncate_wallet_transactions(checked_truncate_height)
-        .map_err(SyncError::WalletError)?;
-    wallet
-        .truncate_nullifiers(checked_truncate_height)
-        .map_err(SyncError::WalletError)?;
-    wallet
-        .truncate_outpoints(checked_truncate_height)
-        .map_err(SyncError::WalletError)?;
-    match wallet.truncate_shard_trees(checked_truncate_height) {
-        Ok(_) => Ok(()),
-        Err(SyncError::TruncationError(height, pooltype)) => {
-            clear_wallet_data(wallet)?;
-
-            Err(SyncError::TruncationError(height, pooltype))
+    match truncate::plan_truncation(wallet_state, truncate_height) {
+        truncate::TruncationPlan::NoOp => Ok(()),
+        truncate::TruncationPlan::ClearAll => {
+            truncate_stores(wallet, consensus::H0, true)?;
+            wallet.clear_shard_trees()
         }
-        Err(e) => Err(e),
-    }?;
+        truncate::TruncationPlan::Truncate { height } => {
+            truncate_stores(wallet, height, true)?;
+            match wallet.truncate_shard_trees(height) {
+                Ok(()) => Ok(()),
+                Err(SyncError::TruncationError(height, pooltype)) => {
+                    clear_wallet_data(wallet)?;
+
+                    Err(SyncError::TruncationError(height, pooltype))
+                }
+                Err(e) => Err(e),
+            }
+        }
+    }
+}
+
+/// Removes wallet blocks, transactions, nullifiers and outpoints above the
+/// given `truncate_height`.
+///
+/// If `set_truncated_transactions_failed` is set, transactions will not be removed from the wallet but their status
+/// will be updated to `Failed`.
+fn truncate_stores<W>(
+    wallet: &mut W,
+    truncate_height: BlockHeight,
+    set_truncated_transactions_failed: bool,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
+{
+    wallet
+        .truncate_wallet_blocks(truncate_height)
+        .map_err(SyncError::WalletError)?;
+    wallet
+        .truncate_wallet_transactions(truncate_height, set_truncated_transactions_failed)
+        .map_err(SyncError::WalletError)?;
+    wallet
+        .truncate_nullifiers(truncate_height)
+        .map_err(SyncError::WalletError)?;
+    wallet
+        .truncate_outpoints(truncate_height)
+        .map_err(SyncError::WalletError)?;
 
     Ok(())
 }
@@ -1909,30 +2198,21 @@ async fn update_subtree_roots<W>(
 where
     W: SyncWallet + SyncShardTrees,
 {
-    let sapling_start_index = wallet
-        .get_shard_trees()
-        .map_err(SyncError::WalletError)?
-        .sapling
-        .store()
-        .get_shard_roots()
-        .expect("infallible")
-        .len() as u32;
-    let orchard_start_index = wallet
-        .get_shard_trees()
-        .map_err(SyncError::WalletError)?
-        .orchard
-        .store()
-        .get_shard_roots()
-        .expect("infallible")
-        .len() as u32;
-    let ironwood_start_index = wallet
-        .get_shard_trees()
-        .map_err(SyncError::WalletError)?
-        .ironwood
-        .store()
-        .get_shard_roots()
-        .expect("infallible")
-        .len() as u32;
+    // Resume from the stored-root count, except that a newest root which
+    // is still bare (never scanned into) is refetched every session: no
+    // checkpoint witnesses it, so this refetch is the only mechanism that
+    // heals it after a reorg (see `subtree_fetch_start_index`). When a
+    // refetch happens, the pool's newest stored shard range is dropped
+    // before the fetched roots are accounted, so the range accounting is
+    // rebuilt from the refetched root, never duplicated, and corrected
+    // if a reorg moved the subtree's completing height.
+    let shard_trees = wallet.get_shard_trees().map_err(SyncError::WalletError)?;
+    let stored_sapling_roots = witness::stored_subtree_root_count(&shard_trees.sapling);
+    let stored_orchard_roots = witness::stored_subtree_root_count(&shard_trees.orchard);
+    let stored_ironwood_roots = witness::stored_subtree_root_count(&shard_trees.ironwood);
+    let sapling_start_index = witness::subtree_fetch_start_index(&shard_trees.sapling);
+    let orchard_start_index = witness::subtree_fetch_start_index(&shard_trees.orchard);
+    let ironwood_start_index = witness::subtree_fetch_start_index(&shard_trees.ironwood);
     let (sapling_subtree_roots, orchard_subtree_roots, ironwood_subtree_roots) = futures::join!(
         client::get_subtree_roots(fetch_request_sender.clone(), sapling_start_index, 0, 0),
         client::get_subtree_roots(fetch_request_sender.clone(), orchard_start_index, 1, 0),
@@ -1959,12 +2239,18 @@ where
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
+    if (sapling_start_index as usize) < stored_sapling_roots && !sapling_subtree_roots.is_empty() {
+        state::pop_newest_shard_range(sync_state, ShieldedPool::Sapling);
+    }
     state::add_shard_ranges(
         consensus_parameters,
         ShieldedPool::Sapling,
         sync_state,
         &sapling_subtree_roots,
     );
+    if (orchard_start_index as usize) < stored_orchard_roots && !orchard_subtree_roots.is_empty() {
+        state::pop_newest_shard_range(sync_state, ShieldedPool::Orchard);
+    }
     state::add_shard_ranges(
         consensus_parameters,
         ShieldedPool::Orchard,
@@ -1972,6 +2258,9 @@ where
         &orchard_subtree_roots,
     );
     if !ironwood_subtree_roots.is_empty() {
+        if (ironwood_start_index as usize) < stored_ironwood_roots {
+            state::pop_newest_shard_range(sync_state, ShieldedPool::Ironwood);
+        }
         state::add_shard_ranges(
             consensus_parameters,
             ShieldedPool::Ironwood,
@@ -2076,7 +2365,7 @@ where
 async fn mempool_monitor<C>(
     mut client: C,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
-    unprocessed_transactions_count: Arc<AtomicU8>,
+    unprocessed_transactions_count: Arc<AtomicU32>,
     stream_connected_at: Arc<std::sync::OnceLock<std::time::Instant>>,
     shutdown_mempool: Arc<AtomicBool>,
 ) -> Result<(), MempoolError>
@@ -2096,8 +2385,8 @@ where
             Ok(mut mempool_stream) => {
                 // First successful subscription: the drain policy's
                 // grace window keys on this instant. Deliberately not
-                // reset on reconnect — any successful connect proves
-                // the indexer serves the stream.
+                // reset on reconnect, since any successful connect
+                // proves the indexer serves the stream.
                 let _already_set = stream_connected_at.set(std::time::Instant::now());
                 interval.reset();
                 loop {
@@ -2105,10 +2394,18 @@ where
                         mempool_stream_message = mempool_stream.message() => {
                             match mempool_stream_message.unwrap_or(None) {
                                 Some(raw_transaction) => {
-                                     let _ignore_error = mempool_transaction_sender
+                                     match mempool_transaction_sender
                                         .send(raw_transaction)
-                                        .await;
-                                    unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
+                                        .await {
+                                            Ok(_) => {
+                                                unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
+                                            }
+                                            Err(_) => {
+                                                unprocessed_transactions_count.store(0, atomic::Ordering::Release);
+                                                shutdown_mempool.store(true, atomic::Ordering::Release);
+                                                break 'main;
+                                            }
+                                        }
                                 }
                                 None => {
                                     continue 'main;
@@ -2127,7 +2424,10 @@ where
             }
             Err(e @ MempoolError::ShutdownWithoutStream) => return Err(e),
             Err(MempoolError::ServerError(e)) => {
-                tracing::warn!("Mempool stream request failed! Status: {e}.\nRetrying...");
+                tracing::warn!(
+                    "Mempool stream request failed! Status: {}.\nRetrying...",
+                    crate::error::cause_chain_text(&e)
+                );
                 tokio::time::sleep(Duration::from_secs(3)).await;
             }
         }
@@ -2183,8 +2483,8 @@ fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> 
 #[cfg(test)]
 mod test {
     /// The completion contract of [`crate::sync::SyncStatus::is_complete`]:
-    /// completion is the sync task's own terminal condition — sync has
-    /// started and every scan range is `Scanned` — independent of the
+    /// completion is the sync task's own terminal condition (sync has
+    /// started and every scan range is `Scanned`), independent of the
     /// output ratio, so an output-free birthday-to-chain-height range can
     /// complete and a stale `total_outputs` cannot fake completion.
     mod sync_status_completion {
@@ -2218,6 +2518,8 @@ mod test {
                 total_sapling_outputs_scanned: 0,
                 session_orchard_outputs_scanned: 0,
                 total_orchard_outputs_scanned: 0,
+                session_ironwood_outputs_scanned: 0,
+                total_ironwood_outputs_scanned: 0,
                 percentage_session_outputs_scanned: 0.0,
                 percentage_total_outputs_scanned: 0.0,
                 total_outputs_scanned: 0,
@@ -2275,6 +2577,491 @@ mod test {
         }
     }
 
+    /// The truncation contract of [`crate::sync::truncate_wallet_data`]:
+    /// a reorg truncation rolls every store back to the truncate height,
+    /// and a shard tree that records nothing above that height (such as
+    /// the empty ironwood tree a pre-ironwood (v0) wallet blob migrates
+    /// to) is untouched, never classified broken. Only a tree that
+    /// holds state above the height and cannot roll back to it forces
+    /// the clear-and-rescan path.
+    mod truncation {
+        use std::collections::BTreeMap;
+
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::consensus::BlockHeight;
+
+        use crate::mocks::MockWalletBuilder;
+        use crate::shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt};
+        use crate::sync::{ScanPriority, ScanRange, truncate_wallet_data};
+        use crate::wallet::{ShardTrees, SyncState, TreeBounds, WalletBlock, traits::SyncBlocks};
+
+        /// A wallet block carrying only what truncation reads: its height.
+        fn block(height: u32) -> WalletBlock {
+            WalletBlock {
+                block_height: BlockHeight::from_u32(height),
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds: TreeBounds {
+                    sapling_initial_tree_size: 0,
+                    sapling_final_tree_size: 0,
+                    orchard_initial_tree_size: 0,
+                    orchard_final_tree_size: 0,
+                    ironwood_initial_tree_size: 0,
+                    ironwood_final_tree_size: 0,
+                },
+            }
+        }
+
+        /// A wallet synced through height 10 with a birthday of 6: one
+        /// fully scanned range, one wallet block per scanned height, and
+        /// the given shard trees.
+        fn synced_wallet(shard_trees: ShardTrees) -> crate::mocks::MockWallet {
+            let wallet_blocks: BTreeMap<_, _> = (6..=10u32)
+                .map(|height| (BlockHeight::from_u32(height), block(height)))
+                .collect();
+            let sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
+                BlockHeight::from_u32(6)..BlockHeight::from_u32(11),
+                ScanPriority::Scanned,
+            )]);
+            MockWalletBuilder::new()
+                .birthday(BlockHeight::from_u32(6))
+                .sync_state(sync_state)
+                .wallet_blocks(wallet_blocks)
+                .shard_trees(shard_trees)
+                .create_mock_wallet()
+        }
+
+        /// A pre-ironwood (v0) wallet blob deserializes to an ironwood
+        /// tree holding only the initialization checkpoint at height
+        /// zero (`ShardTrees::read`), while sapling and orchard carry
+        /// the checkpoints of past scanning. The first routine reorg
+        /// truncation after the upgrade must roll sapling and orchard
+        /// back and leave the empty ironwood tree untouched, not
+        /// classify it broken and wipe the wallet.
+        #[test]
+        fn migrated_wallet_survives_reorg_truncation() {
+            // Sapling and orchard hold checkpoints for the scanned
+            // heights; the ironwood tree stays exactly as
+            // `ShardTrees::new` built it (its height-zero initialization
+            // checkpoint and nothing else), which is also the state
+            // `ShardTrees::read` produces for a pre-ironwood blob.
+            let mut shard_trees = ShardTrees::new();
+            for height in 6..=10u32 {
+                assert_eq!(
+                    shard_trees
+                        .sapling
+                        .append_checkpoint(BlockHeight::from_u32(height))
+                        .unwrap(),
+                    CheckpointAppendOutcome::Appended
+                );
+                assert_eq!(
+                    shard_trees
+                        .orchard
+                        .append_checkpoint(BlockHeight::from_u32(height))
+                        .unwrap(),
+                    CheckpointAppendOutcome::Appended
+                );
+            }
+            let mut wallet = synced_wallet(shard_trees);
+
+            // A routine two-block reorg rolls the wallet back to height 8.
+            let result = truncate_wallet_data(&mut wallet, BlockHeight::from_u32(8));
+
+            assert!(
+                result.is_ok(),
+                "reorg truncation wiped a healthy migrated wallet: {result:?}"
+            );
+            // The blocks at and below the truncate height survive; the
+            // clear-and-rescan path leaves none.
+            assert!(wallet.get_wallet_block(BlockHeight::from_u32(6)).is_ok());
+            assert!(wallet.get_wallet_block(BlockHeight::from_u32(8)).is_ok());
+            assert!(wallet.get_wallet_block(BlockHeight::from_u32(9)).is_err());
+        }
+
+        /// A tree that records state above the truncate height but holds
+        /// no checkpoint at it cannot roll back. The established recovery
+        /// (clear all wallet data and rescan) is preserved for it.
+        #[test]
+        fn unrecoverable_tree_still_clears_wallet_data() {
+            // Orchard scanned past the target but its checkpoint at the
+            // target height is gone (e.g. pruned): checkpoints exist only
+            // above it.
+            let mut shard_trees = ShardTrees::new();
+            for height in 6..=10u32 {
+                assert_eq!(
+                    shard_trees
+                        .sapling
+                        .append_checkpoint(BlockHeight::from_u32(height))
+                        .unwrap(),
+                    CheckpointAppendOutcome::Appended
+                );
+            }
+            for height in 9..=10u32 {
+                assert_eq!(
+                    shard_trees
+                        .orchard
+                        .append_checkpoint(BlockHeight::from_u32(height))
+                        .unwrap(),
+                    CheckpointAppendOutcome::Appended
+                );
+            }
+            let mut wallet = synced_wallet(shard_trees);
+
+            let result = truncate_wallet_data(&mut wallet, BlockHeight::from_u32(8));
+
+            assert!(matches!(
+                result,
+                Err(crate::error::SyncError::TruncationError(_, _))
+            ));
+            // The wallet was cleared for rescan.
+            assert!(wallet.get_wallet_block(BlockHeight::from_u32(6)).is_err());
+        }
+    }
+
+    /// The pool-accounting contract of [`crate::sync::sync_status`]:
+    /// every output total on the status (the per-pool u32 fields, the
+    /// u64 exact-ratio pair, and the f32 percentage) describes the
+    /// same per-pool trio, summed once through `output_pool_total`.
+    /// Regression for the skew where the u64 fields re-summed only
+    /// sapling and orchard while the percentages included ironwood.
+    /// Each pool contributes a distinct count, so dropping any pool
+    /// from any consumer changes an asserted value.
+    mod sync_status_pool_accounting {
+        use std::collections::BTreeMap;
+
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::consensus::BlockHeight;
+
+        use crate::mocks::MockWalletBuilder;
+        use crate::sync::{ScanPriority, ScanRange, sync_status};
+        use crate::wallet::{SyncState, TreeBounds, WalletBlock};
+
+        /// A wallet block carrying only what tree-bounds accounting
+        /// reads: its height and tree sizes.
+        fn block(height: u32, tree_bounds: TreeBounds) -> WalletBlock {
+            WalletBlock {
+                block_height: BlockHeight::from_u32(height),
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds,
+            }
+        }
+
+        /// Tree bounds whose initial and final sizes coincide, for
+        /// blocks that only mark a boundary of a scanned range.
+        fn flat_bounds(sapling: u32, orchard: u32, ironwood: u32) -> TreeBounds {
+            TreeBounds {
+                sapling_initial_tree_size: sapling,
+                sapling_final_tree_size: sapling,
+                orchard_initial_tree_size: orchard,
+                orchard_final_tree_size: orchard,
+                ironwood_initial_tree_size: ironwood,
+                ironwood_final_tree_size: ironwood,
+            }
+        }
+
+        #[tokio::test]
+        async fn exact_ratio_fields_agree_with_per_pool_totals() {
+            // One fully scanned range whose boundary blocks yield a
+            // distinct scanned count per pool: sapling 3, orchard 5,
+            // ironwood 7.
+            let mut sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
+                BlockHeight::from_u32(1_000)..BlockHeight::from_u32(1_010),
+                ScanPriority::Scanned,
+            )]);
+            sync_state.initial_sync_state.sync_start_height = BlockHeight::from_u32(1_000);
+            // Session denominators: 10 sapling + 20 orchard + 40
+            // ironwood outputs between the wallet bounds, 70 in all.
+            sync_state.initial_sync_state.wallet_tree_bounds = TreeBounds {
+                sapling_initial_tree_size: 100,
+                sapling_final_tree_size: 110,
+                orchard_initial_tree_size: 200,
+                orchard_final_tree_size: 220,
+                ironwood_initial_tree_size: 300,
+                ironwood_final_tree_size: 340,
+            };
+            sync_state
+                .initial_sync_state
+                .previously_scanned_sapling_outputs = 1;
+            sync_state
+                .initial_sync_state
+                .previously_scanned_orchard_outputs = 2;
+            sync_state
+                .initial_sync_state
+                .previously_scanned_ironwood_outputs = 3;
+
+            let wallet_blocks = BTreeMap::from([
+                (
+                    BlockHeight::from_u32(1_000),
+                    block(1_000, flat_bounds(100, 200, 300)),
+                ),
+                (
+                    BlockHeight::from_u32(1_009),
+                    block(1_009, flat_bounds(103, 205, 307)),
+                ),
+            ]);
+
+            let wallet = MockWalletBuilder::new()
+                .sync_state(sync_state)
+                .wallet_blocks(wallet_blocks)
+                .create_mock_wallet();
+
+            let status = sync_status(&wallet).await.unwrap();
+
+            assert_eq!(status.total_sapling_outputs_scanned, 3);
+            assert_eq!(status.total_orchard_outputs_scanned, 5);
+            assert_eq!(status.total_ironwood_outputs_scanned, 7);
+
+            // The regression proper: the u64 exact-ratio fields must
+            // equal the sum of the per-pool fields reported beside
+            // them. Under the skew, total_outputs_scanned was 8 (no
+            // ironwood) and total_outputs was 30.
+            assert_eq!(
+                status.total_outputs_scanned,
+                u64::from(status.total_sapling_outputs_scanned)
+                    + u64::from(status.total_orchard_outputs_scanned)
+                    + u64::from(status.total_ironwood_outputs_scanned),
+            );
+            assert_eq!(status.total_outputs_scanned, 15);
+            assert_eq!(status.total_outputs, 70);
+
+            // The percentage must describe the same ratio as the exact
+            // fields. The skew's observable symptom was these two
+            // disagreeing on ironwood chains.
+            let expected_percentage =
+                (status.total_outputs_scanned as f32 / status.total_outputs as f32) * 100.0;
+            assert!(
+                (status.percentage_total_outputs_scanned - expected_percentage).abs()
+                    < f32::EPSILON,
+                "percentage {} disagrees with the exact ratio {}",
+                status.percentage_total_outputs_scanned,
+                expected_percentage,
+            );
+        }
+    }
+
+    /// The session-progress contract of [`crate::sync::sync_status`]
+    /// under a stale initial sync state, whose recorded
+    /// previously-scanned counts stand at or above the whole span the
+    /// wallet can scan, saturating the session denominator to zero and
+    /// obliging the status to report the wallet's total progress
+    /// rather than claim completion.
+    mod sync_status_stale_initial_state {
+        use std::collections::BTreeMap;
+
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::consensus::BlockHeight;
+
+        use crate::mocks::MockWalletBuilder;
+        use crate::sync::{ScanPriority, ScanRange, sync_status};
+        use crate::wallet::{SyncState, TreeBounds, WalletBlock};
+
+        /// The scale a ratio is reported on.
+        const PERCENTAGE_SCALE: f32 = 100.0;
+        /// The percentage a finished sync reports.
+        const COMPLETE_PERCENTAGE: f32 = PERCENTAGE_SCALE;
+
+        /// The wallet birthday, and so the first height of the span.
+        const BIRTHDAY_HEIGHT: u32 = 1_000;
+        /// The number of blocks between the birthday and the chain tip.
+        const TOTAL_BLOCKS: u32 = 10;
+        /// The number of those blocks this wallet has scanned.
+        const SCANNED_BLOCKS: u32 = 5;
+        /// The height of the chain tip the wallet last knew.
+        const CHAIN_TIP_HEIGHT: u32 = BIRTHDAY_HEIGHT + TOTAL_BLOCKS - 1;
+        /// The first height beyond the scanned range.
+        const SCANNED_RANGE_END: u32 = BIRTHDAY_HEIGHT + SCANNED_BLOCKS;
+        /// The factor by which a stale count exceeds the true span.
+        const STALENESS_FACTOR: u32 = 500;
+        /// A previously-scanned count left over from a wider span.
+        const STALE_PREVIOUSLY_SCANNED_BLOCKS: u32 = TOTAL_BLOCKS * STALENESS_FACTOR;
+
+        /// The sapling tree size at the start of the wallet's span.
+        const SAPLING_INITIAL_TREE_SIZE: u32 = 100;
+        /// The sapling outputs the whole span holds.
+        const SAPLING_TOTAL_OUTPUTS: u32 = 10;
+        /// The sapling outputs the wallet has scanned.
+        const SAPLING_SCANNED_OUTPUTS: u32 = 3;
+        /// The orchard tree size at the start of the wallet's span.
+        const ORCHARD_INITIAL_TREE_SIZE: u32 = 200;
+        /// The orchard outputs the whole span holds.
+        const ORCHARD_TOTAL_OUTPUTS: u32 = 20;
+        /// The orchard outputs the wallet has scanned.
+        const ORCHARD_SCANNED_OUTPUTS: u32 = 5;
+        /// The ironwood tree size at the start of the wallet's span.
+        const IRONWOOD_INITIAL_TREE_SIZE: u32 = 300;
+        /// The ironwood outputs the whole span holds.
+        const IRONWOOD_TOTAL_OUTPUTS: u32 = 40;
+        /// The ironwood outputs the wallet has scanned.
+        const IRONWOOD_SCANNED_OUTPUTS: u32 = 7;
+        /// The outputs the whole span holds, across every pool.
+        const TOTAL_OUTPUTS: u32 =
+            SAPLING_TOTAL_OUTPUTS + ORCHARD_TOTAL_OUTPUTS + IRONWOOD_TOTAL_OUTPUTS;
+        /// The outputs the wallet has scanned, across every pool.
+        const SCANNED_OUTPUTS: u32 =
+            SAPLING_SCANNED_OUTPUTS + ORCHARD_SCANNED_OUTPUTS + IRONWOOD_SCANNED_OUTPUTS;
+        /// A previously-scanned output count left over from a wider span.
+        const STALE_PREVIOUSLY_SCANNED_OUTPUTS: u32 = TOTAL_OUTPUTS * STALENESS_FACTOR;
+
+        /// A wallet block carrying only what tree-bounds accounting
+        /// reads: its height and tree sizes.
+        fn block(height: u32, tree_bounds: TreeBounds) -> WalletBlock {
+            WalletBlock {
+                block_height: BlockHeight::from_u32(height),
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds,
+            }
+        }
+
+        /// Tree bounds whose initial and final sizes coincide, for
+        /// blocks that only mark a boundary of a scanned range.
+        fn flat_bounds(sapling: u32, orchard: u32, ironwood: u32) -> TreeBounds {
+            TreeBounds {
+                sapling_initial_tree_size: sapling,
+                sapling_final_tree_size: sapling,
+                orchard_initial_tree_size: orchard,
+                orchard_final_tree_size: orchard,
+                ironwood_initial_tree_size: ironwood,
+                ironwood_final_tree_size: ironwood,
+            }
+        }
+
+        /// A wallet holding a half-scanned span whose initial sync
+        /// state records previously-scanned counts far above that
+        /// span, the shape a truncated or rewound wallet leaves
+        /// behind.
+        fn stale_state_wallet() -> crate::mocks::MockWallet {
+            let mut sync_state = SyncState::new_for_test(vec![
+                ScanRange::from_parts(
+                    BlockHeight::from_u32(BIRTHDAY_HEIGHT)
+                        ..BlockHeight::from_u32(SCANNED_RANGE_END),
+                    ScanPriority::Scanned,
+                ),
+                ScanRange::from_parts(
+                    BlockHeight::from_u32(SCANNED_RANGE_END)
+                        ..BlockHeight::from_u32(CHAIN_TIP_HEIGHT + 1),
+                    ScanPriority::Historic,
+                ),
+            ]);
+            sync_state.initial_sync_state.sync_start_height =
+                BlockHeight::from_u32(BIRTHDAY_HEIGHT);
+            sync_state.initial_sync_state.wallet_tree_bounds = TreeBounds {
+                sapling_initial_tree_size: SAPLING_INITIAL_TREE_SIZE,
+                sapling_final_tree_size: SAPLING_INITIAL_TREE_SIZE + SAPLING_TOTAL_OUTPUTS,
+                orchard_initial_tree_size: ORCHARD_INITIAL_TREE_SIZE,
+                orchard_final_tree_size: ORCHARD_INITIAL_TREE_SIZE + ORCHARD_TOTAL_OUTPUTS,
+                ironwood_initial_tree_size: IRONWOOD_INITIAL_TREE_SIZE,
+                ironwood_final_tree_size: IRONWOOD_INITIAL_TREE_SIZE + IRONWOOD_TOTAL_OUTPUTS,
+            };
+            sync_state.initial_sync_state.previously_scanned_blocks =
+                STALE_PREVIOUSLY_SCANNED_BLOCKS;
+            sync_state
+                .initial_sync_state
+                .previously_scanned_sapling_outputs = STALE_PREVIOUSLY_SCANNED_OUTPUTS;
+            sync_state
+                .initial_sync_state
+                .previously_scanned_orchard_outputs = STALE_PREVIOUSLY_SCANNED_OUTPUTS;
+            sync_state
+                .initial_sync_state
+                .previously_scanned_ironwood_outputs = STALE_PREVIOUSLY_SCANNED_OUTPUTS;
+
+            let wallet_blocks = BTreeMap::from([
+                (
+                    BlockHeight::from_u32(BIRTHDAY_HEIGHT),
+                    block(
+                        BIRTHDAY_HEIGHT,
+                        flat_bounds(
+                            SAPLING_INITIAL_TREE_SIZE,
+                            ORCHARD_INITIAL_TREE_SIZE,
+                            IRONWOOD_INITIAL_TREE_SIZE,
+                        ),
+                    ),
+                ),
+                (
+                    BlockHeight::from_u32(SCANNED_RANGE_END - 1),
+                    block(
+                        SCANNED_RANGE_END - 1,
+                        flat_bounds(
+                            SAPLING_INITIAL_TREE_SIZE + SAPLING_SCANNED_OUTPUTS,
+                            ORCHARD_INITIAL_TREE_SIZE + ORCHARD_SCANNED_OUTPUTS,
+                            IRONWOOD_INITIAL_TREE_SIZE + IRONWOOD_SCANNED_OUTPUTS,
+                        ),
+                    ),
+                ),
+            ]);
+
+            MockWalletBuilder::new()
+                .sync_state(sync_state)
+                .wallet_blocks(wallet_blocks)
+                .create_mock_wallet()
+        }
+
+        /// HYPOTHESIS: a session whose scannable span saturates to zero
+        /// never reports a finished sync, so the falsifier is a status
+        /// whose session block percentage reads complete while half the
+        /// span is unscanned.
+        #[tokio::test]
+        async fn stale_block_state_reports_total_progress_not_completion() {
+            let wallet = stale_state_wallet();
+
+            let status = sync_status(&wallet).await.unwrap();
+
+            let expected_total = (SCANNED_BLOCKS as f32 / TOTAL_BLOCKS as f32) * PERCENTAGE_SCALE;
+            assert!(
+                (status.percentage_total_blocks_scanned - expected_total).abs() < f32::EPSILON,
+                "total block percentage {} disagrees with the scanned ratio {}",
+                status.percentage_total_blocks_scanned,
+                expected_total,
+            );
+            assert_ne!(
+                status.percentage_session_blocks_scanned, COMPLETE_PERCENTAGE,
+                "a session that scanned nothing reported a finished sync",
+            );
+            assert!(
+                (status.percentage_session_blocks_scanned - expected_total).abs() < f32::EPSILON,
+                "session block percentage {} disagrees with the total progress {}",
+                status.percentage_session_blocks_scanned,
+                expected_total,
+            );
+        }
+
+        /// HYPOTHESIS: the output percentages obey the same rule as the
+        /// block percentages, so the falsifier is a status whose
+        /// session output percentage reads complete while most of the
+        /// span's outputs are unscanned.
+        #[tokio::test]
+        async fn stale_output_state_reports_total_progress_not_completion() {
+            let wallet = stale_state_wallet();
+
+            let status = sync_status(&wallet).await.unwrap();
+
+            let expected_total = (SCANNED_OUTPUTS as f32 / TOTAL_OUTPUTS as f32) * PERCENTAGE_SCALE;
+            assert!(
+                (status.percentage_total_outputs_scanned - expected_total).abs() < f32::EPSILON,
+                "total output percentage {} disagrees with the scanned ratio {}",
+                status.percentage_total_outputs_scanned,
+                expected_total,
+            );
+            assert_ne!(
+                status.percentage_session_outputs_scanned, COMPLETE_PERCENTAGE,
+                "a session that scanned no outputs reported a finished sync",
+            );
+            assert!(
+                (status.percentage_session_outputs_scanned - expected_total).abs() < f32::EPSILON,
+                "session output percentage {} disagrees with the total progress {}",
+                status.percentage_session_outputs_scanned,
+                expected_total,
+            );
+        }
+    }
+
     /// The drain policy for scanner shutdown, exercised as a table:
     /// pure inputs, no runtime, no clocks.
     mod drain_verdict {
@@ -2289,24 +3076,24 @@ mod test {
 
         /// One row of the drain-policy table:
         /// (workers, unprocessed, connected_for, poll_elapsed, verdict, label).
-        type DrainCase = (usize, u8, Option<u64>, u64, DrainVerdict, &'static str);
+        type DrainCase = (usize, u32, Option<u64>, u64, DrainVerdict, &'static str);
 
         #[test]
         fn table() {
             let cases: &[DrainCase] = &[
                 // The reported bug: first-loop shutdown on a fully
-                // synced chain, stream not yet connected — hold the
+                // synced chain, stream not yet connected. Hold the
                 // session open instead of closing it instantly.
                 (0, 0, None, 0, KeepPolling, "no stream yet"),
                 // Connected but inside the settle window: still hold.
                 (0, 0, Some(50), 100, KeepPolling, "settling"),
                 // The typical session: stream connected long ago,
-                // scanner drained — immediate shutdown, no added cost.
+                // scanner drained. Immediate shutdown, no added cost.
                 (0, 0, Some(1_400), 0, Shutdown, "settled and drained"),
                 // Exactly the settle boundary counts as settled.
                 (0, 0, Some(200), 0, Shutdown, "settle boundary"),
                 // Unprocessed work always re-enters the processing
-                // loop, whatever the stream state — no deadline caps
+                // loop, whatever the stream state. No deadline caps
                 // the processing itself.
                 (0, 3, Some(1_400), 0, Reenter, "unprocessed work"),
                 (5, 1, None, 999, Reenter, "work trumps missing stream"),
@@ -2315,7 +3102,7 @@ mod test {
                 (2, 0, Some(1_400), 500, KeepPolling, "workers draining"),
                 (2, 0, Some(1_400), 1_000, Reenter, "ceiling with workers"),
                 // Ceiling with a stream that never connected: the
-                // pre-c90f8d309 semantics — a dead stream must not
+                // pre-c90f8d309 semantics. A dead stream must not
                 // hold the session open.
                 (0, 0, None, 1_000, Shutdown, "ceiling without stream"),
             ];
@@ -2338,7 +3125,7 @@ mod test {
     ///
     /// The wallet remembers an on-chain spend observation in exactly one durable place: the
     /// note's `spending_transaction` field. The nullifier map is a transient rendezvous
-    /// buffer — entries are consumed on detection (`detect_shielded_spends`) and pruned
+    /// buffer: entries are consumed on detection (`detect_shielded_spends`) and pruned
     /// behind the fully-scanned frontier (`remove_irrelevant_data`). These tests pin the
     /// consequences for `set_transactions_failed`, whose `reset_spends` call erases that
     /// one durable place.

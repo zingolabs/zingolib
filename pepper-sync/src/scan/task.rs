@@ -16,6 +16,7 @@ use tokio::{
 
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zingo_netutils::lightwallet_protocol::CompactBlock;
 use zip32::AccountId;
@@ -25,8 +26,8 @@ use crate::{
     config::PerformanceLevel,
     error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
-    scan::get_compact_block_height,
     sync::{self, ScanPriority, ScanRange},
+    utils::block,
     wallet::{
         ScanTarget, WalletBlock,
         traits::{SyncBlocks, SyncNullifiers, SyncWallet},
@@ -36,12 +37,9 @@ use crate::{
 use super::{ScanResults, scan};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
-const MAX_BATCH_NULLIFIERS: usize = 2usize.pow(14);
+const MAX_LOAD_NULLIFIERS: usize = 2usize.pow(14);
 
-const STREAM_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
-const STREAM_MSG_TIMEOUT: Duration = Duration::from_secs(15);
-const SCAN_TASK_TIMEOUT: Duration = Duration::from_secs(120);
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+use zingo_netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
 
 pub(crate) enum ScannerState {
     Verification,
@@ -61,7 +59,7 @@ impl ScannerState {
 
 pub(crate) struct Scanner<P> {
     pub(crate) state: ScannerState,
-    batcher: Option<Batcher<P>>,
+    loader: Option<Loader<P>>,
     workers: Vec<ScanWorker<P>>,
     unique_id: usize,
     scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
@@ -84,7 +82,7 @@ where
 
         Self {
             state: ScannerState::Verification,
-            batcher: None,
+            loader: None,
             workers,
             unique_id: 0,
             scan_results_sender,
@@ -95,48 +93,48 @@ where
     }
 
     pub(crate) fn launch(&mut self, performance_level: PerformanceLevel) {
-        let max_batch_outputs = match performance_level {
+        let max_outputs = match performance_level {
             PerformanceLevel::Low => 2usize.pow(11),
             PerformanceLevel::Medium => 2usize.pow(13),
             PerformanceLevel::High => 2usize.pow(13),
             PerformanceLevel::Maximum => 2usize.pow(15),
         };
 
-        self.spawn_batcher(max_batch_outputs);
-        self.spawn_workers(max_batch_outputs);
+        self.spawn_loader(max_outputs);
+        self.spawn_workers(max_outputs);
     }
 
     pub(crate) fn worker_poolsize(&self) -> usize {
         self.workers.len()
     }
 
-    /// Spawns the batcher.
+    /// Spawns the loader.
     ///
-    /// When the batcher is running it will wait for a scan task.
-    pub(crate) fn spawn_batcher(&mut self, max_batch_outputs: usize) {
-        tracing::debug!("Spawning batcher");
-        let mut batcher = Batcher::new(
+    /// When the loader is running it will wait for a scan task.
+    pub(crate) fn spawn_loader(&mut self, max_load_outputs: usize) {
+        tracing::debug!("Spawning loader");
+        let mut loader = Loader::new(
             self.consensus_parameters.clone(),
             self.fetch_request_sender.clone(),
         );
-        batcher.run(max_batch_outputs);
-        self.batcher = Some(batcher);
+        loader.run(max_load_outputs);
+        self.loader = Some(loader);
     }
 
-    fn check_batcher_error(&mut self) -> Result<(), ServerError> {
-        let batcher = self.batcher.take();
-        if let Some(mut batcher) = batcher {
-            batcher.check_error()?;
-            self.batcher = Some(batcher);
+    fn check_loader_error(&mut self) -> Result<(), ServerError> {
+        let loader = self.loader.take();
+        if let Some(mut loader) = loader {
+            loader.check_error()?;
+            self.loader = Some(loader);
         }
 
         Ok(())
     }
 
-    async fn shutdown_batcher(&mut self) -> Result<(), ServerError> {
-        let batcher = self.batcher.take();
-        if let Some(mut batcher) = batcher {
-            batcher.shutdown().await
+    async fn shutdown_loader(&mut self) -> Result<(), ServerError> {
+        let loader = self.loader.take();
+        if let Some(mut loader) = loader {
+            loader.shutdown().await
         } else {
             Ok(())
         }
@@ -145,7 +143,7 @@ where
     /// Spawns a worker.
     ///
     /// When the worker is running it will wait for a scan task.
-    pub(crate) fn spawn_worker(&mut self, max_batch_outputs: usize) {
+    pub(crate) fn spawn_worker(&mut self, max_outputs: usize) {
         tracing::debug!("Spawning worker {}", self.unique_id);
         let mut worker = ScanWorker::new(
             self.unique_id,
@@ -154,7 +152,7 @@ where
             self.fetch_request_sender.clone(),
             self.ufvks.clone(),
         );
-        worker.run(max_batch_outputs);
+        worker.run(max_outputs);
         self.workers.push(worker);
         self.unique_id += 1;
     }
@@ -162,9 +160,9 @@ where
     /// Spawns the initial pool of workers.
     ///
     /// Poolsize is set by [`self::MAX_WORKER_POOLSIZE`].
-    pub(crate) fn spawn_workers(&mut self, max_batch_outputs: usize) {
+    pub(crate) fn spawn_workers(&mut self, max_outputs: usize) {
         for _ in 0..MAX_WORKER_POOLSIZE {
-            self.spawn_worker(max_batch_outputs);
+            self.spawn_worker(max_outputs);
         }
     }
 
@@ -192,12 +190,12 @@ where
 
     /// Updates the scanner.
     ///
-    /// Creates a new scan task and sends to batcher if it's idle.
-    /// The batcher will stream compact blocks into the scan task, splitting the scan task when the maximum number of
-    /// outputs is reached. When a scan task is ready it is stored in the batcher ready to be taken by an idle scan
+    /// Creates a new scan task and sends to loader if it's idle.
+    /// The loader will stream compact blocks into the scan task, splitting the scan task when the maximum number of
+    /// outputs is reached. When a scan task is ready it is stored in the loader ready to be taken by an idle scan
     /// worker for scanning.
     /// When verification is still in progress, only scan tasks with `Verify` scan priority are created.
-    /// When all ranges are scanned, the batcher, idle workers and mempool are shutdown.
+    /// When all ranges are scanned, the loader, idle workers and mempool are shutdown.
     pub(crate) async fn update<W>(
         &mut self,
         wallet: &mut W,
@@ -207,14 +205,14 @@ where
     where
         W: SyncWallet + SyncBlocks + SyncNullifiers,
     {
-        self.check_batcher_error()?;
+        self.check_loader_error()?;
 
         match self.state {
             ScannerState::Verification => {
-                self.batcher
+                self.loader
                     .as_mut()
-                    .expect("batcher should be running")
-                    .update_batch_store();
+                    .expect("loader should be running")
+                    .update_load_store();
                 self.update_workers();
 
                 let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
@@ -237,16 +235,16 @@ where
                 }
 
                 // scan ranges with `Verify` priority
-                self.update_batcher(wallet, nullifier_map_limit_exceeded)
+                self.update_loader(wallet, nullifier_map_limit_exceeded)
                     .map_err(SyncError::WalletError)?;
             }
             ScannerState::Scan => {
-                self.batcher
+                self.loader
                     .as_mut()
-                    .expect("batcher should be running")
-                    .update_batch_store();
+                    .expect("loader should be running")
+                    .update_load_store();
                 self.update_workers();
-                self.update_batcher(wallet, nullifier_map_limit_exceeded)
+                self.update_loader(wallet, nullifier_map_limit_exceeded)
                     .map_err(SyncError::WalletError)?;
             }
             ScannerState::Shutdown => {
@@ -254,7 +252,7 @@ where
                 while let Some(worker) = self.idle_worker() {
                     self.shutdown_worker(worker.id).await;
                 }
-                self.shutdown_batcher().await?;
+                self.shutdown_loader().await?;
             }
         }
 
@@ -262,23 +260,20 @@ where
     }
 
     fn update_workers(&mut self) {
-        let batcher = self.batcher.as_ref().expect("batcher should be running");
-        if batcher.batch.is_some()
+        let loader = self.loader.as_ref().expect("loader should be running");
+        if loader.load.is_some()
             && let Some(worker) = self.idle_worker()
         {
-            let batch = batcher
-                .batch
+            let load = loader
+                .load
                 .clone()
-                .expect("batch should exist in this closure");
-            worker.add_scan_task(batch);
-            self.batcher
-                .as_mut()
-                .expect("batcher should be running")
-                .batch = None;
+                .expect("load should exist in this closure");
+            worker.add_scan_task(load);
+            self.loader.as_mut().expect("loader should be running").load = None;
         }
     }
 
-    fn update_batcher<W>(
+    fn update_loader<W>(
         &mut self,
         wallet: &mut W,
         nullifier_map_limit_exceeded: bool,
@@ -286,14 +281,14 @@ where
     where
         W: SyncWallet + SyncBlocks + SyncNullifiers,
     {
-        let batcher = self.batcher.as_ref().expect("batcher should be running");
-        if !batcher.is_batching() {
+        let loader = self.loader.as_ref().expect("loader should be running");
+        if !loader.is_loading() {
             if let Some(scan_task) = sync::state::create_scan_task(
                 &self.consensus_parameters,
                 wallet,
                 nullifier_map_limit_exceeded,
             )? {
-                batcher.add_scan_task(scan_task);
+                loader.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
                 self.state.shutdown();
             }
@@ -303,17 +298,17 @@ where
     }
 }
 
-struct Batcher<P> {
+struct Loader<P> {
     handle: Option<JoinHandle<Result<(), ServerError>>>,
-    is_batching: Arc<AtomicBool>,
-    batch: Option<ScanTask>,
+    is_loading: Arc<AtomicBool>,
+    load: Option<ScanTask>,
     consensus_parameters: P,
     scan_task_sender: Option<mpsc::Sender<ScanTask>>,
-    batch_receiver: Option<mpsc::Receiver<ScanTask>>,
+    load_receiver: Option<mpsc::Receiver<ScanTask>>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
 }
 
-impl<P> Batcher<P>
+impl<P> Loader<P>
 where
     P: consensus::Parameters + Sync + Send + 'static,
 {
@@ -323,24 +318,25 @@ where
     ) -> Self {
         Self {
             handle: None,
-            is_batching: Arc::new(AtomicBool::new(false)),
-            batch: None,
+            is_loading: Arc::new(AtomicBool::new(false)),
+            load: None,
             consensus_parameters,
             scan_task_sender: None,
-            batch_receiver: None,
+            load_receiver: None,
             fetch_request_sender,
         }
     }
 
-    /// Runs the batcher in a new tokio task.
+    /// Runs the loader in a new tokio task.
     ///
-    /// Waits for a scan task and then fetches compact blocks to form fixed output batches. The scan task is split if
-    /// needed and the compact blocks are added to each scan task and sent to the scan workers for scanning.
-    fn run(&mut self, max_batch_outputs: usize) {
+    /// Waits for a scan task and then fetches compact blocks to form loads within a fixed output budget. The scan
+    /// task is split if needed and the compact blocks are added to each scan task and sent to the scan workers for
+    /// scanning.
+    fn run(&mut self, max_load_outputs: usize) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
-        let (batch_sender, batch_receiver) = mpsc::channel::<ScanTask>(1);
+        let (load_sender, load_receiver) = mpsc::channel::<ScanTask>(1);
 
-        let is_batching = self.is_batching.clone();
+        let is_loading = self.is_loading.clone();
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
 
@@ -355,32 +351,32 @@ where
                     scan_task.scan_range.priority() == ScanPriority::ScannedWithoutMapping;
 
                 let mut retry_height = scan_task.scan_range.block_range().start;
-                let mut sapling_output_count = 0;
-                let mut orchard_output_count = 0;
-                let mut sapling_nullifier_count = 0;
-                let mut orchard_nullifier_count = 0;
-                let mut first_batch = true;
+                let mut load_sapling_output_count = 0;
+                let mut load_orchard_output_count = 0;
+                let mut load_ironwood_output_count = 0;
+                let mut load_sapling_nullifier_count = 0;
+                let mut load_orchard_nullifier_count = 0;
+                let mut load_ironwood_nullifier_count = 0;
+                let mut current_block_sapling_output_count = 0;
+                let mut current_block_orchard_output_count = 0;
+                let mut current_block_ironwood_output_count = 0;
+                let mut current_block_sapling_nullifier_count = 0;
+                let mut current_block_orchard_nullifier_count = 0;
+                let mut current_block_ironwood_nullifier_count = 0;
+                let mut awaiting_first_block = true;
 
-                let mut block_stream = {
-                    let range = scan_task.scan_range.block_range().clone();
-                    let frs = fetch_request_sender.clone();
-
-                    let open_fut = async move {
-                        if fetch_nullifiers_only {
-                            client::get_nullifier_range(frs, range).await
-                        } else {
-                            client::get_compact_block_range(frs, range).await
-                        }
-                    };
-
-                    match tokio::time::timeout(STREAM_OPEN_TIMEOUT, open_fut).await {
-                        Ok(res) => res?,
-                        Err(_) => {
-                            return Err(
-                                tonic::Status::deadline_exceeded("open stream timeout").into()
-                            );
-                        }
-                    }
+                let mut block_stream = if fetch_nullifiers_only {
+                    client::get_nullifier_range(
+                        fetch_request_sender.clone(),
+                        scan_task.scan_range.block_range().clone(),
+                    )
+                    .await?
+                } else {
+                    client::get_compact_block_range(
+                        fetch_request_sender.clone(),
+                        scan_task.scan_range.block_range().clone(),
+                    )
+                    .await?
                 };
 
                 loop {
@@ -403,28 +399,19 @@ where
 
                             let retry_range = retry_height..scan_task.scan_range.block_range().end;
 
-                            let reopen_fut = {
-                                let frs = fetch_request_sender.clone();
-
-                                async move {
-                                    if fetch_nullifiers_only {
-                                        client::get_nullifier_range(frs, retry_range).await
-                                    } else {
-                                        client::get_compact_block_range(frs, retry_range).await
-                                    }
-                                }
+                            block_stream = if fetch_nullifiers_only {
+                                client::get_nullifier_range(
+                                    fetch_request_sender.clone(),
+                                    retry_range,
+                                )
+                                .await?
+                            } else {
+                                client::get_compact_block_range(
+                                    fetch_request_sender.clone(),
+                                    retry_range,
+                                )
+                                .await?
                             };
-
-                            block_stream =
-                                match tokio::time::timeout(STREAM_OPEN_TIMEOUT, reopen_fut).await {
-                                    Ok(res) => res?,
-                                    Err(_) => {
-                                        return Err(tonic::Status::deadline_exceeded(
-                                            "open stream timeout (retry)",
-                                        )
-                                        .into());
-                                    }
-                                };
 
                             let first_msg_res: Result<Option<CompactBlock>, tonic::Status> =
                                 match tokio::time::timeout(
@@ -454,14 +441,18 @@ where
                     };
 
                     if fetch_nullifiers_only {
-                        sapling_nullifier_count += compact_block
-                            .vtx
-                            .iter()
-                            .fold(0, |acc, transaction| acc + transaction.spends.len());
-                        orchard_nullifier_count += compact_block
-                            .vtx
-                            .iter()
-                            .fold(0, |acc, transaction| acc + transaction.actions.len());
+                        current_block_sapling_nullifier_count =
+                            block::shielded_input_count(&compact_block, ShieldedPool::Sapling)
+                                as usize;
+                        load_sapling_nullifier_count += current_block_sapling_nullifier_count;
+                        current_block_orchard_nullifier_count =
+                            block::shielded_input_count(&compact_block, ShieldedPool::Orchard)
+                                as usize;
+                        load_orchard_nullifier_count += current_block_orchard_nullifier_count;
+                        current_block_ironwood_nullifier_count =
+                            block::shielded_input_count(&compact_block, ShieldedPool::Ironwood)
+                                as usize;
+                        load_ironwood_nullifier_count += current_block_ironwood_nullifier_count;
                     } else {
                         if let Some(block) = previous_task_last_block.as_ref()
                             && scan_task.start_seam_block.is_none()
@@ -475,7 +466,7 @@ where
                         {
                             scan_task.end_seam_block = previous_task_first_block.clone();
                         }
-                        if first_batch {
+                        if awaiting_first_block {
                             previous_task_first_block = Some(
                                 WalletBlock::from_compact_block(
                                     &consensus_parameters,
@@ -484,9 +475,9 @@ where
                                 )
                                 .await?,
                             );
-                            first_batch = false;
+                            awaiting_first_block = false;
                         }
-                        if get_compact_block_height(&compact_block)
+                        if block::get_compact_height(&compact_block)
                             == scan_task.scan_range.block_range().end - 1
                         {
                             previous_task_last_block = Some(
@@ -499,78 +490,92 @@ where
                             );
                         }
 
-                        sapling_output_count += compact_block
-                            .vtx
-                            .iter()
-                            .fold(0, |acc, transaction| acc + transaction.outputs.len());
-                        orchard_output_count += compact_block
-                            .vtx
-                            .iter()
-                            .fold(0, |acc, transaction| acc + transaction.actions.len());
+                        current_block_sapling_output_count =
+                            block::shielded_output_count(&compact_block, ShieldedPool::Sapling)
+                                as usize;
+                        load_sapling_output_count += current_block_sapling_output_count;
+                        current_block_orchard_output_count =
+                            block::shielded_output_count(&compact_block, ShieldedPool::Orchard)
+                                as usize;
+                        load_orchard_output_count += current_block_orchard_output_count;
+                        current_block_ironwood_output_count =
+                            block::shielded_output_count(&compact_block, ShieldedPool::Ironwood)
+                                as usize;
+                        load_ironwood_output_count += current_block_ironwood_output_count;
                     }
 
-                    if sapling_output_count + orchard_output_count > max_batch_outputs
-                        || sapling_nullifier_count + orchard_nullifier_count > MAX_BATCH_NULLIFIERS
+                    if (load_sapling_output_count
+                        + load_orchard_output_count
+                        + load_ironwood_output_count
+                        > max_load_outputs
+                        || load_sapling_nullifier_count
+                            + load_orchard_nullifier_count
+                            + load_ironwood_nullifier_count
+                            > MAX_LOAD_NULLIFIERS)
+                        && scan_task.scan_range.block_range().start
+                            != block::get_compact_height(&compact_block)
                     {
-                        let (full_batch, new_batch) = scan_task
+                        let (full_load, new_load) = scan_task
                             .clone()
                             .split(
                                 &consensus_parameters,
                                 fetch_request_sender.clone(),
-                                get_compact_block_height(&compact_block),
+                                block::get_compact_height(&compact_block),
                             )
                             .await?;
 
-                        let _ignore_error = batch_sender.send(full_batch).await;
+                        let _ignore_error = load_sender.send(full_load).await;
 
-                        scan_task = new_batch;
-                        sapling_output_count = 0;
-                        orchard_output_count = 0;
-                        sapling_nullifier_count = 0;
-                        orchard_nullifier_count = 0;
+                        scan_task = new_load;
+                        load_sapling_output_count = current_block_sapling_output_count;
+                        load_orchard_output_count = current_block_orchard_output_count;
+                        load_ironwood_output_count = current_block_ironwood_output_count;
+                        load_sapling_nullifier_count = current_block_sapling_nullifier_count;
+                        load_orchard_nullifier_count = current_block_orchard_nullifier_count;
+                        load_ironwood_nullifier_count = current_block_ironwood_nullifier_count;
                     }
 
-                    retry_height = get_compact_block_height(&compact_block) + 1;
+                    retry_height = block::get_compact_height(&compact_block) + 1;
                     scan_task.compact_blocks.push(compact_block);
                 }
 
-                let _ignore_error = batch_sender.send(scan_task).await;
+                let _ignore_error = load_sender.send(scan_task).await;
 
-                is_batching.store(false, atomic::Ordering::Release);
+                is_loading.store(false, atomic::Ordering::Release);
             }
 
-            is_batching.store(false, atomic::Ordering::Release);
+            is_loading.store(false, atomic::Ordering::Release);
 
             Ok(())
         });
 
         self.handle = Some(handle);
         self.scan_task_sender = Some(scan_task_sender);
-        self.batch_receiver = Some(batch_receiver);
+        self.load_receiver = Some(load_receiver);
     }
 
-    fn is_batching(&self) -> bool {
-        self.is_batching.load(atomic::Ordering::Acquire)
+    fn is_loading(&self) -> bool {
+        self.is_loading.load(atomic::Ordering::Acquire)
     }
 
     fn add_scan_task(&self, scan_task: ScanTask) {
-        tracing::trace!("Adding scan task to batcher:\n{:#?}", &scan_task);
+        tracing::trace!("Adding scan task to loader:\n{:#?}", &scan_task);
         self.scan_task_sender
             .clone()
-            .expect("batcher should be running")
+            .expect("loader should be running")
             .try_send(scan_task)
-            .expect("batcher should never be sent multiple tasks at one time");
-        self.is_batching.store(true, atomic::Ordering::Release);
+            .expect("loader should never be sent multiple tasks at one time");
+        self.is_loading.store(true, atomic::Ordering::Release);
     }
 
-    fn update_batch_store(&mut self) {
-        let batch_receiver = self
-            .batch_receiver
+    fn update_load_store(&mut self) {
+        let load_receiver = self
+            .load_receiver
             .as_mut()
-            .expect("batcher should be running");
-        if self.batch.is_none() && !batch_receiver.is_empty() {
-            self.batch = Some(
-                batch_receiver
+            .expect("loader should be running");
+        if self.load.is_none() && !load_receiver.is_empty() {
+            self.load = Some(
+                load_receiver
                     .try_recv()
                     .expect("channel should be non-empty!"),
             );
@@ -589,29 +594,29 @@ where
         Ok(())
     }
 
-    /// Shuts down batcher by dropping the sender to the batcher task and awaiting the handle.
+    /// Shuts down loader by dropping the sender to the loader task and awaiting the handle.
     ///
     /// This should always be called in the context of the scanner as it must be also be taken from the Scanner struct.
     async fn shutdown(&mut self) -> Result<(), ServerError> {
-        tracing::debug!("Shutting down batcher");
+        tracing::debug!("Shutting down loader");
         if let Some(sender) = self.scan_task_sender.take() {
             drop(sender);
         }
-        if let Some(receiver) = self.batch_receiver.take() {
+        if let Some(receiver) = self.load_receiver.take() {
             drop(receiver);
         }
 
         let mut handle = self
             .handle
             .take()
-            .expect("batcher should always have a handle to take!");
+            .expect("loader should always have a handle to take!");
 
-        match tokio::time::timeout(SHUTDOWN_TIMEOUT, &mut handle).await {
+        match tokio::time::timeout(SCANNER_SHUTDOWN_TIMEOUT, &mut handle).await {
             Ok(join_res) => join_res.expect("task panicked")?,
             Err(_) => {
                 handle.abort();
                 let _ = handle.await;
-                return Err(tonic::Status::deadline_exceeded("batcher shutdown timeout").into());
+                return Err(tonic::Status::deadline_exceeded("loader shutdown timeout").into());
             }
         }
 
@@ -656,7 +661,7 @@ where
     /// Runs the worker in a new tokio task.
     ///
     /// Waits for a scan task and then calls [`crate::scan::scan`] on the given range.
-    fn run(&mut self, max_batch_outputs: usize) {
+    fn run(&mut self, max_outputs: usize) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
 
         let is_scanning = self.is_scanning.clone();
@@ -668,26 +673,14 @@ where
         let handle = tokio::spawn(async move {
             while let Some(scan_task) = scan_task_receiver.recv().await {
                 let scan_range = scan_task.scan_range.clone();
-
-                let scan_fut = scan(
+                let scan_results = scan(
                     fetch_request_sender.clone(),
                     &consensus_parameters,
                     &ufvks,
                     scan_task,
-                    max_batch_outputs,
-                );
-
-                let scan_results = match tokio::time::timeout(SCAN_TASK_TIMEOUT, scan_fut).await {
-                    Ok(res) => res,
-                    Err(_) => {
-                        // Best-effort: maps timeout into existing error types.
-                        Err(ServerError::from(tonic::Status::deadline_exceeded(
-                            "scan task timeout",
-                        ))
-                        .into())
-                    }
-                };
-
+                    max_outputs,
+                )
+                .await;
                 let _ignore_error = scan_results_sender.send((scan_range, scan_results));
 
                 is_scanning.store(false, atomic::Ordering::Release);
@@ -728,7 +721,7 @@ where
             .take()
             .expect("worker should always have a handle to take!");
 
-        match tokio::time::timeout(SHUTDOWN_TIMEOUT, &mut handle).await {
+        match tokio::time::timeout(SCANNER_SHUTDOWN_TIMEOUT, &mut handle).await {
             Ok(res) => res,
             Err(_) => {
                 handle.abort();
@@ -777,7 +770,7 @@ impl ScanTask {
         block_height: BlockHeight,
     ) -> Result<(Self, Self), ServerError> {
         if block_height < self.scan_range.block_range().start
-            && block_height > self.scan_range.block_range().end - 1
+            || block_height > self.scan_range.block_range().end - 1
         {
             panic!("block height should be within scan tasks block range!");
         }
@@ -785,7 +778,7 @@ impl ScanTask {
         let mut lower_compact_blocks = self.compact_blocks;
         let upper_compact_blocks = if let Some(index) = lower_compact_blocks
             .iter()
-            .position(|block| get_compact_block_height(block) == block_height)
+            .position(|block| block::get_compact_height(block) == block_height)
         {
             lower_compact_blocks.split_off(index)
         } else {

@@ -8,6 +8,9 @@ use zcash_keys::keys::DerivationError;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
 
+#[cfg(feature = "nym")]
+use crate::mixnet::acquire;
+
 /// Top level wallet errors
 // TODO: remove external types from public API
 #[derive(Debug, thiserror::Error)]
@@ -53,6 +56,12 @@ pub enum WalletError {
     /// No sync data. Wallet has never been synced with the block chain.
     #[error("No sync data. Wallet has never been synced with the block chain.")]
     NoSyncData,
+    /// The wallet holds notes whose spend status sync has not yet confirmed.
+    #[error(
+        "Sync incomplete: the wallet's notes await spend-status confirmation. \
+         Complete sync and retry."
+    )]
+    SyncIncomplete,
     /// Maximum number of accounts already in use.
     #[error("Maximum number of accounts already in use.")]
     AccountCreationFailed,
@@ -90,10 +99,33 @@ pub enum WalletError {
     /// Persisted migration state failed an integrity check.
     #[error("Migration state corrupt: {0}")]
     MigrationStateCorrupt(String),
-    /// A drain was requested but the account holds no spendable Orchard note
+    /// A placement asked for a transmission window whose candidate anchor set is
+    /// empty: every bucket below it is ruled out by the Ironwood era floor or
+    /// by the part's own bound note, leaving no boundary at age one or more to
+    /// prove against. A caller that derives its window from
+    /// `crate::wallet::migration::schedule::first_permitted_bucket` or from
+    /// `plan_schedule` cannot reach this; a hand-computed window can.
+    #[error(
+        "Migration part cannot anchor in window {window}: no legal anchor bucket \
+         at or above {lowest_anchor} sits below it."
+    )]
+    MigrationNoLegalAnchor {
+        /// The transmission window the part was being placed in.
+        window: u64,
+        /// The lowest bucket the part's floors permit as an anchor.
+        lowest_anchor: u64,
+    },
+    /// An immediate migration was requested but the account holds no spendable Orchard note
     /// worth more than it would cost to spend.
     #[error("No spendable Orchard notes to migrate.")]
     NothingToMigrate,
+    /// `TargetValue::AllFunds(MaxSpendMode::Everything)` was requested. Its
+    /// contract (fail if ANY unspendable funds exist) requires a
+    /// whole-wallet audit this selector does not yet perform, and a wrong
+    /// success would silently strand funds, so the request is refused with
+    /// this typed error instead.
+    #[error("AllFunds(Everything) is not supported: the unspendable-funds audit is unimplemented.")]
+    AllFundsEverythingUnsupported,
     /// Conversion failed
     // TODO: move to lightclient?
     #[error("Conversion failed. {0}")]
@@ -110,15 +142,25 @@ pub enum WalletError {
     WalletAlreadyCreated,
 }
 
-/// Price error
+/// Price error. Exists only in nym builds: the mixnet-only price rule
+/// (ADR 0011, amendment 2026-07-28) leaves other builds with no fetch and
+/// therefore no fetch failures.
+#[cfg(feature = "nym")]
 #[derive(Debug, thiserror::Error)]
 pub enum PriceError {
     /// Price error
-    #[error("price error. {0}")]
+    #[error("price error.")]
     PriceError(#[from] zingo_price::PriceError),
+    /// Every source in the three-source race failed; the report names each
+    /// source's typed failure with its cause chain.
+    #[error("price race failed.")]
+    RaceFailed(#[from] zingo_price::PriceRaceFailure),
     /// Price list not initialised
     #[error("price list not initialised. please wait for sync to obtain time of wallet birthday")]
     NotInitialised,
+    /// The Price Source Pool could not supply a transport for the run.
+    #[error("price transport acquisition failed.")]
+    TransportAcquisition(#[source] acquire::TransportError),
 }
 
 /// Summary error
@@ -257,7 +299,7 @@ impl From<bip32::Error> for KeyError {
 #[derive(Debug, thiserror::Error)]
 pub enum CalculateTransactionError {
     #[error("No unified spending key found for this account. {0}")]
-    NoSpendingKey(#[from] crate::wallet::error::KeyError),
+    NoSpendingKey(#[from] KeyError),
     #[error("Failed to load sapling paramaters. {0}")]
     SaplingParams(String),
     #[error("Failed to build transaction. {0}")]

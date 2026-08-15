@@ -12,7 +12,7 @@ use log::info;
 use bip0039::Mnemonic;
 use zip32::AccountId;
 
-use zcash_encoding::{Optional, Vector};
+use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
@@ -23,7 +23,7 @@ use zingo_netutils::lightwallet_protocol::TreeState;
 use zingo_price::PriceList;
 
 use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
-use super::{LightWallet, error::KeyError};
+use super::{LightWallet, RecoveryInfo, error::KeyError};
 use crate::wallet::{WalletSettings, legacy::WalletZecPriceInfo, utils};
 use crate::wallet::{legacy::WalletOptions, traits::ReadableWriteable};
 use crate::{
@@ -42,25 +42,101 @@ use pepper_sync::{
     },
 };
 
+/// The two trailing sections of a version 42 wallet file: the price list and
+/// the optional Orchard→Ironwood migration section.
+type WalletTail = (PriceList, Option<crate::wallet::migration::MigrationState>);
+
+enum V40ChainField {
+    Tag(u8),
+    Name(String),
+}
+
+fn read_v40_chain_field<R: Read>(reader: &mut R) -> io::Result<V40ChainField> {
+    let first_byte = reader.read_u8()?;
+    if first_byte <= 2 {
+        Ok(V40ChainField::Tag(first_byte))
+    } else {
+        let mut length_bytes = [0u8; 8];
+        length_bytes[0] = first_byte;
+        reader.read_exact(&mut length_bytes[1..])?;
+        Ok(V40ChainField::Name(utils::read_string_body(
+            reader,
+            u64::from_le_bytes(length_bytes),
+        )?))
+    }
+}
+
+fn chain_type_from_tag(tag: u8) -> io::Result<ChainType> {
+    match tag {
+        0 => Ok(ChainType::Mainnet),
+        1 => Ok(ChainType::Testnet),
+        2 => Ok(ChainType::Regtest(ActivationHeights::default())),
+        other => Err(Error::new(
+            ErrorKind::InvalidData,
+            format!("invalid chain type index stored in wallet file: {}", other,),
+        )),
+    }
+}
+
+fn chain_name_from_stored(stored: &str) -> io::Result<&'static str> {
+    match stored {
+        "main" => Ok("mainnet"),
+        "test" => Ok("testnet"),
+        "regtest" => Ok("regtest"),
+        other => Err(Error::new(
+            ErrorKind::InvalidData,
+            format!("invalid chain type stored in wallet file: {}", other,),
+        )),
+    }
+}
+
+fn check_saved_chain(saved_network: &str, chain_type: &ChainType) -> io::Result<()> {
+    if saved_network == chain_type.to_string() {
+        Ok(())
+    } else {
+        Err(Error::new(
+            ErrorKind::InvalidData,
+            format!("wallet chain name {saved_network} doesn't match expected {chain_type}"),
+        ))
+    }
+}
+
 impl LightWallet {
+    /// Version 40 was minted once per branch (Format Census, issue #2590,
+    /// rows 69 and 70). dev's revision (2026-03-25, `eda1dca85` via
+    /// `3f95e4520`) wrote the chain type as a u8 tag and outpoint indices
+    /// as u16; stable's revision (`5d8fda797`) kept the chain-name string
+    /// and widened outpoint indices to u32. The reader separates the two
+    /// grammars on the byte after the version word: a chain tag is 0
+    /// through 2, and a chain-name string length's low byte is 4 or 7.
+    ///
     /// Changes in version 41:
     /// `ChainType` serialized as u8 instead of string to decouple from fmt::Display and reduce bytes stored.
     ///
     /// Changes in version 42:
     /// Optional Orchard→Ironwood migration section appended (see
-    /// [`crate::wallet::migration::store`]; the section carries its own inner
-    /// version). (A pre-release revision of 42 also wrote an
-    /// `allow_v6_transactions` bool after `min_confirmations`; the setting
-    /// was removed before any release carried it, so version 42 is defined
-    /// without the byte and files from those testing builds are not
-    /// readable.)
+    /// `crate::wallet::migration::store`. The section carries its own inner
+    /// version). (An earlier revision of 42 also wrote an
+    /// `allow_v6_transactions` bool after `min_confirmations`. The setting
+    /// was later removed and version 42 redefined without the byte, leaving
+    /// two shipped layouts under one number. Both are read, disambiguated
+    /// via `Self::read_price_and_migration`.)
+    ///
+    /// Version 43 is burned: builds between the two revisions of 42 wrote
+    /// it with the final version 42 layout, so it is accepted at read as 42
+    /// and must never be assigned to a new layout. The next format bump is
+    /// 44.
+    ///
+    /// Landing in dev ships a format: every layout that has landed in dev
+    /// must remain readable, and the wallet writable, forever after (ADR
+    /// 0015, docs/adr/0015-landing-in-dev-ships-the-wallet-file-format.md).
     #[must_use]
     pub const fn serialized_version() -> u64 {
         42
     }
 
     /// Serialize into `writer`
-    pub(crate) fn write<W: Write>(
+    pub fn write<W: Write>(
         &mut self,
         mut writer: W,
         consensus_parameters: &impl consensus::Parameters,
@@ -140,12 +216,14 @@ impl LightWallet {
 
     /// Deserialize into `reader`
     // TODO: update to return WalletError
-    pub(crate) fn read<R: Read>(mut reader: R, chain_type: ChainType) -> io::Result<Self> {
+    pub fn read<R: Read>(mut reader: R, chain_type: ChainType) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         info!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, chain_type, version),
-            32..=42 => Self::read_v32(reader, chain_type, version),
+            // 43 is a burned version number with the final 42 layout; see
+            // the `serialized_version` docs and ADR 0015.
+            32..=43 => Self::read_v32(reader, chain_type, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -374,47 +452,26 @@ impl LightWallet {
     }
 
     fn read_v32<R: Read>(mut reader: R, chain_type: ChainType, version: u64) -> io::Result<Self> {
-        if version >= 41 {
-            let saved_network = match reader.read_u8()? {
-                0 => ChainType::Mainnet,
-                1 => ChainType::Testnet,
-                2 => ChainType::Regtest(ActivationHeights::default()),
-                other => {
-                    return Err(Error::new(
-                        ErrorKind::InvalidData,
-                        format!("invalid chain type index stored in wallet file: {}", other,),
-                    ));
+        let dev_v40_grammar = if version >= 41 {
+            let saved_network = chain_type_from_tag(reader.read_u8()?)?;
+            check_saved_chain(&saved_network.to_string(), &chain_type)?;
+            false
+        } else if version == 40 {
+            match read_v40_chain_field(&mut reader)? {
+                V40ChainField::Tag(tag) => {
+                    check_saved_chain(&chain_type_from_tag(tag)?.to_string(), &chain_type)?;
+                    true
                 }
-            };
-            if saved_network.to_string() != chain_type.to_string() {
-                return Err(Error::new(
-                    ErrorKind::InvalidData,
-                    format!(
-                        "wallet chain name {saved_network} doesn't match expected {chain_type}"
-                    ),
-                ));
+                V40ChainField::Name(stored) => {
+                    check_saved_chain(chain_name_from_stored(&stored)?, &chain_type)?;
+                    false
+                }
             }
         } else {
-            let saved_network = match utils::read_string(&mut reader)?.as_str() {
-                "main" => "mainnet",
-                "test" => "testnet",
-                "regtest" => "regtest",
-                other => {
-                    return Err(Error::new(
-                        ErrorKind::InvalidData,
-                        format!("invalid chain type stored in wallet file: {}", other,),
-                    ));
-                }
-            };
-            if saved_network != chain_type.to_string() {
-                return Err(Error::new(
-                    ErrorKind::InvalidData,
-                    format!(
-                        "wallet chain name {saved_network} doesn't match expected {chain_type}"
-                    ),
-                ));
-            }
-        }
+            let stored = utils::read_string(&mut reader)?;
+            check_saved_chain(chain_name_from_stored(&stored)?, &chain_type)?;
+            false
+        };
 
         let seed_bytes = Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?;
         let mnemonic = if seed_bytes.is_empty() {
@@ -558,7 +615,7 @@ impl LightWallet {
         let nullifier_map = NullifierMap::read(&mut reader)?;
         let outpoint_map = Vector::read(&mut reader, |mut r| {
             let outpoint_txid = TxId::read(&mut r)?;
-            let output_index = if version >= 40 {
+            let output_index = if version >= 40 && !dev_v40_grammar {
                 r.read_u32::<LittleEndian>()?
             } else {
                 u32::from(r.read_u16::<LittleEndian>()?)
@@ -605,16 +662,38 @@ impl LightWallet {
             }
         };
 
-        let price_list = if version >= 34 {
-            PriceList::read(&mut reader)?
-        } else {
-            PriceList::new()
-        };
+        let (price_list, migration) = if version == 42 {
+            // Version 42 exists in two layouts: pre-release builds wrote an
+            // `allow_v6_transactions` byte here, before the price list (see
+            // the `serialized_version` docs). Disambiguate by parsing the
+            // buffered tail anchored at end of file, both ways.
+            let mut tail = Vec::new();
+            reader.read_to_end(&mut tail)?;
 
-        let migration = if version >= 42 {
-            Optional::read(&mut reader, crate::wallet::migration::store::read)?
+            let canonical = Self::read_price_and_migration(&tail);
+            // The extra byte of the pre-release layout is a bool, so only 0
+            // or 1 can begin one; any other leading byte rules that layout
+            // out without a second parse.
+            let pre_release = match tail.first() {
+                Some(0 | 1) => Some(Self::read_price_and_migration(&tail[1..])),
+                _ => None,
+            };
+
+            Self::resolve_v42_tail(canonical, pre_release)?
         } else {
-            None
+            let price_list = if version >= 34 {
+                PriceList::read(&mut reader)?
+            } else {
+                PriceList::new()
+            };
+
+            let migration = if version >= 42 {
+                Optional::read(&mut reader, crate::wallet::migration::store::read)?
+            } else {
+                None
+            };
+
+            (price_list, migration)
         };
 
         Ok(Self {
@@ -637,6 +716,112 @@ impl LightWallet {
             migration,
             send_proposal: None,
             save_required: false,
+        })
+    }
+
+    /// Chooses between the two readings of a version 42 file tail.
+    ///
+    /// The pre-release reading is consulted only when the canonical reading
+    /// fails to parse, so a file written by current code never loads through
+    /// the fallback. When both readings parse cleanly the file is genuinely
+    /// ambiguous and the load fails rather than guessing: a wrong guess here
+    /// would silently substitute a different price list and migration state,
+    /// and the seed remains recoverable through [`Self::read_recovery_info`].
+    ///
+    /// Parity rules out the readings both being migration-free, not the
+    /// refusal itself: a migration-free tail is 5 bytes plus a sum of
+    /// even-sized optional fields (4- and 8-byte values, and `CompactSize`
+    /// widths that grow by 2, 4, or 8), so its length is always odd, while
+    /// the two readings differ in length by exactly one. The refusal below
+    /// is therefore reachable only when at least one reading carries a
+    /// migration section, whose length parity is unconstrained.
+    fn resolve_v42_tail(
+        canonical: io::Result<WalletTail>,
+        pre_release: Option<io::Result<WalletTail>>,
+    ) -> io::Result<WalletTail> {
+        match (canonical, pre_release) {
+            (Ok(_), Some(Ok(_))) => Err(Error::new(
+                ErrorKind::InvalidData,
+                "ambiguous version 42 wallet file: its tail parses as both the \
+                 canonical and the pre-release layout, so which build wrote it \
+                 cannot be determined; recover the seed with recovery_info",
+            )),
+            (Ok(parsed), _) => Ok(parsed),
+            (Err(_), Some(Ok(parsed))) => Ok(parsed),
+            (Err(canonical_error), _) => Err(canonical_error),
+        }
+    }
+
+    /// Parses the final section of a version 42 wallet file (the price list
+    /// followed by the optional migration section) anchored at end of file.
+    /// Trailing bytes are an error, which is what lets the two revisions of
+    /// version 42 be told apart: the pre-release revision carries exactly one
+    /// extra leading byte, so the two readings start one byte apart while
+    /// both must consume the tail exactly to EOF to be accepted.
+    fn read_price_and_migration(mut tail: &[u8]) -> io::Result<WalletTail> {
+        let price_list = PriceList::read(&mut tail)?;
+        let migration = Optional::read(&mut tail, crate::wallet::migration::store::read)?;
+        if !tail.is_empty() {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "unexpected trailing bytes after wallet data",
+            ));
+        }
+        Ok((price_list, migration))
+    }
+
+    /// Recovers the seed phrase, birthday, and account count from the stable
+    /// prefix of a version 32+ wallet file, without parsing the rest of the
+    /// file. This is the escape hatch when [`Self::read`] fails on a file
+    /// written by an orphaned or unknown format revision: the recovered
+    /// info suffices to restore the wallet from seed and rescan.
+    ///
+    /// Fails on legacy files (version below 32), whose seed is stored too
+    /// deep in the file to reach without a full parse, and on view-only
+    /// wallets, which store no seed.
+    pub fn read_recovery_info<R: Read>(mut reader: R) -> io::Result<RecoveryInfo> {
+        let version = reader.read_u64::<LittleEndian>()?;
+        if version < 32 {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("wallet version {version} predates the recoverable prefix layout"),
+            ));
+        }
+        if version >= 41 {
+            let _chain_type_index = reader.read_u8()?;
+        } else if version == 40 {
+            let _chain_field = read_v40_chain_field(&mut reader)?;
+        } else {
+            let _chain_name = utils::read_string(&mut reader)?;
+        }
+        let seed_bytes = Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?;
+        if seed_bytes.is_empty() {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "wallet file stores no seed (view-only wallet); nothing to recover",
+            ));
+        }
+        if version < 35 {
+            let _account_index = reader.read_u32::<LittleEndian>()?;
+        }
+        let mnemonic = <Mnemonic>::from_entropy(seed_bytes)
+            .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?;
+        let birthday = reader.read_u32::<LittleEndian>()?;
+        let no_of_accounts = if version >= 35 {
+            u32::try_from(CompactSize::read(&mut reader)?).map_err(|e| {
+                Error::new(
+                    ErrorKind::InvalidData,
+                    format!("stored account count is not a valid u32: {e}"),
+                )
+            })?
+        } else {
+            1
+        };
+
+        Ok(RecoveryInfo {
+            seed_phrase: mnemonic.phrase().to_string(),
+            birthday: u64::from(birthday),
+            no_of_accounts,
         })
     }
 }

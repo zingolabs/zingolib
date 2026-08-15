@@ -79,4 +79,5 @@ hex.workspace = true
 simple-mermaid.workspace = true
 
 [dev-dependencies]
+proptest.workspace = true
 zcash_protocol = { workspace = true, features = [ "local-consensus"] }

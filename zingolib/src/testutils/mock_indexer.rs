@@ -1,4 +1,4 @@
-//! In-process stateful mock of the `CompactTxStreamer` service — a
+//! In-process stateful mock of the `CompactTxStreamer` service, a
 //! fabricated chain the real sync pipeline can scan, with no zebrad or
 //! zainod involved.
 //!
@@ -8,26 +8,26 @@
 //! mempool that [`MockChain::mine_mempool`] turns into the next block.
 //! [`MockIndexerService`] serves that state over the wire protocol
 //! `GrpcIndexer` speaks (the zaino-proto codegen is wire-identical to
-//! the lightwallet-protocol codegen; zingo-cli's log_file test already
+//! the lightwallet-protocol codegen. Zingo-cli's log_file test already
 //! proves the pairing). [`MockNet`] launches the server on an ephemeral
 //! localhost port and builds `LightClient`s pointed at it.
 //!
 //! Funding: a "faucet" is a [`SyntheticWalletBuilder`] wallet whose
-//! BUILT transactions (via the build-without-broadcast seam) are
-//! cryptographically real — the recipient can decrypt and later spend
+//! BUILT transactions (via the build-without-transmit seam) are
+//! cryptographically real: the recipient can decrypt and later spend
 //! their outputs once they are mined into mock blocks, because the mock
 //! appends every output to its commitment trees and the wallet's scan
 //! of those blocks reconstructs the same tree.
 //!
 //! Deliberate simplifications, safe for wallet-side tests: the mock
-//! validates nothing (no proofs, no signatures, no double-spends);
-//! block hashes are fabricated; compact transaction indices start at 1
-//! so no fabricated transaction is mistaken for a coinbase; the mempool
+//! validates nothing (no proofs, no signatures, no double-spends), and
+//! block hashes are fabricated. Compact transaction indices start at 1
+//! so no fabricated transaction is mistaken for a coinbase. The mempool
 //! stream hangs until sync's shutdown drops it (pepper-sync's monitor
 //! polls its shutdown flag alongside the stream).
 //!
 //! Available to zingolib's own unit tests and, via the `testutils`
-//! feature, to downstream test crates (e.g. libtonode-tests) — the
+//! feature, to downstream test crates (e.g. libtonode-tests), the
 //! rescan-idempotence family's offline seam.
 
 use std::collections::HashMap;
@@ -37,8 +37,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_stream::Stream;
 
-// The message types come from `lightwallet_protocol` — the same generated
-// proto the wallet's client side (pepper-sync via `zingo_netutils`) reads —
+// The message types come from `lightwallet_protocol`, the same generated
+// proto the wallet's client side (pepper-sync via `zingo_netutils`) reads,
 // because its `CompactTx` carries the `ironwood_actions` field the pinned
 // `zaino-proto` predates. `zaino_proto::tonic` remains solely as the tonic
 // re-export (the lock resolves a single tonic, so the types unify).
@@ -77,7 +77,7 @@ pub struct MockChain {
     /// Full transaction bytes and mined height, by txid (natural order).
     transactions: HashMap<[u8; 32], (u32, Vec<u8>)>,
     /// `tree_states[h]` is the serialized (sapling, orchard, ironwood)
-    /// tree state hex as of the END of height `h`; index 0 is the empty
+    /// tree state hex as of the END of height `h`. Index 0 is the empty
     /// pre-chain state.
     tree_states: Vec<(String, String, String)>,
     sapling_tree: SaplingTree,
@@ -92,8 +92,8 @@ pub struct MockChain {
     /// mempool. [`MockChain::promote_download_queue`] is the validator
     /// finishing verification.
     download_queue: Vec<Vec<u8>>,
-    /// One-shot fault: the next `send_transaction` takes the bytes —
-    /// into the mempool or the download queue per the destination —
+    /// One-shot fault: the next `send_transaction` takes the bytes
+    /// (into the mempool or the download queue per the destination)
     /// but answers with an error. The accepted-but-unanswered
     /// submission of issue #2450, in either of the validator's two
     /// pre-mining phases. Cleared on use.
@@ -101,14 +101,14 @@ pub struct MockChain {
     /// The verification delay, made deterministic: how many "already
     /// queued for download" rejections the mock answers before the
     /// download queue promotes to the mempool. Decremented on each
-    /// duplicate probe of a queued transaction; at zero the probe is
+    /// duplicate probe of a queued transaction. At zero the probe is
     /// answered with the mempool-phase rejection instead.
     pub queued_rejections_before_promotion: u8,
     /// One entry per `GetTaddressTxids` request served: the address, the
     /// requested range, and how many transactions were streamed back.
     /// Diagnostic surface for transparent-detection failures.
     taddr_request_log: Vec<String>,
-    /// Bumped by [`MockChain::reorg_to`]; folded into the hashes of
+    /// Bumped by [`MockChain::reorg_to`]. Folded into the hashes of
     /// blocks mined afterwards so a re-mined branch is distinguishable
     /// from the branch it replaced. A wallet detects the reorg by hash
     /// mismatch, exactly as against a real chain.
@@ -174,7 +174,7 @@ impl Default for MockChain {
 
 impl MockChain {
     /// An empty regtest chain at height 0 with the default (everything
-    /// at height 1) activation schedule — matching
+    /// at height 1) activation schedule, matching
     /// [`SyntheticWalletBuilder`]'s default and [`MockNet::client`]'s
     /// config.
     pub fn new() -> Self {
@@ -199,7 +199,7 @@ impl MockChain {
         }
     }
 
-    /// The `GetTaddressTxids` requests served so far — for diagnosing
+    /// The `GetTaddressTxids` requests served so far, for diagnosing
     /// transparent-detection failures in tests.
     pub fn taddr_request_log(&self) -> &[String] {
         &self.taddr_request_log
@@ -307,12 +307,12 @@ impl MockChain {
         }
     }
 
-    /// Rewinds the chain to `height`, discarding every block above it —
+    /// Rewinds the chain to `height`, discarding every block above it,
     /// the reorg primitive. Blocks mined afterwards carry a new branch
     /// seed in their hashes, so a syncing wallet sees a hash mismatch
     /// above `height` and truncates, exactly as against a real reorg.
     /// Returns the raw bytes of the discarded transactions in mined
-    /// order; the caller models miner behavior by resubmitting them to
+    /// order. The caller models miner behavior by resubmitting them to
     /// the mempool, re-mining them at new heights, or dropping them to
     /// let the wallet expire them.
     pub fn reorg_to(&mut self, height: u32) -> Vec<Vec<u8>> {
@@ -889,7 +889,8 @@ impl MockNet {
                 birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             })
-            .build();
+            .build()
+            .unwrap();
         self._wallet_dirs.push(wallet_dir);
         let mut lightclient = LightClient::new(config, true)
             .await
@@ -903,14 +904,26 @@ impl MockNet {
             )
             .await
             .expect("sapling-only address generation succeeds");
+        // Mock-net clients run with Mixnet Mode switched on, so every
+        // chain-mock send walks the fail-closed route resolver and the
+        // escalation orchestration instead of quietly consenting to clearnet.
+        // The address is never dialed: the transmit path pairs this slot
+        // state with arms that submit over the mock indexer's channel.
+        // Without the nym feature there is no mixnet and sends stay
+        // clearnet, so the same tests cover both routes across the
+        // feature matrix.
+        #[cfg(feature = "nym")]
+        lightclient
+            .switch_on_mixnet_for_tests(crate::mocks::transmission::MOCK_SOCKS5_ADDR)
+            .await;
         lightclient
     }
 }
 
-/// Builds (without broadcasting) one real transaction from a synthetic
-/// faucet to the given receivers, returning its raw bytes — the mock
+/// Builds (without transmitting) one real transaction from a synthetic
+/// faucet to the given receivers, returning its raw bytes, the mock
 /// chain's funding primitive. Each call uses a fresh faucet whose
-/// fabricated backing note never exists on the mock chain; nothing
+/// fabricated backing note never exists on the mock chain. Nothing
 /// validates that, and the recipient-facing outputs are real.
 pub async fn faucet_funding_transaction(receivers: Vec<(&str, u64, Option<&str>)>) -> Vec<u8> {
     let total: u64 = receivers.iter().map(|(_, value, _)| value).sum();

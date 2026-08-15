@@ -2,11 +2,14 @@ use std::{num::NonZeroU32, time::Duration};
 
 use incrementalmerkletree::Position;
 use pepper_sync::sync::ScanPriority;
+use pepper_sync::test_support::block;
 use pepper_sync::wallet::ShardTrees;
 use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
+use zcash_protocol::PoolType;
+use zcash_protocol::ShieldedPool::{Ironwood, Orchard, Sapling};
 use zcash_protocol::consensus::BlockHeight;
-use zingo_netutils::lightwallet_protocol::GetSubtreeRootsArg;
+use zingo_netutils::lightwallet_protocol::{BlockId, BlockRange, GetSubtreeRootsArg};
 use zingo_netutils::{GrpcIndexer, Indexer};
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::config::{ChainType, ClientConfig, WalletConfig};
@@ -17,12 +20,17 @@ use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::{
-    config::{DEFAULT_INDEXER_URI, construct_indexer_uri},
+    config::construct_indexer_uri,
     get_base_address_macro,
     lightclient::LightClient,
     testutils::lightclient::from_inputs::{self},
 };
-use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
+
+/// The mainnet indexer these ignored, hand-run sync tests dial explicitly.
+const SYNC_TEST_INDEXER: &str = "https://zec.rocks:443";
+use zingolib_testutils::scenarios::{
+    self, IndexerConvergence, increase_height_and_wait_for_client,
+};
 
 #[ignore = "temporary mainnet test for sync development"]
 #[tokio::test]
@@ -30,7 +38,7 @@ async fn sync_mainnet_test() {
     zingolib::ensure_default_crypto_provider();
     tracing_subscriber::fmt().init();
 
-    let uri = construct_indexer_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
+    let uri = construct_indexer_uri(SYNC_TEST_INDEXER.to_string()).unwrap();
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
     let config = ClientConfig::builder()
@@ -43,11 +51,12 @@ async fn sync_mainnet_test() {
             birthday: 1_500_000,
             wallet_settings: default_test_wallet_settings(),
         })
-        .build();
+        .build()
+        .unwrap();
     let mut lightclient = LightClient::new(config, true).await.unwrap();
 
     lightclient.sync().await.unwrap();
-    let mut interval = tokio::time::interval(Duration::from_secs(5));
+    let mut interval = tokio::time::interval(zingo_netutils::time::test::SETTLE_POLL_INTERVAL);
     loop {
         interval.tick().await;
         {
@@ -150,7 +159,7 @@ async fn add_subtree_roots() {
 
     zingolib::ensure_default_crypto_provider();
 
-    let uri = construct_indexer_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
+    let uri = construct_indexer_uri(SYNC_TEST_INDEXER.to_string()).unwrap();
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
     let config = ClientConfig::builder()
@@ -163,7 +172,8 @@ async fn add_subtree_roots() {
             birthday: 2_000_000,
             wallet_settings: default_test_wallet_settings(),
         })
-        .build();
+        .build()
+        .unwrap();
     let mut lightclient = LightClient::new(config, true).await.unwrap();
 
     let mut grpc_client = GrpcIndexer::new(
@@ -341,13 +351,13 @@ fn checkpoint_window_blocks_path() -> std::path::PathBuf {
 /// Build the ~112-block send-dense chain the checkpoint-window assertion
 /// replays, and export it to [`checkpoint_window_blocks_path`]. Runs on
 /// the first execution per machine and under
-/// [`zingolib_testutils::chain_cache::REGENERATE_ENV`]; every other run
+/// [`zingolib_testutils::chain_cache::REGENERATE_ENV`]. Every other run
 /// replays the exported artifact.
 async fn build_checkpoint_window_chain() {
     // ChainCachePolicy::Disabled, not PerTest: under PerTest the inner
     // scenario would claim this test's chain_caches/<binary>/<test>/
-    // directory for its own mined-setup cache — colliding with the raw
-    // artifact this builder exports there — and a mined-setup replay
+    // directory for its own mined-setup cache, colliding with the raw
+    // artifact this builder exports there, and a mined-setup replay
     // would not shorten the build anyway, since the expensive part is
     // the post-boundary sends.
     let (local_net, mut faucet, recipient) = scenarios::faucet_recipient(
@@ -393,7 +403,7 @@ async fn build_checkpoint_window_chain() {
     // Dense head, bulk-mined empty middle, dense tail. Proved sends are
     // ~95% of the build's wall clock, and checkpoint presence is
     // per-scanned-block regardless of commitments (adjudicated
-    // empirically against the fully dense 27-cycle chain, 2026-07-08) —
+    // empirically against the fully dense 27-cycle chain, 2026-07-08),
     // so the dense regions exist to bracket the verification window
     // with genuinely mutating trees, not to fill it: the head cycles
     // straddle the window's start (the pruning boundary crosses a
@@ -488,15 +498,15 @@ async fn store_all_checkpoints_in_verification_window() {
 /// 1128).
 ///
 /// Reproduction record (issue #2440): the failures occurred only in
-/// container runs — twice, the wallet at exactly 1096 both times, under
-/// `makers container-test` (podman on the originating machine) — while
+/// container runs (twice, the wallet at exactly 1096 both times, under
+/// `makers container-test`, podman on the originating machine) while
 /// host runs of the same commit passed. "Container-only" records where
 /// it happened, not a mechanism: in the same failing container process
 /// a parallel fresh connection to the same URI saw all 1128 roots, so
 /// the healthy backend was reachable from inside the container, and a
 /// backend's state is client-independent. What pinned the wallet's
 /// channel to the stuck backend in exactly the container runs is
-/// unresolved — logging the resolved backend identity (the issue's open
+/// unresolved, though logging the resolved backend identity (the issue's open
 /// question) would make a recurrence attributable. Note the
 /// stream-resume defense of 9d40495b9 converts mid-flight cuts into
 /// completions but cannot conjure shards a stuck backend does not have,
@@ -504,10 +514,10 @@ async fn store_all_checkpoints_in_verification_window() {
 /// (a day-later container run pulled 1128 cleanly), not a client fix.
 ///
 /// Prints, for three fresh connections, how many sapling subtree roots the
-/// stream yields and the chain height at which it ends — then the count
+/// stream yields and the chain height at which it ends, then the count
 /// pepper-sync's own fetch path lands in the wallet. If a short stream's last
 /// completing height is months old, the connection reached a lagging backend
-/// behind the load balancer; if counts differ between connections to a
+/// behind the load balancer. If counts differ between connections to a
 /// current backend, the stream is being cut mid-flight.
 ///
 /// Run in the environment under investigation with output visible, e.g.:
@@ -516,7 +526,7 @@ async fn store_all_checkpoints_in_verification_window() {
 #[ignore = "diagnostic: run manually against live mainnet"]
 #[tokio::test]
 async fn diagnose_subtree_root_stream() {
-    let uri = construct_indexer_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
+    let uri = construct_indexer_uri(SYNC_TEST_INDEXER.to_string()).unwrap();
 
     for attempt in 1..=3 {
         let mut grpc_client = GrpcIndexer::new(uri.clone()).await.unwrap();
@@ -588,7 +598,8 @@ async fn diagnose_subtree_root_stream() {
             birthday: 2_000_000,
             wallet_settings: default_test_wallet_settings(),
         })
-        .build();
+        .build()
+        .unwrap();
     let mut lightclient = LightClient::new(config, true).await.unwrap();
     lightclient.sync().await.unwrap();
     while !(lightclient
@@ -662,4 +673,272 @@ async fn indexer_converges_with_validator_after_block_generation() {
              validator tip {validator_height} despite the convergence barrier"
         );
     }
+}
+
+/// A wallet holding blocks that were scanned without tracking a pool must
+/// still end up with the notes those blocks contain. Nothing in such a
+/// wallet asks for them: the ranges are recorded as fully scanned, so the
+/// notes remain lost and the balance silently understates what the wallet
+/// owns.
+///
+/// The wallet's own recorded commitment tree for the pool is what gives it
+/// away, because it cannot account for the tree the chain reports. Nothing
+/// about that reasoning is particular to one pool, one activation height or
+/// one network, so it is exercised for each pool a wallet can be funded in.
+async fn notes_in_untracked_history_are_recovered(pool: PoolType) {
+    let shielded_pool = match pool {
+        PoolType::ORCHARD => zcash_protocol::ShieldedPool::Orchard,
+        PoolType::IRONWOOD => zcash_protocol::ShieldedPool::Ironwood,
+        other => panic!("{other} is not a pool a recipient can be funded in"),
+    };
+    let balance = async |client: &LightClient| -> u64 {
+        let balance = client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .expect("a synced client reports a balance");
+        match shielded_pool {
+            zcash_protocol::ShieldedPool::Orchard => balance.confirmed_orchard_balance,
+            zcash_protocol::ShieldedPool::Ironwood => balance.confirmed_ironwood_balance,
+            zcash_protocol::ShieldedPool::Sapling => balance.confirmed_sapling_balance,
+        }
+        .map(zcash_protocol::value::Zatoshis::into_u64)
+        .unwrap_or(0)
+    };
+
+    let fixture = scenarios::default_test_activation_heights();
+    let activation_heights = zingolib::ActivationHeights::builder()
+        .set_overwinter(fixture.overwinter())
+        .set_sapling(fixture.sapling())
+        .set_blossom(fixture.blossom())
+        .set_heartwood(fixture.heartwood())
+        .set_canopy(fixture.canopy())
+        .set_nu5(fixture.nu5())
+        .set_nu6(fixture.nu6())
+        .set_nu6_1(fixture.nu6_1())
+        .set_nu6_2(fixture.nu6_2())
+        .set_nu6_3(match shielded_pool {
+            zcash_protocol::ShieldedPool::Ironwood => fixture.nu6_3(),
+            _ => None,
+        })
+        .set_nu7(None)
+        .build();
+
+    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
+        pool,
+        activation_heights,
+        scenarios::ChainCachePolicy::PerTest,
+    )
+    .await;
+
+    let recipient_address = get_base_address_macro!(recipient, "unified");
+    scenarios::send_and_bump(
+        &local_net,
+        &mut faucet,
+        vec![(recipient_address.as_str(), 100_000, None)],
+    )
+    .await;
+    scenarios::sync_client_to_validator_tip(&local_net, &mut recipient).await;
+
+    let funded_balance = balance(&recipient).await;
+    assert!(
+        funded_balance > 0,
+        "the recipient must hold a {pool} note before its history is stripped"
+    );
+
+    // Reduce the wallet to what a build that never tracked the pool would
+    // have left: the very same scanned ranges, none of the pool's data.
+    {
+        let wallet = recipient.wallet();
+        let mut wallet = wallet.write().await;
+        pepper_sync::wallet::strip_pool_tracking_for_test(&mut *wallet, shielded_pool)
+            .expect("stripping a local wallet is infallible");
+    }
+    assert_eq!(
+        balance(&recipient).await,
+        0,
+        "stripping must actually remove the note that recovery is then judged by"
+    );
+
+    // Mining gives the wallet a block whose metadata it must account for.
+    // The barrier is held here rather than by a syncing helper, so the
+    // sessions below are counted exactly.
+    let target = scenarios::generate_n_blocks_return_new_height(&local_net, 2).await;
+    local_net.converge(target).await;
+
+    // The first session finds the pool's recorded tree wanting and reopens
+    // its history, ending there rather than reporting a sync that would have
+    // left the notes lost.
+    let reopened = recipient.sync_and_await().await;
+    assert!(
+        reopened.is_err(),
+        "a wallet whose {pool} history cannot account for the chain must not \
+         report a successful sync: {reopened:?}"
+    );
+
+    // The second session rescans the reopened history and recovers the note.
+    scenarios::sync_client_to_validator_tip(&local_net, &mut recipient).await;
+
+    assert_eq!(
+        balance(&recipient).await,
+        funded_balance,
+        "the {pool} note was left lost in history that was scanned without \
+         {pool} tracking",
+    );
+}
+
+#[tokio::test]
+async fn ironwood_notes_in_untracked_history_are_recovered() {
+    notes_in_untracked_history_are_recovered(PoolType::IRONWOOD).await;
+}
+
+#[tokio::test]
+async fn orchard_notes_in_untracked_history_are_recovered() {
+    notes_in_untracked_history_are_recovered(PoolType::ORCHARD).await;
+}
+
+/// The serving invariant pepper-sync's `check_tree_size` relies on, verified
+/// directly against the wire: per block and per shielded pool, the outputs
+/// served in `vtx` account exactly for the growth of the commitment tree
+/// size in `chain_metadata`. A consistent sweep alongside a failing wallet
+/// scan clears the indexer and points at the scanner or at stale persisted
+/// wallet state.
+#[tokio::test]
+async fn served_outputs_match_chain_metadata_deltas() {
+    let (local_net, mut faucet) = scenarios::faucet(
+        PoolType::IRONWOOD,
+        scenarios::default_test_activation_heights(),
+        scenarios::ChainCachePolicy::PerTest,
+    )
+    .await;
+
+    // A send adds a multi-action ironwood bundle beyond the one-action
+    // coinbase blocks.
+    let self_address = get_base_address_macro!(faucet, "unified");
+    scenarios::send_and_bump(
+        &local_net,
+        &mut faucet,
+        vec![(self_address.as_str(), 100_000, None)],
+    )
+    .await;
+
+    let mut grpc_client = GrpcIndexer::new(faucet.indexer_uri().expect("client is connected"))
+        .await
+        .unwrap();
+    let tip = grpc_client
+        .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
+        .await
+        .unwrap()
+        .height;
+
+    let mut stream = grpc_client
+        .get_block_range(
+            BlockRange {
+                start: Some(BlockId {
+                    height: 1,
+                    hash: vec![],
+                }),
+                end: Some(BlockId {
+                    height: tip,
+                    hash: vec![],
+                }),
+                // Empty means the legacy default: the server must include all
+                // shielded pools. This matches what pepper-sync sends.
+                pool_types: vec![],
+            },
+            DEFAULT_REQUEST_TIMEOUT,
+        )
+        .await
+        .unwrap();
+
+    let ironwood_activation = u64::from(scenarios::IRONWOOD_COINBASE_START_HEIGHT);
+    let mut mismatches = Vec::new();
+    let mut prev: Option<zingo_netutils::lightwallet_protocol::ChainMetadata> = None;
+    let mut ironwood_served_total = 0u64;
+    let mut first_nonzero_ironwood_metadata: Option<u64> = None;
+    let mut first_served_ironwood_action: Option<u64> = None;
+
+    while let Some(block) = stream.message().await.unwrap() {
+        let metadata = block.chain_metadata.unwrap_or_else(|| {
+            panic!(
+                "indexer serves no chain_metadata at height {}; pepper-sync \
+                 cannot verify tree sizes against this server",
+                block.height
+            )
+        });
+
+        let sapling_served = u64::from(block::shielded_output_count(&block, Sapling));
+        let orchard_served = u64::from(block::shielded_output_count(&block, Orchard));
+        let ironwood_served = u64::from(block::shielded_output_count(&block, Ironwood));
+
+        if metadata.ironwood_commitment_tree_size > 0 {
+            first_nonzero_ironwood_metadata.get_or_insert(block.height);
+        }
+        if ironwood_served > 0 {
+            first_served_ironwood_action.get_or_insert(block.height);
+        }
+        ironwood_served_total += ironwood_served;
+
+        if let Some(prev) = prev {
+            for (pool, served, size, prev_size) in [
+                (
+                    "sapling",
+                    sapling_served,
+                    metadata.sapling_commitment_tree_size,
+                    prev.sapling_commitment_tree_size,
+                ),
+                (
+                    "orchard",
+                    orchard_served,
+                    metadata.orchard_commitment_tree_size,
+                    prev.orchard_commitment_tree_size,
+                ),
+                (
+                    "ironwood",
+                    ironwood_served,
+                    metadata.ironwood_commitment_tree_size,
+                    prev.ironwood_commitment_tree_size,
+                ),
+            ] {
+                let metadata_delta = i64::from(size) - i64::from(prev_size);
+                if metadata_delta != served as i64 {
+                    mismatches.push(format!(
+                        "height {}: {pool} metadata delta {metadata_delta} but \
+                         {served} outputs served in vtx",
+                        block.height
+                    ));
+                }
+            }
+        }
+        prev = Some(metadata);
+    }
+
+    assert!(
+        mismatches.is_empty(),
+        "indexer served blocks where chain_metadata growth does not match the \
+         outputs present in vtx; the serving side drops outputs or misreports \
+         tree sizes:\n{}",
+        mismatches.join("\n"),
+    );
+
+    // The sweep must actually exercise ironwood serving, otherwise the delta
+    // checks above pass vacuously on an indexer that serves neither ironwood
+    // actions nor ironwood metadata.
+    assert_eq!(
+        first_nonzero_ironwood_metadata,
+        Some(ironwood_activation),
+        "ironwood metadata should first appear at the activation-height \
+         coinbase block"
+    );
+    assert_eq!(
+        first_served_ironwood_action,
+        Some(ironwood_activation),
+        "the activation-height coinbase block should serve an ironwood action"
+    );
+    // At least one coinbase action per post-activation block, plus the
+    // multi-action send bundle.
+    assert!(
+        ironwood_served_total > tip - ironwood_activation + 1,
+        "expected coinbase plus send-bundle ironwood actions, served only \
+         {ironwood_served_total} across blocks [{ironwood_activation}, {tip}]"
+    );
 }

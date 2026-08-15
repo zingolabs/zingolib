@@ -1,5 +1,6 @@
-//! Canonical quantization: decomposing a balance into the standard
-//! power-of-ten denominations of ZIP 318.
+//! Canonical quantization: decomposing a balance into ZIP 318's standard
+//! `{1, 2, 5} x 10^k` denominations
+//! (<https://zips.z.cash/zip-0318#amountselectioncanonicalquantization>).
 
 use zcash_protocol::value::Zatoshis;
 
@@ -11,8 +12,8 @@ pub struct Denominations {
     /// One entry per Ironwood output to create. Every value is a member of
     /// [`MigrationParams::denominations`]. Ordered largest first.
     outputs: Vec<Zatoshis>,
-    /// The leftover below the dust floor that has no canonical denomination.
-    /// Always strictly less than [`MigrationParams::dust_floor`]. The
+    /// The leftover below the smallest denomination that has no canonical denomination.
+    /// Always strictly less than [`MigrationParams::max_residual_value`]. The
     /// migration folds this into the fee instead of creating a non-standard
     /// note.
     remainder: Zatoshis,
@@ -24,7 +25,7 @@ impl Denominations {
         &self.outputs
     }
 
-    /// The sub-dust-floor leftover to fold into the fee.
+    /// The sub-denomination leftover to fold into the fee.
     pub fn remainder(&self) -> Zatoshis {
         self.remainder
     }
@@ -36,7 +37,7 @@ impl Denominations {
     }
 }
 
-/// Decompose `value` into canonical powers-of-ten denominations.
+/// Decompose `value` into the canonical `{1, 2, 5} x 10^k` denominations.
 ///
 /// Greedy, largest denomination first. Because each denomination is exactly
 /// ten times the next, greedy decomposition also minimizes the number of
@@ -61,18 +62,18 @@ pub fn decompose(value: Zatoshis, params: &MigrationParams) -> Denominations {
 
     Denominations {
         outputs,
-        // `remaining` is what is left after removing every dust-floor unit,
-        // so it is strictly below the dust floor and trivially in range.
+        // `remaining` is what is left after removing every smallest-denomination unit,
+        // so it is strictly below the smallest denomination and trivially in range.
         remainder: Zatoshis::const_from_u64(remaining),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::params::COIN;
     use super::*;
     use crate::config::ChainType;
     use proptest::prelude::*;
+    use zcash_protocol::value::COIN;
     use zcash_protocol::value::MAX_MONEY;
 
     fn params() -> MigrationParams {
@@ -93,41 +94,27 @@ mod tests {
 
     #[test]
     fn worked_example() {
-        // 1.23456789 ZEC: 1 + 2×0.1 + 3×0.01 + 4×0.001, remainder 56_789 zat.
+        // 1.23456789 ZEC: 1 + 0.2 + 0.02 + 0.01, remainder 456_789 zat.
         let d = decompose(Zatoshis::const_from_u64(123_456_789), &params());
         assert_eq!(
             values(d.outputs()),
             vec![
                 100_000_000, // 1 ZEC
-                10_000_000,
-                10_000_000, // 2 × 0.1
-                1_000_000,
-                1_000_000,
-                1_000_000, // 3 × 0.01
-                100_000,
-                100_000,
-                100_000,
-                100_000, // 4 × 0.001
+                20_000_000,  // 0.2
+                2_000_000,   // 0.02
+                1_000_000,   // 0.01
             ]
         );
-        assert_eq!(u64::from(d.remainder()), 56_789);
+        assert_eq!(u64::from(d.remainder()), 456_789);
     }
 
     #[test]
     fn value_above_largest_denomination_uses_many_top_notes() {
-        // 250 ZEC → 2×100 + 5×10, no remainder.
-        let d = decompose(Zatoshis::const_from_u64(250 * COIN), &params());
+        // 25 000 ZEC → 2×10 000 + 5000, no remainder.
+        let d = decompose(Zatoshis::const_from_u64(25_000 * COIN), &params());
         assert_eq!(
             values(d.outputs()),
-            vec![
-                100 * COIN,
-                100 * COIN,
-                10 * COIN,
-                10 * COIN,
-                10 * COIN,
-                10 * COIN,
-                10 * COIN,
-            ]
+            vec![10_000 * COIN, 10_000 * COIN, 5_000 * COIN]
         );
         assert_eq!(d.remainder(), Zatoshis::ZERO);
     }
@@ -164,13 +151,13 @@ mod tests {
             );
         }
 
-        // The remainder is always below the dust floor, so folding it into
-        // the fee costs at most one dust-floor unit.
+        // The remainder is always below the smallest denomination, so folding it into
+        // the fee costs at most one smallest-denomination unit.
         #[test]
-        fn remainder_below_dust_floor(value in 0u64..=MAX_MONEY) {
+        fn remainder_below_max_residual_value(value in 0u64..=MAX_MONEY) {
             let params = params();
             let d = decompose(Zatoshis::const_from_u64(value), &params);
-            prop_assert!(u64::from(d.remainder()) < params.dust_floor);
+            prop_assert!(u64::from(d.remainder()) < params.max_residual_value);
         }
     }
 }

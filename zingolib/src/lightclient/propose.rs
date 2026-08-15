@@ -28,23 +28,62 @@ impl LightClient {
 
     /// Creates and stores a proposal from a transaction request.
     /// OP_RETURN Data, if given, rides the final transaction of the send.
+    ///
+    /// Pauses the sync engine before the first wallet read and holds that
+    /// pause beside the stored proposal, so the state the proposal
+    /// selected against cannot shift before the send builds it. A proposal
+    /// that fails to come into existence releases the pause on the way
+    /// out, restoring the engine to the mode it was found in.
     pub async fn propose_send(
         &mut self,
         request: TransactionRequest,
         account_id: zip32::AccountId,
         op_return_data: Option<OpReturnData>,
     ) -> Result<Proposal, ProposeSendError> {
-        let _ignore_error = self.pause_sync();
-        let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_send_proposal(request, account_id, op_return_data)?;
-        wallet.store_proposal(proposal.clone());
-
-        Ok(proposal)
+        let minted = self.hold_proposal_pause();
+        let result = {
+            let mut wallet = self.wallet().write().await;
+            wallet
+                .create_send_proposal(request, account_id, op_return_data)
+                .inspect(|proposal| {
+                    wallet.store_proposal(proposal.clone());
+                })
+        };
+        if result.is_err() && minted {
+            self.release_proposal_pause(true);
+        }
+        result
     }
 
     /// Creates and stores a proposal for sending all shielded funds from a specified account to a given `address`.
     /// OP_RETURN Data, if given, rides the final transaction of the send.
+    ///
+    /// The pause a proposal holds (see [`Self::propose_send`]) is
+    /// established before the send-all sizing: the [`Self::max_send_value`]
+    /// trial proposals are wallet reads the sizing must not race a running
+    /// engine for, and the value they compute must still hold when the real
+    /// proposal is created.
     pub async fn propose_send_all(
+        &mut self,
+        address: ZcashAddress,
+        zennies_for_zingo: bool,
+        memo: Option<zcash_protocol::memo::MemoBytes>,
+        account_id: zip32::AccountId,
+        op_return_data: Option<OpReturnData>,
+    ) -> Result<Proposal, ProposeSendError> {
+        let minted = self.hold_proposal_pause();
+        let result = self
+            .propose_send_all_paused(address, zennies_for_zingo, memo, account_id, op_return_data)
+            .await;
+        if result.is_err() && minted {
+            self.release_proposal_pause(true);
+        }
+        result
+    }
+
+    /// The [`Self::propose_send_all`] body, from sizing through storing,
+    /// which its caller runs under the stored proposal's pause.
+    async fn propose_send_all_paused(
         &mut self,
         address: ZcashAddress,
         zennies_for_zingo: bool,
@@ -64,7 +103,6 @@ impl LightClient {
         }
         let request = transaction_request_from_receivers(receivers)
             .map_err(ProposeSendError::TransactionRequestFailed)?;
-        let _ignore_error = self.pause_sync();
         let mut wallet = self.wallet().write().await;
         let proposal = wallet.create_send_proposal(request, account_id, op_return_data)?;
         wallet.store_proposal(proposal.clone());
@@ -72,16 +110,27 @@ impl LightClient {
         Ok(proposal)
     }
 
-    /// Creates and stores a proposal for shielding all transparent funds..
+    /// Creates and stores a proposal for shielding all transparent funds,
+    /// under the same stored-proposal pause as [`Self::propose_send`].
+    /// The shield path previously read spendable coins without pausing
+    /// the engine at all.
     pub async fn propose_shield(
         &mut self,
         account_id: zip32::AccountId,
     ) -> Result<Proposal, ProposeShieldError> {
-        let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_shield_proposal(account_id)?;
-        wallet.store_proposal(proposal.clone());
-
-        Ok(proposal)
+        let minted = self.hold_proposal_pause();
+        let result = {
+            let mut wallet = self.wallet().write().await;
+            wallet
+                .create_shield_proposal(account_id)
+                .inspect(|proposal| {
+                    wallet.store_proposal(proposal.clone());
+                })
+        };
+        if result.is_err() && minted {
+            self.release_proposal_pause(true);
+        }
+        result
     }
 
     /// Returns the maximum value that can be sent from the given `account_id`.
@@ -175,7 +224,8 @@ mod shielding {
                 birthday: 419200,
                 wallet_settings: default_test_wallet_settings(),
             })
-            .build();
+            .build()
+            .unwrap();
         LightClient::new(config, true).await.unwrap()
     }
 
@@ -323,7 +373,7 @@ mod send_all {
     /// wallet fragmented across both shielded pools drains every non-dust
     /// note and leaves the dust behind. The original assembled the
     /// fragmentation with five LocalNet sends and asserted zero
-    /// balances-excluding-dust after mining — which is this same contract,
+    /// balances-excluding-dust after mining, which is this same contract,
     /// one mined round trip later: send-all pays out the dust-excluded
     /// spendable balance minus the fee, so notes at or below the 5_000-zat
     /// `MARGINAL_FEE` dust line (which net nothing after paying for their
@@ -389,7 +439,7 @@ mod send_all {
     /// wallet's own sapling address while the validator ran five blocks
     /// ahead, asserting only that propose-and-send succeeded. Proposing
     /// never consults the server, so the offline half is exactly this
-    /// self-destination send-all; the behind-tip send half remains covered
+    /// self-destination send-all. The behind-tip send half remains covered
     /// by `load_wallet::verify_old_wallet_uses_server_height_in_send`.
     #[tokio::test]
     async fn send_all_to_own_sapling_proposes() {
@@ -424,7 +474,7 @@ mod send_all {
     /// Gap-2 remediation from the protection audit (§ Gap remediation
     /// plan): with Zennies for Zingo enabled, the proposal itself carries
     /// the injected zenny payment. toggle_zennies_for_zingo pins the
-    /// max-send arithmetic; this pins the injection mechanism — the
+    /// max-send arithmetic. This pins the injection mechanism: the
     /// request `propose_send_all` builds contains exactly one payment to
     /// the Zennies for Zingo address at `ZENNIES_FOR_ZINGO_AMOUNT`,
     /// alongside the send-all payment, and the step still balances.
@@ -660,7 +710,7 @@ mod simpool {
 /// the transparent minimum-value and boundary-value rows. The matrix's
 /// fee, value, and change assertions are pure proposer arithmetic, so a
 /// synthetic wallet funded with exactly `value + change + fee` replaces
-/// the LocalNet environment and its two-hop funding chain; each case
+/// the LocalNet environment and its two-hop funding chain. Each case
 /// asserts the proposal pays `value`, charges the `fee_tables::one_to_one`
 /// fee, and returns exactly `change`. The Transmitted-to-Confirmed round
 /// trip the matrix also exercised remains covered by the two surviving
@@ -858,7 +908,7 @@ mod pool_matrix {
     );
     // 546 zatoshis is the canonical transparent dust threshold. The
     // proposer permits it; whether a relay accepts it is the network's
-    // business — zebra's mempool dust rule was the reason this row's
+    // business, and zebra's mempool dust rule was the reason this row's
     // LocalNet ancestor sent 546 rather than 1.
     pool_matrix_case!(
         sapling_sends_to_transparent_minimum_value,
@@ -904,10 +954,124 @@ mod proposal_shape {
         unified_address.encode(&external_wallet.chain_type())
     }
 
+    /// A pool whose spendable list is exhausted mid-selection must still
+    /// report the value it covered. The regression this pins: selecting the
+    /// pool's last candidate note broke out of the selection loop before
+    /// the remaining-needed figure was recomputed, so the caller saw a
+    /// stale positive remainder and the next pool selected against a
+    /// target that was already met. The wallet holds the covering note in
+    /// Orchard and a larger note in Sapling (the two trailing pools of
+    /// the selector's preference order for an Ironwood payment), so the
+    /// assertion is independent of that order's head.
+    #[tokio::test]
+    async fn exhausted_pool_does_not_over_select() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(50_000)
+            .sapling_note(100_000)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let destination = external_address(PoolType::Shielded(ShieldedPool::Ironwood));
+        let proposal =
+            from_inputs::propose(&mut client, vec![(destination.as_str(), 20_000, None)])
+                .await
+                .unwrap();
+        let selected: Vec<u64> = proposal
+            .final_step()
+            .shielded_inputs()
+            .iter()
+            .map(|input| u64::from(input.value()))
+            .collect();
+        assert_eq!(
+            selected,
+            [50_000],
+            "one note covers the send; an emptied pool must not spill selection into the next"
+        );
+    }
+
+    /// A note bound to a pending migration part is withheld from ordinary
+    /// input selection while a free note can satisfy the request (the
+    /// ZIP 318 soft reservation). This is the unit-level twin of the
+    /// libtonode `bound_note_reservation_and_external_spend_invalidation`
+    /// scenario, and it fails alongside the exhausted-pool regression
+    /// above: a stale remainder made the never-block fallback consume the
+    /// bound note although the free note had already covered the target.
+    #[tokio::test]
+    async fn reservation_withholds_bound_note_while_a_free_note_suffices() {
+        use pepper_sync::wallet::{NoteInterface as _, OrchardNote, OutputInterface as _};
+
+        use crate::wallet::migration::{
+            BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId,
+            PartRecord, SigningStrategy,
+        };
+
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(100_000)
+                .orchard_note(50_000)
+                .build();
+
+        let (output_id, nullifier) = wallet
+            .wallet_transactions
+            .values()
+            .flat_map(OrchardNote::transaction_outputs)
+            .find(|note| note.value() == 100_000)
+            .map(|note| {
+                (
+                    note.output_id(),
+                    note.nullifier()
+                        .expect("scanned notes carry nullifiers")
+                        .to_bytes(),
+                )
+            })
+            .expect("the wallet holds the 100_000 note");
+
+        let params = MigrationParams::provisional(wallet.chain_type());
+        wallet.migration = Some(MigrationState {
+            consent: ConsentBinding {
+                params_hash: params.params_hash(),
+                plan_hash: [0; 32],
+                consented_at: 0,
+            },
+            params,
+            strategy: SigningStrategy::LazyAtBoundary,
+            mode: crate::wallet::migration::MigrationMode::Scheduled,
+            account: zip32::AccountId::ZERO,
+            phase: MigrationPhase::PartsScheduled,
+            parts: vec![PartRecord::new(
+                PartId(0),
+                100_000,
+                BoundNote {
+                    output_id,
+                    nullifier,
+                    commitment: [0; 32],
+                },
+            )],
+        });
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        let destination = external_address(PoolType::Shielded(ShieldedPool::Ironwood));
+        let proposal =
+            from_inputs::propose(&mut client, vec![(destination.as_str(), 20_000, None)])
+                .await
+                .unwrap();
+        let selected: Vec<u64> = proposal
+            .final_step()
+            .shielded_inputs()
+            .iter()
+            .map(|input| u64::from(input.value()))
+            .collect();
+        assert_eq!(
+            selected,
+            [50_000],
+            "the free note covers the send; the bound note stays reserved"
+        );
+    }
+
     /// Migrated from libtonode `slow::dust_sends_change_correctly`: a send
-    /// of less than the fee still proposes — the fee comes out of the
+    /// of less than the fee still proposes, since the fee comes out of the
     /// selected note and the remainder returns as change. The original
-    /// asserted nothing beyond the send call succeeding; the offline
+    /// asserted nothing beyond the send call succeeding. The offline
     /// proposal now asserts the shape the name always promised.
     #[tokio::test]
     async fn dust_sends_change_correctly() {
@@ -942,8 +1106,8 @@ mod proposal_shape {
     /// Offline twin of libtonode
     /// `basic_transactions::send_and_sync_with_multiple_notes_no_panic`,
     /// which stays live as the pipeline control: a 50_000 payment from
-    /// two 40_000 notes must gather both — either alone is consumed by
-    /// the payment plus the 10_000 one-to-one fee — and return exactly
+    /// two 40_000 notes must gather both (either alone is consumed by
+    /// the payment plus the 10_000 one-to-one fee) and return exactly
     /// 20_000 change.
     #[tokio::test]
     async fn payment_no_single_note_covers_gathers_both_and_changes() {
@@ -987,7 +1151,7 @@ mod proposal_shape {
     /// which stays live as the pipeline control: from 100_000 orchard
     /// plus a 1_000-zat sapling dust note, a 50_000 send selects only
     /// the orchard note (dust cannot pay for its own input), charges the
-    /// plain one-to-one fee, and leaves 40_000 change — the live test's
+    /// plain one-to-one fee, and leaves 40_000 change, the live test's
     /// closing balance, derived here at proposal time. The dust note
     /// stays behind untouched.
     #[tokio::test]
@@ -1059,7 +1223,7 @@ mod proposal_shape {
     /// a four-coin shield proposes as a single step spending all four
     /// coins into one change output, with the zip317 fee for four
     /// transparent inputs plus the orchard action pair. The original
-    /// mined the coins and waited out coinbase maturity; propose logic
+    /// mined the coins and waited out coinbase maturity. Propose logic
     /// detects coinbase through the stored transaction's transparent
     /// bundle (`spendable_transparent_coins` demands 100 extra
     /// confirmations for it), and fabricated records carry no transparent
@@ -1087,11 +1251,11 @@ mod proposal_shape {
 
     /// Migrated from libtonode `slow::zero_value_change`: a send that
     /// leaves exactly zero after the fee still proposes an orchard change
-    /// output — of value zero. The original mined the transaction and then
+    /// output of value zero. The original mined the transaction and then
     /// counted one unspent zero-value note and one confirmed-spent funding
-    /// note; the note-state bookkeeping it exercised is covered by the
-    /// pepper-sync spend-status rig, and the load-bearing claim — the
-    /// builder emits the zero-value change — is decided at proposal time.
+    /// note. The note-state bookkeeping it exercised is covered by the
+    /// pepper-sync spend-status rig, and the load-bearing claim (the
+    /// builder emits the zero-value change) is decided at proposal time.
     #[tokio::test]
     async fn zero_value_change() {
         let note_value = 100_000;
@@ -1119,7 +1283,7 @@ mod proposal_shape {
     }
 
     /// Migrated from libtonode `slow::zero_value_change_to_orchard_created`:
-    /// same zero-value-change arithmetic on a cross-pool send — an 80_000
+    /// same zero-value-change arithmetic on a cross-pool send. An 80_000
     /// payment to an external sapling address out of a 100_000 orchard note
     /// costs exactly the 20_000 cross-pool fee, so the ironwood change
     /// output is proposed at value zero.
@@ -1149,12 +1313,58 @@ mod proposal_shape {
         assert_eq!(change[0].pool(), PoolType::IRONWOOD);
     }
 
+    /// Spending a legacy Orchard note on a post-NU6.3 chain must leave the
+    /// change in the **Orchard** pool, not route it to Ironwood. ZIP 318
+    /// disables ordinary *payments* into the Orchard pool once NU6.3 activates
+    /// "while still permitting change"; the turnstile (ZIP 2006) blocks value
+    /// *entering* Orchard, and change funded by an Orchard input never leaves
+    /// it, so an Orchard change output nets the pool down and stays
+    /// consensus-valid. Keeping change in the source pool is the privacy policy
+    /// for ordinary sends (a discussed decision): it reveals only the payment
+    /// value crossing pools rather than migrating the whole note, and avoids
+    /// stamping every send with an Orchard->Ironwood migration fingerprint.
+    /// Deliberate Orchard->Ironwood movement is the migration engine's job, not
+    /// an ordinary send's.
+    #[tokio::test]
+    async fn orchard_send_change_stays_orchard_post_nu6_3() {
+        let note_value = 200_000;
+        let sent_value = 50_000;
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(note_value)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        // Post-NU6.3 the payment itself routes through Ironwood (ZIP 318), but
+        // that must not drag the change out of Orchard.
+        let destination = external_address(PoolType::IRONWOOD);
+        let proposal =
+            from_inputs::propose(&mut client, vec![(destination.as_str(), sent_value, None)])
+                .await
+                .unwrap();
+
+        assert_eq!(proposal.steps().len(), 1);
+        let step = proposal.final_step();
+        let change = step.change();
+        assert_eq!(change.len(), 1);
+        assert!(
+            u64::from(change[0].value()) > 0,
+            "the send must leave real change for the pool assertion to bite"
+        );
+        assert_eq!(
+            change[0].pool(),
+            PoolType::ORCHARD,
+            "change from spending a legacy Orchard note must stay in Orchard \
+             post-NU6.3: ZIP 318 permits Orchard change, and the privacy policy \
+             keeps it in the source pool instead of migrating on every send"
+        );
+    }
+
     /// Migrated from libtonode `fast::tex::send_to_tex`: a payment to a
-    /// TEX address proposes as the ZIP-320 two-step — shield to an
+    /// TEX address proposes as the ZIP-320 two-step: shield to an
     /// ephemeral transparent output, then the transparent leg to the TEX
     /// destination funded entirely by step one. The original's only
-    /// proposal-level assertion was the step count; the offline version
-    /// also pins the inter-step wiring. The broadcast half (both steps
+    /// proposal-level assertion was the step count. The offline version
+    /// also pins the inter-step wiring. The transmission half (both steps
     /// mined, three wallet records) retires with the LocalNet original.
     #[tokio::test]
     async fn send_to_tex() {
@@ -1249,7 +1459,7 @@ mod proposal_shape {
     /// Migrated from the chain_generics `note_selection_order` fixture's
     /// load-bearing half: from notes of 10/20/30/40 thousand zats, a
     /// 40_000-zat send selects the two-note covering set that leaves the
-    /// least change — not more notes, and not a higher-value covering set.
+    /// least change, not more notes and not a higher-value covering set.
     #[tokio::test]
     async fn note_selection_covers_target_with_minimal_change() {
         let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
@@ -1285,5 +1495,241 @@ mod proposal_shape {
         // any selection leaving 10_000 or more change used a bigger note
         // than necessary.
         assert!(change < 10_000, "change {change} implies oversized inputs");
+    }
+}
+
+/// The propose/send family must never read wallet state a running engine
+/// could be mutating, and a pause it takes must serve a pending proposal,
+/// never outliving one. Each test here pins one way the imperative pause
+/// discipline violates that contract. All four run red until the stored
+/// pause discipline lands later on this branch.
+#[cfg(test)]
+mod sync_pause_contract {
+    use std::sync::atomic;
+
+    use pepper_sync::wallet::SyncMode;
+    use zcash_protocol::PoolType;
+    use zcash_protocol::value::Zatoshis;
+
+    use crate::data::receivers::{Receiver, transaction_request_from_receivers};
+    use crate::lightclient::LightClient;
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::wallet::LightWallet;
+    use crate::wallet::keys::unified::ReceiverSelection;
+
+    /// An address belonging to a different wallet, so the send is external.
+    fn external_address(pool: PoolType) -> zcash_address::ZcashAddress {
+        let mut external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let selection = match pool {
+            PoolType::ORCHARD | PoolType::IRONWOOD => ReceiverSelection::orchard_only(),
+            PoolType::SAPLING => ReceiverSelection::sapling_only(),
+            _ => unimplemented!("only shielded destinations are needed here"),
+        };
+        let (_, unified_address) = external_wallet
+            .generate_unified_address(selection, zip32::AccountId::ZERO)
+            .unwrap();
+        crate::utils::conversion::address_from_str(
+            &unified_address.encode(&external_wallet.chain_type()),
+        )
+        .unwrap()
+    }
+
+    /// A synthetic-wallet client whose sync-mode atomic reads `Running`,
+    /// simulating a consumer whose background sync engine is between
+    /// batches. No engine task exists, so every mode transition observed
+    /// (or leaked) is the code under test's own.
+    async fn client_with_running_engine(wallet: LightWallet) -> LightClient {
+        let client = LightClient::new_for_test(wallet).await;
+        client
+            .sync_mode
+            .store(SyncMode::Running as u8, atomic::Ordering::Release);
+        client
+    }
+
+    /// The pause a proposal takes exists for the proposal it stores. A
+    /// proposing call that fails stores nothing, so it must restore the
+    /// engine on its way out. The imperative discipline pauses first and
+    /// error-returns past every resume, leaving a consumer's background
+    /// sync silently suspended with nothing pending.
+    #[tokio::test]
+    async fn failed_proposal_leaves_no_leaked_pause() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(10_000)
+            .build();
+        let mut client = client_with_running_engine(wallet).await;
+        let request = transaction_request_from_receivers(vec![Receiver::new(
+            external_address(PoolType::ORCHARD),
+            Zatoshis::const_from_u64(50_000),
+            None,
+        )])
+        .unwrap();
+
+        let result = client
+            .propose_send(request, zip32::AccountId::ZERO, None)
+            .await;
+
+        assert!(result.is_err(), "a 50_000 send from 10_000 must fail");
+        assert_eq!(
+            client.sync_mode(),
+            SyncMode::Running,
+            "a failed proposal must leave the engine as it found it"
+        );
+    }
+
+    /// A shield proposal must not come into existence while the engine is
+    /// running: the proposal reads spendable coins the engine mutates.
+    /// `propose_send` pauses for exactly this reason. The shield path
+    /// never did.
+    #[tokio::test]
+    async fn shield_proposal_is_never_created_under_a_running_engine() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .transparent_coin(100_000)
+            .build();
+        let mut client = client_with_running_engine(wallet).await;
+
+        let result = client.propose_shield(zip32::AccountId::ZERO).await;
+
+        assert!(
+            result.is_err() || client.sync_mode() != SyncMode::Running,
+            "a shield proposal was created while the engine ran"
+        );
+    }
+
+    /// `quick_shield` goes further than proposing: it builds and stores
+    /// signed transactions, so its first wallet read must already run
+    /// under a pause. Simulate the engine mid-batch by holding the
+    /// wallet write lock: the call blocks on that lock, so if the mode
+    /// still reads `Running` while the call is in flight, the build began
+    /// without pausing the engine first.
+    #[tokio::test]
+    async fn quick_shield_never_builds_under_a_running_engine() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .transparent_coin(100_000)
+            .build();
+        let mut client = client_with_running_engine(wallet).await;
+        let sync_mode = client.sync_mode.clone();
+        let wallet_handle = client.wallet().clone();
+        let engine_holds_wallet = wallet_handle.write().await;
+
+        let call = tokio::spawn(async move {
+            let _offline_transmission_failure = client.quick_shield(zip32::AccountId::ZERO).await;
+        });
+        // The current-thread runtime polls the spawned call until it
+        // blocks on the held wallet lock.
+        tokio::task::yield_now().await;
+
+        assert_ne!(
+            SyncMode::from_atomic_u8(sync_mode).unwrap(),
+            SyncMode::Running,
+            "quick_shield began its wallet reads while the engine ran"
+        );
+
+        drop(engine_holds_wallet);
+        call.await.unwrap();
+    }
+
+    /// The send-all sizing (the `max_send_value` trial proposals) is
+    /// `propose_send_all`'s first wallet read and must already run under
+    /// a pause. Simulate the engine mid-batch by holding the wallet
+    /// write lock: the sizing blocks on that lock, so if the engine's mode
+    /// still reads `Running` while the call is in flight, the call began
+    /// its reads without pausing the engine first.
+    #[tokio::test]
+    async fn send_all_sizing_runs_under_pause() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(100_000)
+            .build();
+        let mut client = client_with_running_engine(wallet).await;
+        let sync_mode = client.sync_mode.clone();
+        let wallet_handle = client.wallet().clone();
+        let engine_holds_wallet = wallet_handle.write().await;
+
+        let address = external_address(PoolType::ORCHARD);
+        let call = tokio::spawn(async move {
+            client
+                .propose_send_all(address, false, None, zip32::AccountId::ZERO, None)
+                .await
+        });
+        // The current-thread runtime polls the spawned call until it
+        // blocks on the held wallet lock.
+        tokio::task::yield_now().await;
+
+        assert_ne!(
+            SyncMode::from_atomic_u8(sync_mode).unwrap(),
+            SyncMode::Running,
+            "the send-all sizing began while the engine ran"
+        );
+
+        drop(engine_holds_wallet);
+        call.await.unwrap().unwrap();
+    }
+
+    /// A request against a running-engine client that a proposal succeeds
+    /// for, shared by the stored-pause protocol tests below.
+    async fn client_with_stored_proposal() -> LightClient {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(100_000)
+            .build();
+        let mut client = client_with_running_engine(wallet).await;
+        let request = transaction_request_from_receivers(vec![Receiver::new(
+            external_address(PoolType::ORCHARD),
+            Zatoshis::const_from_u64(10_000),
+            None,
+        )])
+        .unwrap();
+        client
+            .propose_send(request, zip32::AccountId::ZERO, None)
+            .await
+            .unwrap();
+        client
+    }
+
+    /// A successful proposal holds its pause for as long as the
+    /// proposal is stored: the engine stays paused, so the state the
+    /// proposal selected against cannot shift before the send builds it.
+    #[tokio::test]
+    async fn proposing_holds_the_pause_for_the_stored_proposal() {
+        let client = client_with_stored_proposal().await;
+
+        assert_eq!(
+            client.sync_mode(),
+            SyncMode::Paused,
+            "a stored proposal must hold the engine paused"
+        );
+    }
+
+    /// Clearing a stored proposal (the decline path of the two-phase
+    /// send) restores the engine to the mode it held before proposing.
+    /// Previously the pause outlived the declined proposal until some
+    /// later send opted into resuming.
+    #[tokio::test]
+    async fn clearing_the_proposal_restores_the_engine() {
+        let mut client = client_with_stored_proposal().await;
+
+        client.clear_proposal().await;
+
+        assert_eq!(
+            client.sync_mode(),
+            SyncMode::Running,
+            "declining a proposal must restore the engine"
+        );
+    }
+
+    /// An Indexerless send attempt fails before consuming the stored
+    /// proposal (ADR 0006), so the proposal and the pause guarding
+    /// it survive for retry once an Indexer is configured.
+    #[tokio::test]
+    async fn offline_send_failure_keeps_the_proposal_guarded() {
+        let mut client = client_with_stored_proposal().await;
+
+        let result = client.send_stored_proposal(true).await;
+
+        assert!(result.is_err(), "an Indexerless send must fail");
+        assert_eq!(
+            client.sync_mode(),
+            SyncMode::Paused,
+            "a send that consumed nothing must release nothing"
+        );
     }
 }

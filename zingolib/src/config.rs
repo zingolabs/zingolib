@@ -20,10 +20,11 @@ use crate::wallet::{
     keys::unified::UnifiedKeyStore,
 };
 
-/// Default indexer uri
-pub const DEFAULT_INDEXER_URI: &str = "https://zec.rocks:443";
-/// Default indexer uri (testnet)
-pub const DEFAULT_INDEXER_URI_TESTNET: &str = "https://testnet.zec.rocks";
+/// The default indexer URIs, from the census (the sole source of truth for
+/// indexer endpoints). NOTE: the census testnet default carries an explicit
+/// `:443`, retiring the old portless string this module completed to
+/// `:9067` — the drift between that completion and the mobile list's `:443`
+/// is what the census exists to end.
 /// Default wallet file name
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 
@@ -33,7 +34,7 @@ pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 /// Any wallet created by this release necessarily post-dates the release, so
 /// this height is a safe [`WalletConfig::NewSeed`] `chain_height` for a
 /// wallet created while Indexerless, where no Indexer can report the chain
-/// tip. The invariant is that the block has been mined, not merely named — a
+/// tip. The invariant is that the block has been mined, not merely named: a
 /// scheduled-but-future network-upgrade activation height does not qualify.
 /// Bumping this constant to a recently observed height is a release-checklist
 /// step. See `docs/adr/0007-library-birthday.md`.
@@ -42,7 +43,7 @@ pub const LIB_BIRTHDAY_MAINNET: u32 = 3_411_499;
 /// The testnet Library Birthday. See [`LIB_BIRTHDAY_MAINNET`].
 ///
 /// NU6.3's testnet activation height. An activation height qualifies only
-/// once it has actually been mined — this one has: NU6.3 is already live on
+/// once it has actually been mined, and this one has. NU6.3 is already live on
 /// testnet (unlike mainnet, where its activation is still scheduled).
 pub const LIB_BIRTHDAY_TESTNET: u32 = 4_134_000;
 
@@ -51,7 +52,7 @@ pub const LIB_BIRTHDAY_TESTNET: u32 = 4_134_000;
 /// [`WalletConfig::NewSeed`] `chain_height` for a wallet created while
 /// Indexerless.
 ///
-/// Restores must not use this — a restored seed or viewing key may predate
+/// Restores must not use this, since a restored seed or viewing key may predate
 /// the library and always requires a caller-supplied birthday. See
 /// `docs/adr/0007-library-birthday.md`.
 pub fn lib_birthday(chain: ChainType) -> u32 {
@@ -275,30 +276,22 @@ impl WalletConfig {
     }
 }
 
-/// Constructs a http::Uri from a `server` string. If `server` is `None` use the `DEFAULT_INDEXER_URI`.
-/// If the provided string is missing the http prefix, a prefix of `http://` will be added.
-/// If the provided string is missing a port, a port of `:9067` will be added.
-pub fn construct_indexer_uri(server: Option<String>) -> Result<http::Uri, InvalidUri> {
-    match server {
-        Some(s) => {
-            if s.is_empty() {
-                return Ok(http::Uri::default());
-            } else {
-                let mut s = if s.starts_with("http") {
-                    s
-                } else {
-                    "http://".to_string() + &s
-                };
-                let uri: http::Uri = s.parse()?;
-                if uri.port().is_none() {
-                    s += ":9067";
-                }
-                s
-            }
-        }
-        None => DEFAULT_INDEXER_URI.to_string(),
+/// Constructs an `http::Uri` from `server`, adding an `http://` prefix and a
+/// `:9067` port when they are missing.
+pub fn construct_indexer_uri(server: String) -> Result<http::Uri, InvalidUri> {
+    if server.is_empty() {
+        return Ok(http::Uri::default());
     }
-    .parse()
+    let mut s = if server.starts_with("http") {
+        server
+    } else {
+        "http://".to_string() + &server
+    };
+    let uri: http::Uri = s.parse()?;
+    if uri.port().is_none() {
+        s += ":9067";
+    }
+    s.parse()
 }
 
 /// Configuration data for the construction of a [`crate::lightclient::LightClient`].
@@ -307,13 +300,17 @@ pub struct ClientConfig {
     /// URI of the indexer the lightclient is connected to. `None` means the
     /// client is Indexerless (no Indexer connection).
     indexer_uri: Option<http::Uri>,
-    /// URI the Ironwood migration parts are broadcast to. Broadcasting to a
+    /// URI the Ironwood migration parts are transmitted to. Transmitting to a
     /// different server than the one used for synchronization reduces the
-    /// correlation between the two (ZIP 318). Falls back to `indexer_uri`
-    /// with a logged warning when unset; when both are `None` the client
-    /// emits no network traffic and broadcasting fails with
-    /// [`crate::lightclient::error::LightClientError::Offline`].
-    migration_broadcast_uri: Option<http::Uri>,
+    /// correlation between the two (ZIP 318). While Mixnet Mode is on (the
+    /// `nym` feature, ADR 0011), this URI is dialed through the mixnet and
+    /// must be https on a host distinct from the synchronization endpoint's
+    /// (a shared host is refused). Unset, parts go to one Correspondent
+    /// drawn at random per submission. On the clearnet opt-out path it falls
+    /// back to `indexer_uri` with a logged warning when unset. When both are
+    /// `None` the client emits no network traffic and transmission fails
+    /// with [`crate::lightclient::error::LightClientError::Offline`].
+    migration_transmission_uri: Option<http::Uri>,
     /// Chain type of the blockchain the lightclient is connected to.
     chain_type: ChainType,
     /// Directory where the wallet file will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
@@ -337,10 +334,10 @@ impl ClientConfig {
         self.indexer_uri.clone()
     }
 
-    /// Returns the migration broadcast URI, if one is configured.
+    /// Returns the migration transmission URI, if one is configured.
     #[must_use]
-    pub fn migration_broadcast_uri(&self) -> Option<http::Uri> {
-        self.migration_broadcast_uri.clone()
+    pub fn migration_transmission_uri(&self) -> Option<http::Uri> {
+        self.migration_transmission_uri.clone()
     }
 
     /// Returns wallet directory.
@@ -381,7 +378,7 @@ impl ClientConfig {
 #[derive(Clone, Debug)]
 pub struct ClientConfigBuilder {
     indexer_uri: Option<http::Uri>,
-    migration_broadcast_uri: Option<http::Uri>,
+    migration_transmission_uri: Option<http::Uri>,
     chain_type: ChainType,
     wallet_dir: Option<PathBuf>,
     wallet_name: Option<String>,
@@ -405,10 +402,10 @@ impl ClientConfigBuilder {
         self
     }
 
-    /// Set a dedicated URI for broadcasting Ironwood migration parts,
+    /// Set a dedicated URI for transmitting Ironwood migration parts,
     /// distinct from the synchronization endpoint.
-    pub fn set_migration_broadcast_uri(mut self, migration_broadcast_uri: http::Uri) -> Self {
-        self.migration_broadcast_uri = Some(migration_broadcast_uri);
+    pub fn set_migration_transmission_uri(mut self, migration_transmission_uri: http::Uri) -> Self {
+        self.migration_transmission_uri = Some(migration_transmission_uri);
         self
     }
 
@@ -438,23 +435,24 @@ impl ClientConfigBuilder {
 
     /// Build a [`ClientConfig`] from the builder.
     ///
-    /// The default indexer is `None` — the resulting [`crate::lightclient::LightClient`] starts
+    /// The default indexer is `None`, so the resulting [`crate::lightclient::LightClient`] starts
     /// in offline mode. All local operations (balance, addresses, proposals) work immediately.
     /// Call [`crate::lightclient::LightClient::set_indexer_uri`] to connect when the network
     /// is available, then [`crate::lightclient::LightClient::sync`] to fetch blocks.
     ///
     /// To start online, call [`set_indexer_uri`](Self::set_indexer_uri) before building.
-    pub fn build(self) -> ClientConfig {
-        let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type);
+    pub fn build(self) -> Result<ClientConfig, ClientConfigError> {
+        let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type)?;
         let wallet_name = wallet_name_or_default(self.wallet_name);
-        ClientConfig {
+
+        Ok(ClientConfig {
             indexer_uri: self.indexer_uri,
-            migration_broadcast_uri: self.migration_broadcast_uri,
+            migration_transmission_uri: self.migration_transmission_uri,
             chain_type: self.chain_type,
             wallet_dir,
             wallet_name,
             wallet_config: self.wallet_config,
-        }
+        })
     }
 }
 
@@ -462,7 +460,7 @@ impl Default for ClientConfigBuilder {
     fn default() -> Self {
         Self {
             indexer_uri: None,
-            migration_broadcast_uri: None,
+            migration_transmission_uri: None,
             wallet_dir: None,
             wallet_name: None,
             chain_type: ChainType::Mainnet,
@@ -491,48 +489,60 @@ fn wallet_name_or_default(opt_wallet_name: Option<String>) -> String {
     }
 }
 
-fn wallet_dir_or_default(opt_wallet_dir: Option<PathBuf>, chain: ChainType) -> PathBuf {
+fn wallet_dir_or_default(
+    opt_wallet_dir: Option<PathBuf>,
+    chain: ChainType,
+) -> Result<PathBuf, ClientConfigError> {
     let wallet_dir: PathBuf;
     #[cfg(any(target_os = "ios", target_os = "android"))]
     {
-        // TODO: handle errors
-        wallet_dir = opt_wallet_dir.unwrap();
+        wallet_dir = opt_wallet_dir.ok_or_else(|| ClientConfigError::WalletDirNotSpecified)?;
     }
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
-        wallet_dir = opt_wallet_dir.clone().unwrap_or_else(|| {
-            let mut dir = dirs::data_dir().expect("Couldn't determine user's data directory!");
+        wallet_dir = opt_wallet_dir.clone().map_or_else(
+            || {
+                let mut dir = dirs::data_dir().ok_or(ClientConfigError::UsersDataDirNotFound)?;
 
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            {
-                dir.push("Zcash");
-            }
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                {
+                    dir.push("Zcash");
+                }
 
-            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-            {
-                dir.push(".zcash");
-            }
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                {
+                    dir.push(".zcash");
+                }
 
-            match chain {
-                ChainType::Mainnet => {}
-                ChainType::Testnet => dir.push("testnet3"),
-                ChainType::Regtest(_) => dir.push("regtest"),
-            }
+                match chain {
+                    ChainType::Mainnet => {}
+                    ChainType::Testnet => dir.push("testnet3"),
+                    ChainType::Regtest(_) => dir.push("regtest"),
+                }
 
-            dir
-        });
+                Ok(dir)
+            },
+            Ok,
+        )?;
 
         // Create directory if it doesn't exist on non-mobile platforms
-        match std::fs::create_dir_all(wallet_dir.clone()) {
-            Ok(()) => {}
-            Err(e) => {
-                panic!("Couldn't create zcash directory!\n {e}");
-            }
-        }
+        std::fs::create_dir_all(wallet_dir.clone())
+            .map_err(|e| ClientConfigError::FileError(e.to_string()))?;
     }
 
-    wallet_dir
+    Ok(wallet_dir)
+}
+
+/// Invalid client config.
+#[derive(thiserror::Error, Debug, Clone)]
+pub enum ClientConfigError {
+    #[error("Wallet directory must be specified for iOS and Android platforms.")]
+    WalletDirNotSpecified,
+    #[error("User's default data directory not found.")]
+    UsersDataDirNotFound,
+    #[error("Failed to create wallet directory. {0}")]
+    FileError(String),
 }
 
 #[cfg(test)]
@@ -541,10 +551,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_clientconfig() {
-        let valid_uri = crate::config::construct_indexer_uri(Some(
-            crate::config::DEFAULT_INDEXER_URI.to_string(),
-        ))
-        .unwrap();
+        let valid_uri =
+            crate::config::construct_indexer_uri("https://zec.rocks:443".to_string()).unwrap();
 
         let temp_dir = tempfile::TempDir::new().unwrap();
         let temp_path = temp_dir.path().to_path_buf();
@@ -553,7 +561,8 @@ mod tests {
             .set_indexer_uri(valid_uri.clone())
             .set_chain_type(ChainType::Mainnet)
             .set_wallet_dir(temp_path)
-            .build();
+            .build()
+            .unwrap();
 
         assert_eq!(valid_config.indexer_uri(), Some(valid_uri));
         assert_eq!(valid_config.chain_type(), ChainType::Mainnet);

@@ -1,10 +1,21 @@
-ARG RUST_VERSION=1.90
-ARG ZAINO_IMAGE_TAG=0.3.0-rc.1
-ARG ZEBRA_VERSION=6.0.0-rc.0
-ARG NEXTEST_VERSION=0.9.128
+# No ARG defaults, deliberately: .env.testing-artifacts is the single
+# source of truth for every pinned value (and rust-toolchain.toml for
+# RUST_VERSION, which the Makefile derives). Build through
+# `makers build-image`, which sources the env file and passes each
+# value; a bare `docker build` without --build-args fails loudly
+# instead of assembling an image from stale duplicated defaults.
+ARG RUST_VERSION
+ARG ZAINO_IMAGE_TAG
+ARG ZEBRA_VERSION
+ARG NEXTEST_VERSION
+# Digests pin the CONTENT the tags merely point at; tag@digest fails
+# loudly if upstream repushes a tag, so every machine building from
+# the same commit provisions byte-identical binaries.
+ARG ZAINO_IMAGE_DIGEST
+ARG ZEBRA_IMAGE_DIGEST
 
-FROM docker.io/zingodevops/zaino:${ZAINO_IMAGE_TAG} AS zainod-downloader
-FROM docker.io/zfnd/zebra:${ZEBRA_VERSION} AS zebrad-downloader
+FROM docker.io/zingodevops/zaino:${ZAINO_IMAGE_TAG}@${ZAINO_IMAGE_DIGEST} AS zainod-downloader
+FROM docker.io/zfnd/zebra:${ZEBRA_VERSION}@${ZEBRA_IMAGE_DIGEST} AS zebrad-downloader
 
 FROM debian:trixie-slim AS runner
 
