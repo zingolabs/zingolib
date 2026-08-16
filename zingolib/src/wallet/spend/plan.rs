@@ -885,13 +885,26 @@ pub fn plan_shield(
     }
     let fee = shape.fee(&wallet.chain_type, target_height)?;
 
-    let shielded_amount = (total_in - fee).unwrap_or(Zatoshis::ZERO);
-    if shielded_amount < SHIELDING_THRESHOLD {
+    // The threshold is read against the gross transparent total, not against
+    // what survives the fee. That is upstream's rule: `propose_shielding`
+    // compares `TransactionBalance::total()`, documented as the sum of the
+    // proposed change and the required fee. Comparing the net instead refuses
+    // shields the wallet has always accepted, because the fee here is a whole
+    // ZIP 317 bundle and routinely exceeds the threshold on its own.
+    if total_in < SHIELDING_THRESHOLD {
         return Err(PlanError::InsufficientFunds {
-            available: shielded_amount,
+            available: total_in,
             required: SHIELDING_THRESHOLD,
         });
     }
+    // A fee at or above the inputs leaves nothing to shield. Upstream reports
+    // that as its own shortfall, against the fee rather than the threshold.
+    let shielded_amount = (total_in - fee)
+        .filter(|amount| amount.is_positive())
+        .ok_or(PlanError::InsufficientFunds {
+            available: total_in,
+            required: fee,
+        })?;
 
     let step = Step::from_parts(
         TransactionRequest::empty(),
@@ -922,7 +935,7 @@ mod tests {
 
     use zcash_protocol::value::Zatoshis;
 
-    use super::plan_transfer;
+    use super::{SHIELDING_THRESHOLD, plan_shield, plan_transfer};
     use crate::testutils::lightclient::from_inputs::transaction_request_from_send_inputs;
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
     use crate::wallet::keys::unified::ReceiverSelection;
@@ -1080,6 +1093,48 @@ mod tests {
         assert!(
             tex.shielding().op_return_data().is_none(),
             "the shielding step carries no memo"
+        );
+    }
+
+    /// The shielding threshold reads the gross transparent total, never what
+    /// survives the fee.
+    ///
+    /// A shield's fee is a whole ZIP 317 bundle and routinely exceeds the
+    /// 10_000 threshold on its own, so measuring the net would refuse balances
+    /// the wallet has always shielded. Upstream compares
+    /// `TransactionBalance::total()`, the change plus the fee, and this holds
+    /// the planner to the same reading.
+    #[test]
+    fn the_shielding_threshold_measures_the_gross_transparent_total() {
+        // 20_000 sits in the window the two readings disagree about: over the
+        // 10_000 threshold, over the 15_000 fee a one-input shield costs, and
+        // leaving 5_000 behind, which is under the threshold.
+        let above = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .transparent_coin(20_000)
+            .build();
+        let proposal = plan_shield(&above, zip32::AccountId::ZERO)
+            .expect("a gross total over the threshold shields");
+        let change = proposal.final_step().change();
+        assert_eq!(change.len(), 1, "a shield places one shielded output");
+        assert!(
+            change[0].value().is_positive(),
+            "the shielded output carries what the fee left"
+        );
+        assert!(
+            change[0].value() < SHIELDING_THRESHOLD,
+            "this is the case the net reading would have refused: the fee \
+             leaves less than the threshold behind"
+        );
+
+        let below = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .transparent_coin(8_000)
+            .build();
+        assert!(
+            matches!(
+                plan_shield(&below, zip32::AccountId::ZERO),
+                Err(super::PlanError::InsufficientFunds { required, .. }) if required == SHIELDING_THRESHOLD
+            ),
+            "a gross total under the threshold is refused against the threshold"
         );
     }
 }
