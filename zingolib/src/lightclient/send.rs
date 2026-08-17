@@ -39,7 +39,6 @@ fn record_send_attempt(
     started: std::time::Instant,
     outcome: &Result<String, zingo_net_diag::NetOpFailure>,
     phase: Option<crate::correspondent::health::FailurePhase>,
-    exit: Option<crate::mixnet::ExitNodeId>,
 ) {
     history.record(&IndexerAttempt {
         unix_secs: now_unix_secs(),
@@ -48,7 +47,6 @@ fn record_send_attempt(
         kind: AttemptKind::Send,
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
         phase,
-        exit,
         outcome: match outcome {
             Ok(_) => Ok(()),
             Err(failure) => Err(FailureKind::classify(&failure.to_string())),
@@ -307,7 +305,6 @@ async fn transmit_one_transaction(
                 outcome
                     .is_err()
                     .then_some(crate::correspondent::health::FailurePhase::Correspondent),
-                None,
             );
             outcome
                 .map(|server_txid| {
@@ -394,7 +391,6 @@ async fn mixnet_escalating_transmit(
             )
             .await
             .map_err(|TransmitFailed(error)| crate::mixnet::socks5_transmit_failure(&error, &host));
-            let bound_exit = None;
             record_send_attempt(
                 history,
                 &host,
@@ -405,7 +401,6 @@ async fn mixnet_escalating_transmit(
                     .as_ref()
                     .err()
                     .map(|failure| crate::mixnet::charge_phase(&failure.stage)),
-                bound_exit,
             );
             outcome.map(|server_txid| {
                 (
@@ -484,7 +479,6 @@ async fn mock_escalating_transmit(
                 AttemptRoute::Mixnet,
                 started,
                 &outcome,
-                None,
                 None,
             );
             outcome.map(|server_txid| (server_txid, host.to_string()))
@@ -1003,14 +997,12 @@ mod transmit_error_seam {
     /// refusal path reads it.
     const ARBITRARY_HEIGHT: u64 = 0;
 
-    /// HYPOTHESIS: a send attempt's failure reaches the diary as the typed
+    /// HYPOTHESIS: a send attempt's failure reaches the history as the typed
     /// taxonomy record, classified whole rather than from hand-rendered
     /// prose. Falsified if the recorded category drifts.
     #[test]
     fn send_attempt_failure_is_classified_from_the_record() {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let history = IndexerHistoryHandle::beside_wallet(&dir.path().join("zingo-wallet.dat"));
-        history.set_recording(true);
+        let history = IndexerHistoryHandle::default();
         let failure = zingo_net_diag::NetOpFailure::message(
             zingo_net_diag::NetOpStage::RemoteConnect,
             "indexer.example",
@@ -1022,7 +1014,6 @@ mod transmit_error_seam {
             AttemptRoute::Clearnet,
             std::time::Instant::now(),
             &Err(failure),
-            None,
             None,
         );
         let recorded = history.load();
@@ -1039,8 +1030,7 @@ mod transmit_error_seam {
     /// is any other variant.
     #[tokio::test]
     async fn missing_clearnet_indexer_refuses_typed() {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let history = IndexerHistoryHandle::beside_wallet(&dir.path().join("zingo-wallet.dat"));
+        let history = IndexerHistoryHandle::default();
         let progress = TransmitProgressHandle::default();
         let refusal = transmit_one_transaction(
             None,

@@ -464,6 +464,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a prefix-only salvage read so `recovery_info` still works.
 
 ### Removed
+- **Breaking.** The indexer diary no longer touches disk. `IndexerHistoryHandle`
+  keeps this session's attempts in memory and folds each into the session's
+  Health, so `indexer-history.tsv` is never written and no record of which
+  indexers this wallet contacted survives the process.
+  `IndexerHistoryHandle::{beside_wallet, is_recording}` and
+  `IndexerAttempt::exit` are gone with the file they served.
 - `mixnet::IP_CORRELATION_DISCLAIMER` - the frontend-facing disclaimer text. A
   library does not own the wording an application shows its user, so the text
   moved into `zingo-cli` as a private constant. A frontend that shows the

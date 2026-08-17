@@ -433,8 +433,8 @@ mod tests {
     const UNANSWERED_CANDIDATE: &str = "https://sweep-candidate.example";
 
     /// HYPOTHESIS: the sweep's per-candidate probe rides the shared probe
-    /// machinery, so the attempt it writes to the indexer diary carries the
-    /// latency it measured. Falsified if a sweep attempt lands with an
+    /// machinery, so the attempt it records in the session's history carries
+    /// the latency it measured. Falsified if a sweep attempt lands with an
     /// unmeasured duration while a liveness probe records a real one.
     #[tokio::test]
     async fn a_surveyed_candidate_records_the_latency_it_measured() {
@@ -457,11 +457,7 @@ mod tests {
                 held.push(socket);
             }
         });
-        let dir = tempfile::tempdir().expect("temp dir");
-        let history = crate::lightclient::indexer_history::IndexerHistoryHandle::beside_wallet(
-            &dir.path().join("zingo-wallet.dat"),
-        );
-        history.set_recording(true);
+        let history = crate::lightclient::indexer_history::IndexerHistoryHandle::default();
 
         let (reported, refusal) = probe_one(
             socks5_addr,
