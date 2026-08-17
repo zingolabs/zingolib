@@ -1,13 +1,13 @@
 //! The fail-closed route resolver shared by every mixnet-only surface.
 //!
 //! Send and price-fetch both obey one policy (ADR 0011): when Mixnet Mode is
-//! [`Ready`](crate::mixnet::MixnetMode::Ready) they route through the local
+//! [`Ready`](crate::mixnet::Indicator::Ready) they route through the local
 //! SOCKS5 proxy. When it is
-//! [`SwitchedOff`](crate::mixnet::MixnetMode::SwitchedOff), reachable only by
+//! [`SwitchedOff`](crate::mixnet::Indicator::SwitchedOff), reachable only by
 //! the user's deliberate toggle-off, they route over clearnet as informed
-//! consent. While [`Unattached`](crate::mixnet::MixnetMode::Unattached),
-//! [`Bootstrapping`](crate::mixnet::MixnetMode::Bootstrapping), or after
-//! [`Died`](crate::mixnet::MixnetMode::Died) they refuse rather than leak to
+//! consent. While [`Unattached`](crate::mixnet::Indicator::Unattached),
+//! [`Bootstrapping`](crate::mixnet::Indicator::Bootstrapping), or after
+//! [`Died`](crate::mixnet::Indicator::Died) they refuse rather than leak to
 //! clearnet. This module names that decision once so both surfaces share it
 //! instead of each re-deriving the mode semantics.
 #![forbid(unsafe_code)]
@@ -43,7 +43,7 @@ impl SlotTunnel {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MixnetRoute {
     /// Route over clearnet. Reached only when Mixnet Mode is
-    /// [`SwitchedOff`](MixnetMode::SwitchedOff), i.e. the user deliberately
+    /// [`SwitchedOff`](Indicator::SwitchedOff), i.e. the user deliberately
     /// toggled it off.
     Clearnet,
     /// Route through the Standing Client's tunnel.

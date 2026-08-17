@@ -634,7 +634,7 @@ fn plan_recovery(
 #[allow(clippy::disallowed_methods)]
 pub(crate) fn command_loop(
     mut lightclient: LightClient,
-    communication_mode: Communications,
+    communications: Communications,
     mut sync_recovery: SyncRecovery,
 ) -> CommandChannel {
     let (command_transmitter, command_receiver) = channel::<Request>();
@@ -666,7 +666,7 @@ pub(crate) fn command_loop(
             // unconsented posture. A deliberate `--offline` never lifts.
             // Consent shows as a configured Indexer or a non-Unattached
             // mixnet slot, since a mixnet-only session binds no Indexer.
-            let live_mode = match communication_mode {
+            let live_mode = match communications {
                 Communications::DeliberateOffline => Communications::DeliberateOffline,
                 _ if lightclient.indexer_uri().is_some() => Communications::Online,
                 #[cfg(feature = "nym")]
@@ -760,19 +760,19 @@ const DELIBERATE_OFFLINE_NOTICE: &str = "This session is deliberately offline (-
 /// rendered refusal to send in place of executing a suppressed `command`,
 /// naming the live remedy, or `None` when the command may proceed.
 fn offline_mode_refusal(
-    communication_mode: Communications,
+    communications: Communications,
     command: &commands::CliCommand,
 ) -> Option<String> {
     command
-        .suppressed(communication_mode)
-        .then(|| offline_refusal_text(communication_mode, &command.name()))
+        .suppressed(communications)
+        .then(|| offline_refusal_text(communications, &command.name()))
 }
 
 /// Renders the minted refusal for a suppressed command, naming the live
 /// remedy the posture leaves open.
 #[cfg(feature = "nym")]
-fn offline_refusal_text(communication_mode: Communications, name: &str) -> String {
-    match communication_mode {
+fn offline_refusal_text(communications: Communications, name: &str) -> String {
+    match communications {
         Communications::DeliberateOffline => format!(
             "Error: `{name}` requires network access, and --offline pins this session \
              offline. The only exit is to relaunch without --offline."
@@ -788,7 +788,7 @@ fn offline_refusal_text(communication_mode: Communications, name: &str) -> Strin
 /// Renders the minted refusal without the mixnet capability: Offline Mode
 /// is the only mode such a build can be in, so the remedy is a rebuild.
 #[cfg(not(feature = "nym"))]
-fn offline_refusal_text(_communication_mode: Communications, name: &str) -> String {
+fn offline_refusal_text(_communications: Communications, name: &str) -> String {
     format!(
         "Error: `{name}` requires network access, and this build has no mixnet \
          capability, so Offline Mode is its only mode. Rebuild with default \
@@ -862,7 +862,7 @@ fn data_dir_from(matches: &clap::ArgMatches) -> PathBuf {
 /// `--remember-online` stores it, and a session with no consent anywhere
 /// runs offline behind a notice naming the ways online.
 #[cfg(feature = "nym")]
-fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communications> {
+fn get_communications(matches: &clap::ArgMatches) -> std::io::Result<Communications> {
     let data_dir = data_dir_from(matches);
     if matches.get_flag("forget-online") {
         zingolib::connectivity::forget_connectivity_consent(&data_dir)?;
@@ -915,7 +915,7 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
 /// consent is reported as inert. `--forget-online` still works, so an
 /// opt-out build can retire a stored consent.
 #[cfg(not(feature = "nym"))]
-fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communications> {
+fn get_communications(matches: &clap::ArgMatches) -> std::io::Result<Communications> {
     let data_dir = data_dir_from(matches);
     if matches.get_flag("forget-online") {
         zingolib::connectivity::forget_connectivity_consent(&data_dir)?;
@@ -956,7 +956,7 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
 #[derive(Debug)]
 pub(crate) struct CliConfigTemplate {
     mode: Operations,
-    communication_mode: Communications,
+    communications: Communications,
     /// The pinned Indexer: `None` when the session is Offline, and equally
     /// when it is Online unpinned, where the Server-Selection Sweep selects.
     server: Option<http::Uri>,
@@ -1031,7 +1031,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
 impl CliConfigTemplate {
     fn fill(
         mode: Operations,
-        communication_mode: Communications,
+        communications: Communications,
         matches: clap::ArgMatches,
     ) -> Result<Self, ConfigTemplateError> {
         let seed = resolve_seed(
@@ -1078,7 +1078,7 @@ impl CliConfigTemplate {
         // Offline mode never resolves a server: the session's contract is
         // that no Indexer is ever configured.
         #[cfg(feature = "clearnet-test-mode")]
-        let (server, ranked_servers) = match communication_mode {
+        let (server, ranked_servers) = match communications {
             Communications::DeliberateOffline | Communications::UnconsentedOffline => {
                 (None, vec![])
             }
@@ -1090,7 +1090,7 @@ impl CliConfigTemplate {
         // Without the quarantined sweep, resolution is pure: the typed
         // `--server` pin or nothing, never a probe and never a default.
         #[cfg(not(feature = "clearnet-test-mode"))]
-        let server = match communication_mode {
+        let server = match communications {
             Communications::DeliberateOffline | Communications::UnconsentedOffline => None,
             Communications::Online => matches
                 .get_one::<http::Uri>("server")
@@ -1116,12 +1116,12 @@ impl CliConfigTemplate {
 
         let server_pinned =
             matches.value_source("server") == Some(clap::parser::ValueSource::CommandLine);
-        let sync = !matches.get_flag("nosync") && communication_mode == Communications::Online;
+        let sync = !matches.get_flag("nosync") && communications == Communications::Online;
         let waitsync = matches.get_flag("waitsync");
         let nym_proxy_path = matches.get_one::<String>("nym-proxy").cloned();
         Ok(Self {
             mode,
-            communication_mode,
+            communications,
             server,
             server_pinned,
             #[cfg(feature = "clearnet-test-mode")]
@@ -1225,7 +1225,7 @@ pub(crate) fn startup(filled_template: &CliConfigTemplate) -> std::io::Result<Co
     let lightclient = RT.block_on(startup_async(filled_template))?;
     #[cfg(feature = "nym")]
     let sync_recovery = SyncRecovery {
-        redraw_chain: (matches!(filled_template.communication_mode, Communications::Online)
+        redraw_chain: (matches!(filled_template.communications, Communications::Online)
             && !filled_template.server_pinned)
             .then(|| census_chain(&filled_template.chaintype))
             .flatten(),
@@ -1236,7 +1236,7 @@ pub(crate) fn startup(filled_template: &CliConfigTemplate) -> std::io::Result<Co
     let sync_recovery = SyncRecovery;
     Ok(command_loop(
         lightclient,
-        filled_template.communication_mode,
+        filled_template.communications,
         sync_recovery,
     ))
 }
@@ -1254,7 +1254,7 @@ async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<L
         info!("Starting Zingo-CLI");
         match &filled_template.server {
             Some(server) => info!("Lightclient connecting to {server}"),
-            None if filled_template.communication_mode == Communications::Online => {
+            None if filled_template.communications == Communications::Online => {
                 info!("No pinned Indexer; the Server-Selection Sweep selects the sync indexer")
             }
             None => info!("Offline mode: no Indexer will be configured this session"),
@@ -1270,7 +1270,7 @@ async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<L
     // clearnet. Offline sessions never transmit and skip the driver
     // entirely.
     #[cfg(feature = "nym")]
-    if filled_template.communication_mode == Communications::Online {
+    if filled_template.communications == Communications::Online {
         use zingolib::mixnet::{MixnetStartPolicy, ProvisionStrategy};
         info!(
             "Mixnet Mode enabling; the nym proxy is bootstrapping. Send and price-fetch \
@@ -1342,7 +1342,7 @@ async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<L
     // server is bound at config time and surveyed here; an unpinned online
     // session has no indexer until the sweep selects one.
     #[cfg(feature = "nym")]
-    let indexer_ready = if filled_template.communication_mode == Communications::Online {
+    let indexer_ready = if filled_template.communications == Communications::Online {
         sweep_select_sync_indexer(&mut lightclient, filled_template).await
     } else {
         true
@@ -2027,9 +2027,9 @@ pub fn run_cli(matches: clap::ArgMatches) -> std::io::Result<ExitCode> {
         eprintln!("{refusal}");
         return Ok(ExitCode::from(2));
     }
-    let communication_mode = get_communication_mode(&matches)?;
-    let cli_config = CliConfigTemplate::fill(mode, communication_mode, matches)
-        .map_err(std::io::Error::other)?;
+    let communications = get_communications(&matches)?;
+    let cli_config =
+        CliConfigTemplate::fill(mode, communications, matches).map_err(std::io::Error::other)?;
     dispatch_command_or_start_interactive(&cli_config)
 }
 

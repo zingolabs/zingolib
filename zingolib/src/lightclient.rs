@@ -718,7 +718,7 @@ impl LightClient {
 
     /// Record the deliberate clearnet consent for a test client: with the
     /// mixnet compiled in, the slot moves to
-    /// [`MixnetMode::SwitchedOff`](crate::mixnet::MixnetMode) — the same act
+    /// [`Indicator::SwitchedOff`](crate::mixnet::Indicator) — the same act
     /// the CLI's `network off` performs — so scenario sends transmit over
     /// clearnet instead of refusing `MixnetNotReady`. Without the `nym`
     /// feature the wallet has no mixnet surface and this is a no-op.

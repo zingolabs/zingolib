@@ -24,7 +24,7 @@ use crate::mixnet::{DeathReport, Indicator};
 /// boundary-carrier consumer ADR 0024 sequences last. The serde form omits
 /// every absent field, so the `mode` token alone discriminates and each state
 /// carries only its own evidence. The wire is pinned by the `wire_contract`
-/// golden test below, the same way [`MixnetMode`]'s five tokens are pinned in
+/// golden test below, the same way [`Indicator`]'s five tokens are pinned in
 /// `mode.rs`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "RawMixnetStatus")]

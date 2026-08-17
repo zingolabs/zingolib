@@ -29,8 +29,8 @@ impl Indicator {
     ];
 
     /// Whether a mixnet-only surface may proceed over the mixnet right
-    /// now: true for earned [`MixnetMode::Ready`] and for stale-proven
-    /// [`MixnetMode::PreviouslyProvenThisEpoch`], which routes the same.
+    /// now: true for earned [`Indicator::Ready`] and for stale-proven
+    /// [`Indicator::PreviouslyProvenThisEpoch`], which routes the same.
     pub fn is_ready(self) -> bool {
         matches!(
             self,
@@ -39,17 +39,17 @@ impl Indicator {
     }
 
     /// Whether this mode is the recovery affordance's target: true exactly
-    /// for [`MixnetMode::Died`], the one state that proves a transport was
+    /// for [`Indicator::Died`], the one state that proves a transport was
     /// consented, established, and lost — where a re-enable repairs a loss.
     /// This is the session driver's recovery predicate (ADR 0024, decision
     /// 2), minted here so every consumer offers the affordance from one
     /// truth instead of re-deriving it.
     ///
-    /// Deliberately false for [`MixnetMode::Unattached`]: the ground state
+    /// Deliberately false for [`Indicator::Unattached`]: the ground state
     /// carries no online intent — a wallet may never have consented to
     /// connectivity at all — and a failed enable reaches the consumer that
     /// expressed intent through the driver's typed error, not by reading
-    /// intent into the mode. False for [`MixnetMode::SwitchedOff`] too:
+    /// intent into the mode. False for [`Indicator::SwitchedOff`] too:
     /// leaving it is consent revocation, a different act with different
     /// narration.
     pub fn needs_recovery(self) -> bool {
@@ -79,28 +79,28 @@ impl std::fmt::Display for Indicator {
     }
 }
 
-/// The token a [`MixnetMode`] parse rejected, carried whole so the consumer
+/// The token a [`Indicator`] parse rejected, carried whole so the consumer
 /// can name it in its own narration.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("not a Mixnet Mode wire token: {0:?}")]
-pub struct UnknownMixnetModeToken(pub String);
+pub struct UnknownIndicatorToken(pub String);
 
 impl std::str::FromStr for Indicator {
-    type Err = UnknownMixnetModeToken;
+    type Err = UnknownIndicatorToken;
 
     fn from_str(token: &str) -> Result<Self, Self::Err> {
         Indicator::ALL
             .into_iter()
             .find(|mode| mode.as_str() == token)
-            .ok_or_else(|| UnknownMixnetModeToken(token.to_string()))
+            .ok_or_else(|| UnknownIndicatorToken(token.to_string()))
     }
 }
 
-/// The wallet's mixnet transport slot: the explicit state [`MixnetMode`] is
+/// The wallet's mixnet transport slot: the explicit state [`Indicator`] is
 /// read from. An enum rather than `Option<MixnetProxy>` because dropping the
 /// handle on disable would erase the very bit that separates
-/// [`MixnetMode::SwitchedOff`] (consent to clearnet) from
-/// [`MixnetMode::Unattached`] (absence of a transport) — the flattening the
+/// [`Indicator::SwitchedOff`] (consent to clearnet) from
+/// [`Indicator::Unattached`] (absence of a transport) — the flattening the
 /// 2026-07-28 amendment of ADR 0011 retires.
 // One slot lives per client and never in a collection, so the size skew
 // between the unit states and the attached transport costs nothing; boxing
@@ -117,7 +117,7 @@ pub(crate) enum MixnetSlot {
     /// transport reports.
     Attached(StandingClient),
     /// A stand-in transport for chain-mock tests: reports
-    /// [`MixnetMode::Ready`] at the given address without a child, watcher,
+    /// [`Indicator::Ready`] at the given address without a child, watcher,
     /// or probe, so the tests exercise the fail-closed route resolver and
     /// the escalation orchestration for real. Only
     /// `LightClient::switch_on_mixnet_for_tests` constructs it, and the
@@ -259,7 +259,7 @@ impl MixnetSlot {
     /// Standing Client is attached, otherwise the client's lifecycle state
     /// refined by its proof — forsaken latches Died, a condemned exit dips
     /// to Bootstrapping while the failover births a replacement, and stale
-    /// unconfirmed proof is typed [`MixnetMode::PreviouslyProvenThisEpoch`]
+    /// unconfirmed proof is typed [`Indicator::PreviouslyProvenThisEpoch`]
     /// rather than earned Ready.
     pub(crate) fn mode(&self) -> Indicator {
         match self {

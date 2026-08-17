@@ -2,7 +2,7 @@
 //! surfaces, seam B of `docs/adr/0011-nym-mixnet-transmission.md`.
 //!
 //! This module holds the mixnet control and policy logic: the five-state
-//! [`MixnetMode`], the fail-closed [`route`] resolver shared by every mixnet-only
+//! [`Indicator`], the fail-closed [`route`] resolver shared by every mixnet-only
 //! surface, the escalating [`correspondent_rotation`] over an injected per-arm
 //! runner and random-number generator, the curated Correspondent list, and
 //! the [`supervisor`] that owns the spawned `nym-proxy` child. The escalation

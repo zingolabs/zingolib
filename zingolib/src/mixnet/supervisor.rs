@@ -4,7 +4,7 @@
 //! `nym-proxy` binary and spawns it as a child. This supervisor owns that
 //! child's lifecycle: it starts the process, reads the local SOCKS5 address
 //! the child announces on stdout, and drives the transport's lifecycle
-//! states of [`MixnetMode`]. While the child is starting the
+//! states of [`Indicator`]. While the child is starting the
 //! mode is `Bootstrapping`. It becomes `Ready` once the address arrives. If
 //! the child's stdout later closes (during bootstrap or after ready) the
 //! mode becomes `Died`, an unconsented loss of the transport that makes
@@ -112,7 +112,7 @@ struct ProxyState {
     /// The Exit Node identities the transport reports as bound.
     exits: Vec<crate::mixnet::ExitNodeId>,
     /// The transport's latest bootstrap progress report, live only while
-    /// [`MixnetMode::Bootstrapping`], so a user interface can narrate the
+    /// [`Indicator::Bootstrapping`], so a user interface can narrate the
     /// connect race instead of showing an opaque wait.
     bootstrap_detail: Option<String>,
     /// The one sticky death latch, holding the moment and, when the watcher
@@ -214,7 +214,7 @@ enum Transport {
 
 impl MixnetProxy {
     /// Spawns the `nym-proxy` binary at `binary_path` over `clutch`,
-    /// returning immediately with mode [`MixnetMode::Bootstrapping`]
+    /// returning immediately with mode [`Indicator::Bootstrapping`]
     /// published into `publisher` along with every later transition.
     pub(crate) fn spawn(
         binary_path: &Path,
@@ -319,13 +319,13 @@ impl MixnetProxy {
         self.state.lock().expect("proxy state mutex").mode
     }
 
-    /// The local SOCKS5 address, once the mode is [`MixnetMode::Ready`].
+    /// The local SOCKS5 address, once the mode is [`Indicator::Ready`].
     pub fn socks5_addr(&self) -> Option<SocketAddr> {
         self.state.lock().expect("proxy state mutex").socks5_addr
     }
 
     /// The bound Exit Node identities, once the mode is
-    /// [`MixnetMode::Ready`].
+    /// [`Indicator::Ready`].
     pub fn exits(&self) -> Vec<crate::mixnet::ExitNodeId> {
         let guarded = self.state.lock().expect("proxy state mutex");
         if guarded.mode == Indicator::Ready {
@@ -336,7 +336,7 @@ impl MixnetProxy {
     }
 
     /// The transport's latest bootstrap progress report, if any, while
-    /// [`MixnetMode::Bootstrapping`].
+    /// [`Indicator::Bootstrapping`].
     pub fn bootstrap_detail(&self) -> Option<String> {
         self.state
             .lock()
@@ -346,7 +346,7 @@ impl MixnetProxy {
     }
 
     /// Why the transport died — the failed stage, its target, and the cause
-    /// chain — while the mode is [`MixnetMode::Died`] and the watcher held a
+    /// chain — while the mode is [`Indicator::Died`] and the watcher held a
     /// typed cause, and `None` otherwise.
     pub fn death_detail(&self) -> Option<zingo_net_diag::NetOpFailure> {
         // Derived from the one latch, so this accessor and death_report
@@ -355,7 +355,7 @@ impl MixnetProxy {
     }
 
     /// The latched death read whole — its moment, and its typed cause when
-    /// one was held — while the mode is [`MixnetMode::Died`], and `None` in
+    /// one was held — while the mode is [`Indicator::Died`], and `None` in
     /// every other mode.
     pub fn death_report(&self) -> Option<DeathReport> {
         let guarded = self.state.lock().expect("proxy state mutex");
@@ -367,7 +367,7 @@ impl MixnetProxy {
     }
 
     /// Shuts the transport down deliberately, aborting and awaiting its
-    /// driver task, marking the mode [`MixnetMode::Unattached`], and
+    /// driver task, marking the mode [`Indicator::Unattached`], and
     /// publishing nothing so the slot owner announces the settled state.
     pub(crate) async fn stop(self) {
         match self.transport {
@@ -644,7 +644,7 @@ fn parse_exit_line(line: &str) -> Option<crate::mixnet::ExitNodeId> {
 
 #[cfg(test)]
 impl MixnetProxy {
-    /// A transport already in [`MixnetMode::Ready`] with no child, watcher,
+    /// A transport already in [`Indicator::Ready`] with no child, watcher,
     /// or network behind it, for slot-mapping unit tests.
     pub(crate) fn ready_for_slot_tests(
         socks5_addr: SocketAddr,

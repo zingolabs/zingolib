@@ -434,7 +434,7 @@ impl LightClient {
     /// ```
     /// use zingolib::config::{ClientConfig, WalletConfig};
     /// use zingolib::lightclient::LightClient;
-    /// use zingolib::mixnet::{MixnetMode, TransportError};
+    /// use zingolib::mixnet::{Indicator, TransportError};
     ///
     /// tokio::runtime::Runtime::new().unwrap().block_on(async {
     ///     let wallet_dir = tempfile::tempdir().unwrap();
@@ -464,7 +464,7 @@ impl LightClient {
     ///         refused,
     ///         Err(TransportError::DiscoverySpawn(_))
     ///     ));
-    ///     assert_eq!(client.read_mixnet_indicator(), MixnetMode::Unattached);
+    ///     assert_eq!(client.read_mixnet_indicator(), Indicator::Unattached);
     /// });
     /// ```
     pub async fn enable_mixnet(
@@ -481,7 +481,7 @@ impl LightClient {
     /// use zingolib::config::{ClientConfig, WalletConfig};
     /// use zingolib::lightclient::LightClient;
     /// use zingolib::mixnet::acquire::{HostRefusal, HostedTransport, ProxyHost};
-    /// use zingolib::mixnet::{ExitNodeId, MixnetMode, TransportError};
+    /// use zingolib::mixnet::{ExitNodeId, Indicator, TransportError};
     ///
     /// // A host that declines every request, standing in for the platform
     /// // that owns the proxy where subprocesses are forbidden.
@@ -532,7 +532,7 @@ impl LightClient {
     ///         refused,
     ///         Err(TransportError::HostRefused(HostRefusal::Declined { .. }))
     ///     ));
-    ///     assert_eq!(client.read_mixnet_indicator(), MixnetMode::Unattached);
+    ///     assert_eq!(client.read_mixnet_indicator(), Indicator::Unattached);
     /// });
     /// ```
     pub async fn enable_mixnet_via_host(
@@ -625,7 +625,7 @@ impl LightClient {
     /// ```
     /// use zingolib::config::{ClientConfig, WalletConfig};
     /// use zingolib::lightclient::LightClient;
-    /// use zingolib::mixnet::{ExitNodeId, MixnetMode, MixnetProxyError};
+    /// use zingolib::mixnet::{ExitNodeId, Indicator, MixnetProxyError};
     ///
     /// tokio::runtime::Runtime::new().unwrap().block_on(async {
     ///     let wallet_dir = tempfile::tempdir().unwrap();
@@ -651,7 +651,7 @@ impl LightClient {
     ///         refused,
     ///         Err(MixnetProxyError::InvalidAddress { .. })
     ///     ));
-    ///     assert_eq!(client.read_mixnet_indicator(), MixnetMode::Unattached);
+    ///     assert_eq!(client.read_mixnet_indicator(), Indicator::Unattached);
     ///
     ///     // Empty `exits` refuses typed before anything is dialed.
     ///     let exitless = client.attach_mixnet("127.0.0.1:9", &[]).await;
@@ -665,12 +665,12 @@ impl LightClient {
     ///         .attach_mixnet("127.0.0.1:9", std::slice::from_ref(&host_drawn))
     ///         .await
     ///         .unwrap();
-    ///     assert_ne!(client.read_mixnet_indicator(), MixnetMode::Ready);
+    ///     assert_ne!(client.read_mixnet_indicator(), Indicator::Ready);
     ///
     ///     // A later attach vacates the standing transport first, so its
     ///     // failure leaves Unattached rather than the prior client.
     ///     client.attach_mixnet("not-an-address", &[]).await.unwrap_err();
-    ///     assert_eq!(client.read_mixnet_indicator(), MixnetMode::Unattached);
+    ///     assert_eq!(client.read_mixnet_indicator(), Indicator::Unattached);
     /// });
     /// ```
     pub async fn attach_mixnet(
@@ -718,7 +718,7 @@ impl LightClient {
     }
 
     /// Disable Mixnet Mode — the deliberate, per-session choice that alone
-    /// reaches [`MixnetMode::SwitchedOff`](crate::mixnet::MixnetMode) — shutting
+    /// reaches [`Indicator::SwitchedOff`](crate::mixnet::Indicator) — shutting
     /// down any running transport so the mixnet-only surfaces route over
     /// clearnet as informed consent.
     pub async fn disable_mixnet(&mut self) {
@@ -748,7 +748,7 @@ impl LightClient {
     /// off, returns any provisioning failure typed while leaving the mode
     /// unattached — refusal, never a silent clearnet — and never respawns on
     /// its own, recovery staying explicit through
-    /// [`MixnetMode::needs_recovery`](crate::mixnet::MixnetMode::needs_recovery).
+    /// [`Indicator::needs_recovery`](crate::mixnet::Indicator::needs_recovery).
     pub async fn start_mixnet_session(
         &mut self,
         strategy: crate::mixnet::ProvisionStrategy<'_>,
@@ -798,7 +798,7 @@ impl LightClient {
     }
 
     /// Switch Mixnet Mode on for a chain-mock test, with the slot reporting
-    /// [`MixnetMode::Ready`](crate::mixnet::MixnetMode) at `socks5_addr` while
+    /// [`Indicator::Ready`](crate::mixnet::Indicator) at `socks5_addr` while
     /// no child, watcher, or probe stands behind it, so the test walks the
     /// same fail-closed route resolver and escalation orchestration a live
     /// Ready session does and the transmit path submits over the mock
@@ -826,7 +826,7 @@ impl LightClient {
     }
 
     /// Why the transport died, while Mixnet Mode is
-    /// [`MixnetMode::Died`](crate::mixnet::MixnetMode) and the watcher held a
+    /// [`Indicator::Died`](crate::mixnet::Indicator) and the watcher held a
     /// typed cause: the [`zingo_net_diag::NetOpFailure`] record naming the
     /// stage, the target, and the cause chain as a vector, so a `died`
     /// verdict carries *why* without anyone parsing prose.
@@ -840,7 +840,7 @@ impl LightClient {
 
     /// The latched death read whole — its moment and, when the watcher held
     /// one, its typed cause — while Mixnet Mode is
-    /// [`MixnetMode::Died`](crate::mixnet::MixnetMode) and `None` in every
+    /// [`Indicator::Died`](crate::mixnet::Indicator) and `None` in every
     /// other mode, the moment distinguishing a stale latch from a fresh one
     /// through [`crate::mixnet::DeathReport::age`].
     pub fn mixnet_death_report(&self) -> Option<crate::mixnet::DeathReport> {
@@ -853,7 +853,7 @@ impl LightClient {
 
     /// Resolve the fail-closed route every mixnet-only surface must obey —
     /// the mixnet proxy when
-    /// [`MixnetMode::Ready`](crate::mixnet::MixnetMode::Ready), clearnet only
+    /// [`Indicator::Ready`](crate::mixnet::Indicator::Ready), clearnet only
     /// when switched off (the deliberate toggle-off), and a refusal while
     /// unattached, bootstrapping, or died — as the single resolver that
     /// send, price-fetch, and the liveness probe share.

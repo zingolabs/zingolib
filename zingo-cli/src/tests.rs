@@ -453,9 +453,9 @@ mod mode_of_operation {
     }
 }
 
-mod communication_mode {
+mod communications {
     use super::*;
-    use crate::{Communications, get_communication_mode};
+    use crate::{Communications, get_communications};
 
     /// A scratch data directory per test, so no stored Connectivity
     /// Consent leaks between tests or into the developer's real store.
@@ -472,7 +472,7 @@ mod communication_mode {
             dir.path().to_str().expect("utf-8 temp path"),
         ];
         args.extend_from_slice(extra);
-        get_communication_mode(&parse(&args)).expect("the mode resolves")
+        get_communications(&parse(&args)).expect("the mode resolves")
     }
 
     /// ADR 0025: first boot is offline. With no stored choice and no
@@ -596,7 +596,7 @@ mod communication_mode {
                     dir.path().to_str().expect("utf-8 temp path"),
                 ];
                 args.extend(act.iter());
-                let err = get_communication_mode(&parse(&args))
+                let err = get_communications(&parse(&args))
                     .expect_err("an offline-only build must refuse every online act");
                 assert!(
                     err.to_string().contains("Offline Mode is its only mode"),
@@ -853,7 +853,7 @@ mod sync_recovery {
 mod config_template {
     use super::*;
     use crate::{
-        CliConfigTemplate, Operations, build_zingo_config, get_communication_mode,
+        CliConfigTemplate, Operations, build_zingo_config, get_communications,
         get_mode_of_operation,
     };
     use std::path::PathBuf;
@@ -863,8 +863,8 @@ mod config_template {
     fn fill(args: &[&str]) -> Result<CliConfigTemplate, String> {
         let matches = parse(args);
         let mode = get_mode_of_operation(&matches);
-        let communication_mode = get_communication_mode(&matches).map_err(|e| e.to_string())?;
-        CliConfigTemplate::fill(mode, communication_mode, matches).map_err(|e| e.to_string())
+        let communications = get_communications(&matches).map_err(|e| e.to_string())?;
+        CliConfigTemplate::fill(mode, communications, matches).map_err(|e| e.to_string())
     }
 
     /// HYPOTHESIS: the flag outranks the environment, the environment
@@ -918,7 +918,7 @@ mod config_template {
         #[test]
         fn fill_resolves_no_server_and_disables_sync() {
             let config = fill(&[examples::BIN_NAME, "--offline"]).unwrap();
-            assert_eq!(config.communication_mode, Communications::DeliberateOffline);
+            assert_eq!(config.communications, Communications::DeliberateOffline);
             assert!(config.server.is_none());
             assert!(!config.sync, "an Offline-mode session cannot sync");
         }
@@ -1002,7 +1002,7 @@ mod config_template {
             let config = fill(&[examples::BIN_NAME, "--server", examples::SERVER_URI]).unwrap();
             assert_eq!(config.data_dir, PathBuf::from("wallets"));
             assert_eq!(config.chaintype, ChainType::Mainnet);
-            assert_eq!(config.communication_mode, Communications::Online);
+            assert_eq!(config.communications, Communications::Online);
             assert!(config.sync);
             assert!(!config.waitsync);
             assert!(config.seed.is_none());
