@@ -95,7 +95,6 @@ impl std::fmt::Display for ExitNodeId {
 
 /// The party a failure stage charges, unattributed when the stage cannot
 /// say which side failed.
-
 pub(crate) fn charge_phase(
     stage: &zingo_net_diag::NetOpStage,
 ) -> crate::correspondent::health::FailurePhase {
@@ -167,7 +166,6 @@ pub struct MixnetTiming {
 /// The current [`MixnetTiming`], read from the one place the constants
 /// live. Pure and infallible, so the FFI layer can surface it as a plain
 /// record.
-
 pub fn mixnet_timing() -> MixnetTiming {
     MixnetTiming {
         attach_readiness_budget: zingo_netutils::time::ATTACH_READINESS_BUDGET,
@@ -180,7 +178,6 @@ pub fn mixnet_timing() -> MixnetTiming {
 /// variants — no substring inspection anywhere. This is the one classifier
 /// for [`zingo_netutils::Socks5TransmitError`], shared by the escalation, the
 /// mixnet probe leg, and the attach readiness gate.
-
 pub(crate) fn socks5_transmit_stage(
     error: &zingo_netutils::Socks5TransmitError,
 ) -> zingo_net_diag::NetOpStage {
