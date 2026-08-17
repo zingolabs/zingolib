@@ -111,7 +111,7 @@ mod mode_of_operation {
         let matches = parse(args);
         assert_eq!(
             get_mode_of_operation(&matches),
-            ModeOfOperation::Command { command: expected }
+            ModeOfOperation::NonInteractive { command: expected }
         );
     }
 
@@ -127,7 +127,7 @@ mod mode_of_operation {
         assert!(matches.get_flag("nosync"));
         assert_eq!(
             get_mode_of_operation(&matches),
-            ModeOfOperation::Command {
+            ModeOfOperation::NonInteractive {
                 command: CliCommand::Balance
             }
         );
@@ -1081,7 +1081,7 @@ mod config_template {
             let config = fill(&[examples::BIN_NAME, "balance"]).unwrap();
             assert_eq!(
                 config.mode,
-                ModeOfOperation::Command {
+                ModeOfOperation::NonInteractive {
                     command: crate::commands::CliCommand::Balance,
                 }
             );
@@ -1293,7 +1293,10 @@ mod config_template {
         fn an_online_requiring_command_after_online_is_accepted() {
             let config = fill(&[examples::BIN_NAME, "--online", "sync", "run"])
                 .expect("sync run requires online");
-            assert!(matches!(config.mode, ModeOfOperation::Command { .. }));
+            assert!(matches!(
+                config.mode,
+                ModeOfOperation::NonInteractive { .. }
+            ));
         }
 
         #[test]
@@ -1620,7 +1623,7 @@ mod sweep_pin_policy {
         let alternative: http::Uri = "https://healthy.example:443/"
             .parse()
             .expect("the alternative parses");
-        let command_mode = crate::ModeOfOperation::Command {
+        let command_mode = crate::ModeOfOperation::NonInteractive {
             command: crate::commands::CliCommand::Balance,
         };
         assert!(!crate::consent_to_fallback(&command_mode, &alternative));

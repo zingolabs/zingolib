@@ -717,21 +717,21 @@ enum ModeOfOperation {
     Interactive,
     /// Execute a single command and exit, the command arriving already
     /// parsed from the same grammar the REPL uses.
-    Command {
+    NonInteractive {
         /// The parsed command to execute.
         command: commands::CliCommand,
     },
 }
 
 /// Determines the mode of operation from parsed CLI arguments:
-/// [`ModeOfOperation::Command`] when a command is given, or
+/// [`ModeOfOperation::NonInteractive`] when a command is given, or
 /// [`ModeOfOperation::Interactive`] when none is.
 fn get_mode_of_operation(matches: &clap::ArgMatches) -> ModeOfOperation {
     use clap::FromArgMatches as _;
 
     commands::CliCommand::from_arg_matches(matches)
         .map_or(ModeOfOperation::Interactive, |command| {
-            ModeOfOperation::Command { command }
+            ModeOfOperation::NonInteractive { command }
         })
 }
 
@@ -1069,7 +1069,7 @@ impl CliConfigTemplate {
         // command after `--online` is a contradiction the launch refuses
         // early, before any network or wallet work.
         if matches.get_flag("online")
-            && let ModeOfOperation::Command { command } = &mode
+            && let ModeOfOperation::NonInteractive { command } = &mode
             && !command.requires_online()
         {
             return Err(ConfigTemplateError::OnlineGrantUnused {
@@ -1837,7 +1837,7 @@ fn dispatch_command_or_start_interactive(
         Err(startup_error) => {
             if matches!(
                 &cli_config.mode,
-                ModeOfOperation::Command {
+                ModeOfOperation::NonInteractive {
                     command: commands::CliCommand::RecoveryInfo
                 }
             ) {
@@ -1852,7 +1852,7 @@ fn dispatch_command_or_start_interactive(
             start_interactive(cli_config, ch);
             Ok(ExitCode::SUCCESS)
         }
-        ModeOfOperation::Command { command } => {
+        ModeOfOperation::NonInteractive { command } => {
             let description = command.name();
             let mut succeeded = if ch
                 .transmitter
@@ -1994,7 +1994,7 @@ fn posture_preview(matches: &clap::ArgMatches) -> CommunicationMode {
 /// the text and exiting the process.
 pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
     match get_mode_of_operation(matches) {
-        ModeOfOperation::Command {
+        ModeOfOperation::NonInteractive {
             command: commands::CliCommand::Help { command: named },
         } => Some(commands::format_help(
             posture_preview(matches),
@@ -2013,7 +2013,7 @@ pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
 /// handling the help short-circuit, process-level setup, and error reporting.
 pub fn run_cli(matches: clap::ArgMatches) -> std::io::Result<ExitCode> {
     let mode = get_mode_of_operation(&matches);
-    if let ModeOfOperation::Command { command } = &mode
+    if let ModeOfOperation::NonInteractive { command } = &mode
         && let Err(refusal) = command.validate_deferred_grammar()
     {
         eprintln!("{refusal}");
