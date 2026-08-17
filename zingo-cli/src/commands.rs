@@ -1328,21 +1328,21 @@ fn render_history(
 /// reusable by any other frontend.
 #[cfg(feature = "nym")]
 fn render_status(
-    mode: zingolib::mixnet::MixnetMode,
+    mode: zingolib::mixnet::Indicator,
     socks5_addr: Option<&str>,
     bootstrap_detail: Option<&str>,
 ) -> String {
-    use zingolib::mixnet::MixnetMode;
+    use zingolib::mixnet::Indicator;
 
     match mode {
-        MixnetMode::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled, \
+        Indicator::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled, \
              and no consent to clearnet has been given: send and price-fetch refuse. Run \
              `network on` to enable the mixnet, or `network off` to use clearnet."
             .to_string(),
-        MixnetMode::SwitchedOff => {
+        Indicator::SwitchedOff => {
             "Mixnet Mode: switched off (send and price-fetch use clearnet)".to_string()
         }
-        MixnetMode::Bootstrapping => match bootstrap_detail {
+        Indicator::Bootstrapping => match bootstrap_detail {
             Some(detail) => format!(
                 "Mixnet Mode: bootstrapping, {detail} (send and price-fetch are unavailable \
                  until ready)"
@@ -1350,18 +1350,18 @@ fn render_status(
             None => "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
                 .to_string(),
         },
-        MixnetMode::Ready => match socks5_addr {
+        Indicator::Ready => match socks5_addr {
             Some(addr) => format!("Mixnet Mode: ready (SOCKS5 {addr})"),
             None => "Mixnet Mode: ready".to_string(),
         },
-        MixnetMode::PreviouslyProvenThisEpoch => match socks5_addr {
+        Indicator::PreviouslyProvenThisEpoch => match socks5_addr {
             Some(addr) => format!(
                 "Mixnet Mode: previously proven this epoch (SOCKS5 {addr}; the exit's \
                  proof is stale until a round trip of this session confirms it)"
             ),
             None => "Mixnet Mode: previously proven this epoch".to_string(),
         },
-        MixnetMode::Died => "Mixnet Mode: died. The proxy exited unexpectedly. Send and \
+        Indicator::Died => "Mixnet Mode: died. The proxy exited unexpectedly. Send and \
              price-fetch refuse and will not fall back to clearnet. Run `network on` to \
              restart the proxy."
             .to_string(),
@@ -1384,7 +1384,7 @@ through a system-level VPN or NymVPN. See ZIP-0318.";
 /// disclaimer.
 #[cfg(feature = "nym")]
 fn render_status_with_disclaimer(
-    mode: zingolib::mixnet::MixnetMode,
+    mode: zingolib::mixnet::Indicator,
     socks5_addr: Option<&str>,
     bootstrap_detail: Option<&str>,
 ) -> String {
@@ -1433,17 +1433,17 @@ pub(crate) fn render_exit_nodes(exits: &[zingolib::mixnet::ExitNodeId]) -> Strin
 async fn await_bootstrap_outcome(
     mut rx: tokio::sync::watch::Receiver<zingolib::mixnet::MixnetStatus>,
 ) -> BootstrapOutcome {
-    use zingolib::mixnet::MixnetMode;
+    use zingolib::mixnet::Indicator;
     let mut was_bootstrapping = false;
     loop {
         let status = rx.borrow_and_update().clone();
         match status.mode {
-            MixnetMode::Ready | MixnetMode::PreviouslyProvenThisEpoch => {
+            Indicator::Ready | Indicator::PreviouslyProvenThisEpoch => {
                 return BootstrapOutcome::Ready {
                     exits: status.exits.clone(),
                 };
             }
-            MixnetMode::Died => {
+            Indicator::Died => {
                 let cause = status
                     .death
                     .as_ref()
@@ -1454,13 +1454,13 @@ async fn await_bootstrap_outcome(
                     report: format!("the mixnet transport died{cause}"),
                 };
             }
-            MixnetMode::Bootstrapping => was_bootstrapping = true,
-            MixnetMode::Unattached | MixnetMode::SwitchedOff if was_bootstrapping => {
+            Indicator::Bootstrapping => was_bootstrapping = true,
+            Indicator::Unattached | Indicator::SwitchedOff if was_bootstrapping => {
                 return BootstrapOutcome::Failed {
                     report: format!("the bootstrap ended in mode {}", status.mode),
                 };
             }
-            MixnetMode::Unattached | MixnetMode::SwitchedOff => {}
+            Indicator::Unattached | Indicator::SwitchedOff => {}
         }
         if rx.changed().await.is_err() {
             return BootstrapOutcome::Failed {
@@ -1483,7 +1483,7 @@ async fn network_command(
                 .mixnet_socks5_addr()
                 .map(|addr| addr.to_string());
             Ok(render_status_with_disclaimer(
-                lightclient.mixnet_mode(),
+                lightclient.read_mixnet_indicator(),
                 socks5.as_deref(),
                 lightclient.mixnet_bootstrap_detail().as_deref(),
             ))
@@ -3137,13 +3137,13 @@ pub(crate) async fn dispatch_parsed(
 /// resolver at the transmit seam as the sole refusal authority.
 #[cfg(feature = "nym")]
 async fn wait_out_bootstrap(lightclient: &LightClient) {
-    use zingolib::mixnet::MixnetMode;
+    use zingolib::mixnet::Indicator;
     use zingolib::netutils::time::{TRANSMIT_HEARTBEAT_INTERVAL, TRANSMIT_READINESS_BUDGET};
 
     let mut status_rx = lightclient.subscribe_mixnet_status();
     let started = tokio::time::Instant::now();
     let deadline = started + TRANSMIT_READINESS_BUDGET;
-    while status_rx.borrow_and_update().mode == MixnetMode::Bootstrapping {
+    while status_rx.borrow_and_update().mode == Indicator::Bootstrapping {
         tokio::select! {
             changed = status_rx.changed() => {
                 if changed.is_err() {

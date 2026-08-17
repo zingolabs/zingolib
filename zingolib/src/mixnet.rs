@@ -136,7 +136,7 @@ pub use driver::{MixnetStartPolicy, MixnetStatus, ProvisionStrategy};
 
 pub(crate) use driver::{StatusPublisher, status_publisher};
 
-pub use mode::MixnetMode;
+pub use mode::Indicator;
 
 pub(crate) use mode::MixnetSlot;
 

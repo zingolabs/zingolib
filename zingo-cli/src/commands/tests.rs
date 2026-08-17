@@ -742,35 +742,35 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn status_lines_render_byte_identically_to_the_replaced_strings() {
-        use zingolib::mixnet::MixnetMode;
+        use zingolib::mixnet::Indicator;
 
         assert_eq!(
-            render_status(MixnetMode::Unattached, None, None),
+            render_status(Indicator::Unattached, None, None),
             "Mixnet Mode: unattached. The mixnet has not been enabled, and no consent to \
              clearnet has been given: send and price-fetch refuse. Run `network on` to enable \
              the mixnet, or `network off` to use clearnet.",
             "absence is not consent: unattached names refusal, never clearnet"
         );
         assert_eq!(
-            render_status(MixnetMode::SwitchedOff, None, None),
+            render_status(Indicator::SwitchedOff, None, None),
             "Mixnet Mode: switched off (send and price-fetch use clearnet)"
         );
         assert_eq!(
-            render_status(MixnetMode::Bootstrapping, None, None),
+            render_status(Indicator::Bootstrapping, None, None),
             "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
         );
         assert_eq!(
-            render_status(MixnetMode::Ready, Some("127.0.0.1:43210"), None),
+            render_status(Indicator::Ready, Some("127.0.0.1:43210"), None),
             "Mixnet Mode: ready (SOCKS5 127.0.0.1:43210)"
         );
         assert_eq!(
-            render_status(MixnetMode::Ready, None, None),
+            render_status(Indicator::Ready, None, None),
             "Mixnet Mode: ready",
             "ready with no address yet still renders (the route resolver, \
              not the renderer, refuses that state)"
         );
         assert_eq!(
-            render_status(MixnetMode::Died, None, None),
+            render_status(Indicator::Died, None, None),
             "Mixnet Mode: died. The proxy exited unexpectedly. Send and price-fetch \
              refuse and will not fall back to clearnet. Run `network on` to restart the proxy.",
             "a died proxy is reported distinctly from switched off, and tells the user how to \
@@ -785,11 +785,11 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn bootstrap_detail_reaches_the_status_line_only_while_bootstrapping() {
-        use zingolib::mixnet::MixnetMode;
+        use zingolib::mixnet::Indicator;
 
         assert_eq!(
             render_status(
-                MixnetMode::Bootstrapping,
+                Indicator::Bootstrapping,
                 None,
                 Some("attempt 2/10: 2 in flight, 0 failed")
             ),
@@ -797,7 +797,7 @@ mod network_command_parsing {
              (send and price-fetch are unavailable until ready)"
         );
         assert_eq!(
-            render_status(MixnetMode::Ready, Some("127.0.0.1:1"), Some("stale")),
+            render_status(Indicator::Ready, Some("127.0.0.1:1"), Some("stale")),
             "Mixnet Mode: ready (SOCKS5 127.0.0.1:1)",
             "a stale detail must not leak into the ready line"
         );
@@ -812,14 +812,14 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn status_always_carries_the_ip_correlation_disclaimer() {
-        use zingolib::mixnet::MixnetMode;
+        use zingolib::mixnet::Indicator;
 
         for mode in [
-            MixnetMode::Unattached,
-            MixnetMode::SwitchedOff,
-            MixnetMode::Bootstrapping,
-            MixnetMode::Ready,
-            MixnetMode::Died,
+            Indicator::Unattached,
+            Indicator::SwitchedOff,
+            Indicator::Bootstrapping,
+            Indicator::Ready,
+            Indicator::Died,
         ] {
             let addr = Some("127.0.0.1:43210");
             let out = render_status_with_disclaimer(mode, addr, None);
@@ -854,11 +854,11 @@ mod bootstrap_wait {
     //! driver is a sync frontend, so it is an audited crossing.
     #![allow(clippy::disallowed_methods)]
 
-    use zingolib::mixnet::{MixnetMode, MixnetStatus};
+    use zingolib::mixnet::{Indicator, MixnetStatus};
 
     use super::super::{BootstrapOutcome, await_bootstrap_outcome};
 
-    fn status(mode: MixnetMode) -> MixnetStatus {
+    fn status(mode: Indicator) -> MixnetStatus {
         MixnetStatus {
             mode,
             socks5_addr: None,
@@ -873,13 +873,13 @@ mod bootstrap_wait {
     /// unattached snapshot.
     #[tokio::test]
     async fn ready_resolves_the_wait_carrying_the_exits() {
-        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Unattached));
+        let (tx, rx) = tokio::sync::watch::channel(status(Indicator::Unattached));
         let waiter = tokio::spawn(await_bootstrap_outcome(rx));
         tokio::task::yield_now().await;
-        tx.send(status(MixnetMode::Bootstrapping))
+        tx.send(status(Indicator::Bootstrapping))
             .expect("the waiter holds the receiver");
         tokio::task::yield_now().await;
-        let mut ready = status(MixnetMode::Ready);
+        let mut ready = status(Indicator::Ready);
         let exit_alpha =
             zingolib::mixnet::ExitNodeId::parse("exit-alpha").expect("the test identity parses");
         ready.exits = vec![exit_alpha.clone()];
@@ -917,10 +917,10 @@ mod bootstrap_wait {
     /// report rather than hanging until a timeout.
     #[tokio::test]
     async fn death_resolves_the_wait_as_failed() {
-        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let (tx, rx) = tokio::sync::watch::channel(status(Indicator::Bootstrapping));
         let waiter = tokio::spawn(await_bootstrap_outcome(rx));
         tokio::task::yield_now().await;
-        tx.send(status(MixnetMode::Died))
+        tx.send(status(Indicator::Died))
             .expect("the waiter holds the receiver");
         let outcome = waiter.await.expect("the waiter must not panic");
         assert_eq!(
@@ -936,10 +936,10 @@ mod bootstrap_wait {
     /// survive subscribing before the driver flips to bootstrapping.
     #[tokio::test]
     async fn unattached_fails_only_after_bootstrapping_began() {
-        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let (tx, rx) = tokio::sync::watch::channel(status(Indicator::Bootstrapping));
         let waiter = tokio::spawn(await_bootstrap_outcome(rx));
         tokio::task::yield_now().await;
-        tx.send(status(MixnetMode::Unattached))
+        tx.send(status(Indicator::Unattached))
             .expect("the waiter holds the receiver");
         let outcome = waiter.await.expect("the waiter must not panic");
         assert_eq!(
@@ -954,7 +954,7 @@ mod bootstrap_wait {
     /// waiting forever on a sender that will never speak again.
     #[tokio::test]
     async fn a_closed_channel_resolves_the_wait_as_failed() {
-        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let (tx, rx) = tokio::sync::watch::channel(status(Indicator::Bootstrapping));
         let waiter = tokio::spawn(await_bootstrap_outcome(rx));
         tokio::task::yield_now().await;
         drop(tx);

@@ -68,11 +68,11 @@ async fn price_rounds_report_their_outcomes() {
     // is expected at once; the wait survives as a cheap guard so a status
     // lag is never reported as a network outcome.
     let ready_by = Instant::now() + READY_BUDGET;
-    while client.mixnet_mode() != zingolib::mixnet::MixnetMode::Ready {
+    while client.read_mixnet_indicator() != zingolib::mixnet::Indicator::Ready {
         assert!(
             Instant::now() < ready_by,
             "the session never reached Ready within {READY_BUDGET:?}: {:?}",
-            client.mixnet_mode()
+            client.read_mixnet_indicator()
         );
         tokio::time::sleep(READY_POLL).await;
     }

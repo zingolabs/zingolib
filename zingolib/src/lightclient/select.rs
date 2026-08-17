@@ -324,7 +324,7 @@ async fn probe_one(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mixnet::MixnetMode;
+    use crate::mixnet::Indicator;
 
     /// HYPOTHESIS: the survey never settles early — every indexer must be
     /// probed and assigned — so a healthy answer does not end the wave.
@@ -493,7 +493,7 @@ mod tests {
     /// latched typed cause.
     fn died_with(detail: Option<zingo_net_diag::NetOpFailure>) -> crate::mixnet::MixnetStatus {
         crate::mixnet::MixnetStatus {
-            mode: MixnetMode::Died,
+            mode: Indicator::Died,
             socks5_addr: None,
             exits: Vec::new(),
             bootstrap_detail: None,
@@ -508,7 +508,7 @@ mod tests {
     /// so far.
     fn ready_with(exits: Vec<crate::mixnet::ExitNodeId>) -> crate::mixnet::MixnetStatus {
         crate::mixnet::MixnetStatus {
-            mode: MixnetMode::Ready,
+            mode: Indicator::Ready,
             socks5_addr: Some("127.0.0.1:1080".parse().expect("the test address parses")),
             exits,
             bootstrap_detail: None,

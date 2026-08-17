@@ -3,71 +3,29 @@
 
 use crate::mixnet::{DeathReport, MixnetProxy};
 
-/// The runtime state of the Nym mixnet transport that carries the
-/// Transmission and price-fetch surfaces.
-///
-/// Five states rather than a bare boolean because refusal and consent must
-/// never share a representation: "no transport is established", "enabled but
-/// not yet reachable", and "was running, then died" are all states a send
-/// must refuse in, and none of them is the user's deliberate
-/// [`MixnetMode::SwitchedOff`], the one state that consents to clearnet. See
-/// `docs/adr/0011-nym-mixnet-transmission.md` (amendment 2026-07-28).
-///
-/// This enum is the canonical wire mint for every consumer (ADR 0024), and
-/// its five wire strings are MINTED TOKENS: this is their sole production
-/// site. The mint enforces itself four ways. The serde `snake_case`
-/// representation, [`MixnetMode::as_str`], and `Display` are forced to agree
-/// on one token per state, pinned literally by the `wire_contract` tests;
-/// `FromStr` and deserialization accept exactly those five tokens and
-/// nothing else; the retired token `off` is rejected by parse, with a test
-/// pinning the rejection as the mint's negative space; and consumers render
-/// and parse through these impls but never restate the token bytes in their
-/// own code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum MixnetMode {
-    /// No mixnet transport is established and no consent to clearnet has
-    /// been recorded. A present condition, not a history claim: this is the
-    /// initial state, and equally the state after a failed enable or
-    /// re-enable, even when a transport ran earlier in the session.
-    /// Mixnet-only surfaces refuse — the absence of a transport is never
-    /// consent.
+pub enum Indicator {
     Unattached,
-    /// The mixnet is disabled by the user's explicit act, and only by it.
-    /// Mixnet-only surfaces route over clearnet as the user's deliberate
-    /// per-session choice, never as a silent fallback.
     SwitchedOff,
-    /// The mixnet client is starting up and is not yet reachable. Mixnet-only
-    /// surfaces are unavailable but connecting.
     Bootstrapping,
-    /// The mixnet is up. Mixnet-only surfaces route through it.
     Ready,
-    /// The mixnet is up on stale proof: the Standing Client was born
-    /// trusting an EpochProven observation some earlier client earned, and
-    /// no round trip of its own has yet confirmed the exit. Routes exactly
-    /// as [`MixnetMode::Ready`]; the first confirmed round trip promotes,
-    /// and an exit-implicating failure demotes through the failover.
     PreviouslyProvenThisEpoch,
-    /// The proxy exited unexpectedly after being spawned, during bootstrap or
-    /// after reaching ready. Distinct from [`MixnetMode::SwitchedOff`]: this
-    /// is an unconsented loss of the transport, so mixnet-only surfaces
-    /// refuse rather than fall back to clearnet. Recover by re-enabling the
-    /// mixnet (`network on`), which spawns a fresh proxy.
     Died,
 }
 
-impl MixnetMode {
+impl Indicator {
     /// Every state, in declaration order. Exhaustive by construction: the
     /// wire round-trip tests iterate this array, so a new state that is not
     /// added here fails the exhaustiveness test rather than shipping
     /// untested.
-    pub const ALL: [MixnetMode; 6] = [
-        MixnetMode::Unattached,
-        MixnetMode::SwitchedOff,
-        MixnetMode::Bootstrapping,
-        MixnetMode::Ready,
-        MixnetMode::PreviouslyProvenThisEpoch,
-        MixnetMode::Died,
+    pub const ALL: [Indicator; 6] = [
+        Indicator::Unattached,
+        Indicator::SwitchedOff,
+        Indicator::Bootstrapping,
+        Indicator::Ready,
+        Indicator::PreviouslyProvenThisEpoch,
+        Indicator::Died,
     ];
 
     /// Whether a mixnet-only surface may proceed over the mixnet right
@@ -76,7 +34,7 @@ impl MixnetMode {
     pub fn is_ready(self) -> bool {
         matches!(
             self,
-            MixnetMode::Ready | MixnetMode::PreviouslyProvenThisEpoch
+            Indicator::Ready | Indicator::PreviouslyProvenThisEpoch
         )
     }
 
@@ -95,7 +53,7 @@ impl MixnetMode {
     /// leaving it is consent revocation, a different act with different
     /// narration.
     pub fn needs_recovery(self) -> bool {
-        matches!(self, MixnetMode::Died)
+        matches!(self, Indicator::Died)
     }
 
     /// The canonical wire token for this state: the one mint every consumer
@@ -105,17 +63,17 @@ impl MixnetMode {
     /// parser that still accepts it would resurrect the conflation.
     pub fn as_str(self) -> &'static str {
         match self {
-            MixnetMode::Unattached => "unattached",
-            MixnetMode::SwitchedOff => "switched_off",
-            MixnetMode::Bootstrapping => "bootstrapping",
-            MixnetMode::Ready => "ready",
-            MixnetMode::PreviouslyProvenThisEpoch => "previously_proven_this_epoch",
-            MixnetMode::Died => "died",
+            Indicator::Unattached => "unattached",
+            Indicator::SwitchedOff => "switched_off",
+            Indicator::Bootstrapping => "bootstrapping",
+            Indicator::Ready => "ready",
+            Indicator::PreviouslyProvenThisEpoch => "previously_proven_this_epoch",
+            Indicator::Died => "died",
         }
     }
 }
 
-impl std::fmt::Display for MixnetMode {
+impl std::fmt::Display for Indicator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
@@ -127,11 +85,11 @@ impl std::fmt::Display for MixnetMode {
 #[error("not a Mixnet Mode wire token: {0:?}")]
 pub struct UnknownMixnetModeToken(pub String);
 
-impl std::str::FromStr for MixnetMode {
+impl std::str::FromStr for Indicator {
     type Err = UnknownMixnetModeToken;
 
     fn from_str(token: &str) -> Result<Self, Self::Err> {
-        MixnetMode::ALL
+        Indicator::ALL
             .into_iter()
             .find(|mode| mode.as_str() == token)
             .ok_or_else(|| UnknownMixnetModeToken(token.to_string()))
@@ -303,26 +261,26 @@ impl MixnetSlot {
     /// to Bootstrapping while the failover births a replacement, and stale
     /// unconfirmed proof is typed [`MixnetMode::PreviouslyProvenThisEpoch`]
     /// rather than earned Ready.
-    pub(crate) fn mode(&self) -> MixnetMode {
+    pub(crate) fn mode(&self) -> Indicator {
         match self {
-            MixnetSlot::Unattached => MixnetMode::Unattached,
-            MixnetSlot::SwitchedOff => MixnetMode::SwitchedOff,
+            MixnetSlot::Unattached => Indicator::Unattached,
+            MixnetSlot::SwitchedOff => Indicator::SwitchedOff,
             MixnetSlot::Attached(client) => {
                 if client.forsaken.lock().expect("forsaken mutex").is_some() {
-                    return MixnetMode::Died;
+                    return Indicator::Died;
                 }
                 if client.is_condemned() {
-                    return MixnetMode::Bootstrapping;
+                    return Indicator::Bootstrapping;
                 }
                 match client.proxy().mode() {
-                    MixnetMode::Ready if client.stale_unconfirmed() => {
-                        MixnetMode::PreviouslyProvenThisEpoch
+                    Indicator::Ready if client.stale_unconfirmed() => {
+                        Indicator::PreviouslyProvenThisEpoch
                     }
                     lifecycle => lifecycle,
                 }
             }
             #[cfg(any(test, feature = "testutils"))]
-            MixnetSlot::AttachedForTests { .. } => MixnetMode::Ready,
+            MixnetSlot::AttachedForTests { .. } => Indicator::Ready,
         }
     }
 
@@ -372,20 +330,20 @@ impl MixnetSlot {
 mod wire_contract {
     use std::str::FromStr as _;
 
-    use super::MixnetMode;
+    use super::Indicator;
 
     /// The ratified tokens, pinned literally so a rename in `as_str` cannot
     /// pass silently: this list is the wire contract of ADR 0024.
-    const RATIFIED_TOKENS: [(MixnetMode, &str); 6] = [
-        (MixnetMode::Unattached, "unattached"),
-        (MixnetMode::SwitchedOff, "switched_off"),
-        (MixnetMode::Bootstrapping, "bootstrapping"),
-        (MixnetMode::Ready, "ready"),
+    const RATIFIED_TOKENS: [(Indicator, &str); 6] = [
+        (Indicator::Unattached, "unattached"),
+        (Indicator::SwitchedOff, "switched_off"),
+        (Indicator::Bootstrapping, "bootstrapping"),
+        (Indicator::Ready, "ready"),
         (
-            MixnetMode::PreviouslyProvenThisEpoch,
+            Indicator::PreviouslyProvenThisEpoch,
             "previously_proven_this_epoch",
         ),
-        (MixnetMode::Died, "died"),
+        (Indicator::Died, "died"),
     ];
 
     #[test]
@@ -398,10 +356,10 @@ mod wire_contract {
 
     #[test]
     fn serde_and_as_str_agree_on_every_state() {
-        for mode in MixnetMode::ALL {
+        for mode in Indicator::ALL {
             let json = serde_json::to_string(&mode).expect("serialization is infallible");
             assert_eq!(json, format!("{:?}", mode.as_str()));
-            let back: MixnetMode =
+            let back: Indicator =
                 serde_json::from_str(&json).expect("the minted token parses back");
             assert_eq!(back, mode);
         }
@@ -409,8 +367,8 @@ mod wire_contract {
 
     #[test]
     fn from_str_round_trips_every_state() {
-        for mode in MixnetMode::ALL {
-            assert_eq!(MixnetMode::from_str(mode.as_str()), Ok(mode));
+        for mode in Indicator::ALL {
+            assert_eq!(Indicator::from_str(mode.as_str()), Ok(mode));
         }
     }
 
@@ -418,8 +376,8 @@ mod wire_contract {
     fn the_retired_off_token_is_rejected() {
         // "off" is the conflation the five-state decomposition retired; a
         // parser that accepts it would quietly reunify consent with absence.
-        assert!(MixnetMode::from_str("off").is_err());
-        assert!(serde_json::from_str::<MixnetMode>("\"off\"").is_err());
+        assert!(Indicator::from_str("off").is_err());
+        assert!(serde_json::from_str::<Indicator>("\"off\"").is_err());
     }
 
     /// HYPOTHESIS: a status in stale-proven mode carries its address and
@@ -428,7 +386,7 @@ mod wire_contract {
     #[test]
     fn a_stale_proven_status_round_trips_with_its_evidence() {
         let status = crate::mixnet::MixnetStatus {
-            mode: MixnetMode::PreviouslyProvenThisEpoch,
+            mode: Indicator::PreviouslyProvenThisEpoch,
             socks5_addr: Some("127.0.0.1:1080".parse().expect("the test address parses")),
             exits: vec![crate::mixnet::ExitNodeId::from("exit-alpha")],
             bootstrap_detail: None,
@@ -437,7 +395,7 @@ mod wire_contract {
         let json = serde_json::to_string(&status).expect("serialization is infallible");
         let back: crate::mixnet::MixnetStatus =
             serde_json::from_str(&json).expect("a published status parses back");
-        assert_eq!(back.mode, MixnetMode::PreviouslyProvenThisEpoch);
+        assert_eq!(back.mode, Indicator::PreviouslyProvenThisEpoch);
         assert_eq!(back.socks5_addr, status.socks5_addr);
         assert_eq!(back.exits, status.exits);
     }
@@ -448,7 +406,7 @@ mod wire_contract {
     /// published shape fails to deserialize.
     #[test]
     fn every_published_shape_round_trips() {
-        for mode in MixnetMode::ALL {
+        for mode in Indicator::ALL {
             let published = crate::mixnet::MixnetStatus::evidenced(
                 mode,
                 Some("127.0.0.1:1080".parse().expect("the test address parses")),
@@ -472,14 +430,14 @@ mod wire_contract {
     fn all_is_exhaustive() {
         // A new variant must join ALL: this match goes non-exhaustive the
         // moment one is added, and ALL's length is pinned by its type.
-        for mode in MixnetMode::ALL {
+        for mode in Indicator::ALL {
             match mode {
-                MixnetMode::Unattached
-                | MixnetMode::SwitchedOff
-                | MixnetMode::Bootstrapping
-                | MixnetMode::Ready
-                | MixnetMode::PreviouslyProvenThisEpoch
-                | MixnetMode::Died => {}
+                Indicator::Unattached
+                | Indicator::SwitchedOff
+                | Indicator::Bootstrapping
+                | Indicator::Ready
+                | Indicator::PreviouslyProvenThisEpoch
+                | Indicator::Died => {}
             }
         }
     }
@@ -487,7 +445,7 @@ mod wire_contract {
 
 #[cfg(test)]
 mod stale_proof {
-    use super::{MixnetMode, MixnetSlot, StandingClient};
+    use super::{Indicator, MixnetSlot, StandingClient};
 
     /// HYPOTHESIS: a Standing Client born on stale proof reports
     /// PreviouslyProvenThisEpoch until a round trip of its own confirms
@@ -503,7 +461,7 @@ mod stale_proof {
 
         assert_eq!(
             slot.mode(),
-            MixnetMode::PreviouslyProvenThisEpoch,
+            Indicator::PreviouslyProvenThisEpoch,
             "stale proof must not masquerade as earned Ready"
         );
 
@@ -515,7 +473,7 @@ mod stale_proof {
         }
         assert_eq!(
             slot.mode(),
-            MixnetMode::Ready,
+            Indicator::Ready,
             "a confirmed round trip promotes stale proof to earned"
         );
     }
@@ -530,13 +488,13 @@ mod stale_proof {
             vec![crate::mixnet::ExitNodeId::from("exit-earned")],
         );
         let slot = MixnetSlot::Attached(StandingClient::new(proxy, None, true));
-        assert_eq!(slot.mode(), MixnetMode::Ready);
+        assert_eq!(slot.mode(), Indicator::Ready);
     }
 }
 
 #[cfg(test)]
 mod demotion {
-    use super::{MixnetMode, MixnetSlot, StandingClient};
+    use super::{Indicator, MixnetSlot, StandingClient};
 
     fn attached(born_probed: bool) -> MixnetSlot {
         let proxy = crate::mixnet::MixnetProxy::ready_for_slot_tests(
@@ -553,14 +511,14 @@ mod demotion {
     #[tokio::test]
     async fn a_condemned_client_dips_to_bootstrapping() {
         let slot = attached(true);
-        assert_eq!(slot.mode(), MixnetMode::Ready);
+        assert_eq!(slot.mode(), Indicator::Ready);
         if let MixnetSlot::Attached(client) = &slot {
             assert!(client.condemn(), "the first conviction reports itself");
             assert!(!client.condemn(), "a second conviction is idempotent");
         }
         assert_eq!(
             slot.mode(),
-            MixnetMode::Bootstrapping,
+            Indicator::Bootstrapping,
             "a convicted exit means the session cannot truthfully claim readiness"
         );
     }
@@ -579,7 +537,7 @@ mod demotion {
                 "every failover birth failed its proof",
             ));
         }
-        assert_eq!(slot.mode(), MixnetMode::Died);
+        assert_eq!(slot.mode(), Indicator::Died);
         assert!(
             slot.death_report()
                 .is_some_and(|death| death.detail.is_some()),

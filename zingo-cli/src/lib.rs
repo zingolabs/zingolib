@@ -670,7 +670,9 @@ pub(crate) fn command_loop(
                 CommunicationMode::DeliberateOffline => CommunicationMode::DeliberateOffline,
                 _ if lightclient.indexer_uri().is_some() => CommunicationMode::Online,
                 #[cfg(feature = "nym")]
-                _ if lightclient.mixnet_mode() != zingolib::mixnet::MixnetMode::Unattached => {
+                _ if lightclient.read_mixnet_indicator()
+                    != zingolib::mixnet::Indicator::Unattached =>
+                {
                     CommunicationMode::Online
                 }
                 _ => CommunicationMode::UnconsentedOffline,
@@ -1286,7 +1288,7 @@ async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<L
         // Bootstrapping because the line above already announced it.
         let mut status_rx = lightclient.subscribe_mixnet_status();
         tokio::spawn(async move {
-            let mut last_mode = zingolib::mixnet::MixnetMode::Bootstrapping;
+            let mut last_mode = zingolib::mixnet::Indicator::Bootstrapping;
             while status_rx.changed().await.is_ok() {
                 let status = status_rx.borrow_and_update().clone();
                 if status.mode == last_mode {
@@ -1297,13 +1299,13 @@ async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<L
                 }
                 last_mode = status.mode;
                 match status.mode {
-                    zingolib::mixnet::MixnetMode::Ready
-                    | zingolib::mixnet::MixnetMode::PreviouslyProvenThisEpoch => info!(
+                    zingolib::mixnet::Indicator::Ready
+                    | zingolib::mixnet::Indicator::PreviouslyProvenThisEpoch => info!(
                         "Mixnet Mode ready; send and price-fetch route over the mixnet \
                          (see `network status`).{}",
                         commands::render_exit_nodes(&status.exits)
                     ),
-                    zingolib::mixnet::MixnetMode::Died => {
+                    zingolib::mixnet::Indicator::Died => {
                         let cause = status
                             .death
                             .as_ref()
