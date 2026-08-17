@@ -868,18 +868,18 @@ mod sync_recovery {
 mod config_template {
     use super::*;
     use crate::{
-        ConfigTemplate, ModeOfOperation, build_zingo_config, get_communication_mode,
+        CliConfigTemplate, ModeOfOperation, build_zingo_config, get_communication_mode,
         get_mode_of_operation,
     };
     use std::path::PathBuf;
     use zingolib::config::ChainType;
 
     /// Helper: parse args, determine mode and communication mode, and call fill.
-    fn fill(args: &[&str]) -> Result<ConfigTemplate, String> {
+    fn fill(args: &[&str]) -> Result<CliConfigTemplate, String> {
         let matches = parse(args);
         let mode = get_mode_of_operation(&matches);
         let communication_mode = get_communication_mode(&matches).map_err(|e| e.to_string())?;
-        ConfigTemplate::fill(mode, communication_mode, matches).map_err(|e| e.to_string())
+        CliConfigTemplate::fill(mode, communication_mode, matches).map_err(|e| e.to_string())
     }
 
     /// HYPOTHESIS: the flag outranks the environment, the environment
@@ -915,7 +915,7 @@ mod config_template {
     /// Helper: build the ZingoConfig for a filled template. The builder is
     /// async, so the tests hold their own crossing into the runtime.
     #[allow(clippy::disallowed_methods)]
-    fn build(filled: &ConfigTemplate) -> zingolib::config::ClientConfig {
+    fn build(filled: &CliConfigTemplate) -> zingolib::config::ClientConfig {
         crate::commands::RT
             .block_on(build_zingo_config(filled))
             .unwrap()

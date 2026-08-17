@@ -413,7 +413,7 @@ fn synced_indicator(progress: Option<ScanProgress>) -> String {
 /// Formats the configured indexer for the `servers` command; the session
 /// probes nothing to answer it.
 #[cfg(not(feature = "clearnet-test-mode"))]
-fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
+fn format_ranked_servers(cli_config: &CliConfigTemplate) -> String {
     match &cli_config.server {
         Some(server) => format!("Configured indexer: {server}. Nothing was probed."),
         None => "Configured indexer: none. This session is offline and probes nothing.".to_string(),
@@ -422,7 +422,7 @@ fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
 
 /// Formats the ranked server list for display by the `servers` command.
 #[cfg(feature = "clearnet-test-mode")]
-fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
+fn format_ranked_servers(cli_config: &CliConfigTemplate) -> String {
     let Some(server) = &cli_config.server else {
         return "Last Known servers: none. This session is offline and probes nothing.".to_string();
     };
@@ -443,7 +443,7 @@ fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
     out
 }
 
-fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
+fn start_interactive(cli_config: &CliConfigTemplate, ch: CommandChannel) {
     // `()` can be used when no completer is required
     let mut rl = rustyline::DefaultEditor::new().expect("Default rustyline Editor not creatable!");
 
@@ -955,7 +955,7 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
 /// Built by [`ConfigTemplate::fill`] from parsed [`clap::ArgMatches`],
 /// then consumed by [`build_zingo_config`] and [`dispatch_command_or_start_interactive`].
 #[derive(Debug)]
-pub(crate) struct ConfigTemplate {
+pub(crate) struct CliConfigTemplate {
     mode: ModeOfOperation,
     communication_mode: CommunicationMode,
     /// The pinned Indexer: `None` when the session is Offline, and equally
@@ -1032,7 +1032,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
     Chain(#[from] zingolib::config::InvalidChainType),
 }
 
-impl ConfigTemplate {
+impl CliConfigTemplate {
     fn fill(
         mode: ModeOfOperation,
         communication_mode: CommunicationMode,
@@ -1149,7 +1149,7 @@ impl ConfigTemplate {
 /// This is the first testable seam inside the startup sequence. Its only
 /// I/O is the chain-tip fetch that dates a brand-new wallet, which an
 /// Offline-mode session never performs.
-async fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<ClientConfig> {
+async fn build_zingo_config(filled_template: &CliConfigTemplate) -> std::io::Result<ClientConfig> {
     let wallet_path = filled_template.data_dir.clone().join(DEFAULT_WALLET_NAME);
     let no_of_accounts = NonZeroU32::try_from(1).expect("hard-coded integer");
     let wallet_settings = WalletSettings {
@@ -1227,7 +1227,7 @@ async fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result
 }
 
 #[allow(clippy::disallowed_methods)]
-pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<CommandChannel> {
+pub(crate) fn startup(filled_template: &CliConfigTemplate) -> std::io::Result<CommandChannel> {
     let lightclient = RT.block_on(startup_async(filled_template))?;
     #[cfg(feature = "nym")]
     let sync_recovery = SyncRecovery {
@@ -1249,7 +1249,7 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     ))
 }
 
-async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<LightClient> {
+async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<LightClient> {
     let config = build_zingo_config(filled_template).await?;
 
     let mut lightclient = LightClient::new(config, false)
@@ -1431,7 +1431,7 @@ fn census_chain(chain: &ChainType) -> Option<zingolib::indexers::IndexerChain> {
 #[cfg(feature = "nym")]
 async fn sweep_select_sync_indexer(
     lightclient: &mut LightClient,
-    filled_template: &ConfigTemplate,
+    filled_template: &CliConfigTemplate,
 ) -> bool {
     let Some(chain) = census_chain(&filled_template.chaintype) else {
         return true;
@@ -1807,7 +1807,7 @@ fn sweep_refusal_notice(error: &zingolib::lightclient::select::ServerSelectionEr
 /// `recovery_info` but the wallet file cannot be fully parsed. The whole
 /// point of that command is to escape a wallet no current build can read.
 fn print_salvaged_recovery_info(
-    cli_config: &ConfigTemplate,
+    cli_config: &CliConfigTemplate,
     startup_error: &std::io::Error,
 ) -> std::io::Result<()> {
     let wallet_path = cli_config.data_dir.clone().join(DEFAULT_WALLET_NAME);
@@ -1829,7 +1829,9 @@ fn print_salvaged_recovery_info(
     Ok(())
 }
 
-fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io::Result<ExitCode> {
+fn dispatch_command_or_start_interactive(
+    cli_config: &CliConfigTemplate,
+) -> std::io::Result<ExitCode> {
     let ch = match startup(cli_config) {
         Ok(ch) => ch,
         Err(startup_error) => {
@@ -2018,8 +2020,8 @@ pub fn run_cli(matches: clap::ArgMatches) -> std::io::Result<ExitCode> {
         return Ok(ExitCode::from(2));
     }
     let communication_mode = get_communication_mode(&matches)?;
-    let cli_config =
-        ConfigTemplate::fill(mode, communication_mode, matches).map_err(std::io::Error::other)?;
+    let cli_config = CliConfigTemplate::fill(mode, communication_mode, matches)
+        .map_err(std::io::Error::other)?;
     dispatch_command_or_start_interactive(&cli_config)
 }
 
