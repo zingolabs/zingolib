@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   indexer is drawn among every healthy answer, all of which are
   draw-eligible, with the transmit candidates excluding the sync
   operator so different operations select different indexers.
+- **Breaking.** `MAX_DIARY_ATTEMPTS` is now `MAX_HISTORY_ATTEMPTS`. The term
+  _Indexer Diary_ is retired: a diary was something the wallet kept, and the
+  history it names now ends with the session.
 
 ### Deprecated
 

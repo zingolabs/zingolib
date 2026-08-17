@@ -23,7 +23,7 @@ use crate::correspondent::health;
 
 /// The most attempts one session keeps, the oldest dropping out as newer ones
 /// arrive, so a long session's history stays bounded.
-pub const MAX_DIARY_ATTEMPTS: usize = 1024;
+pub const MAX_HISTORY_ATTEMPTS: usize = 1024;
 
 /// The network route an attempt used.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -139,7 +139,7 @@ pub(crate) fn now_unix_secs() -> u64 {
 #[derive(Clone, Debug, Default)]
 pub struct IndexerHistoryHandle {
     /// This session's attempts, oldest first, bounded by
-    /// [`MAX_DIARY_ATTEMPTS`].
+    /// [`MAX_HISTORY_ATTEMPTS`].
     attempts: sync::Arc<sync::Mutex<Vec<IndexerAttempt>>>,
     /// The session's Health, updated by every attempt, which the draws
     /// consult when they choose a Correspondent.
@@ -162,7 +162,7 @@ impl IndexerHistoryHandle {
             attempt.phase,
         );
         let mut attempts = self.attempts.lock().expect("attempts mutex");
-        if attempts.len() >= MAX_DIARY_ATTEMPTS {
+        if attempts.len() >= MAX_HISTORY_ATTEMPTS {
             attempts.remove(0);
         }
         attempts.push(attempt.clone());
@@ -178,7 +178,7 @@ impl IndexerHistoryHandle {
 mod tests {
     use super::{
         AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, IndexerHistoryHandle,
-        MAX_DIARY_ATTEMPTS,
+        MAX_HISTORY_ATTEMPTS,
     };
     use crate::correspondent::{Host, health};
 
@@ -234,7 +234,7 @@ mod tests {
     #[test]
     fn the_store_is_bounded_and_keeps_the_newest() {
         let handle = IndexerHistoryHandle::default();
-        let total = MAX_DIARY_ATTEMPTS + 3;
+        let total = MAX_HISTORY_ATTEMPTS + 3;
         for index in 0..total {
             let mut attempt = an_attempt("zec.rocks", Ok(()));
             attempt.unix_secs = index as u64;
@@ -242,7 +242,11 @@ mod tests {
         }
 
         let loaded = handle.load();
-        assert_eq!(loaded.len(), MAX_DIARY_ATTEMPTS, "the store stays bounded");
+        assert_eq!(
+            loaded.len(),
+            MAX_HISTORY_ATTEMPTS,
+            "the store stays bounded"
+        );
         assert_eq!(
             loaded.last().expect("nonempty").unix_secs,
             (total - 1) as u64,
