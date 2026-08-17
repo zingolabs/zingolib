@@ -4,10 +4,11 @@
 //! parsing ([`build_clap_app`]), configuration assembly, wallet startup,
 //! the interactive REPL, and single-command dispatch.
 //!
-//! The binary entry point (`main.rs`) is intentionally thin: it handles
-//! process-level concerns (tracing, crypto-provider installation, error
-//! reporting) and delegates to [`run_cli`], which builds a
-//! [`LightClient`] and runs the command loop.
+//! The binary entry point (`main.rs`) is intentionally thin: it decides
+//! when process-global state is installed, calling [`init_tracing`] and
+//! the crypto provider before delegating to [`run_cli`], which builds a
+//! [`LightClient`] and runs the command loop, and it reports the errors
+//! that come back.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -24,6 +25,7 @@ mod server_select_clearnet;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use clap::{self, Arg};
@@ -1937,12 +1939,9 @@ fn dispatch_command_or_start_interactive(
     }
 }
 
-/// Returns `true` if the CLI will start the interactive REPL
-/// (i.e. no COMMAND was given).
-///
-/// This is a thin wrapper around `ModeOfOperation` so that the binary
-/// entry point can query the mode without exposing the enum publicly.
-pub fn is_interactive(matches: &clap::ArgMatches) -> bool {
+/// Whether the CLI will start the interactive REPL, which it does when no
+/// command was given.
+fn is_interactive(matches: &clap::ArgMatches) -> bool {
     matches!(get_mode_of_operation(matches), ModeOfOperation::Interactive)
 }
 
@@ -1952,12 +1951,48 @@ const LOG_DIR: &str = ".zingo-cli";
 const LOG_FILE: &str = "cli.log";
 
 /// Returns the log file path from `--log-file` or the default `.zingo-cli/cli.log`.
-pub fn log_file_path(matches: &clap::ArgMatches) -> PathBuf {
+fn log_file_path(matches: &clap::ArgMatches) -> PathBuf {
     if let Some(path) = matches.get_one::<String>("log-file") {
         PathBuf::from(path)
     } else {
         PathBuf::from(LOG_DIR).join(LOG_FILE)
     }
+}
+
+/// Installs the process-global tracing subscriber, writing to the log file
+/// in interactive mode so error-level output never pollutes the REPL, and
+/// to stderr in every other case.
+pub fn init_tracing(matches: &clap::ArgMatches) {
+    let env_filter = tracing_subscriber::EnvFilter::from_default_env();
+
+    if is_interactive(matches) {
+        let log_path = log_file_path(matches);
+        if let Some(parent) = log_path.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            Ok(file) => {
+                tracing_subscriber::fmt()
+                    .with_env_filter(env_filter)
+                    .with_writer(sync::Mutex::new(file))
+                    .with_ansi(false)
+                    .init();
+                return;
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: could not open log file {}: {e}. Logging to stderr.",
+                    log_path.display()
+                );
+            }
+        }
+    }
+
+    tracing_subscriber::fmt().with_env_filter(env_filter).init();
 }
 
 /// Reads the posture the parsed arguments imply without performing any
