@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `transparent_gap_limit` to `settings` command.
+- `init_tracing` installs the process-global tracing subscriber. The
+  binary entry point calls it once instead of deriving the mode of
+  operation a second time to decide where log output goes.
 
 ### Changed
 - The interactive prompt never contends with a running sync for the
@@ -148,6 +151,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `do_user_command`, and `do_user_command_result` functions are gone.
   Dispatch parses one clap derive grammar and matches its enum
   exhaustively. No string entry point remains (ADR 0030).
+- **Breaking.** `is_interactive` and `log_file_path` left the library
+  surface. Both existed only so the binary could choose where tracing
+  output goes, and `init_tracing` now makes that choice inside the
+  library.
 
 ## [0.4.0] - 2026-06-10
 
