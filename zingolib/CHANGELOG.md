@@ -464,6 +464,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a prefix-only salvage read so `recovery_info` still works.
 
 ### Removed
+- `mixnet::IP_CORRELATION_DISCLAIMER` - the frontend-facing disclaimer text. A
+  library does not own the wording an application shows its user, so the text
+  moved into `zingo-cli` as a private constant. A frontend that shows the
+  IP-correlation risk now carries its own wording.
 - The `mixnet` re-export of `zingo_netutils::responsiveness::{PrioritisePrivacy,
   PrioritiseSpeed, Responsiveness}` - the responsiveness partition retired with
   ADR 0044's single hedged acquisition policy, and no class reaches the API.

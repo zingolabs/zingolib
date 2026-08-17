@@ -1382,13 +1382,20 @@ fn render_status(
     }
 }
 
-/// The complete `network status` output: the Mixnet Mode line followed by the
-/// IP-correlation disclaimer. The disclaimer always accompanies the status
-/// (ZIP-0318), because Mixnet Mode obfuscates only send and price-fetch while
-/// synchronization stays on the ordinary connector, so a bare "ready" must
-/// never be read as end-to-end IP protection. The canonical text lives in
-/// [`zingolib::mixnet::IP_CORRELATION_DISCLAIMER`] so every frontend shows the same
-/// wording.
+/// The IP-correlation disclaimer this frontend shows alongside every Mixnet
+/// Mode status.
+#[cfg(feature = "nym")]
+const IP_CORRELATION_DISCLAIMER: &str = "\
+IP-correlation risk: Mixnet Mode covers only transaction transmission and \
+price-fetch. Wallet synchronization always uses the ordinary connection, so \
+the sync indexer (and any network operator on that path) sees your IP \
+address and can correlate it with the transactions you transmit; reusing the \
+same IP across sessions can reveal your wallet's total balance to that \
+operator. To hide your IP during synchronization as well, route the wallet \
+through a system-level VPN or NymVPN. See ZIP-0318.";
+
+/// Render the Mixnet Mode status line followed by the IP-correlation
+/// disclaimer.
 #[cfg(feature = "nym")]
 fn render_status_with_disclaimer(
     mode: zingolib::mixnet::MixnetMode,
@@ -1398,7 +1405,7 @@ fn render_status_with_disclaimer(
     format!(
         "{}\n\n{}",
         render_status(mode, socks5_addr, bootstrap_detail),
-        zingolib::mixnet::IP_CORRELATION_DISCLAIMER,
+        IP_CORRELATION_DISCLAIMER,
     )
 }
 
