@@ -969,7 +969,6 @@ impl LightClient {
         let raced =
             zingo_price::first_quote(outcomes).map_err(crate::wallet::error::PriceError::from)?;
         let round_trip = dispatched.elapsed();
-        self.wallet().write().await.record_price_update(raced.price);
         Ok(MixnetPriceFetch {
             usd: raced.price.price_usd,
             source: raced.source,

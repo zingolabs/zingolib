@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking.** `MAX_DIARY_ATTEMPTS` is now `MAX_HISTORY_ATTEMPTS`. The term
   _Indexer Diary_ is retired: a diary was something the wallet kept, and the
   history it names now ends with the session.
+- A price fetch no longer writes to the wallet. `update_current_price` used to
+  record the quote into the wallet's price list and set `save_required`, so
+  asking the price dirtied the wallet and provoked a save; the price now lives
+  only in the returned `MixnetPriceFetch`. The price list is still serialized,
+  so the wallet format is unchanged, and nothing loses a reader — the only
+  consumers of the stored price were already commented out.
 - **Breaking.** `mixnet::MixnetMode` is now `mixnet::Indicator`, its parse
   refusal `UnknownMixnetModeToken` is now `UnknownIndicatorToken`, and
   `LightClient::mixnet_mode` is now `LightClient::read_mixnet_indicator`. An

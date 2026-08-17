@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation a second time to decide where log output goes.
 
 ### Changed
+- `help` lists `info`, `change_server`, and `current_price` among the
+  commands that need no wallet, where it had listed them as wallet
+  commands. None of the three reads wallet state: the first two reach the
+  indexer and the third reaches the mixnet. The sections split on whether a
+  wallet is needed, not on whether the network is.
 - An interactive session exits with the code it earned. A prompt the user
   closed — by `quit`, Ctrl-C, or Ctrl-D — still exits zero, but one the
   terminal ended now exits non-zero and reports on stderr, where before

@@ -2740,7 +2740,12 @@ impl CliCommand {
     /// section of `help` lists the command.
     pub(crate) fn requires_wallet(&self) -> bool {
         match self {
-            CliCommand::Help { .. }
+            // These reach the indexer or the mixnet, never the wallet, so
+            // they are wallet-free even though they are not offline.
+            CliCommand::ChangeServer { .. }
+            | CliCommand::CurrentPrice
+            | CliCommand::Help { .. }
+            | CliCommand::Info
             | CliCommand::ParseAddress { .. }
             | CliCommand::ParseViewkey { .. }
             | CliCommand::Servers
@@ -2751,17 +2756,14 @@ impl CliCommand {
             | CliCommand::Balance
             | CliCommand::Birthday
             | CliCommand::Calculate
-            | CliCommand::ChangeServer { .. }
             | CliCommand::CheckAddress { .. }
             | CliCommand::Clear
             | CliCommand::Coins { .. }
             | CliCommand::Confirm
-            | CliCommand::CurrentPrice
             | CliCommand::Delete
             | CliCommand::Drain { .. }
             | CliCommand::ExportUfvk
             | CliCommand::Height
-            | CliCommand::Info
             | CliCommand::MaxSendValue { .. }
             | CliCommand::MemobytesToAddress
             | CliCommand::Messages { .. }
