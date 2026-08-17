@@ -470,6 +470,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   indexers this wallet contacted survives the process.
   `IndexerHistoryHandle::{beside_wallet, is_recording}` and
   `IndexerAttempt::exit` are gone with the file they served.
+- **Breaking.** The `nym-diary` feature and `LightClient::set_indexer_diary`
+  are gone. The feature gated a disk-backed handle that no longer exists, and
+  the runtime opt-in gated writes that no longer happen.
 - `mixnet::IP_CORRELATION_DISCLAIMER` - the frontend-facing disclaimer text. A
   library does not own the wording an application shows its user, so the text
   moved into `zingo-cli` as a private constant. A frontend that shows the

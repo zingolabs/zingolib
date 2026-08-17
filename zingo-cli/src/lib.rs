@@ -119,10 +119,6 @@ Server-Selection Sweep selects the sync indexer.")
                 .long("nym-proxy")
                 .value_name("PATH")
                 .help("Path to the nym-proxy binary spawned for Mixnet Mode. Without it: $ZINGO_NYM_PROXY, then a nym-proxy bundled beside this binary, then `nym-proxy` on PATH. Used only with the `nym` build feature."))
-            .arg(Arg::new("indexer-diary")
-                .long("indexer-diary")
-                .action(clap::ArgAction::SetTrue)
-                .help("Record per-indexer send and probe outcomes for this session to indexer-history.tsv beside the wallet (view with `network history`). The diary stores hosts, timings, and a failure category, never server text, and is capped. Requires the `nym-diary` build feature. The choice is never persisted."))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
@@ -984,9 +980,6 @@ pub(crate) struct CliConfigTemplate {
     /// the forced-on policy, which the `nym` feature gates.
     #[cfg_attr(not(feature = "nym"), allow(dead_code))]
     nym_proxy_path: Option<String>,
-    /// `--indexer-diary`: opt this session in to recording the indexer diary.
-    /// Effective only with the `nym-diary` build feature. Other builds warn.
-    indexer_diary: bool,
 }
 
 /// A refusal to fill the launch configuration template.
@@ -1125,7 +1118,6 @@ impl CliConfigTemplate {
         let sync = !matches.get_flag("nosync") && communication_mode == CommunicationMode::Online;
         let waitsync = matches.get_flag("waitsync");
         let nym_proxy_path = matches.get_one::<String>("nym-proxy").cloned();
-        let indexer_diary = matches.get_flag("indexer-diary");
         Ok(Self {
             mode,
             communication_mode,
@@ -1141,7 +1133,6 @@ impl CliConfigTemplate {
             waitsync,
             chaintype,
             nym_proxy_path,
-            indexer_diary,
         })
     }
 }
@@ -1269,23 +1260,6 @@ async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<L
             }
             None => info!("Offline mode: no Indexer will be configured this session"),
         }
-    }
-
-    // The indexer diary is a per-session runtime opt-in on top of its build
-    // gate: recording starts only when the user passes --indexer-diary, and
-    // the choice is never persisted. A build without the feature warns loudly
-    // instead of silently not recording, because failing safe is not recording.
-    #[cfg(feature = "nym-diary")]
-    if filled_template.indexer_diary {
-        lightclient.set_indexer_diary(true);
-        info!("Indexer diary: recording send and probe outcomes this session (`network history`).");
-    }
-    #[cfg(not(feature = "nym-diary"))]
-    if filled_template.indexer_diary {
-        eprintln!(
-            "--indexer-diary has no effect: this build has no indexer diary support. \
-             Rebuild zingo-cli with `--features nym-diary`."
-        );
     }
 
     // The session driver call at the go-online moment (ADR 0024, decision

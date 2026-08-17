@@ -1235,36 +1235,22 @@ fn render_mixnet_probe(probe: &zingolib::mixnet::probe::MixnetProbe) -> String {
     format!("{}\n  mixnet:   {}", probe.host, leg(&probe.leg))
 }
 
-/// Renders the accumulated record for `network history` when the indexer diary is
-/// compiled in, reminding an opted-out session how recording starts.
-#[cfg(all(feature = "nym", feature = "nym-diary"))]
+/// Renders this session's accumulated per-indexer record for `network history`.
+#[cfg(feature = "nym")]
 fn nym_history_command(lightclient: &LightClient) -> String {
-    let handle = lightclient.indexer_history_handle();
-    let mut rendered = render_history(
-        &handle.load(),
+    render_history(
+        &lightclient.indexer_history_handle().load(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|elapsed| elapsed.as_secs())
             .unwrap_or(0),
-    );
-    if !handle.is_recording() {
-        rendered.push_str("\n(recording is off this session; start with --indexer-diary)");
-    }
-    rendered
+    )
 }
 
-/// The `network history` body when the indexer diary is not compiled in.
-#[cfg(all(feature = "nym", not(feature = "nym-diary")))]
-fn nym_history_command(_lightclient: &LightClient) -> String {
-    "This build has no indexer diary. Rebuild zingo-cli with `--features nym-diary`, then \
-     opt a session in with --indexer-diary to record per-indexer history."
-        .to_string()
-}
-
-/// Render the accumulated per-indexer history as per-host, per-route
+/// Render this session's per-indexer history as per-host, per-route
 /// aggregates, most-attempted hosts first. Pure over the loaded attempts and
 /// a caller-supplied "now" so tests pin the ages.
-#[cfg(all(feature = "nym", feature = "nym-diary"))]
+#[cfg(feature = "nym")]
 fn render_history(
     attempts: &[zingolib::lightclient::indexer_history::IndexerAttempt],
     now_unix_secs: u64,
@@ -2335,8 +2321,8 @@ pub(crate) enum CliCommand {
             any stored standing consent; `network on` re-consents (ADR 0032).
             `probe` runs GetLatestBlock over the mixnet route to establish an
             indexer's liveness; it requires the mixnet and touches no
-            clearnet endpoint. `history` shows per-indexer attempts across
-            sessions, and needs the nym-diary feature plus --indexer-diary.
+            clearnet endpoint. `history` shows the indexer attempts this
+            session recorded; nothing survives the session that made it.
         "}
     )]
     Network {

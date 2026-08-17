@@ -704,8 +704,8 @@ mod network_command_parsing {
 
     /// HYPOTHESIS: the history rendering aggregates per host and route with
     /// the most recent outcome and its age. Falsified if counts mix routes
-    /// or the last outcome reflects file order rather than timestamps.
-    #[cfg(all(feature = "nym", feature = "nym-diary"))]
+    /// or the last outcome reflects insertion order rather than timestamps.
+    #[cfg(feature = "nym")]
     #[test]
     fn history_aggregates_per_host_and_route() {
         use zingolib::lightclient::indexer_history::{
@@ -720,7 +720,6 @@ mod network_command_parsing {
             millis: 10,
             outcome,
             phase: None,
-            exit: None,
         };
         let tunnel = Err(FailureKind::Unreachable);
         let attempts = vec![

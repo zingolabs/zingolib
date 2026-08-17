@@ -145,6 +145,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   values, so no string is re-parsed inside the process.
 
 ### Removed
+- **Breaking.** The `nym-diary` feature and the `--indexer-diary` flag are
+  gone, because the indexer diary no longer touches disk. `network history`
+  needs neither: it now shows the attempts this session recorded, and nothing
+  is written beside the wallet for a later session to read.
 - **Breaking.** The string-command plumbing left the library surface: the
   `Command` and `ShortCircuitedCommand` traits, `HelpCommand`, and the
   `get_commands`, `get_standalone_commands`, `get_wallet_commands`,

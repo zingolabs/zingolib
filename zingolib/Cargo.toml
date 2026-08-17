@@ -15,11 +15,6 @@ default = []
 # stands without it.
 perspective = []
 nym = ["zingo-netutils/socks5-transmit", "zingo-price/socks5-fetch"]
-# Let the wallet open the on-disk indexer diary (indexer-history.tsv beside
-# the wallet). Off by default; even when compiled, recording is a per-session
-# runtime opt-in, the outcome column is a sanitized category token, and the
-# file is capped. Without this feature the handle is inert.
-nym-diary = []
 testutils = [
     "perspective",
     "portpicker",
