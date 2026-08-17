@@ -441,9 +441,100 @@ fn format_ranked_servers(cli_config: &CliConfigTemplate) -> String {
     out
 }
 
-fn start_interactive(cli_config: &CliConfigTemplate, ch: CommandChannel) {
+/// Executes one command against the loop, drains the reply, closes the
+/// session, and returns the exit code the command earned (ADR 0031).
+fn start_noninteractive(command: &commands::CliCommand, ch: CommandChannel) -> ExitCode {
+    let description = command.name();
+    let mut succeeded = if ch
+        .transmitter
+        .send(Request::Command(command.clone()))
+        .is_err()
+    {
+        let e = format!("Error executing command {description}: the command loop has exited");
+        eprintln!("{e}");
+        error!("{e}");
+        false
+    } else {
+        match ch.receiver.recv() {
+            Ok(Ok(output)) => {
+                println!("{output}");
+                true
+            }
+            Ok(Err(rendered)) => {
+                eprintln!("{rendered}");
+                false
+            }
+            Err(e) => {
+                let e = format!("Error executing command {description}: {e}");
+                eprintln!("{e}");
+                error!("{e}");
+                false
+            }
+        }
+    };
+
+    // A one-shot `sync run` means sync to completion: the session
+    // holds open, narrating progress, until the sync task reports
+    // its result, which becomes the command's outcome.
+    if succeeded
+        && matches!(
+            &command,
+            commands::CliCommand::Sync {
+                sub: commands::SyncSubCommand::Run
+            }
+        )
+    {
+        succeeded = if ch.transmitter.send(Request::AwaitSync).is_err() {
+            eprintln!("Error awaiting sync: the command loop has exited");
+            false
+        } else {
+            match ch.receiver.recv() {
+                Ok(Ok(output)) => {
+                    println!("{output}");
+                    true
+                }
+                Ok(Err(rendered)) => {
+                    eprintln!("{rendered}");
+                    false
+                }
+                Err(e) => {
+                    eprintln!("Error awaiting sync: {e}");
+                    false
+                }
+            }
+        };
+    }
+    if ch
+        .transmitter
+        .send(Request::Command(commands::CliCommand::Quit))
+        .is_ok()
+    {
+        match ch.receiver.recv() {
+            Ok(Ok(trailer)) => eprintln!("{trailer}"),
+            Ok(Err(rendered)) => eprintln!("{rendered}"),
+            Err(e) => eprintln!("{e}"),
+        }
+    }
+
+    if succeeded {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+/// Runs the interactive prompt until it closes, returning the exit code the
+/// session earned: success when the user ended it, failure when the terminal
+/// did (ADR 0031).
+fn start_interactive(cli_config: &CliConfigTemplate, ch: CommandChannel) -> ExitCode {
     // `()` can be used when no completer is required
-    let mut rl = rustyline::DefaultEditor::new().expect("Default rustyline Editor not creatable!");
+    let mut rl = match rustyline::DefaultEditor::new() {
+        Ok(editor) => editor,
+        Err(e) => {
+            eprintln!("Error: the interactive prompt could not start: {e}");
+            error!("the interactive prompt could not start: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     log::debug!("Ready!");
 
@@ -485,8 +576,11 @@ fn start_interactive(cli_config: &CliConfigTemplate, ch: CommandChannel) {
         let readline = rl.readline(&format!("({chain_name}) {prompt_status} >> "));
         match readline {
             Ok(line) => {
-                rl.add_history_entry(line.as_str())
-                    .expect("Ability to add history entry");
+                if let Err(e) = rl.add_history_entry(line.as_str()) {
+                    // A history that will not grow costs the user recall, never
+                    // the session: the command they typed still runs.
+                    log::warn!("the prompt's history did not record the line: {e}");
+                }
                 // Parse command line arguments
                 let Ok(tokens) = shellwords::split(&line) else {
                     println!("Mismatched Quotes");
@@ -520,22 +614,25 @@ fn start_interactive(cli_config: &CliConfigTemplate, ch: CommandChannel) {
                 }
 
                 if is_quit {
-                    break;
+                    break ExitCode::SUCCESS;
                 }
             }
             Err(rustyline::error::ReadlineError::Interrupted) => {
                 println!("CTRL-C");
                 info!("CTRL-C");
-                break;
+                break ExitCode::SUCCESS;
             }
             Err(rustyline::error::ReadlineError::Eof) => {
                 println!("CTRL-D");
                 info!("CTRL-D");
-                break;
+                break ExitCode::SUCCESS;
             }
             Err(err) => {
-                println!("Error: {err:?}");
-                break;
+                // The terminal ended the session, not the user, so the shell
+                // hears failure rather than a clean close.
+                eprintln!("Error: the interactive prompt failed: {err}");
+                error!("the interactive prompt failed: {err}");
+                break ExitCode::FAILURE;
             }
         }
     }
@@ -1823,92 +1920,8 @@ fn dispatch_command_or_start_interactive(
         }
     };
     match &cli_config.mode {
-        Operations::Interactive => {
-            start_interactive(cli_config, ch);
-            Ok(ExitCode::SUCCESS)
-        }
-        Operations::NonInteractive { command } => {
-            let description = command.name();
-            let mut succeeded = if ch
-                .transmitter
-                .send(Request::Command(command.clone()))
-                .is_err()
-            {
-                let e =
-                    format!("Error executing command {description}: the command loop has exited");
-                eprintln!("{e}");
-                error!("{e}");
-                false
-            } else {
-                match ch.receiver.recv() {
-                    Ok(Ok(output)) => {
-                        println!("{output}");
-                        true
-                    }
-                    Ok(Err(rendered)) => {
-                        eprintln!("{rendered}");
-                        false
-                    }
-                    Err(e) => {
-                        let e = format!("Error executing command {description}: {e}");
-                        eprintln!("{e}");
-                        error!("{e}");
-                        false
-                    }
-                }
-            };
-
-            // A one-shot `sync run` means sync to completion: the session
-            // holds open, narrating progress, until the sync task reports
-            // its result, which becomes the command's outcome.
-            if succeeded
-                && matches!(
-                    &command,
-                    commands::CliCommand::Sync {
-                        sub: commands::SyncSubCommand::Run
-                    }
-                )
-            {
-                succeeded = if ch.transmitter.send(Request::AwaitSync).is_err() {
-                    eprintln!("Error awaiting sync: the command loop has exited");
-                    false
-                } else {
-                    match ch.receiver.recv() {
-                        Ok(Ok(output)) => {
-                            println!("{output}");
-                            true
-                        }
-                        Ok(Err(rendered)) => {
-                            eprintln!("{rendered}");
-                            false
-                        }
-                        Err(e) => {
-                            eprintln!("Error awaiting sync: {e}");
-                            false
-                        }
-                    }
-                };
-            }
-            let exit_code = if succeeded {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            };
-
-            if ch
-                .transmitter
-                .send(Request::Command(commands::CliCommand::Quit))
-                .is_ok()
-            {
-                match ch.receiver.recv() {
-                    Ok(Ok(trailer)) => eprintln!("{trailer}"),
-                    Ok(Err(rendered)) => eprintln!("{rendered}"),
-                    Err(e) => eprintln!("{e}"),
-                }
-            }
-
-            Ok(exit_code)
-        }
+        Operations::Interactive => Ok(start_interactive(cli_config, ch)),
+        Operations::NonInteractive { command } => Ok(start_noninteractive(command, ch)),
     }
 }
 

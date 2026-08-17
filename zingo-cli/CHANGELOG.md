@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation a second time to decide where log output goes.
 
 ### Changed
+- An interactive session exits with the code it earned. A prompt the user
+  closed — by `quit`, Ctrl-C, or Ctrl-D — still exits zero, but one the
+  terminal ended now exits non-zero and reports on stderr, where before
+  every interactive session claimed success whatever had happened. A
+  failure to open the prompt at all is reported the same way instead of
+  panicking, and a history entry that cannot be recorded no longer ends
+  the session, since it costs the user recall and not the command.
 - The interactive prompt never contends with a running sync for the
   wallet lock. Its chain height now rides the same lock-free progress
   channel the sync indicator reads, and the prompt's dedicated height
