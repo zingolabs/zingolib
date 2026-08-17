@@ -612,7 +612,7 @@ mod communications {
                 .expect("the store writes in a scratch directory");
             assert_eq!(
                 mode_with_dir(&dir, &[]),
-                CommunicationMode::UnconsentedOffline
+                Communications::UnconsentedOffline
             );
         }
 
@@ -623,7 +623,7 @@ mod communications {
                 .expect("the store writes in a scratch directory");
             assert_eq!(
                 mode_with_dir(&dir, &["--forget-online"]),
-                CommunicationMode::UnconsentedOffline
+                Communications::UnconsentedOffline
             );
             assert!(matches!(
                 zingolib::connectivity::load_connectivity_consent(dir.path()),
