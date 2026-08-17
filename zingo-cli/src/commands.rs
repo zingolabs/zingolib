@@ -372,7 +372,7 @@ async fn height(lightclient: &mut LightClient) -> Result<String, CommandError> {
 }
 
 fn help(command: Option<&str>) -> Result<String, CommandError> {
-    Ok(format_help(crate::CommunicationMode::Online, command))
+    Ok(format_help(crate::Communications::Online, command))
 }
 
 async fn info(lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -2884,17 +2884,17 @@ impl CliCommand {
     /// True when `mode` suppresses the command: it leaves `help` and is
     /// refused if typed, the network family surviving only where `network
     /// on` remains the consent act.
-    pub(crate) fn suppressed(&self, mode: crate::CommunicationMode) -> bool {
+    pub(crate) fn suppressed(&self, mode: crate::Communications) -> bool {
         match mode {
-            crate::CommunicationMode::Online => false,
-            crate::CommunicationMode::DeliberateOffline => {
+            crate::Communications::Online => false,
+            crate::Communications::DeliberateOffline => {
                 #[cfg(feature = "nym")]
                 if matches!(self, CliCommand::Network { .. }) {
                     return true;
                 }
                 self.transmits() || self.requires_indexer()
             }
-            crate::CommunicationMode::UnconsentedOffline => {
+            crate::Communications::UnconsentedOffline => {
                 #[cfg(feature = "nym")]
                 if matches!(self, CliCommand::Network { .. }) {
                     return false;
@@ -3049,7 +3049,7 @@ fn wallet_free_commands() -> Vec<CliCommand> {
 /// Renders the two-section help listing, or one command's long help, from
 /// [`CommandLine`]'s clap model, offering only what `mode` leaves
 /// unsuppressed so help reflects the live session posture.
-pub fn format_help(mode: crate::CommunicationMode, command: Option<&str>) -> String {
+pub fn format_help(mode: crate::Communications, command: Option<&str>) -> String {
     let mut model = COMMAND_MODEL.clone();
     let offered: Vec<String> = every_command()
         .into_iter()

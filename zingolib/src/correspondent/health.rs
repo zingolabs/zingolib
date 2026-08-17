@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 /// How many failures without a success mark a Correspondent unhealthy.
 #[cfg_attr(not(feature = "nym"), allow(dead_code))]
-const UNHEALTHY_FAILURE_THRESHOLD: u32 = 2;
+pub(crate) const UNHEALTHY_FAILURE_THRESHOLD: u32 = 2;
 
 /// The fewest Correspondents a Health filter may leave eligible, so a
 /// partition can never shrink the draw's anonymity set.

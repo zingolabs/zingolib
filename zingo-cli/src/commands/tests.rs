@@ -29,7 +29,7 @@ mod table_invariants {
     /// rather than any debug-only assertion.
     #[test]
     fn help_sections_agree_with_requires_wallet() {
-        let listing = format_help(crate::CommunicationMode::Online, None);
+        let listing = format_help(crate::Communications::Online, None);
         let wallet_header = listing
             .find("Wallet commands:")
             .expect("the listing carries a wallet section");
@@ -1656,7 +1656,7 @@ mod finding_pins {
     /// exists to drift.
     #[test]
     fn the_standalone_section_derives_from_requires_wallet() {
-        let listing = format_help(crate::CommunicationMode::Online, None);
+        let listing = format_help(crate::Communications::Online, None);
         let wallet_header = listing
             .find("Wallet commands:")
             .expect("the listing carries a wallet section");
@@ -1689,7 +1689,7 @@ mod finding_pins {
     #[test]
     fn family_long_help_never_advertises_nested_help() {
         for &family in FAMILIES {
-            let help = format_help(crate::CommunicationMode::Online, Some(family));
+            let help = format_help(crate::Communications::Online, Some(family));
             assert!(
                 !help
                     .lines()
@@ -1722,7 +1722,7 @@ mod finding_pins {
     #[test]
     fn family_sub_commands_all_carry_abouts() {
         for &family in FAMILIES {
-            let help = format_help(crate::CommunicationMode::Online, Some(family));
+            let help = format_help(crate::Communications::Online, Some(family));
             let listing = help
                 .split("Commands:")
                 .nth(1)
@@ -1819,7 +1819,7 @@ mod posture_surface {
     //! teardown, never a clearnet fallback.
     #![allow(clippy::disallowed_methods)]
 
-    use crate::CommunicationMode;
+    use crate::Communications;
 
     use super::super::format_help;
 
@@ -1828,7 +1828,7 @@ mod posture_surface {
     /// Indexerless surface stays listed.
     #[test]
     fn a_deliberate_offline_help_hides_the_network_requiring_surface() {
-        let listing = format_help(CommunicationMode::DeliberateOffline, None);
+        let listing = format_help(Communications::DeliberateOffline, None);
         for hidden in [
             "  confirm - ",
             "  transmit - ",
@@ -1854,7 +1854,7 @@ mod posture_surface {
     #[cfg(feature = "nym")]
     #[test]
     fn an_unconsented_help_keeps_the_network_family() {
-        let listing = format_help(CommunicationMode::UnconsentedOffline, None);
+        let listing = format_help(Communications::UnconsentedOffline, None);
         assert!(listing.contains("  network - "), "{listing}");
         assert!(!listing.contains("  confirm - "), "{listing}");
     }
@@ -1864,11 +1864,11 @@ mod posture_surface {
     #[test]
     fn a_suppressed_commands_long_help_is_not_found() {
         assert_eq!(
-            format_help(CommunicationMode::DeliberateOffline, Some("confirm")),
+            format_help(Communications::DeliberateOffline, Some("confirm")),
             "Command confirm not found"
         );
         assert!(
-            format_help(CommunicationMode::Online, Some("confirm")).contains("Usage:"),
+            format_help(Communications::Online, Some("confirm")).contains("Usage:"),
             "online help must still render the long help"
         );
     }

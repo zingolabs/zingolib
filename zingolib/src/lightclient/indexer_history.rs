@@ -258,24 +258,29 @@ mod tests {
         );
     }
 
-    /// HYPOTHESIS: a charged failure leaves the host unhealthy, so recording
-    /// feeds the judgment the draws consult. Falsified if a recorded failure
-    /// leaves the standing unchanged.
+    /// HYPOTHESIS: recording reaches the session's Health, so charged failures
+    /// accumulate there until the host crosses the threshold. Falsified if the
+    /// standing is unchanged by recording, which would leave the draws blind
+    /// to every attempt the reporters made.
     #[test]
-    fn a_charged_failure_leaves_the_host_unhealthy() {
+    fn recording_charges_the_host_in_health() {
         let handle = IndexerHistoryHandle::default();
         let host = Host::of_host_str("carover0.xyz");
-
-        handle.record(&an_attempt("carover0.xyz", Err(FailureKind::Unreachable)));
-
-        assert!(
-            !handle
+        let healthy = |handle: &IndexerHistoryHandle| {
+            handle
                 .health()
                 .lock()
                 .expect("health mutex")
-                .is_healthy(&host),
-            "a charged failure leaves the host unhealthy"
-        );
+                .is_healthy(&host)
+        };
+
+        for _ in 0..health::UNHEALTHY_FAILURE_THRESHOLD - 1 {
+            handle.record(&an_attempt("carover0.xyz", Err(FailureKind::Unreachable)));
+            assert!(healthy(&handle), "one charge short of the threshold holds");
+        }
+        handle.record(&an_attempt("carover0.xyz", Err(FailureKind::Unreachable)));
+
+        assert!(!healthy(&handle), "the threshold charge lands");
     }
 
     /// HYPOTHESIS: a probe that exhausts its leg budget classifies as a
