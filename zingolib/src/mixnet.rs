@@ -208,7 +208,6 @@ pub(crate) fn socks5_transmit_stage(
 /// The [`zingo_net_diag::NetOpFailure`] record for one SOCKS5 transmit
 /// failure against `target`: stage from [`socks5_transmit_stage`], cause
 /// chain captured layer by layer from the error's `source()` walk.
-
 pub(crate) fn socks5_transmit_failure(
     error: &zingo_netutils::Socks5TransmitError,
     target: impl Into<String>,
