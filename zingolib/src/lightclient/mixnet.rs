@@ -464,7 +464,7 @@ impl LightClient {
     ///         refused,
     ///         Err(TransportError::DiscoverySpawn(_))
     ///     ));
-    ///     assert_eq!(client.mixnet_mode(), MixnetMode::Unattached);
+    ///     assert_eq!(client.read_mixnet_indicator(), MixnetMode::Unattached);
     /// });
     /// ```
     pub async fn enable_mixnet(
@@ -532,7 +532,7 @@ impl LightClient {
     ///         refused,
     ///         Err(TransportError::HostRefused(HostRefusal::Declined { .. }))
     ///     ));
-    ///     assert_eq!(client.mixnet_mode(), MixnetMode::Unattached);
+    ///     assert_eq!(client.read_mixnet_indicator(), MixnetMode::Unattached);
     /// });
     /// ```
     pub async fn enable_mixnet_via_host(
@@ -651,7 +651,7 @@ impl LightClient {
     ///         refused,
     ///         Err(MixnetProxyError::InvalidAddress { .. })
     ///     ));
-    ///     assert_eq!(client.mixnet_mode(), MixnetMode::Unattached);
+    ///     assert_eq!(client.read_mixnet_indicator(), MixnetMode::Unattached);
     ///
     ///     // Empty `exits` refuses typed before anything is dialed.
     ///     let exitless = client.attach_mixnet("127.0.0.1:9", &[]).await;
@@ -665,12 +665,12 @@ impl LightClient {
     ///         .attach_mixnet("127.0.0.1:9", std::slice::from_ref(&host_drawn))
     ///         .await
     ///         .unwrap();
-    ///     assert_ne!(client.mixnet_mode(), MixnetMode::Ready);
+    ///     assert_ne!(client.read_mixnet_indicator(), MixnetMode::Ready);
     ///
     ///     // A later attach vacates the standing transport first, so its
     ///     // failure leaves Unattached rather than the prior client.
     ///     client.attach_mixnet("not-an-address", &[]).await.unwrap_err();
-    ///     assert_eq!(client.mixnet_mode(), MixnetMode::Unattached);
+    ///     assert_eq!(client.read_mixnet_indicator(), MixnetMode::Unattached);
     /// });
     /// ```
     pub async fn attach_mixnet(
