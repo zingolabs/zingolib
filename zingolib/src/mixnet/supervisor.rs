@@ -715,6 +715,10 @@ pub(crate) async fn await_ready_endpoint(
     // lifecycle budget instead of holding the user's go-online moment for
     // the whole of it.
     let mut exit_deadline: Option<tokio::time::Instant> = None;
+    // Every birth's announcement latency is measured here, at the one seam
+    // every birth passes through, because the grace budget was chosen
+    // without a distribution to choose it against (ADR 0045).
+    let started = std::time::Instant::now();
     let outcome = tokio::time::timeout(budget, async {
         loop {
             let addressed = {
@@ -763,8 +767,23 @@ pub(crate) async fn await_ready_endpoint(
     })
     .await;
     match outcome {
-        Ok(ready) => ready,
-        Err(_elapsed) => Err(acquire::TransportError::NotReady { budget }),
+        Ok(ready) => {
+            if ready.is_ok() {
+                log::info!(
+                    "birth announced its exit in {}ms of a {}ms grace",
+                    started.elapsed().as_millis(),
+                    budget.as_millis()
+                );
+            }
+            ready
+        }
+        Err(_elapsed) => {
+            log::info!(
+                "birth announced no exit within its {}ms grace",
+                budget.as_millis()
+            );
+            Err(acquire::TransportError::NotReady { budget })
+        }
     }
 }
 
