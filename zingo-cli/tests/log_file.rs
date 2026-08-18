@@ -225,9 +225,16 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
     );
 }
 
-/// The one Exit Node identity the stub proxy discovers and announces.
+/// The stem of the Exit Node identities the stub proxy discovers, numbered
+/// so a boot draws a distinct exit for every lane.
 #[cfg(feature = "nym")]
 const STUB_EXIT_NODE: &str = "stub-exit-node";
+
+/// How many Exit Nodes the stub directory advertises, an agreeing
+/// representation of `zingolib`'s `QUARTET_SIZE`, because a boot draws one
+/// exit per role and refuses outright when the directory offers fewer.
+#[cfg(feature = "nym")]
+const STUB_EXIT_COUNT: usize = 4;
 
 /// The SOCKS5 protocol version byte.
 #[cfg(feature = "nym")]
@@ -368,19 +375,34 @@ fn write_stub_proxy(
     socks5_addr: std::net::SocketAddr,
 ) -> std::path::PathBuf {
     let path = dir.join("stub-nym-proxy");
+    let exit_prefix = zingo_netutils::NYM_EXIT_LINE_PREFIX;
+    let socks5_prefix = zingo_netutils::SOCKS5_ADDR_LINE_PREFIX;
+    // The advertised directory, built here so its shell indentation is not
+    // subject to the string continuations below.
+    let advertised: String = (1..=STUB_EXIT_COUNT)
+        .map(|nth| format!("    echo \"{exit_prefix}{STUB_EXIT_NODE}-{nth}\"\n"))
+        .collect();
     let script = format!(
         "#!/bin/sh\n\
+         pinned=\n\
+         wants_exit=0\n\
          for arg in \"$@\"; do\n\
          \x20 if [ \"$arg\" = --discover ]; then\n\
-         \x20   echo \"{exit_prefix}{STUB_EXIT_NODE}\"\n\
+{advertised}\
          \x20   exit 0\n\
          \x20 fi\n\
+         \x20 if [ \"$wants_exit\" = 1 ]; then\n\
+         \x20   pinned=\"$arg\"\n\
+         \x20   wants_exit=0\n\
+         \x20 fi\n\
+         \x20 if [ \"$arg\" = --exit ]; then\n\
+         \x20   wants_exit=1\n\
+         \x20 fi\n\
          done\n\
+         [ -n \"$pinned\" ] || pinned={STUB_EXIT_NODE}-1\n\
          echo \"{socks5_prefix}{socks5_addr}\"\n\
-         echo \"{exit_prefix}{STUB_EXIT_NODE}\"\n\
+         echo \"{exit_prefix}$pinned\"\n\
          exec sleep infinity\n",
-        socks5_prefix = zingo_netutils::SOCKS5_ADDR_LINE_PREFIX,
-        exit_prefix = zingo_netutils::NYM_EXIT_LINE_PREFIX,
     );
     std::fs::write(&path, script).expect("write the stub proxy");
     #[cfg(unix)]
