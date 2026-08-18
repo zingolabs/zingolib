@@ -67,6 +67,10 @@ pub(crate) struct Pools {
     roles: std::sync::Mutex<
         std::collections::HashMap<crate::mixnet::quartet::Role, crate::mixnet::ExitNodeId>,
     >,
+    /// The conduit boot proved for each role it has not yet spent, so the
+    /// job a role names runs over a proven exit without paying for a birth.
+    conduits:
+        std::sync::Mutex<std::collections::HashMap<crate::mixnet::quartet::Role, ProvenBirth>>,
 }
 
 impl Pools {
@@ -76,7 +80,37 @@ impl Pools {
             exits: std::sync::Arc::new(std::sync::Mutex::new(exit_pool::ExitPool::default())),
             acquirer: std::sync::Mutex::new(None),
             roles: std::sync::Mutex::new(std::collections::HashMap::new()),
+            conduits: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
+    }
+
+    /// Holds the conduit boot proved for `role` until that role's job takes
+    /// it.
+    pub(crate) fn hold_conduit(&self, role: crate::mixnet::quartet::Role, conduit: ProvenBirth) {
+        self.conduits
+            .lock()
+            .expect("pool conduit mutex")
+            .insert(role, conduit);
+    }
+
+    /// Takes the conduit boot proved for `role`, leaving none behind,
+    /// because the job a role names runs once per boot.
+    pub(crate) fn take_conduit(&self, role: crate::mixnet::quartet::Role) -> Option<ProvenBirth> {
+        self.conduits
+            .lock()
+            .expect("pool conduit mutex")
+            .remove(&role)
+    }
+
+    /// Takes every conduit still held, for a teardown that must leave no
+    /// proxy behind.
+    pub(crate) fn drain_conduits(&self) -> Vec<ProvenBirth> {
+        self.conduits
+            .lock()
+            .expect("pool conduit mutex")
+            .drain()
+            .map(|(_role, conduit)| conduit)
+            .collect()
     }
 
     /// Draws one exit reservation, seeding the Exit Pool from the directory

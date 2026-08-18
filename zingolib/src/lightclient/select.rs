@@ -217,13 +217,16 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
             crate::mixnet::acquire::TransportError,
         >,
     > + Send {
-        // The sweep's client is its own Proven Client, born over the one
-        // acquisition the exit authority defines, never shared: its exit
-        // must be distinct from every exit another operation holds.
+        // The sweep runs over the conduit boot proved for its role, so the
+        // usual case costs no birth at all. A redraw finds the conduit
+        // spent and births over the exit authority as before.
         let pools = self.pools.clone();
         let acquirer = self.acquirer.clone();
         async move {
-            let birth = pools.acquire_proven(acquirer.as_ref()).await?;
+            let birth = match pools.take_conduit(crate::mixnet::quartet::Role::IndexerSweep) {
+                Some(held) => held,
+                None => pools.acquire_proven(acquirer.as_ref()).await?,
+            };
             let member = crate::mixnet::speed::Member::new(birth.transport, birth.lease);
             let addr = member
                 .addr()

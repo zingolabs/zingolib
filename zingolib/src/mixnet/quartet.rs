@@ -24,28 +24,6 @@ pub(crate) enum Role {
     Spare,
 }
 
-/// The three births boot holds after the IndexerClient's is installed:
-/// each does its one job and stops, leaving its exit proven and
-/// role-bound.
-pub(crate) struct BootClients {
-    /// Runs the Server-Selection Sweep, then stops.
-    pub(crate) sweep: ProvenBirth,
-    /// Fetches the price during boot, then stops.
-    pub(crate) price: ProvenBirth,
-    /// Stands by proven against a role's exit failing.
-    pub(crate) spare: ProvenBirth,
-}
-
-impl BootClients {
-    /// Stops every held client, for a session torn down before boot
-    /// consumed them.
-    pub(crate) async fn retire(self) {
-        self.sweep.transport.stop().await;
-        self.price.transport.stop().await;
-        self.spare.transport.stop().await;
-    }
-}
-
 /// The four proven births a boot establishes, each already bound to the
 /// exit that carries its role.
 pub(crate) struct Quartet {

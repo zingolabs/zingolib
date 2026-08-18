@@ -65,15 +65,21 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
             crate::mixnet::acquire::TransportError,
         >,
     > + Send {
-        // The price fetch keeps its own client: a Proven Client born per
-        // run, so priced traffic never shares an egress with the
-        // wallet-correlated streams on the standing client.
+        // Boot's price fetch runs over the conduit proved for its role, so
+        // the first quote costs no birth. A later run finds the conduit
+        // spent and births its own client, which keeps priced traffic off
+        // the wallet-correlated streams on the standing client.
         let pools = self.pools.clone();
         async move {
-            let acquirer = pools
-                .acquirer()
-                .ok_or(crate::mixnet::acquire::TransportError::NoAcquirer)?;
-            let birth = pools.acquire_proven(acquirer.as_ref()).await?;
+            let birth = match pools.take_conduit(crate::mixnet::quartet::Role::PriceFetch) {
+                Some(held) => held,
+                None => {
+                    let acquirer = pools
+                        .acquirer()
+                        .ok_or(crate::mixnet::acquire::TransportError::NoAcquirer)?;
+                    pools.acquire_proven(acquirer.as_ref()).await?
+                }
+            };
             let member = crate::mixnet::speed::Member::new(birth.transport, birth.lease);
             let addr = member
                 .addr()
@@ -383,10 +389,10 @@ impl LightClient {
     /// failure must not silently reinstate a prior `SwitchedOff`.
     pub(super) async fn vacate_mixnet_slot(&mut self) {
         self.correspondent_pools.clear_acquirer();
-        // Boot's held clients go with the session: a teardown before boot
-        // consumed them must leave no proxy behind.
-        if let Some(held) = self.boot_clients.take() {
-            held.retire().await;
+        // Boot's unspent conduits go with the session: a teardown before
+        // their jobs took them must leave no proxy behind.
+        for conduit in self.correspondent_pools.drain_conduits() {
+            conduit.transport.stop().await;
         }
         if let Some(watchdog) = self.standing_watchdog.take() {
             watchdog.abort();
@@ -585,11 +591,15 @@ impl LightClient {
         {
             Ok(quartet) => {
                 let birth = quartet.indexer;
-                self.boot_clients = Some(crate::mixnet::quartet::BootClients {
-                    sweep: quartet.sweep,
-                    price: quartet.price,
-                    spare: quartet.spare,
-                });
+                // The three unspent conduits go to the exit authority, where
+                // the job each role names takes its own without a birth.
+                for (role, conduit) in [
+                    (crate::mixnet::quartet::Role::IndexerSweep, quartet.sweep),
+                    (crate::mixnet::quartet::Role::PriceFetch, quartet.price),
+                    (crate::mixnet::quartet::Role::Spare, quartet.spare),
+                ] {
+                    self.correspondent_pools.hold_conduit(role, conduit);
+                }
                 // The Standing Client's later transitions — above all
                 // Died — must still reach the session's subscribers.
                 forward_client_transitions(&birth.lifecycle, &self.mixnet_status);
