@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `time::NYM_EPOCH`: one Nym network epoch, the hourly topology rotation
   that bounds how long an observation about an Exit Node stays meaningful.
+- `time::OBSERVED_ANNOUNCEMENT_MEAN`, `time::OBSERVED_ANNOUNCEMENT_DEVIATION`,
+  and `time::ANNOUNCEMENT_DEVIATIONS`: the measured exit-announcement
+  latency the readiness grace is now derived from.
+
+### Changed
+- `time::EXIT_ANNOUNCEMENT_GRACE` falls from 25 seconds to 7. It was one
+  connect attempt plus a hedge interval, a bound chosen without measurement.
+  The `birth-trial` workbench tool measured thirty pinned births against
+  mainnet on 2026-08-18 and found announcement latency averaging 4637
+  milliseconds with a standard deviation of 549, and a slowest sample of
+  5604. Seven seconds is the four-deviation figure rounded up to a whole
+  second. `time::SPEED_ACQUISITION_DEADLINE` derives from the grace and so
+  falls with it, from 285 seconds to 105.
 
 ### Removed
 - BREAKING: the responsiveness partition is retired. The `Responsiveness`

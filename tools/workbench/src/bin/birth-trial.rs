@@ -93,7 +93,7 @@ const SOCKS5_IPV4_REPLY_BYTES: usize = 10;
 /// How long one birth may take to announce its exit before the trial
 /// counts it unreachable, agreeing with
 /// `zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE`.
-const ANNOUNCEMENT_GRACE: Duration = Duration::from_secs(25);
+const ANNOUNCEMENT_GRACE: Duration = Duration::from_millis(7_000);
 
 /// How many births one trial run makes when `--births` names no other count.
 const DEFAULT_TRIALS: usize = 100;
