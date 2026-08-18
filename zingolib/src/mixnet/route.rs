@@ -62,8 +62,8 @@ pub enum MixnetNotReady {
     /// Absence is not consent, so the surface refuses.
     #[error(
         "the Nym mixnet is not enabled; this operation refuses rather than use \
-         clearnet without consent. Run `network on` to enable the mixnet, or \
-         `network off` to choose clearnet"
+         clearnet without consent. Enable Mixnet Mode to use the mixnet, or \
+         switch it off to choose clearnet"
     )]
     Unattached,
     /// The mixnet is enabled but not yet reachable. Readiness is coming.
@@ -72,7 +72,7 @@ pub enum MixnetNotReady {
     /// The proxy died after being spawned. Only re-enabling recovers.
     #[error(
         "the Nym mixnet proxy died; this operation refuses rather than fall back to \
-         clearnet. Run `network on` to restart the proxy"
+         clearnet. Re-enable Mixnet Mode to restart the proxy"
     )]
     Died,
 }
@@ -176,9 +176,8 @@ mod tests {
     }
 
     /// HYPOTHESIS: the refusal names the actual state, so a user with a dead
-    /// proxy is told to run `network on` rather than that the mixnet is
-    /// bootstrapping. Falsified if the Died refusal renders the
-    /// bootstrapping message.
+    /// proxy is not told that the mixnet is bootstrapping. Falsified if the
+    /// Died refusal renders the bootstrapping message.
     #[test]
     fn the_refusal_message_names_the_actual_state() {
         let bootstrapping = MixnetNotReady::Bootstrapping.to_string();
@@ -186,14 +185,35 @@ mod tests {
 
         let died = MixnetNotReady::Died.to_string();
         assert!(died.contains("died"), "{died}");
-        assert!(died.contains("network on"), "{died}");
         assert!(!died.contains("bootstrapping"), "{died}");
 
         let unattached = MixnetNotReady::Unattached.to_string();
         assert!(unattached.contains("not enabled"), "{unattached}");
-        assert!(unattached.contains("network on"), "{unattached}");
         assert!(!unattached.contains("bootstrapping"), "{unattached}");
         assert!(!unattached.contains("died"), "{unattached}");
+    }
+
+    /// HYPOTHESIS: a refusal names the condition and never a frontend's
+    /// remedy, because zingolib serves zingo-cli and zingo-mobile alike and
+    /// only one of them has a command line. Falsified if any refusal spells
+    /// a command a mobile user cannot type.
+    #[test]
+    fn no_refusal_speaks_a_frontend_s_vocabulary() {
+        for refusal in [
+            MixnetNotReady::Unattached,
+            MixnetNotReady::Bootstrapping,
+            MixnetNotReady::Died,
+        ] {
+            let rendered = refusal.to_string();
+            for command in ["network on", "network off", "network status"] {
+                assert!(
+                    !rendered.contains(command),
+                    "the {refusal:?} refusal spells the zingo-cli command \
+                     `{command}`, which a zingo-mobile user cannot type: \
+                     {rendered}"
+                );
+            }
+        }
     }
 
     #[test]
