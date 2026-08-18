@@ -610,10 +610,7 @@ mod communications {
             let dir = scratch_dir();
             zingolib::connectivity::store_standing_online(dir.path())
                 .expect("the store writes in a scratch directory");
-            assert_eq!(
-                mode_with_dir(&dir, &[]),
-                Communications::UnconsentedOffline
-            );
+            assert_eq!(mode_with_dir(&dir, &[]), Communications::UnconsentedOffline);
         }
 
         #[test]
