@@ -726,11 +726,9 @@ impl LightClient {
     /// clearnet instead of refusing `MixnetNotReady`. Without the `nym`
     /// feature the wallet has no mixnet surface and this is a no-op.
     ///
-    /// Deliberately unconditional (not `nym`-gated): feature unification
-    /// can enable `zingolib/nym` from any workspace member — zingo-cli
-    /// carries it as a default feature (ADR 0026) — so a caller keying the
-    /// consent on its *own* feature set desyncs from zingolib's and
-    /// compiles the consent out exactly when the refusal is compiled in.
+    /// Deliberately unconditional, because a caller keying the consent on
+    /// its own feature set desyncs from zingolib's and compiles the consent
+    /// out exactly when the refusal is compiled in.
     #[cfg(any(test, feature = "testutils"))]
     pub async fn consent_to_clearnet_for_tests(&mut self) {
         #[cfg(feature = "nym")]

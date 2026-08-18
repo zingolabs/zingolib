@@ -194,9 +194,8 @@ mod tests {
     }
 
     /// HYPOTHESIS: a refusal names the condition and never a frontend's
-    /// remedy, because zingolib serves zingo-cli and zingo-mobile alike and
-    /// only one of them has a command line. Falsified if any refusal spells
-    /// a command a mobile user cannot type.
+    /// remedy, because only a frontend knows whether the user has a command
+    /// line or a toggle. Falsified if any refusal spells a command.
     #[test]
     fn no_refusal_speaks_a_frontend_s_vocabulary() {
         for refusal in [
@@ -208,8 +207,8 @@ mod tests {
             for command in ["network on", "network off", "network status"] {
                 assert!(
                     !rendered.contains(command),
-                    "the {refusal:?} refusal spells the zingo-cli command \
-                     `{command}`, which a zingo-mobile user cannot type: \
+                    "the {refusal:?} refusal spells the command `{command}`, \
+                     which a frontend without a command line cannot offer: \
                      {rendered}"
                 );
             }

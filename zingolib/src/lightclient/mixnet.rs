@@ -1075,8 +1075,7 @@ mod tests {
         /// The startup opt-out is the explicit act (ADR 0024, consent at
         /// start): a deliberate disable on a fresh, never-enabled client
         /// lands SwitchedOff — not Unattached — and the route resolver
-        /// consents to clearnet. This is the transition zingo-cli's
-        /// --no-mixnet flag records at session start.
+        /// consents to clearnet.
         #[tokio::test]
         async fn disable_before_any_enable_records_clearnet_consent() {
             let mut client = LightClient::new_for_test(wallet()).await;
