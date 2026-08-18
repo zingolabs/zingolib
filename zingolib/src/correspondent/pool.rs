@@ -401,7 +401,8 @@ mod bind_failure_absorption {
     use super::*;
 
     /// An acquirer whose every acquisition fails at the bind stage, with a
-    /// census large enough that no draw repeats an exit.
+    /// census of exactly one exit per birth, so every drawn exit is
+    /// distinct and every one of them is convicted.
     struct BindRefusingAcquirer {
         census: usize,
         acquisitions: AtomicUsize,
@@ -459,7 +460,7 @@ mod bind_failure_absorption {
     async fn a_bind_failure_spends_a_birth_and_convicts_the_drawn() {
         let pools = Pools::new();
         let acquirer = BindRefusingAcquirer {
-            census: MAX_PROVING_BIRTHS * zingo_netutils::arm_race::RESERVATION_CLUTCH_SIZE,
+            census: MAX_PROVING_BIRTHS,
             acquisitions: AtomicUsize::new(0),
         };
         let Err(refusal) = pools.acquire_proven(&acquirer).await else {

@@ -1277,8 +1277,15 @@ mod tests {
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
         }
 
-        /// The one exit this harness discovers and announces.
+        /// The exit this harness announces as bound, and the first the
+        /// quartet assigns.
         const HARNESS_EXIT: &str = "exit-alpha";
+
+        /// Every exit this harness discovers. Boot proves a quartet, so a
+        /// population smaller than [`quartet::QUARTET_SIZE`] cannot fill
+        /// the roles and the enable refuses.
+        const HARNESS_CENSUS: [&str; crate::mixnet::quartet::QUARTET_SIZE] =
+            [HARNESS_EXIT, "exit-beta", "exit-gamma", "exit-delta"];
 
         /// Yields granted after a publication so a subscriber on another
         /// worker observes it before the watch channel coalesces.
@@ -1301,7 +1308,12 @@ mod tests {
                         + '_,
                 >,
             > {
-                Box::pin(async { Ok([ExitNodeId::from(HARNESS_EXIT)].into_iter().collect()) })
+                Box::pin(async {
+                    Ok(HARNESS_CENSUS
+                        .iter()
+                        .map(|id| ExitNodeId::from(*id))
+                        .collect())
+                })
             }
 
             fn acquire<'a>(
@@ -1349,10 +1361,12 @@ mod tests {
                 .expect("bind an ephemeral port");
             let addr = listener.local_addr().expect("local addr");
             let mut client = LightClient::new_for_test(wallet()).await;
-            client.correspondent_pools.remember(
-                ExitNodeId::from(HARNESS_EXIT),
-                crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
-            );
+            for exit in HARNESS_CENSUS {
+                client.correspondent_pools.remember(
+                    ExitNodeId::from(exit),
+                    crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
+                );
+            }
             let mut feed = client.subscribe_mixnet_status();
             let seen: Arc<Mutex<Vec<MixnetStatus>>> = Arc::default();
             let sink = Arc::clone(&seen);
