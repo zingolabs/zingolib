@@ -29,8 +29,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `transparent_gap_limit` to `settings` command.
+- `init_tracing` installs the process-global tracing subscriber. The
+  binary entry point calls it once instead of deriving the mode of
+  operation a second time to decide where log output goes.
 
 ### Changed
+- `help` lists `info`, `change_server`, and `current_price` among the
+  commands that need no wallet, where it had listed them as wallet
+  commands. None of the three reads wallet state: the first two reach the
+  indexer and the third reaches the mixnet. The sections split on whether a
+  wallet is needed, not on whether the network is.
+- An interactive session exits with the code it earned. A prompt the user
+  closed — by `quit`, Ctrl-C, or Ctrl-D — still exits zero, but one the
+  terminal ended now exits non-zero and reports on stderr, where before
+  every interactive session claimed success whatever had happened. A
+  failure to open the prompt at all is reported the same way instead of
+  panicking, and a history entry that cannot be recorded no longer ends
+  the session, since it costs the user recall and not the command.
 - The interactive prompt never contends with a running sync for the
   wallet lock. Its chain height now rides the same lock-free progress
   channel the sync indicator reads, and the prompt's dedicated height
@@ -142,12 +157,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   values, so no string is re-parsed inside the process.
 
 ### Removed
+- **Breaking.** The `nym-diary` feature and the `--indexer-diary` flag are
+  gone, because the indexer diary no longer touches disk. `network history`
+  needs neither: it now shows the attempts this session recorded, and nothing
+  is written beside the wallet for a later session to read.
 - **Breaking.** The string-command plumbing left the library surface: the
   `Command` and `ShortCircuitedCommand` traits, `HelpCommand`, and the
   `get_commands`, `get_standalone_commands`, `get_wallet_commands`,
   `do_user_command`, and `do_user_command_result` functions are gone.
   Dispatch parses one clap derive grammar and matches its enum
   exhaustively. No string entry point remains (ADR 0030).
+- **Breaking.** `is_interactive` and `log_file_path` left the library
+  surface. Both existed only so the binary could choose where tracing
+  output goes, and `init_tracing` now makes that choice inside the
+  library.
 
 ## [0.4.0] - 2026-06-10
 

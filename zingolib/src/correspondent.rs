@@ -278,7 +278,7 @@ impl Host {
             .map_or_else(|| Host::of_host_str(&uri.to_string()), Host::of_host_str)
     }
 
-    /// The identity as the string the diary and the displays render.
+    /// The identity as the string the history and the displays render.
     pub fn as_str(&self) -> &str {
         &self.0
     }

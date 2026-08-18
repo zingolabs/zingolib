@@ -324,7 +324,7 @@ async fn probe_one(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mixnet::MixnetMode;
+    use crate::mixnet::Indicator;
 
     /// HYPOTHESIS: the survey never settles early — every indexer must be
     /// probed and assigned — so a healthy answer does not end the wave.
@@ -433,8 +433,8 @@ mod tests {
     const UNANSWERED_CANDIDATE: &str = "https://sweep-candidate.example";
 
     /// HYPOTHESIS: the sweep's per-candidate probe rides the shared probe
-    /// machinery, so the attempt it writes to the indexer diary carries the
-    /// latency it measured. Falsified if a sweep attempt lands with an
+    /// machinery, so the attempt it records in the session's history carries
+    /// the latency it measured. Falsified if a sweep attempt lands with an
     /// unmeasured duration while a liveness probe records a real one.
     #[tokio::test]
     async fn a_surveyed_candidate_records_the_latency_it_measured() {
@@ -457,11 +457,7 @@ mod tests {
                 held.push(socket);
             }
         });
-        let dir = tempfile::tempdir().expect("temp dir");
-        let history = crate::lightclient::indexer_history::IndexerHistoryHandle::beside_wallet(
-            &dir.path().join("zingo-wallet.dat"),
-        );
-        history.set_recording(true);
+        let history = crate::lightclient::indexer_history::IndexerHistoryHandle::default();
 
         let (reported, refusal) = probe_one(
             socks5_addr,
@@ -497,7 +493,7 @@ mod tests {
     /// latched typed cause.
     fn died_with(detail: Option<zingo_net_diag::NetOpFailure>) -> crate::mixnet::MixnetStatus {
         crate::mixnet::MixnetStatus {
-            mode: MixnetMode::Died,
+            mode: Indicator::Died,
             socks5_addr: None,
             exits: Vec::new(),
             bootstrap_detail: None,
@@ -512,7 +508,7 @@ mod tests {
     /// so far.
     fn ready_with(exits: Vec<crate::mixnet::ExitNodeId>) -> crate::mixnet::MixnetStatus {
         crate::mixnet::MixnetStatus {
-            mode: MixnetMode::Ready,
+            mode: Indicator::Ready,
             socks5_addr: Some("127.0.0.1:1080".parse().expect("the test address parses")),
             exits,
             bootstrap_detail: None,

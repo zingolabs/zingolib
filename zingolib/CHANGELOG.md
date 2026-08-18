@@ -14,6 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   indexer is drawn among every healthy answer, all of which are
   draw-eligible, with the transmit candidates excluding the sync
   operator so different operations select different indexers.
+- **Breaking.** `MAX_DIARY_ATTEMPTS` is now `MAX_HISTORY_ATTEMPTS`. The term
+  _Indexer Diary_ is retired: a diary was something the wallet kept, and the
+  history it names now ends with the session.
+- A price fetch no longer writes to the wallet. `update_current_price` used to
+  record the quote into the wallet's price list and set `save_required`, so
+  asking the price dirtied the wallet and provoked a save; the price now lives
+  only in the returned `MixnetPriceFetch`. The price list is still serialized,
+  so the wallet format is unchanged, and nothing loses a reader — the only
+  consumers of the stored price were already commented out.
+- **Breaking.** `mixnet::MixnetMode` is now `mixnet::Indicator`, its parse
+  refusal `UnknownMixnetModeToken` is now `UnknownIndicatorToken`, and
+  `LightClient::mixnet_mode` is now `LightClient::read_mixnet_indicator`. An
+  indicator reports which one of a closed set of states holds, which is what
+  the type does and what _mode_ never said.
 
 ### Deprecated
 
@@ -464,6 +478,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a prefix-only salvage read so `recovery_info` still works.
 
 ### Removed
+- **Breaking.** The indexer diary no longer touches disk. `IndexerHistoryHandle`
+  keeps this session's attempts in memory and folds each into the session's
+  Health, so `indexer-history.tsv` is never written and no record of which
+  indexers this wallet contacted survives the process.
+  `IndexerHistoryHandle::{beside_wallet, is_recording}` and
+  `IndexerAttempt::exit` are gone with the file they served.
+- **Breaking.** The `nym-diary` feature and `LightClient::set_indexer_diary`
+  are gone. The feature gated a disk-backed handle that no longer exists, and
+  the runtime opt-in gated writes that no longer happen.
+- `mixnet::IP_CORRELATION_DISCLAIMER` - the frontend-facing disclaimer text. A
+  library does not own the wording an application shows its user, so the text
+  moved into `zingo-cli` as a private constant. A frontend that shows the
+  IP-correlation risk now carries its own wording.
 - The `mixnet` re-export of `zingo_netutils::responsiveness::{PrioritisePrivacy,
   PrioritiseSpeed, Responsiveness}` - the responsiveness partition retired with
   ADR 0044's single hedged acquisition policy, and no class reaches the API.

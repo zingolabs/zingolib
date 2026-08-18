@@ -17,10 +17,6 @@ nym = ["zingolib/nym"]
 # clearnet only for sync, so compiling this back in is a deliberate,
 # review-gated test act (2026-08-06 ruling).
 clearnet-test-mode = []
-# Compile in the on-disk indexer diary so `--indexer-diary` can opt a session
-# in to recording and `network history` can display it. Off by default; without
-# it the flag warns and records nothing.
-nym-diary = ["zingolib/nym-diary"]
 
 [dependencies]
 pepper-sync = { workspace = true }

@@ -56,17 +56,19 @@ by it.
 **Indexer endpoint records → one host type.** *Implemented 2026-08-10
 as the `Host` newtype (working name), chosen over `http::uri::Authority`
 because an Authority carries a port while Health judges at host grain;
-the diary's `exit` column rode along to `ExitNodeId`, and the `nym`
-module is now declared in every build so the identity vocabulary
-reaches the always-compiled diary.* Sites: `Health.standings`
+the indexer history's `exit` column rode along to `ExitNodeId`, which
+required the `nym` module to be declared in every build so the identity
+vocabulary reached it. That column was retired on 2026-08-17 with the
+at-rest history it served, so nothing outside the `nym` feature names an
+`ExitNodeId` and the module is gated again.* Sites: `Health.standings`
 keyed by `HashMap<String, _>`, `probe::ProbeSuccess.host`, and the
-`server: String` diary fields. `http::uri::Authority` (or a thin `Host`
-newtype over it) makes Health's key, the probe records, and the diary
+`server: String` history fields. `http::uri::Authority` (or a thin `Host`
+newtype over it) makes Health's key, the probe records, and the history
 agree by type rather than by convention.
 
 ## Keep as String — prose or foreign tokens, deliberately
 
-**Bootstrap narration** (`bootstrap_detail`) and death/diary prose: these
+**Bootstrap narration** (`bootstrap_detail`) and death/history prose: these
 are progress lines for humans; a type would add nothing.
 
 **`UnknownMixnetModeToken(String)`**: a typed error whose payload is the

@@ -108,9 +108,9 @@ jobs:
   # The `nym` feature gates the mixnet transmission and price-fetch surfaces
   # (ADR 0011) in zingolib and zingo-cli. zingo-cli carries it as a default
   # feature (ADR 0026), so the --workspace jobs above compile the CLI's gated
-  # code; zingolib's own default remains nym-off. This job adds the
-  # `nym-diary` combination, zingolib's gated tests, and the CLI's explicit
-  # opt-out build, whose refusal strings must keep compiling and rendering.
+  # code; zingolib's own default remains nym-off. This job adds zingolib's
+  # gated tests and the CLI's explicit opt-out build, whose refusal strings
+  # must keep compiling and rendering.
   nym-feature:
     name: nym feature (zingolib + zingo-cli)
     runs-on: ubuntu-24.04
@@ -134,7 +134,7 @@ jobs:
           fi
 
       - name: Clippy
-        run: cargo clippy -p zingolib -p zingo-cli --features nym,nym-diary --all-targets -- -D warnings
+        run: cargo clippy -p zingolib -p zingo-cli --features nym --all-targets -- -D warnings
 
       # Whole suites, deliberately unfiltered: module-path filter lists rot
       # as gated tests land outside them (PR #2470 review, M6). Re-running
@@ -142,13 +142,13 @@ jobs:
       # cannot silently go dark; everything here is deterministic and
       # mixnet-free.
       - name: Test zingolib under the nym features
-        run: cargo test -p zingolib --features nym,nym-diary --lib
+        run: cargo test -p zingolib --features nym --lib
 
       - name: Test zingo-cli under the nym features
-        run: cargo test -p zingo-cli --features nym,nym-diary --lib
+        run: cargo test -p zingo-cli --features nym --lib
 
       - name: Doc-test zingolib under the nym features
-        run: cargo test -p zingolib --features nym,nym-diary --doc
+        run: cargo test -p zingolib --features nym --doc
 
       # The opt-out shape (`--no-default-features`, run-cli's `--clearnet`)
       # must keep building, and its typed refusals must keep rendering.
