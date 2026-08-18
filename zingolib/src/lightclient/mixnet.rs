@@ -176,15 +176,20 @@ fn install_failover_client(
 /// trusting birth.
 fn standing_client_from_birth(
     birth: crate::correspondent::pool::ProvenBirth,
-    pools: &crate::correspondent::pool::Pools,
 ) -> crate::mixnet::StandingClient {
-    let stale_expiry = (!birth.probed)
-        .then(|| pools.proven_until(birth.lease.node()))
-        .flatten();
-    let client =
-        crate::mixnet::StandingClient::new(birth.transport, Some(birth.lease), birth.probed);
-    if let Some(expiry) = stale_expiry {
-        client.set_proof_deadline(expiry);
+    use crate::correspondent::pool::Proof;
+
+    let proof = birth.proof;
+    let client = crate::mixnet::StandingClient::new(
+        birth.transport,
+        Some(birth.lease),
+        matches!(proof, Proof::Earned { .. }),
+    );
+    // An inherited proof carries its own deadline, so the watchdog fires
+    // when the observation the birth trusted ages out rather than an epoch
+    // from now.
+    if let Proof::Inherited { proven_until } = proof {
+        client.set_proof_deadline(proven_until);
     }
     client
 }
@@ -253,7 +258,7 @@ async fn adjudicate_standing_proof(
     match pools.acquire_proven(acquirer.as_ref()).await {
         Ok(birth) => {
             let birth_channel = std::sync::Arc::clone(&birth.lifecycle);
-            let client = standing_client_from_birth(birth, &pools);
+            let client = standing_client_from_birth(birth);
             match install_failover_client(&slot, client) {
                 Ok(replaced) => {
                     // The replacement's candidate churn stayed on its birth
@@ -575,7 +580,7 @@ impl LightClient {
                 // The Standing Client's later transitions — above all
                 // Died — must still reach the session's subscribers.
                 forward_client_transitions(&birth.lifecycle, &self.mixnet_status);
-                let client = standing_client_from_birth(birth, &self.correspondent_pools);
+                let client = standing_client_from_birth(birth);
                 let superseded = swap_slot(
                     &self.mixnet_slot,
                     crate::mixnet::MixnetSlot::Attached(client),

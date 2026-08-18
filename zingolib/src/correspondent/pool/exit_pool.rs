@@ -84,27 +84,6 @@ impl std::borrow::Borrow<crate::mixnet::ExitNodeId> for Reservation {
     }
 }
 
-/// The node identities of a clutch, for the process seam's `--exit` args.
-pub(crate) fn clutch_nodes(clutch: &HashSet<Reservation>) -> Vec<crate::mixnet::ExitNodeId> {
-    clutch
-        .iter()
-        .map(|reservation| reservation.node().clone())
-        .collect()
-}
-
-/// Takes the first reservation a ready transport reports as bound out of
-/// `clutch`, recycling the rest, or `None` when the report names no drawn
-/// node.
-pub(crate) fn take_bound_lease(
-    clutch: &mut HashSet<Reservation>,
-    reported: &[crate::mixnet::ExitNodeId],
-) -> Option<Reservation> {
-    // The report is walked in announcement order, not the set's arbitrary
-    // one, so a transport that names several drawn exits binds the one it
-    // announced first and the same report always binds the same exit.
-    reported.iter().find_map(|node| clutch.take(node))
-}
-
 /// What one completed or refused round trip showed about an Exit Node,
 /// within the epoch that observation survives.
 // TODO: implement sensitivity to, and policy around, Nym epochs: the
@@ -249,12 +228,10 @@ impl ExitPool {
         self.health.epoch_failed(exit, now)
     }
 
-    /// Draws a Clutch of owning reservations, each of which recycles
-    /// itself into `pool` when dropped, sampling fresh-Proven exits first,
-    /// unknown ones next, and Failed ones only at exhaustion.
-    pub(crate) fn draw_clutch(
-        pool: &Arc<Mutex<ExitPool>>,
-    ) -> Result<HashSet<Reservation>, ExitPoolError> {
+    /// Draws one owning reservation, which recycles itself into `pool` when
+    /// dropped, preferring a fresh-Proven exit, then an unknown one, and a
+    /// Failed one only at exhaustion.
+    pub(crate) fn draw_exit(pool: &Arc<Mutex<ExitPool>>) -> Result<Reservation, ExitPoolError> {
         let now = std::time::Instant::now();
         let mut guarded = pool.lock().expect("exit pool mutex");
         if guarded.population.is_empty() {
@@ -295,25 +272,30 @@ impl ExitPool {
             tier.shuffle(&mut rand::rngs::OsRng);
             ordered.extend(tier);
         }
-        let clutch: HashSet<Reservation> = ordered
-            .into_iter()
-            .take(zingo_netutils::arm_race::RESERVATION_CLUTCH_SIZE)
-            .map(|node| {
-                guarded.issued.insert(node.clone());
-                Reservation {
-                    node,
-                    ledger: Arc::downgrade(pool),
-                }
-            })
-            .collect();
-        Ok(clutch)
+        // One exit per birth: the preference order above decides what a
+        // birth uses, because nothing downstream can overrule it.
+        let node = ordered.into_iter().next().expect("drawable is non-empty");
+        guarded.issued.insert(node.clone());
+        Ok(Reservation {
+            node,
+            ledger: Arc::downgrade(pool),
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zingo_netutils::arm_race::RESERVATION_CLUTCH_SIZE;
+
+    /// A population wide enough that repeated draws reaching only a few
+    /// exits would be unmistakable.
+    const TIER_SPREAD_POPULATION: usize = 12;
+
+    /// Draws enough to make an unshuffled tier's repetition unmistakable.
+    const TIER_SPREAD_DRAWS: usize = 10;
+
+    /// The smallest population that can be exhausted by one draw.
+    const SOLE_EXIT: usize = 1;
 
     fn seeded(count: usize) -> Arc<Mutex<ExitPool>> {
         let pool = Arc::new(Mutex::new(ExitPool::default()));
@@ -324,120 +306,38 @@ mod tests {
         pool
     }
 
-    /// HYPOTHESIS: the bind-time take yields exactly the reported
-    /// reservation and leaves the rest for recycling. Falsified if it takes
-    /// the wrong reservation or disturbs the remainder.
-    #[test]
-    fn the_bound_lease_is_taken_and_the_rest_remain() {
-        let mut clutch: HashSet<Reservation> = [
-            Reservation::dangling_for_test("exit-a"),
-            Reservation::dangling_for_test("exit-b"),
-            Reservation::dangling_for_test("exit-c"),
-        ]
-        .into_iter()
-        .collect();
-        let lease = take_bound_lease(
-            &mut clutch,
-            std::slice::from_ref(&crate::mixnet::ExitNodeId::from("exit-b")),
-        )
-        .expect("the reported exit is drawn");
-        assert_eq!(lease.node(), &crate::mixnet::ExitNodeId::from("exit-b"));
-        assert_eq!(clutch.len(), 2, "the unbound reservations remain");
-    }
-
-    /// HYPOTHESIS: a report naming several drawn exits binds the
-    /// first-announced one, so the bind follows the transport's own order
-    /// rather than the set's arbitrary one. Falsified if any trial binds a
-    /// later announcement.
-    #[test]
-    fn the_bound_lease_follows_the_announcement_order() {
-        /// Independently ordered clutches, enough that an arbitrary pick
-        /// cannot agree with the announcement order by chance.
-        const ORDER_TRIALS: usize = 16;
-
-        let announced = [
-            crate::mixnet::ExitNodeId::from("exit-b"),
-            crate::mixnet::ExitNodeId::from("exit-c"),
-            crate::mixnet::ExitNodeId::from("exit-a"),
-        ];
-        let first = announced.first().expect("the announcement names exits");
-        for trial in 0..ORDER_TRIALS {
-            let mut clutch: HashSet<Reservation> = [
-                Reservation::dangling_for_test("exit-a"),
-                Reservation::dangling_for_test("exit-b"),
-                Reservation::dangling_for_test("exit-c"),
-            ]
-            .into_iter()
-            .collect();
-            let lease =
-                take_bound_lease(&mut clutch, &announced).expect("the report names drawn exits");
-            assert_eq!(
-                lease.node(),
-                first,
-                "trial {trial} bound a later announcement"
-            );
-        }
-    }
-
-    /// HYPOTHESIS: a report naming no drawn node (foreign or empty) takes
-    /// nothing, so the caller can refuse typed. Falsified if a lease is
-    /// yielded or the clutch shrinks.
-    #[test]
-    fn a_foreign_or_empty_report_takes_no_lease() {
-        let mut clutch: HashSet<Reservation> = [Reservation::dangling_for_test("exit-a")]
-            .into_iter()
-            .collect();
-        let foreign = [crate::mixnet::ExitNodeId::from("exit-foreign")];
-        assert!(take_bound_lease(&mut clutch, &foreign).is_none());
-        assert!(take_bound_lease(&mut clutch, &[]).is_none());
-        assert_eq!(clutch.len(), 1, "the clutch is undisturbed");
-    }
-
-    /// A tier three clutches wide, so a fixed four-exit subset is provable.
-    const TIER_SPREAD_POPULATION: usize = RESERVATION_CLUTCH_SIZE * 3;
-
-    /// Draws enough to make an unshuffled tier's repetition unmistakable.
-    const TIER_SPREAD_DRAWS: usize = 10;
-
     /// HYPOTHESIS: the draw spreads load inside a tier by chance, so
-    /// repeated draws over one wide tier reach beyond any fixed
-    /// clutch-sized subset. Falsified if every draw binds the same exits.
+    /// repeated draws over one wide tier reach beyond any fixed subset.
+    /// Falsified if every draw binds the same exit.
     #[test]
     fn repeated_draws_spread_across_the_tier() {
         let pool = seeded(TIER_SPREAD_POPULATION);
         let mut seen = std::collections::HashSet::new();
         for _ in 0..TIER_SPREAD_DRAWS {
-            let clutch = ExitPool::draw_clutch(&pool).expect("the tier draws");
-            for reservation in &clutch {
-                seen.insert(reservation.node().clone());
-            }
-            drop(clutch);
+            let lease = ExitPool::draw_exit(&pool).expect("the tier draws");
+            seen.insert(lease.node().clone());
+            drop(lease);
         }
         assert!(
-            seen.len() > RESERVATION_CLUTCH_SIZE,
-            "every draw bound the same {RESERVATION_CLUTCH_SIZE} exits of \
-             {TIER_SPREAD_POPULATION}: the tier is unshuffled"
+            seen.len() > SOLE_EXIT,
+            "every draw bound the same exit of {TIER_SPREAD_POPULATION}: \
+             the tier is unshuffled"
         );
     }
 
-    /// HYPOTHESIS: a drawn clutch is clutch-sized, and every reservation in
-    /// it is transferred, so a second draw can never repeat one.
+    /// HYPOTHESIS: a draw transfers its reservation, so a second draw can
+    /// never repeat it. Falsified if one identity reaches two holders.
     #[test]
     fn a_reservation_is_never_issued_twice() {
-        let pool = seeded(RESERVATION_CLUTCH_SIZE * 2);
-        let first = ExitPool::draw_clutch(&pool).expect("the first clutch");
-        let second = ExitPool::draw_clutch(&pool).expect("the second clutch");
-        assert_eq!(first.len(), RESERVATION_CLUTCH_SIZE);
-        assert_eq!(second.len(), RESERVATION_CLUTCH_SIZE);
-        for reservation in &first {
-            assert!(
-                !second
-                    .iter()
-                    .any(|other| other.node() == reservation.node()),
-                "{} was issued to two holders at once",
-                reservation.node()
-            );
-        }
+        let pool = seeded(TIER_SPREAD_POPULATION);
+        let first = ExitPool::draw_exit(&pool).expect("the first draw");
+        let second = ExitPool::draw_exit(&pool).expect("the second draw");
+        assert_ne!(
+            first.node(),
+            second.node(),
+            "{} was issued to two holders at once",
+            first.node()
+        );
     }
 
     /// HYPOTHESIS: a discovery naming one exit twice seeds a single
@@ -446,64 +346,63 @@ mod tests {
     /// than the identities the pool can issue.
     #[test]
     fn a_duplicated_discovery_seeds_one_reservation() {
-        const DISTINCT_IDENTITIES: usize = 1;
         let pool = Arc::new(Mutex::new(ExitPool::default()));
         let repeated = crate::mixnet::ExitNodeId::from("exit-repeated");
         pool.lock()
             .unwrap()
             .seed(vec![repeated.clone(), repeated.clone()]);
-        let clutch = ExitPool::draw_clutch(&pool).expect("the only clutch");
+        let lease = ExitPool::draw_exit(&pool).expect("the only draw");
         assert_eq!(
-            clutch.len(),
-            DISTINCT_IDENTITIES,
+            lease.node(),
+            &repeated,
             "the repeated identity reserves once"
         );
-        match ExitPool::draw_clutch(&pool).expect_err("nothing is left to issue") {
+        match ExitPool::draw_exit(&pool).expect_err("nothing is left to issue") {
             ExitPoolError::Exhausted { held, population } => {
-                assert_eq!(held, DISTINCT_IDENTITIES, "the sole identity is held");
+                assert_eq!(held, SOLE_EXIT, "the sole identity is held");
                 assert_eq!(
-                    population, DISTINCT_IDENTITIES,
+                    population, SOLE_EXIT,
                     "the population counts identities rather than repeats"
                 );
             }
-            other => panic!("the pool refused with {other:?} rather than exhaustion"),
+            other => panic!("an exhausted pool refuses as Exhausted, got {other:?}"),
         }
     }
 
-    /// HYPOTHESIS: dropping reservations recycles them, so an exhausted
-    /// pool issues again only after its holders release.
+    /// HYPOTHESIS: dropping a reservation recycles it, so an exhausted pool
+    /// issues again only after its holder releases.
     #[test]
     fn dropping_replenishes_an_exhausted_pool() {
-        let pool = seeded(RESERVATION_CLUTCH_SIZE);
-        let clutch = ExitPool::draw_clutch(&pool).expect("the only clutch");
-        let exhausted = ExitPool::draw_clutch(&pool).expect_err("nothing is left to issue");
+        let pool = seeded(SOLE_EXIT);
+        let lease = ExitPool::draw_exit(&pool).expect("the only draw");
+        let exhausted = ExitPool::draw_exit(&pool).expect_err("nothing is left to issue");
         assert!(matches!(exhausted, ExitPoolError::Exhausted { .. }));
-        drop(clutch);
-        ExitPool::draw_clutch(&pool).expect("dropped reservations reissue");
+        drop(lease);
+        ExitPool::draw_exit(&pool).expect("a dropped reservation reissues");
     }
 
     /// HYPOTHESIS: cancelling a future that owns a reservation recycles it,
-    /// the leak shape of a hedged race's losing pull.
+    /// the leak shape of an abandoned birth.
     #[test]
     fn a_cancelled_owner_recycles_by_drop() {
-        let pool = seeded(RESERVATION_CLUTCH_SIZE);
-        let clutch = ExitPool::draw_clutch(&pool).expect("the only clutch");
+        let pool = seeded(SOLE_EXIT);
+        let lease = ExitPool::draw_exit(&pool).expect("the only draw");
         let owner = async move {
-            let _held = clutch;
+            let _held = lease;
             std::future::pending::<()>().await;
         };
         drop(owner);
-        ExitPool::draw_clutch(&pool).expect("the cancelled owner's reservations reissue");
+        ExitPool::draw_exit(&pool).expect("the cancelled owner's reservation reissues");
     }
 
     /// HYPOTHESIS: a reservation outliving its pool recycles into nothing
     /// rather than panicking.
     #[test]
     fn an_orphaned_reservation_drops_quietly() {
-        let pool = seeded(RESERVATION_CLUTCH_SIZE);
-        let clutch = ExitPool::draw_clutch(&pool).expect("the only clutch");
+        let pool = seeded(SOLE_EXIT);
+        let lease = ExitPool::draw_exit(&pool).expect("the only draw");
         drop(pool);
-        drop(clutch);
+        drop(lease);
     }
 
     /// HYPOTHESIS: an unseeded pool refuses rather than drawing nothing
@@ -512,7 +411,7 @@ mod tests {
     fn an_unseeded_pool_refuses() {
         let pool = Arc::new(Mutex::new(ExitPool::default()));
         assert!(matches!(
-            ExitPool::draw_clutch(&pool).expect_err("no population"),
+            ExitPool::draw_exit(&pool).expect_err("no population"),
             ExitPoolError::NotSeeded
         ));
         assert!(!pool.lock().unwrap().is_seeded());
