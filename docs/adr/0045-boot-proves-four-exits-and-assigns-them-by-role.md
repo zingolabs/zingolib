@@ -81,7 +81,7 @@ every request until the epoch ends or an exit starts failing.
 **The price is fetched during boot and printed.** No wallet write, no
 session store: the CLI narrates the quote, and zingo-mobile does what it
 likes with its own result. A later `current_price` at the prompt binds
-the PriceFetcher's proven exit again, so it skips the Sentinel.
+the PriceFetch exit again, so it skips the Sentinel.
 
 **Exits carry a role, not only a verdict.** `NodeHealthIndex` records
 health per node and nothing records which node holds which role, so the
@@ -89,6 +89,31 @@ PriceFetch, IndexerSweep, IndexerClient, and spare exits need a
 role-to-exit binding that outlives every client. Health decides whether
 an exit may be used at all; the role binding decides which of the proven
 four a given operation reaches for.
+
+**The spare is taken up on charged tunnel failures, never on a silent
+cohort.** The taxonomy already separates the two. `socks5_transmit_stage`
+types every SOCKS5 failure by stage, and `charge_phase` turns a stage
+into a `FailurePhase`: route resolution, local proxy connect, SOCKS
+handshake, and tunnel transport charge `Tunnel`; remote TLS, remote HTTP,
+and payload decode charge `Correspondent`; anything the stage cannot
+attribute charges nobody. A `Tunnel` charge is the exit's by
+construction, because the failure happened before the destination was
+reached.
+
+The trigger mirrors the rule Health already applies to Correspondents,
+which `zingolib/CONTEXT.md` states as "a tunnel-phase failure is the Exit
+Node's and never charges the Correspondent". A proven exit that
+accumulates `UNHEALTHY_FAILURE_THRESHOLD` tunnel-phase failures without
+an intervening success has started failing: its role passes to the spare,
+its `EpochProven` verdict is withdrawn, and a fresh birth replaces the
+spare. One success redeems it, exactly as one success redeems a
+Correspondent, so a transient outage never costs an exit its role.
+
+The Sentinel keeps a harder rule: one silence condemns. The asymmetry is
+the evidence, not the severity. The Sentinel asks a question only the
+exit can fail to answer, so its silence names the exit alone; ordinary
+traffic has a destination that can fail on its own account, so it takes
+a charge rule and a threshold to say the same thing.
 
 **A failed sweep aborts boot.** An online session that cannot select a
 sync indexer no longer opens an indexerless prompt, so "the session
@@ -100,8 +125,9 @@ because nothing downstream can overrule it.
 
 **The speed-priority redraw retires.** An operation acquires a proven
 client and runs one wave. A wave no target answers is reported as the
-cohort's failure; an exit is convicted only by its own silence to the
-Sentinel. `SpeedPrioritized` survives as the shared shape for the sweep
+cohort's failure; an exit is convicted only by evidence naming it — the
+Sentinel's silence, or charged tunnel-phase failures as ruled above.
+`SpeedPrioritized` survives as the shared shape for the sweep
 and the price run; its `abandon` and `answered` members retire with the
 loop they served.
 
@@ -161,6 +187,8 @@ DeadlineExhausted}`. The proxy's own `draw_clutch` at
 `zingo-netutils/src/nym_proxy.rs` serves a standalone run and is not
 retired here.
 
-The spare's trigger needs a definition of failing. The Sentinel's
-silence is unambiguous; a wave no target answers is not, and this
-decision has already ruled that case the cohort's.
+The spare's trigger reuses machinery that exists but has never been
+pointed at exits: `charge_phase` already types the party a failure
+charges, and `NodeHealthIndex` records only the verdicts a birth or a
+disposal writes. Charging tunnel-phase failures against the bound exit is
+new bookkeeping, not a new judgement.
