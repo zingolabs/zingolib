@@ -61,6 +61,12 @@ pub(crate) struct Pools {
     /// one, and always `None` for attached sessions.
     acquirer:
         std::sync::Mutex<Option<std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>>>,
+    /// Which exit holds which role, recorded when boot proves its quartet.
+    /// The binding outlives every client, so the next client doing a job
+    /// binds the exit that already carries that job's role (ADR 0045).
+    roles: std::sync::Mutex<
+        std::collections::HashMap<crate::mixnet::quartet::Role, crate::mixnet::ExitNodeId>,
+    >,
 }
 
 impl Pools {
@@ -69,6 +75,7 @@ impl Pools {
         std::sync::Arc::new(Pools {
             exits: std::sync::Arc::new(std::sync::Mutex::new(exit_pool::ExitPool::default())),
             acquirer: std::sync::Mutex::new(None),
+            roles: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
     }
 
@@ -105,6 +112,18 @@ impl Pools {
         &self,
     ) -> Option<std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>> {
         self.acquirer.lock().expect("pool acquirer mutex").clone()
+    }
+
+    /// Records that `exit` holds `role` for as long as its proof stands.
+    pub(crate) fn assign_role(
+        &self,
+        role: crate::mixnet::quartet::Role,
+        exit: crate::mixnet::ExitNodeId,
+    ) {
+        self.roles
+            .lock()
+            .expect("role binding mutex")
+            .insert(role, exit);
     }
 
     /// Keeps `verdict` as `exit`'s current observation, earned now.

@@ -383,6 +383,11 @@ impl LightClient {
     /// failure must not silently reinstate a prior `SwitchedOff`.
     pub(super) async fn vacate_mixnet_slot(&mut self) {
         self.correspondent_pools.clear_acquirer();
+        // Boot's held clients go with the session: a teardown before boot
+        // consumed them must leave no proxy behind.
+        if let Some(held) = self.boot_clients.take() {
+            held.retire().await;
+        }
         if let Some(watchdog) = self.standing_watchdog.take() {
             watchdog.abort();
         }
@@ -571,12 +576,20 @@ impl LightClient {
                 bootstrap_detail: None,
                 death: None,
             });
-        match self
-            .correspondent_pools
-            .acquire_proven(acquirer.as_ref())
+        // Boot proves four exits at once and assigns each a role in the
+        // order it confirms (ADR 0045). The IndexerClient's birth becomes
+        // the session's standing client; the other three are held for the
+        // jobs boot gives them and stop when those jobs end.
+        match crate::mixnet::quartet::prove_quartet(&self.correspondent_pools, acquirer.as_ref())
             .await
         {
-            Ok(birth) => {
+            Ok(quartet) => {
+                let birth = quartet.indexer;
+                self.boot_clients = Some(crate::mixnet::quartet::BootClients {
+                    sweep: quartet.sweep,
+                    price: quartet.price,
+                    spare: quartet.spare,
+                });
                 // The Standing Client's later transitions — above all
                 // Died — must still reach the session's subscribers.
                 forward_client_transitions(&birth.lifecycle, &self.mixnet_status);

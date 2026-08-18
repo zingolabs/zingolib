@@ -177,6 +177,11 @@ pub struct LightClient {
     /// deliberate disable stays distinguishable from a transport's absence.
     #[cfg(feature = "nym")]
     mixnet_slot: std::sync::Arc<std::sync::Mutex<crate::mixnet::MixnetSlot>>,
+    /// The three proven clients boot holds beside the standing one: the
+    /// sweep's, the price fetch's, and the spare. Each stops when its job
+    /// ends, leaving its exit proven and role-bound (ADR 0045).
+    #[cfg(feature = "nym")]
+    boot_clients: Option<crate::mixnet::quartet::BootClients>,
     /// The expiry watchdog driving a new ProofAcquisition the moment the
     /// Standing Client's proof stops being epoch-fresh.
     #[cfg(feature = "nym")]
@@ -286,6 +291,8 @@ impl LightClient {
                 crate::mixnet::MixnetSlot::Unattached,
             )),
             #[cfg(feature = "nym")]
+            boot_clients: None,
+            #[cfg(feature = "nym")]
             standing_watchdog: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
@@ -332,6 +339,8 @@ impl LightClient {
             mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Unattached,
             )),
+            #[cfg(feature = "nym")]
+            boot_clients: None,
             #[cfg(feature = "nym")]
             standing_watchdog: None,
             #[cfg(feature = "nym")]
@@ -395,6 +404,8 @@ impl LightClient {
             mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Unattached,
             )),
+            #[cfg(feature = "nym")]
+            boot_clients: None,
             #[cfg(feature = "nym")]
             standing_watchdog: None,
             #[cfg(feature = "nym")]

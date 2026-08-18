@@ -120,6 +120,8 @@ mod mode;
 
 pub mod probe;
 
+pub(crate) mod quartet;
+
 pub mod provision;
 
 pub mod route;
