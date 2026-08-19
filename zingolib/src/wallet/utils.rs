@@ -91,6 +91,29 @@ pub(crate) fn read_sapling_params() -> (Vec<u8>, Vec<u8>) {
     (sapling_output, sapling_spend)
 }
 
+/// The Sapling prover, parsed from the embedded parameters.
+fn build_sapling_prover() -> std::sync::Arc<zcash_proofs::prover::LocalTxProver> {
+    let (sapling_output, sapling_spend) = read_sapling_params();
+    std::sync::Arc::new(zcash_proofs::prover::LocalTxProver::from_bytes(
+        &sapling_spend,
+        &sapling_output,
+    ))
+}
+
+/// The Sapling prover for one send, parsed once per test process.
+#[cfg(test)]
+pub(crate) fn sapling_prover() -> std::sync::Arc<zcash_proofs::prover::LocalTxProver> {
+    static PROVER: std::sync::LazyLock<std::sync::Arc<zcash_proofs::prover::LocalTxProver>> =
+        std::sync::LazyLock::new(build_sapling_prover);
+    PROVER.clone()
+}
+
+/// The Sapling prover for one send, parsed for that send alone.
+#[cfg(not(test))]
+pub(crate) fn sapling_prover() -> std::sync::Arc<zcash_proofs::prover::LocalTxProver> {
+    build_sapling_prover()
+}
+
 /// Returns the path to the default directory that the Zcash proving parameters are located in.
 pub fn get_zcash_params_path() -> std::io::Result<PathBuf> {
     zcash_proofs::default_params_folder()
