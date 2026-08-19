@@ -19,8 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking.** ZIP 318's ratified constants now live in `zcash_protocol::zip318`,
   and `ANCHOR_AGE_CAP` moves from 16 boundaries to 4. `MIGRATION_MAX_DENOMINATION_ZEC`
   and `RESIDUAL_MIGRATION_MIN` are renamed `DENOM_CAP` and `MAX_RESIDUAL_VALUE`,
-  and both are `Zatoshis` rather than a count of whole ZEC. `MigrationParams` keeps
-  version 2, because the anchor cap never fed the consent hash.
+  and both are `Zatoshis` rather than a count of whole ZEC. The transfer-delay
+  mean moves from 144 blocks to 66, halving the average wait before a migration
+  transfer broadcasts. `MigrationParams` keeps version 2, because neither the
+  anchor cap nor the delay mean feeds the consent hash.
 - `LightWallet` implements `zcash_client_backend`'s new `OutputLockStore`, holding
   advisory output locks in memory beside the pending proposal so they expire with
   the process, as the proposal slot does.

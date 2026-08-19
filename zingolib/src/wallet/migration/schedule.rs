@@ -790,7 +790,7 @@ mod tests {
             let bucket = part.bucket_index.unwrap();
             assert!(bucket >= first_bucket, "current or future bucket");
             // Target is drawn from the part's boundary under the canonical
-            // delay law (mean 144, capped at 576; it may pass the window,
+            // delay law (mean 66, capped at 576; it may pass the window,
             // and the target is advisory per ADR 0017).
             let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
             let target = u32::from(part.target_height.unwrap());
@@ -1256,7 +1256,7 @@ mod tests {
         #[test]
         fn transfer_delay_matches_the_zip() {
             let delay = SchedulingParams::ZIP_318.transfer_delay();
-            assert_eq!(delay.mean().get(), 144);
+            assert_eq!(delay.mean().get(), 66);
             assert_eq!(delay.cap().get(), 576);
         }
 
