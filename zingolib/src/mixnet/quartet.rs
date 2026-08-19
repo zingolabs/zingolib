@@ -37,31 +37,32 @@ pub(crate) struct Quartet {
     pub(crate) spare: ProvenBirth,
 }
 
-/// Proves [`QUARTET_SIZE`] exits by racing that many births, assigning each
-/// a [`Role`] in the order it confirms, and recording the role-to-exit
+/// Proves [`QUARTET_SIZE`] exits by racing that many acquisitions, assigning
+/// each a [`Role`] in the order it confirms, and recording the role-to-exit
 /// binding that outlives every client.
 ///
-/// The lanes race, so the wall clock is the slowest of the four to confirm
-/// rather than their sum, and each lane already retries within its own
-/// birth budget. A lane that exhausts that budget refuses the whole boot:
-/// an online session that cannot prove four exits cannot fill its roles.
+/// The acquisitions race, so the wall clock is the slowest of the four to
+/// confirm rather than their sum, and each already retries within its own
+/// birth budget. An acquisition that exhausts that budget refuses the whole
+/// boot: an online session that cannot prove four exits cannot fill its
+/// roles.
 pub(crate) async fn prove_quartet<A>(pools: &Pools, acquirer: &A) -> Result<Quartet, TransportError>
 where
     A: TransportAcquirable + ?Sized,
 {
-    let mut lanes = (0..QUARTET_SIZE)
+    let mut acquisitions = (0..QUARTET_SIZE)
         .map(|_| pools.acquire_proven(acquirer))
         .collect::<futures::stream::FuturesUnordered<_>>();
 
     let mut proven: Vec<ProvenBirth> = Vec::with_capacity(QUARTET_SIZE);
-    while let Some(outcome) = lanes.next().await {
+    while let Some(outcome) = acquisitions.next().await {
         match outcome {
             Ok(birth) => proven.push(birth),
             Err(refusal) => {
-                // One lane exhausting its births means the mixnet refused
-                // this session everything it asked for. Retire what already
-                // proved rather than leaving clients behind a refusal.
-                drop(lanes);
+                // One acquisition exhausting its births means the mixnet
+                // refused this session everything it asked for. Retire what
+                // already proved rather than leaving clients behind a refusal.
+                drop(acquisitions);
                 for birth in proven {
                     birth.transport.stop().await;
                 }
@@ -72,7 +73,7 @@ where
 
     let mut assigned = proven.into_iter();
     let mut take = |role: Role| {
-        let birth = assigned.next().expect("every lane yielded a birth");
+        let birth = assigned.next().expect("every acquisition yielded a birth");
         pools.assign_role(role, birth.lease.node().clone());
         birth
     };
