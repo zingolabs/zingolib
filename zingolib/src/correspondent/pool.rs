@@ -1,7 +1,8 @@
 //! The Exit Pool and the Proven Client acquisition every operation shares.
 #![forbid(unsafe_code)]
 
-pub(crate) mod exit_pool;
+/// Exit Pool, defined below the seam (ADR 0046).
+pub(crate) use zingo_netutils::exit as exit_pool;
 
 use std::time::{Duration, Instant};
 

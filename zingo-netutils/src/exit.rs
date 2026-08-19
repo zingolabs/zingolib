@@ -1,4 +1,4 @@
-//! The Exit Pool: the session's sole issuer of Exit Node Reservations.
+//! Exit identity, health, Exit Pool.
 #![forbid(unsafe_code)]
 
 use std::collections::HashSet;
@@ -6,39 +6,116 @@ use std::sync::{Arc, Mutex, Weak};
 
 use rand::seq::SliceRandom as _;
 
-/// Why the pool could issue no clutch.
+/// Exit Node identity, as announced.
+#[derive(
+    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(into = "String", try_from = "String")]
+pub struct ExitNodeId(String);
+
+impl ExitNodeId {
+    /// Wire string.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Trims; refuses blank.
+    pub fn parse(candidate: &str) -> Result<Self, BlankExitNodeId> {
+        let identity = candidate.trim();
+        if identity.is_empty() {
+            return Err(BlankExitNodeId);
+        }
+        Ok(ExitNodeId(identity.to_string()))
+    }
+}
+
+/// Blank candidate.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("an Exit Node identity cannot be blank")]
+pub struct BlankExitNodeId;
+
+impl TryFrom<String> for ExitNodeId {
+    type Error = BlankExitNodeId;
+
+    fn try_from(candidate: String) -> Result<Self, Self::Error> {
+        ExitNodeId::parse(&candidate)
+    }
+}
+
+impl From<ExitNodeId> for String {
+    fn from(identity: ExitNodeId) -> Self {
+        identity.0
+    }
+}
+
+impl std::fmt::Display for ExitNodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[cfg(any(test, feature = "testutils"))]
+impl From<&str> for ExitNodeId {
+    fn from(identity: &str) -> Self {
+        ExitNodeId::parse(identity).expect("test exit identities are non-blank")
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::{BlankExitNodeId, ExitNodeId};
+
+    /// HYPOTHESIS: minting trims the candidate and refuses a blank, so the
+    /// spawned and hosted paths cannot mint unequal spellings of one exit or
+    /// an empty identity. Falsified if whitespace survives or a blank mints.
+    #[test]
+    fn minting_trims_and_refuses_a_blank() {
+        assert_eq!(
+            ExitNodeId::parse(" exit-alpha ").expect("non-blank mints"),
+            ExitNodeId::parse("exit-alpha").expect("non-blank mints"),
+        );
+        assert_eq!(ExitNodeId::parse(""), Err(BlankExitNodeId));
+        assert_eq!(ExitNodeId::parse("   "), Err(BlankExitNodeId));
+        assert_eq!(
+            ExitNodeId::try_from(String::from("  ")),
+            Err(BlankExitNodeId)
+        );
+    }
+}
+
+/// Draw refusal.
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum ExitPoolError {
-    /// The session has not yet learned the exit population.
+pub enum ExitPoolError {
+    /// Population unknown.
     #[error("the exit pool has no population yet")]
     NotSeeded,
-    /// Every reservation is held, so nothing can be drawn.
+    /// All reservations held.
     #[error("every exit is held: {held} held, {population} known")]
     Exhausted {
-        /// Reservations currently issued to some holder.
+        /// Reservations issued.
         held: usize,
-        /// The whole discovered population.
+        /// Population size.
         population: usize,
     },
 }
 
-/// One issued Exit Node Reservation; dropping it recycles the node.
-pub(crate) struct Reservation {
-    node: crate::mixnet::ExitNodeId,
+/// Issued reservation; recycles on drop.
+pub struct Reservation {
+    node: ExitNodeId,
     ledger: Weak<Mutex<ExitPool>>,
 }
 
 impl Reservation {
-    /// The reserved Exit Node identity.
-    pub(crate) fn node(&self) -> &crate::mixnet::ExitNodeId {
+    /// Reserved identity.
+    pub fn node(&self) -> &ExitNodeId {
         &self.node
     }
 
-    /// A ledgerless reservation for pool unit tests.
-    #[cfg(test)]
-    pub(crate) fn dangling_for_test(node: &str) -> Self {
+    /// Ledgerless reservation, for tests.
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn dangling_for_test(node: &str) -> Self {
         Reservation {
-            node: crate::mixnet::ExitNodeId::from(node),
+            node: ExitNodeId::from(node),
             ledger: Weak::new(),
         }
     }
@@ -78,160 +155,124 @@ impl std::hash::Hash for Reservation {
     }
 }
 
-impl std::borrow::Borrow<crate::mixnet::ExitNodeId> for Reservation {
-    fn borrow(&self) -> &crate::mixnet::ExitNodeId {
+impl std::borrow::Borrow<ExitNodeId> for Reservation {
+    fn borrow(&self) -> &ExitNodeId {
         &self.node
     }
 }
 
-/// What one completed or refused round trip showed about an Exit Node,
-/// within the epoch that observation survives.
+/// Round-trip verdict, epoch-scoped.
 // TODO: implement sensitivity to, and policy around, Nym epochs: the
 // network's epoch boundaries are queryable, and the sliding one-hour
 // window from the observation instant is a stand-in for the real
 // rotation edge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ExitNodeHealthVerdict {
-    /// A round trip completed through the exit within the current epoch:
-    /// it answered the Sentinel or carried a task.
+pub enum ExitNodeHealthVerdict {
+    /// Round trip completed.
     EpochProven,
-    /// The exit refused, timed out, or stayed silent past budget, within
-    /// the current epoch.
+    /// Refused, timed out, or silent.
     Failed,
 }
 
-/// One exit's most recent verdict with the instant it was earned.
+/// Latest verdict with its instant.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Observation {
+pub struct Observation {
     verdict: ExitNodeHealthVerdict,
     at: std::time::Instant,
 }
 
 impl Observation {
-    /// A verdict earned now.
-    pub(crate) fn earned(verdict: ExitNodeHealthVerdict, at: std::time::Instant) -> Self {
+    /// Verdict earned at `at`.
+    pub fn earned(verdict: ExitNodeHealthVerdict, at: std::time::Instant) -> Self {
         Observation { verdict, at }
     }
 }
 
-/// The epoch-scoped health record of the exit census, keyed by node.
+/// Health record, keyed by node.
 #[derive(Default)]
-pub(crate) struct NodeHealthIndex(
-    std::collections::HashMap<crate::mixnet::ExitNodeId, Observation>,
-);
+pub struct NodeHealthIndex(std::collections::HashMap<ExitNodeId, Observation>);
 
 impl NodeHealthIndex {
-    /// Keeps `observation` as the node's current verdict, superseding any
-    /// earlier one.
-    pub(crate) fn remember(&mut self, exit: crate::mixnet::ExitNodeId, observation: Observation) {
+    /// Supersedes any earlier verdict.
+    pub fn remember(&mut self, exit: ExitNodeId, observation: Observation) {
         self.0.insert(exit, observation);
     }
 
-    /// Whether the node's proof completed within the last Nym epoch.
-    pub(crate) fn epoch_proven(
-        &self,
-        exit: &crate::mixnet::ExitNodeId,
-        now: std::time::Instant,
-    ) -> bool {
+    /// Proven within the epoch.
+    pub fn epoch_proven(&self, exit: &ExitNodeId, now: std::time::Instant) -> bool {
         self.observed(exit, now, ExitNodeHealthVerdict::EpochProven)
     }
 
-    /// Whether the node failed within the last Nym epoch, so a convicted
-    /// node stands trial again once the topology that convicted it has
-    /// rotated away.
-    pub(crate) fn epoch_failed(
-        &self,
-        exit: &crate::mixnet::ExitNodeId,
-        now: std::time::Instant,
-    ) -> bool {
+    /// Failed within the epoch.
+    pub fn epoch_failed(&self, exit: &ExitNodeId, now: std::time::Instant) -> bool {
         self.observed(exit, now, ExitNodeHealthVerdict::Failed)
     }
 
-    /// The instant the node's EpochProven observation stops being fresh,
-    /// when one stands.
-    pub(crate) fn proven_until(
-        &self,
-        exit: &crate::mixnet::ExitNodeId,
-    ) -> Option<std::time::Instant> {
+    /// When the proof goes stale.
+    pub fn proven_until(&self, exit: &ExitNodeId) -> Option<std::time::Instant> {
         self.0.get(exit).and_then(|seen| {
             (seen.verdict == ExitNodeHealthVerdict::EpochProven)
-                .then(|| seen.at + zingo_netutils::time::NYM_EPOCH)
+                .then(|| seen.at + crate::time::NYM_EPOCH)
         })
     }
 
-    /// Whether the node's current observation is `verdict`, still fresh.
     fn observed(
         &self,
-        exit: &crate::mixnet::ExitNodeId,
+        exit: &ExitNodeId,
         now: std::time::Instant,
         verdict: ExitNodeHealthVerdict,
     ) -> bool {
         self.0.get(exit).is_some_and(|seen| {
             seen.verdict == verdict
-                && now.saturating_duration_since(seen.at) < zingo_netutils::time::NYM_EPOCH
+                && now.saturating_duration_since(seen.at) < crate::time::NYM_EPOCH
         })
     }
 }
 
-/// The session's Exit Pool: one reservation per discovered node, issued to
-/// at most one holder at a time.
+/// One reservation per node, one holder at a time.
 #[derive(Default)]
-pub(crate) struct ExitPool {
-    population: HashSet<crate::mixnet::ExitNodeId>,
-    issued: HashSet<crate::mixnet::ExitNodeId>,
+pub struct ExitPool {
+    population: HashSet<ExitNodeId>,
+    issued: HashSet<ExitNodeId>,
     health: NodeHealthIndex,
 }
 
 impl ExitPool {
-    /// Records the discovered population, once per session.
-    pub(crate) fn seed(&mut self, discovered: impl IntoIterator<Item = crate::mixnet::ExitNodeId>) {
+    /// Records the population, once.
+    pub fn seed(&mut self, discovered: impl IntoIterator<Item = ExitNodeId>) {
         self.population = discovered.into_iter().collect();
     }
 
-    /// Whether the population is known yet.
-    pub(crate) fn is_seeded(&self) -> bool {
+    /// Population known.
+    pub fn is_seeded(&self) -> bool {
         !self.population.is_empty()
     }
 
-    /// Keeps `observation` as `exit`'s current verdict.
-    pub(crate) fn remember(&mut self, exit: crate::mixnet::ExitNodeId, observation: Observation) {
+    /// Supersedes `exit`'s verdict.
+    pub fn remember(&mut self, exit: ExitNodeId, observation: Observation) {
         self.health.remember(exit, observation);
     }
 
-    /// Whether `exit`'s proof completed within the last Nym epoch.
-    pub(crate) fn epoch_proven(
-        &self,
-        exit: &crate::mixnet::ExitNodeId,
-        now: std::time::Instant,
-    ) -> bool {
+    /// Proven within the epoch.
+    pub fn epoch_proven(&self, exit: &ExitNodeId, now: std::time::Instant) -> bool {
         self.health.epoch_proven(exit, now)
     }
 
-    /// The instant `exit`'s EpochProven observation stops being fresh,
-    /// when one stands.
-    pub(crate) fn proven_until(
-        &self,
-        exit: &crate::mixnet::ExitNodeId,
-    ) -> Option<std::time::Instant> {
+    /// When `exit`'s proof goes stale.
+    pub fn proven_until(&self, exit: &ExitNodeId) -> Option<std::time::Instant> {
         self.health.proven_until(exit)
     }
 
-    /// Whether `exit` failed within the last Nym epoch.
+    /// Failed within the epoch.
     // Exercised by the ProofAcquisition contract tests; production reads
     // failures only through the draw's own partition.
     #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn epoch_failed(
-        &self,
-        exit: &crate::mixnet::ExitNodeId,
-        now: std::time::Instant,
-    ) -> bool {
+    pub fn epoch_failed(&self, exit: &ExitNodeId, now: std::time::Instant) -> bool {
         self.health.epoch_failed(exit, now)
     }
 
-    /// Draws one owning reservation, which recycles itself into `pool` when
-    /// dropped, preferring a fresh-Proven exit, then an unknown one, and a
-    /// Failed one only at exhaustion.
-    pub(crate) fn draw_exit(pool: &Arc<Mutex<ExitPool>>) -> Result<Reservation, ExitPoolError> {
+    /// Draws one reservation: Proven, then unknown, then Failed.
+    pub fn draw_exit(pool: &Arc<Mutex<ExitPool>>) -> Result<Reservation, ExitPoolError> {
         let now = std::time::Instant::now();
         let mut guarded = pool.lock().expect("exit pool mutex");
         if guarded.population.is_empty() {
@@ -239,7 +280,7 @@ impl ExitPool {
         }
         // The candidates are collected before any issue, so the ledger is
         // written while the population is no longer borrowed.
-        let drawable: Vec<crate::mixnet::ExitNodeId> = guarded
+        let drawable: Vec<ExitNodeId> = guarded
             .population
             .iter()
             .filter(|node| !guarded.issued.contains(*node))
@@ -267,7 +308,7 @@ impl ExitPool {
         // index orders tiers while chance still spreads load inside one:
         // sampling a tier at its own size returns iteration order verbatim,
         // which is why the shuffle is explicit.
-        let mut ordered: Vec<crate::mixnet::ExitNodeId> = Vec::new();
+        let mut ordered: Vec<ExitNodeId> = Vec::new();
         for mut tier in [proven, unknown, failed] {
             tier.shuffle(&mut rand::rngs::OsRng);
             ordered.extend(tier);
@@ -299,10 +340,9 @@ mod tests {
 
     fn seeded(count: usize) -> Arc<Mutex<ExitPool>> {
         let pool = Arc::new(Mutex::new(ExitPool::default()));
-        pool.lock().unwrap().seed(
-            (0..count)
-                .map(|index| crate::mixnet::ExitNodeId::from(format!("exit-{index}").as_str())),
-        );
+        pool.lock()
+            .unwrap()
+            .seed((0..count).map(|index| ExitNodeId::from(format!("exit-{index}").as_str())));
         pool
     }
 
@@ -347,7 +387,7 @@ mod tests {
     #[test]
     fn a_duplicated_discovery_seeds_one_reservation() {
         let pool = Arc::new(Mutex::new(ExitPool::default()));
-        let repeated = crate::mixnet::ExitNodeId::from("exit-repeated");
+        let repeated = ExitNodeId::from("exit-repeated");
         pool.lock()
             .unwrap()
             .seed(vec![repeated.clone(), repeated.clone()]);

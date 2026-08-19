@@ -50,6 +50,8 @@ tokio = { workspace = true, optional = true, features = [
     "io-util",
 ] }
 zingo-net-diag = { version = "0.1.0", path = "../zingo-net-diag", optional = true }
+rand = "0.8"
+serde = { version = "1.0.229", features = ["derive"] }
 
 [features]
 globally-public-transparent = ["dep:tokio-stream"]
