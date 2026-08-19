@@ -451,6 +451,20 @@ args = [
     "${@}",
 ]
 
+[tasks.sync-ab]
+description = "Compare two commits' sync rate, interleaved, with everything but the commits held fixed: the same indexer, seed, window, performance level, and release profile. Takes exactly two commit-ish arguments. Builds each in its own worktree, discards a warm-up run that also pins the window, then alternates the arms so warm-up and machine load fall on both equally, and reports outputs per second with the arms' spread."
+command = "cargo"
+args = [
+    "run",
+    "-q",
+    "--manifest-path",
+    "tools/workbench/Cargo.toml",
+    "--bin",
+    "sync-ab",
+    "--",
+    "${@}",
+]
+
 [tasks.rerun]
 clear = true
 description = "Rerun tests that failed or did not complete in the latest recorded nextest run"
