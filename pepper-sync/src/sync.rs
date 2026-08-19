@@ -1261,6 +1261,11 @@ fn drain_verdict(
     }
     match connected_for {
         Some(age) if age >= MEMPOOL_DRAIN_SETTLE && scan_workers == 0 => DrainVerdict::Shutdown,
+        // Settled, but the scanner still holds workers. Polling cannot retire
+        // them: only the main loop's `scanner.update()` can, and it runs
+        // outside this loop, so waiting here burns the ceiling on a value that
+        // cannot move. Re-enter and let the loop make progress instead.
+        Some(age) if age >= MEMPOOL_DRAIN_SETTLE => DrainVerdict::Reenter,
         _ => DrainVerdict::KeepPolling,
     }
 }
@@ -3078,6 +3083,26 @@ mod test {
         /// (workers, unprocessed, connected_for, poll_elapsed, verdict, label).
         type DrainCase = (usize, u32, Option<u64>, u64, DrainVerdict, &'static str);
 
+        /// HYPOTHESIS: a settled stream whose scanner is still busy, and an
+        /// unsettled stream whose scanner is still busy, are two different
+        /// states, because only the second one is advanced by waiting.
+        /// Falsified if the drain policy answers them alike.
+        #[test]
+        fn a_settled_and_an_unsettled_busy_scanner_are_not_one_state() {
+            let settled = drain_verdict(2, 0, Some(ms(1_400)), ms(500));
+            let unsettled = drain_verdict(2, 0, Some(ms(50)), ms(500));
+
+            assert_ne!(
+                settled, unsettled,
+                "a settled stream waits on `scanner.update()`, which this loop \
+                 never calls, while an unsettled one waits on a clock that ticks \
+                 by itself; one verdict for both spends the ceiling on the state \
+                 that waiting cannot advance"
+            );
+            assert_eq!(settled, Reenter, "settled and busy: only the loop helps");
+            assert_eq!(unsettled, KeepPolling, "unsettled: the clock still runs");
+        }
+
         #[test]
         fn table() {
             let cases: &[DrainCase] = &[
@@ -3097,10 +3122,15 @@ mod test {
                 // the processing itself.
                 (0, 3, Some(1_400), 0, Reenter, "unprocessed work"),
                 (5, 1, None, 999, Reenter, "work trumps missing stream"),
-                // Workers still draining: keep polling inside the
-                // ceiling, re-enter the loop once it expires.
-                (2, 0, Some(1_400), 500, KeepPolling, "workers draining"),
+                // Workers still draining: re-enter at once. Polling here
+                // cannot retire a worker, because only the main loop's
+                // `scanner.update()` does, so waiting spends the ceiling on
+                // a value that cannot move.
+                (2, 0, Some(1_400), 500, Reenter, "workers draining"),
                 (2, 0, Some(1_400), 1_000, Reenter, "ceiling with workers"),
+                // Before the stream settles, polling is still right: the
+                // settle window is wall-clock and does elapse.
+                (2, 0, Some(50), 500, KeepPolling, "unsettled stream polls"),
                 // Ceiling with a stream that never connected: the
                 // pre-c90f8d309 semantics. A dead stream must not
                 // hold the session open.
