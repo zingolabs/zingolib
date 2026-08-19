@@ -171,6 +171,9 @@ pub struct LightClient {
     /// This session's per-indexer attempt history, held in memory for the
     /// life of the process and never written beside the wallet.
     indexer_history: indexer_history::IndexerHistoryHandle,
+    /// The interval between transmit retries and queued-verdict probes, held
+    /// here so a test can exhaust a probe budget without waiting it out.
+    transmit_retry_interval: std::time::Duration,
     /// The mixnet transport slot (ADR 0011, amendment 2026-07-28): the
     /// explicit state Mixnet Mode is read from — unattached, switched off,
     /// or an attached transport. Explicit rather than `Option` so a
@@ -281,6 +284,7 @@ impl LightClient {
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            transmit_retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
             #[cfg(feature = "nym")]
             mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Unattached,
@@ -328,6 +332,7 @@ impl LightClient {
             // Synthetic test wallets have no durable directory; the default
             // handle records nowhere and loads empty.
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            transmit_retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
             #[cfg(feature = "nym")]
             mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Unattached,
@@ -391,6 +396,7 @@ impl LightClient {
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            transmit_retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
             #[cfg(feature = "nym")]
             mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Unattached,
@@ -432,6 +438,12 @@ impl LightClient {
     /// A cloneable handle to this session's per-indexer attempt history,
     /// which [`indexer_history::IndexerHistoryHandle::load`] reads for
     /// display or scoring.
+    /// Sets the interval this client waits between transmit retries and queued-verdict probes.
+    #[cfg(feature = "testutils")]
+    pub fn set_transmit_retry_interval(&mut self, interval: std::time::Duration) {
+        self.transmit_retry_interval = interval;
+    }
+
     pub fn indexer_history_handle(&self) -> indexer_history::IndexerHistoryHandle {
         self.indexer_history.clone()
     }
