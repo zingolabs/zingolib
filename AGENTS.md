@@ -9,6 +9,10 @@
   a type alias. Use a generic parameter, an `impl Trait` position, or an enum
   over the known implementors. Never add one. Existing ones are debt to retire,
   not precedent to follow. Ruled 2026-08-18.
+- **Every commit MUST be A/B benchmarked against its parent** with the online
+  sync benchmark (`makers sync-bench`), which drives a real `run-cli --online`
+  session so the mixnet boot load is present. Report both numbers with the
+  commit. Ruled 2026-08-18.
 
 ## Writing & Code Style
 

@@ -437,6 +437,20 @@ args = [
     "${@}",
 ]
 
+[tasks.sync-bench]
+description = "Time sync inside a real run-cli --online session, so the mixnet boot load is present. Drives the CLI, starts the clock at the sync launch, and stops it when the prompt reports the wallet synced. Requires --birthday <height>; both arms of an A/B must pass the same one so they scan the same window. Takes --label <text> to stamp the arm and --runs <n> for the session count."
+command = "cargo"
+args = [
+    "run",
+    "-q",
+    "--manifest-path",
+    "tools/workbench/Cargo.toml",
+    "--bin",
+    "sync-bench",
+    "--",
+    "${@}",
+]
+
 [tasks.rerun]
 clear = true
 description = "Rerun tests that failed or did not complete in the latest recorded nextest run"
