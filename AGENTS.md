@@ -4,6 +4,11 @@
 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
 - Never define by absence, not in documentation nor doc-comments.
+- **Trait objects are STRICTLY FORBIDDEN.** Every spelling: `dyn Trait`,
+  `Box<dyn Trait>`, `&dyn Trait`, `Arc<dyn Trait>`, and any trait object behind
+  a type alias. Use a generic parameter, an `impl Trait` position, or an enum
+  over the known implementors. Never add one. Existing ones are debt to retire,
+  not precedent to follow. Ruled 2026-08-18.
 
 ## Writing & Code Style
 
