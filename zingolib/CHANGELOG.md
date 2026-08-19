@@ -33,6 +33,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-export, but is now defined in `zingo_netutils::exit`.
 
 ### Changed
+- **Breaking.** The Zcash stack moves to `zcash_primitives` 0.30, `zcash_proofs`
+  0.30, `zcash_transparent` 0.10, `zcash_keys` 0.16 and `zcash_client_backend`
+  0.24.0-rc.7, and `zcash_pool_migration` moves from a git revision to the
+  published 0.1.0-rc.7. These types cross zingolib's public API, so a consumer
+  must move with them. Sourcing the migration crate from the registry collapses
+  the second `zcash_primitives` that its git revision used to drag in, so the
+  workspace now compiles one copy and the migration schedule no longer insulates
+  heights across a version divide.
+- **Breaking.** ZIP 318's ratified constants now live in `zcash_protocol::zip318`,
+  and `ANCHOR_AGE_CAP` moves from 16 boundaries to 4. `MIGRATION_MAX_DENOMINATION_ZEC`
+  and `RESIDUAL_MIGRATION_MIN` are renamed `DENOM_CAP` and `MAX_RESIDUAL_VALUE`,
+  and both are `Zatoshis` rather than a count of whole ZEC. The transfer-delay
+  mean moves from 144 blocks to 66, halving the average wait before a migration
+  transfer broadcasts. `MigrationParams` keeps version 2, because neither the
+  anchor cap nor the delay mean feeds the consent hash.
+- `LightWallet` implements `zcash_client_backend`'s new `OutputLockStore`, holding
+  advisory output locks in memory beside the pending proposal so they expire with
+  the process, as the proposal slot does.
 - The Server-Selection Sweep probes and assigns every indexer before its
   verdict (ruled 2026-08-14): no healthy answer ends the survey early, a
   healthy pinned server still wins outright, and otherwise the sync

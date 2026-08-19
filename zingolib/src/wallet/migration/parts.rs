@@ -14,7 +14,6 @@
 //! any pre-Confirmed state → Invalidated  (bound note spent outside the migration)
 //! ```
 
-use orchard::builder::BundleType;
 use pepper_sync::wallet::OutputId;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
@@ -890,7 +889,7 @@ impl ProveOnce {
             expiry_height,
             params: params_clone,
         } = self;
-        use zcash_primitives::transaction::builder::{BuildConfig, Builder};
+        use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
         use zcash_protocol::memo::MemoBytes;
         use zcash_protocol::value::Zatoshis;
 
@@ -905,10 +904,8 @@ impl ProveOnce {
             sapling_anchor: None,
             orchard_anchor: Some(anchor),
             ironwood_anchor: Some(orchard::Anchor::empty_tree()),
-            orchard_pool_bundle_type: BundleType::Transactional {
-                bundle_required: false,
-                pad_to_minimum: None,
-            },
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
         };
         let mut builder =
             Builder::new(chain_type, target_height, build_config).with_expiry_height(expiry_height);
