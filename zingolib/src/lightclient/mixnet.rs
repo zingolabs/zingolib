@@ -453,6 +453,16 @@ async fn standing_rotation_watchdog(
     pools: std::sync::Arc<crate::correspondent::pool::Pools>,
     status: crate::mixnet::driver::StatusPublisher,
 ) {
+    // Asked once before any waiting, so a platform that will never rotate
+    // holds no sleeping task for the session's life.
+    if let Some(acquirer) = pools.acquirer()
+        && matches!(
+            crate::mixnet::acquire::TransportAcquirable::rotation_verdict(acquirer.as_ref()),
+            crate::mixnet::acquire::RotationVerdict::Never
+        )
+    {
+        return;
+    }
     loop {
         // The generator is scoped so no non-Send handle crosses the await.
         let cadence = {
@@ -481,6 +491,9 @@ async fn standing_rotation_watchdog(
                 crate::mixnet::acquire::RotationVerdict::Defer(after) => {
                     tokio::time::sleep(after).await
                 }
+                // A platform can rule rotation out mid-session, and the
+                // ruling holds for the rest of it.
+                crate::mixnet::acquire::RotationVerdict::Never => return,
             }
         };
         hand_off_standing_client(&slot, &pools, &status, acquirer.as_ref()).await;
@@ -1453,6 +1466,43 @@ mod tests {
             );
         }
 
+        /// How long a watchdog that must not wait is given to retire.
+        const IMMEDIATE_RETIREMENT: std::time::Duration = std::time::Duration::from_millis(50);
+
+        /// HYPOTHESIS: a platform that rules rotation out retires the
+        /// watchdog rather than parking it on a cadence whose answer cannot
+        /// change, so a desktop session holds no sleeping task for its
+        /// whole life. Falsified if the watchdog waits out a rotation
+        /// interval before reading a verdict it could have read at once.
+        #[tokio::test]
+        async fn a_platform_that_never_rotates_retires_the_watchdog() {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind an ephemeral port");
+            let addr = listener.local_addr().expect("local addr");
+            let slot = std::sync::Arc::new(std::sync::Mutex::new(
+                crate::mixnet::MixnetSlot::Attached(attached_client(addr)),
+            ));
+            let pools = crate::correspondent::pool::Pools::new();
+            // The desktop acquirer is the production Never, and its verdict
+            // is answered without the binary ever being spawned.
+            pools.set_acquirer(std::sync::Arc::new(
+                crate::mixnet::acquire::Acquirer::Spawned(
+                    crate::mixnet::acquire::SpawnedBinary::at("nym-proxy".into()),
+                ),
+            ));
+
+            let watchdog = tokio::spawn(super::super::standing_rotation_watchdog(
+                slot,
+                pools,
+                crate::mixnet::status_publisher(),
+            ));
+            tokio::time::timeout(IMMEDIATE_RETIREMENT, watchdog)
+                .await
+                .expect("a Never verdict retires the watchdog before any cadence elapses")
+                .expect("the watchdog runs to completion");
+        }
+
         /// An acquirer whose every birth refuses, so a rotation exhausts.
         struct BirthlessAcquirer;
 
@@ -1644,9 +1694,9 @@ mod tests {
                                 .map(|id| ExitNodeId::from(*id))
                                 .collect(),
                             yields: ANNOUNCEMENT_YIELDS,
-                            rotation: crate::mixnet::acquire::RotationVerdict::Defer(
-                                zingo_netutils::time::CLIENT_ROTATION_MAX,
-                            ),
+                            // The harness pins the client it scripts, so a
+                            // rotation must never replace it mid-test.
+                            rotation: crate::mixnet::acquire::RotationVerdict::Never,
                         },
                     ),
                 ))

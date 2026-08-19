@@ -289,7 +289,7 @@ impl TransportAcquirable for SpawnedBinary {
     fn rotation_verdict(&self) -> RotationVerdict {
         // A desktop keeps the four role-bound clients ADR 0045 gives it, so
         // it never spends a rotation; ADR 0048 leaves it unchanged.
-        RotationVerdict::Defer(zingo_netutils::time::CLIENT_ROTATION_MAX)
+        RotationVerdict::Never
     }
 }
 

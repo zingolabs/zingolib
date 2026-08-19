@@ -41,10 +41,13 @@ pub enum HostRefusal {
 pub enum RotationVerdict {
     /// Spend the bootstrap now.
     Now,
-    /// Not now. Ask again after this long, which a platform holding its
-    /// client indefinitely answers with a long interval rather than a
-    /// separate refusal.
+    /// Not now. Ask again after this long.
     Defer(std::time::Duration),
+    /// Never, for the session's whole life. A platform whose clients are
+    /// already scoped by role has nothing to gain from rotating one, and
+    /// saying so retires the watchdog rather than parking it on a cadence
+    /// whose answer cannot change.
+    Never,
 }
 
 /// A platform host that owns the mixnet proxy, where a sandbox forbids the

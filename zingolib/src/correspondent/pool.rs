@@ -484,9 +484,7 @@ mod bind_failure_absorption {
         }
 
         fn rotation_verdict(&self) -> zingo_netutils::provider::RotationVerdict {
-            zingo_netutils::provider::RotationVerdict::Defer(
-                zingo_netutils::time::CLIENT_ROTATION_MAX,
-            )
+            zingo_netutils::provider::RotationVerdict::Never
         }
     }
 

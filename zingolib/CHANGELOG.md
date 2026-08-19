@@ -21,8 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Now` it hands the session to a freshly proven client (ADR 0048). The
   hand-off is make-before-break, so a rotation that cannot prove a
   replacement keeps the incumbent and publishes nothing. A desktop's
-  spawned acquirer defers indefinitely, which leaves ADR 0045's four
-  role-bound clients unchanged.
+  spawned acquirer answers `RotationVerdict::Never`, which retires the
+  watchdog before it waits at all and leaves ADR 0045's four role-bound
+  clients unchanged.
 - A failover that installs a replacement now retires the client it replaced
   rather than stopping it: the outgoing conduit is superseded so it takes no
   new work, its transport stays open until the work already dialed through

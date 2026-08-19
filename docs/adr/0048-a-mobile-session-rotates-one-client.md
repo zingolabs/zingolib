@@ -114,7 +114,12 @@ The rotation cadence is a privacy parameter. It gets a named constant and
 a glossary entry, never a literal at a call site.
 
 Desktop is unchanged. ADR 0045's four roles stand where a client costs
-nothing a user notices.
+nothing a user notices, and the desktop acquirer says so outright: its
+verdict is `Never`, which retires the rotation watchdog rather than parking
+it on a cadence whose answer cannot change. A platform therefore states one
+of three things — rotate now, ask again later, or never — because "never"
+and "not yet" are different facts and only the first lets the wallet stop
+asking.
 
 Mobile moves from a push seam to a pull one, and that is the interface cost
 of this decision. Today the platform starts a client and hands the wallet

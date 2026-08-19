@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the previous derivation each of those clones inflated the count, leaving
   a superseded conduit permanently short of `Retired`.
 
+### Changed
+- BREAKING: `provider::RotationVerdict` gains a `Never` variant, which a
+  platform answers when rotation is ruled out for the session's whole life
+  rather than merely postponed. `Defer` used to carry both meanings, so a
+  desktop that will never rotate had to say so by repeating a ten-minute
+  deferral forever; the wallet now retires its rotation watchdog instead of
+  parking it on a cadence whose answer cannot change.
+
 ### Added
 - `provider::HostedProvider::rotation_verdict`: the host's answer on
   spending a rotation's bootstrap now, reaching the wallet through the
