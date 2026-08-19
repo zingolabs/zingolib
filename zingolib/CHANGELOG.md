@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Box<ProveOnce>`. Call `prove.prove()` where the closure was invoked.
   Naming the type states what the proving work owns, which the closure
   left implicit.
+- BREAKING: `mixnet::acquire::ProxyHosting` gains `rotation_verdict`, which a
+  platform answers to state whether it can afford a rotation now (ADR 0048).
+  `MixnetTiming` gains `client_rotation_min` and `client_rotation_max`, so a
+  host reads the cadence bounds rather than pinning its own copy.
 
 ### Removed
 - BREAKING: `mixnet::acquire::ProxyHost` is renamed `ProxyHosting` and moved

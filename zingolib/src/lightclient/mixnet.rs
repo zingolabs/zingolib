@@ -495,7 +495,7 @@ impl LightClient {
     /// ```
     /// use zingolib::config::{ClientConfig, WalletConfig};
     /// use zingolib::lightclient::LightClient;
-    /// use zingolib::mixnet::acquire::{HostRefusal, HostedTransport, ProxyHosting};
+    /// use zingolib::mixnet::acquire::{HostRefusal, HostedTransport, ProxyHosting, RotationVerdict};
     /// use zingolib::mixnet::{ExitNodeId, Indicator, TransportError};
     ///
     /// // A host that declines every request, standing in for the platform
@@ -516,6 +516,12 @@ impl LightClient {
     ///         Err(HostRefusal::Declined {
     ///             detail: "the platform is in low-power mode".to_string(),
     ///         })
+    ///     }
+    ///
+    ///     // Low power is exactly when a platform declines to spend a
+    ///     // bootstrap, so this host holds whatever it has.
+    ///     fn rotation_verdict(&self) -> RotationVerdict {
+    ///         RotationVerdict::Defer(zingolib::mixnet::mixnet_timing().client_rotation_max)
     ///     }
     /// }
     ///

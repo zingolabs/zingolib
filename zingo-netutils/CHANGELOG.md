@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `provider::RotationVerdict` and `ProxyHosting::rotation_verdict`: the
+  resource-constrained rotation policy a platform states, since only it sees
+  the battery, the foreground state, and the radio (ADR 0048).
+  `provider::rotation_interval` draws the randomised cadence, and
+  `time::CLIENT_ROTATION_MIN` and `time::CLIENT_ROTATION_MAX` bound it.
 - `provider::ProxyHosting`, `provider::HostedProvider`,
   `provider::HostedTransport`, and `provider::HostRefusal`: the mixnet
   provider a platform host supplies, moved down from zingolib (ADR 0046).

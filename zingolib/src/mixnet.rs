@@ -90,6 +90,11 @@ pub struct MixnetTiming {
     /// Bound on one data round trip through the tunnel, the per-attempt
     /// patience behind the budget.
     pub mixnet_round_trip_bound: std::time::Duration,
+    /// The shortest a session holds one client before rotating it, for a
+    /// platform whose policy rotates at all (ADR 0048).
+    pub client_rotation_min: std::time::Duration,
+    /// The longest, so no exit observes more than this much of a session.
+    pub client_rotation_max: std::time::Duration,
 }
 
 /// The current [`MixnetTiming`], read from the one place the constants
@@ -99,6 +104,8 @@ pub fn mixnet_timing() -> MixnetTiming {
     MixnetTiming {
         attach_readiness_budget: zingo_netutils::time::ATTACH_READINESS_BUDGET,
         mixnet_round_trip_bound: zingo_netutils::time::MIXNET_ROUND_TRIP_BOUND,
+        client_rotation_min: zingo_netutils::time::CLIENT_ROTATION_MIN,
+        client_rotation_max: zingo_netutils::time::CLIENT_ROTATION_MAX,
     }
 }
 

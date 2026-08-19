@@ -200,7 +200,9 @@ impl TransportAcquirable for Acquirer {
 }
 
 /// The provider seam, defined below the seam (ADR 0046).
-pub use zingo_netutils::provider::{HostRefusal, HostedProvider, HostedTransport, ProxyHosting};
+pub use zingo_netutils::provider::{
+    HostRefusal, HostedProvider, HostedTransport, ProxyHosting, RotationVerdict, rotation_interval,
+};
 
 impl TransportAcquirable for HostedProvider {
     async fn discover(&self) -> Result<HashSet<crate::mixnet::ExitNodeId>, TransportError> {
@@ -296,6 +298,14 @@ mod tests {
             _clutch: &[crate::mixnet::ExitNodeId],
         ) -> Result<HostedTransport, HostRefusal> {
             self.transport.clone()
+        }
+
+        /// A script rotates only when its test asks it to, so the default
+        /// holds the client for the whole of any test's run.
+        fn rotation_verdict(&self) -> zingo_netutils::provider::RotationVerdict {
+            zingo_netutils::provider::RotationVerdict::Defer(
+                zingo_netutils::time::CLIENT_ROTATION_MAX,
+            )
         }
     }
 

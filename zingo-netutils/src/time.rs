@@ -275,6 +275,22 @@ pub const SPEED_ACQUISITION_DEADLINE: Duration = Duration::from_millis(
 // as a sliding window.
 pub const NYM_EPOCH: Duration = Duration::from_secs(60 * 60);
 
+/// The shortest a session holds one mixnet client before rotating it, on a
+/// platform whose policy asks for rotation at all (ADR 0048).
+pub const CLIENT_ROTATION_MIN: Duration = Duration::from_secs(5 * 60);
+
+/// The longest, so no exit observes more than this much of one session.
+///
+/// ```
+/// use zingo_netutils::time::{CLIENT_ROTATION_MAX, CLIENT_ROTATION_MIN, NYM_EPOCH};
+///
+/// assert!(CLIENT_ROTATION_MIN < CLIENT_ROTATION_MAX);
+/// // A rotation bounds exposure more tightly than an epoch does, which is
+/// // the whole point of rotating rather than waiting for the topology.
+/// assert!(CLIENT_ROTATION_MAX < NYM_EPOCH);
+/// ```
+pub const CLIENT_ROTATION_MAX: Duration = Duration::from_secs(10 * 60);
+
 /// Per-server bound on the ranking `get_info` sweep, deliberately tight so
 /// one slow server cannot block the fastest-first ordering.
 pub const SERVER_RANKING_TIMEOUT: Duration = Duration::from_secs(5);
