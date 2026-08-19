@@ -51,6 +51,22 @@ Mobile's provider answers every role request with the current conduit.
 Roles still key conduits exactly as ADR 0047 says. On a phone they all key
 the same one, and what changes is which exit that one conduit reaches.
 
+The mechanism belongs to `zingo-netutils` and the policy belongs to the
+host. Proving a replacement, holding both clients through the hand-off, and
+draining in-flight work are subtle and identical on every platform, so they
+are written once below the seam. Deciding whether now is a moment to spend
+a bootstrap needs the battery level, the foreground state, and whether the
+radio is on wifi or cellular, and none of those are observable from this
+workspace. A wallet cannot make a resource-constrained decision it has no
+inputs for.
+
+That split is expressed as a trait `zingo-netutils` defines and the
+platform implements, in the shape `ProxyHosting` already has: the host
+supplies a transport when asked and answers whether a rotation is welcome
+now. The cadence bounds stay in `zingo_netutils::time` and reach the host
+through `mixnet_timing`, so neither side pins its own copy of a number the
+other enforces.
+
 ## Considered options
 
 **Four clients, as the desktop has.** Gives mobile the separated scope
@@ -97,16 +113,26 @@ a glossary entry, never a literal at a call site.
 Desktop is unchanged. ADR 0045's four roles stand where a client costs
 nothing a user notices.
 
+Mobile moves from a push seam to a pull one, and that is the interface cost
+of this decision. Today the platform starts a client and hands the wallet
+its address through `attach_mixnet`, which the wallet can only accept.
+Under a supply-on-request seam the platform answers when asked, which is
+what lets the mechanism live below the seam and run the hand-off. The two
+can coexist during migration, since a first attach and a hand-off are
+different intents.
+
+`attach_mixnet` cannot express a hand-off as it stands. It calls
+`vacate_mixnet_slot` before installing, so it stops the serving client
+first, and it asserts the slot was empty afterward. `install_failover_client`
+is the only path that replaces an attached client and it requires the
+incumbent to be condemned, which a healthy rotation's never is. Both need
+an entry point that installs the replacement and retires the superseded
+client once its work has drained.
+
 ## Open
 
-Who performs the rotation is not settled here, and it is the first thing
-implementation must resolve. The mobile host owns the client:
-`attach_mixnet` receives an address the platform started, and an attached
-session has no acquirer, so the wallet cannot birth a replacement. Either
-the host drives rotation on its own clock, or the FFI gains a way for the
-wallet to ask for a replacement and for the host to hand one over while the
-old one still serves.
-
-Whether rotation should pause while the app is backgrounded and idle is
-also open. Rotating with no traffic to unlink spends battery to hide
-nothing, so the cadence may want to follow activity rather than the clock.
+Whether rotation should pause while the app is backgrounded and idle.
+Rotating with no traffic to unlink spends battery to hide nothing, so the
+cadence may want to follow activity rather than the clock. This is exactly
+the kind of judgement the policy trait exists to delegate, so it may need
+no answer here at all.
