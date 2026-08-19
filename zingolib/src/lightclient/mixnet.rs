@@ -495,14 +495,14 @@ impl LightClient {
     /// ```
     /// use zingolib::config::{ClientConfig, WalletConfig};
     /// use zingolib::lightclient::LightClient;
-    /// use zingolib::mixnet::acquire::{HostRefusal, HostedTransport, ProxyHost};
+    /// use zingolib::mixnet::acquire::{HostRefusal, HostedTransport, ProxyHosting};
     /// use zingolib::mixnet::{ExitNodeId, Indicator, TransportError};
     ///
     /// // A host that declines every request, standing in for the platform
     /// // that owns the proxy where subprocesses are forbidden.
     /// struct DecliningHost;
     ///
-    /// impl ProxyHost for DecliningHost {
+    /// impl ProxyHosting for DecliningHost {
     ///     fn discover_exit_nodes(&self) -> Result<Vec<ExitNodeId>, HostRefusal> {
     ///         Err(HostRefusal::Declined {
     ///             detail: "the platform is in low-power mode".to_string(),
@@ -541,7 +541,7 @@ impl LightClient {
     ///     // binary; the host's refusal surfaces typed and the failed
     ///     // enable leaves Unattached — a refusal, never clearnet.
     ///     let refused = client
-    ///         .enable_mixnet_via_host(std::sync::Arc::new(DecliningHost))
+    ///         .enable_mixnet_via_host(DecliningHost)
     ///         .await;
     ///     assert!(matches!(
     ///         refused,
