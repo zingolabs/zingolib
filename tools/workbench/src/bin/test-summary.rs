@@ -18,7 +18,6 @@
 
 #![forbid(unsafe_code)]
 
-use std::error::Error;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 
@@ -83,7 +82,7 @@ impl Summary {
 /// Run one phase through the `makers test` front door, streaming its combined
 /// output to our stdout while capturing it for parsing. Returns
 /// (exit_code, captured_output).
-fn run_phase(invocation: &str, forwarded_args: &[String]) -> Result<(i32, String), Box<dyn Error>> {
+fn run_phase(invocation: &str, forwarded_args: &[String]) -> Result<(i32, String), std::io::Error> {
     // `bash -c '... 2>&1'` merges stderr into stdout so the single captured
     // stream carries the nextest summary line wherever nextest emits it.
     let mut shell_command = format!("makers test {invocation}");
@@ -169,8 +168,7 @@ fn parse_summary(log: &str) -> Summary {
     let line = log
         .lines()
         .map(strip_ansi)
-        .filter(|l| l.contains("run:") && l.contains("test"))
-        .next_back()
+        .rfind(|l| l.contains("run:") && l.contains("test"))
         .unwrap_or_default();
 
     Summary {
@@ -235,7 +233,7 @@ fn print_row(label: &str, s: &Summary) {
     );
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), std::io::Error> {
     let forwarded_args: Vec<String> = std::env::args().skip(1).collect();
 
     // Forwarded args reach every phase's nextest invocation, where a
@@ -439,8 +437,7 @@ mod parse_summary {
     /// parse silently dropped from the table.
     #[test]
     fn timeouts_are_counted() {
-        let line =
-            "Summary [1200.089s] 40 tests run: 21 passed (18 slow), 4 failed, 15 timed out, 6 skipped";
+        let line = "Summary [1200.089s] 40 tests run: 21 passed (18 slow), 4 failed, 15 timed out, 6 skipped";
         check(line, 40, 21, 4, 15, 6);
         assert_eq!(parse_summary(line).unaccounted(), 0);
     }
