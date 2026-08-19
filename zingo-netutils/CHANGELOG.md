@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `conduit::ConduitDial` and `conduit::ConduitState`: a conduit counts its
+  outstanding uses, so a superseded transport retires the moment its work
+  drains rather than after a guessed interval (ADR 0048). `ConduitState`
+  orders `Serving`, `Superseded`, `Retired`, which is the order a conduit's
+  life runs in, and it is derived from the count so retirement cannot be
+  claimed while work is outstanding.
 - `provider::RotationVerdict` and `ProxyHosting::rotation_verdict`: the
   resource-constrained rotation policy a platform states, since only it sees
   the battery, the foreground state, and the radio (ADR 0048).
@@ -34,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   latency the readiness grace is now derived from.
 
 ### Changed
+- BREAKING: `conduit::MixnetConduit` is no longer `Copy`, and its `socks5`
+  accessor is gone. Dialing takes a `ConduitDial` guard from `dial()`, whose
+  `socks5` is the only way to reach the address, so a use cannot be made
+  without being counted (ADR 0047, ADR 0048).
 - `time::EXIT_ANNOUNCEMENT_GRACE` falls from 25 seconds to 7. It was one
   connect attempt plus a hedge interval, a bound chosen without measurement.
   The `birth-trial` workbench tool measured thirty pinned births against

@@ -182,13 +182,15 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
 
     fn probe(
         &self,
-        socks5: std::net::SocketAddr,
+        dial: zingo_netutils::conduit::ConduitDial,
         target: Uri,
     ) -> impl std::future::Future<Output = SurveyResult> + Send {
         let timeout = self.timeout;
         let history = self.history.clone();
         async move {
-            let (reported, refusal) = probe_one(socks5, &target, timeout, &history).await;
+            // The guard outlives the leg, so the conduit counts this survey
+            // probe while it runs.
+            let (reported, refusal) = probe_one(dial.socks5(), &target, timeout, &history).await;
             SurveyResult {
                 uri: target,
                 reported,

@@ -30,23 +30,20 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
         zingo_price::RACED_SOURCES.to_vec()
     }
 
-    fn probe(
+    async fn probe(
         &self,
-        socks5: std::net::SocketAddr,
+        dial: zingo_netutils::conduit::ConduitDial,
         target: Self::Target,
-    ) -> impl std::future::Future<Output = Self::Outcome> + Send {
-        let dial = socks5.to_string();
-        async move {
-            let outcome = zingo_price::get_source_price(
-                target,
-                Some(&dial),
-                target.url(),
-                zingo_price::REQUEST_TIMEOUT,
-                zingo_price::CONNECT_TIMEOUT,
-            )
-            .await;
-            (target, outcome)
-        }
+    ) -> Self::Outcome {
+        let outcome = zingo_price::get_source_price(
+            target,
+            &dial,
+            target.url(),
+            zingo_price::REQUEST_TIMEOUT,
+            zingo_price::CONNECT_TIMEOUT,
+        )
+        .await;
+        (target, outcome)
     }
 
     fn settled(&self, outcomes: &[Self::Outcome]) -> bool {
@@ -909,12 +906,15 @@ impl LightClient {
         timeout: std::time::Duration,
     ) -> Result<Vec<crate::mixnet::probe::MixnetProbe>, crate::lightclient::error::LightClientError>
     {
-        let socks5_addr = match self.mixnet_route()? {
-            crate::mixnet::MixnetRoute::Mixnet(conduit) => conduit.socks5(),
+        // The guard lives for the whole probe, so the conduit counts this
+        // work as outstanding until every leg has finished.
+        let dial = match self.mixnet_route()? {
+            crate::mixnet::MixnetRoute::Mixnet(conduit) => conduit.dial(),
             crate::mixnet::MixnetRoute::Clearnet => {
                 return Err(crate::lightclient::error::LightClientError::ProbeRequiresMixnet);
             }
         };
+        let socks5_addr = dial.socks5();
         if let Some(uri) = &target
             && !crate::mixnet::probe::probe_eligible(uri)
         {
@@ -958,12 +958,15 @@ impl LightClient {
     /// because the switched-off consent covers Transmission and never a
     /// third-party price API outside the Zcash ecosystem.
     pub async fn update_current_price(&self) -> Result<MixnetPriceFetch, LightClientError> {
-        let socks5_addr = match self.mixnet_route()? {
-            crate::mixnet::MixnetRoute::Mixnet(conduit) => conduit.socks5(),
+        // Held for the whole race, so the conduit knows the fetch is still
+        // running even while every source is in flight.
+        let dial = match self.mixnet_route()? {
+            crate::mixnet::MixnetRoute::Mixnet(conduit) => conduit.dial(),
             crate::mixnet::MixnetRoute::Clearnet => {
                 return Err(LightClientError::PriceFetchRequiresMixnet);
             }
         };
+        let socks5_addr = dial.socks5();
 
         // A spawned session births a per-run Proven Client — one fresh
         // Shared exit per run, never the standing client's — while an
@@ -994,7 +997,8 @@ impl LightClient {
             crate::mixnet::speed::SpeedPrioritized::dispose(&run, spent);
             (outcomes, dial)
         } else {
-            match crate::mixnet::speed::run_wave(&run, socks5_addr).await {
+            let conduit = zingo_netutils::conduit::MixnetConduit::over(socks5_addr);
+            match crate::mixnet::speed::run_wave(&run, &conduit).await {
                 crate::mixnet::speed::WaveEnd::Settled(outcomes)
                 | crate::mixnet::speed::WaveEnd::Exhausted(outcomes) => {
                     (outcomes, socks5_addr.to_string())

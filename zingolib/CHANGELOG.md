@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Box<ProveOnce>`. Call `prove.prove()` where the closure was invoked.
   Naming the type states what the proving work owns, which the closure
   left implicit.
+- BREAKING: `mixnet::MixnetConduit` loses its `socks5` accessor and its
+  `Copy`. A surface holding a route now takes a `ConduitDial` guard and
+  holds it for the work's duration, which is what lets a superseded conduit
+  retire once its work drains (ADR 0048). `mixnet::speed::SpeedPrioritized`
+  races a conduit rather than an address, and `MixnetTransmissionClient`
+  holds a guard for its life because it dials on every submission.
 - BREAKING: `mixnet::acquire::ProxyHosting` gains `rotation_verdict`, which a
   platform answers to state whether it can afford a rotation now (ADR 0048).
   `MixnetTiming` gains `client_rotation_min` and `client_rotation_max`, so a

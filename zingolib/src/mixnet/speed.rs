@@ -25,10 +25,11 @@ pub(crate) trait SpeedPrioritized {
     /// The targets this operation races, in the order the wave takes them.
     fn targets(&self) -> Vec<Self::Target>;
 
-    /// Races one target through the tunnel at `socks5`.
+    /// Races one target through `dial`'s conduit, holding the guard for the
+    /// leg so the conduit counts it as outstanding.
     fn probe(
         &self,
-        socks5: SocketAddr,
+        dial: zingo_netutils::conduit::ConduitDial,
         target: Self::Target,
     ) -> impl std::future::Future<Output = Self::Outcome> + Send;
 
@@ -102,7 +103,11 @@ pub(crate) async fn run_speed_prioritized<T: SpeedPrioritized>(
             return Err(refusal(draw - 1));
         };
         let (member, socks5) = acquired?;
-        let Ok(wave) = tokio::time::timeout_at(deadline, run_wave(operation, socks5)).await else {
+        // One conduit per draw, so the count reflects the legs this wave has
+        // in flight and nothing outside it.
+        let conduit = zingo_netutils::conduit::MixnetConduit::over(socks5);
+        let Ok(wave) = tokio::time::timeout_at(deadline, run_wave(operation, &conduit)).await
+        else {
             // The deadline, not the exit, ended this wave: the member
             // retires without a verdict, because nothing was proven.
             member.retire().await;
@@ -171,16 +176,16 @@ pub(crate) enum WaveEnd<O> {
     Exhausted(Vec<O>),
 }
 
-/// Races `operation`'s targets through `socks5` in one full-width wave.
+/// Races `operation`'s targets through `conduit` in one full-width wave.
 pub(crate) async fn run_wave<T: SpeedPrioritized>(
     operation: &T,
-    socks5: SocketAddr,
+    conduit: &zingo_netutils::conduit::MixnetConduit,
 ) -> WaveEnd<T::Outcome> {
     use futures::StreamExt as _;
 
     let mut outcomes: Vec<T::Outcome> = Vec::new();
     let mut legs = futures::stream::iter(operation.targets())
-        .map(|target| operation.probe(socks5, target))
+        .map(|target| operation.probe(conduit.dial(), target))
         .buffer_unordered(SURVEY_WAVE_WIDTH);
     while let Some(outcome) = legs.next().await {
         outcomes.push(outcome);
@@ -209,7 +214,7 @@ mod tests {
 
         fn probe(
             &self,
-            _socks5: SocketAddr,
+            _dial: zingo_netutils::conduit::ConduitDial,
             _target: usize,
         ) -> impl std::future::Future<Output = bool> + Send {
             std::future::ready(false)
@@ -279,7 +284,7 @@ mod tests {
 
         fn probe(
             &self,
-            _socks5: SocketAddr,
+            _dial: zingo_netutils::conduit::ConduitDial,
             target: usize,
         ) -> impl std::future::Future<Output = bool> + Send {
             let answered = self.answers[target];
@@ -321,12 +326,14 @@ mod tests {
     /// unsettled one claims to have settled.
     #[tokio::test(flavor = "multi_thread")]
     async fn a_wave_ends_when_its_operation_settles() {
-        let socks5: SocketAddr = "127.0.0.1:1".parse().expect("a static address");
+        let conduit = zingo_netutils::conduit::MixnetConduit::over(
+            "127.0.0.1:1".parse().expect("a static address"),
+        );
 
         let settles = Scripted {
             answers: vec![false, true, false],
         };
-        match run_wave(&settles, socks5).await {
+        match run_wave(&settles, &conduit).await {
             WaveEnd::Settled(outcomes) => {
                 assert!(outcomes.iter().any(|answered| *answered));
                 assert!(outcomes.len() <= 3, "the wave stops at the settling leg");
@@ -337,7 +344,7 @@ mod tests {
         let never = Scripted {
             answers: vec![false, false],
         };
-        match run_wave(&never, socks5).await {
+        match run_wave(&never, &conduit).await {
             WaveEnd::Exhausted(outcomes) => assert_eq!(outcomes.len(), 2),
             other => panic!("an unsettled operation ended as {other:?}"),
         }
