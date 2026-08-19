@@ -118,6 +118,13 @@ pub(crate) trait TransportAcquirable: Send + Sync + 'static {
         clutch: &[crate::mixnet::ExitNodeId],
         publisher: StatusPublisher,
     ) -> impl Future<Output = Result<MixnetProxy, TransportError>> + Send;
+
+    /// Whether now is a moment to spend a rotation's bootstrap (ADR 0048).
+    // The wallet cannot weigh this: the battery level, the foreground
+    // state, and the radio are the inputs, and none are observable here.
+    // A platform that holds its client indefinitely defers by a long
+    // interval rather than refusing in a shape of its own.
+    fn rotation_verdict(&self) -> RotationVerdict;
 }
 
 /// What a session acquires transports from, over the known implementors.
@@ -143,6 +150,9 @@ pub(crate) struct AnnouncingAcquirer {
     /// How many times the announcement yields, letting subscribers observe
     /// each transition before the next lands.
     pub(crate) yields: usize,
+    /// What this acquirer's platform answers about rotating now, so a test
+    /// drives the hand-off without a clock.
+    pub(crate) rotation: RotationVerdict,
 }
 
 #[cfg(test)]
@@ -173,6 +183,10 @@ impl TransportAcquirable for AnnouncingAcquirer {
         }
         Ok(proxy)
     }
+
+    fn rotation_verdict(&self) -> RotationVerdict {
+        self.rotation
+    }
 }
 
 impl TransportAcquirable for Acquirer {
@@ -195,6 +209,17 @@ impl TransportAcquirable for Acquirer {
             Acquirer::Hosted(hosted) => hosted.acquire(clutch, publisher).await,
             #[cfg(test)]
             Acquirer::Announcing(announcing) => announcing.acquire(clutch, publisher).await,
+        }
+    }
+
+    fn rotation_verdict(&self) -> RotationVerdict {
+        match self {
+            Acquirer::Spawned(spawned) => spawned.rotation_verdict(),
+            Acquirer::Hosted(hosted) => {
+                <HostedProvider as TransportAcquirable>::rotation_verdict(hosted)
+            }
+            #[cfg(test)]
+            Acquirer::Announcing(announcing) => announcing.rotation_verdict(),
         }
     }
 }
@@ -230,6 +255,10 @@ impl TransportAcquirable for HostedProvider {
         MixnetProxy::attach(hosted.socks5_addr, &[hosted.exit_node], publisher)
             .map_err(TransportError::from)
     }
+
+    fn rotation_verdict(&self) -> RotationVerdict {
+        zingo_netutils::provider::HostedProvider::rotation_verdict(self)
+    }
 }
 
 /// The desktop acquirer: the bundled `nym-proxy` binary, spawned as a child.
@@ -255,6 +284,12 @@ impl TransportAcquirable for SpawnedBinary {
         publisher: StatusPublisher,
     ) -> Result<MixnetProxy, TransportError> {
         MixnetProxy::spawn(&self.path, publisher, clutch).map_err(TransportError::from)
+    }
+
+    fn rotation_verdict(&self) -> RotationVerdict {
+        // A desktop keeps the four role-bound clients ADR 0045 gives it, so
+        // it never spends a rotation; ADR 0048 leaves it unchanged.
+        RotationVerdict::Defer(zingo_netutils::time::CLIENT_ROTATION_MAX)
     }
 }
 

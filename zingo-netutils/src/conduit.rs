@@ -3,7 +3,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// Where a conduit stands in its life, which only moves forward.
 ///
@@ -27,6 +27,10 @@ pub enum ConduitState {
 struct ConduitCore {
     socks5: SocketAddr,
     superseded: AtomicBool,
+    /// Guards outstanding, raised by `dial` and lowered by the guard's drop.
+    /// Counted here rather than read off the `Arc`, because a conduit is
+    /// cloned to every holder and those clones are not uses.
+    in_flight: AtomicUsize,
 }
 
 /// Somewhere to send mixnet traffic, proven for the epoch (ADR 0046).
@@ -56,12 +60,14 @@ impl MixnetConduit {
             core: Arc::new(ConduitCore {
                 socks5,
                 superseded: AtomicBool::new(false),
+                in_flight: AtomicUsize::new(0),
             }),
         }
     }
 
     /// Takes a guard for one use, counted until it drops.
     pub fn dial(&self) -> ConduitDial {
+        self.core.in_flight.fetch_add(1, Ordering::AcqRel);
         ConduitDial {
             core: Arc::clone(&self.core),
         }
@@ -69,8 +75,7 @@ impl MixnetConduit {
 
     /// How many uses are outstanding.
     pub fn in_flight(&self) -> usize {
-        // The conduit holds one reference of its own, which is never a use.
-        Arc::strong_count(&self.core) - 1
+        self.core.in_flight.load(Ordering::Acquire)
     }
 
     /// Marks a replacement as having taken over, after which no new work
@@ -106,6 +111,13 @@ impl ConduitDial {
     /// The address this use dials, for as long as the guard is held.
     pub fn socks5(&self) -> SocketAddr {
         self.core.socks5
+    }
+}
+
+/// Dropping the guard is what says the work it carried has finished.
+impl Drop for ConduitDial {
+    fn drop(&mut self) {
+        self.core.in_flight.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
@@ -154,16 +166,34 @@ mod tests {
         assert!(ConduitState::Superseded < ConduitState::Retired);
     }
 
-    /// HYPOTHESIS: a clone shares one count, so a conduit handed to two
-    /// holders reports their uses together. Falsified if cloning forks the
-    /// count.
+    /// HYPOTHESIS: a clone shares one count and is not itself a use, so a
+    /// conduit handed to two holders reports their uses together and only
+    /// their uses. Falsified if cloning forks the count or inflates it,
+    /// the latter leaving a superseded conduit permanently unretired.
     #[test]
-    fn a_clone_shares_one_count() {
+    fn a_clone_shares_one_count_and_is_not_a_use() {
         let conduit = conduit();
         let shared = conduit.clone();
+        assert_eq!(conduit.in_flight(), 0, "holding a conduit is not using it");
         let held = shared.dial();
         assert_eq!(conduit.in_flight(), 1);
         drop(held);
         assert_eq!(conduit.in_flight(), 0);
+        assert_eq!(shared.state(), ConduitState::Serving);
+    }
+
+    /// HYPOTHESIS: retirement is visible from every holder, so the rotation
+    /// that supersedes a conduit can watch a clone the route resolver
+    /// handed out. Falsified if a clone reports its own state.
+    #[test]
+    fn every_holder_sees_the_same_retirement() {
+        let conduit = conduit();
+        let routed = conduit.clone();
+        let held = routed.dial();
+        conduit.supersede();
+        assert_eq!(routed.state(), ConduitState::Superseded);
+        drop(held);
+        assert_eq!(conduit.state(), ConduitState::Retired);
+        assert_eq!(routed.state(), ConduitState::Retired);
     }
 }

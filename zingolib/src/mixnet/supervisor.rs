@@ -1414,7 +1414,12 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         assert_eq!(
-            resolve_route(proxy.mode(), proxy.socks5_addr()),
+            resolve_route(
+                proxy.mode(),
+                proxy
+                    .socks5_addr()
+                    .map(zingo_netutils::conduit::MixnetConduit::over)
+            ),
             Err(MixnetNotReady::Died),
             "a died attachment must refuse, never route"
         );

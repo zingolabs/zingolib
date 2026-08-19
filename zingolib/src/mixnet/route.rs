@@ -52,14 +52,17 @@ pub enum MixnetNotReady {
     Died,
 }
 
-/// Resolve the fail-closed route for the given Mixnet Mode and SOCKS5
-/// address — `Ready` yields the mixnet route, only the deliberate
-/// `SwitchedOff` yields clearnet, and `Unattached`, `Bootstrapping`,
-/// `Died`, or `Ready` before an address is published all refuse rather
-/// than leak a send to clearnet without consent.
+/// Resolve the fail-closed route for the given Mixnet Mode and conduit —
+/// `Ready` yields the mixnet route, only the deliberate `SwitchedOff`
+/// yields clearnet, and `Unattached`, `Bootstrapping`, `Died`, or `Ready`
+/// before a conduit exists all refuse rather than leak a send to clearnet
+/// without consent.
+// The conduit arrives rather than being minted from an address, because the
+// session's rotation supersedes one conduit and every surface must be
+// holding that one for the supersession to reach it (ADR 0048).
 pub fn resolve_route(
     mode: Indicator,
-    socks5_addr: Option<std::net::SocketAddr>,
+    conduit: Option<zingo_netutils::conduit::MixnetConduit>,
 ) -> Result<MixnetRoute, MixnetNotReady> {
     match mode {
         Indicator::Unattached => Err(MixnetNotReady::Unattached),
@@ -67,8 +70,7 @@ pub fn resolve_route(
         // Stale-proven routes exactly as earned Ready: the difference is
         // evidentiary, resolved by the promotion and demotion loop, never
         // by refusing the surface.
-        Indicator::Ready | Indicator::PreviouslyProvenThisEpoch => socks5_addr
-            .map(zingo_netutils::conduit::MixnetConduit::over)
+        Indicator::Ready | Indicator::PreviouslyProvenThisEpoch => conduit
             .map(MixnetRoute::Mixnet)
             .ok_or(MixnetNotReady::Bootstrapping),
         Indicator::Bootstrapping => Err(MixnetNotReady::Bootstrapping),
@@ -79,6 +81,12 @@ pub fn resolve_route(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn conduit() -> zingo_netutils::conduit::MixnetConduit {
+        zingo_netutils::conduit::MixnetConduit::over(
+            "127.0.0.1:9050".parse().expect("the test address parses"),
+        )
+    }
 
     #[test]
     fn switched_off_routes_clearnet() {
@@ -98,30 +106,46 @@ mod tests {
             Err(MixnetNotReady::Unattached)
         );
         assert_eq!(
-            resolve_route(
-                Indicator::Unattached,
-                Some("127.0.0.1:9050".parse().expect("the test address parses"))
-            ),
+            resolve_route(Indicator::Unattached, Some(conduit())),
             Err(MixnetNotReady::Unattached),
-            "a stray address must not conjure a route without a transport"
+            "a stray conduit must not conjure a route without a transport"
         );
     }
 
     #[test]
     fn ready_routes_through_the_proxy() {
-        let route = resolve_route(
-            Indicator::Ready,
-            Some("127.0.0.1:9050".parse().expect("the test address parses")),
-        );
+        let route = resolve_route(Indicator::Ready, Some(conduit()));
         match route.unwrap() {
-            MixnetRoute::Mixnet(conduit) => assert_eq!(
-                conduit.dial().socks5(),
+            MixnetRoute::Mixnet(routed) => assert_eq!(
+                routed.dial().socks5(),
                 "127.0.0.1:9050"
                     .parse::<std::net::SocketAddr>()
                     .expect("the test address parses")
             ),
             MixnetRoute::Clearnet => panic!("ready must route through the proxy"),
         }
+    }
+
+    /// HYPOTHESIS: the resolver hands out the session's own conduit rather
+    /// than one of its own making, so work it routes counts against the
+    /// conduit a rotation supersedes. Falsified if the route carries a
+    /// conduit whose uses the caller cannot see.
+    #[test]
+    fn the_route_carries_the_session_s_own_conduit() {
+        let session = conduit();
+        let MixnetRoute::Mixnet(routed) =
+            resolve_route(Indicator::Ready, Some(session.clone())).unwrap()
+        else {
+            panic!("ready must route through the proxy")
+        };
+        let held = routed.dial();
+        assert_eq!(
+            session.in_flight(),
+            1,
+            "a use of the routed conduit must count against the session's"
+        );
+        drop(held);
+        assert_eq!(session.in_flight(), 0);
     }
 
     #[test]
@@ -141,12 +165,9 @@ mod tests {
             Err(MixnetNotReady::Died)
         );
         assert_eq!(
-            resolve_route(
-                Indicator::Died,
-                Some("127.0.0.1:9050".parse().expect("the test address parses"))
-            ),
+            resolve_route(Indicator::Died, Some(conduit())),
             Err(MixnetNotReady::Died),
-            "a stale address must not resurrect a dead proxy into a route"
+            "a stale conduit must not resurrect a dead proxy into a route"
         );
     }
 
@@ -191,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn ready_without_an_address_refuses() {
+    fn ready_without_a_conduit_refuses() {
         assert_eq!(
             resolve_route(Indicator::Ready, None),
             Err(MixnetNotReady::Bootstrapping)

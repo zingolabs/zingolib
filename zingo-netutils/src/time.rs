@@ -213,6 +213,14 @@ pub const TRANSMIT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(8);
 /// tolerates latency better than an interactive send.
 pub const MIGRATION_SUBMIT_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Ceiling on a superseded conduit's wait for work already dialed through
+/// it, set to the longest bounded operation that work can be.
+pub const CONDUIT_DRAIN_BUDGET: Duration = MIGRATION_SUBMIT_TIMEOUT;
+
+/// How often a superseded conduit is rechecked for idleness, the overlap a
+/// rotation pays past its predecessor's last use.
+pub const CONDUIT_DRAIN_POLL: Duration = Duration::from_millis(250);
+
 /// How long to wait between sync polls while a note-splitting migration
 /// round confirms.
 pub const CONFIRMATION_POLL_INTERVAL: Duration = Duration::from_secs(5);

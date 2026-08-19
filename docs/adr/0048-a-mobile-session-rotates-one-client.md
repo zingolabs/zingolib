@@ -1,7 +1,10 @@
 # A mobile session rotates one client rather than separating roles
 
-Status: draft, ruled in session 2026-08-18, pending review and
-implementation
+Status: draft, ruled in session 2026-08-18, pending review. The mechanism
+is implemented: a conduit counts its uses, a superseded one retires when
+idle, and a rotation watchdog runs the hand-off on the randomised cadence.
+The policy trait is implemented and answered, though no host answers `Now`
+yet.
 
 ## Context
 
@@ -128,6 +131,12 @@ is the only path that replaces an attached client and it requires the
 incumbent to be condemned, which a healthy rotation's never is. Both need
 an entry point that installs the replacement and retires the superseded
 client once its work has drained.
+
+The mechanism landed in `zingolib` rather than `zingo-netutils`, against
+what this decision says. It drives the Exit Pool, the Standing Client, and
+the transport slot, none of which have moved below the seam yet, and ADR
+0047's remaining work is what moves them. The hand-off travels with them
+when they go; the placement is a migration state, not a revision.
 
 ## Open
 

@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- BREAKING: `mixnet::resolve_route` takes the session's
+  `MixnetConduit` rather than a `SocketAddr`, and `LightClient::mixnet_route`
+  reads it from the new `LightClient::mixnet_conduit`. The resolver used to
+  mint a fresh conduit per call, which gave every surface a private count
+  and left a rotation with nothing to supersede; one conduit per attached
+  client is what makes the supersession reach the work (ADR 0048).
+- A session with an attached Standing Client now runs a rotation watchdog
+  beside its proof watchdog: on a randomised interval between
+  `CLIENT_ROTATION_MIN` and `CLIENT_ROTATION_MAX` it asks the acquirer
+  whether the platform can afford a bootstrap, and where the answer is
+  `Now` it hands the session to a freshly proven client (ADR 0048). The
+  hand-off is make-before-break, so a rotation that cannot prove a
+  replacement keeps the incumbent and publishes nothing. A desktop's
+  spawned acquirer defers indefinitely, which leaves ADR 0045's four
+  role-bound clients unchanged.
+- A failover that installs a replacement now retires the client it replaced
+  rather than stopping it: the outgoing conduit is superseded so it takes no
+  new work, its transport stays open until the work already dialed through
+  it finishes, and only then does the child stop. `MIGRATION_SUBMIT_TIMEOUT`
+  bounds the wait, past which a held guard is treated as leaked.
 - BREAKING: `wallet::migration::parts::ProveOnce` is a named struct rather
   than a boxed `FnOnce`, and `PrepareResult::Ready::prove` holds a
   `Box<ProveOnce>`. Call `prove.prove()` where the closure was invoked.
@@ -19,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retire once its work drains (ADR 0048). `mixnet::speed::SpeedPrioritized`
   races a conduit rather than an address, and `MixnetTransmissionClient`
   holds a guard for its life because it dials on every submission.
+- BREAKING: `mixnet::acquire::TransportAcquirable` gains `rotation_verdict`,
+  which the rotation watchdog asks at the moment of acting rather than when
+  it drew its cadence, because the battery and foreground state a host
+  weighs are the ones it has then.
 - BREAKING: `mixnet::acquire::ProxyHosting` gains `rotation_verdict`, which a
   platform answers to state whether it can afford a rotation now (ADR 0048).
   `MixnetTiming` gains `client_rotation_min` and `client_rotation_max`, so a

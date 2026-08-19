@@ -105,4 +105,9 @@ impl HostedProvider {
     pub fn start_transport(&self, clutch: &[ExitNodeId]) -> Result<HostedTransport, HostRefusal> {
         self.host.start_transport(clutch)
     }
+
+    /// The host's verdict on spending a rotation's bootstrap now.
+    pub fn rotation_verdict(&self) -> RotationVerdict {
+        self.host.rotation_verdict()
+    }
 }

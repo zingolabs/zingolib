@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `conduit::MixnetConduit::in_flight` counts guards rather than references
+  to the shared core, so cloning a conduit no longer reads as using it. A
+  session holds one conduit and hands clones to every surface, and under
+  the previous derivation each of those clones inflated the count, leaving
+  a superseded conduit permanently short of `Retired`.
+
 ### Added
+- `provider::HostedProvider::rotation_verdict`: the host's answer on
+  spending a rotation's bootstrap now, reaching the wallet through the
+  provider so the host itself stays below the seam.
+- `time::CONDUIT_DRAIN_BUDGET` and `time::CONDUIT_DRAIN_POLL`: how long a
+  superseded conduit may hold its transport open for work already dialed
+  through it, and how often that work is rechecked. The budget is
+  `MIGRATION_SUBMIT_TIMEOUT`, the longest bounded operation that work can
+  be, so a guard outliving it is a leak rather than slow work.
 - `conduit::ConduitDial` and `conduit::ConduitState`: a conduit counts its
   outstanding uses, so a superseded transport retires the moment its work
   drains rather than after a guessed interval (ADR 0048). `ConduitState`

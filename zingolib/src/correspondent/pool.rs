@@ -482,6 +482,12 @@ mod bind_failure_absorption {
                 budget: zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT,
             })
         }
+
+        fn rotation_verdict(&self) -> zingo_netutils::provider::RotationVerdict {
+            zingo_netutils::provider::RotationVerdict::Defer(
+                zingo_netutils::time::CLIENT_ROTATION_MAX,
+            )
+        }
     }
 
     /// HYPOTHESIS: a bind-stage failure spends one of the six births and
