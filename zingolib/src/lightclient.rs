@@ -296,8 +296,8 @@ impl LightClient {
                 crate::mixnet::MixnetSlot::Unattached,
             )),
             #[cfg(feature = "nym")]
-            #[cfg(feature = "nym")]
             standing_watchdog: None,
+            #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
@@ -346,8 +346,8 @@ impl LightClient {
                 crate::mixnet::MixnetSlot::Unattached,
             )),
             #[cfg(feature = "nym")]
-            #[cfg(feature = "nym")]
             standing_watchdog: None,
+            #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
@@ -412,8 +412,8 @@ impl LightClient {
                 crate::mixnet::MixnetSlot::Unattached,
             )),
             #[cfg(feature = "nym")]
-            #[cfg(feature = "nym")]
             standing_watchdog: None,
+            #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
