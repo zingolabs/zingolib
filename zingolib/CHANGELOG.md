@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- BREAKING: `wallet::migration::parts::ProveOnce` is a named struct rather
+  than a boxed `FnOnce`, and `PrepareResult::Ready::prove` holds a
+  `Box<ProveOnce>`. Call `prove.prove()` where the closure was invoked.
+  Naming the type states what the proving work owns, which the closure
+  left implicit.
+
 ### Removed
 - BREAKING: `mixnet::acquire::ProxyHost` is renamed `ProxyHosting` and moved
   to `zingo_netutils::provider`, along with `HostedTransport` and

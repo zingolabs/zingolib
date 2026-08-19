@@ -1022,7 +1022,7 @@ impl LightClient {
                             match wallet.prepare_part(account, &mut state.parts[index], &params)? {
                                 PrepareResult::Ready { prove, .. } => {
                                     prove_handles.push(tokio::task::spawn_blocking(move || {
-                                        prove().map(|(txid, raw_tx)| (index, txid, raw_tx))
+                                        prove.prove().map(|(txid, raw_tx)| (index, txid, raw_tx))
                                     }));
                                 }
                                 PrepareResult::Skip(reason) => {
