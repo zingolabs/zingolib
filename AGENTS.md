@@ -9,6 +9,17 @@
   a type alias. Use a generic parameter, an `impl Trait` position, or an enum
   over the known implementors. Never add one. Existing ones are debt to retire,
   not precedent to follow. Ruled 2026-08-18.
+  - **One sanctioned exception:** `Arc<dyn ProxyHosting>` in
+    `zingo-netutils/src/provider.rs`. A platform host is implemented outside
+    this workspace and reached across an FFI boundary, so its concrete type is
+    unnameable here. The alternatives were weighed and both cost more than the
+    rule saves: a type parameter reaches `Acquirer`, `Pools`, and `LightClient`,
+    which every consumer names, and a request channel relocates the dynamism
+    behind a queue, invents a host-vanished failure mode, and serialises the
+    boot's concurrent acquisitions unless the host spawns per request. The
+    exception is confined to one field below the seam, and the wallet names
+    only the concrete `HostedProvider`. Do not relitigate it, and do not read
+    it as licence for a second exception. Ruled 2026-08-18.
 - **Every commit MUST be A/B benchmarked against its parent** with the online
   sync benchmark (`makers sync-bench`), which drives a real `run-cli --online`
   session so the mixnet boot load is present. Report both numbers with the
