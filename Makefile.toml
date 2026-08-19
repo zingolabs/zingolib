@@ -41,9 +41,7 @@ Test front door — `makers test "$@"` is a containerized
 
 Reserved first words expand to canned invocations:
   makers test packages        every workspace package EXCEPT the live
-                              ones (libtonode-tests and zingo-cli); also
-                              skips BUILDING libtonode-tests, whose ten
-                              test binaries this set never runs
+                              ones (libtonode-tests and zingo-cli)
   makers test live            ONLY libtonode-tests and zingo-cli
 
 Explicit package-selection flags (-p, --workspace, --exclude, ...) replace
@@ -343,10 +341,11 @@ container_nextest_run "$@"
 # identically, and every phase of `makers hierarchy-test` reuses ONE
 # compiled variant of each crate — a `-p`/`--exclude` scope re-unifies
 # features per selection and compiles a distinct zingolib variant per phase.
-# The `packages` set carries ONE audited exception: it also excludes the
-# members in build_excludable from the build, which is safe only because
-# those members activate no feature of their own. See that array's comment
-# for the criterion and how to check a candidate against it.
+# The `packages` set can carry audited exceptions: it also excludes the
+# members in build_excludable from the build, which is safe only for a
+# member that activates no feature of its own. That array is empty today,
+# because every candidate so far fails the audit. See its comment for the
+# criterion, and `makers exclusion-audit` for the check.
 # Explicit package-selection args still replace a set's scope entirely —
 # cargo silently ignores `-p` when `--workspace` is present, so merging
 # them would swallow the user's selection. Caveat: combining a reserved
@@ -372,16 +371,21 @@ live_packages=(libtonode-tests zingo-cli)
 # test binaries there buys nothing and is lost outright when the gate trips.
 #
 # A member belongs here only if it activates no feature that no other member
-# activates. Excluding one that does would re-unify features and compile a
+# activates. Excluding one that does re-unifies features and compiles a
 # second variant of every crate beneath it, which is the cost this file's
-# filterset partition exists to avoid. Check a candidate by diffing
-#   cargo tree --workspace -e features -i <crate>
-# against the same command with `--exclude <candidate>`, for every crate the
-# workspace shares. libtonode-tests loses nothing: every feature it turns on
-# is also turned on by zingolib_testutils, which stays. zingo-cli is
-# deliberately absent, because it is the only member that activates
-# `zingolib/nym`.
-build_excludable=(libtonode-tests)
+# filterset partition exists to avoid. Never add a member by inspection:
+# `makers exclusion-audit <candidate>` decides it, and it reads this array,
+# so what is written here is what gets checked.
+#
+# The array is empty because both candidates were audited and rejected.
+# libtonode-tests looked safe across the workspace's own crates, and is not:
+# it alone activates `zcash_address/test-dependencies`, a registry crate the
+# whole zcash stack and therefore zingolib sits above, so excluding it would
+# build that stack twice and make a hierarchy run slower rather than faster.
+# zingo-cli alone activates `zingolib/nym`. Nothing is currently excludable,
+# and the machinery stays so a future candidate is a one-word change plus an
+# audit run.
+build_excludable=()
 
 # The filterset matching every live package's tests; its negation is the
 # hermetic remainder. Space-free, so each expression rides as one argv token.
@@ -446,6 +450,20 @@ args = [
     "test-summary",
     "--",
     "--lite",
+    "${@}",
+]
+
+[tasks.exclusion-audit]
+description = "Check that every member in Makefile.toml's build_excludable array can be dropped from the packages phase's build for free, by diffing each workspace crate's resolved features with and without it. Name extra candidates as arguments to audit a proposed addition before writing it down."
+command = "cargo"
+args = [
+    "run",
+    "-q",
+    "--manifest-path",
+    "tools/workbench/Cargo.toml",
+    "--bin",
+    "exclusion-audit",
+    "--",
     "${@}",
 ]
 
