@@ -438,6 +438,7 @@ impl LightWallet {
             chain_type,
             migration: None,
             send_proposal: None,
+            output_locks: crate::wallet::locks::OutputLocks::default(),
             save_required: false,
             wallet_settings: WalletSettings {
                 sync_config: SyncConfig {
@@ -715,6 +716,7 @@ impl LightWallet {
             price_list,
             migration,
             send_proposal: None,
+            output_locks: crate::wallet::locks::OutputLocks::default(),
             save_required: false,
         })
     }

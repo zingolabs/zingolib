@@ -85,9 +85,10 @@ zaino-proto = { version = "0.2.0", default-features = false, features = [
     "grpc_proxy_server",
 ], optional = true }
 tokio-stream = { workspace = true, optional = true }
-# rev-pinned: the branch tip removed MIGRATION_MAX_DENOMINATION_ZEC and
-# RESIDUAL_MIGRATION_MIN, which wallet/migration/params.rs imports.
-zcash_pool_migration = { git = "https://github.com/zcash/librustzcash.git", rev = "e12f1d0ff7be5e5bfd2e4bcbb8d9a863a405f031", version = "0.1.0-rc.1", default-features = false }
+# Registry-sourced, not git: cargo keys a package by source, so a git
+# zcash_pool_migration drags git copies of zcash_primitives, zcash_protocol and
+# zcash_transparent that no version bump can unify with the registry stack.
+zcash_pool_migration = { version = "0.1.0-rc.7", default-features = false }
 zingo-net-diag = { workspace = true, features = ["serde"] }
 
 [build-dependencies]

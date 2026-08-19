@@ -80,6 +80,7 @@ impl LightWallet {
             &SpendingKeys::new(usk),
             zcash_client_backend::wallet::OvkPolicy::Sender,
             &proposal,
+            None,
         )
         .map_err(CalculateTransactionError::Calculation)
     }
@@ -92,6 +93,21 @@ impl LightWallet {
     where
         N: NoteInterface,
     {
+        self.shards_are_scanned(N::SHIELDED_PROTOCOL, Some(note_height), anchor_height)
+    }
+
+    /// Whether this wallet can materialize `protocol`'s note commitment tree root, and witnesses to it, as of `height`.
+    pub(crate) fn anchor_is_computable(&self, protocol: ShieldedPool, height: BlockHeight) -> bool {
+        self.shards_are_scanned(protocol, None, height)
+    }
+
+    /// Whether every shard carrying `protocol` notes between `note_height` (the scan floor when absent) and `anchor_height` is scanned.
+    fn shards_are_scanned(
+        &self,
+        protocol: ShieldedPool,
+        note_height: Option<BlockHeight>,
+        anchor_height: BlockHeight,
+    ) -> bool {
         let Some(birthday) = self.sync_state.wallet_birthday() else {
             return false;
         };
@@ -104,16 +120,15 @@ impl LightWallet {
         // `birthday >= activation` (true for all current wallets);
         // Ironwood makes the clamp explicit because wallets born before
         // NU6.3 can hold Ironwood notes immediately after activation.
-        let scan_floor =
-            pepper_sync::wallet::PoolActivation::of(&self.chain_type, N::SHIELDED_PROTOCOL)
-                .map_or(birthday, |activation| activation.max_with(birthday));
-        let shard_ranges = match N::SHIELDED_PROTOCOL {
+        let scan_floor = pepper_sync::wallet::PoolActivation::of(&self.chain_type, protocol)
+            .map_or(birthday, |activation| activation.max_with(birthday));
+        let shard_ranges = match protocol {
             ShieldedPool::Ironwood => self.sync_state.ironwood_shard_ranges(),
             ShieldedPool::Orchard => self.sync_state.orchard_shard_ranges(),
             ShieldedPool::Sapling => self.sync_state.sapling_shard_ranges(),
         };
         check_note_shards_are_scanned(
-            note_height,
+            note_height.unwrap_or(scan_floor),
             anchor_height,
             scan_floor,
             scan_ranges,

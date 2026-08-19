@@ -6,15 +6,19 @@ use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
         Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, CoinbaseFilter,
-        InputSource, MaxSpendMode, NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes,
-        ReceivedTransactionOutput, SAPLING_SHARD_HEIGHT, TargetValue, TransactionDataRequest,
-        TransparentKeyOrigin, WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite,
-        Zip32Derivation,
+        InputSource, MaxSpendMode, NullifierQuery, ORCHARD_SHARD_HEIGHT, OutputLockStore,
+        ReceivedNotes, ReceivedTransactionOutput, SAPLING_SHARD_HEIGHT, TargetValue,
+        TransactionDataRequest, TransparentKeyOrigin, WalletCommitmentTrees, WalletRead,
+        WalletSummary, WalletWrite, Zip32Derivation,
         chain::{ChainState, CommitmentTreeRoot},
         error::FindAccountForAddressError,
+        locking::{LockError, LockFilter, LockOwner},
         wallet::{ConfirmationsPolicy, TargetHeight},
     },
-    wallet::{Exposure, NoteId, ReceivedNote, TransparentAddressMetadata, WalletTransparentOutput},
+    wallet::{
+        Exposure, NoteId, OutputRef as LockedOutputRef, ReceivedNote, TransparentAddressMetadata,
+        WalletTransparentOutput,
+    },
 };
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::{
@@ -37,7 +41,7 @@ use pepper_sync::{
     keys::transparent::{self, TransparentScope},
     wallet::{
         IronwoodNote, KeyIdInterface, NoteInterface, OrchardNote, OrchardShardStore, OutputId,
-        OutputInterface, SaplingNote, SaplingShardStore, traits::SyncWallet,
+        OutputInterface, SaplingNote, SaplingShardStore, TransparentCoin, traits::SyncWallet,
     },
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -159,6 +163,10 @@ impl WalletRead for LightWallet {
 
     fn chain_height(&self) -> Result<Option<BlockHeight>, Self::Error> {
         Ok(self.sync_state.last_known_chain_height())
+    }
+
+    fn get_wallet_recover_until(&self) -> Result<Option<BlockHeight>, Self::Error> {
+        Ok(None)
     }
 
     fn get_block_hash(&self, _block_height: BlockHeight) -> Result<Option<BlockHash>, Self::Error> {
@@ -370,6 +378,105 @@ impl WalletRead for LightWallet {
     }
 }
 
+/// The account owning the wallet output `output` names, when the wallet holds it.
+fn output_account<O: OutputInterface>(
+    transaction: &pepper_sync::wallet::WalletTransaction,
+    output: &LockedOutputRef,
+) -> Option<zip32::AccountId> {
+    (O::POOL_TYPE == output.pool())
+        .then(|| {
+            O::transaction_outputs(transaction)
+                .iter()
+                .find(|held| held.output_id().output_index() == output.output_index())
+                .map(|held| held.key_id().account_id())
+        })
+        .flatten()
+}
+
+impl LightWallet {
+    /// The account owning `output`, when the wallet holds an output matching it.
+    fn locked_output_account(&self, output: &LockedOutputRef) -> Option<zip32::AccountId> {
+        let transaction = self.wallet_transactions.get(output.txid())?;
+        output_account::<SaplingNote>(transaction, output)
+            .or_else(|| output_account::<OrchardNote>(transaction, output))
+            .or_else(|| output_account::<IronwoodNote>(transaction, output))
+            .or_else(|| output_account::<TransparentCoin>(transaction, output))
+    }
+
+    /// Every output this account has locked at `target_height`, the height a new
+    /// transaction would be mined at.
+    fn locked_outputs_of(
+        &self,
+        account: zip32::AccountId,
+        target_height: BlockHeight,
+    ) -> Vec<LockedOutputRef> {
+        self.output_locks
+            .iter()
+            .filter(|(_, expiry_height)| *expiry_height >= target_height)
+            .map(|(output, _)| output)
+            .filter(|output| self.locked_output_account(output) == Some(account))
+            .collect()
+    }
+}
+
+impl OutputLockStore for LightWallet {
+    type Error = WalletError;
+    type AccountId = zip32::AccountId;
+
+    fn lock_outputs(
+        &mut self,
+        outputs: &[LockedOutputRef],
+        owner: LockOwner,
+        lock_expiry_height: BlockHeight,
+    ) -> Result<usize, LockError<Self::Error>> {
+        let chain_tip = self
+            .sync_state
+            .last_known_chain_height()
+            .unwrap_or_else(|| BlockHeight::from_u32(0));
+        if let Some(unknown) = outputs
+            .iter()
+            .find(|output| self.locked_output_account(output).is_none())
+        {
+            return Err(LockError::LockFailure(*unknown));
+        }
+        self.output_locks
+            .acquire(outputs, owner, lock_expiry_height, chain_tip)
+            .map_err(LockError::LockFailure)
+    }
+
+    fn unlock_output(
+        &mut self,
+        output: &LockedOutputRef,
+        owner: LockOwner,
+    ) -> Result<bool, Self::Error> {
+        Ok(self.output_locks.release(output, owner))
+    }
+
+    fn clear_locked_outputs(&mut self, account: Self::AccountId) -> Result<usize, Self::Error> {
+        let held: Vec<LockedOutputRef> = self
+            .output_locks
+            .iter()
+            .map(|(output, _)| output)
+            .filter(|output| self.locked_output_account(output) == Some(account))
+            .collect();
+        Ok(held
+            .iter()
+            .filter(|output| self.output_locks.discard(output))
+            .count())
+    }
+
+    fn get_locked_outputs(
+        &self,
+        account: Self::AccountId,
+    ) -> Result<Vec<LockedOutputRef>, Self::Error> {
+        let target_height = self
+            .sync_state
+            .last_known_chain_height()
+            .map_or_else(|| BlockHeight::from_u32(0), |tip| tip + 1);
+        Ok(self.locked_outputs_of(account, target_height))
+    }
+}
+
 impl WalletWrite for LightWallet {
     type UtxoRef = u32;
 
@@ -379,7 +486,13 @@ impl WalletWrite for LightWallet {
         _seed: &SecretVec<u8>,
         _birthday: &AccountBirthday,
         _key_source: Option<&str>,
-    ) -> Result<(Self::AccountId, zcash_keys::keys::UnifiedSpendingKey), Self::Error> {
+    ) -> Result<
+        (
+            <Self as WalletRead>::AccountId,
+            zcash_keys::keys::UnifiedSpendingKey,
+        ),
+        <Self as WalletRead>::Error,
+    > {
         unimplemented!()
     }
 
@@ -390,7 +503,8 @@ impl WalletWrite for LightWallet {
         _account_index: zip32::AccountId,
         _birthday: &AccountBirthday,
         _key_source: Option<&str>,
-    ) -> Result<(Self::Account, zcash_keys::keys::UnifiedSpendingKey), Self::Error> {
+    ) -> Result<(Self::Account, zcash_keys::keys::UnifiedSpendingKey), <Self as WalletRead>::Error>
+    {
         unimplemented!()
     }
 
@@ -401,47 +515,54 @@ impl WalletWrite for LightWallet {
         _birthday: &AccountBirthday,
         _purpose: AccountPurpose,
         _key_source: Option<&str>,
-    ) -> Result<Self::Account, Self::Error> {
+    ) -> Result<Self::Account, <Self as WalletRead>::Error> {
         unimplemented!()
     }
 
-    fn delete_account(&mut self, _account: Self::AccountId) -> Result<(), Self::Error> {
+    fn delete_account(
+        &mut self,
+        _account: <Self as WalletRead>::AccountId,
+    ) -> Result<(), <Self as WalletRead>::Error> {
         unimplemented!()
     }
 
     fn get_next_available_address(
         &mut self,
-        _account: Self::AccountId,
+        _account: <Self as WalletRead>::AccountId,
         _request: zcash_keys::keys::UnifiedAddressRequest,
-    ) -> Result<Option<(UnifiedAddress, zip32::DiversifierIndex)>, Self::Error> {
+    ) -> Result<Option<(UnifiedAddress, zip32::DiversifierIndex)>, <Self as WalletRead>::Error>
+    {
         unimplemented!()
     }
 
     fn get_address_for_index(
         &mut self,
-        _account: Self::AccountId,
+        _account: <Self as WalletRead>::AccountId,
         _diversifier_index: zip32::DiversifierIndex,
         _request: zcash_keys::keys::UnifiedAddressRequest,
-    ) -> Result<Option<UnifiedAddress>, Self::Error> {
+    ) -> Result<Option<UnifiedAddress>, <Self as WalletRead>::Error> {
         unimplemented!()
     }
 
-    fn update_chain_tip(&mut self, _tip_height: BlockHeight) -> Result<(), Self::Error> {
+    fn update_chain_tip(
+        &mut self,
+        _tip_height: BlockHeight,
+    ) -> Result<(), <Self as WalletRead>::Error> {
         unimplemented!()
     }
 
     fn put_blocks(
         &mut self,
         _from_state: &zcash_client_backend::data_api::chain::ChainState,
-        _blocks: Vec<zcash_client_backend::data_api::ScannedBlock<Self::AccountId>>,
-    ) -> Result<(), Self::Error> {
+        _blocks: Vec<zcash_client_backend::data_api::ScannedBlock<<Self as WalletRead>::AccountId>>,
+    ) -> Result<(), <Self as WalletRead>::Error> {
         unimplemented!()
     }
 
     fn put_received_transparent_utxo(
         &mut self,
-        _output: &WalletTransparentOutput<Self::AccountId>,
-    ) -> Result<Self::UtxoRef, Self::Error> {
+        _output: &WalletTransparentOutput<<Self as WalletRead>::AccountId>,
+    ) -> Result<Self::UtxoRef, <Self as WalletRead>::Error> {
         unimplemented!()
     }
 
@@ -449,20 +570,34 @@ impl WalletWrite for LightWallet {
         &mut self,
         _received_tx: zcash_client_backend::data_api::DecryptedTransaction<
             Transaction,
-            Self::AccountId,
+            <Self as WalletRead>::AccountId,
         >,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), <Self as WalletRead>::Error> {
         unimplemented!()
     }
 
-    fn set_tx_trust(&mut self, _txid: TxId, _trusted: bool) -> Result<(), Self::Error> {
+    fn prune_scan_queue_below(
+        &mut self,
+        _height: BlockHeight,
+        _retain_with_priority: Option<zcash_client_backend::data_api::scanning::ScanPriority>,
+    ) -> Result<u64, <Self as WalletRead>::Error> {
+        unimplemented!()
+    }
+
+    fn set_tx_trust(
+        &mut self,
+        _txid: TxId,
+        _trusted: bool,
+    ) -> Result<(), <Self as WalletRead>::Error> {
         unimplemented!()
     }
 
     fn store_transactions_to_be_sent(
         &mut self,
-        transactions: &[zcash_client_backend::data_api::SentTransaction<Self::AccountId>],
-    ) -> Result<(), Self::Error> {
+        transactions: &[zcash_client_backend::data_api::SentTransaction<
+            <Self as WalletRead>::AccountId,
+        >],
+    ) -> Result<(), <Self as WalletRead>::Error> {
         let chain_type = self.chain_type;
 
         for sent_transaction in transactions {
@@ -501,28 +636,40 @@ impl WalletWrite for LightWallet {
         Ok(())
     }
 
-    fn truncate_to_height(&mut self, _max_height: BlockHeight) -> Result<BlockHeight, Self::Error> {
+    fn truncate_to_height(
+        &mut self,
+        _max_height: BlockHeight,
+    ) -> Result<BlockHeight, <Self as WalletRead>::Error> {
         unimplemented!()
     }
 
-    fn truncate_to_chain_state(&mut self, _chain_state: ChainState) -> Result<(), Self::Error> {
+    fn truncate_to_chain_state(
+        &mut self,
+        _chain_state: ChainState,
+    ) -> Result<(), <Self as WalletRead>::Error> {
         unimplemented!()
     }
 
     fn rewind_to_chain_state(
         &mut self,
         _chain_state: ChainState,
-        _reset_account_birthdays: std::collections::HashSet<Self::AccountId>,
-    ) -> Result<(), zcash_client_backend::data_api::error::RewindError<Self::AccountId, Self::Error>>
-    {
+        _reset_account_birthdays: std::collections::HashSet<<Self as WalletRead>::AccountId>,
+    ) -> Result<
+        (),
+        zcash_client_backend::data_api::error::RewindError<
+            <Self as WalletRead>::AccountId,
+            <Self as WalletRead>::Error,
+        >,
+    > {
         unimplemented!()
     }
 
     fn reserve_next_n_ephemeral_addresses(
         &mut self,
-        account_id: Self::AccountId,
+        account_id: <Self as WalletRead>::AccountId,
         n: usize,
-    ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
+    ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, <Self as WalletRead>::Error>
+    {
         Ok(self
             .generate_refund_addresses(n, account_id)?
             .into_iter()
@@ -544,7 +691,7 @@ impl WalletWrite for LightWallet {
         &mut self,
         _txid: TxId,
         _status: zcash_client_backend::data_api::TransactionStatus,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), <Self as WalletRead>::Error> {
         unimplemented!()
     }
 
@@ -552,8 +699,30 @@ impl WalletWrite for LightWallet {
         &mut self,
         _request: zcash_client_backend::data_api::TransactionsInvolvingAddress,
         _as_of_height: BlockHeight,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), <Self as WalletRead>::Error> {
         unimplemented!()
+    }
+}
+
+/// The root of `tree`'s completed subtree at `index`, or `None` while that subtree is incomplete.
+fn subtree_root<S, H, C, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    tree: &ShardTree<S, DEPTH, SHARD_HEIGHT>,
+    shard_height: u8,
+    index: u64,
+) -> Result<Option<H>, ShardTreeError<S::Error>>
+where
+    H: incrementalmerkletree::Hashable + Clone + PartialEq,
+    C: Clone + std::fmt::Debug + Ord,
+    S: ShardStore<H = H, CheckpointId = C>,
+{
+    let address = incrementalmerkletree::Address::from_parts(shard_height.into(), index);
+    if !ShardTree::<S, DEPTH, SHARD_HEIGHT>::root_addr().contains(&address) {
+        return Ok(None);
+    }
+    match tree.root(address, incrementalmerkletree::Position::from(u64::MAX)) {
+        Ok(root) => Ok(Some(root)),
+        Err(ShardTreeError::Query(_)) => Ok(None),
+        Err(other) => Err(other),
     }
 }
 
@@ -595,6 +764,14 @@ impl WalletCommitmentTrees for LightWallet {
         Ok(())
     }
 
+    /// The stored root of the completed Sapling subtree at `index`, when the store holds one.
+    fn get_sapling_subtree_root(
+        &mut self,
+        index: u64,
+    ) -> Result<Option<sapling_crypto::Node>, ShardTreeError<Self::Error>> {
+        subtree_root(&self.shard_trees.sapling, SAPLING_SHARD_HEIGHT, index)
+    }
+
     fn with_orchard_tree_mut<F, A, E>(&mut self, mut callback: F) -> Result<A, E>
     where
         for<'a> F: FnMut(
@@ -626,6 +803,14 @@ impl WalletCommitmentTrees for LightWallet {
         })?;
 
         Ok(())
+    }
+
+    /// The stored root of the completed Orchard subtree at `index`, when the store holds one.
+    fn get_orchard_subtree_root(
+        &mut self,
+        index: u64,
+    ) -> Result<Option<orchard::tree::MerkleHashOrchard>, ShardTreeError<Self::Error>> {
+        subtree_root(&self.shard_trees.orchard, ORCHARD_SHARD_HEIGHT, index)
     }
 
     fn with_ironwood_tree_mut<F, A, E>(&mut self, mut callback: F) -> Result<Option<A>, E>
@@ -686,12 +871,21 @@ impl InputSource for LightWallet {
     type AccountId = zip32::AccountId;
     type NoteRef = OutputRef;
 
+    fn anchor_computable(
+        &self,
+        protocol: ShieldedPool,
+        height: BlockHeight,
+    ) -> Result<bool, Self::Error> {
+        Ok(self.anchor_is_computable(protocol, height))
+    }
+
     fn get_spendable_note(
         &self,
         _txid: &TxId,
         _protocol: ShieldedPool,
         _index: u32,
         _target_height: TargetHeight,
+        _lock_filter: LockFilter<'_>,
     ) -> Result<
         Option<
             zcash_client_backend::wallet::ReceivedNote<
@@ -712,6 +906,7 @@ impl InputSource for LightWallet {
         _target_height: TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
         exclude: &[Self::NoteRef],
+        _lock_filter: LockFilter<'_>,
     ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
         let (_, anchor_height) = self
             .get_target_and_anchor_heights(confirmations_policy.trusted())
@@ -1046,6 +1241,7 @@ impl InputSource for LightWallet {
         _selector: &zcash_client_backend::data_api::NoteFilter,
         _target_height: TargetHeight,
         _exclude: &[Self::NoteRef],
+        _lock_filter: LockFilter<'_>,
     ) -> Result<zcash_client_backend::data_api::AccountMeta, Self::Error> {
         unimplemented!()
     }
@@ -1101,6 +1297,7 @@ impl InputSource for LightWallet {
         target_height: TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
         _output_filter: CoinbaseFilter,
+        _lock_filter: LockFilter<'_>,
     ) -> Result<Vec<WalletTransparentOutput<Self::AccountId>>, Self::Error> {
         let address = transparent::encode_address(&self.chain_type, *address);
 
@@ -1142,6 +1339,7 @@ impl InputSource for LightWallet {
         _sources: &[ShieldedPool],
         _target_height: TargetHeight,
         _exclude: &[Self::NoteRef],
+        _lock_filter: LockFilter<'_>,
     ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
         unimplemented!()
     }
@@ -1226,6 +1424,7 @@ mod tests {
             TargetHeight::from(21),
             ConfirmationsPolicy::new_symmetrical(NonZeroU32::new(1).expect("nonzero"), false),
             &[],
+            LockFilter::Unfiltered,
         )
     }
 
@@ -1314,6 +1513,7 @@ mod tests {
                 target_height,
                 confirmations_policy,
                 &[],
+                LockFilter::Unfiltered,
             )
             .expect("selection over synthetic funds succeeds");
         assert_eq!(
@@ -1347,6 +1547,7 @@ mod tests {
                 target_height,
                 confirmations_policy,
                 &refs,
+                LockFilter::Unfiltered,
             )
             .expect("selection with exclusions succeeds");
         assert!(

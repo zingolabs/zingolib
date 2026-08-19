@@ -33,6 +33,7 @@ pub mod utils;
 pub mod balance;
 pub mod disk;
 pub mod keys;
+pub mod locks;
 pub mod migration;
 pub mod output;
 pub mod propose;
@@ -151,6 +152,9 @@ pub struct LightWallet {
     pub migration: Option<migration::MigrationState>,
     /// Send proposal
     send_proposal: Option<ZingoProposal>,
+    /// Advisory output locks reserving an in-flight proposal's inputs. Process
+    /// -lifetime state beside `send_proposal`, never written to the wallet file.
+    output_locks: locks::OutputLocks,
     /// Boolean for tracking whether the wallet state has changed since last save.
     pub(crate) save_required: bool,
 }
@@ -246,6 +250,7 @@ impl LightWallet {
             migration: None,
             save_required: true,
             send_proposal: None,
+            output_locks: locks::OutputLocks::default(),
         })
     }
 
