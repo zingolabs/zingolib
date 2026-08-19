@@ -88,6 +88,8 @@ pub mod exit;
 
 pub mod conduit;
 
+pub mod provider;
+
 #[cfg(feature = "nym")]
 mod nym_proxy;
 #[cfg(feature = "nym")]

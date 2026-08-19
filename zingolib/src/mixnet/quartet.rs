@@ -45,10 +45,10 @@ pub(crate) struct Quartet {
 /// rather than their sum, and each lane already retries within its own
 /// birth budget. A lane that exhausts that budget refuses the whole boot:
 /// an online session that cannot prove four exits cannot fill its roles.
-pub(crate) async fn prove_quartet(
-    pools: &Pools,
-    acquirer: &dyn TransportAcquirable,
-) -> Result<Quartet, TransportError> {
+pub(crate) async fn prove_quartet<A>(pools: &Pools, acquirer: &A) -> Result<Quartet, TransportError>
+where
+    A: TransportAcquirable + ?Sized,
+{
     let mut lanes = (0..QUARTET_SIZE)
         .map(|_| pools.acquire_proven(acquirer))
         .collect::<futures::stream::FuturesUnordered<_>>();

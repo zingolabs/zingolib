@@ -71,15 +71,12 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
         // the wallet-correlated streams on the standing client.
         let pools = self.pools.clone();
         async move {
-            let birth = match pools.take_conduit(crate::mixnet::quartet::Role::PriceFetch) {
-                Some(held) => held,
-                None => {
-                    let acquirer = pools
-                        .acquirer()
-                        .ok_or(crate::mixnet::acquire::TransportError::NoAcquirer)?;
-                    pools.acquire_proven(acquirer.as_ref()).await?
-                }
-            };
+            let acquirer = pools
+                .acquirer()
+                .ok_or(crate::mixnet::acquire::TransportError::NoAcquirer)?;
+            let birth = pools
+                .conduit_for(crate::mixnet::quartet::Role::PriceFetch, acquirer.as_ref())
+                .await?;
             let member = crate::mixnet::speed::Member::new(birth.transport, birth.lease);
             let addr = member
                 .addr()
@@ -488,7 +485,9 @@ impl LightClient {
         binary_path: &std::path::Path,
     ) -> Result<(), crate::mixnet::acquire::TransportError> {
         self.enable_mixnet_from(std::sync::Arc::new(
-            crate::mixnet::acquire::SpawnedBinary::at(binary_path.to_path_buf()),
+            crate::mixnet::acquire::Acquirer::Spawned(crate::mixnet::acquire::SpawnedBinary::at(
+                binary_path.to_path_buf(),
+            )),
         ))
         .await
     }
@@ -553,10 +552,12 @@ impl LightClient {
     /// ```
     pub async fn enable_mixnet_via_host(
         &mut self,
-        host: std::sync::Arc<dyn crate::mixnet::acquire::ProxyHost>,
+        host: impl crate::mixnet::acquire::ProxyHosting,
     ) -> Result<(), crate::mixnet::acquire::TransportError> {
         self.enable_mixnet_from(std::sync::Arc::new(
-            crate::mixnet::acquire::HostedProxy::owned_by(host),
+            crate::mixnet::acquire::Acquirer::Hosted(
+                crate::mixnet::acquire::HostedProvider::owned_by(host),
+            ),
         ))
         .await
     }
@@ -568,7 +569,7 @@ impl LightClient {
     /// and leaving any failure `Unattached`.
     async fn enable_mixnet_from(
         &mut self,
-        acquirer: std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>,
+        acquirer: std::sync::Arc<crate::mixnet::acquire::Acquirer>,
     ) -> Result<(), crate::mixnet::acquire::TransportError> {
         self.vacate_mixnet_slot().await;
         // The slot owner alone speaks on the session channel: one
@@ -1277,8 +1278,6 @@ mod tests {
         use std::sync::{Arc, Mutex};
 
         use crate::lightclient::LightClient;
-        use crate::mixnet::acquire::{TransportAcquirable, TransportError};
-        use crate::mixnet::driver::StatusPublisher;
         use crate::mixnet::{ExitNodeId, Indicator, MixnetStatus};
         use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
@@ -1299,65 +1298,6 @@ mod tests {
         /// Yields granted after a publication so a subscriber on another
         /// worker observes it before the watch channel coalesces.
         const ANNOUNCEMENT_YIELDS: usize = 8;
-
-        /// An acquirer whose transport announces its lifecycle into the
-        /// publisher it is handed, exactly as a spawned child would.
-        struct AnnouncingAcquirer {
-            socks5_addr: std::net::SocketAddr,
-        }
-
-        impl TransportAcquirable for AnnouncingAcquirer {
-            fn discover(
-                &self,
-            ) -> std::pin::Pin<
-                Box<
-                    dyn std::future::Future<
-                            Output = Result<std::collections::HashSet<ExitNodeId>, TransportError>,
-                        > + Send
-                        + '_,
-                >,
-            > {
-                Box::pin(async {
-                    Ok(HARNESS_CENSUS
-                        .iter()
-                        .map(|id| ExitNodeId::from(*id))
-                        .collect())
-                })
-            }
-
-            fn acquire<'a>(
-                &'a self,
-                clutch: &'a [ExitNodeId],
-                publisher: StatusPublisher,
-            ) -> std::pin::Pin<
-                Box<
-                    dyn std::future::Future<
-                            Output = Result<crate::mixnet::MixnetProxy, TransportError>,
-                        > + Send
-                        + 'a,
-                >,
-            > {
-                let addr = self.socks5_addr;
-                let clutch = clutch.to_vec();
-                Box::pin(async move {
-                    let proxy =
-                        crate::mixnet::MixnetProxy::attach(addr, &clutch, Arc::clone(&publisher))?;
-                    // The candidate announces readiness where a child
-                    // would: into the publisher its acquisition was handed.
-                    publisher.send_replace(MixnetStatus {
-                        mode: Indicator::Ready,
-                        socks5_addr: Some(addr),
-                        exits: clutch,
-                        bootstrap_detail: None,
-                        death: None,
-                    });
-                    for _ in 0..ANNOUNCEMENT_YIELDS {
-                        tokio::task::yield_now().await;
-                    }
-                    Ok(proxy)
-                })
-            }
-        }
 
         /// HYPOTHESIS: during an enable the session channel narrates the
         /// slot owner's Bootstrapping and never a candidate's Ready, so a
@@ -1392,9 +1332,18 @@ mod tests {
             started_rx.await.expect("the collector starts");
 
             client
-                .enable_mixnet_from(std::sync::Arc::new(AnnouncingAcquirer {
-                    socks5_addr: addr,
-                }))
+                .enable_mixnet_from(std::sync::Arc::new(
+                    crate::mixnet::acquire::Acquirer::Announcing(
+                        crate::mixnet::acquire::AnnouncingAcquirer {
+                            socks5_addr: addr,
+                            census: HARNESS_CENSUS
+                                .iter()
+                                .map(|id| ExitNodeId::from(*id))
+                                .collect(),
+                            yields: ANNOUNCEMENT_YIELDS,
+                        },
+                    ),
+                ))
                 .await
                 .expect("the trusted birth settles the enable");
 

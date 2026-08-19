@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Removed
+- BREAKING: `mixnet::acquire::ProxyHost` is renamed `ProxyHosting` and moved
+  to `zingo_netutils::provider`, along with `HostedTransport` and
+  `HostRefusal`; all three are re-exported from `mixnet::acquire`.
+  `HostedProxy` is replaced by `zingo_netutils::provider::HostedProvider`.
+  `LightClient::enable_mixnet_via_host` takes `impl ProxyHosting` by value
+  rather than `Arc<dyn ProxyHost>`, so no caller names a trait object
+  (ADR 0046).
 - BREAKING: `mixnet::SlotTunnel` is replaced by
   `zingo_netutils::conduit::MixnetConduit`, re-exported as
   `mixnet::MixnetConduit` (ADR 0046). Its `addr` and `into_addr`

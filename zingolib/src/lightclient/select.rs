@@ -87,10 +87,9 @@ impl LightClient {
         progress: impl Fn(SweepProgress),
     ) -> Result<Selection, ServerSelectionError> {
         let chain = lightd_chain_name(&self.chain_type());
-        let acquirer: std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable> =
-            std::sync::Arc::new(crate::mixnet::acquire::SpawnedBinary::at(
-                binary_path.to_path_buf(),
-            ));
+        let acquirer = std::sync::Arc::new(crate::mixnet::acquire::Acquirer::Spawned(
+            crate::mixnet::acquire::SpawnedBinary::at(binary_path.to_path_buf()),
+        ));
         // Random lane assignment; the whole census is probed and assigned
         // before the drawn verdict. Acquisition, the Sentinel-ridden wave, and
         // the redraw of an exit that carries nothing are the shared
@@ -167,7 +166,7 @@ impl LightClient {
 /// census through one Exit Node, assigning every candidate its verdict.
 struct IndexerSurvey {
     pools: std::sync::Arc<crate::correspondent::pool::Pools>,
-    acquirer: std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>,
+    acquirer: std::sync::Arc<crate::mixnet::acquire::Acquirer>,
     order: Vec<Uri>,
     timeout: Duration,
     history: crate::lightclient::indexer_history::IndexerHistoryHandle,
@@ -223,10 +222,12 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
         let pools = self.pools.clone();
         let acquirer = self.acquirer.clone();
         async move {
-            let birth = match pools.take_conduit(crate::mixnet::quartet::Role::IndexerSweep) {
-                Some(held) => held,
-                None => pools.acquire_proven(acquirer.as_ref()).await?,
-            };
+            let birth = pools
+                .conduit_for(
+                    crate::mixnet::quartet::Role::IndexerSweep,
+                    acquirer.as_ref(),
+                )
+                .await?;
             let member = crate::mixnet::speed::Member::new(birth.transport, birth.lease);
             let addr = member
                 .addr()
@@ -336,8 +337,10 @@ mod tests {
     fn a_healthy_answer_does_not_settle_the_survey() {
         let survey = IndexerSurvey {
             pools: crate::correspondent::pool::Pools::new(),
-            acquirer: std::sync::Arc::new(crate::mixnet::acquire::SpawnedBinary::at(
-                std::path::PathBuf::from("/nonexistent/nym-proxy"),
+            acquirer: std::sync::Arc::new(crate::mixnet::acquire::Acquirer::Spawned(
+                crate::mixnet::acquire::SpawnedBinary::at(std::path::PathBuf::from(
+                    "/nonexistent/nym-proxy",
+                )),
             )),
             order: Vec::new(),
             timeout: zingo_netutils::time::PROBE_LEG_TIMEOUT,

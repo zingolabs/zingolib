@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `provider::ProxyHosting`, `provider::HostedProvider`,
+  `provider::HostedTransport`, and `provider::HostRefusal`: the mixnet
+  provider a platform host supplies, moved down from zingolib (ADR 0046).
+  `HostedProvider` holds the supplied host, so the dynamic dispatch a
+  host requires stays below the seam and the wallet names a concrete
+  type. The provider names no async runtime: its methods block, and a
+  caller on a runtime hands them to a blocking thread.
 - `conduit::MixnetConduit`: what a wallet holds when it has somewhere to
   send mixnet traffic, asked for by role (ADR 0046). It replaces
   zingolib's `SlotTunnel`, which it also retires the term "tunnel" with.

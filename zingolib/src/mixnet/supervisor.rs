@@ -790,11 +790,14 @@ pub(crate) async fn await_ready_endpoint(
 /// Acquires one transport over `clutch`, publishing its lifecycle into
 /// `publisher`, and waits until it is ready, yielding the transport with the
 /// exits it announced as bound.
-pub(crate) async fn acquire_ready_transport(
-    acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
+pub(crate) async fn acquire_ready_transport<A>(
+    acquirer: &A,
     clutch: &[crate::mixnet::ExitNodeId],
     publisher: StatusPublisher,
-) -> Result<(MixnetProxy, Vec<crate::mixnet::ExitNodeId>), acquire::TransportError> {
+) -> Result<(MixnetProxy, Vec<crate::mixnet::ExitNodeId>), acquire::TransportError>
+where
+    A: crate::mixnet::acquire::TransportAcquirable + ?Sized,
+{
     let mut receiver = publisher.subscribe();
     let proxy = acquirer.acquire(clutch, publisher).await?;
     match await_ready_endpoint(&mut receiver, zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT).await {
