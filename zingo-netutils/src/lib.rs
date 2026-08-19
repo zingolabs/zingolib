@@ -86,6 +86,8 @@ pub mod arm_race;
 // them would make the featureless build harder to reason about (ADR 0046).
 pub mod exit;
 
+pub mod conduit;
+
 #[cfg(feature = "nym")]
 mod nym_proxy;
 #[cfg(feature = "nym")]

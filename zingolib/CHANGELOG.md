@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- BREAKING: `mixnet::SlotTunnel` is replaced by
+  `zingo_netutils::conduit::MixnetConduit`, re-exported as
+  `mixnet::MixnetConduit` (ADR 0046). Its `addr` and `into_addr`
+  accessors become `socks5`. `mixnet::ExitNodeId` keeps its path as a
+  re-export, but is now defined in `zingo_netutils::exit`.
+
 ### Changed
 - The Server-Selection Sweep probes and assigns every indexer before its
   verdict (ruled 2026-08-14): no healthy answer ends the survey early, a

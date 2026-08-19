@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `conduit::MixnetConduit`: what a wallet holds when it has somewhere to
+  send mixnet traffic, asked for by role (ADR 0046). It replaces
+  zingolib's `SlotTunnel`, which it also retires the term "tunnel" with.
+  Its address accessor stays public until the dialers that take a bare
+  `SocketAddr` accept a conduit instead.
+- `exit::ExitNodeId` and the Exit Pool, moved from zingolib so the wallet
+  crate stops owning Nym's vocabulary (ADR 0046).
 - `time::NYM_EPOCH`: one Nym network epoch, the hourly topology rotation
   that bounds how long an observation about an Exit Node stays meaningful.
 - `time::OBSERVED_ANNOUNCEMENT_MEAN`, `time::OBSERVED_ANNOUNCEMENT_DEVIATION`,

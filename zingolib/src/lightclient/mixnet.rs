@@ -903,7 +903,7 @@ impl LightClient {
     ) -> Result<Vec<crate::mixnet::probe::MixnetProbe>, crate::lightclient::error::LightClientError>
     {
         let socks5_addr = match self.mixnet_route()? {
-            crate::mixnet::MixnetRoute::Mixnet(tunnel) => tunnel.into_addr(),
+            crate::mixnet::MixnetRoute::Mixnet(conduit) => conduit.socks5(),
             crate::mixnet::MixnetRoute::Clearnet => {
                 return Err(crate::lightclient::error::LightClientError::ProbeRequiresMixnet);
             }
@@ -952,7 +952,7 @@ impl LightClient {
     /// third-party price API outside the Zcash ecosystem.
     pub async fn update_current_price(&self) -> Result<MixnetPriceFetch, LightClientError> {
         let socks5_addr = match self.mixnet_route()? {
-            crate::mixnet::MixnetRoute::Mixnet(tunnel) => tunnel.into_addr(),
+            crate::mixnet::MixnetRoute::Mixnet(conduit) => conduit.socks5(),
             crate::mixnet::MixnetRoute::Clearnet => {
                 return Err(LightClientError::PriceFetchRequiresMixnet);
             }

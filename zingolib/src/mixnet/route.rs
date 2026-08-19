@@ -14,31 +14,6 @@
 
 use crate::mixnet::Indicator;
 
-/// The session slot's tunnel, whose one exit is Shared across every
-/// request the slot's surfaces send to a Correspondent.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SlotTunnel {
-    socks5_addr: std::net::SocketAddr,
-}
-
-impl SlotTunnel {
-    /// The tunnel's local SOCKS5 address, for one more request to a
-    /// Correspondent.
-    pub fn addr(&self) -> std::net::SocketAddr {
-        self.socks5_addr
-    }
-
-    /// Yields the tunnel's local SOCKS5 address for the one owned dial.
-    pub fn into_addr(self) -> std::net::SocketAddr {
-        self.socks5_addr
-    }
-
-    /// Wraps the published proxy address of a ready transport.
-    fn over(socks5_addr: std::net::SocketAddr) -> Self {
-        Self { socks5_addr }
-    }
-}
-
 /// The resolved network route for a mixnet-only surface.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MixnetRoute {
@@ -46,8 +21,8 @@ pub enum MixnetRoute {
     /// [`SwitchedOff`](Indicator::SwitchedOff), i.e. the user deliberately
     /// toggled it off.
     Clearnet,
-    /// Route through the Standing Client's tunnel.
-    Mixnet(SlotTunnel),
+    /// Route through the session's conduit.
+    Mixnet(zingo_netutils::conduit::MixnetConduit),
 }
 
 /// A mixnet-only surface was attempted while the mixnet was unavailable
@@ -93,7 +68,7 @@ pub fn resolve_route(
         // evidentiary, resolved by the promotion and demotion loop, never
         // by refusing the surface.
         Indicator::Ready | Indicator::PreviouslyProvenThisEpoch => socks5_addr
-            .map(SlotTunnel::over)
+            .map(zingo_netutils::conduit::MixnetConduit::over)
             .map(MixnetRoute::Mixnet)
             .ok_or(MixnetNotReady::Bootstrapping),
         Indicator::Bootstrapping => Err(MixnetNotReady::Bootstrapping),
@@ -139,8 +114,8 @@ mod tests {
             Some("127.0.0.1:9050".parse().expect("the test address parses")),
         );
         match route.unwrap() {
-            MixnetRoute::Mixnet(tunnel) => assert_eq!(
-                tunnel.addr(),
+            MixnetRoute::Mixnet(conduit) => assert_eq!(
+                conduit.socks5(),
                 "127.0.0.1:9050"
                     .parse::<std::net::SocketAddr>()
                     .expect("the test address parses")
