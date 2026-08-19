@@ -115,7 +115,7 @@ mod tests {
         );
         match route.unwrap() {
             MixnetRoute::Mixnet(conduit) => assert_eq!(
-                conduit.socks5(),
+                conduit.dial().socks5(),
                 "127.0.0.1:9050"
                     .parse::<std::net::SocketAddr>()
                     .expect("the test address parses")

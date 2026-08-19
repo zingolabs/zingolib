@@ -884,7 +884,7 @@ async fn get_current_price(
     request_timeout: Duration,
     connect_timeout: Duration,
 ) -> Result<Price, PriceError> {
-    get_source_price(
+    fetch_over(
         PriceSource::Gemini,
         socks5_proxy,
         url,
@@ -900,6 +900,23 @@ async fn get_current_price(
 /// refusal.
 #[cfg(feature = "socks5-fetch")]
 pub async fn get_source_price(
+    source: PriceSource,
+    dial: &zingo_netutils::conduit::ConduitDial,
+    url: &str,
+    request_timeout: Duration,
+    connect_timeout: Duration,
+) -> Result<Price, PriceError> {
+    let proxy = dial.socks5().to_string();
+    fetch_over(source, Some(&proxy), url, request_timeout, connect_timeout).await
+}
+
+/// The shared fetch, over `socks5_proxy` when one is given.
+///
+/// Private because a price fetch is mixnet-only (ADR 0011), and the public
+/// entry takes a conduit guard to say so in the type. The crate's own tests
+/// reach the clearnet leg through here, where no caller outside can.
+#[cfg(feature = "socks5-fetch")]
+async fn fetch_over(
     source: PriceSource,
     socks5_proxy: Option<&str>,
     url: &str,
@@ -1022,7 +1039,7 @@ mod tests {
     #[ignore = "hits a live price-source API over clearnet"]
     async fn live_clearnet_price_fetch_smoke() {
         let source = PriceSource::Kraken;
-        let price = get_source_price(source, None, source.url(), REQUEST_TIMEOUT, CONNECT_TIMEOUT)
+        let price = fetch_over(source, None, source.url(), REQUEST_TIMEOUT, CONNECT_TIMEOUT)
             .await
             .expect("the live price fetch succeeds");
         assert!(
@@ -1234,8 +1251,8 @@ mod tests {
         let kraken = spawn_answering_server(KRAKEN_ELEVEN_TRADES).await;
         let short = Duration::from_millis(500);
 
-        let refused = get_source_price(PriceSource::Gemini, None, &garbage, short, short).await;
-        let answered = get_source_price(PriceSource::Kraken, None, &kraken, short, short).await;
+        let refused = fetch_over(PriceSource::Gemini, None, &garbage, short, short).await;
+        let answered = fetch_over(PriceSource::Kraken, None, &kraken, short, short).await;
         let won = first_quote(vec![
             (PriceSource::Gemini, refused),
             (PriceSource::Kraken, answered),
@@ -1262,10 +1279,7 @@ mod tests {
             (PriceSource::Kraken, garbage_two),
             (PriceSource::CoinGecko, silent),
         ] {
-            outcomes.push((
-                source,
-                get_source_price(source, None, &url, short, short).await,
-            ));
+            outcomes.push((source, fetch_over(source, None, &url, short, short).await));
         }
         let failure = first_quote(outcomes).expect_err("no source answered with a price");
         let named: Vec<&str> = failure

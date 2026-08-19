@@ -4665,6 +4665,7 @@ dependencies = [
  "tokio",
  "zcash_encoding",
  "zingo-net-diag",
+ "zingo-netutils",
 ]
 
 [[package]]

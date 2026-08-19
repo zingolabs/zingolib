@@ -66,7 +66,9 @@ impl TransmissionClient for RoutedTransmissionClient {
 /// for the clearnet client.
 #[cfg(feature = "nym")]
 pub struct MixnetTransmissionClient {
-    socks5_addr: std::net::SocketAddr,
+    /// The conduit's guard, held for the client's whole life because the
+    /// client dials on every submission (ADR 0048).
+    dial: zingo_netutils::conduit::ConduitDial,
     /// The eligible targets ([`eligible_candidates`]): nonempty, and never
     /// operated by the synchronization endpoint's operator (ADR 0022).
     candidates: Vec<http::Uri>,
@@ -74,13 +76,13 @@ pub struct MixnetTransmissionClient {
 
 #[cfg(feature = "nym")]
 impl MixnetTransmissionClient {
-    /// A client dialing through the proxy at `socks5_addr`, drawing each
-    /// submission's target from `candidates`.
-    pub(crate) fn new(socks5_addr: std::net::SocketAddr, candidates: Vec<http::Uri>) -> Self {
-        MixnetTransmissionClient {
-            socks5_addr,
-            candidates,
-        }
+    /// A client dialing through `dial`'s conduit, drawing each submission's
+    /// target from `candidates`.
+    pub(crate) fn new(
+        dial: zingo_netutils::conduit::ConduitDial,
+        candidates: Vec<http::Uri>,
+    ) -> Self {
+        MixnetTransmissionClient { dial, candidates }
     }
 }
 
@@ -100,7 +102,7 @@ impl TransmissionClient for MixnetTransmissionClient {
                 PartTransmissionError::Transport("no transmission candidates".to_string())
             })?;
         let txid_hex = zingo_netutils::Socks5Indexer::new(
-            self.socks5_addr,
+            self.dial.socks5(),
             indexer.clone(),
             super::transmission_grpc::MIGRATION_SUBMIT_TIMEOUT,
         )
@@ -125,7 +127,7 @@ impl TransmissionClient for MixnetTransmissionClient {
             txid,
             route: TransmissionRoute::Mixnet {
                 correspondent: super::transmission_grpc::host_of(indexer),
-                via_socks5: self.socks5_addr.to_string(),
+                via_socks5: self.dial.socks5().to_string(),
             },
         })
     }
