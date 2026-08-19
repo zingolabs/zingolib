@@ -41,7 +41,9 @@ Test front door — `makers test "$@"` is a containerized
 
 Reserved first words expand to canned invocations:
   makers test packages        every workspace package EXCEPT the live
-                              ones (libtonode-tests and zingo-cli)
+                              ones (libtonode-tests and zingo-cli); also
+                              skips BUILDING libtonode-tests, whose ten
+                              test binaries this set never runs
   makers test live            ONLY libtonode-tests and zingo-cli
 
 Explicit package-selection flags (-p, --workspace, --exclude, ...) replace
@@ -341,6 +343,10 @@ container_nextest_run "$@"
 # identically, and every phase of `makers hierarchy-test` reuses ONE
 # compiled variant of each crate — a `-p`/`--exclude` scope re-unifies
 # features per selection and compiles a distinct zingolib variant per phase.
+# The `packages` set carries ONE audited exception: it also excludes the
+# members in build_excludable from the build, which is safe only because
+# those members activate no feature of their own. See that array's comment
+# for the criterion and how to check a candidate against it.
 # Explicit package-selection args still replace a set's scope entirely —
 # cargo silently ignores `-p` when `--workspace` is present, so merging
 # them would swallow the user's selection. Caveat: combining a reserved
@@ -360,6 +366,23 @@ script.main = '''
 # for the packages/live partition.
 live_packages=(libtonode-tests zingo-cli)
 
+# The live packages the `packages` set drops from the BUILD as well as from
+# the run. Nothing in that set runs their tests, and a failing packages
+# phase stops the later phases from ever running them, so compiling their
+# test binaries there buys nothing and is lost outright when the gate trips.
+#
+# A member belongs here only if it activates no feature that no other member
+# activates. Excluding one that does would re-unify features and compile a
+# second variant of every crate beneath it, which is the cost this file's
+# filterset partition exists to avoid. Check a candidate by diffing
+#   cargo tree --workspace -e features -i <crate>
+# against the same command with `--exclude <candidate>`, for every crate the
+# workspace shares. libtonode-tests loses nothing: every feature it turns on
+# is also turned on by zingolib_testutils, which stays. zingo-cli is
+# deliberately absent, because it is the only member that activates
+# `zingolib/nym`.
+build_excludable=(libtonode-tests)
+
 # The filterset matching every live package's tests; its negation is the
 # hermetic remainder. Space-free, so each expression rides as one argv token.
 live_filter=""
@@ -372,7 +395,16 @@ if [[ "$#" -gt 0 ]]; then
   case "$1" in
     packages)
       shift
-      set_args+=(--workspace -E "!(${live_filter})") ;;
+      # `--workspace` stays explicit: the `--exclude` below makes
+      # append_workspace_default treat the scope as already chosen, and a
+      # bare `--exclude` without it is a cargo error. The filterset still
+      # names the excluded package, which nextest resolves against
+      # workspace metadata rather than the build set.
+      set_args+=(--workspace -E "!(${live_filter})")
+      for pkg in "${build_excludable[@]}"; do
+        set_args+=(--exclude "${pkg}")
+      done
+      ;;
     live)
       shift
       set_args+=(--workspace -E "${live_filter}") ;;
