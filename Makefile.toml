@@ -54,6 +54,13 @@ failing phase stops the later, more expensive ones, with a combined
 per-phase summary:
   makers hierarchy-test
 
+Run the same three phases with the libtonode one narrowed to the
+chain_generics::send_shield_cycle fixture, which is the cheapest run
+that still exercises the chain-level machinery. That phase also builds
+only the one test binary of libtonode-tests' ten, via a cargo target
+selection that leaves the shared --workspace scope intact:
+  makers lite-hierarchy
+
 Common usage:
   makers container-test
   cargo make container-test
@@ -392,6 +399,21 @@ args = [
     "--bin",
     "test-summary",
     "--",
+    "${@}",
+]
+
+[tasks.lite-hierarchy]
+description = "Run the same three gated phases as hierarchy-test, with the libtonode phase narrowed to chain_generics::send_shield_cycle and built as that one test binary rather than all ten: the cheapest run that still proves the chain-level machinery, for gating between commits rather than before a push"
+command = "cargo"
+args = [
+    "run",
+    "-q",
+    "--manifest-path",
+    "tools/workbench/Cargo.toml",
+    "--bin",
+    "test-summary",
+    "--",
+    "--lite",
     "${@}",
 ]
 
