@@ -395,6 +395,20 @@ args = [
     "${@}",
 ]
 
+[tasks.feature-sweep]
+description = "Check the crates this branch touches in every feature combination, the way CI's Cargo Hack Check job does, so code that only a non-default feature compiles (a `#[cfg(not(feature = \"nym\"))]` module, say) fails here rather than after the push. Pass --all for the whole workspace, --base <ref> to compare against another branch, or crate directories to check those and no others."
+command = "cargo"
+args = [
+    "run",
+    "-q",
+    "--manifest-path",
+    "tools/workbench/Cargo.toml",
+    "--bin",
+    "feature-sweep",
+    "--",
+    "${@}",
+]
+
 [tasks.bundle-nym-proxy]
 description = "Build the standalone nym-proxy binary (from the zingo-netutils workspace, own lockfile) and copy it beside the target/<profile>/ wallet binaries so the CLI finds it with no configuration (ADR 0011). Pass --release for a release build, or --dest <dir> for another location."
 command = "cargo"

@@ -401,18 +401,6 @@ impl LightWallet {
         }
     }
 
-    /// Records a price fetched *outside* the wallet lock (the net-diag
-    /// polling-blackout remedy: the caller fetches with no lock held, then
-    /// re-acquires briefly and stores the result here). The price lands in
-    /// the price list, so it serializes with the wallet. Price fetching
-    /// exists only in `nym` builds (ADR 0011, amendment 2026-07-28), so the
-    /// recorder is gated with its only caller.
-    #[cfg(feature = "nym")]
-    pub(crate) fn record_price_update(&mut self, price: zingo_price::Price) {
-        self.price_list.record_current_price(price);
-        self.save_required = true;
-    }
-
     /// Prunes historical prices to days containing transactions in the wallet.
     ///
     /// Avoids pruning above fully scanned height.

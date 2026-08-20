@@ -434,7 +434,7 @@ impl LightClient {
     /// ```
     /// use zingolib::config::{ClientConfig, WalletConfig};
     /// use zingolib::lightclient::LightClient;
-    /// use zingolib::mixnet::{MixnetMode, TransportError};
+    /// use zingolib::mixnet::{Indicator, TransportError};
     ///
     /// tokio::runtime::Runtime::new().unwrap().block_on(async {
     ///     let wallet_dir = tempfile::tempdir().unwrap();
@@ -464,7 +464,7 @@ impl LightClient {
     ///         refused,
     ///         Err(TransportError::DiscoverySpawn(_))
     ///     ));
-    ///     assert_eq!(client.mixnet_mode(), MixnetMode::Unattached);
+    ///     assert_eq!(client.read_mixnet_indicator(), Indicator::Unattached);
     /// });
     /// ```
     pub async fn enable_mixnet(
@@ -481,7 +481,7 @@ impl LightClient {
     /// use zingolib::config::{ClientConfig, WalletConfig};
     /// use zingolib::lightclient::LightClient;
     /// use zingolib::mixnet::acquire::{HostRefusal, HostedTransport, ProxyHost};
-    /// use zingolib::mixnet::{ExitNodeId, MixnetMode, TransportError};
+    /// use zingolib::mixnet::{ExitNodeId, Indicator, TransportError};
     ///
     /// // A host that declines every request, standing in for the platform
     /// // that owns the proxy where subprocesses are forbidden.
@@ -532,7 +532,7 @@ impl LightClient {
     ///         refused,
     ///         Err(TransportError::HostRefused(HostRefusal::Declined { .. }))
     ///     ));
-    ///     assert_eq!(client.mixnet_mode(), MixnetMode::Unattached);
+    ///     assert_eq!(client.read_mixnet_indicator(), Indicator::Unattached);
     /// });
     /// ```
     pub async fn enable_mixnet_via_host(
@@ -560,7 +560,7 @@ impl LightClient {
         // and never a candidate's churn.
         self.mixnet_status
             .send_replace(crate::mixnet::MixnetStatus {
-                mode: crate::mixnet::MixnetMode::Bootstrapping,
+                mode: crate::mixnet::Indicator::Bootstrapping,
                 socks5_addr: None,
                 exits: Vec::new(),
                 bootstrap_detail: None,
@@ -625,7 +625,7 @@ impl LightClient {
     /// ```
     /// use zingolib::config::{ClientConfig, WalletConfig};
     /// use zingolib::lightclient::LightClient;
-    /// use zingolib::mixnet::{ExitNodeId, MixnetMode, MixnetProxyError};
+    /// use zingolib::mixnet::{ExitNodeId, Indicator, MixnetProxyError};
     ///
     /// tokio::runtime::Runtime::new().unwrap().block_on(async {
     ///     let wallet_dir = tempfile::tempdir().unwrap();
@@ -651,7 +651,7 @@ impl LightClient {
     ///         refused,
     ///         Err(MixnetProxyError::InvalidAddress { .. })
     ///     ));
-    ///     assert_eq!(client.mixnet_mode(), MixnetMode::Unattached);
+    ///     assert_eq!(client.read_mixnet_indicator(), Indicator::Unattached);
     ///
     ///     // Empty `exits` refuses typed before anything is dialed.
     ///     let exitless = client.attach_mixnet("127.0.0.1:9", &[]).await;
@@ -665,12 +665,12 @@ impl LightClient {
     ///         .attach_mixnet("127.0.0.1:9", std::slice::from_ref(&host_drawn))
     ///         .await
     ///         .unwrap();
-    ///     assert_ne!(client.mixnet_mode(), MixnetMode::Ready);
+    ///     assert_ne!(client.read_mixnet_indicator(), Indicator::Ready);
     ///
     ///     // A later attach vacates the standing transport first, so its
     ///     // failure leaves Unattached rather than the prior client.
     ///     client.attach_mixnet("not-an-address", &[]).await.unwrap_err();
-    ///     assert_eq!(client.mixnet_mode(), MixnetMode::Unattached);
+    ///     assert_eq!(client.read_mixnet_indicator(), Indicator::Unattached);
     /// });
     /// ```
     pub async fn attach_mixnet(
@@ -718,7 +718,7 @@ impl LightClient {
     }
 
     /// Disable Mixnet Mode — the deliberate, per-session choice that alone
-    /// reaches [`MixnetMode::SwitchedOff`](crate::mixnet::MixnetMode) — shutting
+    /// reaches [`Indicator::SwitchedOff`](crate::mixnet::Indicator) — shutting
     /// down any running transport so the mixnet-only surfaces route over
     /// clearnet as informed consent.
     pub async fn disable_mixnet(&mut self) {
@@ -748,7 +748,7 @@ impl LightClient {
     /// off, returns any provisioning failure typed while leaving the mode
     /// unattached — refusal, never a silent clearnet — and never respawns on
     /// its own, recovery staying explicit through
-    /// [`MixnetMode::needs_recovery`](crate::mixnet::MixnetMode::needs_recovery).
+    /// [`Indicator::needs_recovery`](crate::mixnet::Indicator::needs_recovery).
     pub async fn start_mixnet_session(
         &mut self,
         strategy: crate::mixnet::ProvisionStrategy<'_>,
@@ -785,13 +785,7 @@ impl LightClient {
         self.mixnet_status.subscribe()
     }
 
-    /// The current Mixnet Mode, read from the transport slot:
-    /// [`MixnetMode::Unattached`](crate::mixnet::MixnetMode) before any enable
-    /// (and after a failed one),
-    /// [`MixnetMode::SwitchedOff`](crate::mixnet::MixnetMode) after the
-    /// deliberate disable, otherwise the transport's lifecycle state
-    /// (bootstrapping, ready, or died).
-    pub fn mixnet_mode(&self) -> crate::mixnet::MixnetMode {
+    pub fn read_mixnet_indicator(&self) -> crate::mixnet::Indicator {
         self.mixnet_slot.lock().expect("mixnet slot mutex").mode()
     }
 
@@ -804,7 +798,7 @@ impl LightClient {
     }
 
     /// Switch Mixnet Mode on for a chain-mock test, with the slot reporting
-    /// [`MixnetMode::Ready`](crate::mixnet::MixnetMode) at `socks5_addr` while
+    /// [`Indicator::Ready`](crate::mixnet::Indicator) at `socks5_addr` while
     /// no child, watcher, or probe stands behind it, so the test walks the
     /// same fail-closed route resolver and escalation orchestration a live
     /// Ready session does and the transmit path submits over the mock
@@ -832,7 +826,7 @@ impl LightClient {
     }
 
     /// Why the transport died, while Mixnet Mode is
-    /// [`MixnetMode::Died`](crate::mixnet::MixnetMode) and the watcher held a
+    /// [`Indicator::Died`](crate::mixnet::Indicator) and the watcher held a
     /// typed cause: the [`zingo_net_diag::NetOpFailure`] record naming the
     /// stage, the target, and the cause chain as a vector, so a `died`
     /// verdict carries *why* without anyone parsing prose.
@@ -846,7 +840,7 @@ impl LightClient {
 
     /// The latched death read whole — its moment and, when the watcher held
     /// one, its typed cause — while Mixnet Mode is
-    /// [`MixnetMode::Died`](crate::mixnet::MixnetMode) and `None` in every
+    /// [`Indicator::Died`](crate::mixnet::Indicator) and `None` in every
     /// other mode, the moment distinguishing a stale latch from a fresh one
     /// through [`crate::mixnet::DeathReport::age`].
     pub fn mixnet_death_report(&self) -> Option<crate::mixnet::DeathReport> {
@@ -859,14 +853,14 @@ impl LightClient {
 
     /// Resolve the fail-closed route every mixnet-only surface must obey —
     /// the mixnet proxy when
-    /// [`MixnetMode::Ready`](crate::mixnet::MixnetMode::Ready), clearnet only
+    /// [`Indicator::Ready`](crate::mixnet::Indicator::Ready), clearnet only
     /// when switched off (the deliberate toggle-off), and a refusal while
     /// unattached, bootstrapping, or died — as the single resolver that
     /// send, price-fetch, and the liveness probe share.
     pub fn mixnet_route(
         &self,
     ) -> Result<crate::mixnet::MixnetRoute, crate::mixnet::MixnetNotReady> {
-        crate::mixnet::resolve_route(self.mixnet_mode(), self.mixnet_socks5_addr())
+        crate::mixnet::resolve_route(self.read_mixnet_indicator(), self.mixnet_socks5_addr())
     }
 
     /// Runs the mixnet liveness probe — concurrent `GetLightdInfo` calls
@@ -975,7 +969,6 @@ impl LightClient {
         let raced =
             zingo_price::first_quote(outcomes).map_err(crate::wallet::error::PriceError::from)?;
         let round_trip = dispatched.elapsed();
-        self.wallet().write().await.record_price_update(raced.price);
         Ok(MixnetPriceFetch {
             usd: raced.price.price_usd,
             source: raced.source,
@@ -1059,11 +1052,17 @@ mod tests {
         #[tokio::test]
         async fn disable_before_any_enable_records_clearnet_consent() {
             let mut client = LightClient::new_for_test(wallet()).await;
-            assert_eq!(client.mixnet_mode(), crate::mixnet::MixnetMode::Unattached);
+            assert_eq!(
+                client.read_mixnet_indicator(),
+                crate::mixnet::Indicator::Unattached
+            );
 
             client.disable_mixnet().await;
 
-            assert_eq!(client.mixnet_mode(), crate::mixnet::MixnetMode::SwitchedOff);
+            assert_eq!(
+                client.read_mixnet_indicator(),
+                crate::mixnet::Indicator::SwitchedOff
+            );
             assert!(matches!(
                 client.mixnet_route(),
                 Ok(crate::mixnet::MixnetRoute::Clearnet)
@@ -1253,7 +1252,7 @@ mod tests {
         use crate::lightclient::LightClient;
         use crate::mixnet::acquire::{TransportAcquirable, TransportError};
         use crate::mixnet::driver::StatusPublisher;
-        use crate::mixnet::{ExitNodeId, MixnetMode, MixnetStatus};
+        use crate::mixnet::{ExitNodeId, Indicator, MixnetStatus};
         use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
         fn wallet() -> crate::wallet::LightWallet {
@@ -1307,7 +1306,7 @@ mod tests {
                     // The candidate announces readiness where a child
                     // would: into the publisher its acquisition was handed.
                     publisher.send_replace(MixnetStatus {
-                        mode: MixnetMode::Ready,
+                        mode: Indicator::Ready,
                         socks5_addr: Some(addr),
                         exits: clutch,
                         bootstrap_detail: None,
@@ -1364,7 +1363,7 @@ mod tests {
             collector.abort();
             let seen = seen.lock().expect("collector mutex");
             assert!(
-                seen.iter().all(|status| status.mode != MixnetMode::Ready),
+                seen.iter().all(|status| status.mode != Indicator::Ready),
                 "no candidate Ready reaches the session channel: {seen:?}"
             );
             // A watch channel promises the latest state, not every event, so
@@ -1374,7 +1373,7 @@ mod tests {
             if let Some(first) = seen.first() {
                 assert_eq!(
                     first.mode,
-                    MixnetMode::Bootstrapping,
+                    Indicator::Bootstrapping,
                     "the channel's first mid-enable state is the slot owner's"
                 );
                 assert_eq!(
@@ -1388,7 +1387,7 @@ mod tests {
     mod death_story {
         //! A latched death reaches subscribers with its typed cause (finding
         //! F6 of the PR #2705 review, item 2 of the 2026-08-14 split).
-        use crate::mixnet::{ExitNodeId, MixnetMode};
+        use crate::mixnet::{ExitNodeId, Indicator};
 
         /// HYPOTHESIS: a forsaken Standing Client's Died reaches the status
         /// channel carrying the exhaustion's typed story, so a consumer
@@ -1425,7 +1424,7 @@ mod tests {
             super::super::publish_slot(&slot, &session);
 
             let published = session.subscribe().borrow().clone();
-            assert_eq!(published.mode, MixnetMode::Died, "forsaken latches Died");
+            assert_eq!(published.mode, Indicator::Died, "forsaken latches Died");
             let death = published
                 .death
                 .expect("the published death carries its report");
@@ -1471,10 +1470,13 @@ mod tests {
                 .await
                 .expect_err("an unparseable mobile platform address must fail the attach");
 
-            assert_eq!(client.mixnet_mode(), crate::mixnet::MixnetMode::Unattached);
+            assert_eq!(
+                client.read_mixnet_indicator(),
+                crate::mixnet::Indicator::Unattached
+            );
             assert_eq!(
                 subscriber.borrow().mode,
-                crate::mixnet::MixnetMode::Unattached,
+                crate::mixnet::Indicator::Unattached,
                 "subscribers must see the revocation"
             );
         }
@@ -1489,7 +1491,7 @@ mod tests {
             let subscriber = client.subscribe_mixnet_status();
             assert_eq!(
                 subscriber.borrow().mode,
-                crate::mixnet::MixnetMode::Unattached,
+                crate::mixnet::Indicator::Unattached,
                 "the channel opens in the ground state"
             );
 
@@ -1505,10 +1507,13 @@ mod tests {
                 .await
                 .expect("the opt-out provisions nothing and cannot fail");
 
-            assert_eq!(client.mixnet_mode(), crate::mixnet::MixnetMode::SwitchedOff);
+            assert_eq!(
+                client.read_mixnet_indicator(),
+                crate::mixnet::Indicator::SwitchedOff
+            );
             assert_eq!(
                 subscriber.borrow().mode,
-                crate::mixnet::MixnetMode::SwitchedOff,
+                crate::mixnet::Indicator::SwitchedOff,
                 "the slot transition must reach subscribers"
             );
         }
@@ -1538,10 +1543,13 @@ mod tests {
                 )
             ));
 
-            assert_eq!(client.mixnet_mode(), crate::mixnet::MixnetMode::Unattached);
+            assert_eq!(
+                client.read_mixnet_indicator(),
+                crate::mixnet::Indicator::Unattached
+            );
             assert_eq!(
                 subscriber.borrow().mode,
-                crate::mixnet::MixnetMode::Unattached,
+                crate::mixnet::Indicator::Unattached,
                 "the failed start's settled state must reach subscribers"
             );
         }
@@ -1571,7 +1579,7 @@ mod tests {
                 .expect("a well-formed address attaches");
 
             let died = subscriber
-                .wait_for(|status| status.mode == crate::mixnet::MixnetMode::Died)
+                .wait_for(|status| status.mode == crate::mixnet::Indicator::Died)
                 .await
                 .expect("the publisher outlives the wait")
                 .clone();
@@ -1583,7 +1591,7 @@ mod tests {
             client.disable_mixnet().await;
             assert_eq!(
                 subscriber.borrow_and_update().mode,
-                crate::mixnet::MixnetMode::SwitchedOff
+                crate::mixnet::Indicator::SwitchedOff
             );
             tokio::task::yield_now().await;
             assert!(
@@ -1617,12 +1625,12 @@ mod tests {
         /// state must take a position.
         #[test]
         fn the_recovery_predicate_is_died_only() {
-            for mode in crate::mixnet::MixnetMode::ALL {
+            for mode in crate::mixnet::Indicator::ALL {
                 assert_eq!(
                     mode.needs_recovery(),
-                    matches!(mode, crate::mixnet::MixnetMode::Died),
+                    matches!(mode, crate::mixnet::Indicator::Died),
                     "{mode} must {}need recovery",
-                    if matches!(mode, crate::mixnet::MixnetMode::Died) {
+                    if matches!(mode, crate::mixnet::Indicator::Died) {
                         ""
                     } else {
                         "not "
@@ -1642,7 +1650,7 @@ mod proof_acquisition {
 
     use super::{adjudicate_standing_proof, standing_proof_watchdog};
     use crate::correspondent::pool::exit_pool::Reservation;
-    use crate::mixnet::{MixnetMode, MixnetSlot, StandingClient};
+    use crate::mixnet::{Indicator, MixnetSlot, StandingClient};
 
     fn slot_with(born_probed: bool, exit: &str) -> std::sync::Arc<std::sync::Mutex<MixnetSlot>> {
         let proxy = crate::mixnet::MixnetProxy::ready_for_slot_tests(
@@ -1675,7 +1683,7 @@ mod proof_acquisition {
         )
         .await;
 
-        assert_eq!(slot.lock().unwrap().mode(), MixnetMode::Ready);
+        assert_eq!(slot.lock().unwrap().mode(), Indicator::Ready);
         assert!(
             pools.exits.lock().unwrap().epoch_proven(
                 &crate::mixnet::ExitNodeId::from("exit-answers"),
@@ -1683,7 +1691,7 @@ mod proof_acquisition {
             ),
             "the answer refreshes the exit's EpochProven observation"
         );
-        assert_eq!(status.borrow().mode, MixnetMode::Ready);
+        assert_eq!(status.borrow().mode, Indicator::Ready);
     }
 
     /// HYPOTHESIS: a silent arbiter probe convicts the exit, and with no
@@ -1704,7 +1712,7 @@ mod proof_acquisition {
         )
         .await;
 
-        assert_eq!(slot.lock().unwrap().mode(), MixnetMode::Died);
+        assert_eq!(slot.lock().unwrap().mode(), Indicator::Died);
         assert!(
             pools.exits.lock().unwrap().epoch_failed(
                 &crate::mixnet::ExitNodeId::from("exit-silent"),
@@ -1712,7 +1720,7 @@ mod proof_acquisition {
             ),
             "the conviction reaches the NodeHealthIndex"
         );
-        assert_eq!(status.borrow().mode, MixnetMode::Died);
+        assert_eq!(status.borrow().mode, Indicator::Died);
     }
 
     /// HYPOTHESIS: when the proof deadline lapses, the expiry watchdog
@@ -1737,7 +1745,7 @@ mod proof_acquisition {
             std::sync::Arc::clone(&status),
         ));
         watcher
-            .wait_for(|published| published.mode == MixnetMode::Died)
+            .wait_for(|published| published.mode == Indicator::Died)
             .await
             .expect("the watchdog publishes the exhausted failover");
         watchdog.abort();

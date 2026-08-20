@@ -4,7 +4,7 @@
 //! `nym-proxy` binary and spawns it as a child. This supervisor owns that
 //! child's lifecycle: it starts the process, reads the local SOCKS5 address
 //! the child announces on stdout, and drives the transport's lifecycle
-//! states of [`MixnetMode`]. While the child is starting the
+//! states of [`Indicator`]. While the child is starting the
 //! mode is `Bootstrapping`. It becomes `Ready` once the address arrives. If
 //! the child's stdout later closes (during bootstrap or after ready) the
 //! mode becomes `Died`, an unconsented loss of the transport that makes
@@ -56,7 +56,7 @@ use zingo_netutils::time::{
 };
 use zingo_netutils::{NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, SOCKS5_ADDR_LINE_PREFIX};
 
-use crate::mixnet::MixnetMode;
+use crate::mixnet::Indicator;
 use crate::mixnet::acquire;
 use crate::mixnet::driver::{MixnetStatus, StatusPublisher};
 
@@ -107,12 +107,12 @@ pub enum MixnetProxyError {
 /// driver.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ProxyState {
-    mode: MixnetMode,
+    mode: Indicator,
     socks5_addr: Option<SocketAddr>,
     /// The Exit Node identities the transport reports as bound.
     exits: Vec<crate::mixnet::ExitNodeId>,
     /// The transport's latest bootstrap progress report, live only while
-    /// [`MixnetMode::Bootstrapping`], so a user interface can narrate the
+    /// [`Indicator::Bootstrapping`], so a user interface can narrate the
     /// connect race instead of showing an opaque wait.
     bootstrap_detail: Option<String>,
     /// The one sticky death latch, holding the moment and, when the watcher
@@ -128,7 +128,7 @@ impl ProxyState {
             mode: self.mode,
             socks5_addr: self.socks5_addr,
             // Ready-only evidence: the wire refuses exits in any other mode.
-            exits: if self.mode == MixnetMode::Ready {
+            exits: if self.mode == Indicator::Ready {
                 self.exits.clone()
             } else {
                 Vec::new()
@@ -214,7 +214,7 @@ enum Transport {
 
 impl MixnetProxy {
     /// Spawns the `nym-proxy` binary at `binary_path` over `clutch`,
-    /// returning immediately with mode [`MixnetMode::Bootstrapping`]
+    /// returning immediately with mode [`Indicator::Bootstrapping`]
     /// published into `publisher` along with every later transition.
     pub(crate) fn spawn(
         binary_path: &Path,
@@ -255,7 +255,7 @@ impl MixnetProxy {
             stderr_tail,
         };
         let state = Arc::new(Mutex::new(ProxyState {
-            mode: MixnetMode::Bootstrapping,
+            mode: Indicator::Bootstrapping,
             socks5_addr: None,
             exits: Vec::new(),
             bootstrap_detail: None,
@@ -293,7 +293,7 @@ impl MixnetProxy {
             return Err(MixnetProxyError::NoExits);
         }
         let state = Arc::new(Mutex::new(ProxyState {
-            mode: MixnetMode::Bootstrapping,
+            mode: Indicator::Bootstrapping,
             socks5_addr: None,
             exits: exits.to_vec(),
             bootstrap_detail: Some("validating the attached mixnet endpoint".to_string()),
@@ -315,20 +315,20 @@ impl MixnetProxy {
     }
 
     /// The transport's current lifecycle state.
-    pub fn mode(&self) -> MixnetMode {
+    pub fn mode(&self) -> Indicator {
         self.state.lock().expect("proxy state mutex").mode
     }
 
-    /// The local SOCKS5 address, once the mode is [`MixnetMode::Ready`].
+    /// The local SOCKS5 address, once the mode is [`Indicator::Ready`].
     pub fn socks5_addr(&self) -> Option<SocketAddr> {
         self.state.lock().expect("proxy state mutex").socks5_addr
     }
 
     /// The bound Exit Node identities, once the mode is
-    /// [`MixnetMode::Ready`].
+    /// [`Indicator::Ready`].
     pub fn exits(&self) -> Vec<crate::mixnet::ExitNodeId> {
         let guarded = self.state.lock().expect("proxy state mutex");
-        if guarded.mode == MixnetMode::Ready {
+        if guarded.mode == Indicator::Ready {
             guarded.exits.clone()
         } else {
             Vec::new()
@@ -336,7 +336,7 @@ impl MixnetProxy {
     }
 
     /// The transport's latest bootstrap progress report, if any, while
-    /// [`MixnetMode::Bootstrapping`].
+    /// [`Indicator::Bootstrapping`].
     pub fn bootstrap_detail(&self) -> Option<String> {
         self.state
             .lock()
@@ -346,7 +346,7 @@ impl MixnetProxy {
     }
 
     /// Why the transport died — the failed stage, its target, and the cause
-    /// chain — while the mode is [`MixnetMode::Died`] and the watcher held a
+    /// chain — while the mode is [`Indicator::Died`] and the watcher held a
     /// typed cause, and `None` otherwise.
     pub fn death_detail(&self) -> Option<zingo_net_diag::NetOpFailure> {
         // Derived from the one latch, so this accessor and death_report
@@ -355,11 +355,11 @@ impl MixnetProxy {
     }
 
     /// The latched death read whole — its moment, and its typed cause when
-    /// one was held — while the mode is [`MixnetMode::Died`], and `None` in
+    /// one was held — while the mode is [`Indicator::Died`], and `None` in
     /// every other mode.
     pub fn death_report(&self) -> Option<DeathReport> {
         let guarded = self.state.lock().expect("proxy state mutex");
-        if guarded.mode == MixnetMode::Died {
+        if guarded.mode == Indicator::Died {
             guarded.death.clone()
         } else {
             None
@@ -367,7 +367,7 @@ impl MixnetProxy {
     }
 
     /// Shuts the transport down deliberately, aborting and awaiting its
-    /// driver task, marking the mode [`MixnetMode::Unattached`], and
+    /// driver task, marking the mode [`Indicator::Unattached`], and
     /// publishing nothing so the slot owner announces the settled state.
     pub(crate) async fn stop(self) {
         match self.transport {
@@ -383,7 +383,7 @@ impl MixnetProxy {
                 let _ = driver.await;
             }
         }
-        self.state.lock().expect("proxy state mutex").mode = MixnetMode::Unattached;
+        self.state.lock().expect("proxy state mutex").mode = Indicator::Unattached;
     }
 }
 
@@ -446,7 +446,7 @@ async fn drive_attached_state<RFut, P, PFut>(
 {
     let die = |state: &Arc<Mutex<ProxyState>>, cause: zingo_net_diag::NetOpFailure| {
         let mut guarded = state.lock().expect("proxy state mutex");
-        guarded.mode = MixnetMode::Died;
+        guarded.mode = Indicator::Died;
         guarded.socks5_addr = None;
         guarded.exits.clear();
         guarded.bootstrap_detail = None;
@@ -465,7 +465,7 @@ async fn drive_attached_state<RFut, P, PFut>(
         let mut guarded = state.lock().expect("proxy state mutex");
         guarded.socks5_addr = Some(socks5_addr);
         guarded.bootstrap_detail = None;
-        guarded.mode = MixnetMode::Ready;
+        guarded.mode = Indicator::Ready;
         publish_locked(&guarded, &publisher);
     }
     loop {
@@ -502,7 +502,7 @@ async fn drive_state<R: AsyncRead + Unpin>(
             // An exit announced after the address changes the Ready
             // snapshot, so it is published: a readiness waiter parked on an
             // address-first Ready wakes on this publication alone.
-            if guarded.mode == MixnetMode::Ready {
+            if guarded.mode == Indicator::Ready {
                 publish_locked(&guarded, &publisher);
             }
             continue;
@@ -514,7 +514,7 @@ async fn drive_state<R: AsyncRead + Unpin>(
                     let mut guarded = state.lock().expect("proxy state mutex");
                     guarded.socks5_addr = Some(addr);
                     guarded.bootstrap_detail = None;
-                    guarded.mode = MixnetMode::Ready;
+                    guarded.mode = Indicator::Ready;
                     publish_locked(&guarded, &publisher);
                 }
                 Err(error) => {
@@ -523,7 +523,7 @@ async fn drive_state<R: AsyncRead + Unpin>(
                     // the death cause now, instead of burning the caller's
                     // whole bootstrap budget with no diagnosis.
                     let mut guarded = state.lock().expect("proxy state mutex");
-                    guarded.mode = MixnetMode::Died;
+                    guarded.mode = Indicator::Died;
                     guarded.socks5_addr = None;
                     guarded.exits.clear();
                     guarded.bootstrap_detail = None;
@@ -560,7 +560,7 @@ async fn drive_state<R: AsyncRead + Unpin>(
         launch.as_ref().map(launch_failure_report)
     };
     let mut guarded = state.lock().expect("proxy state mutex");
-    guarded.mode = MixnetMode::Died;
+    guarded.mode = Indicator::Died;
     guarded.socks5_addr = None;
     guarded.exits.clear();
     guarded.bootstrap_detail = None;
@@ -644,7 +644,7 @@ fn parse_exit_line(line: &str) -> Option<crate::mixnet::ExitNodeId> {
 
 #[cfg(test)]
 impl MixnetProxy {
-    /// A transport already in [`MixnetMode::Ready`] with no child, watcher,
+    /// A transport already in [`Indicator::Ready`] with no child, watcher,
     /// or network behind it, for slot-mapping unit tests.
     pub(crate) fn ready_for_slot_tests(
         socks5_addr: SocketAddr,
@@ -652,7 +652,7 @@ impl MixnetProxy {
     ) -> Self {
         MixnetProxy {
             state: Arc::new(Mutex::new(ProxyState {
-                mode: MixnetMode::Ready,
+                mode: Indicator::Ready,
                 socks5_addr: Some(socks5_addr),
                 exits,
                 bootstrap_detail: None,
@@ -720,7 +720,7 @@ pub(crate) async fn await_ready_endpoint(
             let addressed = {
                 let status = receiver.borrow_and_update();
                 match status.mode {
-                    MixnetMode::Ready => {
+                    Indicator::Ready => {
                         // Readiness is the address AND a bound exit: the
                         // child announces them on separate lines, so a Ready
                         // with no exit yet is a transient to wait through,
@@ -730,7 +730,7 @@ pub(crate) async fn await_ready_endpoint(
                         }
                         status.socks5_addr.is_some()
                     }
-                    MixnetMode::Died => {
+                    Indicator::Died => {
                         return Err(acquire::TransportError::DiedDuringBootstrap {
                             detail: status.death.as_ref().and_then(|death| death.detail.clone()),
                         });
@@ -842,7 +842,7 @@ mod tests {
 
     fn bootstrapping() -> Arc<Mutex<ProxyState>> {
         Arc::new(Mutex::new(ProxyState {
-            mode: MixnetMode::Bootstrapping,
+            mode: Indicator::Bootstrapping,
             socks5_addr: None,
             exits: Vec::new(),
             bootstrap_detail: None,
@@ -910,7 +910,7 @@ mod tests {
             None,
         ));
         for _ in 0..1000 {
-            if state.lock().unwrap().mode != MixnetMode::Bootstrapping {
+            if state.lock().unwrap().mode != Indicator::Bootstrapping {
                 break;
             }
             tokio::task::yield_now().await;
@@ -945,7 +945,7 @@ mod tests {
     #[tokio::test]
     async fn ready_when_the_address_is_announced() {
         let s = state_over_open_stream(b"SOCKS5_ADDR=127.0.0.1:43210\n").await;
-        assert_eq!(s.mode, MixnetMode::Ready);
+        assert_eq!(s.mode, Indicator::Ready);
         assert_eq!(
             s.socks5_addr,
             Some("127.0.0.1:43210".parse().expect("the test address parses"))
@@ -957,7 +957,7 @@ mod tests {
         let s =
             state_over_open_stream(b"discovering gateways\nconnecting\nSOCKS5_ADDR=127.0.0.1:5\n")
                 .await;
-        assert_eq!(s.mode, MixnetMode::Ready);
+        assert_eq!(s.mode, Indicator::Ready);
         assert_eq!(
             s.socks5_addr,
             Some("127.0.0.1:5".parse().expect("the test address parses"))
@@ -969,7 +969,7 @@ mod tests {
     #[tokio::test]
     async fn ready_carries_the_announced_exit() {
         let s = state_over_open_stream(b"NYM_EXIT=exit-alpha\nSOCKS5_ADDR=127.0.0.1:5\n").await;
-        assert_eq!(s.mode, MixnetMode::Ready);
+        assert_eq!(s.mode, Indicator::Ready);
         assert_eq!(s.exits, vec![crate::mixnet::ExitNodeId::from("exit-alpha")]);
         assert_eq!(
             s.snapshot().exits,
@@ -983,7 +983,7 @@ mod tests {
     #[tokio::test]
     async fn a_blank_exit_announcement_records_no_exit() {
         let s = state_over_open_stream(b"NYM_EXIT=\nNYM_EXIT=   \nSOCKS5_ADDR=127.0.0.1:5\n").await;
-        assert_eq!(s.mode, MixnetMode::Ready);
+        assert_eq!(s.mode, Indicator::Ready);
         assert_eq!(s.exits, Vec::<crate::mixnet::ExitNodeId>::new());
     }
 
@@ -994,7 +994,7 @@ mod tests {
     #[tokio::test]
     async fn an_unparseable_address_announcement_dies_with_a_cause() {
         let s = state_over_open_stream(b"SOCKS5_ADDR=not-a-socket\n").await;
-        assert_eq!(s.mode, MixnetMode::Died);
+        assert_eq!(s.mode, Indicator::Died);
         assert_eq!(s.socks5_addr, None);
         let death = s.death.expect("the defect latches a death report");
         let detail = death.detail.expect("the death carries the typed cause");
@@ -1016,7 +1016,7 @@ mod tests {
         )
         .await;
         let s = state.lock().expect("proxy state mutex");
-        assert_eq!(s.mode, MixnetMode::Died);
+        assert_eq!(s.mode, Indicator::Died);
         let death = s.death.clone().expect("the defect latches a death report");
         assert!(
             death.detail.is_some(),
@@ -1036,7 +1036,7 @@ mod tests {
             b"NYM_STATUS=discovering exit gateways\nNYM_STATUS=attempt 2/10: 2 in flight, 0 failed\n",
         )
         .await;
-        assert_eq!(s.mode, MixnetMode::Bootstrapping);
+        assert_eq!(s.mode, Indicator::Bootstrapping);
         assert_eq!(
             s.bootstrap_detail.as_deref(),
             Some("attempt 2/10: 2 in flight, 0 failed"),
@@ -1053,7 +1053,7 @@ mod tests {
             b"NYM_STATUS=attempt 1/10: 1 in flight, 0 failed\nSOCKS5_ADDR=127.0.0.1:7\n",
         )
         .await;
-        assert_eq!(s.mode, MixnetMode::Ready);
+        assert_eq!(s.mode, Indicator::Ready);
         assert_eq!(
             s.socks5_addr,
             Some("127.0.0.1:7".parse().expect("the test address parses"))
@@ -1074,7 +1074,7 @@ mod tests {
         let s = state.lock().unwrap();
         assert_eq!(
             s.mode,
-            MixnetMode::Died,
+            Indicator::Died,
             "a proxy that closes without an address died; it is never consented clearnet"
         );
         assert!(s.socks5_addr.is_none());
@@ -1099,7 +1099,7 @@ mod tests {
         let s = state.lock().unwrap();
         assert_eq!(
             s.mode,
-            MixnetMode::Died,
+            Indicator::Died,
             "a proxy that dies after ready must not stay stale-Ready"
         );
         assert!(
@@ -1142,7 +1142,7 @@ mod tests {
         )
         .await;
         let s = state.lock().unwrap();
-        assert_eq!(s.mode, MixnetMode::Died);
+        assert_eq!(s.mode, Indicator::Died);
         let detail = s
             .death
             .as_ref()
@@ -1184,7 +1184,7 @@ mod tests {
         )
         .await;
         let s = state.lock().unwrap();
-        assert_eq!(s.mode, MixnetMode::Died);
+        assert_eq!(s.mode, Indicator::Died);
         assert!(
             s.death
                 .as_ref()
@@ -1217,7 +1217,7 @@ mod tests {
         )
         .await;
         let s = state.lock().unwrap();
-        assert_eq!(s.mode, MixnetMode::Died, "readiness failure is death");
+        assert_eq!(s.mode, Indicator::Died, "readiness failure is death");
         assert!(s.socks5_addr.is_none(), "no address may be published");
         assert_eq!(
             s.death.as_ref().and_then(|latch| latch.detail.clone()),
@@ -1241,7 +1241,7 @@ mod tests {
     async fn attached_watchdog_failure_lands_died_after_publishing_ready() {
         /// What the watchdog closure saw at one call: the mode and the
         /// published address at that instant.
-        type ProbeSnapshot = (MixnetMode, Option<std::net::SocketAddr>);
+        type ProbeSnapshot = (Indicator, Option<std::net::SocketAddr>);
 
         let state = bootstrapping();
         let observed: Arc<Mutex<Vec<ProbeSnapshot>>> = Arc::new(Mutex::new(Vec::new()));
@@ -1270,13 +1270,13 @@ mod tests {
         assert_eq!(
             observed[0],
             (
-                MixnetMode::Ready,
+                Indicator::Ready,
                 Some("127.0.0.1:1080".parse().expect("the test address parses"))
             ),
             "readiness success must publish Ready with the address"
         );
         let s = state.lock().unwrap();
-        assert_eq!(s.mode, MixnetMode::Died, "a failed tick is death");
+        assert_eq!(s.mode, Indicator::Died, "a failed tick is death");
         assert!(
             s.socks5_addr.is_none(),
             "the dead endpoint's address must be cleared so nothing dials it"
@@ -1289,7 +1289,7 @@ mod tests {
     #[tokio::test]
     async fn attached_ready_carries_the_host_bound_exits() {
         let state = Arc::new(Mutex::new(ProxyState {
-            mode: MixnetMode::Bootstrapping,
+            mode: Indicator::Bootstrapping,
             socks5_addr: None,
             exits: vec!["host-bound-exit".into()],
             bootstrap_detail: None,
@@ -1309,7 +1309,7 @@ mod tests {
         ));
         loop {
             receiver.changed().await.expect("the publisher stays open");
-            if receiver.borrow().mode == MixnetMode::Ready {
+            if receiver.borrow().mode == Indicator::Ready {
                 break;
             }
         }
@@ -1359,10 +1359,7 @@ mod tests {
         // fast), so assert only what is invariant: a live attachment is in
         // the transport lifecycle, never in a wallet slot state.
         assert!(
-            !matches!(
-                proxy.mode(),
-                MixnetMode::Unattached | MixnetMode::SwitchedOff
-            ),
+            !matches!(proxy.mode(), Indicator::Unattached | Indicator::SwitchedOff),
             "a live attachment never reports a slot state"
         );
         proxy.stop().await;
@@ -1387,7 +1384,7 @@ mod tests {
         )
         .expect("a valid address and a named exit attach");
         let deadline = std::time::Instant::now() + Duration::from_secs(60);
-        while proxy.mode() != MixnetMode::Died {
+        while proxy.mode() != Indicator::Died {
             assert!(
                 std::time::Instant::now() < deadline,
                 "the dead endpoint must be detected within the readiness budget"
@@ -1443,7 +1440,7 @@ mod tests {
         let publisher = test_publisher();
         let mut receiver = publisher.subscribe();
         publisher.send_replace(MixnetStatus {
-            mode: MixnetMode::Ready,
+            mode: Indicator::Ready,
             socks5_addr: Some("127.0.0.1:1080".parse().expect("the test address parses")),
             exits: Vec::new(),
             bootstrap_detail: None,
@@ -1487,7 +1484,7 @@ mod tests {
         ));
         {
             let ready = receiver
-                .wait_for(|status| status.mode == MixnetMode::Ready)
+                .wait_for(|status| status.mode == Indicator::Ready)
                 .await
                 .expect("the publisher outlives the wait");
             assert_eq!(
@@ -1515,7 +1512,7 @@ mod tests {
         )
         .await;
         let latest = receiver.borrow().clone();
-        assert_eq!(latest.mode, MixnetMode::Died);
+        assert_eq!(latest.mode, Indicator::Died);
         assert!(
             latest.socks5_addr.is_none(),
             "the dead proxy's address must not be published"
@@ -1581,7 +1578,7 @@ mod tests {
         for detail in deaths {
             {
                 let mut guarded = state.lock().unwrap();
-                guarded.mode = MixnetMode::Died;
+                guarded.mode = Indicator::Died;
                 guarded.death = Some(DeathReport {
                     at: std::time::SystemTime::UNIX_EPOCH,
                     detail: detail.clone(),
@@ -1618,7 +1615,7 @@ mod tests {
         let state = bootstrapping();
         {
             let mut guarded = state.lock().unwrap();
-            guarded.mode = MixnetMode::Died;
+            guarded.mode = Indicator::Died;
             guarded.death = Some(DeathReport {
                 at: std::time::SystemTime::UNIX_EPOCH,
                 detail: Some(readiness_failure("no data through the endpoint")),
@@ -1633,10 +1630,10 @@ mod tests {
         );
 
         for stale_mode in [
-            MixnetMode::Ready,
-            MixnetMode::Bootstrapping,
-            MixnetMode::Unattached,
-            MixnetMode::SwitchedOff,
+            Indicator::Ready,
+            Indicator::Bootstrapping,
+            Indicator::Unattached,
+            Indicator::SwitchedOff,
         ] {
             state.lock().unwrap().mode = stale_mode;
             assert_eq!(
@@ -1657,7 +1654,7 @@ mod tests {
         let state = bootstrapping();
         {
             let mut guarded = state.lock().unwrap();
-            guarded.mode = MixnetMode::Died;
+            guarded.mode = Indicator::Died;
             guarded.death = Some(DeathReport {
                 at: std::time::SystemTime::UNIX_EPOCH,
                 detail: Some(readiness_failure("no data through the endpoint")),
@@ -1671,10 +1668,10 @@ mod tests {
         );
 
         for stale_mode in [
-            MixnetMode::Ready,
-            MixnetMode::Bootstrapping,
-            MixnetMode::Unattached,
-            MixnetMode::SwitchedOff,
+            Indicator::Ready,
+            Indicator::Bootstrapping,
+            Indicator::Unattached,
+            Indicator::SwitchedOff,
         ] {
             state.lock().unwrap().mode = stale_mode;
             assert_eq!(
@@ -1701,7 +1698,7 @@ mod tests {
         )
         .await;
         let proxy = proxy_over(&state);
-        assert_eq!(proxy.mode(), MixnetMode::Died);
+        assert_eq!(proxy.mode(), Indicator::Died);
         assert_eq!(
             proxy.death_detail(),
             None,

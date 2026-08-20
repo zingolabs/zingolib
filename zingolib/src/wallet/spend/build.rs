@@ -21,7 +21,7 @@ use sapling_crypto::prover::{OutputProver, SpendProver};
 use zcash_keys::address::Address;
 use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
 use zcash_primitives::transaction::Transaction;
-use zcash_primitives::transaction::builder::{BuildConfig, Builder};
+use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
 use zcash_primitives::transaction::fees::zip317;
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 use zcash_protocol::memo::MemoBytes;
@@ -496,7 +496,11 @@ fn build_step(
             sapling_anchor: materials.sapling_anchor,
             orchard_anchor: materials.orchard_anchor,
             ironwood_anchor: materials.ironwood_anchor,
-            orchard_pool_bundle_type: orchard::builder::BundleType::DEFAULT,
+            // `BundlePadding::DEFAULT` is the documented equivalent of the
+            // `BundleType::DEFAULT` this passed before zcash_primitives 0.30
+            // split the single Orchard-family setting into one per pool.
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
         },
     );
     let mut transparent_signing_set = TransparentSigningSet::new();

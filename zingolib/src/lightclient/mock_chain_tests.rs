@@ -795,6 +795,7 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
     let mut recipient = net
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
         .await;
+    recipient.set_transmit_retry_interval(std::time::Duration::ZERO);
     let recipient_ua =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
 
@@ -857,6 +858,7 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
     let mut recipient = net
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
         .await;
+    recipient.set_transmit_retry_interval(std::time::Duration::ZERO);
     let recipient_ua =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
 
@@ -944,6 +946,7 @@ async fn failed_split_round_transmit_strands_calculated_transactions() {
     let mut client = net
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
         .await;
+    client.set_transmit_retry_interval(std::time::Duration::ZERO);
     client
         .sync_and_await()
         .await

@@ -33,7 +33,7 @@ pub struct SurveyResult {
 pub struct RefusalTally(Vec<(FailureKind, usize)>);
 
 impl RefusalTally {
-    /// Counts the refusals of `results` in the diary vocabulary's order.
+    /// Counts the refusals of `results` in the history's vocabulary order.
     pub fn of(results: &[SurveyResult]) -> Self {
         const KINDS: [FailureKind; 5] = [
             FailureKind::Timeout,

@@ -76,6 +76,7 @@ Goal: produce prose and code that reads as if written by a specific, competent h
 - Prefer `if let` and combinators (`map`, `and_then`, `ok_or`, `unwrap_or_else`) over verbose `match` when clearer.
 - Prefer iterator chains over manual `for` + `push` where idiomatic.
 - Use `&str` where a borrow suffices instead of `String`.
+- Run `makers feature-sweep` before you push. An ordinary `cargo check` compiles one feature combination, so a rename or a signature change can leave code behind a `#[cfg(feature = ...)]` gate broken and still look green; the sweep checks the touched crates in every combination, as CI does.
 
 ### TypeScript / React
 

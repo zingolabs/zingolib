@@ -2323,7 +2323,6 @@ fn record_part_route(
         kind: AttemptKind::Send,
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
         phase: None,
-        exit: None,
         outcome,
     });
 }
@@ -2359,9 +2358,7 @@ mod tests {
         use crate::lightclient::indexer_history::{FailureKind, IndexerHistoryHandle};
         use crate::wallet::migration::TransmissionRoute;
 
-        let dir = tempfile::tempdir().expect("temp dir");
-        let history = IndexerHistoryHandle::beside_wallet(&dir.path().join("zingo-wallet.dat"));
-        history.set_recording(true);
+        let history = IndexerHistoryHandle::default();
         super::record_part_route(
             &history,
             &TransmissionRoute::Clearnet {
