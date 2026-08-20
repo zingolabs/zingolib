@@ -11,13 +11,15 @@ ZINGOLIB_NEXTEST_PROFILE = "ci"
 # flakes surface instead of being masked; raise per-run with
 # ZINGOLIB_NEXTEST_RETRIES=N.
 ZINGOLIB_NEXTEST_RETRIES = { value = "0", condition = { env_not_set = [
-    "ZINGOLIB_NEXTEST_RETRIES",
+  "ZINGOLIB_NEXTEST_RETRIES",
 ] } }
 IMAGE_NAME = "zingodevops/ci-build"
 # Single source of truth: rust-toolchain.toml's `channel`, extracted and
 # validated (concrete numeric versions only) by the workbench
 # `get-rust-version` binary.
-RUST_VERSION = { script = ["cargo run -q --manifest-path tools/workbench/Cargo.toml --bin get-rust-version"] }
+RUST_VERSION = { script = [
+  "cargo run -q --manifest-path tools/workbench/Cargo.toml --bin get-rust-version",
+] }
 
 [tasks.default]
 alias = "help"
@@ -196,8 +198,9 @@ container_nextest_run() {
   mount_suffix="$(container_mount_suffix)"
   tag="$(container_image_tag)"
 
-  local -a args
-  mapfile -t args < <(nextest_args "$@")
+  local -a args=()
+  local line
+  while IFS= read -r line; do args+=("${line}"); done < <(nextest_args "$@")
 
   # ZINGO_REGENERATE_CHAIN_CACHE and RUST_LOG are forwarded only when
   # set AND non-empty. Never use -e "VAR=${VAR:-}" — that manufactures
@@ -275,6 +278,7 @@ echo "  ZEBRA_VERSION=${ZEBRA_VERSION}"
 echo "  NEXTEST_VERSION=${NEXTEST_VERSION}"
 
 "${runtime}" build \
+  --platform=linux/amd64 \
   -f docker-ci/Dockerfile \
   --build-arg "RUST_VERSION=${RUST_VERSION}" \
   --build-arg "ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}" \
@@ -312,7 +316,8 @@ dependencies = ["prepare-test-binaries-dir"]
 script_runner = "bash"
 extend = "base-script"
 script.main = '''
-mapfile -t args < <(nextest_args "$@")
+args=()
+while IFS= read -r line; do args+=("${line}"); done < <(nextest_args "$@")
 cargo nextest run "${args[@]}"
 '''
 
@@ -443,113 +448,113 @@ exec makers container-test ${set_args[@]+"${set_args[@]}"} "$@"
 description = "Run the three gated phases (packages, zingo-cli, libtonode): a failing phase stops the later, more expensive ones; prints a combined per-phase summary"
 command = "cargo"
 args = [
-    "run",
-    "-q",
-    "--manifest-path",
-    "tools/workbench/Cargo.toml",
-    "--bin",
-    "test-summary",
-    "--",
-    "${@}",
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "test-summary",
+  "--",
+  "${@}",
 ]
 
 [tasks.lite-hierarchy]
 description = "Run the same three gated phases as hierarchy-test, with the libtonode phase narrowed to chain_generics::send_shield_cycle and built as that one test binary rather than all ten: the cheapest run that still proves the chain-level machinery, for gating between commits rather than before a push"
 command = "cargo"
 args = [
-    "run",
-    "-q",
-    "--manifest-path",
-    "tools/workbench/Cargo.toml",
-    "--bin",
-    "test-summary",
-    "--",
-    "--lite",
-    "${@}",
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "test-summary",
+  "--",
+  "--lite",
+  "${@}",
 ]
 
 [tasks.exclusion-audit]
 description = "Check that every member in Makefile.toml's build_excludable array can be dropped from the packages phase's build for free, by diffing each workspace crate's resolved features with and without it. Name extra candidates as arguments to audit a proposed addition before writing it down."
 command = "cargo"
 args = [
-    "run",
-    "-q",
-    "--manifest-path",
-    "tools/workbench/Cargo.toml",
-    "--bin",
-    "exclusion-audit",
-    "--",
-    "${@}",
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "exclusion-audit",
+  "--",
+  "${@}",
 ]
 
 [tasks.feature-sweep]
 description = "Check the crates this branch touches in every feature combination, the way CI's Cargo Hack Check job does, so code that only a non-default feature compiles (a `#[cfg(not(feature = \"nym\"))]` module, say) fails here rather than after the push. Pass --all for the whole workspace, --base <ref> to compare against another branch, or crate directories to check those and no others."
 command = "cargo"
 args = [
-    "run",
-    "-q",
-    "--manifest-path",
-    "tools/workbench/Cargo.toml",
-    "--bin",
-    "feature-sweep",
-    "--",
-    "${@}",
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "feature-sweep",
+  "--",
+  "${@}",
 ]
 
 [tasks.bundle-nym-proxy]
 description = "Build the standalone nym-proxy binary (from the zingo-netutils workspace, own lockfile) and copy it beside the target/<profile>/ wallet binaries so the CLI finds it with no configuration (ADR 0011). Pass --release for a release build, or --dest <dir> for another location."
 command = "cargo"
 args = [
-    "run",
-    "-q",
-    "--manifest-path",
-    "tools/workbench/Cargo.toml",
-    "--bin",
-    "bundle-nym-proxy",
-    "--",
-    "${@}",
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "bundle-nym-proxy",
+  "--",
+  "${@}",
 ]
 
 [tasks.run-cli]
 description = "Build and launch zingo-cli with the mixnet transport compiled in and nym-proxy bundled beside the binary. The proxy is never launched here: the CLI spawns it only at an Online session's go-online moment (ADR 0024), and an offline session boots no proxy. The session starts offline and goes online only through a Connectivity Consent — one stored by a previous run, or an explicit consent act in the forwarded arguments (ADR 0025); launching never implies consent. Pass --clearnet to opt out of the mixnet default (plain build, nothing bundled); pass --release for release builds. Every other argument is forwarded to zingo-cli."
 command = "cargo"
 args = [
-    "run",
-    "-q",
-    "--manifest-path",
-    "tools/workbench/Cargo.toml",
-    "--bin",
-    "run-cli",
-    "--",
-    "${@}",
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "run-cli",
+  "--",
+  "${@}",
 ]
 
 [tasks.sync-bench]
 description = "Time sync inside a real run-cli --online session, so the mixnet boot load is present. Drives the CLI, starts the clock at the sync launch, and stops it when the prompt reports the wallet synced. Requires --birthday <height>; both arms of an A/B must pass the same one so they scan the same window. Takes --label <text> to stamp the arm and --runs <n> for the session count."
 command = "cargo"
 args = [
-    "run",
-    "-q",
-    "--manifest-path",
-    "tools/workbench/Cargo.toml",
-    "--bin",
-    "sync-bench",
-    "--",
-    "${@}",
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "sync-bench",
+  "--",
+  "${@}",
 ]
 
 [tasks.sync-ab]
 description = "Compare two commits' sync rate, interleaved, with everything but the commits held fixed: the same indexer, seed, window, performance level, and release profile. Takes exactly two commit-ish arguments. Builds each in its own worktree, discards a warm-up run that also pins the window, then alternates the arms so warm-up and machine load fall on both equally, and reports outputs per second with the arms' spread."
 command = "cargo"
 args = [
-    "run",
-    "-q",
-    "--manifest-path",
-    "tools/workbench/Cargo.toml",
-    "--bin",
-    "sync-ab",
-    "--",
-    "${@}",
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "sync-ab",
+  "--",
+  "${@}",
 ]
 
 [tasks.rerun]
@@ -569,7 +574,8 @@ dependencies = ["prepare-test-binaries-dir"]
 script_runner = "bash"
 extend = "base-script"
 script.main = '''
-mapfile -t args < <(nextest_args --run-ignored all "$@")
+args=()
+while IFS= read -r line; do args+=("${line}"); done < <(nextest_args --run-ignored all "$@")
 cargo nextest run "${args[@]}"
 '''
 
