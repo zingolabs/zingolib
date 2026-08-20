@@ -92,6 +92,10 @@ impl From<shardtree::error::ShardTreeError<std::convert::Infallible>> for BuildE
 }
 
 /// One sapling spend, self-contained.
+///
+/// The scope rides along because Sapling's spend authority differs by it:
+/// the builder takes a full viewing key, and the internal one is a
+/// separate derivation from the external one.
 pub struct SaplingSpendMaterial {
     scope: zip32::Scope,
     note: sapling_crypto::Note,
@@ -99,6 +103,11 @@ pub struct SaplingSpendMaterial {
 }
 
 /// One orchard-family (Orchard or Ironwood) spend, self-contained.
+///
+/// No scope, unlike [`SaplingSpendMaterial`]: one Orchard full viewing key
+/// spends notes of either scope, which the note itself already carries in
+/// its recipient address, so storing the scope would be storing nothing
+/// the builder asks for.
 pub struct OrchardSpendMaterial {
     note: orchard::Note,
     merkle_path: orchard::tree::MerklePath,
@@ -683,9 +692,14 @@ fn build_step(
                     .ok_or(BuildError::MissingKey("orchard"))?;
                 let change_address = fvk.address_at(0u32, orchard::keys::Scope::Internal);
                 if ironwood_active {
-                    // Post-NU6.3 the Orchard bundle forbids ordinary
-                    // outputs; change returns to a spent note's own
-                    // address via the dedicated change-output API.
+                    // This is Orchard-pool change, so it lands in the
+                    // legacy Orchard bundle, not the Ironwood one — the
+                    // arm below carries Ironwood-pool change. Post-NU6.3
+                    // that bundle disables cross-address transfers, and
+                    // the change-output API is the only way to retain
+                    // value in one: it pairs the output with a fabricated
+                    // zero-valued spend at the same address, inside a
+                    // single action.
                     builder
                         .add_orchard_change_output::<zip317::FeeError>(
                             fvk,

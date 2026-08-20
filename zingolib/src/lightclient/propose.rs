@@ -109,8 +109,6 @@ impl LightClient {
         let request = transaction_request_from_receivers(receivers)
             .map_err(ProposeSendError::TransactionRequestFailed)?;
         let mut wallet = self.wallet().write().await;
-        // A send-all is a self-spend at heart: no vault reads its origin,
-        // so it stays single-hop.
         let proposal = wallet.create_send_proposal(request, account_id, op_return_data, false)?;
         wallet.store_proposal(proposal.clone());
 
