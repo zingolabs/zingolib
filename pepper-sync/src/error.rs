@@ -62,9 +62,23 @@ where
     /// tree the chain reports, so that pool was reopened for rescanning
     /// from the given height. The session ends here; the next one rescans.
     #[error(
-        "{1} history could not account for the chain's commitment tree. that pool has been reopened for scanning from height {0}. the next sync rescans it."
+        "RESCAN TRIGGERED: the wallet's {pool} records were cleared back to height \
+         {rescan_from} and the next sync rescans from there, because at height {disagreed_at} \
+         the wallet's history accounted for a {pool} commitment tree of {calculated_size} where \
+         the chain reports {block_metadata_size}"
     )]
-    PoolHistoryReopened(BlockHeight, PoolType),
+    PoolHistoryReopened {
+        /// The pool whose history was cleared and reopened.
+        pool: PoolType,
+        /// The height rescanning restarts from.
+        rescan_from: BlockHeight,
+        /// The block height whose tree sizes disagreed.
+        disagreed_at: BlockHeight,
+        /// The tree size the chain's block metadata reports.
+        block_metadata_size: u32,
+        /// The tree size the wallet's history accounts for.
+        calculated_size: u32,
+    },
     /// Transparent address derivation error.
     #[error("transparent address derivation error. {0}")]
     TransparentAddressDerivationError(bip32::Error),
@@ -88,7 +102,7 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
             // Not the server's doing, but the wallet has already reopened
             // the pool it could not account for, so the next sync against
             // this same server makes progress.
-            SyncError::PoolHistoryReopened(..) => true,
+            SyncError::PoolHistoryReopened { .. } => true,
 
             // Local or configuration errors. Retrying won't help.
             SyncError::ScanError(_)
@@ -162,7 +176,9 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
             // The wallet has already reopened the pool it could not account
             // for, so syncing again against the same server is exactly the
             // recovery.
-            SyncError::PoolHistoryReopened(..) => SyncRecoveryObservables::MaybeRecoverableServer,
+            SyncError::PoolHistoryReopened { .. } => {
+                SyncRecoveryObservables::MaybeRecoverableServer
+            }
 
             SyncError::SyncModeError(_)
             | SyncError::ChainError(..)
@@ -251,11 +267,13 @@ pub enum ScanError {
     InvalidOrchardAction,
     /// Incorrect tree size
     #[error(
-        "incorrect tree size. {shielded_protocol} tree size recorded in block metadata {block_metadata_size} does not match calculated size {calculated_size}"
+        "incorrect tree size. at height {height}, {shielded_protocol} tree size recorded in block metadata {block_metadata_size} does not match calculated size {calculated_size}"
     )]
     IncorrectTreeSize {
         /// Shielded protocol
         shielded_protocol: PoolType,
+        /// The block height whose sizes disagreed.
+        height: BlockHeight,
         /// Block metadata size
         block_metadata_size: u32,
         /// Calculated size
@@ -427,6 +445,49 @@ mod tests {
         );
     }
 
+    /// HYPOTHESIS: the rescan announcement is one self-contained sentence
+    /// naming the consequence (records cleared, rescan from a height) and
+    /// the cause (which height disagreed, both tree sizes), so a user
+    /// reading a single log or error line knows what happened and why.
+    /// Falsified if any of those five facts leaves the rendering.
+    #[test]
+    fn the_rescan_announcement_names_the_consequence_and_the_cause() {
+        let announcement: TestSyncError = SyncError::PoolHistoryReopened {
+            pool: PoolType::IRONWOOD,
+            rescan_from: BlockHeight::from_u32(3_000_000),
+            disagreed_at: BlockHeight::from_u32(3_100_000),
+            block_metadata_size: 999,
+            calculated_size: 7,
+        };
+        let rendered = announcement.to_string();
+        assert!(rendered.starts_with("RESCAN TRIGGERED"), "{rendered}");
+        for fact in [
+            "cleared back to height 3000000",
+            "at height 3100000",
+            "commitment tree of 7",
+            "the chain reports 999",
+        ] {
+            assert!(rendered.contains(fact), "missing '{fact}' in: {rendered}");
+        }
+    }
+
+    /// HYPOTHESIS: the tree-size refusal names the block whose sizes
+    /// disagreed, so the trigger is locatable from the error alone.
+    /// Falsified if the height leaves the rendering.
+    #[test]
+    fn the_tree_size_refusal_names_the_disagreeing_block() {
+        let refusal = ScanError::IncorrectTreeSize {
+            shielded_protocol: PoolType::IRONWOOD,
+            height: BlockHeight::from_u32(3_100_000),
+            block_metadata_size: 999,
+            calculated_size: 7,
+        };
+        assert!(
+            refusal.to_string().contains("at height 3100000"),
+            "{refusal}"
+        );
+    }
+
     mod recommend_same_server {
         use super::*;
 
@@ -454,8 +515,13 @@ mod tests {
             /// for a server that was never at fault.
             #[test]
             fn pool_history_reopened() {
-                let e: TestSyncError =
-                    SyncError::PoolHistoryReopened(BlockHeight::from_u32(100), PoolType::IRONWOOD);
+                let e: TestSyncError = SyncError::PoolHistoryReopened {
+                    pool: PoolType::IRONWOOD,
+                    rescan_from: BlockHeight::from_u32(100),
+                    disagreed_at: BlockHeight::from_u32(150),
+                    block_metadata_size: 999,
+                    calculated_size: 7,
+                };
                 assert!(e.recommend_same_server());
             }
         }
@@ -564,8 +630,13 @@ mod tests {
             /// as needing the user to intervene.
             #[test]
             fn pool_history_reopened() {
-                let e: TestSyncError =
-                    SyncError::PoolHistoryReopened(BlockHeight::from_u32(100), PoolType::IRONWOOD);
+                let e: TestSyncError = SyncError::PoolHistoryReopened {
+                    pool: PoolType::IRONWOOD,
+                    rescan_from: BlockHeight::from_u32(100),
+                    disagreed_at: BlockHeight::from_u32(150),
+                    block_metadata_size: 999,
+                    calculated_size: 7,
+                };
                 assert_eq!(
                     e.recovery_recommendation(),
                     SyncRecoveryObservables::MaybeRecoverableServer

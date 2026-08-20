@@ -1586,18 +1586,24 @@ where
         }
         Err(ScanError::IncorrectTreeSize {
             shielded_protocol: PoolType::Shielded(pool),
+            height,
             block_metadata_size,
             calculated_size,
         }) => {
-            tracing::warn!(
-                "{pool:?} history recorded a commitment tree of {calculated_size} where the chain \
-                 reports {block_metadata_size}."
+            tracing::error!(
+                "RESCAN TRIGGERED: at height {height}, {pool:?} history recorded a commitment \
+                 tree of {calculated_size} where the chain reports {block_metadata_size}; the \
+                 wallet's {pool:?} records are being cleared back to the pool activation height \
+                 and the next sync rescans from there."
             );
             return Err(truncate_to_pool_activation_height(
                 consensus_parameters,
                 fetch_request_sender.clone(),
                 wallet,
                 pool,
+                height,
+                block_metadata_size,
+                calculated_size,
             )
             .await?);
         }
@@ -1622,6 +1628,9 @@ async fn truncate_to_pool_activation_height<W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
     target_pool: ShieldedPool,
+    disagreed_at: BlockHeight,
+    block_metadata_size: u32,
+    calculated_size: u32,
 ) -> Result<SyncError<W::Error>, SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
@@ -1696,10 +1705,13 @@ where
     add_scan_targets(sync_state, &rescan_targets);
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
-    Ok(SyncError::PoolHistoryReopened(
+    Ok(SyncError::PoolHistoryReopened {
+        pool: PoolType::Shielded(target_pool),
         rescan_from,
-        PoolType::Shielded(target_pool),
-    ))
+        disagreed_at,
+        block_metadata_size,
+        calculated_size,
+    })
 }
 
 /// Truncate the shard tree to the lowest checkpoint equal to or above the `target_height`.
