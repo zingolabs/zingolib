@@ -3387,35 +3387,42 @@ pub fn cancel_ironwood_migration() -> Result<String, ZingolibError> {
     })
 }
 
-/// The Mixnet Mode tri-state-plus-died as the strings the app layer shows.
-fn mixnet_mode_string(mode: zingolib::nym::MixnetMode) -> &'static str {
-    match mode {
-        zingolib::nym::MixnetMode::SwitchedOff => "off",
-        zingolib::nym::MixnetMode::Bootstrapping => "bootstrapping",
-        zingolib::nym::MixnetMode::Ready => "ready",
+/// The Mixnet Mode indicator as the strings the app layer shows.
+fn mixnet_indicator_string(indicator: zingolib::mixnet::Indicator) -> &'static str {
+    match indicator {
+        zingolib::mixnet::Indicator::SwitchedOff => "off",
+        zingolib::mixnet::Indicator::Bootstrapping => "bootstrapping",
+        // A Standing Client born on an EpochProven observation routes exactly
+        // as Ready, so the app must not hold its surfaces shut waiting for a
+        // round trip the library already treats as unnecessary.
+        zingolib::mixnet::Indicator::Ready
+        | zingolib::mixnet::Indicator::PreviouslyProvenThisEpoch => "ready",
         // A never-attached transport (spawn/attach failed) is not consent to
         // clearnet; report it as `died` so the app fails closed and reconnects
         // rather than opening the mixnet-only surfaces.
-        zingolib::nym::MixnetMode::Died | zingolib::nym::MixnetMode::Unattached => "died",
+        zingolib::mixnet::Indicator::Died | zingolib::mixnet::Indicator::Unattached => "died",
     }
 }
 
 /// Attach Mixnet Mode to an already-running, platform-hosted SOCKS5 endpoint
-/// (the UniFFI proxy shim's address). Readiness is validated by a data round
-/// trip; poll [`mixnet_mode`] for `bootstrapping` -> `ready`, or `died`.
-pub fn attach_mixnet(socks5_addr: String) -> Result<String, ZingolibError> {
+/// (the UniFFI proxy shim's address) that bound `exit_node`. Readiness is
+/// validated by a data round trip; poll [`mixnet_indicator`] for
+/// `bootstrapping` -> `ready`, or `died`.
+pub fn attach_mixnet(socks5_addr: String, exit_node: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
+        let exit = zingolib::mixnet::ExitNodeId::parse(&exit_node)
+            .map_err(|_| ZingolibError::Mixnet("the shim reported no exit node".to_string()))?;
         let mut guard = LIGHTCLIENT
             .write()
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
             RT.block_on(async move {
                 lightclient
-                    .attach_mixnet(&socks5_addr)
+                    .attach_mixnet(&socks5_addr, &[exit])
                     .await
                     .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
                 Ok(
-                    object! { "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()) }
+                    object! { "mixnet_indicator" => mixnet_indicator_string(lightclient.read_mixnet_indicator()) }
                         .pretty(2),
                 )
             })
@@ -3436,13 +3443,11 @@ pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
         if let Some(lightclient) = &mut *guard {
             RT.block_on(async move {
                 lightclient
-                    .enable_mixnet::<zingolib::nym::PrioritisePrivacy>(std::path::Path::new(
-                        &proxy_path,
-                    ))
+                    .enable_mixnet(std::path::Path::new(&proxy_path))
                     .await
                     .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
                 Ok(
-                    object! { "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()) }
+                    object! { "mixnet_indicator" => mixnet_indicator_string(lightclient.read_mixnet_indicator()) }
                         .pretty(2),
                 )
             })
@@ -3462,7 +3467,7 @@ pub fn disable_mixnet() -> Result<String, ZingolibError> {
         if let Some(lightclient) = &mut *guard {
             Ok(RT.block_on(async move {
                 lightclient.disable_mixnet().await;
-                object! { "mixnet_mode" => "off" }.pretty(2)
+                object! { "mixnet_indicator" => "off" }.pretty(2)
             }))
         } else {
             Err(ZingolibError::LightclientNotInitialized)
@@ -3470,20 +3475,20 @@ pub fn disable_mixnet() -> Result<String, ZingolibError> {
     })
 }
 
-/// The current Mixnet Mode: `off`, `bootstrapping`, `ready` (with the local
+/// The current Mixnet Mode indicator: `off`, `bootstrapping`, `ready` (with the local
 /// SOCKS5 address), or `died` (unconsented proxy loss; sends refuse — run
 /// [`attach_mixnet`] or [`enable_mixnet`] to recover).
-pub fn mixnet_mode() -> Result<String, ZingolibError> {
+pub fn mixnet_indicator() -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         let guard = LIGHTCLIENT
             .write()
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &*guard {
             let mut status = object! {
-                "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()),
+                "mixnet_indicator" => mixnet_indicator_string(lightclient.read_mixnet_indicator()),
             };
             if let Some(addr) = lightclient.mixnet_socks5_addr() {
-                status["socks5_addr"] = addr.into();
+                status["socks5_addr"] = addr.to_string().into();
             }
             Ok(status.pretty(2))
         } else {

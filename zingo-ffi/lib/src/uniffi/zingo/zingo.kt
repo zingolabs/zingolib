@@ -952,7 +952,7 @@ fun uniffi_zingo_checksum_func_migration_status(
 ): Short
 fun uniffi_zingo_checksum_func_mixnet_bootstrap_detail(
 ): Short
-fun uniffi_zingo_checksum_func_mixnet_mode(
+fun uniffi_zingo_checksum_func_mixnet_indicator(
 ): Short
 fun uniffi_zingo_checksum_func_parse_address(
 ): Short
@@ -1051,7 +1051,7 @@ internal interface UniffiLib : Library {
     }
 
     // FFI functions
-    fun uniffi_zingo_fn_func_attach_mixnet(`socks5Addr`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zingo_fn_func_attach_mixnet(`socks5Addr`: RustBuffer.ByValue,`exitNode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_cancel_ironwood_migration(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1137,7 +1137,7 @@ fun uniffi_zingo_fn_func_migration_status(uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_mixnet_bootstrap_detail(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_zingo_fn_func_mixnet_mode(uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_zingo_fn_func_mixnet_indicator(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_zingo_fn_func_parse_address(`address`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1317,7 +1317,7 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
-    if (lib.uniffi_zingo_checksum_func_attach_mixnet() != 63024.toShort()) {
+    if (lib.uniffi_zingo_checksum_func_attach_mixnet() != 33149.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zingo_checksum_func_cancel_ironwood_migration() != 44347.toShort()) {
@@ -1446,7 +1446,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_zingo_checksum_func_mixnet_bootstrap_detail() != 12980.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_zingo_checksum_func_mixnet_mode() != 29476.toShort()) {
+    if (lib.uniffi_zingo_checksum_func_mixnet_indicator() != 27566.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zingo_checksum_func_parse_address() != 37603.toShort()) {
@@ -1980,11 +1980,11 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
         }
     }
 }
-    @Throws(ZingolibException::class) fun `attachMixnet`(`socks5Addr`: kotlin.String): kotlin.String {
+    @Throws(ZingolibException::class) fun `attachMixnet`(`socks5Addr`: kotlin.String, `exitNode`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCallWithError(ZingolibException) { _status ->
     UniffiLib.INSTANCE.uniffi_zingo_fn_func_attach_mixnet(
-        FfiConverterString.lower(`socks5Addr`),_status)
+        FfiConverterString.lower(`socks5Addr`),FfiConverterString.lower(`exitNode`),_status)
 }
     )
     }
@@ -2410,10 +2410,10 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
     }
     
 
-    @Throws(ZingolibException::class) fun `mixnetMode`(): kotlin.String {
+    @Throws(ZingolibException::class) fun `mixnetIndicator`(): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCallWithError(ZingolibException) { _status ->
-    UniffiLib.INSTANCE.uniffi_zingo_fn_func_mixnet_mode(
+    UniffiLib.INSTANCE.uniffi_zingo_fn_func_mixnet_indicator(
         _status)
 }
     )
