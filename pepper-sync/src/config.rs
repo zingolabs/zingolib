@@ -117,7 +117,7 @@ impl SyncConfig {
         let shutdown_on_completion = if version >= 2 {
             reader.read_u8()? != 0
         } else {
-            true
+            false
         };
 
         Ok(Self {

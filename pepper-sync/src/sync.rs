@@ -424,7 +424,7 @@ where
     let unprocessed_mempool_transactions_count = Arc::new(AtomicU32::new(0));
     let unprocessed_mempool_transactions_count_clone =
         unprocessed_mempool_transactions_count.clone();
-    let mempool_stream_connected_at = Arc::new(std::sync::OnceLock::new());
+    let mempool_stream_connected_at = Arc::new(OnceLock::new());
     let mempool_stream_connected_at_clone = mempool_stream_connected_at.clone();
     let mempool_handle = tokio::spawn(async move {
         mempool_monitor(
@@ -644,14 +644,17 @@ where
                             }
                         },
                         SyncMode::Shutdown => {
-                            match mempool_drain_verdict(shutdown_mempool.clone(), unprocessed_mempool_transactions_count.clone(), mempool_shutdown_timer.get_or_insert_with(Instant::now), mempool_stream_connected_at.clone()).await {
-                                MempoolDrainVerdict::ContinueScanning => {
+                            match mempool_drain_verdict(
+                                shutdown_mempool.clone(),
+                                unprocessed_mempool_transactions_count.clone(), mempool_shutdown_timer.get_or_insert_with(Instant::now).elapsed(),
+                                mempool_stream_connected_at.get().map(|at| at.elapsed())
+                            ).await {
+                                MempoolDrainVerdict::NotShutdown | MempoolDrainVerdict::ShutdownNotDrained => {
                                     continue 'scan;
-                                    }
-                                    MempoolDrainVerdict::Shutdown => {
-
-                            break 'continuous_sync;
-                                    }
+                                }
+                                MempoolDrainVerdict::ShutdownAndDrainComplete => {
+                                    break 'continuous_sync;
+                                }
                             }
                         }
                         SyncMode::Running => (),
@@ -663,7 +666,6 @@ where
                     scanner.update(&mut *wallet.write().await, nullifier_map_limit_exceeded).await?;
 
                     if matches!(scanner.state, ScannerState::Complete) && config.shutdown_on_completion {
-                        // TODO: when shutting down on completion we should check there are no new mempool txs for a duration (MEMPOOL_DRAIN_SETTLE)
                         sync_mode_enum = SyncMode::Shutdown;
                         sync_mode.store(sync_mode_enum as u8, atomic::Ordering::Release);
 
@@ -678,7 +680,7 @@ where
     }
 
     // shutdown workers and loader
-    while !scanner.workers.is_empty() {
+    while scanner.worker_poolsize() != 0 {
         let worker_id = scanner
             .workers
             .first()
@@ -689,24 +691,6 @@ where
     scanner.shutdown_loader().await?;
 
     let mut wallet_guard = wallet.write().await;
-    // if sync is complete, all nullifiers will have been re-fetched so this note metadata can be discarded.
-    if scanner.is_complete() {
-        for transaction in wallet_guard
-            .get_wallet_transactions_mut()
-            .map_err(SyncError::WalletError)?
-            .values_mut()
-        {
-            for note in transaction.sapling_notes.as_mut_slice() {
-                note.refetch_nullifier_ranges = Vec::new();
-            }
-            for note in transaction.orchard_notes.as_mut_slice() {
-                note.refetch_nullifier_ranges = Vec::new();
-            }
-            for note in transaction.ironwood_notes.as_mut_slice() {
-                note.refetch_nullifier_ranges = Vec::new();
-            }
-        }
-    }
     wallet_guard
         .set_save_flag()
         .map_err(SyncError::WalletError)?;
@@ -1253,24 +1237,28 @@ pub(crate) fn set_transactions_failed_unchecked(
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MempoolDrainVerdict {
-    ///  The mempool stream has been connected for sufficient duration and all recieved mempool transactions are processed.
-    Shutdown,
-    /// Continue scanning until we can safely finish shutting down the mempool.
-    ContinueScanning,
+    ///  The mempool stream has been connected for sufficient duration to be shutdown and all recieved mempool
+    /// transactions are processed.
+    ShutdownAndDrainComplete,
+    ///  The mempool stream has been connected for sufficient duration to be shutdown but not all recieved mempool
+    /// transactions have been processed.
+    ShutdownNotDrained,
+    /// The mempool stream has not been connected for sufficient duration to be shutdown.
+    NotShutdown,
 }
 
 async fn mempool_drain_verdict(
     shutdown_mempool: Arc<AtomicBool>,
     unprocessed_mempool_transactions_count: Arc<AtomicU32>,
-    mempool_shutdown_timer: &mut Instant,
-    mempool_stream_connected_at: Arc<OnceLock<Instant>>,
+    mempool_shutdown_timer: Duration,
+    mempool_stream_connection_timer: Option<Duration>,
 ) -> MempoolDrainVerdict {
     use zingo_netutils::time::{MEMPOOL_DRAIN_CEILING, MEMPOOL_DRAIN_SETTLE};
 
-    if mempool_shutdown_timer.elapsed() < MEMPOOL_DRAIN_CEILING {
-        let Some(mempool_elapsed) = mempool_stream_connected_at.get().map(|at| at.elapsed()) else {
+    if mempool_shutdown_timer < MEMPOOL_DRAIN_CEILING {
+        let Some(mempool_elapsed) = mempool_stream_connection_timer else {
             // if mempool stream has not connected yet, continue scanning unless its timed out
-            return MempoolDrainVerdict::ContinueScanning;
+            return MempoolDrainVerdict::NotShutdown;
         };
         // wait if the mempool stream has not been connected for sufficient time to receive mempool transactions
         if let Some(mempool_startup_remaining) = MEMPOOL_DRAIN_SETTLE.checked_sub(mempool_elapsed) {
@@ -1283,10 +1271,10 @@ async fn mempool_drain_verdict(
 
     // continue scanning if mempool transaction have been received but haven't finished being preocessed
     if unprocessed_mempool_transactions_count.load(atomic::Ordering::Acquire) > 0 {
-        return MempoolDrainVerdict::ContinueScanning;
+        return MempoolDrainVerdict::ShutdownNotDrained;
     }
 
-    MempoolDrainVerdict::Shutdown
+    MempoolDrainVerdict::ShutdownAndDrainComplete
 }
 
 /// Scan post-processing
@@ -2873,61 +2861,101 @@ mod test {
     /// The drain policy for scanner shutdown, exercised as a table:
     /// pure inputs, no runtime, no clocks.
     mod drain_verdict {
-        use std::time::Duration;
+        use std::{
+            sync::{
+                Arc,
+                atomic::{AtomicBool, AtomicU32},
+            },
+            time::Duration,
+        };
 
-        use crate::sync::mempool_drain_verdict;
-
-        fn ms(millis: u64) -> Duration {
-            Duration::from_millis(millis)
-        }
+        use crate::sync::{MempoolDrainVerdict, mempool_drain_verdict};
 
         /// One row of the drain-policy table:
         /// (workers, unprocessed, connected_for, poll_elapsed, verdict, label).
         type DrainCase = (
-            usize,
-            u32,
-            Option<u64>,
-            u64,
+            Arc<AtomicBool>,
+            Arc<AtomicU32>,
+            Duration,
+            Option<Duration>,
             MempoolDrainVerdict,
             &'static str,
         );
 
-        #[test]
-        fn table() {
+        #[tokio::test]
+        async fn table() {
             let cases: &[DrainCase] = &[
                 // The reported bug: first-loop shutdown on a fully
                 // synced chain, stream not yet connected. Hold the
                 // session open instead of closing it instantly.
-                (0, 0, None, 0, KeepPolling, "no stream yet"),
+                (
+                    Arc::new(AtomicBool::new(false)),
+                    Arc::new(AtomicU32::new(0)),
+                    Duration::from_millis(0),
+                    None,
+                    MempoolDrainVerdict::NotShutdown,
+                    "no stream yet",
+                ),
                 // Connected but inside the settle window: still hold.
-                (0, 0, Some(50), 100, KeepPolling, "settling"),
+                (
+                    Arc::new(AtomicBool::new(false)),
+                    Arc::new(AtomicU32::new(0)),
+                    Duration::from_millis(100),
+                    Some(Duration::from_millis(50)),
+                    MempoolDrainVerdict::NotShutdown,
+                    "settling",
+                ),
                 // The typical session: stream connected long ago,
                 // scanner drained. Immediate shutdown, no added cost.
-                (0, 0, Some(1_400), 0, Shutdown, "settled and drained"),
+                (
+                    Arc::new(AtomicBool::new(false)),
+                    Arc::new(AtomicU32::new(0)),
+                    Duration::from_millis(0),
+                    Some(Duration::from_millis(1_400)),
+                    MempoolDrainVerdict::ShutdownAndDrainComplete,
+                    "settled and drained",
+                ),
                 // Exactly the settle boundary counts as settled.
-                (0, 0, Some(200), 0, Shutdown, "settle boundary"),
+                (
+                    Arc::new(AtomicBool::new(false)),
+                    Arc::new(AtomicU32::new(0)),
+                    Duration::from_millis(0),
+                    Some(Duration::from_millis(200)),
+                    MempoolDrainVerdict::ShutdownAndDrainComplete,
+                    "settle boundary",
+                ),
                 // Unprocessed work always re-enters the processing
                 // loop, whatever the stream state. No deadline caps
                 // the processing itself.
-                (0, 3, Some(1_400), 0, Reenter, "unprocessed work"),
-                (5, 1, None, 999, Reenter, "work trumps missing stream"),
-                // Workers still draining: keep polling inside the
-                // ceiling, re-enter the loop once it expires.
-                (2, 0, Some(1_400), 500, KeepPolling, "workers draining"),
-                (2, 0, Some(1_400), 1_000, Reenter, "ceiling with workers"),
+                (
+                    Arc::new(AtomicBool::new(false)),
+                    Arc::new(AtomicU32::new(3)),
+                    Duration::from_millis(3_000),
+                    Some(Duration::from_millis(1_400)),
+                    MempoolDrainVerdict::ShutdownNotDrained,
+                    "unprocessed work",
+                ),
                 // Ceiling with a stream that never connected: the
                 // pre-c90f8d309 semantics. A dead stream must not
                 // hold the session open.
-                (0, 0, None, 1_000, Shutdown, "ceiling without stream"),
+                (
+                    Arc::new(AtomicBool::new(false)),
+                    Arc::new(AtomicU32::new(0)),
+                    Duration::from_millis(1_000),
+                    None,
+                    MempoolDrainVerdict::ShutdownAndDrainComplete,
+                    "ceiling without stream",
+                ),
             ];
-            for (workers, unprocessed, connected_ms, elapsed_ms, expected, name) in cases {
+            for (shutdown_mempool, unprocessed, connected_ms, elapsed_ms, expected, name) in cases {
                 assert_eq!(
                     mempool_drain_verdict(
-                        *workers,
-                        *unprocessed,
-                        connected_ms.map(ms),
-                        ms(*elapsed_ms)
-                    ),
+                        shutdown_mempool.clone(),
+                        unprocessed.clone(),
+                        *connected_ms,
+                        *elapsed_ms,
+                    )
+                    .await,
                     *expected,
                     "{name}"
                 );

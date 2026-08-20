@@ -1052,6 +1052,7 @@ async fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result
         sync_config: SyncConfig {
             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             performance_level: PerformanceLevel::High,
+            shutdown_on_completion: false,
         },
         min_confirmations: NonZeroU32::try_from(3).unwrap(),
     };

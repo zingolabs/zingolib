@@ -30,7 +30,7 @@ use crate::{
     utils::block,
     wallet::{
         ScanTarget, WalletBlock,
-        traits::{SyncBlocks, SyncNullifiers, SyncWallet},
+        traits::{SyncBlocks, SyncNullifiers, SyncTransactions, SyncWallet},
     },
 };
 
@@ -206,7 +206,7 @@ where
         nullifier_map_limit_exceeded: bool,
     ) -> Result<(), SyncError<W::Error>>
     where
-        W: SyncWallet + SyncBlocks + SyncNullifiers,
+        W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
     {
         self.check_loader_error()?;
 
@@ -276,7 +276,7 @@ where
         nullifier_map_limit_exceeded: bool,
     ) -> Result<(), W::Error>
     where
-        W: SyncWallet + SyncBlocks + SyncNullifiers,
+        W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
     {
         let loader = self.loader.as_ref().expect("loader should be running");
         if !loader.is_loading() {
@@ -287,6 +287,18 @@ where
             )? {
                 loader.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
+                // if sync is complete, all nullifiers will have been re-fetched so this note metadata can be discarded.
+                for transaction in wallet.get_wallet_transactions_mut()?.values_mut() {
+                    for note in transaction.sapling_notes.as_mut_slice() {
+                        note.refetch_nullifier_ranges = Vec::new();
+                    }
+                    for note in transaction.orchard_notes.as_mut_slice() {
+                        note.refetch_nullifier_ranges = Vec::new();
+                    }
+                    for note in transaction.ironwood_notes.as_mut_slice() {
+                        note.refetch_nullifier_ranges = Vec::new();
+                    }
+                }
                 self.state.completed();
             }
         }
