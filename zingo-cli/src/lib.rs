@@ -4,10 +4,11 @@
 //! parsing ([`build_clap_app`]), configuration assembly, wallet startup,
 //! the interactive REPL, and single-command dispatch.
 //!
-//! The binary entry point (`main.rs`) is intentionally thin: it handles
-//! process-level concerns (tracing, crypto-provider installation, error
-//! reporting) and delegates to [`run_cli`], which builds a
-//! [`LightClient`] and runs the command loop.
+//! The binary entry point (`main.rs`) is intentionally thin: it decides
+//! when process-global state is installed, calling [`init_tracing`] and
+//! the crypto provider before delegating to [`run_cli`], which builds a
+//! [`LightClient`] and runs the command loop, and it reports the errors
+//! that come back.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -24,6 +25,7 @@ mod server_select_clearnet;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use clap::{self, Arg};
@@ -34,6 +36,8 @@ use log::{error, info};
 use log::{debug, warn};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+#[cfg(feature = "nym")]
+use pepper_sync::error::{SyncError, SyncRecoveryObservables};
 use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
 use zingolib::data::PollReport;
 use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
@@ -115,10 +119,6 @@ Server-Selection Sweep selects the sync indexer.")
                 .long("nym-proxy")
                 .value_name("PATH")
                 .help("Path to the nym-proxy binary spawned for Mixnet Mode. Without it: $ZINGO_NYM_PROXY, then a nym-proxy bundled beside this binary, then `nym-proxy` on PATH. Used only with the `nym` build feature."))
-            .arg(Arg::new("indexer-diary")
-                .long("indexer-diary")
-                .action(clap::ArgAction::SetTrue)
-                .help("Record per-indexer send and probe outcomes for this session to indexer-history.tsv beside the wallet (view with `network history`). The diary stores hosts, timings, and a failure category, never server text, and is capped. Requires the `nym-diary` build feature. The choice is never persisted."))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
@@ -252,8 +252,9 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
 
 /// Performs the per-prompt housekeeping, awaited on the command-loop
 /// thread where the [`LightClient`] lives: polls the sync task, reports
-/// any save-task failure, and returns the sync indicator to embed in the
-/// interactive prompt: `" [Syncing X / Y outputs]"` while sync is in
+/// any save-task failure, and returns the prompt's status segment,
+/// `Block:{height}` followed by the sync indicator:
+/// `" [Syncing X / Y outputs]"` while sync is in
 /// progress, `" [Synced X / X outputs]"` when fully synced,
 /// `" [Sync error]"` on failure, or `" [Sync stopped at X / Y outputs]"`
 /// when no sync task is running and the wallet is not fully synced.
@@ -262,20 +263,37 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
 /// [`pepper_sync::sync_status`], `check_save_error`), never by inspecting
 /// a command's output string. Every line this function prints is
 /// narration, so all of it goes to stderr (ADR 0031).
-async fn prompt_indicator(lightclient: &mut LightClient) -> String {
+async fn prompt_indicator(
+    lightclient: &mut LightClient,
+    sync_recovery: &mut SyncRecovery,
+) -> String {
+    let height = prompt_height(lightclient).await;
     let indicator = match lightclient.poll_sync() {
         PollReport::Ready(Err(e)) => {
             // The doubled "Sync error: Error:" is deliberate: it reproduces
             // the historical output byte for byte, where the polled command
             // string (itself prefixed "Error:") was interpolated after
             // "Sync error: ".
-            eprintln!(
-                "Sync error: Error: {}\nPlease restart sync with `sync run`.",
-                commands::render_error_chain(&e)
-            );
-            " [Sync error]".to_string()
+            eprintln!("Sync error: Error: {}", commands::render_error_chain(&e));
+            #[cfg(feature = "nym")]
+            let recovered = attempt_sync_recovery(lightclient, sync_recovery, &e).await;
+            #[cfg(not(feature = "nym"))]
+            let recovered = {
+                let _ = &sync_recovery;
+                false
+            };
+            if recovered {
+                syncing_indicator(scan_progress(lightclient).await)
+            } else {
+                eprintln!("Please restart sync with `sync run`.");
+                " [Sync error]".to_string()
+            }
         }
         PollReport::Ready(Ok(sync_result)) => {
+            #[cfg(feature = "nym")]
+            {
+                sync_recovery.attempts_left = SYNC_RECOVERY_ATTEMPT_BUDGET;
+            }
             eprintln!("{sync_result}");
             synced_indicator(scan_progress(lightclient).await)
         }
@@ -285,7 +303,7 @@ async fn prompt_indicator(lightclient: &mut LightClient) -> String {
     if let Err(e) = lightclient.check_save_error().await {
         eprintln!("Error: save failed. {e}\nRestarting save task...");
     }
-    indicator
+    format!("Block:{height}{indicator}")
 }
 
 /// Waits on the loop thread for the launched sync task to finish, narrating
@@ -322,6 +340,25 @@ struct ScanProgress {
     outputs_scanned: u64,
     total_outputs: u64,
     complete: bool,
+}
+
+/// Reads the prompt's chain height from the sync engine's progress channel while sync runs, from the wallet otherwise, or zero when neither knows a height yet.
+async fn prompt_height(lightclient: &LightClient) -> u32 {
+    if lightclient.sync_mode() == pepper_sync::wallet::SyncMode::NotRunning {
+        lightclient
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .last_known_chain_height()
+            .map_or(0, u32::from)
+    } else {
+        lightclient
+            .latest_sync_status()
+            .as_ref()
+            .and_then(|status| status.scan_ranges.last())
+            .map_or(0, |range| u32::from(range.block_range().end - 1))
+    }
 }
 
 /// Reads the scan progress from the sync engine's progress channel while sync runs, from the wallet otherwise, or `None` if sync status is unavailable.
@@ -374,7 +411,7 @@ fn synced_indicator(progress: Option<ScanProgress>) -> String {
 /// Formats the configured indexer for the `servers` command; the session
 /// probes nothing to answer it.
 #[cfg(not(feature = "clearnet-test-mode"))]
-fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
+fn format_ranked_servers(cli_config: &CliConfigTemplate) -> String {
     match &cli_config.server {
         Some(server) => format!("Configured indexer: {server}. Nothing was probed."),
         None => "Configured indexer: none. This session is offline and probes nothing.".to_string(),
@@ -383,7 +420,7 @@ fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
 
 /// Formats the ranked server list for display by the `servers` command.
 #[cfg(feature = "clearnet-test-mode")]
-fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
+fn format_ranked_servers(cli_config: &CliConfigTemplate) -> String {
     let Some(server) = &cli_config.server else {
         return "Last Known servers: none. This session is offline and probes nothing.".to_string();
     };
@@ -404,9 +441,100 @@ fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
     out
 }
 
-fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
+/// Executes one command against the loop, drains the reply, closes the
+/// session, and returns the exit code the command earned (ADR 0031).
+fn start_noninteractive(command: &commands::CliCommand, ch: CommandChannel) -> ExitCode {
+    let description = command.name();
+    let mut succeeded = if ch
+        .transmitter
+        .send(Request::Command(command.clone()))
+        .is_err()
+    {
+        let e = format!("Error executing command {description}: the command loop has exited");
+        eprintln!("{e}");
+        error!("{e}");
+        false
+    } else {
+        match ch.receiver.recv() {
+            Ok(Ok(output)) => {
+                println!("{output}");
+                true
+            }
+            Ok(Err(rendered)) => {
+                eprintln!("{rendered}");
+                false
+            }
+            Err(e) => {
+                let e = format!("Error executing command {description}: {e}");
+                eprintln!("{e}");
+                error!("{e}");
+                false
+            }
+        }
+    };
+
+    // A one-shot `sync run` means sync to completion: the session
+    // holds open, narrating progress, until the sync task reports
+    // its result, which becomes the command's outcome.
+    if succeeded
+        && matches!(
+            &command,
+            commands::CliCommand::Sync {
+                sub: commands::SyncSubCommand::Run
+            }
+        )
+    {
+        succeeded = if ch.transmitter.send(Request::AwaitSync).is_err() {
+            eprintln!("Error awaiting sync: the command loop has exited");
+            false
+        } else {
+            match ch.receiver.recv() {
+                Ok(Ok(output)) => {
+                    println!("{output}");
+                    true
+                }
+                Ok(Err(rendered)) => {
+                    eprintln!("{rendered}");
+                    false
+                }
+                Err(e) => {
+                    eprintln!("Error awaiting sync: {e}");
+                    false
+                }
+            }
+        };
+    }
+    if ch
+        .transmitter
+        .send(Request::Command(commands::CliCommand::Quit))
+        .is_ok()
+    {
+        match ch.receiver.recv() {
+            Ok(Ok(trailer)) => eprintln!("{trailer}"),
+            Ok(Err(rendered)) => eprintln!("{rendered}"),
+            Err(e) => eprintln!("{e}"),
+        }
+    }
+
+    if succeeded {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+/// Runs the interactive prompt until it closes, returning the exit code the
+/// session earned: success when the user ended it, failure when the terminal
+/// did (ADR 0031).
+fn start_interactive(cli_config: &CliConfigTemplate, ch: CommandChannel) -> ExitCode {
     // `()` can be used when no completer is required
-    let mut rl = rustyline::DefaultEditor::new().expect("Default rustyline Editor not creatable!");
+    let mut rl = match rustyline::DefaultEditor::new() {
+        Ok(editor) => editor,
+        Err(e) => {
+            eprintln!("Error: the interactive prompt could not start: {e}");
+            error!("the interactive prompt could not start: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     log::debug!("Ready!");
 
@@ -443,22 +571,16 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
     };
 
     loop {
-        // Read the height first
-        let height = send_request(Request::Command(commands::CliCommand::Height))
-            .ok()
-            .and_then(|s| json::parse(&s).ok())
-            .and_then(|v| v["height"].as_i64())
-            .unwrap_or(0);
+        let prompt_status = send_request(Request::PromptIndicator).unwrap_or_default();
 
-        let sync_indicator = send_request(Request::PromptIndicator).unwrap_or_default();
-
-        let readline = rl.readline(&format!(
-            "({chain_name}) Block:{height}{sync_indicator} >> "
-        ));
+        let readline = rl.readline(&format!("({chain_name}) {prompt_status} >> "));
         match readline {
             Ok(line) => {
-                rl.add_history_entry(line.as_str())
-                    .expect("Ability to add history entry");
+                if let Err(e) = rl.add_history_entry(line.as_str()) {
+                    // A history that will not grow costs the user recall, never
+                    // the session: the command they typed still runs.
+                    log::warn!("the prompt's history did not record the line: {e}");
+                }
                 // Parse command line arguments
                 let Ok(tokens) = shellwords::split(&line) else {
                     println!("Mismatched Quotes");
@@ -492,22 +614,25 @@ fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
                 }
 
                 if is_quit {
-                    break;
+                    break ExitCode::SUCCESS;
                 }
             }
             Err(rustyline::error::ReadlineError::Interrupted) => {
                 println!("CTRL-C");
                 info!("CTRL-C");
-                break;
+                break ExitCode::SUCCESS;
             }
             Err(rustyline::error::ReadlineError::Eof) => {
                 println!("CTRL-D");
                 info!("CTRL-D");
-                break;
+                break ExitCode::SUCCESS;
             }
             Err(err) => {
-                println!("Error: {err:?}");
-                break;
+                // The terminal ended the session, not the user, so the shell
+                // hears failure rather than a clean close.
+                eprintln!("Error: the interactive prompt failed: {err}");
+                error!("the interactive prompt failed: {err}");
+                break ExitCode::FAILURE;
             }
         }
     }
@@ -524,8 +649,9 @@ enum Request {
     /// with the command's output or `Err` with the rendered error line.
     Command(commands::CliCommand),
     /// Perform the per-prompt housekeeping (sync poll, save check) via
-    /// typed calls on the loop thread. The reply is the sync indicator
-    /// to embed in the interactive prompt.
+    /// typed calls on the loop thread. The reply is the prompt's status
+    /// segment: the chain height and the sync indicator, read without
+    /// contending with a running sync for the wallet lock.
     PromptIndicator,
     /// Block on the loop thread until the launched sync task finishes,
     /// narrating scan progress on stderr, and reply with the sync result.
@@ -545,13 +671,68 @@ struct CommandChannel {
     receiver: Receiver<Result<String, String>>,
 }
 
+/// How many automatic sync recoveries may run back-to-back before the
+/// session parks on the reported error and waits for `sync run`.
+#[cfg(feature = "nym")]
+const SYNC_RECOVERY_ATTEMPT_BUDGET: usize = 3;
+
+/// What the command loop needs to recover a dead sync without the user.
+#[cfg(feature = "nym")]
+pub(crate) struct SyncRecovery {
+    /// The census chain a redraw surveys; `None` withholds the redraw
+    /// (a pinned, offline, or regtest session), leaving only same-server
+    /// relaunches.
+    redraw_chain: Option<zingolib::indexers::IndexerChain>,
+    /// The `nym-proxy` binary a redraw's sweep spawns.
+    proxy_path: String,
+    /// The automatic recoveries left before the session parks.
+    attempts_left: usize,
+}
+
+/// What the command loop needs to recover a dead sync without the user.
+#[cfg(not(feature = "nym"))]
+pub(crate) struct SyncRecovery;
+
+/// The move one automatic sync-recovery attempt makes.
+#[cfg(feature = "nym")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecoveryAction {
+    /// Report the error and wait for the user's `sync run`.
+    Park,
+    /// Launch a fresh sync task against the still-bound indexer.
+    Relaunch,
+    /// Redraw the sync indexer with a Server-Selection Sweep, then launch
+    /// a fresh sync task against the winner.
+    Redraw,
+}
+
+/// Plans one automatic recovery from the error's typed recommendation, the
+/// attempts left, and whether this session may redraw its indexer.
+#[cfg(feature = "nym")]
+fn plan_recovery(
+    observable: SyncRecoveryObservables,
+    attempts_left: usize,
+    redraw_available: bool,
+) -> RecoveryAction {
+    if attempts_left == 0 {
+        return RecoveryAction::Park;
+    }
+    match observable {
+        SyncRecoveryObservables::Abort => RecoveryAction::Park,
+        SyncRecoveryObservables::MaybeRecoverableServer => RecoveryAction::Relaunch,
+        SyncRecoveryObservables::ServerUnavailable if redraw_available => RecoveryAction::Redraw,
+        SyncRecoveryObservables::ServerUnavailable => RecoveryAction::Park,
+    }
+}
+
 /// Spawns a background thread that executes each parsed-command message
 /// against the [`LightClient`] and replies through the returned
 /// [`CommandChannel`], exiting on [`commands::CliCommand::Quit`].
 #[allow(clippy::disallowed_methods)]
 pub(crate) fn command_loop(
     mut lightclient: LightClient,
-    communication_mode: CommunicationMode,
+    communications: Communications,
+    mut sync_recovery: SyncRecovery,
 ) -> CommandChannel {
     let (command_transmitter, command_receiver) = channel::<Request>();
     let (resp_transmitter, resp_receiver) = channel::<Result<String, String>>();
@@ -562,7 +743,10 @@ pub(crate) fn command_loop(
                 Request::Command(command) => command,
                 Request::PromptIndicator => {
                     resp_transmitter
-                        .send(Ok(RT.block_on(prompt_indicator(&mut lightclient))))
+                        .send(Ok(RT.block_on(prompt_indicator(
+                            &mut lightclient,
+                            &mut sync_recovery,
+                        ))))
                         .unwrap();
                     continue;
                 }
@@ -579,14 +763,16 @@ pub(crate) fn command_loop(
             // unconsented posture. A deliberate `--offline` never lifts.
             // Consent shows as a configured Indexer or a non-Unattached
             // mixnet slot, since a mixnet-only session binds no Indexer.
-            let live_mode = match communication_mode {
-                CommunicationMode::DeliberateOffline => CommunicationMode::DeliberateOffline,
-                _ if lightclient.indexer_uri().is_some() => CommunicationMode::Online,
+            let live_mode = match communications {
+                Communications::DeliberateOffline => Communications::DeliberateOffline,
+                _ if lightclient.indexer_uri().is_some() => Communications::Online,
                 #[cfg(feature = "nym")]
-                _ if lightclient.mixnet_mode() != zingolib::mixnet::MixnetMode::Unattached => {
-                    CommunicationMode::Online
+                _ if lightclient.read_mixnet_indicator()
+                    != zingolib::mixnet::Indicator::Unattached =>
+                {
+                    Communications::Online
                 }
-                _ => CommunicationMode::UnconsentedOffline,
+                _ => Communications::UnconsentedOffline,
             };
             // `help` renders the live posture's surface: what a suppressed
             // session does not offer, its help does not list.
@@ -623,27 +809,26 @@ pub(crate) fn command_loop(
 /// The CLI operates in one of two mutually exclusive modes,
 /// determined at the earliest possible moment from the parsed CLI arguments.
 #[derive(Debug, PartialEq)]
-enum ModeOfOperation {
+enum Operations {
     /// Start the interactive REPL.
     Interactive,
     /// Execute a single command and exit, the command arriving already
     /// parsed from the same grammar the REPL uses.
-    Command {
+    NonInteractive {
         /// The parsed command to execute.
         command: commands::CliCommand,
     },
 }
 
 /// Determines the mode of operation from parsed CLI arguments:
-/// [`ModeOfOperation::Command`] when a command is given, or
+/// [`ModeOfOperation::NonInteractive`] when a command is given, or
 /// [`ModeOfOperation::Interactive`] when none is.
-fn get_mode_of_operation(matches: &clap::ArgMatches) -> ModeOfOperation {
+fn get_mode_of_operation(matches: &clap::ArgMatches) -> Operations {
     use clap::FromArgMatches as _;
 
-    commands::CliCommand::from_arg_matches(matches)
-        .map_or(ModeOfOperation::Interactive, |command| {
-            ModeOfOperation::Command { command }
-        })
+    commands::CliCommand::from_arg_matches(matches).map_or(Operations::Interactive, |command| {
+        Operations::NonInteractive { command }
+    })
 }
 
 /// Whether the CLI communicates with a remote indexer or operates locally.
@@ -651,7 +836,7 @@ fn get_mode_of_operation(matches: &clap::ArgMatches) -> ModeOfOperation {
 /// Selected at argument-parse time by the `--offline` flag and pinned for
 /// the life of the session (Offline mode, issue #2286).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum CommunicationMode {
+pub(crate) enum Communications {
     /// Connected to a remote indexer for sync, send, etc.
     Online,
     /// `--offline`: the deliberate zero-traffic session that no in-session
@@ -672,20 +857,20 @@ const DELIBERATE_OFFLINE_NOTICE: &str = "This session is deliberately offline (-
 /// rendered refusal to send in place of executing a suppressed `command`,
 /// naming the live remedy, or `None` when the command may proceed.
 fn offline_mode_refusal(
-    communication_mode: CommunicationMode,
+    communications: Communications,
     command: &commands::CliCommand,
 ) -> Option<String> {
     command
-        .suppressed(communication_mode)
-        .then(|| offline_refusal_text(communication_mode, &command.name()))
+        .suppressed(communications)
+        .then(|| offline_refusal_text(communications, &command.name()))
 }
 
 /// Renders the minted refusal for a suppressed command, naming the live
 /// remedy the posture leaves open.
 #[cfg(feature = "nym")]
-fn offline_refusal_text(communication_mode: CommunicationMode, name: &str) -> String {
-    match communication_mode {
-        CommunicationMode::DeliberateOffline => format!(
+fn offline_refusal_text(communications: Communications, name: &str) -> String {
+    match communications {
+        Communications::DeliberateOffline => format!(
             "Error: `{name}` requires network access, and --offline pins this session \
              offline. The only exit is to relaunch without --offline."
         ),
@@ -700,7 +885,7 @@ fn offline_refusal_text(communication_mode: CommunicationMode, name: &str) -> St
 /// Renders the minted refusal without the mixnet capability: Offline Mode
 /// is the only mode such a build can be in, so the remedy is a rebuild.
 #[cfg(not(feature = "nym"))]
-fn offline_refusal_text(_communication_mode: CommunicationMode, name: &str) -> String {
+fn offline_refusal_text(_communications: Communications, name: &str) -> String {
     format!(
         "Error: `{name}` requires network access, and this build has no mixnet \
          capability, so Offline Mode is its only mode. Rebuild with default \
@@ -774,7 +959,7 @@ fn data_dir_from(matches: &clap::ArgMatches) -> PathBuf {
 /// `--remember-online` stores it, and a session with no consent anywhere
 /// runs offline behind a notice naming the ways online.
 #[cfg(feature = "nym")]
-fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<CommunicationMode> {
+fn get_communications(matches: &clap::ArgMatches) -> std::io::Result<Communications> {
     let data_dir = data_dir_from(matches);
     if matches.get_flag("forget-online") {
         zingolib::connectivity::forget_connectivity_consent(&data_dir)?;
@@ -792,7 +977,7 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
     Ok(match decision {
         ConnectivityDecision::DeliberateOffline => {
             eprintln!("{DELIBERATE_OFFLINE_NOTICE}");
-            CommunicationMode::DeliberateOffline
+            Communications::DeliberateOffline
         }
         ConnectivityDecision::Online { store } => {
             if store {
@@ -805,7 +990,7 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
                         .display()
                 );
             }
-            CommunicationMode::Online
+            Communications::Online
         }
         ConnectivityDecision::UnconsentedOffline => {
             eprintln!(
@@ -816,7 +1001,7 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
                  consent and switches to ONLINE MODE. Pass --offline to run offline \
                  deliberately and silence this notice."
             );
-            CommunicationMode::UnconsentedOffline
+            Communications::UnconsentedOffline
         }
     })
 }
@@ -827,7 +1012,7 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
 /// consent is reported as inert. `--forget-online` still works, so an
 /// opt-out build can retire a stored consent.
 #[cfg(not(feature = "nym"))]
-fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<CommunicationMode> {
+fn get_communications(matches: &clap::ArgMatches) -> std::io::Result<Communications> {
     let data_dir = data_dir_from(matches);
     if matches.get_flag("forget-online") {
         zingolib::connectivity::forget_connectivity_consent(&data_dir)?;
@@ -854,9 +1039,9 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
     }
     Ok(if matches.get_flag("offline") {
         eprintln!("{DELIBERATE_OFFLINE_NOTICE}");
-        CommunicationMode::DeliberateOffline
+        Communications::DeliberateOffline
     } else {
-        CommunicationMode::UnconsentedOffline
+        Communications::UnconsentedOffline
     })
 }
 
@@ -866,9 +1051,9 @@ fn get_communication_mode(matches: &clap::ArgMatches) -> std::io::Result<Communi
 /// Built by [`ConfigTemplate::fill`] from parsed [`clap::ArgMatches`],
 /// then consumed by [`build_zingo_config`] and [`dispatch_command_or_start_interactive`].
 #[derive(Debug)]
-pub(crate) struct ConfigTemplate {
-    mode: ModeOfOperation,
-    communication_mode: CommunicationMode,
+pub(crate) struct CliConfigTemplate {
+    mode: Operations,
+    communications: Communications,
     /// The pinned Indexer: `None` when the session is Offline, and equally
     /// when it is Online unpinned, where the Server-Selection Sweep selects.
     server: Option<http::Uri>,
@@ -893,9 +1078,6 @@ pub(crate) struct ConfigTemplate {
     /// the forced-on policy, which the `nym` feature gates.
     #[cfg_attr(not(feature = "nym"), allow(dead_code))]
     nym_proxy_path: Option<String>,
-    /// `--indexer-diary`: opt this session in to recording the indexer diary.
-    /// Effective only with the `nym-diary` build feature. Other builds warn.
-    indexer_diary: bool,
 }
 
 /// A refusal to fill the launch configuration template.
@@ -943,10 +1125,10 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
     Chain(#[from] zingolib::config::InvalidChainType),
 }
 
-impl ConfigTemplate {
+impl CliConfigTemplate {
     fn fill(
-        mode: ModeOfOperation,
-        communication_mode: CommunicationMode,
+        mode: Operations,
+        communications: Communications,
         matches: clap::ArgMatches,
     ) -> Result<Self, ConfigTemplateError> {
         let seed = resolve_seed(
@@ -980,7 +1162,7 @@ impl ConfigTemplate {
         // command after `--online` is a contradiction the launch refuses
         // early, before any network or wallet work.
         if matches.get_flag("online")
-            && let ModeOfOperation::Command { command } = &mode
+            && let Operations::NonInteractive { command } = &mode
             && !command.requires_online()
         {
             return Err(ConfigTemplateError::OnlineGrantUnused {
@@ -993,11 +1175,11 @@ impl ConfigTemplate {
         // Offline mode never resolves a server: the session's contract is
         // that no Indexer is ever configured.
         #[cfg(feature = "clearnet-test-mode")]
-        let (server, ranked_servers) = match communication_mode {
-            CommunicationMode::DeliberateOffline | CommunicationMode::UnconsentedOffline => {
+        let (server, ranked_servers) = match communications {
+            Communications::DeliberateOffline | Communications::UnconsentedOffline => {
                 (None, vec![])
             }
-            CommunicationMode::Online => {
+            Communications::Online => {
                 let (server, ranked_servers) = server_select_clearnet::resolve_server(&matches)?;
                 (Some(server), ranked_servers)
             }
@@ -1005,9 +1187,9 @@ impl ConfigTemplate {
         // Without the quarantined sweep, resolution is pure: the typed
         // `--server` pin or nothing, never a probe and never a default.
         #[cfg(not(feature = "clearnet-test-mode"))]
-        let server = match communication_mode {
-            CommunicationMode::DeliberateOffline | CommunicationMode::UnconsentedOffline => None,
-            CommunicationMode::Online => matches
+        let server = match communications {
+            Communications::DeliberateOffline | Communications::UnconsentedOffline => None,
+            Communications::Online => matches
                 .get_one::<http::Uri>("server")
                 .map(|server| {
                     zingolib::config::construct_indexer_uri(server.to_string())
@@ -1031,13 +1213,12 @@ impl ConfigTemplate {
 
         let server_pinned =
             matches.value_source("server") == Some(clap::parser::ValueSource::CommandLine);
-        let sync = !matches.get_flag("nosync") && communication_mode == CommunicationMode::Online;
+        let sync = !matches.get_flag("nosync") && communications == Communications::Online;
         let waitsync = matches.get_flag("waitsync");
         let nym_proxy_path = matches.get_one::<String>("nym-proxy").cloned();
-        let indexer_diary = matches.get_flag("indexer-diary");
         Ok(Self {
             mode,
-            communication_mode,
+            communications,
             server,
             server_pinned,
             #[cfg(feature = "clearnet-test-mode")]
@@ -1050,7 +1231,6 @@ impl ConfigTemplate {
             waitsync,
             chaintype,
             nym_proxy_path,
-            indexer_diary,
         })
     }
 }
@@ -1060,7 +1240,7 @@ impl ConfigTemplate {
 /// This is the first testable seam inside the startup sequence. Its only
 /// I/O is the chain-tip fetch that dates a brand-new wallet, which an
 /// Offline-mode session never performs.
-async fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<ClientConfig> {
+async fn build_zingo_config(filled_template: &CliConfigTemplate) -> std::io::Result<ClientConfig> {
     let wallet_path = filled_template.data_dir.clone().join(DEFAULT_WALLET_NAME);
     let no_of_accounts = NonZeroU32::try_from(1).expect("hard-coded integer");
     let wallet_settings = WalletSettings {
@@ -1138,49 +1318,44 @@ async fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result
 }
 
 #[allow(clippy::disallowed_methods)]
-pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<CommandChannel> {
+pub(crate) fn startup(filled_template: &CliConfigTemplate) -> std::io::Result<CommandChannel> {
     let lightclient = RT.block_on(startup_async(filled_template))?;
+    #[cfg(feature = "nym")]
+    let sync_recovery = SyncRecovery {
+        redraw_chain: (matches!(filled_template.communications, Communications::Online)
+            && !filled_template.server_pinned)
+            .then(|| census_chain(&filled_template.chaintype))
+            .flatten(),
+        proxy_path: commands::resolve_proxy_path(filled_template.nym_proxy_path.as_deref()),
+        attempts_left: SYNC_RECOVERY_ATTEMPT_BUDGET,
+    };
+    #[cfg(not(feature = "nym"))]
+    let sync_recovery = SyncRecovery;
     Ok(command_loop(
         lightclient,
-        filled_template.communication_mode,
+        filled_template.communications,
+        sync_recovery,
     ))
 }
 
-async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<LightClient> {
+async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<LightClient> {
     let config = build_zingo_config(filled_template).await?;
 
     let mut lightclient = LightClient::new(config, false)
         .await
         .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
 
-    if matches!(filled_template.mode, ModeOfOperation::Interactive) {
+    if matches!(filled_template.mode, Operations::Interactive) {
         // Print startup Messages
         info!(""); // Blank line
         info!("Starting Zingo-CLI");
         match &filled_template.server {
             Some(server) => info!("Lightclient connecting to {server}"),
-            None if filled_template.communication_mode == CommunicationMode::Online => {
+            None if filled_template.communications == Communications::Online => {
                 info!("No pinned Indexer; the Server-Selection Sweep selects the sync indexer")
             }
             None => info!("Offline mode: no Indexer will be configured this session"),
         }
-    }
-
-    // The indexer diary is a per-session runtime opt-in on top of its build
-    // gate: recording starts only when the user passes --indexer-diary, and
-    // the choice is never persisted. A build without the feature warns loudly
-    // instead of silently not recording, because failing safe is not recording.
-    #[cfg(feature = "nym-diary")]
-    if filled_template.indexer_diary {
-        lightclient.set_indexer_diary(true);
-        info!("Indexer diary: recording send and probe outcomes this session (`network history`).");
-    }
-    #[cfg(not(feature = "nym-diary"))]
-    if filled_template.indexer_diary {
-        eprintln!(
-            "--indexer-diary has no effect: this build has no indexer diary support. \
-             Rebuild zingo-cli with `--features nym-diary`."
-        );
     }
 
     // The session driver call at the go-online moment (ADR 0024, decision
@@ -1192,7 +1367,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     // clearnet. Offline sessions never transmit and skip the driver
     // entirely.
     #[cfg(feature = "nym")]
-    if filled_template.communication_mode == CommunicationMode::Online {
+    if filled_template.communications == Communications::Online {
         use zingolib::mixnet::{MixnetStartPolicy, ProvisionStrategy};
         info!(
             "Mixnet Mode enabling; the nym proxy is bootstrapping. Send and price-fetch \
@@ -1207,7 +1382,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
         // Bootstrapping because the line above already announced it.
         let mut status_rx = lightclient.subscribe_mixnet_status();
         tokio::spawn(async move {
-            let mut last_mode = zingolib::mixnet::MixnetMode::Bootstrapping;
+            let mut last_mode = zingolib::mixnet::Indicator::Bootstrapping;
             while status_rx.changed().await.is_ok() {
                 let status = status_rx.borrow_and_update().clone();
                 if status.mode == last_mode {
@@ -1218,13 +1393,13 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
                 }
                 last_mode = status.mode;
                 match status.mode {
-                    zingolib::mixnet::MixnetMode::Ready
-                    | zingolib::mixnet::MixnetMode::PreviouslyProvenThisEpoch => info!(
+                    zingolib::mixnet::Indicator::Ready
+                    | zingolib::mixnet::Indicator::PreviouslyProvenThisEpoch => info!(
                         "Mixnet Mode ready; send and price-fetch route over the mixnet \
                          (see `network status`).{}",
                         commands::render_exit_nodes(&status.exits)
                     ),
-                    zingolib::mixnet::MixnetMode::Died => {
+                    zingolib::mixnet::Indicator::Died => {
                         let cause = status
                             .death
                             .as_ref()
@@ -1264,7 +1439,7 @@ async fn startup_async(filled_template: &ConfigTemplate) -> std::io::Result<Ligh
     // server is bound at config time and surveyed here; an unpinned online
     // session has no indexer until the sweep selects one.
     #[cfg(feature = "nym")]
-    let indexer_ready = if filled_template.communication_mode == CommunicationMode::Online {
+    let indexer_ready = if filled_template.communications == Communications::Online {
         sweep_select_sync_indexer(&mut lightclient, filled_template).await
     } else {
         true
@@ -1328,10 +1503,8 @@ fn census_chain(chain: &ChainType) -> Option<zingolib::indexers::IndexerChain> {
 #[cfg(feature = "nym")]
 async fn sweep_select_sync_indexer(
     lightclient: &mut LightClient,
-    filled_template: &ConfigTemplate,
+    filled_template: &CliConfigTemplate,
 ) -> bool {
-    use zingolib::lightclient::select::SweepProgress;
-
     let Some(chain) = census_chain(&filled_template.chaintype) else {
         return true;
     };
@@ -1362,24 +1535,7 @@ async fn sweep_select_sync_indexer(
             std::path::Path::new(&proxy_path),
             &candidates,
             pin.as_ref(),
-            |phase| match phase {
-                SweepProgress::TransportBootstrapping => eprintln!(
-                    "Server-Selection Sweep: bootstrapping a dedicated sweep transport \
-                     (its Exit Node is recycled when the sweep completes)..."
-                ),
-                SweepProgress::Surveying { candidates } => eprintln!(
-                    "Server-Selection Sweep: surveying {candidates} candidates over the mixnet..."
-                ),
-                SweepProgress::ExitAbandoned { draw } => eprintln!(
-                    "Server-Selection Sweep: the Exit Node of draw {draw} carries nothing — \
-                     a reliable address stayed silent through it; abandoning that exit and \
-                     surveying again from the start..."
-                ),
-                SweepProgress::Judging { answered, surveyed } => eprintln!(
-                    "Server-Selection Sweep: {answered} of {surveyed} candidates answered; \
-                     judging the live cohort..."
-                ),
-            },
+            narrate_sweep_progress,
         )
         .await;
     match judge_sweep_outcome(&selection, pin.as_ref()) {
@@ -1441,6 +1597,142 @@ async fn sweep_select_sync_indexer(
     }
 }
 
+/// Narrates one Server-Selection Sweep phase transition on stderr.
+#[cfg(feature = "nym")]
+fn narrate_sweep_progress(phase: zingolib::lightclient::select::SweepProgress) {
+    use zingolib::lightclient::select::SweepProgress;
+    match phase {
+        SweepProgress::TransportBootstrapping => eprintln!(
+            "Server-Selection Sweep: bootstrapping a dedicated sweep transport \
+             (its Exit Node is recycled when the sweep completes)..."
+        ),
+        SweepProgress::Surveying { candidates } => eprintln!(
+            "Server-Selection Sweep: surveying {candidates} candidates over the mixnet..."
+        ),
+        SweepProgress::ExitAbandoned { draw } => eprintln!(
+            "Server-Selection Sweep: the Exit Node of draw {draw} carries nothing — \
+             a reliable address stayed silent through it; abandoning that exit and \
+             surveying again from the start..."
+        ),
+        SweepProgress::Judging { answered, surveyed } => eprintln!(
+            "Server-Selection Sweep: {answered} of {surveyed} candidates answered; \
+             judging the live cohort..."
+        ),
+    }
+}
+
+/// Reports whether two URIs name the same indexer endpoint by scheme, host,
+/// and port, so a bound URI's path rendering never defeats the comparison.
+#[cfg(feature = "nym")]
+fn same_endpoint(a: &http::Uri, b: &http::Uri) -> bool {
+    a.scheme_str() == b.scheme_str() && a.host() == b.host() && a.port_u16() == b.port_u16()
+}
+
+/// Attempts one automatic recovery of a dead sync, returning whether a new
+/// sync task is running.
+#[cfg(feature = "nym")]
+async fn attempt_sync_recovery<E: std::fmt::Debug + std::fmt::Display>(
+    lightclient: &mut LightClient,
+    recovery: &mut SyncRecovery,
+    error: &SyncError<E>,
+) -> bool {
+    let Some(bound) = lightclient.indexer_uri() else {
+        return false;
+    };
+    let action = plan_recovery(
+        error.recovery_recommendation(),
+        recovery.attempts_left,
+        recovery.redraw_chain.is_some(),
+    );
+    let attempt = SYNC_RECOVERY_ATTEMPT_BUDGET - recovery.attempts_left + 1;
+    match action {
+        RecoveryAction::Park => return false,
+        RecoveryAction::Relaunch => {
+            recovery.attempts_left -= 1;
+            eprintln!(
+                "Sync relaunches against {bound}: the error class says the same server may \
+                 recover (automatic recovery {attempt} of {SYNC_RECOVERY_ATTEMPT_BUDGET})."
+            );
+        }
+        RecoveryAction::Redraw => {
+            recovery.attempts_left -= 1;
+            eprintln!(
+                "Sync's indexer {bound} failed and the error class condemns the server; \
+                 abandoning it and redrawing \
+                 (automatic recovery {attempt} of {SYNC_RECOVERY_ATTEMPT_BUDGET})..."
+            );
+            let chain = recovery
+                .redraw_chain
+                .expect("plan_recovery only redraws when a census chain is present");
+            if !redraw_sync_indexer(lightclient, chain, &recovery.proxy_path, &bound).await {
+                return false;
+            }
+        }
+    }
+    let sync_run = commands::CliCommand::Sync {
+        sub: commands::SyncSubCommand::Run,
+    };
+    match commands::dispatch_parsed(sync_run, lightclient).await {
+        Ok(update) => {
+            eprintln!("{update}");
+            true
+        }
+        Err(e) => {
+            eprintln!("Error: {}", commands::render_error_chain(&e));
+            false
+        }
+    }
+}
+
+/// Runs a redraw Server-Selection Sweep that demotes the failed indexer,
+/// surveying it again only when it is the sole candidate, and returns
+/// whether a fresh winner is bound.
+#[cfg(feature = "nym")]
+async fn redraw_sync_indexer(
+    lightclient: &mut LightClient,
+    chain: zingolib::indexers::IndexerChain,
+    proxy_path: &str,
+    failed: &http::Uri,
+) -> bool {
+    let mut candidates: Vec<http::Uri> = zingolib::indexers::mixnet_eligible(chain)
+        .map(|indexer| indexer.uri.parse().expect("census URIs parse"))
+        .collect();
+    if candidates.len() > 1 {
+        candidates.retain(|candidate| !same_endpoint(candidate, failed));
+    }
+    let selection = lightclient
+        .run_server_selection_sweep(
+            std::path::Path::new(proxy_path),
+            &candidates,
+            None,
+            narrate_sweep_progress,
+        )
+        .await;
+    match judge_sweep_outcome(&selection, None) {
+        SweepVerdict::BindWinner { chosen, notice } => {
+            match lightclient.set_indexer_uri(chosen.clone()).await {
+                Ok(()) => {
+                    eprintln!("{notice}");
+                    true
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Server-Selection Sweep: selected {chosen}, but binding it failed: {}.",
+                        commands::render_error_chain(&e),
+                    );
+                    false
+                }
+            }
+        }
+        SweepVerdict::Refuse { notice }
+        | SweepVerdict::PinStands { notice }
+        | SweepVerdict::RecommendFallback { notice, .. } => {
+            eprintln!("{notice}");
+            false
+        }
+    }
+}
+
 /// The decision a finished Server-Selection Sweep leaves the Sync Session
 /// with.
 #[cfg(feature = "nym")]
@@ -1466,7 +1758,7 @@ enum SweepVerdict {
     /// The survey refused the pin but holds a healthy alternative, which
     /// binds only by the user's explicit consent, refusing by default.
     RecommendFallback {
-        /// The healthy indexer the sweep selected.
+        /// The healthy indexer the sweep drew.
         alternative: http::Uri,
         /// The narration recommending the fallback before the consent ask.
         notice: String,
@@ -1477,9 +1769,9 @@ enum SweepVerdict {
 /// of the refused pin, defaulting to No wherever no interactive terminal
 /// can answer.
 #[cfg(feature = "nym")]
-fn consent_to_fallback(mode: &ModeOfOperation, alternative: &http::Uri) -> bool {
+fn consent_to_fallback(mode: &Operations, alternative: &http::Uri) -> bool {
     use std::io::IsTerminal as _;
-    if !matches!(mode, ModeOfOperation::Interactive) || !std::io::stdin().is_terminal() {
+    if !matches!(mode, Operations::Interactive) || !std::io::stdin().is_terminal() {
         return false;
     }
     eprint!("Server-Selection Sweep: use {alternative} for this Sync Session instead? [y/N] ");
@@ -1520,7 +1812,7 @@ fn judge_sweep_outcome(
                     alternative: selection.sync_indexer.clone(),
                     notice: format!(
                         "Server-Selection Sweep: the pinned server {pinned} did not answer the \
-                         survey or lags the live cohort of {}. The sweep selected a healthy \
+                         survey or lags the live cohort of {}. The sweep drew a healthy \
                          alternative: {}.",
                         selection.cohort.len(),
                         selection.sync_indexer,
@@ -1587,7 +1879,7 @@ fn sweep_refusal_notice(error: &zingolib::lightclient::select::ServerSelectionEr
 /// `recovery_info` but the wallet file cannot be fully parsed. The whole
 /// point of that command is to escape a wallet no current build can read.
 fn print_salvaged_recovery_info(
-    cli_config: &ConfigTemplate,
+    cli_config: &CliConfigTemplate,
     startup_error: &std::io::Error,
 ) -> std::io::Result<()> {
     let wallet_path = cli_config.data_dir.clone().join(DEFAULT_WALLET_NAME);
@@ -1609,13 +1901,15 @@ fn print_salvaged_recovery_info(
     Ok(())
 }
 
-fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io::Result<ExitCode> {
+fn dispatch_command_or_start_interactive(
+    cli_config: &CliConfigTemplate,
+) -> std::io::Result<ExitCode> {
     let ch = match startup(cli_config) {
         Ok(ch) => ch,
         Err(startup_error) => {
             if matches!(
                 &cli_config.mode,
-                ModeOfOperation::Command {
+                Operations::NonInteractive {
                     command: commands::CliCommand::RecoveryInfo
                 }
             ) {
@@ -1626,102 +1920,15 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io
         }
     };
     match &cli_config.mode {
-        ModeOfOperation::Interactive => {
-            start_interactive(cli_config, ch);
-            Ok(ExitCode::SUCCESS)
-        }
-        ModeOfOperation::Command { command } => {
-            let description = command.name();
-            let mut succeeded = if ch
-                .transmitter
-                .send(Request::Command(command.clone()))
-                .is_err()
-            {
-                let e =
-                    format!("Error executing command {description}: the command loop has exited");
-                eprintln!("{e}");
-                error!("{e}");
-                false
-            } else {
-                match ch.receiver.recv() {
-                    Ok(Ok(output)) => {
-                        println!("{output}");
-                        true
-                    }
-                    Ok(Err(rendered)) => {
-                        eprintln!("{rendered}");
-                        false
-                    }
-                    Err(e) => {
-                        let e = format!("Error executing command {description}: {e}");
-                        eprintln!("{e}");
-                        error!("{e}");
-                        false
-                    }
-                }
-            };
-
-            // A one-shot `sync run` means sync to completion: the session
-            // holds open, narrating progress, until the sync task reports
-            // its result, which becomes the command's outcome.
-            if succeeded
-                && matches!(
-                    &command,
-                    commands::CliCommand::Sync {
-                        sub: commands::SyncSubCommand::Run
-                    }
-                )
-            {
-                succeeded = if ch.transmitter.send(Request::AwaitSync).is_err() {
-                    eprintln!("Error awaiting sync: the command loop has exited");
-                    false
-                } else {
-                    match ch.receiver.recv() {
-                        Ok(Ok(output)) => {
-                            println!("{output}");
-                            true
-                        }
-                        Ok(Err(rendered)) => {
-                            eprintln!("{rendered}");
-                            false
-                        }
-                        Err(e) => {
-                            eprintln!("Error awaiting sync: {e}");
-                            false
-                        }
-                    }
-                };
-            }
-            let exit_code = if succeeded {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            };
-
-            if ch
-                .transmitter
-                .send(Request::Command(commands::CliCommand::Quit))
-                .is_ok()
-            {
-                match ch.receiver.recv() {
-                    Ok(Ok(trailer)) => eprintln!("{trailer}"),
-                    Ok(Err(rendered)) => eprintln!("{rendered}"),
-                    Err(e) => eprintln!("{e}"),
-                }
-            }
-
-            Ok(exit_code)
-        }
+        Operations::Interactive => Ok(start_interactive(cli_config, ch)),
+        Operations::NonInteractive { command } => Ok(start_noninteractive(command, ch)),
     }
 }
 
-/// Returns `true` if the CLI will start the interactive REPL
-/// (i.e. no COMMAND was given).
-///
-/// This is a thin wrapper around `ModeOfOperation` so that the binary
-/// entry point can query the mode without exposing the enum publicly.
-pub fn is_interactive(matches: &clap::ArgMatches) -> bool {
-    matches!(get_mode_of_operation(matches), ModeOfOperation::Interactive)
+/// Whether the CLI will start the interactive REPL, which it does when no
+/// command was given.
+fn is_interactive(matches: &clap::ArgMatches) -> bool {
+    matches!(get_mode_of_operation(matches), Operations::Interactive)
 }
 
 /// Default log file directory.
@@ -1730,7 +1937,7 @@ const LOG_DIR: &str = ".zingo-cli";
 const LOG_FILE: &str = "cli.log";
 
 /// Returns the log file path from `--log-file` or the default `.zingo-cli/cli.log`.
-pub fn log_file_path(matches: &clap::ArgMatches) -> PathBuf {
+fn log_file_path(matches: &clap::ArgMatches) -> PathBuf {
     if let Some(path) = matches.get_one::<String>("log-file") {
         PathBuf::from(path)
     } else {
@@ -1738,9 +1945,45 @@ pub fn log_file_path(matches: &clap::ArgMatches) -> PathBuf {
     }
 }
 
+/// Installs the process-global tracing subscriber, writing to the log file
+/// in interactive mode so error-level output never pollutes the REPL, and
+/// to stderr in every other case.
+pub fn init_tracing(matches: &clap::ArgMatches) {
+    let env_filter = tracing_subscriber::EnvFilter::from_default_env();
+
+    if is_interactive(matches) {
+        let log_path = log_file_path(matches);
+        if let Some(parent) = log_path.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            Ok(file) => {
+                tracing_subscriber::fmt()
+                    .with_env_filter(env_filter)
+                    .with_writer(sync::Mutex::new(file))
+                    .with_ansi(false)
+                    .init();
+                return;
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: could not open log file {}: {e}. Logging to stderr.",
+                    log_path.display()
+                );
+            }
+        }
+    }
+
+    tracing_subscriber::fmt().with_env_filter(env_filter).init();
+}
+
 /// Reads the posture the parsed arguments imply without performing any
 /// consent act, for surfaces that render before startup.
-fn posture_preview(matches: &clap::ArgMatches) -> CommunicationMode {
+fn posture_preview(matches: &clap::ArgMatches) -> Communications {
     #[cfg(feature = "nym")]
     {
         let explicit_server =
@@ -1752,17 +1995,17 @@ fn posture_preview(matches: &clap::ArgMatches) -> CommunicationMode {
             explicit_server,
             zingolib::connectivity::load_connectivity_consent(&data_dir_from(matches)),
         ) {
-            ConnectivityDecision::DeliberateOffline => CommunicationMode::DeliberateOffline,
-            ConnectivityDecision::Online { .. } => CommunicationMode::Online,
-            ConnectivityDecision::UnconsentedOffline => CommunicationMode::UnconsentedOffline,
+            ConnectivityDecision::DeliberateOffline => Communications::DeliberateOffline,
+            ConnectivityDecision::Online { .. } => Communications::Online,
+            ConnectivityDecision::UnconsentedOffline => Communications::UnconsentedOffline,
         }
     }
     #[cfg(not(feature = "nym"))]
     {
         if matches.get_flag("offline") {
-            CommunicationMode::DeliberateOffline
+            Communications::DeliberateOffline
         } else {
-            CommunicationMode::UnconsentedOffline
+            Communications::UnconsentedOffline
         }
     }
 }
@@ -1772,7 +2015,7 @@ fn posture_preview(matches: &clap::ArgMatches) -> CommunicationMode {
 /// the text and exiting the process.
 pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
     match get_mode_of_operation(matches) {
-        ModeOfOperation::Command {
+        Operations::NonInteractive {
             command: commands::CliCommand::Help { command: named },
         } => Some(commands::format_help(
             posture_preview(matches),
@@ -1791,15 +2034,15 @@ pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
 /// handling the help short-circuit, process-level setup, and error reporting.
 pub fn run_cli(matches: clap::ArgMatches) -> std::io::Result<ExitCode> {
     let mode = get_mode_of_operation(&matches);
-    if let ModeOfOperation::Command { command } = &mode
+    if let Operations::NonInteractive { command } = &mode
         && let Err(refusal) = command.validate_deferred_grammar()
     {
         eprintln!("{refusal}");
         return Ok(ExitCode::from(2));
     }
-    let communication_mode = get_communication_mode(&matches)?;
+    let communications = get_communications(&matches)?;
     let cli_config =
-        ConfigTemplate::fill(mode, communication_mode, matches).map_err(std::io::Error::other)?;
+        CliConfigTemplate::fill(mode, communications, matches).map_err(std::io::Error::other)?;
     dispatch_command_or_start_interactive(&cli_config)
 }
 

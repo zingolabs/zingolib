@@ -73,13 +73,12 @@ impl LightClient {
     /// operator, and the height-ordered live cohort.
     ///
     /// `binary_path` is the `nym-proxy` binary the dedicated sweep proxy
-    /// spawns from. The candidates are assigned to survey lanes at random,
-    /// `pin` guaranteed an opening lane, and the first healthy answer is
-    /// the verdict — the pin preempts while its own probe is pending and is
-    /// chosen the moment it answers — offered to the session immediately:
-    /// every unresolved candidate continues in the background as the health
-    /// sweep, whose handle the session holds so revoking consent aborts it,
-    /// and the sweep transport recycles its exit when that finishes.
+    /// spawns from. The candidates are assigned to survey lanes at random
+    /// and every one is probed and assigned a verdict (ruled 2026-08-14):
+    /// a healthy `pin` wins outright, and otherwise the sync indexer is
+    /// drawn among every healthy answer, all of which are draw-eligible for
+    /// the session's operations, with the transmit candidates excluding the
+    /// sync operator so different operations select different indexers.
     pub async fn run_server_selection_sweep(
         &self,
         binary_path: &Path,
@@ -92,9 +91,8 @@ impl LightClient {
             std::sync::Arc::new(crate::mixnet::acquire::SpawnedBinary::at(
                 binary_path.to_path_buf(),
             ));
-        // Random lane assignment, the pin guaranteed an opening lane: the
-        // first healthy answer is the verdict, the pin preempting while its
-        // own probe is pending. Acquisition, the Sentinel-ridden wave, and
+        // Random lane assignment; the whole census is probed and assigned
+        // before the drawn verdict. Acquisition, the Sentinel-ridden wave, and
         // the redraw of an exit that carries nothing are the shared
         // speed-priority loop's; this runner owns only the judgment.
         let order = sweep::wave_order(candidates, pin, SURVEY_WAVE_WIDTH, &mut rand::rngs::OsRng);
@@ -102,8 +100,6 @@ impl LightClient {
             pools: self.correspondent_pools.clone(),
             acquirer,
             order: order.clone(),
-            chain: chain.to_string(),
-            pin: pin.cloned(),
             timeout: zingo_netutils::time::PROBE_LEG_TIMEOUT,
             history: self.indexer_history.clone(),
         };
@@ -121,7 +117,9 @@ impl LightClient {
             surveyed: results.len(),
         });
 
-        let Some(chosen) = sweep::first_healthy_verdict(&results, chain, pin) else {
+        let Some(chosen) =
+            sweep::healthy_draw_verdict(&results, chain, pin, &mut rand::rngs::OsRng)
+        else {
             // Every candidate was surveyed through a proven exit and none
             // was healthy, so the refusal is about the candidates.
             member.retire().await;
@@ -132,7 +130,7 @@ impl LightClient {
             }
             .into());
         };
-        let selection = sweep::first_healthy_selection(&results, chain, chosen);
+        let selection = sweep::assigned_selection(&results, chain, chosen);
 
         // Every candidate the verdict left unresolved continues in the
         // background purely as the health sweep; the session holds its
@@ -166,13 +164,11 @@ impl LightClient {
 }
 
 /// The Server-Selection Sweep as a speed-priority operation: it races the
-/// census through one Exit Node and settles on the first healthy answer.
+/// census through one Exit Node, assigning every candidate its verdict.
 struct IndexerSurvey {
     pools: std::sync::Arc<crate::correspondent::pool::Pools>,
     acquirer: std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>,
     order: Vec<Uri>,
-    chain: String,
-    pin: Option<Uri>,
     timeout: Duration,
     history: crate::lightclient::indexer_history::IndexerHistoryHandle,
 }
@@ -202,8 +198,11 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
         }
     }
 
-    fn settled(&self, outcomes: &[SurveyResult]) -> bool {
-        sweep::first_healthy_verdict(outcomes, &self.chain, self.pin.as_ref()).is_some()
+    fn settled(&self, _outcomes: &[SurveyResult]) -> bool {
+        // The IndexerSweep probes and assigns every indexer (ruled
+        // 2026-08-14): no answer ends the wave early, so the whole census
+        // earns its verdicts and every healthy indexer is draw-eligible.
+        false
     }
 
     fn answered(&self, outcomes: &[SurveyResult]) -> bool {
@@ -325,7 +324,37 @@ async fn probe_one(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mixnet::MixnetMode;
+    use crate::mixnet::Indicator;
+
+    /// HYPOTHESIS: the survey never settles early — every indexer must be
+    /// probed and assigned — so a healthy answer does not end the wave.
+    /// Falsified if one healthy outcome settles the survey.
+    #[test]
+    fn a_healthy_answer_does_not_settle_the_survey() {
+        let survey = IndexerSurvey {
+            pools: crate::correspondent::pool::Pools::new(),
+            acquirer: std::sync::Arc::new(crate::mixnet::acquire::SpawnedBinary::at(
+                std::path::PathBuf::from("/nonexistent/nym-proxy"),
+            )),
+            order: Vec::new(),
+            timeout: zingo_netutils::time::PROBE_LEG_TIMEOUT,
+            history: crate::lightclient::indexer_history::IndexerHistoryHandle::default(),
+        };
+        let healthy = crate::mixnet::sweep::SurveyResult {
+            uri: "https://a.example:443"
+                .parse()
+                .expect("the static uri parses"),
+            reported: Some(crate::mixnet::probe::ProbeSuccess {
+                chain: "main".to_string(),
+                height: 100,
+            }),
+            refusal: None,
+        };
+        assert!(
+            !crate::mixnet::speed::SpeedPrioritized::settled(&survey, &[healthy]),
+            "one healthy answer must not end the survey"
+        );
+    }
 
     /// HYPOTHESIS: revoking consent aborts the detached health sweep — the
     /// held task is cancelled and the slot empties — so no probe outlives
@@ -404,8 +433,8 @@ mod tests {
     const UNANSWERED_CANDIDATE: &str = "https://sweep-candidate.example";
 
     /// HYPOTHESIS: the sweep's per-candidate probe rides the shared probe
-    /// machinery, so the attempt it writes to the indexer diary carries the
-    /// latency it measured. Falsified if a sweep attempt lands with an
+    /// machinery, so the attempt it records in the session's history carries
+    /// the latency it measured. Falsified if a sweep attempt lands with an
     /// unmeasured duration while a liveness probe records a real one.
     #[tokio::test]
     async fn a_surveyed_candidate_records_the_latency_it_measured() {
@@ -428,11 +457,7 @@ mod tests {
                 held.push(socket);
             }
         });
-        let dir = tempfile::tempdir().expect("temp dir");
-        let history = crate::lightclient::indexer_history::IndexerHistoryHandle::beside_wallet(
-            &dir.path().join("zingo-wallet.dat"),
-        );
-        history.set_recording(true);
+        let history = crate::lightclient::indexer_history::IndexerHistoryHandle::default();
 
         let (reported, refusal) = probe_one(
             socks5_addr,
@@ -468,7 +493,7 @@ mod tests {
     /// latched typed cause.
     fn died_with(detail: Option<zingo_net_diag::NetOpFailure>) -> crate::mixnet::MixnetStatus {
         crate::mixnet::MixnetStatus {
-            mode: MixnetMode::Died,
+            mode: Indicator::Died,
             socks5_addr: None,
             exits: Vec::new(),
             bootstrap_detail: None,
@@ -483,7 +508,7 @@ mod tests {
     /// so far.
     fn ready_with(exits: Vec<crate::mixnet::ExitNodeId>) -> crate::mixnet::MixnetStatus {
         crate::mixnet::MixnetStatus {
-            mode: MixnetMode::Ready,
+            mode: Indicator::Ready,
             socks5_addr: Some("127.0.0.1:1080".parse().expect("the test address parses")),
             exits,
             bootstrap_detail: None,

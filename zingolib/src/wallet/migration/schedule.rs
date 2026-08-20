@@ -52,7 +52,7 @@ const TARGET_BLOCK_SPACING_SECONDS: u64 = 75;
 // blocks, 30 days) and `EXPIRY_WINDOW` (2x, about 60 days) are
 // standardized at
 // <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>;
-// `ANCHOR_AGE_CAP` (16 boundaries, about two days) at
+// `ANCHOR_AGE_CAP` (4 boundaries, about twelve hours) at
 // <https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>.
 // ANCHOR_AGE_CAP is deliberately not a `MigrationParams` field: it does
 // not feed the consent hash, so adopting it costs no existing consent.
@@ -71,11 +71,7 @@ use zcash_pool_migration::scheduling::{AnchorBucketInterval, SchedulingParams};
 /// coarse period. See
 /// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>.
 pub fn canonical_expiry_height(transmission_height: BlockHeight) -> BlockHeight {
-    // Delegates to the canonical implementation; heights cross the git
-    // dependency's type divide as u32, the workspace's standard insulation.
-    BlockHeight::from_u32(u32::from(zcash_pool_migration::scheduling::expiry_height(
-        u32::from(transmission_height).into(),
-    )))
+    zcash_pool_migration::scheduling::expiry_height(transmission_height)
 }
 
 /// The bucket containing `height`.
@@ -175,13 +171,13 @@ pub fn draw_anchor_bucket(
     let interval = AnchorBucketInterval::custom(
         NonZeroU32::new(bucket_modulus).expect("bucket modulus is nonzero by params invariant"),
     );
-    let window_boundary = u32::from(boundary_of(window, bucket_modulus));
-    let funding = floor.note_confirmed_at.map_or(0, u32::from);
     let anchor = zcash_pool_migration::scheduling::draw_anchor_boundary(
         interval,
-        u32::from(floor.activation.height()).into(),
-        funding.into(),
-        window_boundary.into(),
+        floor.activation.height(),
+        floor
+            .note_confirmed_at
+            .unwrap_or_else(|| BlockHeight::from_u32(0)),
+        boundary_of(window, bucket_modulus),
         rng,
     )?;
     Some(u64::from(u32::from(anchor)) / u64::from(bucket_modulus))
@@ -794,7 +790,7 @@ mod tests {
             let bucket = part.bucket_index.unwrap();
             assert!(bucket >= first_bucket, "current or future bucket");
             // Target is drawn from the part's boundary under the canonical
-            // delay law (mean 144, capped at 576; it may pass the window,
+            // delay law (mean 66, capped at 576; it may pass the window,
             // and the target is advisory per ADR 0017).
             let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
             let target = u32::from(part.target_height.unwrap());
@@ -1147,7 +1143,7 @@ mod tests {
         /// <https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>
         #[test]
         fn anchor_age_cap_matches_the_zip() {
-            assert_eq!(ANCHOR_AGE_CAP, 16);
+            assert_eq!(ANCHOR_AGE_CAP, 4);
         }
 
         /// Strict behavioral equivalence across the anchor-draw delegation
@@ -1192,19 +1188,14 @@ mod tests {
             }
         }
 
-        /// The `zcash_pool_migration` revision this workspace has adjudicated.
-        /// The dependency floats on zcash/librustzcash's default branch (ADR
-        /// 0020), so an ordinary `cargo update` can move it. This tripwire
-        /// makes every move loud: when the resolved revision changes, this
-        /// test fails, and the adopting commit re-runs the value tripwires
-        /// above and bumps this literal deliberately.
-        const ADJUDICATED_UPSTREAM_REV: &str = "e12f1d0ff7be5e5bfd2e4bcbb8d9a863a405f031";
+        /// The `zcash_pool_migration` release this workspace has adjudicated.
+        const ADJUDICATED_UPSTREAM_VERSION: &str = "0.1.0-rc.7";
 
-        /// Fails when the floating librustzcash dependency moves (ADR 0020's
-        /// branch-move tripwire). Reads the workspace lockfile rather than any
-        /// crate metadata, because the lockfile is where a float lands first.
+        /// Fails when the migration dependency moves (ADR 0020's movement
+        /// tripwire). Reads the workspace lockfile rather than any crate
+        /// metadata, because the lockfile is where a resolution lands first.
         #[test]
-        fn upstream_revision_is_the_adjudicated_one() {
+        fn upstream_version_is_the_adjudicated_one() {
             let lockfile = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .parent()
                 .expect("zingolib sits directly under the workspace root")
@@ -1215,10 +1206,10 @@ mod tests {
                 .find(|block| block.contains("name = \"zcash_pool_migration\""))
                 .expect("the lockfile resolves zcash_pool_migration");
             assert!(
-                package_block.contains(&format!("#{ADJUDICATED_UPSTREAM_REV}\"")),
-                "zcash_pool_migration moved off the adjudicated revision \
-                 {ADJUDICATED_UPSTREAM_REV}. Re-run the zip318 tripwires against \
-                 the new revision and bump ADJUDICATED_UPSTREAM_REV in the same \
+                package_block.contains(&format!("version = \"{ADJUDICATED_UPSTREAM_VERSION}\"")),
+                "zcash_pool_migration moved off the adjudicated release \
+                 {ADJUDICATED_UPSTREAM_VERSION}. Re-run the zip318 tripwires against \
+                 the new release and bump ADJUDICATED_UPSTREAM_VERSION in the same \
                  commit that adopts it."
             );
         }
@@ -1265,7 +1256,7 @@ mod tests {
         #[test]
         fn transfer_delay_matches_the_zip() {
             let delay = SchedulingParams::ZIP_318.transfer_delay();
-            assert_eq!(delay.mean().get(), 144);
+            assert_eq!(delay.mean().get(), 66);
             assert_eq!(delay.cap().get(), 576);
         }
 

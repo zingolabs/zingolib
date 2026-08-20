@@ -97,21 +97,18 @@ mod misplaced_session_option {
 mod mode_of_operation {
     use super::*;
     use crate::commands::CliCommand;
-    use crate::{ModeOfOperation, get_mode_of_operation};
+    use crate::{Operations, get_mode_of_operation};
 
     fn assert_interactive(args: &[&str]) {
         let matches = parse(args);
-        assert_eq!(
-            get_mode_of_operation(&matches),
-            ModeOfOperation::Interactive
-        );
+        assert_eq!(get_mode_of_operation(&matches), Operations::Interactive);
     }
 
     fn assert_command(args: &[&str], expected: CliCommand) {
         let matches = parse(args);
         assert_eq!(
             get_mode_of_operation(&matches),
-            ModeOfOperation::Command { command: expected }
+            Operations::NonInteractive { command: expected }
         );
     }
 
@@ -127,7 +124,7 @@ mod mode_of_operation {
         assert!(matches.get_flag("nosync"));
         assert_eq!(
             get_mode_of_operation(&matches),
-            ModeOfOperation::Command {
+            Operations::NonInteractive {
                 command: CliCommand::Balance
             }
         );
@@ -456,9 +453,9 @@ mod mode_of_operation {
     }
 }
 
-mod communication_mode {
+mod communications {
     use super::*;
-    use crate::{CommunicationMode, get_communication_mode};
+    use crate::{Communications, get_communications};
 
     /// A scratch data directory per test, so no stored Connectivity
     /// Consent leaks between tests or into the developer's real store.
@@ -468,14 +465,14 @@ mod communication_mode {
 
     /// Resolve the communication mode for `extra` launch arguments against
     /// the scratch store.
-    fn mode_with_dir(dir: &tempfile::TempDir, extra: &[&str]) -> CommunicationMode {
+    fn mode_with_dir(dir: &tempfile::TempDir, extra: &[&str]) -> Communications {
         let mut args = vec![
             examples::BIN_NAME,
             "--data-dir",
             dir.path().to_str().expect("utf-8 temp path"),
         ];
         args.extend_from_slice(extra);
-        get_communication_mode(&parse(&args)).expect("the mode resolves")
+        get_communications(&parse(&args)).expect("the mode resolves")
     }
 
     /// ADR 0025: first boot is offline. With no stored choice and no
@@ -483,10 +480,7 @@ mod communication_mode {
     #[test]
     fn first_boot_without_consent_is_offline() {
         let dir = scratch_dir();
-        assert_eq!(
-            mode_with_dir(&dir, &[]),
-            CommunicationMode::UnconsentedOffline
-        );
+        assert_eq!(mode_with_dir(&dir, &[]), Communications::UnconsentedOffline);
     }
 
     #[test]
@@ -494,7 +488,7 @@ mod communication_mode {
         let dir = scratch_dir();
         assert_eq!(
             mode_with_dir(&dir, &["--offline"]),
-            CommunicationMode::DeliberateOffline
+            Communications::DeliberateOffline
         );
     }
 
@@ -504,13 +498,10 @@ mod communication_mode {
     #[test]
     fn online_flag_consents_this_session_only() {
         let dir = scratch_dir();
-        assert_eq!(
-            mode_with_dir(&dir, &["--online"]),
-            CommunicationMode::Online
-        );
+        assert_eq!(mode_with_dir(&dir, &["--online"]), Communications::Online);
         assert_eq!(
             mode_with_dir(&dir, &[]),
-            CommunicationMode::UnconsentedOffline,
+            Communications::UnconsentedOffline,
             "an un-stored act must not outlive its session"
         );
     }
@@ -523,7 +514,7 @@ mod communication_mode {
         let dir = scratch_dir();
         assert_eq!(
             mode_with_dir(&dir, &["--server", examples::SERVER_URI]),
-            CommunicationMode::Online
+            Communications::Online
         );
     }
 
@@ -535,11 +526,11 @@ mod communication_mode {
         let dir = scratch_dir();
         assert_eq!(
             mode_with_dir(&dir, &["--remember-online"]),
-            CommunicationMode::Online
+            Communications::Online
         );
         assert_eq!(
             mode_with_dir(&dir, &[]),
-            CommunicationMode::Online,
+            Communications::Online,
             "the stored choice attaches later sessions automatically"
         );
     }
@@ -553,12 +544,9 @@ mod communication_mode {
         mode_with_dir(&dir, &["--remember-online"]);
         assert_eq!(
             mode_with_dir(&dir, &["--forget-online"]),
-            CommunicationMode::UnconsentedOffline
+            Communications::UnconsentedOffline
         );
-        assert_eq!(
-            mode_with_dir(&dir, &[]),
-            CommunicationMode::UnconsentedOffline
-        );
+        assert_eq!(mode_with_dir(&dir, &[]), Communications::UnconsentedOffline);
     }
 
     /// Forgetting the store and consenting for the session compose: the
@@ -570,12 +558,9 @@ mod communication_mode {
         mode_with_dir(&dir, &["--remember-online"]);
         assert_eq!(
             mode_with_dir(&dir, &["--forget-online", "--online"]),
-            CommunicationMode::Online
+            Communications::Online
         );
-        assert_eq!(
-            mode_with_dir(&dir, &[]),
-            CommunicationMode::UnconsentedOffline
-        );
+        assert_eq!(mode_with_dir(&dir, &[]), Communications::UnconsentedOffline);
     }
 
     /// The deliberate --offline outranks even a stored standing choice.
@@ -586,7 +571,7 @@ mod communication_mode {
         mode_with_dir(&dir, &["--remember-online"]);
         assert_eq!(
             mode_with_dir(&dir, &["--offline"]),
-            CommunicationMode::DeliberateOffline
+            Communications::DeliberateOffline
         );
     }
 
@@ -611,7 +596,7 @@ mod communication_mode {
                     dir.path().to_str().expect("utf-8 temp path"),
                 ];
                 args.extend(act.iter());
-                let err = get_communication_mode(&parse(&args))
+                let err = get_communications(&parse(&args))
                     .expect_err("an offline-only build must refuse every online act");
                 assert!(
                     err.to_string().contains("Offline Mode is its only mode"),
@@ -625,10 +610,7 @@ mod communication_mode {
             let dir = scratch_dir();
             zingolib::connectivity::store_standing_online(dir.path())
                 .expect("the store writes in a scratch directory");
-            assert_eq!(
-                mode_with_dir(&dir, &[]),
-                CommunicationMode::UnconsentedOffline
-            );
+            assert_eq!(mode_with_dir(&dir, &[]), Communications::UnconsentedOffline);
         }
 
         #[test]
@@ -638,7 +620,7 @@ mod communication_mode {
                 .expect("the store writes in a scratch directory");
             assert_eq!(
                 mode_with_dir(&dir, &["--forget-online"]),
-                CommunicationMode::UnconsentedOffline
+                Communications::UnconsentedOffline
             );
             assert!(matches!(
                 zingolib::connectivity::load_connectivity_consent(dir.path()),
@@ -799,21 +781,87 @@ mod sync {
     }
 }
 
+#[cfg(feature = "nym")]
+mod sync_recovery {
+    use pepper_sync::error::SyncRecoveryObservables;
+
+    use crate::{RecoveryAction, SYNC_RECOVERY_ATTEMPT_BUDGET, plan_recovery};
+
+    #[test]
+    fn a_condemned_server_redraws_when_the_session_may() {
+        assert_eq!(
+            plan_recovery(
+                SyncRecoveryObservables::ServerUnavailable,
+                SYNC_RECOVERY_ATTEMPT_BUDGET,
+                true,
+            ),
+            RecoveryAction::Redraw
+        );
+    }
+
+    #[test]
+    fn a_condemned_server_parks_a_session_that_may_not_redraw() {
+        assert_eq!(
+            plan_recovery(
+                SyncRecoveryObservables::ServerUnavailable,
+                SYNC_RECOVERY_ATTEMPT_BUDGET,
+                false,
+            ),
+            RecoveryAction::Park
+        );
+    }
+
+    #[test]
+    fn a_recoverable_error_relaunches_against_the_same_server() {
+        assert_eq!(
+            plan_recovery(
+                SyncRecoveryObservables::MaybeRecoverableServer,
+                SYNC_RECOVERY_ATTEMPT_BUDGET,
+                false,
+            ),
+            RecoveryAction::Relaunch
+        );
+    }
+
+    #[test]
+    fn an_abort_parks_regardless_of_budget_and_redraw() {
+        assert_eq!(
+            plan_recovery(
+                SyncRecoveryObservables::Abort,
+                SYNC_RECOVERY_ATTEMPT_BUDGET,
+                true,
+            ),
+            RecoveryAction::Park
+        );
+    }
+
+    #[test]
+    fn an_exhausted_budget_parks_every_class() {
+        for observable in [
+            SyncRecoveryObservables::MaybeRecoverableServer,
+            SyncRecoveryObservables::ServerUnavailable,
+            SyncRecoveryObservables::Abort,
+        ] {
+            assert_eq!(plan_recovery(observable, 0, true), RecoveryAction::Park);
+        }
+    }
+}
+
 mod config_template {
     use super::*;
     use crate::{
-        ConfigTemplate, ModeOfOperation, build_zingo_config, get_communication_mode,
+        CliConfigTemplate, Operations, build_zingo_config, get_communications,
         get_mode_of_operation,
     };
     use std::path::PathBuf;
     use zingolib::config::ChainType;
 
     /// Helper: parse args, determine mode and communication mode, and call fill.
-    fn fill(args: &[&str]) -> Result<ConfigTemplate, String> {
+    fn fill(args: &[&str]) -> Result<CliConfigTemplate, String> {
         let matches = parse(args);
         let mode = get_mode_of_operation(&matches);
-        let communication_mode = get_communication_mode(&matches).map_err(|e| e.to_string())?;
-        ConfigTemplate::fill(mode, communication_mode, matches).map_err(|e| e.to_string())
+        let communications = get_communications(&matches).map_err(|e| e.to_string())?;
+        CliConfigTemplate::fill(mode, communications, matches).map_err(|e| e.to_string())
     }
 
     /// HYPOTHESIS: the flag outranks the environment, the environment
@@ -849,7 +897,7 @@ mod config_template {
     /// Helper: build the ZingoConfig for a filled template. The builder is
     /// async, so the tests hold their own crossing into the runtime.
     #[allow(clippy::disallowed_methods)]
-    fn build(filled: &ConfigTemplate) -> zingolib::config::ClientConfig {
+    fn build(filled: &CliConfigTemplate) -> zingolib::config::ClientConfig {
         crate::commands::RT
             .block_on(build_zingo_config(filled))
             .unwrap()
@@ -862,15 +910,12 @@ mod config_template {
 
     mod offline {
         use super::*;
-        use crate::CommunicationMode;
+        use crate::Communications;
 
         #[test]
         fn fill_resolves_no_server_and_disables_sync() {
             let config = fill(&[examples::BIN_NAME, "--offline"]).unwrap();
-            assert_eq!(
-                config.communication_mode,
-                CommunicationMode::DeliberateOffline
-            );
+            assert_eq!(config.communications, Communications::DeliberateOffline);
             assert!(config.server.is_none());
             assert!(!config.sync, "an Offline-mode session cannot sync");
         }
@@ -944,7 +989,7 @@ mod config_template {
         // Consumed only by the nym-gated `defaults` test: the offline-only
         // build never reaches an Online communication mode (ADR 0026).
         #[cfg(feature = "nym")]
-        use crate::CommunicationMode;
+        use crate::Communications;
 
         /// An explicit `--server` is an online act, which only nym builds
         /// accept (ADR 0026).
@@ -954,13 +999,13 @@ mod config_template {
             let config = fill(&[examples::BIN_NAME, "--server", examples::SERVER_URI]).unwrap();
             assert_eq!(config.data_dir, PathBuf::from("wallets"));
             assert_eq!(config.chaintype, ChainType::Mainnet);
-            assert_eq!(config.communication_mode, CommunicationMode::Online);
+            assert_eq!(config.communications, Communications::Online);
             assert!(config.sync);
             assert!(!config.waitsync);
             assert!(config.seed.is_none());
             assert!(config.ufvk.is_none());
             assert_eq!(config.birthday, 0);
-            assert!(matches!(config.mode, ModeOfOperation::Interactive));
+            assert!(matches!(config.mode, Operations::Interactive));
         }
 
         /// `--online` exists as a consented act only in nym builds; the
@@ -1015,7 +1060,7 @@ mod config_template {
             let config = fill(&[examples::BIN_NAME, "balance"]).unwrap();
             assert_eq!(
                 config.mode,
-                ModeOfOperation::Command {
+                Operations::NonInteractive {
                     command: crate::commands::CliCommand::Balance,
                 }
             );
@@ -1227,7 +1272,7 @@ mod config_template {
         fn an_online_requiring_command_after_online_is_accepted() {
             let config = fill(&[examples::BIN_NAME, "--online", "sync", "run"])
                 .expect("sync run requires online");
-            assert!(matches!(config.mode, ModeOfOperation::Command { .. }));
+            assert!(matches!(config.mode, Operations::NonInteractive { .. }));
         }
 
         #[test]
@@ -1242,7 +1287,7 @@ mod config_template {
             // No command means no one-shot to judge; `--online` opens a
             // connected prompt.
             let config = fill(&[examples::BIN_NAME, "--online"]).expect("interactive online");
-            assert!(matches!(config.mode, ModeOfOperation::Interactive));
+            assert!(matches!(config.mode, Operations::Interactive));
         }
     }
 }
@@ -1257,7 +1302,7 @@ mod offline_mode_pin {
     use crate::commands::{
         CliCommand, DrainSubCommand, MigrationSubCommand, SplitSubCommand, SyncSubCommand,
     };
-    use crate::{CommunicationMode, offline_mode_refusal};
+    use crate::{Communications, offline_mode_refusal};
 
     /// One sample per network-requiring shape the gate must refuse.
     fn network_requiring() -> Vec<CliCommand> {
@@ -1322,9 +1367,9 @@ mod offline_mode_pin {
     #[test]
     fn offline_postures_refuse_the_network_requiring_surface() {
         for command in network_requiring() {
-            let deliberate = offline_mode_refusal(CommunicationMode::DeliberateOffline, &command)
+            let deliberate = offline_mode_refusal(Communications::DeliberateOffline, &command)
                 .unwrap_or_else(|| panic!("`{}` must be refused under --offline", command.name()));
-            let unconsented = offline_mode_refusal(CommunicationMode::UnconsentedOffline, &command)
+            let unconsented = offline_mode_refusal(Communications::UnconsentedOffline, &command)
                 .unwrap_or_else(|| panic!("`{}` must be refused without consent", command.name()));
             #[cfg(feature = "nym")]
             {
@@ -1351,18 +1396,15 @@ mod offline_mode_pin {
     fn the_network_family_survives_only_where_consent_can_be_granted() {
         let network = CliCommand::Network { sub: None };
         assert!(
-            offline_mode_refusal(CommunicationMode::DeliberateOffline, &network).is_some(),
+            offline_mode_refusal(Communications::DeliberateOffline, &network).is_some(),
             "--offline suppresses the whole network family"
         );
         assert_eq!(
-            offline_mode_refusal(CommunicationMode::UnconsentedOffline, &network),
+            offline_mode_refusal(Communications::UnconsentedOffline, &network),
             None,
             "`network on` is the unconsented session's consent act"
         );
-        assert_eq!(
-            offline_mode_refusal(CommunicationMode::Online, &network),
-            None
-        );
+        assert_eq!(offline_mode_refusal(Communications::Online, &network), None);
     }
 
     /// HYPOTHESIS: the gate spares every Indexerless capability in every
@@ -1371,9 +1413,9 @@ mod offline_mode_pin {
     fn every_indexerless_capability_passes_the_gate() {
         for command in indexerless() {
             for mode in [
-                CommunicationMode::Online,
-                CommunicationMode::DeliberateOffline,
-                CommunicationMode::UnconsentedOffline,
+                Communications::Online,
+                Communications::DeliberateOffline,
+                Communications::UnconsentedOffline,
             ] {
                 assert_eq!(
                     offline_mode_refusal(mode, &command),
@@ -1390,7 +1432,7 @@ mod offline_mode_pin {
     fn online_passes_the_whole_surface() {
         for command in network_requiring() {
             assert_eq!(
-                offline_mode_refusal(CommunicationMode::Online, &command),
+                offline_mode_refusal(Communications::Online, &command),
                 None,
                 "`{}` must pass online",
                 command.name()
@@ -1554,7 +1596,7 @@ mod sweep_pin_policy {
         let alternative: http::Uri = "https://healthy.example:443/"
             .parse()
             .expect("the alternative parses");
-        let command_mode = crate::ModeOfOperation::Command {
+        let command_mode = crate::Operations::NonInteractive {
             command: crate::commands::CliCommand::Balance,
         };
         assert!(!crate::consent_to_fallback(&command_mode, &alternative));

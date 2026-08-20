@@ -33,7 +33,7 @@ pub struct SurveyResult {
 pub struct RefusalTally(Vec<(FailureKind, usize)>);
 
 impl RefusalTally {
-    /// Counts the refusals of `results` in the diary vocabulary's order.
+    /// Counts the refusals of `results` in the history's vocabulary order.
     pub fn of(results: &[SurveyResult]) -> Self {
         const KINDS: [FailureKind; 5] = [
             FailureKind::Timeout,
@@ -220,39 +220,39 @@ fn healthy(result: &SurveyResult, chain: &str) -> bool {
         .is_some_and(|info| info.chain == chain)
 }
 
-/// The first-healthy verdict over the results seen so far: the pin the
-/// moment it answers on `chain`, any healthy candidate once the pin has
-/// refused or no pin exists, and `None` while the decision still awaits the
-/// pin or a first healthy answer.
-pub fn first_healthy_verdict(
+/// The verdict over the assigned survey (ruled 2026-08-14): a healthy pin
+/// wins outright, otherwise the sync indexer is drawn among every healthy
+/// answer because all of them are draw-eligible, and `None` awaits the pin
+/// or any healthy answer.
+pub fn healthy_draw_verdict(
     results: &[SurveyResult],
     chain: &str,
     pin: Option<&Uri>,
+    rng: &mut impl rand::Rng,
 ) -> Option<Uri> {
-    let first_healthy = || {
-        results
+    use rand::seq::SliceRandom as _;
+    let drawn = |rng: &mut _| {
+        let healthy_set: Vec<&Uri> = results
             .iter()
-            .find(|result| healthy(result, chain))
-            .map(|result| result.uri.clone())
+            .filter(|result| healthy(result, chain))
+            .map(|result| &result.uri)
+            .collect();
+        healthy_set.choose(rng).map(|uri| (*uri).clone())
     };
     match pin {
         Some(pin) => match results.iter().find(|result| &result.uri == pin) {
             Some(of_pin) if healthy(of_pin, chain) => Some(pin.clone()),
-            Some(_refused) => first_healthy(),
+            Some(_refused) => drawn(rng),
             None => None,
         },
-        None => first_healthy(),
+        None => drawn(rng),
     }
 }
 
-/// The [`Selection`] a first-healthy verdict yields: the verdict as the
-/// sync indexer, every healthy answer seen so far as the height-descending
-/// cohort, and the transmit candidates that exclude the verdict's operator.
-pub fn first_healthy_selection(
-    results: &[SurveyResult],
-    chain: &str,
-    sync_indexer: Uri,
-) -> Selection {
+/// The [`Selection`] a verdict yields: the verdict as the sync indexer,
+/// every healthy answer as the height-descending cohort, and the transmit
+/// candidates that exclude the verdict's operator.
+pub fn assigned_selection(results: &[SurveyResult], chain: &str, sync_indexer: Uri) -> Selection {
     let mut cohort: Vec<LiveCandidate> = results
         .iter()
         .filter(|result| healthy(result, chain))
@@ -564,19 +564,54 @@ mod tests {
         assert_eq!(RefusalTally::of(&[]).to_string(), "");
     }
 
-    /// HYPOTHESIS: without a pin, the first healthy answer is the verdict
-    /// the moment it exists, and a wrong-chain answer is not healthy.
-    /// Falsified if silence or a wrong-chain answer forms the verdict.
+    /// Trials enough that a find-first verdict's repetition is unmistakable.
+    const DRAW_SPREAD_TRIALS: usize = 12;
+
+    /// HYPOTHESIS: every healthy indexer is draw-eligible, so repeated
+    /// unpinned verdicts over one three-healthy survey reach more than one
+    /// distinct sync indexer. Falsified if the verdict binds the same
+    /// indexer every time.
     #[test]
-    fn the_first_healthy_answer_is_the_unpinned_verdict() {
+    fn every_healthy_indexer_is_draw_eligible() {
+        let seen = vec![
+            answered("https://a.example:443", "main", 100),
+            answered("https://b.example:443", "main", 100),
+            silent("https://c.example:443"),
+            answered("https://d.example:443", "main", 100),
+        ];
+        let mut distinct = std::collections::HashSet::new();
+        for trial in 0..DRAW_SPREAD_TRIALS {
+            distinct.insert(
+                healthy_draw_verdict(
+                    &seen,
+                    "main",
+                    None,
+                    &mut StdRng::seed_from_u64(trial as u64),
+                )
+                .expect("healthy answers exist"),
+            );
+        }
+        assert!(
+            distinct.len() > 1,
+            "the verdict bound one indexer every time: healthy answers \
+             are not draw-eligible"
+        );
+    }
+
+    /// HYPOTHESIS: without a pin, a sole healthy answer is the verdict the
+    /// moment it exists, and a wrong-chain answer is not healthy. Falsified
+    /// if silence or a wrong-chain answer forms the verdict.
+    #[test]
+    fn a_sole_healthy_answer_is_the_unpinned_verdict() {
         let mut seen = vec![
             silent("https://a.example:443"),
             answered("https://test.example:443", "test", 100),
         ];
-        assert_eq!(first_healthy_verdict(&seen, "main", None), None);
+        let mut rng = StdRng::seed_from_u64(0);
+        assert_eq!(healthy_draw_verdict(&seen, "main", None, &mut rng), None);
         seen.push(answered("https://b.example:443", "main", 100));
         assert_eq!(
-            first_healthy_verdict(&seen, "main", None),
+            healthy_draw_verdict(&seen, "main", None, &mut rng),
             Some(uri("https://b.example:443"))
         );
     }
@@ -587,38 +622,45 @@ mod tests {
     #[test]
     fn the_pin_preempts_earlier_answers_when_it_answers() {
         let pin = uri("https://pin.example:443");
+        let mut rng = StdRng::seed_from_u64(0);
         let mut seen = vec![answered("https://fast.example:443", "main", 100)];
-        assert_eq!(first_healthy_verdict(&seen, "main", Some(&pin)), None);
+        assert_eq!(
+            healthy_draw_verdict(&seen, "main", Some(&pin), &mut rng),
+            None
+        );
         seen.push(answered("https://pin.example:443", "main", 100));
-        assert_eq!(first_healthy_verdict(&seen, "main", Some(&pin)), Some(pin));
+        assert_eq!(
+            healthy_draw_verdict(&seen, "main", Some(&pin), &mut rng),
+            Some(pin)
+        );
     }
 
-    /// HYPOTHESIS: once the pin has refused, the verdict is the first
-    /// healthy answer already seen. Falsified if the refusal blocks it.
+    /// HYPOTHESIS: once the pin has refused, the verdict is drawn among the
+    /// healthy answers already seen. Falsified if the refusal blocks it.
     #[test]
-    fn a_refused_pin_yields_to_the_first_healthy_answer() {
+    fn a_refused_pin_yields_to_the_drawn_healthy_answer() {
         let pin = uri("https://pin.example:443");
         let seen = vec![
             answered("https://fast.example:443", "main", 100),
             silent("https://pin.example:443"),
         ];
         assert_eq!(
-            first_healthy_verdict(&seen, "main", Some(&pin)),
+            healthy_draw_verdict(&seen, "main", Some(&pin), &mut StdRng::seed_from_u64(0)),
             Some(uri("https://fast.example:443"))
         );
     }
 
-    /// HYPOTHESIS: the first-healthy selection carries every healthy answer
+    /// HYPOTHESIS: the assigned selection carries every healthy answer
     /// as its height-descending cohort and excludes the verdict's operator
     /// from the transmit candidates. Falsified if either property drifts.
     #[test]
-    fn the_first_healthy_selection_reports_its_evidence() {
+    fn the_assigned_selection_reports_its_evidence() {
         let results = vec![
             answered("https://na.zec.rocks:443", "main", 101),
             answered("https://other.example:443", "main", 102),
             silent("https://dead.example:443"),
         ];
-        let selection = first_healthy_selection(&results, "main", uri("https://na.zec.rocks:443"));
+        let selection = assigned_selection(&results, "main", uri("https://na.zec.rocks:443"));
         assert_eq!(
             selection
                 .cohort

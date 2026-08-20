@@ -87,6 +87,6 @@ in, and a session that wants clearnet transmits reaches them through
 CI's `--workspace` jobs now compile the CLI's gated code as a matter of
 course; the `nym-feature` job keeps zingolib's gated tests (zingolib's
 own default remains nym-off, so library consumers such as zingo-mobile
-inherit nothing new), adds the `nym-diary` combination, and pins the
-opt-out build's offline-only refusals. The `--clearnet` path of run-cli
+inherit nothing new) and pins the opt-out build's offline-only
+refusals. The `--clearnet` path of run-cli
 passes `--no-default-features` instead of omitting a feature flag.

@@ -1,18 +1,18 @@
 //! The fail-closed route resolver shared by every mixnet-only surface.
 //!
 //! Send and price-fetch both obey one policy (ADR 0011): when Mixnet Mode is
-//! [`Ready`](crate::mixnet::MixnetMode::Ready) they route through the local
+//! [`Ready`](crate::mixnet::Indicator::Ready) they route through the local
 //! SOCKS5 proxy. When it is
-//! [`SwitchedOff`](crate::mixnet::MixnetMode::SwitchedOff), reachable only by
+//! [`SwitchedOff`](crate::mixnet::Indicator::SwitchedOff), reachable only by
 //! the user's deliberate toggle-off, they route over clearnet as informed
-//! consent. While [`Unattached`](crate::mixnet::MixnetMode::Unattached),
-//! [`Bootstrapping`](crate::mixnet::MixnetMode::Bootstrapping), or after
-//! [`Died`](crate::mixnet::MixnetMode::Died) they refuse rather than leak to
+//! consent. While [`Unattached`](crate::mixnet::Indicator::Unattached),
+//! [`Bootstrapping`](crate::mixnet::Indicator::Bootstrapping), or after
+//! [`Died`](crate::mixnet::Indicator::Died) they refuse rather than leak to
 //! clearnet. This module names that decision once so both surfaces share it
 //! instead of each re-deriving the mode semantics.
 #![forbid(unsafe_code)]
 
-use crate::mixnet::MixnetMode;
+use crate::mixnet::Indicator;
 
 /// The session slot's tunnel, whose one exit is Shared across every
 /// request the slot's surfaces send to a Correspondent.
@@ -43,7 +43,7 @@ impl SlotTunnel {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MixnetRoute {
     /// Route over clearnet. Reached only when Mixnet Mode is
-    /// [`SwitchedOff`](MixnetMode::SwitchedOff), i.e. the user deliberately
+    /// [`SwitchedOff`](Indicator::SwitchedOff), i.e. the user deliberately
     /// toggled it off.
     Clearnet,
     /// Route through the Standing Client's tunnel.
@@ -83,21 +83,21 @@ pub enum MixnetNotReady {
 /// `Died`, or `Ready` before an address is published all refuse rather
 /// than leak a send to clearnet without consent.
 pub fn resolve_route(
-    mode: MixnetMode,
+    mode: Indicator,
     socks5_addr: Option<std::net::SocketAddr>,
 ) -> Result<MixnetRoute, MixnetNotReady> {
     match mode {
-        MixnetMode::Unattached => Err(MixnetNotReady::Unattached),
-        MixnetMode::SwitchedOff => Ok(MixnetRoute::Clearnet),
+        Indicator::Unattached => Err(MixnetNotReady::Unattached),
+        Indicator::SwitchedOff => Ok(MixnetRoute::Clearnet),
         // Stale-proven routes exactly as earned Ready: the difference is
         // evidentiary, resolved by the promotion and demotion loop, never
         // by refusing the surface.
-        MixnetMode::Ready | MixnetMode::PreviouslyProvenThisEpoch => socks5_addr
+        Indicator::Ready | Indicator::PreviouslyProvenThisEpoch => socks5_addr
             .map(SlotTunnel::over)
             .map(MixnetRoute::Mixnet)
             .ok_or(MixnetNotReady::Bootstrapping),
-        MixnetMode::Bootstrapping => Err(MixnetNotReady::Bootstrapping),
-        MixnetMode::Died => Err(MixnetNotReady::Died),
+        Indicator::Bootstrapping => Err(MixnetNotReady::Bootstrapping),
+        Indicator::Died => Err(MixnetNotReady::Died),
     }
 }
 
@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn switched_off_routes_clearnet() {
         assert_eq!(
-            resolve_route(MixnetMode::SwitchedOff, None),
+            resolve_route(Indicator::SwitchedOff, None),
             Ok(MixnetRoute::Clearnet)
         );
     }
@@ -119,12 +119,12 @@ mod tests {
         // (or whose enable failed) has not consented to clearnet, so it
         // refuses exactly as bootstrapping and died do.
         assert_eq!(
-            resolve_route(MixnetMode::Unattached, None),
+            resolve_route(Indicator::Unattached, None),
             Err(MixnetNotReady::Unattached)
         );
         assert_eq!(
             resolve_route(
-                MixnetMode::Unattached,
+                Indicator::Unattached,
                 Some("127.0.0.1:9050".parse().expect("the test address parses"))
             ),
             Err(MixnetNotReady::Unattached),
@@ -135,7 +135,7 @@ mod tests {
     #[test]
     fn ready_routes_through_the_proxy() {
         let route = resolve_route(
-            MixnetMode::Ready,
+            Indicator::Ready,
             Some("127.0.0.1:9050".parse().expect("the test address parses")),
         );
         match route.unwrap() {
@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn bootstrapping_refuses_rather_than_leak() {
         assert_eq!(
-            resolve_route(MixnetMode::Bootstrapping, None),
+            resolve_route(Indicator::Bootstrapping, None),
             Err(MixnetNotReady::Bootstrapping)
         );
     }
@@ -162,12 +162,12 @@ mod tests {
         // The critical invariant: an unexpected proxy death is NOT consent to
         // clearnet. Even with a stale address still on hand, Died refuses.
         assert_eq!(
-            resolve_route(MixnetMode::Died, None),
+            resolve_route(Indicator::Died, None),
             Err(MixnetNotReady::Died)
         );
         assert_eq!(
             resolve_route(
-                MixnetMode::Died,
+                Indicator::Died,
                 Some("127.0.0.1:9050".parse().expect("the test address parses"))
             ),
             Err(MixnetNotReady::Died),
@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn ready_without_an_address_refuses() {
         assert_eq!(
-            resolve_route(MixnetMode::Ready, None),
+            resolve_route(Indicator::Ready, None),
             Err(MixnetNotReady::Bootstrapping)
         );
     }

@@ -79,6 +79,7 @@ impl LightWallet {
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
             &SpendPolicy::default(),
             None,
+            None,
         )
         .map_err(ProposeSendError::Proposal)
     }
@@ -137,6 +138,7 @@ impl LightWallet {
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
             zcash_client_backend::data_api::CoinbaseFilter::AllTransparentOutputs,
+            None,
         )
         .map_err(ProposeShieldError::Component)?;
 

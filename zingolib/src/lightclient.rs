@@ -168,11 +168,12 @@ pub struct LightClient {
     /// `transmit_transactions` (submissions, retries, probes, escalation rounds)
     /// and cleared when the transmission ends.
     transmit_progress: transmit::TransmitProgressHandle,
-    /// The cross-session per-indexer attempt history (the indexer diary).
-    /// Disk-backed only under the `nym-diary` feature, and recording only
-    /// after the session opts in via `set_indexer_diary`. Otherwise the
-    /// handle is inert.
+    /// This session's per-indexer attempt history, held in memory for the
+    /// life of the process and never written beside the wallet.
     indexer_history: indexer_history::IndexerHistoryHandle,
+    /// The interval between transmit retries and queued-verdict probes, held
+    /// here so a test can exhaust a probe budget without waiting it out.
+    transmit_retry_interval: std::time::Duration,
     /// The mixnet transport slot (ADR 0011, amendment 2026-07-28): the
     /// explicit state Mixnet Mode is read from — unattached, switched off,
     /// or an attached transport. Explicit rather than `Option` so a
@@ -282,12 +283,8 @@ impl LightClient {
             split_progress: migrate::SplitProgressHandle::default(),
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
-            #[cfg(feature = "nym-diary")]
-            indexer_history: indexer_history::IndexerHistoryHandle::beside_wallet(
-                &config.get_wallet_path(),
-            ),
-            #[cfg(not(feature = "nym-diary"))]
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            transmit_retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
             #[cfg(feature = "nym")]
             mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Unattached,
@@ -335,6 +332,7 @@ impl LightClient {
             // Synthetic test wallets have no durable directory; the default
             // handle records nowhere and loads empty.
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            transmit_retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
             #[cfg(feature = "nym")]
             mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Unattached,
@@ -397,12 +395,8 @@ impl LightClient {
             split_progress: migrate::SplitProgressHandle::default(),
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
-            #[cfg(feature = "nym-diary")]
-            indexer_history: indexer_history::IndexerHistoryHandle::beside_wallet(
-                &config.get_wallet_path(),
-            ),
-            #[cfg(not(feature = "nym-diary"))]
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            transmit_retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
             #[cfg(feature = "nym")]
             mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Unattached,
@@ -441,24 +435,17 @@ impl LightClient {
         self.transmit_progress.clone()
     }
 
-    /// A cloneable handle to the cross-session per-indexer attempt history
-    /// (the indexer diary).
-    /// [`indexer_history::IndexerHistoryHandle::load`] reads the accumulated
-    /// record for display or scoring. Transmission arms and diagnostic probes
-    /// append to it only in a `nym-diary` build whose session has opted in
-    /// via `set_indexer_diary`. In every other configuration the handle is
-    /// inert and loads empty.
-    pub fn indexer_history_handle(&self) -> indexer_history::IndexerHistoryHandle {
-        self.indexer_history.clone()
+    /// A cloneable handle to this session's per-indexer attempt history,
+    /// which [`indexer_history::IndexerHistoryHandle::load`] reads for
+    /// display or scoring.
+    /// Sets the interval this client waits between transmit retries and queued-verdict probes.
+    #[cfg(feature = "testutils")]
+    pub fn set_transmit_retry_interval(&mut self, interval: std::time::Duration) {
+        self.transmit_retry_interval = interval;
     }
 
-    /// Opt this session in to (or back out of) recording the indexer diary:
-    /// one sanitized line per transmission arm or probe leg, appended to
-    /// `indexer-history.tsv` beside the wallet. The choice is never
-    /// persisted, and every session starts with recording off.
-    #[cfg(feature = "nym-diary")]
-    pub fn set_indexer_diary(&self, record: bool) {
-        self.indexer_history.set_recording(record);
+    pub fn indexer_history_handle(&self) -> indexer_history::IndexerHistoryHandle {
+        self.indexer_history.clone()
     }
 
     /// A cloneable handle to the migration's live progress. Grab it *before*
@@ -743,7 +730,7 @@ impl LightClient {
 
     /// Record the deliberate clearnet consent for a test client: with the
     /// mixnet compiled in, the slot moves to
-    /// [`MixnetMode::SwitchedOff`](crate::mixnet::MixnetMode) — the same act
+    /// [`Indicator::SwitchedOff`](crate::mixnet::Indicator) — the same act
     /// the CLI's `network off` performs — so scenario sends transmit over
     /// clearnet instead of refusing `MixnetNotReady`. Without the `nym`
     /// feature the wallet has no mixnet surface and this is a no-op.

@@ -124,7 +124,6 @@ fn record_probe(
             .as_ref()
             .err()
             .map(|failure| crate::mixnet::charge_phase(&failure.stage)),
-        exit: None,
         outcome: match &leg.outcome {
             Ok(_) => Ok(()),
             // The history store is a pre-existing rendered-text seam
