@@ -2149,29 +2149,20 @@ pub fn get_total_spends_to_address() -> Result<String, ZingolibError> {
 }
 
 pub fn zec_price() -> Result<String, ZingolibError> {
-    // zingolib fetches price only over the mixnet (ADR 0011). A mixnet that is
-    // on but not ready still refuses, so an enabled private route never
-    // silently drops to clearnet. Only the wallet fetch needs the lightclient.
-    let mixnet_price = with_initialized_lightclient(|lightclient| {
+    // This wallet fetches price over the mixnet or not at all (ADR 0011).
+    // Every refusal the lightclient raises reaches the caller as one, the
+    // deliberate switch-off included: a price oracle learns the IP that asked
+    // it and when, which is a profile of when this wallet is awake, and no
+    // phone should hand that over as the cost of showing a number.
+    let usd = with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
-            match lightclient.update_current_price().await {
-                Ok(fetch) => Ok(Some(fetch.usd)),
-                Err(LightClientError::PriceFetchRequiresMixnet) => Ok(None),
-                Err(e) => Err(ffi_error(e)),
-            }
+            lightclient
+                .update_current_price()
+                .await
+                .map(|fetch| fetch.usd)
+                .map_err(ffi_error)
         })
     })?;
-    // The price oracle is non-sensitive, so a mixnet deliberately switched off
-    // fetches over clearnet, off the lightclient lock.
-    let usd = match mixnet_price {
-        Some(usd) => usd,
-        None => {
-            RT.block_on(zingo_price::race_current_price(None))
-                .map_err(ZingolibError::read)?
-                .price
-                .price_usd
-        }
-    };
     Ok(object! { "current_price" => usd }.pretty(2))
 }
 
