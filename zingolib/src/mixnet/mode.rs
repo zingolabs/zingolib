@@ -125,8 +125,10 @@ pub(crate) enum MixnetSlot {
     /// channel — the address is never dialed.
     #[cfg(any(test, feature = "testutils"))]
     AttachedForTests {
-        /// The address the route resolver hands to Ready-mode surfaces.
+        /// The address the stand-in publishes into its status.
         socks5_addr: std::net::SocketAddr,
+        /// The conduit the route resolver hands to Ready-mode surfaces.
+        conduit: crate::mixnet::MixnetConduit,
     },
 }
 
@@ -154,6 +156,10 @@ pub(crate) struct StandingClient {
     /// The instant this client's proof stops being epoch-fresh, when a new
     /// ProofAcquisition is due.
     proof_deadline: std::sync::Mutex<std::time::Instant>,
+    /// The one conduit every surface routes through, minted when the
+    /// transport first announces its address and shared by clone from
+    /// there, so a rotation supersedes what the whole session is using.
+    conduit: std::sync::Mutex<Option<crate::mixnet::MixnetConduit>>,
 }
 
 impl StandingClient {
@@ -175,7 +181,21 @@ impl StandingClient {
             proof_deadline: std::sync::Mutex::new(
                 std::time::Instant::now() + zingo_netutils::time::NYM_EPOCH,
             ),
+            conduit: std::sync::Mutex::new(None),
         }
+    }
+
+    /// The client's conduit, minted on the first read that finds an
+    /// announced address and the same conduit for every read after.
+    pub(crate) fn conduit(&self) -> Option<crate::mixnet::MixnetConduit> {
+        let mut held = self.conduit.lock().expect("conduit mutex");
+        if held.is_none() {
+            *held = self
+                .proxy
+                .socks5_addr()
+                .map(crate::mixnet::MixnetConduit::over);
+        }
+        held.clone()
     }
 
     /// The client's transport.
@@ -252,6 +272,35 @@ impl StandingClient {
     pub(crate) async fn stop(self) {
         self.proxy.stop().await;
     }
+
+    /// Hands the session to a replacement: supersedes this client's conduit
+    /// so no new work dials it, waits for the work already dialed to
+    /// finish, then stops.
+    pub(crate) async fn retire(self) {
+        let Some(conduit) = self.conduit() else {
+            // A client with no announced address carried nothing, so there
+            // is nothing to drain.
+            self.stop().await;
+            return;
+        };
+        conduit.supersede();
+        let deadline = std::time::Instant::now() + zingo_netutils::time::CONDUIT_DRAIN_BUDGET;
+        while conduit.state() != zingo_netutils::conduit::ConduitState::Retired {
+            if std::time::Instant::now() >= deadline {
+                // A guard outliving the longest bounded operation is a leak,
+                // not slow work: holding the transport open for it would
+                // keep two clients alive for the rest of the session.
+                tracing::warn!(
+                    "a superseded conduit still had {} use(s) outstanding after its drain \
+                     budget; stopping the transport regardless",
+                    conduit.in_flight()
+                );
+                break;
+            }
+            tokio::time::sleep(zingo_netutils::time::CONDUIT_DRAIN_POLL).await;
+        }
+        self.stop().await;
+    }
 }
 
 impl MixnetSlot {
@@ -303,15 +352,26 @@ impl MixnetSlot {
         }
     }
 
-    /// The local SOCKS5 address the route resolver hands to Ready-mode
-    /// surfaces, wherever the slot keeps it: the Standing Client's announced
-    /// address when one is attached, the pinned address of a test stand-in.
+    /// The local SOCKS5 address a published status carries, wherever the
+    /// slot keeps it: the Standing Client's announced address when one is
+    /// attached, the pinned address of a test stand-in.
     pub(crate) fn socks5_addr(&self) -> Option<std::net::SocketAddr> {
         match self {
             MixnetSlot::Attached(client) => client.proxy().socks5_addr(),
             MixnetSlot::Unattached | MixnetSlot::SwitchedOff => None,
             #[cfg(any(test, feature = "testutils"))]
-            MixnetSlot::AttachedForTests { socks5_addr } => Some(*socks5_addr),
+            MixnetSlot::AttachedForTests { socks5_addr, .. } => Some(*socks5_addr),
+        }
+    }
+
+    /// The conduit the route resolver hands to Ready-mode surfaces, one per
+    /// attached client so a rotation supersedes what the session is using.
+    pub(crate) fn conduit(&self) -> Option<crate::mixnet::MixnetConduit> {
+        match self {
+            MixnetSlot::Attached(client) => client.conduit(),
+            MixnetSlot::Unattached | MixnetSlot::SwitchedOff => None,
+            #[cfg(any(test, feature = "testutils"))]
+            MixnetSlot::AttachedForTests { conduit, .. } => Some(conduit.clone()),
         }
     }
 
@@ -489,6 +549,93 @@ mod stale_proof {
         );
         let slot = MixnetSlot::Attached(StandingClient::new(proxy, None, true));
         assert_eq!(slot.mode(), Indicator::Ready);
+    }
+}
+
+#[cfg(test)]
+mod hand_off {
+    use super::StandingClient;
+    use zingo_netutils::conduit::ConduitState;
+
+    /// How many recheck intervals a held guard is observed across before
+    /// the wait is called a wait rather than a scheduling accident.
+    const DRAIN_OBSERVATION_POLLS: u32 = 3;
+
+    fn client() -> StandingClient {
+        let proxy = crate::mixnet::MixnetProxy::ready_for_slot_tests(
+            "127.0.0.1:1080".parse().expect("the test address parses"),
+            vec![crate::mixnet::ExitNodeId::from("exit-handed-off")],
+        );
+        StandingClient::new(proxy, None, true)
+    }
+
+    /// HYPOTHESIS: a client mints one conduit and hands the same one to
+    /// every reader, so superseding it reaches work the session already
+    /// routed. Falsified if two reads yield conduits with separate counts.
+    #[tokio::test]
+    async fn a_client_hands_every_reader_the_same_conduit() {
+        let client = client();
+        let first = client.conduit().expect("a ready client mints its conduit");
+        let second = client.conduit().expect("the conduit is minted once");
+        let held = first.dial();
+        assert_eq!(
+            second.in_flight(),
+            1,
+            "a second reader must see the first reader's use"
+        );
+        drop(held);
+        assert_eq!(second.in_flight(), 0);
+    }
+
+    /// HYPOTHESIS: retirement holds the transport open for work already
+    /// dialed and stops the moment that work ends, so ADR 0048's hand-off
+    /// cuts no send. Falsified if the transport stops with a guard
+    /// outstanding.
+    #[tokio::test]
+    async fn a_retiring_client_waits_for_its_outstanding_work() {
+        let client = client();
+        let conduit = client.conduit().expect("a ready client mints its conduit");
+        let held = conduit.dial();
+
+        let mut retiring = tokio::spawn(client.retire());
+        assert!(
+            tokio::time::timeout(
+                zingo_netutils::time::CONDUIT_DRAIN_POLL * DRAIN_OBSERVATION_POLLS,
+                &mut retiring,
+            )
+            .await
+            .is_err(),
+            "a hand-off must not stop the transport under work in flight"
+        );
+        assert_eq!(
+            conduit.state(),
+            ConduitState::Superseded,
+            "the outgoing conduit takes no new work while it drains"
+        );
+
+        drop(held);
+        tokio::time::timeout(zingo_netutils::time::CONDUIT_DRAIN_BUDGET, retiring)
+            .await
+            .expect("a drained conduit lets its transport stop")
+            .expect("the retirement runs to completion");
+        assert_eq!(conduit.state(), ConduitState::Retired);
+    }
+
+    /// HYPOTHESIS: a guard that outlives the drain budget does not hold the
+    /// transport open forever, because a leaked guard would leave two
+    /// clients alive for the rest of the session. Falsified if retirement
+    /// never returns.
+    #[tokio::test(start_paused = true)]
+    async fn a_leaked_guard_does_not_strand_the_transport() {
+        let client = client();
+        let conduit = client.conduit().expect("a ready client mints its conduit");
+        let _leaked = conduit.dial();
+        client.retire().await;
+        assert_eq!(
+            conduit.state(),
+            ConduitState::Superseded,
+            "the budget expired rather than the work finishing"
+        );
     }
 }
 

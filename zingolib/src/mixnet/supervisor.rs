@@ -715,6 +715,10 @@ pub(crate) async fn await_ready_endpoint(
     // lifecycle budget instead of holding the user's go-online moment for
     // the whole of it.
     let mut exit_deadline: Option<tokio::time::Instant> = None;
+    // Every birth's announcement latency is measured here, at the one seam
+    // every birth passes through, because the grace budget was chosen
+    // without a distribution to choose it against (ADR 0045).
+    let started = std::time::Instant::now();
     let outcome = tokio::time::timeout(budget, async {
         loop {
             let addressed = {
@@ -763,19 +767,37 @@ pub(crate) async fn await_ready_endpoint(
     })
     .await;
     match outcome {
-        Ok(ready) => ready,
-        Err(_elapsed) => Err(acquire::TransportError::NotReady { budget }),
+        Ok(ready) => {
+            if ready.is_ok() {
+                log::info!(
+                    "birth announced its exit in {}ms of a {}ms grace",
+                    started.elapsed().as_millis(),
+                    budget.as_millis()
+                );
+            }
+            ready
+        }
+        Err(_elapsed) => {
+            log::info!(
+                "birth announced no exit within its {}ms grace",
+                budget.as_millis()
+            );
+            Err(acquire::TransportError::NotReady { budget })
+        }
     }
 }
 
 /// Acquires one transport over `clutch`, publishing its lifecycle into
 /// `publisher`, and waits until it is ready, yielding the transport with the
 /// exits it announced as bound.
-pub(crate) async fn acquire_ready_transport(
-    acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
+pub(crate) async fn acquire_ready_transport<A>(
+    acquirer: &A,
     clutch: &[crate::mixnet::ExitNodeId],
     publisher: StatusPublisher,
-) -> Result<(MixnetProxy, Vec<crate::mixnet::ExitNodeId>), acquire::TransportError> {
+) -> Result<(MixnetProxy, Vec<crate::mixnet::ExitNodeId>), acquire::TransportError>
+where
+    A: crate::mixnet::acquire::TransportAcquirable + ?Sized,
+{
     let mut receiver = publisher.subscribe();
     let proxy = acquirer.acquire(clutch, publisher).await?;
     match await_ready_endpoint(&mut receiver, zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT).await {
@@ -1392,7 +1414,12 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         assert_eq!(
-            resolve_route(proxy.mode(), proxy.socks5_addr()),
+            resolve_route(
+                proxy.mode(),
+                proxy
+                    .socks5_addr()
+                    .map(zingo_netutils::conduit::MixnetConduit::over)
+            ),
             Err(MixnetNotReady::Died),
             "a died attachment must refuse, never route"
         );

@@ -1,9 +1,8 @@
 //! The Correspondable trait and the curated Correspondent list.
 //!
-//! This list is kept deliberately separate from the sync-server list
-//! (`zingo-cli`'s `most_up_indexer_uris`): Correspondents are chosen for
-//! reliable transaction relay, sync servers for low query latency, so tuning
-//! one must not reshape the other.
+//! This list is kept deliberately separate from the sync-server list:
+//! Correspondents are chosen for reliable transaction relay, sync servers
+//! for low query latency, so tuning one must not reshape the other.
 //!
 //! # Provenance
 //!

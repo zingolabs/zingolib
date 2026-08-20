@@ -184,6 +184,10 @@ pub struct LightClient {
     /// Standing Client's proof stops being epoch-fresh.
     #[cfg(feature = "nym")]
     standing_watchdog: Option<tokio::task::JoinHandle<()>>,
+    /// The rotation watchdog handing the session to a fresh client on the
+    /// randomised cadence, where the platform affords one (ADR 0048).
+    #[cfg(feature = "nym")]
+    rotation_watchdog: Option<tokio::task::JoinHandle<()>>,
     /// The session's exit authority: Reservations, the NodeHealthIndex, and
     /// the acquirer Proven Clients are born from.
     #[cfg(feature = "nym")]
@@ -211,8 +215,10 @@ impl Drop for LightClient {
     fn drop(&mut self) {
         // A dropped session must strand no networking task: each held
         // handle is aborted, without awaiting, so the drop stays sync.
-        if let Some(watchdog) = self.standing_watchdog.take() {
-            watchdog.abort();
+        for watchdog in [&mut self.standing_watchdog, &mut self.rotation_watchdog] {
+            if let Some(watchdog) = watchdog.take() {
+                watchdog.abort();
+            }
         }
         for slot in [&self.health_sweep, &self.proof_acquisition] {
             if let Some(task) = slot.lock().expect("a task slot is never poisoned").take() {
@@ -292,6 +298,8 @@ impl LightClient {
             #[cfg(feature = "nym")]
             standing_watchdog: None,
             #[cfg(feature = "nym")]
+            rotation_watchdog: None,
+            #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
@@ -339,6 +347,8 @@ impl LightClient {
             )),
             #[cfg(feature = "nym")]
             standing_watchdog: None,
+            #[cfg(feature = "nym")]
+            rotation_watchdog: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
@@ -403,6 +413,8 @@ impl LightClient {
             )),
             #[cfg(feature = "nym")]
             standing_watchdog: None,
+            #[cfg(feature = "nym")]
+            rotation_watchdog: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
@@ -735,11 +747,9 @@ impl LightClient {
     /// clearnet instead of refusing `MixnetNotReady`. Without the `nym`
     /// feature the wallet has no mixnet surface and this is a no-op.
     ///
-    /// Deliberately unconditional (not `nym`-gated): feature unification
-    /// can enable `zingolib/nym` from any workspace member — zingo-cli
-    /// carries it as a default feature (ADR 0026) — so a caller keying the
-    /// consent on its *own* feature set desyncs from zingolib's and
-    /// compiles the consent out exactly when the refusal is compiled in.
+    /// Deliberately unconditional, because a caller keying the consent on
+    /// its own feature set desyncs from zingolib's and compiles the consent
+    /// out exactly when the refusal is compiled in.
     #[cfg(any(test, feature = "testutils"))]
     pub async fn consent_to_clearnet_for_tests(&mut self) {
         #[cfg(feature = "nym")]

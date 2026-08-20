@@ -4638,7 +4638,9 @@ dependencies = [
  "http",
  "hyper-util",
  "lightwallet-protocol",
+ "rand 0.8.7",
  "rustls 0.23.43",
+ "serde",
  "thiserror 2.0.19",
  "tokio",
  "tokio-rustls",
@@ -4663,6 +4665,7 @@ dependencies = [
  "tokio",
  "zcash_encoding",
  "zingo-net-diag",
+ "zingo-netutils",
 ]
 
 [[package]]

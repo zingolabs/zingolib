@@ -14,84 +14,8 @@
 
 pub mod acquire;
 
-/// The identity of a mixnet Exit Node, as the directory and the proxy announce it.
-#[derive(
-    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
-)]
-#[serde(into = "String", try_from = "String")]
-pub struct ExitNodeId(String);
-
-impl ExitNodeId {
-    /// The identity as the wire string the proxy seam speaks.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-/// The refusal to mint an Exit Node identity from a blank candidate.
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("an Exit Node identity cannot be blank")]
-pub struct BlankExitNodeId;
-
-impl ExitNodeId {
-    /// Mint the identity from a candidate string, trimming it and refusing a blank.
-    pub fn parse(candidate: &str) -> Result<Self, BlankExitNodeId> {
-        let identity = candidate.trim();
-        if identity.is_empty() {
-            return Err(BlankExitNodeId);
-        }
-        Ok(ExitNodeId(identity.to_string()))
-    }
-}
-
-impl TryFrom<String> for ExitNodeId {
-    type Error = BlankExitNodeId;
-
-    fn try_from(candidate: String) -> Result<Self, Self::Error> {
-        ExitNodeId::parse(&candidate)
-    }
-}
-
-impl From<ExitNodeId> for String {
-    fn from(identity: ExitNodeId) -> Self {
-        identity.0
-    }
-}
-
-#[cfg(test)]
-impl From<&str> for ExitNodeId {
-    fn from(identity: &str) -> Self {
-        ExitNodeId::parse(identity).expect("test exit identities are non-blank")
-    }
-}
-
-#[cfg(test)]
-mod identity_tests {
-    use super::{BlankExitNodeId, ExitNodeId};
-
-    /// HYPOTHESIS: minting trims the candidate and refuses a blank, so the
-    /// spawned and hosted paths cannot mint unequal spellings of one exit or
-    /// an empty identity. Falsified if whitespace survives or a blank mints.
-    #[test]
-    fn minting_trims_and_refuses_a_blank() {
-        assert_eq!(
-            ExitNodeId::parse(" exit-alpha ").expect("non-blank mints"),
-            ExitNodeId::parse("exit-alpha").expect("non-blank mints"),
-        );
-        assert_eq!(ExitNodeId::parse(""), Err(BlankExitNodeId));
-        assert_eq!(ExitNodeId::parse("   "), Err(BlankExitNodeId));
-        assert_eq!(
-            ExitNodeId::try_from(String::from("  ")),
-            Err(BlankExitNodeId)
-        );
-    }
-}
-
-impl std::fmt::Display for ExitNodeId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+/// Exit identity, defined below the seam (ADR 0046).
+pub use zingo_netutils::exit::{BlankExitNodeId, ExitNodeId};
 
 /// The party a failure stage charges, unattributed when the stage cannot
 /// say which side failed.
@@ -120,6 +44,8 @@ mod mode;
 
 pub mod probe;
 
+pub(crate) mod quartet;
+
 pub mod provision;
 
 pub mod route;
@@ -142,7 +68,10 @@ pub(crate) use mode::MixnetSlot;
 
 pub(crate) use mode::StandingClient;
 
-pub use route::{MixnetNotReady, MixnetRoute, SlotTunnel, resolve_route};
+pub use route::{MixnetNotReady, MixnetRoute, resolve_route};
+
+/// Conduit, defined below the seam (ADR 0046).
+pub use zingo_netutils::conduit::MixnetConduit;
 
 pub use supervisor::{DeathReport, MixnetProxy, MixnetProxyError};
 
@@ -161,6 +90,11 @@ pub struct MixnetTiming {
     /// Bound on one data round trip through the tunnel, the per-attempt
     /// patience behind the budget.
     pub mixnet_round_trip_bound: std::time::Duration,
+    /// The shortest a session holds one client before rotating it, for a
+    /// platform whose policy rotates at all (ADR 0048).
+    pub client_rotation_min: std::time::Duration,
+    /// The longest, so no exit observes more than this much of a session.
+    pub client_rotation_max: std::time::Duration,
 }
 
 /// The current [`MixnetTiming`], read from the one place the constants
@@ -170,6 +104,8 @@ pub fn mixnet_timing() -> MixnetTiming {
     MixnetTiming {
         attach_readiness_budget: zingo_netutils::time::ATTACH_READINESS_BUDGET,
         mixnet_round_trip_bound: zingo_netutils::time::MIXNET_ROUND_TRIP_BOUND,
+        client_rotation_min: zingo_netutils::time::CLIENT_ROTATION_MIN,
+        client_rotation_max: zingo_netutils::time::CLIENT_ROTATION_MAX,
     }
 }
 

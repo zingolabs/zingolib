@@ -68,25 +68,40 @@ pub const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 /// without yet giving up on it.
 pub const HEDGE_INTERVAL: Duration = Duration::from_secs(5);
 
+/// The mean exit-announcement latency the `birth-trial` workbench tool
+/// measured over thirty pinned births against mainnet on 2026-08-18.
+pub const OBSERVED_ANNOUNCEMENT_MEAN: Duration = Duration::from_millis(4_637);
+
+/// The standard deviation of that same measurement, whose samples spanned
+/// 3203 to 5604 milliseconds.
+pub const OBSERVED_ANNOUNCEMENT_DEVIATION: Duration = Duration::from_millis(549);
+
+/// How many standard deviations above the measured mean the readiness gate
+/// waits before it refuses a transport that never announced.
+pub const ANNOUNCEMENT_DEVIATIONS: u32 = 4;
+
 /// How long the readiness gate waits for the transport's first Exit Node
-/// announcement once the address has arrived: one Exit Node connect attempt
-/// plus the hedge interval that would have launched another, so a transport
-/// still finishing its exit connect is waited through while one that never
-/// binds an exit is refused long before the lifecycle budget.
+/// announcement once the address has arrived: the four-deviation figure of
+/// 6833 milliseconds rounded up to a whole second, so an unremarkably slow
+/// bootstrap is waited through while one that never binds an exit is
+/// refused long before the lifecycle budget.
 ///
 /// ```
 /// use zingo_netutils::time::{
-///     EXIT_ANNOUNCEMENT_GRACE, HEDGE_INTERVAL, NYM_LIFECYCLE_TIMEOUT, PER_ATTEMPT_CONNECT_TIMEOUT,
+///     ANNOUNCEMENT_DEVIATIONS, EXIT_ANNOUNCEMENT_GRACE, NYM_LIFECYCLE_TIMEOUT,
+///     OBSERVED_ANNOUNCEMENT_DEVIATION, OBSERVED_ANNOUNCEMENT_MEAN,
 /// };
 ///
-/// assert_eq!(
-///     EXIT_ANNOUNCEMENT_GRACE,
-///     PER_ATTEMPT_CONNECT_TIMEOUT + HEDGE_INTERVAL,
-/// );
+/// // The grace covers four deviations above the measured mean, and the
+/// // rounding that reaches a whole second never reaches a fifth.
+/// let four = OBSERVED_ANNOUNCEMENT_MEAN + OBSERVED_ANNOUNCEMENT_DEVIATION * ANNOUNCEMENT_DEVIATIONS;
+/// let five = OBSERVED_ANNOUNCEMENT_MEAN
+///     + OBSERVED_ANNOUNCEMENT_DEVIATION * (ANNOUNCEMENT_DEVIATIONS + 1);
+/// assert!(EXIT_ANNOUNCEMENT_GRACE >= four);
+/// assert!(EXIT_ANNOUNCEMENT_GRACE < five);
 /// assert!(EXIT_ANNOUNCEMENT_GRACE < NYM_LIFECYCLE_TIMEOUT);
 /// ```
-pub const EXIT_ANNOUNCEMENT_GRACE: Duration =
-    Duration::from_secs(PER_ATTEMPT_CONNECT_TIMEOUT.as_secs() + HEDGE_INTERVAL.as_secs());
+pub const EXIT_ANNOUNCEMENT_GRACE: Duration = Duration::from_millis(7_000);
 
 /// The silence interval before a send's escalation launches a further
 /// Correspondent arm: the sum of a connect attempt's bound and one mixnet
@@ -198,6 +213,14 @@ pub const TRANSMIT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(8);
 /// tolerates latency better than an interactive send.
 pub const MIGRATION_SUBMIT_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Ceiling on a superseded conduit's wait for work already dialed through
+/// it, set to the longest bounded operation that work can be.
+pub const CONDUIT_DRAIN_BUDGET: Duration = MIGRATION_SUBMIT_TIMEOUT;
+
+/// How often a superseded conduit is rechecked for idleness, the overlap a
+/// rotation pays past its predecessor's last use.
+pub const CONDUIT_DRAIN_POLL: Duration = Duration::from_millis(250);
+
 /// How long to wait between sync polls while a note-splitting migration
 /// round confirms.
 pub const CONFIRMATION_POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -229,8 +252,8 @@ pub const SPEED_ACQUISITION_PROOFS: u64 = 10;
 /// ```
 /// // One shared deadline bounds a speed-prioritized operation end to end:
 /// // ten expected proof cycles, each an unremarkable bootstrap's exit
-/// // announcement plus the Sentinel exchange (285 seconds, ruled
-/// // 2026-08-14).
+/// // announcement plus the Sentinel exchange (105 seconds, ruled
+/// // 2026-08-14 and retuned when the grace was measured).
 /// use zingo_netutils::time::{
 ///     EXIT_ANNOUNCEMENT_GRACE, SENTINEL_BUDGET, SPEED_ACQUISITION_DEADLINE,
 ///     SPEED_ACQUISITION_PROOFS,
@@ -240,7 +263,7 @@ pub const SPEED_ACQUISITION_PROOFS: u64 = 10;
 ///     (EXIT_ANNOUNCEMENT_GRACE.as_millis() + SENTINEL_BUDGET.as_millis())
 ///         * SPEED_ACQUISITION_PROOFS as u128
 /// );
-/// assert_eq!(SPEED_ACQUISITION_DEADLINE.as_secs(), 285);
+/// assert_eq!(SPEED_ACQUISITION_DEADLINE.as_secs(), 105);
 /// ```
 pub const SPEED_ACQUISITION_DEADLINE: Duration = Duration::from_millis(
     (EXIT_ANNOUNCEMENT_GRACE.as_millis() as u64 + SENTINEL_BUDGET.as_millis() as u64)
@@ -259,6 +282,22 @@ pub const SPEED_ACQUISITION_DEADLINE: Duration = Duration::from_millis(
 // exit discovery uses, and this constant approximates the rotation cadence
 // as a sliding window.
 pub const NYM_EPOCH: Duration = Duration::from_secs(60 * 60);
+
+/// The shortest a session holds one mixnet client before rotating it, on a
+/// platform whose policy asks for rotation at all (ADR 0048).
+pub const CLIENT_ROTATION_MIN: Duration = Duration::from_secs(5 * 60);
+
+/// The longest, so no exit observes more than this much of one session.
+///
+/// ```
+/// use zingo_netutils::time::{CLIENT_ROTATION_MAX, CLIENT_ROTATION_MIN, NYM_EPOCH};
+///
+/// assert!(CLIENT_ROTATION_MIN < CLIENT_ROTATION_MAX);
+/// // A rotation bounds exposure more tightly than an epoch does, which is
+/// // the whole point of rotating rather than waiting for the topology.
+/// assert!(CLIENT_ROTATION_MAX < NYM_EPOCH);
+/// ```
+pub const CLIENT_ROTATION_MAX: Duration = Duration::from_secs(10 * 60);
 
 /// Per-server bound on the ranking `get_info` sweep, deliberately tight so
 /// one slow server cannot block the fastest-first ordering.

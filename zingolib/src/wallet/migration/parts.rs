@@ -311,21 +311,43 @@ impl PartRecord {
     }
 }
 
-/// A part's proving closure: builds, proves, and signs the part's
-/// transaction, returning its txid and raw bytes. Takes ownership of all
-/// needed data. No wallet reference is captured. Safe to call on any thread.
-pub(crate) type ProveOnce =
-    Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>;
+/// A part's proving work, owning everything the build needs.
+///
+/// Naming the captured set is the point: a closure hid it in a body, where
+/// nothing stated what crossed to the proving thread. Every field is owned,
+/// so no wallet reference travels with it and the work runs on any thread.
+pub struct ProveOnce {
+    /// The account's spending key, for the spend and the output keys.
+    usk: zcash_keys::keys::UnifiedSpendingKey,
+    /// The historical Orchard root the spend commits to.
+    anchor: orchard::Anchor,
+    /// The bound note the part spends.
+    note: orchard::Note,
+    /// That note's path to the anchor.
+    merkle_path: orchard::tree::MerklePath,
+    /// The chain the transaction is built for.
+    chain_type: crate::config::ChainType,
+    /// The part's value, which the Ironwood output carries.
+    denomination: u64,
+    /// The fee this part pays, as a non-standard fixed rule.
+    part_fee: u64,
+    /// The height whose consensus branch the transaction commits to.
+    target_height: BlockHeight,
+    /// The height past which the transaction is no longer valid.
+    expiry_height: BlockHeight,
+    /// The migration's parameters, for the canonical-shape verification.
+    params: super::MigrationParams,
+}
 
 /// Outcome of `crate::wallet::LightWallet::prepare_part`: either a ready
 /// proving closure or the reason the part must be skipped.
 pub enum PrepareResult {
-    /// All wallet data was extracted. The closure does the CPU-intensive
-    /// proving on a background thread.
+    /// All wallet data was extracted. The proving work does the
+    /// CPU-intensive part on a background thread.
     Ready {
-        /// Proving closure. Takes ownership of all needed data. No wallet
-        /// reference is captured. Safe to call on any thread.
-        prove: ProveOnce,
+        /// The proving work, boxed so this variant stays the size of a
+        /// pointer rather than of every field the build needs.
+        prove: Box<ProveOnce>,
         /// First block of the part's bucket window (the builder's target).
         target_height: BlockHeight,
         /// Expiry height of the built transaction.
@@ -759,72 +781,17 @@ impl crate::wallet::LightWallet {
         let expiry_height = super::schedule::canonical_expiry_height(target_height);
         let params_clone = params.clone();
 
-        let prove: ProveOnce = Box::new(move || {
-            use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
-            use zcash_protocol::memo::MemoBytes;
-            use zcash_protocol::value::Zatoshis;
-
-            let orchard_fvk = orchard::keys::FullViewingKey::from(usk.orchard());
-            let recipient = orchard_fvk.address_at(0u32, zip32::Scope::Internal);
-            let internal_ovk = orchard_fvk.to_ovk(zip32::Scope::Internal);
-
-            let fee_rule = zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(
-                Zatoshis::from_u64(part_fee)?,
-            );
-            let build_config = BuildConfig::Standard {
-                sapling_anchor: None,
-                orchard_anchor: Some(anchor),
-                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
-                orchard_padding: BundlePadding::DEFAULT,
-                ironwood_padding: BundlePadding::DEFAULT,
-            };
-            let mut builder = Builder::new(chain_type, target_height, build_config)
-                .with_expiry_height(expiry_height);
-            builder
-                .add_orchard_spend::<std::convert::Infallible>(
-                    orchard_fvk.clone(),
-                    note,
-                    merkle_path,
-                )
-                .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
-            builder
-                .add_ironwood_output::<std::convert::Infallible>(
-                    Some(internal_ovk),
-                    recipient,
-                    Zatoshis::from_u64(denomination)?,
-                    MemoBytes::empty(),
-                )
-                .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
-
-            let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
-            let sapling_prover =
-                zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-            let build_result = builder
-                .build(
-                    &zcash_transparent::builder::TransparentSigningSet::new(),
-                    &[usk.sapling().clone()],
-                    &[usk.orchard().into()],
-                    rand::rngs::OsRng,
-                    &sapling_prover,
-                    &sapling_prover,
-                    &fee_rule,
-                )
-                .map_err(|e| WalletError::MigrationBuild(format!("{e:?}")))?;
-
-            verify_canonical_part(
-                build_result.transaction(),
-                denomination,
-                expiry_height,
-                &params_clone,
-            )?;
-
-            let txid = build_result.transaction().txid();
-            let mut raw_tx = Vec::new();
-            build_result
-                .transaction()
-                .write(&mut raw_tx)
-                .map_err(WalletError::TransactionWrite)?;
-            Ok((txid, raw_tx))
+        let prove = Box::new(ProveOnce {
+            usk,
+            anchor,
+            note,
+            merkle_path,
+            chain_type,
+            denomination,
+            part_fee,
+            target_height,
+            expiry_height,
+            params: params_clone,
         });
 
         Ok(PrepareResult::Ready {
@@ -890,7 +857,7 @@ impl crate::wallet::LightWallet {
                 target_height,
                 expiry_height,
             } => {
-                let (txid, raw_tx) = prove()?;
+                let (txid, raw_tx) = prove.prove()?;
                 self.record_part_result(
                     part,
                     txid,
@@ -902,6 +869,87 @@ impl crate::wallet::LightWallet {
                 Ok(MaterializeOutcome::Materialized { txid, raw_tx })
             }
         }
+    }
+}
+
+impl ProveOnce {
+    /// Builds, proves, and signs the part's transaction, yielding its txid
+    /// and raw bytes.
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn prove(self) -> Result<(TxId, Vec<u8>), WalletError> {
+        let ProveOnce {
+            usk,
+            anchor,
+            note,
+            merkle_path,
+            chain_type,
+            denomination,
+            part_fee,
+            target_height,
+            expiry_height,
+            params: params_clone,
+        } = self;
+        use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
+        use zcash_protocol::memo::MemoBytes;
+        use zcash_protocol::value::Zatoshis;
+
+        let orchard_fvk = orchard::keys::FullViewingKey::from(usk.orchard());
+        let recipient = orchard_fvk.address_at(0u32, zip32::Scope::Internal);
+        let internal_ovk = orchard_fvk.to_ovk(zip32::Scope::Internal);
+
+        let fee_rule = zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(
+            Zatoshis::from_u64(part_fee)?,
+        );
+        let build_config = BuildConfig::Standard {
+            sapling_anchor: None,
+            orchard_anchor: Some(anchor),
+            ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
+        };
+        let mut builder =
+            Builder::new(chain_type, target_height, build_config).with_expiry_height(expiry_height);
+        builder
+            .add_orchard_spend::<std::convert::Infallible>(orchard_fvk.clone(), note, merkle_path)
+            .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
+        builder
+            .add_ironwood_output::<std::convert::Infallible>(
+                Some(internal_ovk),
+                recipient,
+                Zatoshis::from_u64(denomination)?,
+                MemoBytes::empty(),
+            )
+            .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
+
+        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
+        let sapling_prover =
+            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let build_result = builder
+            .build(
+                &zcash_transparent::builder::TransparentSigningSet::new(),
+                &[usk.sapling().clone()],
+                &[usk.orchard().into()],
+                rand::rngs::OsRng,
+                &sapling_prover,
+                &sapling_prover,
+                &fee_rule,
+            )
+            .map_err(|e| WalletError::MigrationBuild(format!("{e:?}")))?;
+
+        verify_canonical_part(
+            build_result.transaction(),
+            denomination,
+            expiry_height,
+            &params_clone,
+        )?;
+
+        let txid = build_result.transaction().txid();
+        let mut raw_tx = Vec::new();
+        build_result
+            .transaction()
+            .write(&mut raw_tx)
+            .map_err(WalletError::TransactionWrite)?;
+        Ok((txid, raw_tx))
     }
 }
 

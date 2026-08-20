@@ -25,5 +25,12 @@
 // failure as a typed variant rather than a rendered string.
 pub use zingo_netutils::{GetClientError, GrpcIndexer, Indexer, ensure_default_crypto_provider};
 
+// Status joins on the same terms, and for the same reason: zingo-cli's
+// clearnet server probe names the stage that failed, and an RPC rejection is
+// the indexer's own verdict, so the probe carries that verdict rather than a
+// rendering of it. A consumer holding a typed rejection cannot reach it
+// without this, because the funnel is a consumer's only path to the crate.
+pub use zingo_netutils::Status;
+
 pub use zingo_netutils::indexers;
 pub use zingo_netutils::time;

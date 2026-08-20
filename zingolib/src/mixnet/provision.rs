@@ -23,14 +23,7 @@ pub const NYM_PROXY_ENV: &str = "ZINGO_NYM_PROXY";
 /// restatement is what this constant retires.
 pub const NYM_PROXY_BINARY_NAME: &str = "nym-proxy";
 
-/// Platform facts a consumer supplies to [`resolve_proxy_path`]: the pieces
-/// of the precedence that zingolib cannot know by itself.
-///
-/// The bundled directory differs per platform — the executable's own
-/// directory for zingo-cli (where the `bundle-nym-proxy` workbench tool
-/// places the binary), the native-library directory on Android, a packaged
-/// resources directory for zingo-pc — so the consumer names the directory
-/// and zingolib owns everything else about the precedence.
+/// Platform facts a consumer supplies to [`resolve_proxy_path`].
 #[derive(Debug, Default)]
 pub struct SpawnHints<'a> {
     /// An explicit path the user supplied this session (a `--nym-proxy`
@@ -57,8 +50,7 @@ pub fn resolve_proxy_path(hints: &SpawnHints<'_>) -> String {
     )
 }
 
-/// The directory holding the running executable: zingo-cli's (and generally
-/// any spawned desktop wallet's) bundled-binary directory hint.
+/// The directory holding the running executable.
 pub fn executable_sibling_dir() -> Option<PathBuf> {
     Some(std::env::current_exe().ok()?.parent()?.to_path_buf())
 }

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- BREAKING: `get_source_price` takes a `zingo_netutils::conduit::ConduitDial`
+  where it took `Option<&str>`. A price fetch is mixnet-only (ADR 0011), and
+  the option let a caller passing `None` route it over clearnet instead. The
+  clearnet leg survives crate-privately for this crate's own tests, where no
+  caller outside can reach it, so the public API can no longer express the
+  fetch the ADR forbids. The `socks5-fetch` feature gains a `zingo-netutils`
+  dependency to carry the guard type.
+
 ### Deprecated
 
 ### Added
