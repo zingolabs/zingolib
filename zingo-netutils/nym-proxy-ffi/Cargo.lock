@@ -9136,12 +9136,12 @@ dependencies = [
 [[package]]
 name = "zingo-net-diag"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ae7ab038f64405b57d71ed01e52f680f9a010ff2"
+source = "git+https://github.com/zingolabs/zingolib?branch=finish_nym#752a0c0416fd224a75d4cacc9892cc635322ec34"
 
 [[package]]
 name = "zingo-netutils"
 version = "5.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ae7ab038f64405b57d71ed01e52f680f9a010ff2"
+source = "git+https://github.com/zingolabs/zingolib?branch=finish_nym#752a0c0416fd224a75d4cacc9892cc635322ec34"
 dependencies = [
  "http 1.5.0",
  "hyper-util",
@@ -9149,7 +9149,9 @@ dependencies = [
  "nym-http-api-client",
  "nym-sdk",
  "nym-validator-client",
+ "rand 0.8.7",
  "rustls 0.23.43",
+ "serde",
  "thiserror 2.0.20",
  "tokio",
  "tokio-rustls 0.26.4",

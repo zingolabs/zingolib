@@ -14,12 +14,12 @@ exclude = ["nym-proxy-ffi"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", rev = "80134660ec8f6217c211e72b1b17d8f613227b0f", features = [
+zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "finish_nym", features = [
     "nym",
     "perspective",
 ] }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", rev = "80134660ec8f6217c211e72b1b17d8f613227b0f" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "80134660ec8f6217c211e72b1b17d8f613227b0f" }
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "finish_nym" }
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "finish_nym" }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
@@ -29,7 +29,7 @@ zcash_client_backend = { version = "0.24.0-rc.1", features = [
     "orchard",
     "transparent-inputs",
 ] }
-zcash_keys = { version = "0.15.0", features = [
+zcash_keys = { version = "0.16.1", features = [
     "transparent-inputs",
     "sapling",
     "orchard",

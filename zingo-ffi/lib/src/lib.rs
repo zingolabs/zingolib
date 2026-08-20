@@ -43,10 +43,8 @@ use zcash_client_backend::proposal::Proposal;
 use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
-use zingolib::netutils::{GrpcIndexer, Indexer};
 use zingolib::config::{
-    ChainType, ClientConfig, DEFAULT_INDEXER_URI, DEFAULT_INDEXER_URI_TESTNET, WalletConfig,
-    construct_indexer_uri, lib_birthday,
+    ChainType, ClientConfig, WalletConfig, construct_indexer_uri, lib_birthday,
 };
 use zingolib::data::PollReport;
 use zingolib::data::proposal::total_fee;
@@ -55,6 +53,7 @@ use zingolib::data::receivers::transaction_request_from_receivers;
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::{LightClientError, SendError};
 use zingolib::lightclient::migrate::SplitStep;
+use zingolib::netutils::{GrpcIndexer, Indexer};
 use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
 use zingolib::wallet::WalletSettings;
 use zingolib::wallet::keys::{
@@ -165,14 +164,16 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::PriceError(_) | LightClientError::PriceFetchRequiresMixnet => {
             ZingolibError::Read(text)
         }
-        LightClientError::MixnetNotReady(_) => ZingolibError::Mixnet(text),
+        LightClientError::MixnetNotReady(_) | LightClientError::ProbeRequiresMixnet => {
+            ZingolibError::Mixnet(text)
+        }
         // A deliberate verdict (#1229): exhausting the eligible Correspondents
         // is a server-topology problem, not a mixnet refusal — switching the
         // synchronization endpoint changes eligibility, so the app's
         // switch-and-retry routing can genuinely help. Mapping it to Mixnet
         // would stamp it with the owned refusal marker and turn it
         // never-retry.
-        LightClientError::NoEligibleCorrespondent
+        LightClientError::NoEligibleCorrespondent(_)
         | LightClientError::IneligibleProbeTarget(_)
         | LightClientError::MigrationTransmissionTargetIsSyncEndpoint { .. } => {
             ZingolibError::Indexer(text)
@@ -567,7 +568,7 @@ fn build_connection_params(
         None
     } else {
         Some(
-            construct_indexer_uri(Some(uri))
+            construct_indexer_uri(uri)
                 .map_err(|e| ZingolibError::init(format!("Invalid lightwalletd uri: {e}")))?,
         )
     };
@@ -631,7 +632,7 @@ pub fn set_broadcast_candidates(candidates_json: String) -> Result<String, Zingo
     let parsed = json::parse(&candidates_json)
         .map_err(|e| ZingolibError::InvalidInput(format!("invalid candidates json: {e}")))?;
     let transmission_uri = match parsed["transmissionUri"].as_str() {
-        Some(uri) => Some(construct_indexer_uri(Some(uri.to_string())).map_err(|e| {
+        Some(uri) => Some(construct_indexer_uri(uri.to_string()).map_err(|e| {
             ZingolibError::InvalidInput(format!("invalid transmission uri {uri}: {e}"))
         })?),
         None => None,
@@ -952,7 +953,7 @@ mod ffi_error_routing_tests {
     #[test]
     fn a_mixnet_refusal_maps_to_the_owned_mixnet_marker() {
         let mapped = ffi_error(LightClientError::MixnetNotReady(
-            zingolib::nym::MixnetNotReady::Bootstrapping,
+            zingolib::mixnet::MixnetNotReady::Bootstrapping,
         ));
         assert!(
             matches!(&mapped, ZingolibError::Mixnet(_)),
@@ -963,7 +964,9 @@ mod ffi_error_routing_tests {
 
     #[test]
     fn excluded_indexer_exhaustion_is_an_indexer_failure_not_a_refusal() {
-        let mapped = ffi_error(LightClientError::NoEligibleCorrespondent);
+        let mapped = ffi_error(LightClientError::NoEligibleCorrespondent(
+            zingolib::correspondent::NoEligibleCorrespondents::EmptyPool,
+        ));
         assert!(
             matches!(&mapped, ZingolibError::Indexer(_)),
             "exhaustion routes as server-suspect, so it must not wear the mixnet marker: {mapped:?}"
@@ -1874,17 +1877,22 @@ pub fn change_server(server_uri: String) -> Result<String, ZingolibError> {
         let uri = if server_uri.is_empty() {
             // Offline: no server. `http::Uri::default()` is scheme-less and
             // `set_indexer_uri` rejects it ("bad uri: invalid scheme"), so
-            // hand it the chain's default indexer URI instead —
+            // hand it the chain's first census indexer instead —
             // syntactically valid, and never actually dialed while offline.
-            let default = match lightclient.chain_type() {
-                ChainType::Mainnet => DEFAULT_INDEXER_URI,
-                ChainType::Testnet => DEFAULT_INDEXER_URI_TESTNET,
-                ChainType::Regtest(_) => DEFAULT_INDEXER_URI,
+            let census_chain = match lightclient.chain_type() {
+                ChainType::Testnet => zingolib::indexers::IndexerChain::Test,
+                ChainType::Mainnet | ChainType::Regtest(_) => {
+                    zingolib::indexers::IndexerChain::Main
+                }
             };
-            construct_indexer_uri(Some(default.to_string()))
+            let default = zingolib::indexers::active(census_chain)
+                .next()
+                .map(|indexer| indexer.uri.to_string())
+                .ok_or_else(|| ZingolibError::InvalidInput("empty indexer census".to_string()))?;
+            construct_indexer_uri(default)
                 .map_err(|_| ZingolibError::InvalidInput("invalid server uri".to_string()))?
         } else {
-            construct_indexer_uri(Some(server_uri))
+            construct_indexer_uri(server_uri)
                 .map_err(|_| ZingolibError::InvalidInput("invalid server uri".to_string()))?
         };
         RT.block_on(async move {
