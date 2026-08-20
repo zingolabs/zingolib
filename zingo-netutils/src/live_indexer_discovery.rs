@@ -91,13 +91,18 @@ pub enum DiscoveryError {
 /// Budget; `None` is full width. `seed` fixes the exit sampling, so a
 /// caller supplies entropy (production hashes the clock, tests pass a
 /// constant).
-pub async fn discover_live_indexers(
+pub async fn discover_live_indexers<F>(
     chain: IndexerChain,
     budget: Option<usize>,
     seed: u64,
-    on_progress: impl Fn(String) + Send + Sync + 'static,
-) -> Result<DiscoveryReport, DiscoveryError> {
-    let on_progress: Arc<dyn Fn(String) + Send + Sync> = Arc::new(on_progress);
+    on_progress: F,
+) -> Result<DiscoveryReport, DiscoveryError>
+where
+    F: Fn(String) + Send + Sync + 'static,
+{
+    // Shared by reference count so every probe task narrates through the
+    // one callback, and by its own type so no trait object is minted.
+    let on_progress = Arc::new(on_progress);
     let mut eligible: Vec<&'static Indexer> = mixnet_eligible(chain).collect();
     if let Some(budget) = budget {
         eligible.truncate(budget);
@@ -138,11 +143,14 @@ pub async fn discover_live_indexers(
     Ok(DiscoveryReport { live, failed })
 }
 
-async fn probe_via_unique_exit(
+async fn probe_via_unique_exit<F>(
     indexer: &'static Indexer,
     exit_node: String,
-    on_progress: Arc<dyn Fn(String) + Send + Sync>,
-) -> Result<DiscoveredIndexer, DiscoveryFailure> {
+    on_progress: Arc<F>,
+) -> Result<DiscoveredIndexer, DiscoveryFailure>
+where
+    F: Fn(String) + Send + Sync + 'static,
+{
     let started = Instant::now();
     on_progress(format!(
         "{}: bootstrapping exit {}",

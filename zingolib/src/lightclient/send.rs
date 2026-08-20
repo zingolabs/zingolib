@@ -113,10 +113,11 @@ pub struct TransmitReport {
 fn resolve_transmit_route(
     has_indexer: bool,
     route: Result<crate::mixnet::MixnetRoute, crate::mixnet::MixnetNotReady>,
-) -> Result<Option<std::net::SocketAddr>, LightClientError> {
+) -> Result<Option<zingo_netutils::conduit::ConduitDial>, LightClientError> {
     use crate::mixnet::{MixnetNotReady, MixnetRoute};
     match (has_indexer, route) {
-        (_, Ok(MixnetRoute::Mixnet(tunnel))) => Ok(Some(tunnel.into_addr())),
+        // The guard rides out to the caller, which holds it for the send.
+        (_, Ok(MixnetRoute::Mixnet(conduit))) => Ok(Some(conduit.dial())),
         (true, Ok(MixnetRoute::Clearnet)) => Ok(None),
         (false, Ok(MixnetRoute::Clearnet)) => Err(LightClientError::Offline),
         (false, Err(MixnetNotReady::Unattached)) => Err(LightClientError::Offline),
@@ -765,15 +766,19 @@ impl LightClient {
         let indexer = self.indexer.clone();
 
         // Resolve the Mixnet Mode route once for the whole send (ADR 0011).
-        // `Clearnet` submits through the configured indexer; `Mixnet(tunnel)`
-        // routes the escalation through the tunnel's SOCKS5 proxy — with or without a
+        // `Clearnet` submits through the configured indexer; `Mixnet(conduit)`
+        // routes the escalation through the conduit's SOCKS5 proxy — with or without a
         // sync indexer (ruling 2026-07-29); `Bootstrapping` fails closed
         // here, before any submission, rather than leaking to clearnet.
         // Without the `nym` feature there is no mixnet, so the route is
         // clearnet and demands the indexer.
+        // The guard is bound for the whole send, so the conduit counts this
+        // transmission as outstanding until the escalation finishes.
+        #[cfg(feature = "nym")]
+        let transmit_dial = resolve_transmit_route(indexer.is_some(), self.mixnet_route())?;
         #[cfg(feature = "nym")]
         let socks5_proxy: Option<std::net::SocketAddr> =
-            resolve_transmit_route(indexer.is_some(), self.mixnet_route())?;
+            transmit_dial.as_ref().map(|dial| dial.socks5());
         #[cfg(not(feature = "nym"))]
         let socks5_proxy: Option<std::net::SocketAddr> = None;
         // Every pull rides the session's standing client on both platforms:

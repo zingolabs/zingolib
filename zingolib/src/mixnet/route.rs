@@ -14,31 +14,6 @@
 
 use crate::mixnet::Indicator;
 
-/// The session slot's tunnel, whose one exit is Shared across every
-/// request the slot's surfaces send to a Correspondent.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SlotTunnel {
-    socks5_addr: std::net::SocketAddr,
-}
-
-impl SlotTunnel {
-    /// The tunnel's local SOCKS5 address, for one more request to a
-    /// Correspondent.
-    pub fn addr(&self) -> std::net::SocketAddr {
-        self.socks5_addr
-    }
-
-    /// Yields the tunnel's local SOCKS5 address for the one owned dial.
-    pub fn into_addr(self) -> std::net::SocketAddr {
-        self.socks5_addr
-    }
-
-    /// Wraps the published proxy address of a ready transport.
-    fn over(socks5_addr: std::net::SocketAddr) -> Self {
-        Self { socks5_addr }
-    }
-}
-
 /// The resolved network route for a mixnet-only surface.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MixnetRoute {
@@ -46,8 +21,8 @@ pub enum MixnetRoute {
     /// [`SwitchedOff`](Indicator::SwitchedOff), i.e. the user deliberately
     /// toggled it off.
     Clearnet,
-    /// Route through the Standing Client's tunnel.
-    Mixnet(SlotTunnel),
+    /// Route through the session's conduit.
+    Mixnet(zingo_netutils::conduit::MixnetConduit),
 }
 
 /// A mixnet-only surface was attempted while the mixnet was unavailable
@@ -62,8 +37,8 @@ pub enum MixnetNotReady {
     /// Absence is not consent, so the surface refuses.
     #[error(
         "the Nym mixnet is not enabled; this operation refuses rather than use \
-         clearnet without consent. Run `network on` to enable the mixnet, or \
-         `network off` to choose clearnet"
+         clearnet without consent. Enable Mixnet Mode to use the mixnet, or \
+         switch it off to choose clearnet"
     )]
     Unattached,
     /// The mixnet is enabled but not yet reachable. Readiness is coming.
@@ -72,19 +47,22 @@ pub enum MixnetNotReady {
     /// The proxy died after being spawned. Only re-enabling recovers.
     #[error(
         "the Nym mixnet proxy died; this operation refuses rather than fall back to \
-         clearnet. Run `network on` to restart the proxy"
+         clearnet. Re-enable Mixnet Mode to restart the proxy"
     )]
     Died,
 }
 
-/// Resolve the fail-closed route for the given Mixnet Mode and SOCKS5
-/// address — `Ready` yields the mixnet route, only the deliberate
-/// `SwitchedOff` yields clearnet, and `Unattached`, `Bootstrapping`,
-/// `Died`, or `Ready` before an address is published all refuse rather
-/// than leak a send to clearnet without consent.
+/// Resolve the fail-closed route for the given Mixnet Mode and conduit —
+/// `Ready` yields the mixnet route, only the deliberate `SwitchedOff`
+/// yields clearnet, and `Unattached`, `Bootstrapping`, `Died`, or `Ready`
+/// before a conduit exists all refuse rather than leak a send to clearnet
+/// without consent.
+// The conduit arrives rather than being minted from an address, because the
+// session's rotation supersedes one conduit and every surface must be
+// holding that one for the supersession to reach it (ADR 0048).
 pub fn resolve_route(
     mode: Indicator,
-    socks5_addr: Option<std::net::SocketAddr>,
+    conduit: Option<zingo_netutils::conduit::MixnetConduit>,
 ) -> Result<MixnetRoute, MixnetNotReady> {
     match mode {
         Indicator::Unattached => Err(MixnetNotReady::Unattached),
@@ -92,8 +70,7 @@ pub fn resolve_route(
         // Stale-proven routes exactly as earned Ready: the difference is
         // evidentiary, resolved by the promotion and demotion loop, never
         // by refusing the surface.
-        Indicator::Ready | Indicator::PreviouslyProvenThisEpoch => socks5_addr
-            .map(SlotTunnel::over)
+        Indicator::Ready | Indicator::PreviouslyProvenThisEpoch => conduit
             .map(MixnetRoute::Mixnet)
             .ok_or(MixnetNotReady::Bootstrapping),
         Indicator::Bootstrapping => Err(MixnetNotReady::Bootstrapping),
@@ -104,6 +81,12 @@ pub fn resolve_route(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn conduit() -> zingo_netutils::conduit::MixnetConduit {
+        zingo_netutils::conduit::MixnetConduit::over(
+            "127.0.0.1:9050".parse().expect("the test address parses"),
+        )
+    }
 
     #[test]
     fn switched_off_routes_clearnet() {
@@ -123,30 +106,46 @@ mod tests {
             Err(MixnetNotReady::Unattached)
         );
         assert_eq!(
-            resolve_route(
-                Indicator::Unattached,
-                Some("127.0.0.1:9050".parse().expect("the test address parses"))
-            ),
+            resolve_route(Indicator::Unattached, Some(conduit())),
             Err(MixnetNotReady::Unattached),
-            "a stray address must not conjure a route without a transport"
+            "a stray conduit must not conjure a route without a transport"
         );
     }
 
     #[test]
     fn ready_routes_through_the_proxy() {
-        let route = resolve_route(
-            Indicator::Ready,
-            Some("127.0.0.1:9050".parse().expect("the test address parses")),
-        );
+        let route = resolve_route(Indicator::Ready, Some(conduit()));
         match route.unwrap() {
-            MixnetRoute::Mixnet(tunnel) => assert_eq!(
-                tunnel.addr(),
+            MixnetRoute::Mixnet(routed) => assert_eq!(
+                routed.dial().socks5(),
                 "127.0.0.1:9050"
                     .parse::<std::net::SocketAddr>()
                     .expect("the test address parses")
             ),
             MixnetRoute::Clearnet => panic!("ready must route through the proxy"),
         }
+    }
+
+    /// HYPOTHESIS: the resolver hands out the session's own conduit rather
+    /// than one of its own making, so work it routes counts against the
+    /// conduit a rotation supersedes. Falsified if the route carries a
+    /// conduit whose uses the caller cannot see.
+    #[test]
+    fn the_route_carries_the_session_s_own_conduit() {
+        let session = conduit();
+        let MixnetRoute::Mixnet(routed) =
+            resolve_route(Indicator::Ready, Some(session.clone())).unwrap()
+        else {
+            panic!("ready must route through the proxy")
+        };
+        let held = routed.dial();
+        assert_eq!(
+            session.in_flight(),
+            1,
+            "a use of the routed conduit must count against the session's"
+        );
+        drop(held);
+        assert_eq!(session.in_flight(), 0);
     }
 
     #[test]
@@ -166,19 +165,15 @@ mod tests {
             Err(MixnetNotReady::Died)
         );
         assert_eq!(
-            resolve_route(
-                Indicator::Died,
-                Some("127.0.0.1:9050".parse().expect("the test address parses"))
-            ),
+            resolve_route(Indicator::Died, Some(conduit())),
             Err(MixnetNotReady::Died),
-            "a stale address must not resurrect a dead proxy into a route"
+            "a stale conduit must not resurrect a dead proxy into a route"
         );
     }
 
     /// HYPOTHESIS: the refusal names the actual state, so a user with a dead
-    /// proxy is told to run `network on` rather than that the mixnet is
-    /// bootstrapping. Falsified if the Died refusal renders the
-    /// bootstrapping message.
+    /// proxy is not told that the mixnet is bootstrapping. Falsified if the
+    /// Died refusal renders the bootstrapping message.
     #[test]
     fn the_refusal_message_names_the_actual_state() {
         let bootstrapping = MixnetNotReady::Bootstrapping.to_string();
@@ -186,18 +181,38 @@ mod tests {
 
         let died = MixnetNotReady::Died.to_string();
         assert!(died.contains("died"), "{died}");
-        assert!(died.contains("network on"), "{died}");
         assert!(!died.contains("bootstrapping"), "{died}");
 
         let unattached = MixnetNotReady::Unattached.to_string();
         assert!(unattached.contains("not enabled"), "{unattached}");
-        assert!(unattached.contains("network on"), "{unattached}");
         assert!(!unattached.contains("bootstrapping"), "{unattached}");
         assert!(!unattached.contains("died"), "{unattached}");
     }
 
+    /// HYPOTHESIS: a refusal names the condition and never a frontend's
+    /// remedy, because only a frontend knows whether the user has a command
+    /// line or a toggle. Falsified if any refusal spells a command.
     #[test]
-    fn ready_without_an_address_refuses() {
+    fn no_refusal_speaks_a_frontend_s_vocabulary() {
+        for refusal in [
+            MixnetNotReady::Unattached,
+            MixnetNotReady::Bootstrapping,
+            MixnetNotReady::Died,
+        ] {
+            let rendered = refusal.to_string();
+            for command in ["network on", "network off", "network status"] {
+                assert!(
+                    !rendered.contains(command),
+                    "the {refusal:?} refusal spells the command `{command}`, \
+                     which a frontend without a command line cannot offer: \
+                     {rendered}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ready_without_a_conduit_refuses() {
         assert_eq!(
             resolve_route(Indicator::Ready, None),
             Err(MixnetNotReady::Bootstrapping)

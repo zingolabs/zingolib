@@ -45,7 +45,21 @@ async fn main() -> std::process::ExitCode {
     }
 }
 
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
+/// Why the proxy process stopped short of serving.
+#[derive(Debug, thiserror::Error)]
+enum ProxyExit {
+    /// The argument grammar refused what the parent passed.
+    #[error(transparent)]
+    Arguments(#[from] ArgumentsError),
+    /// The mixnet refused the discovery or the bootstrap.
+    #[error(transparent)]
+    Nym(#[from] zingo_netutils::NymProxyError),
+    /// The interrupt handler could not be installed.
+    #[error("the interrupt handler failed")]
+    Interrupt(#[source] std::io::Error),
+}
+
+async fn run() -> Result<(), ProxyExit> {
     let arguments = parse_arguments(std::env::args().skip(1))?;
 
     // The parent's one window onto the exit directory: it cannot query the
@@ -70,7 +84,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // arrives (Ctrl-C for a standalone run). Then disconnect cleanly.
     tokio::select! {
         _ = wait_for_parent_exit() => {}
-        result = tokio::signal::ctrl_c() => { result?; }
+        result = tokio::signal::ctrl_c() => { result.map_err(ProxyExit::Interrupt)?; }
     }
     proxy.disconnect().await;
     Ok(())
@@ -79,7 +93,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// Bootstrap the proxy over the parent-supplied clutch (or a self-drawn one
 /// for a standalone run), then announce the bound Exit Node and the SOCKS5
 /// address at bind time.
-async fn bootstrap(arguments: Arguments) -> Result<NymProxy, Box<dyn std::error::Error>> {
+async fn bootstrap(arguments: Arguments) -> Result<NymProxy, ProxyExit> {
     // Narrate the bootstrap on stdout so the parent supervisor can surface
     // live progress (`nym status`) instead of an opaque wait.
     let narrate = |line: String| emit(format!("{NYM_STATUS_LINE_PREFIX}{line}"));

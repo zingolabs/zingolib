@@ -7,9 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `conduit::MixnetConduit::in_flight` counts guards rather than references
+  to the shared core, so cloning a conduit no longer reads as using it. A
+  session holds one conduit and hands clones to every surface, and under
+  the previous derivation each of those clones inflated the count, leaving
+  a superseded conduit permanently short of `Retired`.
+
+### Changed
+- BREAKING: `provider::RotationVerdict` gains a `Never` variant, which a
+  platform answers when rotation is ruled out for the session's whole life
+  rather than merely postponed. `Defer` used to carry both meanings, so a
+  desktop that will never rotate had to say so by repeating a ten-minute
+  deferral forever; the wallet now retires its rotation watchdog instead of
+  parking it on a cadence whose answer cannot change.
+
 ### Added
+- `provider::HostedProvider::rotation_verdict`: the host's answer on
+  spending a rotation's bootstrap now, reaching the wallet through the
+  provider so the host itself stays below the seam.
+- `time::CONDUIT_DRAIN_BUDGET` and `time::CONDUIT_DRAIN_POLL`: how long a
+  superseded conduit may hold its transport open for work already dialed
+  through it, and how often that work is rechecked. The budget is
+  `MIGRATION_SUBMIT_TIMEOUT`, the longest bounded operation that work can
+  be, so a guard outliving it is a leak rather than slow work.
+- `conduit::ConduitDial` and `conduit::ConduitState`: a conduit counts its
+  outstanding uses, so a superseded transport retires the moment its work
+  drains rather than after a guessed interval (ADR 0048). `ConduitState`
+  orders `Serving`, `Superseded`, `Retired`, which is the order a conduit's
+  life runs in, and it is derived from the count so retirement cannot be
+  claimed while work is outstanding.
+- `provider::RotationVerdict` and `ProxyHosting::rotation_verdict`: the
+  resource-constrained rotation policy a platform states, since only it sees
+  the battery, the foreground state, and the radio (ADR 0048).
+  `provider::rotation_interval` draws the randomised cadence, and
+  `time::CLIENT_ROTATION_MIN` and `time::CLIENT_ROTATION_MAX` bound it.
+- `provider::ProxyHosting`, `provider::HostedProvider`,
+  `provider::HostedTransport`, and `provider::HostRefusal`: the mixnet
+  provider a platform host supplies, moved down from zingolib (ADR 0046).
+  `HostedProvider` holds the supplied host, so the dynamic dispatch a
+  host requires stays below the seam and the wallet names a concrete
+  type. The provider names no async runtime: its methods block, and a
+  caller on a runtime hands them to a blocking thread.
+- `conduit::MixnetConduit`: what a wallet holds when it has somewhere to
+  send mixnet traffic, asked for by role (ADR 0046). It replaces
+  zingolib's `SlotTunnel`, which it also retires the term "tunnel" with.
+  Its address accessor stays public until the dialers that take a bare
+  `SocketAddr` accept a conduit instead.
+- `exit::ExitNodeId` and the Exit Pool, moved from zingolib so the wallet
+  crate stops owning Nym's vocabulary (ADR 0046).
 - `time::NYM_EPOCH`: one Nym network epoch, the hourly topology rotation
   that bounds how long an observation about an Exit Node stays meaningful.
+- `time::OBSERVED_ANNOUNCEMENT_MEAN`, `time::OBSERVED_ANNOUNCEMENT_DEVIATION`,
+  and `time::ANNOUNCEMENT_DEVIATIONS`: the measured exit-announcement
+  latency the readiness grace is now derived from.
+
+### Changed
+- BREAKING: `conduit::MixnetConduit` is no longer `Copy`, and its `socks5`
+  accessor is gone. Dialing takes a `ConduitDial` guard from `dial()`, whose
+  `socks5` is the only way to reach the address, so a use cannot be made
+  without being counted (ADR 0047, ADR 0048).
+- `time::EXIT_ANNOUNCEMENT_GRACE` falls from 25 seconds to 7. It was one
+  connect attempt plus a hedge interval, a bound chosen without measurement.
+  The `birth-trial` workbench tool measured thirty pinned births against
+  mainnet on 2026-08-18 and found announcement latency averaging 4637
+  milliseconds with a standard deviation of 549, and a slowest sample of
+  5604. Seven seconds is the four-deviation figure rounded up to a whole
+  second. `time::SPEED_ACQUISITION_DEADLINE` derives from the grace and so
+  falls with it, from 285 seconds to 105.
 
 ### Removed
 - BREAKING: the responsiveness partition is retired. The `Responsiveness`

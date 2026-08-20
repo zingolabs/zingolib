@@ -58,7 +58,7 @@ pub enum LightClientError {
     #[cfg(feature = "nym")]
     #[error(
         "the mixnet-routed price fetch requires Mixnet Mode, which is off; \
-         enable it (`network on`), or use the clearnet price fetch"
+         enable Mixnet Mode, or use the clearnet price fetch"
     )]
     PriceFetchRequiresMixnet,
     /// A mixnet-only surface was attempted while the mixnet was bootstrapping.
@@ -69,7 +69,7 @@ pub enum LightClientError {
     #[cfg(feature = "nym")]
     #[error(
         "the mixnet liveness probe requires Mixnet Mode, which is off; \
-         enable it (`network on`) to probe Correspondents"
+         enable Mixnet Mode to probe Correspondents"
     )]
     ProbeRequiresMixnet,
     /// A probe target outside the one endpoint shape the mixnet exit

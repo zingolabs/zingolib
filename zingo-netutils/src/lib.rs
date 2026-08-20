@@ -82,6 +82,14 @@ mod mixnet_connect;
 // mixnet bootstrap here and zingolib's send escalation (ADR 0011).
 pub mod arm_race;
 
+// Deliberately ungated: Exit Node identity and health are data, so gating
+// them would make the featureless build harder to reason about (ADR 0046).
+pub mod exit;
+
+pub mod conduit;
+
+pub mod provider;
+
 #[cfg(feature = "nym")]
 mod nym_proxy;
 #[cfg(feature = "nym")]

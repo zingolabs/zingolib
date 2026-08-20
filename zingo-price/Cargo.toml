@@ -18,6 +18,7 @@ license = "MIT"
 # feature the crate is the storage-only price data model.
 default = ["socks5-fetch"]
 socks5-fetch = [
+    "dep:zingo-netutils",
     "dep:reqwest",
     "dep:rustls",
     "dep:serde",
@@ -27,6 +28,7 @@ socks5-fetch = [
     "dep:zingo-net-diag",
     "dep:futures",
 ]
+zingo-netutils = ["dep:zingo-netutils"]
 
 [dependencies]
 zcash_encoding = { workspace = true }
@@ -49,6 +51,7 @@ serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 zingo-net-diag = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
+zingo-netutils = { version = "5.0.1", path = "../zingo-netutils", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }

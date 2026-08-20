@@ -1,7 +1,10 @@
 //! The Exit Pool and the Proven Client acquisition every operation shares.
 #![forbid(unsafe_code)]
 
-pub(crate) mod exit_pool;
+/// Exit Pool, defined below the seam (ADR 0046).
+pub(crate) use zingo_netutils::exit as exit_pool;
+
+use std::time::{Duration, Instant};
 
 use crate::mixnet::acquire;
 
@@ -57,8 +60,17 @@ pub(crate) struct Pools {
     pub(crate) exits: std::sync::Arc<std::sync::Mutex<exit_pool::ExitPool>>,
     /// What births acquire transports from; `None` until a session sets
     /// one, and always `None` for attached sessions.
-    acquirer:
-        std::sync::Mutex<Option<std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>>>,
+    acquirer: std::sync::Mutex<Option<std::sync::Arc<crate::mixnet::acquire::Acquirer>>>,
+    /// Which exit holds which role, recorded when boot proves its quartet.
+    /// The binding outlives every client, so the next client doing a job
+    /// binds the exit that already carries that job's role (ADR 0045).
+    roles: std::sync::Mutex<
+        std::collections::HashMap<crate::mixnet::quartet::Role, crate::mixnet::ExitNodeId>,
+    >,
+    /// The conduit boot proved for each role it has not yet spent, so the
+    /// job a role names runs over a proven exit without paying for a birth.
+    conduits:
+        std::sync::Mutex<std::collections::HashMap<crate::mixnet::quartet::Role, ProvenBirth>>,
 }
 
 impl Pools {
@@ -67,28 +79,75 @@ impl Pools {
         std::sync::Arc::new(Pools {
             exits: std::sync::Arc::new(std::sync::Mutex::new(exit_pool::ExitPool::default())),
             acquirer: std::sync::Mutex::new(None),
+            roles: std::sync::Mutex::new(std::collections::HashMap::new()),
+            conduits: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
     }
 
-    /// Draws a Clutch, seeding the Exit Pool from the directory first when
-    /// this session has not yet learned the population.
-    pub(crate) async fn draw_clutch(
+    /// Holds the conduit boot proved for `role` until that role's job takes
+    /// it.
+    pub(crate) fn hold_conduit(&self, role: crate::mixnet::quartet::Role, conduit: ProvenBirth) {
+        self.conduits
+            .lock()
+            .expect("pool conduit mutex")
+            .insert(role, conduit);
+    }
+
+    /// Takes the conduit boot proved for `role`, leaving none behind,
+    /// because the job a role names runs once per boot.
+    pub(crate) fn take_conduit(&self, role: crate::mixnet::quartet::Role) -> Option<ProvenBirth> {
+        self.conduits
+            .lock()
+            .expect("pool conduit mutex")
+            .remove(&role)
+    }
+
+    /// The conduit for `role`: the one boot proved while it stands unspent,
+    /// and a proving birth once it is taken.
+    pub(crate) async fn conduit_for<A>(
         &self,
-        acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
-    ) -> Result<std::collections::HashSet<exit_pool::Reservation>, acquire::TransportError> {
+        role: crate::mixnet::quartet::Role,
+        acquirer: &A,
+    ) -> Result<ProvenBirth, acquire::TransportError>
+    where
+        A: crate::mixnet::acquire::TransportAcquirable + ?Sized,
+    {
+        match self.take_conduit(role) {
+            Some(held) => Ok(held),
+            None => self.acquire_proven(acquirer).await,
+        }
+    }
+
+    /// Takes every conduit still held, for a teardown that must leave no
+    /// proxy behind.
+    pub(crate) fn drain_conduits(&self) -> Vec<ProvenBirth> {
+        self.conduits
+            .lock()
+            .expect("pool conduit mutex")
+            .drain()
+            .map(|(_role, conduit)| conduit)
+            .collect()
+    }
+
+    /// Draws one exit reservation, seeding the Exit Pool from the directory
+    /// first when this session has not yet learned the population.
+    pub(crate) async fn draw_exit<A>(
+        &self,
+        acquirer: &A,
+    ) -> Result<exit_pool::Reservation, acquire::TransportError>
+    where
+        A: crate::mixnet::acquire::TransportAcquirable + ?Sized,
+    {
         let seeded = self.exits.lock().expect("exit pool mutex").is_seeded();
         if !seeded {
             let discovered = acquirer.discover().await?;
             self.exits.lock().expect("exit pool mutex").seed(discovered);
         }
-        Ok(exit_pool::ExitPool::draw_clutch(&self.exits)?)
+        Ok(exit_pool::ExitPool::draw_exit(&self.exits)?)
     }
 
     /// Records what this session acquires transports from.
-    pub(crate) fn set_acquirer(
-        &self,
-        acquirer: std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>,
-    ) {
+    pub(crate) fn set_acquirer(&self, acquirer: std::sync::Arc<crate::mixnet::acquire::Acquirer>) {
         *self.acquirer.lock().expect("pool acquirer mutex") = Some(acquirer);
     }
 
@@ -99,22 +158,20 @@ impl Pools {
     }
 
     /// This session's acquirer, when one is set.
-    pub(crate) fn acquirer(
-        &self,
-    ) -> Option<std::sync::Arc<dyn crate::mixnet::acquire::TransportAcquirable>> {
+    pub(crate) fn acquirer(&self) -> Option<std::sync::Arc<crate::mixnet::acquire::Acquirer>> {
         self.acquirer.lock().expect("pool acquirer mutex").clone()
     }
 
-    /// The instant `exit`'s EpochProven observation stops being fresh,
-    /// when one stands.
-    pub(crate) fn proven_until(
+    /// Records that `exit` holds `role` for as long as its proof stands.
+    pub(crate) fn assign_role(
         &self,
-        exit: &crate::mixnet::ExitNodeId,
-    ) -> Option<std::time::Instant> {
-        self.exits
+        role: crate::mixnet::quartet::Role,
+        exit: crate::mixnet::ExitNodeId,
+    ) {
+        self.roles
             .lock()
-            .expect("exit pool mutex")
-            .proven_until(exit)
+            .expect("role binding mutex")
+            .insert(role, exit);
     }
 
     /// Keeps `verdict` as `exit`'s current observation, earned now.
@@ -125,24 +182,26 @@ impl Pools {
     ) {
         self.exits.lock().expect("exit pool mutex").remember(
             exit,
-            exit_pool::Observation::earned(verdict, std::time::Instant::now()),
+            exit_pool::Observation::earned(verdict, Instant::now()),
         );
     }
 
-    /// Acquires one ready transport over a fresh Clutch, publishing its
-    /// lifecycle into `publisher` and keeping only the bound exit's lease;
-    /// a bind failure names the exits the failed Clutch drew, so the birth
-    /// loop can convict them.
-    async fn acquire_bound(
+    /// Acquires one ready transport over a freshly drawn exit, publishing
+    /// its lifecycle into `publisher`; a bind failure names the exit it drew,
+    /// so the birth loop can convict it.
+    async fn acquire_bound<A>(
         &self,
-        acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
+        acquirer: &A,
         publisher: &crate::mixnet::driver::StatusPublisher,
-    ) -> Result<(crate::mixnet::MixnetProxy, exit_pool::Reservation), BindFailure> {
-        let mut clutch = self
-            .draw_clutch(acquirer)
+    ) -> Result<(crate::mixnet::MixnetProxy, exit_pool::Reservation), BindFailure>
+    where
+        A: crate::mixnet::acquire::TransportAcquirable + ?Sized,
+    {
+        let lease = self
+            .draw_exit(acquirer)
             .await
             .map_err(BindFailure::undrawn)?;
-        let nodes = exit_pool::clutch_nodes(&clutch);
+        let nodes = vec![lease.node().clone()];
         let (transport, exits) = match crate::mixnet::supervisor::acquire_ready_transport(
             acquirer,
             &nodes,
@@ -158,33 +217,34 @@ impl Pools {
                 });
             }
         };
-        // Bind-time recycle: keeping only the bound lease drops the rest. A
-        // report naming no drawn node (a defective host or child) refuses
-        // typed, with the transport stopped and every reservation recycled.
-        let Some(lease) = exit_pool::take_bound_lease(&mut clutch, &exits) else {
+        // The birth drew one exit, so a report naming any other is a
+        // defective host or child: refuse typed, stop the transport, and let
+        // the reservation recycle on drop.
+        if !exits.contains(lease.node()) {
             transport.stop().await;
             return Err(BindFailure {
                 cause: acquire::TransportError::ExitOutsideClutch { reported: exits },
                 drawn: nodes,
             });
-        };
-        drop(clutch);
+        }
         Ok((transport, lease))
     }
 
-    /// Births one Proven Client — a trusting birth when the bound exit's
-    /// fresh proof is trusted, otherwise a proving birth whose Sentinel
-    /// refusal condemns the exit and tries a successor, refusing typed when
-    /// every birth failed its proof — returning `probed: false` for a
-    /// trusting birth so the caller can type the stale proof. A bind-stage
-    /// failure spends a birth too: the drawn exits are convicted and a
-    /// fresh Clutch drawn, so one slow or dead Clutch is absorbed by the
-    /// budget instead of aborting the whole acquisition with nothing
-    /// learned.
-    pub(crate) async fn acquire_proven(
+    /// Births one Proven Client, carrying a [`Proof::Inherited`] when the
+    /// bound exit's fresh observation is trusted and a [`Proof::Earned`]
+    /// when the Sentinel answered, condemning the exit and trying a
+    /// successor when it does not, and refusing typed when every birth
+    /// failed its proof. A bind-stage failure spends a birth too: the drawn
+    /// exit is convicted and a fresh one drawn, so one slow or dead exit is
+    /// absorbed by the budget instead of aborting the whole acquisition
+    /// with nothing learned.
+    pub(crate) async fn acquire_proven<A>(
         &self,
-        acquirer: &dyn crate::mixnet::acquire::TransportAcquirable,
-    ) -> Result<ProvenBirth, acquire::TransportError> {
+        acquirer: &A,
+    ) -> Result<ProvenBirth, acquire::TransportError>
+    where
+        A: crate::mixnet::acquire::TransportAcquirable + ?Sized,
+    {
         // The birth channel is minted here, never taken from the caller, so
         // no candidate lifecycle can reach the session's subscribers: the
         // returned birth carries the channel, and the slot owner alone
@@ -208,15 +268,21 @@ impl Pools {
                 }
                 Err(failure) => return Err(failure.cause),
             };
-            let trusted = {
+            // A trusted exit's own observation carries the deadline: the
+            // birth inherits it rather than starting an epoch it never
+            // earned, so the watchdog fires when the original proof ages out.
+            let inherited = {
                 let exits = self.exits.lock().expect("exit pool mutex");
-                exits.epoch_proven(lease.node(), std::time::Instant::now())
+                exits
+                    .epoch_proven(lease.node(), Instant::now())
+                    .then(|| exits.proven_until(lease.node()))
+                    .flatten()
             };
-            if trusted {
+            if let Some(proven_until) = inherited {
                 return Ok(ProvenBirth {
                     transport,
                     lease,
-                    probed: false,
+                    proof: Proof::Inherited { proven_until },
                     lifecycle,
                 });
             }
@@ -229,7 +295,7 @@ impl Pools {
                 zingo_netutils::time::SENTINEL_BUDGET,
             )
             .await;
-            if evidence.proves_the_exit() {
+            if let zingo_netutils::sentinel::ExitEvidence::Answered { millis } = evidence {
                 self.remember(
                     lease.node().clone(),
                     exit_pool::ExitNodeHealthVerdict::EpochProven,
@@ -237,7 +303,9 @@ impl Pools {
                 return Ok(ProvenBirth {
                     transport,
                     lease,
-                    probed: true,
+                    proof: Proof::Earned {
+                        round_trip: Duration::from_millis(millis),
+                    },
                     lifecycle,
                 });
             }
@@ -299,13 +367,32 @@ impl BindFailure {
 /// One Proven Client's birth: the transport, its bound exit's lease, and
 /// whether the proof was earned by this birth's own Sentinel answer rather
 /// than trusted from a stale EpochProven observation.
+/// What a birth's proof rests on, which decides how long the client may be
+/// trusted before a fresh ProofAcquisition is due.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Proof {
+    /// The birth answered the Sentinel itself, so its exit is proven for a
+    /// whole epoch from now.
+    Earned {
+        /// How long the Sentinel's round trip took.
+        round_trip: Duration,
+    },
+    /// The birth trusted a fresh `EpochProven` observation an earlier client
+    /// earned, so it inherits that observation's expiry rather than starting
+    /// an epoch of its own.
+    Inherited {
+        /// When the inherited observation stops being epoch-fresh.
+        proven_until: Instant,
+    },
+}
+
 pub(crate) struct ProvenBirth {
     /// The ready transport.
     pub(crate) transport: crate::mixnet::MixnetProxy,
     /// The bound exit's lease.
     pub(crate) lease: exit_pool::Reservation,
-    /// Whether this birth answered the Sentinel itself.
-    pub(crate) probed: bool,
+    /// What this birth's proof rests on.
+    pub(crate) proof: Proof,
     /// The birth's own status channel, carrying the condemned candidates'
     /// churn and the settled client's later transitions.
     pub(crate) lifecycle: crate::mixnet::driver::StatusPublisher,
@@ -368,52 +455,36 @@ mod bind_failure_absorption {
     use super::*;
 
     /// An acquirer whose every acquisition fails at the bind stage, with a
-    /// census large enough that no draw repeats an exit.
+    /// census of exactly one exit per birth, so every drawn exit is
+    /// distinct and every one of them is convicted.
     struct BindRefusingAcquirer {
         census: usize,
         acquisitions: AtomicUsize,
     }
 
     impl crate::mixnet::acquire::TransportAcquirable for BindRefusingAcquirer {
-        fn discover(
+        async fn discover(
             &self,
-        ) -> std::pin::Pin<
-            Box<
-                dyn std::future::Future<
-                        Output = Result<
-                            std::collections::HashSet<crate::mixnet::ExitNodeId>,
-                            acquire::TransportError,
-                        >,
-                    > + Send
-                    + '_,
-            >,
-        > {
-            let census = self.census;
-            Box::pin(async move {
-                Ok((0..census)
-                    .map(|index| crate::mixnet::ExitNodeId::from(format!("exit-{index}").as_str()))
-                    .collect())
+        ) -> Result<std::collections::HashSet<crate::mixnet::ExitNodeId>, acquire::TransportError>
+        {
+            Ok((0..self.census)
+                .map(|index| crate::mixnet::ExitNodeId::from(format!("exit-{index}").as_str()))
+                .collect())
+        }
+
+        async fn acquire(
+            &self,
+            _clutch: &[crate::mixnet::ExitNodeId],
+            _publisher: crate::mixnet::driver::StatusPublisher,
+        ) -> Result<crate::mixnet::MixnetProxy, acquire::TransportError> {
+            self.acquisitions.fetch_add(1, Ordering::AcqRel);
+            Err(acquire::TransportError::NotReady {
+                budget: zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT,
             })
         }
 
-        fn acquire<'a>(
-            &'a self,
-            _clutch: &'a [crate::mixnet::ExitNodeId],
-            _publisher: crate::mixnet::driver::StatusPublisher,
-        ) -> std::pin::Pin<
-            Box<
-                dyn std::future::Future<
-                        Output = Result<crate::mixnet::MixnetProxy, acquire::TransportError>,
-                    > + Send
-                    + 'a,
-            >,
-        > {
-            self.acquisitions.fetch_add(1, Ordering::AcqRel);
-            Box::pin(async {
-                Err(acquire::TransportError::NotReady {
-                    budget: zingo_netutils::time::NYM_LIFECYCLE_TIMEOUT,
-                })
-            })
+        fn rotation_verdict(&self) -> zingo_netutils::provider::RotationVerdict {
+            zingo_netutils::provider::RotationVerdict::Never
         }
     }
 
@@ -426,7 +497,7 @@ mod bind_failure_absorption {
     async fn a_bind_failure_spends_a_birth_and_convicts_the_drawn() {
         let pools = Pools::new();
         let acquirer = BindRefusingAcquirer {
-            census: MAX_PROVING_BIRTHS * zingo_netutils::arm_race::RESERVATION_CLUTCH_SIZE,
+            census: MAX_PROVING_BIRTHS,
             acquisitions: AtomicUsize::new(0),
         };
         let Err(refusal) = pools.acquire_proven(&acquirer).await else {
@@ -448,7 +519,7 @@ mod bind_failure_absorption {
         );
         let convicted = {
             let exits = pools.exits.lock().expect("exit pool mutex");
-            let now = std::time::Instant::now();
+            let now = Instant::now();
             (0..acquirer.census)
                 .filter(|index| {
                     exits.epoch_failed(

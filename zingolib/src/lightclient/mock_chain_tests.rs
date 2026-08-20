@@ -914,7 +914,7 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
 /// silently excludes that value until expiry self-heals it (~40 blocks
 /// plus a sync).
 ///
-/// Setup: 34 fabricated legacy-Orchard (V2) notes make the provisional
+/// Setup: 17 fabricated legacy-Orchard (V2) notes make the provisional
 /// planner (16-action total budget) emit a first reduction round of several
 /// merge transactions — more than one, so a failure of the first can strand
 /// the rest. The mock indexer's lost-response fault plus an
@@ -932,8 +932,8 @@ async fn failed_split_round_transmit_strands_calculated_transactions() {
     use crate::testutils::mock_indexer::LostSendDestination;
     use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
 
-    const NOTES: u32 = 34;
-    const NOTE_VALUE: u64 = 60_000;
+    const NOTES: u32 = 17;
+    const NOTE_VALUE: u64 = 120_000;
     const TIP: u32 = 41;
 
     // A real mock-net client, synced over an empty chain so the wallet

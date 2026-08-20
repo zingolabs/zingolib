@@ -921,15 +921,17 @@ impl LightClient {
         &self,
     ) -> Result<transmission_route::RoutedTransmissionClient, LightClientError> {
         #[cfg(feature = "nym")]
-        if let crate::mixnet::MixnetRoute::Mixnet(tunnel) = self.mixnet_route()? {
-            let socks5_addr = tunnel.into_addr();
+        if let crate::mixnet::MixnetRoute::Mixnet(conduit) = self.mixnet_route()? {
+            // The guard travels into the client, which dials on every
+            // submission long after this function returns.
+            let dial = conduit.dial();
             let sync_indexer = self.indexer_uri();
             let candidates = transmission_route::eligible_candidates(
                 self.migration_transmission_uri.clone(),
                 sync_indexer.as_ref(),
             )?;
             return Ok(transmission_route::RoutedTransmissionClient::Mixnet(
-                transmission_route::MixnetTransmissionClient::new(socks5_addr, candidates),
+                transmission_route::MixnetTransmissionClient::new(dial, candidates),
             ));
         }
 
@@ -1022,7 +1024,7 @@ impl LightClient {
                             match wallet.prepare_part(account, &mut state.parts[index], &params)? {
                                 PrepareResult::Ready { prove, .. } => {
                                     prove_handles.push(tokio::task::spawn_blocking(move || {
-                                        prove().map(|(txid, raw_tx)| (index, txid, raw_tx))
+                                        prove.prove().map(|(txid, raw_tx)| (index, txid, raw_tx))
                                     }));
                                 }
                                 PrepareResult::Skip(reason) => {
