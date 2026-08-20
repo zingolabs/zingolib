@@ -37,14 +37,40 @@ fn canonical_endpoints() -> Vec<(&'static str, Socks5Endpoint)> {
     ]
 }
 
-/// The canonical death reason; the non-ASCII detail pins UTF-8 handling.
+/// One canonical value per death reason the monitor can report; the non-ASCII
+/// detail pins UTF-8 handling.
 fn canonical_death_reasons() -> Vec<(&'static str, ProxyDeathReason)> {
-    vec![(
-        "proxy_death_reason_mixnet_disconnected",
-        ProxyDeathReason::MixnetDisconnected {
-            detail: "gateway went away — упал — 途絶".to_string(),
-        },
-    )]
+    vec![
+        (
+            "proxy_death_reason_listener_refused",
+            ProxyDeathReason::ListenerRefused {
+                detail: "gateway went away — упал — 途絶".to_string(),
+            },
+        ),
+        (
+            "proxy_death_reason_greeting_unwritable",
+            ProxyDeathReason::GreetingUnwritable {
+                detail: "broken pipe".to_string(),
+            },
+        ),
+        (
+            "proxy_death_reason_method_selection_unreadable",
+            ProxyDeathReason::MethodSelectionUnreadable {
+                detail: "connection reset".to_string(),
+            },
+        ),
+        (
+            "proxy_death_reason_method_selection_refused",
+            ProxyDeathReason::MethodSelectionRefused {
+                version: 0x05,
+                method: 0xff,
+            },
+        ),
+        (
+            "proxy_death_reason_check_timed_out",
+            ProxyDeathReason::CheckTimedOut { budget_millis: 250 },
+        ),
+    ]
 }
 
 /// One canonical value per error variant `start()` can raise.
@@ -60,12 +86,6 @@ fn canonical_errors() -> Vec<(&'static str, ProxyFfiError)> {
             "proxy_ffi_error_connect",
             ProxyFfiError::Connect {
                 reason: "gateway refused".to_string(),
-            },
-        ),
-        (
-            "proxy_ffi_error_address",
-            ProxyFfiError::Address {
-                reason: "\"not-an-address\": invalid socket address syntax".to_string(),
             },
         ),
     ]
@@ -130,7 +150,7 @@ fn socks5_endpoint_wire_encoding_matches_the_pins() {
 }
 
 #[test]
-fn death_reason_wire_encoding_matches_the_pin() {
+fn every_death_reason_wire_encoding_matches_its_pin() {
     for (name, reason) in canonical_death_reasons() {
         assert_pins(name, reason);
     }

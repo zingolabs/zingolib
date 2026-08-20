@@ -2,9 +2,9 @@
 
 The hex files under `../test-data/golden/` pin the exact uniffi wire encoding
 of every value the nym FFI functions carry: the `Socks5Endpoint` record that
-`socks5_endpoint()` returns (including both port extremes), the
-`ProxyDeathReason` that `ProxyDeathObserver::on_death` receives, and every
-`ProxyFfiError` variant that `start()` can raise. Three test suites assert
+`socks5_endpoint()` returns (including both port extremes), every
+`ProxyDeathReason` variant that `ProxyDeathObserver::on_death` receives, and
+every `ProxyFfiError` variant that `start()` can raise. Three test suites assert
 both directions — lowering produces exactly the pinned bytes, and lifting the
 pinned bytes produces exactly the canonical value — against the same files:
 

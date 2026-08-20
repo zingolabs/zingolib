@@ -21,9 +21,8 @@
 use std::{net::SocketAddr, sync::Mutex, time::Duration};
 
 use tokio::runtime::Runtime;
-use zingo_netutils::responsiveness::PrioritiseSpeed;
-use zingo_netutils::time::{LISTENER_MONITOR_INTERVAL, LOOPBACK_DIAL_BOUND};
 use zingo_netutils::NymProxy;
+use zingo_netutils::time::{LISTENER_MONITOR_INTERVAL, LOOPBACK_DIAL_BOUND};
 
 #[cfg(target_os = "android")]
 use zingo_nym_tls_init as _;
@@ -60,24 +59,37 @@ pub enum ProxyFfiError {
         /// The underlying NymProxy failure.
         reason: String,
     },
-    /// The proxy came up but reported a listener address that did not parse
-    /// as a socket address, so no endpoint can be offered.
-    #[error("the proxy reported an unparseable SOCKS5 address: {reason}")]
-    Address {
-        /// The unparseable address text and the parse failure.
-        reason: String,
-    },
 }
 
-/// Why a running proxy was lost, as a typed cause the host can match on for
-/// policy (retry, narrate, escalate), each variant carrying the underlying
-/// diagnostic for logs.
+/// Why a running proxy was lost, named as the liveness probe observed it.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum ProxyDeathReason {
-    /// The mixnet client's connection to its gateway ended.
-    MixnetDisconnected {
-        /// The underlying disconnect diagnostic.
+    /// The TCP connect to the listener failed.
+    ListenerRefused {
+        /// The underlying connect failure.
         detail: String,
+    },
+    /// The SOCKS5 greeting could not be written to the listener.
+    GreetingUnwritable {
+        /// The underlying write failure.
+        detail: String,
+    },
+    /// The listener's method selection could not be read.
+    MethodSelectionUnreadable {
+        /// The underlying read failure.
+        detail: String,
+    },
+    /// The listener answered a method selection other than no-auth.
+    MethodSelectionRefused {
+        /// The version byte the listener answered.
+        version: u8,
+        /// The method byte the listener answered.
+        method: u8,
+    },
+    /// The liveness round trip missed its budget.
+    CheckTimedOut {
+        /// The budget the round trip missed, in milliseconds.
+        budget_millis: u64,
     },
 }
 
@@ -163,6 +175,32 @@ async fn socks5_handshake_check(
         })?
 }
 
+/// Carry a liveness-probe failure across the FFI as the typed death it caused.
+fn death_reason(failure: HandshakeCheckError) -> ProxyDeathReason {
+    match failure {
+        HandshakeCheckError::Connect(e) => ProxyDeathReason::ListenerRefused {
+            detail: e.to_string(),
+        },
+        HandshakeCheckError::GreetingWrite(e) => ProxyDeathReason::GreetingUnwritable {
+            detail: e.to_string(),
+        },
+        HandshakeCheckError::MethodSelectionRead(e) => {
+            ProxyDeathReason::MethodSelectionUnreadable {
+                detail: e.to_string(),
+            }
+        }
+        HandshakeCheckError::MethodSelection { reply } => {
+            ProxyDeathReason::MethodSelectionRefused {
+                version: reply[0],
+                method: reply[1],
+            }
+        }
+        HandshakeCheckError::TimedOut { budget } => ProxyDeathReason::CheckTimedOut {
+            budget_millis: u64::try_from(budget.as_millis()).unwrap_or(u64::MAX),
+        },
+    }
+}
+
 /// Checks the listener until `strikes_allowed` consecutive failures, then
 /// reports the death exactly once and ends.
 async fn monitor_listener(
@@ -180,11 +218,7 @@ async fn monitor_listener(
             Err(failure) => {
                 strikes += 1;
                 if strikes >= strikes_allowed {
-                    // The typed failure is rendered only here, at the FFI
-                    // schema's existing prose field.
-                    observer.on_death(ProxyDeathReason::MixnetDisconnected {
-                        detail: failure.to_string(),
-                    });
+                    observer.on_death(death_reason(failure));
                     return;
                 }
             }
@@ -192,17 +226,13 @@ async fn monitor_listener(
     }
 }
 
-/// Split a `NymProxy` listener address (`"127.0.0.1:43210"`) into the typed
-/// endpoint the FFI surface offers, kept pure so the derivation is
-/// unit-testable against round trips through [`SocketAddr`].
-fn endpoint_from_listener_addr(addr: &str) -> Result<Socks5Endpoint, ProxyFfiError> {
-    let parsed: SocketAddr = addr.parse().map_err(|e| ProxyFfiError::Address {
-        reason: format!("{addr:?}: {e}"),
-    })?;
-    Ok(Socks5Endpoint {
-        host: parsed.ip().to_string(),
-        port: parsed.port(),
-    })
+/// Split a typed `NymProxy` listener address into the explicit parts the FFI
+/// surface offers.
+fn endpoint_from_listener_addr(addr: SocketAddr) -> Socks5Endpoint {
+    Socks5Endpoint {
+        host: addr.ip().to_string(),
+        port: addr.port(),
+    }
 }
 
 #[uniffi::export]
@@ -222,11 +252,11 @@ impl MixnetProxyHandle {
                 reason: e.to_string(),
             })?;
         let proxy = runtime
-            .block_on(NymProxy::start::<PrioritiseSpeed>())
+            .block_on(NymProxy::start())
             .map_err(|e| ProxyFfiError::Connect {
                 reason: e.to_string(),
             })?;
-        let endpoint = endpoint_from_listener_addr(&proxy.socks5_addr())?;
+        let endpoint = endpoint_from_listener_addr(proxy.socks5_addr());
         let monitor = observer.map(|observer| {
             runtime
                 .spawn(monitor_listener(
@@ -267,7 +297,11 @@ impl MixnetProxyHandle {
         if let Some(monitor) = &self.monitor {
             monitor.abort();
         }
-        let taken = self.proxy.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
+        let taken = self
+            .proxy
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
         if let Some(proxy) = taken {
             self.runtime.block_on(proxy.disconnect());
         }
@@ -285,19 +319,13 @@ mod tests {
         // NymProxy always binds IPv4 loopback; the derivation must preserve
         // both parts exactly through SocketAddr and back.
         let bound = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 43210);
-        let endpoint = endpoint_from_listener_addr(&bound.to_string()).unwrap();
+        let endpoint = endpoint_from_listener_addr(bound);
         assert_eq!(endpoint.host, "127.0.0.1");
         assert_eq!(endpoint.port, 43210);
         let rebuilt: SocketAddr = format!("{}:{}", endpoint.host, endpoint.port)
             .parse()
             .unwrap();
         assert_eq!(rebuilt, bound);
-    }
-
-    #[test]
-    fn unparseable_listener_address_is_a_typed_address_error() {
-        let error = endpoint_from_listener_addr("not-an-address").unwrap_err();
-        assert!(matches!(error, ProxyFfiError::Address { .. }));
     }
 
     use std::sync::Arc;
@@ -309,8 +337,8 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind mock listener");
-        let endpoint = endpoint_from_listener_addr(&listener.local_addr().unwrap().to_string())
-            .expect("mock listener address parses");
+        let endpoint =
+            endpoint_from_listener_addr(listener.local_addr().expect("mock listener address"));
         let serving = tokio::spawn(async move {
             loop {
                 let Ok((mut stream, _)) = listener.accept().await else {
@@ -379,6 +407,42 @@ mod tests {
         serving.abort();
     }
 
+    /// HYPOTHESIS: every probe failure reaches the host as its own death
+    /// variant, and a refused method selection keeps both reply bytes.
+    /// Falsified if any mapping collapses or a byte is lost.
+    #[test]
+    fn every_probe_failure_maps_to_its_own_death_variant() {
+        let refused = death_reason(HandshakeCheckError::MethodSelection {
+            reply: [0x05, 0xff],
+        });
+        assert_eq!(
+            refused,
+            ProxyDeathReason::MethodSelectionRefused {
+                version: 0x05,
+                method: 0xff,
+            }
+        );
+        assert_eq!(
+            death_reason(HandshakeCheckError::TimedOut {
+                budget: Duration::from_millis(250),
+            }),
+            ProxyDeathReason::CheckTimedOut { budget_millis: 250 }
+        );
+        let io = || std::io::Error::other("boom");
+        assert!(matches!(
+            death_reason(HandshakeCheckError::Connect(io())),
+            ProxyDeathReason::ListenerRefused { .. }
+        ));
+        assert!(matches!(
+            death_reason(HandshakeCheckError::GreetingWrite(io())),
+            ProxyDeathReason::GreetingUnwritable { .. }
+        ));
+        assert!(matches!(
+            death_reason(HandshakeCheckError::MethodSelectionRead(io())),
+            ProxyDeathReason::MethodSelectionUnreadable { .. }
+        ));
+    }
+
     #[derive(Default)]
     struct RecordingObserver {
         deaths: Mutex<Vec<ProxyDeathReason>>,
@@ -416,9 +480,11 @@ mod tests {
             .expect("monitor task must end cleanly");
         let deaths = observer.deaths.lock().unwrap();
         assert_eq!(deaths.len(), 1, "death must be reported exactly once");
+        // The port is free once the mock stops serving, so the probe's connect
+        // is refused and that refusal must survive typed to the observer.
         assert!(matches!(
             deaths[0],
-            ProxyDeathReason::MixnetDisconnected { .. }
+            ProxyDeathReason::ListenerRefused { .. }
         ));
     }
 }
