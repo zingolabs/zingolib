@@ -36,8 +36,13 @@
 //! blocks affordable to measure, and it measures the early phase a user
 //! actually waits through.
 //!
+//! The wallet is the caller's too. `--seed` restores a named mnemonic in
+//! every arm, defaulting to a fundless one. A wallet with history decrypts
+//! notes where a fundless one only discards, so reproducing someone's
+//! measurement means giving the comparison their wallet.
+//!
 //! Usage: `makers sync-ab [cli] <arm> <arm> --birthday <height>
-//! [--runs <n>] [--seconds <n>]`. The reserved first word names the session
+//! [--runs <n>] [--seconds <n>] [--seed <mnemonic>]`. The reserved first word names the session
 //! kind, as `makers test packages` and `makers test live` name their
 //! scopes, and omitting it names the same kind.
 #![forbid(unsafe_code)]
@@ -89,7 +94,11 @@ const LOG_FILTER: &str = "info";
 /// The indexer every run pins, so no arm meets a different server.
 const PINNED_INDEXER: &str = "https://zec.rocks:443";
 
-/// A BIP-39 mnemonic holding no funds, so the scan measures pure scanning.
+/// The BIP-39 mnemonic every arm restores, when `--seed` names no other.
+// A fundless wallet measures pure scanning: every output is trial
+// decrypted and discarded, and none is decrypted twice for its note. A
+// wallet with history does more work per output, so a comparison that
+// means to reproduce one must be given that wallet rather than this one.
 const GUARD_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
      abandon abandon abandon abandon abandon abandon abandon abandon \
      abandon abandon abandon abandon abandon abandon abandon art";
@@ -174,6 +183,7 @@ struct Request {
     birthday: u32,
     runs: usize,
     seconds: u64,
+    seed: String,
 }
 
 /// One arm's checkout, how it is launched, and its readings.
@@ -223,6 +233,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
     let mut birthday = None;
     let mut runs = DEFAULT_RUNS;
     let mut seconds = DEFAULT_SECONDS;
+    let mut seed = GUARD_MNEMONIC.to_string();
     while let Some(argument) = arguments.next() {
         let mut value = |name: &str| {
             arguments
@@ -243,6 +254,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
                     .parse()
                     .map_err(|e| vec![format!("--runs {raw}: {e}")])?;
             }
+            "--seed" => seed = value("--seed")?,
             "--seconds" => {
                 let raw = value("--seconds")?;
                 seconds = raw
@@ -283,6 +295,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
         birthday,
         runs,
         seconds,
+        seed,
     })
 }
 
@@ -478,7 +491,7 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
         .arg("--server")
         .arg(PINNED_INDEXER)
         .arg("--seed")
-        .arg(GUARD_MNEMONIC)
+        .arg(&request.seed)
         .arg("--birthday")
         .arg(request.birthday.to_string())
         .arg("--data-dir")
