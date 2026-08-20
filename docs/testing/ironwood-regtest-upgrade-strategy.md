@@ -24,31 +24,6 @@ verification moved to a shared thread pool), which is the subsystem
 the `tip_spend_rejection` suite probes, so that suite's verdicts must
 be re-observed under the new pin before its assertions are re-litigated.
 
-Update (2026-08-19): both pins advance together. `.env.testing-artifacts`
-now names zebrad 6.3.0 (published 2026-08-10) and the zainod image tag
-0.8.0-no-tls (published 2026-08-19), each still pinned by manifest
-digest. The zebrad delta is peer-set, address-book and RPC work that
-needs no state migration, and it leaves this harness's configuration
-untouched: zebra's testnet-parameters module is byte-identical between
-the two tags, and `zebrad/src/config.rs` gains only an optional
-zcashd-compat section. The zainod delta is the larger one, because
-0.8.0 rewires validator access onto a port-and-adapter stack and
-renames the `backend` selector's values; it keeps the former values as
-aliases, so the configuration `zcash_local_net` writes still parses.
-
-This bump lifts the hold the table above records, and it lifts it while
-zaino#1404 stays open. No zaino changelog entry claims the masking fix,
-so the container suite is the experiment. Four tests decide whether the
-hold returns: `chain_generics::send_shield_cycle`,
-`chain_generics::generate_a_range_of_value_transfers`,
-`concrete::test_scanning_in_watch_only_mode`, and
-`tip_spend_rejection::boundary_rejection_attribution`. The issue names a
-fifth, `tip_spend_rejection::matrix_young_coinbase_to_orchard`, which
-this repository has since renamed `matrix_young_coinbase_to_ironwood`.
-The same run must re-observe the `tip_spend_rejection` verdicts, which
-that suite's module header stamps with zebrad 6.0.0, a version we no
-longer run.
-
 Two findings with strategic weight:
 
 1. **The librustzcash ironwood train is incomplete on crates.io.**
