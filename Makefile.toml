@@ -170,13 +170,16 @@ append_workspace_default() {
 }
 
 nextest_args() {
-  local -a extra_args=("$@")
   local -a args=(
     --profile "${ZINGOLIB_NEXTEST_PROFILE}"
     --retries "${ZINGOLIB_NEXTEST_RETRIES}"
   )
 
-  args+=("${extra_args[@]}")
+  # `"$@"` directly, never by way of a named array: under `set -u`, bash
+  # before 4.4 — the /bin/bash macOS ships — calls an EMPTY array's
+  # expansion an unbound variable, and a bare `makers test` forwards none.
+  # The special parameter carries no such hazard.
+  args+=("$@")
 
   local workspace_arg
   workspace_arg="$(append_workspace_default "$@")"
@@ -202,6 +205,9 @@ container_nextest_run() {
   # empty value either: an empty (or restrictive) RUST_LOG silences
   # zainod's "Syncing block" markers, hanging the harness's
   # log-contract convergence barrier (2026-07-20 stall forensics).
+  # Expanded below as `${array[@]+"${array[@]}"}`, because this array is
+  # empty whenever neither variable is set and bash before 4.4 calls an
+  # empty array's bare expansion an unbound variable under `set -u`.
   local -a forwarded_env=()
   if [[ -n "${ZINGO_REGENERATE_CHAIN_CACHE:-}" ]]; then
     forwarded_env+=(-e ZINGO_REGENERATE_CHAIN_CACHE)
@@ -218,7 +224,7 @@ container_nextest_run() {
     -v "zingolib-cargo-registry:/root/.cargo/registry${mount_suffix}" \
     -e "NEXTEST_EXPERIMENTAL_LIBTEST_JSON=${NEXTEST_EXPERIMENTAL_LIBTEST_JSON}" \
     -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
-    "${forwarded_env[@]}" \
+    ${forwarded_env[@]+"${forwarded_env[@]}"} \
     -w /workspace \
     "${IMAGE_NAME}:${tag}" \
     bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/zainod /usr/bin/zebrad test_binaries/bins/ && exec "$@"' \
@@ -405,7 +411,13 @@ if [[ "$#" -gt 0 ]]; then
       # names the excluded package, which nextest resolves against
       # workspace metadata rather than the build set.
       set_args+=(--workspace -E "!(${live_filter})")
-      for pkg in "${build_excludable[@]}"; do
+      # `${array[@]+"${array[@]}"}` rather than a bare expansion: under
+      # `set -u`, bash before 4.4 — which is the /bin/bash macOS ships —
+      # calls an EMPTY array's expansion an unbound variable. This array is
+      # empty whenever no member has passed the exclusion audit, which is
+      # its normal state, so the bare form breaks the packages phase on a
+      # Mac and never on Linux.
+      for pkg in ${build_excludable[@]+"${build_excludable[@]}"}; do
         set_args+=(--exclude "${pkg}")
       done
       ;;
@@ -421,7 +433,10 @@ if [[ "${#set_args[@]}" -gt 0 ]] && has_package_selection_args "$@"; then
   set_args=()
 fi
 
-exec makers container-test "${set_args[@]}" "$@"
+# `set_args` is empty for every invocation without a reserved word — a bare
+# `makers test`, `makers test -p zingo-memo`, `makers test some_test_name` —
+# so it expands in the empty-array-safe form for the reason given above.
+exec makers container-test ${set_args[@]+"${set_args[@]}"} "$@"
 '''
 
 [tasks.hierarchy-test]
