@@ -131,6 +131,13 @@ const BESSEL_CORRECTION: usize = 1;
 /// a few more outputs than an earlier one.
 const OUTPUT_DRIFT_TOLERANCE: f64 = 0.01;
 
+/// How far a bounded run's durations may differ before the comparison is
+/// reported as drifted.
+// A stop lands after the batch in flight rather than on the instant it is
+// asked for, so a bounded span overshoots by up to one batch and the
+// spread a fixed window allows would fire on that alone.
+const SPAN_DRIFT_TOLERANCE: f64 = 0.10;
+
 fn main() {
     run("sync-ab", compare, |()| {})
 }
@@ -200,6 +207,7 @@ struct Arm {
     rates: Vec<f64>,
     outputs: Vec<u64>,
     boots: Vec<Duration>,
+    syncs: Vec<Duration>,
 }
 
 /// One session's reading, taken from the engine's span but for the boot.
@@ -337,10 +345,11 @@ fn compare() -> Result<(), Vec<String>> {
             arm.rates.push(reading.rate());
             arm.outputs.push(reading.outputs);
             arm.boots.push(reading.boot);
+            arm.syncs.push(reading.sync);
         }
     }
 
-    report(&arms);
+    report(&arms, request.seconds > 0);
     for arm in &arms {
         retire(&root, &arm.worktree);
     }
@@ -396,6 +405,7 @@ fn prepare(root: &Path, spec: &Spec) -> Result<Arm, Vec<String>> {
         rates: Vec::new(),
         outputs: Vec::new(),
         boots: Vec::new(),
+        syncs: Vec::new(),
     })
 }
 
@@ -631,7 +641,7 @@ fn quit(child: &mut Child) {
 }
 
 /// Prints both arms, their spread, and whether the window held.
-fn report(arms: &[Arm; 2]) {
+fn report(arms: &[Arm; 2], bounded: bool) {
     println!(
         "\nSYNC_AB_TAG: {} vs {}",
         arms[0].spec.label(),
@@ -658,25 +668,42 @@ fn report(arms: &[Arm; 2]) {
         );
     }
 
-    let counted: Vec<u64> = arms.iter().flat_map(|arm| arm.outputs.clone()).collect();
-    let (low, high) = (
-        counted.iter().copied().min().unwrap_or_default(),
-        counted.iter().copied().max().unwrap_or_default(),
-    );
+    // A run that finishes scans a fixed window, so its output counts
+    // should agree and a disagreement means the arms did different work. A
+    // bounded run scans whatever its seconds reach, so its counts differ by
+    // design and the fixed quantity is the duration instead. Checking the
+    // counts there would fire on the tool's own design.
+    let (measured, (low, high), tolerance) = if bounded {
+        let spans: Vec<u64> = arms
+            .iter()
+            .flat_map(|arm| arm.syncs.iter().map(|span| span.as_millis() as u64))
+            .collect();
+        ("milliseconds scanned", span(&spans), SPAN_DRIFT_TOLERANCE)
+    } else {
+        let counted: Vec<u64> = arms.iter().flat_map(|arm| arm.outputs.clone()).collect();
+        ("outputs scanned", span(&counted), OUTPUT_DRIFT_TOLERANCE)
+    };
     let drift = if low == 0 {
         0.0
     } else {
         (high - low) as f64 / low as f64
     };
+    let cause = if bounded {
+        "a stop landing after the batch in flight"
+    } else {
+        "the tip advancing mid-run"
+    };
     println!(
-        "outputs scanned: {low} to {high} ({:.2}% drift, the tip advancing mid-run)",
+        "{measured}: {low} to {high} ({:.2}% drift, {cause})",
         drift * 100.0
     );
-    if drift > OUTPUT_DRIFT_TOLERANCE {
-        println!(
-            "  WARNING: the arms scanned materially different work, so the \
-             rates are not comparable"
-        );
+    if drift > tolerance {
+        let what = if bounded {
+            "scanned for materially different spans"
+        } else {
+            "scanned materially different work"
+        };
+        println!("  WARNING: the arms {what}, so the rates are not comparable");
     }
 
     let (left, right) = (mean(&arms[0].rates), mean(&arms[1].rates));
@@ -697,6 +724,14 @@ fn report(arms: &[Arm; 2]) {
     if (right - left).abs() < noise {
         println!("  within the noisier arm's own deviation, so indistinguishable");
     }
+}
+
+/// The lowest and highest of a sampled series.
+fn span(samples: &[u64]) -> (u64, u64) {
+    (
+        samples.iter().copied().min().unwrap_or_default(),
+        samples.iter().copied().max().unwrap_or_default(),
+    )
 }
 
 /// The arithmetic mean of the sampled rates.
