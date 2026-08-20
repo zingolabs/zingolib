@@ -29,10 +29,17 @@
 //! moving tip where to start. A discarded warm-up per arm still runs, since
 //! a first run pays for the build and reads slower than its successors.
 //!
+//! A run may be bounded rather than run to completion. `--seconds <n>`
+//! stops the scan that long after its span opens, and the engine answers a
+//! stop with the session's own counts, so the rate means what a whole
+//! scan's would. That is what makes a range of hundreds of thousands of
+//! blocks affordable to measure, and it measures the early phase a user
+//! actually waits through.
+//!
 //! Usage: `makers sync-ab [cli] <arm> <arm> --birthday <height>
-//! [--runs <n>]`. The reserved first word names the session kind, as
-//! `makers test packages` and `makers test live` name their scopes, and
-//! omitting it names the same kind.
+//! [--runs <n>] [--seconds <n>]`. The reserved first word names the session
+//! kind, as `makers test packages` and `makers test live` name their
+//! scopes, and omitting it names the same kind.
 #![forbid(unsafe_code)]
 
 use std::io::Write as _;
@@ -89,6 +96,14 @@ const GUARD_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon ab
 
 /// Measured runs per arm, when `--runs` names no other count.
 const DEFAULT_RUNS: usize = 3;
+
+/// How long a run scans before it is stopped, when `--seconds` names no
+/// other span. Zero lets the scan run to completion.
+// A bounded run measures the rate over the window a user actually waits
+// through, and it makes a long range affordable: the engine reports the
+// session's own counts when it stops, so a partial scan yields the same
+// rate a whole one would.
+const DEFAULT_SECONDS: u64 = 0;
 
 /// How long one measured session may take before it counts as failed.
 const RUN_BUDGET: Duration = Duration::from_secs(900);
@@ -158,6 +173,7 @@ struct Request {
     specs: [Spec; 2],
     birthday: u32,
     runs: usize,
+    seconds: u64,
 }
 
 /// One arm's checkout, how it is launched, and its readings.
@@ -206,6 +222,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
     let mut positional: Vec<String> = Vec::new();
     let mut birthday = None;
     let mut runs = DEFAULT_RUNS;
+    let mut seconds = DEFAULT_SECONDS;
     while let Some(argument) = arguments.next() {
         let mut value = |name: &str| {
             arguments
@@ -225,6 +242,12 @@ fn parse_request() -> Result<Request, Vec<String>> {
                 runs = raw
                     .parse()
                     .map_err(|e| vec![format!("--runs {raw}: {e}")])?;
+            }
+            "--seconds" => {
+                let raw = value("--seconds")?;
+                seconds = raw
+                    .parse()
+                    .map_err(|e| vec![format!("--seconds {raw}: {e}")])?;
             }
             other if other.starts_with("--") => {
                 return Err(vec![format!("unknown argument: {other}")]);
@@ -259,6 +282,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
         specs,
         birthday,
         runs,
+        seconds,
     })
 }
 
@@ -478,10 +502,26 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
 
     let spawned = Instant::now();
     let mut launched: Option<Instant> = None;
+    let mut stopped = false;
     let outcome = loop {
         let log = std::fs::read_to_string(&log_path).unwrap_or_default();
         if launched.is_none() && log.contains(SYNC_SPAN_OPEN) {
             launched = Some(Instant::now());
+        }
+        // A bounded run is stopped once its span has been open long enough.
+        // The engine answers a stop with the session's own counts, so the
+        // rate a partial scan reports means what a whole one's would, and a
+        // range too long to finish becomes affordable to measure.
+        if !stopped && request.seconds > 0 {
+            if let Some(at) = launched {
+                if at.elapsed() >= Duration::from_secs(request.seconds) {
+                    if let Some(stdin) = child.stdin.as_mut() {
+                        let _ = writeln!(stdin, "sync stop");
+                        let _ = stdin.flush();
+                    }
+                    stopped = true;
+                }
+            }
         }
         if let Some((millis, outputs)) = closing_span(&log) {
             break match launched {
