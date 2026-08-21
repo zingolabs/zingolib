@@ -884,6 +884,7 @@ where
         previously_scanned_orchard_outputs,
         previously_scanned_ironwood_outputs,
     };
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
 }

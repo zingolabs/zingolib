@@ -500,7 +500,6 @@ where
             &mut *wallet.write().await,
         )
         .await?;
-
         let new_blocks_mined = chain_height > last_known_chain_height;
         let mut reorg_occured = false;
         let mut initial_reorg_detection_start_height_opt = wallet
@@ -510,65 +509,81 @@ where
             .map_err(SyncError::WalletError)?
             .highest_scanned_height()
             .map(|highest_scanned_height| highest_scanned_height + 1);
-        if let Some(initial_reorg_detection_start_height) = initial_reorg_detection_start_height_opt
         {
+            // hold the wallet guard so we can update the initial sync state before the wallet can be accessed in the
+            // case of re-org
             let mut wallet_guard = wallet.write().await;
-            if initial_reorg_detection_start_height <= chain_height {
-                // skip verification if initial wallet state was already verified this session and verification is below
-                // the chain tip reorg window. this may happen if the chain tip was not fully scanned before continuous
-                // sync enters another loop.
-                if !(first_verification_complete
-                    && u32::from(initial_reorg_detection_start_height) < MAX_REORG_ALLOWANCE)
-                {
-                    state::set_verify_scan_range(
-                        wallet_guard
-                            .get_sync_state_mut()
-                            .map_err(SyncError::WalletError)?,
-                        initial_reorg_detection_start_height,
-                        VerifyEnd::VerifyLowest,
-                    );
+            if let Some(initial_reorg_detection_start_height) =
+                initial_reorg_detection_start_height_opt
+            {
+                if initial_reorg_detection_start_height <= chain_height {
+                    // skip verification if initial wallet state was already verified this session and verification is below
+                    // the chain tip reorg window. this may happen if the chain tip was not fully scanned before continuous
+                    // sync enters another loop.
+                    if !(first_verification_complete
+                        && u32::from(initial_reorg_detection_start_height) < MAX_REORG_ALLOWANCE)
+                    {
+                        state::set_verify_scan_range(
+                            wallet_guard
+                                .get_sync_state_mut()
+                                .map_err(SyncError::WalletError)?,
+                            initial_reorg_detection_start_height,
+                            VerifyEnd::VerifyLowest,
+                        );
+                    }
+                } else {
+                    // in this case, no blocks have been mined since last sync but a re-org may have occured
+                    let chain_height_server_block =
+                        client::get_compact_block(fetch_request_sender.clone(), chain_height)
+                            .await?;
+                    let chain_height_wallet_block = wallet_guard
+                        .get_wallet_block(chain_height)
+                        .map_err(SyncError::WalletError)?;
+                    if chain_height_wallet_block.block_hash().0.to_vec()
+                        != chain_height_server_block.hash
+                    {
+                        tracing::info!("Re-org detected.");
+                        reorg_occured = true;
+                        let scan_range_to_verify = state::set_verify_scan_range(
+                            wallet_guard
+                                .get_sync_state_mut()
+                                .map_err(SyncError::WalletError)?,
+                            chain_height,
+                            VerifyEnd::VerifyHighest,
+                        );
+                        initial_reorg_detection_start_height_opt =
+                            Some(scan_range_to_verify.block_range().start);
+                        truncate_wallet_data(
+                            &mut *wallet_guard,
+                            initial_reorg_detection_start_height_opt
+                                .expect("value must exist in this scope")
+                                - 1,
+                        )?;
+                    } else {
+                        // there are no new blocks to verify and no re-org has occured
+                        scanner.state.verified();
+                    }
                 }
             } else {
-                // in this case, no blocks have been mined since last sync but a re-org may have occured
-                let chain_height_server_block =
-                    client::get_compact_block(fetch_request_sender.clone(), chain_height).await?;
-                let chain_height_wallet_block = wallet_guard
-                    .get_wallet_block(chain_height)
-                    .map_err(SyncError::WalletError)?;
-                if chain_height_wallet_block.block_hash().0.to_vec()
-                    != chain_height_server_block.hash
-                {
-                    tracing::info!("Re-org detected.");
-                    reorg_occured = true;
-                    let scan_range_to_verify = state::set_verify_scan_range(
-                        wallet_guard
-                            .get_sync_state_mut()
-                            .map_err(SyncError::WalletError)?,
-                        chain_height,
-                        VerifyEnd::VerifyHighest,
-                    );
-                    initial_reorg_detection_start_height_opt =
-                        Some(scan_range_to_verify.block_range().start);
-                    truncate_wallet_data(
-                        &mut *wallet_guard,
-                        initial_reorg_detection_start_height_opt
-                            .expect("value must exist in this scope")
-                            - 1,
-                    )?;
-                } else {
-                    // there are no new blocks to verify and no re-org has occured
-                    scanner.state.verified();
-                }
+                // first time sync, there are no previously synced blocks to verify
+                scanner.state.verified();
             }
-        } else {
-            // first time sync, there are no previously synced blocks to verify
-            scanner.state.verified();
+            state::set_initial_state(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                &mut *wallet_guard,
+                chain_height,
+            )
+            .await?;
         }
 
         if new_blocks_mined || reorg_occured {
             // FIXME: this will work however it will check all addresses past the gap limit for the top 100 blocks everytime
             // there is a new block mined. this should be improved. a potential solution is to use transparent data in compact
             // blocks after the first pass i.e. once the first new mined block is detected.
+            //
+            // we could have a new sync state bool which is set if transparent address discovery succeeded and then switch to
+            // compact block scanning with gap limit taddrs once the inuse taddrs are known
             transparent::update_addresses_and_scan_targets(
                 consensus_parameters,
                 wallet.clone(),
@@ -584,16 +599,6 @@ where
                 consensus_parameters,
                 fetch_request_sender.clone(),
                 &mut *wallet.write().await,
-            )
-            .await?;
-
-            // FIXME: truncation may have occured earlier without updating the initial state. this means calls to sync status
-            // could cause subtraction underflows if not protected.
-            state::set_initial_state(
-                consensus_parameters,
-                fetch_request_sender.clone(),
-                &mut *wallet.write().await,
-                chain_height,
             )
             .await?;
 
@@ -613,10 +618,15 @@ where
                 ShieldedPool::Ironwood,
                 scan_targets.into_iter(),
             );
+            wallet_guard
+                .set_save_flag()
+                .map_err(SyncError::WalletError)?;
         }
 
         // publish sync status prior to scanning
+        // TODO: solve how to get sync status when sync is not running. maybe have to revert making sync status private?
         publish_sync_status(&*wallet.read().await, &progress).await;
+
         'scan: loop {
             tokio::select! {
                 Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
