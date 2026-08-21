@@ -25,7 +25,7 @@ use zingo_netutils::NymProxy;
 use zingo_netutils::time::{LISTENER_MONITOR_INTERVAL, LOOPBACK_DIAL_BOUND};
 
 #[cfg(target_os = "android")]
-use zingo_nym_tls_init as _;
+mod debug_log;
 
 /// Consecutive check failures required before the proxy is declared dead.
 const LISTENER_MONITOR_STRIKES: u32 = 2;
@@ -245,6 +245,8 @@ impl MixnetProxyHandle {
     pub fn start(
         observer: Option<Box<dyn ProxyDeathObserver>>,
     ) -> Result<std::sync::Arc<Self>, ProxyFfiError> {
+        #[cfg(target_os = "android")]
+        debug_log::init();
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -253,6 +255,7 @@ impl MixnetProxyHandle {
             })?;
         let proxy = runtime
             .block_on(NymProxy::start())
+            .inspect_err(|e| tracing::error!(error = %e, "mixnet proxy start failed"))
             .map_err(|e| ProxyFfiError::Connect {
                 reason: e.to_string(),
             })?;

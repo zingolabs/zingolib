@@ -13,9 +13,6 @@ root workspace in `rust/` excludes it.
   what it bound. `stop` tears it down. A listener monitor calls
   `ProxyDeathObserver::on_death` once if the listener is lost. Builds as
   `cdylib` for Android, `staticlib` for iOS, and `lib` for host tests.
-- `zingo-nym-tls-init` (`tls-init/`): Android only. One JNI function,
-  `NymTlsInit.initPlatformVerifier`, that hands the app `Context` to
-  `rustls-platform-verifier`.
 
 ## Consumers
 

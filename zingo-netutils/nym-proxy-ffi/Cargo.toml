@@ -22,6 +22,7 @@ uniffi = "0.28"
 # SOCKS5 listener alive across start and stop.
 tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "time"] }
 thiserror = "2"
+tracing = "0.1.44"
 
 [features]
 # Builds tests/live_mixnet.rs, which reaches the real Nym network.
@@ -34,14 +35,22 @@ zingo-netutils = { git = "https://github.com/zingolabs/zingolib", branch = "dev"
     "testutils",
 ] }
 
-# Linked for its exported JNI symbol: the Kotlin side's `NymTlsInit` calls it
-# to hand the app Context to rustls-platform-verifier before any mixnet TLS
-# (zingo-mobile ADR 0004).
 [target.'cfg(target_os = "android")'.dependencies]
-zingo-nym-tls-init = { path = "tls-init" }
+android_logger = "0.15.1"
+log = "0.4.33"
+tracing-subscriber = "0.3.23"
 
 # This crate resolves in its own lockfile, never the parent workspace's:
 # nym-sdk's transitive graph needs `crypto-common ^0.2`, irreconcilable
 # with the main workspace's pins (see the root manifest's exclude).
 [workspace]
-members = ["tls-init"]
+members = []
+
+# Cargo honours `[patch]` only from the workspace being built, so zingolib's
+# own stanza never reaches this workspace and the nym stack would otherwise
+# resolve the real `rustls-platform-verifier`. On Android that verifier
+# rejects `validator.nymtech.net` for carrying no OCSP responder, and the
+# mixnet never starts. This restates zingolib ADR 0021 here: verification is
+# the compiled-in Mozilla bundle, identically on every platform.
+[patch.crates-io]
+rustls-platform-verifier = { git = "https://github.com/zingolabs/zingolib", branch = "dev" }
