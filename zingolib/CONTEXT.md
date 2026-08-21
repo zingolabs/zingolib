@@ -139,6 +139,8 @@
 
 **pepper-sync** — A published crates.io library owned by ZingoLabs. Provides the sync engine for zingolib: non-linear scanning, spend-before-sync, pause/resume/stop, and fixed-memory batching. Developed inside this workspace (path dependency during development, versioned releases for consumers).
 
+**Sync Span** — The interval a sync task spends inside `pepper_sync::sync`, timed by that task itself and bracketed in the log by the minted markers `SYNC_SPAN=open` and `SYNC_SPAN=close`, the closing one carrying the elapsed milliseconds. The Sync Span covers the scan and only the scan: a session's proxy spawn, quartet proof, and Server-Selection Sweep all finish before it opens. It is a tracing span, never a range of block heights — a range of heights is a **Scan Range**. Ratified 2026-08-20.
+
 **Scan Range** — A contiguous range of block heights assigned a priority (e.g. `ChainTip`, `Historic`, `Verify`, `Scanned`).
 
 **Fully Scanned Height** — The highest block height at or below which the wallet has completed scanning all blocks.
