@@ -4639,6 +4639,7 @@ dependencies = [
  "hyper-util",
  "lightwallet-protocol",
  "rand 0.8.7",
+ "reqwest",
  "rustls 0.23.43",
  "serde",
  "thiserror 2.0.19",
@@ -4657,8 +4658,6 @@ version = "0.1.0"
 dependencies = [
  "byteorder",
  "futures",
- "reqwest",
- "rustls 0.23.43",
  "serde",
  "serde_json",
  "thiserror 2.0.19",

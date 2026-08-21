@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parking it on a cadence whose answer cannot change.
 
 ### Added
+- The `socks5-fetch` feature and the `socks5_fetch` module: one HTTP request
+  carried through a conduit, classified into a typed `zingo_net_diag`
+  failure. `ConduitDial::fetch_text` is the entry, and it is the first
+  operation a conduit performs rather than describes, so a caller reaches the
+  wire by holding the guard instead of by reading an address out of it.
 - `provider::HostedProvider::rotation_verdict`: the host's answer on
   spending a rotation's bootstrap now, reaching the wallet through the
   provider so the host itself stays below the seam.
