@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a superseded conduit permanently short of `Retired`.
 
 ### Changed
+- The `socks5-fetch` feature enables neither reqwest's `cookies` nor its
+  `json`. A price leg is a single stateless GET against a public quote
+  endpoint, so there is no session for a cookie jar to carry, and the fetch
+  reads the body as text and hands it to the source's own parser, so it never
+  touches reqwest's json surface. Both features came across with the fetch
+  when it moved out of zingo-price, where they had been inherited rather than
+  chosen. Dropping them takes `cookie`, `cookie_store`, `psl-types`,
+  `publicsuffix`, and `time-macros` out of the wallet workspace's graph
+  entirely, and leaves this crate's own standalone lockfile gaining `reqwest`
+  alone where it had gained seven packages.
 - BREAKING: `provider::RotationVerdict` gains a `Never` variant, which a
   platform answers when rotation is ruled out for the session's whole life
   rather than merely postponed. `Defer` used to carry both meanings, so a
