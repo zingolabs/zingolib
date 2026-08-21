@@ -4599,7 +4599,6 @@ name = "zingo-price"
 version = "0.1.0"
 dependencies = [
  "byteorder",
- "futures",
  "serde",
  "serde_json",
  "thiserror 2.0.19",
