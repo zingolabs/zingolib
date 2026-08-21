@@ -1361,6 +1361,150 @@ impl ShardTrees {
 mod tests {
     use super::*;
 
+    // ---------------------------------------------------------------------
+    // Reproduction tests for claim `serialization-panics-and-no-version-guard`.
+    // These assert the intended invariant: readers that return `io::Result`
+    // must return `Err` on corrupt or unknown input instead of panicking or
+    // accepting garbage. They are expected to FAIL on current code.
+    // ---------------------------------------------------------------------
+
+    fn invalid_data(e: &std::io::Error) -> bool {
+        e.kind() == std::io::ErrorKind::InvalidData
+    }
+
+    // REPRO (a): `NullifierMap::read` uses `.expect` on
+    // `orchard::note::Nullifier::from_bytes`, so a corrupt nullifier panics
+    // instead of returning `io::Error(InvalidData)`.
+    #[test]
+    fn nullifier_map_read_rejects_non_canonical_orchard_nullifier() {
+        let mut map = NullifierMap::new();
+        let nullifier = orchard::note::Nullifier::from_bytes(&[0u8; 32]).unwrap();
+        map.orchard.insert(
+            nullifier,
+            ScanTarget {
+                block_height: BlockHeight::from_u32(10),
+                txid: TxId::from_bytes([1u8; 32]),
+                narrow_scan_area: false,
+            },
+        );
+        let mut bytes = Vec::new();
+        map.write(&mut bytes).expect("write should succeed");
+
+        // Layout: version(1) | sapling vec len(1, = 0) | orchard vec len(1, = 1) | 32 nullifier bytes | ...
+        let nullifier_offset = 3;
+        assert_eq!(&bytes[nullifier_offset..nullifier_offset + 32], &[0u8; 32]);
+        // All 0xFF is not a canonical Pallas base field element.
+        bytes[nullifier_offset..nullifier_offset + 32].copy_from_slice(&[0xFFu8; 32]);
+        assert!(bool::from(
+            orchard::note::Nullifier::from_bytes(&[0xFFu8; 32]).is_none()
+        ));
+
+        let result = std::panic::catch_unwind(|| NullifierMap::read(bytes.as_slice()));
+        match result {
+            Ok(Err(e)) => assert!(invalid_data(&e), "unexpected error kind: {e}"),
+            Ok(Ok(_)) => panic!("corrupt orchard nullifier was accepted"),
+            Err(_) => panic!("NullifierMap::read panicked on a corrupt orchard nullifier"),
+        }
+    }
+
+    // REPRO (b): `read_string` allocates `vec![0; len]` from an untrusted u64
+    // length before reading any bytes, so a corrupt length aborts or panics
+    // instead of returning an error.
+    #[test]
+    fn read_string_rejects_oversized_length_without_allocating() {
+        let mut bytes = Vec::new();
+        bytes.write_u64::<LittleEndian>(usize::MAX as u64).unwrap();
+
+        let result = std::panic::catch_unwind(|| read_string(bytes.as_slice()));
+        match result {
+            Ok(Err(_)) => {}
+            Ok(Ok(s)) => panic!("read_string returned a string of length {}", s.len()),
+            Err(_) => panic!("read_string panicked on an oversized length prefix"),
+        }
+    }
+
+    // REPRO (c): `SyncState::read` matches `3..` and never rejects a version
+    // above `serialized_version()`.
+    #[test]
+    fn sync_state_read_rejects_unknown_future_version() {
+        let mut state = SyncState::new();
+        let mut bytes = Vec::new();
+        state.write(&mut bytes).expect("write should succeed");
+        assert_eq!(bytes[0], SyncState::serialized_version());
+        bytes[0] = 99;
+
+        let result = SyncState::read(bytes.as_slice());
+        assert!(
+            result.is_err(),
+            "SyncState::read accepted unknown version 99 as the newest known layout"
+        );
+    }
+
+    // REPRO (c): `SyncConfig::read` never rejects a version above
+    // `serialized_version()`.
+    #[test]
+    fn sync_config_read_rejects_unknown_future_version() {
+        let mut config = crate::config::SyncConfig::default();
+        let mut bytes = Vec::new();
+        config.write(&mut bytes).expect("write should succeed");
+        bytes[0] = 99;
+
+        let result = crate::config::SyncConfig::read(bytes.as_slice());
+        assert!(
+            result.is_err(),
+            "SyncConfig::read accepted unknown version 99 as the newest known layout"
+        );
+    }
+
+    // REPRO (c): `ScanTarget::read` and `WalletBlock::read` discard the
+    // version byte entirely.
+    #[test]
+    fn scan_target_read_rejects_unknown_future_version() {
+        let target = ScanTarget {
+            block_height: BlockHeight::from_u32(10),
+            txid: TxId::from_bytes([1u8; 32]),
+            narrow_scan_area: false,
+        };
+        let mut bytes = Vec::new();
+        target.write(&mut bytes).expect("write should succeed");
+        bytes[0] = 99;
+
+        assert!(
+            ScanTarget::read(bytes.as_slice()).is_err(),
+            "ScanTarget::read accepted unknown version 99"
+        );
+    }
+
+    // GUARD (d): `SyncState::write` uses `priority as u8` (declaration order)
+    // while the reader uses an explicit table. This passes today and pins the
+    // current order so that a reorder of `ScanPriority` becomes visible.
+    #[test]
+    fn sync_state_roundtrip_preserves_every_scan_priority() {
+        let priorities = [
+            ScanPriority::RefetchingNullifiers,
+            ScanPriority::Scanning,
+            ScanPriority::Scanned,
+            ScanPriority::ScannedWithoutMapping,
+            ScanPriority::Historic,
+            ScanPriority::OpenAdjacent,
+            ScanPriority::FoundNote,
+            ScanPriority::ChainTip,
+            ScanPriority::Verify,
+        ];
+        let mut state = SyncState::new();
+        for (i, priority) in priorities.iter().enumerate() {
+            let start = (i as u32) * 10;
+            state.scan_ranges.push(ScanRange::from_parts(
+                BlockHeight::from_u32(start)..BlockHeight::from_u32(start + 10),
+                *priority,
+            ));
+        }
+        let mut bytes = Vec::new();
+        state.write(&mut bytes).expect("write should succeed");
+        let recovered = SyncState::read(bytes.as_slice()).expect("read should succeed");
+        assert_eq!(recovered.scan_ranges, state.scan_ranges);
+    }
+
     // Helper: build a minimal v3 SyncState byte blob (no ironwood_shard_ranges).
     // Format: version(1) | scan_ranges[0] | sapling_shard_ranges[0] |
     //         orchard_shard_ranges[0] | scan_targets[0]
