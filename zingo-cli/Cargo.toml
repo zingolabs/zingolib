@@ -12,10 +12,16 @@ edition = "2024"
 # command then reports the capability was switched off at build time.
 default = ["nym"]
 nym = ["zingolib/nym"]
-# The quarantined clearnet server-selection sweep (ADR 0029 deletes it from
-# ordinary builds). Never a default: a session that goes online engages
-# clearnet only for sync, so compiling this back in is a deliberate,
-# review-gated test act (2026-08-06 ruling).
+# The quarantined clearnet acts, compiled back in for testing and never for
+# use. Never a default: a session that goes online engages clearnet only for
+# sync, so compiling these back in is a deliberate, review-gated test act
+# (2026-08-06 ruling). Two things live behind it. The clearnet
+# server-selection sweep, which ADR 0029 deletes from ordinary builds. And,
+# in a build without `nym`, the ability to go online at all: ADR 0026 makes
+# the mixnet a default capability and ADR 0024 forces Mixnet Mode on at the
+# go-online moment, so no ordinary build can run an online session with no
+# mixnet beside it, and a measurement that separates the mixnet's cost from
+# the scan's needs exactly that arm.
 clearnet-test-mode = []
 
 [dependencies]

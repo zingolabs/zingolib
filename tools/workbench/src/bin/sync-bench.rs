@@ -76,6 +76,8 @@ struct Request {
     birthday: u32,
     label: String,
     runs: usize,
+    /// Whether the session builds without the mixnet.
+    clearnet: bool,
 }
 
 fn parse_request() -> Result<Request, Vec<String>> {
@@ -83,6 +85,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
     let mut birthday = None;
     let mut label = String::from("unlabelled");
     let mut runs = DEFAULT_RUNS;
+    let mut clearnet = false;
     while let Some(argument) = args.next() {
         let mut value = |name: &str| {
             args.next()
@@ -96,6 +99,12 @@ fn parse_request() -> Result<Request, Vec<String>> {
                         .map_err(|e| vec![format!("--birthday {raw}: {e}")])?,
                 );
             }
+            // The mixnet is a default capability (ADR 0026), so an Online
+            // session boots a proxy, proves a quartet, and sweeps before the
+            // scan. `--clearnet` builds without it, which is what makes a
+            // pair of runs attribute the mixnet's cost to the mixnet rather
+            // than leaving it inside one number.
+            "--clearnet" => clearnet = true,
             "--label" => label = value("--label")?,
             "--runs" => {
                 let raw = value("--runs")?;
@@ -117,6 +126,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
         birthday,
         label,
         runs,
+        clearnet,
     })
 }
 
@@ -127,7 +137,7 @@ fn bench() -> Result<(), Vec<String>> {
     let mut syncs: Vec<Duration> = Vec::new();
     let mut boots: Vec<Duration> = Vec::new();
     for index in 0..request.runs {
-        match session(&root, request.birthday)? {
+        match session(&root, request.birthday, request.clearnet)? {
             Outcome::Synced { boot, sync } => {
                 eprintln!(
                     "sync-bench: {:2}/{} boot {:.1}s, sync {:.3}s",
@@ -151,7 +161,7 @@ fn bench() -> Result<(), Vec<String>> {
 }
 
 /// Drives one session, reading both markers out of its log.
-fn session(root: &Path, birthday: u32) -> Result<Outcome, Vec<String>> {
+fn session(root: &Path, birthday: u32, clearnet: bool) -> Result<Outcome, Vec<String>> {
     let scratch = root.join("target").join("sync-bench");
     // A fresh wallet each run, so no session resumes a partial scan.
     let _ = std::fs::remove_dir_all(&scratch);
@@ -159,10 +169,15 @@ fn session(root: &Path, birthday: u32) -> Result<Outcome, Vec<String>> {
         .map_err(|e| vec![format!("cannot make {}: {e}", scratch.display())])?;
     let log_path = scratch.join("session.log");
 
-    let mut child = Command::new("makers")
+    let mut command = Command::new("makers");
+    command
         .current_dir(root)
         .env("RUST_LOG", LOG_FILTER)
-        .arg("run-cli")
+        .arg("run-cli");
+    if clearnet {
+        command.arg("--clearnet");
+    }
+    command
         .arg("--online")
         .arg("--server")
         .arg(PINNED_INDEXER)
@@ -176,7 +191,8 @@ fn session(root: &Path, birthday: u32) -> Result<Outcome, Vec<String>> {
         .arg(&log_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    let mut child = command
         .spawn()
         .map_err(|e| vec![format!("cannot spawn makers run-cli: {e}")])?;
 
