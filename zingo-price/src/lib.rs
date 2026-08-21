@@ -45,7 +45,8 @@ pub enum PriceError {
         source: Box<zingo_netutils::socks5_fetch::Socks5FetchError>,
     },
     /// The price source answered with fewer trades than requested, so the
-    /// median position does not exist. A typed [`NetOpStage::PayloadDecode`]
+    /// median position does not exist. A typed
+    /// [`zingo_net_diag::NetOpStage::PayloadDecode`]
     /// condition: the payload decoded but was structurally short.
     #[error("the price source returned {received} trades where {TRADES_REQUESTED} were requested")]
     InsufficientTrades {
@@ -249,7 +250,8 @@ const GEMINI_ZECUSD_URL: &str = "https://api.gemini.com/v1/trades/zecusd?limit_t
 /// native bound under the mobile UI's 25-second watchdog, so the native call
 /// ends (and releases whatever holds it) before or shortly after the UI
 /// gives up. A hang through a half-dead tunnel becomes a typed
-/// [`NetOpStage::TimedOut`] failure instead of an unbounded wait.
+/// [`zingo_net_diag::NetOpStage::TimedOut`] failure instead of an unbounded
+/// wait.
 #[cfg(feature = "socks5-fetch")]
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
