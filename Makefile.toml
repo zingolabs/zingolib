@@ -516,7 +516,7 @@ args = [
 ]
 
 [tasks.run-cli]
-description = "Build and launch zingo-cli with the mixnet transport compiled in and nym-proxy bundled beside the binary. The proxy is never launched here: the CLI spawns it only at an Online session's go-online moment (ADR 0024), and an offline session boots no proxy. The session starts offline and goes online only through a Connectivity Consent — one stored by a previous run, or an explicit consent act in the forwarded arguments (ADR 0025); launching never implies consent. Pass --clearnet to opt out of the mixnet default (plain build, nothing bundled); pass --release for release builds. Every other argument is forwarded to zingo-cli."
+description = "Build and launch zingo-cli with the mixnet transport compiled in and nym-proxy bundled beside the binary. The proxy is never launched here: the CLI spawns it only at an Online session's go-online moment (ADR 0024), and an offline session boots no proxy. The session starts offline and goes online only through a Connectivity Consent — one stored by a previous run, or an explicit consent act in the forwarded arguments (ADR 0025); launching never implies consent. Pass --clearnet to opt out of the mixnet default (plain build, nothing bundled); the build is a release build unless --debug asks otherwise. Every other argument is forwarded to zingo-cli."
 command = "cargo"
 args = [
   "run",

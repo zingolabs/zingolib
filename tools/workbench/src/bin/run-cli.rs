@@ -1,9 +1,11 @@
 //! Build and launch `zingo-cli`, by default mixnet-capable.
 //!
-//! Usage: `run-cli [--clearnet] [--release] [<zingo-cli args...>]`. The
-//! `--clearnet` and `--release` flags are consumed wherever they appear
-//! (as is the retired `--nym`, a no-op now that it names the default);
-//! every other argument is forwarded to `zingo-cli` unchanged.
+//! Usage: `run-cli [--clearnet] [--debug] [<zingo-cli args...>]`. The
+//! `--clearnet` and `--debug` flags are consumed wherever they appear
+//! (as are the retired `--nym` and `--release`, no-ops now that they name
+//! the defaults); every other argument is forwarded to `zingo-cli`
+//! unchanged. The build is a release build unless `--debug` asks
+//! otherwise.
 //!
 //! The default run builds the CLI with its default features — which carry
 //! the mixnet transport (ADR 0026) — and bundles the `nym-proxy` binary
@@ -59,11 +61,16 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
     if nym_flag {
         eprintln!("{PROG}: note: --nym is now the default and the flag is ignored");
     }
+    if args.iter().any(|arg| arg == "--release") {
+        eprintln!("{PROG}: note: --release is now the default and the flag is ignored");
+    }
     let nym = !clearnet;
-    let release = args.iter().any(|arg| arg == "--release");
+    let release = !args.iter().any(|arg| arg == "--debug");
     let cli_args: Vec<&String> = args
         .iter()
-        .filter(|arg| *arg != "--nym" && *arg != "--release" && *arg != "--clearnet")
+        .filter(|arg| {
+            *arg != "--nym" && *arg != "--release" && *arg != "--debug" && *arg != "--clearnet"
+        })
         .collect();
 
     let root = repo_root()?;
