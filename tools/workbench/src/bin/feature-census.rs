@@ -45,7 +45,7 @@ const PROBE_FEATURES: [(&str, &str); 1] = [(
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Candidate {
     /// The crate directory whose manifest declares it, or `.` for the root.
-    krate: String,
+    crate_dir: String,
     /// The dependency the feature is enabled on.
     dependency: String,
     /// The feature itself.
