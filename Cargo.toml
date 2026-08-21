@@ -123,7 +123,6 @@ reqwest = { version = "0.12.15", default-features = false }
 # hybrid group. Runtime installation is first-install-wins via
 # zingo_netutils::crypto::ensure_default_crypto_provider, so downstream
 # embedders that install their own provider first keep it.
-rustls = { version = "0.23.40", features = ["prefer-post-quantum"] }
 tonic = { version = "0.14", features = ["tls-webpki-roots", "tls-aws-lc"] }
 prost = "0.14"
 

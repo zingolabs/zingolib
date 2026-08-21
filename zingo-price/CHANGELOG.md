@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- BREAKING: `PriceError::RequestFailed` carries a
+  `zingo_netutils::socks5_fetch::Socks5FetchError` where it carried a
+  `reqwest::Error`. The HTTP leg the price fetch rides moved below the seam
+  into `zingo-netutils`, so this crate no longer names a network type. The
+  `failure: NetOpFailure` field is unchanged, and the transport error is now
+  boxed, which keeps the enum the size it was.
+
+### Removed
+- BREAKING: `reqwest` and `rustls` leave this crate's dependency set. The
+  request builder, the SOCKS5 proxy URL, the crypto-provider install, and the
+  `zingo-net-diag` classification table all move to
+  `zingo_netutils::socks5_fetch`, which serves them through
+  `ConduitDial::fetch_text`. The crate is now the price data model and its
+  parsers.
+
+### Changed
 - BREAKING: `get_source_price` takes a `zingo_netutils::conduit::ConduitDial`
   where it took `Option<&str>`. A price fetch is mixnet-only (ADR 0011), and
   the option let a caller passing `None` route it over clearnet instead. The
