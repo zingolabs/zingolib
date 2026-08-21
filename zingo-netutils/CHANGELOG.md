@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failure. `ConduitDial::fetch_text` is the entry, and it is the first
   operation a conduit performs rather than describes, so a caller reaches the
   wire by holding the guard instead of by reading an address out of it.
+- The classification table's fabricated-input tests, which `docs/agents/net-diag-design.md`
+  has mandated since the table was written and which nothing had ever
+  supplied. One case reaches each stage the table can produce, and two more
+  pin where the implementation diverges from the design's rows: the TLS arm
+  fires on chain text without the `is_connect()` conjunct the design
+  requires, and it outranks `is_status()`, so a status error whose chain
+  names a certificate never reaches `RemoteHttp`.
 - `provider::HostedProvider::rotation_verdict`: the host's answer on
   spending a rotation's bootstrap now, reaching the wallet through the
   provider so the host itself stays below the seam.
