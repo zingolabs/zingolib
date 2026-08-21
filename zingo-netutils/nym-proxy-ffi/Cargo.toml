@@ -12,7 +12,7 @@ crate-type = ["lib", "cdylib", "staticlib"]
 
 [dependencies]
 # NymProxy lives here, behind the nym feature; this shim always needs it.
-zingo-netutils = { git = "https://github.com/zingolabs/zingolib", branch = "finish_nym", features = [
+zingo-netutils = { git = "https://github.com/zingolabs/zingolib", branch = "dev", features = [
     "nym",
 ] }
 # Proc-macro scaffolding (setup_scaffolding! + #[uniffi::export]); no build.rs
@@ -26,7 +26,7 @@ thiserror = "2"
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # The tests read their temporal parameters from `time::test`.
-zingo-netutils = { git = "https://github.com/zingolabs/zingolib", branch = "finish_nym", features = [
+zingo-netutils = { git = "https://github.com/zingolabs/zingolib", branch = "dev", features = [
     "testutils",
 ] }
 

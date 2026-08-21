@@ -9136,12 +9136,12 @@ dependencies = [
 [[package]]
 name = "zingo-net-diag"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=finish_nym#752a0c0416fd224a75d4cacc9892cc635322ec34"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#009505350768a251e39ceba6abd5377fc778d896"
 
 [[package]]
 name = "zingo-netutils"
 version = "5.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=finish_nym#752a0c0416fd224a75d4cacc9892cc635322ec34"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#009505350768a251e39ceba6abd5377fc778d896"
 dependencies = [
  "http 1.5.0",
  "hyper-util",
