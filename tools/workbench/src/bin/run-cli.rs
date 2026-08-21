@@ -61,11 +61,20 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
     if nym_flag {
         eprintln!("{PROG}: note: --nym is now the default and the flag is ignored");
     }
-    if args.iter().any(|arg| arg == "--release") {
+    let debug = args.iter().any(|arg| arg == "--debug");
+    let release_flag = args.iter().any(|arg| arg == "--release");
+    if debug && release_flag {
+        return Err(vec![
+            "--debug and --release contradict each other; pass --debug for a \
+         debug build, or nothing for the release default"
+                .to_string(),
+        ]);
+    }
+    if release_flag {
         eprintln!("{PROG}: note: --release is now the default and the flag is ignored");
     }
     let nym = !clearnet;
-    let release = !args.iter().any(|arg| arg == "--debug");
+    let release = !debug;
     let cli_args: Vec<&String> = args
         .iter()
         .filter(|arg| {
