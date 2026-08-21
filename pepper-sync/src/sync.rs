@@ -3747,4 +3747,146 @@ mod test {
             ));
         }
     }
+
+    /// Continuity failures reported for a load that is not a `Verify` range
+    /// or whose load range was split by the loader.
+    mod load_continuity_failure {
+        use std::collections::HashMap;
+
+        use tokio::sync::mpsc;
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::consensus::BlockHeight;
+        use zcash_protocol::local_consensus::LocalNetwork;
+
+        use crate::config::PerformanceLevel;
+        use crate::error::{ContinuityError, ScanError};
+        use crate::mocks::{MockWallet, MockWalletBuilder};
+        use crate::sync::{ScanPriority, ScanRange, process_scan_results};
+        use crate::wallet::{SyncState, traits::SyncWallet};
+
+        const LOCAL_NETWORK: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+            nu6_2: Some(BlockHeight::from_u32(1)),
+            nu6_3: Some(BlockHeight::from_u32(1)),
+        };
+
+        fn range(start: u32, end: u32, priority: ScanPriority) -> ScanRange {
+            ScanRange::from_parts(
+                BlockHeight::from_u32(start)..BlockHeight::from_u32(end),
+                priority,
+            )
+        }
+
+        fn wallet(scan_ranges: Vec<ScanRange>) -> MockWallet {
+            MockWalletBuilder::new()
+                .birthday(BlockHeight::from_u32(90))
+                .sync_state(SyncState::new_for_test(scan_ranges))
+                .create_mock_wallet()
+        }
+
+        fn hash_discontinuity(height: u32) -> ScanError {
+            ScanError::ContinuityError(ContinuityError::HashDiscontinuity {
+                height: BlockHeight::from_u32(height),
+                prev_hash: BlockHash([1; 32]),
+                previous_block_hash: BlockHash([2; 32]),
+            })
+        }
+
+        // REPRO: claim `mid-load-reorg-aborts-sync`. A hash discontinuity reported in the
+        // middle of a `ChainTip` load (the chain re-organised while the load was streamed)
+        // falls through to `scan_results?` in `process_scan_results` and aborts the sync
+        // session instead of re-prioritising the affected blocks to `Verify`.
+        #[tokio::test]
+        async fn discontinuity_inside_chain_tip_load_is_treated_as_reorg() {
+            // the loader selected 100..200 so the wallet holds it as `Scanning`, while the
+            // load carries its original `ChainTip` priority.
+            let mut wallet = wallet(vec![
+                range(90, 100, ScanPriority::Scanned),
+                range(100, 200, ScanPriority::Scanning),
+            ]);
+            let (fetch_request_sender, _fetch_request_receiver) = mpsc::unbounded_channel();
+            let ufvks = HashMap::new();
+            let mut nullifier_map_limit_exceeded = false;
+
+            let result = process_scan_results(
+                &LOCAL_NETWORK,
+                &mut wallet,
+                fetch_request_sender,
+                &ufvks,
+                range(100, 200, ScanPriority::ChainTip),
+                Err(hash_discontinuity(150)),
+                BlockHeight::from_u32(100),
+                PerformanceLevel::High,
+                &mut nullifier_map_limit_exceeded,
+            )
+            .await;
+
+            assert!(
+                result.is_ok(),
+                "a discontinuity inside a chain tip load aborted the sync session: {result:?}"
+            );
+            let sync_state = wallet.get_sync_state().unwrap();
+            assert!(
+                sync_state.scan_ranges().iter().any(|scan_range| {
+                    scan_range.priority() == ScanPriority::Verify
+                        && scan_range
+                            .block_range()
+                            .contains(&BlockHeight::from_u32(149))
+                }),
+                "the blocks around the discontinuity were not re-prioritised to Verify: {:?}",
+                sync_state.scan_ranges()
+            );
+        }
+
+        // REPRO: claim `mid-load-reorg-aborts-sync` (secondary). When the loader split the
+        // `Verify` range by output budget, the failing load is a sub-range of the wallet's
+        // scan range. The re-org path calls `state::set_scan_priority` with the load's range
+        // and that function panics when no wallet scan range matches exactly.
+        #[tokio::test]
+        async fn reorg_in_split_verify_load_does_not_panic() {
+            // the wallet holds the full verify range as `Scanning`, the load is its lower half.
+            let mut wallet = wallet(vec![
+                range(90, 100, ScanPriority::Scanned),
+                range(100, 110, ScanPriority::Scanning),
+            ]);
+            let (fetch_request_sender, _fetch_request_receiver) = mpsc::unbounded_channel();
+            let ufvks = HashMap::new();
+            let mut nullifier_map_limit_exceeded = false;
+
+            // on current code this call panics inside `set_scan_priority`, which fails the test.
+            let result = process_scan_results(
+                &LOCAL_NETWORK,
+                &mut wallet,
+                fetch_request_sender,
+                &ufvks,
+                range(100, 105, ScanPriority::Verify),
+                Err(hash_discontinuity(100)),
+                BlockHeight::from_u32(100),
+                PerformanceLevel::High,
+                &mut nullifier_map_limit_exceeded,
+            )
+            .await;
+
+            assert!(
+                result.is_ok(),
+                "a re-org detected by a split verify load failed: {result:?}"
+            );
+            let sync_state = wallet.get_sync_state().unwrap();
+            assert!(
+                sync_state
+                    .scan_ranges()
+                    .iter()
+                    .any(|scan_range| scan_range.priority() == ScanPriority::Verify),
+                "no Verify range after re-org: {:?}",
+                sync_state.scan_ranges()
+            );
+        }
+    }
 }
