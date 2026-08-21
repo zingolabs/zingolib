@@ -60,7 +60,7 @@ impl Candidate {
     /// The one key a blessing names this candidate by.
     fn key(&self) -> String {
         [
-            self.krate.as_str(),
+            self.crate_dir.as_str(),
             self.dependency.as_str(),
             self.feature.as_str(),
         ]
@@ -232,16 +232,16 @@ fn touched_manifests(root: &Path, base: &str) -> Result<Vec<PathBuf>, Vec<String
 
 /// Every declared dependency feature in `manifest` whose removal still compiles.
 fn probe_manifest(root: &Path, manifest: &Path) -> Result<Vec<Candidate>, Vec<String>> {
-    let krate = crate_name(root, manifest);
+    let crate_dir = crate_name(root, manifest);
     let original = read(manifest)?;
     let mut unneeded = Vec::new();
 
-    for candidate in declared(&krate, &original) {
+    for candidate in declared(&crate_dir, &original) {
         let Some(without) = manifest_without(&original, &candidate) else {
             continue;
         };
         write(manifest, &without)?;
-        let compiled = check(root, manifest, &krate);
+        let compiled = check(root, manifest, &crate_dir);
         write(manifest, &original)?;
         if compiled? {
             println!("  unneeded: {}", candidate.key());
@@ -252,7 +252,7 @@ fn probe_manifest(root: &Path, manifest: &Path) -> Result<Vec<Candidate>, Vec<St
 }
 
 /// Every dependency feature `text` declares, in declaration order.
-fn declared(krate: &str, text: &str) -> Vec<Candidate> {
+fn declared(crate_dir: &str, text: &str) -> Vec<Candidate> {
     let mut declared = Vec::new();
     let mut cursor = 0;
     while let Some(offset) = text[cursor..].find(FEATURES_KEY) {
@@ -269,7 +269,7 @@ fn declared(krate: &str, text: &str) -> Vec<Candidate> {
         let body_end = cursor + end;
         for feature in quoted(&text[body_start..body_end]) {
             declared.push(Candidate {
-                krate: krate.to_string(),
+                crate_dir: crate_dir.to_string(),
                 dependency: dependency.clone(),
                 feature,
                 body_start,
@@ -360,7 +360,7 @@ fn write(path: &Path, text: &str) -> Result<(), Vec<String>> {
 }
 
 /// Whether the crate still compiles, with every target and the probe's features.
-fn check(root: &Path, manifest: &Path, krate: &str) -> Result<bool, Vec<String>> {
+fn check(root: &Path, manifest: &Path, crate_dir: &str) -> Result<bool, Vec<String>> {
     let mut command = Command::new("cargo");
     command
         .current_dir(root)
@@ -373,7 +373,7 @@ fn check(root: &Path, manifest: &Path, krate: &str) -> Result<bool, Vec<String>>
     } else {
         command.arg("--manifest-path").arg(manifest);
     }
-    match PROBE_FEATURES.iter().find(|(name, _)| *name == krate) {
+    match PROBE_FEATURES.iter().find(|(name, _)| *name == crate_dir) {
         Some((_, features)) => {
             command.arg("--features").arg(features);
         }
@@ -540,7 +540,7 @@ serde = { workspace = true, features = ["derive"] }
     #[test]
     fn an_absent_feature_removes_nothing() {
         let candidate = Candidate {
-            krate: "zingo-price".to_string(),
+            crate_dir: "zingo-price".to_string(),
             dependency: "reqwest".to_string(),
             feature: "cookies".to_string(),
             body_start: 0,
