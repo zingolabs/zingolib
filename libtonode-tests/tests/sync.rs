@@ -227,7 +227,7 @@ async fn add_subtree_roots() {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
     let _ = lightclient.stop_sync();
-    let _ = lightclient.await_sync().await;
+    lightclient.await_sync().await.unwrap();
 
     {
         let shard_trees = &mut lightclient.wallet().write().await.shard_trees;

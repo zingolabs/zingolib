@@ -625,11 +625,11 @@ where
             .expect("loader should always have a handle to take!");
 
         match tokio::time::timeout(SCANNER_SHUTDOWN_TIMEOUT, &mut handle).await {
-            Ok(join_res) => join_res.expect("task panicked")?,
+            Ok(res) => res.expect("task panicked")?,
             Err(_) => {
+                tracing::warn!("Loader shutdown timed out!");
                 handle.abort();
                 let _ = handle.await;
-                return Err(tonic::Status::deadline_exceeded("loader shutdown timeout").into());
             }
         }
 
@@ -742,6 +742,7 @@ where
         match tokio::time::timeout(SCANNER_SHUTDOWN_TIMEOUT, &mut handle).await {
             Ok(res) => res,
             Err(_) => {
+                tracing::warn!("Worker shutdown timed out!");
                 handle.abort();
                 let _ = handle.await; // ignore join error after abort
                 Ok(())
