@@ -40,6 +40,35 @@ jobs:
         with:
           hack-subcommand: build
 
+  feature-census:
+    name: Feature Census
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ inputs.toolchain }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install protoc
+        run: |
+          if ! command -v protoc; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+          fi
+
+      # Removes each declared dependency feature in turn and checks without it.
+      # One `cargo check` per feature, so this runs nightly rather than per PR.
+      - name: Run feature-census
+        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin feature-census -- --all
+
   create-timestamp:
     uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
 
