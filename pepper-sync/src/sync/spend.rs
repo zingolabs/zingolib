@@ -437,3 +437,267 @@ pub(super) fn update_spent_coins(
             }
         });
 }
+
+// REPRO: claim `remove-mark-bool-discarded`. `update_spent_notes_by_protocol`
+// calls `ShardTree::remove_mark(position, Some(&spending_height))` and drops
+// the returned `bool`. shardtree 0.7.1 reports two silent outcomes through
+// that bool: `Ok(false)` when the spending height is at or above the oldest
+// checkpoint id but no checkpoint with exactly that id exists (the mark is
+// kept and nothing is recorded), and `Ok(true)` with direct removal when the
+// spending height is below the oldest checkpoint id (no checkpoint records
+// the removal, so a later rollback cannot restore it). These tests pin the
+// library facts and then drive the crate's spend path into the first case.
+#[cfg(test)]
+mod remove_mark_outcome_repro {
+    use std::collections::HashMap;
+
+    use incrementalmerkletree::{Marking, Position, Retention};
+    use sapling_crypto::value::NoteValue;
+    use shardtree::{RetentionFlags, ShardTree, store::ShardStore};
+    use zcash_primitives::transaction::TxId;
+    use zcash_protocol::{consensus::BlockHeight, memo::Memo};
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use crate::{
+        mocks::MockWalletBuilder,
+        shardtree_ext::ShardTreeExt,
+        sync::spend,
+        wallet::{
+            NullifierMap, OutputId, ScanTarget, ShardTrees, WalletNote, WalletTransaction,
+            empty_shard_tree,
+            traits::{SyncNullifiers, SyncShardTrees, SyncTransactions},
+        },
+        witness::SHARD_HEIGHT,
+    };
+
+    type SaplingTree = ShardTree<
+        shardtree::store::memory::MemoryShardStore<sapling_crypto::Node, BlockHeight>,
+        { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
+        { SHARD_HEIGHT },
+    >;
+
+    const fn h(height: u32) -> BlockHeight {
+        BlockHeight::from_u32(height)
+    }
+    fn leaf_position() -> Position {
+        Position::from(0)
+    }
+
+    /// True when the leaf at `position` still carries the MARKED retention flag.
+    fn leaf_is_marked(tree: &SaplingTree, position: Position) -> bool {
+        tree.store()
+            .get_shard(SaplingTree::subtree_addr(position))
+            .expect("infallible")
+            .and_then(|shard| shard.value_at_position(position).map(|(_, flags)| *flags))
+            .is_some_and(|flags| flags.contains(RetentionFlags::MARKED))
+    }
+
+    /// True when some checkpoint records `position` in its `marks_removed` set.
+    fn removal_is_recorded(tree: &SaplingTree, position: Position) -> bool {
+        let mut recorded = false;
+        let count = tree.store().checkpoint_count().expect("infallible");
+        tree.store()
+            .for_each_checkpoint(count, |_, checkpoint| {
+                recorded |= checkpoint.marks_removed().contains(&position);
+                Ok(())
+            })
+            .expect("infallible");
+        recorded
+    }
+
+    /// A tree holding one marked leaf at position 0 checkpointed at `marked_at`,
+    /// followed by one unmarked leaf checkpointed at each of `later_checkpoints`.
+    fn tree_with_marked_leaf(
+        marked_at: BlockHeight,
+        later_checkpoints: &[BlockHeight],
+    ) -> SaplingTree {
+        let mut tree = empty_shard_tree();
+        tree.append(
+            sapling_crypto::Node::from_scalar(jubjub::Base::from(1u64)),
+            Retention::Checkpoint {
+                id: marked_at,
+                marking: Marking::Marked,
+            },
+        )
+        .expect("append");
+        for (i, height) in later_checkpoints.iter().enumerate() {
+            tree.append(
+                sapling_crypto::Node::from_scalar(jubjub::Base::from(2 + i as u64)),
+                Retention::Checkpoint {
+                    id: *height,
+                    marking: Marking::None,
+                },
+            )
+            .expect("append");
+        }
+        tree
+    }
+
+    /// Library fact (a): a spending height between the oldest and newest
+    /// checkpoint ids with no checkpoint of its own is a silent no-op.
+    #[test]
+    fn library_remove_mark_without_checkpoint_at_height_is_silent_noop() {
+        let mut tree = tree_with_marked_leaf(h(10), &[h(30)]);
+        assert!(leaf_is_marked(&tree, leaf_position()));
+
+        let removed = tree
+            .remove_mark(leaf_position(), Some(&h(20)))
+            .expect("infallible");
+
+        assert!(
+            !removed,
+            "shardtree reports the no-op only through the bool"
+        );
+        assert!(leaf_is_marked(&tree, leaf_position()));
+        assert!(!removal_is_recorded(&tree, leaf_position()));
+        assert!(
+            tree.witness_at_checkpoint_id(leaf_position(), &h(30))
+                .expect("infallible")
+                .is_some(),
+            "the leaf is still witnessable, so the retention leaked"
+        );
+    }
+
+    /// Library fact (b): a spending height below the oldest checkpoint id
+    /// removes the mark directly, and no checkpoint can restore it on rollback.
+    #[test]
+    fn library_remove_mark_below_oldest_checkpoint_is_not_restored_by_rollback() {
+        let mut tree = tree_with_marked_leaf(h(5), &[h(6), h(7), h(8), h(9), h(10)]);
+        // Drop the zero-height and leaf checkpoints so the oldest checkpoint id is 6.
+        tree.store_mut()
+            .remove_checkpoint(&h(0))
+            .expect("infallible");
+        tree.store_mut()
+            .remove_checkpoint(&h(5))
+            .expect("infallible");
+        assert_eq!(
+            tree.store().min_checkpoint_id().expect("infallible"),
+            Some(h(6))
+        );
+        assert!(
+            tree.witness_at_checkpoint_id(leaf_position(), &h(6))
+                .expect("infallible")
+                .is_some()
+        );
+
+        let removed = tree
+            .remove_mark(leaf_position(), Some(&h(2)))
+            .expect("infallible");
+        assert!(removed);
+        assert!(!leaf_is_marked(&tree, leaf_position()));
+        assert!(!removal_is_recorded(&tree, leaf_position()));
+
+        tree.rollback_to_checkpoint(h(6)).expect("infallible");
+        assert!(!leaf_is_marked(&tree, leaf_position()));
+        assert!(
+            tree.witness_at_checkpoint_id(leaf_position(), &h(6))
+                .is_err(),
+            "the rolled back tree cannot witness the un-spent note"
+        );
+    }
+
+    const FUNDING_HEIGHT: BlockHeight = h(10);
+    const SPEND_HEIGHT: BlockHeight = h(20);
+    const LATER_CHECKPOINT: BlockHeight = h(30);
+    const FUNDING_TXID: TxId = TxId::from_bytes([1; 32]);
+    const SPENDING_TXID: TxId = TxId::from_bytes([2; 32]);
+    const NOTE_NULLIFIER: sapling_crypto::Nullifier = sapling_crypto::Nullifier([42; 32]);
+
+    fn funding_transaction() -> WalletTransaction {
+        let extsk = sapling_crypto::zip32::ExtendedSpendingKey::master(&[0; 32]);
+        let (_, recipient) = extsk.default_address();
+        let crypto_note = sapling_crypto::Note::from_parts(
+            recipient,
+            NoteValue::from_raw(100_000),
+            sapling_crypto::Rseed::AfterZip212([0; 32]),
+        );
+        let note = WalletNote::new_for_test(
+            OutputId::new(FUNDING_TXID, 0),
+            zip32::AccountId::ZERO,
+            zip32::Scope::External,
+            crypto_note,
+            Memo::Empty,
+            Some(leaf_position()),
+        )
+        .with_nullifier_for_test(NOTE_NULLIFIER);
+
+        WalletTransaction::new_for_test(FUNDING_TXID, ConfirmationStatus::Confirmed(FUNDING_HEIGHT))
+            .with_sapling_notes_for_test(vec![note])
+    }
+
+    /// Crate path: `update_spent_notes` with `remove_marks = true` on a tree
+    /// whose checkpoints bracket the spending height without one at that
+    /// height. The spend is recorded on the note, but the retention for the
+    /// spent note is neither cleared nor scheduled for clearing, and the
+    /// `Ok(false)` that said so was dropped by
+    /// `remove_mark(...).expect("infallible")` in this module.
+    #[test]
+    fn update_spent_notes_drops_remove_mark_outcome() {
+        let mut wallet_transactions = HashMap::new();
+        wallet_transactions.insert(FUNDING_TXID, funding_transaction());
+        wallet_transactions.insert(
+            SPENDING_TXID,
+            WalletTransaction::new_for_test(
+                SPENDING_TXID,
+                ConfirmationStatus::Confirmed(SPEND_HEIGHT),
+            ),
+        );
+        let mut nullifier_map = NullifierMap::new();
+        nullifier_map.sapling.insert(
+            NOTE_NULLIFIER,
+            ScanTarget {
+                block_height: SPEND_HEIGHT,
+                txid: SPENDING_TXID,
+                narrow_scan_area: false,
+            },
+        );
+        let mut shard_trees = ShardTrees::new();
+        shard_trees.sapling = tree_with_marked_leaf(FUNDING_HEIGHT, &[LATER_CHECKPOINT]);
+        let mut wallet = MockWalletBuilder::new()
+            .wallet_transactions(wallet_transactions)
+            .nullifier_map(nullifier_map)
+            .shard_trees(shard_trees)
+            .create_mock_wallet();
+
+        let (sapling_nullifiers, orchard_nullifiers, ironwood_nullifiers) =
+            spend::collect_derived_nullifiers(wallet.get_wallet_transactions().unwrap());
+        let (sapling_targets, orchard_targets, ironwood_targets) = spend::detect_shielded_spends(
+            wallet.get_nullifiers_mut().unwrap(),
+            sapling_nullifiers,
+            orchard_nullifiers,
+            ironwood_nullifiers,
+        );
+        spend::update_spent_notes(
+            &mut wallet,
+            sapling_targets,
+            orchard_targets,
+            ironwood_targets,
+            true,
+        )
+        .unwrap();
+
+        let spending = wallet
+            .get_wallet_transactions()
+            .unwrap()
+            .get(&FUNDING_TXID)
+            .unwrap()
+            .sapling_notes()
+            .first()
+            .unwrap()
+            .spending_transaction;
+        assert_eq!(
+            spending,
+            Some(SPENDING_TXID),
+            "the spend itself is recorded"
+        );
+
+        let tree = &wallet.get_shard_trees_mut().unwrap().sapling;
+        // Intended invariant: a confirmed spend with `remove_marks = true`
+        // either clears the mark or records its removal in a checkpoint.
+        assert!(
+            !leaf_is_marked(tree, leaf_position()) || removal_is_recorded(tree, leaf_position()),
+            "spent note at position 0 is still marked and no checkpoint records \
+             the removal: remove_mark returned Ok(false) and the spend path ignored it"
+        );
+    }
+}
