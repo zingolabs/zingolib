@@ -751,4 +751,124 @@ mod tests {
             }
         }
     }
+
+    /// REPRO: recovery classification disagrees with itself and with the
+    /// failure cause (claim slug `error-classification-mismatches`). Each
+    /// test encodes the proposed classification, so each fails on the
+    /// current code.
+    mod classification_mismatches {
+        use super::*;
+
+        /// REPRO (1): `FetcherDropped` is raised when the local fetch task
+        /// or its channel is gone (`client.rs` `map_err(|_| FetcherDropped)`),
+        /// so the server is not implicated and retrying it cannot help.
+        #[test]
+        fn fetcher_dropped_is_a_local_failure_and_aborts() {
+            assert_eq!(
+                ServerError::FetcherDropped.recovery_recommendation(),
+                SyncRecoveryObservables::Abort
+            );
+        }
+
+        /// REPRO (1): the boolean view agrees with the enum view.
+        #[test]
+        fn fetcher_dropped_does_not_recommend_the_same_server() {
+            assert!(!ServerError::FetcherDropped.recommend_same_server());
+        }
+
+        /// REPRO (2): a deadline that expired is transient, so the same
+        /// server is worth retrying.
+        #[test]
+        fn request_failed_deadline_exceeded_retries_the_same_server() {
+            let e = ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout"));
+            assert_eq!(
+                e.recovery_recommendation(),
+                SyncRecoveryObservables::MaybeRecoverableServer
+            );
+        }
+
+        /// REPRO (2): `Unavailable` is the canonical transient status.
+        #[test]
+        fn request_failed_unavailable_retries_the_same_server() {
+            let e = ServerError::RequestFailed(tonic::Status::unavailable("busy"));
+            assert_eq!(
+                e.recovery_recommendation(),
+                SyncRecoveryObservables::MaybeRecoverableServer
+            );
+        }
+
+        /// REPRO (2): an authentication refusal is not an availability
+        /// problem, so switching servers is not the recovery.
+        #[test]
+        fn request_failed_unauthenticated_is_not_server_unavailable() {
+            let e = ServerError::RequestFailed(tonic::Status::unauthenticated("no token"));
+            assert_ne!(
+                e.recovery_recommendation(),
+                SyncRecoveryObservables::ServerUnavailable
+            );
+        }
+
+        /// REPRO (3): a tree size the chain reports that the scanner cannot
+        /// reproduce is server misbehaviour, so another server is the recovery.
+        #[test]
+        fn scan_error_incorrect_tree_size_tries_another_server() {
+            let e: TestSyncError = ScanError::IncorrectTreeSize {
+                shielded_protocol: PoolType::IRONWOOD,
+                height: BlockHeight::from_u32(100),
+                block_metadata_size: 999,
+                calculated_size: 7,
+            }
+            .into();
+            assert_eq!(
+                e.recovery_recommendation(),
+                SyncRecoveryObservables::ServerUnavailable
+            );
+        }
+
+        /// REPRO (3): a transaction returned under the wrong txid is server
+        /// misbehaviour, so another server is the recovery.
+        #[test]
+        fn scan_error_incorrect_txid_tries_another_server() {
+            let e: TestSyncError = ScanError::IncorrectTxid {
+                txid_requested: TxId::from_bytes([1u8; 32]),
+                txid_returned: TxId::from_bytes([2u8; 32]),
+            }
+            .into();
+            assert_eq!(
+                e.recovery_recommendation(),
+                SyncRecoveryObservables::ServerUnavailable
+            );
+        }
+
+        /// REPRO (4): the same failed request must classify the same way
+        /// whether it arrives through `MempoolError` or directly.
+        #[test]
+        fn mempool_wrapped_request_failed_matches_direct_request_failed() {
+            let wrapped: TestSyncError = MempoolError::ServerError(ServerError::RequestFailed(
+                tonic::Status::unavailable("down"),
+            ))
+            .into();
+            let direct: TestSyncError =
+                ServerError::RequestFailed(tonic::Status::unavailable("down")).into();
+            assert_eq!(
+                wrapped.recovery_recommendation(),
+                direct.recovery_recommendation()
+            );
+        }
+
+        /// REPRO (4): the boolean view has the same wrapper inconsistency.
+        #[test]
+        fn mempool_wrapped_request_failed_matches_direct_recommend_same_server() {
+            let wrapped: TestSyncError = MempoolError::ServerError(ServerError::RequestFailed(
+                tonic::Status::unavailable("down"),
+            ))
+            .into();
+            let direct: TestSyncError =
+                ServerError::RequestFailed(tonic::Status::unavailable("down")).into();
+            assert_eq!(
+                wrapped.recommend_same_server(),
+                direct.recommend_same_server()
+            );
+        }
+    }
 }
