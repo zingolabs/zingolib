@@ -306,8 +306,8 @@ where
         Ok(())
     }
 
-    pub(crate) fn is_complete(&self) -> bool {
-        matches!(self.state, ScannerState::Complete)
+    pub(crate) fn is_verified(&self) -> bool {
+        !matches!(self.state, ScannerState::Verification)
     }
 }
 

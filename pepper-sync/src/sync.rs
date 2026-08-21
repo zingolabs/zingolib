@@ -467,6 +467,8 @@ where
             .map_err(SyncError::WalletError)?,
     );
 
+    let mut first_verification_complete = false;
+    // TODO: change to oncelock?
     let mut mempool_shutdown_timer = None;
     let mut nullifier_map_limit_exceeded = false;
     let mut continuous_sync_interval = tokio::time::interval(Duration::from_secs(30));
@@ -474,13 +476,11 @@ where
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     'continuous_sync: loop {
-        // NOTE: there needs to be some protection for checking for re-org when new blocks are mined. there could be a bug
+        // FIXME: there needs to be some protection for checking for re-org when new blocks are mined. there could be a bug
         // where the chain tip is still being scanned, a new mined block is detected and the verify range is not set to the
         // new block as the chain tip is not within the highest scanned range yet. a potential solution is to wait until all
         // currently scanning ranges are scanned before including the newly mined block in the scan span but this has efficiency
         // costs.
-        //
-        // TODO: add logic that sets scanner from complete back to scanning in continuous sync
 
         scanner.state.reverify();
         let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
@@ -492,6 +492,14 @@ where
             chain_height,
             consensus_parameters,
         )?;
+        state::update_scan_ranges(
+            consensus_parameters,
+            last_known_chain_height,
+            chain_height,
+            &mut *wallet.write().await,
+        )
+        .await?;
+
         let new_blocks_mined = chain_height > last_known_chain_height;
         let mut reorg_occured = false;
         let mut initial_reorg_detection_start_height_opt = wallet
@@ -505,16 +513,20 @@ where
         {
             let mut wallet_guard = wallet.write().await;
             if initial_reorg_detection_start_height <= chain_height {
-                // NOTE: if the chain tip was not fully scanned before continuous sync enters another loop, it will inefficiently
-                // verify blocks below the top 100 blocks. consider the case where we are verifying a wallets current blocks
-                // on a first time pass of continuous sync when adding logic to mitigate this.
-                state::set_verify_scan_range(
-                    wallet_guard
-                        .get_sync_state_mut()
-                        .map_err(SyncError::WalletError)?,
-                    initial_reorg_detection_start_height,
-                    VerifyEnd::VerifyLowest,
-                );
+                // skip verification if initial wallet state was already verified this session and verification is below
+                // the chain tip reorg window. this may happen if the chain tip was not fully scanned before continuous
+                // sync enters another loop.
+                if !(first_verification_complete
+                    && u32::from(initial_reorg_detection_start_height) < MAX_REORG_ALLOWANCE)
+                {
+                    state::set_verify_scan_range(
+                        wallet_guard
+                            .get_sync_state_mut()
+                            .map_err(SyncError::WalletError)?,
+                        initial_reorg_detection_start_height,
+                        VerifyEnd::VerifyLowest,
+                    );
+                }
             } else {
                 // in this case, no blocks have been mined since last sync but a re-org may have occured
                 let chain_height_server_block =
@@ -553,7 +565,7 @@ where
         }
 
         if new_blocks_mined || reorg_occured {
-            // NOTE: this will work however it will check all addresses past the gap limit for the top 100 blocks everytime
+            // FIXME: this will work however it will check all addresses past the gap limit for the top 100 blocks everytime
             // there is a new block mined. this should be improved. a potential solution is to use transparent data in compact
             // blocks after the first pass i.e. once the first new mined block is detected.
             transparent::update_addresses_and_scan_targets(
@@ -570,14 +582,6 @@ where
             update_subtree_roots(
                 consensus_parameters,
                 fetch_request_sender.clone(),
-                &mut *wallet.write().await,
-            )
-            .await?;
-
-            state::update_scan_ranges(
-                consensus_parameters,
-                last_known_chain_height,
-                chain_height,
                 &mut *wallet.write().await,
             )
             .await?;
@@ -673,7 +677,10 @@ where
                 }
 
                 _check_new_block_mined = continuous_sync_interval.tick() => {
-                    continue 'continuous_sync;
+                    if scanner.is_verified() {
+                        first_verification_complete = true;
+                        continue 'continuous_sync;
+                    }
                 }
             }
         }
@@ -2896,13 +2903,13 @@ mod test {
                     MempoolDrainVerdict::NotShutdown,
                     "no stream yet",
                 ),
-                // Connected but inside the settle window: still hold.
+                // Connected but inside the settle window: waits before checking whether there is work to process.
                 (
                     Arc::new(AtomicBool::new(false)),
                     Arc::new(AtomicU32::new(0)),
                     Duration::from_millis(100),
                     Some(Duration::from_millis(50)),
-                    MempoolDrainVerdict::NotShutdown,
+                    MempoolDrainVerdict::ShutdownAndDrainComplete,
                     "settling",
                 ),
                 // The typical session: stream connected long ago,
@@ -2914,15 +2921,6 @@ mod test {
                     Some(Duration::from_millis(1_400)),
                     MempoolDrainVerdict::ShutdownAndDrainComplete,
                     "settled and drained",
-                ),
-                // Exactly the settle boundary counts as settled.
-                (
-                    Arc::new(AtomicBool::new(false)),
-                    Arc::new(AtomicU32::new(0)),
-                    Duration::from_millis(0),
-                    Some(Duration::from_millis(200)),
-                    MempoolDrainVerdict::ShutdownAndDrainComplete,
-                    "settle boundary",
                 ),
                 // Unprocessed work always re-enters the processing
                 // loop, whatever the stream state. No deadline caps

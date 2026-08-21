@@ -1072,6 +1072,7 @@ mod perspective {
     /// spendable arithmetic across a subsequent send.
     #[tokio::test]
     async fn zero_value_receipts() {
+        tracing_subscriber::fmt().init();
         let mut net = MockNet::launch().await;
         let mut recipient = net
             .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
