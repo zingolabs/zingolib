@@ -23,6 +23,10 @@ uniffi = "0.28"
 tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "time"] }
 thiserror = "2"
 
+[features]
+# Builds tests/live_mixnet.rs, which reaches the real Nym network.
+live-mixnet = []
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # The tests read their temporal parameters from `time::test`.
