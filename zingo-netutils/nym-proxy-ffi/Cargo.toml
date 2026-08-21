@@ -1,0 +1,56 @@
+[package]
+name = "zingo-nym-proxy-ffi"
+version = "0.1.0"
+edition = "2024"
+description = "UniFFI shim hosting the Nym mixnet SOCKS5 proxy for mobile (ADR 0011, CP-3)."
+
+# The mobile host loads this as a dynamic library (cdylib for the loaded
+# framework) or links it statically (staticlib for the iOS XCFramework slices).
+# rlib keeps it usable as an ordinary dependency for host-side tests.
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[dependencies]
+# NymProxy lives here, behind the nym feature; this shim always needs it.
+zingo-netutils = { git = "https://github.com/zingolabs/zingolib", branch = "dev", features = [
+    "nym",
+] }
+# Proc-macro scaffolding (setup_scaffolding! + #[uniffi::export]); no build.rs
+# and no UDL. Generating the Swift/Kotlin bindings is a later, separate step.
+uniffi = "0.28"
+# The shim owns a long-lived runtime that keeps the NymProxy client and its
+# SOCKS5 listener alive across start and stop.
+tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "time"] }
+thiserror = "2"
+tracing = "0.1.44"
+
+[features]
+# Builds tests/live_mixnet.rs, which reaches the real Nym network.
+live-mixnet = []
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# The tests read their temporal parameters from `time::test`.
+zingo-netutils = { git = "https://github.com/zingolabs/zingolib", branch = "dev", features = [
+    "testutils",
+] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.15.1"
+log = "0.4.33"
+tracing-subscriber = "0.3.23"
+
+# This crate resolves in its own lockfile, never the parent workspace's:
+# nym-sdk's transitive graph needs `crypto-common ^0.2`, irreconcilable
+# with the main workspace's pins (see the root manifest's exclude).
+[workspace]
+members = []
+
+# Cargo honours `[patch]` only from the workspace being built, so zingolib's
+# own stanza never reaches this workspace and the nym stack would otherwise
+# resolve the real `rustls-platform-verifier`. On Android that verifier
+# rejects `validator.nymtech.net` for carrying no OCSP responder, and the
+# mixnet never starts. This restates zingolib ADR 0021 here: verification is
+# the compiled-in Mozilla bundle, identically on every platform.
+[patch.crates-io]
+rustls-platform-verifier = { git = "https://github.com/zingolabs/zingolib", branch = "dev" }
