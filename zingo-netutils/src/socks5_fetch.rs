@@ -86,7 +86,7 @@ fn classify_stage(
     NetOpStage::TunnelTransport
 }
 
-fn classify_request(
+fn classify_error(
     error: &reqwest::Error,
     socks5_proxy: Option<&str>,
     url: &str,
@@ -115,7 +115,7 @@ async fn fetch_over(
 ) -> Result<String, Socks5FetchError> {
     ensure_default_crypto_provider();
     let typed = |error: reqwest::Error| Socks5FetchError {
-        failure: classify_request(&error, socks5_proxy, url, request_timeout),
+        failure: classify_error(&error, socks5_proxy, url, request_timeout),
         source: error,
     };
     let mut builder = reqwest::Client::builder()
