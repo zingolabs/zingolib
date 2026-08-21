@@ -3363,6 +3363,64 @@ mod test {
             );
         }
 
+        /// REPRO: `update_shielded_spends` consumes the nullifier-map entry in
+        /// `detect_shielded_spends` before `scan_spending_transactions` awaits the
+        /// network. When the spending transaction is not in the wallet and the fetch
+        /// fails, the function returns before `update_spent_notes`, so the note is
+        /// never marked spent and the map entry that could re-detect it is gone.
+        ///
+        /// The invariant: after a failed detection pass the spend is still recoverable,
+        /// either the note carries the spending txid or the nullifier is still mapped.
+        #[tokio::test]
+        async fn failed_spending_transaction_fetch_must_not_lose_the_detected_spend() {
+            let mut wallet_transactions = HashMap::new();
+            wallet_transactions.insert(FUNDING_TXID, funding_transaction(None));
+            // The spending transaction evaded trial decryption: it is absent from the
+            // wallet, so `scan_spending_transactions` must fetch it.
+            let mut nullifier_map = NullifierMap::new();
+            nullifier_map.sapling.insert(
+                NOTE_NULLIFIER,
+                ScanTarget {
+                    block_height: SPEND_HEIGHT,
+                    txid: SPENDING_TXID,
+                    narrow_scan_area: true,
+                },
+            );
+            let mut wallet = MockWalletBuilder::new()
+                .wallet_transactions(wallet_transactions)
+                .nullifier_map(nullifier_map)
+                .create_mock_wallet();
+
+            // The fetcher is gone: every network request fails with `FetcherDropped`.
+            let (fetch_request_sender, fetch_request_receiver) =
+                tokio::sync::mpsc::unbounded_channel::<crate::client::FetchRequest>();
+            drop(fetch_request_receiver);
+
+            let result = spend::update_shielded_spends(
+                &zcash_protocol::consensus::MAIN_NETWORK,
+                &mut wallet,
+                fetch_request_sender,
+                &HashMap::new(),
+                &std::collections::BTreeMap::new(),
+                None,
+            )
+            .await;
+            assert!(result.is_err(), "the fetch was expected to fail");
+
+            let note_marked_spent = get_spending_txid(&wallet) == Some(SPENDING_TXID);
+            let nullifier_still_mapped = wallet
+                .get_nullifiers()
+                .unwrap()
+                .sapling
+                .contains_key(&NOTE_NULLIFIER);
+            assert!(
+                note_marked_spent || nullifier_still_mapped,
+                "the spend observation was lost: the note is unspent \
+                 (spending_transaction = {:?}) and the nullifier is no longer mapped",
+                get_spending_txid(&wallet)
+            );
+        }
+
         /// A scanned transaction record replaces an existing `Failed` record
         /// wholesale, because `extend_wallet_transactions` merges via `HashMap::extend`.
         /// This is why the reset-before-scan sequence heals completely.
