@@ -74,13 +74,6 @@ where
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
     create_scan_range(last_known_chain_height, chain_height, sync_state);
-    let scan_targets = sync_state.scan_targets.clone();
-    set_found_note_scan_ranges(
-        consensus_parameters,
-        sync_state,
-        ShieldedPool::Ironwood,
-        scan_targets.into_iter(),
-    );
     set_chain_tip_scan_range(consensus_parameters, sync_state, chain_height);
     merge_scan_ranges(sync_state, ScanPriority::ChainTip);
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
@@ -832,6 +825,7 @@ where
         .fully_scanned_height()
         .expect("scan ranges must be non-empty");
     let previously_scanned_blocks = calculate_scanned_blocks(sync_state);
+    // FIXME: check that we add a wallet block when we truncate back to ironwood epoch when wallet is updated after scanning ironwood era blocks
     let (
         previously_scanned_sapling_outputs,
         previously_scanned_orchard_outputs,

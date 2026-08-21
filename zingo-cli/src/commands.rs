@@ -829,7 +829,7 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
             Err(e) => Err(not_yet_typed(e)),
         },
         SyncSubCommand::Status => {
-            let status = match lightclient.latest_sync_status() {
+            let status = match lightclient.sync_status() {
                 Some(status) if lightclient.sync_mode() != SyncMode::NotRunning => status,
                 _ => pepper_sync::sync_status(&*lightclient.wallet().read().await)
                     .await

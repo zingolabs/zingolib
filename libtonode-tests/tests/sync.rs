@@ -61,10 +61,7 @@ async fn sync_mainnet_test() {
         interval.tick().await;
         {
             let wallet = lightclient.wallet().read().await;
-            tracing::info!(
-                "{}",
-                json::JsonValue::from(pepper_sync::sync_status(&*wallet).await.unwrap())
-            );
+            tracing::info!("{}", json::JsonValue::from(lightclient.sync_status()));
             tracing::info!("WALLET DEBUG:");
             tracing::info!("uas: {}", wallet.unified_addresses().len());
             tracing::info!("taddrs: {}", wallet.transparent_addresses().len());
@@ -235,6 +232,7 @@ async fn add_subtree_roots() {
     {
         let shard_trees = &mut lightclient.wallet().write().await.shard_trees;
 
+        dbg!("1");
         assert_subtree_roots_match_server(
             shard_trees,
             sapling_subtree_roots_server.clone(),
@@ -277,6 +275,7 @@ async fn add_subtree_roots() {
     {
         let shard_trees = &mut lightclient.wallet().write().await.shard_trees;
 
+        dbg!("2");
         assert_subtree_roots_match_server(
             shard_trees,
             sapling_subtree_roots_server.clone(),

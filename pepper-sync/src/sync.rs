@@ -35,7 +35,7 @@ use crate::scan::ScanResults;
 use crate::scan::task::{Scanner, ScannerState};
 use crate::scan::transactions::scan_transaction;
 use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
-use crate::sync::state::{VerifyEnd, truncate_scan_ranges};
+use crate::sync::state::{VerifyEnd, set_found_note_scan_ranges, truncate_scan_ranges};
 use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
@@ -473,6 +473,7 @@ where
     let mut nullifier_map_limit_exceeded = false;
     let mut continuous_sync_interval = tokio::time::interval(Duration::from_secs(30));
     continuous_sync_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    continuous_sync_interval.tick().await;
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     'continuous_sync: loop {
@@ -597,10 +598,25 @@ where
             .await?;
 
             expire_transactions(&mut *wallet.write().await)?;
-
-            publish_sync_status(&*wallet.read().await, &progress).await;
         }
 
+        // now transparent scan targets have been added, set ranges to be prioritized for scanning.
+        {
+            let mut wallet_guard = wallet.write().await;
+            let sync_state = wallet_guard
+                .get_sync_state_mut()
+                .map_err(SyncError::WalletError)?;
+            let scan_targets = sync_state.scan_targets.clone();
+            set_found_note_scan_ranges(
+                consensus_parameters,
+                sync_state,
+                ShieldedPool::Ironwood,
+                scan_targets.into_iter(),
+            );
+        }
+
+        // publish sync status prior to scanning
+        publish_sync_status(&*wallet.read().await, &progress).await;
         'scan: loop {
             tokio::select! {
                 Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
@@ -821,9 +837,8 @@ where
 /// Creates a [`self::SyncStatus`] from the wallet's current [`crate::wallet::SyncState`].
 /// If there is still nullifiers to be re-fetched when scanning is complete, the percentages will be overrided to 99%
 /// until sync is complete.
-///
-/// Intended to be called while [`self::sync`] is running in a separate task.
-pub async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, SyncStatusError<W::Error>>
+// TODO: update changelog
+async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, SyncStatusError<W::Error>>
 where
     W: SyncWallet + SyncBlocks,
 {

@@ -319,7 +319,7 @@ async fn scan_progress(lightclient: &LightClient) -> Option<ScanProgress> {
             .await
             .ok()?
     } else {
-        lightclient.latest_sync_status()?
+        lightclient.sync_status()?
     };
     Some(ScanProgress {
         outputs_scanned: status.total_outputs_scanned,
