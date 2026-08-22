@@ -35,6 +35,7 @@ use zingolib_testutils::scenarios::{
     self, IndexerConvergence, increase_height_and_wait_for_client,
 };
 
+// TODO: migrate to mock test as this test is long and connects to mainnet
 #[tokio::test]
 async fn add_subtree_roots() {
     fn assert_subtree_roots_match_server(
@@ -53,6 +54,8 @@ async fn add_subtree_roots() {
             sapling_subtree_roots_server.len()
         );
         let mut sapling_subtree_roots_wallet = Vec::new();
+        dbg!(&sapling_shard_addrs);
+        dbg!(&shard_trees.sapling);
         for addr in sapling_shard_addrs {
             let root = shard_trees
                 .sapling
@@ -186,7 +189,8 @@ async fn add_subtree_roots() {
         Ok(_) => {}
         Err(LightClientError::SyncError(SyncError::SyncModeError(
             SyncModeError::SyncNotRunning,
-        ))) => {}
+        )))
+        | Err(LightClientError::SyncNotRunning) => {}
         Err(e) => {
             panic!("{e}");
         }
@@ -194,8 +198,6 @@ async fn add_subtree_roots() {
 
     {
         let shard_trees = &mut lightclient.wallet().write().await.shard_trees;
-
-        dbg!("1");
         assert_subtree_roots_match_server(
             shard_trees,
             sapling_subtree_roots_server.clone(),
@@ -219,6 +221,9 @@ async fn add_subtree_roots() {
         assert!(orchard_shard_addrs.len() != orchard_subtree_roots_server.len());
     }
 
+    // must wait for a new block to be mined to trigger get_subtree_roots in sync
+    tokio::time::sleep(Duration::from_secs(100)).await;
+
     lightclient.sync().await.unwrap();
     while !(lightclient
         .wallet()
@@ -233,12 +238,20 @@ async fn add_subtree_roots() {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
     let _ = lightclient.stop_sync();
-    let _ = lightclient.await_sync().await;
+    match lightclient.await_sync().await {
+        Ok(_) => {}
+        Err(LightClientError::SyncError(SyncError::SyncModeError(
+            SyncModeError::SyncNotRunning,
+        )))
+        | Err(LightClientError::SyncNotRunning) => {}
+        Err(e) => {
+            panic!("{e}");
+        }
+    }
 
     {
         let shard_trees = &mut lightclient.wallet().write().await.shard_trees;
 
-        dbg!("2");
         assert_subtree_roots_match_server(
             shard_trees,
             sapling_subtree_roots_server.clone(),
