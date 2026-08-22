@@ -48,11 +48,22 @@ use super::{
 
 fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
     let str_len = reader.read_u64::<LittleEndian>()?;
-    let mut str_bytes = vec![0; str_len as usize];
-    reader.read_exact(&mut str_bytes)?;
+    let mut str_bytes = Vec::new();
+    reader.take(str_len).read_to_end(&mut str_bytes)?;
+    if str_bytes.len() as u64 != str_len {
+        return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
+    }
 
     String::from_utf8(str_bytes)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
+}
+
+fn read_orchard_nullifier<R: Read>(mut reader: R) -> std::io::Result<orchard::note::Nullifier> {
+    let mut nullifier_bytes = [0u8; 32];
+    reader.read_exact(&mut nullifier_bytes)?;
+    Option::from(orchard::note::Nullifier::from_bytes(&nullifier_bytes)).ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid orchard nullifier")
+    })
 }
 
 fn write_string<W: Write>(mut writer: W, str: &str) -> std::io::Result<()> {
@@ -310,10 +321,7 @@ impl NullifierMap {
         .collect::<BTreeMap<_, _>>();
 
         let orchard = Vector::read(&mut reader, |r| {
-            let mut nullifier_bytes = [0u8; 32];
-            r.read_exact(&mut nullifier_bytes)?;
-            let nullifier = orchard::note::Nullifier::from_bytes(&nullifier_bytes)
-                .expect("nullifier bytes should be valid");
+            let nullifier = read_orchard_nullifier(&mut *r)?;
             let scan_target = if version >= 1 {
                 ScanTarget::read(r)?
             } else {
@@ -334,10 +342,7 @@ impl NullifierMap {
 
         let ironwood = if version >= 2 {
             Vector::read(&mut reader, |r| {
-                let mut nullifier_bytes = [0u8; 32];
-                r.read_exact(&mut nullifier_bytes)?;
-                let nullifier = orchard::note::Nullifier::from_bytes(&nullifier_bytes)
-                    .expect("nullifier bytes should be valid");
+                let nullifier = read_orchard_nullifier(&mut *r)?;
                 let scan_target = ScanTarget::read(r)?;
 
                 Ok((nullifier, scan_target))
@@ -785,13 +790,7 @@ fn read_orchard_protocol_note<R: Read, P>(
     let rseed = orchard::note::RandomSeed::from_bytes(rseed_bytes, &rho)
         .expect("should be valid random seed bytes");
 
-    let nullifier = Optional::read(&mut reader, |r| {
-        let mut nullifier_bytes = [0u8; 32];
-        r.read_exact(&mut nullifier_bytes)?;
-
-        Ok(orchard::note::Nullifier::from_bytes(&nullifier_bytes)
-            .expect("should be valid nullfiier bytes"))
-    })?;
+    let nullifier = Optional::read(&mut reader, |r| read_orchard_nullifier(&mut *r))?;
     let position = Optional::read(&mut reader, |r| {
         Ok(Position::from(r.read_u64::<LittleEndian>()?))
     })?;
