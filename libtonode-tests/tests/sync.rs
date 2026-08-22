@@ -1,6 +1,7 @@
 use std::{num::NonZeroU32, time::Duration};
 
 use incrementalmerkletree::Position;
+use pepper_sync::error::SyncError;
 use pepper_sync::sync::ScanPriority;
 use pepper_sync::test_support::block;
 use pepper_sync::wallet::ShardTrees;
@@ -15,6 +16,8 @@ use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::config::{ChainType, ClientConfig, WalletConfig};
 use zingolib::data::PollReport;
 use zingolib::lightclient::DEFAULT_REQUEST_TIMEOUT;
+use zingolib::lightclient::error::LightClientError;
+use zingolib::sync::SyncModeError;
 use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
@@ -179,7 +182,15 @@ async fn add_subtree_roots() {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
     let _ = lightclient.stop_sync();
-    lightclient.await_sync().await.unwrap();
+    match lightclient.await_sync().await {
+        Ok(_) => {}
+        Err(LightClientError::SyncError(SyncError::SyncModeError(
+            SyncModeError::SyncNotRunning,
+        ))) => {}
+        Err(e) => {
+            panic!("{e}");
+        }
+    }
 
     {
         let shard_trees = &mut lightclient.wallet().write().await.shard_trees;

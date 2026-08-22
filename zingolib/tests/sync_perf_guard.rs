@@ -65,6 +65,7 @@ async fn syncing_the_top_window_holds_this_machines_baseline() {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::default(),
                     performance_level: PerformanceLevel::High,
+                    shutdown_on_completion: true,
                 },
                 min_confirmations: NonZeroU32::new(3).unwrap(),
             },
