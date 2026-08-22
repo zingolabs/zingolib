@@ -847,6 +847,16 @@ pub(crate) enum Communications {
     UnconsentedOffline,
 }
 
+/// The minted launch notice for a `clearnet-test-mode` session that went
+/// online, naming what the build suspended and what it costs its user.
+#[cfg(all(not(feature = "nym"), feature = "clearnet-test-mode"))]
+const CLEARNET_TEST_MODE_NOTICE: &str = "WARNING: this build carries `clearnet-test-mode`, so it went online with NO \
+     mixnet. Every request — sync, and anything else this session makes — \
+     travels clearnet, and the indexer sees this machine's IP address. This \
+     feature exists to measure the mixnet's cost against its absence and is \
+     never a default; a build for use rather than measurement must not carry \
+     it.";
+
 /// The minted launch notice for a deliberate `--offline` session, naming
 /// the only exit.
 const DELIBERATE_OFFLINE_NOTICE: &str = "This session is deliberately offline (--offline): network-requiring \
@@ -1021,6 +1031,18 @@ fn get_communications(matches: &clap::ArgMatches) -> std::io::Result<Communicati
     let explicit_server =
         matches.value_source("server") == Some(clap::parser::ValueSource::CommandLine);
     if matches.get_flag("online") || matches.get_flag("remember-online") || explicit_server {
+        // `clearnet-test-mode` suspends the refusal so a measurement can run
+        // the arm the product does not otherwise offer: an Online session
+        // with no mixnet beside it. Without it there is no way to separate
+        // the mixnet's cost from the scan's, because ADR 0026 makes the
+        // mixnet a default capability and ADR 0024 forces Mixnet Mode on at
+        // the go-online moment, leaving every online session carrying both.
+        #[cfg(feature = "clearnet-test-mode")]
+        {
+            eprintln!("{CLEARNET_TEST_MODE_NOTICE}");
+            return Ok(Communications::Online);
+        }
+        #[cfg(not(feature = "clearnet-test-mode"))]
         return Err(std::io::Error::other(
             "this build has no mixnet capability, so Offline Mode is its only mode; \
              going online is not possible. Rebuild with default features (plain \
