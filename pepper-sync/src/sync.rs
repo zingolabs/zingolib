@@ -862,6 +862,27 @@ where
         u64::from(sapling) + u64::from(orchard) + u64::from(ironwood)
     }
 
+    /// The scale every scan-progress ratio is reported on.
+    const PERCENTAGE_SCALE: f32 = 100.0;
+    /// The percentage a fully scanned span reports.
+    const COMPLETE_PERCENTAGE: f32 = PERCENTAGE_SCALE;
+    /// The percentage an entirely unscanned span reports.
+    const NO_PROGRESS_PERCENTAGE: f32 = 0.0;
+    /// The smallest whole step a reported percentage moves by.
+    const PERCENTAGE_STEP: f32 = 1.0;
+    /// The percentage reported while scanning has finished but nullifiers await refetching.
+    const NULLIFIER_RETRIEVAL_PERCENTAGE: f32 = COMPLETE_PERCENTAGE - PERCENTAGE_STEP;
+    /// The block a span's own first height contributes to the span's inclusive length.
+    const INCLUSIVE_SPAN_ADJUSTMENT: u32 = 1;
+
+    /// Reports `scanned` as a percentage of `total`, and reports `None` where a zero denominator leaves that ratio undefined.
+    fn percentage_scanned(scanned: u64, total: u64) -> Option<f32> {
+        (total != 0).then(|| {
+            ((scanned as f32 / total as f32) * PERCENTAGE_SCALE)
+                .clamp(NO_PROGRESS_PERCENTAGE, COMPLETE_PERCENTAGE)
+        })
+    }
+
     let (
         total_sapling_outputs_scanned,
         total_orchard_outputs_scanned,
@@ -882,16 +903,16 @@ where
             sync_start_height: 0.into(),
             session_blocks_scanned: 0,
             total_blocks_scanned: 0,
-            percentage_session_blocks_scanned: 0.0,
-            percentage_total_blocks_scanned: 0.0,
+            percentage_session_blocks_scanned: NO_PROGRESS_PERCENTAGE,
+            percentage_total_blocks_scanned: NO_PROGRESS_PERCENTAGE,
             session_sapling_outputs_scanned: 0,
             session_orchard_outputs_scanned: 0,
             session_ironwood_outputs_scanned: 0,
             total_sapling_outputs_scanned: 0,
             total_orchard_outputs_scanned: 0,
             total_ironwood_outputs_scanned: 0,
-            percentage_session_outputs_scanned: 0.0,
-            percentage_total_outputs_scanned: 0.0,
+            percentage_session_outputs_scanned: NO_PROGRESS_PERCENTAGE,
+            percentage_total_outputs_scanned: NO_PROGRESS_PERCENTAGE,
             total_outputs_scanned: 0,
             total_outputs: 0,
         });
@@ -904,31 +925,39 @@ where
     let last_known_chain_height = sync_state
         .last_known_chain_height()
         .ok_or(SyncStatusError::NoSyncData)?;
-    let total_blocks = last_known_chain_height - birthday + 1;
+    let total_blocks = u32::from(last_known_chain_height)
+        .saturating_sub(u32::from(birthday))
+        .saturating_add(INCLUSIVE_SPAN_ADJUSTMENT);
     let total_sapling_outputs = sync_state
         .initial_sync_state
         .wallet_tree_bounds
         .sapling_final_tree_size
-        - sync_state
-            .initial_sync_state
-            .wallet_tree_bounds
-            .sapling_initial_tree_size;
+        .saturating_sub(
+            sync_state
+                .initial_sync_state
+                .wallet_tree_bounds
+                .sapling_initial_tree_size,
+        );
     let total_orchard_outputs = sync_state
         .initial_sync_state
         .wallet_tree_bounds
         .orchard_final_tree_size
-        - sync_state
-            .initial_sync_state
-            .wallet_tree_bounds
-            .orchard_initial_tree_size;
+        .saturating_sub(
+            sync_state
+                .initial_sync_state
+                .wallet_tree_bounds
+                .orchard_initial_tree_size,
+        );
     let total_ironwood_outputs = sync_state
         .initial_sync_state
         .wallet_tree_bounds
         .ironwood_final_tree_size
-        - sync_state
-            .initial_sync_state
-            .wallet_tree_bounds
-            .ironwood_initial_tree_size;
+        .saturating_sub(
+            sync_state
+                .initial_sync_state
+                .wallet_tree_bounds
+                .ironwood_initial_tree_size,
+        );
     let total_outputs = output_pool_total(
         total_sapling_outputs,
         total_orchard_outputs,
@@ -937,19 +966,14 @@ where
 
     let session_blocks_scanned = total_blocks_scanned
         .saturating_sub(sync_state.initial_sync_state.previously_scanned_blocks);
-    let mut percentage_session_blocks_scanned = ((session_blocks_scanned as f32
-        / total_blocks.saturating_sub(sync_state.initial_sync_state.previously_scanned_blocks)
-            as f32)
-        * 100.0)
-        .clamp(0.0, 100.0);
-    if percentage_session_blocks_scanned.is_nan() {
-        percentage_session_blocks_scanned = 100.0;
-    }
+    let session_blocks =
+        total_blocks.saturating_sub(sync_state.initial_sync_state.previously_scanned_blocks);
     let mut percentage_total_blocks_scanned =
-        ((total_blocks_scanned as f32 / total_blocks as f32) * 100.0).clamp(0.0, 100.0);
-    if percentage_total_blocks_scanned.is_nan() {
-        percentage_total_blocks_scanned = 100.0;
-    }
+        percentage_scanned(u64::from(total_blocks_scanned), u64::from(total_blocks))
+            .unwrap_or(COMPLETE_PERCENTAGE);
+    let mut percentage_session_blocks_scanned =
+        percentage_scanned(u64::from(session_blocks_scanned), u64::from(session_blocks))
+            .unwrap_or(percentage_total_blocks_scanned);
 
     let session_sapling_outputs_scanned = total_sapling_outputs_scanned.saturating_sub(
         sync_state
@@ -982,35 +1006,29 @@ where
             .initial_sync_state
             .previously_scanned_ironwood_outputs,
     );
-    let mut percentage_session_outputs_scanned = ((session_outputs_scanned as f32
-        / total_outputs.saturating_sub(previously_scanned_outputs) as f32)
-        * 100.0)
-        .clamp(0.0, 100.0);
-    if percentage_session_outputs_scanned.is_nan() {
-        percentage_session_outputs_scanned = 100.0;
-    }
+    let session_outputs = total_outputs.saturating_sub(previously_scanned_outputs);
     let mut percentage_total_outputs_scanned =
-        ((total_outputs_scanned as f32 / total_outputs as f32) * 100.0).clamp(0.0, 100.0);
-    if percentage_total_outputs_scanned.is_nan() {
-        percentage_total_outputs_scanned = 100.0;
-    }
+        percentage_scanned(total_outputs_scanned, total_outputs).unwrap_or(COMPLETE_PERCENTAGE);
+    let mut percentage_session_outputs_scanned =
+        percentage_scanned(session_outputs_scanned, session_outputs)
+            .unwrap_or(percentage_total_outputs_scanned);
 
     if sync_state
         .scan_ranges()
         .iter()
         .any(|scan_range| scan_range.priority().awaits_nullifier_retrieval())
     {
-        if percentage_session_blocks_scanned == 100.0 {
-            percentage_session_blocks_scanned = 99.0;
+        if percentage_session_blocks_scanned == COMPLETE_PERCENTAGE {
+            percentage_session_blocks_scanned = NULLIFIER_RETRIEVAL_PERCENTAGE;
         }
-        if percentage_total_blocks_scanned == 100.0 {
-            percentage_total_blocks_scanned = 99.0;
+        if percentage_total_blocks_scanned == COMPLETE_PERCENTAGE {
+            percentage_total_blocks_scanned = NULLIFIER_RETRIEVAL_PERCENTAGE;
         }
-        if percentage_session_outputs_scanned == 100.0 {
-            percentage_session_outputs_scanned = 99.0;
+        if percentage_session_outputs_scanned == COMPLETE_PERCENTAGE {
+            percentage_session_outputs_scanned = NULLIFIER_RETRIEVAL_PERCENTAGE;
         }
-        if percentage_total_outputs_scanned == 100.0 {
-            percentage_total_outputs_scanned = 99.0;
+        if percentage_total_outputs_scanned == COMPLETE_PERCENTAGE {
+            percentage_total_outputs_scanned = NULLIFIER_RETRIEVAL_PERCENTAGE;
         }
     }
 
@@ -1628,18 +1646,24 @@ where
         }
         Err(ScanError::IncorrectTreeSize {
             shielded_protocol: PoolType::Shielded(pool),
+            height,
             block_metadata_size,
             calculated_size,
         }) => {
-            tracing::warn!(
-                "{pool:?} history recorded a commitment tree of {calculated_size} where the chain \
-                 reports {block_metadata_size}."
+            tracing::error!(
+                "RESCAN TRIGGERED: at height {height}, {pool:?} history recorded a commitment \
+                 tree of {calculated_size} where the chain reports {block_metadata_size}; the \
+                 wallet's {pool:?} records are being cleared back to the pool activation height \
+                 and the next sync rescans from there."
             );
             return Err(truncate_to_pool_activation_height(
                 consensus_parameters,
                 fetch_request_sender.clone(),
                 wallet,
                 pool,
+                height,
+                block_metadata_size,
+                calculated_size,
             )
             .await?);
         }
@@ -1664,6 +1688,9 @@ async fn truncate_to_pool_activation_height<W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
     target_pool: ShieldedPool,
+    disagreed_at: BlockHeight,
+    block_metadata_size: u32,
+    calculated_size: u32,
 ) -> Result<SyncError<W::Error>, SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
@@ -1738,10 +1765,13 @@ where
     add_scan_targets(sync_state, &rescan_targets);
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
-    Ok(SyncError::PoolHistoryReopened(
+    Ok(SyncError::PoolHistoryReopened {
+        pool: PoolType::Shielded(target_pool),
         rescan_from,
-        PoolType::Shielded(target_pool),
-    ))
+        disagreed_at,
+        block_metadata_size,
+        calculated_size,
+    })
 }
 
 /// Truncate the shard tree to the lowest checkpoint equal to or above the `target_height`.
@@ -2887,6 +2917,224 @@ mod test {
                 "percentage {} disagrees with the exact ratio {}",
                 status.percentage_total_outputs_scanned,
                 expected_percentage,
+            );
+        }
+    }
+
+    /// The session-progress contract of [`crate::sync::sync_status`]
+    /// under a stale initial sync state, whose recorded
+    /// previously-scanned counts stand at or above the whole span the
+    /// wallet can scan, saturating the session denominator to zero and
+    /// obliging the status to report the wallet's total progress
+    /// rather than claim completion.
+    mod sync_status_stale_initial_state {
+        use std::collections::BTreeMap;
+
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::consensus::BlockHeight;
+
+        use crate::mocks::MockWalletBuilder;
+        use crate::sync::{ScanPriority, ScanRange, sync_status};
+        use crate::wallet::{SyncState, TreeBounds, WalletBlock};
+
+        /// The scale a ratio is reported on.
+        const PERCENTAGE_SCALE: f32 = 100.0;
+        /// The percentage a finished sync reports.
+        const COMPLETE_PERCENTAGE: f32 = PERCENTAGE_SCALE;
+
+        /// The wallet birthday, and so the first height of the span.
+        const BIRTHDAY_HEIGHT: u32 = 1_000;
+        /// The number of blocks between the birthday and the chain tip.
+        const TOTAL_BLOCKS: u32 = 10;
+        /// The number of those blocks this wallet has scanned.
+        const SCANNED_BLOCKS: u32 = 5;
+        /// The height of the chain tip the wallet last knew.
+        const CHAIN_TIP_HEIGHT: u32 = BIRTHDAY_HEIGHT + TOTAL_BLOCKS - 1;
+        /// The first height beyond the scanned range.
+        const SCANNED_RANGE_END: u32 = BIRTHDAY_HEIGHT + SCANNED_BLOCKS;
+        /// The factor by which a stale count exceeds the true span.
+        const STALENESS_FACTOR: u32 = 500;
+        /// A previously-scanned count left over from a wider span.
+        const STALE_PREVIOUSLY_SCANNED_BLOCKS: u32 = TOTAL_BLOCKS * STALENESS_FACTOR;
+
+        /// The sapling tree size at the start of the wallet's span.
+        const SAPLING_INITIAL_TREE_SIZE: u32 = 100;
+        /// The sapling outputs the whole span holds.
+        const SAPLING_TOTAL_OUTPUTS: u32 = 10;
+        /// The sapling outputs the wallet has scanned.
+        const SAPLING_SCANNED_OUTPUTS: u32 = 3;
+        /// The orchard tree size at the start of the wallet's span.
+        const ORCHARD_INITIAL_TREE_SIZE: u32 = 200;
+        /// The orchard outputs the whole span holds.
+        const ORCHARD_TOTAL_OUTPUTS: u32 = 20;
+        /// The orchard outputs the wallet has scanned.
+        const ORCHARD_SCANNED_OUTPUTS: u32 = 5;
+        /// The ironwood tree size at the start of the wallet's span.
+        const IRONWOOD_INITIAL_TREE_SIZE: u32 = 300;
+        /// The ironwood outputs the whole span holds.
+        const IRONWOOD_TOTAL_OUTPUTS: u32 = 40;
+        /// The ironwood outputs the wallet has scanned.
+        const IRONWOOD_SCANNED_OUTPUTS: u32 = 7;
+        /// The outputs the whole span holds, across every pool.
+        const TOTAL_OUTPUTS: u32 =
+            SAPLING_TOTAL_OUTPUTS + ORCHARD_TOTAL_OUTPUTS + IRONWOOD_TOTAL_OUTPUTS;
+        /// The outputs the wallet has scanned, across every pool.
+        const SCANNED_OUTPUTS: u32 =
+            SAPLING_SCANNED_OUTPUTS + ORCHARD_SCANNED_OUTPUTS + IRONWOOD_SCANNED_OUTPUTS;
+        /// A previously-scanned output count left over from a wider span.
+        const STALE_PREVIOUSLY_SCANNED_OUTPUTS: u32 = TOTAL_OUTPUTS * STALENESS_FACTOR;
+
+        /// A wallet block carrying only what tree-bounds accounting
+        /// reads: its height and tree sizes.
+        fn block(height: u32, tree_bounds: TreeBounds) -> WalletBlock {
+            WalletBlock {
+                block_height: BlockHeight::from_u32(height),
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds,
+            }
+        }
+
+        /// Tree bounds whose initial and final sizes coincide, for
+        /// blocks that only mark a boundary of a scanned range.
+        fn flat_bounds(sapling: u32, orchard: u32, ironwood: u32) -> TreeBounds {
+            TreeBounds {
+                sapling_initial_tree_size: sapling,
+                sapling_final_tree_size: sapling,
+                orchard_initial_tree_size: orchard,
+                orchard_final_tree_size: orchard,
+                ironwood_initial_tree_size: ironwood,
+                ironwood_final_tree_size: ironwood,
+            }
+        }
+
+        /// A wallet holding a half-scanned span whose initial sync
+        /// state records previously-scanned counts far above that
+        /// span, the shape a truncated or rewound wallet leaves
+        /// behind.
+        fn stale_state_wallet() -> crate::mocks::MockWallet {
+            let mut sync_state = SyncState::new_for_test(vec![
+                ScanRange::from_parts(
+                    BlockHeight::from_u32(BIRTHDAY_HEIGHT)
+                        ..BlockHeight::from_u32(SCANNED_RANGE_END),
+                    ScanPriority::Scanned,
+                ),
+                ScanRange::from_parts(
+                    BlockHeight::from_u32(SCANNED_RANGE_END)
+                        ..BlockHeight::from_u32(CHAIN_TIP_HEIGHT + 1),
+                    ScanPriority::Historic,
+                ),
+            ]);
+            sync_state.initial_sync_state.sync_start_height =
+                BlockHeight::from_u32(BIRTHDAY_HEIGHT);
+            sync_state.initial_sync_state.wallet_tree_bounds = TreeBounds {
+                sapling_initial_tree_size: SAPLING_INITIAL_TREE_SIZE,
+                sapling_final_tree_size: SAPLING_INITIAL_TREE_SIZE + SAPLING_TOTAL_OUTPUTS,
+                orchard_initial_tree_size: ORCHARD_INITIAL_TREE_SIZE,
+                orchard_final_tree_size: ORCHARD_INITIAL_TREE_SIZE + ORCHARD_TOTAL_OUTPUTS,
+                ironwood_initial_tree_size: IRONWOOD_INITIAL_TREE_SIZE,
+                ironwood_final_tree_size: IRONWOOD_INITIAL_TREE_SIZE + IRONWOOD_TOTAL_OUTPUTS,
+            };
+            sync_state.initial_sync_state.previously_scanned_blocks =
+                STALE_PREVIOUSLY_SCANNED_BLOCKS;
+            sync_state
+                .initial_sync_state
+                .previously_scanned_sapling_outputs = STALE_PREVIOUSLY_SCANNED_OUTPUTS;
+            sync_state
+                .initial_sync_state
+                .previously_scanned_orchard_outputs = STALE_PREVIOUSLY_SCANNED_OUTPUTS;
+            sync_state
+                .initial_sync_state
+                .previously_scanned_ironwood_outputs = STALE_PREVIOUSLY_SCANNED_OUTPUTS;
+
+            let wallet_blocks = BTreeMap::from([
+                (
+                    BlockHeight::from_u32(BIRTHDAY_HEIGHT),
+                    block(
+                        BIRTHDAY_HEIGHT,
+                        flat_bounds(
+                            SAPLING_INITIAL_TREE_SIZE,
+                            ORCHARD_INITIAL_TREE_SIZE,
+                            IRONWOOD_INITIAL_TREE_SIZE,
+                        ),
+                    ),
+                ),
+                (
+                    BlockHeight::from_u32(SCANNED_RANGE_END - 1),
+                    block(
+                        SCANNED_RANGE_END - 1,
+                        flat_bounds(
+                            SAPLING_INITIAL_TREE_SIZE + SAPLING_SCANNED_OUTPUTS,
+                            ORCHARD_INITIAL_TREE_SIZE + ORCHARD_SCANNED_OUTPUTS,
+                            IRONWOOD_INITIAL_TREE_SIZE + IRONWOOD_SCANNED_OUTPUTS,
+                        ),
+                    ),
+                ),
+            ]);
+
+            MockWalletBuilder::new()
+                .sync_state(sync_state)
+                .wallet_blocks(wallet_blocks)
+                .create_mock_wallet()
+        }
+
+        /// HYPOTHESIS: a session whose scannable span saturates to zero
+        /// never reports a finished sync, so the falsifier is a status
+        /// whose session block percentage reads complete while half the
+        /// span is unscanned.
+        #[tokio::test]
+        async fn stale_block_state_reports_total_progress_not_completion() {
+            let wallet = stale_state_wallet();
+
+            let status = sync_status(&wallet).await.unwrap();
+
+            let expected_total = (SCANNED_BLOCKS as f32 / TOTAL_BLOCKS as f32) * PERCENTAGE_SCALE;
+            assert!(
+                (status.percentage_total_blocks_scanned - expected_total).abs() < f32::EPSILON,
+                "total block percentage {} disagrees with the scanned ratio {}",
+                status.percentage_total_blocks_scanned,
+                expected_total,
+            );
+            assert_ne!(
+                status.percentage_session_blocks_scanned, COMPLETE_PERCENTAGE,
+                "a session that scanned nothing reported a finished sync",
+            );
+            assert!(
+                (status.percentage_session_blocks_scanned - expected_total).abs() < f32::EPSILON,
+                "session block percentage {} disagrees with the total progress {}",
+                status.percentage_session_blocks_scanned,
+                expected_total,
+            );
+        }
+
+        /// HYPOTHESIS: the output percentages obey the same rule as the
+        /// block percentages, so the falsifier is a status whose
+        /// session output percentage reads complete while most of the
+        /// span's outputs are unscanned.
+        #[tokio::test]
+        async fn stale_output_state_reports_total_progress_not_completion() {
+            let wallet = stale_state_wallet();
+
+            let status = sync_status(&wallet).await.unwrap();
+
+            let expected_total = (SCANNED_OUTPUTS as f32 / TOTAL_OUTPUTS as f32) * PERCENTAGE_SCALE;
+            assert!(
+                (status.percentage_total_outputs_scanned - expected_total).abs() < f32::EPSILON,
+                "total output percentage {} disagrees with the scanned ratio {}",
+                status.percentage_total_outputs_scanned,
+                expected_total,
+            );
+            assert_ne!(
+                status.percentage_session_outputs_scanned, COMPLETE_PERCENTAGE,
+                "a session that scanned no outputs reported a finished sync",
+            );
+            assert!(
+                (status.percentage_session_outputs_scanned - expected_total).abs() < f32::EPSILON,
+                "session output percentage {} disagrees with the total progress {}",
+                status.percentage_session_outputs_scanned,
+                expected_total,
             );
         }
     }
