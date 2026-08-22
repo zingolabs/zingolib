@@ -216,27 +216,27 @@ impl From<SyncResult> for json::JsonValue {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ScanPriority {
     /// Block ranges that are currently refetching nullifiers.
-    RefetchingNullifiers,
+    RefetchingNullifiers = 0,
     /// Block ranges that are currently being scanned.
-    Scanning,
+    Scanning = 1,
     /// Block ranges that have already been scanned will not be re-scanned.
-    Scanned,
+    Scanned = 2,
     /// Block ranges that have already been scanned. The nullifiers from this range were not mapped after scanning and
     /// spend detection to reduce memory consumption and/or storage for non-linear scanning. These nullifiers will need
     /// to be re-fetched for final spend detection when this range is the lowest unscanned range in the wallet's list
     /// of scan ranges.
-    ScannedWithoutMapping,
+    ScannedWithoutMapping = 3,
     /// Block ranges to be scanned to advance the fully-scanned height.
-    Historic,
+    Historic = 4,
     /// Block ranges adjacent to heights at which the user opened the wallet.
-    OpenAdjacent,
+    OpenAdjacent = 5,
     /// Blocks that must be scanned to complete note commitment tree shards adjacent to found notes.
-    FoundNote,
+    FoundNote = 6,
     /// Blocks that must be scanned to complete the latest note commitment tree shard.
-    ChainTip,
+    ChainTip = 7,
     /// A previously scanned range that must be verified to check it is still in the
     /// main chain, has highest priority.
-    Verify,
+    Verify = 8,
 }
 
 impl ScanPriority {
