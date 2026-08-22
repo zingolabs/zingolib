@@ -1,5 +1,7 @@
 //! Entrypoint for sync engine
 
+// TODO: check scan targets do not cause errors if they dont exist
+
 use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
 use std::ops::Range;

@@ -54,8 +54,6 @@ async fn add_subtree_roots() {
             sapling_subtree_roots_server.len()
         );
         let mut sapling_subtree_roots_wallet = Vec::new();
-        dbg!(&sapling_shard_addrs);
-        dbg!(&shard_trees.sapling);
         for addr in sapling_shard_addrs {
             let root = shard_trees
                 .sapling
