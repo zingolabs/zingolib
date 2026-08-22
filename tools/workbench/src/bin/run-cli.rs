@@ -1,11 +1,15 @@
 //! Build and launch `zingo-cli`, by default mixnet-capable.
 //!
-//! Usage: `run-cli [--clearnet] [--debug] [<zingo-cli args...>]`. The
-//! `--clearnet` and `--debug` flags are consumed wherever they appear
-//! (as are the retired `--nym` and `--release`, no-ops now that they name
-//! the defaults); every other argument is forwarded to `zingo-cli`
-//! unchanged. The build is a release build unless `--debug` asks
-//! otherwise.
+//! Usage: `run-cli [--clearnet] [--debug] [--features <list>]
+//! [--target-dir <dir>] [--build-only] [<zingo-cli args...>]`. Those flags
+//! are consumed wherever they appear (as are the retired `--nym` and
+//! `--release`, no-ops now that they name the defaults); every other
+//! argument is forwarded to `zingo-cli` unchanged. The build is a release
+//! build unless `--debug` asks otherwise. `--build-only` stops after the
+//! build and the bundling, which is how a caller pays the compile once
+//! before timing anything, and `--target-dir` gives a build its own
+//! directory, which is how two differently-featured builds stand side by
+//! side without either rebuilding the other.
 //!
 //! The default run builds the CLI with its default features — which carry
 //! the mixnet transport (ADR 0026) — and bundles the `nym-proxy` binary
@@ -26,12 +30,42 @@
 
 #![forbid(unsafe_code)]
 
-use std::path::Path;
-use std::process::{Command, exit};
+use std::path::{Path, PathBuf};
+use std::process::{exit, Command};
 
 use workbench::repo_root;
 
 const PROG: &str = "run-cli";
+
+/// The flag naming the cargo features the build adds.
+const FEATURES_FLAG: &str = "--features";
+
+/// The flag naming the directory the build writes its artifacts to.
+const TARGET_DIR_FLAG: &str = "--target-dir";
+
+/// The flags this tool consumes together with the value that follows them.
+const VALUE_FLAGS: [&str; 2] = [FEATURES_FLAG, TARGET_DIR_FLAG];
+
+/// The flags this tool consumes on their own.
+const BARE_FLAGS: [&str; 5] = [
+    "--nym",
+    "--release",
+    "--clearnet",
+    "--build-only",
+    "--debug",
+];
+
+/// The value following `flag`, which reaches the cargo build and not the CLI.
+fn value_of(args: &[String], flag: &str) -> Result<Option<String>, Vec<String>> {
+    args.iter()
+        .position(|arg| arg == flag)
+        .map(|at| {
+            args.get(at + 1)
+                .cloned()
+                .ok_or_else(|| vec![format!("{flag} needs a value")])
+        })
+        .transpose()
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -75,18 +109,39 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
     }
     let nym = !clearnet;
     let release = !debug;
+    let build_only = args.iter().any(|arg| arg == "--build-only");
+    let features = value_of(args, FEATURES_FLAG)?;
+    let target_dir = value_of(args, TARGET_DIR_FLAG)?;
+    let mut skip_value = false;
     let cli_args: Vec<&String> = args
         .iter()
         .filter(|arg| {
-            *arg != "--nym" && *arg != "--release" && *arg != "--debug" && *arg != "--clearnet"
+            if skip_value {
+                skip_value = false;
+                return false;
+            }
+            if VALUE_FLAGS.contains(&arg.as_str()) {
+                skip_value = true;
+                return false;
+            }
+            !BARE_FLAGS.contains(&arg.as_str())
         })
         .collect();
 
     let root = repo_root()?;
     let profile = if release { "release" } else { "debug" };
+    // Naming a build directory is what lets two differently-featured builds
+    // stand side by side, so a caller alternating between them pays no
+    // rebuild at each switch.
+    let builds = target_dir
+        .as_ref()
+        .map_or_else(|| root.join("target"), PathBuf::from);
 
     let mut build = Command::new("cargo");
     build.current_dir(&root).args(["build", "-p", "zingo-cli"]);
+    if target_dir.is_some() {
+        build.arg(TARGET_DIR_FLAG).arg(&builds);
+    }
     if release {
         build.arg("--release");
     }
@@ -95,6 +150,12 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
         // a clearnet build is the explicit opt-out.
         build.arg("--no-default-features");
     }
+    // Named by the caller, never chosen here: a feature that suspends a
+    // ratified refusal is the caller's deliberate act, and burying the
+    // choice in this tool would make every invocation carry it silently.
+    if let Some(features) = &features {
+        build.arg(FEATURES_FLAG).arg(features);
+    }
     let status = build
         .status()
         .map_err(|e| vec![format!("failed to run cargo build: {e}")])?;
@@ -102,14 +163,20 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
         return Err(vec![format!("cargo build of zingo-cli failed ({status})")]);
     }
 
+    let beside = builds.join(profile);
     if nym {
-        bundle_proxy(&root, release)?;
+        bundle_proxy(&root, release, &beside)?;
     }
 
-    let cli = root
-        .join("target")
-        .join(profile)
-        .join(format!("zingo-cli{}", std::env::consts::EXE_SUFFIX));
+    if build_only {
+        eprintln!(
+            "{PROG}: built the {profile} CLI into {} and stopped; no session was launched",
+            beside.display()
+        );
+        return Ok(0);
+    }
+
+    let cli = beside.join(format!("zingo-cli{}", std::env::consts::EXE_SUFFIX));
     let cli_status = Command::new(&cli)
         .args(&cli_args)
         .status()
@@ -122,7 +189,7 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
 /// `bundle-nym-proxy` tool, so the CLI's provisioning precedence finds it.
 /// The CLI decides whether the proxy ever runs: it spawns it only at an
 /// Online session's go-online moment, never for an offline session.
-fn bundle_proxy(root: &Path, release: bool) -> Result<(), Vec<String>> {
+fn bundle_proxy(root: &Path, release: bool, beside: &Path) -> Result<(), Vec<String>> {
     let mut bundle = Command::new("cargo");
     bundle.current_dir(root).args([
         "run",
@@ -136,6 +203,7 @@ fn bundle_proxy(root: &Path, release: bool) -> Result<(), Vec<String>> {
     if release {
         bundle.arg("--release");
     }
+    bundle.arg("--dest").arg(beside);
     let bundled = bundle
         .output()
         .map_err(|e| vec![format!("failed to run bundle-nym-proxy: {e}")])?;
