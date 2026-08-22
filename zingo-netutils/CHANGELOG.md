@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a superseded conduit permanently short of `Retired`.
 
 ### Changed
+- The `socks5-fetch` feature enables neither reqwest's `cookies` nor its
+  `json`. A price leg is a single stateless GET against a public quote
+  endpoint, so there is no session for a cookie jar to carry, and the fetch
+  reads the body as text and hands it to the source's own parser, so it never
+  touches reqwest's json surface. Both features came across with the fetch
+  when it moved out of zingo-price, where they had been inherited rather than
+  chosen. Dropping them takes `cookie`, `cookie_store`, `psl-types`,
+  `publicsuffix`, and `time-macros` out of the wallet workspace's graph
+  entirely, and leaves this crate's own standalone lockfile gaining `reqwest`
+  alone where it had gained seven packages.
 - BREAKING: `provider::RotationVerdict` gains a `Never` variant, which a
   platform answers when rotation is ruled out for the session's whole life
   rather than merely postponed. `Defer` used to carry both meanings, so a
@@ -23,6 +33,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parking it on a cadence whose answer cannot change.
 
 ### Added
+- The `socks5-fetch` feature and the `socks5_fetch` module: one HTTP request
+  carried through a conduit, classified into a typed `zingo_net_diag`
+  failure. `ConduitDial::fetch_text` is the entry, and it is the first
+  operation a conduit performs rather than describes, so a caller reaches the
+  wire by holding the guard instead of by reading an address out of it.
+- The classification table's fabricated-input tests, which `docs/agents/net-diag-design.md`
+  has mandated since the table was written and which nothing had ever
+  supplied. One case reaches each stage the table can produce, and two more
+  pin where the implementation diverges from the design's rows: the TLS arm
+  fires on chain text without the `is_connect()` conjunct the design
+  requires, and it outranks `is_status()`, so a status error whose chain
+  names a certificate never reaches `RemoteHttp`.
 - `provider::HostedProvider::rotation_verdict`: the host's answer on
   spending a rotation's bootstrap now, reaching the wallet through the
   provider so the host itself stays below the seam.
