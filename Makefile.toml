@@ -516,7 +516,7 @@ args = [
 ]
 
 [tasks.run-cli]
-description = "Build and launch zingo-cli with the mixnet transport compiled in and nym-proxy bundled beside the binary. The proxy is never launched here: the CLI spawns it only at an Online session's go-online moment (ADR 0024), and an offline session boots no proxy. The session starts offline and goes online only through a Connectivity Consent — one stored by a previous run, or an explicit consent act in the forwarded arguments (ADR 0025); launching never implies consent. Pass --clearnet to opt out of the mixnet default (plain build, nothing bundled); pass --release for release builds. Every other argument is forwarded to zingo-cli."
+description = "Build and launch zingo-cli with the mixnet transport compiled in and nym-proxy bundled beside the binary. The proxy is never launched here: the CLI spawns it only at an Online session's go-online moment (ADR 0024), and an offline session boots no proxy. The session starts offline and goes online only through a Connectivity Consent — one stored by a previous run, or an explicit consent act in the forwarded arguments (ADR 0025); launching never implies consent. Pass --clearnet to opt out of the mixnet default (plain build, nothing bundled); the build is a release build unless --debug asks otherwise. Pass --features <list> to name extra cargo features, which reach the build and not the CLI, and --build-only to stop after the build and the bundling without launching a session. Every other argument is forwarded to zingo-cli."
 command = "cargo"
 args = [
   "run",
@@ -530,7 +530,7 @@ args = [
 ]
 
 [tasks.sync-bench]
-description = "Time sync inside a real run-cli --online session, so the mixnet boot load is present. Drives the CLI, starts the clock at the sync launch, and stops it when the prompt reports the wallet synced. Requires --birthday <height>; both arms of an A/B must pass the same one so they scan the same window. Takes --label <text> to stamp the arm and --runs <n> for the session count."
+description = "Time sync inside a real run-cli --online session, so the mixnet boot load is present. Drives the CLI, starts the clock at the sync launch, and stops it when the prompt reports the wallet synced. Requires --birthday <height>; both arms of an A/B must pass the same one so they scan the same window. Builds the release CLI once before the runs, so no session's clock carries a compile and no core-second is an unoptimized one. Reports the wallet's and the proxy's core-seconds over the boot and over the span beside the times. Takes --clearnet to run the clearnet arm alone, --compare to alternate both arms round by round so machine load falls on each equally, --label <text> to stamp the arm, and --runs <n> for the sessions per arm. Each arm builds into its own directory under target/sync-bench/builds, so alternating costs no rebuild but two release builds sit on disk."
 command = "cargo"
 args = [
   "run",
@@ -544,17 +544,17 @@ args = [
 ]
 
 [tasks.sync-ab]
-description = "Compare two commits' sync rate, interleaved, with everything but the commits held fixed: the same indexer, seed, window, performance level, and release profile. Takes exactly two commit-ish arguments. Builds each in its own worktree, discards a warm-up run that also pins the window, then alternates the arms so warm-up and machine load fall on both equally, and reports outputs per second with the arms' spread."
+description = "Compare two commits' sync rate inside a real run-cli --online session, so the mixnet boot load is present, interleaved, with everything but the commits held fixed: the same indexer, seed, window, performance level, and release profile. Usage: makers sync-ab [cli] <commit> <commit> --birthday <height>. The reserved first word names the session kind, as makers test's packages and live name their scopes, and omitting it names the same kind. Both arms receive the one birthday. Gives each commit its own worktree, discards a warm-up run per arm, then alternates the arms so warm-up and machine load fall on both equally, and reports outputs per second with the arms' spread. Takes --runs <n> for the measured sessions per arm, --seconds <n> to stop each scan that long after it starts rather than running it to completion, --seed <mnemonic> to restore a wallet other than the fundless default, and --clearnet to run the same comparison with the mixnet out of the picture, which is how a difference is attributed to it."
 command = "cargo"
 args = [
-  "run",
-  "-q",
-  "--manifest-path",
-  "tools/workbench/Cargo.toml",
-  "--bin",
-  "sync-ab",
-  "--",
-  "${@}",
+    "run",
+    "-q",
+    "--manifest-path",
+    "tools/workbench/Cargo.toml",
+    "--bin",
+    "sync-ab",
+    "--",
+    "${@}",
 ]
 
 [tasks.rerun]
