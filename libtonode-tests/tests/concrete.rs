@@ -1730,7 +1730,7 @@ mod testnet_test {
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             interval.tick().await;
             while lightclient
-                .sync_status()
+                .latest_sync_status()
                 .is_none_or(|status| status.percentage_total_outputs_scanned < 1.0)
             {
                 interval.tick().await;

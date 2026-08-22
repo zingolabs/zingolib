@@ -120,6 +120,7 @@ pub use sync::reset_spends;
 pub use sync::scan_pending_transaction;
 pub use sync::set_transactions_failed;
 pub use sync::sync;
+pub use sync::sync_status;
 
 #[cfg(any(test, feature = "test-features"))]
 pub mod test_support {

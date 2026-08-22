@@ -829,8 +829,12 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
             Err(e) => Err(not_yet_typed(e)),
         },
         SyncSubCommand::Status => {
-            // FIXME: add sync status error and remove unwrap
-            let status = lightclient.sync_status().unwrap();
+            let status = match lightclient.latest_sync_status() {
+                Some(status) if lightclient.sync_mode() != SyncMode::NotRunning => status,
+                _ => pepper_sync::sync_status(&*lightclient.wallet().read().await)
+                    .await
+                    .map_err(not_yet_typed)?,
+            };
             Ok(json::JsonValue::from(status).pretty(JSON_INDENT))
         }
         SyncSubCommand::Poll => match lightclient.poll_sync() {

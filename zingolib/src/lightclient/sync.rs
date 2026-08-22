@@ -126,9 +126,8 @@ impl LightClient {
     }
 
     /// Returns the sync engine's most recently published status without touching the wallet lock.
-    // TODO: changelog
     // TODO: return result with status error
-    pub fn sync_status(&self) -> Option<pepper_sync::sync::SyncStatus> {
+    pub fn latest_sync_status(&self) -> Option<pepper_sync::sync::SyncStatus> {
         self.sync_progress.borrow().clone()
     }
 

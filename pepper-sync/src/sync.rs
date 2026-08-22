@@ -847,8 +847,9 @@ where
 /// Creates a [`self::SyncStatus`] from the wallet's current [`crate::wallet::SyncState`].
 /// If there is still nullifiers to be re-fetched when scanning is complete, the percentages will be overrided to 99%
 /// until sync is complete.
-// TODO: update changelog
-async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, SyncStatusError<W::Error>>
+///
+/// Intended to be called while [`self::sync`] is running in a separate task.
+pub async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, SyncStatusError<W::Error>>
 where
     W: SyncWallet + SyncBlocks,
 {
@@ -2982,6 +2983,8 @@ mod test {
                     *expected,
                     "{name}"
                 );
+
+                // TODO: assert shutdown_mempool is true is cases where mempool should be shutdown
             }
         }
     }
