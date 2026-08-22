@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- BREAKING: the truncation rescan announces itself. `error::SyncError::PoolHistoryReopened`
+  is now a struct variant carrying the pool, the rescan height, the
+  disagreeing block, and both tree sizes, and it renders one
+  "RESCAN TRIGGERED" sentence naming the consequence and the cause.
+  `error::ScanError::IncorrectTreeSize` gains the disagreeing block's
+  `height`, and the truncation site logs at error level where it warned.
+- `sync::sync_status`: a session with no scannable blocks or outputs no longer
+  reports a finished sync. A stale initial sync state, whose previously scanned
+  counts stand at or above the wallet's whole span, saturates the session
+  denominator to zero. The status now reports the wallet's total progress for
+  that session, where it previously divided zero by zero and coerced the
+  resulting `NaN` to one hundred percent. The pool totals and the block span are
+  saturated likewise, so a rewound tree bound can no longer underflow them.
 - BREAKING: a wrapper error variant renders only its own layer. The
   `Display` texts of the `error::SyncError`, `error::MempoolError`, and
   `error::ScanError` wrapper variants no longer embed the wrapped source's

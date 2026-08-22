@@ -31,10 +31,10 @@ zingo-netutils dial calls, whose `&str` parameters are a possible
 future cross-workspace promotion outside this census's scope.
 
 **Responsiveness class across the host seam → `ResponsivenessClass`.**
-*Implemented 2026-08-10.*
-Site: `ProxyHost::start_transport(class: &str, …)` and the `class.wire()`
-flattening in `HostedProxy::acquire`. The enum crosses the ADR 0041
-request channel intact; `wire()` renders only inside the mobile FFI crate.
+*Implemented 2026-08-10; deleted 2026-08-13.* The partition retired with
+ADR 0044's single hedged acquisition policy, so no class token crosses
+the seam any longer; `ProxyHost::start_transport` lost its `class`
+parameter with the type.
 
 **Host refusals → typed `HostRefusal`.** *Implemented 2026-08-10; the
 name and its two-variant shape (`Failed` versus `Declined`) are ratified
@@ -56,17 +56,19 @@ by it.
 **Indexer endpoint records → one host type.** *Implemented 2026-08-10
 as the `Host` newtype (working name), chosen over `http::uri::Authority`
 because an Authority carries a port while Health judges at host grain;
-the diary's `exit` column rode along to `ExitNodeId`, and the `nym`
-module is now declared in every build so the identity vocabulary
-reaches the always-compiled diary.* Sites: `Health.standings`
+the indexer history's `exit` column rode along to `ExitNodeId`, which
+required the `nym` module to be declared in every build so the identity
+vocabulary reached it. That column was retired on 2026-08-17 with the
+at-rest history it served, so nothing outside the `nym` feature names an
+`ExitNodeId` and the module is gated again.* Sites: `Health.standings`
 keyed by `HashMap<String, _>`, `probe::ProbeSuccess.host`, and the
-`server: String` diary fields. `http::uri::Authority` (or a thin `Host`
-newtype over it) makes Health's key, the probe records, and the diary
+`server: String` history fields. `http::uri::Authority` (or a thin `Host`
+newtype over it) makes Health's key, the probe records, and the history
 agree by type rather than by convention.
 
 ## Keep as String — prose or foreign tokens, deliberately
 
-**Bootstrap narration** (`bootstrap_detail`) and death/diary prose: these
+**Bootstrap narration** (`bootstrap_detail`) and death/history prose: these
 are progress lines for humans; a type would add nothing.
 
 **`UnknownMixnetModeToken(String)`**: a typed error whose payload is the

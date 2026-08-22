@@ -27,17 +27,58 @@ _Avoid_: bare "platform" for this sense; the bare word stays only for
 the generic OS sense and for the desktop-or-mobile provisioning axis
 (ADR 0041's platform-typed session)
 
+**Exit-Proven** (ratified 2026-08-13):
+The one validation an Exit Node carries: a completed round trip
+through it — it answered the Sentinel (`proves_the_exit`), or it
+carried a task. The only rung; readiness proves nothing about the
+exit.
+_Avoid_: "Exit-Bound" as a validation rung (deleted); "healthy" for
+this fact
+
+**EpochProven** (ratified 2026-08-14):
+The Exit-Proven fact bounded by the epoch it survives: the
+`ExitNodeHealthVerdict` a round trip earns, trusted until one Nym
+epoch after the observation instant and stale after.
+_Avoid_: bare "Proven" (the pre-epoch name, upgraded)
+
+**PreviouslyProvenThisEpoch** (ratified 2026-08-14):
+The Mixnet Mode of a Standing Client up on stale proof: born trusting
+an EpochProven observation an earlier client earned, unconfirmed by
+any round trip of its own; routes exactly as Ready, promoted by the
+first confirmed round trip, demoted through ProofAcquisition.
+
+**ProofAcquisition** (ratified 2026-08-14):
+One adjudication of the Standing Client's exit: an arbiter Sentinel
+exchange dialed into its tunnel, promotion on an answer, and on
+silence a conviction followed by the two-layer failover; fired by
+suspicion (an exit-implicating failure) or by the proof deadline
+lapsing, whichever comes first.
+
+**Proven Client** (ratified 2026-08-13):
+A client whose exit is Exit-Proven — by its own birth probe, or by
+drawing an exit whose fresh proof is trusted.
+_Avoid_: "ShownHealthy", "ProvenHealthy"
+
+**Standing Client** (ratified 2026-08-14):
+The session's one long-lived Proven Client — the transport every
+operation but the price fetch multiplexes over, born at go-online and
+holding its bound exit's lease for its life.
+_Avoid_: "session tunnel", "slot tunnel" for the client itself; "the
+tunnel" names only its local SOCKS5 face
+
+**Observation** (ratified 2026-08-13; amended 2026-08-14):
+One exit's most recent verdict — EpochProven or Failed
+(`ExitNodeHealthVerdict`) — with its timestamp; a later verdict for
+the same exit supersedes it, and both lapse after one Nym epoch, so a
+convicted node stands trial again once the topology that convicted it
+has rotated away.
+
+**NodeHealthIndex** (ratified 2026-08-13):
+The session's memory of Observations, one per Exit Node, remembered
+only through the Exit Pool's own draws and consulted to order
+sampling: fresh-Proven first, then unknown, Failed only at exhaustion.
+
 ### Command classes
-
-**Transmitting command**:
-A command whose execution emits mixnet-bound traffic: a transaction
-Transmission, the price fetch, or the mixnet probe. The Online consent
-covers exactly this class.
-_Avoid_: network command (conflates this class with sync-class commands)
-
-**Sync-class command**:
-A command that speaks only to the sync Indexer over the session route.
-It needs a configured Indexer, never the Online transmission consent.
 
 **Readiness budget**:
 The bounded time a transmitting command waits for a bootstrapping mixnet
@@ -91,11 +132,6 @@ A time window of M consecutive blocks (ZIP 318 sense). Never an amount.
 **Boundary**:
 The block height that opens a bucket (height ≡ 0 mod M), also the anchor
 height of the bucket's parts.
-
-**Broadcast window**:
-An upcoming bucket with parts due in it, as reported by migration status
-for platform schedulers.
-_Avoid_: wake, wake point
 
 **Window timeline**:
 The chain's windows around the tip, each carrying the schedule's

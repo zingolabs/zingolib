@@ -33,6 +33,7 @@ pub mod utils;
 pub mod balance;
 pub mod disk;
 pub mod keys;
+pub mod locks;
 pub mod migration;
 pub mod output;
 pub mod propose;
@@ -151,6 +152,9 @@ pub struct LightWallet {
     pub migration: Option<migration::MigrationState>,
     /// Send proposal
     send_proposal: Option<ZingoProposal>,
+    /// Advisory output locks reserving an in-flight proposal's inputs. Process
+    /// -lifetime state beside `send_proposal`, never written to the wallet file.
+    output_locks: locks::OutputLocks,
     /// Boolean for tracking whether the wallet state has changed since last save.
     pub(crate) save_required: bool,
 }
@@ -246,6 +250,7 @@ impl LightWallet {
             migration: None,
             save_required: true,
             send_proposal: None,
+            output_locks: locks::OutputLocks::default(),
         })
     }
 
@@ -400,18 +405,6 @@ impl LightWallet {
         } else {
             Ok(None)
         }
-    }
-
-    /// Records a price fetched *outside* the wallet lock (the net-diag
-    /// polling-blackout remedy: the caller fetches with no lock held, then
-    /// re-acquires briefly and stores the result here). The price lands in
-    /// the price list, so it serializes with the wallet. Price fetching
-    /// exists only in `nym` builds (ADR 0011, amendment 2026-07-28), so the
-    /// recorder is gated with its only caller.
-    #[cfg(feature = "nym")]
-    pub(crate) fn record_price_update(&mut self, price: zingo_price::Price) {
-        self.price_list.record_current_price(price);
-        self.save_required = true;
     }
 
     /// Prunes historical prices to days containing transactions in the wallet.

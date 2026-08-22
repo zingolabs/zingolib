@@ -1,9 +1,8 @@
 //! The Correspondable trait and the curated Correspondent list.
 //!
-//! This list is kept deliberately separate from the sync-server list
-//! (`zingo-cli`'s `most_up_indexer_uris`): Correspondents are chosen for
-//! reliable transaction relay, sync servers for low query latency, so tuning
-//! one must not reshape the other.
+//! This list is kept deliberately separate from the sync-server list:
+//! Correspondents are chosen for reliable transaction relay, sync servers
+//! for low query latency, so tuning one must not reshape the other.
 //!
 //! # Provenance
 //!
@@ -278,7 +277,7 @@ impl Host {
             .map_or_else(|| Host::of_host_str(&uri.to_string()), Host::of_host_str)
     }
 
-    /// The identity as the string the diary and the displays render.
+    /// The identity as the string the history and the displays render.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -385,7 +384,7 @@ mod tests {
             pool.iter()
                 .all(|entry| Operator::of_host(entry.host().unwrap())
                     != Operator::of_host("zec.rocks")),
-            "the sync indexer's operator must never appear in the Correspondent pool"
+            "the sync indexer's operator must never appear among the eligible Correspondents"
         );
     }
 

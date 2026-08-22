@@ -10,14 +10,6 @@
 //! [`crate::arm_race`].
 #![forbid(unsafe_code)]
 
-/// Strip the `socks5h://` scheme from a SOCKS5 URL, passing a bare
-/// `host:port` through unchanged. The pure core of
-/// [`NymProxy::socks5_addr`](crate::NymProxy::socks5_addr).
-#[cfg_attr(not(feature = "nym"), allow(dead_code))]
-pub(crate) fn strip_socks5_scheme(url: &str) -> &str {
-    url.strip_prefix("socks5h://").unwrap_or(url)
-}
-
 /// Fisher-Yates shuffle driven by a caller-supplied seed, so the permutation
 /// is a pure function of `(items, seed)`. The pure core of Exit Node
 /// shuffling: the caller supplies entropy (production hashes the clock,
@@ -39,19 +31,6 @@ pub(crate) fn seeded_shuffle<T>(items: &mut [T], mut seed: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn strips_the_socks5h_scheme() {
-        assert_eq!(
-            strip_socks5_scheme("socks5h://127.0.0.1:1080"),
-            "127.0.0.1:1080"
-        );
-    }
-
-    #[test]
-    fn passes_a_bare_address_through() {
-        assert_eq!(strip_socks5_scheme("127.0.0.1:1080"), "127.0.0.1:1080");
-    }
 
     #[test]
     fn a_seed_fixes_the_permutation() {

@@ -4,9 +4,6 @@
 use std::collections::HashSet;
 use std::future::Future;
 use std::path::PathBuf;
-use std::pin::Pin;
-
-use zingo_netutils::responsiveness::ResponsivenessClass;
 
 use crate::correspondent::pool::exit_pool::ExitPoolError;
 use crate::mixnet::driver::StatusPublisher;
@@ -60,12 +57,12 @@ pub enum TransportError {
         reported: Vec<crate::mixnet::ExitNodeId>,
     },
     /// The transport died during bootstrap.
-    #[error(
-        "the pool transport died during bootstrap: {}",
-        detail.as_ref().map_or_else(|| "no detail reported".to_string(), ToString::to_string)
-    )]
+    #[error("the transport died before it became ready")]
     DiedDuringBootstrap {
-        /// The death detail the status channel carried, when it carried one.
+        /// The death detail the status channel carried, when it carried one,
+        /// kept as a source so the typed failure reaches a caller whole
+        /// rather than flattened into this message.
+        #[source]
         detail: Option<zingo_net_diag::NetOpFailure>,
     },
     /// The transport's status channel closed before readiness.
@@ -79,6 +76,17 @@ pub enum TransportError {
     #[error("the pool transport did not become ready within {}s", budget.as_secs())]
     NotReady {
         /// The lifecycle budget the transport missed.
+        budget: std::time::Duration,
+    },
+    /// Every birth this acquisition attempted failed its proof.
+    #[error(
+        "no proven exit: {probed} births each proved nothing within {}ms",
+        budget.as_millis()
+    )]
+    NoProvenExit {
+        /// How many proving births were attempted.
+        probed: usize,
+        /// The Sentinel budget each birth's proof was given.
         budget: std::time::Duration,
     },
 }
@@ -101,115 +109,155 @@ pub(crate) trait TransportAcquirable: Send + Sync + 'static {
     /// The Exit Nodes this acquirer can reach, for seeding the Exit Pool.
     fn discover(
         &self,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<HashSet<crate::mixnet::ExitNodeId>, TransportError>>
-                + Send
-                + '_,
-        >,
-    >;
+    ) -> impl Future<Output = Result<HashSet<crate::mixnet::ExitNodeId>, TransportError>> + Send;
 
-    /// Acquires one transport that races `clutch` under `class`.
-    fn acquire<'a>(
-        &'a self,
-        class: ResponsivenessClass,
-        clutch: &'a [crate::mixnet::ExitNodeId],
-        publisher: StatusPublisher,
-    ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>>;
-}
-
-/// One transport a mobile platform host started on the wallet's behalf.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct HostedTransport {
-    /// The local SOCKS5 address the host's proxy listens on.
-    pub socks5_addr: std::net::SocketAddr,
-    /// The Exit Node that proxy bound.
-    pub exit_node: crate::mixnet::ExitNodeId,
-}
-
-/// Why the mobile platform host declined or failed a request, with the host's own
-/// detail carried verbatim as the payload.
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum HostRefusal {
-    /// The host tried to satisfy the request and could not.
-    #[error("the host failed: {detail}")]
-    Failed {
-        /// The host's own account of the failure.
-        detail: String,
-    },
-    /// The host declined the request as a matter of mobile platform policy.
-    #[error("the host declined: {detail}")]
-    Declined {
-        /// The host's own account of the refusal.
-        detail: String,
-    },
-}
-
-/// A mobile platform host that owns the mixnet proxy, for a mobile platform whose sandbox
-/// forbids the wallet from spawning one.
-pub trait ProxyHost: Send + Sync + 'static {
-    /// The Exit Nodes the host's directory query reports.
-    fn discover_exit_nodes(&self) -> Result<Vec<crate::mixnet::ExitNodeId>, HostRefusal>;
-
-    /// Starts one proxy racing `clutch` under `class`, returning where it
-    /// listens and which exit it bound.
-    fn start_transport(
+    /// Acquires one transport that races `clutch` under the one hedged
+    /// launch policy.
+    fn acquire(
         &self,
-        class: ResponsivenessClass,
         clutch: &[crate::mixnet::ExitNodeId],
-    ) -> Result<HostedTransport, HostRefusal>;
-}
-
-/// The mobile acquirer: a mobile platform host that owns the proxy library.
-pub(crate) struct HostedProxy {
-    host: std::sync::Arc<dyn ProxyHost>,
-}
-
-impl HostedProxy {
-    /// An acquirer that asks `host` for every transport.
-    pub(crate) fn owned_by(host: std::sync::Arc<dyn ProxyHost>) -> Self {
-        HostedProxy { host }
-    }
-}
-
-impl TransportAcquirable for HostedProxy {
-    fn discover(
-        &self,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<HashSet<crate::mixnet::ExitNodeId>, TransportError>>
-                + Send
-                + '_,
-        >,
-    > {
-        let host = std::sync::Arc::clone(&self.host);
-        Box::pin(async move {
-            // The host's directory query blocks, so it runs off the runtime's
-            // worker threads.
-            let reported = tokio::task::spawn_blocking(move || host.discover_exit_nodes())
-                .await
-                .map_err(|join| TransportError::HostUnavailable(join.to_string()))?
-                .map_err(TransportError::HostRefused)?;
-            Ok(reported.into_iter().collect())
-        })
-    }
-
-    fn acquire<'a>(
-        &'a self,
-        class: ResponsivenessClass,
-        clutch: &'a [crate::mixnet::ExitNodeId],
         publisher: StatusPublisher,
-    ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>> {
-        let host = std::sync::Arc::clone(&self.host);
+    ) -> impl Future<Output = Result<MixnetProxy, TransportError>> + Send;
+
+    /// Whether now is a moment to spend a rotation's bootstrap (ADR 0048).
+    // The wallet cannot weigh this: the battery level, the foreground
+    // state, and the radio are the inputs, and none are observable here.
+    // A platform that holds its client indefinitely defers by a long
+    // interval rather than refusing in a shape of its own.
+    fn rotation_verdict(&self) -> RotationVerdict;
+}
+
+/// What a session acquires transports from, over the known implementors.
+pub(crate) enum Acquirer {
+    /// The bundled binary a desktop spawns.
+    Spawned(SpawnedBinary),
+    /// The host that owns the proxy where a sandbox forbids subprocesses.
+    Hosted(HostedProvider),
+    /// A double that announces readiness itself, so a test can script the
+    /// transition order the real readiness probe produces on its own clock.
+    #[cfg(test)]
+    Announcing(AnnouncingAcquirer),
+}
+
+/// An acquirer whose transport announces its lifecycle into the publisher it
+/// is handed, exactly as a spawned child would.
+#[cfg(test)]
+pub(crate) struct AnnouncingAcquirer {
+    /// Where the already-listening endpoint accepts.
+    pub(crate) socks5_addr: std::net::SocketAddr,
+    /// The census this acquirer's directory reports.
+    pub(crate) census: Vec<crate::mixnet::ExitNodeId>,
+    /// How many times the announcement yields, letting subscribers observe
+    /// each transition before the next lands.
+    pub(crate) yields: usize,
+    /// What this acquirer's platform answers about rotating now, so a test
+    /// drives the hand-off without a clock.
+    pub(crate) rotation: RotationVerdict,
+}
+
+#[cfg(test)]
+impl TransportAcquirable for AnnouncingAcquirer {
+    async fn discover(&self) -> Result<HashSet<crate::mixnet::ExitNodeId>, TransportError> {
+        Ok(self.census.iter().cloned().collect())
+    }
+
+    async fn acquire(
+        &self,
+        clutch: &[crate::mixnet::ExitNodeId],
+        publisher: StatusPublisher,
+    ) -> Result<MixnetProxy, TransportError> {
+        let addr = self.socks5_addr;
         let clutch = clutch.to_vec();
-        Box::pin(async move {
-            let hosted = tokio::task::spawn_blocking(move || host.start_transport(class, &clutch))
-                .await
-                .map_err(|join| TransportError::HostUnavailable(join.to_string()))?
-                .map_err(TransportError::HostRefused)?;
-            MixnetProxy::attach(hosted.socks5_addr, &[hosted.exit_node], publisher)
-                .map_err(TransportError::from)
-        })
+        let proxy = MixnetProxy::attach(addr, &clutch, std::sync::Arc::clone(&publisher))?;
+        // The candidate announces readiness where a child would: into the
+        // publisher its acquisition was handed.
+        publisher.send_replace(crate::mixnet::MixnetStatus {
+            mode: crate::mixnet::Indicator::Ready,
+            socks5_addr: Some(addr),
+            exits: clutch,
+            bootstrap_detail: None,
+            death: None,
+        });
+        for _ in 0..self.yields {
+            tokio::task::yield_now().await;
+        }
+        Ok(proxy)
+    }
+
+    fn rotation_verdict(&self) -> RotationVerdict {
+        self.rotation
+    }
+}
+
+impl TransportAcquirable for Acquirer {
+    async fn discover(&self) -> Result<HashSet<crate::mixnet::ExitNodeId>, TransportError> {
+        match self {
+            Acquirer::Spawned(spawned) => spawned.discover().await,
+            Acquirer::Hosted(hosted) => hosted.discover().await,
+            #[cfg(test)]
+            Acquirer::Announcing(announcing) => announcing.discover().await,
+        }
+    }
+
+    async fn acquire(
+        &self,
+        clutch: &[crate::mixnet::ExitNodeId],
+        publisher: StatusPublisher,
+    ) -> Result<MixnetProxy, TransportError> {
+        match self {
+            Acquirer::Spawned(spawned) => spawned.acquire(clutch, publisher).await,
+            Acquirer::Hosted(hosted) => hosted.acquire(clutch, publisher).await,
+            #[cfg(test)]
+            Acquirer::Announcing(announcing) => announcing.acquire(clutch, publisher).await,
+        }
+    }
+
+    fn rotation_verdict(&self) -> RotationVerdict {
+        match self {
+            Acquirer::Spawned(spawned) => spawned.rotation_verdict(),
+            Acquirer::Hosted(hosted) => {
+                <HostedProvider as TransportAcquirable>::rotation_verdict(hosted)
+            }
+            #[cfg(test)]
+            Acquirer::Announcing(announcing) => announcing.rotation_verdict(),
+        }
+    }
+}
+
+/// The provider seam, defined below the seam (ADR 0046).
+pub use zingo_netutils::provider::{
+    HostRefusal, HostedProvider, HostedTransport, ProxyHosting, RotationVerdict, rotation_interval,
+};
+
+impl TransportAcquirable for HostedProvider {
+    async fn discover(&self) -> Result<HashSet<crate::mixnet::ExitNodeId>, TransportError> {
+        let provider = self.clone();
+        // The host's directory query blocks, so it runs off the runtime's
+        // worker threads; the provider itself names no runtime.
+        let reported = tokio::task::spawn_blocking(move || provider.discover_exit_nodes())
+            .await
+            .map_err(|join| TransportError::HostUnavailable(join.to_string()))?
+            .map_err(TransportError::HostRefused)?;
+        Ok(reported.into_iter().collect())
+    }
+
+    async fn acquire(
+        &self,
+        clutch: &[crate::mixnet::ExitNodeId],
+        publisher: StatusPublisher,
+    ) -> Result<MixnetProxy, TransportError> {
+        let provider = self.clone();
+        let clutch = clutch.to_vec();
+        let hosted = tokio::task::spawn_blocking(move || provider.start_transport(&clutch))
+            .await
+            .map_err(|join| TransportError::HostUnavailable(join.to_string()))?
+            .map_err(TransportError::HostRefused)?;
+        MixnetProxy::attach(hosted.socks5_addr, &[hosted.exit_node], publisher)
+            .map_err(TransportError::from)
+    }
+
+    fn rotation_verdict(&self) -> RotationVerdict {
+        zingo_netutils::provider::HostedProvider::rotation_verdict(self)
     }
 }
 
@@ -226,27 +274,22 @@ impl SpawnedBinary {
 }
 
 impl TransportAcquirable for SpawnedBinary {
-    fn discover(
-        &self,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<HashSet<crate::mixnet::ExitNodeId>, TransportError>>
-                + Send
-                + '_,
-        >,
-    > {
-        Box::pin(crate::mixnet::supervisor::discover_exit_nodes(&self.path))
+    async fn discover(&self) -> Result<HashSet<crate::mixnet::ExitNodeId>, TransportError> {
+        crate::mixnet::supervisor::discover_exit_nodes(&self.path).await
     }
 
-    fn acquire<'a>(
-        &'a self,
-        class: ResponsivenessClass,
-        clutch: &'a [crate::mixnet::ExitNodeId],
+    async fn acquire(
+        &self,
+        clutch: &[crate::mixnet::ExitNodeId],
         publisher: StatusPublisher,
-    ) -> Pin<Box<dyn Future<Output = Result<MixnetProxy, TransportError>> + Send + 'a>> {
-        Box::pin(async move {
-            MixnetProxy::spawn(&self.path, class, publisher, clutch).map_err(TransportError::from)
-        })
+    ) -> Result<MixnetProxy, TransportError> {
+        MixnetProxy::spawn(&self.path, publisher, clutch).map_err(TransportError::from)
+    }
+
+    fn rotation_verdict(&self) -> RotationVerdict {
+        // A desktop keeps the four role-bound clients ADR 0045 gives it, so
+        // it never spends a rotation; ADR 0048 leaves it unchanged.
+        RotationVerdict::Never
     }
 }
 
@@ -280,22 +323,29 @@ mod tests {
         transport: Result<HostedTransport, HostRefusal>,
     }
 
-    impl ProxyHost for ScriptedHost {
+    impl ProxyHosting for ScriptedHost {
         fn discover_exit_nodes(&self) -> Result<Vec<crate::mixnet::ExitNodeId>, HostRefusal> {
             self.directory.clone()
         }
 
         fn start_transport(
             &self,
-            _class: ResponsivenessClass,
             _clutch: &[crate::mixnet::ExitNodeId],
         ) -> Result<HostedTransport, HostRefusal> {
             self.transport.clone()
         }
+
+        /// A script rotates only when its test asks it to, so the default
+        /// holds the client for the whole of any test's run.
+        fn rotation_verdict(&self) -> zingo_netutils::provider::RotationVerdict {
+            zingo_netutils::provider::RotationVerdict::Defer(
+                zingo_netutils::time::CLIENT_ROTATION_MAX,
+            )
+        }
     }
 
-    fn hosted(host: ScriptedHost) -> HostedProxy {
-        HostedProxy::owned_by(std::sync::Arc::new(host))
+    fn hosted(host: ScriptedHost) -> HostedProvider {
+        HostedProvider::owned_by(host)
     }
 
     /// HYPOTHESIS: a host's directory answer seeds the Exit Pool exactly as
@@ -355,11 +405,7 @@ mod tests {
             TransportError::HostRefused(_)
         ));
         let Err(refusal) = acquirer
-            .acquire(
-                ResponsivenessClass::PrioritisePrivacy,
-                &["exit-a".into()],
-                crate::mixnet::status_publisher(),
-            )
+            .acquire(&["exit-a".into()], crate::mixnet::status_publisher())
             .await
         else {
             panic!("a declining host must not yield a transport");
@@ -379,11 +425,7 @@ mod tests {
             }),
         });
         let proxy = acquirer
-            .acquire(
-                ResponsivenessClass::PrioritisePrivacy,
-                &["exit-a".into()],
-                crate::mixnet::status_publisher(),
-            )
+            .acquire(&["exit-a".into()], crate::mixnet::status_publisher())
             .await
             .expect("a typed endpoint always constructs the attached transport");
         proxy.stop().await;

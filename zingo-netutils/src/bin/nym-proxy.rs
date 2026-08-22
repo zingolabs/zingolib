@@ -32,7 +32,6 @@ use std::io::Write as _;
 use tokio::io::AsyncReadExt as _;
 use zingo_netutils::{
     NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX,
-    responsiveness::{PrioritisePrivacy, PrioritiseSpeed, ResponsivenessClass},
 };
 
 #[tokio::main]
@@ -46,7 +45,21 @@ async fn main() -> std::process::ExitCode {
     }
 }
 
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
+/// Why the proxy process stopped short of serving.
+#[derive(Debug, thiserror::Error)]
+enum ProxyExit {
+    /// The argument grammar refused what the parent passed.
+    #[error(transparent)]
+    Arguments(#[from] ArgumentsError),
+    /// The mixnet refused the discovery or the bootstrap.
+    #[error(transparent)]
+    Nym(#[from] zingo_netutils::NymProxyError),
+    /// The interrupt handler could not be installed.
+    #[error("the interrupt handler failed")]
+    Interrupt(#[source] std::io::Error),
+}
+
+async fn run() -> Result<(), ProxyExit> {
     let arguments = parse_arguments(std::env::args().skip(1))?;
 
     // The parent's one window onto the exit directory: it cannot query the
@@ -71,34 +84,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // arrives (Ctrl-C for a standalone run). Then disconnect cleanly.
     tokio::select! {
         _ = wait_for_parent_exit() => {}
-        result = tokio::signal::ctrl_c() => { result?; }
+        result = tokio::signal::ctrl_c() => { result.map_err(ProxyExit::Interrupt)?; }
     }
     proxy.disconnect().await;
     Ok(())
 }
 
-/// Bootstrap the proxy under the parent's responsiveness class, then
-/// announce the bound Exit Node and the SOCKS5 address at bind time.
-async fn bootstrap(arguments: Arguments) -> Result<NymProxy, Box<dyn std::error::Error>> {
+/// Bootstrap the proxy over the parent-supplied clutch (or a self-drawn one
+/// for a standalone run), then announce the bound Exit Node and the SOCKS5
+/// address at bind time.
+async fn bootstrap(arguments: Arguments) -> Result<NymProxy, ProxyExit> {
     // Narrate the bootstrap on stdout so the parent supervisor can surface
     // live progress (`nym status`) instead of an opaque wait.
     let narrate = |line: String| emit(format!("{NYM_STATUS_LINE_PREFIX}{line}"));
-    // The one point where the wire form re-enters the type system: each
-    // class monomorphizes the same start.
-    // A parent supplies the clutch; a standalone run draws its own.
-    let proxy = match (arguments.class, arguments.clutch.is_empty()) {
-        (ResponsivenessClass::PrioritiseSpeed, false) => {
-            NymProxy::start_over::<PrioritiseSpeed>(arguments.clutch, narrate).await?
-        }
-        (ResponsivenessClass::PrioritisePrivacy, false) => {
-            NymProxy::start_over::<PrioritisePrivacy>(arguments.clutch, narrate).await?
-        }
-        (ResponsivenessClass::PrioritiseSpeed, true) => {
-            NymProxy::start::<PrioritiseSpeed>().await?
-        }
-        (ResponsivenessClass::PrioritisePrivacy, true) => {
-            NymProxy::start::<PrioritisePrivacy>().await?
-        }
+    let proxy = if arguments.clutch.is_empty() {
+        NymProxy::start().await?
+    } else {
+        NymProxy::start_over(arguments.clutch, narrate).await?
     };
 
     emit(format!("{NYM_EXIT_LINE_PREFIX}{}", proxy.exit_node()));
@@ -121,9 +123,6 @@ struct Arguments {
     /// The clutch of Exit Node Reservations the parent drew for this
     /// acquisition; empty means draw one locally.
     clutch: Vec<String>,
-    /// The acquisition's responsiveness class; a bare invocation defaults
-    /// to prioritise-speed, matching a person waiting at a terminal.
-    class: ResponsivenessClass,
     /// Whether to print the discovered Exit Nodes and exit instead of
     /// bootstrapping, the parent's one window onto the directory.
     discover: bool,
@@ -135,15 +134,6 @@ enum ArgumentsError {
     /// `--exit` arrived without an Exit Node identity.
     #[error("--exit needs an Exit Node identity")]
     MissingExitIdentity,
-    /// `--responsiveness` arrived without a class token.
-    #[error("--responsiveness needs a class token")]
-    MissingClassToken,
-    /// `--responsiveness` named a token outside the sealed partition.
-    #[error("unknown responsiveness class: {token}")]
-    UnknownClass {
-        /// The token that names no class.
-        token: String,
-    },
     /// An argument outside the grammar.
     #[error("unknown argument: {argument}")]
     UnknownArgument {
@@ -152,12 +142,10 @@ enum ArgumentsError {
     },
 }
 
-/// Parse every `--exit <identity>` pair, the optional `--discover` flag, and
-/// the optional `--responsiveness <prioritise-speed|prioritise-privacy>`
-/// from `args`, refusing unknown arguments and unknown class tokens.
+/// Parse every `--exit <identity>` pair and the optional `--discover` flag
+/// from `args`, refusing unknown arguments.
 fn parse_arguments(mut args: impl Iterator<Item = String>) -> Result<Arguments, ArgumentsError> {
     let mut clutch = Vec::new();
-    let mut class = ResponsivenessClass::PrioritiseSpeed;
     let mut discover = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -166,13 +154,6 @@ fn parse_arguments(mut args: impl Iterator<Item = String>) -> Result<Arguments, 
                 Some(identity) => clutch.push(identity),
                 None => return Err(ArgumentsError::MissingExitIdentity),
             },
-            "--responsiveness" => match args.next() {
-                Some(token) => {
-                    class = ResponsivenessClass::parse(&token)
-                        .ok_or(ArgumentsError::UnknownClass { token })?;
-                }
-                None => return Err(ArgumentsError::MissingClassToken),
-            },
             other => {
                 return Err(ArgumentsError::UnknownArgument {
                     argument: other.to_string(),
@@ -180,11 +161,7 @@ fn parse_arguments(mut args: impl Iterator<Item = String>) -> Result<Arguments, 
             }
         }
     }
-    Ok(Arguments {
-        clutch,
-        class,
-        discover,
-    })
+    Ok(Arguments { clutch, discover })
 }
 
 /// Resolves when stdin reaches EOF, which happens when the parent closes its
@@ -206,7 +183,7 @@ async fn wait_for_parent_exit() {
 
 #[cfg(test)]
 mod tests {
-    use super::{ResponsivenessClass, parse_arguments};
+    use super::parse_arguments;
 
     fn parse(args: &[&str]) -> Result<super::Arguments, super::ArgumentsError> {
         parse_arguments(args.iter().map(ToString::to_string))
@@ -222,16 +199,20 @@ mod tests {
             super::ArgumentsError::MissingExitIdentity
         ));
         assert!(matches!(
-            parse(&["--responsiveness"]).unwrap_err(),
-            super::ArgumentsError::MissingClassToken
-        ));
-        assert!(matches!(
-            parse(&["--responsiveness", "bogus"]).unwrap_err(),
-            super::ArgumentsError::UnknownClass { token } if token == "bogus"
-        ));
-        assert!(matches!(
             parse(&["--bogus"]).unwrap_err(),
             super::ArgumentsError::UnknownArgument { argument } if argument == "--bogus"
+        ));
+    }
+
+    /// HYPOTHESIS: the retired `--responsiveness` flag refuses as an unknown
+    /// argument, so a version-skewed older parent is diagnosed loudly rather
+    /// than silently accepted.
+    #[test]
+    fn the_retired_class_flag_refuses_as_unknown() {
+        assert!(matches!(
+            parse(&["--responsiveness", "prioritise-speed"]).unwrap_err(),
+            super::ArgumentsError::UnknownArgument { argument }
+                if argument == "--responsiveness"
         ));
     }
 
@@ -263,38 +244,5 @@ mod tests {
     fn the_discover_flag_is_off_unless_named() {
         assert!(!parse(&[]).expect("bare invocation").discover);
         assert!(parse(&["--discover"]).expect("the flag alone").discover);
-    }
-
-    /// HYPOTHESIS: the class grammar accepts exactly the wire tokens of the
-    /// two responsiveness classes and defaults a bare invocation to
-    /// prioritise-speed, so a malformed spawn fails loudly instead of
-    /// silently racing under the wrong policy.
-    #[test]
-    fn the_class_grammar_speaks_the_wire_tokens() {
-        assert_eq!(
-            parse(&[]).expect("bare invocation").class,
-            ResponsivenessClass::PrioritiseSpeed,
-            "a person at a terminal is waiting"
-        );
-        assert_eq!(
-            parse(&["--responsiveness", "prioritise-privacy"])
-                .expect("the prioritise-privacy token")
-                .class,
-            ResponsivenessClass::PrioritisePrivacy
-        );
-        assert_eq!(
-            parse(&["--responsiveness", "prioritise-speed", "--exit", "id-a"])
-                .expect("class and exclusions compose")
-                .class,
-            ResponsivenessClass::PrioritiseSpeed
-        );
-        assert!(
-            parse(&["--responsiveness", "urgent"]).is_err(),
-            "an unknown class token refuses"
-        );
-        assert!(
-            parse(&["--responsiveness"]).is_err(),
-            "a dangling flag refuses"
-        );
     }
 }

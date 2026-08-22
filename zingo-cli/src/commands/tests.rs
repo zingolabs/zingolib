@@ -29,7 +29,7 @@ mod table_invariants {
     /// rather than any debug-only assertion.
     #[test]
     fn help_sections_agree_with_requires_wallet() {
-        let listing = format_help(crate::CommunicationMode::Online, None);
+        let listing = format_help(crate::Communications::Online, None);
         let wallet_header = listing
             .find("Wallet commands:")
             .expect("the listing carries a wallet section");
@@ -400,6 +400,12 @@ mod typed_argument_parsing {
                 sub: Some(SettingsSubCommand::MinConfirmations { .. })
             }
         ));
+        assert!(matches!(
+            parse(&["settings", "transparent_gap_limit", "20"]).expect("a gap limit parses"),
+            CliCommand::Settings {
+                sub: Some(SettingsSubCommand::TransparentGapLimit { gap_limit: 20, .. })
+            }
+        ));
         for junk in [
             &["settings", "bogus"][..],
             &["settings", "performance"][..],
@@ -673,7 +679,7 @@ mod network_command_parsing {
         };
         assert_eq!(
             render_mixnet_probe(&live),
-            "zec.rocks\n  mixnet:   ok in 180ms: chain main, height 3420400"
+            "zec.rocks\n  mixnet:   ok in 180ms: height 3420400"
         );
 
         let dead = MixnetProbe {
@@ -698,8 +704,8 @@ mod network_command_parsing {
 
     /// HYPOTHESIS: the history rendering aggregates per host and route with
     /// the most recent outcome and its age. Falsified if counts mix routes
-    /// or the last outcome reflects file order rather than timestamps.
-    #[cfg(all(feature = "nym", feature = "nym-diary"))]
+    /// or the last outcome reflects insertion order rather than timestamps.
+    #[cfg(feature = "nym")]
     #[test]
     fn history_aggregates_per_host_and_route() {
         use zingolib::lightclient::indexer_history::{
@@ -714,7 +720,6 @@ mod network_command_parsing {
             millis: 10,
             outcome,
             phase: None,
-            exit: None,
         };
         let tunnel = Err(FailureKind::Unreachable);
         let attempts = vec![
@@ -737,35 +742,35 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn status_lines_render_byte_identically_to_the_replaced_strings() {
-        use zingolib::mixnet::MixnetMode;
+        use zingolib::mixnet::Indicator;
 
         assert_eq!(
-            render_status(MixnetMode::Unattached, None, None),
+            render_status(Indicator::Unattached, None, None),
             "Mixnet Mode: unattached. The mixnet has not been enabled, and no consent to \
              clearnet has been given: send and price-fetch refuse. Run `network on` to enable \
              the mixnet, or `network off` to use clearnet.",
             "absence is not consent: unattached names refusal, never clearnet"
         );
         assert_eq!(
-            render_status(MixnetMode::SwitchedOff, None, None),
+            render_status(Indicator::SwitchedOff, None, None),
             "Mixnet Mode: switched off (send and price-fetch use clearnet)"
         );
         assert_eq!(
-            render_status(MixnetMode::Bootstrapping, None, None),
+            render_status(Indicator::Bootstrapping, None, None),
             "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
         );
         assert_eq!(
-            render_status(MixnetMode::Ready, Some("127.0.0.1:43210"), None),
+            render_status(Indicator::Ready, Some("127.0.0.1:43210"), None),
             "Mixnet Mode: ready (SOCKS5 127.0.0.1:43210)"
         );
         assert_eq!(
-            render_status(MixnetMode::Ready, None, None),
+            render_status(Indicator::Ready, None, None),
             "Mixnet Mode: ready",
             "ready with no address yet still renders (the route resolver, \
              not the renderer, refuses that state)"
         );
         assert_eq!(
-            render_status(MixnetMode::Died, None, None),
+            render_status(Indicator::Died, None, None),
             "Mixnet Mode: died. The proxy exited unexpectedly. Send and price-fetch \
              refuse and will not fall back to clearnet. Run `network on` to restart the proxy.",
             "a died proxy is reported distinctly from switched off, and tells the user how to \
@@ -780,11 +785,11 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn bootstrap_detail_reaches_the_status_line_only_while_bootstrapping() {
-        use zingolib::mixnet::MixnetMode;
+        use zingolib::mixnet::Indicator;
 
         assert_eq!(
             render_status(
-                MixnetMode::Bootstrapping,
+                Indicator::Bootstrapping,
                 None,
                 Some("attempt 2/10: 2 in flight, 0 failed")
             ),
@@ -792,7 +797,7 @@ mod network_command_parsing {
              (send and price-fetch are unavailable until ready)"
         );
         assert_eq!(
-            render_status(MixnetMode::Ready, Some("127.0.0.1:1"), Some("stale")),
+            render_status(Indicator::Ready, Some("127.0.0.1:1"), Some("stale")),
             "Mixnet Mode: ready (SOCKS5 127.0.0.1:1)",
             "a stale detail must not leak into the ready line"
         );
@@ -807,14 +812,14 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn status_always_carries_the_ip_correlation_disclaimer() {
-        use zingolib::mixnet::MixnetMode;
+        use zingolib::mixnet::Indicator;
 
         for mode in [
-            MixnetMode::Unattached,
-            MixnetMode::SwitchedOff,
-            MixnetMode::Bootstrapping,
-            MixnetMode::Ready,
-            MixnetMode::Died,
+            Indicator::Unattached,
+            Indicator::SwitchedOff,
+            Indicator::Bootstrapping,
+            Indicator::Ready,
+            Indicator::Died,
         ] {
             let addr = Some("127.0.0.1:43210");
             let out = render_status_with_disclaimer(mode, addr, None);
@@ -849,11 +854,11 @@ mod bootstrap_wait {
     //! driver is a sync frontend, so it is an audited crossing.
     #![allow(clippy::disallowed_methods)]
 
-    use zingolib::mixnet::{MixnetMode, MixnetStatus};
+    use zingolib::mixnet::{Indicator, MixnetStatus};
 
     use super::super::{BootstrapOutcome, await_bootstrap_outcome};
 
-    fn status(mode: MixnetMode) -> MixnetStatus {
+    fn status(mode: Indicator) -> MixnetStatus {
         MixnetStatus {
             mode,
             socks5_addr: None,
@@ -868,13 +873,13 @@ mod bootstrap_wait {
     /// unattached snapshot.
     #[tokio::test]
     async fn ready_resolves_the_wait_carrying_the_exits() {
-        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Unattached));
+        let (tx, rx) = tokio::sync::watch::channel(status(Indicator::Unattached));
         let waiter = tokio::spawn(await_bootstrap_outcome(rx));
         tokio::task::yield_now().await;
-        tx.send(status(MixnetMode::Bootstrapping))
+        tx.send(status(Indicator::Bootstrapping))
             .expect("the waiter holds the receiver");
         tokio::task::yield_now().await;
-        let mut ready = status(MixnetMode::Ready);
+        let mut ready = status(Indicator::Ready);
         let exit_alpha =
             zingolib::mixnet::ExitNodeId::parse("exit-alpha").expect("the test identity parses");
         ready.exits = vec![exit_alpha.clone()];
@@ -912,10 +917,10 @@ mod bootstrap_wait {
     /// report rather than hanging until a timeout.
     #[tokio::test]
     async fn death_resolves_the_wait_as_failed() {
-        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let (tx, rx) = tokio::sync::watch::channel(status(Indicator::Bootstrapping));
         let waiter = tokio::spawn(await_bootstrap_outcome(rx));
         tokio::task::yield_now().await;
-        tx.send(status(MixnetMode::Died))
+        tx.send(status(Indicator::Died))
             .expect("the waiter holds the receiver");
         let outcome = waiter.await.expect("the waiter must not panic");
         assert_eq!(
@@ -931,10 +936,10 @@ mod bootstrap_wait {
     /// survive subscribing before the driver flips to bootstrapping.
     #[tokio::test]
     async fn unattached_fails_only_after_bootstrapping_began() {
-        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let (tx, rx) = tokio::sync::watch::channel(status(Indicator::Bootstrapping));
         let waiter = tokio::spawn(await_bootstrap_outcome(rx));
         tokio::task::yield_now().await;
-        tx.send(status(MixnetMode::Unattached))
+        tx.send(status(Indicator::Unattached))
             .expect("the waiter holds the receiver");
         let outcome = waiter.await.expect("the waiter must not panic");
         assert_eq!(
@@ -949,7 +954,7 @@ mod bootstrap_wait {
     /// waiting forever on a sender that will never speak again.
     #[tokio::test]
     async fn a_closed_channel_resolves_the_wait_as_failed() {
-        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let (tx, rx) = tokio::sync::watch::channel(status(Indicator::Bootstrapping));
         let waiter = tokio::spawn(await_bootstrap_outcome(rx));
         tokio::task::yield_now().await;
         drop(tx);
@@ -1651,7 +1656,7 @@ mod finding_pins {
     /// exists to drift.
     #[test]
     fn the_standalone_section_derives_from_requires_wallet() {
-        let listing = format_help(crate::CommunicationMode::Online, None);
+        let listing = format_help(crate::Communications::Online, None);
         let wallet_header = listing
             .find("Wallet commands:")
             .expect("the listing carries a wallet section");
@@ -1684,7 +1689,7 @@ mod finding_pins {
     #[test]
     fn family_long_help_never_advertises_nested_help() {
         for &family in FAMILIES {
-            let help = format_help(crate::CommunicationMode::Online, Some(family));
+            let help = format_help(crate::Communications::Online, Some(family));
             assert!(
                 !help
                     .lines()
@@ -1717,7 +1722,7 @@ mod finding_pins {
     #[test]
     fn family_sub_commands_all_carry_abouts() {
         for &family in FAMILIES {
-            let help = format_help(crate::CommunicationMode::Online, Some(family));
+            let help = format_help(crate::Communications::Online, Some(family));
             let listing = help
                 .split("Commands:")
                 .nth(1)
@@ -1814,7 +1819,7 @@ mod posture_surface {
     //! teardown, never a clearnet fallback.
     #![allow(clippy::disallowed_methods)]
 
-    use crate::CommunicationMode;
+    use crate::Communications;
 
     use super::super::format_help;
 
@@ -1823,7 +1828,7 @@ mod posture_surface {
     /// Indexerless surface stays listed.
     #[test]
     fn a_deliberate_offline_help_hides_the_network_requiring_surface() {
-        let listing = format_help(CommunicationMode::DeliberateOffline, None);
+        let listing = format_help(Communications::DeliberateOffline, None);
         for hidden in [
             "  confirm - ",
             "  transmit - ",
@@ -1849,7 +1854,7 @@ mod posture_surface {
     #[cfg(feature = "nym")]
     #[test]
     fn an_unconsented_help_keeps_the_network_family() {
-        let listing = format_help(CommunicationMode::UnconsentedOffline, None);
+        let listing = format_help(Communications::UnconsentedOffline, None);
         assert!(listing.contains("  network - "), "{listing}");
         assert!(!listing.contains("  confirm - "), "{listing}");
     }
@@ -1859,11 +1864,11 @@ mod posture_surface {
     #[test]
     fn a_suppressed_commands_long_help_is_not_found() {
         assert_eq!(
-            format_help(CommunicationMode::DeliberateOffline, Some("confirm")),
+            format_help(Communications::DeliberateOffline, Some("confirm")),
             "Command confirm not found"
         );
         assert!(
-            format_help(CommunicationMode::Online, Some("confirm")).contains("Usage:"),
+            format_help(Communications::Online, Some("confirm")).contains("Usage:"),
             "online help must still render the long help"
         );
     }

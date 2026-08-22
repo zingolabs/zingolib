@@ -66,7 +66,9 @@ impl TransmissionClient for RoutedTransmissionClient {
 /// for the clearnet client.
 #[cfg(feature = "nym")]
 pub struct MixnetTransmissionClient {
-    socks5_addr: std::net::SocketAddr,
+    /// The conduit's guard, held for the client's whole life because the
+    /// client dials on every submission (ADR 0048).
+    dial: zingo_netutils::conduit::ConduitDial,
     /// The eligible targets ([`eligible_candidates`]): nonempty, and never
     /// operated by the synchronization endpoint's operator (ADR 0022).
     candidates: Vec<http::Uri>,
@@ -74,13 +76,13 @@ pub struct MixnetTransmissionClient {
 
 #[cfg(feature = "nym")]
 impl MixnetTransmissionClient {
-    /// A client dialing through the proxy at `socks5_addr`, drawing each
-    /// submission's target from `candidates`.
-    pub(crate) fn new(socks5_addr: std::net::SocketAddr, candidates: Vec<http::Uri>) -> Self {
-        MixnetTransmissionClient {
-            socks5_addr,
-            candidates,
-        }
+    /// A client dialing through `dial`'s conduit, drawing each submission's
+    /// target from `candidates`.
+    pub(crate) fn new(
+        dial: zingo_netutils::conduit::ConduitDial,
+        candidates: Vec<http::Uri>,
+    ) -> Self {
+        MixnetTransmissionClient { dial, candidates }
     }
 }
 
@@ -99,13 +101,12 @@ impl TransmissionClient for MixnetTransmissionClient {
             .ok_or_else(|| {
                 PartTransmissionError::Transport("no transmission candidates".to_string())
             })?;
-        let txid_hex = zingo_netutils::send_transaction_via_socks5(
-            self.socks5_addr,
-            indexer,
-            &raw_tx,
-            u64::from(u32::from(expiry_height)),
+        let txid_hex = zingo_netutils::Socks5Indexer::new(
+            self.dial.socks5(),
+            indexer.clone(),
             super::transmission_grpc::MIGRATION_SUBMIT_TIMEOUT,
         )
+        .send_transaction(&raw_tx, u64::from(u32::from(expiry_height)))
         .await
         .map_err(|error| {
             // The taxonomy's own failover reading maps onto PartTransmissionError's
@@ -126,7 +127,7 @@ impl TransmissionClient for MixnetTransmissionClient {
             txid,
             route: TransmissionRoute::Mixnet {
                 correspondent: super::transmission_grpc::host_of(indexer),
-                via_socks5: self.socks5_addr.to_string(),
+                via_socks5: self.dial.socks5().to_string(),
             },
         })
     }
@@ -134,10 +135,10 @@ impl TransmissionClient for MixnetTransmissionClient {
 
 /// The mixnet targets migration parts may go to: the configured
 /// `migration_transmission_uri` alone when set, otherwise the curated
-/// Correspondent pool, in both cases with the synchronization endpoint's operator
-/// forbidden (ADR 0022), so no server correlates a wallet's sync stream with
-/// its migration cohort. An exclusion that empties the pool refuses with a
-/// typed error rather than falling back.
+/// Correspondent census, in both cases with the synchronization endpoint's
+/// operator forbidden (ADR 0022), so no server correlates a wallet's sync
+/// stream with its migration cohort. An exclusion that empties the
+/// candidates refuses with a typed error rather than falling back.
 #[cfg(feature = "nym")]
 pub(crate) fn eligible_candidates(
     configured: Option<http::Uri>,

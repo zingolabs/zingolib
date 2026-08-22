@@ -11,13 +11,15 @@ ZINGOLIB_NEXTEST_PROFILE = "ci"
 # flakes surface instead of being masked; raise per-run with
 # ZINGOLIB_NEXTEST_RETRIES=N.
 ZINGOLIB_NEXTEST_RETRIES = { value = "0", condition = { env_not_set = [
-    "ZINGOLIB_NEXTEST_RETRIES",
+  "ZINGOLIB_NEXTEST_RETRIES",
 ] } }
 IMAGE_NAME = "zingodevops/ci-build"
 # Single source of truth: rust-toolchain.toml's `channel`, extracted and
 # validated (concrete numeric versions only) by the workbench
 # `get-rust-version` binary.
-RUST_VERSION = { script = ["cargo run -q --manifest-path tools/workbench/Cargo.toml --bin get-rust-version"] }
+RUST_VERSION = { script = [
+  "cargo run -q --manifest-path tools/workbench/Cargo.toml --bin get-rust-version",
+] }
 
 [tasks.default]
 alias = "help"
@@ -53,6 +55,13 @@ Run the three gated phases (packages, zingo-cli, libtonode), where a
 failing phase stops the later, more expensive ones, with a combined
 per-phase summary:
   makers hierarchy-test
+
+Run the same three phases with the libtonode one narrowed to the
+chain_generics::send_shield_cycle fixture, which is the cheapest run
+that still exercises the chain-level machinery. That phase also builds
+only the one test binary of libtonode-tests' ten, via a cargo target
+selection that leaves the shared --workspace scope intact:
+  makers lite-hierarchy
 
 Common usage:
   makers container-test
@@ -163,13 +172,16 @@ append_workspace_default() {
 }
 
 nextest_args() {
-  local -a extra_args=("$@")
   local -a args=(
     --profile "${ZINGOLIB_NEXTEST_PROFILE}"
     --retries "${ZINGOLIB_NEXTEST_RETRIES}"
   )
 
-  args+=("${extra_args[@]}")
+  # `"$@"` directly, never by way of a named array: under `set -u`, bash
+  # before 4.4 — the /bin/bash macOS ships — calls an EMPTY array's
+  # expansion an unbound variable, and a bare `makers test` forwards none.
+  # The special parameter carries no such hazard.
+  args+=("$@")
 
   local workspace_arg
   workspace_arg="$(append_workspace_default "$@")"
@@ -186,8 +198,9 @@ container_nextest_run() {
   mount_suffix="$(container_mount_suffix)"
   tag="$(container_image_tag)"
 
-  local -a args
-  mapfile -t args < <(nextest_args "$@")
+  local -a args=()
+  local line
+  while IFS= read -r line; do args+=("${line}"); done < <(nextest_args "$@")
 
   # ZINGO_REGENERATE_CHAIN_CACHE and RUST_LOG are forwarded only when
   # set AND non-empty. Never use -e "VAR=${VAR:-}" — that manufactures
@@ -195,6 +208,9 @@ container_nextest_run() {
   # empty value either: an empty (or restrictive) RUST_LOG silences
   # zainod's "Syncing block" markers, hanging the harness's
   # log-contract convergence barrier (2026-07-20 stall forensics).
+  # Expanded below as `${array[@]+"${array[@]}"}`, because this array is
+  # empty whenever neither variable is set and bash before 4.4 calls an
+  # empty array's bare expansion an unbound variable under `set -u`.
   local -a forwarded_env=()
   if [[ -n "${ZINGO_REGENERATE_CHAIN_CACHE:-}" ]]; then
     forwarded_env+=(-e ZINGO_REGENERATE_CHAIN_CACHE)
@@ -211,7 +227,7 @@ container_nextest_run() {
     -v "zingolib-cargo-registry:/root/.cargo/registry${mount_suffix}" \
     -e "NEXTEST_EXPERIMENTAL_LIBTEST_JSON=${NEXTEST_EXPERIMENTAL_LIBTEST_JSON}" \
     -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
-    "${forwarded_env[@]}" \
+    ${forwarded_env[@]+"${forwarded_env[@]}"} \
     -w /workspace \
     "${IMAGE_NAME}:${tag}" \
     bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/zainod /usr/bin/zebrad test_binaries/bins/ && exec "$@"' \
@@ -262,6 +278,7 @@ echo "  ZEBRA_VERSION=${ZEBRA_VERSION}"
 echo "  NEXTEST_VERSION=${NEXTEST_VERSION}"
 
 "${runtime}" build \
+  --platform=linux/amd64 \
   -f docker-ci/Dockerfile \
   --build-arg "RUST_VERSION=${RUST_VERSION}" \
   --build-arg "ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}" \
@@ -299,7 +316,8 @@ dependencies = ["prepare-test-binaries-dir"]
 script_runner = "bash"
 extend = "base-script"
 script.main = '''
-mapfile -t args < <(nextest_args "$@")
+args=()
+while IFS= read -r line; do args+=("${line}"); done < <(nextest_args "$@")
 cargo nextest run "${args[@]}"
 '''
 
@@ -334,6 +352,11 @@ container_nextest_run "$@"
 # identically, and every phase of `makers hierarchy-test` reuses ONE
 # compiled variant of each crate — a `-p`/`--exclude` scope re-unifies
 # features per selection and compiles a distinct zingolib variant per phase.
+# The `packages` set can carry audited exceptions: it also excludes the
+# members in build_excludable from the build, which is safe only for a
+# member that activates no feature of its own. That array is empty today,
+# because every candidate so far fails the audit. See its comment for the
+# criterion, and `makers exclusion-audit` for the check.
 # Explicit package-selection args still replace a set's scope entirely —
 # cargo silently ignores `-p` when `--workspace` is present, so merging
 # them would swallow the user's selection. Caveat: combining a reserved
@@ -353,6 +376,28 @@ script.main = '''
 # for the packages/live partition.
 live_packages=(libtonode-tests zingo-cli)
 
+# The live packages the `packages` set drops from the BUILD as well as from
+# the run. Nothing in that set runs their tests, and a failing packages
+# phase stops the later phases from ever running them, so compiling their
+# test binaries there buys nothing and is lost outright when the gate trips.
+#
+# A member belongs here only if it activates no feature that no other member
+# activates. Excluding one that does re-unifies features and compiles a
+# second variant of every crate beneath it, which is the cost this file's
+# filterset partition exists to avoid. Never add a member by inspection:
+# `makers exclusion-audit <candidate>` decides it, and it reads this array,
+# so what is written here is what gets checked.
+#
+# The array is empty because both candidates were audited and rejected.
+# libtonode-tests looked safe across the workspace's own crates, and is not:
+# it alone activates `zcash_address/test-dependencies`, a registry crate the
+# whole zcash stack and therefore zingolib sits above, so excluding it would
+# build that stack twice and make a hierarchy run slower rather than faster.
+# zingo-cli alone activates `zingolib/nym`. Nothing is currently excludable,
+# and the machinery stays so a future candidate is a one-word change plus an
+# audit run.
+build_excludable=()
+
 # The filterset matching every live package's tests; its negation is the
 # hermetic remainder. Space-free, so each expression rides as one argv token.
 live_filter=""
@@ -365,7 +410,22 @@ if [[ "$#" -gt 0 ]]; then
   case "$1" in
     packages)
       shift
-      set_args+=(--workspace -E "!(${live_filter})") ;;
+      # `--workspace` stays explicit: the `--exclude` below makes
+      # append_workspace_default treat the scope as already chosen, and a
+      # bare `--exclude` without it is a cargo error. The filterset still
+      # names the excluded package, which nextest resolves against
+      # workspace metadata rather than the build set.
+      set_args+=(--workspace -E "!(${live_filter})")
+      # `${array[@]+"${array[@]}"}` rather than a bare expansion: under
+      # `set -u`, bash before 4.4 — which is the /bin/bash macOS ships —
+      # calls an EMPTY array's expansion an unbound variable. This array is
+      # empty whenever no member has passed the exclusion audit, which is
+      # its normal state, so the bare form breaks the packages phase on a
+      # Mac and never on Linux.
+      for pkg in ${build_excludable[@]+"${build_excludable[@]}"}; do
+        set_args+=(--exclude "${pkg}")
+      done
+      ;;
     live)
       shift
       set_args+=(--workspace -E "${live_filter}") ;;
@@ -378,39 +438,113 @@ if [[ "${#set_args[@]}" -gt 0 ]] && has_package_selection_args "$@"; then
   set_args=()
 fi
 
-exec makers container-test "${set_args[@]}" "$@"
+# `set_args` is empty for every invocation without a reserved word — a bare
+# `makers test`, `makers test -p zingo-memo`, `makers test some_test_name` —
+# so it expands in the empty-array-safe form for the reason given above.
+exec makers container-test ${set_args[@]+"${set_args[@]}"} "$@"
 '''
 
 [tasks.hierarchy-test]
 description = "Run the three gated phases (packages, zingo-cli, libtonode): a failing phase stops the later, more expensive ones; prints a combined per-phase summary"
 command = "cargo"
 args = [
-    "run",
-    "-q",
-    "--manifest-path",
-    "tools/workbench/Cargo.toml",
-    "--bin",
-    "test-summary",
-    "--",
-    "${@}",
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "test-summary",
+  "--",
+  "${@}",
+]
+
+[tasks.lite-hierarchy]
+description = "Run the same three gated phases as hierarchy-test, with the libtonode phase narrowed to chain_generics::send_shield_cycle and built as that one test binary rather than all ten: the cheapest run that still proves the chain-level machinery, for gating between commits rather than before a push"
+command = "cargo"
+args = [
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "test-summary",
+  "--",
+  "--lite",
+  "${@}",
+]
+
+[tasks.exclusion-audit]
+description = "Check that every member in Makefile.toml's build_excludable array can be dropped from the packages phase's build for free, by diffing each workspace crate's resolved features with and without it. Name extra candidates as arguments to audit a proposed addition before writing it down."
+command = "cargo"
+args = [
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "exclusion-audit",
+  "--",
+  "${@}",
+]
+
+[tasks.feature-sweep]
+description = "Check the crates this branch touches in every feature combination, the way CI's Cargo Hack Check job does, so code that only a non-default feature compiles (a `#[cfg(not(feature = \"nym\"))]` module, say) fails here rather than after the push. Pass --all for the whole workspace, --base <ref> to compare against another branch, or crate directories to check those and no others."
+command = "cargo"
+args = [
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "feature-sweep",
+  "--",
+  "${@}",
 ]
 
 [tasks.bundle-nym-proxy]
 description = "Build the standalone nym-proxy binary (from the zingo-netutils workspace, own lockfile) and copy it beside the target/<profile>/ wallet binaries so the CLI finds it with no configuration (ADR 0011). Pass --release for a release build, or --dest <dir> for another location."
 command = "cargo"
 args = [
-    "run",
-    "-q",
-    "--manifest-path",
-    "tools/workbench/Cargo.toml",
-    "--bin",
-    "bundle-nym-proxy",
-    "--",
-    "${@}",
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "bundle-nym-proxy",
+  "--",
+  "${@}",
 ]
 
 [tasks.run-cli]
-description = "Build and launch zingo-cli with the mixnet transport compiled in and nym-proxy bundled beside the binary. The proxy is never launched here: the CLI spawns it only at an Online session's go-online moment (ADR 0024), and an offline session boots no proxy. The session starts offline and goes online only through a Connectivity Consent — one stored by a previous run, or an explicit consent act in the forwarded arguments (ADR 0025); launching never implies consent. Pass --clearnet to opt out of the mixnet default (plain build, nothing bundled); pass --release for release builds. Every other argument is forwarded to zingo-cli."
+description = "Build and launch zingo-cli with the mixnet transport compiled in and nym-proxy bundled beside the binary. The proxy is never launched here: the CLI spawns it only at an Online session's go-online moment (ADR 0024), and an offline session boots no proxy. The session starts offline and goes online only through a Connectivity Consent — one stored by a previous run, or an explicit consent act in the forwarded arguments (ADR 0025); launching never implies consent. Pass --clearnet to opt out of the mixnet default (plain build, nothing bundled); the build is a release build unless --debug asks otherwise. Pass --features <list> to name extra cargo features, which reach the build and not the CLI, and --build-only to stop after the build and the bundling without launching a session. Every other argument is forwarded to zingo-cli."
+command = "cargo"
+args = [
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "run-cli",
+  "--",
+  "${@}",
+]
+
+[tasks.sync-bench]
+description = "Time sync inside a real run-cli --online session, so the mixnet boot load is present. Drives the CLI, starts the clock at the sync launch, and stops it when the prompt reports the wallet synced. Requires --birthday <height>; both arms of an A/B must pass the same one so they scan the same window. Builds the release CLI once before the runs, so no session's clock carries a compile and no core-second is an unoptimized one. Reports the wallet's and the proxy's core-seconds over the boot and over the span beside the times. Takes --clearnet to run the clearnet arm alone, --compare to alternate both arms round by round so machine load falls on each equally, --label <text> to stamp the arm, and --runs <n> for the sessions per arm. Each arm builds into its own directory under target/sync-bench/builds, so alternating costs no rebuild but two release builds sit on disk."
+command = "cargo"
+args = [
+  "run",
+  "-q",
+  "--manifest-path",
+  "tools/workbench/Cargo.toml",
+  "--bin",
+  "sync-bench",
+  "--",
+  "${@}",
+]
+
+[tasks.sync-ab]
+description = "Compare two commits' sync rate inside a real run-cli --online session, so the mixnet boot load is present, interleaved, with everything but the commits held fixed: the same indexer, seed, window, performance level, and release profile. Usage: makers sync-ab [cli] <commit> <commit> --birthday <height>. The reserved first word names the session kind, as makers test's packages and live name their scopes, and omitting it names the same kind. Both arms receive the one birthday. Gives each commit its own worktree, discards a warm-up run per arm, then alternates the arms so warm-up and machine load fall on both equally, and reports outputs per second with the arms' spread. Takes --runs <n> for the measured sessions per arm, --seconds <n> to stop each scan that long after it starts rather than running it to completion, --seed <mnemonic> to restore a wallet other than the fundless default, and --clearnet to run the same comparison with the mixnet out of the picture, which is how a difference is attributed to it."
 command = "cargo"
 args = [
     "run",
@@ -418,7 +552,7 @@ args = [
     "--manifest-path",
     "tools/workbench/Cargo.toml",
     "--bin",
-    "run-cli",
+    "sync-ab",
     "--",
     "${@}",
 ]
@@ -440,7 +574,8 @@ dependencies = ["prepare-test-binaries-dir"]
 script_runner = "bash"
 extend = "base-script"
 script.main = '''
-mapfile -t args < <(nextest_args --run-ignored all "$@")
+args=()
+while IFS= read -r line; do args+=("${line}"); done < <(nextest_args --run-ignored all "$@")
 cargo nextest run "${args[@]}"
 '''
 

@@ -45,13 +45,40 @@ pub enum LaunchPolicy {
     /// round `r + 1` launches only after every pull of round `r` has failed.
     /// Uses no timer.
     EscalatingRounds,
-    /// Launch `max_parallel` pulls immediately and replace each failure at
-    /// once, holding the width saturated until the cap exhausts. Uses no
-    /// timer.
-    Saturating {
-        /// The most pulls allowed in flight at once.
-        max_parallel: usize,
-    },
+}
+
+/// ```
+/// // The number of exit reservations an acquisition draws to attempt one
+/// // connection.
+/// use zingo_netutils::arm_race::RESERVATION_CLUTCH_SIZE;
+/// assert_eq!(RESERVATION_CLUTCH_SIZE, 4);
+/// ```
+pub const RESERVATION_CLUTCH_SIZE: usize = 4;
+
+/// ```
+/// // Every Acquisition Race runs under the one hedged launch policy,
+/// // capped at the clutch size and paced by the hedge interval.
+/// use zingo_netutils::arm_race::{
+///     LaunchPolicy, RESERVATION_CLUTCH_SIZE, acquisition_launch_policy,
+/// };
+/// use zingo_netutils::time::HEDGE_INTERVAL;
+///
+/// match acquisition_launch_policy() {
+///     LaunchPolicy::Hedged {
+///         max_parallel,
+///         hedge_interval,
+///     } => {
+///         assert_eq!(max_parallel, RESERVATION_CLUTCH_SIZE);
+///         assert_eq!(hedge_interval, HEDGE_INTERVAL);
+///     }
+///     other => panic!("the one policy is hedged, got {other:?}"),
+/// }
+/// ```
+pub fn acquisition_launch_policy() -> LaunchPolicy {
+    LaunchPolicy::Hedged {
+        max_parallel: RESERVATION_CLUTCH_SIZE,
+        hedge_interval: crate::time::HEDGE_INTERVAL,
+    }
 }
 
 /// One pull's failure, retained for replacement decisions and progress.
@@ -154,7 +181,6 @@ impl RaceState {
             return vec![RaceAction::GiveUp];
         }
         let initial = match self.policy {
-            LaunchPolicy::Saturating { max_parallel } => max_parallel,
             LaunchPolicy::Hedged { .. } | LaunchPolicy::EscalatingRounds => 1,
         };
         let mut actions = self.launch(initial);
@@ -169,7 +195,7 @@ impl RaceState {
                 self.in_flight = self.in_flight.saturating_sub(1);
                 self.failures.push(PullFailure { arm, error });
                 match self.policy {
-                    LaunchPolicy::Hedged { .. } | LaunchPolicy::Saturating { .. } => self.launch(1),
+                    LaunchPolicy::Hedged { .. } => self.launch(1),
                     LaunchPolicy::EscalatingRounds => {
                         if self.in_flight > 0 {
                             // The round is not over; the gate holds.
@@ -189,7 +215,7 @@ impl RaceState {
                         Vec::new()
                     }
                 }
-                LaunchPolicy::EscalatingRounds | LaunchPolicy::Saturating { .. } => Vec::new(),
+                LaunchPolicy::EscalatingRounds => Vec::new(),
             },
         };
 
@@ -313,68 +339,6 @@ mod tests {
             ],
             "a failure is a signal to try elsewhere at once, not to wait"
         );
-    }
-
-    fn saturating(max_parallel: usize) -> LaunchPolicy {
-        LaunchPolicy::Saturating { max_parallel }
-    }
-
-    #[test]
-    fn saturating_launches_its_full_width_at_start_with_no_timer() {
-        let mut race = RaceState::new(10, 10, saturating(3));
-        assert_eq!(
-            race.start(),
-            vec![
-                RaceAction::Launch { arm: 0 },
-                RaceAction::Launch { arm: 1 },
-                RaceAction::Launch { arm: 2 },
-            ],
-            "the whole width flies at once, and no hedge timer is set"
-        );
-    }
-
-    #[test]
-    fn saturating_replaces_a_failure_immediately_and_never_times() {
-        let mut race = RaceState::new(10, 10, saturating(3));
-        race.start();
-        assert_eq!(
-            race.on_event(failed(1)),
-            vec![RaceAction::Launch { arm: 3 }],
-            "a failure is replaced at once, holding the width saturated"
-        );
-        assert_eq!(
-            race.on_event(RaceEvent::HedgeElapsed),
-            Vec::new(),
-            "no timer exists to widen a saturated race"
-        );
-    }
-
-    /// HYPOTHESIS: a saturating race never holds more than `max_parallel`
-    /// pulls in flight, even across failure-driven replacements. Falsified
-    /// if a replacement launch overshoots the width the start established.
-    #[test]
-    fn saturating_replacements_never_exceed_the_width() {
-        let mut race = RaceState::new(10, 10, saturating(3));
-        race.start();
-        assert_eq!(race.progress().in_flight, 3);
-        for arm in 0..7 {
-            race.on_event(failed(arm));
-            assert!(
-                race.progress().in_flight <= 3,
-                "in_flight {} after failing arm {arm}",
-                race.progress().in_flight
-            );
-        }
-    }
-
-    #[test]
-    fn saturating_drains_to_give_up_when_the_cap_exhausts() {
-        let mut race = RaceState::new(3, 3, saturating(3));
-        race.start();
-        assert_eq!(race.on_event(failed(0)), Vec::new());
-        assert_eq!(race.on_event(failed(1)), Vec::new());
-        assert_eq!(race.on_event(failed(2)), vec![RaceAction::GiveUp]);
-        assert_eq!(race.failures().len(), 3, "every pull's failure is retained");
     }
 
     #[test]

@@ -27,28 +27,26 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use serde::Deserialize;
 use zcash_encoding::{Optional, Vector};
 #[cfg(feature = "socks5-fetch")]
-use zingo_net_diag::{NetOpFailure, NetOpStage, chain_texts};
+use zingo_net_diag::{NetOpFailure, chain_texts};
 
 /// Errors with price requests and parsing.
 // TODO: remove unused when historical data is implemented
 #[cfg(feature = "socks5-fetch")]
 #[derive(Debug, thiserror::Error)]
 pub enum PriceError {
-    /// The HTTP request failed. The typed [`NetOpFailure`] names the stage
-    /// and target; the original [`reqwest::Error`] is preserved whole as the
-    /// source, so nothing is flattened away. This `Display` prints its own
-    /// layer only — the cause chain belongs to `source()`.
+    /// The HTTP request failed.
     #[error("price request failed at {} to {}", failure.stage, failure.target)]
     RequestFailed {
         /// Which stage failed, against what target, with the cause chain
         /// captured layer by layer.
         failure: NetOpFailure,
-        /// The underlying reqwest failure, untouched.
+        /// The underlying transport failure, untouched.
         #[source]
-        source: reqwest::Error,
+        source: Box<zingo_netutils::socks5_fetch::Socks5FetchError>,
     },
     /// The price source answered with fewer trades than requested, so the
-    /// median position does not exist. A typed [`NetOpStage::PayloadDecode`]
+    /// median position does not exist. A typed
+    /// [`zingo_net_diag::NetOpStage::PayloadDecode`]
     /// condition: the payload decoded but was structurally short.
     #[error("the price source returned {received} trades where {TRADES_REQUESTED} were requested")]
     InsufficientTrades {
@@ -153,9 +151,9 @@ impl PriceList {
     /// and [`Self::current_price`] reflects the latest fetch.
     ///
     /// This is the storage half of a price update. A caller that must not
-    /// hold a lock across the network wait runs [`race_current_price`]
-    /// first, then records the result here under a briefly-held lock (the
-    /// net-diag polling-blackout remedy).
+    /// hold a lock across the network wait runs the wallet's speed-priority
+    /// wave first, then records the result here under a briefly-held lock
+    /// (the net-diag polling-blackout remedy).
     pub fn record_current_price(&mut self, price: Price) {
         self.current_price = Some(price);
     }
@@ -233,18 +231,6 @@ impl PriceList {
     }
 }
 
-/// Installs rustls's `aws-lc-rs` provider as the process-level default if
-/// none is installed yet (first-install-wins, so an embedder's choice is
-/// kept). Required because reqwest is built with `rustls-tls-no-provider`.
-/// Mirrors `zingo_netutils::ensure_default_crypto_provider`, which cannot be
-/// used here: zingo-netutils sits above this crate in the dependency graph.
-#[cfg(feature = "socks5-fetch")]
-fn ensure_default_crypto_provider() {
-    if rustls::crypto::CryptoProvider::get_default().is_none() {
-        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-    }
-}
-
 /// How many trades the fetch requests from the price source. Eleven, so the
 /// median of the sorted list is a robust current price. [`GEMINI_ZECUSD_URL`]
 /// embeds this value; a test pins the two together.
@@ -264,7 +250,8 @@ const GEMINI_ZECUSD_URL: &str = "https://api.gemini.com/v1/trades/zecusd?limit_t
 /// native bound under the mobile UI's 25-second watchdog, so the native call
 /// ends (and releases whatever holds it) before or shortly after the UI
 /// gives up. A hang through a half-dead tunnel becomes a typed
-/// [`NetOpStage::TimedOut`] failure instead of an unbounded wait.
+/// [`zingo_net_diag::NetOpStage::TimedOut`] failure instead of an unbounded
+/// wait.
 #[cfg(feature = "socks5-fetch")]
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -325,72 +312,39 @@ impl PriceRaceFailure {
     }
 }
 
-/// Race every source concurrently and report the first success; the
-/// losing fetches are cancelled. When every source fails, the error names
-/// each source's typed failure. Bounded by [`REQUEST_TIMEOUT`] per leg, so
-/// the whole race settles within the single-fetch bound.
+/// The first quote among a driven race's outcomes, or the report naming
+/// every source's typed failure when none answered. The wallet's one
+/// speed-priority wave runs the race and turns its outcomes into the
+/// result through this, so the racing lives in one place and this crate
+/// says only what to fetch.
 #[cfg(feature = "socks5-fetch")]
-pub async fn race_current_price(
-    socks5_proxy: Option<&str>,
+pub fn first_quote(
+    outcomes: Vec<(PriceSource, Result<Price, PriceError>)>,
 ) -> Result<RacedPrice, PriceRaceFailure> {
-    race_sources(
-        socks5_proxy,
-        [
-            PriceSource::Gemini,
-            PriceSource::Kraken,
-            PriceSource::CoinGecko,
-            PriceSource::Coinbase,
-            PriceSource::Bitfinex,
-            PriceSource::Okx,
-            PriceSource::Mexc,
-            PriceSource::GateIo,
-            PriceSource::Kucoin,
-        ]
-        .map(|source| (source, source.url().to_string())),
-        REQUEST_TIMEOUT,
-        CONNECT_TIMEOUT,
-    )
-    .await
-}
-
-/// The race mechanism, URL-injectable for tests. First `Ok` wins and
-/// aborts the rest; all-fail collects every typed failure.
-#[cfg(feature = "socks5-fetch")]
-async fn race_sources<const N: usize>(
-    socks5_proxy: Option<&str>,
-    entries: [(PriceSource, String); N],
-    request_timeout: Duration,
-    connect_timeout: Duration,
-) -> Result<RacedPrice, PriceRaceFailure> {
-    use futures::stream::{FuturesUnordered, StreamExt};
-    let mut in_flight: FuturesUnordered<_> = entries
-        .into_iter()
-        .map(|(source, url)| {
-            let proxy = socks5_proxy.map(str::to_string);
-            async move {
-                let outcome = get_source_price(
-                    source,
-                    proxy.as_deref(),
-                    &url,
-                    request_timeout,
-                    connect_timeout,
-                )
-                .await;
-                (source, outcome)
-            }
-        })
-        .collect();
-
     let mut failures = Vec::new();
-    while let Some((source, outcome)) = in_flight.next().await {
+    for (source, outcome) in outcomes {
         match outcome {
-            // Dropping `in_flight` cancels the losing legs.
             Ok(price) => return Ok(RacedPrice { price, source }),
             Err(error) => failures.push((source, error)),
         }
     }
     Err(PriceRaceFailure { failures })
 }
+
+/// Every price source a run races, so a caller that drives the race asks
+/// the same operators in the same order.
+#[cfg(feature = "socks5-fetch")]
+pub const RACED_SOURCES: [PriceSource; 9] = [
+    PriceSource::Gemini,
+    PriceSource::Kraken,
+    PriceSource::CoinGecko,
+    PriceSource::Coinbase,
+    PriceSource::Bitfinex,
+    PriceSource::Okx,
+    PriceSource::Mexc,
+    PriceSource::GateIo,
+    PriceSource::Kucoin,
+];
 
 /// Kraken's public recent-trades endpoint for the ZEC/USD pair, requesting
 /// [`TRADES_REQUESTED`] trades so the Gemini median contract transfers.
@@ -801,164 +755,22 @@ fn parse_kucoin_histories(body: &str) -> Result<Price, PriceError> {
     median_price(trades)
 }
 
-/// The typed signals [`classify_stage`] reads from a [`reqwest::Error`],
-/// extracted into a plain struct so the classification table is a pure
-/// function testable with fabricated inputs (a `reqwest::Error` cannot be
-/// constructed by hand).
+/// One source's price over the conduit.
 #[cfg(feature = "socks5-fetch")]
-#[derive(Clone, Copy, Debug, Default)]
-struct RequestSignals {
-    is_timeout: bool,
-    is_connect: bool,
-    is_status: bool,
-    is_decode_or_body: bool,
-}
-
-#[cfg(feature = "socks5-fetch")]
-impl RequestSignals {
-    fn of(error: &reqwest::Error) -> Self {
-        RequestSignals {
-            is_timeout: error.is_timeout(),
-            is_connect: error.is_connect(),
-            is_status: error.is_status(),
-            is_decode_or_body: error.is_decode() || error.is_body(),
-        }
-    }
-}
-
-/// The classification table (`docs/agents/net-diag-design.md`), checked in
-/// order, pure over the extracted signals and the chain's layer texts.
-///
-/// The boundary between `RemoteTls` and `TunnelTransport` is genuinely fuzzy
-/// from reqwest's chain alone: a handshake that reached the target and was
-/// refused is `RemoteTls`, while a mid-handshake EOF (`tls handshake eof`,
-/// the half-dead-tunnel signature) means the data path broke underneath the
-/// handshake and is `TunnelTransport`. Chain-text inspection here is
-/// classification input as the design's table specifies, not a decision on
-/// the rendered stability contract.
-#[cfg(feature = "socks5-fetch")]
-fn classify_stage(
-    signals: RequestSignals,
-    chain: &[String],
-    socks5_proxy: Option<&str>,
-    bound: Duration,
-) -> NetOpStage {
-    let chain_mentions = |needle: &str| {
-        chain
-            .iter()
-            .any(|layer| layer.to_ascii_lowercase().contains(needle))
-    };
-    if signals.is_timeout {
-        return NetOpStage::TimedOut {
-            after_ms: bound.as_millis().try_into().unwrap_or(u64::MAX),
-        };
-    }
-    if signals.is_connect && socks5_proxy.is_some_and(&chain_mentions) {
-        return NetOpStage::LocalProxyConnect;
-    }
-    if chain_mentions("socks") {
-        return NetOpStage::SocksHandshake;
-    }
-    if chain_mentions("tls") || chain_mentions("certificate") || chain_mentions("handshake") {
-        if chain_mentions("handshake eof") {
-            return NetOpStage::TunnelTransport;
-        }
-        return NetOpStage::RemoteTls;
-    }
-    if signals.is_status {
-        return NetOpStage::RemoteHttp;
-    }
-    if signals.is_decode_or_body {
-        return NetOpStage::PayloadDecode;
-    }
-    if signals.is_connect {
-        return NetOpStage::RemoteConnect;
-    }
-    NetOpStage::TunnelTransport
-}
-
-/// The [`NetOpFailure`] for one failed request: stage from the
-/// classification table, target from the failing leg (the SOCKS endpoint for
-/// local stages, the price URL otherwise), cause chain captured layer by
-/// layer. The `reqwest::Error` itself travels beside it, untouched, in
-/// [`PriceError::RequestFailed`].
-#[cfg(feature = "socks5-fetch")]
-fn classify_request(
-    error: &reqwest::Error,
-    socks5_proxy: Option<&str>,
-    url: &str,
-    bound: Duration,
-) -> NetOpFailure {
-    let chain = chain_texts(error);
-    let stage = classify_stage(RequestSignals::of(error), &chain, socks5_proxy, bound);
-    let target = match (&stage, socks5_proxy) {
-        (NetOpStage::LocalProxyConnect | NetOpStage::SocksHandshake, Some(addr)) => {
-            addr.to_string()
-        }
-        _ => url.to_string(),
-    };
-    NetOpFailure {
-        stage,
-        target,
-        cause_chain: chain,
-    }
-}
-
-/// Get current price of ZEC in USD from `url`, optionally through a local
-/// SOCKS5 proxy, bounded by the given timeouts.
-///
-/// Production callers go through [`race_current_price`]; tests point `url`
-/// at a local server and shrink the bounds.
-#[cfg(all(test, feature = "socks5-fetch"))]
-async fn get_current_price(
-    socks5_proxy: Option<&str>,
-    url: &str,
-    request_timeout: Duration,
-    connect_timeout: Duration,
-) -> Result<Price, PriceError> {
-    get_source_price(
-        PriceSource::Gemini,
-        socks5_proxy,
-        url,
-        request_timeout,
-        connect_timeout,
-    )
-    .await
-}
-
-/// Fetch one source's answer over the shared HTTP leg and hand the body to
-/// the source's parser. Transport failures classify through the net-diag
-/// table; a body that arrives but does not parse is the parser's typed
-/// refusal.
-#[cfg(feature = "socks5-fetch")]
-async fn get_source_price(
+pub async fn get_source_price(
     source: PriceSource,
-    socks5_proxy: Option<&str>,
+    dial: &zingo_netutils::conduit::ConduitDial,
     url: &str,
     request_timeout: Duration,
     connect_timeout: Duration,
 ) -> Result<Price, PriceError> {
-    ensure_default_crypto_provider();
-    let typed = |error: reqwest::Error| PriceError::RequestFailed {
-        failure: classify_request(&error, socks5_proxy, url, request_timeout),
-        source: error,
-    };
-    let mut builder = reqwest::Client::builder()
-        .timeout(request_timeout)
-        .connect_timeout(connect_timeout);
-    if let Some(addr) = socks5_proxy {
-        builder = builder.proxy(reqwest::Proxy::all(format!("socks5h://{addr}")).map_err(typed)?);
-    }
-    let body = builder
-        .build()
-        .map_err(typed)?
-        .get(url)
-        .send()
+    let body = dial
+        .fetch_text(url, request_timeout, connect_timeout)
         .await
-        .map_err(typed)?
-        .text()
-        .await
-        .map_err(typed)?;
+        .map_err(|error| PriceError::RequestFailed {
+            failure: error.net_op_failure(),
+            source: Box::new(error),
+        })?;
     source.parse(&body)
 }
 
@@ -967,9 +779,50 @@ mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+    use zingo_net_diag::NetOpStage;
 
     /// Generous bounds for tests whose subject is not the timeout.
     const TEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+    /// One source's price off an untunneled leg, which tests alone may take.
+    async fn fetch_untunneled(
+        source: PriceSource,
+        url: &str,
+        request_timeout: Duration,
+        connect_timeout: Duration,
+    ) -> Result<Price, PriceError> {
+        let body = zingo_netutils::socks5_fetch::fetch_text_untunneled(
+            url,
+            request_timeout,
+            connect_timeout,
+        )
+        .await
+        .map_err(|error| PriceError::RequestFailed {
+            failure: error.net_op_failure(),
+            source: Box::new(error),
+        })?;
+        source.parse(&body)
+    }
+
+    /// One source's price through a conduit over `socks5`, for the tests
+    /// whose subject is the proxy leg itself.
+    async fn fetch_through_proxy(
+        source: PriceSource,
+        socks5: std::net::SocketAddr,
+        url: &str,
+        request_timeout: Duration,
+        connect_timeout: Duration,
+    ) -> Result<Price, PriceError> {
+        let conduit = zingo_netutils::conduit::MixnetConduit::over(socks5);
+        get_source_price(
+            source,
+            &conduit.dial(),
+            url,
+            request_timeout,
+            connect_timeout,
+        )
+        .await
+    }
 
     /// HYPOTHESIS: the race report renders a source's two-link cause chain
     /// exactly as the one sanctioned chain walk joined by this module's
@@ -1035,7 +888,7 @@ mod tests {
         ]"#;
         let url = spawn_trades_server(body).await;
 
-        let price = get_current_price(None, &url, TEST_TIMEOUT, TEST_TIMEOUT)
+        let price = fetch_untunneled(PriceSource::Gemini, &url, TEST_TIMEOUT, TEST_TIMEOUT)
             .await
             .expect("the clearnet fetch parses a valid trades response");
 
@@ -1045,277 +898,25 @@ mod tests {
         );
     }
 
-    /// Smoke test against the real price sources over clearnet. Ignored by
-    /// default (needs network and live third parties); run with
-    /// `cargo test -p zingo-price -- --ignored` to confirm the live race.
+    /// Smoke test against a real price source over clearnet. Ignored by
+    /// default (needs network and a live third party); run with
+    /// `cargo test -p zingo-price -- --ignored`. The race that once lived
+    /// here is the wallet's speed-priority wave, so this proves the fetch
+    /// this crate still owns.
     #[tokio::test]
-    #[ignore = "hits the live price-source APIs over clearnet"]
-    async fn live_clearnet_price_race_smoke() {
-        let raced = race_current_price(None)
+    #[ignore = "hits a live price-source API over clearnet"]
+    async fn live_clearnet_price_fetch_smoke() {
+        let source = PriceSource::Kraken;
+        let price = fetch_untunneled(source, source.url(), REQUEST_TIMEOUT, CONNECT_TIMEOUT)
             .await
-            .expect("the live price race succeeds");
+            .expect("the live price fetch succeeds");
         assert!(
-            raced.price.price_usd > 0.0 && raced.price.price_usd.is_finite(),
+            price.price_usd > 0.0 && price.price_usd.is_finite(),
             "a live ZEC/USD price is positive and finite, got {}",
-            raced.price.price_usd
+            price.price_usd
         );
     }
 
-    /// The endpoint URL and [`TRADES_REQUESTED`] are two spellings of one
-    /// spec value; this pins them together so neither drifts alone.
-    #[test]
-    fn the_endpoint_url_requests_the_named_trade_count() {
-        assert!(
-            GEMINI_ZECUSD_URL.ends_with(&format!("limit_trades={TRADES_REQUESTED}")),
-            "GEMINI_ZECUSD_URL must request TRADES_REQUESTED trades: {GEMINI_ZECUSD_URL}"
-        );
-        assert!(
-            BITFINEX_ZECUSD_URL.ends_with(&format!("limit={TRADES_REQUESTED}")),
-            "BITFINEX_ZECUSD_URL must request TRADES_REQUESTED trades: {BITFINEX_ZECUSD_URL}"
-        );
-        assert!(
-            OKX_ZECUSDT_URL.ends_with(&format!("limit={TRADES_REQUESTED}")),
-            "OKX_ZECUSDT_URL must request TRADES_REQUESTED trades: {OKX_ZECUSDT_URL}"
-        );
-        assert!(
-            MEXC_ZECUSDT_URL.ends_with(&format!("limit={TRADES_REQUESTED}")),
-            "MEXC_ZECUSDT_URL must request TRADES_REQUESTED trades: {MEXC_ZECUSDT_URL}"
-        );
-        assert!(
-            GATEIO_ZECUSDT_URL.ends_with(&format!("limit={TRADES_REQUESTED}")),
-            "GATEIO_ZECUSDT_URL must request TRADES_REQUESTED trades: {GATEIO_ZECUSDT_URL}"
-        );
-        assert_eq!(MEDIAN_INDEX, TRADES_REQUESTED / 2);
-    }
-
-    /// HYPOTHESIS: MEXC's object rows reduce to the median with
-    /// second-resolution times.
-    #[test]
-    fn mexc_trades_reduce_to_the_median() {
-        let rows: Vec<String> = (0..TRADES_REQUESTED)
-            .map(|i| {
-                format!(
-                    r#"{{"price":"{}.0","qty":"1","time":1786060006816}}"#,
-                    490 + i
-                )
-            })
-            .collect();
-        let body = format!("[{}]", rows.join(","));
-        let price = parse_mexc_trades(&body).expect("eleven well-formed rows parse");
-        assert!((price.price_usd - 495.0).abs() < 0.001);
-        assert_eq!(price.time, 1_786_060_006);
-    }
-
-    /// HYPOTHESIS: Gate.io's string-second rows reduce to the median.
-    #[test]
-    fn gateio_trades_reduce_to_the_median() {
-        let rows: Vec<String> = (0..TRADES_REQUESTED)
-            .map(|i| {
-                format!(
-                    r#"{{"price":"{}.0","amount":"1","create_time":"1786060000"}}"#,
-                    490 + i
-                )
-            })
-            .collect();
-        let body = format!("[{}]", rows.join(","));
-        let price = parse_gateio_trades(&body).expect("eleven well-formed rows parse");
-        assert!((price.price_usd - 495.0).abs() < 0.001);
-        assert_eq!(price.time, 1_786_060_000);
-    }
-
-    /// HYPOTHESIS: KuCoin's coded envelope keeps only the newest eleven of
-    /// its uncounted rows, honors nanosecond times, and refuses a non-zero
-    /// code with the reported message.
-    #[test]
-    fn kucoin_histories_truncate_to_the_newest_eleven() {
-        // Twenty rows ascending in price; the newest eleven are 499..=509,
-        // whose median is 504.
-        let rows: Vec<String> = (0..20)
-            .map(|i| {
-                format!(
-                    r#"{{"price":"{}.0","size":"1","time":1786059671481000000}}"#,
-                    490 + i
-                )
-            })
-            .collect();
-        let body = format!(r#"{{"code":"200000","data":[{}]}}"#, rows.join(","));
-        let price = parse_kucoin_histories(&body).expect("twenty well-formed rows parse");
-        assert!((price.price_usd - 504.0).abs() < 0.001);
-        assert_eq!(price.time, 1_786_059_671);
-        assert!(matches!(
-            parse_kucoin_histories(r#"{"code":"400100","msg":"symbol not found","data":[]}"#),
-            Err(PriceError::SourceReportedError(message)) if message.contains("not found")
-        ));
-    }
-
-    /// HYPOTHESIS: Coinbase's timeless spot quote parses to its amount
-    /// with a fetch-time stamp, and a malformed amount refuses typed.
-    #[test]
-    fn coinbase_spot_parses_the_amount() {
-        let price =
-            parse_coinbase_spot(r#"{"data":{"amount":"495.03","base":"ZEC","currency":"USD"}}"#)
-                .expect("the live shape parses");
-        assert!((price.price_usd - 495.03).abs() < 0.001);
-        assert!(price.time > 0, "the spot quote is stamped at the fetch");
-        assert!(matches!(
-            parse_coinbase_spot(r#"{"data":{"amount":null}}"#),
-            Err(PriceError::UnexpectedShape("the spot amount"))
-        ));
-    }
-
-    /// HYPOTHESIS: Bitfinex's `[id, millis, amount, price]` rows reduce to
-    /// the median price with second-resolution times.
-    #[test]
-    fn bitfinex_trades_reduce_to_the_median() {
-        let rows: Vec<String> = (0..TRADES_REQUESTED)
-            .map(|i| format!("[{i},1786058678265,0.5,{}.0]", 490 + i))
-            .collect();
-        let body = format!("[{}]", rows.join(","));
-        let price = parse_bitfinex_trades(&body).expect("eleven well-formed rows parse");
-        assert!((price.price_usd - 495.0).abs() < 0.001);
-        assert_eq!(price.time, 1_786_058_678);
-        assert!(matches!(
-            parse_bitfinex_trades("[[1,1786058678265,0.5,495.0]]"),
-            Err(PriceError::InsufficientTrades { received: 1 })
-        ));
-    }
-
-    /// HYPOTHESIS: OKX's coded envelope reduces to the median when the
-    /// code is zero and refuses with the reported message otherwise.
-    #[test]
-    fn okx_trades_honor_the_envelope_code() {
-        let rows: Vec<String> = (0..TRADES_REQUESTED)
-            .map(|i| {
-                format!(
-                    r#"{{"instId":"ZEC-USDT","px":"{}.0","sz":"1","ts":"1786058702759"}}"#,
-                    490 + i
-                )
-            })
-            .collect();
-        let body = format!(r#"{{"code":"0","msg":"","data":[{}]}}"#, rows.join(","));
-        let price = parse_okx_trades(&body).expect("eleven well-formed rows parse");
-        assert!((price.price_usd - 495.0).abs() < 0.001);
-        assert_eq!(price.time, 1_786_058_702);
-        assert!(matches!(
-            parse_okx_trades(r#"{"code":"51001","msg":"Instrument ID does not exist","data":[]}"#),
-            Err(PriceError::SourceReportedError(message)) if message.contains("does not exist")
-        ));
-    }
-
-    /// A recorded current price survives the write/read round trip, so the
-    /// latest fetch is what a reloaded wallet reports.
-    #[test]
-    fn a_recorded_price_survives_the_serialization_round_trip() {
-        let mut list = PriceList::new();
-        assert!(list.current_price().is_none());
-        list.record_current_price(Price {
-            time: 1_753_000_000,
-            price_usd: 42.25,
-        });
-
-        let mut bytes = Vec::new();
-        list.write(&mut bytes).expect("an in-memory write succeeds");
-        let reloaded = PriceList::read(bytes.as_slice()).expect("the bytes just written read back");
-
-        let stored = reloaded
-            .current_price()
-            .expect("the recorded price survives");
-        assert_eq!(stored.time, 1_753_000_000);
-        assert_eq!(stored.price_usd, 42.25);
-    }
-
-    /// The classification table, exercised with fabricated signals and chain
-    /// texts: every [`NetOpStage`] variant is reachable, and the documented
-    /// boundary cases land where the table says. A `reqwest::Error` cannot
-    /// be constructed by hand, which is why the table is pure over
-    /// [`RequestSignals`].
-    #[test]
-    fn every_stage_is_reachable_from_fabricated_signals() {
-        let chain = |texts: &[&str]| texts.iter().map(|t| t.to_string()).collect::<Vec<_>>();
-        let bound = Duration::from_secs(20);
-        let signals = |timeout: bool, connect: bool, status: bool, decode: bool| RequestSignals {
-            is_timeout: timeout,
-            is_connect: connect,
-            is_status: status,
-            is_decode_or_body: decode,
-        };
-
-        let table: Vec<(RequestSignals, Vec<String>, Option<&str>, NetOpStage)> = vec![
-            (
-                signals(true, false, false, false),
-                chain(&["operation timed out"]),
-                None,
-                NetOpStage::TimedOut { after_ms: 20_000 },
-            ),
-            (
-                signals(false, true, false, false),
-                chain(&["error sending request", "tcp connect error 127.0.0.1:1080"]),
-                Some("127.0.0.1:1080"),
-                NetOpStage::LocalProxyConnect,
-            ),
-            (
-                signals(false, false, false, false),
-                chain(&["error sending request", "socks connect refused by proxy"]),
-                Some("127.0.0.1:1080"),
-                NetOpStage::SocksHandshake,
-            ),
-            (
-                signals(false, true, false, false),
-                chain(&["error sending request", "invalid peer certificate"]),
-                None,
-                NetOpStage::RemoteTls,
-            ),
-            (
-                signals(false, true, false, false),
-                chain(&["error sending request", "tls handshake eof"]),
-                None,
-                NetOpStage::TunnelTransport,
-            ),
-            (
-                signals(false, false, true, false),
-                chain(&["HTTP status server error (503)"]),
-                None,
-                NetOpStage::RemoteHttp,
-            ),
-            (
-                signals(false, false, false, true),
-                chain(&["error decoding response body"]),
-                None,
-                NetOpStage::PayloadDecode,
-            ),
-            (
-                signals(false, true, false, false),
-                chain(&["error sending request", "connection refused"]),
-                None,
-                NetOpStage::RemoteConnect,
-            ),
-            (
-                signals(false, false, false, false),
-                chain(&["connection reset by peer"]),
-                None,
-                NetOpStage::TunnelTransport,
-            ),
-        ];
-
-        let mut reached = std::collections::HashSet::new();
-        for (signals, chain, socks, expected) in table {
-            let stage = classify_stage(signals, &chain, socks, bound);
-            assert_eq!(stage, expected, "signals {signals:?}, chain {chain:?}");
-            reached.insert(stage.to_string());
-        }
-        // RouteResolution is refused upstream of any request, so the reqwest
-        // table cannot produce it; every other variant must be reachable.
-        assert_eq!(
-            reached.len(),
-            8,
-            "every reqwest-reachable NetOpStage variant appears: {reached:?}"
-        );
-    }
-
-    /// A black-holed server (accepts the TCP connection, never answers)
-    /// resolves within the client bound as a typed `TimedOut` failure with
-    /// the reqwest source preserved — the field failure that motivated the
-    /// taxonomy (a five-minute unbounded hang) can no longer happen.
     #[tokio::test]
     async fn a_black_holed_server_times_out_typed_within_the_bound() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1327,13 +928,16 @@ mod tests {
         });
 
         let short = Duration::from_millis(300);
-        let error = get_current_price(None, &url, short, short)
+        let error = fetch_untunneled(PriceSource::Gemini, &url, short, short)
             .await
             .expect_err("a silent server cannot serve a price");
         match &error {
             PriceError::RequestFailed { failure, source } => {
                 assert_eq!(failure.stage, NetOpStage::TimedOut { after_ms: 300 });
-                assert!(source.is_timeout(), "the reqwest source keeps its kind");
+                assert!(
+                    std::error::Error::source(source).is_some(),
+                    "the transport source keeps its own cause beneath it"
+                );
                 assert!(
                     !failure.cause_chain.is_empty(),
                     "the cause chain is captured layer by layer"
@@ -1358,8 +962,9 @@ mod tests {
         };
 
         let short = Duration::from_millis(300);
-        let error = get_current_price(
-            Some(&closed.to_string()),
+        let error = fetch_through_proxy(
+            PriceSource::Gemini,
+            closed,
             "http://127.0.0.1:9/v1/trades/zecusd",
             short,
             short,
@@ -1369,8 +974,8 @@ mod tests {
         match &error {
             PriceError::RequestFailed { failure, source } => {
                 assert!(
-                    source.is_connect(),
-                    "the reqwest failure must keep its kind: {source}"
+                    std::error::Error::source(source).is_some(),
+                    "the transport failure must keep its own cause: {source}"
                 );
                 assert!(
                     matches!(
@@ -1400,7 +1005,7 @@ mod tests {
         ]"#;
         let url = spawn_trades_server(body).await;
 
-        let error = get_current_price(None, &url, TEST_TIMEOUT, TEST_TIMEOUT)
+        let error = fetch_untunneled(PriceSource::Gemini, &url, TEST_TIMEOUT, TEST_TIMEOUT)
             .await
             .expect_err("two trades cannot yield the median of eleven");
         assert!(
@@ -1508,48 +1113,47 @@ mod tests {
         url
     }
 
+    /// HYPOTHESIS: the first source that answered supplies the quote, and
+    /// the sources that failed before it are discarded rather than
+    /// reported. Falsified if a later answer wins or a failure survives a
+    /// success.
     #[tokio::test]
-    async fn the_race_reports_the_first_success() {
+    async fn the_first_answer_supplies_the_quote() {
         let garbage = spawn_answering_server("not json at all").await;
         let kraken = spawn_answering_server(KRAKEN_ELEVEN_TRADES).await;
-        let silent = spawn_silent_server().await;
         let short = Duration::from_millis(500);
 
-        let won = race_sources(
-            None,
-            [
-                (PriceSource::Gemini, garbage),
-                (PriceSource::Kraken, kraken),
-                (PriceSource::CoinGecko, silent),
-            ],
-            short,
-            short,
-        )
-        .await
-        .expect("one healthy source wins the race");
+        let refused = fetch_untunneled(PriceSource::Gemini, &garbage, short, short).await;
+        let answered = fetch_untunneled(PriceSource::Kraken, &kraken, short, short).await;
+        let won = first_quote(vec![
+            (PriceSource::Gemini, refused),
+            (PriceSource::Kraken, answered),
+        ])
+        .expect("one healthy source supplies the quote");
         assert_eq!(won.source, PriceSource::Kraken);
         assert_eq!(won.price.price_usd, 43.00);
     }
 
+    /// HYPOTHESIS: when no source answered, the report carries every
+    /// source's typed failure and names each operator, so a total outage is
+    /// diagnosable per operator rather than as one opaque refusal.
+    /// Falsified if a failure or a name leaves the report.
     #[tokio::test]
-    async fn a_race_where_every_source_fails_reports_all_three() {
+    async fn a_run_where_every_source_fails_reports_them_all() {
         let garbage_one = spawn_answering_server("not json at all").await;
         let garbage_two = spawn_answering_server(r#"{"unexpected":true}"#).await;
         let silent = spawn_silent_server().await;
         let short = Duration::from_millis(300);
 
-        let failure = race_sources(
-            None,
-            [
-                (PriceSource::Gemini, garbage_one),
-                (PriceSource::Kraken, garbage_two),
-                (PriceSource::CoinGecko, silent),
-            ],
-            short,
-            short,
-        )
-        .await
-        .expect_err("no source answered with a price");
+        let mut outcomes = Vec::new();
+        for (source, url) in [
+            (PriceSource::Gemini, garbage_one),
+            (PriceSource::Kraken, garbage_two),
+            (PriceSource::CoinGecko, silent),
+        ] {
+            outcomes.push((source, fetch_untunneled(source, &url, short, short).await));
+        }
+        let failure = first_quote(outcomes).expect_err("no source answered with a price");
         let named: Vec<&str> = failure
             .failures
             .iter()

@@ -38,7 +38,7 @@ pub(super) fn scan_compact_blocks<P>(
     consensus_parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     initial_scan_data: InitialScanData,
-    decryption_batch_size: usize,
+    output_decryptions_in_batch: usize,
 ) -> Result<ScanData, ScanError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -54,7 +54,7 @@ where
         consensus_parameters,
         &scanning_keys,
         &compact_blocks,
-        decryption_batch_size,
+        output_decryptions_in_batch,
     )?;
 
     let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
@@ -222,13 +222,13 @@ fn trial_decrypt<P>(
     consensus_parameters: &P,
     scanning_keys: &ScanningKeys,
     compact_blocks: &[CompactBlock],
-    decryption_batch_size: usize,
+    output_decryptions_in_batch: usize,
 ) -> Result<DecryptionBatchRunners<(), (), ()>, ScanError>
 where
     P: consensus::Parameters + Send + 'static,
 {
     let mut runners =
-        DecryptionBatchRunners::<(), (), ()>::for_keys(decryption_batch_size, scanning_keys);
+        DecryptionBatchRunners::<(), (), ()>::for_keys(output_decryptions_in_batch, scanning_keys);
     for block in compact_blocks {
         runners.add_block(consensus_parameters, block.clone())?;
     }
@@ -347,6 +347,7 @@ fn check_tree_size(
 
         return Err(ScanError::IncorrectTreeSize {
             shielded_protocol: PoolType::Shielded(pool),
+            height: wallet_block.block_height(),
             block_metadata_size: metadata_size,
             calculated_size,
         });
@@ -599,6 +600,7 @@ mod tests {
         assert!(matches!(
             check_tree_size(&compact_block, &wallet_block),
             Err(ScanError::IncorrectTreeSize {
+                height: _,
                 shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
                 ..
             })
@@ -697,6 +699,7 @@ mod tests {
         assert!(matches!(
             result,
             Err(ScanError::IncorrectTreeSize {
+                height: _,
                 shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
                 block_metadata_size: 105,
                 calculated_size: 5,
@@ -733,6 +736,7 @@ mod tests {
         assert!(matches!(
             check_tree_size(&compact_block, &wallet_block),
             Err(ScanError::IncorrectTreeSize {
+                height: _,
                 shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
                 block_metadata_size: 1354,
                 calculated_size: 0,
@@ -751,6 +755,7 @@ mod tests {
         assert!(matches!(
             check_tree_size(&compact_block, &wallet_block),
             Err(ScanError::IncorrectTreeSize {
+                height: _,
                 shielded_protocol: PoolType::Shielded(ShieldedPool::Orchard),
                 block_metadata_size: 1354,
                 calculated_size: 10,

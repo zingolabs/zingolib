@@ -39,7 +39,7 @@ pub(crate) enum ProbeStage {
     /// Establishing the transport (DNS, TCP, TLS, HTTP/2) failed.
     Connect(GetClientError),
     /// The transport stood, but the `get_info` call itself failed.
-    Rpc(Box<dyn std::error::Error + Send + Sync>),
+    Rpc(zingolib::netutils::Status),
     /// Nothing failed and nothing answered within the probe budget.
     TimedOut(Duration),
 }
@@ -48,7 +48,7 @@ impl std::fmt::Display for ProbeStage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ProbeStage::Connect(error) => write!(f, "connect failed: {}", error_chain(error)),
-            ProbeStage::Rpc(error) => write!(f, "get_info failed: {}", error_chain(&**error)),
+            ProbeStage::Rpc(error) => write!(f, "get_info failed: {}", error_chain(error)),
             ProbeStage::TimedOut(budget) => write!(f, "no answer within {budget:?}"),
         }
     }
@@ -80,7 +80,7 @@ pub(crate) async fn probe_servers(
                 indexer
                     .get_lightd_info(budget)
                     .await
-                    .map_err(|status| ProbeStage::Rpc(Box::new(status)))?;
+                    .map_err(ProbeStage::Rpc)?;
                 Ok(start.elapsed())
             })
             .await

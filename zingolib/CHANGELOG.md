@@ -7,9 +7,117 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- BREAKING: `mixnet::resolve_route` takes the session's
+  `MixnetConduit` rather than a `SocketAddr`, and `LightClient::mixnet_route`
+  reads it from the new `LightClient::mixnet_conduit`. The resolver used to
+  mint a fresh conduit per call, which gave every surface a private count
+  and left a rotation with nothing to supersede; one conduit per attached
+  client is what makes the supersession reach the work (ADR 0048).
+- A session with an attached Standing Client now runs a rotation watchdog
+  beside its proof watchdog: on a randomised interval between
+  `CLIENT_ROTATION_MIN` and `CLIENT_ROTATION_MAX` it asks the acquirer
+  whether the platform can afford a bootstrap, and where the answer is
+  `Now` it hands the session to a freshly proven client (ADR 0048). The
+  hand-off is make-before-break, so a rotation that cannot prove a
+  replacement keeps the incumbent and publishes nothing. A desktop's
+  spawned acquirer answers `RotationVerdict::Never`, which retires the
+  watchdog before it waits at all and leaves ADR 0045's four role-bound
+  clients unchanged.
+- A failover that installs a replacement now retires the client it replaced
+  rather than stopping it: the outgoing conduit is superseded so it takes no
+  new work, its transport stays open until the work already dialed through
+  it finishes, and only then does the child stop. `MIGRATION_SUBMIT_TIMEOUT`
+  bounds the wait, past which a held guard is treated as leaked.
+- BREAKING: `wallet::migration::parts::ProveOnce` is a named struct rather
+  than a boxed `FnOnce`, and `PrepareResult::Ready::prove` holds a
+  `Box<ProveOnce>`. Call `prove.prove()` where the closure was invoked.
+  Naming the type states what the proving work owns, which the closure
+  left implicit.
+- BREAKING: `mixnet::MixnetConduit` loses its `socks5` accessor and its
+  `Copy`. A surface holding a route now takes a `ConduitDial` guard and
+  holds it for the work's duration, which is what lets a superseded conduit
+  retire once its work drains (ADR 0048). `mixnet::speed::SpeedPrioritized`
+  races a conduit rather than an address, and `MixnetTransmissionClient`
+  holds a guard for its life because it dials on every submission.
+- BREAKING: `mixnet::acquire::TransportAcquirable` gains `rotation_verdict`,
+  which the rotation watchdog asks at the moment of acting rather than when
+  it drew its cadence, because the battery and foreground state a host
+  weighs are the ones it has then.
+- BREAKING: `mixnet::acquire::ProxyHosting` gains `rotation_verdict`, which a
+  platform answers to state whether it can afford a rotation now (ADR 0048).
+  `MixnetTiming` gains `client_rotation_min` and `client_rotation_max`, so a
+  host reads the cadence bounds rather than pinning its own copy.
+
+### Removed
+- BREAKING: `mixnet::acquire::ProxyHost` is renamed `ProxyHosting` and moved
+  to `zingo_netutils::provider`, along with `HostedTransport` and
+  `HostRefusal`; all three are re-exported from `mixnet::acquire`.
+  `HostedProxy` is replaced by `zingo_netutils::provider::HostedProvider`.
+  `LightClient::enable_mixnet_via_host` takes `impl ProxyHosting` by value
+  rather than `Arc<dyn ProxyHost>`, so no caller names a trait object
+  (ADR 0046).
+- BREAKING: `mixnet::SlotTunnel` is replaced by
+  `zingo_netutils::conduit::MixnetConduit`, re-exported as
+  `mixnet::MixnetConduit` (ADR 0046). Its `addr` and `into_addr`
+  accessors become `socks5`. `mixnet::ExitNodeId` keeps its path as a
+  re-export, but is now defined in `zingo_netutils::exit`.
+
+### Changed
+- **Breaking.** The Zcash stack moves to `zcash_primitives` 0.30, `zcash_proofs`
+  0.30, `zcash_transparent` 0.10, `zcash_keys` 0.16 and `zcash_client_backend`
+  0.24.0-rc.7, and `zcash_pool_migration` moves from a git revision to the
+  published 0.1.0-rc.7. These types cross zingolib's public API, so a consumer
+  must move with them. Sourcing the migration crate from the registry collapses
+  the second `zcash_primitives` that its git revision used to drag in, so the
+  workspace now compiles one copy and the migration schedule no longer insulates
+  heights across a version divide.
+- **Breaking.** ZIP 318's ratified constants now live in `zcash_protocol::zip318`,
+  and `ANCHOR_AGE_CAP` moves from 16 boundaries to 4. `MIGRATION_MAX_DENOMINATION_ZEC`
+  and `RESIDUAL_MIGRATION_MIN` are renamed `DENOM_CAP` and `MAX_RESIDUAL_VALUE`,
+  and both are `Zatoshis` rather than a count of whole ZEC. The transfer-delay
+  mean moves from 144 blocks to 66, halving the average wait before a migration
+  transfer broadcasts. `MigrationParams` keeps version 2, because neither the
+  anchor cap nor the delay mean feeds the consent hash.
+- `LightWallet` implements `zcash_client_backend`'s new `OutputLockStore`, holding
+  advisory output locks in memory beside the pending proposal so they expire with
+  the process, as the proposal slot does.
+- The Server-Selection Sweep probes and assigns every indexer before its
+  verdict (ruled 2026-08-14): no healthy answer ends the survey early, a
+  healthy pinned server still wins outright, and otherwise the sync
+  indexer is drawn among every healthy answer, all of which are
+  draw-eligible, with the transmit candidates excluding the sync
+  operator so different operations select different indexers.
+- **Breaking.** `MAX_DIARY_ATTEMPTS` is now `MAX_HISTORY_ATTEMPTS`. The term
+  _Indexer Diary_ is retired: a diary was something the wallet kept, and the
+  history it names now ends with the session.
+- A price fetch no longer writes to the wallet. `update_current_price` used to
+  record the quote into the wallet's price list and set `save_required`, so
+  asking the price dirtied the wallet and provoked a save; the price now lives
+  only in the returned `MixnetPriceFetch`. The price list is still serialized,
+  so the wallet format is unchanged, and nothing loses a reader — the only
+  consumers of the stored price were already commented out.
+- **Breaking.** `mixnet::MixnetMode` is now `mixnet::Indicator`, its parse
+  refusal `UnknownMixnetModeToken` is now `UnknownIndicatorToken`, and
+  `LightClient::mixnet_mode` is now `LightClient::read_mixnet_indicator`. An
+  indicator reports which one of a closed set of states holds, which is what
+  the type does and what _mode_ never said.
+
 ### Deprecated
 
 ### Added
+- The session keeps a `NodeHealthIndex`: one epoch-scoped observation per
+  Exit Node, written only by the Exit Pool's own acquisition and recycle
+  paths. A `Proven` observation (a completed round trip: a Sentinel answer
+  or a carried task) is trusted for one Nym epoch; a `Failed` observation
+  (a refusal, a timeout, or silence past budget) stands for the session.
+  Clutch draws sample fresh-Proven exits first, unknown ones next, and
+  Failed ones only at exhaustion.
+- Every mixnet client is a Proven Client: an acquisition whose bound exit
+  carries no trusted fresh proof must answer the Sentinel before its first
+  use, a refusal condemns the exit and births a successor, and an
+  acquisition whose every birth failed its proof refuses with the new typed
+  `TransportError::NoProvenExit`.
 - A spawned `nym-proxy` that dies before speaking its stdout protocol now
   latches a typed `proxy-launch` death detail (new `NetOpStage::ProxyLaunch`)
   naming the binary, the launch arguments, and the child's stderr tail, so a
@@ -58,6 +166,178 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_orchard_to_ironwood_migration`.
 
 ### Changed
+- A bind-stage failure spends a proving birth instead of escaping the
+  acquisition. A Clutch that never produced a ready bound transport —
+  the readiness budget missed, the child dead mid-bootstrap, the status
+  channel closed — convicts its drawn exits in the NodeHealthIndex and
+  a fresh Clutch is drawn, up to the six-birth budget; only the
+  environment's own refusals (a missing binary, an unreachable host, an
+  unseeded or exhausted pool) still abort at once, and a defective exit
+  report retries without convicting the exits it failed to name.
+  Previously one 120-second `NotReady` aborted the whole acquisition
+  fatally with nothing learned, and the unbootstrappable exits stayed
+  eligible for the very next draw.
+- The F1 demotion loop lands whole. An exit-implicating failure on the
+  Standing Client — a failed mixnet transmission, or a correspondent
+  probe wave nobody answered — raises a suspicion that spawns a
+  ProofAcquisition: one arbiter Sentinel exchange dialed into the
+  client's tunnel. An answer promotes and refreshes the exit's
+  EpochProven observation; silence convicts the exit
+  (`ExitNodeHealthVerdict::Failed`) and runs the two-layer failover —
+  the mode dips to `Bootstrapping` while a replacement Proven Client
+  births over a preference-ordered draw, `Ready` on success, `Died`
+  latched when every birth exhausts or no acquirer exists to rebirth
+  from. An expiry watchdog fires the same ProofAcquisition unprompted
+  the moment the client's proof stops being epoch-fresh, a trusting
+  birth inheriting the stale observation's original expiry as its
+  deadline. The slot moved behind a mutex so the loop runs from the
+  operation paths that observe the failures.
+- BREAKING: `MixnetMode` gains a sixth state, `PreviouslyProvenThisEpoch`
+  (wire token `previously_proven_this_epoch`), adjacent to `Ready`: the
+  Standing Client is up on stale proof — born trusting an EpochProven
+  observation an earlier client earned — and no round trip of its own has
+  yet confirmed the exit. It routes exactly as `Ready`; the first
+  confirmed round trip (a delivered mixnet transmission or an answered
+  correspondent probe) promotes it to earned `Ready` and refreshes the
+  exit's EpochProven observation. Consumers matching `MixnetMode`
+  exhaustively, including mobile's FFI mapping, must add the state.
+- BREAKING: the session's standing client is born as a Proven Client.
+  `enable_mixnet` and `enable_mixnet_via_host` lose their responsiveness
+  type parameter and return once the client is bound and its exit proven,
+  instead of returning while an unproven transport bootstraps; the slot
+  holds only the bound exit's lease rather than the whole Clutch, and
+  `ProxyHost::start_transport` loses its class parameter. The retired
+  speed-class enable race stalled at `Bootstrapping` past 90 seconds in
+  three consecutive measured runs; the proven birth reached `Ready` and
+  quoted prices on its first live run.
+- BREAKING: the Correspondent Pools' member-keeping is retired. Go-online
+  no longer launches background refills, the Indexer and Price complements
+  are gone, and a Transmission's pulls multiplex over the session's standing
+  tunnel instead of consuming per-pull Exclusive members; the price fetch
+  keeps its own per-run Proven Client, so priced traffic never shares an
+  egress with wallet-correlated streams. The go-online refills measurably
+  contended with the scan: knocking them out returned a 5,000-block sync
+  from 80.3–82.3 seconds to 70.8–73.3 under identical conditions.
+- BREAKING: the Sentinel leaves the survey and price waves. Proof belongs
+  to a client's birth, so waves run at full indexer width, and the redraw
+  survives as the safety net keyed on a wave that not one target answered.
+- BREAKING: the redraw of a dead Exit Node serves every speed-priority
+  operation. `mixnet::speed::run_speed_prioritized` owns the loop an
+  operation used to carry itself: acquire a transport, run the wave, and on
+  a Sentinel's silence hold the dead exit until its replacement binds so the
+  pool cannot offer it again, up to `MAX_SPEED_EXIT_DRAWS`. An operation
+  supplies `acquire`, `dispose`, and `narrate`; the price run gains the
+  redraw the sweep already had, and both dispose of a spent transport in the
+  background rather than making a caller wait on teardown. Measured over
+  twenty live rounds each: the price run failed nine of twenty before, and
+  none of twenty after, at a mean of 7.9 seconds against about 5; the sweep
+  is unchanged at twenty verdicts of twenty and a 9.5-second mean.
+- BREAKING: `lightclient::select::ServerSelectionError` falls from seven
+  variants to two, `Speed` and `Selection`. Four of the removed variants
+  renamed failures `mixnet::acquire::TransportError` already carried, and
+  `ProxyStart` and `ExitOutsideClutch` were among them; a consumer matching
+  on those now matches `Speed`, whose source chain carries the transport's
+  own error. `wallet::error::PriceError` likewise replaces
+  `TransportAcquisition` and `ExitCarriesNothing` with `Speed`.
+- `mixnet::acquire::TransportError::DiedDuringBootstrap` carries its death
+  detail as a `#[source]` rather than formatting it into the message, so a
+  caller reaches the typed `zingo_net_diag::NetOpFailure` whole. Its message
+  no longer repeats the detail.
+- BREAKING: one wave serves every speed-priority operation. The new
+  `mixnet::speed` module holds `SpeedPrioritized` — an operation's targets,
+  how it probes one, and what settles it — and `run_wave`, which opens
+  `lightclient::select::SURVEY_WAVE_WIDTH` lanes with a Sentinel holding one
+  of them, ends the moment the operation settles, and abandons the whole
+  wave when the Sentinel proves the Exit Node carries nothing. The
+  Server-Selection Sweep and the price run are its two implementations, so
+  the width, the Sentinel, and the abandonment rule have one definition
+  rather than one apiece. `lightclient::select::survey_tunnel_width` is
+  replaced by the `SURVEY_WAVE_WIDTH` constant: the width counts
+  connections through the one Nym client, which does not vary with how many
+  targets there are.
+- BREAKING: `wallet::error::PriceError` gains `ExitCarriesNothing`, which a
+  price run returns when its exit carried no round trip. The run previously
+  reported every source as having timed out, charging nine operators for a
+  tunnel that reached none of them.
+- BREAKING: a speed-priority survey now carries a Sentinel in its opening
+  wave and restarts on a dead exit. The Sentinel is a reliable public
+  address, probed with an ordinary DNS lookup through the same tunnel; it
+  holds one of the wave's lanes rather than adding one, because the survey
+  width is a ceiling measured for the one Nym client a mobile host runs
+  in-process. Its silence within `zingo_netutils::time::SENTINEL_BUDGET`
+  proves the Exit Node carries nothing, whereupon the sweep abandons that
+  exit — holding its reservation until a replacement binds, so the pool
+  cannot offer it again — drops every result of the failed attempt, and
+  surveys afresh, up to `lightclient::select::MAX_SWEEP_EXIT_DRAWS` exits.
+  `SweepProgress` gains `ExitAbandoned`. Nothing from an abandoned draw
+  charges any indexer's Health: a tunnel-phase failure is the exit's.
+- A survey whose opening wave times out to a leg now ends there. Every leg
+  timing out is evidence about the tunnel rather than about the candidates,
+  which the remaining waves can only repeat at the same cost, so a dead
+  sweep exit refuses the cohort after one wave instead of after all of
+  them. The new `mixnet::sweep::opening_wave_timed_out` states the reading.
+- A transport failure whose text says its deadline has elapsed now
+  classifies as a timeout. Tonic reports an exhausted leg budget that way,
+  and the classifier matched only the other spellings, so genuine timeouts
+  reached the sweep's cause tally and the indexer history as `other`.
+- BREAKING: the sweep offers the first healthy indexer immediately. The
+  survey assigns candidates to lanes at random with the pinned server
+  guaranteed an opening lane, opens at most
+  `lightclient::select::survey_tunnel_width(candidates)` tunnels at once —
+  a bounded function of the census, calibrated for the one shared Nym
+  client every platform hosts — and binds the first healthy answer as the
+  sync indexer the moment it arrives, the pin preempting while its own
+  probe is pending. Every unresolved candidate continues in the background
+  as the health sweep, whose handle the session holds: `go_offline` aborts
+  it, so revoking consent stops all networking. A pinned session whose pin
+  did not answer binds the first healthy alternative and says so. The
+  runner no longer draws from a median-judged cohort and no longer fails
+  `DeadPin` (the accepted tradeoff: random lane assignment already forces
+  an adversary to be lucky).
+- BREAKING: `lightclient::LightClient::switch_on_mixnet_for_tests` takes a
+  `std::net::SocketAddr` instead of a `&str`. The helper used to parse the
+  text and abort the process on a placeholder, which killed an external
+  harness. The contract is now checked at compile time. A caller passes a
+  parsed address, so `"127.0.0.1:1"` becomes `"127.0.0.1:1".parse().unwrap()`
+  or an address constant of its own.
+- The indexer diary tolerates a corrupt exit column per column. A stored row
+  whose exit column no longer names an Exit Node now loads with every other
+  field intact and no exit, where it was previously dropped whole.
+- BREAKING: `lightclient::LightClient::shutdown_save_task` returns
+  `std::io::Result<SaveShutdown>` instead of `std::io::Result<()>`, where the
+  new `lightclient::SaveShutdown` enum distinguishes a stopped task
+  (`ShutDown`) from an absent one (`NotRunning`), so callers can report a
+  shutdown request against a never-launched saver accurately.
+- BREAKING: `lightclient::select::ServerSelectionError` gains the
+  `ExitOutsideClutch` variant, which carries the exits the ready transport
+  reported. The bind refusal previously reached callers wrapped in
+  `TransportAcquisition`, whose message names a Clutch that could not be
+  drawn, and an exhaustive match over the enum needs the new arm.
+- BREAKING: `lightclient::LightClient::attach_mixnet` now refuses an empty
+  exit report. `mixnet::MixnetProxyError` gains the `NoExits` variant, which
+  the attach returns when the host names no bound Exit Node, and an
+  exhaustive match over the enum needs the new arm. A host that attaches
+  must name the Exit Node its proxy bound, so Ready means the address and a
+  bound exit at every door.
+- The readiness gate now bounds its wait for the transport's first Exit Node
+  announcement with the new `zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE`,
+  which runs from the moment the address arrives. A proxy that latches ready
+  and never announces a usable exit refuses within the grace instead of
+  holding the go-online moment for the whole `NYM_LIFECYCLE_TIMEOUT`. The
+  refusal is the existing `NotReady` variant, carrying the grace as the
+  budget it exceeded.
+- BREAKING: the survey reports its refusal causes.
+  `mixnet::sweep::SurveyResult` gains a `refusal` field carrying the diary's
+  `FailureKind`, and `SweepError::EmptyCohort` gains a `causes` tally, so the
+  refusal itself says whether the transport or the indexers failed, e.g. "0 of
+  17 answered, none within the cohort (17 timeout)". A saturated transport now
+  reads differently from dead indexers without any external harness.
+- `zingo_netutils::Socks5Indexer::get_latest_block` fetches a candidate's tip
+  through the proxy, the lightest liveness probe an indexer answers. The attach
+  readiness round trip and the live-indexer discovery probe use it. The
+  Server-Selection Sweep's own survey keeps `get_lightd_info`, because the
+  first-healthy verdict rests on the chain a candidate names and a tip carries
+  no chain identity.
 - BREAKING: `mixnet::acquire::TransportError` gains the `ExitOutsideClutch`
   variant. A transport that reports ready without announcing an exit from
   the drawn Clutch now refuses with this variant instead of panicking, and
@@ -272,6 +552,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a prefix-only salvage read so `recovery_info` still works.
 
 ### Removed
+- **Breaking.** The indexer diary no longer touches disk. `IndexerHistoryHandle`
+  keeps this session's attempts in memory and folds each into the session's
+  Health, so `indexer-history.tsv` is never written and no record of which
+  indexers this wallet contacted survives the process.
+  `IndexerHistoryHandle::{beside_wallet, is_recording}` and
+  `IndexerAttempt::exit` are gone with the file they served.
+- **Breaking.** The `nym-diary` feature and `LightClient::set_indexer_diary`
+  are gone. The feature gated a disk-backed handle that no longer exists, and
+  the runtime opt-in gated writes that no longer happen.
+- `mixnet::IP_CORRELATION_DISCLAIMER` - the frontend-facing disclaimer text. A
+  library does not own the wording an application shows its user, so the text
+  moved into `zingo-cli` as a private constant. A frontend that shows the
+  IP-correlation risk now carries its own wording.
+- The `mixnet` re-export of `zingo_netutils::responsiveness::{PrioritisePrivacy,
+  PrioritiseSpeed, Responsiveness}` - the responsiveness partition retired with
+  ADR 0044's single hedged acquisition policy, and no class reaches the API.
+- `mixnet::sweep::indexer_lanes` and `mixnet::sweep::opening_wave_timed_out` -
+  dead remnants of the wave-carried Sentinel. The Sentinel proof moved to the
+  client's birth (ADR 0044), so the wave runs at its full width with no lane
+  displaced, and a dead exit is condemned at birth rather than read off an
+  all-timeout opening wave.
 - `wallet::LightWallet::update_current_price` - the deprecated lock-holding
   price fetch. Its only callers were two tests, and the sequential
   `zingo_price` path it rode is itself removed; production fetches with

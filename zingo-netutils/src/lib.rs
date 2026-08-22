@@ -82,9 +82,13 @@ mod mixnet_connect;
 // mixnet bootstrap here and zingolib's send escalation (ADR 0011).
 pub mod arm_race;
 
-// Deliberately ungated and public: the wallet side names an acquisition's
-// class at compile time even in builds where the nym transport is off.
-pub mod responsiveness;
+// Deliberately ungated: Exit Node identity and health are data, so gating
+// them would make the featureless build harder to reason about (ADR 0046).
+pub mod exit;
+
+pub mod conduit;
+
+pub mod provider;
 
 #[cfg(feature = "nym")]
 mod nym_proxy;
@@ -94,13 +98,16 @@ pub use nym_proxy::NymProxy;
 #[cfg(feature = "nym")]
 pub mod live_indexer_discovery;
 
+#[cfg(feature = "socks5-fetch")]
+pub mod socks5_fetch;
+
 #[cfg(feature = "socks5-transmit")]
 mod socks5_transmit;
 #[cfg(feature = "socks5-transmit")]
-pub use socks5_transmit::{
-    ProxyDialFailure, Socks5TransmitError, TunnelFailure, get_lightd_info_via_socks5,
-    send_transaction_via_socks5, transaction_known_via_socks5,
-};
+pub use socks5_transmit::{ProxyDialFailure, Socks5Indexer, Socks5TransmitError, TunnelFailure};
+
+#[cfg(feature = "socks5-transmit")]
+pub mod sentinel;
 
 fn client_tls_config() -> ClientTlsConfig {
     // The config built here is consumed by rustls at connect time; make

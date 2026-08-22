@@ -35,8 +35,9 @@ use futures::stream::FuturesUnordered;
 use http::Uri;
 use rand::Rng;
 use rand::seq::SliceRandom;
-use zingo_netutils::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceState};
-use zingo_netutils::responsiveness::RESERVATION_CLUTCH_SIZE;
+use zingo_netutils::arm_race::{
+    LaunchPolicy, RESERVATION_CLUTCH_SIZE, RaceAction, RaceEvent, RaceState,
+};
 use zingo_netutils::time::TRANSMISSION_HEDGE_INTERVAL;
 
 /// The maximum number of distinct Correspondents a single send may contact

@@ -9,7 +9,7 @@ homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
 [features]
-# The fetch machinery: reqwest + TLS + the net-diag classification. On by
+# The fetch machinery: the conduit-guarded HTTP leg in zingo-netutils. On by
 # default so the standalone crate builds and tests its whole surface;
 # zingolib depends on this crate with default features off and re-enables
 # the fetch only under its `nym` feature, per the mixnet-only price rule
@@ -18,37 +18,28 @@ license = "MIT"
 # feature the crate is the storage-only price data model.
 default = ["socks5-fetch"]
 socks5-fetch = [
-    "dep:reqwest",
-    "dep:rustls",
+    "zingo-netutils/socks5-fetch",
+    "dep:zingo-netutils",
     "dep:serde",
     "dep:serde_json",
 
     "dep:thiserror",
     "dep:zingo-net-diag",
-    "dep:futures",
 ]
+zingo-netutils = ["dep:zingo-netutils"]
 
 [dependencies]
 zcash_encoding = { workspace = true }
 
 byteorder = { workspace = true }
-# rustls-tls-webpki-roots-no-provider: bundles the webpki trust anchors (so
-# the TLS handshake to the price source verifies) but never auto-selects a
-# rustls CryptoProvider; the fetch path installs aws-lc-rs (first-install-wins)
-# before requesting. The `socks` feature backs the optional Nym mixnet route;
-# the fetch defaults to clearnet.
-reqwest = { workspace = true, optional = true, default-features = false, features = [
-    "cookies",
-    "rustls-tls-webpki-roots-no-provider",
-    "json",
-    "socks",
-] }
-rustls = { workspace = true, optional = true }
 serde = { workspace = true, optional = true, features = ["derive"] }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 zingo-net-diag = { workspace = true, optional = true }
-futures = { workspace = true, optional = true }
+zingo-netutils = { version = "5.0.1", path = "../zingo-netutils", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }
+# `testutils` exposes the untunneled fetch leg, which the crate's own
+# tests use where production always dials through a conduit.
+zingo-netutils = { path = "../zingo-netutils", features = ["socks5-fetch", "testutils"] }

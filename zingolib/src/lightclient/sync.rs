@@ -21,6 +21,12 @@ use super::error::LightClientError;
 
 use zingo_netutils::time::SYNC_START_TIMEOUT;
 
+/// Minted log marker opening the sync engine's span.
+pub const SYNC_SPAN_OPEN: &str = "SYNC_SPAN=open";
+
+/// Minted log marker closing the sync engine's span, carrying its duration.
+pub const SYNC_SPAN_CLOSE: &str = "SYNC_SPAN=close";
+
 impl LightClient {
     /// Launches a task for syncing the wallet to the latest state of the block chain, storing the handle in the
     /// `sync_handle` field.
@@ -46,7 +52,12 @@ impl LightClient {
         let (progress_sender, progress_receiver) = tokio::sync::watch::channel(None);
         self.sync_progress = progress_receiver;
         let sync_handle = tokio::spawn(async move {
-            pepper_sync::sync(
+            // The engine times its own span, so a measurement reads one
+            // clock inside the task that does the work rather than polling
+            // a status or watching a prompt redraw.
+            let started = std::time::Instant::now();
+            tracing::info!("{SYNC_SPAN_OPEN}");
+            let outcome = pepper_sync::sync(
                 client,
                 &chain_type,
                 wallet,
@@ -54,7 +65,13 @@ impl LightClient {
                 progress_sender,
                 sync_config,
             )
-            .await
+            .await;
+            tracing::info!(
+                "{SYNC_SPAN_CLOSE} {}ms {}",
+                started.elapsed().as_millis(),
+                if outcome.is_ok() { "ok" } else { "err" }
+            );
+            outcome
         });
         self.sync_handle = Some(sync_handle);
 

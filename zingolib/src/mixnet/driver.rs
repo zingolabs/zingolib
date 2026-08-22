@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use crate::mixnet::{DeathReport, MixnetMode};
+use crate::mixnet::{DeathReport, Indicator};
 
 /// One observation of Mixnet Mode for subscribers: the mode plus the
 /// evidence scoped to it. Every field beyond the mode is `None` outside
@@ -24,13 +24,13 @@ use crate::mixnet::{DeathReport, MixnetMode};
 /// boundary-carrier consumer ADR 0024 sequences last. The serde form omits
 /// every absent field, so the `mode` token alone discriminates and each state
 /// carries only its own evidence. The wire is pinned by the `wire_contract`
-/// golden test below, the same way [`MixnetMode`]'s five tokens are pinned in
+/// golden test below, the same way [`Indicator`]'s five tokens are pinned in
 /// `mode.rs`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "RawMixnetStatus")]
 pub struct MixnetStatus {
     /// The Mixnet Mode at this observation.
-    pub mode: MixnetMode,
+    pub mode: Indicator,
     /// The local SOCKS5 address, present exactly while ready.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub socks5_addr: Option<std::net::SocketAddr>,
@@ -54,7 +54,7 @@ pub struct MixnetStatus {
 /// outside its one mode.
 #[derive(serde::Deserialize)]
 struct RawMixnetStatus {
-    mode: MixnetMode,
+    mode: Indicator,
     #[serde(default)]
     socks5_addr: Option<std::net::SocketAddr>,
     #[serde(default)]
@@ -69,19 +69,21 @@ impl TryFrom<RawMixnetStatus> for MixnetStatus {
     type Error = String;
 
     fn try_from(raw: RawMixnetStatus) -> Result<Self, Self::Error> {
-        fn stray(field: &str, mode: MixnetMode) -> String {
+        fn stray(field: &str, mode: Indicator) -> String {
             format!("{field} is not evidence for mode {}", mode.as_str())
         }
-        if raw.socks5_addr.is_some() && raw.mode != MixnetMode::Ready {
+        // Route evidence rides every routable mode: earned Ready and
+        // stale-proven PreviouslyProvenThisEpoch, which routes the same.
+        if raw.socks5_addr.is_some() && !raw.mode.is_ready() {
             return Err(stray("socks5_addr", raw.mode));
         }
-        if !raw.exits.is_empty() && raw.mode != MixnetMode::Ready {
+        if !raw.exits.is_empty() && !raw.mode.is_ready() {
             return Err(stray("exits", raw.mode));
         }
-        if raw.bootstrap_detail.is_some() && raw.mode != MixnetMode::Bootstrapping {
+        if raw.bootstrap_detail.is_some() && raw.mode != Indicator::Bootstrapping {
             return Err(stray("bootstrap_detail", raw.mode));
         }
-        if raw.death.is_some() && raw.mode != MixnetMode::Died {
+        if raw.death.is_some() && raw.mode != Indicator::Died {
             return Err(stray("death", raw.mode));
         }
         Ok(MixnetStatus {
@@ -97,13 +99,32 @@ impl TryFrom<RawMixnetStatus> for MixnetStatus {
 impl MixnetStatus {
     /// The snapshot of a slot state that carries no transport — unattached
     /// or switched off — where every transport-scoped field is absent.
-    pub(crate) fn slot_only(mode: MixnetMode) -> Self {
+    pub(crate) fn slot_only(mode: Indicator) -> Self {
         MixnetStatus {
             mode,
             socks5_addr: None,
             exits: Vec::new(),
             bootstrap_detail: None,
             death: None,
+        }
+    }
+
+    /// A status carrying only the evidence its mode offers — route fields
+    /// ride the routable modes and the death rides `Died` alone — so every
+    /// published shape satisfies the wire guard by construction.
+    pub(crate) fn evidenced(
+        mode: Indicator,
+        socks5_addr: Option<std::net::SocketAddr>,
+        exits: Vec<crate::mixnet::ExitNodeId>,
+        death: Option<DeathReport>,
+    ) -> Self {
+        let routable = mode.is_ready();
+        MixnetStatus {
+            mode,
+            socks5_addr: if routable { socks5_addr } else { None },
+            exits: if routable { exits } else { Vec::new() },
+            bootstrap_detail: None,
+            death: if mode == Indicator::Died { death } else { None },
         }
     }
 }
@@ -119,7 +140,7 @@ pub(crate) type StatusPublisher = Arc<tokio::sync::watch::Sender<MixnetStatus>>;
 /// `subscribe()` on the sender, so only the publisher is kept.
 pub(crate) fn status_publisher() -> StatusPublisher {
     let (sender, _initial_receiver) =
-        tokio::sync::watch::channel(MixnetStatus::slot_only(MixnetMode::Unattached));
+        tokio::sync::watch::channel(MixnetStatus::slot_only(Indicator::Unattached));
     Arc::new(sender)
 }
 
@@ -170,7 +191,7 @@ mod wire_contract {
     use zingo_net_diag::{NetOpFailure, NetOpStage};
 
     use super::MixnetStatus;
-    use crate::mixnet::{DeathReport, MixnetMode};
+    use crate::mixnet::{DeathReport, Indicator};
 
     // A fixed latch moment (2025-07-30T18:26:40Z) so the death pins are
     // deterministic; the wire carries it as milliseconds since the epoch.
@@ -202,7 +223,7 @@ mod wire_contract {
     #[test]
     fn unattached_carries_only_its_token() {
         pin(
-            &MixnetStatus::slot_only(MixnetMode::Unattached),
+            &MixnetStatus::slot_only(Indicator::Unattached),
             r#"{"mode":"unattached"}"#,
         );
     }
@@ -210,7 +231,7 @@ mod wire_contract {
     #[test]
     fn switched_off_carries_only_its_token() {
         pin(
-            &MixnetStatus::slot_only(MixnetMode::SwitchedOff),
+            &MixnetStatus::slot_only(Indicator::SwitchedOff),
             r#"{"mode":"switched_off"}"#,
         );
     }
@@ -219,7 +240,7 @@ mod wire_contract {
     fn bootstrapping_carries_its_narration() {
         pin(
             &MixnetStatus {
-                mode: MixnetMode::Bootstrapping,
+                mode: Indicator::Bootstrapping,
                 socks5_addr: None,
                 exits: Vec::new(),
                 bootstrap_detail: Some("connecting to gateway".into()),
@@ -233,7 +254,7 @@ mod wire_contract {
     fn ready_carries_its_socks5_addr() {
         pin(
             &MixnetStatus {
-                mode: MixnetMode::Ready,
+                mode: Indicator::Ready,
                 socks5_addr: Some("127.0.0.1:1080".parse().expect("the test address parses")),
                 exits: Vec::new(),
                 bootstrap_detail: None,
@@ -247,7 +268,7 @@ mod wire_contract {
     fn ready_carries_its_bound_exits() {
         pin(
             &MixnetStatus {
-                mode: MixnetMode::Ready,
+                mode: Indicator::Ready,
                 socks5_addr: Some("127.0.0.1:1080".parse().expect("the test address parses")),
                 exits: vec!["exit-alpha".into(), "exit-beta".into()],
                 bootstrap_detail: None,
@@ -261,7 +282,7 @@ mod wire_contract {
     fn died_carries_a_typed_cause() {
         pin(
             &MixnetStatus {
-                mode: MixnetMode::Died,
+                mode: Indicator::Died,
                 socks5_addr: None,
                 exits: Vec::new(),
                 bootstrap_detail: None,
@@ -282,7 +303,7 @@ mod wire_contract {
     fn died_without_a_held_cause_omits_the_detail() {
         pin(
             &MixnetStatus {
-                mode: MixnetMode::Died,
+                mode: Indicator::Died,
                 socks5_addr: None,
                 exits: Vec::new(),
                 bootstrap_detail: None,

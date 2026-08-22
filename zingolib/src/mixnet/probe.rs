@@ -94,7 +94,8 @@ async fn mixnet_leg(
     host: &crate::correspondent::Host,
 ) -> ProbeLeg {
     let started = Instant::now();
-    let outcome = zingo_netutils::get_lightd_info_via_socks5(socks5_addr, indexer, timeout)
+    let outcome = zingo_netutils::Socks5Indexer::new(socks5_addr, indexer.clone(), timeout)
+        .get_lightd_info()
         .await
         .map(|info| ProbeSuccess::of(&info))
         .map_err(|e| super::socks5_transmit_failure(&e, host));
@@ -123,7 +124,6 @@ fn record_probe(
             .as_ref()
             .err()
             .map(|failure| crate::mixnet::charge_phase(&failure.stage)),
-        exit: None,
         outcome: match &leg.outcome {
             Ok(_) => Ok(()),
             // The history store is a pre-existing rendered-text seam

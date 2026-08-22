@@ -13,8 +13,6 @@ use zcash_primitives::transaction::{TxId, fees::zip317};
 use zcash_protocol::consensus::BranchId;
 use zcash_transparent::keys::NonHardenedChildIndex;
 
-#[cfg(feature = "nym")]
-use crate::mixnet::acquire;
 use pepper_sync::keys::transparent::{TransparentAddressId, TransparentScope};
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
@@ -41,7 +39,6 @@ fn record_send_attempt(
     started: std::time::Instant,
     outcome: &Result<String, zingo_net_diag::NetOpFailure>,
     phase: Option<crate::correspondent::health::FailurePhase>,
-    exit: Option<crate::mixnet::ExitNodeId>,
 ) {
     history.record(&IndexerAttempt {
         unix_secs: now_unix_secs(),
@@ -50,7 +47,6 @@ fn record_send_attempt(
         kind: AttemptKind::Send,
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
         phase,
-        exit,
         outcome: match outcome {
             Ok(_) => Ok(()),
             Err(failure) => Err(FailureKind::classify(&failure.to_string())),
@@ -120,10 +116,11 @@ pub struct TransmitReport {
 fn resolve_transmit_route(
     has_indexer: bool,
     route: Result<crate::mixnet::MixnetRoute, crate::mixnet::MixnetNotReady>,
-) -> Result<Option<std::net::SocketAddr>, LightClientError> {
+) -> Result<Option<zingo_netutils::conduit::ConduitDial>, LightClientError> {
     use crate::mixnet::{MixnetNotReady, MixnetRoute};
     match (has_indexer, route) {
-        (_, Ok(MixnetRoute::Mixnet(tunnel))) => Ok(Some(tunnel.into_addr())),
+        // The guard rides out to the caller, which holds it for the send.
+        (_, Ok(MixnetRoute::Mixnet(conduit))) => Ok(Some(conduit.dial())),
         (true, Ok(MixnetRoute::Clearnet)) => Ok(None),
         (false, Ok(MixnetRoute::Clearnet)) => Err(LightClientError::Offline),
         (false, Err(MixnetNotReady::Unattached)) => Err(LightClientError::Offline),
@@ -231,18 +228,11 @@ impl TransmitTarget for ClearnetTarget {
     }
 }
 
-/// A single Correspondent reached through the local SOCKS5 proxy, as a
-/// [`TransmitTarget`]: it submits and delivery-checks over the mixnet tunnel,
-/// running the same [`resilient_transmit`] policy as the clearnet path. The
-/// escalation builds one of these per pick.
+/// A [`zingo_netutils::Socks5Indexer`] is the mixnet [`TransmitTarget`]:
+/// one Correspondent that submits and delivery-checks over its own tunnel,
+/// running the same [`resilient_transmit`] policy as the clearnet path.
 #[cfg(feature = "nym")]
-struct SocksTarget {
-    socks5_addr: std::net::SocketAddr,
-    indexer: http::Uri,
-}
-
-#[cfg(feature = "nym")]
-impl TransmitTarget for SocksTarget {
+impl TransmitTarget for zingo_netutils::Socks5Indexer {
     type Failure = zingo_netutils::Socks5TransmitError;
 
     async fn submit(
@@ -250,84 +240,41 @@ impl TransmitTarget for SocksTarget {
         raw_tx: &[u8],
         height: u64,
     ) -> Result<String, zingo_netutils::Socks5TransmitError> {
-        zingo_netutils::send_transaction_via_socks5(
-            self.socks5_addr,
-            &self.indexer,
-            raw_tx,
-            height,
-            DEFAULT_REQUEST_TIMEOUT,
-        )
-        .await
+        self.send_transaction(raw_tx, height).await
     }
 
     fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send {
         let hash = txid.as_ref().to_vec();
-        async move {
-            zingo_netutils::transaction_known_via_socks5(
-                self.socks5_addr,
-                &self.indexer,
-                &hash,
-                DEFAULT_REQUEST_TIMEOUT,
-            )
-            .await
-        }
+        async move { self.transaction_known(&hash).await }
     }
 }
 
-/// The session's Correspondent Pools, from which a Transmission's pulls
-/// draw their own Exclusive exits.
-#[cfg(feature = "nym")]
-pub(crate) struct PullTransports {
-    pools: std::sync::Arc<crate::correspondent::pool::Pools>,
-}
-
-/// The placeholder a build without the mixnet carries in its place.
-#[cfg(not(feature = "nym"))]
-pub(crate) struct PullTransports;
-
-#[cfg(feature = "nym")]
-impl PullTransports {
-    /// One pull's own Exclusive-exit transport: the Indexer Pool's next
-    /// member, or a fresh acquisition when the pool is empty.
-    async fn acquire(
-        &self,
-    ) -> Result<
-        crate::correspondent::pool::Member<
-            crate::mixnet::MixnetProxy,
-            crate::correspondent::pool::Exclusive,
-        >,
-        acquire::TransportError,
-    > {
-        self.pools.take_or_acquire(|pools| &pools.indexer).await
-    }
-
-    /// Tops the pools back up after a pull consumed a member.
-    fn refill(&self) {
-        self.pools.ensure_filled();
-    }
-}
-
-/// The mixnet route one Transmission's pulls take: the session tunnel a
-/// pull falls back to, and the pools it draws its own Exclusive exit from.
+/// The mixnet route one Transmission's pulls take: the session's standing
+/// client, which every pull multiplexes over.
 #[derive(Clone, Copy)]
 #[cfg_attr(not(feature = "nym"), allow(dead_code))]
-pub(crate) struct PullRoute<'a> {
+pub(crate) struct PullRoute {
     shared_socks5: std::net::SocketAddr,
-    transports: Option<&'a PullTransports>,
 }
 
 /// Submit one transaction under the route the Mixnet Mode policy resolved:
 /// clearnet through the configured indexer when `route` is `None`, or the
 /// mixnet escalation over the Correspondents when it is `Some`. Returns the
 /// server-reported txid or the last failure message.
+/// The ambient state a transmission narrates through, records against, and paces itself by.
+struct TransmitContext<'a> {
+    progress: &'a TransmitProgressHandle,
+    history: &'a IndexerHistoryHandle,
+    retry_interval: std::time::Duration,
+}
+
 async fn transmit_one_transaction(
-    route: Option<PullRoute<'_>>,
+    route: Option<PullRoute>,
     indexer: Option<&zingo_netutils::GrpcIndexer>,
     tx_bytes: &[u8],
     height: u64,
     txid: &TxId,
-    progress: &TransmitProgressHandle,
-    history: &IndexerHistoryHandle,
+    context: &TransmitContext<'_>,
 ) -> Result<(String, TransmitRoute), TransmitError> {
     match route {
         None => {
@@ -343,8 +290,8 @@ async fn transmit_one_transaction(
                 tx_bytes,
                 height,
                 txid,
-                |interval| tokio::time::sleep(interval),
-                |event| progress.set(format!("indexer {host}: {event}")),
+                move |_| tokio::time::sleep(context.retry_interval),
+                |event| context.progress.set(format!("indexer {host}: {event}")),
             )
             .await
             .map_err(|TransmitFailed(status)| {
@@ -355,7 +302,7 @@ async fn transmit_one_transaction(
                 )
             });
             record_send_attempt(
-                history,
+                context.history,
                 &host,
                 AttemptRoute::Clearnet,
                 started,
@@ -365,7 +312,6 @@ async fn transmit_one_transaction(
                 outcome
                     .is_err()
                     .then_some(crate::correspondent::health::FailurePhase::Correspondent),
-                None,
             );
             outcome
                 .map(|server_txid| {
@@ -386,8 +332,7 @@ async fn transmit_one_transaction(
                 tx_bytes,
                 height,
                 txid,
-                progress,
-                history,
+                context,
             )
             .await
         }
@@ -409,13 +354,12 @@ async fn transmit_one_transaction(
 /// rather than falling back.
 #[cfg(feature = "nym")]
 async fn mixnet_escalating_transmit(
-    route: PullRoute<'_>,
+    route: PullRoute,
     sync_indexer: Option<&http::Uri>,
     tx_bytes: &[u8],
     height: u64,
     txid: &TxId,
-    progress: &TransmitProgressHandle,
-    history: &IndexerHistoryHandle,
+    context: &TransmitContext<'_>,
 ) -> Result<(String, TransmitRoute), TransmitError> {
     use crate::correspondent::eligible_correspondents;
     use crate::mixnet::correspondent_rotation::{
@@ -424,48 +368,19 @@ async fn mixnet_escalating_transmit(
 
     let indexers = eligible_correspondents(
         sync_indexer,
-        &history.health().lock().expect("health mutex"),
+        &context.history.health().lock().expect("health mutex"),
     )?;
     let run_pull = |indexer: http::Uri| {
-        let shared_addr = route.shared_socks5;
-        let pulls = route.transports;
+        let socks5_addr = route.shared_socks5;
         let tx_bytes = tx_bytes.to_vec();
         let txid = *txid;
         let host = crate::correspondent::Host::of_uri(&indexer);
         async move {
-            // Each pull binds its own Exclusive exit when this session pools
-            // transports; an attached session shares the slot's tunnel.
-            let member = match pulls {
-                Some(context) => Some(context.acquire().await.map_err(|cause| {
-                    zingo_net_diag::NetOpFailure::message(
-                        zingo_net_diag::NetOpStage::RouteResolution,
-                        host.clone(),
-                        cause.to_string(),
-                    )
-                })?),
-                None => None,
-            };
-            // A pooled member carries its own Exclusive exit, and the one
-            // consuming dial is the only way to read its tunnel; only an
-            // attached session (no member) rides the shared slot tunnel. A
-            // member whose transport reports no address died between take
-            // and use, so the pull refuses rather than silently degrading
-            // to the shared tunnel and mislabeling the diary.
-            let (socks5_addr, spent) = match member.map(crate::correspondent::pool::Member::dial) {
-                Some((Some(addr), spent)) => (addr, Some(spent)),
-                Some((None, _spent)) => {
-                    return Err(zingo_net_diag::NetOpFailure::message(
-                        zingo_net_diag::NetOpStage::LocalProxyConnect,
-                        host.clone(),
-                        "the pooled transport died before its pull could use it",
-                    ));
-                }
-                None => (shared_addr, None),
-            };
-            let target = SocksTarget {
-                socks5_addr,
-                indexer,
-            };
+            // Every pull multiplexes over the session's standing client,
+            // whose exit was proven at its birth; the standing
+            // client is one egress for all wallet-correlated streams.
+            let target =
+                zingo_netutils::Socks5Indexer::new(socks5_addr, indexer, DEFAULT_REQUEST_TIMEOUT);
             let started = std::time::Instant::now();
             // The pull's failure becomes the taxonomy record — stage by typed
             // match, cause chain captured layer by layer, target the
@@ -476,24 +391,17 @@ async fn mixnet_escalating_transmit(
                 &tx_bytes,
                 height,
                 &txid,
-                |interval| tokio::time::sleep(interval),
-                |event| progress.set(format!("correspondent {host}: {event}")),
+                move |_| tokio::time::sleep(context.retry_interval),
+                |event| {
+                    context
+                        .progress
+                        .set(format!("correspondent {host}: {event}"))
+                },
             )
             .await
             .map_err(|TransmitFailed(error)| crate::mixnet::socks5_transmit_failure(&error, &host));
-            // The consumed transport dies with its pull, whatever the
-            // outcome, so its exit carries exactly this one Transmission;
-            // dropping the spent holder recycles its lease even when the
-            // pull is cancelled mid-await.
-            let bound_exit = spent.as_ref().map(|spent| spent.node().clone());
-            if let Some(spent) = spent {
-                spent.retire().await;
-                if let Some(context) = pulls {
-                    context.refill();
-                }
-            }
             record_send_attempt(
-                history,
+                context.history,
                 &host,
                 AttemptRoute::Mixnet,
                 started,
@@ -502,14 +410,13 @@ async fn mixnet_escalating_transmit(
                     .as_ref()
                     .err()
                     .map(|failure| crate::mixnet::charge_phase(&failure.stage)),
-                bound_exit,
             );
             outcome.map(|server_txid| {
                 (
                     server_txid,
                     TransmitRoute::Mixnet {
                         correspondent: host.to_string(),
-                        via_socks5: target.socks5_addr.to_string(),
+                        via_socks5: socks5_addr.to_string(),
                     },
                 )
             })
@@ -521,7 +428,7 @@ async fn mixnet_escalating_transmit(
         &mut rand::rngs::OsRng,
         MAX_TRANSMISSION_CORRESPONDENTS,
         run_pull,
-        |line| progress.set(format!("mixnet escalation: {line}")),
+        |line| context.progress.set(format!("mixnet escalation: {line}")),
     )
     .await
     .map_err(TransmitError::Escalation)
@@ -540,8 +447,7 @@ async fn mock_escalating_transmit(
     tx_bytes: &[u8],
     height: u64,
     txid: &TxId,
-    progress: &TransmitProgressHandle,
-    history: &IndexerHistoryHandle,
+    context: &TransmitContext<'_>,
 ) -> Result<(String, String), TransmitError> {
     use crate::correspondent::eligible_correspondents;
     use crate::mixnet::correspondent_rotation::{
@@ -550,7 +456,7 @@ async fn mock_escalating_transmit(
 
     let correspondents = eligible_correspondents(
         Some(indexer.uri()),
-        &history.health().lock().expect("health mutex"),
+        &context.history.health().lock().expect("health mutex"),
     )?;
     let run_arm = |correspondent: http::Uri| {
         let target = ClearnetTarget(indexer.clone());
@@ -564,8 +470,12 @@ async fn mock_escalating_transmit(
                 &tx_bytes,
                 height,
                 &txid,
-                |interval| tokio::time::sleep(interval),
-                |event| progress.set(format!("correspondent {host}: {event}")),
+                move |_| tokio::time::sleep(context.retry_interval),
+                |event| {
+                    context
+                        .progress
+                        .set(format!("correspondent {host}: {event}"))
+                },
             )
             .await
             .map_err(|TransmitFailed(status)| {
@@ -576,12 +486,11 @@ async fn mock_escalating_transmit(
                 )
             });
             record_send_attempt(
-                history,
+                context.history,
                 &host,
                 AttemptRoute::Mixnet,
                 started,
                 &outcome,
-                None,
                 None,
             );
             outcome.map(|server_txid| (server_txid, host.to_string()))
@@ -593,7 +502,7 @@ async fn mock_escalating_transmit(
         &mut rand::rngs::OsRng,
         MAX_TRANSMISSION_CORRESPONDENTS,
         run_arm,
-        |line| progress.set(format!("mixnet escalation: {line}")),
+        |line| context.progress.set(format!("mixnet escalation: {line}")),
     )
     .await
     .map_err(TransmitError::Escalation)
@@ -893,34 +802,24 @@ impl LightClient {
         let indexer = self.indexer.clone();
 
         // Resolve the Mixnet Mode route once for the whole send (ADR 0011).
-        // `Clearnet` submits through the configured indexer; `Mixnet(tunnel)`
-        // routes the escalation through the tunnel's SOCKS5 proxy — with or without a
+        // `Clearnet` submits through the configured indexer; `Mixnet(conduit)`
+        // routes the escalation through the conduit's SOCKS5 proxy — with or without a
         // sync indexer (ruling 2026-07-29); `Bootstrapping` fails closed
         // here, before any submission, rather than leaking to clearnet.
         // Without the `nym` feature there is no mixnet, so the route is
         // clearnet and demands the indexer.
+        // The guard is bound for the whole send, so the conduit counts this
+        // transmission as outstanding until the escalation finishes.
+        #[cfg(feature = "nym")]
+        let transmit_dial = resolve_transmit_route(indexer.is_some(), self.mixnet_route())?;
         #[cfg(feature = "nym")]
         let socks5_proxy: Option<std::net::SocketAddr> =
-            resolve_transmit_route(indexer.is_some(), self.mixnet_route())?;
+            transmit_dial.as_ref().map(|dial| dial.socks5());
         #[cfg(not(feature = "nym"))]
         let socks5_proxy: Option<std::net::SocketAddr> = None;
-        // A spawned session gives every pull its own Exclusive exit; an
-        // attached session has no pools and shares the slot's tunnel.
-        #[cfg(feature = "nym")]
-        let pull_transports: Option<PullTransports> = self
-            .mixnet_slot
-            .proxy()
-            .is_some_and(crate::mixnet::MixnetProxy::is_spawned)
-            .then(|| PullTransports {
-                pools: std::sync::Arc::clone(&self.correspondent_pools),
-            })
-            .filter(|context| context.pools.acquirer().is_some());
-        #[cfg(not(feature = "nym"))]
-        let pull_transports: Option<PullTransports> = None;
-        let pull_route = socks5_proxy.map(|shared_socks5| PullRoute {
-            shared_socks5,
-            transports: pull_transports.as_ref(),
-        });
+        // Every pull rides the session's standing client on both platforms:
+        // one proven egress for all wallet-correlated streams.
+        let pull_route = socks5_proxy.map(|shared_socks5| PullRoute { shared_socks5 });
         if socks5_proxy.is_none() && indexer.is_none() {
             return Err(LightClientError::Offline);
         }
@@ -931,7 +830,7 @@ impl LightClient {
         // this distinction does not exist there.
         #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
         let mock_arms = matches!(
-            self.mixnet_slot,
+            *self.mixnet_slot.lock().expect("mixnet slot mutex"),
             crate::mixnet::MixnetSlot::AttachedForTests { .. }
         );
 
@@ -980,6 +879,11 @@ impl LightClient {
             // directly and the mixnet path runs it per escalation arm.
             // Wallet-state effects stay here, around the pure transmission.
             let dispatched = std::time::Instant::now();
+            let transmit_context = TransmitContext {
+                progress: &progress,
+                history: &history,
+                retry_interval: self.transmit_retry_interval,
+            };
             #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
             let transmit_outcome = if mock_arms {
                 mock_escalating_transmit(
@@ -989,8 +893,7 @@ impl LightClient {
                     &transaction_bytes,
                     height.into(),
                     txid,
-                    &progress,
-                    &history,
+                    &transmit_context,
                 )
                 .await
                 .map(|(server_txid, correspondent)| {
@@ -1011,8 +914,7 @@ impl LightClient {
                     &transaction_bytes,
                     height.into(),
                     txid,
-                    &progress,
-                    &history,
+                    &transmit_context,
                 )
                 .await
             };
@@ -1023,13 +925,28 @@ impl LightClient {
                 &transaction_bytes,
                 height.into(),
                 txid,
-                &progress,
-                &history,
+                &transmit_context,
             )
             .await;
             let (txid_from_server, route) = match transmit_outcome {
-                Ok(server_txid_and_route) => server_txid_and_route,
+                Ok(server_txid_and_route) => {
+                    // A delivered mixnet transmission is a completed round
+                    // trip through the Standing Client, promoting stale
+                    // proof to earned.
+                    #[cfg(feature = "nym")]
+                    if matches!(server_txid_and_route.1, TransmitRoute::Mixnet { .. }) {
+                        self.note_standing_round_trip();
+                    }
+                    server_txid_and_route
+                }
                 Err(failure) => {
+                    // A failed mixnet transmission raises the suspicion that
+                    // the standing exit is dead; the arbiter probe
+                    // adjudicates rather than convicting on one failure.
+                    #[cfg(feature = "nym")]
+                    if pull_route.is_some() {
+                        self.note_standing_exit_suspicion();
+                    }
                     pepper_sync::set_transactions_failed(
                         &mut wallet.wallet_transactions,
                         vec![*txid],
@@ -1098,14 +1015,12 @@ mod transmit_error_seam {
     /// refusal path reads it.
     const ARBITRARY_HEIGHT: u64 = 0;
 
-    /// HYPOTHESIS: a send attempt's failure reaches the diary as the typed
+    /// HYPOTHESIS: a send attempt's failure reaches the history as the typed
     /// taxonomy record, classified whole rather than from hand-rendered
     /// prose. Falsified if the recorded category drifts.
     #[test]
     fn send_attempt_failure_is_classified_from_the_record() {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let history = IndexerHistoryHandle::beside_wallet(&dir.path().join("zingo-wallet.dat"));
-        history.set_recording(true);
+        let history = IndexerHistoryHandle::default();
         let failure = zingo_net_diag::NetOpFailure::message(
             zingo_net_diag::NetOpStage::RemoteConnect,
             "indexer.example",
@@ -1117,7 +1032,6 @@ mod transmit_error_seam {
             AttemptRoute::Clearnet,
             std::time::Instant::now(),
             &Err(failure),
-            None,
             None,
         );
         let recorded = history.load();
@@ -1134,8 +1048,7 @@ mod transmit_error_seam {
     /// is any other variant.
     #[tokio::test]
     async fn missing_clearnet_indexer_refuses_typed() {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let history = IndexerHistoryHandle::beside_wallet(&dir.path().join("zingo-wallet.dat"));
+        let history = IndexerHistoryHandle::default();
         let progress = TransmitProgressHandle::default();
         let refusal = transmit_one_transaction(
             None,
@@ -1143,8 +1056,11 @@ mod transmit_error_seam {
             &[],
             ARBITRARY_HEIGHT,
             &TxId::from_bytes([0u8; 32]),
-            &progress,
-            &history,
+            &TransmitContext {
+                progress: &progress,
+                history: &history,
+                retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
+            },
         )
         .await
         .expect_err("no indexer must refuse");

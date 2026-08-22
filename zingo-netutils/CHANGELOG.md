@@ -7,7 +7,152 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `conduit::MixnetConduit::in_flight` counts guards rather than references
+  to the shared core, so cloning a conduit no longer reads as using it. A
+  session holds one conduit and hands clones to every surface, and under
+  the previous derivation each of those clones inflated the count, leaving
+  a superseded conduit permanently short of `Retired`.
+
 ### Changed
+- The `socks5-fetch` feature enables neither reqwest's `cookies` nor its
+  `json`. A price leg is a single stateless GET against a public quote
+  endpoint, so there is no session for a cookie jar to carry, and the fetch
+  reads the body as text and hands it to the source's own parser, so it never
+  touches reqwest's json surface. Both features came across with the fetch
+  when it moved out of zingo-price, where they had been inherited rather than
+  chosen. Dropping them takes `cookie`, `cookie_store`, `psl-types`,
+  `publicsuffix`, and `time-macros` out of the wallet workspace's graph
+  entirely, and leaves this crate's own standalone lockfile gaining `reqwest`
+  alone where it had gained seven packages.
+- BREAKING: `provider::RotationVerdict` gains a `Never` variant, which a
+  platform answers when rotation is ruled out for the session's whole life
+  rather than merely postponed. `Defer` used to carry both meanings, so a
+  desktop that will never rotate had to say so by repeating a ten-minute
+  deferral forever; the wallet now retires its rotation watchdog instead of
+  parking it on a cadence whose answer cannot change.
+
+### Added
+- The `socks5-fetch` feature and the `socks5_fetch` module: one HTTP request
+  carried through a conduit, classified into a typed `zingo_net_diag`
+  failure. `ConduitDial::fetch_text` is the entry, and it is the first
+  operation a conduit performs rather than describes, so a caller reaches the
+  wire by holding the guard instead of by reading an address out of it.
+- The classification table's fabricated-input tests, which `docs/agents/net-diag-design.md`
+  has mandated since the table was written and which nothing had ever
+  supplied. One case reaches each stage the table can produce, and two more
+  pin where the implementation diverges from the design's rows: the TLS arm
+  fires on chain text without the `is_connect()` conjunct the design
+  requires, and it outranks `is_status()`, so a status error whose chain
+  names a certificate never reaches `RemoteHttp`.
+- `provider::HostedProvider::rotation_verdict`: the host's answer on
+  spending a rotation's bootstrap now, reaching the wallet through the
+  provider so the host itself stays below the seam.
+- `time::CONDUIT_DRAIN_BUDGET` and `time::CONDUIT_DRAIN_POLL`: how long a
+  superseded conduit may hold its transport open for work already dialed
+  through it, and how often that work is rechecked. The budget is
+  `MIGRATION_SUBMIT_TIMEOUT`, the longest bounded operation that work can
+  be, so a guard outliving it is a leak rather than slow work.
+- `conduit::ConduitDial` and `conduit::ConduitState`: a conduit counts its
+  outstanding uses, so a superseded transport retires the moment its work
+  drains rather than after a guessed interval (ADR 0048). `ConduitState`
+  orders `Serving`, `Superseded`, `Retired`, which is the order a conduit's
+  life runs in, and it is derived from the count so retirement cannot be
+  claimed while work is outstanding.
+- `provider::RotationVerdict` and `ProxyHosting::rotation_verdict`: the
+  resource-constrained rotation policy a platform states, since only it sees
+  the battery, the foreground state, and the radio (ADR 0048).
+  `provider::rotation_interval` draws the randomised cadence, and
+  `time::CLIENT_ROTATION_MIN` and `time::CLIENT_ROTATION_MAX` bound it.
+- `provider::ProxyHosting`, `provider::HostedProvider`,
+  `provider::HostedTransport`, and `provider::HostRefusal`: the mixnet
+  provider a platform host supplies, moved down from zingolib (ADR 0046).
+  `HostedProvider` holds the supplied host, so the dynamic dispatch a
+  host requires stays below the seam and the wallet names a concrete
+  type. The provider names no async runtime: its methods block, and a
+  caller on a runtime hands them to a blocking thread.
+- `conduit::MixnetConduit`: what a wallet holds when it has somewhere to
+  send mixnet traffic, asked for by role (ADR 0046). It replaces
+  zingolib's `SlotTunnel`, which it also retires the term "tunnel" with.
+  Its address accessor stays public until the dialers that take a bare
+  `SocketAddr` accept a conduit instead.
+- `exit::ExitNodeId` and the Exit Pool, moved from zingolib so the wallet
+  crate stops owning Nym's vocabulary (ADR 0046).
+- `time::NYM_EPOCH`: one Nym network epoch, the hourly topology rotation
+  that bounds how long an observation about an Exit Node stays meaningful.
+- `time::OBSERVED_ANNOUNCEMENT_MEAN`, `time::OBSERVED_ANNOUNCEMENT_DEVIATION`,
+  and `time::ANNOUNCEMENT_DEVIATIONS`: the measured exit-announcement
+  latency the readiness grace is now derived from.
+
+### Changed
+- BREAKING: `conduit::MixnetConduit` is no longer `Copy`, and its `socks5`
+  accessor is gone. Dialing takes a `ConduitDial` guard from `dial()`, whose
+  `socks5` is the only way to reach the address, so a use cannot be made
+  without being counted (ADR 0047, ADR 0048).
+- `time::EXIT_ANNOUNCEMENT_GRACE` falls from 25 seconds to 7. It was one
+  connect attempt plus a hedge interval, a bound chosen without measurement.
+  The `birth-trial` workbench tool measured thirty pinned births against
+  mainnet on 2026-08-18 and found announcement latency averaging 4637
+  milliseconds with a standard deviation of 549, and a slowest sample of
+  5604. Seven seconds is the four-deviation figure rounded up to a whole
+  second. `time::SPEED_ACQUISITION_DEADLINE` derives from the grace and so
+  falls with it, from 285 seconds to 105.
+
+### Removed
+- BREAKING: the responsiveness partition is retired. The `Responsiveness`
+  trait, the `PrioritiseSpeed` and `PrioritisePrivacy` marker types,
+  `ResponsivenessClass`, its wire token, and the proxy binary's
+  `--responsiveness` argument are gone; `NymProxy::start` and `start_over`
+  lose their type parameter. Every acquisition now races under the one
+  hedged launch policy (`arm_race::acquisition_launch_policy`), an
+  arm wins by binding, and the child-side Sentinel gate is deleted: proof
+  of the bound exit belongs to the layer above the SOCKS5 seam, which
+  probes once per birth instead of once per losing arm. The speed class's
+  in-race proving starved acquisitions whenever no arm could complete a
+  round trip quickly, stalling the session tunnel at `Bootstrapping`
+  past 90 seconds in three consecutive measured runs.
+- BREAKING: the retirement's residue is gone with it. The `responsiveness`
+  module is deleted, with `RESERVATION_CLUTCH_SIZE` and
+  `acquisition_launch_policy` re-homed in `arm_race` beside the policy they
+  configure; `LaunchPolicy::Saturating`, which nothing outside its own
+  tests constructed, is removed; and `NymProxyError::CarriesNothing`, whose
+  only mint left with the child-side Sentinel gate, is removed.
+
+### Changed
+- `time::PROGRESS_HEARTBEAT_INTERVAL` settles on a ten-second cadence. The
+  two-second value was a temporary diagnostic aid for the silent-phase
+  reports, and its narration crowded the interactive session it served.
+- BREAKING: an acquisition's clutch grows from three Exit Node reservations
+  to four, and a racing arm now wins by carrying a round trip rather than by
+  binding a socket. Building a mixnet client never contacts the exit, so a
+  dead exit won the race as readily as a live one. Under the speed priority
+  each arm carries a Sentinel round trip before it can win, and an arm
+  whose exit stays silent loses the race.
+
+### Added
+- `sentinel` module (with the `socks5-transmit` feature): `probe_sentinel`
+  carries an ordinary DNS lookup of a constant name to a reliable public
+  resolver through a SOCKS5 tunnel, and reports `ExitEvidence` — whether the
+  bound Exit Node carried a round trip at all. A survey uses it to tell an
+  exit that carries nothing from indexers that will not answer; binding an
+  exit proves neither, because the mixnet client reports success against a
+  dead exit. `time::SENTINEL_BUDGET` bounds the probe.
+
+
+### Changed
+
+- BREAKING: the free functions `send_transaction_via_socks5`,
+  `get_lightd_info_via_socks5`, and `transaction_known_via_socks5` are
+  replaced by the `Socks5Indexer` struct. `Socks5Indexer::new` groups
+  the proxy address, the indexer URI, and the round-trip bound once,
+  and the methods `send_transaction`, `get_lightd_info`, and
+  `transaction_known` run the operations through one private
+  dial-and-bound pipeline. Every operation still opens its own SOCKS5
+  tunnel.
+- BREAKING: `NymProxy::socks5_addr` returns a `std::net::SocketAddr`
+  instead of a `String`. The proxy announces the loopback address it
+  bound, so a caller dials the typed address it is handed and never
+  parses one out of text.
 
 - BREAKING: `send_transaction_via_socks5`, `get_lightd_info_via_socks5`,
   and `transaction_known_via_socks5` take the SOCKS5 proxy address as a
@@ -17,12 +162,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- BREAKING: `live_indexer_discovery::DiscoveredIndexer` carries `tip: BlockId`
+  where it carried `info: LightdInfo`, because discovery now probes the tip.
 - BREAKING: the `zingo-nym-proxy-ffi` crate and the `uniffi-bindgen`
   helper leave this workspace; zingo-mobile now hosts the mobile UniFFI
   proxy shim in its own `nym-host` workspace (zingo-mobile PR #1251).
 
 ### Added
 
+- `Socks5Indexer::get_latest_block`: the `GetLatestBlock` tip fetch through
+  the local SOCKS5 proxy, the lightest liveness probe an indexer answers,
+  used by the attach readiness round trip and by live-indexer discovery.
 - The `responsiveness` module partitions network operations at compile
   time: the sealed `Responsiveness` trait with the `Critical` and
   `NonCritical` marker types, the `ResponsivenessClass` enum with

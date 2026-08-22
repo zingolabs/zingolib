@@ -54,6 +54,7 @@ pub mod send;
 pub mod sync;
 pub(crate) mod transmit;
 
+pub use save::SaveShutdown;
 pub use transmit::TransmitProgressHandle;
 
 #[cfg(test)]
@@ -167,25 +168,30 @@ pub struct LightClient {
     /// `transmit_transactions` (submissions, retries, probes, escalation rounds)
     /// and cleared when the transmission ends.
     transmit_progress: transmit::TransmitProgressHandle,
-    /// The cross-session per-indexer attempt history (the indexer diary).
-    /// Disk-backed only under the `nym-diary` feature, and recording only
-    /// after the session opts in via `set_indexer_diary`. Otherwise the
-    /// handle is inert.
+    /// This session's per-indexer attempt history, held in memory for the
+    /// life of the process and never written beside the wallet.
     indexer_history: indexer_history::IndexerHistoryHandle,
+    /// The interval between transmit retries and queued-verdict probes, held
+    /// here so a test can exhaust a probe budget without waiting it out.
+    transmit_retry_interval: std::time::Duration,
     /// The mixnet transport slot (ADR 0011, amendment 2026-07-28): the
     /// explicit state Mixnet Mode is read from — unattached, switched off,
     /// or an attached transport. Explicit rather than `Option` so a
     /// deliberate disable stays distinguishable from a transport's absence.
     #[cfg(feature = "nym")]
-    mixnet_slot: crate::mixnet::MixnetSlot,
-    /// The Correspondent Pools: ready transports Exit Rotation consumes per
-    /// run, refilled in the background under PrioritisePrivacy.
+    mixnet_slot: std::sync::Arc<std::sync::Mutex<crate::mixnet::MixnetSlot>>,
+    /// The expiry watchdog driving a new ProofAcquisition the moment the
+    /// Standing Client's proof stops being epoch-fresh.
+    #[cfg(feature = "nym")]
+    standing_watchdog: Option<tokio::task::JoinHandle<()>>,
+    /// The rotation watchdog handing the session to a fresh client on the
+    /// randomised cadence, where the platform affords one (ADR 0048).
+    #[cfg(feature = "nym")]
+    rotation_watchdog: Option<tokio::task::JoinHandle<()>>,
+    /// The session's exit authority: Reservations, the NodeHealthIndex, and
+    /// the acquirer Proven Clients are born from.
     #[cfg(feature = "nym")]
     correspondent_pools: std::sync::Arc<crate::correspondent::pool::Pools>,
-    /// The session tunnel's Clutch, held for the spawned slot proxy's life
-    /// and recycled by drop on vacate.
-    #[cfg(feature = "nym")]
-    slot_clutch: std::collections::HashSet<crate::correspondent::pool::exit_pool::Reservation>,
     /// The session-level Mixnet Mode status channel (ADR 0024, decision 2):
     /// the one shared watch every subscriber reads. Transport transitions
     /// publish from the supervisor's tasks, slot transitions from the
@@ -194,6 +200,32 @@ pub struct LightClient {
     /// subscriber already holds.
     #[cfg(feature = "nym")]
     mixnet_status: crate::mixnet::StatusPublisher,
+    /// The detached health sweep of the most recent Server-Selection Sweep,
+    /// held so revoking consent aborts its traffic with everything else.
+    #[cfg(feature = "nym")]
+    health_sweep: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// The in-flight failover birth, held so a vacate aborts it and a
+    /// consent revoked mid-birth is never raced by an untracked task.
+    #[cfg(feature = "nym")]
+    proof_acquisition: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+#[cfg(feature = "nym")]
+impl Drop for LightClient {
+    fn drop(&mut self) {
+        // A dropped session must strand no networking task: each held
+        // handle is aborted, without awaiting, so the drop stays sync.
+        for watchdog in [&mut self.standing_watchdog, &mut self.rotation_watchdog] {
+            if let Some(watchdog) = watchdog.take() {
+                watchdog.abort();
+            }
+        }
+        for slot in [&self.health_sweep, &self.proof_acquisition] {
+            if let Some(task) = slot.lock().expect("a task slot is never poisoned").take() {
+                task.abort();
+            }
+        }
+    }
 }
 
 impl LightClient {
@@ -257,20 +289,24 @@ impl LightClient {
             split_progress: migrate::SplitProgressHandle::default(),
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
-            #[cfg(feature = "nym-diary")]
-            indexer_history: indexer_history::IndexerHistoryHandle::beside_wallet(
-                &config.get_wallet_path(),
-            ),
-            #[cfg(not(feature = "nym-diary"))]
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            transmit_retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
             #[cfg(feature = "nym")]
-            mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
+            mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::mixnet::MixnetSlot::Unattached,
+            )),
             #[cfg(feature = "nym")]
-            slot_clutch: std::collections::HashSet::new(),
+            standing_watchdog: None,
+            #[cfg(feature = "nym")]
+            rotation_watchdog: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
+            #[cfg(feature = "nym")]
+            health_sweep: std::sync::Mutex::new(None),
+            #[cfg(feature = "nym")]
+            proof_acquisition: std::sync::Mutex::new(None),
         })
     }
 
@@ -304,14 +340,23 @@ impl LightClient {
             // Synthetic test wallets have no durable directory; the default
             // handle records nowhere and loads empty.
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            transmit_retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
             #[cfg(feature = "nym")]
-            mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
+            mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::mixnet::MixnetSlot::Unattached,
+            )),
             #[cfg(feature = "nym")]
-            slot_clutch: std::collections::HashSet::new(),
+            standing_watchdog: None,
+            #[cfg(feature = "nym")]
+            rotation_watchdog: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
+            #[cfg(feature = "nym")]
+            health_sweep: std::sync::Mutex::new(None),
+            #[cfg(feature = "nym")]
+            proof_acquisition: std::sync::Mutex::new(None),
         }
     }
 
@@ -360,20 +405,24 @@ impl LightClient {
             split_progress: migrate::SplitProgressHandle::default(),
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
-            #[cfg(feature = "nym-diary")]
-            indexer_history: indexer_history::IndexerHistoryHandle::beside_wallet(
-                &config.get_wallet_path(),
-            ),
-            #[cfg(not(feature = "nym-diary"))]
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
+            transmit_retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
             #[cfg(feature = "nym")]
-            mixnet_slot: crate::mixnet::MixnetSlot::Unattached,
+            mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::mixnet::MixnetSlot::Unattached,
+            )),
             #[cfg(feature = "nym")]
-            slot_clutch: std::collections::HashSet::new(),
+            standing_watchdog: None,
+            #[cfg(feature = "nym")]
+            rotation_watchdog: None,
             #[cfg(feature = "nym")]
             correspondent_pools: crate::correspondent::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
+            #[cfg(feature = "nym")]
+            health_sweep: std::sync::Mutex::new(None),
+            #[cfg(feature = "nym")]
+            proof_acquisition: std::sync::Mutex::new(None),
         })
     }
 
@@ -398,24 +447,17 @@ impl LightClient {
         self.transmit_progress.clone()
     }
 
-    /// A cloneable handle to the cross-session per-indexer attempt history
-    /// (the indexer diary).
-    /// [`indexer_history::IndexerHistoryHandle::load`] reads the accumulated
-    /// record for display or scoring. Transmission arms and diagnostic probes
-    /// append to it only in a `nym-diary` build whose session has opted in
-    /// via `set_indexer_diary`. In every other configuration the handle is
-    /// inert and loads empty.
-    pub fn indexer_history_handle(&self) -> indexer_history::IndexerHistoryHandle {
-        self.indexer_history.clone()
+    /// A cloneable handle to this session's per-indexer attempt history,
+    /// which [`indexer_history::IndexerHistoryHandle::load`] reads for
+    /// display or scoring.
+    /// Sets the interval this client waits between transmit retries and queued-verdict probes.
+    #[cfg(feature = "testutils")]
+    pub fn set_transmit_retry_interval(&mut self, interval: std::time::Duration) {
+        self.transmit_retry_interval = interval;
     }
 
-    /// Opt this session in to (or back out of) recording the indexer diary:
-    /// one sanitized line per transmission arm or probe leg, appended to
-    /// `indexer-history.tsv` beside the wallet. The choice is never
-    /// persisted, and every session starts with recording off.
-    #[cfg(feature = "nym-diary")]
-    pub fn set_indexer_diary(&self, record: bool) {
-        self.indexer_history.set_recording(record);
+    pub fn indexer_history_handle(&self) -> indexer_history::IndexerHistoryHandle {
+        self.indexer_history.clone()
     }
 
     /// A cloneable handle to the migration's live progress. Grab it *before*
@@ -540,11 +582,30 @@ impl LightClient {
         self.abort_sync().await;
         #[cfg(feature = "nym")]
         {
+            self.abort_health_sweep().await;
             self.vacate_mixnet_slot().await;
             self.publish_mixnet_slot_state();
         }
         self.indexer = None;
         self.migration_transmission_uri = None;
+    }
+
+    /// Aborts the detached health sweep, if one is still surveying, so a
+    /// revoked consent stops every emission the session started.
+    #[cfg(feature = "nym")]
+    pub(crate) async fn abort_health_sweep(&self) {
+        let held = self
+            .health_sweep
+            .lock()
+            .expect("the health-sweep slot is never poisoned")
+            .take();
+        if let Some(sweep) = held {
+            sweep.abort();
+            // Await the cancellation, so the caller's offline promise holds
+            // the moment this returns; dropping the sweep's transport kills
+            // its child and recycles its lease.
+            let _cancelled = sweep.await;
+        }
     }
 
     /// Returns a reference to the indexer, or `LightClientError::Offline` if none is configured.
@@ -681,16 +742,14 @@ impl LightClient {
 
     /// Record the deliberate clearnet consent for a test client: with the
     /// mixnet compiled in, the slot moves to
-    /// [`MixnetMode::SwitchedOff`](crate::mixnet::MixnetMode) — the same act
+    /// [`Indicator::SwitchedOff`](crate::mixnet::Indicator) — the same act
     /// the CLI's `network off` performs — so scenario sends transmit over
     /// clearnet instead of refusing `MixnetNotReady`. Without the `nym`
     /// feature the wallet has no mixnet surface and this is a no-op.
     ///
-    /// Deliberately unconditional (not `nym`-gated): feature unification
-    /// can enable `zingolib/nym` from any workspace member — zingo-cli
-    /// carries it as a default feature (ADR 0026) — so a caller keying the
-    /// consent on its *own* feature set desyncs from zingolib's and
-    /// compiles the consent out exactly when the refusal is compiled in.
+    /// Deliberately unconditional, because a caller keying the consent on
+    /// its own feature set desyncs from zingolib's and compiles the consent
+    /// out exactly when the refusal is compiled in.
     #[cfg(any(test, feature = "testutils"))]
     pub async fn consent_to_clearnet_for_tests(&mut self) {
         #[cfg(feature = "nym")]
