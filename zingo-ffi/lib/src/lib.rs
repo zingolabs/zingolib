@@ -2162,7 +2162,7 @@ pub fn zec_price() -> Result<String, ZingolibError> {
     // deliberate switch-off included: a price oracle learns the IP that asked
     // it and when, which is a profile of when this wallet is awake, and no
     // phone should hand that over as the cost of showing a number.
-    let usd = with_initialized_lightclient(|lightclient| {
+    let usd = with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
             lightclient
                 .update_current_price()
