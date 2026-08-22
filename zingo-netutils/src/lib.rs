@@ -98,6 +98,9 @@ pub use nym_proxy::NymProxy;
 #[cfg(feature = "nym")]
 pub mod live_indexer_discovery;
 
+#[cfg(feature = "socks5-fetch")]
+pub mod socks5_fetch;
+
 #[cfg(feature = "socks5-transmit")]
 mod socks5_transmit;
 #[cfg(feature = "socks5-transmit")]
