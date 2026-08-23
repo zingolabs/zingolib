@@ -472,26 +472,29 @@ where
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     'continuous_sync: loop {
-        // FIXME: there needs to be some protection for checking for re-org when new blocks are mined. there could be a bug
-        // where the chain tip is still being scanned, a new mined block is detected and the verify range is not set to the
-        // new block as the chain tip is not within the highest scanned range yet. a potential solution is to wait until all
-        // currently scanning ranges are scanned before including the newly mined block in the scan span but this has efficiency
-        // costs.
-        //
-        // we need to:
-        // a) make sure the newly mined block(s) are verified (could leverage first_verification_complete?)
-        // b) make sure the lower seam block is available for the verify range for continuity checks
-
         scanner.state.reverify();
         let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
         if chain_height == 0.into() {
             return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
         }
-        let last_known_chain_height = checked_wallet_height(
-            &mut *wallet.write().await,
-            chain_height,
-            consensus_parameters,
-        )?;
+
+        // hold wallet guard until initial sync state is set to avoid inconsistencies and potential subtraction overflows
+        // when calculating sync status
+        let mut wallet_guard = wallet.write().await;
+        let last_known_chain_height =
+            checked_wallet_height(&mut *wallet_guard, chain_height, consensus_parameters)?;
+        if !first_verification_complete {
+            // only set intiial sync state on first continuous sync loop
+            state::set_initial_state(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                &mut *wallet_guard,
+                chain_height,
+            )
+            .await?;
+        }
+        drop(wallet_guard);
+
         state::update_scan_ranges(
             consensus_parameters,
             last_known_chain_height,
@@ -501,9 +504,9 @@ where
         .await?;
         let new_blocks_mined = chain_height > last_known_chain_height;
         let mut reorg_occured = false;
-        let mut initial_reorg_detection_start_height_opt =
         // on the first verification we verify the previous wallet state
         // afterwards, we only verify the newly mined blocks if they exist
+        let mut initial_reorg_detection_start_height_opt =
             if first_verification_complete && new_blocks_mined {
                 Some(last_known_chain_height + 1)
             } else if first_verification_complete {
@@ -517,66 +520,67 @@ where
                     .highest_scanned_height()
                     .map(|highest_scanned_height| highest_scanned_height + 1)
             };
+
+        if let Some(initial_reorg_detection_start_height) = initial_reorg_detection_start_height_opt
         {
-            // hold the wallet guard so we can update the initial sync state before the wallet can be accessed in the
-            // case of re-org
-            let mut wallet_guard = wallet.write().await;
-            if let Some(initial_reorg_detection_start_height) =
-                initial_reorg_detection_start_height_opt
-            {
-                if initial_reorg_detection_start_height <= chain_height {
-                    state::set_verify_scan_range(
+            if initial_reorg_detection_start_height <= chain_height {
+                state::set_verify_scan_range(
+                    wallet
+                        .write()
+                        .await
+                        .get_sync_state_mut()
+                        .map_err(SyncError::WalletError)?,
+                    initial_reorg_detection_start_height,
+                    VerifyEnd::VerifyLowest,
+                );
+            } else {
+                // in this case, no blocks have been mined since last sync session but a re-org may have occured
+                let chain_height_server_block =
+                    client::get_compact_block(fetch_request_sender.clone(), chain_height).await?;
+                let chain_height_wallet_block = wallet
+                    .read()
+                    .await
+                    .get_wallet_block(chain_height)
+                    .map_err(SyncError::WalletError)?;
+                if chain_height_wallet_block.block_hash().0.to_vec()
+                    != chain_height_server_block.hash
+                {
+                    tracing::info!("Re-org detected.");
+                    reorg_occured = true;
+                    // hold wallet guard until initial sync state is set to avoid inconsistencies and potential subtraction overflows
+                    // when calculating sync status
+                    let mut wallet_guard = wallet.write().await;
+                    let scan_range_to_verify = state::set_verify_scan_range(
                         wallet_guard
                             .get_sync_state_mut()
                             .map_err(SyncError::WalletError)?,
-                        initial_reorg_detection_start_height,
-                        VerifyEnd::VerifyLowest,
+                        chain_height,
+                        VerifyEnd::VerifyHighest,
                     );
+                    initial_reorg_detection_start_height_opt =
+                        Some(scan_range_to_verify.block_range().start);
+                    truncate_wallet_data(
+                        &mut *wallet_guard,
+                        initial_reorg_detection_start_height_opt
+                            .expect("value must exist in this scope")
+                            - 1,
+                    )?;
+                    state::set_initial_state(
+                        consensus_parameters,
+                        fetch_request_sender.clone(),
+                        &mut *wallet_guard,
+                        chain_height,
+                    )
+                    .await?;
                 } else {
-                    // in this case, no blocks have been mined since last sync session but a re-org may have occured
-                    let chain_height_server_block =
-                        client::get_compact_block(fetch_request_sender.clone(), chain_height)
-                            .await?;
-                    let chain_height_wallet_block = wallet_guard
-                        .get_wallet_block(chain_height)
-                        .map_err(SyncError::WalletError)?;
-                    if chain_height_wallet_block.block_hash().0.to_vec()
-                        != chain_height_server_block.hash
-                    {
-                        tracing::info!("Re-org detected.");
-                        reorg_occured = true;
-                        let scan_range_to_verify = state::set_verify_scan_range(
-                            wallet_guard
-                                .get_sync_state_mut()
-                                .map_err(SyncError::WalletError)?,
-                            chain_height,
-                            VerifyEnd::VerifyHighest,
-                        );
-                        initial_reorg_detection_start_height_opt =
-                            Some(scan_range_to_verify.block_range().start);
-                        truncate_wallet_data(
-                            &mut *wallet_guard,
-                            initial_reorg_detection_start_height_opt
-                                .expect("value must exist in this scope")
-                                - 1,
-                        )?;
-                    } else {
-                        // there are no new blocks to verify and no re-org has occured
-                        scanner.state.verified();
-                    }
+                    // there are no new blocks to verify and no re-org has occured
+                    scanner.state.verified();
                 }
-            } else {
-                // first verifcation not complete: first time sync, there are no previously synced blocks to verify
-                // first verifcation complete: no newly mined blocks to verify
-                scanner.state.verified();
             }
-            state::set_initial_state(
-                consensus_parameters,
-                fetch_request_sender.clone(),
-                &mut *wallet_guard,
-                chain_height,
-            )
-            .await?;
+        } else {
+            // first verifcation not complete: first time sync, there are no previously synced blocks to verify
+            // first verifcation complete: no newly mined blocks to verify
+            scanner.state.verified();
         }
 
         if new_blocks_mined || reorg_occured {
@@ -1768,6 +1772,7 @@ where
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
     state::reopen_scan_ranges_from(sync_state, rescan_from);
+    // FIXME: add wallet block at rescan_from - 1 to avoid sync status errors
     add_scan_targets(sync_state, &rescan_targets);
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
@@ -1911,7 +1916,7 @@ where
     match truncate::plan_truncation(wallet_state, truncate_height) {
         truncate::TruncationPlan::NoOp => Ok(()),
         truncate::TruncationPlan::ClearAll => {
-            truncate_stores(wallet, consensus::H0, true)?;
+            truncate_stores(wallet, consensus::H0, false)?;
             wallet.clear_shard_trees()
         }
         truncate::TruncationPlan::Truncate { height } => {

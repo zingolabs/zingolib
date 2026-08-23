@@ -786,6 +786,14 @@ where
                 .get_wallet_block(selected_range.block_range().end)
                 .ok();
 
+            // verify range must have a start seam block to check continuity in case of re-org.
+            // in continuous sync there is a case where the range directly below the newly mined block (chain tip) is
+            // currently being scanned.
+            // sync must be postponed until this range has completed scanning to then reverify in case of re-org.
+            if selected_range.priority() == ScanPriority::Verify && start_seam_block.is_none() {
+                return Ok(None);
+            }
+
             let scan_targets =
                 find_scan_targets(wallet.get_sync_state()?, selected_range.block_range());
             let transparent_addresses: HashMap<String, TransparentAddressId> = wallet
