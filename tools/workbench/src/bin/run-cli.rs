@@ -1,14 +1,15 @@
 //! Build and launch `zingo-cli`, by default mixnet-capable.
 //!
-//! Usage: `run-cli [--clearnet] [--release] [--features <list>]
+//! Usage: `run-cli [--clearnet] [--debug] [--features <list>]
 //! [--target-dir <dir>] [--build-only] [<zingo-cli args...>]`. Those flags
-//! are consumed wherever they appear (as is the retired `--nym`, a no-op now
-//! that it names the default); every other argument is forwarded to
-//! `zingo-cli` unchanged. `--build-only` stops after the build and the
-//! bundling, which is how a caller pays the compile once before timing
-//! anything, and `--target-dir` gives a build its own directory, which is
-//! how two differently-featured builds stand side by side without either
-//! rebuilding the other.
+//! are consumed wherever they appear (as are the retired `--nym` and
+//! `--release`, no-ops now that they name the defaults); every other
+//! argument is forwarded to `zingo-cli` unchanged. The build is a release
+//! build unless `--debug` asks otherwise. `--build-only` stops after the
+//! build and the bundling, which is how a caller pays the compile once
+//! before timing anything, and `--target-dir` gives a build its own
+//! directory, which is how two differently-featured builds stand side by
+//! side without either rebuilding the other.
 //!
 //! The default run builds the CLI with its default features — which carry
 //! the mixnet transport (ADR 0026) — and bundles the `nym-proxy` binary
@@ -46,7 +47,13 @@ const TARGET_DIR_FLAG: &str = "--target-dir";
 const VALUE_FLAGS: [&str; 2] = [FEATURES_FLAG, TARGET_DIR_FLAG];
 
 /// The flags this tool consumes on their own.
-const BARE_FLAGS: [&str; 4] = ["--nym", "--release", "--clearnet", "--build-only"];
+const BARE_FLAGS: [&str; 5] = [
+    "--nym",
+    "--release",
+    "--clearnet",
+    "--build-only",
+    "--debug",
+];
 
 /// The value following `flag`, which reaches the cargo build and not the CLI.
 fn value_of(args: &[String], flag: &str) -> Result<Option<String>, Vec<String>> {
@@ -88,8 +95,20 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
     if nym_flag {
         eprintln!("{PROG}: note: --nym is now the default and the flag is ignored");
     }
+    let debug = args.iter().any(|arg| arg == "--debug");
+    let release_flag = args.iter().any(|arg| arg == "--release");
+    if debug && release_flag {
+        return Err(vec![
+            "--debug and --release contradict each other; pass --debug for a \
+         debug build, or nothing for the release default"
+                .to_string(),
+        ]);
+    }
+    if release_flag {
+        eprintln!("{PROG}: note: --release is now the default and the flag is ignored");
+    }
     let nym = !clearnet;
-    let release = args.iter().any(|arg| arg == "--release");
+    let release = !debug;
     let build_only = args.iter().any(|arg| arg == "--build-only");
     let features = value_of(args, FEATURES_FLAG)?;
     let target_dir = value_of(args, TARGET_DIR_FLAG)?;

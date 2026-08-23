@@ -123,8 +123,8 @@ makers run-cli --chain testnet
 makers run-cli addresses
 makers run-cli --data-dir ~/my-wallet --online
 
-# Release build
-makers run-cli --release
+# Debug build (the default is a release build)
+makers run-cli --debug
 
 # Opt out of the mixnet default: a plain build, nothing bundled
 makers run-cli --clearnet
@@ -132,7 +132,7 @@ makers run-cli --clearnet
 
 Notes:
 
-- `--clearnet` and `--release` are consumed by the launcher; **every other
+- `--clearnet` and `--debug` are consumed by the launcher; **every other
   argument is forwarded to `zingo-cli` unchanged.**
 - This task never launches the proxy itself. The CLI owns that lifecycle: it
   spawns the proxy only at an online session's go-online moment, and an offline
