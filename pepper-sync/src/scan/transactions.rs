@@ -34,7 +34,7 @@ use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
-    error::ScanError,
+    error::{ScanError, ServerError},
     keys::{self, KeyId, transparent::TransparentAddressId},
     wallet::{
         IronwoodNote, NullifierMap, OrchardNote, OutgoingIronwoodNote, OutgoingNote,
@@ -95,16 +95,27 @@ pub(crate) async fn scan_transactions(
     let mut wallet_transactions = HashMap::with_capacity(scan_targets.len());
 
     for scan_target in scan_targets {
+        // TODO: replace wth optional txid in scan targets
         if scan_target.txid == TxId::from_bytes([0u8; 32]) {
             continue;
         }
 
-        let (transaction, block_height) = client::get_transaction_and_block_height(
+        // in case of re-orgs or consumers manually adding incorrect scan target txids, skip if request fails.
+        let (transaction, block_height) = match client::get_transaction_and_block_height(
             fetch_request_sender.clone(),
             consensus_parameters,
             scan_target.txid,
         )
-        .await?;
+        .await
+        {
+            Ok((tx, height)) => (tx, height),
+            Err(ServerError::RequestFailed(_)) => {
+                continue;
+            }
+            Err(e) => {
+                return Err(e.into());
+            }
+        };
 
         if transaction.txid() != scan_target.txid {
             return Err(ScanError::IncorrectTxid {

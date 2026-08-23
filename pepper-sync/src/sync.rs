@@ -1,7 +1,5 @@
 //! Entrypoint for sync engine
 
-// TODO: check scan targets do not cause errors if they dont exist
-
 use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
 use std::ops::Range;
@@ -463,7 +461,6 @@ where
     );
 
     let mut first_verification_complete = false;
-    // TODO: change to oncelock?
     let mut mempool_shutdown_timer = None;
     let mut nullifier_map_limit_exceeded = false;
     let mut continuous_sync_interval = tokio::time::interval(Duration::from_secs(30));
