@@ -280,7 +280,8 @@ namespace zingo {
 
   [Throws=ZingolibError]
   string attach_mixnet(
-    string socks5_addr
+    string socks5_addr,
+    string exit_node
   );
 
   [Throws=ZingolibError]
@@ -292,10 +293,8 @@ namespace zingo {
   string disable_mixnet();
 
   [Throws=ZingolibError]
-  string mixnet_mode();
+  string mixnet_indicator();
 
   [Throws=ZingolibError]
   string mixnet_bootstrap_detail();
-
-  string mixnet_ip_correlation_disclaimer();
 };

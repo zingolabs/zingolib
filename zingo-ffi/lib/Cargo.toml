@@ -14,7 +14,6 @@ zcash_address = { workspace = true }
 zcash_protocol = { workspace = true }
 zcash_client_backend = { workspace = true }
 zingo_common_components = { workspace = true }
-zingo-netutils = { workspace = true }
 
 http = { workspace = true }
 json = { workspace = true }

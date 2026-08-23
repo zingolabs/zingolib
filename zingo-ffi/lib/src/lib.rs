@@ -43,10 +43,8 @@ use zcash_client_backend::proposal::Proposal;
 use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
-use zingo_netutils::{GrpcIndexer, Indexer};
 use zingolib::config::{
-    ChainType, ClientConfig, DEFAULT_INDEXER_URI, DEFAULT_INDEXER_URI_TESTNET, WalletConfig,
-    construct_indexer_uri, lib_birthday,
+    ChainType, ClientConfig, WalletConfig, construct_indexer_uri, lib_birthday,
 };
 use zingolib::data::PollReport;
 use zingolib::data::proposal::total_fee;
@@ -55,6 +53,7 @@ use zingolib::data::receivers::transaction_request_from_receivers;
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::{LightClientError, SendError};
 use zingolib::lightclient::migrate::SplitStep;
+use zingolib::netutils::{GrpcIndexer, Indexer};
 use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
 use zingolib::wallet::WalletSettings;
 use zingolib::wallet::keys::{
@@ -70,9 +69,7 @@ use zingo_common_components::protocol::ActivationHeights;
 
 const INDEXER_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-// Bounds the pending-URI redial inside run_sync, which holds the LIGHTCLIENT
-// write lock: every other FFI call waits behind it, so the dial gets seconds,
-// not the OS connect timeout.
+// Bounds the pending-URI redial in attach_pending_indexer.
 const PENDING_INDEXER_DIAL_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, thiserror::Error)]
@@ -167,14 +164,16 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::PriceError(_) | LightClientError::PriceFetchRequiresMixnet => {
             ZingolibError::Read(text)
         }
-        LightClientError::MixnetNotReady(_) => ZingolibError::Mixnet(text),
+        LightClientError::MixnetNotReady(_) | LightClientError::ProbeRequiresMixnet => {
+            ZingolibError::Mixnet(text)
+        }
         // A deliberate verdict (#1229): exhausting the eligible Correspondents
         // is a server-topology problem, not a mixnet refusal — switching the
         // synchronization endpoint changes eligibility, so the app's
         // switch-and-retry routing can genuinely help. Mapping it to Mixnet
         // would stamp it with the owned refusal marker and turn it
         // never-retry.
-        LightClientError::NoEligibleCorrespondent
+        LightClientError::NoEligibleCorrespondent(_)
         | LightClientError::IneligibleProbeTarget(_)
         | LightClientError::MigrationTransmissionTargetIsSyncEndpoint { .. } => {
             ZingolibError::Indexer(text)
@@ -569,7 +568,7 @@ fn build_connection_params(
         None
     } else {
         Some(
-            construct_indexer_uri(Some(uri))
+            construct_indexer_uri(uri)
                 .map_err(|e| ZingolibError::init(format!("Invalid lightwalletd uri: {e}")))?,
         )
     };
@@ -623,20 +622,17 @@ fn build_client_config(
     builder.build().map_err(ZingolibError::init)
 }
 
-/// Set an optional dedicated migration-transmission endpoint, applied at the
-/// next client construction. The library owns the curated Correspondent pool
-/// and always excludes the synchronization operator, so migration-over-mixnet
-/// works with no input here.
-///
-/// Accepts `{ transmissionUri: "<uri>" }` to name one dedicated endpoint
-/// distinct from the sync operator, or `null` / `{}` / the legacy
-/// `{ candidates, allowSyncEndpoint }` shape to clear it and use the curated
-/// pool. The legacy pool no longer feeds routing: the library embeds the pool.
+/// Set an optional dedicated migration-transmission endpoint for the next
+/// client construction — `{ transmissionUri: "<uri>" }` names one endpoint
+/// distinct from the sync operator, while `null`, `{}`, or the legacy
+/// `{ candidates, allowSyncEndpoint }` shape clears it so the library's
+/// embedded curated Correspondent pool, which always excludes the
+/// synchronization operator, routes instead.
 pub fn set_broadcast_candidates(candidates_json: String) -> Result<String, ZingolibError> {
     let parsed = json::parse(&candidates_json)
         .map_err(|e| ZingolibError::InvalidInput(format!("invalid candidates json: {e}")))?;
     let transmission_uri = match parsed["transmissionUri"].as_str() {
-        Some(uri) => Some(construct_indexer_uri(Some(uri.to_string())).map_err(|e| {
+        Some(uri) => Some(construct_indexer_uri(uri.to_string()).map_err(|e| {
             ZingolibError::InvalidInput(format!("invalid transmission uri {uri}: {e}"))
         })?),
         None => None,
@@ -957,7 +953,7 @@ mod ffi_error_routing_tests {
     #[test]
     fn a_mixnet_refusal_maps_to_the_owned_mixnet_marker() {
         let mapped = ffi_error(LightClientError::MixnetNotReady(
-            zingolib::nym::MixnetNotReady::Bootstrapping,
+            zingolib::mixnet::MixnetNotReady::Bootstrapping,
         ));
         assert!(
             matches!(&mapped, ZingolibError::Mixnet(_)),
@@ -968,7 +964,9 @@ mod ffi_error_routing_tests {
 
     #[test]
     fn excluded_indexer_exhaustion_is_an_indexer_failure_not_a_refusal() {
-        let mapped = ffi_error(LightClientError::NoEligibleCorrespondent);
+        let mapped = ffi_error(LightClientError::NoEligibleCorrespondent(
+            zingolib::correspondent::NoEligibleCorrespondents::EmptyPool,
+        ));
         assert!(
             matches!(&mapped, ZingolibError::Indexer(_)),
             "exhaustion routes as server-suspect, so it must not wear the mixnet marker: {mapped:?}"
@@ -1686,24 +1684,40 @@ pub fn poll_sync() -> Result<String, ZingolibError> {
     })
 }
 
-/// One bounded redial of the URI left pending by `init_from_b64`'s
-/// Indexerless fallback. Success attaches the Indexer and clears the pending
-/// URI; failure leaves it for the next sync tick. A no-op when no URI is
-/// pending.
-fn attach_pending_indexer(lightclient: &mut LightClient) {
+/// Redials the pending Indexerless-fallback URI off the LIGHTCLIENT lock,
+/// attaching the Indexer under a brief write lock when the probe connects.
+fn attach_pending_indexer() {
     let pending_uri = PENDING_INDEXER_URI
         .read()
         .ok()
         .and_then(|pending| pending.clone());
     let Some(uri) = pending_uri else { return };
-    let attached = RT.block_on(async {
-        tokio::time::timeout(
-            PENDING_INDEXER_DIAL_TIMEOUT,
-            lightclient.set_indexer_uri(uri),
-        )
-        .await
+    let reachable = RT.block_on(async {
+        tokio::time::timeout(PENDING_INDEXER_DIAL_TIMEOUT, GrpcIndexer::new(uri.clone())).await
     });
-    if matches!(attached, Ok(Ok(())))
+    if !matches!(reachable, Ok(Ok(_))) {
+        return;
+    }
+    let attached = with_initialized_lightclient(|lightclient| {
+        let still_pending = PENDING_INDEXER_URI
+            .read()
+            .ok()
+            .and_then(|pending| pending.clone())
+            == Some(uri.clone());
+        if !still_pending {
+            return Ok(false);
+        }
+        Ok(RT
+            .block_on(async {
+                tokio::time::timeout(
+                    PENDING_INDEXER_DIAL_TIMEOUT,
+                    lightclient.set_indexer_uri(uri),
+                )
+                .await
+            })
+            .is_ok_and(|result| result.is_ok()))
+    });
+    if matches!(attached, Ok(true))
         && let Ok(mut pending) = PENDING_INDEXER_URI.write()
     {
         *pending = None;
@@ -1711,8 +1725,8 @@ fn attach_pending_indexer(lightclient: &mut LightClient) {
 }
 
 fn run_sync() -> Result<String, ZingolibError> {
+    attach_pending_indexer();
     with_initialized_lightclient(|lightclient| {
-        attach_pending_indexer(lightclient);
         if lightclient.sync_mode() == SyncMode::Paused {
             // resume_sync can race: sync_mode() was Paused a moment ago but the
             // task may have advanced before we got here. Return the error typed
@@ -1863,17 +1877,22 @@ pub fn change_server(server_uri: String) -> Result<String, ZingolibError> {
         let uri = if server_uri.is_empty() {
             // Offline: no server. `http::Uri::default()` is scheme-less and
             // `set_indexer_uri` rejects it ("bad uri: invalid scheme"), so
-            // hand it the chain's default indexer URI instead —
+            // hand it the chain's first census indexer instead —
             // syntactically valid, and never actually dialed while offline.
-            let default = match lightclient.chain_type() {
-                ChainType::Mainnet => DEFAULT_INDEXER_URI,
-                ChainType::Testnet => DEFAULT_INDEXER_URI_TESTNET,
-                ChainType::Regtest(_) => DEFAULT_INDEXER_URI,
+            let census_chain = match lightclient.chain_type() {
+                ChainType::Testnet => zingolib::indexers::IndexerChain::Test,
+                ChainType::Mainnet | ChainType::Regtest(_) => {
+                    zingolib::indexers::IndexerChain::Main
+                }
             };
-            construct_indexer_uri(Some(default.to_string()))
+            let default = zingolib::indexers::active(census_chain)
+                .next()
+                .map(|indexer| indexer.uri.to_string())
+                .ok_or_else(|| ZingolibError::InvalidInput("empty indexer census".to_string()))?;
+            construct_indexer_uri(default)
                 .map_err(|_| ZingolibError::InvalidInput("invalid server uri".to_string()))?
         } else {
-            construct_indexer_uri(Some(server_uri))
+            construct_indexer_uri(server_uri)
                 .map_err(|_| ZingolibError::InvalidInput("invalid server uri".to_string()))?
         };
         RT.block_on(async move {
@@ -2138,27 +2157,21 @@ pub fn get_total_spends_to_address() -> Result<String, ZingolibError> {
 }
 
 pub fn zec_price() -> Result<String, ZingolibError> {
-    with_initialized_lightclient(|lightclient| {
+    // This wallet fetches price over the mixnet or not at all (ADR 0011).
+    // Every refusal the lightclient raises reaches the caller as one, the
+    // deliberate switch-off included: a price oracle learns the IP that asked
+    // it and when, which is a profile of when this wallet is awake, and no
+    // phone should hand that over as the cost of showing a number.
+    let usd = with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
-            // zingolib fetches price only over the mixnet (ADR 0011). This
-            // wallet treats the price oracle as non-sensitive, so a mixnet
-            // deliberately switched off fetches over clearnet instead. A mixnet
-            // that is on but not ready still refuses, so an enabled private
-            // route never silently drops to clearnet.
-            let usd = match lightclient.update_current_price().await {
-                Ok(fetch) => fetch.usd,
-                Err(LightClientError::PriceFetchRequiresMixnet) => {
-                    zingo_price::race_current_price(None)
-                        .await
-                        .map_err(ZingolibError::read)?
-                        .price
-                        .price_usd
-                }
-                Err(e) => return Err(ffi_error(e)),
-            };
-            Ok(object! { "current_price" => usd }.pretty(2))
+            lightclient
+                .update_current_price()
+                .await
+                .map(|fetch| fetch.usd)
+                .map_err(ffi_error)
         })
-    })
+    })?;
+    Ok(object! { "current_price" => usd }.pretty(2))
 }
 
 pub fn remove_transaction(txid: String) -> Result<String, ZingolibError> {
@@ -3374,35 +3387,42 @@ pub fn cancel_ironwood_migration() -> Result<String, ZingolibError> {
     })
 }
 
-/// The Mixnet Mode tri-state-plus-died as the strings the app layer shows.
-fn mixnet_mode_string(mode: zingolib::nym::MixnetMode) -> &'static str {
-    match mode {
-        zingolib::nym::MixnetMode::SwitchedOff => "off",
-        zingolib::nym::MixnetMode::Bootstrapping => "bootstrapping",
-        zingolib::nym::MixnetMode::Ready => "ready",
+/// The Mixnet Mode indicator as the strings the app layer shows.
+fn mixnet_indicator_string(indicator: zingolib::mixnet::Indicator) -> &'static str {
+    match indicator {
+        zingolib::mixnet::Indicator::SwitchedOff => "off",
+        zingolib::mixnet::Indicator::Bootstrapping => "bootstrapping",
+        // A Standing Client born on an EpochProven observation routes exactly
+        // as Ready, so the app must not hold its surfaces shut waiting for a
+        // round trip the library already treats as unnecessary.
+        zingolib::mixnet::Indicator::Ready
+        | zingolib::mixnet::Indicator::PreviouslyProvenThisEpoch => "ready",
         // A never-attached transport (spawn/attach failed) is not consent to
         // clearnet; report it as `died` so the app fails closed and reconnects
         // rather than opening the mixnet-only surfaces.
-        zingolib::nym::MixnetMode::Died | zingolib::nym::MixnetMode::Unattached => "died",
+        zingolib::mixnet::Indicator::Died | zingolib::mixnet::Indicator::Unattached => "died",
     }
 }
 
 /// Attach Mixnet Mode to an already-running, platform-hosted SOCKS5 endpoint
-/// (the UniFFI proxy shim's address). Readiness is validated by a data round
-/// trip; poll [`mixnet_mode`] for `bootstrapping` -> `ready`, or `died`.
-pub fn attach_mixnet(socks5_addr: String) -> Result<String, ZingolibError> {
+/// (the UniFFI proxy shim's address) that bound `exit_node`. Readiness is
+/// validated by a data round trip; poll [`mixnet_indicator`] for
+/// `bootstrapping` -> `ready`, or `died`.
+pub fn attach_mixnet(socks5_addr: String, exit_node: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
+        let exit = zingolib::mixnet::ExitNodeId::parse(&exit_node)
+            .map_err(|_| ZingolibError::Mixnet("the shim reported no exit node".to_string()))?;
         let mut guard = LIGHTCLIENT
             .write()
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
             RT.block_on(async move {
                 lightclient
-                    .attach_mixnet(&socks5_addr)
+                    .attach_mixnet(&socks5_addr, &[exit])
                     .await
                     .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
                 Ok(
-                    object! { "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()) }
+                    object! { "mixnet_indicator" => mixnet_indicator_string(lightclient.read_mixnet_indicator()) }
                         .pretty(2),
                 )
             })
@@ -3423,13 +3443,11 @@ pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
         if let Some(lightclient) = &mut *guard {
             RT.block_on(async move {
                 lightclient
-                    .enable_mixnet::<zingolib::nym::PrioritisePrivacy>(std::path::Path::new(
-                        &proxy_path,
-                    ))
+                    .enable_mixnet(std::path::Path::new(&proxy_path))
                     .await
                     .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
                 Ok(
-                    object! { "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()) }
+                    object! { "mixnet_indicator" => mixnet_indicator_string(lightclient.read_mixnet_indicator()) }
                         .pretty(2),
                 )
             })
@@ -3449,7 +3467,7 @@ pub fn disable_mixnet() -> Result<String, ZingolibError> {
         if let Some(lightclient) = &mut *guard {
             Ok(RT.block_on(async move {
                 lightclient.disable_mixnet().await;
-                object! { "mixnet_mode" => "off" }.pretty(2)
+                object! { "mixnet_indicator" => "off" }.pretty(2)
             }))
         } else {
             Err(ZingolibError::LightclientNotInitialized)
@@ -3457,20 +3475,20 @@ pub fn disable_mixnet() -> Result<String, ZingolibError> {
     })
 }
 
-/// The current Mixnet Mode: `off`, `bootstrapping`, `ready` (with the local
+/// The current Mixnet Mode indicator: `off`, `bootstrapping`, `ready` (with the local
 /// SOCKS5 address), or `died` (unconsented proxy loss; sends refuse — run
 /// [`attach_mixnet`] or [`enable_mixnet`] to recover).
-pub fn mixnet_mode() -> Result<String, ZingolibError> {
+pub fn mixnet_indicator() -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         let guard = LIGHTCLIENT
             .write()
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &*guard {
             let mut status = object! {
-                "mixnet_mode" => mixnet_mode_string(lightclient.mixnet_mode()),
+                "mixnet_indicator" => mixnet_indicator_string(lightclient.read_mixnet_indicator()),
             };
             if let Some(addr) = lightclient.mixnet_socks5_addr() {
-                status["socks5_addr"] = addr.into();
+                status["socks5_addr"] = addr.to_string().into();
             }
             Ok(status.pretty(2))
         } else {
@@ -3493,13 +3511,4 @@ pub fn mixnet_bootstrap_detail() -> Result<String, ZingolibError> {
             Err(ZingolibError::LightclientNotInitialized)
         }
     })
-}
-
-/// The canonical IP-correlation disclaimer (ZIP-0318): Mixnet Mode covers only
-/// transaction broadcast and price-fetch, and synchronization still exposes
-/// the client IP to the sync indexer. One constant from zingolib so every
-/// frontend renders the same text; infallible because it needs no wallet and
-/// has no failure path.
-pub fn mixnet_ip_correlation_disclaimer() -> String {
-    zingolib::nym::IP_CORRELATION_DISCLAIMER.to_string()
 }
