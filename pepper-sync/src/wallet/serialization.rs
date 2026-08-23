@@ -3,6 +3,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::{Read, Write},
+    mem::size_of,
     ops::Range,
 };
 
@@ -70,20 +71,25 @@ pub(crate) fn read_version<R: Read>(
     Ok(version)
 }
 
-/// The byte width of a serialized field or group element.
-const FIELD_ELEMENT_SIZE: usize = 32;
+/// The byte width of a canonical encoding of a field element on either curve family.
+const FIELD_ELEMENT_SIZE: usize = size_of::<<jubjub::Fr as ff::PrimeField>::Repr>();
+
+const _: () = assert!(
+    FIELD_ELEMENT_SIZE == size_of::<<pasta_curves::pallas::Base as ff::PrimeField>::Repr>()
+);
 
 /// The byte width of a block hash.
-const BLOCK_HASH_SIZE: usize = 32;
+const BLOCK_HASH_SIZE: usize = size_of::<BlockHash>();
 
 /// The byte width of a shielded payment address diversifier.
-const DIVERSIFIER_SIZE: usize = 11;
+const DIVERSIFIER_SIZE: usize = size_of::<sapling_crypto::keys::Diversifier>();
 
 /// The byte width of a raw sapling or orchard payment address, a diversifier followed by a transmission key.
 const RAW_ADDRESS_SIZE: usize = DIVERSIFIER_SIZE + FIELD_ELEMENT_SIZE;
 
-/// The byte width of a serialized memo field.
-const MEMO_SIZE: usize = 512;
+/// The byte width of a serialized memo field, derived as the difference between the full and compact note plaintext widths.
+const MEMO_SIZE: usize =
+    zcash_note_encryption::NOTE_PLAINTEXT_SIZE - zcash_note_encryption::COMPACT_NOTE_SIZE;
 
 /// Reads exactly `N` bytes from `reader` into a fixed-size array.
 fn read_array<const N: usize>(mut reader: impl Read) -> std::io::Result<[u8; N]> {

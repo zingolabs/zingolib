@@ -45,7 +45,9 @@ bip32.workspace = true
 zip32.workspace = true
 
 # Cryptography
+ff.workspace = true
 jubjub.workspace = true
+pasta_curves.workspace = true
 subtle.workspace = true
 
 # Async
