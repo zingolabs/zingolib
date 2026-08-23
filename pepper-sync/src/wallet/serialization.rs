@@ -46,6 +46,30 @@ use super::{
     TransparentCoin, TreeBounds, WalletBlock, WalletNote, WalletTransaction,
 };
 
+/// Returns `InvalidData` when `version` is newer than the latest layout this build can read.
+fn reject_unknown_version(type_name: &str, version: u8, latest: u8) -> std::io::Result<()> {
+    if version > latest {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "unknown {type_name} serialization version {version}, latest supported is {latest}"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Reads one layout version byte, rejecting any version newer than the latest this build can read.
+pub(crate) fn read_version<R: Read>(
+    mut reader: R,
+    type_name: &str,
+    latest: u8,
+) -> std::io::Result<u8> {
+    let version = reader.read_u8()?;
+    reject_unknown_version(type_name, version, latest)?;
+    Ok(version)
+}
+
 fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
     let str_len = reader.read_u64::<LittleEndian>()?;
     let mut str_bytes = Vec::new();
@@ -78,7 +102,7 @@ impl ScanTarget {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        read_version(&mut reader, "ScanTarget", Self::serialized_version())?;
         let block_height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
         let txid = TxId::read(&mut reader)?;
         let narrow_scan_area = reader.read_u8()? != 0;
@@ -107,7 +131,7 @@ impl SyncState {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let version = reader.read_u8()?;
+        let version = read_version(&mut reader, "SyncState", Self::serialized_version())?;
         let scan_ranges = Vector::read(&mut reader, |r| {
             let start = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
             let end = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
@@ -247,7 +271,7 @@ impl TreeBounds {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let version = reader.read_u8()?;
+        let version = read_version(&mut reader, "TreeBounds", Self::serialized_version())?;
         let sapling_initial_tree_size = reader.read_u32::<LittleEndian>()?;
         let sapling_final_tree_size = reader.read_u32::<LittleEndian>()?;
         let orchard_initial_tree_size = reader.read_u32::<LittleEndian>()?;
@@ -291,7 +315,7 @@ impl NullifierMap {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let version = reader.read_u8()?;
+        let version = read_version(&mut reader, "NullifierMap", Self::serialized_version())?;
         let sapling = Vector::read(&mut reader, |r| {
             let mut nullifier_bytes = [0u8; 32];
             r.read_exact(&mut nullifier_bytes)?;
@@ -397,7 +421,7 @@ impl WalletBlock {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        read_version(&mut reader, "WalletBlock", Self::serialized_version())?;
         let block_height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
         let mut block_hash = BlockHash([0u8; 32]);
         reader.read_exact(&mut block_hash.0)?;
@@ -440,7 +464,7 @@ impl WalletTransaction {
         mut reader: R,
         consensus_parameters: &impl consensus::Parameters,
     ) -> std::io::Result<Self> {
-        let version = reader.read_u8()?;
+        let version = read_version(&mut reader, "WalletTransaction", Self::serialized_version())?;
         let txid = TxId::read(&mut reader)?;
         let status = ConfirmationStatus::read(&mut reader)?;
         let transaction = Transaction::read(
@@ -525,7 +549,7 @@ impl TransparentCoin {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let version = reader.read_u8()?;
+        let version = read_version(&mut reader, "TransparentCoin", Self::serialized_version())?;
 
         let txid = TxId::read(&mut reader)?;
         let output_index = if version >= 1 {
@@ -616,7 +640,7 @@ fn write_refetch_nullifier_ranges(
 impl SaplingNote {
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let version = reader.read_u8()?;
+        let version = read_version(&mut reader, "SaplingNote", Self::serialized_version())?;
 
         let txid = TxId::read(&mut reader)?;
         let output_index = if version >= 2 {
@@ -752,7 +776,11 @@ fn read_orchard_protocol_note<R: Read, P>(
     mut reader: R,
     note_version: orchard::note::NoteVersion,
 ) -> std::io::Result<WalletNote<orchard::Note, orchard::note::Nullifier, P>> {
-    let version = reader.read_u8()?;
+    let version = read_version(
+        &mut reader,
+        "OrchardNote",
+        WalletNote::<orchard::Note, orchard::note::Nullifier, P>::serialized_version(),
+    )?;
 
     let txid = TxId::read(&mut reader)?;
     let output_index = if version >= 2 {
@@ -889,7 +917,11 @@ impl OutgoingSaplingNote {
         mut reader: R,
         consensus_parameters: &impl consensus::Parameters,
     ) -> std::io::Result<Self> {
-        let version = reader.read_u8()?;
+        let version = read_version(
+            &mut reader,
+            "OutgoingSaplingNote",
+            Self::serialized_version(),
+        )?;
 
         let txid = TxId::read(&mut reader)?;
         let output_index = if version >= 1 {
@@ -1011,7 +1043,11 @@ fn read_orchard_protocol_outgoing_note<R: Read, P>(
     consensus_parameters: &impl consensus::Parameters,
     note_version: orchard::note::NoteVersion,
 ) -> std::io::Result<OutgoingNote<orchard::Note, P>> {
-    let version = reader.read_u8()?;
+    let version = read_version(
+        &mut reader,
+        "OutgoingOrchardNote",
+        OutgoingNote::<orchard::Note, P>::serialized_version(),
+    )?;
 
     let txid = TxId::read(&mut reader)?;
     let output_index = if version >= 1 {
@@ -1158,7 +1194,7 @@ impl ShardTrees {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let version = reader.read_u8()?;
+        let version = read_version(&mut reader, "ShardTrees", Self::serialized_version())?;
         let sapling = Self::read_shardtree(&mut reader)?;
         let orchard = Self::read_shardtree(&mut reader)?;
         let ironwood = if version >= 1 {
@@ -1359,13 +1395,6 @@ impl ShardTrees {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ---------------------------------------------------------------------
-    // Reproduction tests for claim `serialization-panics-and-no-version-guard`.
-    // These assert the intended invariant: readers that return `io::Result`
-    // must return `Err` on corrupt or unknown input instead of panicking or
-    // accepting garbage. They are expected to FAIL on current code.
-    // ---------------------------------------------------------------------
 
     fn invalid_data(e: &std::io::Error) -> bool {
         e.kind() == std::io::ErrorKind::InvalidData
