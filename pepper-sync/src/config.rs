@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
 #[cfg(feature = "wallet_essentials")]
-use crate::wallet::serialization::reject_unknown_version;
+use crate::wallet::serialization::read_version;
 
 /// Performance level.
 ///
@@ -40,8 +40,7 @@ impl PerformanceLevel {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let version = reader.read_u8()?;
-        reject_unknown_version("PerformanceLevel", version, Self::serialized_version())?;
+        read_version(&mut reader, "PerformanceLevel", Self::serialized_version())?;
 
         Ok(match reader.read_u8()? {
             0 => Self::Low,
@@ -100,8 +99,7 @@ impl SyncConfig {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let version = reader.read_u8()?;
-        reject_unknown_version("SyncConfig", version, Self::serialized_version())?;
+        let version = read_version(&mut reader, "SyncConfig", Self::serialized_version())?;
 
         let gap_limit = reader.read_u8()?;
         let scopes = reader.read_u8()?;
