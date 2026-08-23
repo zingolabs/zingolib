@@ -84,6 +84,8 @@ const BLOCK_HASH_SIZE: usize = size_of::<BlockHash>();
 /// The byte width of a shielded payment address diversifier.
 const DIVERSIFIER_SIZE: usize = size_of::<sapling_crypto::keys::Diversifier>();
 
+const _: () = assert!(DIVERSIFIER_SIZE == size_of::<orchard::keys::Diversifier>());
+
 /// The byte width of a raw sapling or orchard payment address, a diversifier followed by a transmission key.
 const RAW_ADDRESS_SIZE: usize = DIVERSIFIER_SIZE + FIELD_ELEMENT_SIZE;
 
