@@ -779,20 +779,26 @@ where
                 HashMap::new(),
             )))
         } else {
+            // in continuous sync there is a case where the range directly below the newly mined block (chain tip) is
+            // currently being scanned.
+            // sync must be postponed until this range has completed scanning to then reverify in case of re-org.
+            if selected_range.priority() == ScanPriority::Verify
+                && wallet.get_sync_state()?.scan_ranges().iter().any(|range| {
+                    range
+                        .block_range()
+                        .contains(&(selected_range.block_range().start - 1))
+                        && range.priority() == ScanPriority::Scanning
+                })
+            {
+                return Ok(None);
+            }
+
             let start_seam_block = wallet
                 .get_wallet_block(selected_range.block_range().start - 1)
                 .ok();
             let end_seam_block = wallet
                 .get_wallet_block(selected_range.block_range().end)
                 .ok();
-
-            // verify range must have a start seam block to check continuity in case of re-org.
-            // in continuous sync there is a case where the range directly below the newly mined block (chain tip) is
-            // currently being scanned.
-            // sync must be postponed until this range has completed scanning to then reverify in case of re-org.
-            if selected_range.priority() == ScanPriority::Verify && start_seam_block.is_none() {
-                return Ok(None);
-            }
 
             let scan_targets =
                 find_scan_targets(wallet.get_sync_state()?, selected_range.block_range());
@@ -826,19 +832,63 @@ where
     W: SyncWallet + SyncBlocks,
 {
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-    let birthday = sync_state
-        .wallet_birthday()
-        .expect("scan ranges must be non-empty");
     let fully_scanned_height = sync_state
         .fully_scanned_height()
         .expect("scan ranges must be non-empty");
     let previously_scanned_blocks = calculate_scanned_blocks(sync_state);
-    // FIXME: check that we add a wallet block when we truncate back to ironwood epoch when wallet is updated after scanning ironwood era blocks
     let (
         previously_scanned_sapling_outputs,
         previously_scanned_orchard_outputs,
         previously_scanned_ironwood_outputs,
     ) = calculate_scanned_outputs(wallet).map_err(SyncError::WalletError)?;
+
+    wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?
+        .initial_sync_state = InitialSyncState {
+        sync_start_height: if chain_height > fully_scanned_height {
+            fully_scanned_height + 1
+        } else {
+            chain_height
+        },
+        wallet_tree_bounds: TreeBounds {
+            sapling_initial_tree_size: 0,
+            sapling_final_tree_size: 0,
+            orchard_initial_tree_size: 0,
+            orchard_final_tree_size: 0,
+            ironwood_initial_tree_size: 0,
+            ironwood_final_tree_size: 0,
+        },
+        previously_scanned_blocks,
+        previously_scanned_sapling_outputs,
+        previously_scanned_orchard_outputs,
+        previously_scanned_ironwood_outputs,
+    };
+
+    update_wallet_tree_bounds(
+        consensus_parameters,
+        fetch_request_sender,
+        wallet,
+        chain_height,
+    )
+    .await?;
+
+    Ok(())
+}
+
+pub(super) async fn update_wallet_tree_bounds<W>(
+    consensus_parameters: &impl consensus::Parameters,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    wallet: &mut W,
+    chain_height: BlockHeight,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks,
+{
+    let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
+    let birthday = sync_state
+        .wallet_birthday()
+        .expect("scan ranges must be non-empty");
     let (
         birthday_sapling_initial_tree_size,
         birthday_orchard_initial_tree_size,
@@ -873,25 +923,16 @@ where
     wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?
-        .initial_sync_state = InitialSyncState {
-        sync_start_height: if chain_height > fully_scanned_height {
-            fully_scanned_height + 1
-        } else {
-            chain_height
-        },
-        wallet_tree_bounds: TreeBounds {
-            sapling_initial_tree_size: birthday_sapling_initial_tree_size,
-            sapling_final_tree_size: chain_tip_sapling_final_tree_size,
-            orchard_initial_tree_size: birthday_orchard_initial_tree_size,
-            orchard_final_tree_size: chain_tip_orchard_final_tree_size,
-            ironwood_initial_tree_size: birthday_ironwood_initial_tree_size,
-            ironwood_final_tree_size: chain_tip_ironwood_final_tree_size,
-        },
-        previously_scanned_blocks,
-        previously_scanned_sapling_outputs,
-        previously_scanned_orchard_outputs,
-        previously_scanned_ironwood_outputs,
+        .initial_sync_state
+        .wallet_tree_bounds = TreeBounds {
+        sapling_initial_tree_size: birthday_sapling_initial_tree_size,
+        sapling_final_tree_size: chain_tip_sapling_final_tree_size,
+        orchard_initial_tree_size: birthday_orchard_initial_tree_size,
+        orchard_final_tree_size: chain_tip_orchard_final_tree_size,
+        ironwood_initial_tree_size: birthday_ironwood_initial_tree_size,
+        ironwood_final_tree_size: chain_tip_ironwood_final_tree_size,
     };
+
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())

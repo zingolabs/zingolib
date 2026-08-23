@@ -472,6 +472,7 @@ where
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     'continuous_sync: loop {
+        let mut reorg_occured = false;
         scanner.state.reverify();
         let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
         if chain_height == 0.into() {
@@ -483,8 +484,25 @@ where
         let mut wallet_guard = wallet.write().await;
         let last_known_chain_height =
             checked_wallet_height(&mut *wallet_guard, chain_height, consensus_parameters)?;
-        if !first_verification_complete {
-            // only set intiial sync state on first continuous sync loop
+        let new_blocks_mined = chain_height > last_known_chain_height;
+        state::update_scan_ranges(
+            consensus_parameters,
+            last_known_chain_height,
+            chain_height,
+            &mut *wallet_guard,
+        )
+        .await?;
+        // only set intiial sync state on first continuous sync loop
+        // otherwise, only extend the wallet tree bounds to include new blocks
+        if first_verification_complete && new_blocks_mined {
+            state::update_wallet_tree_bounds(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                &mut *wallet_guard,
+                chain_height,
+            )
+            .await?;
+        } else if !first_verification_complete {
             state::set_initial_state(
                 consensus_parameters,
                 fetch_request_sender.clone(),
@@ -495,15 +513,6 @@ where
         }
         drop(wallet_guard);
 
-        state::update_scan_ranges(
-            consensus_parameters,
-            last_known_chain_height,
-            chain_height,
-            &mut *wallet.write().await,
-        )
-        .await?;
-        let new_blocks_mined = chain_height > last_known_chain_height;
-        let mut reorg_occured = false;
         // on the first verification we verify the previous wallet state
         // afterwards, we only verify the newly mined blocks if they exist
         let mut initial_reorg_detection_start_height_opt =
