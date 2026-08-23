@@ -60,23 +60,26 @@ fn find_scan_targets(
         .collect()
 }
 
-/// Update scan ranges for scanning.
-pub(super) async fn update_scan_ranges<W>(
+/// Prioritize scan ranges for scanning.
+pub(super) fn prioritize_scan_ranges<W>(
     consensus_parameters: &impl consensus::Parameters,
-    last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     wallet: &mut W,
-) -> Result<(), SyncError<W::Error>>
+) -> Result<(), W::Error>
 where
     W: SyncWallet + SyncBlocks,
 {
-    let sync_state = wallet
-        .get_sync_state_mut()
-        .map_err(SyncError::WalletError)?;
-    create_scan_range(last_known_chain_height, chain_height, sync_state);
+    let sync_state = wallet.get_sync_state_mut()?;
+    let scan_targets = sync_state.scan_targets.clone();
+    set_found_note_scan_ranges(
+        consensus_parameters,
+        sync_state,
+        ShieldedPool::Ironwood,
+        scan_targets.into_iter(),
+    );
     set_chain_tip_scan_range(consensus_parameters, sync_state, chain_height);
     merge_scan_ranges(sync_state, ScanPriority::ChainTip);
-    wallet.set_save_flag().map_err(SyncError::WalletError)?;
+    wallet.set_save_flag()?;
 
     Ok(())
 }
@@ -119,12 +122,12 @@ pub(super) fn merge_scan_ranges(sync_state: &mut SyncState, scan_priority: ScanP
 }
 
 /// Create scan range between the wallet height and the chain height from the server.
-fn create_scan_range(
+pub(super) fn create_scan_range(
     last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
 ) {
-    if last_known_chain_height == chain_height {
+    if last_known_chain_height >= chain_height {
         return;
     }
 

@@ -37,7 +37,7 @@ use crate::scan::ScanResults;
 use crate::scan::task::{Scanner, ScannerState};
 use crate::scan::transactions::scan_transaction;
 use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
-use crate::sync::state::{VerifyEnd, set_found_note_scan_ranges, truncate_scan_ranges};
+use crate::sync::state::VerifyEnd;
 use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
@@ -485,13 +485,13 @@ where
         let last_known_chain_height =
             checked_wallet_height(&mut *wallet_guard, chain_height, consensus_parameters)?;
         let new_blocks_mined = chain_height > last_known_chain_height;
-        state::update_scan_ranges(
-            consensus_parameters,
+        state::create_scan_range(
             last_known_chain_height,
             chain_height,
-            &mut *wallet_guard,
-        )
-        .await?;
+            wallet_guard
+                .get_sync_state_mut()
+                .map_err(SyncError::WalletError)?,
+        );
         // only set intiial sync state on first continuous sync loop
         // otherwise, only extend the wallet tree bounds to include new blocks
         if first_verification_complete && new_blocks_mined {
@@ -513,8 +513,8 @@ where
         }
         drop(wallet_guard);
 
-        // on the first verification we verify the previous wallet state
-        // afterwards, we only verify the newly mined blocks if they exist
+        // on the first verification we verify the previous wallet state.
+        // afterwards, we only verify the newly mined blocks if they exist.
         let mut initial_reorg_detection_start_height_opt =
             if first_verification_complete && new_blocks_mined {
                 Some(last_known_chain_height + 1)
@@ -587,8 +587,8 @@ where
                 }
             }
         } else {
-            // first verifcation not complete: first time sync, there are no previously synced blocks to verify
-            // first verifcation complete: no newly mined blocks to verify
+            // first verification not complete: first time sync, there are no previously synced blocks to verify.
+            // first verification complete: no newly mined blocks to verify.
             scanner.state.verified();
         }
 
@@ -617,23 +617,13 @@ where
             expire_transactions(&mut *wallet.write().await)?;
         }
 
-        // now transparent scan targets have been added, set ranges to be prioritized for scanning.
-        {
-            let mut wallet_guard = wallet.write().await;
-            let sync_state = wallet_guard
-                .get_sync_state_mut()
-                .map_err(SyncError::WalletError)?;
-            let scan_targets = sync_state.scan_targets.clone();
-            set_found_note_scan_ranges(
-                consensus_parameters,
-                sync_state,
-                ShieldedPool::Ironwood,
-                scan_targets.into_iter(),
-            );
-            wallet_guard
-                .set_save_flag()
-                .map_err(SyncError::WalletError)?;
-        }
+        // now transparent scan targets and subtree roots have been added, set ranges to be prioritized for scanning.
+        state::prioritize_scan_ranges(
+            consensus_parameters,
+            chain_height,
+            &mut *wallet.write().await,
+        )
+        .map_err(SyncError::WalletError)?;
 
         // frontier is added after subtree roots to retain subtree roots below birthday
         add_initial_frontier(
@@ -827,7 +817,7 @@ where
             // The wallet reported height is above the current proxy height
             // reset to the proxy height.
             truncate_wallet_data(wallet, chain_height)?;
-            truncate_scan_ranges(
+            state::truncate_scan_ranges(
                 chain_height,
                 wallet
                     .get_sync_state_mut()
@@ -1992,7 +1982,7 @@ where
         })
         .collect::<Vec<_>>();
     truncate_wallet_data(wallet, consensus::H0)?;
-    truncate_scan_ranges(
+    state::truncate_scan_ranges(
         consensus::H0,
         wallet
             .get_sync_state_mut()
