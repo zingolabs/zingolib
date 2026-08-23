@@ -652,8 +652,8 @@ where
                         &mut nullifier_map_limit_exceeded,
                     )
                     .await?;
-                    wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
                     publish_sync_status(&*wallet_guard, &progress).await;
+                    wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
                     drop(wallet_guard);
                 }
 
