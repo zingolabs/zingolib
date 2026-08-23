@@ -3,6 +3,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::{Read, Write},
+    mem::size_of,
     ops::Range,
 };
 
@@ -70,13 +71,66 @@ pub(crate) fn read_version<R: Read>(
     Ok(version)
 }
 
+/// The byte width of a canonical encoding of a field element on either curve family.
+const FIELD_ELEMENT_SIZE: usize = size_of::<<jubjub::Fr as ff::PrimeField>::Repr>();
+
+const _: () = assert!(
+    FIELD_ELEMENT_SIZE == size_of::<<pasta_curves::pallas::Base as ff::PrimeField>::Repr>()
+);
+
+/// The byte width of a block hash.
+const BLOCK_HASH_SIZE: usize = size_of::<BlockHash>();
+
+/// The byte width of a shielded payment address diversifier.
+const DIVERSIFIER_SIZE: usize = size_of::<sapling_crypto::keys::Diversifier>();
+
+const _: () = assert!(DIVERSIFIER_SIZE == size_of::<orchard::keys::Diversifier>());
+
+/// The byte width of a raw sapling or orchard payment address, a diversifier followed by a transmission key.
+const RAW_ADDRESS_SIZE: usize = DIVERSIFIER_SIZE + FIELD_ELEMENT_SIZE;
+
+/// The byte width of a serialized memo field, derived as the difference between the full and compact note plaintext widths.
+const MEMO_SIZE: usize =
+    zcash_note_encryption::NOTE_PLAINTEXT_SIZE - zcash_note_encryption::COMPACT_NOTE_SIZE;
+
+/// Reads exactly `N` bytes from `reader` into a fixed-size array.
+fn read_array<const N: usize>(mut reader: impl Read) -> std::io::Result<[u8; N]> {
+    let mut bytes = [0u8; N];
+    reader.read_exact(&mut bytes)?;
+    Ok(bytes)
+}
+
+/// Converts an empty parse result into an `InvalidData` error naming the corrupt `field`.
+fn parse_field<T>(parsed: impl Into<Option<T>>, field: &str) -> std::io::Result<T> {
+    parsed.into().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, format!("invalid {field}"))
+    })
+}
+
 fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
     let str_len = reader.read_u64::<LittleEndian>()?;
-    let mut str_bytes = vec![0; str_len as usize];
-    reader.read_exact(&mut str_bytes)?;
+    let mut str_bytes = Vec::new();
+    reader.take(str_len).read_to_end(&mut str_bytes)?;
+    if str_bytes.len() as u64 != str_len {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "string length prefix claims {str_len} bytes but only {} were available",
+                str_bytes.len()
+            ),
+        ));
+    }
 
     String::from_utf8(str_bytes)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
+}
+
+fn read_orchard_nullifier<R: Read>(mut reader: R) -> std::io::Result<orchard::note::Nullifier> {
+    let nullifier_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut reader)?;
+    parse_field(
+        orchard::note::Nullifier::from_bytes(&nullifier_bytes),
+        "orchard nullifier",
+    )
 }
 
 fn write_string<W: Write>(mut writer: W, str: &str) -> std::io::Result<()> {
@@ -306,8 +360,7 @@ impl NullifierMap {
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         let version = read_version(&mut reader, "NullifierMap", Self::serialized_version())?;
         let sapling = Vector::read(&mut reader, |r| {
-            let mut nullifier_bytes = [0u8; 32];
-            r.read_exact(&mut nullifier_bytes)?;
+            let nullifier_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut *r)?;
             let nullifier =
                 sapling_crypto::Nullifier::from_slice(&nullifier_bytes).map_err(|e| {
                     std::io::Error::new(
@@ -334,10 +387,7 @@ impl NullifierMap {
         .collect::<BTreeMap<_, _>>();
 
         let orchard = Vector::read(&mut reader, |r| {
-            let mut nullifier_bytes = [0u8; 32];
-            r.read_exact(&mut nullifier_bytes)?;
-            let nullifier = orchard::note::Nullifier::from_bytes(&nullifier_bytes)
-                .expect("nullifier bytes should be valid");
+            let nullifier = read_orchard_nullifier(&mut *r)?;
             let scan_target = if version >= 1 {
                 ScanTarget::read(r)?
             } else {
@@ -358,10 +408,7 @@ impl NullifierMap {
 
         let ironwood = if version >= 2 {
             Vector::read(&mut reader, |r| {
-                let mut nullifier_bytes = [0u8; 32];
-                r.read_exact(&mut nullifier_bytes)?;
-                let nullifier = orchard::note::Nullifier::from_bytes(&nullifier_bytes)
-                    .expect("nullifier bytes should be valid");
+                let nullifier = read_orchard_nullifier(&mut *r)?;
                 let scan_target = ScanTarget::read(r)?;
 
                 Ok((nullifier, scan_target))
@@ -418,10 +465,8 @@ impl WalletBlock {
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         read_version(&mut reader, "WalletBlock", Self::serialized_version())?;
         let block_height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
-        let mut block_hash = BlockHash([0u8; 32]);
-        reader.read_exact(&mut block_hash.0)?;
-        let mut prev_hash = BlockHash([0u8; 32]);
-        reader.read_exact(&mut prev_hash.0)?;
+        let block_hash = BlockHash(read_array::<BLOCK_HASH_SIZE>(&mut reader)?);
+        let prev_hash = BlockHash(read_array::<BLOCK_HASH_SIZE>(&mut reader)?);
         let time = reader.read_u32::<LittleEndian>()?;
         let txids = Vector::read(&mut reader, |r| TxId::read(r))?;
         let tree_bounds = TreeBounds::read(&mut reader)?;
@@ -553,15 +598,24 @@ impl TransparentCoin {
             u32::from(reader.read_u16::<LittleEndian>()?)
         };
 
-        let account_id = zip32::AccountId::try_from(reader.read_u32::<LittleEndian>()?)
-            .expect("only valid account ids written");
+        let account_id =
+            zip32::AccountId::try_from(reader.read_u32::<LittleEndian>()?).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("failed to read account id. {e}"),
+                )
+            })?;
         let scope = TransparentScope::try_from(reader.read_u8()?)?;
         let address_index = reader.read_u32::<LittleEndian>()?;
 
         let address = read_string(&mut reader)?;
         let script = Script::read(&mut reader)?;
-        let value = Zatoshis::from_u64(reader.read_u64::<LittleEndian>()?)
-            .expect("only valid values written");
+        let value = Zatoshis::from_u64(reader.read_u64::<LittleEndian>()?).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("failed to read value. {e:?}"),
+            )
+        })?;
         let spending_transaction = Optional::read(&mut reader, TxId::read)?;
 
         Ok(Self {
@@ -569,8 +623,10 @@ impl TransparentCoin {
             key_id: TransparentAddressId::new(
                 account_id,
                 scope,
-                NonHardenedChildIndex::from_index(address_index)
-                    .expect("only non-hardened child indexes should be written"),
+                parse_field(
+                    NonHardenedChildIndex::from_index(address_index),
+                    "non-hardened child index",
+                )?,
             ),
             address,
             value,
@@ -660,23 +716,19 @@ impl SaplingNote {
             )),
         }?;
 
-        let mut address_bytes = [0u8; 43];
-        reader.read_exact(&mut address_bytes)?;
-        let recipient =
-            sapling_crypto::PaymentAddress::from_bytes(&address_bytes).ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "failed to read payment address",
-                )
-            })?;
+        let address_bytes = read_array::<RAW_ADDRESS_SIZE>(&mut reader)?;
+        let recipient = parse_field(
+            sapling_crypto::PaymentAddress::from_bytes(&address_bytes),
+            "sapling payment address",
+        )?;
         let value = sapling_crypto::value::NoteValue::from_raw(reader.read_u64::<LittleEndian>()?);
         let rseed_zip212 = reader.read_u8()?;
-        let mut rseed_bytes = [0u8; 32];
-        reader.read_exact(&mut rseed_bytes)?;
+        let rseed_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut reader)?;
         let rseed = match rseed_zip212 {
-            0 => sapling_crypto::Rseed::BeforeZip212(
-                jubjub::Fr::from_bytes(&rseed_bytes).expect("should read valid jubjub bytes"),
-            ),
+            0 => sapling_crypto::Rseed::BeforeZip212(parse_field(
+                jubjub::Fr::from_bytes(&rseed_bytes),
+                "jubjub rseed",
+            )?),
             1 => sapling_crypto::Rseed::AfterZip212(rseed_bytes),
             _ => {
                 return Err(std::io::Error::new(
@@ -687,8 +739,7 @@ impl SaplingNote {
         };
 
         let nullifier = Optional::read(&mut reader, |r| {
-            let mut nullifier_bytes = [0u8; 32];
-            r.read_exact(&mut nullifier_bytes)?;
+            let nullifier_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut *r)?;
 
             sapling_crypto::Nullifier::from_slice(&nullifier_bytes).map_err(|e| {
                 std::io::Error::new(
@@ -700,8 +751,7 @@ impl SaplingNote {
         let position = Optional::read(&mut reader, |r| {
             Ok(Position::from(r.read_u64::<LittleEndian>()?))
         })?;
-        let mut memo_bytes = [0u8; 512];
-        reader.read_exact(&mut memo_bytes)?;
+        let memo_bytes = read_array::<MEMO_SIZE>(&mut reader)?;
         let memo = Memo::from_bytes(&memo_bytes).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -800,31 +850,25 @@ fn read_orchard_protocol_note<R: Read, P>(
         )),
     }?;
 
-    let mut address_bytes = [0u8; 43];
-    reader.read_exact(&mut address_bytes)?;
-    let recipient = orchard::Address::from_raw_address_bytes(&address_bytes)
-        .expect("should be a valid address");
+    let address_bytes = read_array::<RAW_ADDRESS_SIZE>(&mut reader)?;
+    let recipient = parse_field(
+        orchard::Address::from_raw_address_bytes(&address_bytes),
+        "orchard address",
+    )?;
     let value = orchard::value::NoteValue::from_raw(reader.read_u64::<LittleEndian>()?);
-    let mut rho_bytes = [0u8; 32];
-    reader.read_exact(&mut rho_bytes)?;
-    let rho = orchard::note::Rho::from_bytes(&rho_bytes).expect("should be valid rho bytes");
-    let mut rseed_bytes = [0u8; 32];
-    reader.read_exact(&mut rseed_bytes)?;
-    let rseed = orchard::note::RandomSeed::from_bytes(rseed_bytes, &rho)
-        .expect("should be valid random seed bytes");
+    let rho_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut reader)?;
+    let rho = parse_field(orchard::note::Rho::from_bytes(&rho_bytes), "orchard rho")?;
+    let rseed_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut reader)?;
+    let rseed = parse_field(
+        orchard::note::RandomSeed::from_bytes(rseed_bytes, &rho),
+        "orchard random seed",
+    )?;
 
-    let nullifier = Optional::read(&mut reader, |r| {
-        let mut nullifier_bytes = [0u8; 32];
-        r.read_exact(&mut nullifier_bytes)?;
-
-        Ok(orchard::note::Nullifier::from_bytes(&nullifier_bytes)
-            .expect("should be valid nullfiier bytes"))
-    })?;
+    let nullifier = Optional::read(&mut reader, |r| read_orchard_nullifier(&mut *r))?;
     let position = Optional::read(&mut reader, |r| {
         Ok(Position::from(r.read_u64::<LittleEndian>()?))
     })?;
-    let mut memo_bytes = [0u8; 512];
-    reader.read_exact(&mut memo_bytes)?;
+    let memo_bytes = read_array::<MEMO_SIZE>(&mut reader)?;
     let memo = Memo::from_bytes(&memo_bytes).map_err(|e| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -838,8 +882,10 @@ fn read_orchard_protocol_note<R: Read, P>(
     Ok(WalletNote {
         output_id: OutputId::new(txid, output_index),
         key_id: KeyId::from_parts(account_id, scope),
-        note: orchard::note::Note::from_parts(recipient, value, rho, rseed, note_version)
-            .expect("should be a valid orchard note"),
+        note: parse_field(
+            orchard::note::Note::from_parts(recipient, value, rho, rseed, note_version),
+            "orchard note",
+        )?,
         nullifier,
         position,
         memo,
@@ -947,23 +993,19 @@ impl OutgoingSaplingNote {
             )),
         }?;
 
-        let mut address_bytes = [0u8; 43];
-        reader.read_exact(&mut address_bytes)?;
-        let recipient =
-            sapling_crypto::PaymentAddress::from_bytes(&address_bytes).ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "failed to read payment address",
-                )
-            })?;
+        let address_bytes = read_array::<RAW_ADDRESS_SIZE>(&mut reader)?;
+        let recipient = parse_field(
+            sapling_crypto::PaymentAddress::from_bytes(&address_bytes),
+            "sapling payment address",
+        )?;
         let value = sapling_crypto::value::NoteValue::from_raw(reader.read_u64::<LittleEndian>()?);
         let rseed_zip212 = reader.read_u8()?;
-        let mut rseed_bytes = [0u8; 32];
-        reader.read_exact(&mut rseed_bytes)?;
+        let rseed_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut reader)?;
         let rseed = match rseed_zip212 {
-            0 => sapling_crypto::Rseed::BeforeZip212(
-                jubjub::Fr::from_bytes(&rseed_bytes).expect("should read valid jubjub bytes"),
-            ),
+            0 => sapling_crypto::Rseed::BeforeZip212(parse_field(
+                jubjub::Fr::from_bytes(&rseed_bytes),
+                "jubjub rseed",
+            )?),
             1 => sapling_crypto::Rseed::AfterZip212(rseed_bytes),
             _ => {
                 return Err(std::io::Error::new(
@@ -973,8 +1015,7 @@ impl OutgoingSaplingNote {
             }
         };
 
-        let mut memo_bytes = [0u8; 512];
-        reader.read_exact(&mut memo_bytes)?;
+        let memo_bytes = read_array::<MEMO_SIZE>(&mut reader)?;
         let memo = Memo::from_bytes(&memo_bytes).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -1073,21 +1114,21 @@ fn read_orchard_protocol_outgoing_note<R: Read, P>(
         )),
     }?;
 
-    let mut address_bytes = [0u8; 43];
-    reader.read_exact(&mut address_bytes)?;
-    let recipient = orchard::Address::from_raw_address_bytes(&address_bytes)
-        .expect("should be a valid address");
+    let address_bytes = read_array::<RAW_ADDRESS_SIZE>(&mut reader)?;
+    let recipient = parse_field(
+        orchard::Address::from_raw_address_bytes(&address_bytes),
+        "orchard address",
+    )?;
     let value = orchard::value::NoteValue::from_raw(reader.read_u64::<LittleEndian>()?);
-    let mut rho_bytes = [0u8; 32];
-    reader.read_exact(&mut rho_bytes)?;
-    let rho = orchard::note::Rho::from_bytes(&rho_bytes).expect("should be valid rho bytes");
-    let mut rseed_bytes = [0u8; 32];
-    reader.read_exact(&mut rseed_bytes)?;
-    let rseed = orchard::note::RandomSeed::from_bytes(rseed_bytes, &rho)
-        .expect("should be valid random seed bytes");
+    let rho_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut reader)?;
+    let rho = parse_field(orchard::note::Rho::from_bytes(&rho_bytes), "orchard rho")?;
+    let rseed_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut reader)?;
+    let rseed = parse_field(
+        orchard::note::RandomSeed::from_bytes(rseed_bytes, &rho),
+        "orchard random seed",
+    )?;
 
-    let mut memo_bytes = [0u8; 512];
-    reader.read_exact(&mut memo_bytes)?;
+    let memo_bytes = read_array::<MEMO_SIZE>(&mut reader)?;
     let memo = Memo::from_bytes(&memo_bytes).map_err(|e| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -1104,8 +1145,10 @@ fn read_orchard_protocol_outgoing_note<R: Read, P>(
     Ok(OutgoingNote {
         output_id: OutputId::new(txid, output_index),
         key_id: KeyId::from_parts(account_id, scope),
-        note: orchard::note::Note::from_parts(recipient, value, rho, rseed, note_version)
-            .expect("should be a valid orchard note"),
+        note: parse_field(
+            orchard::note::Note::from_parts(recipient, value, rho, rseed, note_version),
+            "orchard note",
+        )?,
         memo,
         recipient_full_unified_address: recipient_unified_address,
         marker: std::marker::PhantomData,
@@ -1450,6 +1493,40 @@ mod tests {
             Ok(Ok(s)) => panic!("read_string returned a string of length {}", s.len()),
             Err(_) => panic!("read_string panicked on an oversized length prefix"),
         }
+    }
+
+    // REPRO (d): the `read_string` truncation guard returned a bare
+    // `UnexpectedEof` with no message, hiding both the claimed and the
+    // delivered length and contradicting the `InvalidData` contract that
+    // issue #2732 states.
+    #[test]
+    fn read_string_truncation_error_names_both_lengths() {
+        const CLAIMED_LENGTH: u64 = 41;
+        const DELIVERED_BYTES: &[u8] = b"zingo!!";
+
+        let mut bytes = Vec::new();
+        bytes.write_u64::<LittleEndian>(CLAIMED_LENGTH).unwrap();
+        bytes.extend_from_slice(DELIVERED_BYTES);
+
+        let error = match read_string(bytes.as_slice()) {
+            Err(e) => e,
+            Ok(s) => panic!("truncated stream was accepted as string {s:?}"),
+        };
+        assert!(
+            invalid_data(&error),
+            "truncation error kind is {:?}, not InvalidData",
+            error.kind()
+        );
+        let message = error.to_string();
+        assert!(
+            message.contains(&CLAIMED_LENGTH.to_string()),
+            "error message {message:?} does not name the claimed length {CLAIMED_LENGTH}"
+        );
+        assert!(
+            message.contains(&DELIVERED_BYTES.len().to_string()),
+            "error message {message:?} does not name the delivered length {}",
+            DELIVERED_BYTES.len()
+        );
     }
 
     // REPRO (c): `SyncState::read` matches `3..` and never rejects a version
