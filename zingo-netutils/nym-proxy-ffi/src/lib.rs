@@ -108,13 +108,34 @@ pub trait ProxyDeathObserver: Send + Sync {
 /// [`Self::stop`] or a drop of the handle tears both down.
 #[derive(uniffi::Object)]
 pub struct MixnetProxyHandle {
-    // NymProxy's client runs background tasks on the runtime, so `proxy` and
-    // `monitor` are declared before `runtime`: fields drop in declaration
-    // order, so both tear down before the runtime they ran on.
     proxy: Mutex<Option<NymProxy>>,
     monitor: Option<tokio::task::AbortHandle>,
     endpoint: Socks5Endpoint,
-    runtime: Runtime,
+    // `Some` for the handle's whole life. `Drop` takes it out for
+    // `shutdown_background` and owns the teardown order the field order
+    // used to carry.
+    runtime: Option<Runtime>,
+}
+
+/// Tears down safely on whatever thread drops the last reference, including
+/// this runtime's own workers, where the death observer's callback runs and
+/// a plain runtime drop panics tokio.
+impl Drop for MixnetProxyHandle {
+    fn drop(&mut self) {
+        if let Some(monitor) = &self.monitor {
+            monitor.abort();
+        }
+        // The client's tasks ran on this runtime. Drop it first.
+        drop(
+            self.proxy
+                .get_mut()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take(),
+        );
+        if let Some(runtime) = self.runtime.take() {
+            runtime.shutdown_background();
+        }
+    }
 }
 
 /// Why one SOCKS5 method-selection round trip failed.
@@ -272,7 +293,7 @@ impl MixnetProxyHandle {
                 .abort_handle()
         });
         Ok(std::sync::Arc::new(MixnetProxyHandle {
-            runtime,
+            runtime: Some(runtime),
             proxy: Mutex::new(Some(proxy)),
             endpoint,
             monitor,
@@ -305,8 +326,10 @@ impl MixnetProxyHandle {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .take();
-        if let Some(proxy) = taken {
-            self.runtime.block_on(proxy.disconnect());
+        if let Some(proxy) = taken
+            && let Some(runtime) = &self.runtime
+        {
+            runtime.block_on(proxy.disconnect());
         }
     }
 }
@@ -489,5 +512,42 @@ mod tests {
             deaths[0],
             ProxyDeathReason::ListenerRefused { .. }
         ));
+    }
+
+    /// HYPOTHESIS: a task on the handle's own runtime may drop the last
+    /// reference, as Swift's deinit does when the death observer clears the
+    /// stored handle. Falsified if the drop task panics or teardown hangs.
+    #[test]
+    fn last_reference_may_drop_on_the_handles_own_runtime() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("build runtime");
+        let handle = Arc::new(MixnetProxyHandle {
+            proxy: Mutex::new(None),
+            monitor: None,
+            endpoint: Socks5Endpoint {
+                host: "127.0.0.1".to_string(),
+                port: 1,
+            },
+            runtime: Some(runtime),
+        });
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let (dropped_tx, dropped_rx) = std::sync::mpsc::channel();
+        let held_by_task = Arc::clone(&handle);
+        handle
+            .runtime
+            .as_ref()
+            .expect("a live handle owns its runtime")
+            .spawn(async move {
+                release_rx.await.expect("release signal");
+                drop(held_by_task);
+                let _ = dropped_tx.send(());
+            });
+        drop(handle);
+        release_tx.send(()).expect("the drop task is waiting");
+        dropped_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the worker-thread drop must complete without panicking");
     }
 }
