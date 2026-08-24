@@ -111,21 +111,16 @@ pub struct MixnetProxyHandle {
     proxy: Mutex<Option<NymProxy>>,
     monitor: Option<tokio::task::AbortHandle>,
     endpoint: Socks5Endpoint,
-    // `Some` for the handle's whole life. `Drop` takes it out for
-    // `shutdown_background` and owns the teardown order the field order
-    // used to carry.
     runtime: Option<Runtime>,
 }
 
 /// Tears down safely on whatever thread drops the last reference, including
-/// this runtime's own workers, where the death observer's callback runs and
-/// a plain runtime drop panics tokio.
+/// the runtime's own workers.
 impl Drop for MixnetProxyHandle {
     fn drop(&mut self) {
         if let Some(monitor) = &self.monitor {
             monitor.abort();
         }
-        // The client's tasks ran on this runtime. Drop it first.
         drop(
             self.proxy
                 .get_mut()
@@ -133,7 +128,11 @@ impl Drop for MixnetProxyHandle {
                 .take(),
         );
         if let Some(runtime) = self.runtime.take() {
-            runtime.shutdown_background();
+            if tokio::runtime::Handle::try_current().is_ok() {
+                runtime.shutdown_background();
+            } else {
+                drop(runtime);
+            }
         }
     }
 }
@@ -239,7 +238,10 @@ async fn monitor_listener(
             Err(failure) => {
                 strikes += 1;
                 if strikes >= strikes_allowed {
-                    observer.on_death(death_reason(failure));
+                    let _ = tokio::task::spawn_blocking(move || {
+                        observer.on_death(death_reason(failure))
+                    })
+                    .await;
                     return;
                 }
             }
@@ -326,10 +328,11 @@ impl MixnetProxyHandle {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .take();
-        if let Some(proxy) = taken
-            && let Some(runtime) = &self.runtime
-        {
-            runtime.block_on(proxy.disconnect());
+        if let Some(proxy) = taken {
+            self.runtime
+                .as_ref()
+                .expect("a live handle owns its runtime")
+                .block_on(proxy.disconnect());
         }
     }
 }
@@ -412,9 +415,8 @@ mod tests {
             .expect_err("a dead listener must fail the check");
     }
 
-    /// HYPOTHESIS: a refusing listener is reported as the typed
-    /// method-selection variant carrying the reply bytes, not as prose.
-    /// Falsified if the variant or its payload differs.
+    /// Tests that the check fails with the typed method-selection variant,
+    /// both reply bytes intact, when the listener refuses the method.
     #[tokio::test]
     async fn check_names_the_refused_method_selection() {
         let (endpoint, serving) = mock_socks5_listener([0x05, 0xff]).await;
@@ -433,9 +435,8 @@ mod tests {
         serving.abort();
     }
 
-    /// HYPOTHESIS: every probe failure reaches the host as its own death
-    /// variant, and a refused method selection keeps both reply bytes.
-    /// Falsified if any mapping collapses or a byte is lost.
+    /// Tests that each probe failure maps to its own death variant with its
+    /// payload intact.
     #[test]
     fn every_probe_failure_maps_to_its_own_death_variant() {
         let refused = death_reason(HandshakeCheckError::MethodSelection {
@@ -514,9 +515,38 @@ mod tests {
         ));
     }
 
-    /// HYPOTHESIS: a task on the handle's own runtime may drop the last
-    /// reference, as Swift's deinit does when the death observer clears the
-    /// stored handle. Falsified if the drop task panics or teardown hangs.
+    /// Tests that the death report reaches the host on a thread where
+    /// blocking is legal.
+    #[tokio::test]
+    async fn death_reaches_the_host_on_a_thread_that_may_block() {
+        struct BlockingObserver(std::sync::mpsc::Sender<()>);
+        impl ProxyDeathObserver for BlockingObserver {
+            fn on_death(&self, _reason: ProxyDeathReason) {
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .expect("build probe runtime")
+                    .block_on(async {});
+                self.0.send(()).expect("report the blocking success");
+            }
+        }
+        let (endpoint, serving) = mock_socks5_listener([0x05, 0x00]).await;
+        serving.abort();
+        let (blocked_tx, blocked_rx) = std::sync::mpsc::channel();
+        tokio::spawn(monitor_listener(
+            endpoint,
+            Box::new(BlockingObserver(blocked_tx)),
+            MONITOR_CHECK_INTERVAL,
+            MONITOR_CHECK_TIMEOUT,
+            1,
+        ));
+        tokio::task::spawn_blocking(move || blocked_rx.recv_timeout(Duration::from_secs(10)))
+            .await
+            .expect("join the wait")
+            .expect("the callback must complete without panicking");
+    }
+
+    /// Tests that teardown completes without a panic when a task on the
+    /// handle's own runtime drops the last reference.
     #[test]
     fn last_reference_may_drop_on_the_handles_own_runtime() {
         let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -549,5 +579,160 @@ mod tests {
         dropped_rx
             .recv_timeout(Duration::from_secs(10))
             .expect("the worker-thread drop must complete without panicking");
+    }
+
+    /// Tests that teardown completes when the observer blocks on the
+    /// handle's runtime, stops it, and releases the last reference inside
+    /// the death callback.
+    #[test]
+    fn observer_may_stop_and_release_the_handle_inside_the_callback() {
+        struct TearingObserver {
+            handle: Mutex<Option<Arc<MixnetProxyHandle>>>,
+            torn_down: std::sync::mpsc::Sender<()>,
+        }
+        impl ProxyDeathObserver for TearingObserver {
+            fn on_death(&self, _reason: ProxyDeathReason) {
+                let handle = self
+                    .handle
+                    .lock()
+                    .unwrap()
+                    .take()
+                    .expect("the observer holds the last reference");
+                handle
+                    .runtime
+                    .as_ref()
+                    .expect("a live handle owns its runtime")
+                    .block_on(async {});
+                handle.stop();
+                drop(handle);
+                self.torn_down.send(()).expect("report the teardown");
+            }
+        }
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("build runtime");
+        let handle = Arc::new(MixnetProxyHandle {
+            proxy: Mutex::new(None),
+            monitor: None,
+            endpoint: Socks5Endpoint {
+                host: "127.0.0.1".to_string(),
+                port: 1,
+            },
+            runtime: Some(runtime),
+        });
+        let (torn_down_tx, torn_down_rx) = std::sync::mpsc::channel();
+        let observer = TearingObserver {
+            handle: Mutex::new(Some(Arc::clone(&handle))),
+            torn_down: torn_down_tx,
+        };
+        handle
+            .runtime
+            .as_ref()
+            .expect("a live handle owns its runtime")
+            .spawn(monitor_listener(
+                handle.endpoint.clone(),
+                Box::new(observer),
+                MONITOR_CHECK_INTERVAL,
+                MONITOR_CHECK_TIMEOUT,
+                1,
+            ));
+        drop(handle);
+        torn_down_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the callback must tear the handle down without panicking");
+    }
+
+    /// Tests that teardown completes without a panic when a task on another
+    /// runtime drops the last reference.
+    #[test]
+    fn last_reference_may_drop_on_a_foreign_runtime() {
+        let build = || {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("build runtime")
+        };
+        let foreign = build();
+        let handle = Arc::new(MixnetProxyHandle {
+            proxy: Mutex::new(None),
+            monitor: None,
+            endpoint: Socks5Endpoint {
+                host: "127.0.0.1".to_string(),
+                port: 1,
+            },
+            runtime: Some(build()),
+        });
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let (dropped_tx, dropped_rx) = std::sync::mpsc::channel();
+        let held_by_task = Arc::clone(&handle);
+        foreign.spawn(async move {
+            release_rx.await.expect("release signal");
+            drop(held_by_task);
+            let _ = dropped_tx.send(());
+        });
+        drop(handle);
+        release_tx.send(()).expect("the drop task is waiting");
+        dropped_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the foreign-worker drop must complete without panicking");
+    }
+
+    /// Tests that every task is wound down before drop returns, given a drop
+    /// away from any runtime.
+    #[test]
+    fn drop_off_runtime_outlives_no_task() {
+        struct DownGuard(std::sync::mpsc::Sender<()>);
+        impl Drop for DownGuard {
+            fn drop(&mut self) {
+                let _ = self.0.send(());
+            }
+        }
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("build runtime");
+        let (down_tx, down_rx) = std::sync::mpsc::channel();
+        runtime.spawn(async move {
+            let _guard = DownGuard(down_tx);
+            std::future::pending::<()>().await
+        });
+        let handle = MixnetProxyHandle {
+            proxy: Mutex::new(None),
+            monitor: None,
+            endpoint: Socks5Endpoint {
+                host: "127.0.0.1".to_string(),
+                port: 1,
+            },
+            runtime: Some(runtime),
+        };
+        drop(handle);
+        down_rx
+            .try_recv()
+            .expect("the task's guard must already be down when drop returns");
+    }
+
+    /// Tests that the monitor ends cleanly when the observer panics.
+    #[tokio::test]
+    async fn a_panicking_observer_does_not_poison_the_monitor() {
+        struct PanickingObserver;
+        impl ProxyDeathObserver for PanickingObserver {
+            fn on_death(&self, _reason: ProxyDeathReason) {
+                panic!("host bug");
+            }
+        }
+        let (endpoint, serving) = mock_socks5_listener([0x05, 0x00]).await;
+        serving.abort();
+        let monitor = tokio::spawn(monitor_listener(
+            endpoint,
+            Box::new(PanickingObserver),
+            MONITOR_CHECK_INTERVAL,
+            MONITOR_CHECK_TIMEOUT,
+            1,
+        ));
+        tokio::time::timeout(zingo_netutils::time::test::MOCK_OP_BOUND, monitor)
+            .await
+            .expect("monitor must end within the strike window")
+            .expect("monitor task must end cleanly despite the panic");
     }
 }
