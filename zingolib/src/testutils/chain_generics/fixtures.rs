@@ -123,7 +123,10 @@ pub async fn send_shield_cycle<CC>(n: u64)
 where
     CC: ConductChain,
 {
-    let mut environment = CC::setup().await;
+    let (mut environment, ()) = tokio::join!(
+        CC::setup(),
+        crate::testutils::warm_orchard_proving_key(),
+    );
     let primary_fund = 1_000_000;
     let mut primary = environment.fund_client_orchard(primary_fund).await;
 

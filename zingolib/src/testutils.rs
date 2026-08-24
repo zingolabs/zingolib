@@ -548,6 +548,17 @@ pub fn timestamped_test_log(text: &str) {
     tracing::info!("{}: {}", crate::utils::now(), text);
 }
 
+/// Builds and caches the post-NU6.3 Orchard proving key ahead of the first send, so a fixture that awaits this during environment setup hides the multi-second build.
+pub async fn warm_orchard_proving_key() {
+    use orchard::circuit::OrchardCircuitVersion;
+    use zcash_primitives::transaction::builder;
+    tokio::task::spawn_blocking(|| {
+        builder::cached_orchard_proving_key(OrchardCircuitVersion::PostNu6_3);
+    })
+    .await
+    .expect("proving-key warmup task must not panic");
+}
+
 #[allow(unused_macros)]
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
