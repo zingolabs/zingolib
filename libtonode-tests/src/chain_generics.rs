@@ -8,6 +8,7 @@ use zingolib::lightclient::LightClient;
 use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::port_to_localhost_uri;
+use zingolib::testutils::timed;
 use zingolib::testutils::timestamped_test_log;
 
 use zingolib_testutils::scenarios::ClientBuilder;
@@ -27,7 +28,11 @@ pub struct LibtonodeEnvironment {
 impl ConductChain for LibtonodeEnvironment {
     async fn setup() -> Self {
         timestamped_test_log("starting mock libtonode network");
-        let (local_net, client_builder) = custom_clients_default().await;
+        let (local_net, client_builder) = timed(
+            "libtonode_setup::custom_clients_default",
+            custom_clients_default(),
+        )
+        .await;
 
         LibtonodeEnvironment {
             local_net,
@@ -49,14 +54,23 @@ impl ConductChain for LibtonodeEnvironment {
     }
 
     async fn increase_chain_height(&mut self) {
-        let start_height = self.local_net.validator().get_chain_height().await;
-        self.local_net
-            .validator()
-            .generate_blocks(1)
-            .await
-            .expect("Called for side effect, failed!");
+        let start_height = timed(
+            "increase_chain_height::get_chain_height[before]",
+            self.local_net.validator().get_chain_height(),
+        )
+        .await;
+        timed(
+            "increase_chain_height::generate_blocks",
+            self.local_net.validator().generate_blocks(1),
+        )
+        .await
+        .expect("Called for side effect, failed!");
         assert_eq!(
-            self.local_net.validator().get_chain_height().await,
+            timed(
+                "increase_chain_height::get_chain_height[after]",
+                self.local_net.validator().get_chain_height(),
+            )
+            .await,
             start_height + 1
         );
     }

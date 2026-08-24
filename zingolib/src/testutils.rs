@@ -559,6 +559,25 @@ pub async fn warm_orchard_proving_key() {
     .expect("proving-key warmup task must not panic");
 }
 
+/// Decimal places phase timers use when they report elapsed seconds.
+const PHASE_SECONDS_PRECISION: usize = 3;
+
+/// Awaits `fut` while logging the phase's start and its elapsed wall-clock seconds under `label`.
+pub async fn timed<T>(label: &str, fut: impl std::future::Future<Output = T>) -> T {
+    let start = std::time::Instant::now();
+    timestamped_test_log(format!("[phase] {label} started.").as_str());
+    let output = fut.await;
+    timestamped_test_log(
+        format!(
+            "[phase] {label} finished in {:.precision$}s.",
+            start.elapsed().as_secs_f64(),
+            precision = PHASE_SECONDS_PRECISION
+        )
+        .as_str(),
+    );
+    output
+}
+
 #[allow(unused_macros)]
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {

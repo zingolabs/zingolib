@@ -12,6 +12,7 @@ use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::chain_generics::with_assertions;
 use crate::testutils::fee_tables;
 use crate::testutils::lightclient::get_base_address;
+use crate::testutils::timed;
 use crate::testutils::timestamped_test_log;
 
 /// Fixture for testing various vt transactions
@@ -124,75 +125,104 @@ where
     CC: ConductChain,
 {
     let (mut environment, ()) = tokio::join!(
-        CC::setup(),
-        crate::testutils::warm_orchard_proving_key(),
+        timed("send_shield_cycle::setup", CC::setup()),
+        timed(
+            "send_shield_cycle::warm_orchard_proving_key",
+            crate::testutils::warm_orchard_proving_key(),
+        ),
     );
     let primary_fund = 1_000_000;
-    let mut primary = environment.fund_client_orchard(primary_fund).await;
+    let mut primary = timed(
+        "send_shield_cycle::fund_client_orchard",
+        environment.fund_client_orchard(primary_fund),
+    )
+    .await;
 
-    let mut secondary = environment.create_client().await;
-    let secondary_taddr = get_base_address(&secondary, PoolType::Transparent).await;
+    let mut secondary = timed(
+        "send_shield_cycle::create_secondary_client",
+        environment.create_client(),
+    )
+    .await;
+    let secondary_taddr = timed(
+        "send_shield_cycle::get_secondary_taddr",
+        get_base_address(&secondary, PoolType::Transparent),
+    )
+    .await;
 
-    for _ in 0..n {
-        let (recorded_fee, recorded_value, recorded_change) =
-            with_assertions::assure_propose_send_bump_sync_all_recipients(
-                &mut environment,
-                &mut primary,
-                vec![
-                    (&secondary_taddr, 100_000, None),
-                    (&secondary_taddr, 4_000, None),
-                ],
-                vec![&mut secondary],
-                false,
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            (recorded_fee, recorded_value, recorded_change),
-            (
-                Option::unwrap(MARGINAL_FEE * 4_u64),
-                recorded_value,
-                recorded_change
-            )
-        );
+    for cycle in 0..n {
+        timed(
+            format!("send_shield_cycle::cycle[{cycle}]").as_str(),
+            async {
+                let (recorded_fee, recorded_value, recorded_change) = timed(
+                    format!("send_shield_cycle::cycle[{cycle}]::send_to_transparent").as_str(),
+                    with_assertions::assure_propose_send_bump_sync_all_recipients(
+                        &mut environment,
+                        &mut primary,
+                        vec![
+                            (&secondary_taddr, 100_000, None),
+                            (&secondary_taddr, 4_000, None),
+                        ],
+                        vec![&mut secondary],
+                        false,
+                    ),
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    (recorded_fee, recorded_value, recorded_change),
+                    (
+                        Option::unwrap(MARGINAL_FEE * 4_u64),
+                        recorded_value,
+                        recorded_change
+                    )
+                );
 
-        let (recorded_fee, recorded_value) = with_assertions::assure_propose_shield_bump_sync(
-            &mut environment,
-            &mut secondary,
-            false,
+                let (recorded_fee, recorded_value) = timed(
+                    format!("send_shield_cycle::cycle[{cycle}]::shield").as_str(),
+                    with_assertions::assure_propose_shield_bump_sync(
+                        &mut environment,
+                        &mut secondary,
+                        false,
+                    ),
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    (recorded_fee, recorded_value),
+                    (
+                        Option::unwrap(MARGINAL_FEE * 3_u64),
+                        Option::unwrap(Zatoshis::from_u64(100_000).unwrap() - recorded_fee)
+                    )
+                );
+
+                let primary_orchard_addr = timed(
+                    format!("send_shield_cycle::cycle[{cycle}]::get_primary_orchard_addr").as_str(),
+                    get_base_address(&primary, PoolType::Shielded(ShieldedPool::Orchard)),
+                )
+                .await;
+                let (recorded_fee, recorded_value, recorded_change) = timed(
+                    format!("send_shield_cycle::cycle[{cycle}]::send_back_to_orchard").as_str(),
+                    with_assertions::assure_propose_send_bump_sync_all_recipients(
+                        &mut environment,
+                        &mut secondary,
+                        vec![(&primary_orchard_addr, 50_000, None)],
+                        vec![&mut primary],
+                        false,
+                    ),
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    (recorded_fee, recorded_value, recorded_change),
+                    (
+                        Option::unwrap(MARGINAL_FEE * 2_u64),
+                        Zatoshis::from_u64(50_000).unwrap(),
+                        recorded_change
+                    )
+                );
+            },
         )
-        .await
-        .unwrap();
-        assert_eq!(
-            (recorded_fee, recorded_value),
-            (
-                Option::unwrap(MARGINAL_FEE * 3_u64),
-                Option::unwrap(Zatoshis::from_u64(100_000).unwrap() - recorded_fee)
-            )
-        );
-
-        let (recorded_fee, recorded_value, recorded_change) =
-            with_assertions::assure_propose_send_bump_sync_all_recipients(
-                &mut environment,
-                &mut secondary,
-                vec![(
-                    &get_base_address(&primary, PoolType::Shielded(ShieldedPool::Orchard)).await,
-                    50_000,
-                    None,
-                )],
-                vec![&mut primary],
-                false,
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            (recorded_fee, recorded_value, recorded_change),
-            (
-                Option::unwrap(MARGINAL_FEE * 2_u64),
-                Zatoshis::from_u64(50_000).unwrap(),
-                recorded_change
-            )
-        );
+        .await;
     }
 }
 
