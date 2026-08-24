@@ -177,7 +177,7 @@ impl std::fmt::Display for SyncResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Sync completed succesfully:
+            "Sync result:
 {{
     sync start height: {}
     sync end height: {}
@@ -2343,7 +2343,6 @@ where
         Vec::new()
     };
 
-    // TODO: check shard ranges are resilient to re-orgs
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;

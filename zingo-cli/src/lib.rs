@@ -61,6 +61,7 @@ pub fn build_clap_app() -> clap::Command {
                 .long("nosync")
                 .short('n')
                 .action(clap::ArgAction::SetTrue))
+            // TODO: make sure waitsync works with cont sync. may need to change wallet settings to turn shutdown_on_completion off
             .arg(Arg::new("waitsync")
                 .help("Block execution of the specified command until the background sync completes. Has no effect if --nosync is set.")
                 .long("waitsync")

@@ -1182,18 +1182,30 @@ pub(super) fn add_shard_ranges(
         .fold(
             highest_subtree_completing_height,
             |previous_subtree_completing_height, subtree_completing_height| {
-                shard_ranges.push(Range {
-                    start: previous_subtree_completing_height,
-                    end: subtree_completing_height + 1,
-                });
+                if subtree_completing_height >= previous_subtree_completing_height {
+                    shard_ranges.push(Range {
+                        start: previous_subtree_completing_height,
+                        end: subtree_completing_height + 1,
+                    });
 
-                tracing::debug!(
-                    "{:?} subtree root height: {}",
-                    shielded_protocol,
+                    tracing::debug!(
+                        "{:?} subtree root height: {}",
+                        shielded_protocol,
+                        subtree_completing_height
+                    );
+
                     subtree_completing_height
-                );
+                } else {
+                    tracing::error!(
+                        "error: first {:?} subtree root from server has completing block height {} which is lower than the
+                        completing block height of latest shard range in wallet with height {}",
+                        shielded_protocol,
+                        previous_subtree_completing_height,
+                        subtree_completing_height
+                    );
 
-                subtree_completing_height
+                    previous_subtree_completing_height
+                }
             },
         );
 }
