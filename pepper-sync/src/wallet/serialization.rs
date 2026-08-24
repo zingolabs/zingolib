@@ -3,7 +3,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::{Read, Write},
-    mem::size_of,
     ops::Range,
 };
 
@@ -71,24 +70,6 @@ pub(crate) fn read_version<R: Read>(
     Ok(version)
 }
 
-/// The byte width of a canonical encoding of a field element on either curve family.
-const FIELD_ELEMENT_SIZE: usize = size_of::<<jubjub::Fr as ff::PrimeField>::Repr>();
-
-const _: () = assert!(
-    FIELD_ELEMENT_SIZE == size_of::<<pasta_curves::pallas::Base as ff::PrimeField>::Repr>()
-);
-
-/// The byte width of a block hash.
-const BLOCK_HASH_SIZE: usize = size_of::<BlockHash>();
-
-/// The byte width of a shielded payment address diversifier.
-const DIVERSIFIER_SIZE: usize = size_of::<sapling_crypto::keys::Diversifier>();
-
-const _: () = assert!(DIVERSIFIER_SIZE == size_of::<orchard::keys::Diversifier>());
-
-/// The byte width of a raw sapling or orchard payment address, a diversifier followed by a transmission key.
-const RAW_ADDRESS_SIZE: usize = DIVERSIFIER_SIZE + FIELD_ELEMENT_SIZE;
-
 /// The byte width of a serialized memo field, derived as the difference between the full and compact note plaintext widths.
 const MEMO_SIZE: usize =
     zcash_note_encryption::NOTE_PLAINTEXT_SIZE - zcash_note_encryption::COMPACT_NOTE_SIZE;
@@ -126,7 +107,7 @@ fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
 }
 
 fn read_orchard_nullifier<R: Read>(mut reader: R) -> std::io::Result<orchard::note::Nullifier> {
-    let nullifier_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut reader)?;
+    let nullifier_bytes = read_array(&mut reader)?;
     parse_field(
         orchard::note::Nullifier::from_bytes(&nullifier_bytes),
         "orchard nullifier",
@@ -360,14 +341,7 @@ impl NullifierMap {
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         let version = read_version(&mut reader, "NullifierMap", Self::serialized_version())?;
         let sapling = Vector::read(&mut reader, |r| {
-            let nullifier_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut *r)?;
-            let nullifier =
-                sapling_crypto::Nullifier::from_slice(&nullifier_bytes).map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("failed to read nullifier. {e}"),
-                    )
-                })?;
+            let nullifier = sapling_crypto::Nullifier(read_array(&mut *r)?);
             let scan_target = if version >= 1 {
                 ScanTarget::read(r)?
             } else {
@@ -465,8 +439,8 @@ impl WalletBlock {
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         read_version(&mut reader, "WalletBlock", Self::serialized_version())?;
         let block_height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
-        let block_hash = BlockHash(read_array::<BLOCK_HASH_SIZE>(&mut reader)?);
-        let prev_hash = BlockHash(read_array::<BLOCK_HASH_SIZE>(&mut reader)?);
+        let block_hash = BlockHash(read_array(&mut reader)?);
+        let prev_hash = BlockHash(read_array(&mut reader)?);
         let time = reader.read_u32::<LittleEndian>()?;
         let txids = Vector::read(&mut reader, |r| TxId::read(r))?;
         let tree_bounds = TreeBounds::read(&mut reader)?;
@@ -716,14 +690,14 @@ impl SaplingNote {
             )),
         }?;
 
-        let address_bytes = read_array::<RAW_ADDRESS_SIZE>(&mut reader)?;
+        let address_bytes = read_array(&mut reader)?;
         let recipient = parse_field(
             sapling_crypto::PaymentAddress::from_bytes(&address_bytes),
             "sapling payment address",
         )?;
         let value = sapling_crypto::value::NoteValue::from_raw(reader.read_u64::<LittleEndian>()?);
         let rseed_zip212 = reader.read_u8()?;
-        let rseed_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut reader)?;
+        let rseed_bytes = read_array(&mut reader)?;
         let rseed = match rseed_zip212 {
             0 => sapling_crypto::Rseed::BeforeZip212(parse_field(
                 jubjub::Fr::from_bytes(&rseed_bytes),
@@ -739,14 +713,7 @@ impl SaplingNote {
         };
 
         let nullifier = Optional::read(&mut reader, |r| {
-            let nullifier_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut *r)?;
-
-            sapling_crypto::Nullifier::from_slice(&nullifier_bytes).map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("failed to read nullifier. {e}"),
-                )
-            })
+            Ok(sapling_crypto::Nullifier(read_array(&mut *r)?))
         })?;
         let position = Optional::read(&mut reader, |r| {
             Ok(Position::from(r.read_u64::<LittleEndian>()?))
@@ -850,15 +817,15 @@ fn read_orchard_protocol_note<R: Read, P>(
         )),
     }?;
 
-    let address_bytes = read_array::<RAW_ADDRESS_SIZE>(&mut reader)?;
+    let address_bytes = read_array(&mut reader)?;
     let recipient = parse_field(
         orchard::Address::from_raw_address_bytes(&address_bytes),
         "orchard address",
     )?;
     let value = orchard::value::NoteValue::from_raw(reader.read_u64::<LittleEndian>()?);
-    let rho_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut reader)?;
+    let rho_bytes = read_array(&mut reader)?;
     let rho = parse_field(orchard::note::Rho::from_bytes(&rho_bytes), "orchard rho")?;
-    let rseed_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut reader)?;
+    let rseed_bytes = read_array(&mut reader)?;
     let rseed = parse_field(
         orchard::note::RandomSeed::from_bytes(rseed_bytes, &rho),
         "orchard random seed",
@@ -993,14 +960,14 @@ impl OutgoingSaplingNote {
             )),
         }?;
 
-        let address_bytes = read_array::<RAW_ADDRESS_SIZE>(&mut reader)?;
+        let address_bytes = read_array(&mut reader)?;
         let recipient = parse_field(
             sapling_crypto::PaymentAddress::from_bytes(&address_bytes),
             "sapling payment address",
         )?;
         let value = sapling_crypto::value::NoteValue::from_raw(reader.read_u64::<LittleEndian>()?);
         let rseed_zip212 = reader.read_u8()?;
-        let rseed_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut reader)?;
+        let rseed_bytes = read_array(&mut reader)?;
         let rseed = match rseed_zip212 {
             0 => sapling_crypto::Rseed::BeforeZip212(parse_field(
                 jubjub::Fr::from_bytes(&rseed_bytes),
@@ -1114,15 +1081,15 @@ fn read_orchard_protocol_outgoing_note<R: Read, P>(
         )),
     }?;
 
-    let address_bytes = read_array::<RAW_ADDRESS_SIZE>(&mut reader)?;
+    let address_bytes = read_array(&mut reader)?;
     let recipient = parse_field(
         orchard::Address::from_raw_address_bytes(&address_bytes),
         "orchard address",
     )?;
     let value = orchard::value::NoteValue::from_raw(reader.read_u64::<LittleEndian>()?);
-    let rho_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut reader)?;
+    let rho_bytes = read_array(&mut reader)?;
     let rho = parse_field(orchard::note::Rho::from_bytes(&rho_bytes), "orchard rho")?;
-    let rseed_bytes = read_array::<FIELD_ELEMENT_SIZE>(&mut reader)?;
+    let rseed_bytes = read_array(&mut reader)?;
     let rseed = parse_field(
         orchard::note::RandomSeed::from_bytes(rseed_bytes, &rho),
         "orchard random seed",
