@@ -6315,7 +6315,7 @@ dependencies = [
 [[package]]
 name = "rustls-platform-verifier"
 version = "0.7.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#009505350768a251e39ceba6abd5377fc778d896"
+source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_nym_rc0#f65251c5648ebdb96f00d3f2a9de92b11e139abb"
 dependencies = [
  "log",
  "rustls 0.23.43",
@@ -7319,7 +7319,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.3",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -9105,12 +9105,12 @@ dependencies = [
 [[package]]
 name = "zingo-net-diag"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#009505350768a251e39ceba6abd5377fc778d896"
+source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_nym_rc0#f65251c5648ebdb96f00d3f2a9de92b11e139abb"
 
 [[package]]
 name = "zingo-netutils"
 version = "5.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#009505350768a251e39ceba6abd5377fc778d896"
+source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_nym_rc0#f65251c5648ebdb96f00d3f2a9de92b11e139abb"
 dependencies = [
  "http 1.5.0",
  "hyper-util",
