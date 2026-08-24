@@ -498,7 +498,7 @@ mod tests {
         serving.abort();
         // The monitor ends itself after reporting; that is the at-most-once
         // guarantee, and joining it proves the report happened.
-        tokio::time::timeout(zingo_netutils::time::test::MOCK_OP_BOUND, monitor)
+        tokio::time::timeout(MOCK_OP_BOUND, monitor)
             .await
             .expect("monitor must report within the strike window")
             .expect("monitor task must end cleanly");
@@ -536,21 +536,25 @@ mod tests {
             MONITOR_CHECK_TIMEOUT,
             1,
         ));
-        tokio::task::spawn_blocking(move || blocked_rx.recv_timeout(Duration::from_secs(10)))
+        tokio::task::spawn_blocking(move || blocked_rx.recv_timeout(MOCK_OP_BOUND))
             .await
             .expect("join the wait")
             .expect("the callback must complete without panicking");
     }
 
-    /// Tests that teardown completes without a panic when a task on the
-    /// handle's own runtime drops the last reference.
-    #[test]
-    fn last_reference_may_drop_on_the_handles_own_runtime() {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
+    use zingo_netutils::time::test::MOCK_OP_BOUND;
+
+    /// Builds the multi-thread runtime the teardown tests hand their handles.
+    fn teardown_runtime() -> Runtime {
+        tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
-            .expect("build runtime");
-        let handle = Arc::new(MixnetProxyHandle {
+            .expect("build runtime")
+    }
+
+    /// A handle over an empty proxy slot, owning the given runtime.
+    fn teardown_handle(runtime: Runtime) -> MixnetProxyHandle {
+        MixnetProxyHandle {
             proxy: Mutex::new(None),
             monitor: None,
             endpoint: Socks5Endpoint {
@@ -558,24 +562,42 @@ mod tests {
                 port: 1,
             },
             runtime: Some(runtime),
-        });
+        }
+    }
+
+    /// Drops the last reference from a task the given spawner runs, waiting
+    /// for that drop to complete without a panic.
+    fn release_last_reference_from(
+        spawner: &tokio::runtime::Handle,
+        handle: Arc<MixnetProxyHandle>,
+    ) {
         let (release_tx, release_rx) = tokio::sync::oneshot::channel();
         let (dropped_tx, dropped_rx) = std::sync::mpsc::channel();
         let held_by_task = Arc::clone(&handle);
-        handle
-            .runtime
-            .as_ref()
-            .expect("a live handle owns its runtime")
-            .spawn(async move {
-                release_rx.await.expect("release signal");
-                drop(held_by_task);
-                let _ = dropped_tx.send(());
-            });
+        spawner.spawn(async move {
+            release_rx.await.expect("release signal");
+            drop(held_by_task);
+            let _ = dropped_tx.send(());
+        });
         drop(handle);
         release_tx.send(()).expect("the drop task is waiting");
         dropped_rx
-            .recv_timeout(Duration::from_secs(10))
-            .expect("the worker-thread drop must complete without panicking");
+            .recv_timeout(MOCK_OP_BOUND)
+            .expect("the task's drop must complete without panicking");
+    }
+
+    /// Tests that teardown completes without a panic when a task on the
+    /// handle's own runtime drops the last reference.
+    #[test]
+    fn last_reference_may_drop_on_the_handles_own_runtime() {
+        let handle = Arc::new(teardown_handle(teardown_runtime()));
+        let spawner = handle
+            .runtime
+            .as_ref()
+            .expect("a live handle owns its runtime")
+            .handle()
+            .clone();
+        release_last_reference_from(&spawner, handle);
     }
 
     /// Tests that teardown completes when the observer blocks on the
@@ -605,19 +627,7 @@ mod tests {
                 self.torn_down.send(()).expect("report the teardown");
             }
         }
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("build runtime");
-        let handle = Arc::new(MixnetProxyHandle {
-            proxy: Mutex::new(None),
-            monitor: None,
-            endpoint: Socks5Endpoint {
-                host: "127.0.0.1".to_string(),
-                port: 1,
-            },
-            runtime: Some(runtime),
-        });
+        let handle = Arc::new(teardown_handle(teardown_runtime()));
         let (torn_down_tx, torn_down_rx) = std::sync::mpsc::channel();
         let observer = TearingObserver {
             handle: Mutex::new(Some(Arc::clone(&handle))),
@@ -636,7 +646,7 @@ mod tests {
             ));
         drop(handle);
         torn_down_rx
-            .recv_timeout(Duration::from_secs(10))
+            .recv_timeout(MOCK_OP_BOUND)
             .expect("the callback must tear the handle down without panicking");
     }
 
@@ -644,35 +654,9 @@ mod tests {
     /// runtime drops the last reference.
     #[test]
     fn last_reference_may_drop_on_a_foreign_runtime() {
-        let build = || {
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .expect("build runtime")
-        };
-        let foreign = build();
-        let handle = Arc::new(MixnetProxyHandle {
-            proxy: Mutex::new(None),
-            monitor: None,
-            endpoint: Socks5Endpoint {
-                host: "127.0.0.1".to_string(),
-                port: 1,
-            },
-            runtime: Some(build()),
-        });
-        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-        let (dropped_tx, dropped_rx) = std::sync::mpsc::channel();
-        let held_by_task = Arc::clone(&handle);
-        foreign.spawn(async move {
-            release_rx.await.expect("release signal");
-            drop(held_by_task);
-            let _ = dropped_tx.send(());
-        });
-        drop(handle);
-        release_tx.send(()).expect("the drop task is waiting");
-        dropped_rx
-            .recv_timeout(Duration::from_secs(10))
-            .expect("the foreign-worker drop must complete without panicking");
+        let foreign = teardown_runtime();
+        let handle = Arc::new(teardown_handle(teardown_runtime()));
+        release_last_reference_from(foreign.handle(), handle);
     }
 
     /// Tests that every task is destroyed before drop returns, given a drop
@@ -680,24 +664,12 @@ mod tests {
     #[test]
     fn drop_off_runtime_outlives_no_task() {
         let (down_tx, down_rx) = std::sync::mpsc::channel::<()>();
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("build runtime");
+        let runtime = teardown_runtime();
         runtime.spawn(async move {
             let _held = down_tx;
             std::future::pending::<()>().await
         });
-        let handle = MixnetProxyHandle {
-            proxy: Mutex::new(None),
-            monitor: None,
-            endpoint: Socks5Endpoint {
-                host: "127.0.0.1".to_string(),
-                port: 1,
-            },
-            runtime: Some(runtime),
-        };
-        drop(handle);
+        drop(teardown_handle(runtime));
         // The task owns the sender, polled or not, so only its destruction
         // disconnects the channel. Empty means the task outlived the drop.
         assert_eq!(
@@ -725,7 +697,7 @@ mod tests {
             MONITOR_CHECK_TIMEOUT,
             1,
         ));
-        tokio::time::timeout(zingo_netutils::time::test::MOCK_OP_BOUND, monitor)
+        tokio::time::timeout(MOCK_OP_BOUND, monitor)
             .await
             .expect("monitor must end within the strike window")
             .expect("monitor task must end cleanly despite the panic");
