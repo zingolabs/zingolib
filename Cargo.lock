@@ -3268,7 +3268,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -4261,7 +4261,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.7.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b228c06ae82365f306ff364e164da#537f84d3d81b228c06ae82365f306ff364e164da"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a2416144d1bbbae30aca02bec062d1492#89cf104a2416144d1bbbae30aca02bec062d1492"
 dependencies = [
  "hex",
  "reqwest",
@@ -4553,7 +4553,7 @@ dependencies = [
 [[package]]
 name = "zingo-consensus"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b228c06ae82365f306ff364e164da#537f84d3d81b228c06ae82365f306ff364e164da"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a2416144d1bbbae30aca02bec062d1492#89cf104a2416144d1bbbae30aca02bec062d1492"
 
 [[package]]
 name = "zingo-memo"
@@ -4636,7 +4636,7 @@ dependencies = [
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b228c06ae82365f306ff364e164da#537f84d3d81b228c06ae82365f306ff364e164da"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a2416144d1bbbae30aca02bec062d1492#89cf104a2416144d1bbbae30aca02bec062d1492"
 
 [[package]]
 name = "zingolib"
