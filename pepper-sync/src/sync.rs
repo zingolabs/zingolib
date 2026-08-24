@@ -1722,7 +1722,7 @@ where
 
     truncate_stores(wallet, rescan_from - 1, false)?;
 
-    let frontiers = client::get_frontiers(fetch_request_sender, birthday).await?;
+    let frontiers = client::get_frontiers(fetch_request_sender.clone(), birthday).await?;
     let retention = Retention::Checkpoint {
         id: birthday,
         marking: Marking::None,
@@ -1764,12 +1764,19 @@ where
         }
     }
 
-    let sync_state = wallet
-        .get_sync_state_mut()
-        .map_err(SyncError::WalletError)?;
-    state::reopen_scan_ranges_from(sync_state, rescan_from);
-    // FIXME: add wallet block at rescan_from - 1 to avoid sync status errors
-    add_scan_targets(sync_state, &rescan_targets);
+    state::reopen_scan_ranges_from(
+        consensus_parameters,
+        fetch_request_sender,
+        wallet,
+        rescan_from,
+    )
+    .await?;
+    add_scan_targets(
+        wallet
+            .get_sync_state_mut()
+            .map_err(SyncError::WalletError)?,
+        &rescan_targets,
+    );
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(SyncError::PoolHistoryReopened {

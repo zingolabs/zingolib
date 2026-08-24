@@ -2,7 +2,7 @@
 
 use std::{
     cmp,
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     ops::Range,
 };
 
@@ -21,7 +21,7 @@ use crate::{
     scan::task::ScanTask,
     sync::ScanRange,
     wallet::{
-        InitialSyncState, ScanTarget, SyncState, TreeBounds, WalletTransaction,
+        InitialSyncState, ScanTarget, SyncState, TreeBounds, WalletBlock, WalletTransaction,
         traits::{SyncBlocks, SyncNullifiers, SyncWallet},
     },
 };
@@ -1089,7 +1089,42 @@ pub(super) fn pop_newest_shard_range(sync_state: &mut SyncState, shielded_protoc
 ///
 /// Ranges being scanned right now are left alone, since their results are
 /// already in flight against the bounds they were dispatched with.
-pub(super) fn reopen_scan_ranges_from(sync_state: &mut SyncState, from_height: BlockHeight) {
+pub(super) async fn reopen_scan_ranges_from<W>(
+    consensus_parameters: &impl consensus::Parameters,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    wallet: &mut W,
+    from_height: BlockHeight,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks,
+{
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
+    reopen_scan_ranges_inner(sync_state, from_height);
+
+    let upper_block_bound_height = from_height - 1;
+    if wallet.get_wallet_block(upper_block_bound_height).is_err() {
+        let mut missing_block_bound = BTreeMap::new();
+        missing_block_bound.insert(
+            upper_block_bound_height,
+            WalletBlock::from_compact_block(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                &client::get_compact_block(fetch_request_sender.clone(), upper_block_bound_height)
+                    .await?,
+            )
+            .await?,
+        );
+        wallet
+            .append_wallet_blocks(missing_block_bound)
+            .map_err(SyncError::WalletError)?;
+    }
+
+    Ok(())
+}
+
+fn reopen_scan_ranges_inner(sync_state: &mut SyncState, from_height: BlockHeight) {
     if let Some((index, range_to_split)) = sync_state
         .scan_ranges()
         .iter()
@@ -1412,7 +1447,7 @@ mod tests {
             ScanRange::from_parts(300.into()..400.into(), ScanPriority::Scanning),
         ];
 
-        super::reopen_scan_ranges_from(&mut sync_state, 150.into());
+        super::reopen_scan_ranges_inner(&mut sync_state, 150.into());
 
         assert_eq!(
             sync_state.scan_ranges,
@@ -1437,7 +1472,7 @@ mod tests {
             ScanRange::from_parts(200.into()..300.into(), ScanPriority::Scanned),
         ];
 
-        super::reopen_scan_ranges_from(&mut sync_state, 1.into());
+        super::reopen_scan_ranges_inner(&mut sync_state, 1.into());
 
         assert_eq!(
             sync_state.scan_ranges,
