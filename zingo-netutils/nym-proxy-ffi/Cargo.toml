@@ -12,7 +12,7 @@ crate-type = ["lib", "cdylib", "staticlib"]
 
 [dependencies]
 # NymProxy lives here, behind the nym feature; this shim always needs it.
-zingo-netutils = { git = "https://github.com/zingolabs/zingolib", branch = "dev", features = [
+zingo-netutils = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_nym_rc0", features = [
     "nym",
 ] }
 # Proc-macro scaffolding (setup_scaffolding! + #[uniffi::export]); no build.rs
@@ -31,7 +31,7 @@ live-mixnet = []
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # The tests read their temporal parameters from `time::test`.
-zingo-netutils = { git = "https://github.com/zingolabs/zingolib", branch = "dev", features = [
+zingo-netutils = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_nym_rc0", features = [
     "testutils",
 ] }
 
@@ -53,4 +53,4 @@ members = []
 # mixnet never starts. This restates zingolib ADR 0021 here: verification is
 # the compiled-in Mozilla bundle, identically on every platform.
 [patch.crates-io]
-rustls-platform-verifier = { git = "https://github.com/zingolabs/zingolib", branch = "dev" }
+rustls-platform-verifier = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_nym_rc0" }
