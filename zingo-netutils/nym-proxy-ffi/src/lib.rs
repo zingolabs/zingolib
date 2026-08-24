@@ -735,4 +735,95 @@ mod tests {
             .expect("monitor must end within the strike window")
             .expect("monitor task must end cleanly despite the panic");
     }
+
+    /// HYPOTHESIS: a task spawned on the handle's runtime constructs its
+    /// guard before an off-runtime drop of the handle returns, the premise
+    /// `drop_off_runtime_outlives_no_task` rests on.
+    /// Falsified if any trial's guard channel reports disconnected, meaning
+    /// the spawned future was dropped before it was ever polled.
+    #[test]
+    fn a_spawned_guard_exists_before_an_off_runtime_drop() {
+        struct DownGuard(std::sync::mpsc::Sender<()>);
+        impl Drop for DownGuard {
+            fn drop(&mut self) {
+                let _ = self.0.send(());
+            }
+        }
+        for trial in 0..100 {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(20)
+                .enable_all()
+                .build()
+                .expect("build runtime");
+            let (down_tx, down_rx) = std::sync::mpsc::channel();
+            runtime.spawn(async move {
+                let _guard = DownGuard(down_tx);
+                std::future::pending::<()>().await
+            });
+            let handle = MixnetProxyHandle {
+                proxy: Mutex::new(None),
+                monitor: None,
+                endpoint: Socks5Endpoint {
+                    host: "127.0.0.1".to_string(),
+                    port: 1,
+                },
+                runtime: Some(runtime),
+            };
+            drop(handle);
+            if let Err(state) = down_rx.try_recv() {
+                panic!("trial {trial}: {state:?} — the spawned future never built its guard");
+            }
+        }
+    }
+
+    /// HYPOTHESIS: this crate's manifest itself enables tokio's `sync`
+    /// feature for the tests that call `tokio::sync::oneshot`, instead of
+    /// borrowing it from feature unification with the nym stack.
+    /// Falsified if the dev-dependency tokio feature list lacks "sync".
+    #[test]
+    fn the_manifest_declares_the_tokio_sync_feature_the_tests_use() {
+        let manifest = include_str!("../Cargo.toml");
+        let dev_dependencies = manifest
+            .split("[dev-dependencies]")
+            .nth(1)
+            .expect("the manifest has a dev-dependencies table");
+        let tokio_line = dev_dependencies
+            .lines()
+            .find(|line| line.trim_start().starts_with("tokio"))
+            .expect("the dev-dependencies declare tokio");
+        assert!(
+            tokio_line.contains("\"sync\""),
+            "tokio::sync compiles only through feature unification: {tokio_line}"
+        );
+    }
+
+    /// HYPOTHESIS: the two ratified-convention tests keep their HYPOTHESIS
+    /// falsifier doc-comments.
+    /// Falsified if the doc block above either test lacks the convention.
+    #[test]
+    fn the_convention_tests_keep_their_hypothesis_falsifiers() {
+        let lines: Vec<&str> = include_str!("lib.rs").lines().collect();
+        for name in [
+            "check_names_the_refused_method_selection",
+            "every_probe_failure_maps_to_its_own_death_variant",
+        ] {
+            let needle = format!("fn {name}(");
+            let definition = lines
+                .iter()
+                .position(|line| line.contains(&needle))
+                .expect("the convention test is defined in this file");
+            let falsifier_kept = lines[..definition]
+                .iter()
+                .rev()
+                .take_while(|line| {
+                    let lead = line.trim_start();
+                    lead.starts_with("///") || lead.starts_with("#[")
+                })
+                .any(|line| line.contains("HYPOTHESIS"));
+            assert!(
+                falsifier_kept,
+                "{name} lost its HYPOTHESIS falsifier doc-comment"
+            );
+        }
+    }
 }
