@@ -61,6 +61,53 @@ fn draw_clutch(mut discovered: Vec<String>) -> Vec<String> {
 
 use crate::time::{DISCOVERY_TIMEOUT, NYM_LIFECYCLE_TIMEOUT, PER_ATTEMPT_CONNECT_TIMEOUT};
 
+/// One step of the bootstrap, carrying the Exit Node it concerns.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BootstrapEvent {
+    /// The Exit Node discovery query left for the Nym directory.
+    DiscoveryStarted,
+    /// The directory answered the discovery query.
+    DiscoveryFinished {
+        /// The count of Exit Nodes the directory advertised.
+        candidate_count: usize,
+    },
+    /// A pull of this Exit Node launched.
+    PullLaunched {
+        /// The Exit Node address the pull races.
+        exit_node: String,
+    },
+    /// The pull of this Exit Node failed.
+    PullFailed {
+        /// The Exit Node address whose pull failed.
+        exit_node: String,
+        /// The failure rendered for a human.
+        error: String,
+    },
+    /// The race kept this Exit Node and the local listener is up.
+    Connected {
+        /// The Exit Node address the proxy bound.
+        exit_node: String,
+    },
+}
+
+/// One step of a driven race, reported to the caller as it happens.
+enum AcqStep {
+    /// A pull of this arm index launched.
+    Launched {
+        /// The arm index the pull races.
+        arm: usize,
+    },
+    /// The pull of this arm index failed.
+    Failed {
+        /// The arm index whose pull failed.
+        arm: usize,
+        /// The failure rendered for a human.
+        error: String,
+    },
+    /// The race's counters changed.
+    Progress(RaceProgress),
+}
+
 /// Embedded Nym SOCKS5 proxy that routes traffic through the Nym mixnet.
 ///
 /// Manages the lifecycle of an in-process Nym SOCKS5 client connected to a
@@ -79,8 +126,20 @@ impl NymProxy {
     /// Start an embedded Nym SOCKS5 proxy over a clutch this call draws for
     /// itself, for a standalone run with no parent to draw one.
     pub async fn start() -> Result<Self, NymProxyError> {
+        Self::start_observed(|_| {}).await
+    }
+
+    /// [`Self::start`], reporting each bootstrap step to `on_event` as a
+    /// typed [`BootstrapEvent`].
+    pub async fn start_observed(
+        mut on_event: impl FnMut(BootstrapEvent),
+    ) -> Result<Self, NymProxyError> {
+        on_event(BootstrapEvent::DiscoveryStarted);
         let discovered = Self::discover_exit_nodes_at(DEFAULT_NYM_API_URL).await?;
-        Self::start_over(draw_clutch(discovered), |_| {}).await
+        on_event(BootstrapEvent::DiscoveryFinished {
+            candidate_count: discovered.len(),
+        });
+        Self::start_over_observed(draw_clutch(discovered), on_event).await
     }
 
     /// Start over exactly `clutch`, the Exit Node Reservations the parent
@@ -89,9 +148,26 @@ impl NymProxy {
         clutch: Vec<String>,
         on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
+        Self::start_bounded(clutch, |_| {}, on_progress).await
+    }
+
+    /// [`Self::start_over`], reporting typed [`BootstrapEvent`]s instead of
+    /// prose lines.
+    pub async fn start_over_observed(
+        clutch: Vec<String>,
+        on_event: impl FnMut(BootstrapEvent),
+    ) -> Result<Self, NymProxyError> {
+        Self::start_bounded(clutch, on_event, |_| {}).await
+    }
+
+    async fn start_bounded(
+        clutch: Vec<String>,
+        on_event: impl FnMut(BootstrapEvent),
+        on_progress: impl FnMut(String),
+    ) -> Result<Self, NymProxyError> {
         tokio::time::timeout(
             NYM_LIFECYCLE_TIMEOUT,
-            Self::start_inner(clutch, on_progress),
+            Self::start_inner(clutch, on_event, on_progress),
         )
         .await
         .map_err(|_| {
@@ -104,13 +180,14 @@ impl NymProxy {
 
     async fn start_inner(
         clutch: Vec<String>,
+        on_event: impl FnMut(BootstrapEvent),
         mut on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
         if clutch.is_empty() {
             return Err(NymProxyError::NoExitNode);
         }
         on_progress(format!("racing a clutch of {} exits", clutch.len()));
-        let mut proxy = Self::connect_across_exit_nodes(&clutch, on_progress).await?;
+        let mut proxy = Self::connect_across_exit_nodes(&clutch, on_event, on_progress).await?;
         proxy.clutch = clutch;
         Ok(proxy)
     }
@@ -121,9 +198,18 @@ impl NymProxy {
     /// above the SOCKS5 seam.
     async fn connect_across_exit_nodes(
         exit_nodes: &[String],
+        mut on_event: impl FnMut(BootstrapEvent),
         mut on_progress: impl FnMut(String),
     ) -> Result<Self, NymProxyError> {
-        drive_acq_race(
+        // A panicked pull can lose its arm index, so the identity lookup
+        // falls back the way short_exit_node_name does.
+        let full_exit_node_name = |arm: usize| {
+            exit_nodes
+                .get(arm)
+                .cloned()
+                .unwrap_or_else(|| format!("exit node {arm}"))
+        };
+        let proxy = drive_acq_race(
             exit_nodes.len(),
             exit_nodes.len(),
             acquisition_launch_policy(),
@@ -158,10 +244,23 @@ impl NymProxy {
                     text,
                 )
             },
-            |progress| on_progress(progress.to_string()),
+            |step| match step {
+                AcqStep::Launched { arm } => on_event(BootstrapEvent::PullLaunched {
+                    exit_node: full_exit_node_name(arm),
+                }),
+                AcqStep::Failed { arm, error } => on_event(BootstrapEvent::PullFailed {
+                    exit_node: full_exit_node_name(arm),
+                    error,
+                }),
+                AcqStep::Progress(progress) => on_progress(progress.to_string()),
+            },
         )
         .await
-        .map_err(acq_race_loss_error)
+        .map_err(acq_race_loss_error)?;
+        on_event(BootstrapEvent::Connected {
+            exit_node: proxy.exit_node().to_string(),
+        });
+        Ok(proxy)
     }
 
     /// The Exit Nodes the Nym directory currently advertises, for
@@ -278,7 +377,7 @@ impl NymProxy {
         }
         // Each attempt binds its own fresh port, which cannot collide with
         // the old client's still-bound port.
-        let new_proxy = Self::connect_across_exit_nodes(&clutch, |_| {}).await?;
+        let new_proxy = Self::connect_across_exit_nodes(&clutch, |_| {}, |_| {}).await?;
 
         // Swap only after the new client succeeded, so a failed reconnect
         // leaves the old client untouched.
@@ -450,7 +549,7 @@ async fn drive_acq_race<T, E, F, Fut, D, DFut>(
     launch: F,
     abandon: D,
     describe_panic: impl Fn(usize, String) -> E,
-    mut on_progress: impl FnMut(RaceProgress),
+    mut on_step: impl FnMut(AcqStep),
 ) -> Result<T, LostAcqRace<E>>
 where
     T: Send + 'static,
@@ -471,13 +570,15 @@ where
                  pulls: &mut tokio::task::JoinSet<(usize, Result<T, E>)>,
                  pull_arms: &mut HashMap<tokio::task::Id, usize>,
                  hedge_deadline: &mut Option<tokio::time::Instant>,
-                 lost: &mut bool| {
+                 lost: &mut bool,
+                 launched: &mut Vec<usize>| {
         for action in actions {
             match action {
                 RaceAction::Launch { arm } => {
                     let pull = launch(arm);
                     let handle = pulls.spawn(async move { (arm, pull.await) });
                     pull_arms.insert(handle.id(), arm);
+                    launched.push(arm);
                 }
                 RaceAction::SetHedgeTimer(interval) => {
                     *hedge_deadline = Some(tokio::time::Instant::now() + interval);
@@ -486,6 +587,9 @@ where
             }
         }
     };
+    // The apply closure cannot call the generic `on_step` directly, so it
+    // records launches and each call site drains them into steps.
+    let mut launched: Vec<usize> = Vec::new();
 
     apply(
         acq_race.start(),
@@ -493,8 +597,12 @@ where
         &mut pull_arms,
         &mut hedge_deadline,
         &mut lost,
+        &mut launched,
     );
-    on_progress(acq_race.progress());
+    for arm in launched.drain(..) {
+        on_step(AcqStep::Launched { arm });
+    }
+    on_step(AcqStep::Progress(acq_race.progress()));
 
     loop {
         if lost {
@@ -543,6 +651,10 @@ where
                         // The planner's event wants a rendered line for its
                         // progress narration; the typed failure is retained
                         // whole for the terminal account.
+                        on_step(AcqStep::Failed {
+                            arm,
+                            error: error.to_string(),
+                        });
                         apply(
                             acq_race.on_event(RaceEvent::PullFailed {
                                 arm,
@@ -552,9 +664,13 @@ where
                             &mut pull_arms,
                             &mut hedge_deadline,
                             &mut lost,
+                            &mut launched,
                         );
+                        for arm in launched.drain(..) {
+                            on_step(AcqStep::Launched { arm });
+                        }
                         failures.push(error);
-                        on_progress(acq_race.progress());
+                        on_step(AcqStep::Progress(acq_race.progress()));
                     }
                 }
             }
@@ -568,8 +684,12 @@ where
                     &mut pull_arms,
                     &mut hedge_deadline,
                     &mut lost,
+                    &mut launched,
                 );
-                on_progress(acq_race.progress());
+                for arm in launched.drain(..) {
+                    on_step(AcqStep::Launched { arm });
+                }
+                on_step(AcqStep::Progress(acq_race.progress()));
             }
         }
     }
@@ -815,7 +935,11 @@ mod tests {
             |arm| async move { Err::<&str, _>(format!("arm {arm} refused")) },
             no_abandon,
             panic_text,
-            move |progress| sink.lock().unwrap().push(progress.to_string()),
+            move |step| {
+                if let AcqStep::Progress(progress) = step {
+                    sink.lock().unwrap().push(progress.to_string())
+                }
+            },
         )
         .await;
         let lines = lines.lock().unwrap();
@@ -823,6 +947,43 @@ mod tests {
             lines.iter().any(|l| l.contains("2 failed")),
             "progress must narrate the accumulated failures, got {lines:?}"
         );
+    }
+
+    /// HYPOTHESIS: the driver reports every launch and every failure as a
+    /// typed step carrying the arm index, so the caller can name the Exit
+    /// Node each step concerns. Falsified if a launched arm goes
+    /// unreported, a failure loses its index, or a failure loses its text.
+    #[tokio::test(start_paused = true)]
+    async fn the_driver_reports_each_launch_and_failure_with_its_arm() {
+        let steps = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = std::sync::Arc::clone(&steps);
+        let _ = drive_acq_race(
+            RACED_ARMS,
+            RACED_ARMS,
+            hedged(RESERVATION_CLUTCH_SIZE),
+            |arm| async move { Err::<&str, _>(format!("arm {arm} refused")) },
+            no_abandon,
+            panic_text,
+            move |step| match step {
+                AcqStep::Launched { arm } => sink.lock().unwrap().push(format!("launched {arm}")),
+                AcqStep::Failed { arm, error } => {
+                    sink.lock().unwrap().push(format!("failed {arm}: {error}"))
+                }
+                AcqStep::Progress(_) => {}
+            },
+        )
+        .await;
+        let steps = steps.lock().unwrap();
+        for arm in 0..RACED_ARMS {
+            assert!(
+                steps.contains(&format!("launched {arm}")),
+                "every arm's launch is reported, got {steps:?}"
+            );
+            assert!(
+                steps.contains(&format!("failed {arm}: arm {arm} refused")),
+                "every arm's failure carries its index and text, got {steps:?}"
+            );
+        }
     }
 
     #[test]
