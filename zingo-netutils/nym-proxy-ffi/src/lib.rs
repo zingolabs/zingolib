@@ -328,11 +328,8 @@ impl MixnetProxyHandle {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .take();
-        if let Some(proxy) = taken {
-            self.runtime
-                .as_ref()
-                .expect("a live handle owns its runtime")
-                .block_on(proxy.disconnect());
+        if let (Some(proxy), Some(runtime)) = (taken, self.runtime.as_ref()) {
+            runtime.block_on(proxy.disconnect());
         }
     }
 }
