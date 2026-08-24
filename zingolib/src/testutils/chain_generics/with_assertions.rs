@@ -298,7 +298,7 @@ where
         environment.increase_chain_height().await;
         timestamped_test_log("syncking transaction confirmation.");
         // chain scan shows the same
-        sender.sync_and_await().await.unwrap();
+        environment.sync_client_to_tip(sender).await;
         let last_known_chain_height = sender
             .wallet()
             .read()
