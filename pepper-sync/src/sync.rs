@@ -368,6 +368,11 @@ impl ScanRange {
     }
 }
 
+enum MempoolMessage {
+    Transaction(RawTransaction),
+    NewBlockMined,
+}
+
 /// Syncs a wallet to the latest state of the blockchain.
 ///
 /// `sync_mode` is intended to be stored in a struct that owns the wallet(s) (i.e. lightclient) and has a non-atomic
@@ -460,6 +465,7 @@ where
             .map_err(SyncError::WalletError)?,
     );
 
+    let mut check_for_new_blocks = false;
     let mut first_verification_complete = false;
     let mut mempool_shutdown_timer = None;
     let mut nullifier_map_limit_exceeded = false;
@@ -654,18 +660,25 @@ where
                     drop(wallet_guard);
                 }
 
-                Some(raw_transaction) = mempool_transaction_receiver.recv() => {
-                    let mut wallet_guard = wallet.write().await;
-                    process_mempool_transaction(
-                        consensus_parameters,
-                        &ufvks,
-                        &mut *wallet_guard,
-                        raw_transaction,
-                    )
-                    .await?;
-                    unprocessed_mempool_transactions_count.fetch_sub(1, atomic::Ordering::Release);
-                    wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
-                    drop(wallet_guard);
+                Some(mempool_message) = mempool_transaction_receiver.recv() => {
+                    match mempool_message {
+                        MempoolMessage::Transaction(raw_transaction) => {
+                            let mut wallet_guard = wallet.write().await;
+                            process_mempool_transaction(
+                                consensus_parameters,
+                                &ufvks,
+                                &mut *wallet_guard,
+                                raw_transaction,
+                            )
+                            .await?;
+                            unprocessed_mempool_transactions_count.fetch_sub(1, atomic::Ordering::Release);
+                            wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
+                            drop(wallet_guard);
+                        }
+                        MempoolMessage::NewBlockMined => {
+                            check_for_new_blocks = true;
+                        }
+                    }
                 }
 
                 _update_scanner = interval.tick() => {
@@ -699,6 +712,12 @@ where
                         },
                     }
 
+                    if check_for_new_blocks && scanner.is_verified() {
+                        check_for_new_blocks = false;
+                        first_verification_complete = true;
+                        continue 'continuous_sync;
+                    }
+
                     scanner.update(&mut *wallet.write().await, nullifier_map_limit_exceeded).await?;
 
                     if matches!(scanner.state, ScannerState::Complete) && config.shutdown_on_completion {
@@ -709,10 +728,7 @@ where
                 }
 
                 _check_new_block_mined = continuous_sync_interval.tick() => {
-                    if scanner.is_verified() {
-                        first_verification_complete = true;
-                        continue 'continuous_sync;
-                    }
+                    check_for_new_blocks = true;
                 }
             }
         }
@@ -2456,7 +2472,7 @@ where
 /// If the mempool stream message is `None` (a block was mined) or the request failed, setup a new mempool stream.
 async fn mempool_monitor<C>(
     mut client: C,
-    mempool_transaction_sender: mpsc::Sender<RawTransaction>,
+    mempool_transaction_sender: mpsc::Sender<MempoolMessage>,
     unprocessed_transactions_count: Arc<AtomicU32>,
     stream_connected_at: Arc<std::sync::OnceLock<std::time::Instant>>,
     shutdown_mempool: Arc<AtomicBool>,
@@ -2464,8 +2480,6 @@ async fn mempool_monitor<C>(
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
-    // TODO: improve this logic to utilize the `None` return when a new block is mined and reset the continuous sync loop
-
     // The tick only bounds how quickly the monitor notices the shutdown
     // flag; sync() joins this task at session end, so the tick interval
     // is paid on the critical path of every sync session.
@@ -2486,10 +2500,10 @@ where
                 loop {
                     tokio::select! {
                         mempool_stream_message = mempool_stream.message() => {
-                            match mempool_stream_message.unwrap_or(None) {
-                                Some(raw_transaction) => {
+                            match mempool_stream_message {
+                                Ok(Some(raw_transaction)) => {
                                      match mempool_transaction_sender
-                                        .send(raw_transaction)
+                                        .send(MempoolMessage::Transaction(raw_transaction))
                                         .await {
                                             Ok(_) => {
                                                 unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
@@ -2501,7 +2515,22 @@ where
                                             }
                                         }
                                 }
-                                None => {
+                                Ok(None) => {
+                                     match mempool_transaction_sender
+                                        .send(MempoolMessage::NewBlockMined)
+                                        .await {
+                                            Ok(_) => {
+                                                continue 'main;
+                                            }
+                                            Err(_) => {
+                                                unprocessed_transactions_count.store(0, atomic::Ordering::Release);
+                                                shutdown_mempool.store(true, atomic::Ordering::Release);
+                                                break 'main;
+                                            }
+                                        }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Mempool error: {e}");
                                     continue 'main;
                                 }
                             }
