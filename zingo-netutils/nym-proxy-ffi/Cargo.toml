@@ -29,7 +29,7 @@ tracing = "0.1.44"
 live-mixnet = []
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 # The tests read their temporal parameters from `time::test`.
 zingo-netutils = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_nym_rc0", features = [
     "testutils",
