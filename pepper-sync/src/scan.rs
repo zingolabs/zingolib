@@ -11,15 +11,20 @@ use incrementalmerkletree::Position;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_transparent::keys::NonHardenedChildIndex;
 use zingo_netutils::lightwallet_protocol::{CompactBlock, CompactTx};
 use zip32::AccountId;
 
 use crate::{
     client::FetchRequest,
     error::{ScanError, ServerError},
+    keys::{
+        self,
+        transparent::{TransparentAddressId, TransparentScope},
+    },
     sync::ScanPriority,
     utils::{block, transaction},
-    wallet::{NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction},
+    wallet::{KeyIdInterface, NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
 };
 
@@ -87,6 +92,7 @@ struct ScanData {
     decrypted_scan_targets: BTreeSet<ScanTarget>,
     decrypted_note_data: DecryptedNoteData,
     witness_data: WitnessData,
+    gap_addresses_in_use: BTreeSet<TransparentAddressId>,
 }
 
 pub(crate) struct ScanResults {
@@ -189,9 +195,12 @@ where
     )
     .await?;
 
+    // TODO: loop until no more gap addresses are derived
     let consensus_parameters_clone = consensus_parameters.clone();
     let ufvks_clone = ufvks.clone();
     let transparent_inuse_addresses_clone = transparent_inuse_addresses.clone();
+    let transparent_gap_addresses_clone = transparent_gap_addresses.clone();
+    // TODO: add logic to add gap address to inuse and derive more gap addresses to the new gap limit
     let scan_data = tokio::task::spawn_blocking(move || {
         scan_compact_blocks(
             compact_blocks,
@@ -200,7 +209,7 @@ where
             initial_scan_data,
             max_outputs / 8,
             transparent_inuse_addresses_clone,
-            transparent_gap_addresses,
+            transparent_gap_addresses_clone,
         )
     })
     .await
@@ -213,7 +222,70 @@ where
         mut decrypted_scan_targets,
         decrypted_note_data,
         witness_data,
+        gap_addresses_in_use,
     } = scan_data;
+
+    for (account_id, ufvk) in ufvks.iter() {
+        let Some(account_pubkey) = ufvk.transparent() else {
+            continue;
+        };
+
+        for scope in [
+            TransparentScope::External,
+            TransparentScope::Internal,
+            TransparentScope::Refund,
+        ] {
+            let gap_addresses_in_use_scoped = gap_addresses_in_use
+                .iter()
+                .filter(|gap_id| gap_id.account_id() == *account_id && gap_id.scope() == scope)
+                .collect::<Vec<_>>();
+
+            if gap_addresses_in_use_scoped.is_empty() {
+                continue;
+            }
+
+            let highest_gap_address_in_use = gap_addresses_in_use_scoped
+                .last()
+                .expect("non-empty in this scope");
+            let no_of_gap_addresses_in_use = highest_gap_address_in_use
+                .address_index()
+                .saturating_sub(
+                    gap_addresses_in_use_scoped
+                        .first()
+                        .expect("non-empty in this scope")
+                        .address_index()
+                        .index(),
+                )
+                .index()
+                + 1;
+            let mut address_index_for_derivation = transparent_gap_addresses
+                .values()
+                .last()
+                .unwrap()
+                .address_index()
+                .next()
+                .ok_or_else(|| ScanError::AllAddressesInUse)?;
+            while address_index_for_derivation.index()
+                < address_index_for_derivation
+                    .index()
+                    .saturating_add(no_of_gap_addresses_in_use)
+            {
+                let address_id =
+                    TransparentAddressId::new(*account_id, scope, address_index_for_derivation);
+                let address = keys::transparent::derive_address(
+                    consensus_parameters,
+                    account_pubkey,
+                    address_id,
+                )
+                .map_err(SyncError::TransparentAddressDerivationError)?;
+                // addresses.push((address_id, address.clone()));
+
+                address_index_for_derivation = address_index_for_derivation
+                    .next()
+                    .ok_or_else(|| ScanError::AllAddressesInUse)?;
+            }
+        }
+    }
 
     scan_targets.append(&mut decrypted_scan_targets);
 

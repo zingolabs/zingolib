@@ -306,6 +306,9 @@ pub enum ScanError {
     /// Compact transaction contained transparent output with invalid script bytes.
     #[error("compact transaction contained transparent output with invalid script bytes")]
     InvalidTransparentScriptBytes,
+    /// All transparent addresses are already in use.
+    #[error("all transparent addresses are already in use")]
+    AllAddressesInUse,
 }
 
 /// The encoding of a compact Sapling output or compact Orchard action was invalid.

@@ -67,6 +67,7 @@ where
     let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
     let mut nullifiers = NullifierMap::new();
     let mut outpoints = BTreeMap::new();
+    let mut gap_addresses_in_use = BTreeSet::new();
     let mut decrypted_scan_targets = BTreeSet::new();
     let mut decrypted_note_data = DecryptedNoteData::new();
     let mut witness_data = WitnessData::new(
@@ -190,16 +191,15 @@ where
                             narrow_scan_area: true,
                         });
                     }
-                    if let Some((address, key_id)) =
+                    if let Some((_address, key_id)) =
                         transparent_gap_addresses.get_key_value(&encoded_address)
                     {
+                        gap_addresses_in_use.insert(*key_id);
                         decrypted_scan_targets.insert(ScanTarget {
                             block_height,
                             txid,
                             narrow_scan_area: true,
                         });
-
-                        // TODO: add logic to add gap address to inuse and derive more gap addresses to the new gap limit
                     }
                 }
             }
@@ -251,6 +251,7 @@ where
         decrypted_scan_targets,
         decrypted_note_data,
         witness_data,
+        gap_addresses_in_use,
     })
 }
 
