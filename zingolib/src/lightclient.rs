@@ -191,7 +191,7 @@ pub struct LightClient {
     /// The session's exit authority: Reservations, the NodeHealthIndex, and
     /// the acquirer Proven Clients are born from.
     #[cfg(feature = "nym")]
-    correspondent_pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+    destination_pools: std::sync::Arc<crate::destination::pool::Pools>,
     /// The session-level Mixnet Mode status channel (ADR 0024, decision 2):
     /// the one shared watch every subscriber reads. Transport transitions
     /// publish from the supervisor's tasks, slot transitions from the
@@ -300,7 +300,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            correspondent_pools: crate::correspondent::pool::Pools::new(),
+            destination_pools: crate::destination::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
@@ -350,7 +350,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            correspondent_pools: crate::correspondent::pool::Pools::new(),
+            destination_pools: crate::destination::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
@@ -416,7 +416,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            correspondent_pools: crate::correspondent::pool::Pools::new(),
+            destination_pools: crate::destination::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]

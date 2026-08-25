@@ -1,26 +1,26 @@
-# A Correspondent Reservation levels concurrent Transmissions across operators
+# A Destination Reservation levels concurrent Transmissions across operators
 
 Status: draft — ratified in session 2026-08-10, pending review
 
 ## Context
 
-Correspondent Selection carried two constraints — the sync indexer's
-operator is never a transmit target, and a Transmission's Correspondent
+Destination Selection carried two constraints — the sync indexer's
+operator is never a transmit target, and a Transmission's Destination
 must differ from the previous Transmission's — and both govern
 consecutive sends. Nothing governed concurrent ones: two Transmissions
-in flight at once could draw the same Correspondent, so the
+in flight at once could draw the same Destination, so the
 non-accumulation property that Selection buys sequentially had no
 concurrent counterpart on any platform. The 2026-08-10 audit surfaced
 the gap alongside the Exit Pool comparison: exits already enjoy
 absolute concurrent disjointness through the unique-per-holder
 Reservation of ADR 0038, but the exit population is large and
-fungible, while the Correspondent census is small — an absolute
+fungible, while the Destination census is small — an absolute
 exclusion there would make a send wait on, or refuse for, a transient
 concurrency collision.
 
 ## Decision
 
-The session keeps one Correspondent Reservation ledger, keyed by the
+The session keeps one Destination Reservation ledger, keyed by the
 operator's registrable domain and never by endpoint URI, because two
 endpoints of one operator are one observer. It governs the Indexer
 kind only: a price run contacts its whole census and draws nothing.
@@ -42,7 +42,7 @@ Transmission only after every operator observes one, and so on upward,
 with no artificial ceiling.
 
 The absolute exclusions filter before the ledger. The sync operator,
-the previous Transmission's Correspondent, and the operators this
+the previous Transmission's Destination, and the operators this
 Transmission already holds are removed first, and the Health floor
 judges eligibility on Health evidence alone — reservations are
 transient concurrency state, never evidence, so they neither push a

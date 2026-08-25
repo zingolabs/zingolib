@@ -104,8 +104,8 @@ pub const ANNOUNCEMENT_DEVIATIONS: u32 = 4;
 pub const EXIT_ANNOUNCEMENT_GRACE: Duration = Duration::from_millis(7_000);
 
 /// The silence interval before a send's escalation launches a further
-/// Correspondent arm: the sum of a connect attempt's bound and one mixnet
-/// round trip, so a responsive Correspondent's confirmed delivery beats the
+/// Destination arm: the sum of a connect attempt's bound and one mixnet
+/// round trip, so a responsive Destination's confirmed delivery beats the
 /// first hedge by construction, and the interval retunes when either bound
 /// retunes.
 ///

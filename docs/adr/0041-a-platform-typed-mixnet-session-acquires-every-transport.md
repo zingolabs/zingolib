@@ -33,7 +33,7 @@ process, one for the app-serviced mobile host (marker names are
 working identifiers pending ratification) — carries the concrete
 acquirer as an associated type. The generic is confined to the
 **Mixnet Session** (name ratified 2026-08-10): the one subsystem
-struct owning the session's transport slot, Correspondent Pools, Exit
+struct owning the session's transport slot, Destination Pools, Exit
 Pool, and acquirer. The wallet session holds a Mixnet Session typed by
 its platform, with the desktop platform as the default parameter so
 existing desktop consumers compile unchanged.
@@ -70,6 +70,6 @@ because pooling capability is a property of the platform type. The
 Server-Selection Sweep and the Price Source Pool reach mobile through
 the same seam, which is what extends pairwise-disjoint Exit Node
 Reservations to every concurrent surface there. zingo-mobile's shim
-must implement the host service for the request channel. Correspondent
+must implement the host service for the request channel. Destination
 disjointness across concurrent Transmissions remains unenforced on
 every platform and is a separate future decision.

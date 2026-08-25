@@ -1,7 +1,7 @@
-//! The Correspondable trait and the curated Correspondent list.
+//! The Destination trait and the curated Destination list.
 //!
 //! This list is kept deliberately separate from the sync-server list:
-//! Correspondents are chosen for reliable transaction relay, sync servers
+//! Destinations are chosen for reliable transaction relay, sync servers
 //! for low query latency, so tuning one must not reshape the other.
 //!
 //! # Provenance
@@ -17,7 +17,7 @@
 //! entire `lightwalletd.com` and `zcash-infra.com` fleets were dead.
 //!
 //! The entries below are those 19 survivors deduplicated to ONE endpoint per
-//! operator, because the party Correspondent Rotation defends against is the
+//! operator, because the party Destination Rotation defends against is the
 //! operator, not the DNS name: a uniform pick over an operator-diverse pool
 //! spreads sends across accumulating parties, where a pool listing one
 //! operator's many regional endpoints would overweight that operator.
@@ -40,7 +40,7 @@
 //! endpoint the mixnet cannot reach is worse than useless: it wastes
 //! escalation rounds on a certain failure. A 2026-07-21 paired clearnet/mixnet
 //! probe (the `network probe` diagnostic) found a clean split: every port-443
-//! Correspondent answered over the mixnet, while all three port-9067 entries
+//! Destination answered over the mixnet, while all three port-9067 entries
 //! (`lwd.zcashexplorer.app`, `zec.alexxiy.top`, `carover0.xyz`) completed the
 //! SOCKS5 tunnel but then failed the TLS handshake with an EOF. The mixnet
 //! exit gateways relay the standard 443 but mishandle the non-standard
@@ -53,30 +53,30 @@
 
 use http::Uri;
 
-/// Something that can be corresponded with over the mixnet: the party a
-/// Transmission addresses, never the path that carries it.
+/// The party a Transmission addresses over the mixnet, never the path
+/// that carries it.
 ///
 /// ```
-/// use zingolib::correspondent::Correspondable;
+/// use zingolib::destination::Destination;
 ///
 /// let indexer = zingolib::indexers::INDEXERS
 ///     .iter()
 ///     .find(|indexer| indexer.uri == "https://na.zec.rocks:443")
 ///     .unwrap();
-/// assert_eq!(Correspondable::address(indexer).scheme_str(), Some("https"));
+/// assert_eq!(Destination::address(indexer).scheme_str(), Some("https"));
 /// assert_eq!(
-///     Correspondable::operator(indexer).as_deref(),
+///     Destination::operator(indexer).as_deref(),
 ///     Some("zec.rocks")
 /// );
 /// ```
-pub trait Correspondable {
+pub trait Destination {
     /// Where a Transmission addresses it.
     fn address(&self) -> Uri;
     /// The accountable operator: the draw key and the Health aggregation key.
     fn operator(&self) -> Option<String>;
 }
 
-impl Correspondable for zingo_netutils::indexers::Indexer {
+impl Destination for zingo_netutils::indexers::Indexer {
     fn address(&self) -> Uri {
         self.uri
             .parse()
@@ -89,7 +89,7 @@ impl Correspondable for zingo_netutils::indexers::Indexer {
 }
 
 #[cfg(feature = "nym")]
-impl Correspondable for zingo_price::PriceSource {
+impl Destination for zingo_price::PriceSource {
     fn address(&self) -> Uri {
         self.url()
             .parse()
@@ -105,11 +105,11 @@ pub mod health;
 #[cfg(feature = "nym")]
 pub(crate) mod pool;
 
-/// Curated Correspondents (mainnet): the publicly reachable indexers found
+/// Curated Destinations (mainnet): the publicly reachable indexers found
 /// by the 2026-07-21 discovery sweep, one endpoint per operator, restricted to
 /// those the mixnet can actually reach. See the module docs for provenance,
 /// the operator-diversity rationale, and the port-443 restriction.
-pub const CORRESPONDENT_INDEXERS: &[&str] = &[
+pub const DESTINATION_INDEXERS: &[&str] = &[
     "https://zec.rocks:443",
     "https://us.zec.stardust.rest:443",
     "https://zec-node.cakewallet.com:443",
@@ -123,15 +123,15 @@ pub const CORRESPONDENT_INDEXERS: &[&str] = &[
     "https://webhighway.website:443",
 ];
 
-/// Parses [`CORRESPONDENT_INDEXERS`] into `Uri`s, skipping any that fail to parse.
+/// Parses [`DESTINATION_INDEXERS`] into `Uri`s, skipping any that fail to parse.
 ///
 /// This is the raw curated list, for diagnostic surfaces that carry no wallet
 /// data (the `network probe` pairing). A transmission draw MUST NOT use it
-/// directly: it goes through `eligible_correspondents` (crate-private, so no
+/// directly: it goes through `eligible_destinations` (crate-private, so no
 /// intra-doc link from this public item), which enforces the
-/// correspondent-is-never-the-sync-indexer invariant (ADR 0022).
-pub fn correspondent_indexers() -> Vec<Uri> {
-    CORRESPONDENT_INDEXERS
+/// destination-is-never-the-sync-indexer invariant (ADR 0022).
+pub fn destination_indexers() -> Vec<Uri> {
+    DESTINATION_INDEXERS
         .iter()
         .filter_map(|entry| entry.parse().ok())
         .collect()
@@ -141,32 +141,32 @@ pub fn correspondent_indexers() -> Vec<Uri> {
 /// than transmit to the sync indexer.
 #[cfg(feature = "nym")]
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum NoEligibleCorrespondents {
+pub enum NoEligibleDestinations {
     /// Every pool entry belongs to the sync indexer's operator.
     #[error(
-        "no eligible Correspondent: every entry in the pool belongs to the \
-         sync indexer's operator ({0}), and a Correspondent is never \
+        "no eligible Destination: every entry in the pool belongs to the \
+         sync indexer's operator ({0}), and a Destination is never \
          allowed to be the sync indexer"
     )]
     AllBelongToSyncOperator(Operator),
-    /// The pool held no Correspondents before any exclusion applied.
-    #[error("no eligible Correspondent: the pool is empty")]
+    /// The pool held no Destinations before any exclusion applied.
+    #[error("no eligible Destination: the pool is empty")]
     EmptyPool,
 }
 
 /// The pool a transmission draw is allowed to use: the curated
-/// Correspondents minus every entry operated by the party that runs
+/// Destinations minus every entry operated by the party that runs
 /// `sync_indexer`.
 ///
 /// This is the sole sanctioned pool constructor for any surface that hands a
 /// raw transaction to a drawn indexer (ADR 0022). The sync indexer already
 /// holds the wallet's address set, so a draw that lands on it would hand that
-/// same party the transmission too, defeating Correspondent Rotation exactly
+/// same party the transmission too, defeating Destination Rotation exactly
 /// where it matters most. Exclusion is by operator, not by exact URI, for the same
 /// reason the list holds one endpoint per operator: `eu.zec.rocks` and
 /// `zec.rocks` are the same accumulating party.
 ///
-/// Refuses with [`NoEligibleCorrespondents`] if the exclusion empties the pool,
+/// Refuses with [`NoEligibleDestinations`] if the exclusion empties the pool,
 /// so a misconfigured list fails closed instead of silently transmitting to
 /// the sync indexer.
 ///
@@ -174,13 +174,13 @@ pub enum NoEligibleCorrespondents {
 /// operator to exclude, so the ADR 0022 invariant holds vacuously over the
 /// full pool (ruling 2026-07-29).
 #[cfg(feature = "nym")]
-pub(crate) fn eligible_correspondents(
+pub(crate) fn eligible_destinations(
     sync_indexer: Option<&Uri>,
     health: &health::Health,
-) -> Result<Vec<Uri>, NoEligibleCorrespondents> {
-    let candidates = correspondent_indexers();
+) -> Result<Vec<Uri>, NoEligibleDestinations> {
+    let candidates = destination_indexers();
     if candidates.is_empty() {
-        return Err(NoEligibleCorrespondents::EmptyPool);
+        return Err(NoEligibleDestinations::EmptyPool);
     }
     let pool = match sync_indexer {
         Some(sync_indexer) => eligible_from(candidates, sync_indexer)?,
@@ -189,7 +189,7 @@ pub(crate) fn eligible_correspondents(
     Ok(health.filter_with_floor(pool))
 }
 
-/// Pure core of [`eligible_correspondents`], over an arbitrary pool for
+/// Pure core of [`eligible_destinations`], over an arbitrary pool for
 /// testability. Crate-visible so the migration draw's pool filtering
 /// (`eligible_candidates`) delegates here instead of growing a second,
 /// divergent exclusion (ADR 0022 requires one).
@@ -197,9 +197,9 @@ pub(crate) fn eligible_correspondents(
 pub(crate) fn eligible_from(
     pool: Vec<Uri>,
     sync_indexer: &Uri,
-) -> Result<Vec<Uri>, NoEligibleCorrespondents> {
+) -> Result<Vec<Uri>, NoEligibleDestinations> {
     if pool.is_empty() {
-        return Err(NoEligibleCorrespondents::EmptyPool);
+        return Err(NoEligibleDestinations::EmptyPool);
     }
     match Operator::of_uri(sync_indexer) {
         None => Ok(pool),
@@ -209,7 +209,7 @@ pub(crate) fn eligible_from(
                 .filter(|entry| Operator::of_uri(entry).as_ref() != Some(&sync_operator))
                 .collect();
             if eligible.is_empty() {
-                return Err(NoEligibleCorrespondents::AllBelongToSyncOperator(
+                return Err(NoEligibleDestinations::AllBelongToSyncOperator(
                     sync_operator,
                 ));
             }
@@ -226,7 +226,7 @@ pub(crate) fn same_operator(host_a: &str, host_b: &str) -> bool {
     Operator::of_host(host_a) == Operator::of_host(host_b)
 }
 
-/// The accumulating administrative authority behind a Correspondable host, keyed by its registrable parent domain.
+/// The accumulating administrative authority behind a Destination host, keyed by its registrable parent domain.
 #[cfg(feature = "nym")]
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Operator(String);
@@ -261,7 +261,7 @@ impl std::fmt::Display for Operator {
     }
 }
 
-/// The endpoint-grain identity of a Correspondable host, lowercased because DNS names compare case-insensitively.
+/// The endpoint-grain identity of a Destination host, lowercased because DNS names compare case-insensitively.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Host(String);
 
@@ -308,9 +308,9 @@ mod tests {
     #[test]
     fn every_entry_parses() {
         assert_eq!(
-            correspondent_indexers().len(),
-            CORRESPONDENT_INDEXERS.len(),
-            "every Correspondent URI must parse"
+            destination_indexers().len(),
+            DESTINATION_INDEXERS.len(),
+            "every Destination URI must parse"
         );
     }
 
@@ -318,13 +318,13 @@ mod tests {
     fn every_entry_is_https() {
         // Mixnet transmission is TLS-only end to end, so the exit gateway that
         // terminates the tunnel cannot read or tamper with the traffic. Every
-        // Correspondent must be https; the transmit path refuses anything
+        // Destination must be https; the transmit path refuses anything
         // else at dial time.
-        for entry in correspondent_indexers() {
+        for entry in destination_indexers() {
             assert_eq!(
                 entry.scheme_str(),
                 Some("https"),
-                "Correspondent entry {entry} must be https"
+                "Destination entry {entry} must be https"
             );
         }
     }
@@ -336,27 +336,27 @@ mod tests {
         // TLS handshake over the tunnel). Since this list is mixnet-only, a
         // non-443 entry is a guaranteed escalation failure. See the module
         // docs.
-        for entry in correspondent_indexers() {
+        for entry in destination_indexers() {
             assert_eq!(
                 entry.port_u16(),
                 Some(443),
-                "Correspondent entry {entry} must be port 443 to traverse the mixnet"
+                "Destination entry {entry} must be port 443 to traverse the mixnet"
             );
         }
     }
 
     #[test]
     fn one_endpoint_per_operator() {
-        // Correspondent Rotation defends against the operator, not the DNS
+        // Destination Rotation defends against the operator, not the DNS
         // name: no two entries may share a registrable parent domain.
-        let operator_domains: Vec<Operator> = CORRESPONDENT_INDEXERS
+        let operator_domains: Vec<Operator> = DESTINATION_INDEXERS
             .iter()
             .map(|entry| {
                 let host = entry
                     .parse::<Uri>()
                     .expect("checked by every_entry_parses")
                     .host()
-                    .expect("every Correspondent URI has a host")
+                    .expect("every Destination URI has a host")
                     .to_string();
                 Operator::of_host(&host)
             })
@@ -367,40 +367,40 @@ mod tests {
         assert_eq!(
             deduped.len(),
             operator_domains.len(),
-            "two Correspondent entries share an operator domain: {operator_domains:?}"
+            "two Destination entries share an operator domain: {operator_domains:?}"
         );
     }
 
     #[test]
-    fn the_sync_indexers_operator_is_excluded_from_the_correspondent_pool() {
+    fn the_sync_indexers_operator_is_excluded_from_the_destination_pool() {
         // A regional variant, not the listed URI, so this fails if exclusion
         // ever weakens to exact-URI matching: the accumulating party is the
         // operator (ADR 0022).
         let sync: Uri = "https://eu.zec.rocks:443".parse().unwrap();
-        let pool = eligible_correspondents(Some(&sync), &health::Health::default())
+        let pool = eligible_destinations(Some(&sync), &health::Health::default())
             .expect("ten operators remain");
-        assert_eq!(pool.len(), CORRESPONDENT_INDEXERS.len() - 1);
+        assert_eq!(pool.len(), DESTINATION_INDEXERS.len() - 1);
         assert!(
             pool.iter()
                 .all(|entry| Operator::of_host(entry.host().unwrap())
                     != Operator::of_host("zec.rocks")),
-            "the sync indexer's operator must never appear among the eligible Correspondents"
+            "the sync indexer's operator must never appear among the eligible Destinations"
         );
     }
 
     #[test]
     fn a_sync_indexer_outside_the_pool_excludes_nothing() {
         let sync: Uri = "https://my.private.indexer.example:443".parse().unwrap();
-        let pool = eligible_correspondents(Some(&sync), &health::Health::default())
+        let pool = eligible_destinations(Some(&sync), &health::Health::default())
             .expect("nothing to exclude");
-        assert_eq!(pool.len(), CORRESPONDENT_INDEXERS.len());
+        assert_eq!(pool.len(), DESTINATION_INDEXERS.len());
     }
 
     #[test]
     fn an_indexerless_session_draws_from_the_full_pool() {
         let pool =
-            eligible_correspondents(None, &health::Health::default()).expect("nothing to exclude");
-        assert_eq!(pool.len(), CORRESPONDENT_INDEXERS.len());
+            eligible_destinations(None, &health::Health::default()).expect("nothing to exclude");
+        assert_eq!(pool.len(), DESTINATION_INDEXERS.len());
     }
 
     /// HYPOTHESIS: a pool owned wholly by the sync indexer's operator
@@ -415,7 +415,7 @@ mod tests {
         let err = eligible_from(pool, &sync).expect_err("the pool must empty");
         assert_eq!(
             err,
-            NoEligibleCorrespondents::AllBelongToSyncOperator(Operator::of_host("zec.rocks"))
+            NoEligibleDestinations::AllBelongToSyncOperator(Operator::of_host("zec.rocks"))
         );
         assert!(err.to_string().contains("zec.rocks"), "{err}");
     }
@@ -430,7 +430,7 @@ mod tests {
         let resolvable: Uri = "https://na.zec.rocks:443".parse().unwrap();
         for sync in [hostless, resolvable] {
             let err = eligible_from(Vec::new(), &sync).expect_err("an empty pool must refuse");
-            assert_eq!(err, NoEligibleCorrespondents::EmptyPool);
+            assert_eq!(err, NoEligibleDestinations::EmptyPool);
             assert!(err.to_string().contains("the pool is empty"), "{err}");
             assert!(!err.to_string().contains("operator"), "{err}");
         }

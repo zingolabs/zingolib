@@ -66,7 +66,7 @@ pub(crate) trait SpeedPrioritized {
 
 /// The transport every speed-priority operation rides: one Proven Client
 /// whose exit serves the whole wave.
-pub(crate) type Member = crate::correspondent::pool::Member<crate::mixnet::MixnetProxy>;
+pub(crate) type Member = crate::destination::pool::Member<crate::mixnet::MixnetProxy>;
 
 /// A phase of a speed-priority attempt, for the operation to narrate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

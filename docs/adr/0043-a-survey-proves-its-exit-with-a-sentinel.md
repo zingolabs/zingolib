@@ -56,8 +56,8 @@ before proof has no name, no type, and no permitted use beyond making
 the attempt that proves it.
 
 A speed-priority survey carries one **Sentinel** in its opening wave: a
-realistic request to a highly reliable public address, which is not
-Correspondable and is never eligible for the cohort or the verdict. The
+realistic request to a highly reliable public address, which is never
+a Destination and is never eligible for the cohort or the verdict. The
 Sentinel holds a Survey Lane rather than adding one — the survey width
 is a ceiling measured for the one Nym client that the mobile host runs
 in-process, and a wider opening wave risks a saturation that would be
@@ -77,7 +77,7 @@ with its reservation held until a replacement binds, so the pool cannot
 offer it again; every survey result is discarded rather than carried
 forward; lanes are drawn afresh; and nothing from the failed attempt
 charges any indexer's Health or reaches the diary, because a
-tunnel-phase failure is the exit's and never the Correspondent's. A
+tunnel-phase failure is the exit's and never the Destination's. A
 sweep may burn a bounded number of exits this way, then refuses with a
 typed error naming how many were proven silent.
 
