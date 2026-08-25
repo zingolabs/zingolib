@@ -52,6 +52,12 @@ pub(crate) mod state;
 pub(crate) mod transparent;
 pub mod truncate;
 
+// TODO: investigate a potential case where:
+// - a wallet syncs, including the latest incomplete shard
+// - the wallet is not opened for some time, the incomplete shard has completed since
+// - on next sync, the shard roots *after* the incomplete shard are fetched
+// - the wallet can't spend because the incomplete shard is not prioritized to be completed
+
 /// The deepest chain reorganization the wallet tolerates, and the
 /// repository's single source of truth for that depth. It mirrors the
 /// validator's finalization boundary, zebra's
@@ -599,16 +605,20 @@ where
             // FIXME: this will work however it will check all addresses past the gap limit for the top 100 blocks everytime
             // there is a new block mined. this should be improved. a potential solution is to use transparent data in compact
             // blocks after the first pass with inuse+gaplimit taddrs i.e. once the first new mined block is detected.
-            transparent::update_addresses_and_scan_targets(
-                consensus_parameters,
-                wallet.clone(),
-                fetch_request_sender.clone(),
-                &ufvks,
-                last_known_chain_height,
-                chain_height,
-                config.transparent_address_discovery.clone(),
-            )
-            .await?;
+            if !first_verification_complete {
+                scanner.transparent_gap_addresses.extend(
+                    transparent::update_addresses_and_scan_targets(
+                        consensus_parameters,
+                        wallet.clone(),
+                        fetch_request_sender.clone(),
+                        &ufvks,
+                        last_known_chain_height,
+                        chain_height,
+                        config.transparent_address_discovery.clone(),
+                    )
+                    .await?,
+                );
+            }
 
             update_subtree_roots(
                 consensus_parameters,

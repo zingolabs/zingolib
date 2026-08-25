@@ -10,7 +10,11 @@ use tokio::sync::mpsc;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 use zcash_primitives::block::BlockHash;
-use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::{
+    consensus::{self, BlockHeight},
+    value::Zatoshis,
+};
+use zcash_transparent::address::Script;
 use zingo_netutils::lightwallet_protocol::{
     CompactBlock, CompactOrchardAction, CompactSaplingOutput,
 };
@@ -19,7 +23,8 @@ use zip32::AccountId;
 use crate::{
     client::{self, FetchRequest},
     error::{ContinuityError, ScanError, ServerError},
-    keys::{KeyId, ScanningKeyOps, ScanningKeys},
+    keys::{self, KeyId, ScanningKeyOps, ScanningKeys, transparent::TransparentAddressId},
+    scan::collect_outpoints_compact,
     utils::{block, get_compact_action, get_compact_output_description, transaction},
     wallet::{NullifierMap, OutputId, ScanTarget, TreeBounds, WalletBlock},
     witness::WitnessData,
@@ -29,7 +34,7 @@ use zcash_protocol::{PoolType, ShieldedPool};
 
 use self::runners::{DecryptedOutput, DecryptionBatchRunners};
 
-use super::{DecryptedNoteData, InitialScanData, ScanData, collect_nullifiers};
+use super::{DecryptedNoteData, InitialScanData, ScanData, collect_nullifiers_compact};
 
 mod runners;
 
@@ -39,6 +44,8 @@ pub(super) fn scan_compact_blocks<P>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     initial_scan_data: InitialScanData,
     output_decryptions_in_batch: usize,
+    transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
+    transparent_gap_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<ScanData, ScanError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -59,6 +66,7 @@ where
 
     let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
     let mut nullifiers = NullifierMap::new();
+    let mut outpoints = BTreeMap::new();
     let mut decrypted_scan_targets = BTreeSet::new();
     let mut decrypted_note_data = DecryptedNoteData::new();
     let mut witness_data = WitnessData::new(
@@ -78,21 +86,15 @@ where
         ironwood_initial_tree_size = ironwood_final_tree_size;
 
         let block_height = block::get_compact_height(block);
+        let block_hash = block::get_compact_hash(block);
 
         for transaction in &block.vtx {
+            let txid = transaction::get_compact_txid(transaction);
+
             // collect trial decryption results by transaction
-            let incoming_sapling_outputs = runners.sapling.collect_results(
-                block::get_compact_hash(block),
-                transaction::get_compact_txid(transaction),
-            );
-            let incoming_orchard_outputs = runners.orchard.collect_results(
-                block::get_compact_hash(block),
-                transaction::get_compact_txid(transaction),
-            );
-            let incoming_ironwood_outputs = runners.ironwood.collect_results(
-                block::get_compact_hash(block),
-                transaction::get_compact_txid(transaction),
-            );
+            let incoming_sapling_outputs = runners.sapling.collect_results(block_hash, txid);
+            let incoming_orchard_outputs = runners.orchard.collect_results(block_hash, txid);
+            let incoming_ironwood_outputs = runners.ironwood.collect_results(block_hash, txid);
 
             // gather the txids of all transactions relevant to the wallet
             // the edge case of transactions that this capability created but did not receive change
@@ -119,11 +121,7 @@ where
                 });
             }
 
-            collect_nullifiers(
-                &mut nullifiers,
-                block::get_compact_height(block),
-                transaction,
-            )?;
+            collect_nullifiers_compact(&mut nullifiers, block_height, transaction)?;
 
             witness_data.sapling_leaves_and_retentions.extend(
                 calculate_sapling_leaves_and_retentions(
@@ -169,6 +167,43 @@ where
                 transaction::shielded_output_count(transaction, ShieldedPool::Orchard);
             ironwood_final_tree_size +=
                 transaction::shielded_output_count(transaction, ShieldedPool::Ironwood);
+
+            // check transparent outputs against inuse and gap addresses and add outpoints to map
+            // TODO: only enable for blocks above the initial chain height when sync session started
+            for output in transaction.vout.iter() {
+                // TODO: add more info to errors
+                let output = zcash_transparent::bundle::TxOut::new(
+                    Zatoshis::from_u64(output.value)
+                        .map_err(|_| ScanError::TransparentOutputInvalidValue)?,
+                    Script::read(output.script_pub_key.as_slice())
+                        .map_err(|_| ScanError::InvalidTransparentScriptBytes)?,
+                );
+                if let Some(address) = output.recipient_address() {
+                    let encoded_address =
+                        keys::transparent::encode_address(consensus_parameters, address);
+                    if let Some((_address, _key_id)) =
+                        transparent_inuse_addresses.get_key_value(&encoded_address)
+                    {
+                        decrypted_scan_targets.insert(ScanTarget {
+                            block_height,
+                            txid,
+                            narrow_scan_area: true,
+                        });
+                    }
+                    if let Some((address, key_id)) =
+                        transparent_gap_addresses.get_key_value(&encoded_address)
+                    {
+                        decrypted_scan_targets.insert(ScanTarget {
+                            block_height,
+                            txid,
+                            narrow_scan_area: true,
+                        });
+
+                        // TODO: add logic to add gap address to inuse and derive more gap addresses to the new gap limit
+                    }
+                }
+            }
+            collect_outpoints_compact(&mut outpoints, block_height, transaction);
         }
 
         set_checkpoint_retentions(
@@ -185,8 +220,8 @@ where
         );
 
         let wallet_block = WalletBlock {
-            block_height: block::get_compact_height(block),
-            block_hash: block::get_compact_hash(block),
+            block_height,
+            block_hash,
             prev_hash: block::get_compact_prev_hash(block),
             time: block.time,
             txids: block
@@ -211,6 +246,7 @@ where
 
     Ok(ScanData {
         nullifiers,
+        outpoints,
         wallet_blocks,
         decrypted_scan_targets,
         decrypted_note_data,
@@ -669,6 +705,8 @@ mod tests {
             &HashMap::new(),
             initial_scan_data(100),
             100,
+            HashMap::new(),
+            HashMap::new(),
         )
         .unwrap();
 
@@ -694,6 +732,8 @@ mod tests {
             &HashMap::new(),
             initial_scan_data(0),
             100,
+            HashMap::new(),
+            HashMap::new(),
         );
 
         assert!(matches!(

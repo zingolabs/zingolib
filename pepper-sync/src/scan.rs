@@ -82,6 +82,7 @@ impl InitialScanData {
 
 struct ScanData {
     nullifiers: NullifierMap,
+    outpoints: BTreeMap<OutputId, ScanTarget>,
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     decrypted_scan_targets: BTreeSet<ScanTarget>,
     decrypted_note_data: DecryptedNoteData,
@@ -136,7 +137,8 @@ where
         start_seam_block,
         end_seam_block,
         mut scan_targets,
-        transparent_addresses,
+        transparent_inuse_addresses,
+        transparent_gap_addresses,
     } = scan_task;
 
     if compact_blocks
@@ -157,7 +159,7 @@ where
         let mut nullifiers = NullifierMap::new();
         for block in &compact_blocks {
             for transaction in &block.vtx {
-                collect_nullifiers(
+                collect_nullifiers_compact(
                     &mut nullifiers,
                     block::get_compact_height(block),
                     transaction,
@@ -189,6 +191,7 @@ where
 
     let consensus_parameters_clone = consensus_parameters.clone();
     let ufvks_clone = ufvks.clone();
+    let transparent_inuse_addresses_clone = transparent_inuse_addresses.clone();
     let scan_data = tokio::task::spawn_blocking(move || {
         scan_compact_blocks(
             compact_blocks,
@@ -196,6 +199,8 @@ where
             &ufvks_clone,
             initial_scan_data,
             max_outputs / 8,
+            transparent_inuse_addresses_clone,
+            transparent_gap_addresses,
         )
     })
     .await
@@ -203,6 +208,7 @@ where
 
     let ScanData {
         nullifiers,
+        mut outpoints,
         wallet_blocks,
         mut decrypted_scan_targets,
         decrypted_note_data,
@@ -211,7 +217,6 @@ where
 
     scan_targets.append(&mut decrypted_scan_targets);
 
-    let mut outpoints = BTreeMap::new();
     let wallet_transactions = scan_transactions(
         fetch_request_sender,
         consensus_parameters,
@@ -220,7 +225,7 @@ where
         decrypted_note_data,
         &wallet_blocks,
         &mut outpoints,
-        transparent_addresses,
+        transparent_inuse_addresses,
     )
     .await?;
 
@@ -268,11 +273,13 @@ where
 }
 
 /// Converts the nullifiers from a compact transaction and adds them to the nullifier map
-fn collect_nullifiers(
+fn collect_nullifiers_compact(
     nullifier_map: &mut NullifierMap,
     block_height: BlockHeight,
     transaction: &CompactTx,
 ) -> Result<(), ScanError> {
+    let txid = transaction::get_compact_txid(transaction);
+
     transaction
         .spends
         .iter()
@@ -284,7 +291,7 @@ fn collect_nullifiers(
                 nullifier,
                 ScanTarget {
                     block_height,
-                    txid: transaction::get_compact_txid(transaction),
+                    txid,
                     narrow_scan_area: false,
                 },
             );
@@ -308,7 +315,7 @@ fn collect_nullifiers(
                 nullifier,
                 ScanTarget {
                     block_height,
-                    txid: transaction::get_compact_txid(transaction),
+                    txid,
                     narrow_scan_area: false,
                 },
             );
@@ -332,10 +339,33 @@ fn collect_nullifiers(
                 nullifier,
                 ScanTarget {
                     block_height,
-                    txid: transaction::get_compact_txid(transaction),
+                    txid,
                     narrow_scan_area: false,
                 },
             );
         });
     Ok(())
+}
+
+/// Adds the outpoints from a compact transaction to the outpoint map.
+fn collect_outpoints_compact(
+    outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
+    block_height: BlockHeight,
+    transaction: &CompactTx,
+) {
+    let txid = transaction::get_compact_txid(transaction);
+
+    transaction.vin.iter().for_each(|outpoint| {
+        let mut txid_bytes = [0u8; 32];
+        txid_bytes.copy_from_slice(&outpoint.prevout_txid);
+        let prevout_txid = TxId::from_bytes(txid_bytes);
+        outpoint_map.insert(
+            OutputId::new(prevout_txid, outpoint.prevout_index),
+            ScanTarget {
+                block_height,
+                txid,
+                narrow_scan_area: true,
+            },
+        );
+    });
 }

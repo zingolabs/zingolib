@@ -1,6 +1,6 @@
 use std::{
     borrow::BorrowMut,
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::{
         Arc,
         atomic::{self, AtomicBool},
@@ -70,6 +70,7 @@ pub(crate) struct Scanner<P> {
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: P,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
+    pub(crate) transparent_gap_addresses: BTreeMap<TransparentAddressId, String>,
 }
 
 impl<P> Scanner<P>
@@ -93,6 +94,7 @@ where
             fetch_request_sender,
             consensus_parameters,
             ufvks,
+            transparent_gap_addresses: BTreeMap::new(),
         }
     }
 
@@ -284,6 +286,7 @@ where
                 &self.consensus_parameters,
                 wallet,
                 nullifier_map_limit_exceeded,
+                &self.transparent_gap_addresses,
             )? {
                 loader.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
@@ -758,7 +761,8 @@ pub(crate) struct ScanTask {
     pub(crate) start_seam_block: Option<WalletBlock>,
     pub(crate) end_seam_block: Option<WalletBlock>,
     pub(crate) scan_targets: BTreeSet<ScanTarget>,
-    pub(crate) transparent_addresses: HashMap<String, TransparentAddressId>,
+    pub(crate) transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
+    pub(crate) transparent_gap_addresses: HashMap<String, TransparentAddressId>,
 }
 
 impl ScanTask {
@@ -767,7 +771,8 @@ impl ScanTask {
         start_seam_block: Option<WalletBlock>,
         end_seam_block: Option<WalletBlock>,
         scan_targets: BTreeSet<ScanTarget>,
-        transparent_addresses: HashMap<String, TransparentAddressId>,
+        transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
+        transparent_gap_addresses: HashMap<String, TransparentAddressId>,
     ) -> Self {
         Self {
             compact_blocks: Vec::new(),
@@ -775,7 +780,8 @@ impl ScanTask {
             start_seam_block,
             end_seam_block,
             scan_targets,
-            transparent_addresses,
+            transparent_inuse_addresses,
+            transparent_gap_addresses,
         }
     }
 
@@ -846,7 +852,8 @@ impl ScanTask {
                 start_seam_block: self.start_seam_block,
                 end_seam_block: upper_task_first_block,
                 scan_targets: lower_task_scan_targets,
-                transparent_addresses: self.transparent_addresses.clone(),
+                transparent_inuse_addresses: self.transparent_inuse_addresses.clone(),
+                transparent_gap_addresses: self.transparent_gap_addresses.clone(),
             },
             ScanTask {
                 compact_blocks: upper_compact_blocks,
@@ -857,7 +864,8 @@ impl ScanTask {
                 start_seam_block: lower_task_last_block,
                 end_seam_block: self.end_seam_block,
                 scan_targets: upper_task_scan_targets,
-                transparent_addresses: self.transparent_addresses,
+                transparent_inuse_addresses: self.transparent_inuse_addresses,
+                transparent_gap_addresses: self.transparent_gap_addresses,
             },
         ))
     }

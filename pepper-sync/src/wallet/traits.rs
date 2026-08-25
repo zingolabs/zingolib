@@ -67,11 +67,15 @@ pub trait SyncWallet {
     ) -> Result<(), Self::Error>;
 
     /// Returns a reference to all transparent addresses known to this wallet.
+    ///
+    /// These addresses must be in-use, they do not include gap addresses.
     fn get_transparent_addresses(
         &self,
     ) -> Result<&BTreeMap<TransparentAddressId, String>, Self::Error>;
 
     /// Returns a mutable reference to all transparent addresses known to this wallet.
+    ///
+    /// These addresses must be in-use, they do not include gap addresses.
     fn get_transparent_addresses_mut(
         &mut self,
     ) -> Result<&mut BTreeMap<TransparentAddressId, String>, Self::Error>;
