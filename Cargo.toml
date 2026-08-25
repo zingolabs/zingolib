@@ -42,8 +42,8 @@ portpicker = "0.1"
 # migration proptests consume it, so the merge restores it.
 proptest = "1.6.0"
 tempfile = "3"
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "537f84d3d81b228c06ae82365f306ff364e164da" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "537f84d3d81b228c06ae82365f306ff364e164da" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "89cf104a2416144d1bbbae30aca02bec062d1492" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "89cf104a2416144d1bbbae30aca02bec062d1492" }
 
 ### Documentation
 indoc = "2"

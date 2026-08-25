@@ -67,7 +67,7 @@ pub mod from_inputs {
 
     use crate::{
         data::receivers::Receivers,
-        lightclient::{LightClient, error::LightClientError},
+        lightclient::{LightClient, error::LightClientError, send},
         wallet::error::ProposeSendError,
     };
 
@@ -80,6 +80,18 @@ pub mod from_inputs {
             .expect("should be able to create a transaction request as receivers are valid.");
         quick_sender
             .quick_send(request, zip32::AccountId::ZERO, None, false, true)
+            .await
+    }
+
+    /// Panics if the address, amount or memo conversion fails.
+    pub async fn quick_send_reported(
+        quick_sender: &mut crate::lightclient::LightClient,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
+    ) -> Result<NonEmpty<send::TransmitReport>, LightClientError> {
+        let request = transaction_request_from_send_inputs(raw_receivers)
+            .expect("should be able to create a transaction request as receivers are valid.");
+        quick_sender
+            .quick_send_reported(request, zip32::AccountId::ZERO, None, false, true)
             .await
     }
 

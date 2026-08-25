@@ -17,6 +17,7 @@ mod chain_generics {
     }
     #[tokio::test]
     async fn send_shield_cycle() {
+        tracing_subscriber::fmt().init();
         fixtures::send_shield_cycle::<LibtonodeEnvironment>(1).await;
     }
 }

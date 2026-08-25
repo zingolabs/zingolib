@@ -47,6 +47,7 @@ use zingolib::testutils::lightclient::from_inputs::{self, quick_send};
 use zingolib::testutils::lightclient::get_base_address;
 use zingolib::testutils::port_to_localhost_uri;
 use zingolib::testutils::sync_to_target_height;
+use zingolib::testutils::timed;
 use zingolib::wallet::keys::unified::ReceiverSelection;
 
 /// Default regtest network processes for testing and zingo-cli regtest mode:
@@ -272,9 +273,22 @@ pub async fn sync_client_to_validator_tip<V, I>(
     <V as Process>::Config: Send,
     LocalNet<V, I>: IndexerConvergence,
 {
-    let tip = local_net.validator().get_chain_height().await;
-    local_net.converge(tip).await;
-    sync_to_target_height(client, tip).await.unwrap();
+    let tip = timed(
+        "sync_to_validator_tip::get_chain_height",
+        local_net.validator().get_chain_height(),
+    )
+    .await;
+    timed(
+        "sync_to_validator_tip::indexer_converge",
+        local_net.converge(tip),
+    )
+    .await;
+    timed(
+        "sync_to_validator_tip::wallet_sync",
+        sync_to_target_height(client, tip),
+    )
+    .await
+    .unwrap();
 }
 
 /// Zebra's mempool rejection text for a spend of, or anchored at, the tip
@@ -525,13 +539,21 @@ impl ClientBuilder {
         overwrite: bool,
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_create_config(wallet_config);
-        let mut lightclient = LightClient::new_clearnet_consented(config, overwrite)
-            .await
-            .unwrap();
-        lightclient
-            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
-            .await
-            .unwrap();
+        let mut lightclient = timed(
+            "build_client::new_clearnet_consented",
+            LightClient::new_clearnet_consented(config, overwrite),
+        )
+        .await
+        .unwrap();
+        timed(
+            "build_client::generate_unified_address",
+            lightclient.generate_unified_address(
+                ReceiverSelection::sapling_only(),
+                zip32::AccountId::ZERO,
+            ),
+        )
+        .await
+        .unwrap();
 
         lightclient
     }
@@ -962,20 +984,38 @@ async fn custom_clients_raw(
     replay_from: Option<PathBuf>,
 ) -> (MeteredNet, ClientBuilder) {
     let setup_started = std::time::Instant::now();
-    let (local_net, zebrad_front, zainod_front) =
-        launch_observed(mine_to_pool, configured_activation_heights).await;
+    let (local_net, zebrad_front, zainod_front) = timed(
+        "custom_clients_raw::launch_observed",
+        launch_observed(mine_to_pool, configured_activation_heights),
+    )
+    .await;
     let mut local_net = MeteredNet::new(local_net, zebrad_front, zainod_front, setup_started);
 
     match replay_from {
         Some(blocks_file) => {
-            let tip = chain_cache::replay(&local_net, &blocks_file).await;
+            let tip = timed(
+                "custom_clients_raw::chain_cache_replay",
+                chain_cache::replay(&local_net, &blocks_file),
+            )
+            .await;
             // The replay reorgs the launch block away; the Indexer may
             // have already ingested it (it starts syncing within
             // milliseconds of launch). Barrier on convergence to the
             // replayed tip so no wallet ever syncs the orphaned branch.
-            local_net.converge(tip).await;
+            timed(
+                "custom_clients_raw::replay_converge",
+                local_net.converge(tip),
+            )
+            .await;
         }
-        None => local_net.validator().generate_blocks(2).await.unwrap(),
+        None => {
+            timed(
+                "custom_clients_raw::generate_initial_blocks",
+                local_net.validator().generate_blocks(2),
+            )
+            .await
+            .unwrap();
+        }
     }
 
     let client_builder = ClientBuilder::new(
@@ -986,7 +1026,13 @@ async fn custom_clients_raw(
         // The validator is the sole source of activation-height truth
         // (infras ADR 0003): wallets take their schedule from the running
         // validator, never from a caller-supplied vector.
-        wallet_activation_heights(&local_net.validator().get_activation_heights().await),
+        wallet_activation_heights(
+            &timed(
+                "custom_clients_raw::get_activation_heights",
+                local_net.validator().get_activation_heights(),
+            )
+            .await,
+        ),
     );
 
     local_net.mark_setup_complete("custom_clients");
