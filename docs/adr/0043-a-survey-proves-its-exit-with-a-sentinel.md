@@ -56,8 +56,8 @@ before proof has no name, no type, and no permitted use beyond making
 the attempt that proves it.
 
 A speed-priority survey carries one **Sentinel** in its opening wave: a
-realistic request to a highly reliable public address, which is never
-a Destination and is never eligible for the cohort or the verdict. The
+realistic request to a highly reliable public address, which is not
+Correspondable and is never eligible for the cohort or the verdict. The
 Sentinel holds a Survey Lane rather than adding one — the survey width
 is a ceiling measured for the one Nym client that the mobile host runs
 in-process, and a wider opening wave risks a saturation that would be

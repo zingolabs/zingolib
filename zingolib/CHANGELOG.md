@@ -493,7 +493,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PriceError` gains `TransportAcquisition`.
 - BREAKING: `mixnet::destinations` is absorbed into the new top-level
   `zingolib::destination` module, which compiles without the `nym`
-  feature and adds the `Destination` trait — the party a Transmission
+  feature and adds the `Correspondable` trait — the party a Transmission
   addresses, implemented by the census `Indexer` and (under `nym`) by
   `PriceSource`, each yielding an https address and an accountable
   operator. The draw-eligibility functions stay `nym`-gated.

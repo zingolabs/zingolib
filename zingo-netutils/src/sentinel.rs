@@ -1,7 +1,7 @@
 //! The Sentinel probe: evidence that a bound Exit Node carries traffic.
 //!
 //! A proving birth answers the Sentinel before its client takes any work
-//! (ADR 0044). The Sentinel is never a Destination and is never eligible
+//! (ADR 0044). The Sentinel is not Correspondable and is never eligible
 //! for a cohort or a verdict: it exists so a birth can tell an exit that
 //! carries nothing from indexers that will not answer. The request is the
 //! shape its address ordinarily serves — a DNS lookup — so neither the

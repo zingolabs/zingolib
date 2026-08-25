@@ -1,4 +1,4 @@
-//! The Destination trait and the curated Destination list.
+//! The Correspondable trait and the curated Destination list.
 //!
 //! This list is kept deliberately separate from the sync-server list:
 //! Destinations are chosen for reliable transaction relay, sync servers
@@ -53,30 +53,30 @@
 
 use http::Uri;
 
-/// The party a Transmission addresses over the mixnet, never the path
-/// that carries it.
+/// Something that can be corresponded with over the mixnet: the party a
+/// Transmission addresses, never the path that carries it.
 ///
 /// ```
-/// use zingolib::destination::Destination;
+/// use zingolib::destination::Correspondable;
 ///
 /// let indexer = zingolib::indexers::INDEXERS
 ///     .iter()
 ///     .find(|indexer| indexer.uri == "https://na.zec.rocks:443")
 ///     .unwrap();
-/// assert_eq!(Destination::address(indexer).scheme_str(), Some("https"));
+/// assert_eq!(Correspondable::address(indexer).scheme_str(), Some("https"));
 /// assert_eq!(
-///     Destination::operator(indexer).as_deref(),
+///     Correspondable::operator(indexer).as_deref(),
 ///     Some("zec.rocks")
 /// );
 /// ```
-pub trait Destination {
+pub trait Correspondable {
     /// Where a Transmission addresses it.
     fn address(&self) -> Uri;
     /// The accountable operator: the draw key and the Health aggregation key.
     fn operator(&self) -> Option<String>;
 }
 
-impl Destination for zingo_netutils::indexers::Indexer {
+impl Correspondable for zingo_netutils::indexers::Indexer {
     fn address(&self) -> Uri {
         self.uri
             .parse()
@@ -89,7 +89,7 @@ impl Destination for zingo_netutils::indexers::Indexer {
 }
 
 #[cfg(feature = "nym")]
-impl Destination for zingo_price::PriceSource {
+impl Correspondable for zingo_price::PriceSource {
     fn address(&self) -> Uri {
         self.url()
             .parse()

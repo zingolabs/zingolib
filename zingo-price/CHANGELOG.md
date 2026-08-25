@@ -52,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_source_price` and collects the outcomes with `first_quote`, or, in
   the wallet, runs `zingolib::mixnet::speed::run_wave` over `PriceRun`.
 
-- `PriceSource::url` is public, so a Destination implementation can
+- `PriceSource::url` is public, so a Correspondable implementation can
   name the endpoint a source answers at.
 
 ### Changed
