@@ -108,13 +108,33 @@ pub trait ProxyDeathObserver: Send + Sync {
 /// [`Self::stop`] or a drop of the handle tears both down.
 #[derive(uniffi::Object)]
 pub struct MixnetProxyHandle {
-    // NymProxy's client runs background tasks on the runtime, so `proxy` and
-    // `monitor` are declared before `runtime`: fields drop in declaration
-    // order, so both tear down before the runtime they ran on.
     proxy: Mutex<Option<NymProxy>>,
     monitor: Option<tokio::task::AbortHandle>,
     endpoint: Socks5Endpoint,
-    runtime: Runtime,
+    runtime: Option<Runtime>,
+}
+
+/// Tears down safely on whatever thread drops the last reference, including
+/// the runtime's own workers.
+impl Drop for MixnetProxyHandle {
+    fn drop(&mut self) {
+        if let Some(monitor) = &self.monitor {
+            monitor.abort();
+        }
+        drop(
+            self.proxy
+                .get_mut()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take(),
+        );
+        if let Some(runtime) = self.runtime.take() {
+            if tokio::runtime::Handle::try_current().is_ok() {
+                runtime.shutdown_background();
+            } else {
+                drop(runtime);
+            }
+        }
+    }
 }
 
 /// Why one SOCKS5 method-selection round trip failed.
@@ -218,7 +238,10 @@ async fn monitor_listener(
             Err(failure) => {
                 strikes += 1;
                 if strikes >= strikes_allowed {
-                    observer.on_death(death_reason(failure));
+                    let _ = tokio::task::spawn_blocking(move || {
+                        observer.on_death(death_reason(failure))
+                    })
+                    .await;
                     return;
                 }
             }
@@ -272,7 +295,7 @@ impl MixnetProxyHandle {
                 .abort_handle()
         });
         Ok(std::sync::Arc::new(MixnetProxyHandle {
-            runtime,
+            runtime: Some(runtime),
             proxy: Mutex::new(Some(proxy)),
             endpoint,
             monitor,
@@ -305,8 +328,8 @@ impl MixnetProxyHandle {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .take();
-        if let Some(proxy) = taken {
-            self.runtime.block_on(proxy.disconnect());
+        if let (Some(proxy), Some(runtime)) = (taken, self.runtime.as_ref()) {
+            runtime.block_on(proxy.disconnect());
         }
     }
 }
@@ -389,9 +412,8 @@ mod tests {
             .expect_err("a dead listener must fail the check");
     }
 
-    /// HYPOTHESIS: a refusing listener is reported as the typed
-    /// method-selection variant carrying the reply bytes, not as prose.
-    /// Falsified if the variant or its payload differs.
+    /// Tests that the check fails with the typed method-selection variant,
+    /// both reply bytes intact, when the listener refuses the method.
     #[tokio::test]
     async fn check_names_the_refused_method_selection() {
         let (endpoint, serving) = mock_socks5_listener([0x05, 0xff]).await;
@@ -410,9 +432,8 @@ mod tests {
         serving.abort();
     }
 
-    /// HYPOTHESIS: every probe failure reaches the host as its own death
-    /// variant, and a refused method selection keeps both reply bytes.
-    /// Falsified if any mapping collapses or a byte is lost.
+    /// Tests that each probe failure maps to its own death variant with its
+    /// payload intact.
     #[test]
     fn every_probe_failure_maps_to_its_own_death_variant() {
         let refused = death_reason(HandshakeCheckError::MethodSelection {
@@ -477,7 +498,7 @@ mod tests {
         serving.abort();
         // The monitor ends itself after reporting; that is the at-most-once
         // guarantee, and joining it proves the report happened.
-        tokio::time::timeout(zingo_netutils::time::test::MOCK_OP_BOUND, monitor)
+        tokio::time::timeout(MOCK_OP_BOUND, monitor)
             .await
             .expect("monitor must report within the strike window")
             .expect("monitor task must end cleanly");
@@ -489,5 +510,216 @@ mod tests {
             deaths[0],
             ProxyDeathReason::ListenerRefused { .. }
         ));
+    }
+
+    /// Tests that the death report reaches the host on a thread where
+    /// blocking is legal.
+    #[tokio::test]
+    async fn death_reaches_the_host_on_a_thread_that_may_block() {
+        struct BlockingObserver(std::sync::mpsc::Sender<()>);
+        impl ProxyDeathObserver for BlockingObserver {
+            fn on_death(&self, _reason: ProxyDeathReason) {
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .expect("build probe runtime")
+                    .block_on(async {});
+                self.0.send(()).expect("report the blocking success");
+            }
+        }
+        let (endpoint, serving) = mock_socks5_listener([0x05, 0x00]).await;
+        serving.abort();
+        let (blocked_tx, blocked_rx) = std::sync::mpsc::channel();
+        tokio::spawn(monitor_listener(
+            endpoint,
+            Box::new(BlockingObserver(blocked_tx)),
+            MONITOR_CHECK_INTERVAL,
+            MONITOR_CHECK_TIMEOUT,
+            1,
+        ));
+        tokio::task::spawn_blocking(move || blocked_rx.recv_timeout(MOCK_OP_BOUND))
+            .await
+            .expect("join the wait")
+            .expect("the callback must complete without panicking");
+    }
+
+    use zingo_netutils::time::test::MOCK_OP_BOUND;
+
+    /// Builds the multi-thread runtime the teardown tests hand their handles.
+    fn teardown_runtime() -> Runtime {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("build runtime")
+    }
+
+    /// A handle over an empty proxy slot, owning the given runtime.
+    fn teardown_handle(runtime: Runtime) -> MixnetProxyHandle {
+        MixnetProxyHandle {
+            proxy: Mutex::new(None),
+            monitor: None,
+            endpoint: Socks5Endpoint {
+                host: "127.0.0.1".to_string(),
+                port: 1,
+            },
+            runtime: Some(runtime),
+        }
+    }
+
+    /// Drops the last reference from a task the given spawner runs, waiting
+    /// for that drop to complete without a panic.
+    fn release_last_reference_from(
+        spawner: &tokio::runtime::Handle,
+        handle: Arc<MixnetProxyHandle>,
+    ) {
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let (dropped_tx, dropped_rx) = std::sync::mpsc::channel();
+        let held_by_task = Arc::clone(&handle);
+        spawner.spawn(async move {
+            release_rx.await.expect("release signal");
+            drop(held_by_task);
+            let _ = dropped_tx.send(());
+        });
+        drop(handle);
+        release_tx.send(()).expect("the drop task is waiting");
+        dropped_rx
+            .recv_timeout(MOCK_OP_BOUND)
+            .expect("the task's drop must complete without panicking");
+    }
+
+    /// Tests that teardown completes without a panic when a task on the
+    /// handle's own runtime drops the last reference.
+    #[test]
+    fn last_reference_may_drop_on_the_handles_own_runtime() {
+        let handle = Arc::new(teardown_handle(teardown_runtime()));
+        let spawner = handle
+            .runtime
+            .as_ref()
+            .expect("a live handle owns its runtime")
+            .handle()
+            .clone();
+        release_last_reference_from(&spawner, handle);
+    }
+
+    /// Tests that teardown completes when the observer blocks on the
+    /// handle's runtime, stops it, and releases the last reference inside
+    /// the death callback.
+    #[test]
+    fn observer_may_stop_and_release_the_handle_inside_the_callback() {
+        struct TearingObserver {
+            handle: Mutex<Option<Arc<MixnetProxyHandle>>>,
+            torn_down: std::sync::mpsc::Sender<()>,
+        }
+        impl ProxyDeathObserver for TearingObserver {
+            fn on_death(&self, _reason: ProxyDeathReason) {
+                let handle = self
+                    .handle
+                    .lock()
+                    .unwrap()
+                    .take()
+                    .expect("the observer holds the last reference");
+                handle
+                    .runtime
+                    .as_ref()
+                    .expect("a live handle owns its runtime")
+                    .block_on(async {});
+                handle.stop();
+                drop(handle);
+                self.torn_down.send(()).expect("report the teardown");
+            }
+        }
+        let handle = Arc::new(teardown_handle(teardown_runtime()));
+        let (torn_down_tx, torn_down_rx) = std::sync::mpsc::channel();
+        let observer = TearingObserver {
+            handle: Mutex::new(Some(Arc::clone(&handle))),
+            torn_down: torn_down_tx,
+        };
+        handle
+            .runtime
+            .as_ref()
+            .expect("a live handle owns its runtime")
+            .spawn(monitor_listener(
+                handle.endpoint.clone(),
+                Box::new(observer),
+                MONITOR_CHECK_INTERVAL,
+                MONITOR_CHECK_TIMEOUT,
+                1,
+            ));
+        drop(handle);
+        torn_down_rx
+            .recv_timeout(MOCK_OP_BOUND)
+            .expect("the callback must tear the handle down without panicking");
+    }
+
+    /// Tests that teardown completes without a panic when a task on another
+    /// runtime drops the last reference.
+    #[test]
+    fn last_reference_may_drop_on_a_foreign_runtime() {
+        let foreign = teardown_runtime();
+        let handle = Arc::new(teardown_handle(teardown_runtime()));
+        release_last_reference_from(foreign.handle(), handle);
+    }
+
+    /// Tests that every task is destroyed before drop returns, given a drop
+    /// away from any runtime.
+    #[test]
+    fn drop_off_runtime_outlives_no_task() {
+        let (down_tx, down_rx) = std::sync::mpsc::channel::<()>();
+        let runtime = teardown_runtime();
+        runtime.spawn(async move {
+            let _held = down_tx;
+            std::future::pending::<()>().await
+        });
+        drop(teardown_handle(runtime));
+        // The task owns the sender, polled or not, so only its destruction
+        // disconnects the channel. Empty means the task outlived the drop.
+        assert_eq!(
+            down_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Disconnected),
+            "the task must already be destroyed when drop returns"
+        );
+    }
+
+    /// Tests that the monitor ends cleanly when the observer panics.
+    #[tokio::test]
+    async fn a_panicking_observer_does_not_poison_the_monitor() {
+        struct PanickingObserver;
+        impl ProxyDeathObserver for PanickingObserver {
+            fn on_death(&self, _reason: ProxyDeathReason) {
+                panic!("host bug");
+            }
+        }
+        let (endpoint, serving) = mock_socks5_listener([0x05, 0x00]).await;
+        serving.abort();
+        let monitor = tokio::spawn(monitor_listener(
+            endpoint,
+            Box::new(PanickingObserver),
+            MONITOR_CHECK_INTERVAL,
+            MONITOR_CHECK_TIMEOUT,
+            1,
+        ));
+        tokio::time::timeout(MOCK_OP_BOUND, monitor)
+            .await
+            .expect("monitor must end within the strike window")
+            .expect("monitor task must end cleanly despite the panic");
+    }
+
+    /// Tests that the manifest itself enables tokio's `sync` feature for the
+    /// tests that call `tokio::sync::oneshot`, instead of borrowing it from
+    /// feature unification with the nym stack.
+    #[test]
+    fn the_manifest_declares_the_tokio_sync_feature_the_tests_use() {
+        let manifest = include_str!("../Cargo.toml");
+        let dev_dependencies = manifest
+            .split("[dev-dependencies]")
+            .nth(1)
+            .expect("the manifest has a dev-dependencies table");
+        let tokio_line = dev_dependencies
+            .lines()
+            .find(|line| line.trim_start().starts_with("tokio"))
+            .expect("the dev-dependencies declare tokio");
+        assert!(
+            tokio_line.contains("\"sync\""),
+            "tokio::sync compiles only through feature unification: {tokio_line}"
+        );
     }
 }
