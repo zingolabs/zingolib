@@ -167,7 +167,7 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::MixnetNotReady(_) | LightClientError::ProbeRequiresMixnet => {
             ZingolibError::Mixnet(text)
         }
-        // A deliberate verdict (#1229): exhausting the eligible Correspondents
+        // A deliberate verdict (#1229): exhausting the eligible Destinations
         // is a server-topology problem, not a mixnet refusal — switching the
         // synchronization endpoint changes eligibility, so the app's
         // switch-and-retry routing can genuinely help. Mapping it to Mixnet
@@ -350,7 +350,7 @@ lazy_static! {
 }
 
 // An optional dedicated migration-transmission endpoint, read at every client
-// construction. The library owns the curated Correspondent pool and always
+// construction. The library owns the curated Destination pool and always
 // excludes the synchronization operator (ADR 0022), so a mixnet migration works
 // without any app input. `Some` names one dedicated endpoint distinct from the
 // sync operator; `None` (the default) lets the library draw its curated pool.
@@ -610,7 +610,7 @@ fn build_client_config(
         None => builder,
     };
     // Point migration transmission at a dedicated endpoint when the app set
-    // one. Absent it, the library draws its curated Correspondent pool.
+    // one. Absent it, the library draws its curated Destination pool.
     let migration_uri = MIGRATION_TRANSMISSION_URI
         .read()
         .ok()
@@ -626,7 +626,7 @@ fn build_client_config(
 /// client construction — `{ transmissionUri: "<uri>" }` names one endpoint
 /// distinct from the sync operator, while `null`, `{}`, or the legacy
 /// `{ candidates, allowSyncEndpoint }` shape clears it so the library's
-/// embedded curated Correspondent pool, which always excludes the
+/// embedded curated Destination pool, which always excludes the
 /// synchronization operator, routes instead.
 pub fn set_broadcast_candidates(candidates_json: String) -> Result<String, ZingolibError> {
     let parsed = json::parse(&candidates_json)
