@@ -3,7 +3,7 @@
 
 use futures::StreamExt as _;
 
-use crate::correspondent::pool::{Pools, ProvenBirth};
+use crate::destination::pool::{Pools, ProvenBirth};
 use crate::mixnet::acquire::{TransportAcquirable, TransportError};
 
 /// How many exits a boot proves before it opens a prompt: one for each

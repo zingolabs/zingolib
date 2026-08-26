@@ -38,7 +38,7 @@ use lightwallet_protocol::{
 /// Why a SOCKS5-tunneled operation did not complete, typed by the connection
 /// phase that failed and carrying that phase's complete underlying data
 /// (sources, elapsed times, codes, and messages), so the caller decides what
-/// to make of a failure. One reading, whether another Correspondent is
+/// to make of a failure. One reading, whether another Destination is
 /// worth trying, is offered as [`Self::is_failover_candidate`]. Nothing is
 /// flattened away to support it.
 #[derive(Debug, thiserror::Error)]
@@ -89,7 +89,7 @@ pub enum Socks5TransmitError {
     /// rather than a response. The status is carried whole (code, message,
     /// and any transport source chain), and
     /// [`Self::is_failover_candidate`] reads its code as either a transport
-    /// failure worth another Correspondent or a server verdict that is not.
+    /// failure worth another Destination or a server verdict that is not.
     #[error(
         "rpc to {destination} ended in status {code:?}: {message}",
         code = .status.code(),
@@ -117,7 +117,7 @@ pub enum Socks5TransmitError {
     /// The indexer heard the submission and rejected it on its merits: a
     /// lightwalletd `SendResponse` with a nonzero error code, carried with
     /// both its fields. Never a failover candidate, since another
-    /// Correspondent would hear the same transaction and say the same.
+    /// Destination would hear the same transaction and say the same.
     #[error("indexer rejected the transaction: {0}")]
     Rejected(#[from] SendRejection),
     /// The indexer URI is not https. Mixnet transmission is TLS-only so the
@@ -154,9 +154,9 @@ pub enum TunnelFailure {
 
 impl Socks5TransmitError {
     /// The failover policy's reading of this failure: whether submitting to
-    /// another Correspondent could plausibly succeed. A server verdict on
+    /// another Destination could plausibly succeed. A server verdict on
     /// the transaction ([`Self::Rejected`], or an [`Self::Rpc`] status whose
-    /// code is a verdict) is final, because every other Correspondent would
+    /// code is a verdict) is final, because every other Destination would
     /// answer the same, while every phase or transport failure is worth
     /// another arm.
     /// This is one interpretation of the complete data above. The caller
@@ -190,9 +190,9 @@ fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StatusDisposition {
     /// The RPC ended without a server verdict (the tunnel, channel, or
-    /// deadline gave out), so another Correspondent is worth trying.
+    /// deadline gave out), so another Destination is worth trying.
     Transport,
-    /// The server judged the request and said no. Another Correspondent
+    /// The server judged the request and said no. Another Destination
     /// would hear the same request and say the same.
     Verdict,
 }
@@ -396,7 +396,7 @@ impl Socks5Indexer {
             // `connect_timeout` bounds the channel establishment — critically
             // the TLS handshake tonic runs on top of the SOCKS5 tunnel, which
             // the connector's own per-phase timeouts do not cover. Without this
-            // a Correspondent that completes the tunnel but stalls the handshake
+            // a Destination that completes the tunnel but stalls the handshake
             // (observed: a lightwalletd on a non-standard port the mixnet exit
             // mishandles) hangs for minutes instead of failing over. The RPC
             // itself is deliberately NOT bounded here: tonic's channel timeout
@@ -553,7 +553,7 @@ mod tests {
 
     /// HYPOTHESIS: an elapsed client bound is typed as its own variant, reads
     /// as a failover candidate (a slow round trip is worth another
-    /// Correspondent, never a verdict), and renders the bound it carries.
+    /// Destination, never a verdict), and renders the bound it carries.
     /// Falsified if the
     /// variant is misread as final or loses the bound.
     #[test]
@@ -595,13 +595,13 @@ mod tests {
         ] {
             assert!(
                 an_rpc_error(code).is_failover_candidate(),
-                "{code:?} must be worth another Correspondent"
+                "{code:?} must be worth another Destination"
             );
         }
     }
 
     /// HYPOTHESIS: an RPC status whose code is a server verdict is final, since
-    /// another Correspondent would hear the same request and say the same.
+    /// another Destination would hear the same request and say the same.
     /// Falsified if a verdict code triggers pointless failover arms.
     #[test]
     fn verdict_statuses_are_not_failover_candidates() {

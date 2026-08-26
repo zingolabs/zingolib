@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::future::Future;
 use std::path::PathBuf;
 
-use crate::correspondent::pool::exit_pool::ExitPoolError;
+use crate::destination::pool::exit_pool::ExitPoolError;
 use crate::mixnet::driver::StatusPublisher;
 use crate::mixnet::supervisor::{MixnetProxy, MixnetProxyError};
 

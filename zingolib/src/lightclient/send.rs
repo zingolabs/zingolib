@@ -34,11 +34,11 @@ use crate::lightclient::transmit::{
 /// failed, never the raw failure prose, which can embed the txid.
 fn record_send_attempt(
     history: &IndexerHistoryHandle,
-    host: &crate::correspondent::Host,
+    host: &crate::destination::Host,
     route: AttemptRoute,
     started: std::time::Instant,
     outcome: &Result<String, zingo_net_diag::NetOpFailure>,
-    phase: Option<crate::correspondent::health::FailurePhase>,
+    phase: Option<crate::destination::health::FailurePhase>,
 ) {
     history.record(&IndexerAttempt {
         unix_secs: now_unix_secs(),
@@ -67,16 +67,14 @@ pub(crate) enum TransmitError {
     /// The single-target transmit's taxonomy record.
     #[error(transparent)]
     Failure(#[from] zingo_net_diag::NetOpFailure),
-    /// The Correspondent draw refused.
+    /// The Destination draw refused.
     #[cfg(feature = "nym")]
     #[error(transparent)]
-    Draw(#[from] crate::correspondent::NoEligibleCorrespondents),
+    Draw(#[from] crate::destination::NoEligibleDestinations),
     /// Every arm of the escalation failed, reported whole.
     #[cfg(feature = "nym")]
     #[error("{0}")]
-    Escalation(
-        crate::mixnet::correspondent_rotation::EscalationError<zingo_net_diag::NetOpFailure>,
-    ),
+    Escalation(crate::mixnet::destination_rotation::EscalationError<zingo_net_diag::NetOpFailure>),
 }
 
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
@@ -97,7 +95,7 @@ pub struct TransmitReport {
     /// it.
     pub route: TransmitRoute,
     /// Wall-clock time from dispatching the transmission to its delivery
-    /// confirmation, retries and Correspondent escalation included.
+    /// confirmation, retries and Destination escalation included.
     pub round_trip: std::time::Duration,
 }
 
@@ -106,7 +104,7 @@ pub struct TransmitReport {
 /// (`None`), from the session's connectivity and its Mixnet Mode route.
 ///
 /// An Indexerless session transmits only over a ready mixnet (ruling
-/// 2026-07-29): the Correspondent escalation needs no sync indexer, so
+/// 2026-07-29): the Destination escalation needs no sync indexer, so
 /// the ADR 0022 exclusion holds vacuously. A mixnet-less offline session
 /// keeps the typed [`LightClientError::Offline`] refusal — an unattached
 /// mixnet carries no online intent — while attached-but-not-ready states
@@ -136,12 +134,12 @@ pub enum TransmitRoute {
         /// The sync indexer's host.
         indexer: String,
     },
-    /// Mixnet escalation over the Correspondents (ADR 0022), reached
+    /// Mixnet escalation over the Destinations (ADR 0022), reached
     /// through the local SOCKS5 tunnel endpoint.
     Mixnet {
-        /// The host of the Correspondent whose delivery confirmation
+        /// The host of the Destination whose delivery confirmation
         /// won the escalation.
-        correspondent: String,
+        destination: String,
         /// The local SOCKS5 endpoint of the mixnet tunnel.
         via_socks5: String,
     },
@@ -229,7 +227,7 @@ impl TransmitTarget for ClearnetTarget {
 }
 
 /// A [`zingo_netutils::Socks5Indexer`] is the mixnet [`TransmitTarget`]:
-/// one Correspondent that submits and delivery-checks over its own tunnel,
+/// one Destination that submits and delivery-checks over its own tunnel,
 /// running the same [`resilient_transmit`] policy as the clearnet path.
 #[cfg(feature = "nym")]
 impl TransmitTarget for zingo_netutils::Socks5Indexer {
@@ -259,7 +257,7 @@ pub(crate) struct PullRoute {
 
 /// Submit one transaction under the route the Mixnet Mode policy resolved:
 /// clearnet through the configured indexer when `route` is `None`, or the
-/// mixnet escalation over the Correspondents when it is `Some`. Returns the
+/// mixnet escalation over the Destinations when it is `Some`. Returns the
 /// server-reported txid or the last failure message.
 /// The ambient state a transmission narrates through, records against, and paces itself by.
 struct TransmitContext<'a> {
@@ -283,7 +281,7 @@ async fn transmit_one_transaction(
             let Some(indexer) = indexer else {
                 return Err(TransmitError::NoClearnetIndexer);
             };
-            let host = crate::correspondent::Host::of_uri(indexer.uri());
+            let host = crate::destination::Host::of_uri(indexer.uri());
             let started = std::time::Instant::now();
             let outcome = resilient_transmit(
                 &ClearnetTarget(indexer.clone()),
@@ -311,7 +309,7 @@ async fn transmit_one_transaction(
                 // sees is the indexer's own.
                 outcome
                     .is_err()
-                    .then_some(crate::correspondent::health::FailurePhase::Correspondent),
+                    .then_some(crate::destination::health::FailurePhase::Destination),
             );
             outcome
                 .map(|server_txid| {
@@ -342,13 +340,13 @@ async fn transmit_one_transaction(
 }
 
 /// Transmit one transaction over the mixnet as the escalating, serially gated
-/// Correspondent Rotation (ADR 0011): each arm runs the shared
-/// [`resilient_transmit`] policy against one Correspondent through the SOCKS5
-/// proxy, and the escalation widens round by round until a Correspondent
+/// Destination Rotation (ADR 0011): each arm runs the shared
+/// [`resilient_transmit`] policy against one Destination through the SOCKS5
+/// proxy, and the escalation widens round by round until a Destination
 /// confirms delivery or the cap is reached.
 ///
-/// The draw comes from [`crate::correspondent::eligible_correspondents`],
-/// never the raw curated list: a Correspondent is never the sync indexer's
+/// The draw comes from [`crate::destination::eligible_destinations`],
+/// never the raw curated list: a Destination is never the sync indexer's
 /// operator (ADR 0022), because that party already holds the wallet's address
 /// set and must not receive the transmission too. An emptied pool refuses
 /// rather than falling back.
@@ -361,12 +359,10 @@ async fn mixnet_escalating_transmit(
     txid: &TxId,
     context: &TransmitContext<'_>,
 ) -> Result<(String, TransmitRoute), TransmitError> {
-    use crate::correspondent::eligible_correspondents;
-    use crate::mixnet::correspondent_rotation::{
-        MAX_TRANSMISSION_CORRESPONDENTS, escalating_transmit,
-    };
+    use crate::destination::eligible_destinations;
+    use crate::mixnet::destination_rotation::{MAX_TRANSMISSION_DESTINATIONS, escalating_transmit};
 
-    let indexers = eligible_correspondents(
+    let indexers = eligible_destinations(
         sync_indexer,
         &context.history.health().lock().expect("health mutex"),
     )?;
@@ -374,7 +370,7 @@ async fn mixnet_escalating_transmit(
         let socks5_addr = route.shared_socks5;
         let tx_bytes = tx_bytes.to_vec();
         let txid = *txid;
-        let host = crate::correspondent::Host::of_uri(&indexer);
+        let host = crate::destination::Host::of_uri(&indexer);
         async move {
             // Every pull multiplexes over the session's standing client,
             // whose exit was proven at its birth; the standing
@@ -384,19 +380,15 @@ async fn mixnet_escalating_transmit(
             let started = std::time::Instant::now();
             // The pull's failure becomes the taxonomy record — stage by typed
             // match, cause chain captured layer by layer, target the
-            // Correspondent host — which the escalation collects whole per
-            // Correspondent.
+            // Destination host — which the escalation collects whole per
+            // Destination.
             let outcome = resilient_transmit(
                 &target,
                 &tx_bytes,
                 height,
                 &txid,
                 move |_| tokio::time::sleep(context.retry_interval),
-                |event| {
-                    context
-                        .progress
-                        .set(format!("correspondent {host}: {event}"))
-                },
+                |event| context.progress.set(format!("destination {host}: {event}")),
             )
             .await
             .map_err(|TransmitFailed(error)| crate::mixnet::socks5_transmit_failure(&error, &host));
@@ -415,7 +407,7 @@ async fn mixnet_escalating_transmit(
                 (
                     server_txid,
                     TransmitRoute::Mixnet {
-                        correspondent: host.to_string(),
+                        destination: host.to_string(),
                         via_socks5: socks5_addr.to_string(),
                     },
                 )
@@ -426,7 +418,7 @@ async fn mixnet_escalating_transmit(
     escalating_transmit(
         &indexers,
         &mut rand::rngs::OsRng,
-        MAX_TRANSMISSION_CORRESPONDENTS,
+        MAX_TRANSMISSION_DESTINATIONS,
         run_pull,
         |line| context.progress.set(format!("mixnet escalation: {line}")),
     )
@@ -436,8 +428,8 @@ async fn mixnet_escalating_transmit(
 
 /// The chain-mock twin of [`mixnet_escalating_transmit`], paired with the
 /// test-attached slot state behind
-/// [`LightClient::switch_on_mixnet_for_tests`]: the Correspondent draw, the
-/// escalation rounds, and the cap run for real over the curated Correspondent
+/// [`LightClient::switch_on_mixnet_for_tests`]: the Destination draw, the
+/// escalation rounds, and the cap run for real over the curated Destination
 /// pool, while each arm's bytes travel the mock indexer's channel
 /// instead of a SOCKS5 tunnel. The tunnel's byte transport is pinned by
 /// zingo-netutils' own tests, so no packet leaves the process here.
@@ -449,20 +441,18 @@ async fn mock_escalating_transmit(
     txid: &TxId,
     context: &TransmitContext<'_>,
 ) -> Result<(String, String), TransmitError> {
-    use crate::correspondent::eligible_correspondents;
-    use crate::mixnet::correspondent_rotation::{
-        MAX_TRANSMISSION_CORRESPONDENTS, escalating_transmit,
-    };
+    use crate::destination::eligible_destinations;
+    use crate::mixnet::destination_rotation::{MAX_TRANSMISSION_DESTINATIONS, escalating_transmit};
 
-    let correspondents = eligible_correspondents(
+    let destinations = eligible_destinations(
         Some(indexer.uri()),
         &context.history.health().lock().expect("health mutex"),
     )?;
-    let run_arm = |correspondent: http::Uri| {
+    let run_arm = |destination: http::Uri| {
         let target = ClearnetTarget(indexer.clone());
         let tx_bytes = tx_bytes.to_vec();
         let txid = *txid;
-        let host = crate::correspondent::Host::of_uri(&correspondent);
+        let host = crate::destination::Host::of_uri(&destination);
         async move {
             let started = std::time::Instant::now();
             let outcome = resilient_transmit(
@@ -471,11 +461,7 @@ async fn mock_escalating_transmit(
                 height,
                 &txid,
                 move |_| tokio::time::sleep(context.retry_interval),
-                |event| {
-                    context
-                        .progress
-                        .set(format!("correspondent {host}: {event}"))
-                },
+                |event| context.progress.set(format!("destination {host}: {event}")),
             )
             .await
             .map_err(|TransmitFailed(status)| {
@@ -498,9 +484,9 @@ async fn mock_escalating_transmit(
     };
 
     escalating_transmit(
-        &correspondents,
+        &destinations,
         &mut rand::rngs::OsRng,
-        MAX_TRANSMISSION_CORRESPONDENTS,
+        MAX_TRANSMISSION_DESTINATIONS,
         run_arm,
         |line| context.progress.set(format!("mixnet escalation: {line}")),
     )
@@ -896,11 +882,11 @@ impl LightClient {
                     &transmit_context,
                 )
                 .await
-                .map(|(server_txid, correspondent)| {
+                .map(|(server_txid, destination)| {
                     (
                         server_txid,
                         TransmitRoute::Mixnet {
-                            correspondent,
+                            destination,
                             via_socks5: socks5_proxy
                                 .map(|addr| addr.to_string())
                                 .unwrap_or_default(),
@@ -1028,7 +1014,7 @@ mod transmit_error_seam {
         );
         record_send_attempt(
             &history,
-            &crate::correspondent::Host::of_host_str("indexer.example"),
+            &crate::destination::Host::of_host_str("indexer.example"),
             AttemptRoute::Clearnet,
             std::time::Instant::now(),
             &Err(failure),

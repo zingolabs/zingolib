@@ -140,7 +140,7 @@ pub(crate) struct StandingClient {
     /// The bound exit's Reservation, recycled by drop; `None` for a
     /// mobile-attached endpoint, whose exit the host drew outside this
     /// session's Exit Pool.
-    exit_reservation: Option<crate::correspondent::pool::exit_pool::Reservation>,
+    exit_reservation: Option<crate::destination::pool::exit_pool::Reservation>,
     /// Whether this client's birth answered the Sentinel itself; a
     /// trusting birth stands on a stale EpochProven observation instead.
     born_probed: bool,
@@ -168,7 +168,7 @@ impl StandingClient {
     /// Sentinel or trusted a stale EpochProven observation.
     pub(crate) fn new(
         proxy: MixnetProxy,
-        exit_reservation: Option<crate::correspondent::pool::exit_pool::Reservation>,
+        exit_reservation: Option<crate::destination::pool::exit_pool::Reservation>,
         born_probed: bool,
     ) -> Self {
         StandingClient {
@@ -249,7 +249,7 @@ impl StandingClient {
     pub(crate) fn exit_node(&self) -> Option<&crate::mixnet::ExitNodeId> {
         self.exit_reservation
             .as_ref()
-            .map(crate::correspondent::pool::exit_pool::Reservation::node)
+            .map(crate::destination::pool::exit_pool::Reservation::node)
     }
 
     /// Whether this client still stands on stale, unconfirmed proof.

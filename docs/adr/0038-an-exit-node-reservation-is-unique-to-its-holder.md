@@ -62,7 +62,7 @@ because it cannot be launched without a clutch.
 
 Respawn moves to the parent. A transport no longer redraws internally
 after exhausting its attempts; it dies, and the supervisor that owns the
-pool decides whether to respawn with a fresh clutch. The Correspondent
+pool decides whether to respawn with a fresh clutch. The Destination
 Pools this enables race their acquisitions as `PrioritisePrivacy`,
 activating the second responsiveness class.
 

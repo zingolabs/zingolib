@@ -96,7 +96,7 @@ impl LightClient {
         // speed-priority loop's; this runner owns only the judgment.
         let order = sweep::wave_order(candidates, pin, SURVEY_WAVE_WIDTH, &mut rand::rngs::OsRng);
         let survey = IndexerSurvey {
-            pools: self.correspondent_pools.clone(),
+            pools: self.destination_pools.clone(),
             acquirer,
             order: order.clone(),
             timeout: zingo_netutils::time::PROBE_LEG_TIMEOUT,
@@ -165,7 +165,7 @@ impl LightClient {
 /// The Server-Selection Sweep as a speed-priority operation: it races the
 /// census through one Exit Node, assigning every candidate its verdict.
 struct IndexerSurvey {
-    pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+    pools: std::sync::Arc<crate::destination::pool::Pools>,
     acquirer: std::sync::Arc<crate::mixnet::acquire::Acquirer>,
     order: Vec<Uri>,
     timeout: Duration,
@@ -243,7 +243,7 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
         // renews as the client retires.
         self.pools.remember(
             spent.node().clone(),
-            crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
+            crate::destination::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
         );
         tokio::spawn(async move {
             spent.retire().await;
@@ -253,7 +253,7 @@ impl crate::mixnet::speed::SpeedPrioritized for IndexerSurvey {
     fn abandon(&self, dead: crate::mixnet::speed::Member) {
         self.pools.remember(
             dead.node().clone(),
-            crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::Failed,
+            crate::destination::pool::exit_pool::ExitNodeHealthVerdict::Failed,
         );
         tokio::spawn(async move {
             dead.retire().await;
@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn a_healthy_answer_does_not_settle_the_survey() {
         let survey = IndexerSurvey {
-            pools: crate::correspondent::pool::Pools::new(),
+            pools: crate::destination::pool::Pools::new(),
             acquirer: std::sync::Arc::new(crate::mixnet::acquire::Acquirer::Spawned(
                 crate::mixnet::acquire::SpawnedBinary::at(std::path::PathBuf::from(
                     "/nonexistent/nym-proxy",

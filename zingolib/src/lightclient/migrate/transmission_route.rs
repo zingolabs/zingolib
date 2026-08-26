@@ -7,14 +7,14 @@
 //! user deliberately toggled the mode off for the session, or in a build
 //! compiled without the `nym` feature.
 //!
-//! Over the mixnet, each part is submitted to one Correspondent drawn at
-//! random per submission (Correspondent Rotation for migration parts), and
+//! Over the mixnet, each part is submitted to one Destination drawn at
+//! random per submission (Destination Rotation for migration parts), and
 //! the synchronization endpoint's *operator* is forbidden as a target (ADR
 //! 0022): a configured `migration_transmission_uri` on the sync operator's
 //! domain is refused, and the random draw excludes that operator from the
 //! curated list through the same exclusion core the send escalation uses, so
 //! a sync connection to a regional variant (`eu.zec.rocks`) still bars the
-//! operator's Correspondent (`zec.rocks`). The clearnet opt-out path keeps
+//! operator's Destination (`zec.rocks`). The clearnet opt-out path keeps
 //! its historical behavior, including the logged correlation warning when it
 //! must fall back to the sync endpoint.
 
@@ -61,7 +61,7 @@ impl TransmissionClient for RoutedTransmissionClient {
 }
 
 /// Submits parts through the local SOCKS5 proxy, one randomly drawn
-/// Correspondent per submission, and can do nothing else. The ZIP 318
+/// Destination per submission, and can do nothing else. The ZIP 318
 /// no-synchronization guarantee holds structurally here exactly as it does
 /// for the clearnet client.
 #[cfg(feature = "nym")]
@@ -126,7 +126,7 @@ impl TransmissionClient for MixnetTransmissionClient {
         Ok(TransmissionReceipt {
             txid,
             route: TransmissionRoute::Mixnet {
-                correspondent: super::transmission_grpc::host_of(indexer),
+                destination: super::transmission_grpc::host_of(indexer),
                 via_socks5: self.dial.socks5().to_string(),
             },
         })
@@ -135,7 +135,7 @@ impl TransmissionClient for MixnetTransmissionClient {
 
 /// The mixnet targets migration parts may go to: the configured
 /// `migration_transmission_uri` alone when set, otherwise the curated
-/// Correspondent census, in both cases with the synchronization endpoint's
+/// Destination census, in both cases with the synchronization endpoint's
 /// operator forbidden (ADR 0022), so no server correlates a wallet's sync
 /// stream with its migration cohort. An exclusion that empties the
 /// candidates refuses with a typed error rather than falling back.
@@ -147,7 +147,7 @@ pub(crate) fn eligible_candidates(
     candidates_from(
         configured,
         sync_indexer,
-        crate::correspondent::correspondent_indexers(),
+        crate::destination::destination_indexers(),
     )
 }
 
@@ -161,7 +161,7 @@ fn candidates_from(
     sync_indexer: Option<&http::Uri>,
     pool: Vec<http::Uri>,
 ) -> Result<Vec<http::Uri>, LightClientError> {
-    use crate::correspondent::{eligible_from, same_operator};
+    use crate::destination::{eligible_from, same_operator};
 
     if let Some(configured) = configured {
         let shares_sync_operator = configured
@@ -180,7 +180,7 @@ fn candidates_from(
     match sync_indexer {
         Some(sync) => eligible_from(pool, sync).map_err(LightClientError::from),
         None if pool.is_empty() => {
-            Err(crate::correspondent::NoEligibleCorrespondents::EmptyPool.into())
+            Err(crate::destination::NoEligibleDestinations::EmptyPool.into())
         }
         None => Ok(pool),
     }
@@ -217,7 +217,7 @@ mod tests {
 
     /// HYPOTHESIS: exclusion is by operator, not exact host (ADR 0022). A
     /// sync connection to a regional variant must still bar the operator's
-    /// listed Correspondent. Falsified if the draw weakens to exact-host matching,
+    /// listed Destination. Falsified if the draw weakens to exact-host matching,
     /// the regression PR #2527's review found on this path.
     #[test]
     fn the_sync_operators_regional_variant_is_excluded_from_the_pool() {
@@ -295,8 +295,8 @@ mod tests {
         let refused = candidates_from(None, Some(&sync), vec![uri("https://only.example:443")]);
         assert!(matches!(
             refused,
-            Err(LightClientError::NoEligibleCorrespondent(
-                crate::correspondent::NoEligibleCorrespondents::AllBelongToSyncOperator(_)
+            Err(LightClientError::NoEligibleDestination(
+                crate::destination::NoEligibleDestinations::AllBelongToSyncOperator(_)
             ))
         ));
     }
@@ -306,12 +306,12 @@ mod tests {
     /// pool, with that operator absent.
     #[test]
     fn eligible_candidates_draws_the_curated_pool_minus_the_sync_operator() {
-        use crate::correspondent::CORRESPONDENT_INDEXERS;
+        use crate::destination::DESTINATION_INDEXERS;
 
         let sync = uri("https://eu.zec.rocks:443");
         let candidates =
             eligible_candidates(None, Some(&sync)).expect("the curated pool minus one operator");
-        assert_eq!(candidates.len(), CORRESPONDENT_INDEXERS.len() - 1);
+        assert_eq!(candidates.len(), DESTINATION_INDEXERS.len() - 1);
         assert!(
             candidates
                 .iter()

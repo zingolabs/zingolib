@@ -88,7 +88,7 @@ per-exit probes instead of re-established each Sync Session.
 ## Addendum (2026-08-08)
 
 ADR 0029 is superseded, so the maintained-successor consequence above
-is void: the sweep's successor is the Correspondent Pools with the
+is void: the sweep's successor is the Destination Pools with the
 transmissions-are-probes Health economy. The sweep itself gains a
 ratified second role: it is the session's baseline health probe, the
 last probe-only act a session performs. The judgment this record calls
