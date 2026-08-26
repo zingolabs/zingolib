@@ -59,6 +59,18 @@ fn draw_clutch(mut discovered: Vec<String>) -> Vec<String> {
     discovered
 }
 
+/// Draw a reconnect clutch with every exit of the spent clutch excluded,
+/// because a redraw that rebound the same exit would defeat the rotation it
+/// exists for.
+fn redraw_clutch(discovered: Vec<String>, spent: &[String]) -> Vec<String> {
+    draw_clutch(
+        discovered
+            .into_iter()
+            .filter(|exit_node| !spent.contains(exit_node))
+            .collect(),
+    )
+}
+
 use crate::time::{DISCOVERY_TIMEOUT, NYM_LIFECYCLE_TIMEOUT, PER_ATTEMPT_CONNECT_TIMEOUT};
 
 /// One step of the bootstrap, carrying the Exit Node it concerns.
@@ -80,8 +92,8 @@ pub enum BootstrapEvent {
     PullFailed {
         /// The Exit Node address whose pull failed.
         exit_node: String,
-        /// The failure rendered for a human.
-        error: String,
+        /// The pull's typed failure record.
+        failure: NetOpFailure,
     },
     /// The race kept this Exit Node and the local listener is up.
     Connected {
@@ -91,7 +103,7 @@ pub enum BootstrapEvent {
 }
 
 /// One step of a driven race, reported to the caller as it happens.
-enum AcqStep {
+enum AcqStep<E> {
     /// A pull of this arm index launched.
     Launched {
         /// The arm index the pull races.
@@ -101,8 +113,8 @@ enum AcqStep {
     Failed {
         /// The arm index whose pull failed.
         arm: usize,
-        /// The failure rendered for a human.
-        error: String,
+        /// The pull's failure, untouched.
+        error: E,
     },
     /// The race's counters changed.
     Progress(RaceProgress),
@@ -134,12 +146,22 @@ impl NymProxy {
     pub async fn start_observed(
         mut on_event: impl FnMut(BootstrapEvent),
     ) -> Result<Self, NymProxyError> {
+        let discovered = Self::discover_observed(DEFAULT_NYM_API_URL, &mut on_event).await?;
+        Self::start_over_observed(draw_clutch(discovered), on_event).await
+    }
+
+    /// Discover the directory's Exit Nodes at `nym_api_url`, reporting the
+    /// query's departure and its answer to `on_event`.
+    async fn discover_observed(
+        nym_api_url: &str,
+        on_event: &mut impl FnMut(BootstrapEvent),
+    ) -> Result<Vec<String>, NymProxyError> {
         on_event(BootstrapEvent::DiscoveryStarted);
-        let discovered = Self::discover_exit_nodes_at(DEFAULT_NYM_API_URL).await?;
+        let discovered = Self::discover_exit_nodes_at(nym_api_url).await?;
         on_event(BootstrapEvent::DiscoveryFinished {
             candidate_count: discovered.len(),
         });
-        Self::start_over_observed(draw_clutch(discovered), on_event).await
+        Ok(discovered)
     }
 
     /// Start over exactly `clutch`, the Exit Node Reservations the parent
@@ -250,7 +272,7 @@ impl NymProxy {
                 }),
                 AcqStep::Failed { arm, error } => on_event(BootstrapEvent::PullFailed {
                     exit_node: full_exit_node_name(arm),
-                    error,
+                    failure: error,
                 }),
                 AcqStep::Progress(progress) => on_progress(progress.to_string()),
             },
@@ -353,7 +375,16 @@ impl NymProxy {
     /// returned. After a successful reconnect, [`socks5_addr`](Self::socks5_addr)
     /// returns the new port.
     pub async fn reconnect(&mut self) -> Result<(), NymProxyError> {
-        tokio::time::timeout(NYM_LIFECYCLE_TIMEOUT, self.reconnect_inner())
+        self.reconnect_observed(|_| {}).await
+    }
+
+    /// [`Self::reconnect`], reporting each bootstrap step to `on_event` as a
+    /// typed [`BootstrapEvent`].
+    pub async fn reconnect_observed(
+        &mut self,
+        on_event: impl FnMut(BootstrapEvent),
+    ) -> Result<(), NymProxyError> {
+        tokio::time::timeout(NYM_LIFECYCLE_TIMEOUT, self.reconnect_inner(on_event))
             .await
             .map_err(|_| {
                 NymProxyError::ConnectivityCheck(format!(
@@ -363,21 +394,18 @@ impl NymProxy {
             })?
     }
 
-    async fn reconnect_inner(&mut self) -> Result<(), NymProxyError> {
-        // The spent clutch is redrawn rather than reused: a redraw that
-        // rebound the same exit would defeat the rotation it exists for.
-        let discovered = Self::discover_exit_nodes_at(DEFAULT_NYM_API_URL).await?;
-        let fresh: Vec<String> = discovered
-            .into_iter()
-            .filter(|exit_node| !self.clutch.contains(exit_node))
-            .collect();
-        let clutch = draw_clutch(fresh);
+    async fn reconnect_inner(
+        &mut self,
+        mut on_event: impl FnMut(BootstrapEvent),
+    ) -> Result<(), NymProxyError> {
+        let discovered = Self::discover_observed(DEFAULT_NYM_API_URL, &mut on_event).await?;
+        let clutch = redraw_clutch(discovered, &self.clutch);
         if clutch.is_empty() {
             return Err(NymProxyError::NoExitNode);
         }
         // Each attempt binds its own fresh port, which cannot collide with
         // the old client's still-bound port.
-        let new_proxy = Self::connect_across_exit_nodes(&clutch, |_| {}, |_| {}).await?;
+        let new_proxy = Self::connect_across_exit_nodes(&clutch, on_event, |_| {}).await?;
 
         // Swap only after the new client succeeded, so a failed reconnect
         // leaves the old client untouched.
@@ -549,11 +577,11 @@ async fn drive_acq_race<T, E, F, Fut, D, DFut>(
     launch: F,
     abandon: D,
     describe_panic: impl Fn(usize, String) -> E,
-    mut on_step: impl FnMut(AcqStep),
+    mut on_step: impl FnMut(AcqStep<E>),
 ) -> Result<T, LostAcqRace<E>>
 where
     T: Send + 'static,
-    E: std::fmt::Display + Send + 'static,
+    E: Clone + std::fmt::Display + Send + 'static,
     F: Fn(usize) -> Fut,
     Fut: Future<Output = Result<T, E>> + Send + 'static,
     D: Fn(T) -> DFut,
@@ -653,7 +681,7 @@ where
                         // whole for the terminal account.
                         on_step(AcqStep::Failed {
                             arm,
-                            error: error.to_string(),
+                            error: error.clone(),
                         });
                         apply(
                             acq_race.on_event(RaceEvent::PullFailed {
@@ -760,6 +788,28 @@ mod tests {
         let scarce = vec!["only".to_string()];
         assert_eq!(draw_clutch(scarce.clone()), scarce, "a short population");
         assert!(draw_clutch(Vec::new()).is_empty());
+    }
+
+    /// HYPOTHESIS: a reconnect redraw never rebinds a spent exit and still
+    /// draws a full clutch from the fresh remainder; falsified if a spent
+    /// exit reappears, or if a spent-out population yields anything but an
+    /// empty draw.
+    #[test]
+    fn a_reconnect_redraw_never_rebinds_a_spent_exit() {
+        let population: Vec<String> = (0..RESERVATION_CLUTCH_SIZE * 3)
+            .map(|index| format!("exit-{index}"))
+            .collect();
+        let spent: Vec<String> = population[..RESERVATION_CLUTCH_SIZE].to_vec();
+
+        let redrawn = redraw_clutch(population.clone(), &spent);
+        assert_eq!(redrawn.len(), RESERVATION_CLUTCH_SIZE);
+        assert!(redrawn.iter().all(|drawn| !spent.contains(drawn)));
+        assert!(redrawn.iter().all(|drawn| population.contains(drawn)));
+
+        assert!(
+            redraw_clutch(spent.clone(), &spent).is_empty(),
+            "a spent-out population leaves nothing to draw"
+        );
     }
 
     fn hedged(max_parallel: usize) -> LaunchPolicy {
@@ -984,6 +1034,22 @@ mod tests {
                 "every arm's failure carries its index and text, got {steps:?}"
             );
         }
+    }
+
+    /// HYPOTHESIS: the shared discovery narration reports the query's
+    /// departure before its outcome, so a failed directory query is still
+    /// visible on the typed channel that both bootstrap and reconnect
+    /// report through; falsified if a failing discovery emits nothing or
+    /// claims to have finished.
+    #[tokio::test]
+    async fn a_failed_discovery_still_reports_its_departure() {
+        let mut events = Vec::new();
+        // Port 0 is unconnectable, so the query fails without the network.
+        let outcome =
+            NymProxy::discover_observed("http://127.0.0.1:0/", &mut |event| events.push(event))
+                .await;
+        outcome.expect_err("no directory answers on port 0");
+        assert_eq!(events, vec![BootstrapEvent::DiscoveryStarted]);
     }
 
     #[test]
