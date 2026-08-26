@@ -460,6 +460,7 @@ where
         scan_results_sender,
         fetch_request_sender.clone(),
         ufvks.clone(),
+        config.transparent_address_discovery.gap_limit as u32,
     );
     scanner.launch(config.performance_level);
 
@@ -489,7 +490,7 @@ where
         }
 
         // hold wallet guard until initial sync state is set to avoid inconsistencies and potential subtraction overflows
-        // when calculating sync status
+        // when calculating sync status.
         let mut wallet_guard = wallet.write().await;
         let last_known_chain_height =
             checked_wallet_height(&mut *wallet_guard, chain_height, consensus_parameters)?;
@@ -501,8 +502,8 @@ where
                 .get_sync_state_mut()
                 .map_err(SyncError::WalletError)?,
         );
-        // only set intiial sync state on first continuous sync loop
-        // otherwise, only extend the wallet tree bounds to include new blocks
+        // only set intiial sync state on first continuous sync loop.
+        // otherwise, only extend the wallet tree bounds to include new blocks.
         if first_verification_complete && new_blocks_mined {
             state::update_wallet_tree_bounds(
                 consensus_parameters,
@@ -602,12 +603,13 @@ where
         }
 
         if new_blocks_mined || reorg_occured {
-            // FIXME: this will work however it will check all addresses past the gap limit for the top 100 blocks everytime
-            // there is a new block mined. this should be improved. a potential solution is to use transparent data in compact
-            // blocks after the first pass with inuse+gaplimit taddrs i.e. once the first new mined block is detected.
+            // only perform transparent address discovery on the first continuous sync loop.
+            // transparent data in newly mined blocks during the sync session will be scanned in compact blocks.
+            // address discovery is still necessary as scanning compact blocks non-linearly may lead to missing funds
+            // or requiring rescanning multiple times.
             if !first_verification_complete {
                 scanner.transparent_gap_addresses.extend(
-                    transparent::update_addresses_and_scan_targets(
+                    transparent::address_discovery(
                         consensus_parameters,
                         wallet.clone(),
                         fetch_request_sender.clone(),
@@ -653,7 +655,7 @@ where
             tokio::select! {
                 Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
                     let mut wallet_guard = wallet.write().await;
-                    process_scan_results(
+                    if let Some(updated_transparent_gap_addresses) = process_scan_results(
                         consensus_parameters,
                         &mut *wallet_guard,
                         fetch_request_sender.clone(),
@@ -664,7 +666,9 @@ where
                         config.performance_level,
                         &mut nullifier_map_limit_exceeded,
                     )
-                    .await?;
+                    .await? {
+                        scanner.transparent_gap_addresses = updated_transparent_gap_addresses;
+                    }
                     publish_sync_status(&*wallet_guard, &progress).await;
                     wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
                     drop(wallet_guard);
@@ -1360,7 +1364,9 @@ async fn mempool_drain_verdict(
     MempoolDrainVerdict::ShutdownAndDrainComplete
 }
 
-/// Scan post-processing
+/// Scan post-processing.
+///
+/// Returns the updated transparent gap addresses or none in the case of a recovered error i.e. re-org.
 #[allow(clippy::too_many_arguments)]
 async fn process_scan_results<W>(
     consensus_parameters: &impl consensus::Parameters,
@@ -1372,7 +1378,7 @@ async fn process_scan_results<W>(
     initial_reorg_detection_start_height: Option<BlockHeight>,
     performance_level: PerformanceLevel,
     nullifier_map_limit_exceeded: &mut bool,
-) -> Result<(), SyncError<W::Error>>
+) -> Result<Option<HashMap<String, TransparentAddressId>>, SyncError<W::Error>>
 where
     W: SyncWallet
         + SyncBlocks
@@ -1392,6 +1398,8 @@ where
                 sapling_located_trees,
                 orchard_located_trees,
                 ironwood_located_trees,
+                new_inuse_transparent_addresses,
+                transparent_gap_addresses,
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
@@ -1478,7 +1486,7 @@ where
                         "Nullifiers discarded and will be re-fetched to avoid missing spends."
                     );
 
-                    return Ok(());
+                    return Ok(Some(transparent_gap_addresses));
                 }
 
                 spend::update_shielded_spends(
@@ -1516,6 +1524,7 @@ where
                 }
                 let mut map_nullifiers = !*nullifier_map_limit_exceeded;
 
+                // TODO: do we need to remove this now we scan compact blocks?
                 // all transparent spend locations are known before scanning so there is no need to map outpoints from untargetted ranges.
                 // outpoints of untargetted ranges will still be checked before being discarded.
                 let map_outpoints = scan_range.priority() >= ScanPriority::FoundNote;
@@ -1572,6 +1581,7 @@ where
                     sapling_located_trees,
                     orchard_located_trees,
                     ironwood_located_trees,
+                    new_inuse_transparent_addresses,
                 )
                 .await?;
                 spend::update_transparent_spends(
@@ -1622,6 +1632,8 @@ where
             );
             remove_irrelevant_data(wallet).map_err(SyncError::WalletError)?;
             tracing::debug!("Scan results processed.");
+
+            Ok(Some(transparent_gap_addresses))
         }
         Err(ScanError::ContinuityError(ContinuityError::HashDiscontinuity { height, .. })) => {
             tracing::warn!("Hash discontinuity detected before block {height}.");
@@ -1672,8 +1684,12 @@ where
                     last_known_chain_height,
                 )
                 .await?;
+
+                Ok(None)
             } else {
-                scan_results?;
+                Err(scan_results
+                    .expect_err("must be error variant in this scope")
+                    .into())
             }
         }
         Err(ScanError::IncorrectTreeSize {
@@ -1688,7 +1704,7 @@ where
                  wallet's {pool:?} records are being cleared back to the pool activation height \
                  and the next sync rescans from there."
             );
-            return Err(truncate_to_pool_activation_height(
+            Err(truncate_to_pool_activation_height(
                 consensus_parameters,
                 fetch_request_sender.clone(),
                 wallet,
@@ -1697,12 +1713,10 @@ where
                 block_metadata_size,
                 calculated_size,
             )
-            .await?);
+            .await?)
         }
-        Err(e) => return Err(e.into()),
+        Err(e) => Err(e.into()),
     }
-
-    Ok(())
 }
 
 /// Truncates the wallet back to the `target_pool` activation height.
@@ -2045,9 +2059,16 @@ async fn update_wallet_data<W>(
     sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
     ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
+    new_inuse_transparent_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<(), SyncError<W::Error>>
 where
-    W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees + Send,
+    W: SyncWallet
+        + SyncBlocks
+        + SyncTransactions
+        + SyncNullifiers
+        + SyncOutPoints
+        + SyncShardTrees
+        + Send,
 {
     let sync_state = wallet
         .get_sync_state_mut()
@@ -2135,6 +2156,12 @@ where
             ironwood_located_trees,
         )
         .await?;
+    let wallet_transparent_addresses = wallet
+        .get_transparent_addresses_mut()
+        .map_err(SyncError::WalletError)?;
+    for (address, id) in new_inuse_transparent_addresses {
+        wallet_transparent_addresses.insert(id, address);
+    }
 
     Ok(())
 }

@@ -762,7 +762,7 @@ pub(crate) fn create_scan_task<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
     nullifier_map_limit_exceeded: bool,
-    transparent_gap_addresses: &BTreeMap<TransparentAddressId, String>,
+    transparent_gap_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<Option<ScanTask>, W::Error>
 where
     W: SyncWallet + SyncBlocks + SyncNullifiers,
@@ -823,11 +823,6 @@ where
                 .iter()
                 .map(|(id, address)| (address.clone(), *id))
                 .collect();
-            let transparent_gap_addresses: HashMap<String, TransparentAddressId> =
-                transparent_gap_addresses
-                    .iter()
-                    .map(|(id, address)| (address.clone(), *id))
-                    .collect();
 
             Ok(Some(ScanTask::from_parts(
                 selected_range,

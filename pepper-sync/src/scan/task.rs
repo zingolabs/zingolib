@@ -1,6 +1,6 @@
 use std::{
     borrow::BorrowMut,
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap},
     sync::{
         Arc,
         atomic::{self, AtomicBool},
@@ -70,7 +70,8 @@ pub(crate) struct Scanner<P> {
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: P,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
-    pub(crate) transparent_gap_addresses: BTreeMap<TransparentAddressId, String>,
+    transparent_gap_limit: u32,
+    pub(crate) transparent_gap_addresses: HashMap<String, TransparentAddressId>,
 }
 
 impl<P> Scanner<P>
@@ -82,6 +83,7 @@ where
         scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
+        transparent_gap_limit: u32,
     ) -> Self {
         let workers: Vec<ScanWorker<P>> = Vec::with_capacity(MAX_WORKER_POOLSIZE);
 
@@ -94,7 +96,8 @@ where
             fetch_request_sender,
             consensus_parameters,
             ufvks,
-            transparent_gap_addresses: BTreeMap::new(),
+            transparent_gap_limit,
+            transparent_gap_addresses: HashMap::new(),
         }
     }
 
@@ -157,6 +160,7 @@ where
             self.scan_results_sender.clone(),
             self.fetch_request_sender.clone(),
             self.ufvks.clone(),
+            self.transparent_gap_limit,
         );
         worker.run(max_outputs);
         self.workers.push(worker);
@@ -286,7 +290,7 @@ where
                 &self.consensus_parameters,
                 wallet,
                 nullifier_map_limit_exceeded,
-                &self.transparent_gap_addresses,
+                self.transparent_gap_addresses.clone(),
             )? {
                 loader.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
@@ -649,6 +653,7 @@ pub(crate) struct ScanWorker<P> {
     scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
+    transparent_gap_limit: u32,
 }
 
 impl<P> ScanWorker<P>
@@ -661,6 +666,7 @@ where
         scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
+        transparent_gap_limit: u32,
     ) -> Self {
         Self {
             id,
@@ -671,6 +677,7 @@ where
             scan_results_sender,
             fetch_request_sender,
             ufvks,
+            transparent_gap_limit,
         }
     }
 
@@ -681,6 +688,7 @@ where
     /// Runs the worker in a new tokio task.
     ///
     /// Waits for a scan task and then calls [`crate::scan::scan`] on the given range.
+    // TODO: max_outputs can be moved to scan worker field
     fn run(&mut self, max_outputs: usize) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
 
@@ -689,6 +697,7 @@ where
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
         let ufvks = self.ufvks.clone();
+        let transparent_gap_limit = self.transparent_gap_limit;
 
         let handle = tokio::spawn(async move {
             while let Some(scan_task) = scan_task_receiver.recv().await {
@@ -699,6 +708,7 @@ where
                     &ufvks,
                     scan_task,
                     max_outputs,
+                    transparent_gap_limit,
                 )
                 .await;
                 let _ignore_error = scan_results_sender.send((scan_range, scan_results));

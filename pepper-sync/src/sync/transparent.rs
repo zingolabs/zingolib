@@ -1,5 +1,5 @@
 use std::cmp;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -23,8 +23,9 @@ use super::MAX_REORG_ALLOWANCE;
 /// Discovers all addresses in use by the wallet and returns `scan_targets` for any new relevant transactions to scan transparent
 /// bundles.
 /// `last_known_chain_height` should be the value before updating to latest chain height.
+/// Returns the gap addresses.
 // TODO: improve this to not make all the calls at once
-pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
+pub(crate) async fn address_discovery<W: SyncWallet>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: Arc<RwLock<W>>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
@@ -32,9 +33,9 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
     last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     config: TransparentAddressDiscovery,
-) -> Result<BTreeMap<TransparentAddressId, String>, SyncError<W::Error>> {
+) -> Result<HashMap<String, TransparentAddressId>, SyncError<W::Error>> {
     if !config.scopes.external && !config.scopes.internal && !config.scopes.refund {
-        return Ok(BTreeMap::new());
+        return Ok(HashMap::new());
     }
 
     let wallet_addresses = wallet
@@ -105,7 +106,7 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
     }
 
     // discover new addresses and find scan_targets for relevant transactions
-    let mut gap_addresses = BTreeMap::new();
+    let mut gap_addresses = HashMap::new();
     for (account_id, ufvk) in ufvks {
         if let Some(account_pubkey) = ufvk.transparent() {
             for scope in &scopes {
@@ -161,8 +162,11 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
                 }
 
                 let gap_index = addresses.len().saturating_sub(config.gap_limit as usize);
-                let scope_gap_addresses: BTreeMap<TransparentAddressId, String> =
-                    addresses.split_off(gap_index).into_iter().collect();
+                let scope_gap_addresses: HashMap<String, TransparentAddressId> = addresses
+                    .split_off(gap_index)
+                    .into_iter()
+                    .map(|(id, address)| (address, id))
+                    .collect();
                 gap_addresses.extend(scope_gap_addresses);
 
                 let mut wallet_guard = wallet.write().await;

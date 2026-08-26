@@ -11,7 +11,6 @@ use incrementalmerkletree::Position;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
-use zcash_transparent::keys::NonHardenedChildIndex;
 use zingo_netutils::lightwallet_protocol::{CompactBlock, CompactTx};
 use zip32::AccountId;
 
@@ -34,6 +33,7 @@ pub(crate) mod compact_blocks;
 pub(crate) mod task;
 pub(crate) mod transactions;
 
+#[derive(Debug, Clone)]
 struct InitialScanData {
     start_seam_block: Option<WalletBlock>,
     end_seam_block: Option<WalletBlock>,
@@ -95,6 +95,7 @@ struct ScanData {
     gap_addresses_in_use: BTreeSet<TransparentAddressId>,
 }
 
+#[derive(Debug)]
 pub(crate) struct ScanResults {
     pub(crate) nullifiers: NullifierMap,
     pub(crate) outpoints: BTreeMap<OutputId, ScanTarget>,
@@ -103,6 +104,8 @@ pub(crate) struct ScanResults {
     pub(crate) sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     pub(crate) orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
     pub(crate) ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
+    pub(crate) new_inuse_transparent_addresses: HashMap<String, TransparentAddressId>,
+    pub(crate) transparent_gap_addresses: HashMap<String, TransparentAddressId>,
 }
 
 pub(crate) struct DecryptedNoteData {
@@ -133,6 +136,7 @@ pub(crate) async fn scan<P>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_task: ScanTask,
     max_outputs: usize,
+    transparent_gap_limit: u32,
 ) -> Result<ScanResults, ScanError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -143,8 +147,8 @@ where
         start_seam_block,
         end_seam_block,
         mut scan_targets,
-        transparent_inuse_addresses,
-        transparent_gap_addresses,
+        mut transparent_inuse_addresses,
+        mut transparent_gap_addresses,
     } = scan_task;
 
     if compact_blocks
@@ -181,6 +185,8 @@ where
             sapling_located_trees: Vec::new(),
             orchard_located_trees: Vec::new(),
             ironwood_located_trees: Vec::new(),
+            new_inuse_transparent_addresses: HashMap::new(),
+            transparent_gap_addresses,
         });
     }
 
@@ -195,26 +201,128 @@ where
     )
     .await?;
 
-    // TODO: loop until no more gap addresses are derived
-    let consensus_parameters_clone = consensus_parameters.clone();
-    let ufvks_clone = ufvks.clone();
-    let transparent_inuse_addresses_clone = transparent_inuse_addresses.clone();
-    let transparent_gap_addresses_clone = transparent_gap_addresses.clone();
-    // TODO: add logic to add gap address to inuse and derive more gap addresses to the new gap limit
-    let scan_data = tokio::task::spawn_blocking(move || {
-        scan_compact_blocks(
-            compact_blocks,
-            &consensus_parameters_clone,
-            &ufvks_clone,
-            initial_scan_data,
-            max_outputs / 8,
-            transparent_inuse_addresses_clone,
-            transparent_gap_addresses_clone,
-        )
-    })
-    .await
-    .expect("task panicked")?;
+    // retry compact block scanning until the gap limit has been satisfied
+    let mut new_inuse_transparent_addresses = HashMap::new();
+    let scan_data = loop {
+        let compact_blocks_clone = compact_blocks.clone();
+        let consensus_parameters_clone = consensus_parameters.clone();
+        let ufvks_clone = ufvks.clone();
+        let initial_scan_data_clone = initial_scan_data.clone();
+        let transparent_inuse_addresses_clone = transparent_inuse_addresses.clone();
+        let transparent_gap_addresses_clone = transparent_gap_addresses.clone();
+        let scan_data = tokio::task::spawn_blocking(move || {
+            scan_compact_blocks(
+                compact_blocks_clone,
+                &consensus_parameters_clone,
+                &ufvks_clone,
+                initial_scan_data_clone,
+                max_outputs / 8,
+                transparent_inuse_addresses_clone,
+                transparent_gap_addresses_clone,
+            )
+        })
+        .await
+        .expect("task panicked")?;
 
+        if scan_data.gap_addresses_in_use.is_empty() {
+            break scan_data;
+        }
+
+        for (account_id, ufvk) in ufvks.iter() {
+            let Some(account_pubkey) = ufvk.transparent() else {
+                continue;
+            };
+
+            for scope in [
+                TransparentScope::External,
+                TransparentScope::Internal,
+                TransparentScope::Refund,
+            ] {
+                // TODO: collect as nonempty?
+                let gap_addresses_in_use_scoped = scan_data
+                    .gap_addresses_in_use
+                    .iter()
+                    .filter(|id| id.account_id() == *account_id && id.scope() == scope)
+                    .collect::<Vec<_>>();
+
+                if gap_addresses_in_use_scoped.is_empty() {
+                    continue;
+                }
+
+                // NOTE: the `gap_addresses_in_use` cannot be used to determine the first gap address index as there is no
+                // guarantee the first gap address is in use
+                let lowest_gap_address_index = transparent_gap_addresses
+                .values()
+                .filter(|id| id.account_id() == *account_id && id.scope() == scope)
+                .map(TransparentAddressId::address_index)
+                .min()
+                .expect(
+                    "gap addresses must exist as some are guaranteed to be in use in this scope",
+                );
+                let highest_gap_address_index_in_use = gap_addresses_in_use_scoped
+                    .last()
+                    .expect("non-empty in this scope")
+                    .address_index();
+                let no_of_gap_addresses_in_use = highest_gap_address_index_in_use
+                    .saturating_sub(lowest_gap_address_index.index())
+                    .index()
+                    + 1;
+                // NOTE:
+                // if we saturating add `gap_limit` to directly find the first index to derive we will not error if
+                // all addresses are already in use
+                let mut address_index_for_derivation = lowest_gap_address_index
+                    .saturating_add(transparent_gap_limit - 1)
+                    .next()
+                    .ok_or_else(|| ScanError::AllAddressesInUse)?;
+                let highest_address_index_for_derivation = address_index_for_derivation
+                    .index()
+                    .saturating_add(no_of_gap_addresses_in_use - 1);
+                loop {
+                    // derive new gap address for each gap address in use
+                    let new_gap_address_id =
+                        TransparentAddressId::new(*account_id, scope, address_index_for_derivation);
+                    let new_gap_address = keys::transparent::derive_address(
+                        consensus_parameters,
+                        account_pubkey,
+                        new_gap_address_id,
+                    )
+                    .map_err(ScanError::TransparentAddressDerivationError)?;
+                    transparent_gap_addresses.insert(new_gap_address, new_gap_address_id);
+
+                    // move the used gap address into inuse addresses
+                    let new_inuse_address = transparent_gap_addresses
+                        .iter()
+                        .find(|(_address, id)| {
+                            id.account_id() == *account_id
+                                && id.scope() == scope
+                                && id.address_index().index()
+                                    == new_gap_address_id
+                                        .address_index()
+                                        .index()
+                                        .checked_sub(transparent_gap_limit)
+                                        .expect("new gap address index was derived directly from transparent gap addresses. should never underflow!")
+                        })
+                        .expect("new gap address index was derived directly from transparent gap addresses. should always exist!")
+                        .0
+                        .clone();
+                    let new_inuse_address_entry = transparent_gap_addresses
+                        .remove_entry(&new_inuse_address)
+                        .expect("must exist in this scope!");
+                    new_inuse_transparent_addresses
+                        .insert(new_inuse_address_entry.0, new_inuse_address_entry.1);
+
+                    // increment the address index until we have derived all the new gap addresses
+                    if address_index_for_derivation.index() < highest_address_index_for_derivation {
+                        address_index_for_derivation = address_index_for_derivation
+                            .next()
+                            .ok_or_else(|| ScanError::AllAddressesInUse)?;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+    };
     let ScanData {
         nullifiers,
         mut outpoints,
@@ -222,72 +330,10 @@ where
         mut decrypted_scan_targets,
         decrypted_note_data,
         witness_data,
-        gap_addresses_in_use,
+        gap_addresses_in_use: _,
     } = scan_data;
-
-    for (account_id, ufvk) in ufvks.iter() {
-        let Some(account_pubkey) = ufvk.transparent() else {
-            continue;
-        };
-
-        for scope in [
-            TransparentScope::External,
-            TransparentScope::Internal,
-            TransparentScope::Refund,
-        ] {
-            let gap_addresses_in_use_scoped = gap_addresses_in_use
-                .iter()
-                .filter(|gap_id| gap_id.account_id() == *account_id && gap_id.scope() == scope)
-                .collect::<Vec<_>>();
-
-            if gap_addresses_in_use_scoped.is_empty() {
-                continue;
-            }
-
-            let highest_gap_address_in_use = gap_addresses_in_use_scoped
-                .last()
-                .expect("non-empty in this scope");
-            let no_of_gap_addresses_in_use = highest_gap_address_in_use
-                .address_index()
-                .saturating_sub(
-                    gap_addresses_in_use_scoped
-                        .first()
-                        .expect("non-empty in this scope")
-                        .address_index()
-                        .index(),
-                )
-                .index()
-                + 1;
-            let mut address_index_for_derivation = transparent_gap_addresses
-                .values()
-                .last()
-                .unwrap()
-                .address_index()
-                .next()
-                .ok_or_else(|| ScanError::AllAddressesInUse)?;
-            while address_index_for_derivation.index()
-                < address_index_for_derivation
-                    .index()
-                    .saturating_add(no_of_gap_addresses_in_use)
-            {
-                let address_id =
-                    TransparentAddressId::new(*account_id, scope, address_index_for_derivation);
-                let address = keys::transparent::derive_address(
-                    consensus_parameters,
-                    account_pubkey,
-                    address_id,
-                )
-                .map_err(SyncError::TransparentAddressDerivationError)?;
-                // addresses.push((address_id, address.clone()));
-
-                address_index_for_derivation = address_index_for_derivation
-                    .next()
-                    .ok_or_else(|| ScanError::AllAddressesInUse)?;
-            }
-        }
-    }
-
     scan_targets.append(&mut decrypted_scan_targets);
+    transparent_inuse_addresses.extend(new_inuse_transparent_addresses.clone());
 
     let wallet_transactions = scan_transactions(
         fetch_request_sender,
@@ -341,6 +387,8 @@ where
         sapling_located_trees,
         orchard_located_trees,
         ironwood_located_trees,
+        new_inuse_transparent_addresses,
+        transparent_gap_addresses,
     })
 }
 

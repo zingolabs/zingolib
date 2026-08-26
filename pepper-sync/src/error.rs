@@ -309,6 +309,9 @@ pub enum ScanError {
     /// All transparent addresses are already in use.
     #[error("all transparent addresses are already in use")]
     AllAddressesInUse,
+    /// Transparent address derivation error.
+    #[error("transparent address derivation error. {0}")]
+    TransparentAddressDerivationError(bip32::Error),
 }
 
 /// The encoding of a compact Sapling output or compact Orchard action was invalid.
