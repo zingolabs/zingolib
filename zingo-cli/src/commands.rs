@@ -546,6 +546,13 @@ async fn quickshield(lightclient: &mut LightClient) -> Result<String, CommandErr
 }
 
 async fn quit(lightclient: &mut LightClient) -> Result<String, CommandError> {
+    if lightclient.stop_sync().is_ok() {
+        eprintln!("Stopping sync task...");
+        match lightclient.await_sync().await {
+            Ok(sync_result) => eprintln!("Sync task stopped. {sync_result}"),
+            Err(e) => eprintln!("Error: sync stop failed. {}", render_error_chain(&e)),
+        }
+    }
     match lightclient.shutdown_save_task().await {
         Ok(SaveShutdown::ShutDown) => eprintln!("Save task shutdown successfully."),
         Ok(SaveShutdown::NotRunning) => eprintln!("No save task was running."),
