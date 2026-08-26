@@ -74,6 +74,9 @@ namespace zingo {
   bytes? save_wallet_bytes();
 
   [Throws=ZingolibError]
+  string read_wallet_recovery_info(bytes wallet_bytes);
+
+  [Throws=ZingolibError]
   string get_latest_block_server(
     string serveruri
   );
