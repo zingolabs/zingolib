@@ -1,4 +1,4 @@
-# A Correspondent, not a witness, receives a Transmission
+# A Destination, not a witness, receives a Transmission
 
 Status: draft — ratified in session 2026-08-07, pending review
 
@@ -14,16 +14,18 @@ and it is held to account by the delivery check and the escalation.
 
 ## Decision
 
-The role is named the **Correspondent**: the indexer a Transmission is
+The role is named the **Destination**: the indexer a Transmission is
 submitted to — the served party that receives the transaction, acts on
-it, and thereby learns it. Witness Rotation becomes Correspondent
-Rotation, Witness Selection becomes Correspondent Selection, and the
+it, and thereby learns it. Witness Rotation becomes Destination
+Rotation, Witness Selection becomes Destination Selection, and the
 code sweep is scheduled as its own change.
 
-The term is taken from correspondent banking — the institution that
-acts on another's behalf at a remove — and its idiosyncrasy is a
-feature: it is collision-free in this repository and in the adjacent
-literatures, so both prose and search stay unambiguous.
+The role was first minted as the Correspondent, taken from
+correspondent banking — the institution that acts on another's behalf
+at a remove. A 2026-08-25 amendment renames the role the
+**Destination**, preferring the plain word for the addressed party
+over the banking metaphor; the code, the ADRs, and the glossary were
+swept the same day. _Avoid_: Correspondent.
 
 ## Considered options
 
@@ -42,9 +44,9 @@ where the sense is upstream-aligned.
 ## Consequences
 
 The threat model lives in the glossary entry's body, not the name: a
-censoring Correspondent accepts a submission and suppresses or
-misreports the relay, and Correspondent Rotation bounds how many
-distinct Correspondents ever learn one transaction. The rename sweep
+censoring Destination accepts a submission and suppresses or
+misreports the relay, and Destination Rotation bounds how many
+distinct Destinations ever learn one transaction. The rename sweep
 (WitnessAttempt, the witness fields and prose in the escalation module,
 MAX_BROADCAST_WITNESSES jointly with ADR 0037's sweep) is scheduled and
 tracked in the issue queue.

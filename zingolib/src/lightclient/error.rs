@@ -72,7 +72,7 @@ pub enum LightClientError {
     #[cfg(feature = "nym")]
     #[error(
         "the mixnet liveness probe requires Mixnet Mode, which is off; \
-         enable Mixnet Mode to probe Correspondents"
+         enable Mixnet Mode to probe Destinations"
     )]
     ProbeRequiresMixnet,
     /// A probe target outside the one endpoint shape the mixnet exit
@@ -88,18 +88,18 @@ pub enum LightClientError {
     #[error(
         "the migration transmission target '{host}' is the synchronization endpoint; migration \
          parts never go to the sync server. Configure a different migration_transmission_uri or \
-         remove it to use the Correspondent Rotation."
+         remove it to use the Destination Rotation."
     )]
     MigrationTransmissionTargetIsSyncEndpoint {
         /// The host both endpoints share.
         host: String,
     },
-    /// No Correspondent remains to carry migration parts over the mixnet,
+    /// No Destination remains to carry migration parts over the mixnet,
     /// with the typed refusal saying whether exclusion or an empty pool
     /// emptied the draw.
     #[cfg(feature = "nym")]
     #[error(transparent)]
-    NoEligibleCorrespondent(#[from] crate::correspondent::NoEligibleCorrespondents),
+    NoEligibleDestination(#[from] crate::destination::NoEligibleDestinations),
 }
 
 /// Errors from the Orchard→Ironwood migration entry points

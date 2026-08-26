@@ -3,8 +3,8 @@
 //!
 //! This module holds the mixnet control and policy logic: the five-state
 //! [`Indicator`], the fail-closed [`route`] resolver shared by every mixnet-only
-//! surface, the escalating [`correspondent_rotation`] over an injected per-arm
-//! runner and random-number generator, the curated Correspondent list, and
+//! surface, the escalating [`destination_rotation`] over an injected per-arm
+//! runner and random-number generator, the curated Destination list, and
 //! the [`supervisor`] that owns the spawned `nym-proxy` child. The escalation
 //! orchestrates the shared per-submission resilience policy across rounds, and
 //! because its arm runner and RNG are injected, the round, escalation, and cap
@@ -21,8 +21,8 @@ pub use zingo_netutils::exit::{BlankExitNodeId, ExitNodeId};
 /// say which side failed.
 pub(crate) fn charge_phase(
     stage: &zingo_net_diag::NetOpStage,
-) -> crate::correspondent::health::FailurePhase {
-    use crate::correspondent::health::FailurePhase;
+) -> crate::destination::health::FailurePhase {
+    use crate::destination::health::FailurePhase;
     use zingo_net_diag::NetOpStage;
     match stage {
         NetOpStage::RouteResolution
@@ -30,13 +30,13 @@ pub(crate) fn charge_phase(
         | NetOpStage::SocksHandshake
         | NetOpStage::TunnelTransport => FailurePhase::Tunnel,
         NetOpStage::RemoteTls | NetOpStage::RemoteHttp | NetOpStage::PayloadDecode => {
-            FailurePhase::Correspondent
+            FailurePhase::Destination
         }
         _ => FailurePhase::Unattributed,
     }
 }
 
-pub mod correspondent_rotation;
+pub mod destination_rotation;
 
 pub mod driver;
 

@@ -27,7 +27,7 @@ reads the milestone lines below).
 - **Fielded integrations**: LANDED for the price fetch
   (`PriceError::RequestFailed` carries a `NetOpFailure` beside the
   untouched reqwest source), the fan-out (`EscalationError::AllFailed`
-  carries typed per-correspondent attempts), the attach validation
+  carries typed per-destination attempts), the attach validation
   (`LightClient::mixnet_death_detail`), both probe shapes
   (`ProbeLeg` outcomes are `Result<ProbeSuccess, NetOpFailure>`), and
   the provider connect race in the `zingo-netutils` workspace
@@ -48,7 +48,7 @@ died with `tls handshake eof`. The root causes of two earlier outages
 (an uninitialized platform verifier, then an empty manual root store)
 each cost a debugging session because every error crossed the system as
 flattened prose. The wallet's own liveness verdict (`died`) says nothing
-about why. Send fan-out failures join per-correspondent errors into one
+about why. Send fan-out failures join per-destination errors into one
 string.
 
 The information exists at the failure site and is destroyed on the way
@@ -219,8 +219,8 @@ route attestation, consumed by zingo-mobile). Do not disturb that field.
 
 ### Transmission fan-out
 
-`escalating_transmit`'s per-correspondent failures become `NetOpFailure` values,
-target set to the correspondent host. The fan-out report becomes a vector of
+`escalating_transmit`'s per-destination failures become `NetOpFailure` values,
+target set to the destination host. The fan-out report becomes a vector of
 typed attempts. The joined-prose rendering may remain as a Display on
 top of the vector, for the existing consumers.
 
@@ -367,7 +367,7 @@ Third, failure values travel whole below every seam: the transmit policy
 (`resilient_transmit`) is generic over each target's typed failure
 (`tonic::Status` for clearnet, `Socks5TransmitError` for the mixnet) and
 classifies only the server's own verdict text; the fan-out collects
-per-correspondent typed attempts and renders prose only in `Display`; the
+per-destination typed attempts and renders prose only in `Display`; the
 existing rendered-text seams (the indexer history's `FailureKind`, the
 send path's `Result<String, String>` boundary in the NotYetTyped backlog)
 were left where they were rather than adding new ones.

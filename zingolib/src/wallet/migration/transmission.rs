@@ -23,11 +23,11 @@ pub enum TransmissionRoute {
         /// The endpoint's host.
         endpoint: String,
     },
-    /// Mixnet submission to this Correspondent's host, through the local
+    /// Mixnet submission to this Destination's host, through the local
     /// SOCKS5 tunnel endpoint.
     Mixnet {
-        /// The drawn Correspondent's host.
-        correspondent: String,
+        /// The drawn Destination's host.
+        destination: String,
         /// The local SOCKS5 endpoint of the mixnet tunnel.
         via_socks5: String,
     },
