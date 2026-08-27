@@ -18,7 +18,7 @@
 //! safety invariant intact — see the ADR amendment for the empirical check.
 #![forbid(unsafe_code)]
 
-use std::{net::SocketAddr, sync::Mutex, time::Duration};
+use std::{net::SocketAddr, sync::Mutex, thread, time::Duration};
 
 use tokio::runtime::Runtime;
 use zingo_netutils::NymProxy;
@@ -114,43 +114,30 @@ pub struct MixnetProxyHandle {
     runtime: Option<Runtime>,
 }
 
-/// Where a handle's teardown can run, decided by whether the dropping thread
-/// may block.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TeardownSite {
-    /// The dropping thread may block, so teardown finishes before `drop`
-    /// returns.
-    Inline,
-    /// The dropping thread is a runtime worker, so teardown moves to a thread
-    /// of its own.
-    OffRuntime,
-}
+/// How long a finished disconnect's runtime may wait for its last blocking
+/// task before disposal abandons it.
+const RUNTIME_DISPOSAL_GRACE: Duration = Duration::from_secs(5);
 
-/// Pure: a runtime worker may neither block on the disconnect nor drop the
-/// runtime, so a drop that lands on one moves its teardown elsewhere.
-fn teardown_site(dropping_on_runtime_thread: bool) -> TeardownSite {
-    if dropping_on_runtime_thread {
-        TeardownSite::OffRuntime
-    } else {
-        TeardownSite::Inline
-    }
-}
-
-/// Disconnects the mixnet client in order, then drops the runtime that hosted
-/// it.
-fn teardown(runtime: Runtime, proxy: Option<NymProxy>) {
+/// Disconnects the mixnet client in order, then disposes the runtime that
+/// hosted it, waiting at most `disposal_grace` for straggling blocking tasks.
+fn teardown(runtime: Runtime, proxy: Option<NymProxy>, disposal_grace: Duration) {
     // The disconnect carries no deadline on purpose. Cancelling it drops the
     // runtime with SOCKS5 connections still open, and `SocksClient::drop`
     // aborts the process when it reports a closing connection to a controller
-    // the same cancellation already took down (nymtech/nym#7108). A teardown
-    // that hangs leaks one thread. A teardown that gives up kills the app.
+    // the same cancellation already took down (nymtech/nym#7108). A disconnect
+    // that hangs leaks this thread and the whole runtime. A disconnect that
+    // gives up kills the app. The disposal grace below starts only after the
+    // disconnect has finished, when no connection remains to trip the abort;
+    // it bounds a straggler such as a death callback stuck in the host.
     if let Some(proxy) = proxy {
         runtime.block_on(proxy.disconnect());
     }
+    runtime.shutdown_timeout(disposal_grace);
 }
 
-/// Tears down safely on whatever thread drops the last reference, including
-/// the runtime's own workers.
+/// Tears down on a thread of its own, so no dropping thread — a runtime
+/// worker, a blocking-pool thread, or a host cleaner thread — waits on the
+/// disconnect.
 impl Drop for MixnetProxyHandle {
     fn drop(&mut self) {
         if let Some(monitor) = &self.monitor {
@@ -164,12 +151,7 @@ impl Drop for MixnetProxyHandle {
         let Some(runtime) = self.runtime.take() else {
             return;
         };
-        match teardown_site(tokio::runtime::Handle::try_current().is_ok()) {
-            TeardownSite::Inline => teardown(runtime, proxy),
-            TeardownSite::OffRuntime => {
-                std::thread::spawn(move || teardown(runtime, proxy));
-            }
-        }
+        thread::spawn(move || teardown(runtime, proxy, RUNTIME_DISPOSAL_GRACE));
     }
 }
 
@@ -376,41 +358,15 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn a_worker_drop_moves_its_teardown_off_the_runtime() {
-        assert_eq!(teardown_site(true), TeardownSite::OffRuntime);
-        assert_eq!(teardown_site(false), TeardownSite::Inline);
-    }
-
-    /// The whole teardown design rests on `Handle::try_current` telling a
-    /// runtime worker apart from a thread that may block, so pin both answers.
-    #[test]
-    fn try_current_separates_a_worker_from_a_thread_that_may_block() {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("build runtime");
-        let on_worker = runtime.block_on(async { tokio::runtime::Handle::try_current().is_ok() });
-        assert_eq!(teardown_site(on_worker), TeardownSite::OffRuntime);
-        assert_eq!(
-            teardown_site(tokio::runtime::Handle::try_current().is_ok()),
-            TeardownSite::Inline
-        );
-    }
-
     /// A runtime moved to a plain thread may still be blocked on and dropped,
-    /// which is what makes the `OffRuntime` arm legal where the worker was not.
+    /// which is what makes the spawned teardown thread legal.
     #[test]
     fn a_runtime_handed_to_a_plain_thread_still_blocks_and_drops() {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("build runtime");
-        let moved = std::thread::spawn(move || {
+        let runtime = teardown_runtime();
+        let moved = thread::spawn(move || {
             runtime.block_on(async { tokio::task::yield_now().await });
-            true
         });
-        assert!(moved.join().expect("teardown thread joins"));
+        moved.join().expect("teardown thread joins");
     }
 
     #[test]
@@ -732,10 +688,10 @@ mod tests {
         release_last_reference_from(foreign.handle(), handle);
     }
 
-    /// Tests that every task is destroyed before drop returns, given a drop
-    /// away from any runtime.
+    /// Tests that a drop leads to every task's destruction within the mock
+    /// bound, now that teardown runs on a thread of its own.
     #[test]
-    fn drop_off_runtime_outlives_no_task() {
+    fn a_drop_destroys_every_task_within_the_bound() {
         let (down_tx, down_rx) = std::sync::mpsc::channel::<()>();
         let runtime = teardown_runtime();
         runtime.spawn(async move {
@@ -744,11 +700,11 @@ mod tests {
         });
         drop(teardown_handle(runtime));
         // The task owns the sender, polled or not, so only its destruction
-        // disconnects the channel. Empty means the task outlived the drop.
+        // disconnects the channel.
         assert_eq!(
-            down_rx.try_recv(),
-            Err(std::sync::mpsc::TryRecvError::Disconnected),
-            "the task must already be destroyed when drop returns"
+            down_rx.recv_timeout(MOCK_OP_BOUND),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected),
+            "the teardown thread must destroy the task within the bound"
         );
     }
 
@@ -774,6 +730,94 @@ mod tests {
             .await
             .expect("monitor must end within the strike window")
             .expect("monitor task must end cleanly despite the panic");
+    }
+
+    /// Tests that a drop from a plain thread returns while a blocking task
+    /// still runs, instead of disposing the runtime inline.
+    #[test]
+    fn a_drop_from_a_plain_thread_returns_while_a_blocking_task_runs() {
+        let runtime = teardown_runtime();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        runtime.spawn_blocking(move || {
+            started_tx.send(()).expect("report the blocking start");
+            let _ = release_rx.recv();
+        });
+        started_rx
+            .recv_timeout(MOCK_OP_BOUND)
+            .expect("the blocking task starts");
+        let handle = teardown_handle(runtime);
+        let (dropped_tx, dropped_rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            drop(handle);
+            let _ = dropped_tx.send(());
+        });
+        let outcome = dropped_rx.recv_timeout(MOCK_OP_BOUND);
+        release_tx.send(()).expect("the blocking task is waiting");
+        outcome.expect("drop must return while the blocking task still runs");
+    }
+
+    /// Tests that teardown disposes the runtime after the grace period even
+    /// when a blocking task never finishes.
+    #[test]
+    fn teardown_abandons_a_blocking_task_after_the_grace_period() {
+        let runtime = teardown_runtime();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        runtime.spawn_blocking(move || {
+            started_tx.send(()).expect("report the blocking start");
+            let _ = release_rx.recv();
+        });
+        started_rx
+            .recv_timeout(MOCK_OP_BOUND)
+            .expect("the blocking task starts");
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            teardown(runtime, None, Duration::from_millis(100));
+            let _ = done_tx.send(());
+        });
+        let outcome = done_rx.recv_timeout(MOCK_OP_BOUND);
+        release_tx.send(()).expect("the blocking task is waiting");
+        outcome.expect("teardown must abandon a blocking task it cannot end");
+    }
+
+    /// Tests that a peer's close reaches `read` as zero bytes while
+    /// `peer_addr` still answers, which is why the live suite reads the
+    /// socket to observe teardown.
+    #[test]
+    fn a_peers_close_shows_in_read_and_not_in_peer_addr() {
+        use std::io::Read;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let mut client =
+            std::net::TcpStream::connect(listener.local_addr().expect("addr")).expect("connect");
+        let (accepted, _) = listener.accept().expect("accept");
+        drop(accepted);
+        client
+            .set_read_timeout(Some(MOCK_OP_BOUND))
+            .expect("read timeout");
+        let mut byte = [0u8; 1];
+        assert_eq!(client.read(&mut byte).expect("read"), 0);
+        assert!(
+            client.peer_addr().is_ok(),
+            "peer_addr keeps answering on a half-closed socket"
+        );
+    }
+
+    /// Tests that a blocking-pool thread sits inside the runtime context, so
+    /// no predicate on `Handle::try_current` finds every thread that may
+    /// block, which is why teardown always takes a thread of its own.
+    #[test]
+    fn a_blocking_pool_thread_sits_inside_the_runtime_context() {
+        let runtime = teardown_runtime();
+        let on_blocking_pool = runtime.block_on(async {
+            tokio::task::spawn_blocking(|| tokio::runtime::Handle::try_current().is_ok())
+                .await
+                .expect("join the blocking probe")
+        });
+        assert!(
+            on_blocking_pool,
+            "a blocking-pool thread answers Ok from try_current"
+        );
     }
 
     /// Tests that the manifest itself enables tokio's `sync` feature for the
