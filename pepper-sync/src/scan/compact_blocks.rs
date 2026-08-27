@@ -172,12 +172,10 @@ where
             // check transparent outputs against inuse and gap addresses and add outpoints to map
             // TODO: only enable for blocks above the initial chain height when sync session started
             for output in transaction.vout.iter() {
-                // TODO: add more info to errors
                 let output = zcash_transparent::bundle::TxOut::new(
                     Zatoshis::from_u64(output.value)
-                        .map_err(|_| ScanError::TransparentOutputInvalidValue)?,
-                    Script::read(output.script_pub_key.as_slice())
-                        .map_err(|_| ScanError::InvalidTransparentScriptBytes)?,
+                        .map_err(|_| ScanError::TransparentOutputInvalidValue(output.value))?,
+                    Script(zcash_script::script::Code(output.script_pub_key.clone())),
                 );
                 if let Some(address) = output.recipient_address() {
                     let encoded_address =

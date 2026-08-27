@@ -300,12 +300,9 @@ pub enum ScanError {
     AddressParseError(#[from] zcash_address::unified::ParseError),
     /// Compact transaction contained transparent output with value outside the valid zatoshi range.
     #[error(
-        "compact transaction contained transparent output with value outside the valid zatoshi range"
+        "compact transaction contained transparent output with value {0} which is outside the valid zatoshi range"
     )]
-    TransparentOutputInvalidValue,
-    /// Compact transaction contained transparent output with invalid script bytes.
-    #[error("compact transaction contained transparent output with invalid script bytes")]
-    InvalidTransparentScriptBytes,
+    TransparentOutputInvalidValue(u64),
     /// All transparent addresses are already in use.
     #[error("all transparent addresses are already in use")]
     AllAddressesInUse,
