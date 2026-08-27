@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation a second time to decide where log output goes.
 
 ### Changed
+- `current_price` works while Mixnet Mode is switched off, fetching over
+  clearnet as the toggle-off consents to (ADR 0011, amendment
+  2026-08-26), and its output names the route the fetch traveled.
 - `help` lists `info`, `change_server`, and `current_price` among the
   commands that need no wallet, where it had listed them as wallet
   commands. None of the three reads wallet state: the first two reach the

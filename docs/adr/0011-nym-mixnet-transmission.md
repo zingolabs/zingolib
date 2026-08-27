@@ -490,3 +490,28 @@ workspace and generates its own bindings (zingo-mobile PR #1251). The
 UniFFI, and the runtime-boundary generalization remains in force; only
 the shim's hosting repository changes. This workspace keeps the desktop
 `nym-proxy` binary and its `bundle-nym-proxy` workbench tool.
+
+## Amendment (2026-08-26): the switched-off consent covers the price fetch
+
+The 2026-07-28 ruling above, that the switched-off consent covers
+Transmission and never the price fetch, is reversed. The deliberate
+SwitchedOff now consents to a clearnet price fetch exactly as it consents
+to a clearnet send. The mobile sessions supplied the deciding evidence. A
+user who declines the mixnet starts every session SwitchedOff, and the
+price display never works for that user, in any session, by design. The
+refusal was meant to prevent an unconsented leak, but the state it fires
+in is the one state the user reached by an explicit choice. The same
+session's sends already travel clearnet to an indexer that knows the
+wallet's address set, and a price API learns less than that indexer
+already holds.
+
+The amended rule: `update_current_price` follows the one route resolver.
+Ready races the sources through the tunnel as before. SwitchedOff races
+the same sources over untunneled HTTP, and the documentation disclosure
+from the 2026-07-27 amendment applies to that route again. The
+transitional states (Unattached, Bootstrapping, Died) keep their typed
+refusals, so absence is still not consent. The success value attests the
+route as a two-variant enum, mixnet with its SOCKS5 endpoint or clearnet,
+replacing the tunnel-endpoint string, and `PriceFetchRequiresMixnet`
+leaves the error surface as unreachable. `probe_destinations` remains
+mixnet-only, since its subject is the mixnet transport itself.

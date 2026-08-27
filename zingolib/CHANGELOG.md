@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- BREAKING: `LightClient::update_current_price` follows the route
+  resolver instead of refusing while Mixnet Mode is switched off
+  (ADR 0011, amendment 2026-08-26). A switched-off session races the
+  same price sources over untunneled clearnet HTTP, so the deliberate
+  toggle-off consents to the price fetch as it consents to Transmission.
+  The transitional states (`Unattached`, `Bootstrapping`, `Died`) keep
+  their typed `MixnetNotReady` refusals. `MixnetPriceFetch` carries
+  `route: PriceFetchRoute` (a two-variant enum, mixnet with its SOCKS5
+  endpoint or clearnet) where it carried `via_socks5: String`, and
+  `LightClientError::PriceFetchRequiresMixnet` is removed as
+  unreachable. `probe_destinations` remains mixnet-only.
 - BREAKING: `mixnet::resolve_route` takes the session's
   `MixnetConduit` rather than a `SocketAddr`, and `LightClient::mixnet_route`
   reads it from the new `LightClient::mixnet_conduit`. The resolver used to

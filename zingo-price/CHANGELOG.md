@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `get_source_price_untunneled`, the untunneled counterpart of
+  `get_source_price`, so the wallet can race the same sources over
+  clearnet when a switched-off Mixnet Mode consents to it (ADR 0011,
+  amendment 2026-08-26). It was previously a test-only helper.
+
 ### Changed
 - BREAKING: `PriceError::RequestFailed` carries a
   `zingo_netutils::socks5_fetch::Socks5FetchError` where it carried a

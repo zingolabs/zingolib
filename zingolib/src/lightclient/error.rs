@@ -49,21 +49,11 @@ pub enum LightClientError {
     /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
     #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
     Offline,
-    /// Price fetch error. Exists only in nym builds: the mixnet-only price
-    /// rule leaves other builds with no fetch to fail.
+    /// Price fetch error. Exists only in nym builds: the fetch compiles
+    /// only with the mixnet stack, so other builds have no fetch to fail.
     #[cfg(feature = "nym")]
     #[error("Price fetch error.")]
     PriceError(#[from] PriceError),
-    /// The mixnet-routed price fetch was requested while Mixnet Mode is toggled
-    /// off. The opt-in route fails closed rather than falling back to clearnet
-    /// (ADR 0011); use the clearnet default `update_current_price` instead, or
-    /// enable Mixnet Mode (`network on`).
-    #[cfg(feature = "nym")]
-    #[error(
-        "the mixnet-routed price fetch requires Mixnet Mode, which is off; \
-         enable Mixnet Mode, or use the clearnet price fetch"
-    )]
-    PriceFetchRequiresMixnet,
     /// A mixnet-only surface was attempted while the mixnet was bootstrapping.
     #[cfg(feature = "nym")]
     #[error(transparent)]

@@ -1090,94 +1090,104 @@ impl LightClient {
         Ok(probes)
     }
 
-    /// Update and return the current ZEC price in USD by racing the three
-    /// price sources (Gemini, Kraken, CoinGecko) through the mixnet tunnel —
-    /// hiding the client IP, taking the first answer, erroring only when
-    /// every source fails and then naming each source's typed failure, and
-    /// returning the tunnel endpoint, the winning source, and the round-trip
-    /// time as per-fetch route evidence — while failing closed in every
-    /// other state: a typed [`MixnetNotReady`](crate::mixnet::MixnetNotReady)
-    /// refusal while unattached, bootstrapping, or died, and
-    /// [`LightClientError::PriceFetchRequiresMixnet`] while switched off,
-    /// because the switched-off consent covers Transmission and never a
-    /// third-party price API outside the Zcash ecosystem.
+    /// Update and return the current ZEC price in USD by racing the price
+    /// sources and taking the first answer. The race follows the Mixnet
+    /// Mode route: a ready mixnet carries it through the tunnel,
+    /// SwitchedOff carries it over clearnet as informed consent, and the
+    /// transitional states refuse with a typed
+    /// [`MixnetNotReady`](crate::mixnet::MixnetNotReady).
     pub async fn update_current_price(&self) -> Result<MixnetPriceFetch, LightClientError> {
-        // Held for the whole race, so the conduit knows the fetch is still
-        // running even while every source is in flight.
-        let dial = match self.mixnet_route()? {
-            crate::mixnet::MixnetRoute::Mixnet(conduit) => conduit.dial(),
-            crate::mixnet::MixnetRoute::Clearnet => {
-                return Err(LightClientError::PriceFetchRequiresMixnet);
-            }
-        };
-        let socks5_addr = dial.socks5();
-
-        // A spawned session births a per-run Proven Client — one fresh
-        // Shared exit per run, never the standing client's — while an
-        // attached session's single mobile-platform endpoint carries it as
-        // before. The per-run client is stopped whatever the outcome, and
-        // its lease recycles into the Exit Pool.
-        // The run is the one speed-priority operation shape: it acquires a
-        // transport, races its sources through that exit in a wave a
-        // Sentinel rides, and redraws whenever an exit proves to carry
-        // nothing. Acquisition, disposal, and the redraw bound are the
-        // shared loop's; this call site owns only the quote.
         let dispatched = std::time::Instant::now();
-        let run = PriceRun {
-            pools: self.destination_pools.clone(),
-        };
-        // A spawned session draws its own transport per run, so a dead exit
-        // costs a redraw. An attached session has one endpoint its platform
-        // host owns: there is nothing to redraw, so the run rides that tunnel
-        // for one wave, and a dead exit ends it.
-        let (outcomes, via_socks5) = if self.destination_pools.acquirer().is_some() {
-            let (outcomes, spent) = crate::mixnet::speed::run_speed_prioritized(&run)
-                .await
-                .map_err(crate::wallet::error::PriceError::Speed)?;
-            let dial = spent
-                .addr()
-                .map(|addr| addr.to_string())
-                .unwrap_or_default();
-            crate::mixnet::speed::SpeedPrioritized::dispose(&run, spent);
-            (outcomes, dial)
-        } else {
-            let conduit = zingo_netutils::conduit::MixnetConduit::over(socks5_addr);
-            match crate::mixnet::speed::run_wave(&run, &conduit).await {
-                crate::mixnet::speed::WaveEnd::Settled(outcomes)
-                | crate::mixnet::speed::WaveEnd::Exhausted(outcomes) => {
-                    (outcomes, socks5_addr.to_string())
-                }
+        let (outcomes, route) = match self.mixnet_route()? {
+            crate::mixnet::MixnetRoute::Clearnet => (
+                clearnet_price_race().await,
+                crate::lightclient::PriceFetchRoute::Clearnet,
+            ),
+            crate::mixnet::MixnetRoute::Mixnet(conduit) => {
+                let dial = conduit.dial();
+                let socks5_addr = dial.socks5();
+
+                let run = PriceRun {
+                    pools: self.destination_pools.clone(),
+                };
+
+                let (outcomes, via_socks5) = if self.destination_pools.acquirer().is_some() {
+                    let (outcomes, spent) = crate::mixnet::speed::run_speed_prioritized(&run)
+                        .await
+                        .map_err(crate::wallet::error::PriceError::Speed)?;
+                    let dial = spent
+                        .addr()
+                        .map(|addr| addr.to_string())
+                        .unwrap_or_default();
+                    crate::mixnet::speed::SpeedPrioritized::dispose(&run, spent);
+                    (outcomes, dial)
+                } else {
+                    let conduit = zingo_netutils::conduit::MixnetConduit::over(socks5_addr);
+                    match crate::mixnet::speed::run_wave(&run, &conduit).await {
+                        crate::mixnet::speed::WaveEnd::Settled(outcomes)
+                        | crate::mixnet::speed::WaveEnd::Exhausted(outcomes) => {
+                            (outcomes, socks5_addr.to_string())
+                        }
+                    }
+                };
+                (
+                    outcomes,
+                    crate::lightclient::PriceFetchRoute::Mixnet { via_socks5 },
+                )
             }
         };
         let raced =
             zingo_price::first_quote(outcomes).map_err(crate::wallet::error::PriceError::from)?;
-        let round_trip = dispatched.elapsed();
         Ok(MixnetPriceFetch {
             usd: raced.price.price_usd,
             source: raced.source,
-            round_trip,
-            via_socks5: via_socks5.to_string(),
+            round_trip: dispatched.elapsed(),
+            route,
         })
     }
+}
+
+/// Races every price source over untunneled clearnet HTTP, the route a
+/// switched-off Mixnet Mode consents to. Settles on the first quote,
+/// keeping earlier failures for the report.
+#[cfg(feature = "nym")]
+async fn clearnet_price_race() -> Vec<(
+    zingo_price::PriceSource,
+    Result<zingo_price::Price, zingo_price::PriceError>,
+)> {
+    use futures::StreamExt;
+    let mut in_flight = zingo_price::RACED_SOURCES
+        .iter()
+        .map(|&source| async move {
+            let quote = zingo_price::get_source_price_untunneled(
+                source,
+                source.url(),
+                zingo_price::REQUEST_TIMEOUT,
+                zingo_price::CONNECT_TIMEOUT,
+            )
+            .await;
+            (source, quote)
+        })
+        .collect::<futures::stream::FuturesUnordered<_>>();
+    let mut outcomes = Vec::new();
+    while let Some(outcome) = in_flight.next().await {
+        let settled = outcome.1.is_ok();
+        outcomes.push(outcome);
+        if settled {
+            break;
+        }
+    }
+    outcomes
 }
 
 #[cfg(test)]
 mod tests {
 
     mod price_fetch_contract {
-        //! The price-fetch error contract for the mixnet route (ADR 0011,
-        //! amendments 2026-07-23 and 2026-07-27).
-        //!
-        //! Every way the opt-in mixnet price fetch can fail must arrive at
-        //! the API surface as a typed [`LightClientError`] variant with its
-        //! source chain intact: never prose in the data channel, never a
-        //! silent clearnet fallback. The route pre-flight variants
-        //! (`PriceFetchRequiresMixnet`, `MixnetNotReady::{Unattached,
-        //! Bootstrapping, Died}`) pair with `mixnet::route`'s own
-        //! `resolve_route` tests; the tests here pin the surface wiring. The
-        //! transport-leg contract (typed connect and timeout failures with
-        //! their cause chains) is pinned in `zingo-price`'s own tests,
-        //! beside the mechanism.
+        //! The price-fetch error contract: every failure reaches the API
+        //! as a typed [`LightClientError`], and a clearnet leg runs only
+        //! with consent. Route refusals pair with `mixnet::route`'s tests;
+        //! transport-leg failures are pinned in `zingo-price`.
         use crate::lightclient::LightClient;
         use crate::lightclient::error::LightClientError;
         use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
@@ -1208,23 +1218,26 @@ mod tests {
             );
         }
 
-        /// Mixnet Mode switched off is equally a typed refusal for the
-        /// opt-in mixnet fetch: the caller demanded the private route, so a
-        /// consented-clearnet mode answers `PriceFetchRequiresMixnet` rather
-        /// than quietly fetching over clearnet.
+        /// Switched off consents to a clearnet fetch; only `Unattached`,
+        /// `Bootstrapping`, and `Died` refuse. A failed race is accepted,
+        /// a route refusal is not.
         #[tokio::test]
-        async fn switched_off_mode_is_a_typed_refusal() {
+        async fn switched_off_mode_consents_to_a_clearnet_fetch() {
             let mut client = LightClient::new_for_test(wallet()).await;
             client.disable_mixnet().await;
 
-            let error = client
-                .update_current_price()
-                .await
-                .expect_err("switched off consents to clearnet, not to a mixnet fetch");
-            assert!(
-                matches!(error, LightClientError::PriceFetchRequiresMixnet),
-                "the refusal must be typed, not prose: {error}"
-            );
+            match client.update_current_price().await {
+                Ok(fetch) => assert_eq!(
+                    fetch.route,
+                    crate::lightclient::PriceFetchRoute::Clearnet,
+                    "a switched-off fetch must attest the clearnet route"
+                ),
+
+                Err(LightClientError::PriceError(_)) => {}
+                Err(refusal) => {
+                    panic!("switched off must consent to a clearnet fetch, not refuse: {refusal}")
+                }
+            }
         }
 
         /// The startup opt-out is the explicit act (ADR 0024, consent at

@@ -304,13 +304,21 @@ async fn confirm(lightclient: &mut LightClient) -> Result<String, CommandError> 
 #[cfg(feature = "nym")]
 async fn current_price(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.update_current_price().await {
-        Ok(fetch) => Ok(format!(
-            "current price: {} USD (source: {}, rtt: {} ms, fetched over the mixnet via {})",
-            fetch.usd,
-            fetch.source.name(),
-            fetch.round_trip.as_millis(),
-            fetch.via_socks5
-        )),
+        Ok(fetch) => {
+            let route = match &fetch.route {
+                zingolib::lightclient::PriceFetchRoute::Mixnet { via_socks5 } => {
+                    format!("over the mixnet via {via_socks5}")
+                }
+                zingolib::lightclient::PriceFetchRoute::Clearnet => "over clearnet".to_string(),
+            };
+            Ok(format!(
+                "current price: {} USD (source: {}, rtt: {} ms, fetched {})",
+                fetch.usd,
+                fetch.source.name(),
+                fetch.round_trip.as_millis(),
+                route
+            ))
+        }
         Err(e) => Err(not_yet_typed(e)),
     }
 }
