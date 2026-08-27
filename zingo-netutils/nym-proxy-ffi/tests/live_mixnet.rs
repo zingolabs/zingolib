@@ -49,48 +49,9 @@ async fn socks5_connect(
     endpoint: &Socks5Endpoint,
     host: &str,
     port: u16,
-) -> std::io::Result<tokio::net::TcpStream> {
-    let mut stream =
-        tokio::net::TcpStream::connect((endpoint.host.as_str(), endpoint.port)).await?;
-    stream.write_all(&[0x05, 0x01, 0x00]).await?;
-    let mut selection = [0u8; 2];
-    stream.read_exact(&mut selection).await?;
-    if selection != [0x05, 0x00] {
-        return Err(std::io::Error::other(format!(
-            "method selection refused: {selection:?}"
-        )));
-    }
-
-    let name_length = u8::try_from(host.len()).expect("test host name fits a SOCKS5 length byte");
-    let mut request = vec![0x05, 0x01, 0x00, 0x03, name_length];
-    request.extend_from_slice(host.as_bytes());
-    request.extend_from_slice(&port.to_be_bytes());
-    stream.write_all(&request).await?;
-
-    // The client acknowledges a CONNECT before it reaches the remote; the
-    // bound-address tail's length follows the reply's ATYP.
-    let mut reply_head = [0u8; 4];
-    stream.read_exact(&mut reply_head).await?;
-    if reply_head[1] != 0x00 {
-        return Err(std::io::Error::other(format!(
-            "CONNECT refused: {reply_head:?}"
-        )));
-    }
-    let bound_addr_len = match reply_head[3] {
-        0x01 => 4,
-        0x04 => 16,
-        0x03 => {
-            let mut len = [0u8; 1];
-            stream.read_exact(&mut len).await?;
-            usize::from(len[0])
-        }
-        other => {
-            return Err(std::io::Error::other(format!("unknown ATYP {other:#04x}")));
-        }
-    };
-    let mut bound_addr_and_port = vec![0u8; bound_addr_len + 2];
-    stream.read_exact(&mut bound_addr_and_port).await?;
-    Ok(stream)
+) -> Result<tokio_socks::tcp::Socks5Stream<tokio::net::TcpStream>, tokio_socks::Error> {
+    tokio_socks::tcp::Socks5Stream::connect((endpoint.host.as_str(), endpoint.port), (host, port))
+        .await
 }
 
 /// Starts a live proxy off-thread, recording deaths, within the start budget.
@@ -141,6 +102,37 @@ fn live_proxy_survives_a_drop_while_a_connection_is_open() {
     assert!(
         deaths.lock().unwrap().is_empty(),
         "a drop-driven teardown must not report a death"
+    );
+}
+
+/// Tests the sequence both hosts actually take: stop with a connection open,
+/// then release the handle.
+#[test]
+fn live_proxy_stops_with_a_connection_open_then_releases() {
+    let deaths = Arc::new(Mutex::new(Vec::new()));
+    let handle = start_live_proxy(&deaths);
+
+    let endpoint = handle.socks5_endpoint();
+    let client = tokio::runtime::Runtime::new().expect("client runtime");
+    let mut open = client
+        .block_on(socks5_connect(&endpoint, "example.com", 80))
+        .expect("SOCKS5 CONNECT against the live listener");
+
+    // stop() begins the ordered disconnect off-thread; the session closing
+    // is the observable completion.
+    handle.stop();
+    let mut byte = [0u8; 1];
+    let observed = client
+        .block_on(async { tokio::time::timeout(TEARDOWN_BOUND, open.read(&mut byte)).await })
+        .expect("stop must close the SOCKS session within the bound");
+    match observed {
+        Ok(0) | Err(_) => {}
+        Ok(unsolicited) => panic!("{unsolicited} unsolicited bytes instead of a close"),
+    }
+    drop(handle);
+    assert!(
+        deaths.lock().unwrap().is_empty(),
+        "a deliberate stop must not report a death"
     );
 }
 

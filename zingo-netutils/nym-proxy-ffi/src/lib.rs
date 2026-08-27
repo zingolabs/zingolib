@@ -18,7 +18,13 @@
 //! safety invariant intact — see the ADR amendment for the empirical check.
 #![forbid(unsafe_code)]
 
-use std::{net::SocketAddr, sync::Mutex, thread, time::Duration};
+use std::{
+    mem,
+    net::SocketAddr,
+    sync::{Arc, Mutex, atomic},
+    thread,
+    time::Duration,
+};
 
 use tokio::runtime::Runtime;
 use zingo_netutils::NymProxy;
@@ -108,50 +114,123 @@ pub trait ProxyDeathObserver: Send + Sync {
 /// [`Self::stop`] or a drop of the handle tears both down.
 #[derive(uniffi::Object)]
 pub struct MixnetProxyHandle {
-    proxy: Mutex<Option<NymProxy>>,
+    proxy: Mutex<Option<ProxySlot>>,
     monitor: Option<tokio::task::AbortHandle>,
     endpoint: Socks5Endpoint,
-    runtime: Option<Runtime>,
+    runtime: Mutex<Option<Runtime>>,
+    stopping: Arc<atomic::AtomicBool>,
 }
+
+/// The client a handle tears down: the live one in production, a scripted
+/// stand-in under test.
+#[cfg_attr(test, expect(clippy::large_enum_variant))]
+enum ProxySlot {
+    Live(NymProxy),
+    #[cfg(test)]
+    Scripted(tests::ScriptedProxy),
+}
+
+impl ProxySlot {
+    /// The Exit Node identity the slot's client bound.
+    fn exit_node(&self) -> String {
+        match self {
+            ProxySlot::Live(proxy) => proxy.exit_node().to_string(),
+            #[cfg(test)]
+            ProxySlot::Scripted(proxy) => proxy.exit_node(),
+        }
+    }
+
+    /// Runs the client's ordered disconnect.
+    async fn disconnect(self) {
+        match self {
+            ProxySlot::Live(proxy) => proxy.disconnect().await,
+            #[cfg(test)]
+            ProxySlot::Scripted(proxy) => proxy.disconnect().await,
+        }
+    }
+}
+
+/// The bound a teardown's ordered disconnect gets before the runtime is
+/// leaked, still running, instead of dropped.
+const DISCONNECT_BOUND: Duration = Duration::from_secs(60);
 
 /// How long a finished disconnect's runtime may wait for its last blocking
 /// task before disposal abandons it.
 const RUNTIME_DISPOSAL_GRACE: Duration = Duration::from_secs(5);
 
-/// Disconnects the mixnet client in order, then disposes the runtime that
-/// hosted it, waiting at most `disposal_grace` for straggling blocking tasks.
-fn teardown(runtime: Runtime, proxy: Option<NymProxy>, disposal_grace: Duration) {
-    // The disconnect carries no deadline on purpose. Cancelling it drops the
-    // runtime with SOCKS5 connections still open, and `SocksClient::drop`
-    // aborts the process when it reports a closing connection to a controller
-    // the same cancellation already took down (nymtech/nym#7108). A disconnect
-    // that hangs leaks this thread and the whole runtime. A disconnect that
-    // gives up kills the app. The disposal grace below starts only after the
-    // disconnect has finished, when no connection remains to trip the abort;
-    // it bounds a straggler such as a death callback stuck in the host.
+/// Runs the ordered disconnect under `disconnect_bound`, then disposes the
+/// runtime within `disposal_grace`, leaking both instead when the disconnect
+/// cannot finish.
+fn teardown(
+    runtime: Runtime,
+    proxy: Option<ProxySlot>,
+    disconnect_bound: Duration,
+    disposal_grace: Duration,
+) {
     if let Some(proxy) = proxy {
-        runtime.block_on(proxy.disconnect());
+        let disconnect = runtime.spawn(proxy.disconnect());
+        let finished =
+            runtime.block_on(async { tokio::time::timeout(disconnect_bound, disconnect).await });
+        if finished.is_err() {
+            // A late disconnect cannot be cancelled: dropping the runtime
+            // under live SocksClients aborts the process (nymtech/nym#7108),
+            // so the runtime is forgotten, still running, instead of dropped.
+            mem::forget(runtime);
+            return;
+        }
     }
     runtime.shutdown_timeout(disposal_grace);
 }
 
-/// Tears down on a thread of its own, so no dropping thread — a runtime
-/// worker, a blocking-pool thread, or a host cleaner thread — waits on the
-/// disconnect.
+/// Hands the runtime and client to a detached teardown thread, falling back
+/// without an abort when the OS refuses the thread.
+fn spawn_teardown(runtime: Runtime, proxy: Option<ProxySlot>) {
+    let payload = Arc::new(Mutex::new(Some((runtime, proxy))));
+    let for_thread = Arc::clone(&payload);
+    let spawned = thread::Builder::new()
+        .name("nym-teardown".to_string())
+        .spawn(move || {
+            if let Some((runtime, proxy)) = take_teardown_payload(&for_thread) {
+                teardown(runtime, proxy, DISCONNECT_BOUND, RUNTIME_DISPOSAL_GRACE);
+            }
+        });
+    if spawned.is_err() {
+        reclaim_unspawned_teardown(&payload);
+    }
+}
+
+/// Takes the runtime and client out of a shared teardown payload.
+fn take_teardown_payload(
+    payload: &Mutex<Option<(Runtime, Option<ProxySlot>)>>,
+) -> Option<(Runtime, Option<ProxySlot>)> {
+    payload
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take()
+}
+
+/// Completes a teardown whose thread the OS refused: inline where this
+/// thread may block, by a deliberate leak where it may not.
+fn reclaim_unspawned_teardown(payload: &Mutex<Option<(Runtime, Option<ProxySlot>)>>) {
+    let Some((runtime, proxy)) = take_teardown_payload(payload) else {
+        return;
+    };
+    if tokio::runtime::Handle::try_current().is_err() {
+        teardown(runtime, proxy, DISCONNECT_BOUND, RUNTIME_DISPOSAL_GRACE);
+    } else {
+        // Dropping the runtime on a runtime-context thread panics, and
+        // dropping the client raw aborts (nymtech/nym#7108); leaking both is
+        // the survivable arm.
+        mem::forget(runtime);
+        mem::forget(proxy);
+    }
+}
+
+/// Tears down through [`Self::stop`], so a dropped handle and a stopped one
+/// take one path.
 impl Drop for MixnetProxyHandle {
     fn drop(&mut self) {
-        if let Some(monitor) = &self.monitor {
-            monitor.abort();
-        }
-        let proxy = self
-            .proxy
-            .get_mut()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take();
-        let Some(runtime) = self.runtime.take() else {
-            return;
-        };
-        thread::spawn(move || teardown(runtime, proxy, RUNTIME_DISPOSAL_GRACE));
+        self.stop();
     }
 }
 
@@ -244,6 +323,7 @@ fn death_reason(failure: HandshakeCheckError) -> ProxyDeathReason {
 async fn monitor_listener(
     endpoint: Socks5Endpoint,
     observer: Box<dyn ProxyDeathObserver>,
+    stopping: Arc<atomic::AtomicBool>,
     interval: Duration,
     check_timeout: Duration,
     strikes_allowed: u32,
@@ -256,8 +336,13 @@ async fn monitor_listener(
             Err(failure) => {
                 strikes += 1;
                 if strikes >= strikes_allowed {
+                    // The abort in stop() cannot recall a report already
+                    // dispatched into the blocking pool, so the closure
+                    // itself honours the deliberate stop.
                     let _ = tokio::task::spawn_blocking(move || {
-                        observer.on_death(death_reason(failure))
+                        if !stopping.load(atomic::Ordering::SeqCst) {
+                            observer.on_death(death_reason(failure))
+                        }
                     })
                     .await;
                     return;
@@ -301,11 +386,13 @@ impl MixnetProxyHandle {
                 reason: e.to_string(),
             })?;
         let endpoint = endpoint_from_listener_addr(proxy.socks5_addr());
+        let stopping = Arc::new(atomic::AtomicBool::new(false));
         let monitor = observer.map(|observer| {
             runtime
                 .spawn(monitor_listener(
                     endpoint.clone(),
                     observer,
+                    Arc::clone(&stopping),
                     LISTENER_MONITOR_INTERVAL,
                     LOOPBACK_DIAL_BOUND,
                     LISTENER_MONITOR_STRIKES,
@@ -313,10 +400,11 @@ impl MixnetProxyHandle {
                 .abort_handle()
         });
         Ok(std::sync::Arc::new(MixnetProxyHandle {
-            runtime: Some(runtime),
-            proxy: Mutex::new(Some(proxy)),
+            runtime: Mutex::new(Some(runtime)),
+            proxy: Mutex::new(Some(ProxySlot::Live(proxy))),
             endpoint,
             monitor,
+            stopping,
         }))
     }
 
@@ -331,23 +419,29 @@ impl MixnetProxyHandle {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_ref()
-            .map(|proxy| proxy.exit_node().to_string())
+            .map(|slot| slot.exit_node())
     }
 
-    /// Disconnect the mixnet client and stop the local SOCKS5 proxy,
-    /// idempotently, cancelling the liveness monitor before the listener goes
-    /// down so a deliberate stop never fires the death observer.
+    /// Begin the ordered teardown on a thread of its own, idempotently,
+    /// after silencing the monitor and any death report it has already
+    /// dispatched.
     pub fn stop(&self) {
+        self.stopping.store(true, atomic::Ordering::SeqCst);
         if let Some(monitor) = &self.monitor {
             monitor.abort();
         }
-        let taken = self
+        let proxy = self
             .proxy
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .take();
-        if let (Some(proxy), Some(runtime)) = (taken, self.runtime.as_ref()) {
-            runtime.block_on(proxy.disconnect());
+        if let Some(runtime) = self
+            .runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            spawn_teardown(runtime, proxy);
         }
     }
 }
@@ -516,6 +610,7 @@ mod tests {
         let monitor = tokio::spawn(monitor_listener(
             endpoint,
             Box::new(Arc::clone(&observer)),
+            not_stopping(),
             MONITOR_CHECK_INTERVAL,
             MONITOR_CHECK_TIMEOUT,
             LISTENER_MONITOR_STRIKES,
@@ -561,6 +656,7 @@ mod tests {
         tokio::spawn(monitor_listener(
             endpoint,
             Box::new(BlockingObserver(blocked_tx)),
+            not_stopping(),
             MONITOR_CHECK_INTERVAL,
             MONITOR_CHECK_TIMEOUT,
             1,
@@ -590,9 +686,19 @@ mod tests {
                 host: "127.0.0.1".to_string(),
                 port: 1,
             },
-            runtime: Some(runtime),
+            runtime: Mutex::new(Some(runtime)),
+            stopping: Arc::new(atomic::AtomicBool::new(false)),
         }
     }
+
+    /// A stopping flag no one ever raises.
+    fn not_stopping() -> Arc<atomic::AtomicBool> {
+        Arc::new(atomic::AtomicBool::new(false))
+    }
+
+    /// The bound the drop tests observe under, strictly inside the disposal
+    /// grace so an inline-teardown regression reds reliably.
+    const DROP_OBSERVATION_BOUND: Duration = Duration::from_millis(2500);
 
     /// Drops the last reference from a task the given spawner runs, waiting
     /// for that drop to complete without a panic.
@@ -622,6 +728,8 @@ mod tests {
         let handle = Arc::new(teardown_handle(teardown_runtime()));
         let spawner = handle
             .runtime
+            .lock()
+            .unwrap()
             .as_ref()
             .expect("a live handle owns its runtime")
             .handle()
@@ -648,6 +756,8 @@ mod tests {
                     .expect("the observer holds the last reference");
                 handle
                     .runtime
+                    .lock()
+                    .unwrap()
                     .as_ref()
                     .expect("a live handle owns its runtime")
                     .block_on(async {});
@@ -664,11 +774,14 @@ mod tests {
         };
         handle
             .runtime
+            .lock()
+            .unwrap()
             .as_ref()
             .expect("a live handle owns its runtime")
             .spawn(monitor_listener(
                 handle.endpoint.clone(),
                 Box::new(observer),
+                not_stopping(),
                 MONITOR_CHECK_INTERVAL,
                 MONITOR_CHECK_TIMEOUT,
                 1,
@@ -702,7 +815,7 @@ mod tests {
         // The task owns the sender, polled or not, so only its destruction
         // disconnects the channel.
         assert_eq!(
-            down_rx.recv_timeout(MOCK_OP_BOUND),
+            down_rx.recv_timeout(DROP_OBSERVATION_BOUND),
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected),
             "the teardown thread must destroy the task within the bound"
         );
@@ -722,6 +835,7 @@ mod tests {
         let monitor = tokio::spawn(monitor_listener(
             endpoint,
             Box::new(PanickingObserver),
+            not_stopping(),
             MONITOR_CHECK_INTERVAL,
             MONITOR_CHECK_TIMEOUT,
             1,
@@ -752,7 +866,7 @@ mod tests {
             drop(handle);
             let _ = dropped_tx.send(());
         });
-        let outcome = dropped_rx.recv_timeout(MOCK_OP_BOUND);
+        let outcome = dropped_rx.recv_timeout(DROP_OBSERVATION_BOUND);
         release_tx.send(()).expect("the blocking task is waiting");
         outcome.expect("drop must return while the blocking task still runs");
     }
@@ -773,7 +887,12 @@ mod tests {
             .expect("the blocking task starts");
         let (done_tx, done_rx) = std::sync::mpsc::channel();
         thread::spawn(move || {
-            teardown(runtime, None, Duration::from_millis(100));
+            teardown(
+                runtime,
+                None,
+                Duration::from_millis(100),
+                Duration::from_millis(100),
+            );
             let _ = done_tx.send(());
         });
         let outcome = done_rx.recv_timeout(MOCK_OP_BOUND);
@@ -817,6 +936,166 @@ mod tests {
         assert!(
             on_blocking_pool,
             "a blocking-pool thread answers Ok from try_current"
+        );
+    }
+
+    /// A stand-in client whose disconnect waits for the test's release
+    /// signal, then reports completion.
+    pub(crate) struct ScriptedProxy {
+        released: tokio::sync::oneshot::Receiver<()>,
+        finished: std::sync::mpsc::Sender<()>,
+    }
+
+    impl ScriptedProxy {
+        /// A fixed identity standing in for a live Exit Node.
+        pub(crate) fn exit_node(&self) -> String {
+            "scripted-exit-node".to_string()
+        }
+
+        /// Waits for the release signal, then reports the disconnect done.
+        pub(crate) async fn disconnect(self) {
+            let _ = self.released.await;
+            let _ = self.finished.send(());
+        }
+    }
+
+    /// Builds a scripted client plus its release trigger and its completion
+    /// signal.
+    fn scripted_proxy() -> (
+        ScriptedProxy,
+        tokio::sync::oneshot::Sender<()>,
+        std::sync::mpsc::Receiver<()>,
+    ) {
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+        (
+            ScriptedProxy {
+                released: release_rx,
+                finished: finished_tx,
+            },
+            release_tx,
+            finished_rx,
+        )
+    }
+
+    /// A handle whose proxy slot holds the given scripted client.
+    fn scripted_handle(runtime: Runtime, proxy: ScriptedProxy) -> MixnetProxyHandle {
+        let handle = teardown_handle(runtime);
+        *handle.proxy.lock().unwrap() = Some(ProxySlot::Scripted(proxy));
+        handle
+    }
+
+    /// Tests that stop returns while the ordered disconnect is still
+    /// running, instead of blocking the caller's thread on it.
+    #[test]
+    fn stop_returns_while_the_disconnect_is_still_running() {
+        let (proxy, release_tx, finished_rx) = scripted_proxy();
+        let handle = Arc::new(scripted_handle(teardown_runtime(), proxy));
+        let stopper = Arc::clone(&handle);
+        let (stopped_tx, stopped_rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            stopper.stop();
+            let _ = stopped_tx.send(());
+        });
+        let outcome = stopped_rx.recv_timeout(MOCK_OP_BOUND);
+        release_tx.send(()).expect("the disconnect is waiting");
+        outcome.expect("stop must return while the disconnect still runs");
+        finished_rx
+            .recv_timeout(MOCK_OP_BOUND)
+            .expect("the ordered disconnect still runs to completion");
+    }
+
+    /// Tests that a teardown whose disconnect never finishes still ends its
+    /// thread within the disconnect bound.
+    #[test]
+    fn teardown_leaks_rather_than_wait_out_a_disconnect_that_never_ends() {
+        let (proxy, _release_tx, _finished_rx) = scripted_proxy();
+        let runtime = teardown_runtime();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            teardown(
+                runtime,
+                Some(ProxySlot::Scripted(proxy)),
+                Duration::from_millis(100),
+                Duration::from_millis(100),
+            );
+            let _ = done_tx.send(());
+        });
+        done_rx
+            .recv_timeout(MOCK_OP_BOUND)
+            .expect("teardown must end despite a disconnect that never finishes");
+    }
+
+    /// Tests that the live CI job serializes its mixnet tests, since the
+    /// shim workspace sees no nextest.toml from the main one.
+    #[test]
+    fn the_live_ci_job_serializes_its_mixnet_tests() {
+        let workflow = include_str!("../../../.github/workflows/nym-proxy-ffi-check.yaml");
+        let live_invocation = workflow
+            .lines()
+            .find(|line| line.contains("--features live-mixnet"))
+            .expect("the workflow runs the live suite");
+        assert!(
+            live_invocation.contains("--test-threads 1"),
+            "two concurrent live starts contend for one runner: {live_invocation}"
+        );
+    }
+
+    /// Tests that the bound the drop tests observe under sits strictly
+    /// inside the disposal grace, so an inline-teardown regression reds
+    /// reliably instead of racing the scheduler.
+    #[test]
+    fn the_drop_observation_bound_nests_inside_the_disposal_grace() {
+        assert!(
+            DROP_OBSERVATION_BOUND < RUNTIME_DISPOSAL_GRACE,
+            "equal bounds make an inline regression a scheduler coin flip"
+        );
+    }
+
+    /// Tests that a death report dispatched into the blocking pool before a
+    /// deliberate stop never reaches the observer after it.
+    #[test]
+    fn a_deliberate_stop_silences_an_already_dispatched_death_report() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .max_blocking_threads(1)
+            .enable_all()
+            .build()
+            .expect("build runtime");
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        runtime.spawn_blocking(move || {
+            started_tx.send(()).expect("report the blocking start");
+            let _ = release_rx.recv();
+        });
+        started_rx
+            .recv_timeout(MOCK_OP_BOUND)
+            .expect("the occupier starts");
+        let observer = Arc::new(RecordingObserver::default());
+        let handle = teardown_handle(runtime);
+        handle
+            .runtime
+            .lock()
+            .unwrap()
+            .as_ref()
+            .expect("a live handle owns its runtime")
+            .spawn(monitor_listener(
+                handle.endpoint.clone(),
+                Box::new(Arc::clone(&observer)),
+                Arc::clone(&handle.stopping),
+                MONITOR_CHECK_INTERVAL,
+                MONITOR_CHECK_TIMEOUT,
+                1,
+            ));
+        // The endpoint is a dead port, so the monitor strikes on its first
+        // check and its report queues behind the occupied blocking slot.
+        thread::sleep(Duration::from_millis(400));
+        handle.stop();
+        release_tx.send(()).expect("the occupier is waiting");
+        thread::sleep(Duration::from_millis(300));
+        assert!(
+            observer.deaths.lock().unwrap().is_empty(),
+            "a deliberate stop must silence the dispatched report"
         );
     }
 
