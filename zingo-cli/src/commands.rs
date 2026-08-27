@@ -30,7 +30,7 @@ use zingolib::lightclient::migrate::{
     ImmediateMigrationPhase, ImmediateMigrationStatus, PartSendResult, SplitOutcome, SplitPhase,
     SplitStatus, SplitStep,
 };
-use zingolib::lightclient::{LightClient, SaveShutdown, TransmitProgressHandle};
+use zingolib::lightclient::{LightClient, SaveShutdown, SyncShutdown, TransmitProgressHandle};
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
@@ -545,13 +545,24 @@ async fn quickshield(lightclient: &mut LightClient) -> Result<String, CommandErr
     transmit_txids(lightclient.quick_shield(zip32::AccountId::ZERO)).await
 }
 
+/// The ceiling on quit's graceful sync stop, generous beside the engine's one remaining batch yet far below the scan a wedged engine would never finish.
+const QUIT_SYNC_STOP_BOUND: std::time::Duration = std::time::Duration::from_secs(30);
+
 async fn quit(lightclient: &mut LightClient) -> Result<String, CommandError> {
-    if lightclient.stop_sync().is_ok() {
+    if lightclient.sync_mode() != SyncMode::NotRunning {
         eprintln!("Stopping sync task...");
-        match lightclient.await_sync().await {
-            Ok(sync_result) => eprintln!("Sync task stopped. {sync_result}"),
-            Err(e) => eprintln!("Error: sync stop failed. {}", render_error_chain(&e)),
-        }
+    }
+    match lightclient.shutdown_sync(QUIT_SYNC_STOP_BOUND).await {
+        SyncShutdown::NotRunning => {}
+        SyncShutdown::Stopped(sync_result) => eprintln!("Sync task stopped. {sync_result}"),
+        SyncShutdown::Failed(e) => eprintln!(
+            "Error: the sync task ended with an error. {}",
+            render_error_chain(&e)
+        ),
+        SyncShutdown::Aborted => eprintln!(
+            "Sync task did not stop within {}s; aborted.",
+            QUIT_SYNC_STOP_BOUND.as_secs()
+        ),
     }
     match lightclient.shutdown_save_task().await {
         Ok(SaveShutdown::ShutDown) => eprintln!("Save task shutdown successfully."),
