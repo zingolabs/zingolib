@@ -476,7 +476,7 @@ where
     let mut first_verification_complete = false;
     let mut mempool_shutdown_timer = None;
     let mut nullifier_map_limit_exceeded = false;
-    let mut continuous_sync_interval = tokio::time::interval(Duration::from_secs(30));
+    let mut continuous_sync_interval = tokio::time::interval(Duration::from_secs(120));
     continuous_sync_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     continuous_sync_interval.tick().await;
     let mut interval = tokio::time::interval(Duration::from_millis(50));
@@ -727,6 +727,7 @@ where
                     }
 
                     if check_for_new_blocks && scanner.is_verified() {
+                        continuous_sync_interval.reset();
                         check_for_new_blocks = false;
                         first_verification_complete = true;
                         continue 'continuous_sync;
@@ -742,6 +743,7 @@ where
                 }
 
                 _check_new_block_mined = continuous_sync_interval.tick() => {
+                    // if the mempool has not triggered a new block within the time expected, force a new block check.
                     check_for_new_blocks = true;
                 }
             }
