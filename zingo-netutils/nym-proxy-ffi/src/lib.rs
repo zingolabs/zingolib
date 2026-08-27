@@ -114,6 +114,41 @@ pub struct MixnetProxyHandle {
     runtime: Option<Runtime>,
 }
 
+/// Where a handle's teardown can run, decided by whether the dropping thread
+/// may block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TeardownSite {
+    /// The dropping thread may block, so teardown finishes before `drop`
+    /// returns.
+    Inline,
+    /// The dropping thread is a runtime worker, so teardown moves to a thread
+    /// of its own.
+    OffRuntime,
+}
+
+/// Pure: a runtime worker may neither block on the disconnect nor drop the
+/// runtime, so a drop that lands on one moves its teardown elsewhere.
+fn teardown_site(dropping_on_runtime_thread: bool) -> TeardownSite {
+    if dropping_on_runtime_thread {
+        TeardownSite::OffRuntime
+    } else {
+        TeardownSite::Inline
+    }
+}
+
+/// Disconnects the mixnet client in order, then drops the runtime that hosted
+/// it.
+fn teardown(runtime: Runtime, proxy: Option<NymProxy>) {
+    // The disconnect carries no deadline on purpose. Cancelling it drops the
+    // runtime with SOCKS5 connections still open, and `SocksClient::drop`
+    // aborts the process when it reports a closing connection to a controller
+    // the same cancellation already took down (nymtech/nym#7108). A teardown
+    // that hangs leaks one thread. A teardown that gives up kills the app.
+    if let Some(proxy) = proxy {
+        runtime.block_on(proxy.disconnect());
+    }
+}
+
 /// Tears down safely on whatever thread drops the last reference, including
 /// the runtime's own workers.
 impl Drop for MixnetProxyHandle {
@@ -121,17 +156,18 @@ impl Drop for MixnetProxyHandle {
         if let Some(monitor) = &self.monitor {
             monitor.abort();
         }
-        drop(
-            self.proxy
-                .get_mut()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .take(),
-        );
-        if let Some(runtime) = self.runtime.take() {
-            if tokio::runtime::Handle::try_current().is_ok() {
-                runtime.shutdown_background();
-            } else {
-                drop(runtime);
+        let proxy = self
+            .proxy
+            .get_mut()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        let Some(runtime) = self.runtime.take() else {
+            return;
+        };
+        match teardown_site(tokio::runtime::Handle::try_current().is_ok()) {
+            TeardownSite::Inline => teardown(runtime, proxy),
+            TeardownSite::OffRuntime => {
+                std::thread::spawn(move || teardown(runtime, proxy));
             }
         }
     }
@@ -339,6 +375,43 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr};
 
     use super::*;
+
+    #[test]
+    fn a_worker_drop_moves_its_teardown_off_the_runtime() {
+        assert_eq!(teardown_site(true), TeardownSite::OffRuntime);
+        assert_eq!(teardown_site(false), TeardownSite::Inline);
+    }
+
+    /// The whole teardown design rests on `Handle::try_current` telling a
+    /// runtime worker apart from a thread that may block, so pin both answers.
+    #[test]
+    fn try_current_separates_a_worker_from_a_thread_that_may_block() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("build runtime");
+        let on_worker = runtime.block_on(async { tokio::runtime::Handle::try_current().is_ok() });
+        assert_eq!(teardown_site(on_worker), TeardownSite::OffRuntime);
+        assert_eq!(
+            teardown_site(tokio::runtime::Handle::try_current().is_ok()),
+            TeardownSite::Inline
+        );
+    }
+
+    /// A runtime moved to a plain thread may still be blocked on and dropped,
+    /// which is what makes the `OffRuntime` arm legal where the worker was not.
+    #[test]
+    fn a_runtime_handed_to_a_plain_thread_still_blocks_and_drops() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("build runtime");
+        let moved = std::thread::spawn(move || {
+            runtime.block_on(async { tokio::task::yield_now().await });
+            true
+        });
+        assert!(moved.join().expect("teardown thread joins"));
+    }
 
     #[test]
     fn endpoint_round_trips_the_listener_address_nym_proxy_binds() {
