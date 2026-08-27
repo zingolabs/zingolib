@@ -2310,7 +2310,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.5.0"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_nym_rc0#f65251c5648ebdb96f00d3f2a9de92b11e139abb"
+source = "git+https://github.com/zingolabs/zingolib?branch=clearnet_price_when_switched_off#6228fecd660233e68f39c4fb097cb83d0793cb83"
 dependencies = [
  "bip32",
  "byteorder",
@@ -4738,7 +4738,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.7.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b228c06ae82365f306ff364e164da#537f84d3d81b228c06ae82365f306ff364e164da"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a2416144d1bbbae30aca02bec062d1492#89cf104a2416144d1bbbae30aca02bec062d1492"
 dependencies = [
  "hex",
  "reqwest",
@@ -5024,12 +5024,12 @@ dependencies = [
 [[package]]
 name = "zingo-consensus"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b228c06ae82365f306ff364e164da#537f84d3d81b228c06ae82365f306ff364e164da"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a2416144d1bbbae30aca02bec062d1492#89cf104a2416144d1bbbae30aca02bec062d1492"
 
 [[package]]
 name = "zingo-memo"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_nym_rc0#f65251c5648ebdb96f00d3f2a9de92b11e139abb"
+source = "git+https://github.com/zingolabs/zingolib?branch=clearnet_price_when_switched_off#6228fecd660233e68f39c4fb097cb83d0793cb83"
 dependencies = [
  "zcash_address",
  "zcash_encoding",
@@ -5040,7 +5040,7 @@ dependencies = [
 [[package]]
 name = "zingo-net-diag"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_nym_rc0#f65251c5648ebdb96f00d3f2a9de92b11e139abb"
+source = "git+https://github.com/zingolabs/zingolib?branch=clearnet_price_when_switched_off#6228fecd660233e68f39c4fb097cb83d0793cb83"
 dependencies = [
  "serde",
 ]
@@ -5048,7 +5048,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "5.0.1"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_nym_rc0#f65251c5648ebdb96f00d3f2a9de92b11e139abb"
+source = "git+https://github.com/zingolabs/zingolib?branch=clearnet_price_when_switched_off#6228fecd660233e68f39c4fb097cb83d0793cb83"
 dependencies = [
  "http",
  "hyper-util",
@@ -5070,7 +5070,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_nym_rc0#f65251c5648ebdb96f00d3f2a9de92b11e139abb"
+source = "git+https://github.com/zingolabs/zingolib?branch=clearnet_price_when_switched_off#6228fecd660233e68f39c4fb097cb83d0793cb83"
 dependencies = [
  "byteorder",
  "serde",
@@ -5084,7 +5084,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.2.1"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_nym_rc0#f65251c5648ebdb96f00d3f2a9de92b11e139abb"
+source = "git+https://github.com/zingolabs/zingolib?branch=clearnet_price_when_switched_off#6228fecd660233e68f39c4fb097cb83d0793cb83"
 dependencies = [
  "byteorder",
  "zcash_protocol",
@@ -5110,12 +5110,12 @@ dependencies = [
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b228c06ae82365f306ff364e164da#537f84d3d81b228c06ae82365f306ff364e164da"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a2416144d1bbbae30aca02bec062d1492#89cf104a2416144d1bbbae30aca02bec062d1492"
 
 [[package]]
 name = "zingolib"
 version = "5.0.0"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_nym_rc0#f65251c5648ebdb96f00d3f2a9de92b11e139abb"
+source = "git+https://github.com/zingolabs/zingolib?branch=clearnet_price_when_switched_off#6228fecd660233e68f39c4fb097cb83d0793cb83"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -5175,7 +5175,7 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_nym_rc0#f65251c5648ebdb96f00d3f2a9de92b11e139abb"
+source = "git+https://github.com/zingolabs/zingolib?branch=clearnet_price_when_switched_off#6228fecd660233e68f39c4fb097cb83d0793cb83"
 dependencies = [
  "http",
  "nonempty",
