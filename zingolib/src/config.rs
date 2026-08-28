@@ -469,7 +469,7 @@ impl Default for ClientConfigBuilder {
                 chain_height: 1,
                 wallet_settings: WalletSettings {
                     sync_config: SyncConfig {
-                        transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                        transparent_address_discovery: TransparentAddressDiscovery::default(),
                         performance_level: pepper_sync::config::PerformanceLevel::High,
                         shutdown_on_completion: false,
                     },

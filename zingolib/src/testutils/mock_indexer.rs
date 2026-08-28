@@ -64,6 +64,7 @@ use crate::lightclient::LightClient;
 use crate::testutils::default_test_wallet_settings;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+use crate::wallet::WalletSettings;
 
 type SaplingTree =
     CommitmentTree<sapling_crypto::Node, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }>;
@@ -877,7 +878,11 @@ impl MockNet {
     /// Builds a `LightClient` for `mnemonic` (birthday 1) dialed at the
     /// mock, with its wallet directory in a tempdir this net keeps
     /// alive.
-    pub async fn client(&mut self, mnemonic: &str) -> LightClient {
+    pub async fn client(
+        &mut self,
+        mnemonic: &str,
+        wallet_settings_opt: Option<WalletSettings>,
+    ) -> LightClient {
         let wallet_dir = tempfile::tempdir().expect("a tempdir is creatable");
         let config = ClientConfig::builder()
             .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
@@ -887,7 +892,7 @@ impl MockNet {
                 mnemonic_phrase: mnemonic.to_string(),
                 no_of_accounts: 1.try_into().expect("hard-coded non-zero"),
                 birthday: 1,
-                wallet_settings: default_test_wallet_settings(),
+                wallet_settings: wallet_settings_opt.unwrap_or_else(default_test_wallet_settings),
             })
             .build()
             .unwrap();

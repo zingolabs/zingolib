@@ -470,11 +470,11 @@ async fn new_address(
 
 async fn taddress(
     lightclient: &mut LightClient,
-    enforce_gap: bool,
+    enforce_no_gap: bool,
 ) -> Result<String, CommandError> {
     let chain_type = lightclient.chain_type();
     let mut wallet = lightclient.wallet().write().await;
-    match wallet.generate_transparent_address(zip32::AccountId::ZERO, enforce_gap) {
+    match wallet.generate_transparent_address(zip32::AccountId::ZERO, enforce_no_gap) {
         Ok((id, transparent_address)) => Ok(json::object! {
             "account" => u32::from(id.account_id()),
             "address_index" => id.address_index().index(),

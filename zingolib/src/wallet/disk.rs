@@ -442,7 +442,7 @@ impl LightWallet {
             save_required: false,
             wallet_settings: WalletSettings {
                 sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                    transparent_address_discovery: TransparentAddressDiscovery::default(),
                     performance_level: PerformanceLevel::High,
                     shutdown_on_completion: false,
                 },
@@ -657,7 +657,7 @@ impl LightWallet {
         } else {
             WalletSettings {
                 sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                    transparent_address_discovery: TransparentAddressDiscovery::default(),
                     performance_level: PerformanceLevel::High,
                     shutdown_on_completion: false,
                 },

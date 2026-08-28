@@ -1268,7 +1268,7 @@ async fn build_zingo_config(filled_template: &CliConfigTemplate) -> std::io::Res
     let no_of_accounts = NonZeroU32::try_from(1).expect("hard-coded integer");
     let wallet_settings = WalletSettings {
         sync_config: SyncConfig {
-            transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            transparent_address_discovery: TransparentAddressDiscovery::default(),
             performance_level: PerformanceLevel::High,
             shutdown_on_completion: false,
         },
