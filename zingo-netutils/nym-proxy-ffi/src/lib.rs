@@ -23,7 +23,7 @@ use std::{
     net::SocketAddr,
     sync::{Arc, Mutex, atomic},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use tokio::runtime::Runtime;
@@ -152,15 +152,32 @@ impl ProxySlot {
 
 /// The bound a teardown's ordered disconnect gets before the runtime is
 /// leaked, still running, instead of dropped.
-const DISCONNECT_BOUND: Duration = Duration::from_secs(60);
+pub const DISCONNECT_BOUND: Duration = Duration::from_secs(60);
 
 /// How long a finished disconnect's runtime may wait for its last blocking
 /// task before disposal abandons it.
-const RUNTIME_DISPOSAL_GRACE: Duration = Duration::from_secs(5);
+pub const RUNTIME_DISPOSAL_GRACE: Duration = Duration::from_secs(5);
+
+/// Runtimes this process has leaked because their teardown could not end.
+static LEAKED_TEARDOWNS: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
+
+/// Leaked runtimes beyond which [`MixnetProxyHandle::start`] refuses to
+/// build another.
+const MAX_LEAKED_TEARDOWNS: usize = 4;
+
+/// Teardowns whose disconnect is still in flight.
+static ACTIVE_TEARDOWNS: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
+
+/// Counts and reports a runtime the teardown cannot dispose, then leaks it.
+fn leak_runtime(runtime: Runtime, why: &str) {
+    let leaks = LEAKED_TEARDOWNS.fetch_add(1, atomic::Ordering::SeqCst) + 1;
+    tracing::error!(leaks, why, "leaking a mixnet runtime");
+    mem::forget(runtime);
+}
 
 /// Runs the ordered disconnect under `disconnect_bound`, then disposes the
-/// runtime within `disposal_grace`, leaking both instead when the disconnect
-/// cannot finish.
+/// runtime within `disposal_grace`, leaking the runtime instead when the
+/// disconnect does not finish cleanly.
 fn teardown(
     runtime: Runtime,
     proxy: Option<ProxySlot>,
@@ -171,12 +188,20 @@ fn teardown(
         let disconnect = runtime.spawn(proxy.disconnect());
         let finished =
             runtime.block_on(async { tokio::time::timeout(disconnect_bound, disconnect).await });
-        if finished.is_err() {
-            // A late disconnect cannot be cancelled: dropping the runtime
-            // under live SocksClients aborts the process (nymtech/nym#7108),
-            // so the runtime is forgotten, still running, instead of dropped.
-            mem::forget(runtime);
-            return;
+        match finished {
+            Ok(Ok(())) => {}
+            Ok(Err(died)) => {
+                // The dead task's client state is unknown, and dropping the
+                // runtime under it can abort (nymtech/nym#7108).
+                tracing::error!(error = %died, "mixnet disconnect task died");
+                leak_runtime(runtime, "disconnect task died");
+                return;
+            }
+            Err(_) => {
+                // Cancelling a late disconnect aborts (nymtech/nym#7108).
+                leak_runtime(runtime, "disconnect missed its bound");
+                return;
+            }
         }
     }
     runtime.shutdown_timeout(disposal_grace);
@@ -185,6 +210,7 @@ fn teardown(
 /// Hands the runtime and client to a detached teardown thread, falling back
 /// without an abort when the OS refuses the thread.
 fn spawn_teardown(runtime: Runtime, proxy: Option<ProxySlot>) {
+    ACTIVE_TEARDOWNS.fetch_add(1, atomic::Ordering::SeqCst);
     let payload = Arc::new(Mutex::new(Some((runtime, proxy))));
     let for_thread = Arc::clone(&payload);
     let spawned = thread::Builder::new()
@@ -193,9 +219,24 @@ fn spawn_teardown(runtime: Runtime, proxy: Option<ProxySlot>) {
             if let Some((runtime, proxy)) = take_teardown_payload(&for_thread) {
                 teardown(runtime, proxy, DISCONNECT_BOUND, RUNTIME_DISPOSAL_GRACE);
             }
+            ACTIVE_TEARDOWNS.fetch_sub(1, atomic::Ordering::SeqCst);
         });
     if spawned.is_err() {
         reclaim_unspawned_teardown(&payload);
+        ACTIVE_TEARDOWNS.fetch_sub(1, atomic::Ordering::SeqCst);
+    }
+}
+
+/// Waits, bounded by the teardown bounds, until no disconnect is in flight,
+/// so a new client never bootstraps beside a disconnecting one.
+fn await_teardowns_in_flight() {
+    let deadline = Instant::now() + DISCONNECT_BOUND + RUNTIME_DISPOSAL_GRACE;
+    while ACTIVE_TEARDOWNS.load(atomic::Ordering::SeqCst) > 0 {
+        if Instant::now() >= deadline {
+            tracing::warn!("starting a mixnet client beside an unfinished teardown");
+            return;
+        }
+        thread::sleep(Duration::from_millis(50));
     }
 }
 
@@ -221,7 +262,10 @@ fn reclaim_unspawned_teardown(payload: &Mutex<Option<(Runtime, Option<ProxySlot>
         // Dropping the runtime on a runtime-context thread panics, and
         // dropping the client raw aborts (nymtech/nym#7108); leaking both is
         // the survivable arm.
-        mem::forget(runtime);
+        leak_runtime(
+            runtime,
+            "no thread for a teardown on a runtime-context thread",
+        );
         mem::forget(proxy);
     }
 }
@@ -373,6 +417,13 @@ impl MixnetProxyHandle {
     ) -> Result<std::sync::Arc<Self>, ProxyFfiError> {
         #[cfg(target_os = "android")]
         debug_log::init();
+        let leaks = LEAKED_TEARDOWNS.load(atomic::Ordering::SeqCst);
+        if leaks >= MAX_LEAKED_TEARDOWNS {
+            return Err(ProxyFfiError::Runtime {
+                reason: format!("{leaks} mixnet runtimes leaked; the process must restart"),
+            });
+        }
+        await_teardowns_in_flight();
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -430,17 +481,21 @@ impl MixnetProxyHandle {
         if let Some(monitor) = &self.monitor {
             monitor.abort();
         }
-        let proxy = self
-            .proxy
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take();
-        if let Some(runtime) = self
-            .runtime
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take()
-        {
+        // Both takes happen under the proxy lock, so concurrent stops can
+        // never split the pair and strand a live client without its runtime.
+        let (proxy, runtime) = {
+            let mut proxy = self
+                .proxy
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let runtime = self
+                .runtime
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take();
+            (proxy.take(), runtime)
+        };
+        if let Some(runtime) = runtime {
             spawn_teardown(runtime, proxy);
         }
     }
@@ -940,10 +995,11 @@ mod tests {
     }
 
     /// A stand-in client whose disconnect waits for the test's release
-    /// signal, then reports completion.
+    /// signal, then reports completion, or dies at once when scripted to.
     pub(crate) struct ScriptedProxy {
         released: tokio::sync::oneshot::Receiver<()>,
         finished: std::sync::mpsc::Sender<()>,
+        dies: bool,
     }
 
     impl ScriptedProxy {
@@ -952,10 +1008,23 @@ mod tests {
             "scripted-exit-node".to_string()
         }
 
-        /// Waits for the release signal, then reports the disconnect done.
+        /// Waits for the release signal, then reports the disconnect done,
+        /// unless scripted to die first.
         pub(crate) async fn disconnect(self) {
+            if self.dies {
+                panic!("scripted disconnect death");
+            }
             let _ = self.released.await;
             let _ = self.finished.send(());
+        }
+    }
+
+    /// A scripted client whose disconnect dies as soon as it is polled.
+    fn dying_scripted_proxy() -> ScriptedProxy {
+        let (proxy, _release_tx, _finished_rx) = scripted_proxy();
+        ScriptedProxy {
+            dies: true,
+            ..proxy
         }
     }
 
@@ -972,6 +1041,7 @@ mod tests {
             ScriptedProxy {
                 released: release_rx,
                 finished: finished_tx,
+                dies: false,
             },
             release_tx,
             finished_rx,
@@ -1026,19 +1096,86 @@ mod tests {
             .expect("teardown must end despite a disconnect that never finishes");
     }
 
-    /// Tests that the live CI job serializes its mixnet tests, since the
-    /// shim workspace sees no nextest.toml from the main one.
+    /// Tests that a disconnect task that dies leaves the runtime leaked,
+    /// never dropped under whatever the task left behind.
     #[test]
-    fn the_live_ci_job_serializes_its_mixnet_tests() {
-        let workflow = include_str!("../../../.github/workflows/nym-proxy-ffi-check.yaml");
-        let live_invocation = workflow
-            .lines()
-            .find(|line| line.contains("--features live-mixnet"))
-            .expect("the workflow runs the live suite");
-        assert!(
-            live_invocation.contains("--test-threads 1"),
-            "two concurrent live starts contend for one runner: {live_invocation}"
+    fn a_dead_disconnect_task_leaks_the_runtime_rather_than_drop_it() {
+        let (down_tx, down_rx) = std::sync::mpsc::channel::<()>();
+        let runtime = teardown_runtime();
+        runtime.spawn(async move {
+            let _held = down_tx;
+            std::future::pending::<()>().await
+        });
+        teardown(
+            runtime,
+            Some(ProxySlot::Scripted(dying_scripted_proxy())),
+            MOCK_OP_BOUND,
+            Duration::from_millis(100),
         );
+        // A dropped runtime destroys the task and disconnects the channel; a
+        // leaked one keeps it alive.
+        assert_eq!(
+            down_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty),
+            "a dead disconnect must leak the runtime, not drop it"
+        );
+    }
+
+    /// Tests that the shim workspace itself serializes the live suite, so
+    /// any nextest invocation, local or CI, runs one mixnet client at a time.
+    #[test]
+    fn the_shim_workspace_serializes_its_live_suite_itself() {
+        let config = include_str!("../.config/nextest.toml");
+        assert!(
+            config.contains("binary(live_mixnet)") && config.contains("max-threads = 1"),
+            "the live tests must not start two mixnet clients at once: {config}"
+        );
+    }
+
+    /// Tests that a leaked runtime is counted, so the accumulation is
+    /// visible and start's refusal cap has something to read.
+    #[test]
+    fn a_missed_disconnect_bound_is_counted() {
+        let (proxy, _release_tx, _finished_rx) = scripted_proxy();
+        let before = LEAKED_TEARDOWNS.load(atomic::Ordering::SeqCst);
+        teardown(
+            teardown_runtime(),
+            Some(ProxySlot::Scripted(proxy)),
+            Duration::from_millis(100),
+            Duration::from_millis(100),
+        );
+        assert!(
+            LEAKED_TEARDOWNS.load(atomic::Ordering::SeqCst) > before,
+            "a leaked runtime must be counted"
+        );
+    }
+
+    /// Tests that start refuses to build a runtime once the process has
+    /// leaked its cap, instead of stacking leaks until the OS kills the app.
+    #[test]
+    fn start_refuses_once_leaks_reach_the_cap() {
+        LEAKED_TEARDOWNS.fetch_add(MAX_LEAKED_TEARDOWNS, atomic::Ordering::SeqCst);
+        let refused = MixnetProxyHandle::start(None);
+        assert!(
+            matches!(refused, Err(ProxyFfiError::Runtime { .. })),
+            "a capped process must refuse a new proxy"
+        );
+    }
+
+    /// Tests that an in-flight disconnect is visible to start's fence, so a
+    /// new client never bootstraps beside a disconnecting one.
+    #[test]
+    fn a_running_disconnect_is_visible_to_the_start_fence() {
+        let (proxy, release_tx, finished_rx) = scripted_proxy();
+        spawn_teardown(teardown_runtime(), Some(ProxySlot::Scripted(proxy)));
+        assert!(
+            ACTIVE_TEARDOWNS.load(atomic::Ordering::SeqCst) >= 1,
+            "an in-flight disconnect must be visible to start's fence"
+        );
+        release_tx.send(()).expect("the disconnect is waiting");
+        finished_rx
+            .recv_timeout(MOCK_OP_BOUND)
+            .expect("the released disconnect completes");
     }
 
     /// Tests that the bound the drop tests observe under sits strictly
