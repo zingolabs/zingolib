@@ -1084,6 +1084,7 @@ mod init_error_channel_tests {
 
     #[test]
     fn invalid_server_uri_travels_on_the_error_channel() {
+        let _serial = lock_discipline_tests::serialized();
         let error = init_new(
             "http://an invalid uri with spaces".to_string(),
             0,
@@ -1147,6 +1148,7 @@ mod init_error_channel_tests {
 
     #[test]
     fn undecodable_wallet_base64_travels_on_the_error_channel() {
+        let _serial = lock_discipline_tests::serialized();
         let error = init_from_b64(
             "!!!not-base64!!!".to_string(),
             String::new(),
@@ -1984,6 +1986,7 @@ mod wallet_validation_tests {
 
     #[test]
     fn a_saved_wallet_validates_and_every_truncation_fails() {
+        let _serial = lock_discipline_tests::serialized();
         let bytes = saved_wallet("main");
         validate_wallet_bytes(bytes.clone()).expect("the saved wallet must validate");
 
