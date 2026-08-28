@@ -90,6 +90,19 @@ fn chain_name_from_stored(stored: &str) -> io::Result<&'static str> {
     }
 }
 
+struct CountingReader<R> {
+    inner: R,
+    offset: u64,
+}
+
+impl<R: Read> Read for CountingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let bytes_read = self.inner.read(buf)?;
+        self.offset += bytes_read as u64;
+        Ok(bytes_read)
+    }
+}
+
 fn check_saved_chain(saved_network: &str, chain_type: &ChainType) -> io::Result<()> {
     if saved_network == chain_type.to_string() {
         Ok(())
@@ -232,6 +245,26 @@ impl LightWallet {
                 ),
             )),
         }
+    }
+
+    /// Confirms the bytes parse as a complete wallet this build can read, by
+    /// running the full [`Self::read`] deserialization and discarding the
+    /// result; on failure the error names the byte offset reached.
+    pub fn validate<R: Read>(reader: R, chain_type: ChainType) -> io::Result<()> {
+        let mut counting_reader = CountingReader {
+            inner: reader,
+            offset: 0,
+        };
+        Self::read(&mut counting_reader, chain_type).map_err(|error| {
+            Error::new(
+                error.kind(),
+                format!(
+                    "wallet file failed to parse at byte {}: {error}",
+                    counting_reader.offset
+                ),
+            )
+        })?;
+        Ok(())
     }
 
     fn read_v0<R: Read>(mut reader: R, chain_type: ChainType, version: u64) -> io::Result<Self> {

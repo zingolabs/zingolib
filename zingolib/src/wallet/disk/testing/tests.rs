@@ -655,6 +655,142 @@ fn data_wallets_corpus_parses_or_salvages() {
     }
 }
 
+mod validation {
+    use zingo_common_components::protocol::ActivationHeights;
+
+    use crate::config::ChainType;
+    use crate::wallet::LightWallet;
+
+    use super::current_version_wallet_bytes;
+    use super::{
+        AbandonAbandonVersion, AbsurdAmountVersion, ChimneyBetterVersion, HospitalMuseumVersion,
+        HotelHumorVersion, MainnetSeedVersion, MobileShuffleVersion, NetworkSeedVersion,
+        RegtestSeedVersion, TestnetSeedVersion, VillageTargetVersion,
+    };
+
+    /// [`LightWallet::validate`] accepts every checked-in example wallet file.
+    #[test]
+    fn validate_accepts_every_example_wallet_fixture() {
+        let regtest = ChainType::Regtest(ActivationHeights::default());
+        let fixtures = [
+            (
+                NetworkSeedVersion::Regtest(RegtestSeedVersion::HospitalMuseum(
+                    HospitalMuseumVersion::V27,
+                )),
+                regtest,
+            ),
+            (
+                NetworkSeedVersion::Regtest(RegtestSeedVersion::AbandonAbandon(
+                    AbandonAbandonVersion::V26,
+                )),
+                regtest,
+            ),
+            (
+                NetworkSeedVersion::Regtest(RegtestSeedVersion::AbsurdAmount(
+                    AbsurdAmountVersion::OrchAndSapl,
+                )),
+                regtest,
+            ),
+            (
+                NetworkSeedVersion::Regtest(RegtestSeedVersion::AbsurdAmount(
+                    AbsurdAmountVersion::OrchOnly,
+                )),
+                regtest,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(
+                    ChimneyBetterVersion::V26,
+                )),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(
+                    ChimneyBetterVersion::V27,
+                )),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(
+                    ChimneyBetterVersion::V28,
+                )),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(
+                    ChimneyBetterVersion::Latest,
+                )),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::MobileShuffle(
+                    MobileShuffleVersion::Gab72a38b,
+                )),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::MobileShuffle(
+                    MobileShuffleVersion::G93738061a,
+                )),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::MobileShuffle(
+                    MobileShuffleVersion::Latest,
+                )),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::GloryGoddess),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Mainnet(MainnetSeedVersion::VillageTarget(
+                    VillageTargetVersion::V28,
+                )),
+                ChainType::Mainnet,
+            ),
+            (
+                NetworkSeedVersion::Mainnet(MainnetSeedVersion::HotelHumor(
+                    HotelHumorVersion::Gf0aaf9347,
+                )),
+                ChainType::Mainnet,
+            ),
+            (
+                NetworkSeedVersion::Mainnet(MainnetSeedVersion::HotelHumor(
+                    HotelHumorVersion::Latest,
+                )),
+                ChainType::Mainnet,
+            ),
+        ];
+
+        for (fixture, chain_type) in fixtures {
+            let path = fixture.example_wallet_path();
+            let bytes = std::fs::read(&path).expect("example wallet files are checked in");
+            LightWallet::validate(bytes.as_slice(), chain_type)
+                .unwrap_or_else(|error| panic!("{} must validate: {error}", path.display()));
+        }
+    }
+
+    /// [`LightWallet::validate`] accepts the output of `write` untouched and
+    /// rejects it truncated to every shorter length, a superset of every
+    /// field boundary and every position one byte past one.
+    #[tokio::test]
+    async fn validate_accepts_write_output_and_rejects_every_truncation() {
+        let expected = current_version_wallet_bytes().await;
+
+        LightWallet::validate(expected.bytes.as_slice(), expected.chain_type)
+            .expect("the untruncated output of write must validate");
+
+        for length in 0..expected.bytes.len() {
+            assert!(
+                LightWallet::validate(&expected.bytes[..length], expected.chain_type).is_err(),
+                "the file truncated to {length} of {} bytes must be rejected",
+                expected.bytes.len()
+            );
+        }
+    }
+}
+
 mod version_forty {
     use bip0039::Mnemonic;
 
