@@ -10,6 +10,7 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::ShardTree;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::store::{Checkpoint, ShardStore, TreeState};
+use zcash_client_backend::data_api::anchor_retention::AnchorRetention;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
@@ -252,11 +253,13 @@ pub trait SyncShardTrees: SyncWallet {
     /// Update wallet shard trees with new shard tree data.
     ///
     /// `highest_scanned_height` is the height of the highest scanned block in the wallet not including the `scan_range` we are updating.
+    #[allow(clippy::too_many_arguments)]
     fn update_shard_trees(
         &mut self,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         scan_range: &ScanRange,
         highest_scanned_height: BlockHeight,
+        anchor_retention: Option<AnchorRetention>,
         sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
         orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
         ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
@@ -334,6 +337,70 @@ pub trait SyncShardTrees: SyncWallet {
                     &mut shard_trees.ironwood,
                 )
                 .await?;
+            }
+
+            if let Some(retention) = &anchor_retention {
+                let as_of = std::cmp::max(highest_scanned_height, scan_range.block_range().end - 1);
+                let window = witness::anchor_retention_window(retention, as_of);
+                witness::repin_anchor_checkpoints(
+                    retention,
+                    &window,
+                    shard_trees.sapling.store_mut(),
+                );
+                witness::repin_anchor_checkpoints(
+                    retention,
+                    &window,
+                    shard_trees.orchard.store_mut(),
+                );
+                witness::repin_anchor_checkpoints(
+                    retention,
+                    &window,
+                    shard_trees.ironwood.store_mut(),
+                );
+
+                let start = std::cmp::max(*window.start(), scan_range.block_range().start);
+                let end = std::cmp::min(*window.end(), scan_range.block_range().end - 1);
+                for boundary in retention.retained_in_range(start..=end) {
+                    if checkpoint_range.contains(&boundary) {
+                        continue;
+                    }
+                    add_checkpoint::<
+                        Sapling,
+                        sapling_crypto::Node,
+                        { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
+                        { witness::SHARD_HEIGHT },
+                    >(
+                        fetch_request_sender.clone(),
+                        boundary,
+                        &sapling_located_trees,
+                        &mut shard_trees.sapling,
+                    )
+                    .await?;
+                    add_checkpoint::<
+                        Orchard,
+                        MerkleHashOrchard,
+                        { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+                        { witness::SHARD_HEIGHT },
+                    >(
+                        fetch_request_sender.clone(),
+                        boundary,
+                        &orchard_located_trees,
+                        &mut shard_trees.orchard,
+                    )
+                    .await?;
+                    add_checkpoint::<
+                        Ironwood,
+                        MerkleHashOrchard,
+                        { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+                        { witness::SHARD_HEIGHT },
+                    >(
+                        fetch_request_sender.clone(),
+                        boundary,
+                        &ironwood_located_trees,
+                        &mut shard_trees.ironwood,
+                    )
+                    .await?;
+                }
             }
 
             for tree in sapling_located_trees {

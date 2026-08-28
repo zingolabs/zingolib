@@ -1341,9 +1341,21 @@ impl ShardTrees {
                 Ok(())
             })
             .expect("Infallible");
-        if checkpoints.len() > MAX_REORG_ALLOWANCE as usize {
-            let keep_from = checkpoints.len() - MAX_REORG_ALLOWANCE as usize;
-            checkpoints.drain(..keep_from);
+        let retained = store.retained_checkpoints().expect("Infallible");
+        let non_retained_count = checkpoints
+            .iter()
+            .filter(|(checkpoint_id, _)| !retained.contains(checkpoint_id))
+            .count();
+        if non_retained_count > MAX_REORG_ALLOWANCE as usize {
+            let mut excess = non_retained_count - MAX_REORG_ALLOWANCE as usize;
+            checkpoints.retain(|(checkpoint_id, _)| {
+                if retained.contains(checkpoint_id) || excess == 0 {
+                    true
+                } else {
+                    excess -= 1;
+                    false
+                }
+            });
         }
         write_with_error_handling!(write_checkpoints, checkpoints);
 
@@ -1527,6 +1539,61 @@ mod tests {
                 .get_checkpoint(&BlockHeight::from_u32(50))
                 .expect("infallible")
                 .is_none()
+        );
+    }
+
+    /// A pinned anchor checkpoint survives the newest-100 write cap, while the pinned set
+    /// itself is not persisted.
+    #[test]
+    fn shardtree_roundtrip_keeps_pinned_anchor_checkpoints() {
+        let mut shard_trees = ShardTrees::new();
+
+        for height in 1..=150 {
+            let height = BlockHeight::from_u32(height);
+            shard_trees
+                .sapling
+                .store_mut()
+                .add_checkpoint(
+                    height,
+                    Checkpoint::from_parts(TreeState::Empty, BTreeSet::new()),
+                )
+                .expect("infallible");
+        }
+        shard_trees
+            .sapling
+            .store_mut()
+            .add_retained_checkpoint(BlockHeight::from_u32(24))
+            .expect("infallible");
+
+        let mut bytes = Vec::new();
+        shard_trees.write(&mut bytes).expect("write should succeed");
+        let roundtripped = ShardTrees::read(bytes.as_slice()).expect("read should succeed");
+
+        let sapling_store = roundtripped.sapling.store();
+        assert_eq!(sapling_store.checkpoint_count().expect("infallible"), 101);
+        assert!(
+            sapling_store
+                .get_checkpoint(&BlockHeight::from_u32(24))
+                .expect("infallible")
+                .is_some()
+        );
+        assert!(
+            sapling_store
+                .get_checkpoint(&BlockHeight::from_u32(50))
+                .expect("infallible")
+                .is_none()
+        );
+        assert!(
+            sapling_store
+                .get_checkpoint(&BlockHeight::from_u32(51))
+                .expect("infallible")
+                .is_some()
+        );
+        assert!(
+            sapling_store
+                .retained_checkpoints()
+                .expect("infallible")
+                .is_empty()
         );
     }
 }

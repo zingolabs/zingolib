@@ -9,6 +9,7 @@ use incrementalmerkletree::{
 use orchard::tree::MerkleHashOrchard;
 use sapling_crypto::Node;
 use shardtree::LocatedPrunableTree;
+use zcash_client_backend::data_api::anchor_retention::{AnchorRetention, AnchorRetentionInterval};
 use zcash_primitives::{block::BlockHash, merkle_tree::read_commitment_tree};
 use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::lightwallet_protocol::TreeState;
@@ -369,5 +370,118 @@ pub(crate) fn get_ironwood_tree(
         read_commitment_tree::<MerkleHashOrchard, _, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>(
             &ironwood_tree_bytes[..],
         )
+    }
+}
+
+/// How many grid intervals behind the wallet's newest scanned block anchor-boundary checkpoints
+/// stay pinned: the ZIP 318 anchor age cap plus two intervals of slack.
+pub(crate) const ANCHOR_RETENTION_INTERVALS: u32 = zcash_protocol::zip318::ANCHOR_AGE_CAP + 2;
+
+/// The anchor-checkpoint retention policy in force for `consensus_parameters` — the ZIP 318
+/// grid from the Ironwood pool's activation — or `None` when that upgrade never activates.
+pub(crate) fn anchor_retention_policy(
+    consensus_parameters: &impl zcash_protocol::consensus::Parameters,
+) -> Option<AnchorRetention> {
+    crate::wallet::PoolActivation::of(consensus_parameters, zcash_protocol::ShieldedPool::Ironwood)
+        .map(|activation| {
+            AnchorRetention::new(activation.height(), AnchorRetentionInterval::default())
+        })
+}
+
+/// The height range whose grid-boundary checkpoints must currently be pinned, given `as_of`,
+/// the wallet's newest scanned block.
+pub(crate) fn anchor_retention_window(
+    policy: &AnchorRetention,
+    as_of: BlockHeight,
+) -> std::ops::RangeInclusive<BlockHeight> {
+    let span = policy
+        .intervals()
+        .iter()
+        .map(|interval| interval.block_count().get())
+        .max()
+        .unwrap_or(0)
+        .saturating_mul(ANCHOR_RETENTION_INTERVALS);
+    as_of.saturating_sub(span)..=as_of
+}
+
+/// Re-derives one shard store's pinned-checkpoint set from `policy`, pinning every grid
+/// boundary in `window` and releasing every pin outside it.
+pub(crate) fn repin_anchor_checkpoints<S>(
+    policy: &AnchorRetention,
+    window: &std::ops::RangeInclusive<BlockHeight>,
+    store: &mut S,
+) where
+    S: ShardStore<CheckpointId = BlockHeight, Error = std::convert::Infallible>,
+{
+    for id in store.retained_checkpoints().expect("infallible") {
+        if !window.contains(&id) || !policy.retains(id) {
+            store.remove_retained_checkpoint(&id).expect("infallible");
+        }
+    }
+    for boundary in policy.retained_in_range(window.clone()) {
+        store.add_retained_checkpoint(boundary).expect("infallible");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shardtree_ext::ShardTreeExt;
+    use crate::wallet::empty_shard_tree;
+
+    /// Pinned grid boundaries survive checkpoint pruning until re-deriving the pins releases
+    /// them.
+    #[test]
+    fn pinned_boundaries_survive_pruning_until_released() {
+        let policy =
+            AnchorRetention::new(BlockHeight::from_u32(1), AnchorRetentionInterval::default());
+        let mut tree = empty_shard_tree::<
+            sapling_crypto::Node,
+            { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
+            SHARD_HEIGHT,
+        >();
+
+        for height in 1..=600u32 {
+            let height = BlockHeight::from_u32(height);
+            if policy.retains(height) {
+                tree.store_mut()
+                    .add_retained_checkpoint(height)
+                    .expect("infallible");
+            }
+            tree.append_checkpoint(height).expect("infallible");
+        }
+
+        let checkpoint_exists = |store: &shardtree::store::memory::MemoryShardStore<
+            sapling_crypto::Node,
+            BlockHeight,
+        >,
+                                 height: u32| {
+            store
+                .get_checkpoint(&BlockHeight::from_u32(height))
+                .expect("infallible")
+                .is_some()
+        };
+        for boundary in [144, 288, 432, 576] {
+            assert!(
+                checkpoint_exists(tree.store(), boundary),
+                "boundary {boundary}"
+            );
+        }
+        for pruned in [143, 300, 431] {
+            assert!(
+                !checkpoint_exists(tree.store(), pruned),
+                "non-boundary {pruned}"
+            );
+        }
+
+        let window = anchor_retention_window(&policy, BlockHeight::from_u32(1200));
+        assert_eq!(*window.start(), BlockHeight::from_u32(336));
+        repin_anchor_checkpoints(&policy, &window, tree.store_mut());
+        tree.append_checkpoint(BlockHeight::from_u32(601))
+            .expect("infallible");
+        assert!(!checkpoint_exists(tree.store(), 144));
+        assert!(!checkpoint_exists(tree.store(), 288));
+        assert!(checkpoint_exists(tree.store(), 432));
+        assert!(checkpoint_exists(tree.store(), 576));
     }
 }

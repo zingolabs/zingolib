@@ -446,6 +446,8 @@ where
         consensus_parameters,
     )?;
 
+    repin_anchor_checkpoints(consensus_parameters, &mut *wallet.write().await)?;
+
     let ufvks = wallet
         .read()
         .await
@@ -1726,8 +1728,9 @@ where
     H: incrementalmerkletree::Hashable + Clone + PartialEq,
 {
     let mut truncation_height = None;
+    let checkpoint_count = tree.store().checkpoint_count().expect("infallible");
     tree.store()
-        .for_each_checkpoint((MAX_REORG_ALLOWANCE + 1) as usize, |height, _| {
+        .for_each_checkpoint(checkpoint_count, |height, _| {
             if truncation_height.is_some() {
                 return Ok(());
             }
@@ -2030,6 +2033,7 @@ where
             fetch_request_sender,
             scan_range,
             highest_scanned_height,
+            witness::anchor_retention_policy(consensus_parameters),
             sapling_located_trees,
             orchard_located_trees,
             ironwood_located_trees,
@@ -2305,6 +2309,36 @@ where
         &mut shard_trees.ironwood,
     )?;
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
+
+    Ok(())
+}
+
+/// Re-derives the pinned anchor-checkpoint set of each shard tree from the retention policy in
+/// force for `consensus_parameters`, as of the wallet's newest scanned block.
+fn repin_anchor_checkpoints<W>(
+    consensus_parameters: &impl consensus::Parameters,
+    wallet: &mut W,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncShardTrees,
+{
+    let Some(policy) = witness::anchor_retention_policy(consensus_parameters) else {
+        return Ok(());
+    };
+    let Some(highest_scanned_height) = wallet
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .highest_scanned_height()
+    else {
+        return Ok(());
+    };
+    let window = witness::anchor_retention_window(&policy, highest_scanned_height);
+    let shard_trees = wallet
+        .get_shard_trees_mut()
+        .map_err(SyncError::WalletError)?;
+    witness::repin_anchor_checkpoints(&policy, &window, shard_trees.sapling.store_mut());
+    witness::repin_anchor_checkpoints(&policy, &window, shard_trees.orchard.store_mut());
+    witness::repin_anchor_checkpoints(&policy, &window, shard_trees.ironwood.store_mut());
 
     Ok(())
 }
