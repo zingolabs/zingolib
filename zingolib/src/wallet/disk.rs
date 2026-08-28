@@ -103,6 +103,17 @@ impl<R: Read> Read for CountingReader<R> {
     }
 }
 
+/// Reads a little-endian u32 and rejects values outside the ZIP 32 account id range as `InvalidData`.
+fn read_account_id<R: Read>(reader: &mut R) -> io::Result<zip32::AccountId> {
+    let raw_account_id = reader.read_u32::<LittleEndian>()?;
+    zip32::AccountId::try_from(raw_account_id).map_err(|_| {
+        Error::new(
+            ErrorKind::InvalidData,
+            format!("invalid account id {raw_account_id} stored in wallet file"),
+        )
+    })
+}
+
 fn check_saved_chain(saved_network: &str, chain_type: &ChainType) -> io::Result<()> {
     if saved_network == chain_type.to_string() {
         Ok(())
@@ -309,12 +320,13 @@ impl LightWallet {
         } else {
             WalletOptions::read(&mut reader)?
         };
-        let birthday = BlockHeight::from_u32(
-            reader
-                .read_u64::<LittleEndian>()?
-                .try_into()
-                .expect("should never overflow"),
-        );
+        let stored_birthday = reader.read_u64::<LittleEndian>()?;
+        let birthday = BlockHeight::from_u32(stored_birthday.try_into().map_err(|_| {
+            Error::new(
+                ErrorKind::InvalidData,
+                format!("stored birthday {stored_birthday} exceeds the maximum block height"),
+            )
+        })?);
 
         if version <= 22 {
             let _sapling_tree_verified = if version <= 12 {
@@ -533,11 +545,7 @@ impl LightWallet {
 
         let unified_key_store = if version >= 35 {
             Vector::read(&mut reader, |r| {
-                Ok((
-                    zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
-                        .expect("only valid account ids are stored"),
-                    UnifiedKeyStore::read(r, chain_type)?,
-                ))
+                Ok((read_account_id(r)?, UnifiedKeyStore::read(r, chain_type)?))
             })?
             .into_iter()
             .collect::<BTreeMap<_, _>>()
@@ -551,8 +559,7 @@ impl LightWallet {
         };
 
         let mut unified_addresses = Vector::read(&mut reader, |r| {
-            let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
-                .expect("only valid account ids are stored");
+            let account_id = read_account_id(r)?;
             let address_index = r.read_u32::<LittleEndian>()?;
             let receivers = ReceiverSelection::read(r, ())?;
 
@@ -577,11 +584,18 @@ impl LightWallet {
         .into_iter()
         .collect::<BTreeMap<_, _>>();
         let mut transparent_addresses = Vector::read(&mut reader, |r| {
-            let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
-                .expect("only valid account ids are stored");
+            let account_id = read_account_id(r)?;
             let scope = TransparentScope::try_from(r.read_u8()?)?;
-            let address_index = NonHardenedChildIndex::from_index(r.read_u32::<LittleEndian>()?)
-                .expect("only non-hardened child indexes should be written");
+            let raw_address_index = r.read_u32::<LittleEndian>()?;
+            let address_index =
+                NonHardenedChildIndex::from_index(raw_address_index).ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        format!(
+                            "hardened transparent address index {raw_address_index} stored in wallet file"
+                        ),
+                    )
+                })?;
 
             Ok((
                 TransparentAddressId::new(account_id, scope, address_index),
@@ -608,7 +622,12 @@ impl LightWallet {
         if version < 36 {
             let unified_key = unified_key_store
                 .get(&zip32::AccountId::ZERO)
-                .expect("account 0 must exist");
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        "wallet file stores no key for account 0",
+                    )
+                })?;
             unified_addresses = BTreeMap::new();
             if let Some(receivers) = unified_key.default_receivers() {
                 let unified_address_id = UnifiedAddressId {
@@ -687,8 +706,13 @@ impl LightWallet {
         let wallet_settings = if version >= 33 {
             let sync_config = SyncConfig::read(&mut reader)?;
             let min_confirmations = if version >= 38 {
-                NonZeroU32::try_from(reader.read_u32::<LittleEndian>()?)
-                    .expect("only valid non-zero u32s stored")
+                let stored_min_confirmations = reader.read_u32::<LittleEndian>()?;
+                NonZeroU32::try_from(stored_min_confirmations).map_err(|_| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        "min_confirmations of zero stored in wallet file",
+                    )
+                })?
             } else {
                 NonZeroU32::try_from(3).expect("hard-coded non-zero integer")
             };
