@@ -656,6 +656,8 @@ fn data_wallets_corpus_parses_or_salvages() {
 }
 
 mod validation {
+    use proptest::prelude::*;
+
     use zingo_common_components::protocol::ActivationHeights;
 
     use crate::config::ChainType;
@@ -787,6 +789,82 @@ mod validation {
                 "the file truncated to {length} of {} bytes must be rejected",
                 expected.bytes.len()
             );
+        }
+    }
+
+    /// [`LightWallet::read_recovery_info`] must
+    /// still read the prefix of a file stamped with a future version.
+    #[tokio::test]
+    async fn recovery_info_salvages_versions_above_the_current_write_version() {
+        let expected = current_version_wallet_bytes().await;
+
+        for future_version in [
+            LightWallet::serialized_version() + 1,
+            LightWallet::serialized_version() + 2,
+        ] {
+            let mut bytes = expected.bytes.clone();
+            bytes[..8].copy_from_slice(&future_version.to_le_bytes());
+
+            let salvaged =
+                LightWallet::read_recovery_info(bytes.as_slice()).unwrap_or_else(|error| {
+                    panic!("version {future_version} must remain salvageable: {error}")
+                });
+            assert_eq!(salvaged, expected.recovery_info);
+        }
+    }
+
+    /// Regression case: invalid seed phrase bytes must not recover to a seed phrase.
+    #[test]
+    fn recovery_info_rejects_forty_seven_space_bytes() {
+        let error = LightWallet::read_recovery_info(vec![0x20; 47].as_slice())
+            .expect_err("uniform filler bytes must not decode to a seed phrase");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(
+            error
+                .to_string()
+                .contains(&0x2020202020202020u64.to_string()),
+            "the error must name the rejected version: {error}"
+        );
+    }
+
+    /// A well-formed recovery prefix is accepted, and the same prefix with an invalid birthday is rejected.
+    #[test]
+    fn recovery_info_rejects_an_implausible_birthday() {
+        let prefix = |birthday: u32| {
+            let mut bytes = LightWallet::serialized_version().to_le_bytes().to_vec();
+            bytes.push(0);
+            bytes.push(32);
+            bytes.extend_from_slice(&[0x55; 32]);
+            bytes.extend_from_slice(&birthday.to_le_bytes());
+            bytes.push(1);
+            bytes
+        };
+
+        let info = LightWallet::read_recovery_info(prefix(2_000_000).as_slice()).unwrap();
+        assert_eq!(info.birthday, 2_000_000);
+
+        let error = LightWallet::read_recovery_info(prefix(600_000_000).as_slice())
+            .expect_err("a birthday in the hundreds of millions must be rejected");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    proptest! {
+        /// Any byte string whose version word falls outside the accepted
+        /// range is rejected by both functions.
+        #[test]
+        fn out_of_range_version_words_are_rejected(
+            bytes in proptest::collection::vec(any::<u8>(), 8..512)
+        ) {
+            let version = u64::from_le_bytes(bytes[..8].try_into().unwrap());
+
+            if version > 43 {
+                prop_assert!(
+                    LightWallet::validate(bytes.as_slice(), ChainType::Mainnet).is_err()
+                );
+            }
+            if !(32..=LightWallet::MAX_RECOVERABLE_VERSION).contains(&version) {
+                prop_assert!(LightWallet::read_recovery_info(bytes.as_slice()).is_err());
+            }
         }
     }
 }

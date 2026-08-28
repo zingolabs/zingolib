@@ -148,6 +148,16 @@ impl LightWallet {
         42
     }
 
+    /// Upper bound on the version word [`Self::read_recovery_info`] accepts:
+    /// far above any version this project will reach, low enough that random
+    /// or encrypted bytes cannot land in it.
+    pub const MAX_RECOVERABLE_VERSION: u64 = 1000;
+
+    /// Upper bound on the birthday [`Self::read_recovery_info`] accepts: no
+    /// real chain reaches this height for centuries, while fabricated
+    /// prefixes decode to birthdays far above it.
+    pub const MAX_RECOVERABLE_BIRTHDAY: u32 = 100_000_000;
+
     /// Serialize into `writer`
     pub fn write<W: Write>(
         &mut self,
@@ -814,12 +824,26 @@ impl LightWallet {
     /// Fails on legacy files (version below 32), whose seed is stored too
     /// deep in the file to reach without a full parse, and on view-only
     /// wallets, which store no seed.
+    ///
+    /// Rejects versions above [`Self::MAX_RECOVERABLE_VERSION`] and birthdays
+    /// above [`Self::MAX_RECOVERABLE_BIRTHDAY`], so random or encrypted bytes
+    /// cannot come back as a confident seed phrase.
     pub fn read_recovery_info<R: Read>(mut reader: R) -> io::Result<RecoveryInfo> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version < 32 {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 format!("wallet version {version} predates the recoverable prefix layout"),
+            ));
+        }
+        if version > Self::MAX_RECOVERABLE_VERSION {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "version {version} is above {}, so this is not a wallet file \
+                     this project or any future revision of it could have written",
+                    Self::MAX_RECOVERABLE_VERSION
+                ),
             ));
         }
         if version >= 41 {
@@ -842,6 +866,16 @@ impl LightWallet {
         let mnemonic = <Mnemonic>::from_entropy(seed_bytes)
             .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?;
         let birthday = reader.read_u32::<LittleEndian>()?;
+        if birthday > Self::MAX_RECOVERABLE_BIRTHDAY {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "recovered birthday {birthday} is above block height {}, which no \
+                     real wallet can reach; this is not a wallet file",
+                    Self::MAX_RECOVERABLE_BIRTHDAY
+                ),
+            ));
+        }
         let no_of_accounts = if version >= 35 {
             u32::try_from(CompactSize::read(&mut reader)?).map_err(|e| {
                 Error::new(
