@@ -227,8 +227,9 @@ fn spawn_teardown(runtime: Runtime, proxy: Option<ProxySlot>) {
     }
 }
 
-/// Waits, bounded by the teardown bounds, until no disconnect is in flight,
-/// so a new client never bootstraps beside a disconnecting one.
+/// Waits, bounded by the teardown bounds, until no teardown thread is still
+/// working, which fences a new client from every bounded teardown but not
+/// from a leaked runtime.
 fn await_teardowns_in_flight() {
     let deadline = Instant::now() + DISCONNECT_BOUND + RUNTIME_DISPOSAL_GRACE;
     while ACTIVE_TEARDOWNS.load(atomic::Ordering::SeqCst) > 0 {
@@ -260,7 +261,7 @@ fn reclaim_unspawned_teardown(payload: &Mutex<Option<(Runtime, Option<ProxySlot>
         teardown(runtime, proxy, DISCONNECT_BOUND, RUNTIME_DISPOSAL_GRACE);
     } else {
         // Dropping the runtime on a runtime-context thread panics, and
-        // dropping the client raw aborts (nymtech/nym#7108); leaking both is
+        // dropping the client raw aborts (nymtech/nym#7108). Leaking both is
         // the survivable arm.
         leak_runtime(
             runtime,
@@ -417,13 +418,15 @@ impl MixnetProxyHandle {
     ) -> Result<std::sync::Arc<Self>, ProxyFfiError> {
         #[cfg(target_os = "android")]
         debug_log::init();
+        await_teardowns_in_flight();
+        // Read after the fence, so a teardown that leaked during the wait
+        // counts against the cap.
         let leaks = LEAKED_TEARDOWNS.load(atomic::Ordering::SeqCst);
         if leaks >= MAX_LEAKED_TEARDOWNS {
             return Err(ProxyFfiError::Runtime {
                 reason: format!("{leaks} mixnet runtimes leaked; the process must restart"),
             });
         }
-        await_teardowns_in_flight();
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -1112,8 +1115,8 @@ mod tests {
             MOCK_OP_BOUND,
             Duration::from_millis(100),
         );
-        // A dropped runtime destroys the task and disconnects the channel; a
-        // leaked one keeps it alive.
+        // A dropped runtime destroys the task and disconnects the channel.
+        // A leaked one keeps it alive.
         assert_eq!(
             down_rx.try_recv(),
             Err(std::sync::mpsc::TryRecvError::Empty),
@@ -1156,6 +1159,9 @@ mod tests {
     fn start_refuses_once_leaks_reach_the_cap() {
         LEAKED_TEARDOWNS.fetch_add(MAX_LEAKED_TEARDOWNS, atomic::Ordering::SeqCst);
         let refused = MixnetProxyHandle::start(None);
+        // Restore the process-global counter so this test cannot cap any
+        // test that runs after it in the same process.
+        LEAKED_TEARDOWNS.fetch_sub(MAX_LEAKED_TEARDOWNS, atomic::Ordering::SeqCst);
         assert!(
             matches!(refused, Err(ProxyFfiError::Runtime { .. })),
             "a capped process must refuse a new proxy"

@@ -85,7 +85,8 @@ fn start_live_proxy(deaths: &Arc<Mutex<Vec<ProxyDeathReason>>>) -> Arc<MixnetPro
 fn live_proxy_survives_a_drop_while_a_connection_is_open() {
     // The abort this guards came from `SocksClient::drop`, which reports the
     // closing connection to a controller the same shutdown already took down
-    // (nymtech/nym#7108). Reaching the last line at all is the assertion.
+    // (nymtech/nym#7108). Observing the close with the process still alive is
+    // the assertion, though the teardown tail past the close goes unobserved.
     let deaths = Arc::new(Mutex::new(Vec::new()));
     let handle = start_live_proxy(&deaths);
 
@@ -110,6 +111,10 @@ fn live_proxy_survives_a_drop_while_a_connection_is_open() {
         Ok(0) | Err(_) => {}
         Ok(unsolicited) => panic!("{unsolicited} unsolicited bytes instead of a close"),
     }
+    assert!(
+        deaths.lock().unwrap().is_empty(),
+        "a deliberate drop must not report a death"
+    );
 }
 
 /// Tests the sequence both hosts actually take: stop with a connection open,
@@ -125,7 +130,7 @@ fn live_proxy_stops_with_a_connection_open_then_releases() {
         .block_on(socks5_connect(&endpoint, "example.com", 80))
         .expect("SOCKS5 CONNECT against the live listener");
 
-    // stop() begins the ordered disconnect off-thread; the session closing
+    // stop() begins the ordered disconnect off-thread. The session closing
     // is the observable completion.
     handle.stop();
     let mut byte = [0u8; 1];
@@ -136,6 +141,10 @@ fn live_proxy_stops_with_a_connection_open_then_releases() {
         Ok(0) | Err(_) => {}
         Ok(unsolicited) => panic!("{unsolicited} unsolicited bytes instead of a close"),
     }
+    assert!(
+        deaths.lock().unwrap().is_empty(),
+        "a deliberate stop must not report a death"
+    );
     drop(handle);
 }
 
@@ -161,4 +170,8 @@ fn live_proxy_starts_serves_socks5_and_stops() {
     handle.stop();
     assert!(handle.exit_node().is_none());
     handle.stop();
+    assert!(
+        deaths.lock().unwrap().is_empty(),
+        "a deliberate stop must not report a death"
+    );
 }
