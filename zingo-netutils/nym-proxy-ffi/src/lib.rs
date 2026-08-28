@@ -154,9 +154,39 @@ impl ProxySlot {
 /// leaked, still running, instead of dropped.
 pub const DISCONNECT_BOUND: Duration = Duration::from_secs(60);
 
+/// The second bound the disconnect gets once the first is spent, which a
+/// process resumed from suspension needs because it wakes with the first
+/// bound already gone.
+pub const DISCONNECT_RESUME_GRACE: Duration = Duration::from_secs(10);
+
 /// How long a finished disconnect's runtime may wait for its last blocking
 /// task before disposal abandons it.
 pub const RUNTIME_DISPOSAL_GRACE: Duration = Duration::from_secs(5);
+
+/// The bounds one teardown runs under.
+#[derive(Clone, Copy, Debug)]
+struct TeardownBounds {
+    /// What the ordered disconnect gets before the resume grace.
+    disconnect: Duration,
+    /// What a disconnect gets after a spent bound, before the runtime leaks.
+    resume_grace: Duration,
+    /// What the runtime's disposal gets for its last blocking task.
+    disposal: Duration,
+}
+
+impl TeardownBounds {
+    /// The bounds every teardown outside the tests runs under.
+    const LIVE: Self = Self {
+        disconnect: DISCONNECT_BOUND,
+        resume_grace: DISCONNECT_RESUME_GRACE,
+        disposal: RUNTIME_DISPOSAL_GRACE,
+    };
+
+    /// The longest a teardown under these bounds holds its thread.
+    fn longest(self) -> Duration {
+        self.disconnect + self.resume_grace + self.disposal
+    }
+}
 
 /// Runtimes this process has leaked because their teardown could not end.
 static LEAKED_TEARDOWNS: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
@@ -168,6 +198,23 @@ const MAX_LEAKED_TEARDOWNS: usize = 4;
 /// Teardowns whose disconnect is still in flight.
 static ACTIVE_TEARDOWNS: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
 
+/// Holds one teardown in a fence counter for as long as the guard lives.
+struct TeardownInFlight(&'static atomic::AtomicUsize);
+
+impl TeardownInFlight {
+    /// Registers a teardown as in flight until the returned guard drops.
+    fn enter(fence: &'static atomic::AtomicUsize) -> Self {
+        fence.fetch_add(1, atomic::Ordering::SeqCst);
+        Self(fence)
+    }
+}
+
+impl Drop for TeardownInFlight {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, atomic::Ordering::SeqCst);
+    }
+}
+
 /// Counts and reports a runtime the teardown cannot dispose, then leaks it.
 fn leak_runtime(runtime: Runtime, why: &str) {
     let leaks = LEAKED_TEARDOWNS.fetch_add(1, atomic::Ordering::SeqCst) + 1;
@@ -175,19 +222,20 @@ fn leak_runtime(runtime: Runtime, why: &str) {
     mem::forget(runtime);
 }
 
-/// Runs the ordered disconnect under `disconnect_bound`, then disposes the
-/// runtime within `disposal_grace`, leaking the runtime instead when the
-/// disconnect does not finish cleanly.
-fn teardown(
-    runtime: Runtime,
-    proxy: Option<ProxySlot>,
-    disconnect_bound: Duration,
-    disposal_grace: Duration,
-) {
+/// Runs the ordered disconnect under `bounds`, then disposes the runtime,
+/// leaking the runtime instead when the disconnect does not finish cleanly.
+fn teardown(runtime: Runtime, proxy: Option<ProxySlot>, bounds: TeardownBounds) {
     if let Some(proxy) = proxy {
-        let disconnect = runtime.spawn(proxy.disconnect());
-        let finished =
-            runtime.block_on(async { tokio::time::timeout(disconnect_bound, disconnect).await });
+        let mut disconnect = runtime.spawn(proxy.disconnect());
+        let finished = runtime.block_on(async {
+            match tokio::time::timeout(bounds.disconnect, &mut disconnect).await {
+                // A bound spent while the process was suspended gave the
+                // disconnect no poll at all, and leaking there spends a leak
+                // credit on a teardown that never ran.
+                Err(_) => tokio::time::timeout(bounds.resume_grace, &mut disconnect).await,
+                polled => polled,
+            }
+        });
         match finished {
             Ok(Ok(())) => {}
             Ok(Err(died)) => {
@@ -204,26 +252,30 @@ fn teardown(
             }
         }
     }
-    runtime.shutdown_timeout(disposal_grace);
+    runtime.shutdown_timeout(bounds.disposal);
 }
 
 /// Hands the runtime and client to a detached teardown thread, falling back
 /// without an abort when the OS refuses the thread.
 fn spawn_teardown(runtime: Runtime, proxy: Option<ProxySlot>) {
-    ACTIVE_TEARDOWNS.fetch_add(1, atomic::Ordering::SeqCst);
+    // Guards, and not paired decrements, because an unwind out of a teardown
+    // would strand the count and make every later start wait out the fence.
+    // The entry kept here holds the count up until a refused spawn has run
+    // its reclaim.
+    let _here = TeardownInFlight::enter(&ACTIVE_TEARDOWNS);
+    let on_thread = TeardownInFlight::enter(&ACTIVE_TEARDOWNS);
     let payload = Arc::new(Mutex::new(Some((runtime, proxy))));
     let for_thread = Arc::clone(&payload);
     let spawned = thread::Builder::new()
         .name("nym-teardown".to_string())
         .spawn(move || {
+            let _in_flight = on_thread;
             if let Some((runtime, proxy)) = take_teardown_payload(&for_thread) {
-                teardown(runtime, proxy, DISCONNECT_BOUND, RUNTIME_DISPOSAL_GRACE);
+                teardown(runtime, proxy, TeardownBounds::LIVE);
             }
-            ACTIVE_TEARDOWNS.fetch_sub(1, atomic::Ordering::SeqCst);
         });
     if spawned.is_err() {
         reclaim_unspawned_teardown(&payload);
-        ACTIVE_TEARDOWNS.fetch_sub(1, atomic::Ordering::SeqCst);
     }
 }
 
@@ -231,7 +283,7 @@ fn spawn_teardown(runtime: Runtime, proxy: Option<ProxySlot>) {
 /// working, which fences a new client from every bounded teardown but not
 /// from a leaked runtime.
 fn await_teardowns_in_flight() {
-    let deadline = Instant::now() + DISCONNECT_BOUND + RUNTIME_DISPOSAL_GRACE;
+    let deadline = Instant::now() + TeardownBounds::LIVE.longest();
     while ACTIVE_TEARDOWNS.load(atomic::Ordering::SeqCst) > 0 {
         if Instant::now() >= deadline {
             tracing::warn!("starting a mixnet client beside an unfinished teardown");
@@ -258,7 +310,7 @@ fn reclaim_unspawned_teardown(payload: &Mutex<Option<(Runtime, Option<ProxySlot>
         return;
     };
     if tokio::runtime::Handle::try_current().is_err() {
-        teardown(runtime, proxy, DISCONNECT_BOUND, RUNTIME_DISPOSAL_GRACE);
+        teardown(runtime, proxy, TeardownBounds::LIVE);
     } else {
         // Dropping the runtime on a runtime-context thread panics, and
         // dropping the client raw aborts (nymtech/nym#7108). Leaking both is
@@ -727,6 +779,13 @@ mod tests {
 
     use zingo_netutils::time::test::MOCK_OP_BOUND;
 
+    /// Teardown bounds short enough for a test to wait out.
+    const QUICK_BOUNDS: TeardownBounds = TeardownBounds {
+        disconnect: Duration::from_millis(100),
+        resume_grace: Duration::from_millis(100),
+        disposal: Duration::from_millis(100),
+    };
+
     /// Builds the multi-thread runtime the teardown tests hand their handles.
     fn teardown_runtime() -> Runtime {
         tokio::runtime::Builder::new_multi_thread()
@@ -945,12 +1004,7 @@ mod tests {
             .expect("the blocking task starts");
         let (done_tx, done_rx) = std::sync::mpsc::channel();
         thread::spawn(move || {
-            teardown(
-                runtime,
-                None,
-                Duration::from_millis(100),
-                Duration::from_millis(100),
-            );
+            teardown(runtime, None, QUICK_BOUNDS);
             let _ = done_tx.send(());
         });
         let outcome = done_rx.recv_timeout(MOCK_OP_BOUND);
@@ -1086,12 +1140,7 @@ mod tests {
         let runtime = teardown_runtime();
         let (done_tx, done_rx) = std::sync::mpsc::channel();
         thread::spawn(move || {
-            teardown(
-                runtime,
-                Some(ProxySlot::Scripted(proxy)),
-                Duration::from_millis(100),
-                Duration::from_millis(100),
-            );
+            teardown(runtime, Some(ProxySlot::Scripted(proxy)), QUICK_BOUNDS);
             let _ = done_tx.send(());
         });
         done_rx
@@ -1112,8 +1161,10 @@ mod tests {
         teardown(
             runtime,
             Some(ProxySlot::Scripted(dying_scripted_proxy())),
-            MOCK_OP_BOUND,
-            Duration::from_millis(100),
+            TeardownBounds {
+                disconnect: MOCK_OP_BOUND,
+                ..QUICK_BOUNDS
+            },
         );
         // A dropped runtime destroys the task and disconnects the channel.
         // A leaked one keeps it alive.
@@ -1144,12 +1195,59 @@ mod tests {
         teardown(
             teardown_runtime(),
             Some(ProxySlot::Scripted(proxy)),
-            Duration::from_millis(100),
-            Duration::from_millis(100),
+            QUICK_BOUNDS,
         );
         assert!(
             LEAKED_TEARDOWNS.load(atomic::Ordering::SeqCst) > before,
             "a leaked runtime must be counted"
+        );
+    }
+
+    /// Tests that a disconnect whose first bound was spent before it was
+    /// ever polled still runs to completion, the app resumed from suspension.
+    #[test]
+    fn a_disconnect_resumed_after_its_bound_finishes_instead_of_leaking() {
+        let (proxy, release_tx, finished_rx) = scripted_proxy();
+        // The released signal arrives while the resume grace runs, so the
+        // first bound is guaranteed to elapse on an unpolled disconnect.
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            let _ = release_tx.send(());
+        });
+        let started = Instant::now();
+        teardown(
+            teardown_runtime(),
+            Some(ProxySlot::Scripted(proxy)),
+            TeardownBounds {
+                disconnect: Duration::ZERO,
+                resume_grace: MOCK_OP_BOUND,
+                ..QUICK_BOUNDS
+            },
+        );
+        finished_rx
+            .try_recv()
+            .expect("the resumed disconnect must run to completion");
+        // Returning inside the grace is what tells a completed disconnect
+        // apart from one the grace gave up on.
+        assert!(
+            started.elapsed() < MOCK_OP_BOUND,
+            "a resumed disconnect must end inside its grace, not leak at the edge"
+        );
+    }
+
+    /// Tests that a teardown which unwinds still leaves start's fence clear.
+    #[test]
+    fn an_unwound_teardown_leaves_no_teardown_in_flight() {
+        static FENCE: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
+        let unwound = std::panic::catch_unwind(|| {
+            let _in_flight = TeardownInFlight::enter(&FENCE);
+            panic!("a teardown that unwinds");
+        });
+        assert!(unwound.is_err(), "the teardown must have unwound");
+        assert_eq!(
+            FENCE.load(atomic::Ordering::SeqCst),
+            0,
+            "an unwound teardown must not strand start's fence"
         );
     }
 
