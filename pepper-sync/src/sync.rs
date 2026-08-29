@@ -65,6 +65,8 @@ pub const MAX_REORG_ALLOWANCE: u32 = 100;
 /// The maximum number of checkpoint boundaries to retain.
 pub const MAX_BOUNDARY_CHECKPOINTS: u32 = 6;
 
+/// The maximum total number of checkpoints a shard tree persists: the reorg window plus the
+/// retained boundary checkpoints.
 pub const MAX_SHARDTREE_CHECKPOINTS: u32 = MAX_REORG_ALLOWANCE + MAX_BOUNDARY_CHECKPOINTS;
 
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;

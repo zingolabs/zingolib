@@ -461,6 +461,19 @@ mod tests {
                 .expect("infallible")
                 .is_some()
         };
+        let count = tree.store().checkpoint_count().expect("infallible");
+        tree.store()
+            .for_each_checkpoint(count, |id, _| {
+                if u32::from(*id) < 494 {
+                    assert_eq!(
+                        u32::from(*id) % 144,
+                        0,
+                        "old checkpoint {id} is not a boundary"
+                    );
+                }
+                Ok(())
+            })
+            .expect("infallible");
         for boundary in [144, 288, 432, 576] {
             assert!(
                 checkpoint_exists(tree.store(), boundary),

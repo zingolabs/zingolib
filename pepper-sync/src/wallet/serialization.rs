@@ -1467,6 +1467,112 @@ mod tests {
         assert_eq!(recovered.ironwood_final_tree_size, 6);
     }
 
+    /// The checkpoint set of a synced wallet decomposes into exactly two parts:
+    /// [`MAX_REORG_ALLOWANCE`] rolling checkpoints, which serve ordinary reorg handling and
+    /// near-tip spends, plus [`MAX_BOUNDARY_CHECKPOINTS`] pinned ZIP 318 grid boundaries,
+    /// which serve pool crossings. Their sum is [`MAX_SHARDTREE_CHECKPOINTS`].
+    ///
+    /// The two parts are disjoint and independently bounded: pinning a boundary must not
+    /// consume a rolling slot (that would shrink the reorg window), and the rolling budget must
+    /// not displace a boundary (that would break crossings).
+    #[test]
+    fn checkpoint_set_is_reorg_window_plus_pinned_boundaries() {
+        use crate::shardtree_ext::ShardTreeExt as _;
+        use crate::sync::MAX_BOUNDARY_CHECKPOINTS;
+        use crate::witness::{anchor_retention_window, repin_anchor_checkpoints};
+        use zcash_client_backend::data_api::anchor_retention::{
+            AnchorRetention, AnchorRetentionInterval,
+        };
+
+        const TIP: u32 = 100_000;
+        const INTERVAL: u32 = 144;
+        let policy = AnchorRetention::new(
+            BlockHeight::from_u32(90_000),
+            AnchorRetentionInterval::default(),
+        );
+        let mut shard_trees = ShardTrees::new();
+
+        for height in (TIP - 2000)..=TIP {
+            let height = BlockHeight::from_u32(height);
+            let window = anchor_retention_window(&policy, height);
+            repin_anchor_checkpoints(&policy, &window, shard_trees.orchard.store_mut());
+            shard_trees
+                .orchard
+                .append_checkpoint(height)
+                .expect("infallible");
+        }
+
+        let store = shard_trees.orchard.store();
+        let total = store.checkpoint_count().expect("infallible");
+        let pinned_ids = store.retained_checkpoints().expect("infallible");
+        let mut pinned = Vec::new();
+        let mut rolling = Vec::new();
+        store
+            .for_each_checkpoint(total, |id, _| {
+                if pinned_ids.contains(id) {
+                    pinned.push(u32::from(*id));
+                } else {
+                    rolling.push(u32::from(*id));
+                }
+                Ok(())
+            })
+            .expect("infallible");
+
+        assert!(
+            pinned.iter().all(|height| height % INTERVAL == 0),
+            "every pinned checkpoint must be a grid boundary, got {pinned:?}"
+        );
+        assert_eq!(rolling.last().copied(), Some(TIP));
+        // TODO: this fails with:
+        // left:  (106, 6, 112)
+        // right: (100, 6, 106)
+        assert_eq!(
+            (rolling.len(), pinned.len(), total),
+            (
+                MAX_REORG_ALLOWANCE as usize,
+                MAX_BOUNDARY_CHECKPOINTS as usize,
+                MAX_SHARDTREE_CHECKPOINTS as usize,
+            ),
+            "(rolling, pinned, total): the pinned boundaries must be part of the \
+             MAX_SHARDTREE_CHECKPOINTS total, not stored on top of it"
+        );
+
+        for height in (TIP - MAX_REORG_ALLOWANCE + 1)..=TIP {
+            assert!(
+                store
+                    .get_checkpoint(&BlockHeight::from_u32(height))
+                    .expect("infallible")
+                    .is_some(),
+                "reorg window is missing height {height}"
+            );
+        }
+
+        assert!(
+            rolling
+                .iter()
+                .all(|height| *height >= TIP - MAX_REORG_ALLOWANCE),
+            "a rolling checkpoint survived below the reorg window: {rolling:?}"
+        );
+
+        let mut bytes = Vec::new();
+        shard_trees.write(&mut bytes).expect("write should succeed");
+        let reloaded = ShardTrees::read(bytes.as_slice()).expect("read should succeed");
+        let reloaded_store = reloaded.orchard.store();
+        for boundary in &pinned {
+            assert!(
+                reloaded_store
+                    .get_checkpoint(&BlockHeight::from_u32(*boundary))
+                    .expect("infallible")
+                    .is_some(),
+                "boundary {boundary} lost on reload; a crossing anchored there cannot be built"
+            );
+        }
+        assert_eq!(
+            reloaded_store.checkpoint_count().expect("infallible"),
+            MAX_SHARDTREE_CHECKPOINTS as usize
+        );
+    }
+
     #[test]
     fn shardtree_roundtrip_keeps_newest_checkpoints() {
         let mut shard_trees = ShardTrees::new();
@@ -1498,11 +1604,17 @@ mod tests {
         let sapling_store = roundtripped.sapling.store();
         let orchard_store = roundtripped.orchard.store();
 
-        assert_eq!(sapling_store.checkpoint_count().expect("infallible"), 100);
-        assert_eq!(orchard_store.checkpoint_count().expect("infallible"), 100);
+        assert_eq!(
+            sapling_store.checkpoint_count().expect("infallible"),
+            MAX_SHARDTREE_CHECKPOINTS as usize
+        );
+        assert_eq!(
+            orchard_store.checkpoint_count().expect("infallible"),
+            MAX_SHARDTREE_CHECKPOINTS as usize
+        );
         assert_eq!(
             sapling_store.min_checkpoint_id().expect("infallible"),
-            Some(BlockHeight::from_u32(51))
+            Some(BlockHeight::from_u32(45))
         );
         assert_eq!(
             sapling_store.max_checkpoint_id().expect("infallible"),
@@ -1510,7 +1622,7 @@ mod tests {
         );
         assert_eq!(
             orchard_store.min_checkpoint_id().expect("infallible"),
-            Some(BlockHeight::from_u32(51))
+            Some(BlockHeight::from_u32(45))
         );
         assert_eq!(
             orchard_store.max_checkpoint_id().expect("infallible"),
@@ -1524,14 +1636,14 @@ mod tests {
         );
         assert!(
             sapling_store
-                .get_checkpoint(&BlockHeight::from_u32(50))
+                .get_checkpoint(&BlockHeight::from_u32(44))
                 .expect("infallible")
                 .is_none()
         );
     }
 
-    /// A pinned anchor checkpoint survives the newest-100 write cap, while the pinned set
-    /// itself is not persisted.
+    /// A pinned anchor checkpoint must survive the write cap. The pinned set itself is not
+    /// persisted, being re-derived at the start of every sync.
     #[test]
     fn shardtree_roundtrip_keeps_pinned_anchor_checkpoints() {
         let mut shard_trees = ShardTrees::new();
@@ -1558,22 +1670,26 @@ mod tests {
         let roundtripped = ShardTrees::read(bytes.as_slice()).expect("read should succeed");
 
         let sapling_store = roundtripped.sapling.store();
-        assert_eq!(sapling_store.checkpoint_count().expect("infallible"), 101);
+        assert_eq!(
+            sapling_store.checkpoint_count().expect("infallible"),
+            MAX_SHARDTREE_CHECKPOINTS as usize
+        );
         assert!(
             sapling_store
                 .get_checkpoint(&BlockHeight::from_u32(24))
                 .expect("infallible")
-                .is_some()
+                .is_some(),
+            "pinned checkpoint must survive the write cap"
         );
         assert!(
             sapling_store
-                .get_checkpoint(&BlockHeight::from_u32(50))
+                .get_checkpoint(&BlockHeight::from_u32(44))
                 .expect("infallible")
                 .is_none()
         );
         assert!(
             sapling_store
-                .get_checkpoint(&BlockHeight::from_u32(51))
+                .get_checkpoint(&BlockHeight::from_u32(45))
                 .expect("infallible")
                 .is_some()
         );
