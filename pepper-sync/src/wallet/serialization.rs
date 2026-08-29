@@ -35,7 +35,7 @@ use crate::{
         KeyId, decode_unified_address,
         transparent::{TransparentAddressId, TransparentScope},
     },
-    sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
+    sync::{MAX_REORG_ALLOWANCE, MAX_SHARDTREE_CHECKPOINTS, ScanPriority, ScanRange},
     wallet::ScanTarget,
 };
 
@@ -1341,21 +1341,9 @@ impl ShardTrees {
                 Ok(())
             })
             .expect("Infallible");
-        let retained = store.retained_checkpoints().expect("Infallible");
-        let non_retained_count = checkpoints
-            .iter()
-            .filter(|(checkpoint_id, _)| !retained.contains(checkpoint_id))
-            .count();
-        if non_retained_count > MAX_REORG_ALLOWANCE as usize {
-            let mut excess = non_retained_count - MAX_REORG_ALLOWANCE as usize;
-            checkpoints.retain(|(checkpoint_id, _)| {
-                if retained.contains(checkpoint_id) || excess == 0 {
-                    true
-                } else {
-                    excess -= 1;
-                    false
-                }
-            });
+        if checkpoints.len() > MAX_SHARDTREE_CHECKPOINTS as usize {
+            let keep_from = checkpoints.len() - MAX_SHARDTREE_CHECKPOINTS as usize;
+            checkpoints.drain(..keep_from);
         }
         write_with_error_handling!(write_checkpoints, checkpoints);
 

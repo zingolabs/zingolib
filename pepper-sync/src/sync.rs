@@ -62,6 +62,7 @@ pub mod truncate;
 /// its boundary, this constant is the one place that follows it.
 pub const MAX_REORG_ALLOWANCE: u32 = 100;
 
+/// The maximum number of checkpoint boundaries to retain.
 pub const MAX_BOUNDARY_CHECKPOINTS: u32 = 6;
 
 pub const MAX_SHARDTREE_CHECKPOINTS: u32 = MAX_REORG_ALLOWANCE + MAX_BOUNDARY_CHECKPOINTS;
