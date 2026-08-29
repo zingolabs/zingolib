@@ -77,7 +77,7 @@ with its reservation held until a replacement binds, so the pool cannot
 offer it again; every survey result is discarded rather than carried
 forward; lanes are drawn afresh; and nothing from the failed attempt
 charges any indexer's Health or reaches the diary, because a
-tunnel-phase failure is the exit's and never the Correspondent's. A
+tunnel-phase failure is the exit's and never the Destination's. A
 sweep may burn a bounded number of exits this way, then refuses with a
 typed error naming how many were proven silent.
 

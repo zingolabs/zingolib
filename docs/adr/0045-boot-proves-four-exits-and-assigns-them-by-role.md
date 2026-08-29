@@ -8,7 +8,7 @@ implementation
 ADR 0044 moved proof to a client's birth: a Proven Client answers the
 Sentinel before it takes any role. ADR 0043 established what the proof
 is — a completed round trip through the bound Exit Node, made with real
-traffic. Together they retired the Correspondent Pools and left every
+traffic. Together they retired the Destination Pools and left every
 operation acquiring its own client on demand.
 
 Acquiring on demand is what boot does not do well. An online session
@@ -95,19 +95,19 @@ cohort.** The taxonomy already separates the two. `socks5_transmit_stage`
 types every SOCKS5 failure by stage, and `charge_phase` turns a stage
 into a `FailurePhase`: route resolution, local proxy connect, SOCKS
 handshake, and tunnel transport charge `Tunnel`; remote TLS, remote HTTP,
-and payload decode charge `Correspondent`; anything the stage cannot
+and payload decode charge `Destination`; anything the stage cannot
 attribute charges nobody. A `Tunnel` charge is the exit's by
 construction, because the failure happened before the destination was
 reached.
 
-The trigger mirrors the rule Health already applies to Correspondents,
+The trigger mirrors the rule Health already applies to Destinations,
 which `zingolib/CONTEXT.md` states as "a tunnel-phase failure is the Exit
-Node's and never charges the Correspondent". A proven exit that
+Node's and never charges the Destination". A proven exit that
 accumulates `UNHEALTHY_FAILURE_THRESHOLD` tunnel-phase failures without
 an intervening success has started failing: its role passes to the spare,
 its `EpochProven` verdict is withdrawn, and a fresh birth replaces the
 spare. One success redeems it, exactly as one success redeems a
-Correspondent, so a transient outage never costs an exit its role.
+Destination, so a transient outage never costs an exit its role.
 
 The Sentinel keeps a harder rule: one silence condemns. The asymmetry is
 the evidence, not the severity. The Sentinel asks a question only the
@@ -151,7 +151,7 @@ verdict against a healthy exit whenever a cohort is down.
 
 **Persist all four clients.** Rejected: ADR 0044 records that the mobile
 platform hosts each client in-process and tolerates roughly five
-concurrent, which is why the Correspondent Pools were retired. One
+concurrent, which is why the Destination Pools were retired. One
 persistent client keeps steady-state load where it is today.
 
 ## Consequences

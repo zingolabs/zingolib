@@ -2,17 +2,16 @@
 
 //! Crate for ZEC price types, storage, and fetching.
 //!
-//! Currently only supports USD. The fetch defaults to clearnet; a caller that
-//! wants to hide the client IP from the price source passes a local SOCKS5
-//! proxy address (the Nym mixnet transport, ADR 0011) and the request is
-//! routed through it instead.
+//! Currently only supports USD. The routing policy lives in the caller:
+//! `get_source_price` dials through a local SOCKS5 tunnel endpoint (the
+//! Nym mixnet transport), and `get_source_price_untunneled` takes the
+//! clearnet leg a switched-off Mixnet Mode consents to.
 //!
 //! The whole fetch surface — and every dependency it needs — sits behind
 //! the `socks5-fetch` feature (on by default for this crate alone).
 //! Without it the crate is the storage-only data model: [`Price`] and
-//! [`PriceList`] with their wallet-file serialization. This is the
-//! dependency half of the mixnet-only price rule (ADR 0011, amendment
-//! 2026-07-28): a wallet build without the mixnet compiles no fetch.
+//! [`PriceList`] with their wallet-file serialization. A wallet build
+//! without the mixnet stack compiles no fetch.
 
 #[cfg(feature = "socks5-fetch")]
 use std::time::Duration;
@@ -774,6 +773,25 @@ pub async fn get_source_price(
     source.parse(&body)
 }
 
+/// One source's price over an untunneled clearnet leg, which discloses
+/// the client IP: the route a switched-off Mixnet Mode consents to.
+#[cfg(feature = "socks5-fetch")]
+pub async fn get_source_price_untunneled(
+    source: PriceSource,
+    url: &str,
+    request_timeout: Duration,
+    connect_timeout: Duration,
+) -> Result<Price, PriceError> {
+    let body =
+        zingo_netutils::socks5_fetch::fetch_text_untunneled(url, request_timeout, connect_timeout)
+            .await
+            .map_err(|error| PriceError::RequestFailed {
+                failure: error.net_op_failure(),
+                source: Box::new(error),
+            })?;
+    source.parse(&body)
+}
+
 #[cfg(all(test, feature = "socks5-fetch"))]
 mod tests {
     use super::*;
@@ -783,26 +801,6 @@ mod tests {
 
     /// Generous bounds for tests whose subject is not the timeout.
     const TEST_TIMEOUT: Duration = Duration::from_secs(10);
-
-    /// One source's price off an untunneled leg, which tests alone may take.
-    async fn fetch_untunneled(
-        source: PriceSource,
-        url: &str,
-        request_timeout: Duration,
-        connect_timeout: Duration,
-    ) -> Result<Price, PriceError> {
-        let body = zingo_netutils::socks5_fetch::fetch_text_untunneled(
-            url,
-            request_timeout,
-            connect_timeout,
-        )
-        .await
-        .map_err(|error| PriceError::RequestFailed {
-            failure: error.net_op_failure(),
-            source: Box::new(error),
-        })?;
-        source.parse(&body)
-    }
 
     /// One source's price through a conduit over `socks5`, for the tests
     /// whose subject is the proxy leg itself.
@@ -888,9 +886,10 @@ mod tests {
         ]"#;
         let url = spawn_trades_server(body).await;
 
-        let price = fetch_untunneled(PriceSource::Gemini, &url, TEST_TIMEOUT, TEST_TIMEOUT)
-            .await
-            .expect("the clearnet fetch parses a valid trades response");
+        let price =
+            get_source_price_untunneled(PriceSource::Gemini, &url, TEST_TIMEOUT, TEST_TIMEOUT)
+                .await
+                .expect("the clearnet fetch parses a valid trades response");
 
         assert_eq!(
             price.price_usd, 105.0,
@@ -907,9 +906,10 @@ mod tests {
     #[ignore = "hits a live price-source API over clearnet"]
     async fn live_clearnet_price_fetch_smoke() {
         let source = PriceSource::Kraken;
-        let price = fetch_untunneled(source, source.url(), REQUEST_TIMEOUT, CONNECT_TIMEOUT)
-            .await
-            .expect("the live price fetch succeeds");
+        let price =
+            get_source_price_untunneled(source, source.url(), REQUEST_TIMEOUT, CONNECT_TIMEOUT)
+                .await
+                .expect("the live price fetch succeeds");
         assert!(
             price.price_usd > 0.0 && price.price_usd.is_finite(),
             "a live ZEC/USD price is positive and finite, got {}",
@@ -928,7 +928,7 @@ mod tests {
         });
 
         let short = Duration::from_millis(300);
-        let error = fetch_untunneled(PriceSource::Gemini, &url, short, short)
+        let error = get_source_price_untunneled(PriceSource::Gemini, &url, short, short)
             .await
             .expect_err("a silent server cannot serve a price");
         match &error {
@@ -1005,9 +1005,10 @@ mod tests {
         ]"#;
         let url = spawn_trades_server(body).await;
 
-        let error = fetch_untunneled(PriceSource::Gemini, &url, TEST_TIMEOUT, TEST_TIMEOUT)
-            .await
-            .expect_err("two trades cannot yield the median of eleven");
+        let error =
+            get_source_price_untunneled(PriceSource::Gemini, &url, TEST_TIMEOUT, TEST_TIMEOUT)
+                .await
+                .expect_err("two trades cannot yield the median of eleven");
         assert!(
             matches!(error, PriceError::InsufficientTrades { received: 2 }),
             "the refusal must be typed with the received count: {error}"
@@ -1123,8 +1124,10 @@ mod tests {
         let kraken = spawn_answering_server(KRAKEN_ELEVEN_TRADES).await;
         let short = Duration::from_millis(500);
 
-        let refused = fetch_untunneled(PriceSource::Gemini, &garbage, short, short).await;
-        let answered = fetch_untunneled(PriceSource::Kraken, &kraken, short, short).await;
+        let refused =
+            get_source_price_untunneled(PriceSource::Gemini, &garbage, short, short).await;
+        let answered =
+            get_source_price_untunneled(PriceSource::Kraken, &kraken, short, short).await;
         let won = first_quote(vec![
             (PriceSource::Gemini, refused),
             (PriceSource::Kraken, answered),
@@ -1151,7 +1154,10 @@ mod tests {
             (PriceSource::Kraken, garbage_two),
             (PriceSource::CoinGecko, silent),
         ] {
-            outcomes.push((source, fetch_untunneled(source, &url, short, short).await));
+            outcomes.push((
+                source,
+                get_source_price_untunneled(source, &url, short, short).await,
+            ));
         }
         let failure = first_quote(outcomes).expect_err("no source answered with a price");
         let named: Vec<&str> = failure

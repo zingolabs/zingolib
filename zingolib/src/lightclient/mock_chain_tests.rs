@@ -1193,9 +1193,9 @@ mod perspective {
 }
 
 /// A mock-chain send travels the mixnet route and says so: the receipt
-/// names the Correspondent that accepted the transaction and the
+/// names the Destination that accepted the transaction and the
 /// session's SOCKS5 endpoint, never the sync indexer. Mock-net clients
-/// run with Mixnet Mode switched on, so the Correspondent draw, the
+/// run with Mixnet Mode switched on, so the Destination draw, the
 /// escalation rounds, and the cap all run for real; only the bytes take
 /// the mock indexer's channel instead of the tunnel.
 #[cfg(feature = "nym")]
@@ -1225,7 +1225,7 @@ async fn a_mock_chain_send_reports_the_mixnet_route() {
     for report in &reports {
         match &report.route {
             TransmitRoute::Mixnet {
-                correspondent,
+                destination,
                 via_socks5,
             } => {
                 assert_eq!(
@@ -1233,10 +1233,10 @@ async fn a_mock_chain_send_reports_the_mixnet_route() {
                     &crate::mocks::transmission::MOCK_SOCKS5_ADDR.to_string()
                 );
                 assert!(
-                    crate::correspondent::CORRESPONDENT_INDEXERS
+                    crate::destination::DESTINATION_INDEXERS
                         .iter()
-                        .any(|entry| entry.contains(correspondent.as_str())),
-                    "the winning Correspondent {correspondent} is not drawn from the curated pool"
+                        .any(|entry| entry.contains(destination.as_str())),
+                    "the winning Destination {destination} is not drawn from the curated pool"
                 );
             }
             TransmitRoute::Clearnet { indexer } => {
@@ -1256,7 +1256,7 @@ async fn a_mock_chain_send_reports_the_mixnet_route() {
 /// The falsifier for [`a_mock_chain_send_reports_the_mixnet_route`]: the
 /// deliberate toggle-off is the one act that routes a transmission over
 /// clearnet as informed consent, and its receipt names the sync indexer
-/// rather than a Correspondent.
+/// rather than a Destination.
 #[cfg(feature = "nym")]
 #[tokio::test]
 async fn switching_the_mixnet_off_reports_the_clearnet_route() {

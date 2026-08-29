@@ -104,28 +104,36 @@ impl WalletMeta {
     }
 }
 
-/// A successfully fetched ZEC price, attested with the route it traveled,
-/// the source that answered, and the time the answer took.
-///
-/// The route attestation is the mixnet tunnel's local SOCKS5 endpoint the
-/// fetch went through. It rides the success value — not a log — so every
-/// consumer of [`LightClient::update_current_price`] holds per-fetch
-/// evidence that this fetch ran over the mixnet (ADR 0011). The source and
-/// round trip ride beside it: the fetch races all three price sources and
-/// reports the one whose answer arrived first.
+/// A successfully fetched ZEC price with the route it traveled, the
+/// source whose answer won the race, and the time the answer took. The
+/// route rides the success value so every consumer of
+/// [`LightClient::update_current_price`] holds per-fetch evidence of it.
 #[cfg(feature = "nym")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct MixnetPriceFetch {
     /// The current ZEC price in USD.
     pub usd: f32,
-    /// The price source whose answer won the three-source race.
+    /// The price source whose answer won the race.
     pub source: zingo_price::PriceSource,
     /// Wall-clock time from dispatching the race to the winning answer,
-    /// tunnel traversal included.
+    /// tunnel traversal included on the mixnet route.
     pub round_trip: std::time::Duration,
-    /// The local SOCKS5 endpoint of the mixnet tunnel this fetch traveled
-    /// through.
-    pub via_socks5: String,
+    /// The route this fetch traveled.
+    pub route: PriceFetchRoute,
+}
+
+/// The route one price fetch traveled.
+#[cfg(feature = "nym")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PriceFetchRoute {
+    /// Untunneled HTTP straight to the price sources: the route a
+    /// switched-off Mixnet Mode consents to.
+    Clearnet,
+    /// The mixnet tunnel, reached through its local SOCKS5 endpoint.
+    Mixnet {
+        /// The local SOCKS5 endpoint the fetch traveled through.
+        via_socks5: String,
+    },
 }
 
 /// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
@@ -191,7 +199,7 @@ pub struct LightClient {
     /// The session's exit authority: Reservations, the NodeHealthIndex, and
     /// the acquirer Proven Clients are born from.
     #[cfg(feature = "nym")]
-    correspondent_pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+    destination_pools: std::sync::Arc<crate::destination::pool::Pools>,
     /// The session-level Mixnet Mode status channel (ADR 0024, decision 2):
     /// the one shared watch every subscriber reads. Transport transitions
     /// publish from the supervisor's tasks, slot transitions from the
@@ -300,7 +308,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            correspondent_pools: crate::correspondent::pool::Pools::new(),
+            destination_pools: crate::destination::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
@@ -350,7 +358,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            correspondent_pools: crate::correspondent::pool::Pools::new(),
+            destination_pools: crate::destination::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
@@ -416,7 +424,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            correspondent_pools: crate::correspondent::pool::Pools::new(),
+            destination_pools: crate::destination::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]

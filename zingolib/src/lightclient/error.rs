@@ -46,21 +46,11 @@ pub enum LightClientError {
     /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
     #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
     Offline,
-    /// Price fetch error. Exists only in nym builds: the mixnet-only price
-    /// rule leaves other builds with no fetch to fail.
+    /// Price fetch error. Exists only in nym builds: the fetch compiles
+    /// only with the mixnet stack, so other builds have no fetch to fail.
     #[cfg(feature = "nym")]
     #[error("Price fetch error.")]
     PriceError(#[from] PriceError),
-    /// The mixnet-routed price fetch was requested while Mixnet Mode is toggled
-    /// off. The opt-in route fails closed rather than falling back to clearnet
-    /// (ADR 0011); use the clearnet default `update_current_price` instead, or
-    /// enable Mixnet Mode (`network on`).
-    #[cfg(feature = "nym")]
-    #[error(
-        "the mixnet-routed price fetch requires Mixnet Mode, which is off; \
-         enable Mixnet Mode, or use the clearnet price fetch"
-    )]
-    PriceFetchRequiresMixnet,
     /// A mixnet-only surface was attempted while the mixnet was bootstrapping.
     #[cfg(feature = "nym")]
     #[error(transparent)]
@@ -69,7 +59,7 @@ pub enum LightClientError {
     #[cfg(feature = "nym")]
     #[error(
         "the mixnet liveness probe requires Mixnet Mode, which is off; \
-         enable Mixnet Mode to probe Correspondents"
+         enable Mixnet Mode to probe Destinations"
     )]
     ProbeRequiresMixnet,
     /// A probe target outside the one endpoint shape the mixnet exit
@@ -85,18 +75,18 @@ pub enum LightClientError {
     #[error(
         "the migration transmission target '{host}' is the synchronization endpoint; migration \
          parts never go to the sync server. Configure a different migration_transmission_uri or \
-         remove it to use the Correspondent Rotation."
+         remove it to use the Destination Rotation."
     )]
     MigrationTransmissionTargetIsSyncEndpoint {
         /// The host both endpoints share.
         host: String,
     },
-    /// No Correspondent remains to carry migration parts over the mixnet,
+    /// No Destination remains to carry migration parts over the mixnet,
     /// with the typed refusal saying whether exclusion or an empty pool
     /// emptied the draw.
     #[cfg(feature = "nym")]
     #[error(transparent)]
-    NoEligibleCorrespondent(#[from] crate::correspondent::NoEligibleCorrespondents),
+    NoEligibleDestination(#[from] crate::destination::NoEligibleDestinations),
 }
 
 /// Errors from the Orchard→Ironwood migration entry points

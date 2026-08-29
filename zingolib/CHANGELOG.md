@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- BREAKING: `LightClient::update_current_price` follows the route
+  resolver instead of refusing while Mixnet Mode is switched off
+  (ADR 0011, amendment 2026-08-26). A switched-off session races the
+  same price sources over untunneled clearnet HTTP, so the deliberate
+  toggle-off consents to the price fetch as it consents to Transmission.
+  The transitional states (`Unattached`, `Bootstrapping`, `Died`) keep
+  their typed `MixnetNotReady` refusals. `MixnetPriceFetch` carries
+  `route: PriceFetchRoute` (a two-variant enum, mixnet with its SOCKS5
+  endpoint or clearnet) where it carried `via_socks5: String`, and
+  `LightClientError::PriceFetchRequiresMixnet` is removed as
+  unreachable. `probe_destinations` remains mixnet-only.
 - BREAKING: `mixnet::resolve_route` takes the session's
   `MixnetConduit` rather than a `SocketAddr`, and `LightClient::mixnet_route`
   reads it from the new `LightClient::mixnet_conduit`. The resolver used to
@@ -175,7 +186,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fatally with nothing learned, and the unbootstrappable exits stayed
   eligible for the very next draw.
 - The F1 demotion loop lands whole. An exit-implicating failure on the
-  Standing Client — a failed mixnet transmission, or a correspondent
+  Standing Client — a failed mixnet transmission, or a destination
   probe wave nobody answered — raises a suspicion that spawns a
   ProofAcquisition: one arbiter Sentinel exchange dialed into the
   client's tunnel. An answer promotes and refreshes the exit's
@@ -195,7 +206,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   observation an earlier client earned — and no round trip of its own has
   yet confirmed the exit. It routes exactly as `Ready`; the first
   confirmed round trip (a delivered mixnet transmission or an answered
-  correspondent probe) promotes it to earned `Ready` and refreshes the
+  destination probe) promotes it to earned `Ready` and refreshes the
   exit's EpochProven observation. Consumers matching `MixnetMode`
   exhaustively, including mobile's FFI mapping, must add the state.
 - BREAKING: the session's standing client is born as a Proven Client.
@@ -207,7 +218,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   speed-class enable race stalled at `Bootstrapping` past 90 seconds in
   three consecutive measured runs; the proven birth reached `Ready` and
   quoted prices on its first live run.
-- BREAKING: the Correspondent Pools' member-keeping is retired. Go-online
+- BREAKING: the Destination Pools' member-keeping is retired. Go-online
   no longer launches background refills, the Indexer and Price complements
   are gone, and a Transmission's pulls multiplex over the session's standing
   tunnel instead of consuming per-pull Exclusive members; the price fetch
@@ -355,9 +366,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TransportError::HostRefused` and the wrapper variants of
   `lightclient::error::SendError` and `wallet::error::PriceError` follow
   the same rule.
-  `LightClientError::NoEligibleCorrespondent` now carries the typed
-  `correspondent::NoEligibleCorrespondents` union — that union and
-  `correspondent::Operator` are public — so the empty-pool and
+  `LightClientError::NoEligibleDestination` now carries the typed
+  `destination::NoEligibleDestinations` union — that union and
+  `destination::Operator` are public — so the empty-pool and
   all-excluded stories reach consumers distinctly. The mixnet refusals
   prescribe `network on` / `network off`, the commands that exist.
 - BREAKING: the `zingolib::nym` module is renamed `zingolib::mixnet`,
@@ -371,7 +382,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mixnet::ExitNodeId` instead of bare strings — in `MixnetStatus::exits`,
   `LightClient::attach_mixnet`, `ProvisionStrategy::Attach`,
   `HostedTransport`, and the `ProxyHost` seam — and the operator key
-  behind Correspondent exclusion is the typed `correspondent::Operator`
+  behind Destination exclusion is the typed `destination::Operator`
   (String-promotion census of the ADR 0041 arc). Construction is checked:
   `ExitNodeId::parse` (and `TryFrom<String>`, which deserialization uses)
   trims the candidate and refuses a blank with the typed
@@ -385,7 +396,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wire string, and both host methods refuse with the typed
   `mixnet::acquire::HostRefusal` instead of `String`, which
   `TransportError::HostRefused` now carries as its source.
-- BREAKING: indexer endpoints are the typed `correspondent::Host` — the
+- BREAKING: indexer endpoints are the typed `destination::Host` — the
   Health ledger's key, `MixnetProbe::host`, and the diary's
   `IndexerAttempt::host`, whose `exit` field is now the typed
   `mixnet::ExitNodeId`. A Host is lowercased at construction because DNS
@@ -412,7 +423,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once through `into_addr`, and lends it through `addr`; consumers render
   the dial string at their own seams. The zero-caller
   `MixnetRoute::socks5_proxy` accessor is removed.
-- BREAKING: probing Correspondents while Mixnet Mode is deliberately
+- BREAKING: probing Destinations while Mixnet Mode is deliberately
   switched off refuses with the new
   `LightClientError::ProbeRequiresMixnet`, which names the toggle-off,
   instead of mislabeling the state as `MixnetNotReady::Unattached`.
@@ -451,7 +462,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Every attempt updates an always-on, in-memory, session-scoped Health,
   whatever the diary's gates say; the feature-gated diary stays its
   opt-in export view, and its line format grows two columns while still
-  loading six-column rows. The Correspondent draw consults Health as a
+  loading six-column rows. The Destination draw consults Health as a
   binary eligibility filter with a floor, never as a weight, so the draw
   stays uniform and a partition cannot shrink the anonymity set.
 - BREAKING: the session holds an Exit Pool, the sole issuer of Exit Node
@@ -470,14 +481,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exit (ADR 0039). A spawned session's send escalation consumes one
   Indexer Pool member per pull, acquiring inline past the complement,
   and tears each transport down when its pull ends, so an exit carries
-  exactly one Correspondent contact. `TransmitRoute::Mixnet` now
+  exactly one Destination contact. `TransmitRoute::Mixnet` now
   attests the winning pull's own tunnel rather than a shared one. An
   attached session shares the slot's tunnel as before. A pooled member
   whose transport died between take and use makes its pull refuse — and
   the price run refuse with `TransportError::DiedBeforeUse` — rather than
   silently degrading onto the slot's shared tunnel and mislabeling the
   diary's bound exit.
-- BREAKING: the Correspondent Pools land. A spawned session keeps an
+- BREAKING: the Destination Pools land. A spawned session keeps an
   Indexer Pool (two Exit-Bound transports) and a Price Source
   Pool (one Shared-exit transport), refilled in the background under
   `PrioritisePrivacy` and drained on disable. A drain bumps a generation
@@ -488,8 +499,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exit per run, the refill draw excluding the spent exit — instead of
   riding the slot's shared tunnel; an attached session is unchanged.
   `PriceError` gains `TransportAcquisition`.
-- BREAKING: `mixnet::correspondents` is absorbed into the new top-level
-  `zingolib::correspondent` module, which compiles without the `nym`
+- BREAKING: `mixnet::destinations` is absorbed into the new top-level
+  `zingolib::destination` module, which compiles without the `nym`
   feature and adds the `Correspondable` trait — the party a Transmission
   addresses, implemented by the census `Indexer` and (under `nym`) by
   `PriceSource`, each yielding an https address and an accountable
@@ -504,11 +515,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once, because a listener that accepts TCP proves nothing about the mixnet
   carrying data; a data-dead endpoint lands `Died` rather than `Ready`. The
   loopback dial remains only as the cheap liveness watchdog after readiness.
-- BREAKING: the send escalation is a hedged race (ADR 0040): a further Correspondent
+- BREAKING: the send escalation is a hedged race (ADR 0040): a further Destination
   is contacted only after `TRANSMISSION_HEDGE_INTERVAL` of silence or a
   pull's failure, holding at most `RESERVATION_CLUTCH_SIZE` pulls in
   flight, replacing the serially gated one-two-three rounds. The
-  six-Correspondent cap and the happy path's single-Correspondent
+  six-Destination cap and the happy path's single-Destination
   discipline are unchanged.
 - `config::ClientConfigBuilder`: `build` method now returns result for improved error handling.
 - `config::construct_lightwalletd_uri`: `server` parameter changed from `Option<String>` to `String`. documentation
@@ -532,13 +543,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SplitStep::RoundBroadcast` is `SplitStep::RoundTransmitted`.
   `LightClientError` renames `MigrationBroadcastTargetIsSyncEndpoint` to
   `MigrationTransmissionTargetIsSyncEndpoint` and `NoEligibleBroadcastIndexer`
-  to `NoEligibleCorrespondent`. `LightClient::probe_broadcast_indexers` is
-  `probe_correspondents`, `broadcast_due_parts` is `transmit_due_parts`, and
+  to `NoEligibleDestination`. `LightClient::probe_broadcast_indexers` is
+  `probe_destinations`, `broadcast_due_parts` is `transmit_due_parts`, and
   `auto_broadcast_if_due` is `auto_transmit_if_due`.
-  `TransmitRoute::Mixnet`'s field `witness` is `correspondent`. The nym
-  modules rename: `mixnet::broadcast` to `mixnet::correspondent_rotation` and
-  `mixnet::broadcast_indexers` to `mixnet::correspondents`, with
-  `CORRESPONDENT_INDEXERS` (was `BROADCAST_INDEXERS`). The migration modules
+  `TransmitRoute::Mixnet`'s field `witness` is `destination`. The nym
+  modules rename: `mixnet::broadcast` to `mixnet::destination_rotation` and
+  `mixnet::broadcast_indexers` to `mixnet::destinations`, with
+  `DESTINATION_INDEXERS` (was `BROADCAST_INDEXERS`). The migration modules
   `lightclient::migrate::{broadcast_grpc, broadcast_route}` rename to
   `{transmission_grpc, transmission_route}` with `GrpcTransmissionClient`,
   `RoutedTransmissionClient`, and `MixnetTransmissionClient`. The persisted

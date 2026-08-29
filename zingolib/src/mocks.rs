@@ -521,8 +521,8 @@ pub(crate) mod transmission {
         MOCK_SOCKS5_PORT,
     );
 
-    /// The mock's stand-in Correspondent host.
-    pub const MOCK_CORRESPONDENT: &str = "mock.correspondent.indexer";
+    /// The mock's stand-in Destination host.
+    pub const MOCK_DESTINATION: &str = "mock.destination.indexer";
 
     /// Records every submission. Fails with a transport error while `fail`
     /// is set (the raw transaction is then not consumed, mirroring the real
@@ -547,7 +547,7 @@ pub(crate) mod transmission {
                 submissions: Mutex::new(Vec::new()),
                 fail: AtomicBool::new(false),
                 route: TransmissionRoute::Mixnet {
-                    correspondent: MOCK_CORRESPONDENT.to_string(),
+                    destination: MOCK_DESTINATION.to_string(),
                     via_socks5: MOCK_SOCKS5_ADDR.to_string(),
                 },
             }

@@ -5,7 +5,7 @@ two-layer failover ruling was added in session 2026-08-14
 
 ## Context
 
-Landing the Correspondent Pools slowed the scan, and the whole chain is
+Landing the Destination Pools slowed the scan, and the whole chain is
 measured. A bisect over 557 commits, judging each commit by sync time
 alone through a session-printed mark, confirmed its boundary five
 samples a side with no overlap: the parent of the Pools landing scanned
