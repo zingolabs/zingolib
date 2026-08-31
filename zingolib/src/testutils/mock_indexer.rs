@@ -939,7 +939,7 @@ pub async fn faucet_funding_transaction(receivers: Vec<(&str, u64, Option<&str>)
         .wallet()
         .write()
         .await
-        .calculate_transactions(proposal, zip32::AccountId::ZERO)
+        .calculate_transactions(proposal, zip32::AccountId::ZERO, None)
         .await
         .expect("the faucet's funding transaction builds");
     assert_eq!(txids.len(), 1, "funding sends are single-step");

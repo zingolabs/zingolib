@@ -515,7 +515,7 @@ impl LightClient {
         };
         let highest_refund_address_index = wallet.highest_refund_address_index();
         let calculated_txids = wallet
-            .calculate_transactions(proposal, sending_account)
+            .calculate_transactions(proposal, sending_account, None)
             .await
             .map_err(|e| {
                 wallet.truncate_refund_addresses(highest_refund_address_index);
@@ -564,7 +564,8 @@ impl LightClient {
             .wallet()
             .write()
             .await
-            .calculate_transactions(proposal, shielding_account)
+            // A Shield never carries an OP_RETURN payload.
+            .calculate_transactions(proposal, shielding_account, None)
             .await
             .map_err(SendError::CalculateShieldError)?;
 
@@ -644,7 +645,7 @@ impl LightClient {
                 };
                 match retargeted {
                     Ok(proposal) => wallet
-                        .calculate_transactions(proposal, sending_account)
+                        .calculate_transactions(proposal, sending_account, None)
                         .await
                         .map_err(SendError::CalculateSendError),
                     Err(e) => Err(e),
@@ -662,7 +663,8 @@ impl LightClient {
                 };
                 match retargeted {
                     Ok(proposal) => wallet
-                        .calculate_transactions(proposal, shielding_account)
+                        // A Shield never carries an OP_RETURN payload.
+            .calculate_transactions(proposal, shielding_account, None)
                         .await
                         .map_err(SendError::CalculateShieldError),
                     Err(e) => Err(e),
@@ -1093,7 +1095,7 @@ mod built_transaction_shape {
             .wallet()
             .write()
             .await
-            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .calculate_transactions(proposal, zip32::AccountId::ZERO, None)
             .await
             .unwrap();
         assert_eq!(txids.len(), 1);
@@ -1158,7 +1160,7 @@ mod built_transaction_shape {
             .wallet()
             .write()
             .await
-            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .calculate_transactions(proposal, zip32::AccountId::ZERO, None)
             .await
             .unwrap();
         assert_eq!(txids.len(), 1);
@@ -1232,7 +1234,7 @@ mod built_transaction_shape {
             .wallet()
             .write()
             .await
-            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .calculate_transactions(proposal, zip32::AccountId::ZERO, None)
             .await
             .unwrap();
         assert_eq!(txids.len(), 1);
@@ -1324,7 +1326,7 @@ mod built_transaction_shape {
             .wallet()
             .write()
             .await
-            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .calculate_transactions(proposal, zip32::AccountId::ZERO, None)
             .await
             .unwrap();
         assert_eq!(txids.len(), 1);
@@ -1416,7 +1418,7 @@ mod built_transaction_shape {
             .wallet()
             .write()
             .await
-            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .calculate_transactions(proposal, zip32::AccountId::ZERO, None)
             .await
             .unwrap();
         assert_eq!(txids.len(), 2, "the ZIP-320 pair builds as two steps");

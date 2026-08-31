@@ -35,6 +35,7 @@ pub mod disk;
 pub mod keys;
 pub mod locks;
 pub mod migration;
+pub mod op_return;
 pub mod output;
 pub mod propose;
 pub mod send;
