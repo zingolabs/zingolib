@@ -35,7 +35,7 @@ use crate::{
         KeyId, decode_unified_address,
         transparent::{TransparentAddressId, TransparentScope},
     },
-    sync::{MAX_REORG_ALLOWANCE, MAX_SHARDTREE_CHECKPOINTS, ScanPriority, ScanRange},
+    sync::{MAX_BOUNDARY_CHECKPOINTS, MAX_SHARDTREE_CHECKPOINTS, ScanPriority, ScanRange},
     wallet::ScanTarget,
 };
 
@@ -1242,7 +1242,7 @@ impl ShardTrees {
 
         Ok(shardtree::ShardTree::new(
             store,
-            MAX_REORG_ALLOWANCE as usize,
+            MAX_SHARDTREE_CHECKPOINTS as usize,
         ))
     }
 
@@ -1323,7 +1323,8 @@ impl ShardTrees {
         macro_rules! write_with_error_handling {
             ($writer: ident, $from: ident) => {
                 if let Err(e) = $writer(&mut writer, &$from) {
-                    *shardtree = shardtree::ShardTree::new(store, MAX_REORG_ALLOWANCE as usize);
+                    *shardtree =
+                        shardtree::ShardTree::new(store, MAX_SHARDTREE_CHECKPOINTS as usize);
                     return Err(e);
                 }
             };
@@ -1341,8 +1342,9 @@ impl ShardTrees {
                 Ok(())
             })
             .expect("Infallible");
-        if checkpoints.len() > MAX_SHARDTREE_CHECKPOINTS as usize {
-            let keep_from = checkpoints.len() - MAX_SHARDTREE_CHECKPOINTS as usize;
+        if checkpoints.len() > (MAX_SHARDTREE_CHECKPOINTS + MAX_BOUNDARY_CHECKPOINTS) as usize {
+            let keep_from =
+                checkpoints.len() - (MAX_SHARDTREE_CHECKPOINTS + MAX_BOUNDARY_CHECKPOINTS) as usize;
             checkpoints.drain(..keep_from);
         }
         write_with_error_handling!(write_checkpoints, checkpoints);
@@ -1351,7 +1353,7 @@ impl ShardTrees {
         let cap = store.get_cap().expect("Infallible");
         write_with_error_handling!(write_shard, cap);
 
-        *shardtree = shardtree::ShardTree::new(store, MAX_REORG_ALLOWANCE as usize);
+        *shardtree = shardtree::ShardTree::new(store, MAX_SHARDTREE_CHECKPOINTS as usize);
 
         Ok(())
     }
@@ -1523,21 +1525,18 @@ mod tests {
             "every pinned checkpoint must be a grid boundary, got {pinned:?}"
         );
         assert_eq!(rolling.last().copied(), Some(TIP));
-        // TODO: this fails with:
-        // left:  (106, 6, 112)
-        // right: (100, 6, 106)
         assert_eq!(
             (rolling.len(), pinned.len(), total),
             (
-                MAX_REORG_ALLOWANCE as usize,
-                MAX_BOUNDARY_CHECKPOINTS as usize,
                 MAX_SHARDTREE_CHECKPOINTS as usize,
+                MAX_BOUNDARY_CHECKPOINTS as usize,
+                (MAX_SHARDTREE_CHECKPOINTS + MAX_BOUNDARY_CHECKPOINTS) as usize,
             ),
-            "(rolling, pinned, total): the pinned boundaries must be part of the \
-             MAX_SHARDTREE_CHECKPOINTS total, not stored on top of it"
+            "(rolling, pinned, total): the pinned boundaries must not be part of the \
+             MAX_SHARDTREE_CHECKPOINTS total"
         );
 
-        for height in (TIP - MAX_REORG_ALLOWANCE + 1)..=TIP {
+        for height in (TIP - MAX_SHARDTREE_CHECKPOINTS + 1)..=TIP {
             assert!(
                 store
                     .get_checkpoint(&BlockHeight::from_u32(height))
@@ -1550,7 +1549,7 @@ mod tests {
         assert!(
             rolling
                 .iter()
-                .all(|height| *height >= TIP - MAX_REORG_ALLOWANCE),
+                .all(|height| *height >= TIP - MAX_SHARDTREE_CHECKPOINTS),
             "a rolling checkpoint survived below the reorg window: {rolling:?}"
         );
 
@@ -1569,7 +1568,7 @@ mod tests {
         }
         assert_eq!(
             reloaded_store.checkpoint_count().expect("infallible"),
-            MAX_SHARDTREE_CHECKPOINTS as usize
+            (MAX_SHARDTREE_CHECKPOINTS + MAX_BOUNDARY_CHECKPOINTS) as usize
         );
     }
 

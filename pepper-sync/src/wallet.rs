@@ -40,7 +40,7 @@ use crate::{
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
     shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt as _},
-    sync::{MAX_REORG_ALLOWANCE, MAX_SHARDTREE_CHECKPOINTS, ScanPriority, ScanRange},
+    sync::{MAX_SHARDTREE_CHECKPOINTS, ScanPriority, ScanRange},
     utils::{block, transaction},
     witness,
 };
