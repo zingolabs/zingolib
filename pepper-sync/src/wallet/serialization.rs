@@ -1605,11 +1605,11 @@ mod tests {
 
         assert_eq!(
             sapling_store.checkpoint_count().expect("infallible"),
-            MAX_SHARDTREE_CHECKPOINTS as usize
+            (MAX_SHARDTREE_CHECKPOINTS + MAX_BOUNDARY_CHECKPOINTS) as usize
         );
         assert_eq!(
             orchard_store.checkpoint_count().expect("infallible"),
-            MAX_SHARDTREE_CHECKPOINTS as usize
+            (MAX_SHARDTREE_CHECKPOINTS + MAX_BOUNDARY_CHECKPOINTS) as usize
         );
         assert_eq!(
             sapling_store.min_checkpoint_id().expect("infallible"),
@@ -1671,7 +1671,7 @@ mod tests {
         let sapling_store = roundtripped.sapling.store();
         assert_eq!(
             sapling_store.checkpoint_count().expect("infallible"),
-            MAX_SHARDTREE_CHECKPOINTS as usize
+            (MAX_SHARDTREE_CHECKPOINTS + MAX_BOUNDARY_CHECKPOINTS) as usize
         );
         assert!(
             sapling_store
