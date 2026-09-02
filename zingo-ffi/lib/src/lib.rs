@@ -1935,7 +1935,10 @@ mod wallet_salvage_tests {
         let mut bytes = stable_prefix();
         bytes.extend([0xAB; 100]);
         let with_tail = read_wallet_recovery_info(bytes).unwrap();
-        assert_eq!(with_tail, read_wallet_recovery_info(stable_prefix()).unwrap());
+        assert_eq!(
+            with_tail,
+            read_wallet_recovery_info(stable_prefix()).unwrap()
+        );
     }
 
     #[test]
@@ -2300,11 +2303,6 @@ pub fn get_total_spends_to_address() -> Result<String, ZingolibError> {
 }
 
 pub fn zec_price() -> Result<String, ZingolibError> {
-    // This wallet fetches price over the mixnet or not at all (ADR 0011).
-    // Every refusal the lightclient raises reaches the caller as one, the
-    // deliberate switch-off included: a price oracle learns the IP that asked
-    // it and when, which is a profile of when this wallet is awake, and no
-    // phone should hand that over as the cost of showing a number.
     let usd = with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
             lightclient

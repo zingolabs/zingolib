@@ -14,14 +14,12 @@ exclude = ["nym-proxy-ffi"]
 resolver = "2"
 
 [workspace.dependencies]
-# Interim pin onto the wallet-file validation PR (zingolib #2749) until it
-# merges.
-zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "bb/add-wallet-file-validation-thr_dfg7v7d7jv", features = [
+zingolib = { git = "https://github.com/zingolabs/zingolib", branch = "dev", features = [
     "nym",
     "perspective",
 ] }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "bb/add-wallet-file-validation-thr_dfg7v7d7jv" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "bb/add-wallet-file-validation-thr_dfg7v7d7jv" }
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "dev" }
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "dev" }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 

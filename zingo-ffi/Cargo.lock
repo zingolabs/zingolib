@@ -2310,7 +2310,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.5.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=bb%2Fadd-wallet-file-validation-thr_dfg7v7d7jv#c953e143033ba26a1729332346bb71c6b7883c08"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eb62284f4149c58892db1abc0a3dc650169ccd32"
 dependencies = [
  "bip32",
  "byteorder",
@@ -4738,7 +4738,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.7.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b228c06ae82365f306ff364e164da#537f84d3d81b228c06ae82365f306ff364e164da"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a2416144d1bbbae30aca02bec062d1492#89cf104a2416144d1bbbae30aca02bec062d1492"
 dependencies = [
  "hex",
  "reqwest",
@@ -5043,7 +5043,7 @@ dependencies = [
 [[package]]
 name = "zingo-consensus"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b228c06ae82365f306ff364e164da#537f84d3d81b228c06ae82365f306ff364e164da"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a2416144d1bbbae30aca02bec062d1492#89cf104a2416144d1bbbae30aca02bec062d1492"
 
 [[package]]
 name = "zingo-consensus"
@@ -5053,7 +5053,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a241614
 [[package]]
 name = "zingo-memo"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=bb%2Fadd-wallet-file-validation-thr_dfg7v7d7jv#c953e143033ba26a1729332346bb71c6b7883c08"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eb62284f4149c58892db1abc0a3dc650169ccd32"
 dependencies = [
  "zcash_address",
  "zcash_encoding",
@@ -5064,7 +5064,7 @@ dependencies = [
 [[package]]
 name = "zingo-net-diag"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=bb%2Fadd-wallet-file-validation-thr_dfg7v7d7jv#c953e143033ba26a1729332346bb71c6b7883c08"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eb62284f4149c58892db1abc0a3dc650169ccd32"
 dependencies = [
  "serde",
 ]
@@ -5072,7 +5072,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "5.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=bb%2Fadd-wallet-file-validation-thr_dfg7v7d7jv#c953e143033ba26a1729332346bb71c6b7883c08"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eb62284f4149c58892db1abc0a3dc650169ccd32"
 dependencies = [
  "http",
  "hyper-util",
@@ -5094,7 +5094,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=bb%2Fadd-wallet-file-validation-thr_dfg7v7d7jv#c953e143033ba26a1729332346bb71c6b7883c08"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eb62284f4149c58892db1abc0a3dc650169ccd32"
 dependencies = [
  "byteorder",
  "serde",
@@ -5108,7 +5108,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.2.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=bb%2Fadd-wallet-file-validation-thr_dfg7v7d7jv#c953e143033ba26a1729332346bb71c6b7883c08"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eb62284f4149c58892db1abc0a3dc650169ccd32"
 dependencies = [
  "byteorder",
  "zcash_protocol",
@@ -5134,7 +5134,7 @@ dependencies = [
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=537f84d3d81b228c06ae82365f306ff364e164da#537f84d3d81b228c06ae82365f306ff364e164da"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a2416144d1bbbae30aca02bec062d1492#89cf104a2416144d1bbbae30aca02bec062d1492"
 
 [[package]]
 name = "zingo_test_vectors"
@@ -5144,7 +5144,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a241614
 [[package]]
 name = "zingolib"
 version = "5.0.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=bb%2Fadd-wallet-file-validation-thr_dfg7v7d7jv#c953e143033ba26a1729332346bb71c6b7883c08"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eb62284f4149c58892db1abc0a3dc650169ccd32"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -5204,7 +5204,7 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=bb%2Fadd-wallet-file-validation-thr_dfg7v7d7jv#c953e143033ba26a1729332346bb71c6b7883c08"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eb62284f4149c58892db1abc0a3dc650169ccd32"
 dependencies = [
  "http",
  "nonempty",
