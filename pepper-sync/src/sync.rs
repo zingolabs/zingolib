@@ -667,6 +667,11 @@ where
                         &mut nullifier_map_limit_exceeded,
                     )
                     .await? {
+                        // NOTE: this is safe in the current architecture as the correct set of gap addressses will be
+                        // determined before scanning begins and this update will only apply to the latest newly mined
+                        // block(s). If the sync engine is modified so there are cases where compact blocks may be scanned
+                        // for transparent data out-of-order, more checks must be applied here to ensure gap addresses are
+                        // not lost and correctly follow on from the wallets current in-use address list.
                         scanner.transparent_gap_addresses = updated_transparent_gap_addresses;
                     }
                     publish_sync_status(&*wallet_guard, &progress).await;
@@ -1400,8 +1405,8 @@ where
                 sapling_located_trees,
                 orchard_located_trees,
                 ironwood_located_trees,
-                new_inuse_transparent_addresses,
-                transparent_gap_addresses,
+                new_transparent_inuse_addresses,
+                updated_transparent_gap_addresses,
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
@@ -1488,7 +1493,7 @@ where
                         "Nullifiers discarded and will be re-fetched to avoid missing spends."
                     );
 
-                    return Ok(Some(transparent_gap_addresses));
+                    return Ok(Some(updated_transparent_gap_addresses));
                 }
 
                 spend::update_shielded_spends(
@@ -1583,7 +1588,7 @@ where
                     sapling_located_trees,
                     orchard_located_trees,
                     ironwood_located_trees,
-                    new_inuse_transparent_addresses,
+                    new_transparent_inuse_addresses,
                 )
                 .await?;
                 spend::update_transparent_spends(
@@ -1635,7 +1640,7 @@ where
             remove_irrelevant_data(wallet).map_err(SyncError::WalletError)?;
             tracing::debug!("Scan results processed.");
 
-            Ok(Some(transparent_gap_addresses))
+            Ok(Some(updated_transparent_gap_addresses))
         }
         Err(ScanError::ContinuityError(ContinuityError::HashDiscontinuity { height, .. })) => {
             tracing::warn!("Hash discontinuity detected before block {height}.");
@@ -2061,7 +2066,7 @@ async fn update_wallet_data<W>(
     sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
     ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
-    new_inuse_transparent_addresses: HashMap<String, TransparentAddressId>,
+    new_transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet
@@ -2161,7 +2166,7 @@ where
     let wallet_transparent_addresses = wallet
         .get_transparent_addresses_mut()
         .map_err(SyncError::WalletError)?;
-    for (address, id) in new_inuse_transparent_addresses {
+    for (address, id) in new_transparent_inuse_addresses {
         wallet_transparent_addresses.insert(id, address);
     }
 
