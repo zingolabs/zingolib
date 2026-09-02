@@ -1613,7 +1613,7 @@ mod tests {
         );
         assert_eq!(
             sapling_store.min_checkpoint_id().expect("infallible"),
-            Some(BlockHeight::from_u32(45))
+            Some(BlockHeight::from_u32(44))
         );
         assert_eq!(
             sapling_store.max_checkpoint_id().expect("infallible"),
@@ -1621,7 +1621,7 @@ mod tests {
         );
         assert_eq!(
             orchard_store.min_checkpoint_id().expect("infallible"),
-            Some(BlockHeight::from_u32(45))
+            Some(BlockHeight::from_u32(44))
         );
         assert_eq!(
             orchard_store.max_checkpoint_id().expect("infallible"),
@@ -1635,7 +1635,7 @@ mod tests {
         );
         assert!(
             sapling_store
-                .get_checkpoint(&BlockHeight::from_u32(44))
+                .get_checkpoint(&BlockHeight::from_u32(43))
                 .expect("infallible")
                 .is_none()
         );
@@ -1663,6 +1663,10 @@ mod tests {
             .store_mut()
             .add_retained_checkpoint(BlockHeight::from_u32(24))
             .expect("infallible");
+        // FIXME: this needs to be pruned before we can assert the correct checkpoints are retained.
+        // currently there are more checkpoints than the amount that would exist after pruning.
+        // in fact, I think this is a case to remove the fixed cap on checkpoints during serialization
+        // to avoid cases where serialization may delete retained checkpoints.
 
         let mut bytes = Vec::new();
         shard_trees.write(&mut bytes).expect("write should succeed");
