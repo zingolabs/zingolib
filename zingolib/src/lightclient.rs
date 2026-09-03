@@ -2,7 +2,7 @@
 
 use std::{
     fs::File,
-    io::{BufReader, Cursor},
+    io::{BufReader, Cursor, Read},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -387,11 +387,20 @@ impl LightClient {
         bytes: Vec<u8>,
         config: ClientConfig,
     ) -> Result<Self, LightClientError> {
+        Self::from_reader(Cursor::new(bytes), config).await
+    }
+
+    /// Builds a client from a wallet serialized in `reader`.
+    #[allow(clippy::result_large_err)]
+    pub async fn from_reader<R: Read>(
+        reader: R,
+        config: ClientConfig,
+    ) -> Result<Self, LightClientError> {
         // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
         zingo_netutils::ensure_default_crypto_provider();
 
-        let wallet = LightWallet::read(Cursor::new(bytes), config.chain_type())
-            .map_err(LightClientError::FileError)?;
+        let wallet =
+            LightWallet::read(reader, config.chain_type()).map_err(LightClientError::FileError)?;
 
         let indexer = if let Some(uri) = config.indexer_uri() {
             Some(zingo_netutils::GrpcIndexer::new(uri).await?)
@@ -791,6 +800,11 @@ impl std::fmt::Debug for LightClient {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        fs::File,
+        io::{BufReader, Cursor},
+    };
+
     use crate::{
         config::{ChainType, ClientConfig, WalletConfig},
         lightclient::{LightClient, error::LightClientError},
@@ -890,6 +904,116 @@ mod tests {
             source.unified_addresses_json().await[0]["encoded_address"],
             restored.unified_addresses_json().await[0]["encoded_address"],
         );
+    }
+
+    /// Reads a saved wallet file through `from_reader` and checks the seed parses correctly.
+    #[tokio::test]
+    async fn from_reader_over_buffered_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = ClientConfig::builder()
+            .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
+            .set_wallet_dir(temp_dir.path().to_path_buf())
+            .set_wallet_config(WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: CHIMNEY_BETTER_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            })
+            .build()
+            .unwrap();
+
+        let mut source = LightClient::new(config.clone(), false).await.unwrap();
+        source.save_task().await;
+        source.wait_for_save().await;
+
+        let file = File::open(config.get_wallet_path()).unwrap();
+        let restored_config = ClientConfig::builder()
+            .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
+            .set_wallet_dir(temp_dir.path().to_path_buf())
+            .set_wallet_config(WalletConfig::Read)
+            .build()
+            .unwrap();
+        let restored = LightClient::from_reader(BufReader::new(file), restored_config)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            restored.mnemonic_phrase().as_deref(),
+            Some(CHIMNEY_BETTER_SEED)
+        );
+        assert_eq!(source.mnemonic_phrase(), restored.mnemonic_phrase());
+        assert_eq!(
+            source.transparent_addresses_json().await[0]["encoded_address"],
+            restored.transparent_addresses_json().await[0]["encoded_address"],
+        );
+    }
+
+    /// Feeds the same bytes to `from_bytes` and `from_reader` and checks that wallets match.
+    #[tokio::test]
+    async fn from_bytes_and_from_reader_agree() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = ClientConfig::builder()
+            .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
+            .set_wallet_dir(temp_dir.path().to_path_buf())
+            .set_wallet_config(WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: CHIMNEY_BETTER_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            })
+            .build()
+            .unwrap();
+
+        let source = LightClient::new(config, false).await.unwrap();
+        let bytes = source
+            .wallet()
+            .write()
+            .await
+            .save()
+            .expect("save returned an error")
+            .expect("nothing to save");
+
+        let read_config = || {
+            ClientConfig::builder()
+                .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
+                .set_wallet_dir(temp_dir.path().to_path_buf())
+                .set_wallet_config(WalletConfig::Read)
+                .build()
+                .unwrap()
+        };
+        let from_bytes = LightClient::from_bytes(bytes.clone(), read_config())
+            .await
+            .unwrap();
+        let from_reader = LightClient::from_reader(Cursor::new(bytes), read_config())
+            .await
+            .unwrap();
+
+        assert_eq!(from_bytes.mnemonic_phrase(), from_reader.mnemonic_phrase());
+        assert_eq!(from_bytes.birthday(), from_reader.birthday());
+        assert_eq!(
+            from_bytes.transparent_addresses_json().await,
+            from_reader.transparent_addresses_json().await,
+        );
+        assert_eq!(
+            from_bytes.unified_addresses_json().await,
+            from_reader.unified_addresses_json().await,
+        );
+        let chain_type = from_bytes.chain_type();
+        let mut bytes_serialized = Vec::new();
+        from_bytes
+            .wallet()
+            .write()
+            .await
+            .write(&mut bytes_serialized, &chain_type)
+            .unwrap();
+        let mut reader_serialized = Vec::new();
+        from_reader
+            .wallet()
+            .write()
+            .await
+            .write(&mut reader_serialized, &chain_type)
+            .unwrap();
+        assert_eq!(bytes_serialized, reader_serialized);
     }
 
     /// The `info` data/error channel contract (zingolabs/zingolib#2446).
