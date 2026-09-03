@@ -30,8 +30,8 @@ use zcash_primitives::transaction::fees::zip317;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::Zatoshis;
 use zcash_transparent::address::TransparentAddress;
-use zcash_transparent::bundle::{OutPoint, TxOut};
 use zcash_transparent::builder::TransparentSigningSet;
+use zcash_transparent::bundle::{OutPoint, TxOut};
 use zcash_transparent::keys::TransparentKeyScope;
 
 use pepper_sync::keys::transparent::TransparentAddressId;
@@ -99,9 +99,17 @@ impl LightWallet {
         let pubkey = TransparentSigningSet::new().add_key(secret_key);
         let script = carrier.script().into();
 
-        let mut builder = Builder::new(self.chain_type, target_height, transparent_only_build_config());
+        let mut builder = Builder::new(
+            self.chain_type,
+            target_height,
+            transparent_only_build_config(),
+        );
         builder
-            .add_transparent_p2pkh_input(pubkey, OutPoint::new([0u8; 32], 0), TxOut::new(amount, script))
+            .add_transparent_p2pkh_input(
+                pubkey,
+                OutPoint::new([0u8; 32], 0),
+                TxOut::new(amount, script),
+            )
             .map_err(|e| WalletError::SwapBuild(format!("fee estimate input: {e:?}")))?;
         builder
             .add_transparent_output(vault, amount)
@@ -179,7 +187,11 @@ impl LightWallet {
         let mut signing_set = TransparentSigningSet::new();
         let pubkey = signing_set.add_key(secret_key);
 
-        let mut builder = Builder::new(self.chain_type, target_height, transparent_only_build_config());
+        let mut builder = Builder::new(
+            self.chain_type,
+            target_height,
+            transparent_only_build_config(),
+        );
         builder
             .add_transparent_p2pkh_input(pubkey, carrier_outpoint, carrier_txout)
             .map_err(|e| WalletError::SwapBuild(format!("carrier input: {e:?}")))?;
@@ -237,7 +249,10 @@ impl LightWallet {
             .enumerate()
             .find(|(_, out)| *out.script_pubkey() == carrier_script)
             .ok_or(WalletError::SwapCarrierOutputMissing)?;
-        Ok((OutPoint::new(deshield_txid.into(), index as u32), txout.clone()))
+        Ok((
+            OutPoint::new(deshield_txid.into(), index as u32),
+            txout.clone(),
+        ))
     }
 
     /// Records a calculated swap transaction in the wallet, mirroring
@@ -250,8 +265,11 @@ impl LightWallet {
         raw_tx: &[u8],
         target_height: BlockHeight,
     ) -> Result<TxId, WalletError> {
-        let transaction = Transaction::read(raw_tx, BranchId::for_height(&self.chain_type, target_height))
-            .map_err(WalletError::TransactionRead)?;
+        let transaction = Transaction::read(
+            raw_tx,
+            BranchId::for_height(&self.chain_type, target_height),
+        )
+        .map_err(WalletError::TransactionRead)?;
         let txid = transaction.txid();
 
         let timestamp = std::time::SystemTime::now()
@@ -347,7 +365,15 @@ mod tests {
                 target_height,
             )
             .expect("fee estimate");
-        (carrier_id, carrier, vault, op_return, amount, target_height, fee)
+        (
+            carrier_id,
+            carrier,
+            vault,
+            op_return,
+            amount,
+            target_height,
+            fee,
+        )
     }
 
     /// The raw script bytes of a transparent output.
@@ -399,7 +425,11 @@ mod tests {
             .transparent_bundle()
             .expect("carrier is a transparent transaction");
 
-        assert_eq!(bundle.vin.len(), 1, "carrier spends exactly the deshield output");
+        assert_eq!(
+            bundle.vin.len(),
+            1,
+            "carrier spends exactly the deshield output"
+        );
         assert_eq!(bundle.vin[0].prevout().n(), 0);
         assert_eq!(bundle.vin[0].prevout().hash(), &[7u8; 32]);
 
@@ -411,7 +441,11 @@ mod tests {
             .iter()
             .find(|out| *out.script_pubkey() == vault_script)
             .expect("a vault output");
-        assert_eq!(vault_out.value(), amount, "vault is paid the deposit amount");
+        assert_eq!(
+            vault_out.value(),
+            amount,
+            "vault is paid the deposit amount"
+        );
 
         let op_return_out = bundle
             .vout
@@ -441,9 +475,20 @@ mod tests {
         let (_, _, _, _, _, _, short_fee) = carrier_fixture(&mut wallet, 100_000, b"=:ZEC.ZEC:x");
         let (_, _, _, _, _, _, max_fee) = carrier_fixture(&mut wallet, 100_000, &[0u8; 80]);
 
-        assert!(u64::from(short_fee) >= 10_000, "at least the ZIP-317 grace floor");
-        assert_eq!(u64::from(short_fee) % 5_000, 0, "a multiple of the marginal fee");
-        assert_eq!(u64::from(max_fee) % 5_000, 0, "a multiple of the marginal fee");
+        assert!(
+            u64::from(short_fee) >= 10_000,
+            "at least the ZIP-317 grace floor"
+        );
+        assert_eq!(
+            u64::from(short_fee) % 5_000,
+            0,
+            "a multiple of the marginal fee"
+        );
+        assert_eq!(
+            u64::from(max_fee) % 5_000,
+            0,
+            "a multiple of the marginal fee"
+        );
         assert!(
             max_fee >= short_fee,
             "a larger memo never costs less: {max_fee:?} vs {short_fee:?}"
@@ -495,7 +540,10 @@ mod tests {
             &op_return,
             target_height,
         );
-        assert!(result.is_err(), "surplus with no change output cannot balance");
+        assert!(
+            result.is_err(),
+            "surplus with no change output cannot balance"
+        );
     }
 
     /// An empty memo is a valid (if pointless) OP_RETURN, and still builds.

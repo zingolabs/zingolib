@@ -1702,13 +1702,16 @@ async fn swap_deposit_carries_op_return_to_vault_on_chain() {
     const MEMO: &[u8] = b"=:ZEC.ZEC:tz==maya1abcdefghij:100000000";
     let amount = Zatoshis::const_from_u64(100_000);
 
-    let (ref local_net, mut faucet, mut recipient) =
-        scenarios::faucet_recipient_default().await;
+    let (ref local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
 
     scenarios::send_and_bump(
         local_net,
         &mut faucet,
-        vec![(&get_base_address_macro!(recipient, "unified"), 500_000, None)],
+        vec![(
+            &get_base_address_macro!(recipient, "unified"),
+            500_000,
+            None,
+        )],
     )
     .await;
     recipient.sync_and_await().await.unwrap();
@@ -1717,13 +1720,7 @@ async fn swap_deposit_carries_op_return_to_vault_on_chain() {
     let memo = OpReturnData::new(MEMO.to_vec()).unwrap();
 
     let reports = recipient
-        .propose_swap_deposit(
-            &vault_address,
-            amount,
-            memo,
-            zip32::AccountId::ZERO,
-            false,
-        )
+        .propose_swap_deposit(&vault_address, amount, memo, zip32::AccountId::ZERO, false)
         .await
         .unwrap();
     assert_eq!(reports.len(), 2, "a deshield and a memo carrier are sent");
@@ -1754,7 +1751,11 @@ async fn swap_deposit_carries_op_return_to_vault_on_chain() {
         .transparent_bundle()
         .expect("carrier is a transparent transaction");
 
-    assert_eq!(bundle.vin.len(), 1, "carrier spends the single deshield output");
+    assert_eq!(
+        bundle.vin.len(),
+        1,
+        "carrier spends the single deshield output"
+    );
 
     assert_eq!(bundle.vout.len(), 2, "vault + OP_RETURN, no change output");
 

@@ -828,17 +828,14 @@ impl LightClient {
             )
             .map_err(|e| SendError::SwapDeposit(WalletError::ParseError(e)))?;
 
-            let deshield_request =
-                transaction_request_from_receivers(vec![Receiver::new(
-                    carrier_zcash_address,
-                    deshield_amount,
-                    None,
-                )])
-                .map_err(|e| {
-                    SendError::SwapDeposit(WalletError::SwapBuild(format!(
-                        "deshield request: {e}"
-                    )))
-                })?;
+            let deshield_request = transaction_request_from_receivers(vec![Receiver::new(
+                carrier_zcash_address,
+                deshield_amount,
+                None,
+            )])
+            .map_err(|e| {
+                SendError::SwapDeposit(WalletError::SwapBuild(format!("deshield request: {e}")))
+            })?;
 
             (
                 deshield_request,
