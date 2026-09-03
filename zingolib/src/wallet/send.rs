@@ -142,6 +142,20 @@ impl LightWallet {
     /// Whether this wallet can materialize `protocol`'s note commitment tree root, and witnesses to it, as of `height`.
     pub(crate) fn anchor_is_computable(&self, protocol: ShieldedPool, height: BlockHeight) -> bool {
         self.shards_are_scanned(protocol, None, height)
+            && self.checkpoint_is_retained(protocol, height)
+    }
+
+    /// Whether `protocol`'s shard tree retains a checkpoint at `height`.
+    fn checkpoint_is_retained(&self, protocol: ShieldedPool, height: BlockHeight) -> bool {
+        use shardtree::store::ShardStore;
+
+        match protocol {
+            ShieldedPool::Sapling => self.shard_trees.sapling.store().get_checkpoint(&height),
+            ShieldedPool::Orchard => self.shard_trees.orchard.store().get_checkpoint(&height),
+            ShieldedPool::Ironwood => self.shard_trees.ironwood.store().get_checkpoint(&height),
+        }
+        .expect("memory shard store is infallible")
+        .is_some()
     }
 
     /// Whether every shard carrying `protocol` notes between `note_height` (the scan floor when absent) and `anchor_height` is scanned.

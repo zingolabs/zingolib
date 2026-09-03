@@ -9,9 +9,12 @@
 //! live versions are never removed. They eventually move to a gated
 //! "pre-migration" mod once side-by-side equivalence is documented).
 
+use pepper_sync::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 use pepper_sync::wallet::IronwoodNote;
+use shardtree::store::ShardStore;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedPool;
+use zcash_protocol::consensus::BlockHeight;
 
 use crate::check_client_balances;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
@@ -1292,5 +1295,135 @@ async fn switching_the_mixnet_off_reports_the_clearnet_route() {
             "a switched-off session reported {:?} instead of clearnet",
             report.route
         );
+    }
+}
+
+#[tokio::test]
+async fn shardtree_roundtrip_restores_retained_checkpoints() {
+    fn checkpoint_exists<S>(store: &S, height: u32) -> bool
+    where
+        S: ShardStore<CheckpointId = BlockHeight>,
+    {
+        store
+            .get_checkpoint(&BlockHeight::from_u32(height))
+            .expect("infallible")
+            .is_some()
+    }
+
+    fn all_checkpoints_stored<S>(store: &S, chain_height: u32) -> bool
+    where
+        S: ShardStore<CheckpointId = BlockHeight>,
+    {
+        for boundary in [144, 288] {
+            if !checkpoint_exists(store, boundary) {
+                return false;
+            }
+        }
+        for rolling_window in
+            (chain_height - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1)..=chain_height
+        {
+            if !checkpoint_exists(store, rolling_window) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn all_boundaries_retained<S>(store: &S, chain_height: u32) -> bool
+    where
+        S: ShardStore<CheckpointId = BlockHeight>,
+    {
+        let retained = store.retained_checkpoints().unwrap();
+        let no_of_boundaries = chain_height / 144;
+        for boundary_index in 0..no_of_boundaries {
+            let boundary = (boundary_index + 1) * 144;
+            if !retained.contains(&BlockHeight::from_u32(boundary)) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    let mut chain_height = 500;
+    let mut net = MockNet::launch().await;
+    let mut recipient = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+
+    net.chain.write().await.mine_empty_blocks(chain_height - 2);
+    recipient.sync_and_await().await.unwrap();
+
+    // create shielded note commitments to trigger checkpoint pruning
+    let recipient_ua =
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    recipient.sync_and_await().await.unwrap();
+
+    {
+        let shard_trees = &recipient.wallet().read().await.shard_trees;
+        assert!(all_checkpoints_stored(
+            shard_trees.sapling.store(),
+            chain_height
+        ));
+        assert!(all_checkpoints_stored(
+            shard_trees.orchard.store(),
+            chain_height
+        ));
+        assert!(all_checkpoints_stored(
+            shard_trees.ironwood.store(),
+            chain_height
+        ));
+        assert!(all_boundaries_retained(
+            shard_trees.sapling.store(),
+            chain_height
+        ));
+        assert!(all_boundaries_retained(
+            shard_trees.orchard.store(),
+            chain_height
+        ));
+        assert!(all_boundaries_retained(
+            shard_trees.ironwood.store(),
+            chain_height
+        ));
+    }
+
+    recipient.save_task().await;
+    recipient.wait_for_save().await;
+    recipient.shutdown_save_task().await.unwrap();
+    drop(recipient);
+
+    let mut reloaded_recipient = net.client_from_file(0).await;
+    // create shielded note commitments to trigger checkpoint pruning on first sync of reloaded client
+    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    chain_height += 2;
+    reloaded_recipient.sync_and_await().await.unwrap();
+    {
+        let shard_trees = &reloaded_recipient.wallet().read().await.shard_trees;
+        assert!(all_checkpoints_stored(
+            shard_trees.sapling.store(),
+            chain_height
+        ));
+        assert!(all_checkpoints_stored(
+            shard_trees.orchard.store(),
+            chain_height
+        ));
+        assert!(all_checkpoints_stored(
+            shard_trees.ironwood.store(),
+            chain_height
+        ));
+        assert!(all_boundaries_retained(
+            shard_trees.sapling.store(),
+            chain_height
+        ));
+        assert!(all_boundaries_retained(
+            shard_trees.orchard.store(),
+            chain_height
+        ));
+        assert!(all_boundaries_retained(
+            shard_trees.ironwood.store(),
+            chain_height
+        ));
     }
 }

@@ -43,7 +43,7 @@ use crate::wallet::{
     KeyIdInterface, NoteInterface, NullifierMap, OutputId, OutputInterface, PoolActivation,
     ScanTarget, SyncMode, SyncState, WalletBlock, WalletTransaction,
 };
-use crate::witness::LocatedTreeData;
+use crate::witness::{ANCHOR_RETENTION_INTERVALS, LocatedTreeData};
 
 use crate::witness;
 
@@ -61,6 +61,13 @@ pub mod truncate;
 /// upstream by documentation rather than import. If zebra ever moves
 /// its boundary, this constant is the one place that follows it.
 pub const MAX_REORG_ALLOWANCE: u32 = 100;
+
+/// The maximum number of checkpoints in the rolling window for re-org handling and chain tip anchor spends.
+pub const SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE: u32 = MAX_REORG_ALLOWANCE + 1;
+
+/// The maximum total number of checkpoints a shard tree persists.
+pub const MAX_SHARDTREE_CHECKPOINTS: u32 =
+    SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + ANCHOR_RETENTION_INTERVALS;
 
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
@@ -445,6 +452,8 @@ where
         chain_height,
         consensus_parameters,
     )?;
+
+    repin_anchor_checkpoints(consensus_parameters, &mut *wallet.write().await)?;
 
     let ufvks = wallet
         .read()
@@ -1726,8 +1735,9 @@ where
     H: incrementalmerkletree::Hashable + Clone + PartialEq,
 {
     let mut truncation_height = None;
+    let checkpoint_count = tree.store().checkpoint_count().expect("infallible");
     tree.store()
-        .for_each_checkpoint((MAX_REORG_ALLOWANCE + 1) as usize, |height, _| {
+        .for_each_checkpoint(checkpoint_count, |height, _| {
             if truncation_height.is_some() {
                 return Ok(());
             }
@@ -2030,6 +2040,7 @@ where
             fetch_request_sender,
             scan_range,
             highest_scanned_height,
+            witness::anchor_retention_policy(consensus_parameters),
             sapling_located_trees,
             orchard_located_trees,
             ironwood_located_trees,
@@ -2305,6 +2316,36 @@ where
         &mut shard_trees.ironwood,
     )?;
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
+
+    Ok(())
+}
+
+/// Re-derives the pinned anchor-checkpoint set of each shard tree from the retention policy in
+/// force for `consensus_parameters`, as of the wallet's newest scanned block.
+fn repin_anchor_checkpoints<W>(
+    consensus_parameters: &impl consensus::Parameters,
+    wallet: &mut W,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncShardTrees,
+{
+    let Some(policy) = witness::anchor_retention_policy(consensus_parameters) else {
+        return Ok(());
+    };
+    let Some(highest_scanned_height) = wallet
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .highest_scanned_height()
+    else {
+        return Ok(());
+    };
+    let window = witness::anchor_retention_window(&policy, highest_scanned_height);
+    let shard_trees = wallet
+        .get_shard_trees_mut()
+        .map_err(SyncError::WalletError)?;
+    witness::repin_anchor_checkpoints(&policy, &window, shard_trees.sapling.store_mut());
+    witness::repin_anchor_checkpoints(&policy, &window, shard_trees.orchard.store_mut());
+    witness::repin_anchor_checkpoints(&policy, &window, shard_trees.ironwood.store_mut());
 
     Ok(())
 }
