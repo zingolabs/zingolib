@@ -15,33 +15,19 @@ use zcash_protocol::{ShieldedPool, TxId};
 
 use super::LightWallet;
 use super::error::{CalculateTransactionError, KeyError};
-use super::op_return::OpReturnData;
 
 impl LightWallet {
-    /// Creates and stores transactions from the given `proposal`, returning the txids for each calculated transaction.
-    ///
-    /// When `op_return` is `Some`, the payload rides the final transaction
-    /// of the proposal — the ZIP-320 TEX exposure step, or the single step
-    /// otherwise — which is built by driving the transaction builder
-    /// directly. When `None`, the whole proposal is built by
-    /// `zcash_client_backend`.
+    /// Creates and stores transaction from the given `proposal`, returning the txids for each calculated transaction.
     pub(crate) async fn calculate_transactions<NoteRef>(
         &mut self,
         proposal: Proposal<zip317::FeeRule, NoteRef>,
         sending_account: zip32::AccountId,
-        op_return: Option<OpReturnData>,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
         let calculated_txids = match proposal.steps().len() {
-            1 => match op_return {
-                None => {
-                    self.create_proposed_transactions(proposal, sending_account)
-                        .await?
-                }
-                Some(op_return) => {
-                    self.build_proposal_with_op_return(proposal, sending_account, op_return)
-                        .await?
-                }
-            },
+            1 => {
+                self.create_proposed_transactions(proposal, sending_account)
+                    .await?
+            }
             2 if proposal.steps()[1]
                 .transaction_request()
                 .payments()
@@ -58,43 +44,14 @@ impl LightWallet {
                     )
                 }) =>
             {
-                match op_return {
-                    None => {
-                        self.create_proposed_transactions(proposal, sending_account)
-                            .await?
-                    }
-                    Some(op_return) => {
-                        self.build_proposal_with_op_return(proposal, sending_account, op_return)
-                            .await?
-                    }
-                }
+                self.create_proposed_transactions(proposal, sending_account)
+                    .await?
             }
             _ => return Err(CalculateTransactionError::NonTexMultiStep),
         };
         self.save_required = true;
 
         Ok(calculated_txids)
-    }
-
-    /// Builds a proposal whose final transaction carries an OP_RETURN
-    /// payload.
-    ///
-    /// `zcash_client_backend::create_proposed_transactions` exposes no hook
-    /// to add an output, so the payload-carrying step is built by driving
-    /// `zcash_primitives`' transaction builder directly: it reuses the
-    /// inputs, recipient outputs, and change the proposal already fixed,
-    /// then adds the null-data output via
-    /// `Builder::add_transparent_null_data_output` before proving and
-    /// signing. Fee correctness holds because the ZIP-317 `FeeRule`
-    /// accounts for the null-data output's serialized size and the
-    /// builder's value-balance check rejects a mismatched fee.
-    async fn build_proposal_with_op_return<NoteRef>(
-        &mut self,
-        _proposal: Proposal<zip317::FeeRule, NoteRef>,
-        _sending_account: zip32::AccountId,
-        _op_return: OpReturnData,
-    ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
-        todo!("build the payload-carrying step via the transaction builder")
     }
 
     async fn create_proposed_transactions<NoteRef>(

@@ -139,6 +139,20 @@ pub enum WalletError {
         "Cannot create a new wallet: a wallet file already exists at this path. Use WalletConfig::Read to load the existing wallet."
     )]
     WalletAlreadyCreated,
+    /// The swap-deposit vault address is not a transparent address. THORChain
+    /// and MAYAChain vaults are transparent-only (TSS-managed), so the memo
+    /// carrier must pay a `t`-address.
+    #[error("Swap deposit vault address is not a transparent (t) address.")]
+    SwapVaultNotTransparent,
+    /// The deshield output funding the memo carrier could not be located in
+    /// the deshield transaction's transparent outputs. This is an internal
+    /// invariant failure: the deshield step must pay the reserved carrier
+    /// address.
+    #[error("Swap deposit: deshielded carrier output not found in the deshield transaction.")]
+    SwapCarrierOutputMissing,
+    /// Building the OP_RETURN memo carrier transaction failed.
+    #[error("Swap deposit: memo carrier build failed: {0}")]
+    SwapBuild(String),
 }
 
 /// Price error. Exists only in nym builds: the fetch compiles only with

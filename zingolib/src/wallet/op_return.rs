@@ -67,4 +67,16 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn accepts_empty_payload() {
+        assert_eq!(OpReturnData::new(vec![]).unwrap().as_bytes(), b"");
+    }
+
+    #[test]
+    fn preserves_the_payload_bytes() {
+        let memo = b"=:ZEC.ZEC:tzabc:0/1/0".to_vec();
+        let data = OpReturnData::new(memo.clone()).unwrap();
+        assert_eq!(data.as_bytes(), memo.as_slice());
+    }
 }

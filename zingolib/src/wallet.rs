@@ -40,6 +40,7 @@ pub mod output;
 pub mod propose;
 pub mod send;
 pub mod summary;
+pub mod swap;
 pub mod sync;
 pub mod transaction;
 mod zcb_traits;
