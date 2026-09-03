@@ -368,8 +368,7 @@ impl LightClient {
         }
     }
 
-    /// Creates a [`LightClient`] by deserializing wallet bytes directly, without reading from
-    /// a file.
+    /// Creates a [`LightClient`] from wallet bytes already in memory, without reading a file.
     ///
     /// Intended for mobile platforms (iOS/Android) where the native layer (Swift/Kotlin) owns
     /// all file I/O: the native side reads the wallet file and passes the raw bytes across the
@@ -379,9 +378,8 @@ impl LightClient {
     /// to the OS temp directory (notably Android, where `std::env::temp_dir()` resolves to
     /// `/tmp` outside the app UID's reach).
     ///
-    /// The `config` is still required for the indexer URI and chain type. `wallet_dir` /
-    /// `wallet_name` within the config are retained on the resulting [`LightClient`] for any
-    /// subsequent save operations, but no file is read here.
+    /// This is a thin wrapper over [`LightClient::from_reader`] with a [`std::io::Cursor`]. See
+    /// that method for how `config` is used.
     #[allow(clippy::result_large_err)]
     pub async fn from_bytes(
         bytes: Vec<u8>,
@@ -390,7 +388,15 @@ impl LightClient {
         Self::from_reader(Cursor::new(bytes), config).await
     }
 
-    /// Builds a client from a wallet serialized in `reader`.
+    /// Creates a [`LightClient`] from a wallet read from `reader`, without a wallet file on disk.
+    ///
+    /// The `reader` is wrapped in a [`BufReader`] internally, so callers may pass an unbuffered
+    /// source such as a [`File`]. The read happens synchronously inside this `async fn`, so a
+    /// reader backed by blocking I/O blocks the executor thread for the duration of the read.
+    ///
+    /// The `config` is still required for the indexer URI and chain type. `wallet_dir` /
+    /// `wallet_name` within the config are retained on the resulting [`LightClient`] for any
+    /// subsequent save operations, but no file is read here.
     #[allow(clippy::result_large_err)]
     pub async fn from_reader<R: Read>(
         reader: R,
@@ -399,8 +405,8 @@ impl LightClient {
         // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
         zingo_netutils::ensure_default_crypto_provider();
 
-        let wallet =
-            LightWallet::read(reader, config.chain_type()).map_err(LightClientError::FileError)?;
+        let wallet = LightWallet::read(BufReader::new(reader), config.chain_type())
+            .map_err(LightClientError::FileError)?;
 
         let indexer = if let Some(uri) = config.indexer_uri() {
             Some(zingo_netutils::GrpcIndexer::new(uri).await?)
@@ -800,10 +806,7 @@ impl std::fmt::Debug for LightClient {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs::File,
-        io::{BufReader, Cursor},
-    };
+    use std::io::{Cursor, Read};
 
     use crate::{
         config::{ChainType, ClientConfig, WalletConfig},
@@ -906,51 +909,19 @@ mod tests {
         );
     }
 
-    /// Reads a saved wallet file through `from_reader` and checks the seed parses correctly.
-    #[tokio::test]
-    async fn from_reader_over_buffered_file() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = ClientConfig::builder()
-            .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
-            .set_wallet_dir(temp_dir.path().to_path_buf())
-            .set_wallet_config(WalletConfig::MnemonicPhrase {
-                mnemonic_phrase: CHIMNEY_BETTER_SEED.to_string(),
-                no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1,
-                wallet_settings: default_test_wallet_settings(),
-            })
-            .build()
-            .unwrap();
+    /// A reader that yields at most one byte per `read` call.
+    struct OneByteReader(Cursor<Vec<u8>>);
 
-        let mut source = LightClient::new(config.clone(), false).await.unwrap();
-        source.save_task().await;
-        source.wait_for_save().await;
-
-        let file = File::open(config.get_wallet_path()).unwrap();
-        let restored_config = ClientConfig::builder()
-            .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
-            .set_wallet_dir(temp_dir.path().to_path_buf())
-            .set_wallet_config(WalletConfig::Read)
-            .build()
-            .unwrap();
-        let restored = LightClient::from_reader(BufReader::new(file), restored_config)
-            .await
-            .unwrap();
-
-        assert_eq!(
-            restored.mnemonic_phrase().as_deref(),
-            Some(CHIMNEY_BETTER_SEED)
-        );
-        assert_eq!(source.mnemonic_phrase(), restored.mnemonic_phrase());
-        assert_eq!(
-            source.transparent_addresses_json().await[0]["encoded_address"],
-            restored.transparent_addresses_json().await[0]["encoded_address"],
-        );
+    impl Read for OneByteReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let len = buf.len().min(1);
+            self.0.read(&mut buf[..len])
+        }
     }
 
-    /// Feeds the same bytes to `from_bytes` and `from_reader` and checks that wallets match.
+    /// Feeds one byte per call to `from_reader` and checks the wallet matches `from_bytes`.
     #[tokio::test]
-    async fn from_bytes_and_from_reader_agree() {
+    async fn from_reader_with_one_byte_reads_matches_from_bytes() {
         let temp_dir = TempDir::new().unwrap();
         let config = ClientConfig::builder()
             .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
@@ -984,10 +955,15 @@ mod tests {
         let from_bytes = LightClient::from_bytes(bytes.clone(), read_config())
             .await
             .unwrap();
-        let from_reader = LightClient::from_reader(Cursor::new(bytes), read_config())
-            .await
-            .unwrap();
+        let from_reader =
+            LightClient::from_reader(OneByteReader(Cursor::new(bytes)), read_config())
+                .await
+                .unwrap();
 
+        assert_eq!(
+            from_reader.mnemonic_phrase().as_deref(),
+            Some(CHIMNEY_BETTER_SEED)
+        );
         assert_eq!(from_bytes.mnemonic_phrase(), from_reader.mnemonic_phrase());
         assert_eq!(from_bytes.birthday(), from_reader.birthday());
         assert_eq!(
