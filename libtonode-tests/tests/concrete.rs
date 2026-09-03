@@ -1689,6 +1689,100 @@ async fn mine_to_transparent_coinbase_maturity() {
     assert_eq!(mature_balance, scenarios::mined_block_rewards_total(3));
 }
 
+/// A THORChain / MAYAChain swap deposit round-trips on regtest: from a
+/// shielded balance, `propose_swap_deposit` broadcasts a deshield and a
+/// transparent memo carrier, and once mined the carrier confirms as a
+/// transparent transaction paying the vault with the swap memo in an
+/// OP_RETURN output and no change.
+#[tokio::test]
+async fn swap_deposit_carries_op_return_to_vault_on_chain() {
+    use zingolib::wallet::op_return::OpReturnData;
+
+    /// A representative MAYAChain swap memo, well under the 80-byte limit.
+    const MEMO: &[u8] = b"=:ZEC.ZEC:tz==maya1abcdefghij:100000000";
+    let amount = Zatoshis::const_from_u64(100_000);
+
+    let (ref local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
+
+    scenarios::send_and_bump(
+        local_net,
+        &mut faucet,
+        vec![(
+            &get_base_address_macro!(recipient, "unified"),
+            500_000,
+            None,
+        )],
+    )
+    .await;
+    recipient.sync_and_await().await.unwrap();
+
+    let vault_address = get_base_address_macro!(faucet, "transparent");
+    let memo = OpReturnData::new(MEMO.to_vec()).unwrap();
+
+    let reports = recipient
+        .propose_swap_deposit(&vault_address, amount, memo, zip32::AccountId::ZERO, false)
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 2, "a deshield and a memo carrier are sent");
+    let deshield_txid = reports[0].txid;
+    let carrier_txid = reports[1].txid;
+
+    increase_height_and_wait_for_client(local_net, &mut recipient, 3)
+        .await
+        .unwrap();
+
+    let wallet = recipient.wallet();
+    let wallet = wallet.read().await;
+
+    let deshield = wallet
+        .wallet_transactions
+        .get(&deshield_txid)
+        .expect("deshield recorded");
+    assert!(deshield.status().is_confirmed(), "deshield confirmed");
+
+    let carrier = wallet
+        .wallet_transactions
+        .get(&carrier_txid)
+        .expect("carrier recorded");
+    assert!(carrier.status().is_confirmed(), "carrier confirmed");
+
+    let bundle = carrier
+        .transaction()
+        .transparent_bundle()
+        .expect("carrier is a transparent transaction");
+
+    assert_eq!(
+        bundle.vin.len(),
+        1,
+        "carrier spends the single deshield output"
+    );
+
+    assert_eq!(bundle.vout.len(), 2, "vault + OP_RETURN, no change output");
+
+    let op_return_out = bundle
+        .vout
+        .iter()
+        .find(|out| out.value() == Zatoshis::ZERO)
+        .expect("a zero-value OP_RETURN output");
+    let script = op_return_out.script_pubkey().0.0.clone();
+    assert_eq!(script[0], 0x6a, "null-data script starts with OP_RETURN");
+    assert!(
+        script.windows(MEMO.len()).any(|w| w == MEMO),
+        "the OP_RETURN carries the memo payload verbatim"
+    );
+
+    let vault_out = bundle
+        .vout
+        .iter()
+        .find(|out| out.value() == amount)
+        .expect("a vault output paying the deposit amount");
+    assert_ne!(
+        vault_out.value(),
+        Zatoshis::ZERO,
+        "the vault output is the non-null-data output"
+    );
+}
+
 mod testnet_test {
     use pepper_sync::sync_status;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;

@@ -755,6 +755,131 @@ impl LightClient {
         reports
     }
 
+    /// Makes a swap deposit to a transparent THORChain / MAYAChain vault,
+    /// attaching `memo` as an OP_RETURN.
+    ///
+    /// The deposit is two transactions, the same shape as a ZIP-320 TEX
+    /// pair: a deshield from shielded funds to a freshly reserved,
+    /// wallet-owned transparent address, then a transparent memo carrier
+    /// spending that output to `vault_address` with the swap memo in an
+    /// OP_RETURN. The carrier's transparent input is the sender THORChain /
+    /// MAYAChain derive their refund address from, so the deposit is
+    /// refundable; a shielded-funded deposit would not be. The deshield
+    /// funds the carrier exactly, so the carrier has no change output.
+    ///
+    /// Returns the transmit reports for both transactions, deshield first.
+    pub async fn propose_swap_deposit(
+        &mut self,
+        vault_address: &str,
+        amount: zcash_protocol::value::Zatoshis,
+        memo: crate::wallet::op_return::OpReturnData,
+        account_id: zip32::AccountId,
+        resume_sync: bool,
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        use zcash_protocol::consensus::Parameters as _;
+
+        use crate::data::receivers::{Receiver, transaction_request_from_receivers};
+        use crate::wallet::error::WalletError;
+
+        let (deshield_request, carrier_address_id, carrier_address, vault, target_height) = {
+            let mut wallet = self.wallet().write().await;
+            let chain_type = wallet.chain_type();
+
+            let vault = zcash_address::ZcashAddress::try_from_encoded(vault_address)
+                .map_err(|e| SendError::SwapDeposit(WalletError::ParseError(e)))?
+                .convert_if_network::<zcash_transparent::address::TransparentAddress>(
+                    chain_type.network_type(),
+                )
+                .map_err(|_| SendError::SwapDeposit(WalletError::SwapVaultNotTransparent))?;
+
+            let (carrier_address_id, carrier_address) = wallet
+                .generate_refund_addresses(1, account_id)
+                .map_err(|e| SendError::SwapDeposit(WalletError::from(e)))?
+                .into_iter()
+                .next()
+                .expect("a request for one address yields one address");
+
+            let target_height = wallet
+                .get_migration_heights()
+                .map_err(SendError::SwapDeposit)?
+                .ok_or(SendError::SwapDeposit(WalletError::NoSyncData))?
+                .0;
+
+            let carrier_fee = wallet
+                .op_return_carrier_fee(
+                    account_id,
+                    carrier_address_id,
+                    &carrier_address,
+                    &vault,
+                    amount,
+                    &memo,
+                    target_height,
+                )
+                .map_err(SendError::SwapDeposit)?;
+
+            let deshield_amount = (amount + carrier_fee).ok_or_else(|| {
+                SendError::SwapDeposit(WalletError::SwapBuild(
+                    "deshield amount overflows the zatoshi range".to_string(),
+                ))
+            })?;
+
+            let carrier_zcash_address = zcash_address::ZcashAddress::try_from_encoded(
+                &pepper_sync::keys::transparent::encode_address(&chain_type, carrier_address),
+            )
+            .map_err(|e| SendError::SwapDeposit(WalletError::ParseError(e)))?;
+
+            let deshield_request = transaction_request_from_receivers(vec![Receiver::new(
+                carrier_zcash_address,
+                deshield_amount,
+                None,
+            )])
+            .map_err(|e| {
+                SendError::SwapDeposit(WalletError::SwapBuild(format!("deshield request: {e}")))
+            })?;
+
+            (
+                deshield_request,
+                carrier_address_id,
+                carrier_address,
+                vault,
+                target_height,
+            )
+        };
+
+        let deshield_reports = self
+            .quick_send_reported(deshield_request, account_id, resume_sync)
+            .await?;
+        let deshield_txid = deshield_reports.first().txid;
+
+        let carrier_txid = {
+            let mut wallet = self.wallet().write().await;
+            let (carrier_outpoint, carrier_txout) = wallet
+                .locate_deshield_output(deshield_txid, &carrier_address)
+                .map_err(SendError::SwapDeposit)?;
+            wallet
+                .build_op_return_carrier(
+                    account_id,
+                    carrier_address_id,
+                    carrier_outpoint,
+                    carrier_txout,
+                    &vault,
+                    amount,
+                    &memo,
+                    target_height,
+                )
+                .map_err(SendError::SwapDeposit)?
+        };
+        let carrier_reports = self
+            .transmit_transactions(NonEmpty::new(carrier_txid))
+            .await?;
+
+        let mut reports = deshield_reports;
+        for report in carrier_reports {
+            reports.push(report);
+        }
+        Ok(reports)
+    }
+
     /// Shields all transparent funds skipping proposal confirmation. The
     /// sync engine is paused before the proposal's wallet reads and
     /// restored to its prior mode when the call returns. The shield path
