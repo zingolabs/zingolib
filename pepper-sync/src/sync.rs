@@ -43,7 +43,7 @@ use crate::wallet::{
     KeyIdInterface, NoteInterface, NullifierMap, OutputId, OutputInterface, PoolActivation,
     ScanTarget, SyncMode, SyncState, WalletBlock, WalletTransaction,
 };
-use crate::witness::LocatedTreeData;
+use crate::witness::{ANCHOR_RETENTION_INTERVALS, LocatedTreeData};
 
 use crate::witness;
 
@@ -61,9 +61,6 @@ pub mod truncate;
 /// upstream by documentation rather than import. If zebra ever moves
 /// its boundary, this constant is the one place that follows it.
 pub const MAX_REORG_ALLOWANCE: u32 = 100;
-
-/// The maximum number of checkpoint boundaries to retain.
-pub const MAX_BOUNDARY_CHECKPOINTS: u32 = 6;
 
 /// The maximum total number of checkpoints a shard tree persists.
 /// This does not include retained boundary checkpoints.

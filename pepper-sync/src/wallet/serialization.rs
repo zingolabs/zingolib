@@ -1356,6 +1356,8 @@ impl ShardTrees {
 
 #[cfg(test)]
 mod tests {
+    use crate::witness::ANCHOR_RETENTION_INTERVALS;
+
     use super::*;
 
     // Helper: build a minimal v3 SyncState byte blob (no ironwood_shard_ranges).
@@ -1465,9 +1467,9 @@ mod tests {
     }
 
     /// The checkpoint set of a synced wallet decomposes into exactly two parts:
-    /// [`MAX_REORG_ALLOWANCE`] rolling checkpoints, which serve ordinary reorg handling and
-    /// near-tip spends, plus [`MAX_BOUNDARY_CHECKPOINTS`] pinned ZIP 318 grid boundaries,
-    /// which serve pool crossings. Their sum is [`MAX_SHARDTREE_CHECKPOINTS`].
+    /// [`MAX_SHARDTREE_CHECKPOINTS`] rolling checkpoints, which serve ordinary reorg handling and
+    /// near-tip spends, plus [`ANCHOR_RETENTION_INTERVALS`] pinned ZIP 318 grid boundaries,
+    /// which serve pool crossings.
     ///
     /// The two parts are disjoint and independently bounded: pinning a boundary must not
     /// consume a rolling slot (that would shrink the reorg window), and the rolling budget must
@@ -1475,7 +1477,6 @@ mod tests {
     #[test]
     fn checkpoint_set_is_reorg_window_plus_pinned_boundaries() {
         use crate::shardtree_ext::ShardTreeExt as _;
-        use crate::sync::MAX_BOUNDARY_CHECKPOINTS;
         use crate::witness::{anchor_retention_window, repin_anchor_checkpoints};
         use zcash_client_backend::data_api::anchor_retention::{
             AnchorRetention, AnchorRetentionInterval,
@@ -1524,8 +1525,8 @@ mod tests {
             (rolling.len(), pinned.len(), total),
             (
                 MAX_SHARDTREE_CHECKPOINTS as usize,
-                MAX_BOUNDARY_CHECKPOINTS as usize,
-                (MAX_SHARDTREE_CHECKPOINTS + MAX_BOUNDARY_CHECKPOINTS) as usize,
+                ANCHOR_RETENTION_INTERVALS as usize,
+                (MAX_SHARDTREE_CHECKPOINTS + ANCHOR_RETENTION_INTERVALS) as usize,
             ),
             "(rolling, pinned, total): the pinned boundaries must not be part of the \
              MAX_SHARDTREE_CHECKPOINTS total"
@@ -1563,7 +1564,7 @@ mod tests {
         }
         assert_eq!(
             reloaded_store.checkpoint_count().expect("infallible"),
-            (MAX_SHARDTREE_CHECKPOINTS + MAX_BOUNDARY_CHECKPOINTS) as usize
+            (MAX_SHARDTREE_CHECKPOINTS + ANCHOR_RETENTION_INTERVALS) as usize
         );
     }
 
