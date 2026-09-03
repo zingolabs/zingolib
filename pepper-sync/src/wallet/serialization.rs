@@ -35,7 +35,7 @@ use crate::{
         KeyId, decode_unified_address,
         transparent::{TransparentAddressId, TransparentScope},
     },
-    sync::{MAX_BOUNDARY_CHECKPOINTS, MAX_SHARDTREE_CHECKPOINTS, ScanPriority, ScanRange},
+    sync::{MAX_SHARDTREE_CHECKPOINTS, ScanPriority, ScanRange},
     wallet::ScanTarget,
 };
 
@@ -1342,11 +1342,6 @@ impl ShardTrees {
                 Ok(())
             })
             .expect("Infallible");
-        if checkpoints.len() > (MAX_SHARDTREE_CHECKPOINTS + MAX_BOUNDARY_CHECKPOINTS) as usize {
-            let keep_from =
-                checkpoints.len() - (MAX_SHARDTREE_CHECKPOINTS + MAX_BOUNDARY_CHECKPOINTS) as usize;
-            checkpoints.drain(..keep_from);
-        }
         write_with_error_handling!(write_checkpoints, checkpoints);
 
         // Write cap
@@ -1572,27 +1567,22 @@ mod tests {
         );
     }
 
+    /// Serialization preserves the checkpoints pruning left instead of imposing a cap.
     #[test]
     fn shardtree_roundtrip_keeps_newest_checkpoints() {
+        use crate::shardtree_ext::ShardTreeExt as _;
+
         let mut shard_trees = ShardTrees::new();
 
         for height in 1..=150 {
             let height = BlockHeight::from_u32(height);
             shard_trees
                 .sapling
-                .store_mut()
-                .add_checkpoint(
-                    height,
-                    Checkpoint::from_parts(TreeState::Empty, BTreeSet::new()),
-                )
+                .append_checkpoint(height)
                 .expect("infallible");
             shard_trees
                 .orchard
-                .store_mut()
-                .add_checkpoint(
-                    height,
-                    Checkpoint::from_parts(TreeState::Empty, BTreeSet::new()),
-                )
+                .append_checkpoint(height)
                 .expect("infallible");
         }
 
@@ -1603,98 +1593,81 @@ mod tests {
         let sapling_store = roundtripped.sapling.store();
         let orchard_store = roundtripped.orchard.store();
 
-        assert_eq!(
-            sapling_store.checkpoint_count().expect("infallible"),
-            (MAX_SHARDTREE_CHECKPOINTS + MAX_BOUNDARY_CHECKPOINTS) as usize
-        );
-        assert_eq!(
-            orchard_store.checkpoint_count().expect("infallible"),
-            (MAX_SHARDTREE_CHECKPOINTS + MAX_BOUNDARY_CHECKPOINTS) as usize
-        );
-        assert_eq!(
-            sapling_store.min_checkpoint_id().expect("infallible"),
-            Some(BlockHeight::from_u32(44))
-        );
-        assert_eq!(
-            sapling_store.max_checkpoint_id().expect("infallible"),
-            Some(BlockHeight::from_u32(150))
-        );
-        assert_eq!(
-            orchard_store.min_checkpoint_id().expect("infallible"),
-            Some(BlockHeight::from_u32(44))
-        );
-        assert_eq!(
-            orchard_store.max_checkpoint_id().expect("infallible"),
-            Some(BlockHeight::from_u32(150))
-        );
-        assert!(
-            sapling_store
-                .get_checkpoint(&BlockHeight::from_u32(149))
-                .expect("infallible")
-                .is_some()
-        );
-        assert!(
-            sapling_store
-                .get_checkpoint(&BlockHeight::from_u32(43))
-                .expect("infallible")
-                .is_none()
-        );
+        let oldest_kept = BlockHeight::from_u32(150 - MAX_SHARDTREE_CHECKPOINTS + 1);
+        fn assert_window<S>(store: &S, oldest_kept: BlockHeight)
+        where
+            S: ShardStore<CheckpointId = BlockHeight, Error = std::convert::Infallible>,
+        {
+            assert_eq!(
+                store.checkpoint_count().expect("infallible"),
+                MAX_SHARDTREE_CHECKPOINTS as usize
+            );
+            assert_eq!(
+                store.min_checkpoint_id().expect("infallible"),
+                Some(oldest_kept)
+            );
+            assert_eq!(
+                store.max_checkpoint_id().expect("infallible"),
+                Some(BlockHeight::from_u32(150))
+            );
+            assert!(
+                store
+                    .get_checkpoint(&(oldest_kept - 1))
+                    .expect("infallible")
+                    .is_none()
+            );
+        }
+        assert_window(sapling_store, oldest_kept);
+        assert_window(orchard_store, oldest_kept);
     }
 
-    /// A pinned anchor checkpoint must survive the write cap. The pinned set itself is not
-    /// persisted, being re-derived at the start of every sync.
+    /// A pinned anchor checkpoint survives serialization even once it has aged out of the
+    /// rolling window. The pinned set itself is not persisted, being re-derived at the start of
+    /// every sync.
     #[test]
     fn shardtree_roundtrip_keeps_pinned_anchor_checkpoints() {
+        use crate::shardtree_ext::ShardTreeExt as _;
+
+        let pinned = BlockHeight::from_u32(24);
         let mut shard_trees = ShardTrees::new();
 
-        for height in 1..=150 {
-            let height = BlockHeight::from_u32(height);
-            shard_trees
-                .sapling
-                .store_mut()
-                .add_checkpoint(
-                    height,
-                    Checkpoint::from_parts(TreeState::Empty, BTreeSet::new()),
-                )
-                .expect("infallible");
-        }
         shard_trees
             .sapling
             .store_mut()
-            .add_retained_checkpoint(BlockHeight::from_u32(24))
+            .add_retained_checkpoint(pinned)
             .expect("infallible");
-        // FIXME: this needs to be pruned before we can assert the correct checkpoints are retained.
-        // currently there are more checkpoints than the amount that would exist after pruning.
-        // in fact, I think this is a case to remove the fixed cap on checkpoints during serialization
-        // to avoid cases where serialization may delete retained checkpoints.
+        for height in 1..=150 {
+            shard_trees
+                .sapling
+                .append_checkpoint(BlockHeight::from_u32(height))
+                .expect("infallible");
+        }
+
+        assert!(
+            shard_trees
+                .sapling
+                .store()
+                .get_checkpoint(&pinned)
+                .expect("infallible")
+                .is_some(),
+            "pruning must not evict a pinned checkpoint"
+        );
 
         let mut bytes = Vec::new();
         shard_trees.write(&mut bytes).expect("write should succeed");
         let roundtripped = ShardTrees::read(bytes.as_slice()).expect("read should succeed");
 
         let sapling_store = roundtripped.sapling.store();
-        assert_eq!(
-            sapling_store.checkpoint_count().expect("infallible"),
-            (MAX_SHARDTREE_CHECKPOINTS + MAX_BOUNDARY_CHECKPOINTS) as usize
-        );
         assert!(
             sapling_store
-                .get_checkpoint(&BlockHeight::from_u32(24))
+                .get_checkpoint(&pinned)
                 .expect("infallible")
                 .is_some(),
-            "pinned checkpoint must survive the write cap"
+            "serialization must not evict a pinned checkpoint"
         );
-        assert!(
-            sapling_store
-                .get_checkpoint(&BlockHeight::from_u32(44))
-                .expect("infallible")
-                .is_none()
-        );
-        assert!(
-            sapling_store
-                .get_checkpoint(&BlockHeight::from_u32(45))
-                .expect("infallible")
-                .is_some()
+        assert_eq!(
+            sapling_store.checkpoint_count().expect("infallible"),
+            MAX_SHARDTREE_CHECKPOINTS as usize + 1
         );
         assert!(
             sapling_store
