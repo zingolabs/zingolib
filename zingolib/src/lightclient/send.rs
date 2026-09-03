@@ -781,9 +781,6 @@ impl LightClient {
         use crate::data::receivers::{Receiver, transaction_request_from_receivers};
         use crate::wallet::error::WalletError;
 
-        // Reserve the carrier address, decode and validate the vault, size
-        // the carrier fee, and form the deshield request — all under one
-        // wallet lock.
         let (deshield_request, carrier_address_id, carrier_address, vault, target_height) = {
             let mut wallet = self.wallet().write().await;
             let chain_type = wallet.chain_type();
@@ -852,14 +849,11 @@ impl LightClient {
             )
         };
 
-        // Deshield: shielded -> carrier address. Broadcast first, so the
-        // carrier's mempool parent is present.
         let deshield_reports = self
             .quick_send_reported(deshield_request, account_id, resume_sync)
             .await?;
         let deshield_txid = deshield_reports.first().txid;
 
-        // Build the memo carrier spending the deshield output, then transmit.
         let carrier_txid = {
             let mut wallet = self.wallet().write().await;
             let (carrier_outpoint, carrier_txout) = wallet

@@ -190,8 +190,6 @@ impl LightWallet {
             .add_transparent_null_data_output::<std::convert::Infallible>(op_return.as_bytes())
             .map_err(|e| WalletError::SwapBuild(format!("carrier op_return: {e:?}")))?;
 
-        // A transparent-only build takes no shielded spending keys, but
-        // `build` still requires provers in its signature.
         let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
         let prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
@@ -401,12 +399,10 @@ mod tests {
             .transparent_bundle()
             .expect("carrier is a transparent transaction");
 
-        // One input: the deshield output.
         assert_eq!(bundle.vin.len(), 1, "carrier spends exactly the deshield output");
         assert_eq!(bundle.vin[0].prevout().n(), 0);
         assert_eq!(bundle.vin[0].prevout().hash(), &[7u8; 32]);
 
-        // Two outputs, no change: the vault payment and the OP_RETURN.
         assert_eq!(bundle.vout.len(), 2, "vault + OP_RETURN, no change output");
 
         let vault_script: zcash_transparent::address::Script = vault.script().into();
@@ -429,7 +425,6 @@ mod tests {
             "the OP_RETURN carries the memo payload verbatim"
         );
 
-        // The implied fee (input − outputs) is exactly the estimated fee.
         assert_eq!(
             (input_value - amount).and_then(|v| v - Zatoshis::ZERO),
             Some(fee),

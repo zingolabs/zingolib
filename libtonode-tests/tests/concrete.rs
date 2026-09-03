@@ -1705,7 +1705,6 @@ async fn swap_deposit_carries_op_return_to_vault_on_chain() {
     let (ref local_net, mut faucet, mut recipient) =
         scenarios::faucet_recipient_default().await;
 
-    // Fund the depositor with shielded value for the deshield to spend.
     scenarios::send_and_bump(
         local_net,
         &mut faucet,
@@ -1714,12 +1713,9 @@ async fn swap_deposit_carries_op_return_to_vault_on_chain() {
     .await;
     recipient.sync_and_await().await.unwrap();
 
-    // The vault is a transparent address (the faucet's, standing in for a
-    // THORChain / MAYAChain inbound vault).
     let vault_address = get_base_address_macro!(faucet, "transparent");
     let memo = OpReturnData::new(MEMO.to_vec()).unwrap();
 
-    // The call under test broadcasts both the deshield and the carrier.
     let reports = recipient
         .propose_swap_deposit(
             &vault_address,
@@ -1734,7 +1730,6 @@ async fn swap_deposit_carries_op_return_to_vault_on_chain() {
     let deshield_txid = reports[0].txid;
     let carrier_txid = reports[1].txid;
 
-    // Mine the mempool parent (deshield) and child (carrier), then sync.
     increase_height_and_wait_for_client(local_net, &mut recipient, 3)
         .await
         .unwrap();
@@ -1759,10 +1754,8 @@ async fn swap_deposit_carries_op_return_to_vault_on_chain() {
         .transparent_bundle()
         .expect("carrier is a transparent transaction");
 
-    // The carrier spends exactly the deshield output.
     assert_eq!(bundle.vin.len(), 1, "carrier spends the single deshield output");
 
-    // Two outputs, no change: the vault payment and the OP_RETURN memo.
     assert_eq!(bundle.vout.len(), 2, "vault + OP_RETURN, no change output");
 
     let op_return_out = bundle
