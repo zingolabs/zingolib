@@ -1391,8 +1391,11 @@ async fn shardtree_roundtrip_restores_retained_checkpoints() {
 
     recipient.save_task().await;
     recipient.wait_for_save().await;
+    recipient.shutdown_save_task().await.unwrap();
+    drop(recipient);
 
-    let reloaded_recipient = net.client_from_file(0).await;
+    let mut reloaded_recipient = net.client_from_file(0).await;
+    reloaded_recipient.sync_and_await().await.unwrap();
     {
         let shard_trees = &reloaded_recipient.wallet().read().await.shard_trees;
         assert!(all_checkpoints_stored(
