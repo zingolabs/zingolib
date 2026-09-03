@@ -1,6 +1,7 @@
 use std::{num::NonZeroU32, time::Duration};
 
 use incrementalmerkletree::Position;
+use pepper_sync::error::SyncError;
 use pepper_sync::sync::ScanPriority;
 use pepper_sync::test_support::block;
 use pepper_sync::wallet::ShardTrees;
@@ -15,6 +16,8 @@ use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::config::{ChainType, ClientConfig, WalletConfig};
 use zingolib::data::PollReport;
 use zingolib::lightclient::DEFAULT_REQUEST_TIMEOUT;
+use zingolib::lightclient::error::LightClientError;
+use zingolib::sync::SyncModeError;
 use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
@@ -32,57 +35,7 @@ use zingolib_testutils::scenarios::{
     self, IndexerConvergence, increase_height_and_wait_for_client,
 };
 
-#[ignore = "temporary mainnet test for sync development"]
-#[tokio::test]
-async fn sync_mainnet_test() {
-    zingolib::ensure_default_crypto_provider();
-    tracing_subscriber::fmt().init();
-
-    let uri = construct_indexer_uri(SYNC_TEST_INDEXER.to_string()).unwrap();
-    let temp_dir = TempDir::new().unwrap();
-    let temp_path = temp_dir.path().to_path_buf();
-    let config = ClientConfig::builder()
-        .set_indexer_uri(uri.clone())
-        .set_chain_type(ChainType::Mainnet)
-        .set_wallet_dir(temp_path)
-        .set_wallet_config(WalletConfig::MnemonicPhrase {
-            mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
-            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            birthday: 1_500_000,
-            wallet_settings: default_test_wallet_settings(),
-        })
-        .build()
-        .unwrap();
-    let mut lightclient = LightClient::new(config, true).await.unwrap();
-
-    lightclient.sync().await.unwrap();
-    let mut interval = tokio::time::interval(zingo_netutils::time::test::SETTLE_POLL_INTERVAL);
-    loop {
-        interval.tick().await;
-        {
-            let wallet = lightclient.wallet().read().await;
-            tracing::info!(
-                "{}",
-                json::JsonValue::from(pepper_sync::sync_status(&*wallet).await.unwrap())
-            );
-            tracing::info!("WALLET DEBUG:");
-            tracing::info!("uas: {}", wallet.unified_addresses().len());
-            tracing::info!("taddrs: {}", wallet.transparent_addresses().len());
-            tracing::info!("blocks: {}", wallet.wallet_blocks.len());
-            tracing::info!("txs: {}", wallet.wallet_transactions.len());
-            tracing::info!("nullifiers o: {}", wallet.nullifier_map.orchard.len());
-            tracing::info!("nullifiers s: {}", wallet.nullifier_map.sapling.len());
-            tracing::info!("outpoints: {}", wallet.outpoint_map.len());
-        }
-        lightclient.flush().await.unwrap();
-    }
-
-    // let wallet = lightclient.wallet.read().await;
-    // dbg!(&wallet.wallet_blocks);
-    // dbg!(&wallet.nullifier_map);
-    // dbg!(&wallet.sync_state);
-}
-
+// TODO: migrate to mock test as this test is long and connects to mainnet
 #[tokio::test]
 async fn add_subtree_roots() {
     fn assert_subtree_roots_match_server(
@@ -230,11 +183,19 @@ async fn add_subtree_roots() {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
     let _ = lightclient.stop_sync();
-    let _ = lightclient.await_sync().await;
+    match lightclient.await_sync().await {
+        Ok(_) => {}
+        Err(LightClientError::SyncError(SyncError::SyncModeError(
+            SyncModeError::SyncNotRunning,
+        )))
+        | Err(LightClientError::SyncNotRunning) => {}
+        Err(e) => {
+            panic!("{e}");
+        }
+    }
 
     {
         let shard_trees = &mut lightclient.wallet().write().await.shard_trees;
-
         assert_subtree_roots_match_server(
             shard_trees,
             sapling_subtree_roots_server.clone(),
@@ -258,6 +219,9 @@ async fn add_subtree_roots() {
         assert!(orchard_shard_addrs.len() != orchard_subtree_roots_server.len());
     }
 
+    // must wait for a new block to be mined to trigger get_subtree_roots in sync
+    tokio::time::sleep(Duration::from_secs(100)).await;
+
     lightclient.sync().await.unwrap();
     while !(lightclient
         .wallet()
@@ -272,7 +236,16 @@ async fn add_subtree_roots() {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
     let _ = lightclient.stop_sync();
-    let _ = lightclient.await_sync().await;
+    match lightclient.await_sync().await {
+        Ok(_) => {}
+        Err(LightClientError::SyncError(SyncError::SyncModeError(
+            SyncModeError::SyncNotRunning,
+        )))
+        | Err(LightClientError::SyncNotRunning) => {}
+        Err(e) => {
+            panic!("{e}");
+        }
+    }
 
     {
         let shard_trees = &mut lightclient.wallet().write().await.shard_trees;

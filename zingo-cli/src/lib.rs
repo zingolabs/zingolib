@@ -61,6 +61,7 @@ pub fn build_clap_app() -> clap::Command {
                 .long("nosync")
                 .short('n')
                 .action(clap::ArgAction::SetTrue))
+            // TODO: make sure waitsync works with cont sync. may need to change wallet settings to turn shutdown_on_completion off
             .arg(Arg::new("waitsync")
                 .help("Block execution of the specified command until the background sync completes. Has no effect if --nosync is set.")
                 .long("waitsync")
@@ -1267,8 +1268,9 @@ async fn build_zingo_config(filled_template: &CliConfigTemplate) -> std::io::Res
     let no_of_accounts = NonZeroU32::try_from(1).expect("hard-coded integer");
     let wallet_settings = WalletSettings {
         sync_config: SyncConfig {
-            transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            transparent_address_discovery: TransparentAddressDiscovery::default(),
             performance_level: PerformanceLevel::High,
+            shutdown_on_completion: false,
         },
         min_confirmations: NonZeroU32::try_from(3).unwrap(),
     };

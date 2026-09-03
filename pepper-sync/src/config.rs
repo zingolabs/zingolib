@@ -86,12 +86,21 @@ pub struct SyncConfig {
     pub transparent_address_discovery: TransparentAddressDiscovery,
     /// Performance level
     pub performance_level: PerformanceLevel,
+    /// Shutdown on completion
+    ///
+    /// If not set, sync will not shutdown until the consumer sets the `SyncMode` to `Shutdown` variant.
+    /// The sync engine will regularly check for new blocks mined so the wallet will always be updated to the state
+    /// of the latest chain.
+    ///
+    /// If set, sync will still check for any newly mined blocks during scanning. But when the wallet is completely
+    /// up-to-date with the latest chain, sync will shutdown.
+    pub shutdown_on_completion: bool,
 }
 
 #[cfg(feature = "wallet_essentials")]
 impl SyncConfig {
     fn serialized_version() -> u8 {
-        1
+        2
     }
 
     /// Deserialize into `reader`
@@ -101,10 +110,16 @@ impl SyncConfig {
         let gap_limit = reader.read_u8()?;
         let scopes = reader.read_u8()?;
         let performance_level = if version >= 1 {
-            PerformanceLevel::read(reader)?
+            PerformanceLevel::read(&mut reader)?
         } else {
             PerformanceLevel::High
         };
+        let shutdown_on_completion = if version >= 2 {
+            reader.read_u8()? != 0
+        } else {
+            false
+        };
+
         Ok(Self {
             transparent_address_discovery: TransparentAddressDiscovery {
                 gap_limit,
@@ -115,6 +130,7 @@ impl SyncConfig {
                 },
             },
             performance_level,
+            shutdown_on_completion,
         })
     }
 
@@ -133,7 +149,8 @@ impl SyncConfig {
             scopes |= 0b100;
         }
         writer.write_u8(scopes)?;
-        self.performance_level.write(writer)?;
+        self.performance_level.write(&mut writer)?;
+        writer.write_u8(self.shutdown_on_completion as u8)?;
 
         Ok(())
     }

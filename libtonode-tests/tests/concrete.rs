@@ -1690,7 +1690,6 @@ async fn mine_to_transparent_coinbase_maturity() {
 }
 
 mod testnet_test {
-    use pepper_sync::sync_status;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::{
         config::{ChainType, ClientConfig, WalletConfig},
@@ -1730,11 +1729,9 @@ mod testnet_test {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             interval.tick().await;
-            while sync_status(&*lightclient.wallet().read().await)
-                .await
-                .unwrap()
-                .percentage_total_outputs_scanned
-                > 1.0
+            while lightclient
+                .latest_sync_status()
+                .is_none_or(|status| status.percentage_total_outputs_scanned < 1.0)
             {
                 interval.tick().await;
             }

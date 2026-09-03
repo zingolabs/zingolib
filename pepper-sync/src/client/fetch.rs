@@ -102,27 +102,27 @@ where
 {
     match fetch_request {
         FetchRequest::ChainTip(sender) => {
-            tracing::debug!("Fetching chain tip.");
+            tracing::info!("Fetching chain tip.");
             let block_id = get_latest_block(client).await;
             let _ignore_error = sender.send(block_id);
         }
         FetchRequest::CompactBlock(sender, block_height) => {
-            tracing::debug!("Fetching compact block. {:?}", &block_height);
+            tracing::info!("Fetching compact block. {:?}", &block_height);
             let block = get_block(client, block_height).await;
             let _ignore_error = sender.send(block);
         }
         FetchRequest::CompactBlockRange(sender, block_range) => {
-            tracing::debug!("Fetching compact blocks. {:?}", &block_range);
+            tracing::info!("Fetching compact blocks. {:?}", &block_range);
             let block_stream = get_block_range(client, block_range).await;
             let _ignore_error = sender.send(block_stream);
         }
         FetchRequest::NullifierRange(sender, block_range) => {
-            tracing::debug!("Fetching nullifiers. {:?}", &block_range);
+            tracing::info!("Fetching nullifiers. {:?}", &block_range);
             let block_stream = get_block_range_nullifiers(client, block_range).await;
             let _ignore_error = sender.send(block_stream);
         }
         FetchRequest::SubtreeRoots(sender, start_index, shielded_protocol, max_entries) => {
-            tracing::debug!(
+            tracing::info!(
                 "Fetching subtree roots. start index: {}. shielded protocol: {}",
                 start_index,
                 shielded_protocol
@@ -132,17 +132,17 @@ where
             let _ignore_error = sender.send(subtree_roots);
         }
         FetchRequest::TreeState(sender, block_height) => {
-            tracing::debug!("Fetching tree state. {:?}", &block_height);
+            tracing::info!("Fetching tree state. {:?}", &block_height);
             let tree_state = get_tree_state(client, block_height).await;
             let _ignore_error = sender.send(tree_state);
         }
         FetchRequest::Transaction(sender, txid) => {
-            tracing::debug!("Fetching transaction. {:?}", txid);
+            tracing::info!("Fetching transaction. {:?}", txid);
             let transaction = get_transaction(client, txid).await;
             let _ignore_error = sender.send(transaction);
         }
         FetchRequest::UtxoMetadata(sender, (addresses, start_height)) => {
-            tracing::debug!(
+            tracing::info!(
                 "Fetching unspent transparent output metadata from {:?} for addresses:\n{:?}",
                 &start_height,
                 &addresses
@@ -151,7 +151,7 @@ where
             let _ignore_error = sender.send(utxo_metadata);
         }
         FetchRequest::TransparentAddressTxs(sender, (address, block_range)) => {
-            tracing::debug!(
+            tracing::info!(
                 "Fetching raw transactions in block range {:?} for address {:?}",
                 &block_range,
                 &address

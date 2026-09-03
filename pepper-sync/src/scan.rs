@@ -17,6 +17,7 @@ use zip32::AccountId;
 use crate::{
     client::FetchRequest,
     error::{ScanError, ServerError},
+    keys::transparent::TransparentAddressId,
     sync::ScanPriority,
     utils::{block, transaction},
     wallet::{NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction},
@@ -29,6 +30,7 @@ pub(crate) mod compact_blocks;
 pub(crate) mod task;
 pub(crate) mod transactions;
 
+#[derive(Debug, Clone)]
 struct InitialScanData {
     start_seam_block: Option<WalletBlock>,
     end_seam_block: Option<WalletBlock>,
@@ -82,12 +84,16 @@ impl InitialScanData {
 
 struct ScanData {
     nullifiers: NullifierMap,
+    outpoints: BTreeMap<OutputId, ScanTarget>,
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     decrypted_scan_targets: BTreeSet<ScanTarget>,
     decrypted_note_data: DecryptedNoteData,
     witness_data: WitnessData,
+    new_transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
+    updated_transparent_gap_addresses: HashMap<String, TransparentAddressId>,
 }
 
+#[derive(Debug)]
 pub(crate) struct ScanResults {
     pub(crate) nullifiers: NullifierMap,
     pub(crate) outpoints: BTreeMap<OutputId, ScanTarget>,
@@ -96,6 +102,8 @@ pub(crate) struct ScanResults {
     pub(crate) sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     pub(crate) orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
     pub(crate) ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
+    pub(crate) new_transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
+    pub(crate) updated_transparent_gap_addresses: HashMap<String, TransparentAddressId>,
 }
 
 pub(crate) struct DecryptedNoteData {
@@ -126,6 +134,7 @@ pub(crate) async fn scan<P>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_task: ScanTask,
     max_outputs: usize,
+    transparent_gap_limit: u32,
 ) -> Result<ScanResults, ScanError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -136,7 +145,8 @@ where
         start_seam_block,
         end_seam_block,
         mut scan_targets,
-        transparent_addresses,
+        mut transparent_inuse_addresses,
+        transparent_gap_addresses,
     } = scan_task;
 
     if compact_blocks
@@ -157,7 +167,7 @@ where
         let mut nullifiers = NullifierMap::new();
         for block in &compact_blocks {
             for transaction in &block.vtx {
-                collect_nullifiers(
+                collect_nullifiers_compact(
                     &mut nullifiers,
                     block::get_compact_height(block),
                     transaction,
@@ -173,6 +183,8 @@ where
             sapling_located_trees: Vec::new(),
             orchard_located_trees: Vec::new(),
             ironwood_located_trees: Vec::new(),
+            new_transparent_inuse_addresses: HashMap::new(),
+            updated_transparent_gap_addresses: transparent_gap_addresses,
         });
     }
 
@@ -189,13 +201,18 @@ where
 
     let consensus_parameters_clone = consensus_parameters.clone();
     let ufvks_clone = ufvks.clone();
+    let initial_scan_data_clone = initial_scan_data.clone();
+    let transparent_inuse_addresses_clone = transparent_inuse_addresses.clone();
     let scan_data = tokio::task::spawn_blocking(move || {
         scan_compact_blocks(
             compact_blocks,
             &consensus_parameters_clone,
             &ufvks_clone,
-            initial_scan_data,
+            initial_scan_data_clone,
             max_outputs / 8,
+            transparent_inuse_addresses_clone,
+            transparent_gap_addresses,
+            transparent_gap_limit,
         )
     })
     .await
@@ -203,15 +220,17 @@ where
 
     let ScanData {
         nullifiers,
+        mut outpoints,
         wallet_blocks,
         mut decrypted_scan_targets,
         decrypted_note_data,
         witness_data,
+        new_transparent_inuse_addresses,
+        updated_transparent_gap_addresses,
     } = scan_data;
-
     scan_targets.append(&mut decrypted_scan_targets);
+    transparent_inuse_addresses.extend(new_transparent_inuse_addresses.clone());
 
-    let mut outpoints = BTreeMap::new();
     let wallet_transactions = scan_transactions(
         fetch_request_sender,
         consensus_parameters,
@@ -220,7 +239,7 @@ where
         decrypted_note_data,
         &wallet_blocks,
         &mut outpoints,
-        transparent_addresses,
+        transparent_inuse_addresses,
     )
     .await?;
 
@@ -264,15 +283,19 @@ where
         sapling_located_trees,
         orchard_located_trees,
         ironwood_located_trees,
+        new_transparent_inuse_addresses,
+        updated_transparent_gap_addresses,
     })
 }
 
 /// Converts the nullifiers from a compact transaction and adds them to the nullifier map
-fn collect_nullifiers(
+fn collect_nullifiers_compact(
     nullifier_map: &mut NullifierMap,
     block_height: BlockHeight,
     transaction: &CompactTx,
 ) -> Result<(), ScanError> {
+    let txid = transaction::get_compact_txid(transaction);
+
     transaction
         .spends
         .iter()
@@ -284,7 +307,7 @@ fn collect_nullifiers(
                 nullifier,
                 ScanTarget {
                     block_height,
-                    txid: transaction::get_compact_txid(transaction),
+                    txid,
                     narrow_scan_area: false,
                 },
             );
@@ -308,7 +331,7 @@ fn collect_nullifiers(
                 nullifier,
                 ScanTarget {
                     block_height,
-                    txid: transaction::get_compact_txid(transaction),
+                    txid,
                     narrow_scan_area: false,
                 },
             );
@@ -332,10 +355,33 @@ fn collect_nullifiers(
                 nullifier,
                 ScanTarget {
                     block_height,
-                    txid: transaction::get_compact_txid(transaction),
+                    txid,
                     narrow_scan_area: false,
                 },
             );
         });
     Ok(())
+}
+
+/// Adds the outpoints from a compact transaction to the outpoint map.
+fn collect_outpoints_compact(
+    outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
+    block_height: BlockHeight,
+    transaction: &CompactTx,
+) {
+    let txid = transaction::get_compact_txid(transaction);
+
+    transaction.vin.iter().for_each(|outpoint| {
+        let mut txid_bytes = [0u8; 32];
+        txid_bytes.copy_from_slice(&outpoint.prevout_txid);
+        let prevout_txid = TxId::from_bytes(txid_bytes);
+        outpoint_map.insert(
+            OutputId::new(prevout_txid, outpoint.prevout_index),
+            ScanTarget {
+                block_height,
+                txid,
+                narrow_scan_area: true,
+            },
+        );
+    });
 }

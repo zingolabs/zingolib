@@ -34,7 +34,7 @@ use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
-    error::ScanError,
+    error::{ScanError, ServerError},
     keys::{self, KeyId, transparent::TransparentAddressId},
     wallet::{
         IronwoodNote, NullifierMap, OrchardNote, OutgoingIronwoodNote, OutgoingNote,
@@ -90,21 +90,32 @@ pub(crate) async fn scan_transactions(
     decrypted_note_data: DecryptedNoteData,
     wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
-    transparent_addresses: HashMap<String, TransparentAddressId>,
+    transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<HashMap<TxId, WalletTransaction>, ScanError> {
     let mut wallet_transactions = HashMap::with_capacity(scan_targets.len());
 
     for scan_target in scan_targets {
+        // TODO: replace wth optional txid in scan targets
         if scan_target.txid == TxId::from_bytes([0u8; 32]) {
             continue;
         }
 
-        let (transaction, block_height) = client::get_transaction_and_block_height(
+        // in case of re-orgs or consumers manually adding incorrect scan target txids, skip if request fails.
+        let (transaction, block_height) = match client::get_transaction_and_block_height(
             fetch_request_sender.clone(),
             consensus_parameters,
             scan_target.txid,
         )
-        .await?;
+        .await
+        {
+            Ok((tx, height)) => (tx, height),
+            Err(ServerError::RequestFailed(_)) => {
+                continue;
+            }
+            Err(e) => {
+                return Err(e.into());
+            }
+        };
 
         if transaction.txid() != scan_target.txid {
             return Err(ScanError::IncorrectTxid {
@@ -134,7 +145,7 @@ pub(crate) async fn scan_transactions(
             Some(&decrypted_note_data),
             &mut NullifierMap::new(),
             outpoint_map,
-            &transparent_addresses,
+            &transparent_inuse_addresses,
             wallet_block.time(),
         )?;
         wallet_transactions.insert(scan_target.txid, wallet_transaction);
@@ -163,7 +174,7 @@ pub(crate) fn scan_transaction(
     decrypted_note_data: Option<&DecryptedNoteData>,
     nullifier_map: &mut NullifierMap,
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
-    transparent_addresses: &HashMap<String, TransparentAddressId>,
+    transparent_inuse_addresses: &HashMap<String, TransparentAddressId>,
     datetime: u32,
 ) -> Result<WalletTransaction, ScanError> {
     let block_height = status.get_height();
@@ -247,7 +258,7 @@ pub(crate) fn scan_transaction(
             consensus_parameters,
             &mut transparent_coins,
             txid,
-            transparent_addresses,
+            transparent_inuse_addresses,
             transparent_outputs,
         );
 
@@ -429,13 +440,15 @@ fn scan_incoming_coins<P: consensus::Parameters>(
     consensus_parameters: &P,
     transparent_coins: &mut Vec<TransparentCoin>,
     txid: TxId,
-    transparent_addresses: &HashMap<String, TransparentAddressId>,
+    transparent_inuse_addresses: &HashMap<String, TransparentAddressId>,
     transparent_outputs: &[zcash_transparent::bundle::TxOut],
 ) {
     for (output_index, output) in transparent_outputs.iter().enumerate() {
         if let Some(address) = output.recipient_address() {
             let encoded_address = keys::transparent::encode_address(consensus_parameters, address);
-            if let Some((address, key_id)) = transparent_addresses.get_key_value(&encoded_address) {
+            if let Some((address, key_id)) =
+                transparent_inuse_addresses.get_key_value(&encoded_address)
+            {
                 let output_id = OutputId::new(
                     txid,
                     output_index
