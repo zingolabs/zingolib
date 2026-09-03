@@ -1300,7 +1300,6 @@ async fn switching_the_mixnet_off_reports_the_clearnet_route() {
 
 #[tokio::test]
 async fn shardtree_roundtrip_restores_retained_checkpoints() {
-    let chain_height = 500;
     fn checkpoint_exists<S>(store: &S, height: u32) -> bool
     where
         S: ShardStore<CheckpointId = BlockHeight>,
@@ -1347,6 +1346,7 @@ async fn shardtree_roundtrip_restores_retained_checkpoints() {
         true
     }
 
+    let mut chain_height = 500;
     let mut net = MockNet::launch().await;
     let mut recipient = net
         .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
@@ -1395,6 +1395,9 @@ async fn shardtree_roundtrip_restores_retained_checkpoints() {
     drop(recipient);
 
     let mut reloaded_recipient = net.client_from_file(0).await;
+    // create shielded note commitments to trigger checkpoint pruning on first sync of reloaded client
+    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    chain_height += 2;
     reloaded_recipient.sync_and_await().await.unwrap();
     {
         let shard_trees = &reloaded_recipient.wallet().read().await.shard_trees;
