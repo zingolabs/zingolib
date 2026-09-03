@@ -1,36 +1,36 @@
-//! Health: the wallet's per-Correspondent judgment, from real traffic alone.
+//! Health: the wallet's per-Destination judgment, from real traffic alone.
 #![forbid(unsafe_code)]
 
 use std::collections::HashMap;
 
-/// How many failures without a success mark a Correspondent unhealthy.
+/// How many failures without a success mark a Destination unhealthy.
 #[cfg_attr(not(feature = "nym"), allow(dead_code))]
 pub(crate) const UNHEALTHY_FAILURE_THRESHOLD: u32 = 2;
 
-/// The fewest Correspondents a Health filter may leave eligible, so a
+/// The fewest Destinations a Health filter may leave eligible, so a
 /// partition can never shrink the draw's anonymity set.
 #[cfg_attr(not(feature = "nym"), allow(dead_code))]
-const MINIMUM_ELIGIBLE_CORRESPONDENTS: usize = 4;
+const MINIMUM_ELIGIBLE_DESTINATIONS: usize = 4;
 
 /// Which party a failed attempt is charged against.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FailurePhase {
     /// The tunnel failed before reaching the destination: the exit's.
     Tunnel,
-    /// The destination answered badly or not at all: the Correspondent's.
-    Correspondent,
+    /// The destination answered badly or not at all: the Destination's.
+    Destination,
     /// The evidence cannot say which party failed.
     Unattributed,
 }
 
-/// One Correspondent's standing this session.
+/// One Destination's standing this session.
 #[derive(Clone, Copy, Debug, Default)]
 struct Standing {
     successes: u32,
     failures: u32,
 }
 
-/// The session's per-Correspondent Health, updated by real traffic only.
+/// The session's per-Destination Health, updated by real traffic only.
 #[derive(Debug, Default)]
 pub struct Health {
     standings: HashMap<super::Host, Standing>,
@@ -38,12 +38,12 @@ pub struct Health {
 
 impl Health {
     /// Charges one attempt's outcome against the host it contacted, counting
-    /// a failure only when the evidence names this Correspondent.
+    /// a failure only when the evidence names this Destination.
     pub(crate) fn note(&mut self, host: &super::Host, failed: bool, phase: Option<FailurePhase>) {
         let standing = self.standings.entry(host.clone()).or_default();
         if !failed {
             standing.successes += 1;
-        } else if phase == Some(FailurePhase::Correspondent) {
+        } else if phase == Some(FailurePhase::Destination) {
             standing.failures += 1;
         }
     }
@@ -71,7 +71,7 @@ impl Health {
             })
             .cloned()
             .collect();
-        if healthy.len() < MINIMUM_ELIGIBLE_CORRESPONDENTS {
+        if healthy.len() < MINIMUM_ELIGIBLE_DESTINATIONS {
             candidates
         } else {
             healthy
@@ -94,10 +94,10 @@ mod tests {
         super::super::Host::of_host_str(name)
     }
 
-    /// HYPOTHESIS: only a Correspondent-phase failure counts against a
-    /// Correspondent; a tunnel failure is the exit's and never demotes it.
+    /// HYPOTHESIS: only a Destination-phase failure counts against a
+    /// Destination; a tunnel failure is the exit's and never demotes it.
     #[test]
-    fn a_tunnel_failure_never_charges_the_correspondent() {
+    fn a_tunnel_failure_never_charges_the_destination() {
         let mut health = Health::default();
         for _ in 0..UNHEALTHY_FAILURE_THRESHOLD {
             health.note(&host("tunnelled.example"), true, Some(FailurePhase::Tunnel));
@@ -105,7 +105,7 @@ mod tests {
             health.note(
                 &host("refusing.example"),
                 true,
-                Some(FailurePhase::Correspondent),
+                Some(FailurePhase::Destination),
             );
         }
         assert!(health.is_healthy(&host("tunnelled.example")));
@@ -113,16 +113,16 @@ mod tests {
         assert!(!health.is_healthy(&host("refusing.example")));
     }
 
-    /// HYPOTHESIS: one success redeems a Correspondent, so a transient
+    /// HYPOTHESIS: one success redeems a Destination, so a transient
     /// outage never strands it for the session.
     #[test]
-    fn a_success_redeems_a_failing_correspondent() {
+    fn a_success_redeems_a_failing_destination() {
         let mut health = Health::default();
         for _ in 0..UNHEALTHY_FAILURE_THRESHOLD {
             health.note(
                 &host("flaky.example"),
                 true,
-                Some(FailurePhase::Correspondent),
+                Some(FailurePhase::Destination),
             );
         }
         assert!(!health.is_healthy(&host("flaky.example")));
@@ -137,7 +137,7 @@ mod tests {
         let mut health = Health::default();
         let roomy = uris(&["a", "b", "c", "d", "e", "f"]);
         for _ in 0..UNHEALTHY_FAILURE_THRESHOLD {
-            health.note(&host("a"), true, Some(FailurePhase::Correspondent));
+            health.note(&host("a"), true, Some(FailurePhase::Destination));
         }
         let filtered = health.filter_with_floor(roomy.clone());
         assert_eq!(filtered.len(), roomy.len() - 1, "the unhealthy one goes");

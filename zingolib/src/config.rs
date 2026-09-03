@@ -305,7 +305,7 @@ pub struct ClientConfig {
     /// correlation between the two (ZIP 318). While Mixnet Mode is on (the
     /// `nym` feature, ADR 0011), this URI is dialed through the mixnet and
     /// must be https on a host distinct from the synchronization endpoint's
-    /// (a shared host is refused). Unset, parts go to one Correspondent
+    /// (a shared host is refused). Unset, parts go to one Destination
     /// drawn at random per submission. On the clearnet opt-out path it falls
     /// back to `indexer_uri` with a logged warning when unset. When both are
     /// `None` the client emits no network traffic and transmission fails

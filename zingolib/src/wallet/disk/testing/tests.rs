@@ -655,6 +655,323 @@ fn data_wallets_corpus_parses_or_salvages() {
     }
 }
 
+mod validation {
+    use proptest::prelude::*;
+
+    use zingo_common_components::protocol::ActivationHeights;
+
+    use pepper_sync::keys::transparent::TransparentScope;
+
+    use crate::config::ChainType;
+    use crate::wallet::{LightWallet, utils};
+
+    use super::current_version_wallet_bytes;
+    use super::{
+        AbandonAbandonVersion, AbsurdAmountVersion, ChimneyBetterVersion, HospitalMuseumVersion,
+        HotelHumorVersion, MainnetSeedVersion, MobileShuffleVersion, NetworkSeedVersion,
+        RegtestSeedVersion, TestnetSeedVersion, VillageTargetVersion,
+    };
+
+    /// [`LightWallet::validate`] accepts every checked-in example wallet file.
+    #[test]
+    fn validate_accepts_every_example_wallet_fixture() {
+        let regtest = ChainType::Regtest(ActivationHeights::default());
+        let fixtures = [
+            (
+                NetworkSeedVersion::Regtest(RegtestSeedVersion::HospitalMuseum(
+                    HospitalMuseumVersion::V27,
+                )),
+                regtest,
+            ),
+            (
+                NetworkSeedVersion::Regtest(RegtestSeedVersion::AbandonAbandon(
+                    AbandonAbandonVersion::V26,
+                )),
+                regtest,
+            ),
+            (
+                NetworkSeedVersion::Regtest(RegtestSeedVersion::AbsurdAmount(
+                    AbsurdAmountVersion::OrchAndSapl,
+                )),
+                regtest,
+            ),
+            (
+                NetworkSeedVersion::Regtest(RegtestSeedVersion::AbsurdAmount(
+                    AbsurdAmountVersion::OrchOnly,
+                )),
+                regtest,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(
+                    ChimneyBetterVersion::V26,
+                )),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(
+                    ChimneyBetterVersion::V27,
+                )),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(
+                    ChimneyBetterVersion::V28,
+                )),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(
+                    ChimneyBetterVersion::Latest,
+                )),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::MobileShuffle(
+                    MobileShuffleVersion::Gab72a38b,
+                )),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::MobileShuffle(
+                    MobileShuffleVersion::G93738061a,
+                )),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::MobileShuffle(
+                    MobileShuffleVersion::Latest,
+                )),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Testnet(TestnetSeedVersion::GloryGoddess),
+                ChainType::Testnet,
+            ),
+            (
+                NetworkSeedVersion::Mainnet(MainnetSeedVersion::VillageTarget(
+                    VillageTargetVersion::V28,
+                )),
+                ChainType::Mainnet,
+            ),
+            (
+                NetworkSeedVersion::Mainnet(MainnetSeedVersion::HotelHumor(
+                    HotelHumorVersion::Gf0aaf9347,
+                )),
+                ChainType::Mainnet,
+            ),
+            (
+                NetworkSeedVersion::Mainnet(MainnetSeedVersion::HotelHumor(
+                    HotelHumorVersion::Latest,
+                )),
+                ChainType::Mainnet,
+            ),
+        ];
+
+        for (fixture, chain_type) in fixtures {
+            let path = fixture.example_wallet_path();
+            let bytes = std::fs::read(&path).expect("example wallet files are checked in");
+            LightWallet::validate(bytes.as_slice(), chain_type)
+                .unwrap_or_else(|error| panic!("{} must validate: {error}", path.display()));
+        }
+    }
+
+    /// [`LightWallet::validate`] accepts the output of `write` untouched and
+    /// rejects it truncated to every shorter length, a superset of every
+    /// field boundary and every position one byte past one.
+    #[tokio::test]
+    async fn validate_accepts_write_output_and_rejects_every_truncation() {
+        let expected = current_version_wallet_bytes().await;
+
+        LightWallet::validate(expected.bytes.as_slice(), expected.chain_type)
+            .expect("the untruncated output of write must validate");
+
+        for length in 0..expected.bytes.len() {
+            assert!(
+                LightWallet::validate(&expected.bytes[..length], expected.chain_type).is_err(),
+                "the file truncated to {length} of {} bytes must be rejected",
+                expected.bytes.len()
+            );
+        }
+    }
+
+    /// [`LightWallet::read_recovery_info`] must
+    /// still read the prefix of a file stamped with a future version.
+    #[tokio::test]
+    async fn recovery_info_salvages_versions_above_the_current_write_version() {
+        let expected = current_version_wallet_bytes().await;
+
+        for future_version in [
+            LightWallet::serialized_version() + 1,
+            LightWallet::serialized_version() + 2,
+        ] {
+            let mut bytes = expected.bytes.clone();
+            bytes[..8].copy_from_slice(&future_version.to_le_bytes());
+
+            let salvaged =
+                LightWallet::read_recovery_info(bytes.as_slice()).unwrap_or_else(|error| {
+                    panic!("version {future_version} must remain salvageable: {error}")
+                });
+            assert_eq!(salvaged, expected.recovery_info);
+        }
+    }
+
+    /// Regression case: invalid seed phrase bytes must not recover to a seed phrase.
+    #[test]
+    fn recovery_info_rejects_forty_seven_space_bytes() {
+        let error = LightWallet::read_recovery_info(vec![0x20; 47].as_slice())
+            .expect_err("uniform filler bytes must not decode to a seed phrase");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(
+            error
+                .to_string()
+                .contains(&0x2020202020202020u64.to_string()),
+            "the error must name the rejected version: {error}"
+        );
+    }
+
+    /// A well-formed recovery prefix is accepted, and the same prefix with an invalid birthday is rejected.
+    #[test]
+    fn recovery_info_rejects_an_implausible_birthday() {
+        let prefix = |birthday: u32| {
+            let mut bytes = LightWallet::serialized_version().to_le_bytes().to_vec();
+            bytes.push(0);
+            bytes.push(32);
+            bytes.extend_from_slice(&[0x55; 32]);
+            bytes.extend_from_slice(&birthday.to_le_bytes());
+            bytes.push(1);
+            bytes
+        };
+
+        let info = LightWallet::read_recovery_info(prefix(2_000_000).as_slice()).unwrap();
+        assert_eq!(info.birthday, 2_000_000);
+
+        let error = LightWallet::read_recovery_info(prefix(600_000_000).as_slice())
+            .expect_err("a birthday in the hundreds of millions must be rejected");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    /// The lowest u32 with the ZIP 32 hardened-derivation bit set, valid neither as an account id nor as a non-hardened child index.
+    const FIRST_HARDENED_INDEX: u32 = 1 << 31;
+
+    /// The chain tag byte the current wallet version stores for mainnet.
+    const MAINNET_CHAIN_TAG: u8 = 0;
+
+    /// The filler byte the crafted fixtures use as seed entropy.
+    const SEED_ENTROPY_FILL: u8 = 0x55;
+
+    /// The oldest wallet version that stores the unified key store as a vector of account entries.
+    const FIRST_VECTORED_KEY_STORE_VERSION: u64 = 35;
+
+    /// Builds a current-version wallet prefix through the birthday field, ready for a crafted tail.
+    fn current_version_prefix_through_birthday() -> Vec<u8> {
+        let mut bytes = LightWallet::serialized_version().to_le_bytes().to_vec();
+        bytes.push(MAINNET_CHAIN_TAG);
+        let seed_entropy = [SEED_ENTROPY_FILL; 32];
+        bytes.push(seed_entropy.len() as u8);
+        bytes.extend_from_slice(&seed_entropy);
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes
+    }
+
+    /// [`LightWallet::validate`] returns an error, rather than panicking, on a key store entry whose account id has the hardened bit set.
+    #[test]
+    fn validate_rejects_a_hardened_key_store_account_id() {
+        let mut bytes = current_version_prefix_through_birthday();
+        bytes.push(1);
+        bytes.extend_from_slice(&FIRST_HARDENED_INDEX.to_le_bytes());
+
+        let error = LightWallet::validate(bytes.as_slice(), ChainType::Mainnet)
+            .expect_err("a hardened account id must be rejected, not panicked on");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(
+            error
+                .to_string()
+                .contains(&FIRST_HARDENED_INDEX.to_string()),
+            "the error must name the rejected account id: {error}"
+        );
+    }
+
+    /// [`LightWallet::validate`] returns an error, rather than panicking, on a unified address whose account id has the hardened bit set.
+    #[test]
+    fn validate_rejects_a_hardened_unified_address_account_id() {
+        let mut bytes = current_version_prefix_through_birthday();
+        bytes.push(0);
+        bytes.push(1);
+        bytes.extend_from_slice(&FIRST_HARDENED_INDEX.to_le_bytes());
+
+        let error = LightWallet::validate(bytes.as_slice(), ChainType::Mainnet)
+            .expect_err("a hardened account id must be rejected, not panicked on");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    /// [`LightWallet::validate`] returns an error, rather than panicking, on a transparent address whose account id has the hardened bit set.
+    #[test]
+    fn validate_rejects_a_hardened_transparent_address_account_id() {
+        let mut bytes = current_version_prefix_through_birthday();
+        bytes.push(0);
+        bytes.push(0);
+        bytes.push(1);
+        bytes.extend_from_slice(&FIRST_HARDENED_INDEX.to_le_bytes());
+
+        let error = LightWallet::validate(bytes.as_slice(), ChainType::Mainnet)
+            .expect_err("a hardened account id must be rejected, not panicked on");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    /// [`LightWallet::validate`] returns an error, rather than panicking, on a transparent address index with the hardened bit set.
+    #[test]
+    fn validate_rejects_a_hardened_transparent_address_index() {
+        let mut bytes = current_version_prefix_through_birthday();
+        bytes.push(0);
+        bytes.push(0);
+        bytes.push(1);
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.push(TransparentScope::External as u8);
+        bytes.extend_from_slice(&FIRST_HARDENED_INDEX.to_le_bytes());
+
+        let error = LightWallet::validate(bytes.as_slice(), ChainType::Mainnet)
+            .expect_err("a hardened address index must be rejected, not panicked on");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    /// [`LightWallet::validate`] returns an error, rather than panicking, on a version 35 wallet whose key store vector holds no account 0.
+    #[test]
+    fn validate_rejects_an_account_zero_free_version_thirty_five_wallet() {
+        let mut bytes = FIRST_VECTORED_KEY_STORE_VERSION.to_le_bytes().to_vec();
+        utils::write_string(&mut bytes, &"main".to_string())
+            .expect("writing to a vector cannot fail");
+        bytes.push(0);
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.push(0);
+        bytes.push(0);
+        bytes.push(0);
+
+        let error = LightWallet::validate(bytes.as_slice(), ChainType::Mainnet)
+            .expect_err("a wallet with no account 0 key must be rejected, not panicked on");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    proptest! {
+        /// Any byte string whose version word falls outside the accepted
+        /// range is rejected by both functions.
+        #[test]
+        fn out_of_range_version_words_are_rejected(
+            bytes in proptest::collection::vec(any::<u8>(), 8..512)
+        ) {
+            let version = u64::from_le_bytes(bytes[..8].try_into().unwrap());
+
+            if version > 43 {
+                prop_assert!(
+                    LightWallet::validate(bytes.as_slice(), ChainType::Mainnet).is_err()
+                );
+            }
+            if !(32..=LightWallet::MAX_RECOVERABLE_VERSION).contains(&version) {
+                prop_assert!(LightWallet::read_recovery_info(bytes.as_slice()).is_err());
+            }
+        }
+    }
+}
+
 mod version_forty {
     use bip0039::Mnemonic;
 

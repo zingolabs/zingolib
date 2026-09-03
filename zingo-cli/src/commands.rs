@@ -304,13 +304,21 @@ async fn confirm(lightclient: &mut LightClient) -> Result<String, CommandError> 
 #[cfg(feature = "nym")]
 async fn current_price(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.update_current_price().await {
-        Ok(fetch) => Ok(format!(
-            "current price: {} USD (source: {}, rtt: {} ms, fetched over the mixnet via {})",
-            fetch.usd,
-            fetch.source.name(),
-            fetch.round_trip.as_millis(),
-            fetch.via_socks5
-        )),
+        Ok(fetch) => {
+            let route = match &fetch.route {
+                zingolib::lightclient::PriceFetchRoute::Mixnet { via_socks5 } => {
+                    format!("over the mixnet via {via_socks5}")
+                }
+                zingolib::lightclient::PriceFetchRoute::Clearnet => "over clearnet".to_string(),
+            };
+            Ok(format!(
+                "current price: {} USD (source: {}, rtt: {} ms, fetched {})",
+                fetch.usd,
+                fetch.source.name(),
+                fetch.round_trip.as_millis(),
+                route
+            ))
+        }
         Err(e) => Err(not_yet_typed(e)),
     }
 }
@@ -1564,7 +1572,7 @@ async fn network_command(
             // Probing runs only over the mixnet route; the typed refusal
             // below names the transport state and its remedy.
             let probes = lightclient
-                .probe_correspondents(target, PROBE_LEG_TIMEOUT)
+                .probe_destinations(target, PROBE_LEG_TIMEOUT)
                 .await?;
             Ok(probes
                 .iter()
@@ -1589,12 +1597,12 @@ fn render_transmit_report(report: &zingolib::lightclient::send::TransmitReport) 
             "rtt_ms" => rtt_ms,
         },
         TransmitRoute::Mixnet {
-            correspondent,
+            destination,
             via_socks5,
         } => object! {
             "txid" => report.txid.to_string(),
             "over_mixnet" => true,
-            "correspondent" => correspondent.clone(),
+            "destination" => destination.clone(),
             "via_socks5" => via_socks5.clone(),
             "rtt_ms" => rtt_ms,
         },
@@ -2231,7 +2239,7 @@ pub(crate) enum CliCommand {
         about = "List memos for this wallet.",
         long_about = indoc! {r"
             List the wallet's memo-bearing value transfers. An address filters to that
-            correspondent, any other string filters to memos containing it, and no
+            destination, any other string filters to memos containing it, and no
             argument shows every memo. Received messages are matched on the memo's
             reply-to address.
         "}

@@ -90,6 +90,30 @@ fn chain_name_from_stored(stored: &str) -> io::Result<&'static str> {
     }
 }
 
+struct CountingReader<R> {
+    inner: R,
+    offset: u64,
+}
+
+impl<R: Read> Read for CountingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let bytes_read = self.inner.read(buf)?;
+        self.offset += bytes_read as u64;
+        Ok(bytes_read)
+    }
+}
+
+/// Reads a little-endian u32 and rejects values outside the ZIP 32 account id range as `InvalidData`.
+fn read_account_id<R: Read>(reader: &mut R) -> io::Result<zip32::AccountId> {
+    let raw_account_id = reader.read_u32::<LittleEndian>()?;
+    zip32::AccountId::try_from(raw_account_id).map_err(|_| {
+        Error::new(
+            ErrorKind::InvalidData,
+            format!("invalid account id {raw_account_id} stored in wallet file"),
+        )
+    })
+}
+
 fn check_saved_chain(saved_network: &str, chain_type: &ChainType) -> io::Result<()> {
     if saved_network == chain_type.to_string() {
         Ok(())
@@ -134,6 +158,16 @@ impl LightWallet {
     pub const fn serialized_version() -> u64 {
         42
     }
+
+    /// Upper bound on the version word [`Self::read_recovery_info`] accepts:
+    /// far above any version this project will reach, low enough that random
+    /// or encrypted bytes cannot land in it.
+    pub const MAX_RECOVERABLE_VERSION: u64 = 1000;
+
+    /// Upper bound on the birthday [`Self::read_recovery_info`] accepts: no
+    /// real chain reaches this height for centuries, while fabricated
+    /// prefixes decode to birthdays far above it.
+    pub const MAX_RECOVERABLE_BIRTHDAY: u32 = 100_000_000;
 
     /// Serialize into `writer`
     pub fn write<W: Write>(
@@ -234,6 +268,26 @@ impl LightWallet {
         }
     }
 
+    /// Confirms the bytes parse as a complete wallet this build can read, by
+    /// running the full [`Self::read`] deserialization and discarding the
+    /// result; on failure the error names the byte offset reached.
+    pub fn validate<R: Read>(reader: R, chain_type: ChainType) -> io::Result<()> {
+        let mut counting_reader = CountingReader {
+            inner: reader,
+            offset: 0,
+        };
+        Self::read(&mut counting_reader, chain_type).map_err(|error| {
+            Error::new(
+                error.kind(),
+                format!(
+                    "wallet file failed to parse at byte {}: {error}",
+                    counting_reader.offset
+                ),
+            )
+        })?;
+        Ok(())
+    }
+
     fn read_v0<R: Read>(mut reader: R, chain_type: ChainType, version: u64) -> io::Result<Self> {
         let mut wallet_capability = WalletCapability::read(&mut reader, chain_type)?;
         let mut _blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
@@ -266,12 +320,13 @@ impl LightWallet {
         } else {
             WalletOptions::read(&mut reader)?
         };
-        let birthday = BlockHeight::from_u32(
-            reader
-                .read_u64::<LittleEndian>()?
-                .try_into()
-                .expect("should never overflow"),
-        );
+        let stored_birthday = reader.read_u64::<LittleEndian>()?;
+        let birthday = BlockHeight::from_u32(stored_birthday.try_into().map_err(|_| {
+            Error::new(
+                ErrorKind::InvalidData,
+                format!("stored birthday {stored_birthday} exceeds the maximum block height"),
+            )
+        })?);
 
         if version <= 22 {
             let _sapling_tree_verified = if version <= 12 {
@@ -491,11 +546,7 @@ impl LightWallet {
 
         let unified_key_store = if version >= 35 {
             Vector::read(&mut reader, |r| {
-                Ok((
-                    zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
-                        .expect("only valid account ids are stored"),
-                    UnifiedKeyStore::read(r, chain_type)?,
-                ))
+                Ok((read_account_id(r)?, UnifiedKeyStore::read(r, chain_type)?))
             })?
             .into_iter()
             .collect::<BTreeMap<_, _>>()
@@ -509,8 +560,7 @@ impl LightWallet {
         };
 
         let mut unified_addresses = Vector::read(&mut reader, |r| {
-            let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
-                .expect("only valid account ids are stored");
+            let account_id = read_account_id(r)?;
             let address_index = r.read_u32::<LittleEndian>()?;
             let receivers = ReceiverSelection::read(r, ())?;
 
@@ -535,11 +585,18 @@ impl LightWallet {
         .into_iter()
         .collect::<BTreeMap<_, _>>();
         let mut transparent_addresses = Vector::read(&mut reader, |r| {
-            let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
-                .expect("only valid account ids are stored");
+            let account_id = read_account_id(r)?;
             let scope = TransparentScope::try_from(r.read_u8()?)?;
-            let address_index = NonHardenedChildIndex::from_index(r.read_u32::<LittleEndian>()?)
-                .expect("only non-hardened child indexes should be written");
+            let raw_address_index = r.read_u32::<LittleEndian>()?;
+            let address_index =
+                NonHardenedChildIndex::from_index(raw_address_index).ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        format!(
+                            "hardened transparent address index {raw_address_index} stored in wallet file"
+                        ),
+                    )
+                })?;
 
             Ok((
                 TransparentAddressId::new(account_id, scope, address_index),
@@ -566,7 +623,12 @@ impl LightWallet {
         if version < 36 {
             let unified_key = unified_key_store
                 .get(&zip32::AccountId::ZERO)
-                .expect("account 0 must exist");
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        "wallet file stores no key for account 0",
+                    )
+                })?;
             unified_addresses = BTreeMap::new();
             if let Some(receivers) = unified_key.default_receivers() {
                 let unified_address_id = UnifiedAddressId {
@@ -645,8 +707,13 @@ impl LightWallet {
         let wallet_settings = if version >= 33 {
             let sync_config = SyncConfig::read(&mut reader)?;
             let min_confirmations = if version >= 38 {
-                NonZeroU32::try_from(reader.read_u32::<LittleEndian>()?)
-                    .expect("only valid non-zero u32s stored")
+                let stored_min_confirmations = reader.read_u32::<LittleEndian>()?;
+                NonZeroU32::try_from(stored_min_confirmations).map_err(|_| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        "min_confirmations of zero stored in wallet file",
+                    )
+                })?
             } else {
                 NonZeroU32::try_from(3).expect("hard-coded non-zero integer")
             };
@@ -783,12 +850,26 @@ impl LightWallet {
     /// Fails on legacy files (version below 32), whose seed is stored too
     /// deep in the file to reach without a full parse, and on view-only
     /// wallets, which store no seed.
+    ///
+    /// Rejects versions above [`Self::MAX_RECOVERABLE_VERSION`] and birthdays
+    /// above [`Self::MAX_RECOVERABLE_BIRTHDAY`], so random or encrypted bytes
+    /// cannot come back as a confident seed phrase.
     pub fn read_recovery_info<R: Read>(mut reader: R) -> io::Result<RecoveryInfo> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version < 32 {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 format!("wallet version {version} predates the recoverable prefix layout"),
+            ));
+        }
+        if version > Self::MAX_RECOVERABLE_VERSION {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "version {version} is above {}, so this is not a wallet file \
+                     this project or any future revision of it could have written",
+                    Self::MAX_RECOVERABLE_VERSION
+                ),
             ));
         }
         if version >= 41 {
@@ -811,6 +892,16 @@ impl LightWallet {
         let mnemonic = <Mnemonic>::from_entropy(seed_bytes)
             .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?;
         let birthday = reader.read_u32::<LittleEndian>()?;
+        if birthday > Self::MAX_RECOVERABLE_BIRTHDAY {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "recovered birthday {birthday} is above block height {}, which no \
+                     real wallet can reach; this is not a wallet file",
+                    Self::MAX_RECOVERABLE_BIRTHDAY
+                ),
+            ));
+        }
         let no_of_accounts = if version >= 35 {
             u32::try_from(CompactSize::read(&mut reader)?).map_err(|e| {
                 Error::new(

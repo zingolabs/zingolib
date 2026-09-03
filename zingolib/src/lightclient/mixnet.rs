@@ -15,7 +15,7 @@ use super::{LightClient, MixnetPriceFetch};
 #[cfg(feature = "nym")]
 pub(crate) struct PriceRun {
     /// The pools this run takes its transport from and returns it to.
-    pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+    pools: std::sync::Arc<crate::destination::pool::Pools>,
 }
 
 #[cfg(feature = "nym")]
@@ -88,7 +88,7 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
         // fetches must not share a client.
         self.pools.remember(
             spent.node().clone(),
-            crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
+            crate::destination::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
         );
         tokio::spawn(async move {
             spent.retire().await;
@@ -98,7 +98,7 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
     fn abandon(&self, dead: crate::mixnet::speed::Member) {
         self.pools.remember(
             dead.node().clone(),
-            crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::Failed,
+            crate::destination::pool::exit_pool::ExitNodeHealthVerdict::Failed,
         );
         tokio::spawn(async move {
             dead.retire().await;
@@ -195,9 +195,9 @@ fn install_rotated_client(
 /// birth's own answer, or the stale observation's original expiry for a
 /// trusting birth.
 fn standing_client_from_birth(
-    birth: crate::correspondent::pool::ProvenBirth,
+    birth: crate::destination::pool::ProvenBirth,
 ) -> crate::mixnet::StandingClient {
-    use crate::correspondent::pool::Proof;
+    use crate::destination::pool::Proof;
 
     let proof = birth.proof;
     let client = crate::mixnet::StandingClient::new(
@@ -220,7 +220,7 @@ fn standing_client_from_birth(
 /// replacement births, Died latched when every birth exhausts.
 async fn adjudicate_standing_proof(
     slot: std::sync::Arc<std::sync::Mutex<crate::mixnet::MixnetSlot>>,
-    pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+    pools: std::sync::Arc<crate::destination::pool::Pools>,
     status: crate::mixnet::driver::StatusPublisher,
     evidence: zingo_netutils::sentinel::ExitEvidence,
 ) {
@@ -238,7 +238,7 @@ async fn adjudicate_standing_proof(
             if let Some(node) = refreshed {
                 pools.remember(
                     node,
-                    crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
+                    crate::destination::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
                 );
             }
             publish_slot(&slot, &status);
@@ -253,7 +253,7 @@ async fn adjudicate_standing_proof(
     if let Some(node) = node {
         pools.remember(
             node,
-            crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::Failed,
+            crate::destination::pool::exit_pool::ExitNodeHealthVerdict::Failed,
         );
     }
     // The ruled Bootstrapping dip: the session cannot truthfully claim
@@ -321,7 +321,7 @@ async fn adjudicate_standing_proof(
 /// dialed into the Standing Client's tunnel, then the adjudication.
 async fn run_proof_acquisition(
     slot: std::sync::Arc<std::sync::Mutex<crate::mixnet::MixnetSlot>>,
-    pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+    pools: std::sync::Arc<crate::destination::pool::Pools>,
     status: crate::mixnet::driver::StatusPublisher,
 ) {
     let socks5 = {
@@ -349,7 +349,7 @@ async fn run_proof_acquisition(
 /// unadvanced.
 async fn standing_proof_watchdog(
     slot: std::sync::Arc<std::sync::Mutex<crate::mixnet::MixnetSlot>>,
-    pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+    pools: std::sync::Arc<crate::destination::pool::Pools>,
     status: crate::mixnet::driver::StatusPublisher,
 ) {
     let mut wake = status.subscribe();
@@ -404,7 +404,7 @@ async fn standing_proof_watchdog(
 /// dialed through it drains (ADR 0048).
 async fn hand_off_standing_client<A>(
     slot: &std::sync::Arc<std::sync::Mutex<crate::mixnet::MixnetSlot>>,
-    pools: &std::sync::Arc<crate::correspondent::pool::Pools>,
+    pools: &std::sync::Arc<crate::destination::pool::Pools>,
     status: &crate::mixnet::driver::StatusPublisher,
     acquirer: &A,
 ) where
@@ -450,7 +450,7 @@ async fn hand_off_standing_client<A>(
 /// until the slot empties.
 async fn standing_rotation_watchdog(
     slot: std::sync::Arc<std::sync::Mutex<crate::mixnet::MixnetSlot>>,
-    pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+    pools: std::sync::Arc<crate::destination::pool::Pools>,
     status: crate::mixnet::driver::StatusPublisher,
 ) {
     // Asked once before any waiting, so a platform that will never rotate
@@ -506,10 +506,10 @@ impl LightClient {
     /// because the enable act revoked any standing clearnet consent and a
     /// failure must not silently reinstate a prior `SwitchedOff`.
     pub(super) async fn vacate_mixnet_slot(&mut self) {
-        self.correspondent_pools.clear_acquirer();
+        self.destination_pools.clear_acquirer();
         // Boot's unspent conduits go with the session: a teardown before
         // their jobs took them must leave no proxy behind.
-        for conduit in self.correspondent_pools.drain_conduits() {
+        for conduit in self.destination_pools.drain_conduits() {
             conduit.transport.stop().await;
         }
         for watchdog in [&mut self.standing_watchdog, &mut self.rotation_watchdog] {
@@ -544,14 +544,14 @@ impl LightClient {
         }
         self.standing_watchdog = Some(tokio::spawn(standing_proof_watchdog(
             self.mixnet_slot.clone(),
-            self.correspondent_pools.clone(),
+            self.destination_pools.clone(),
             std::sync::Arc::clone(&self.mixnet_status),
         )));
         // Both watchdogs follow the slot rather than a client, so a rotation
         // or a failover installing a replacement re-arms neither.
         self.rotation_watchdog = Some(tokio::spawn(standing_rotation_watchdog(
             self.mixnet_slot.clone(),
-            self.correspondent_pools.clone(),
+            self.destination_pools.clone(),
             std::sync::Arc::clone(&self.mixnet_status),
         )));
     }
@@ -571,7 +571,7 @@ impl LightClient {
         }
         *held = Some(tokio::spawn(run_proof_acquisition(
             self.mixnet_slot.clone(),
-            self.correspondent_pools.clone(),
+            self.destination_pools.clone(),
             std::sync::Arc::clone(&self.mixnet_status),
         )));
     }
@@ -725,7 +725,7 @@ impl LightClient {
         // order it confirms (ADR 0045). The IndexerClient's birth becomes
         // the session's standing client; the other three are held for the
         // jobs boot gives them and stop when those jobs end.
-        match crate::mixnet::quartet::prove_quartet(&self.correspondent_pools, acquirer.as_ref())
+        match crate::mixnet::quartet::prove_quartet(&self.destination_pools, acquirer.as_ref())
             .await
         {
             Ok(quartet) => {
@@ -737,7 +737,7 @@ impl LightClient {
                     (crate::mixnet::quartet::Role::PriceFetch, quartet.price),
                     (crate::mixnet::quartet::Role::Spare, quartet.spare),
                 ] {
-                    self.correspondent_pools.hold_conduit(role, conduit);
+                    self.destination_pools.hold_conduit(role, conduit);
                 }
                 // The Standing Client's later transitions — above all
                 // Died — must still reach the session's subscribers.
@@ -748,7 +748,7 @@ impl LightClient {
                     crate::mixnet::MixnetSlot::Attached(client),
                 );
                 debug_assert!(matches!(superseded, crate::mixnet::MixnetSlot::Unattached));
-                self.correspondent_pools.set_acquirer(acquirer);
+                self.destination_pools.set_acquirer(acquirer);
                 self.arm_standing_watchdog();
                 // The settled slot publishes last so subscribers read the
                 // attached state whole.
@@ -779,9 +779,9 @@ impl LightClient {
         };
         if let Some(node) = promoted_node {
             if let Some(node) = node {
-                self.correspondent_pools.remember(
+                self.destination_pools.remember(
                     node,
-                    crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
+                    crate::destination::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
                 );
             }
             // Subscribers watching the session channel see the promotion.
@@ -1044,9 +1044,9 @@ impl LightClient {
     /// Runs the mixnet liveness probe — concurrent `GetLightdInfo` calls
     /// through the session's SOCKS5 proxy, each appending its outcome to the
     /// cross-session indexer history — against `target`, or against every
-    /// Correspondent when `target` is `None`, with no clearnet leg and a
+    /// Destination when `target` is `None`, with no clearnet leg and a
     /// refusal while the mixnet transport is not ready.
-    pub async fn probe_correspondents(
+    pub async fn probe_destinations(
         &self,
         target: Option<http::Uri>,
         timeout: std::time::Duration,
@@ -1069,9 +1069,7 @@ impl LightClient {
             );
         }
         let targets: Vec<http::Uri> = target
-            .map_or_else(crate::correspondent::correspondent_indexers, |uri| {
-                vec![uri]
-            })
+            .map_or_else(crate::destination::destination_indexers, |uri| vec![uri])
             .into_iter()
             .filter(crate::mixnet::probe::probe_eligible)
             .collect();
@@ -1092,94 +1090,104 @@ impl LightClient {
         Ok(probes)
     }
 
-    /// Update and return the current ZEC price in USD by racing the three
-    /// price sources (Gemini, Kraken, CoinGecko) through the mixnet tunnel —
-    /// hiding the client IP, taking the first answer, erroring only when
-    /// every source fails and then naming each source's typed failure, and
-    /// returning the tunnel endpoint, the winning source, and the round-trip
-    /// time as per-fetch route evidence — while failing closed in every
-    /// other state: a typed [`MixnetNotReady`](crate::mixnet::MixnetNotReady)
-    /// refusal while unattached, bootstrapping, or died, and
-    /// [`LightClientError::PriceFetchRequiresMixnet`] while switched off,
-    /// because the switched-off consent covers Transmission and never a
-    /// third-party price API outside the Zcash ecosystem.
+    /// Update and return the current ZEC price in USD by racing the price
+    /// sources and taking the first answer. The race follows the Mixnet
+    /// Mode route: a ready mixnet carries it through the tunnel,
+    /// SwitchedOff carries it over clearnet as informed consent, and the
+    /// transitional states refuse with a typed
+    /// [`MixnetNotReady`](crate::mixnet::MixnetNotReady).
     pub async fn update_current_price(&self) -> Result<MixnetPriceFetch, LightClientError> {
-        // Held for the whole race, so the conduit knows the fetch is still
-        // running even while every source is in flight.
-        let dial = match self.mixnet_route()? {
-            crate::mixnet::MixnetRoute::Mixnet(conduit) => conduit.dial(),
-            crate::mixnet::MixnetRoute::Clearnet => {
-                return Err(LightClientError::PriceFetchRequiresMixnet);
-            }
-        };
-        let socks5_addr = dial.socks5();
-
-        // A spawned session births a per-run Proven Client — one fresh
-        // Shared exit per run, never the standing client's — while an
-        // attached session's single mobile-platform endpoint carries it as
-        // before. The per-run client is stopped whatever the outcome, and
-        // its lease recycles into the Exit Pool.
-        // The run is the one speed-priority operation shape: it acquires a
-        // transport, races its sources through that exit in a wave a
-        // Sentinel rides, and redraws whenever an exit proves to carry
-        // nothing. Acquisition, disposal, and the redraw bound are the
-        // shared loop's; this call site owns only the quote.
         let dispatched = std::time::Instant::now();
-        let run = PriceRun {
-            pools: self.correspondent_pools.clone(),
-        };
-        // A spawned session draws its own transport per run, so a dead exit
-        // costs a redraw. An attached session has one endpoint its platform
-        // host owns: there is nothing to redraw, so the run rides that tunnel
-        // for one wave, and a dead exit ends it.
-        let (outcomes, via_socks5) = if self.correspondent_pools.acquirer().is_some() {
-            let (outcomes, spent) = crate::mixnet::speed::run_speed_prioritized(&run)
-                .await
-                .map_err(crate::wallet::error::PriceError::Speed)?;
-            let dial = spent
-                .addr()
-                .map(|addr| addr.to_string())
-                .unwrap_or_default();
-            crate::mixnet::speed::SpeedPrioritized::dispose(&run, spent);
-            (outcomes, dial)
-        } else {
-            let conduit = zingo_netutils::conduit::MixnetConduit::over(socks5_addr);
-            match crate::mixnet::speed::run_wave(&run, &conduit).await {
-                crate::mixnet::speed::WaveEnd::Settled(outcomes)
-                | crate::mixnet::speed::WaveEnd::Exhausted(outcomes) => {
-                    (outcomes, socks5_addr.to_string())
-                }
+        let (outcomes, route) = match self.mixnet_route()? {
+            crate::mixnet::MixnetRoute::Clearnet => (
+                clearnet_price_race().await,
+                crate::lightclient::PriceFetchRoute::Clearnet,
+            ),
+            crate::mixnet::MixnetRoute::Mixnet(conduit) => {
+                let dial = conduit.dial();
+                let socks5_addr = dial.socks5();
+
+                let run = PriceRun {
+                    pools: self.destination_pools.clone(),
+                };
+
+                let (outcomes, via_socks5) = if self.destination_pools.acquirer().is_some() {
+                    let (outcomes, spent) = crate::mixnet::speed::run_speed_prioritized(&run)
+                        .await
+                        .map_err(crate::wallet::error::PriceError::Speed)?;
+                    let dial = spent
+                        .addr()
+                        .map(|addr| addr.to_string())
+                        .unwrap_or_default();
+                    crate::mixnet::speed::SpeedPrioritized::dispose(&run, spent);
+                    (outcomes, dial)
+                } else {
+                    let conduit = zingo_netutils::conduit::MixnetConduit::over(socks5_addr);
+                    match crate::mixnet::speed::run_wave(&run, &conduit).await {
+                        crate::mixnet::speed::WaveEnd::Settled(outcomes)
+                        | crate::mixnet::speed::WaveEnd::Exhausted(outcomes) => {
+                            (outcomes, socks5_addr.to_string())
+                        }
+                    }
+                };
+                (
+                    outcomes,
+                    crate::lightclient::PriceFetchRoute::Mixnet { via_socks5 },
+                )
             }
         };
         let raced =
             zingo_price::first_quote(outcomes).map_err(crate::wallet::error::PriceError::from)?;
-        let round_trip = dispatched.elapsed();
         Ok(MixnetPriceFetch {
             usd: raced.price.price_usd,
             source: raced.source,
-            round_trip,
-            via_socks5: via_socks5.to_string(),
+            round_trip: dispatched.elapsed(),
+            route,
         })
     }
+}
+
+/// Races every price source over untunneled clearnet HTTP, the route a
+/// switched-off Mixnet Mode consents to. Settles on the first quote,
+/// keeping earlier failures for the report.
+#[cfg(feature = "nym")]
+async fn clearnet_price_race() -> Vec<(
+    zingo_price::PriceSource,
+    Result<zingo_price::Price, zingo_price::PriceError>,
+)> {
+    use futures::StreamExt;
+    let mut in_flight = zingo_price::RACED_SOURCES
+        .iter()
+        .map(|&source| async move {
+            let quote = zingo_price::get_source_price_untunneled(
+                source,
+                source.url(),
+                zingo_price::REQUEST_TIMEOUT,
+                zingo_price::CONNECT_TIMEOUT,
+            )
+            .await;
+            (source, quote)
+        })
+        .collect::<futures::stream::FuturesUnordered<_>>();
+    let mut outcomes = Vec::new();
+    while let Some(outcome) = in_flight.next().await {
+        let settled = outcome.1.is_ok();
+        outcomes.push(outcome);
+        if settled {
+            break;
+        }
+    }
+    outcomes
 }
 
 #[cfg(test)]
 mod tests {
 
     mod price_fetch_contract {
-        //! The price-fetch error contract for the mixnet route (ADR 0011,
-        //! amendments 2026-07-23 and 2026-07-27).
-        //!
-        //! Every way the opt-in mixnet price fetch can fail must arrive at
-        //! the API surface as a typed [`LightClientError`] variant with its
-        //! source chain intact: never prose in the data channel, never a
-        //! silent clearnet fallback. The route pre-flight variants
-        //! (`PriceFetchRequiresMixnet`, `MixnetNotReady::{Unattached,
-        //! Bootstrapping, Died}`) pair with `mixnet::route`'s own
-        //! `resolve_route` tests; the tests here pin the surface wiring. The
-        //! transport-leg contract (typed connect and timeout failures with
-        //! their cause chains) is pinned in `zingo-price`'s own tests,
-        //! beside the mechanism.
+        //! The price-fetch error contract: every failure reaches the API
+        //! as a typed [`LightClientError`], and a clearnet leg runs only
+        //! with consent. Route refusals pair with `mixnet::route`'s tests;
+        //! transport-leg failures are pinned in `zingo-price`.
         use crate::lightclient::LightClient;
         use crate::lightclient::error::LightClientError;
         use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
@@ -1210,23 +1218,26 @@ mod tests {
             );
         }
 
-        /// Mixnet Mode switched off is equally a typed refusal for the
-        /// opt-in mixnet fetch: the caller demanded the private route, so a
-        /// consented-clearnet mode answers `PriceFetchRequiresMixnet` rather
-        /// than quietly fetching over clearnet.
+        /// Switched off consents to a clearnet fetch; only `Unattached`,
+        /// `Bootstrapping`, and `Died` refuse. A failed race is accepted,
+        /// a route refusal is not.
         #[tokio::test]
-        async fn switched_off_mode_is_a_typed_refusal() {
+        async fn switched_off_mode_consents_to_a_clearnet_fetch() {
             let mut client = LightClient::new_for_test(wallet()).await;
             client.disable_mixnet().await;
 
-            let error = client
-                .update_current_price()
-                .await
-                .expect_err("switched off consents to clearnet, not to a mixnet fetch");
-            assert!(
-                matches!(error, LightClientError::PriceFetchRequiresMixnet),
-                "the refusal must be typed, not prose: {error}"
-            );
+            match client.update_current_price().await {
+                Ok(fetch) => assert_eq!(
+                    fetch.route,
+                    crate::lightclient::PriceFetchRoute::Clearnet,
+                    "a switched-off fetch must attest the clearnet route"
+                ),
+
+                Err(LightClientError::PriceError(_)) => {}
+                Err(refusal) => {
+                    panic!("switched off must consent to a clearnet fetch, not refuse: {refusal}")
+                }
+            }
         }
 
         /// The startup opt-out is the explicit act (ADR 0024, consent at
@@ -1483,7 +1494,7 @@ mod tests {
             let slot = std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Attached(attached_client(addr)),
             ));
-            let pools = crate::correspondent::pool::Pools::new();
+            let pools = crate::destination::pool::Pools::new();
             // The desktop acquirer is the production Never, and its verdict
             // is answered without the binary ever being spawned.
             pools.set_acquirer(std::sync::Arc::new(
@@ -1544,7 +1555,7 @@ mod tests {
             let slot = std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Attached(attached_client(addr)),
             ));
-            let pools = crate::correspondent::pool::Pools::new();
+            let pools = crate::destination::pool::Pools::new();
             let status = crate::mixnet::status_publisher();
             let mut watching = status.subscribe();
             watching.borrow_and_update();
@@ -1606,7 +1617,7 @@ mod tests {
             let slot = std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Attached(client),
             ));
-            let pools = crate::correspondent::pool::Pools::new();
+            let pools = crate::destination::pool::Pools::new();
             let status = crate::mixnet::status_publisher();
 
             let watchdog = tokio::spawn(super::super::standing_proof_watchdog(
@@ -1664,9 +1675,9 @@ mod tests {
             let addr = listener.local_addr().expect("local addr");
             let mut client = LightClient::new_for_test(wallet()).await;
             for exit in HARNESS_CENSUS {
-                client.correspondent_pools.remember(
+                client.destination_pools.remember(
                     ExitNodeId::from(exit),
-                    crate::correspondent::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
+                    crate::destination::pool::exit_pool::ExitNodeHealthVerdict::EpochProven,
                 );
             }
             let mut feed = client.subscribe_mixnet_status();
@@ -1754,7 +1765,7 @@ mod tests {
             .expect("the attach accepts a bound exit");
             let client = crate::mixnet::StandingClient::new(proxy, None, true);
             let exhausted = crate::mixnet::acquire::TransportError::NoProvenExit {
-                probed: crate::correspondent::pool::MAX_PROVING_BIRTHS,
+                probed: crate::destination::pool::MAX_PROVING_BIRTHS,
                 budget: zingo_netutils::time::SENTINEL_BUDGET,
             };
             client.forsake(zingo_net_diag::NetOpFailure::from_error(
@@ -1995,7 +2006,7 @@ mod proof_acquisition {
     //! ProofAcquisition the moment the proof stops being epoch-fresh.
 
     use super::{adjudicate_standing_proof, standing_proof_watchdog};
-    use crate::correspondent::pool::exit_pool::Reservation;
+    use crate::destination::pool::exit_pool::Reservation;
     use crate::mixnet::{Indicator, MixnetSlot, StandingClient};
 
     fn slot_with(born_probed: bool, exit: &str) -> std::sync::Arc<std::sync::Mutex<MixnetSlot>> {
@@ -2018,7 +2029,7 @@ mod proof_acquisition {
     #[tokio::test]
     async fn an_answer_promotes_and_refreshes_the_observation() {
         let slot = slot_with(false, "exit-answers");
-        let pools = crate::correspondent::pool::Pools::new();
+        let pools = crate::destination::pool::Pools::new();
         let status = crate::mixnet::status_publisher();
 
         adjudicate_standing_proof(
@@ -2047,7 +2058,7 @@ mod proof_acquisition {
     #[tokio::test]
     async fn silence_convicts_and_a_rebirthless_failover_latches_died() {
         let slot = slot_with(true, "exit-silent");
-        let pools = crate::correspondent::pool::Pools::new();
+        let pools = crate::destination::pool::Pools::new();
         let status = crate::mixnet::status_publisher();
 
         adjudicate_standing_proof(
@@ -2081,7 +2092,7 @@ mod proof_acquisition {
         if let MixnetSlot::Attached(client) = &*slot.lock().unwrap() {
             client.set_proof_deadline(std::time::Instant::now());
         }
-        let pools = crate::correspondent::pool::Pools::new();
+        let pools = crate::destination::pool::Pools::new();
         let status = crate::mixnet::status_publisher();
         let mut watcher = status.subscribe();
 

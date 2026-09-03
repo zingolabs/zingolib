@@ -1321,3 +1321,102 @@ mod perspective {
         recipient.await_sync().await.unwrap();
     }
 }
+
+/// A mock-chain send travels the mixnet route and says so: the receipt
+/// names the Destination that accepted the transaction and the
+/// session's SOCKS5 endpoint, never the sync indexer. Mock-net clients
+/// run with Mixnet Mode switched on, so the Destination draw, the
+/// escalation rounds, and the cap all run for real; only the bytes take
+/// the mock indexer's channel instead of the tunnel.
+#[cfg(feature = "nym")]
+#[tokio::test]
+async fn a_mock_chain_send_reports_the_mixnet_route() {
+    use crate::lightclient::send::TransmitRoute;
+
+    let mut net = MockNet::launch().await;
+    let mut recipient = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+    let recipient_ua =
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+
+    net.chain.write().await.mine_empty_blocks(1);
+    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    recipient.sync_and_await().await.unwrap();
+    check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
+
+    let reports = from_inputs::quick_send_reported(
+        &mut recipient,
+        vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+    )
+    .await
+    .unwrap();
+
+    for report in &reports {
+        match &report.route {
+            TransmitRoute::Mixnet {
+                destination,
+                via_socks5,
+            } => {
+                assert_eq!(
+                    via_socks5,
+                    &crate::mocks::transmission::MOCK_SOCKS5_ADDR.to_string()
+                );
+                assert!(
+                    crate::destination::DESTINATION_INDEXERS
+                        .iter()
+                        .any(|entry| entry.contains(destination.as_str())),
+                    "the winning Destination {destination} is not drawn from the curated pool"
+                );
+            }
+            TransmitRoute::Clearnet { indexer } => {
+                panic!("a mixnet-on session leaked the transmission to clearnet at {indexer}")
+            }
+        }
+    }
+
+    net.chain.write().await.mine_mempool();
+    recipient.sync_and_await().await.unwrap();
+
+    // 100_000 funding minus the 20_000 payment and its 10_000 one-orchard-
+    // spend, two-logical-action ZIP-317 fee.
+    check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
+}
+
+/// The falsifier for [`a_mock_chain_send_reports_the_mixnet_route`]: the
+/// deliberate toggle-off is the one act that routes a transmission over
+/// clearnet as informed consent, and its receipt names the sync indexer
+/// rather than a Destination.
+#[cfg(feature = "nym")]
+#[tokio::test]
+async fn switching_the_mixnet_off_reports_the_clearnet_route() {
+    use crate::lightclient::send::TransmitRoute;
+
+    let mut net = MockNet::launch().await;
+    let mut recipient = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+    let recipient_ua =
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+
+    net.chain.write().await.mine_empty_blocks(1);
+    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    recipient.sync_and_await().await.unwrap();
+
+    recipient.disable_mixnet().await;
+
+    let reports = from_inputs::quick_send_reported(
+        &mut recipient,
+        vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+    )
+    .await
+    .unwrap();
+
+    for report in &reports {
+        assert!(
+            matches!(report.route, TransmitRoute::Clearnet { .. }),
+            "a switched-off session reported {:?} instead of clearnet",
+            report.route
+        );
+    }
+}

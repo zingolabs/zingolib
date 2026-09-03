@@ -174,7 +174,7 @@ mod progress_heartbeat {
             "confirm",
             PROGRESS_HEARTBEAT_INTERVAL,
             "working",
-            || Some("correspondent zec.rocks: submitting".to_string()),
+            || Some("destination zec.rocks: submitting".to_string()),
             move |line| sink.lock().expect("line sink poisoned").push(line),
             tokio::time::sleep(PROGRESS_HEARTBEAT_INTERVAL * 3 + Duration::from_millis(500)),
         )
@@ -183,7 +183,7 @@ mod progress_heartbeat {
         let expected: Vec<String> = (1..=3)
             .map(|tick| {
                 format!(
-                    "confirm: correspondent zec.rocks: submitting ({}s elapsed)",
+                    "confirm: destination zec.rocks: submitting ({}s elapsed)",
                     PROGRESS_HEARTBEAT_INTERVAL.as_secs() * tick
                 )
             })
@@ -668,7 +668,7 @@ mod network_command_parsing {
         use zingolib::mixnet::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
 
         let live = MixnetProbe {
-            host: zingolib::correspondent::Host::of_host_str("zec.rocks"),
+            host: zingolib::destination::Host::of_host_str("zec.rocks"),
             leg: ProbeLeg {
                 outcome: Ok(ProbeSuccess {
                     chain: "main".to_string(),
@@ -683,7 +683,7 @@ mod network_command_parsing {
         );
 
         let dead = MixnetProbe {
-            host: zingolib::correspondent::Host::of_host_str("carover0.xyz"),
+            host: zingolib::destination::Host::of_host_str("carover0.xyz"),
             leg: ProbeLeg {
                 outcome: Err(NetOpFailure {
                     stage: NetOpStage::SocksHandshake,
@@ -714,7 +714,7 @@ mod network_command_parsing {
 
         let attempt = |host: &str, route, unix_secs, outcome| IndexerAttempt {
             unix_secs,
-            host: zingolib::correspondent::Host::of_host_str(host),
+            host: zingolib::destination::Host::of_host_str(host),
             route,
             kind: AttemptKind::Send,
             millis: 10,

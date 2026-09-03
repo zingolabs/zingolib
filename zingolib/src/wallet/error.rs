@@ -141,9 +141,9 @@ pub enum WalletError {
     WalletAlreadyCreated,
 }
 
-/// Price error. Exists only in nym builds: the mixnet-only price rule
-/// (ADR 0011, amendment 2026-07-28) leaves other builds with no fetch and
-/// therefore no fetch failures.
+/// Price error. Exists only in nym builds: the fetch compiles only with
+/// the mixnet stack, so other builds have no fetch and therefore no
+/// fetch failures.
 #[cfg(feature = "nym")]
 #[derive(Debug, thiserror::Error)]
 pub enum PriceError {

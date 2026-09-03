@@ -151,8 +151,9 @@ impl ConduitDial {
     }
 }
 
-/// The body at `url`, fetched without a conduit, for tests alone.
-#[cfg(feature = "testutils")]
+/// The body at `url`, fetched untunneled, disclosing the client IP: the
+/// clearnet leg of the price fetch a switched-off Mixnet Mode consents
+/// to.
 pub async fn fetch_text_untunneled(
     url: &str,
     request_timeout: Duration,

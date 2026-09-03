@@ -1,17 +1,17 @@
 //! Censorship-resistant transmission over the Nym mixnet: a hedged
-//! Correspondent Rotation over the curated Correspondent list.
+//! Destination Rotation over the curated Destination list.
 //!
-//! The adversary is a Correspondent that suppresses a send (accepting the
+//! The adversary is a Destination that suppresses a send (accepting the
 //! connection but declining to relay, stalling silently, or misreporting
 //! the outcome), so the send must be able to route around it to honest
-//! indexers. One random Correspondent is submitted to first (Correspondent
-//! Rotation, and the common success path). A further Correspondent learns
+//! indexers. One random Destination is submitted to first (Destination
+//! Rotation, and the common success path). A further Destination learns
 //! of the transaction only on evidence: an arm's failure, or
 //! [`TRANSMISSION_HEDGE_INTERVAL`] of silence — an interval sized so a
-//! responsive Correspondent's confirmed delivery ends the race before the
+//! responsive Destination's confirmed delivery ends the race before the
 //! first hedge fires. At most [`RESERVATION_CLUTCH_SIZE`] arms fly at
-//! once, the race stops at `MAX_TRANSMISSION_CORRESPONDENTS` distinct
-//! Correspondents, and the first confirmed delivery wins with the rest
+//! once, the race stops at `MAX_TRANSMISSION_DESTINATIONS` distinct
+//! Destinations, and the first confirmed delivery wins with the rest
 //! abandoned. See
 //! `docs/adr/0040-sends-escalation-is-a-hedged-race-of-full-paths.md`.
 //!
@@ -40,18 +40,18 @@ use zingo_netutils::arm_race::{
 };
 use zingo_netutils::time::TRANSMISSION_HEDGE_INTERVAL;
 
-/// The maximum number of distinct Correspondents a single send may contact
+/// The maximum number of distinct Destinations a single send may contact
 /// before it surfaces failure (ADR 0011, schedule superseded by ADR 0040).
 /// It is the circuit breaker for an untransmittable transaction, since the
 /// client cannot classify a rejection.
-pub(crate) const MAX_TRANSMISSION_CORRESPONDENTS: usize = 6;
+pub(crate) const MAX_TRANSMISSION_DESTINATIONS: usize = 6;
 
-/// One Correspondent's failed pull: which indexer was tried and its typed
+/// One Destination's failed pull: which indexer was tried and its typed
 /// failure, carried whole (`docs/agents/net-diag-design.md`).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct CorrespondentAttempt<E> {
-    /// The Correspondent's host.
-    pub correspondent: String,
+pub(crate) struct DestinationAttempt<E> {
+    /// The Destination's host.
+    pub destination: String,
     /// The pull's failure, untouched.
     pub failure: E,
 }
@@ -61,22 +61,22 @@ pub(crate) struct CorrespondentAttempt<E> {
 /// vector for the existing string consumers, never the storage form.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum EscalationError<E> {
-    /// The Correspondent list was empty.
+    /// The Destination list was empty.
     NoIndexers,
-    /// The cap was reached without any Correspondent confirming delivery.
+    /// The cap was reached without any Destination confirming delivery.
     AllFailed {
-        /// The number of distinct Correspondents contacted.
+        /// The number of distinct Destinations contacted.
         attempts: usize,
-        /// Every Correspondent's failure: which indexers were tried and how
+        /// Every Destination's failure: which indexers were tried and how
         /// each pull failed, in completion order.
-        failures: Vec<CorrespondentAttempt<E>>,
+        failures: Vec<DestinationAttempt<E>>,
     },
 }
 
 impl<E: std::fmt::Display> std::fmt::Display for EscalationError<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EscalationError::NoIndexers => write!(f, "the Correspondent list is empty"),
+            EscalationError::NoIndexers => write!(f, "the Destination list is empty"),
             EscalationError::AllFailed { attempts, failures } => {
                 write!(
                     f,
@@ -86,7 +86,7 @@ impl<E: std::fmt::Display> std::fmt::Display for EscalationError<E> {
                     if i > 0 {
                         write!(f, "; ")?;
                     }
-                    write!(f, "{}: {}", attempt.correspondent, attempt.failure)?;
+                    write!(f, "{}: {}", attempt.destination, attempt.failure)?;
                 }
                 Ok(())
             }
@@ -96,12 +96,12 @@ impl<E: std::fmt::Display> std::fmt::Display for EscalationError<E> {
 
 impl<E: std::fmt::Display + std::fmt::Debug> std::error::Error for EscalationError<E> {}
 
-/// Transmit to `indexers` as a hedged Correspondent Rotation, returning the
-/// server-reported txid of the first Correspondent to confirm delivery.
+/// Transmit to `indexers` as a hedged Destination Rotation, returning the
+/// server-reported txid of the first Destination to confirm delivery.
 /// `run_pull` submits to one indexer and resolves to `Ok(server_txid)` on
 /// confirmed delivery or `Err(msg)` otherwise. `rng` chooses the random
-/// order (Correspondent Rotation), and `cap` bounds the distinct
-/// Correspondents contacted.
+/// order (Destination Rotation), and `cap` bounds the distinct
+/// Destinations contacted.
 ///
 /// One pull launches first; a further pull launches only after
 /// [`TRANSMISSION_HEDGE_INTERVAL`] of silence or immediately on a pull's
@@ -154,7 +154,7 @@ where
     );
     let mut pulls = FuturesUnordered::new();
     let mut lost = false;
-    let mut failures: Vec<CorrespondentAttempt<E>> = Vec::new();
+    let mut failures: Vec<DestinationAttempt<E>> = Vec::new();
     // The planner schedules at most one hedge timer; the driver owns it.
     let mut hedge_timer: Option<std::pin::Pin<Box<tokio::time::Sleep>>> = None;
 
@@ -219,8 +219,8 @@ where
                     &mut lost,
                     &mut hedge_timer,
                 );
-                failures.push(CorrespondentAttempt {
-                    correspondent: host_of(arm),
+                failures.push(DestinationAttempt {
+                    destination: host_of(arm),
                     failure: error,
                 });
                 report(race.progress().to_string());
@@ -269,7 +269,7 @@ mod tests {
     /// every indexer it was asked to contact. Recording happens when the pull is
     /// created, so the race's full width is counted even when an early pull
     /// wins the race. A host in `hang` never resolves, the shape of a
-    /// Correspondent that accepts the connection and stalls silently.
+    /// Destination that accepts the connection and stalls silently.
     struct MockArms {
         scripts: HashMap<String, Result<String, String>>,
         hang: std::collections::HashSet<String>,
@@ -350,9 +350,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_confirming_first_pull_contacts_exactly_one_correspondent() {
+    async fn a_confirming_first_pull_contacts_exactly_one_destination() {
         // Every indexer would accept; the single first pick must end it, so
-        // the happy path keeps its single-Correspondent discipline.
+        // the happy path keeps its single-Destination discipline.
         let indexers = uris(&["a", "b", "c", "d"]);
         let mock = MockArms::new(&[
             ("a", Ok("txid")),
@@ -378,7 +378,7 @@ mod tests {
         // Fail the seed's first pick; accept everywhere else. The failure
         // launches exactly one replacement pull, which succeeds, so exactly
         // two distinct indexers are contacted — hedged widening spends one
-        // fresh Correspondent per piece of evidence, never a round of them.
+        // fresh Destination per piece of evidence, never a round of them.
         let hosts = ["a", "b", "c", "d", "e"];
         let indexers = uris(&hosts);
         let seed = 20;
@@ -422,7 +422,7 @@ mod tests {
     #[tokio::test]
     async fn all_failing_stops_at_the_cap() {
         // Ten indexers, every one suppressing. Each failure launches one
-        // replacement, and the walk must stop at the six-Correspondent cap,
+        // replacement, and the walk must stop at the six-Destination cap,
         // not visit the whole list.
         let hosts = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
         let indexers = uris(&hosts);
@@ -433,7 +433,7 @@ mod tests {
         let err = escalating_transmit(
             &indexers,
             &mut StdRng::seed_from_u64(3),
-            MAX_TRANSMISSION_CORRESPONDENTS,
+            MAX_TRANSMISSION_DESTINATIONS,
             |u| mock.run(u),
             |_| (),
         )
@@ -444,7 +444,7 @@ mod tests {
             other => panic!("expected AllFailed, got {other:?}"),
         }
         let contacted = mock.contacted();
-        assert_eq!(contacted.len(), 6, "capped at six Correspondents");
+        assert_eq!(contacted.len(), 6, "capped at six Destinations");
         let distinct: std::collections::HashSet<_> = contacted.iter().collect();
         assert_eq!(distinct.len(), 6, "no indexer is contacted twice");
     }
@@ -474,12 +474,12 @@ mod tests {
         assert_eq!(mock.contacted().len(), 3);
     }
 
-    /// HYPOTHESIS: a failed escalation accounts for every Correspondent
+    /// HYPOTHESIS: a failed escalation accounts for every Destination
     /// contacted and how each failed, as typed records — and the prose
     /// rendering on top still names each one. Falsified if any contacted host
     /// is missing from the typed attempts or the rendering.
     #[tokio::test]
-    async fn a_failed_escalation_records_every_correspondent_and_its_failure() {
+    async fn a_failed_escalation_records_every_destination_and_its_failure() {
         let hosts = ["a", "b", "c"];
         let indexers = uris(&hosts);
         let scripts: Vec<(&str, Result<&str, &str>)> =
@@ -503,7 +503,7 @@ mod tests {
             assert!(
                 failures
                     .iter()
-                    .any(|a| a.correspondent == host && a.failure == "suppressed"),
+                    .any(|a| a.destination == host && a.failure == "suppressed"),
                 "the typed attempts must record {host}: {failures:?}"
             );
             assert!(
@@ -529,7 +529,7 @@ mod tests {
         let _ = escalating_transmit(
             &indexers,
             &mut StdRng::seed_from_u64(11),
-            MAX_TRANSMISSION_CORRESPONDENTS,
+            MAX_TRANSMISSION_DESTINATIONS,
             |u| mock.run(u),
             |line| lines.lock().expect("narration mutex poisoned").push(line),
         )
@@ -549,9 +549,9 @@ mod tests {
         );
     }
 
-    /// HYPOTHESIS: silence alone widens the race — a Correspondent that
+    /// HYPOTHESIS: silence alone widens the race — a Destination that
     /// accepts and stalls costs one hedge interval, after which a second
-    /// Correspondent is contacted while the first pull stays in flight.
+    /// Destination is contacted while the first pull stays in flight.
     /// Falsified if a silent stall leaves the race at width one.
     #[tokio::test(start_paused = true)]
     async fn silence_alone_widens_the_race_by_one_pull() {
@@ -569,7 +569,7 @@ mod tests {
             escalating_transmit(
                 &indexers,
                 &mut StdRng::seed_from_u64(2),
-                MAX_TRANSMISSION_CORRESPONDENTS,
+                MAX_TRANSMISSION_DESTINATIONS,
                 |u| mock.run(u),
                 |line| lines.lock().expect("narration mutex poisoned").push(line),
             ),
@@ -585,13 +585,13 @@ mod tests {
         assert_eq!(
             mock.contacted().len(),
             2,
-            "the silence hedge contacts exactly the second Correspondent"
+            "the silence hedge contacts exactly the second Destination"
         );
     }
 
     #[tokio::test]
-    async fn a_seed_picks_the_same_first_correspondent_every_time() {
-        // Correspondent Rotation is driven by the injected RNG, so a fixed
+    async fn a_seed_picks_the_same_first_destination_every_time() {
+        // Destination Rotation is driven by the injected RNG, so a fixed
         // seed is reproducible: the same indexer opens the race across runs.
         let hosts = ["a", "b", "c", "d", "e"];
         let indexers = uris(&hosts);
@@ -621,7 +621,7 @@ mod tests {
         assert_eq!(
             first_run.contacted()[0],
             second_run.contacted()[0],
-            "the seed fixes the opening Correspondent"
+            "the seed fixes the opening Destination"
         );
     }
 }

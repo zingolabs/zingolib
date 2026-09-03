@@ -908,7 +908,7 @@ impl LightClient {
     ///
     /// While the mode is on, parts travel ONLY over the mixnet (failing
     /// closed with [`MixnetNotReady`](crate::mixnet::MixnetNotReady) while the
-    /// proxy bootstraps or after it dies) to one Correspondent drawn at
+    /// proxy bootstraps or after it dies) to one Destination drawn at
     /// random per submission, with the synchronization endpoint's operator
     /// forbidden as a target (ADR 0022: a `migration_transmission_uri` on the
     /// sync operator's domain is refused, and the draw excludes that
@@ -2309,12 +2309,12 @@ fn record_part_route(
     use crate::wallet::migration::TransmissionRoute;
 
     let (host, attempt_route) = match route {
-        TransmissionRoute::Mixnet { correspondent, .. } => (
-            crate::correspondent::Host::of_host_str(correspondent),
+        TransmissionRoute::Mixnet { destination, .. } => (
+            crate::destination::Host::of_host_str(destination),
             AttemptRoute::Mixnet,
         ),
         TransmissionRoute::Clearnet { endpoint } => (
-            crate::correspondent::Host::of_host_str(endpoint),
+            crate::destination::Host::of_host_str(endpoint),
             AttemptRoute::Clearnet,
         ),
     };
@@ -4540,7 +4540,7 @@ mod tests {
         #[test]
         fn the_detector_can_see_a_clearnet_leak() {
             let mixnet = TransmissionRoute::Mixnet {
-                correspondent: "correspondent.example".to_string(),
+                destination: "destination.example".to_string(),
                 via_socks5: "127.0.0.1:1".to_string(),
             };
             let clearnet = TransmissionRoute::Clearnet {

@@ -2,7 +2,7 @@
 
 use std::{
     fs::File,
-    io::{BufReader, Cursor},
+    io::{BufReader, Cursor, Read},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -104,28 +104,36 @@ impl WalletMeta {
     }
 }
 
-/// A successfully fetched ZEC price, attested with the route it traveled,
-/// the source that answered, and the time the answer took.
-///
-/// The route attestation is the mixnet tunnel's local SOCKS5 endpoint the
-/// fetch went through. It rides the success value — not a log — so every
-/// consumer of [`LightClient::update_current_price`] holds per-fetch
-/// evidence that this fetch ran over the mixnet (ADR 0011). The source and
-/// round trip ride beside it: the fetch races all three price sources and
-/// reports the one whose answer arrived first.
+/// A successfully fetched ZEC price with the route it traveled, the
+/// source whose answer won the race, and the time the answer took. The
+/// route rides the success value so every consumer of
+/// [`LightClient::update_current_price`] holds per-fetch evidence of it.
 #[cfg(feature = "nym")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct MixnetPriceFetch {
     /// The current ZEC price in USD.
     pub usd: f32,
-    /// The price source whose answer won the three-source race.
+    /// The price source whose answer won the race.
     pub source: zingo_price::PriceSource,
     /// Wall-clock time from dispatching the race to the winning answer,
-    /// tunnel traversal included.
+    /// tunnel traversal included on the mixnet route.
     pub round_trip: std::time::Duration,
-    /// The local SOCKS5 endpoint of the mixnet tunnel this fetch traveled
-    /// through.
-    pub via_socks5: String,
+    /// The route this fetch traveled.
+    pub route: PriceFetchRoute,
+}
+
+/// The route one price fetch traveled.
+#[cfg(feature = "nym")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PriceFetchRoute {
+    /// Untunneled HTTP straight to the price sources: the route a
+    /// switched-off Mixnet Mode consents to.
+    Clearnet,
+    /// The mixnet tunnel, reached through its local SOCKS5 endpoint.
+    Mixnet {
+        /// The local SOCKS5 endpoint the fetch traveled through.
+        via_socks5: String,
+    },
 }
 
 /// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
@@ -191,7 +199,7 @@ pub struct LightClient {
     /// The session's exit authority: Reservations, the NodeHealthIndex, and
     /// the acquirer Proven Clients are born from.
     #[cfg(feature = "nym")]
-    correspondent_pools: std::sync::Arc<crate::correspondent::pool::Pools>,
+    destination_pools: std::sync::Arc<crate::destination::pool::Pools>,
     /// The session-level Mixnet Mode status channel (ADR 0024, decision 2):
     /// the one shared watch every subscriber reads. Transport transitions
     /// publish from the supervisor's tasks, slot transitions from the
@@ -300,7 +308,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            correspondent_pools: crate::correspondent::pool::Pools::new(),
+            destination_pools: crate::destination::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
@@ -350,7 +358,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            correspondent_pools: crate::correspondent::pool::Pools::new(),
+            destination_pools: crate::destination::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
@@ -360,8 +368,7 @@ impl LightClient {
         }
     }
 
-    /// Creates a [`LightClient`] by deserializing wallet bytes directly, without reading from
-    /// a file.
+    /// Creates a [`LightClient`] from wallet bytes already in memory, without reading a file.
     ///
     /// Intended for mobile platforms (iOS/Android) where the native layer (Swift/Kotlin) owns
     /// all file I/O: the native side reads the wallet file and passes the raw bytes across the
@@ -371,18 +378,34 @@ impl LightClient {
     /// to the OS temp directory (notably Android, where `std::env::temp_dir()` resolves to
     /// `/tmp` outside the app UID's reach).
     ///
-    /// The `config` is still required for the indexer URI and chain type. `wallet_dir` /
-    /// `wallet_name` within the config are retained on the resulting [`LightClient`] for any
-    /// subsequent save operations, but no file is read here.
+    /// This is a thin wrapper over [`LightClient::from_reader`] with a [`std::io::Cursor`]. See
+    /// that method for how `config` is used.
     #[allow(clippy::result_large_err)]
     pub async fn from_bytes(
         bytes: Vec<u8>,
         config: ClientConfig,
     ) -> Result<Self, LightClientError> {
+        Self::from_reader(Cursor::new(bytes), config).await
+    }
+
+    /// Creates a [`LightClient`] from a wallet read from `reader`, without a wallet file on disk.
+    ///
+    /// The `reader` is wrapped in a [`BufReader`] internally, so callers may pass an unbuffered
+    /// source such as a [`File`]. The read happens synchronously inside this `async fn`, so a
+    /// reader backed by blocking I/O blocks the executor thread for the duration of the read.
+    ///
+    /// The `config` is still required for the indexer URI and chain type. `wallet_dir` /
+    /// `wallet_name` within the config are retained on the resulting [`LightClient`] for any
+    /// subsequent save operations, but no file is read here.
+    #[allow(clippy::result_large_err)]
+    pub async fn from_reader<R: Read>(
+        reader: R,
+        config: ClientConfig,
+    ) -> Result<Self, LightClientError> {
         // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
         zingo_netutils::ensure_default_crypto_provider();
 
-        let wallet = LightWallet::read(Cursor::new(bytes), config.chain_type())
+        let wallet = LightWallet::read(BufReader::new(reader), config.chain_type())
             .map_err(LightClientError::FileError)?;
 
         let indexer = if let Some(uri) = config.indexer_uri() {
@@ -416,7 +439,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            correspondent_pools: crate::correspondent::pool::Pools::new(),
+            destination_pools: crate::destination::pool::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
@@ -783,6 +806,8 @@ impl std::fmt::Debug for LightClient {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Cursor, Read};
+
     use crate::{
         config::{ChainType, ClientConfig, WalletConfig},
         lightclient::{LightClient, error::LightClientError},
@@ -882,6 +907,89 @@ mod tests {
             source.unified_addresses_json().await[0]["encoded_address"],
             restored.unified_addresses_json().await[0]["encoded_address"],
         );
+    }
+
+    /// A reader that yields at most one byte per `read` call.
+    struct OneByteReader(Cursor<Vec<u8>>);
+
+    impl Read for OneByteReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let len = buf.len().min(1);
+            self.0.read(&mut buf[..len])
+        }
+    }
+
+    /// Feeds one byte per call to `from_reader` and checks the wallet matches `from_bytes`.
+    #[tokio::test]
+    async fn from_reader_with_one_byte_reads_matches_from_bytes() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = ClientConfig::builder()
+            .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
+            .set_wallet_dir(temp_dir.path().to_path_buf())
+            .set_wallet_config(WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: CHIMNEY_BETTER_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            })
+            .build()
+            .unwrap();
+
+        let source = LightClient::new(config, false).await.unwrap();
+        let bytes = source
+            .wallet()
+            .write()
+            .await
+            .save()
+            .expect("save returned an error")
+            .expect("nothing to save");
+
+        let read_config = || {
+            ClientConfig::builder()
+                .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
+                .set_wallet_dir(temp_dir.path().to_path_buf())
+                .set_wallet_config(WalletConfig::Read)
+                .build()
+                .unwrap()
+        };
+        let from_bytes = LightClient::from_bytes(bytes.clone(), read_config())
+            .await
+            .unwrap();
+        let from_reader =
+            LightClient::from_reader(OneByteReader(Cursor::new(bytes)), read_config())
+                .await
+                .unwrap();
+
+        assert_eq!(
+            from_reader.mnemonic_phrase().as_deref(),
+            Some(CHIMNEY_BETTER_SEED)
+        );
+        assert_eq!(from_bytes.mnemonic_phrase(), from_reader.mnemonic_phrase());
+        assert_eq!(from_bytes.birthday(), from_reader.birthday());
+        assert_eq!(
+            from_bytes.transparent_addresses_json().await,
+            from_reader.transparent_addresses_json().await,
+        );
+        assert_eq!(
+            from_bytes.unified_addresses_json().await,
+            from_reader.unified_addresses_json().await,
+        );
+        let chain_type = from_bytes.chain_type();
+        let mut bytes_serialized = Vec::new();
+        from_bytes
+            .wallet()
+            .write()
+            .await
+            .write(&mut bytes_serialized, &chain_type)
+            .unwrap();
+        let mut reader_serialized = Vec::new();
+        from_reader
+            .wallet()
+            .write()
+            .await
+            .write(&mut reader_serialized, &chain_type)
+            .unwrap();
+        assert_eq!(bytes_serialized, reader_serialized);
     }
 
     /// The `info` data/error channel contract (zingolabs/zingolib#2446).

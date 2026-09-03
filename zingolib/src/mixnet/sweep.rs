@@ -120,7 +120,7 @@ pub struct Selection {
     pub cohort: Vec<LiveCandidate>,
 }
 
-use crate::correspondent::Operator;
+use crate::destination::Operator;
 
 /// The median of a nonempty height list, taking the lower of the two middle
 /// values for an even count. Integer-only, so the tolerance test needs no

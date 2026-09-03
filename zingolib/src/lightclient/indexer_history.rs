@@ -4,7 +4,7 @@
 //! indexer reliability accumulates instead of dying with each error message:
 //! which hosts deliver, over which route, how fast, and which category of
 //! failure presented. Every entry also folds into the session's Health, which
-//! the draws consult when they choose a Correspondent.
+//! the draws consult when they choose a Destination.
 //!
 //! # Privacy contract
 //!
@@ -19,7 +19,7 @@
 use std::sync;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::correspondent::health;
+use crate::destination::health;
 
 /// The most attempts one session keeps, the oldest dropping out as newer ones
 /// arrive, so a long session's history stays bounded.
@@ -113,7 +113,7 @@ pub struct IndexerAttempt {
     /// Seconds since the Unix epoch when the attempt finished.
     pub unix_secs: u64,
     /// The indexer host the attempt targeted.
-    pub host: crate::correspondent::Host,
+    pub host: crate::destination::Host,
     /// The route the attempt used.
     pub route: AttemptRoute,
     /// Whether the attempt was a send or a probe.
@@ -142,7 +142,7 @@ pub struct IndexerHistoryHandle {
     /// [`MAX_HISTORY_ATTEMPTS`].
     attempts: sync::Arc<sync::Mutex<Vec<IndexerAttempt>>>,
     /// The session's Health, updated by every attempt, which the draws
-    /// consult when they choose a Correspondent.
+    /// consult when they choose a Destination.
     health: sync::Arc<sync::Mutex<health::Health>>,
 }
 
@@ -180,7 +180,7 @@ mod tests {
         AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, IndexerHistoryHandle,
         MAX_HISTORY_ATTEMPTS,
     };
-    use crate::correspondent::{Host, health};
+    use crate::destination::{Host, health};
 
     fn an_attempt(host: &str, outcome: Result<(), FailureKind>) -> IndexerAttempt {
         IndexerAttempt {
@@ -191,7 +191,7 @@ mod tests {
             millis: 1234,
             phase: outcome
                 .is_err()
-                .then_some(health::FailurePhase::Correspondent),
+                .then_some(health::FailurePhase::Destination),
             outcome,
         }
     }
