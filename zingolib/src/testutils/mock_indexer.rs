@@ -920,6 +920,7 @@ impl MockNet {
     }
 
     /// Builds a `LightClient` from wallet file saved in wallet directory at position `client_index` in `self.wallet_dirs`.
+    #[allow(unused_mut)]
     pub async fn client_from_file(&mut self, client_index: usize) -> LightClient {
         let wallet_dir = self
             .wallet_dirs
