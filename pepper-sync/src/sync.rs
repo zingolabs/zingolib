@@ -62,9 +62,12 @@ pub mod truncate;
 /// its boundary, this constant is the one place that follows it.
 pub const MAX_REORG_ALLOWANCE: u32 = 100;
 
+/// The maximum number of checkpoints in the rolling window for re-org handling and chain tip anchor spends.
+pub const SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE: u32 = MAX_REORG_ALLOWANCE + 1;
+
 /// The maximum total number of checkpoints a shard tree persists.
-/// This does not include retained boundary checkpoints.
-pub const MAX_SHARDTREE_CHECKPOINTS: u32 = MAX_REORG_ALLOWANCE + 1;
+pub const MAX_SHARDTREE_CHECKPOINTS: u32 =
+    SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + ANCHOR_RETENTION_INTERVALS;
 
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 

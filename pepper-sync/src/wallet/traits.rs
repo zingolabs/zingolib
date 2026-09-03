@@ -22,7 +22,7 @@ use crate::keys::transparent::TransparentAddressId;
 use crate::reset_spends;
 use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
 use crate::sync::truncate::{PoolTruncation, plan_pool_truncation, tree_facts};
-use crate::sync::{MAX_REORG_ALLOWANCE, ScanRange};
+use crate::sync::{MAX_SHARDTREE_CHECKPOINTS, ScanRange};
 use crate::wallet::{
     Ironwood, NullifierMap, Orchard, OutputId, Sapling, ShardTrees, SyncState, WalletBlock,
     WalletTransaction, empty_shard_tree,
@@ -270,22 +270,22 @@ pub trait SyncShardTrees: SyncWallet {
         async move {
             let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
 
-            // limit the range that checkpoints are manually added to the top MAX_REORG_ALLOWANCE scanned blocks for efficiency.
+            // limit the range that checkpoints are manually added to the top MAX_SHARDTREE_CHECKPOINTS scanned blocks for efficiency.
             // As we sync the chain tip first and have spend-before-sync, we will always choose anchors very close to chain
             // height and we will also never need to truncate to checkpoints lower than this height.
             let checkpoint_range = if scan_range.block_range().start > highest_scanned_height {
                 let verification_window_start = scan_range
                     .block_range()
                     .end
-                    .saturating_sub(MAX_REORG_ALLOWANCE);
+                    .saturating_sub(MAX_SHARDTREE_CHECKPOINTS);
 
                 std::cmp::max(scan_range.block_range().start, verification_window_start)
                     ..scan_range.block_range().end
             } else if scan_range.block_range().end
-                > highest_scanned_height.saturating_sub(MAX_REORG_ALLOWANCE) + 1
+                > highest_scanned_height.saturating_sub(MAX_SHARDTREE_CHECKPOINTS) + 1
             {
                 let verification_window_start =
-                    highest_scanned_height.saturating_sub(MAX_REORG_ALLOWANCE) + 1;
+                    highest_scanned_height.saturating_sub(MAX_SHARDTREE_CHECKPOINTS) + 1;
 
                 std::cmp::max(scan_range.block_range().start, verification_window_start)
                     ..scan_range.block_range().end
@@ -403,6 +403,7 @@ pub trait SyncShardTrees: SyncWallet {
                 }
             }
 
+            // TODO: use `batch_insert_trees`
             for tree in sapling_located_trees {
                 shard_trees
                     .sapling
@@ -528,12 +529,15 @@ where
         let mut previous_checkpoint = None;
         shard_tree
             .store()
-            .for_each_checkpoint(1_000, |height, checkpoint| {
-                if *height == checkpoint_height - 1 {
-                    previous_checkpoint = Some(checkpoint.clone());
-                }
-                Ok(())
-            })
+            .for_each_checkpoint(
+                MAX_SHARDTREE_CHECKPOINTS as usize + 100,
+                |height, checkpoint| {
+                    if *height == checkpoint_height - 1 {
+                        previous_checkpoint = Some(checkpoint.clone());
+                    }
+                    Ok(())
+                },
+            )
             .expect("infallible");
 
         let tree_state = if let Some(checkpoint) = previous_checkpoint {

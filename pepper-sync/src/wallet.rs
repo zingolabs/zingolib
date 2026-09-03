@@ -40,7 +40,7 @@ use crate::{
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
     shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt as _},
-    sync::{MAX_SHARDTREE_CHECKPOINTS, ScanPriority, ScanRange},
+    sync::{SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE, ScanPriority, ScanRange},
     utils::{block, transaction},
     witness,
 };
@@ -1830,7 +1830,7 @@ where
 {
     let mut tree = ShardTree::new(
         MemoryShardStore::empty(),
-        MAX_SHARDTREE_CHECKPOINTS as usize,
+        SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE as usize,
     );
 
     // `NotAboveNewest` is impossible on an empty checkpoint store.

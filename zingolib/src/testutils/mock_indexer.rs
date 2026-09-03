@@ -837,7 +837,7 @@ pub struct MockNet {
     /// The fabricated chain the server reads and the test mutates.
     pub chain: Arc<RwLock<MockChain>>,
     indexer_uri: http::Uri,
-    _wallet_dirs: Vec<tempfile::TempDir>,
+    wallet_dirs: Vec<tempfile::TempDir>,
     _server: tokio::task::JoinHandle<()>,
 }
 
@@ -869,7 +869,7 @@ impl MockNet {
         Self {
             chain,
             indexer_uri,
-            _wallet_dirs: Vec::new(),
+            wallet_dirs: Vec::new(),
             _server: server,
         }
     }
@@ -891,7 +891,7 @@ impl MockNet {
             })
             .build()
             .unwrap();
-        self._wallet_dirs.push(wallet_dir);
+        self.wallet_dirs.push(wallet_dir);
         let mut lightclient = LightClient::new(config, true)
             .await
             .expect("mock-net client construction succeeds");
@@ -904,6 +904,37 @@ impl MockNet {
             )
             .await
             .expect("sapling-only address generation succeeds");
+        // Mock-net clients run with Mixnet Mode switched on, so every
+        // chain-mock send walks the fail-closed route resolver and the
+        // escalation orchestration instead of quietly consenting to clearnet.
+        // The address is never dialed: the transmit path pairs this slot
+        // state with arms that submit over the mock indexer's channel.
+        // Without the nym feature there is no mixnet and sends stay
+        // clearnet, so the same tests cover both routes across the
+        // feature matrix.
+        #[cfg(feature = "nym")]
+        lightclient
+            .switch_on_mixnet_for_tests(crate::mocks::transmission::MOCK_SOCKS5_ADDR)
+            .await;
+        lightclient
+    }
+
+    /// Builds a `LightClient` from wallet file saved in wallet directory at position `client_index` in `self.wallet_dirs`.
+    pub async fn client_from_file(&mut self, client_index: usize) -> LightClient {
+        let wallet_dir = self
+            .wallet_dirs
+            .get(client_index)
+            .expect("client at given index should exist");
+        let config = ClientConfig::builder()
+            .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
+            .set_indexer_uri(self.indexer_uri.clone())
+            .set_wallet_dir(wallet_dir.path().to_path_buf())
+            .set_wallet_config(WalletConfig::Read)
+            .build()
+            .unwrap();
+        let mut lightclient = LightClient::new(config, true)
+            .await
+            .expect("mock-net client construction succeeds");
         // Mock-net clients run with Mixnet Mode switched on, so every
         // chain-mock send walks the fail-closed route resolver and the
         // escalation orchestration instead of quietly consenting to clearnet.

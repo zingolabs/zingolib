@@ -35,7 +35,7 @@ use crate::{
         KeyId, decode_unified_address,
         transparent::{TransparentAddressId, TransparentScope},
     },
-    sync::{MAX_SHARDTREE_CHECKPOINTS, ScanPriority, ScanRange},
+    sync::{SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE, ScanPriority, ScanRange},
     wallet::ScanTarget,
 };
 
@@ -1242,7 +1242,7 @@ impl ShardTrees {
 
         Ok(shardtree::ShardTree::new(
             store,
-            MAX_SHARDTREE_CHECKPOINTS as usize,
+            SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE as usize,
         ))
     }
 
@@ -1323,8 +1323,10 @@ impl ShardTrees {
         macro_rules! write_with_error_handling {
             ($writer: ident, $from: ident) => {
                 if let Err(e) = $writer(&mut writer, &$from) {
-                    *shardtree =
-                        shardtree::ShardTree::new(store, MAX_SHARDTREE_CHECKPOINTS as usize);
+                    *shardtree = shardtree::ShardTree::new(
+                        store,
+                        SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE as usize,
+                    );
                     return Err(e);
                 }
             };
@@ -1348,7 +1350,8 @@ impl ShardTrees {
         let cap = store.get_cap().expect("Infallible");
         write_with_error_handling!(write_shard, cap);
 
-        *shardtree = shardtree::ShardTree::new(store, MAX_SHARDTREE_CHECKPOINTS as usize);
+        *shardtree =
+            shardtree::ShardTree::new(store, SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE as usize);
 
         Ok(())
     }
@@ -1356,7 +1359,7 @@ impl ShardTrees {
 
 #[cfg(test)]
 mod tests {
-    use crate::witness::ANCHOR_RETENTION_INTERVALS;
+    use crate::{sync::MAX_SHARDTREE_CHECKPOINTS, witness::ANCHOR_RETENTION_INTERVALS};
 
     use super::*;
 
@@ -1467,7 +1470,7 @@ mod tests {
     }
 
     /// The checkpoint set of a synced wallet decomposes into exactly two parts:
-    /// [`MAX_SHARDTREE_CHECKPOINTS`] rolling checkpoints, which serve ordinary reorg handling and
+    /// [`SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE`] rolling checkpoints, which serve ordinary reorg handling and
     /// near-tip spends, plus [`ANCHOR_RETENTION_INTERVALS`] pinned ZIP 318 grid boundaries,
     /// which serve pool crossings.
     ///
@@ -1524,15 +1527,15 @@ mod tests {
         assert_eq!(
             (rolling.len(), pinned.len(), total),
             (
-                MAX_SHARDTREE_CHECKPOINTS as usize,
+                SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE as usize,
                 ANCHOR_RETENTION_INTERVALS as usize,
-                (MAX_SHARDTREE_CHECKPOINTS + ANCHOR_RETENTION_INTERVALS) as usize,
+                MAX_SHARDTREE_CHECKPOINTS as usize,
             ),
             "(rolling, pinned, total): the pinned boundaries must not be part of the \
-             MAX_SHARDTREE_CHECKPOINTS total"
+             SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE total"
         );
 
-        for height in (TIP - MAX_SHARDTREE_CHECKPOINTS + 1)..=TIP {
+        for height in (TIP - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1)..=TIP {
             assert!(
                 store
                     .get_checkpoint(&BlockHeight::from_u32(height))
@@ -1545,7 +1548,7 @@ mod tests {
         assert!(
             rolling
                 .iter()
-                .all(|height| *height >= TIP - MAX_SHARDTREE_CHECKPOINTS),
+                .all(|height| *height >= TIP - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE),
             "a rolling checkpoint survived below the reorg window: {rolling:?}"
         );
 
@@ -1564,7 +1567,7 @@ mod tests {
         }
         assert_eq!(
             reloaded_store.checkpoint_count().expect("infallible"),
-            (MAX_SHARDTREE_CHECKPOINTS + ANCHOR_RETENTION_INTERVALS) as usize
+            MAX_SHARDTREE_CHECKPOINTS as usize
         );
     }
 
@@ -1594,14 +1597,14 @@ mod tests {
         let sapling_store = roundtripped.sapling.store();
         let orchard_store = roundtripped.orchard.store();
 
-        let oldest_kept = BlockHeight::from_u32(150 - MAX_SHARDTREE_CHECKPOINTS + 1);
+        let oldest_kept = BlockHeight::from_u32(150 - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1);
         fn assert_window<S>(store: &S, oldest_kept: BlockHeight)
         where
             S: ShardStore<CheckpointId = BlockHeight, Error = std::convert::Infallible>,
         {
             assert_eq!(
                 store.checkpoint_count().expect("infallible"),
-                MAX_SHARDTREE_CHECKPOINTS as usize
+                SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE as usize
             );
             assert_eq!(
                 store.min_checkpoint_id().expect("infallible"),
@@ -1668,7 +1671,7 @@ mod tests {
         );
         assert_eq!(
             sapling_store.checkpoint_count().expect("infallible"),
-            MAX_SHARDTREE_CHECKPOINTS as usize + 1
+            SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE as usize + 1
         );
         assert!(
             sapling_store
