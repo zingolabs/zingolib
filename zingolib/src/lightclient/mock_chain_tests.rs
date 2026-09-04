@@ -1027,7 +1027,7 @@ async fn failed_split_round_transmit_strands_calculated_transactions() {
 #[cfg(feature = "perspective")]
 mod perspective {
     use std::num::NonZeroU32;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     use pepper_sync::config::{
         PerformanceLevel, SyncConfig, TransparentAddressDiscovery,
@@ -1335,7 +1335,7 @@ async fn a_mock_chain_send_reports_the_mixnet_route() {
 
     let mut net = MockNet::launch().await;
     let mut recipient = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     let recipient_ua =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
@@ -1394,7 +1394,7 @@ async fn switching_the_mixnet_off_reports_the_clearnet_route() {
 
     let mut net = MockNet::launch().await;
     let mut recipient = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     let recipient_ua =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;

@@ -1100,8 +1100,13 @@ async fn publish_sync_status<W>(wallet: &W, progress: &watch::Sender<Option<Sync
 where
     W: SyncWallet + SyncBlocks,
 {
-    if let Ok(status) = sync_status(wallet).await {
-        let _ = progress.send(Some(status));
+    match sync_status(wallet).await {
+        Ok(status) => {
+            progress.send(Some(status)).unwrap();
+        }
+        Err(e) => {
+            panic!("{e}");
+        }
     }
 }
 
@@ -2335,6 +2340,8 @@ where
             || *height == scan_range.block_range().end - 1
             || wallet_transaction_heights.contains(height)
     });
+
+    dbg!(&scanned_blocks);
 
     wallet.append_wallet_blocks(scanned_blocks)?;
 

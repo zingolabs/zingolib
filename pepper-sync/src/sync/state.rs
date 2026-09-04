@@ -796,13 +796,11 @@ where
                 })
             {
                 // reset from scanning priority to verify until chain tip is scanned.
-                let range_to_verify = wallet
-                    .get_sync_state_mut()?
-                    .scan_ranges
-                    .iter_mut()
-                    .find(|range| range.block_range().start == selected_range.block_range().start)
-                    .expect("this range must exist in this scope!");
-                range_to_verify.priority = ScanPriority::Verify;
+                set_scan_priority(
+                    wallet.get_sync_state_mut()?,
+                    selected_range.block_range(),
+                    ScanPriority::Verify,
+                );
 
                 return Ok(None);
             }
