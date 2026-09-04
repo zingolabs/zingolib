@@ -161,9 +161,7 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::FileError(_) => ZingolibError::Save(text),
         LightClientError::WalletError(_) => ZingolibError::Wallet(text),
         LightClientError::Offline => ZingolibError::Offline,
-        LightClientError::PriceError(_) | LightClientError::PriceFetchRequiresMixnet => {
-            ZingolibError::Read(text)
-        }
+        LightClientError::PriceError(_) => ZingolibError::Read(text),
         LightClientError::MixnetNotReady(_) | LightClientError::ProbeRequiresMixnet => {
             ZingolibError::Mixnet(text)
         }
@@ -173,7 +171,7 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         // switch-and-retry routing can genuinely help. Mapping it to Mixnet
         // would stamp it with the owned refusal marker and turn it
         // never-retry.
-        LightClientError::NoEligibleCorrespondent(_)
+        LightClientError::NoEligibleDestination(_)
         | LightClientError::IneligibleProbeTarget(_)
         | LightClientError::MigrationTransmissionTargetIsSyncEndpoint { .. } => {
             ZingolibError::Indexer(text)
@@ -964,8 +962,8 @@ mod ffi_error_routing_tests {
 
     #[test]
     fn excluded_indexer_exhaustion_is_an_indexer_failure_not_a_refusal() {
-        let mapped = ffi_error(LightClientError::NoEligibleCorrespondent(
-            zingolib::correspondent::NoEligibleCorrespondents::EmptyPool,
+        let mapped = ffi_error(LightClientError::NoEligibleDestination(
+            zingolib::destination::NoEligibleDestinations::EmptyPool,
         ));
         assert!(
             matches!(&mapped, ZingolibError::Indexer(_)),
@@ -2157,11 +2155,6 @@ pub fn get_total_spends_to_address() -> Result<String, ZingolibError> {
 }
 
 pub fn zec_price() -> Result<String, ZingolibError> {
-    // This wallet fetches price over the mixnet or not at all (ADR 0011).
-    // Every refusal the lightclient raises reaches the caller as one, the
-    // deliberate switch-off included: a price oracle learns the IP that asked
-    // it and when, which is a profile of when this wallet is awake, and no
-    // phone should hand that over as the cost of showing a number.
     let usd = with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
             lightclient
