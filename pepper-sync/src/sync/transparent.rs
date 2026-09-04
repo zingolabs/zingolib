@@ -193,3 +193,252 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
 // the wallet transaction
 // c) if the range is scanned and the tx does not exist in the wallet, fetch the compact block if its not in the wallet
 // and scan the transparent bundles
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use futures::stream;
+    use tonic::codec::{
+        DecodeBuf, Decoder, EncodeBody, EncodeBuf, Encoder, SingleMessageCompressionOverride,
+        Streaming,
+    };
+    use tonic::codegen::http::StatusCode;
+    use zcash_keys::keys::UnifiedSpendingKey;
+    use zcash_primitives::transaction::{Authorized, TransactionData, TxVersion};
+    use zcash_protocol::consensus::BranchId;
+    use zcash_protocol::local_consensus::LocalNetwork;
+    use zingo_netutils::lightwallet_protocol::RawTransaction;
+
+    use super::*;
+    use crate::config::TransparentAddressDiscoveryScopes;
+    use crate::mocks::MockWalletError;
+    use crate::wallet::SyncState;
+
+    const NETWORK: LocalNetwork = LocalNetwork {
+        overwinter: Some(BlockHeight::from_u32(1)),
+        sapling: Some(BlockHeight::from_u32(1)),
+        blossom: Some(BlockHeight::from_u32(1)),
+        heartwood: Some(BlockHeight::from_u32(1)),
+        canopy: Some(BlockHeight::from_u32(1)),
+        nu5: Some(BlockHeight::from_u32(1)),
+        nu6: Some(BlockHeight::from_u32(1)),
+        nu6_1: Some(BlockHeight::from_u32(1)),
+        nu6_2: Some(BlockHeight::from_u32(1)),
+        nu6_3: Some(BlockHeight::from_u32(1)),
+    };
+
+    /// Minimal in-memory wallet exposing only what `update_addresses_and_scan_targets` touches.
+    struct TestWallet {
+        sync_state: SyncState,
+        transparent_addresses: BTreeMap<TransparentAddressId, String>,
+    }
+
+    impl SyncWallet for TestWallet {
+        type Error = MockWalletError;
+
+        fn get_birthday(&self) -> Result<BlockHeight, Self::Error> {
+            Ok(BlockHeight::from_u32(1))
+        }
+        fn get_sync_state(&self) -> Result<&SyncState, Self::Error> {
+            Ok(&self.sync_state)
+        }
+        fn get_sync_state_mut(&mut self) -> Result<&mut SyncState, Self::Error> {
+            Ok(&mut self.sync_state)
+        }
+        fn get_unified_full_viewing_keys(
+            &self,
+        ) -> Result<HashMap<AccountId, UnifiedFullViewingKey>, Self::Error> {
+            Ok(HashMap::new())
+        }
+        fn add_orchard_address(
+            &mut self,
+            _account_id: AccountId,
+            _address: orchard::Address,
+            _diversifier_index: zip32::DiversifierIndex,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+        fn add_sapling_address(
+            &mut self,
+            _account_id: AccountId,
+            _address: sapling_crypto::PaymentAddress,
+            _diversifier_index: zip32::DiversifierIndex,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+        fn get_transparent_addresses(
+            &self,
+        ) -> Result<&BTreeMap<TransparentAddressId, String>, Self::Error> {
+            Ok(&self.transparent_addresses)
+        }
+        fn get_transparent_addresses_mut(
+            &mut self,
+        ) -> Result<&mut BTreeMap<TransparentAddressId, String>, Self::Error> {
+            Ok(&mut self.transparent_addresses)
+        }
+    }
+
+    /// Writes a zero-length gRPC frame per item. The payload is irrelevant because `FixedDecoder`
+    /// ignores it.
+    struct EmptyEncoder;
+
+    impl Encoder for EmptyEncoder {
+        type Item = ();
+        type Error = tonic::Status;
+
+        fn encode(&mut self, _item: (), _dst: &mut EncodeBuf<'_>) -> Result<(), Self::Error> {
+            Ok(())
+        }
+    }
+
+    /// Yields the same `RawTransaction` for every frame in the stream.
+    struct FixedDecoder(RawTransaction);
+
+    impl Decoder for FixedDecoder {
+        type Item = RawTransaction;
+        type Error = tonic::Status;
+
+        fn decode(&mut self, _src: &mut DecodeBuf<'_>) -> Result<Option<Self::Item>, Self::Error> {
+            Ok(Some(self.0.clone()))
+        }
+    }
+
+    /// Builds a `tonic::Streaming<RawTransaction>` that yields `raw_transaction` `count` times.
+    fn raw_transaction_stream(
+        raw_transaction: RawTransaction,
+        count: usize,
+    ) -> Streaming<RawTransaction> {
+        let body = EncodeBody::new_server(
+            EmptyEncoder,
+            stream::iter(std::iter::repeat_n(Ok::<(), tonic::Status>(()), count)),
+            None,
+            SingleMessageCompressionOverride::default(),
+            None,
+        );
+        Streaming::new_response(
+            FixedDecoder(raw_transaction),
+            body,
+            StatusCode::OK,
+            None,
+            None,
+        )
+    }
+
+    fn empty_v5_raw_transaction(height: u32) -> RawTransaction {
+        let transaction = TransactionData::<Authorized>::from_parts(
+            TxVersion::V5,
+            BranchId::Nu5,
+            0,
+            BlockHeight::from_u32(0),
+            None,
+            None,
+            None,
+            None,
+        )
+        .freeze()
+        .expect("empty v5 transaction should freeze");
+        let mut data = Vec::new();
+        transaction
+            .write(&mut data)
+            .expect("transaction should serialise");
+        RawTransaction {
+            data,
+            height: u64::from(height),
+        }
+    }
+
+    // REPRO: claim `transparent-discovery-partial-persist-on-error`.
+    // `update_addresses_and_scan_targets` writes each scope's discovered addresses into the
+    // wallet inside the per-scope loop but only appends the collected scan targets after all
+    // scopes complete. When the server fails part way through a later scope the function
+    // returns `Err` with the first scope's addresses persisted and every scan target discarded.
+    // On the next sync those addresses are only queried over the recent reorg window, so the
+    // transactions found in the aborted pass are never scanned.
+    //
+    // The invariant asserted here is that an error leaves the wallet in a consistent state:
+    // either no addresses were persisted, or the scan targets found for the persisted addresses
+    // were also persisted.
+    #[tokio::test]
+    async fn error_in_later_scope_does_not_persist_addresses_without_their_scan_targets() {
+        let chain_height = BlockHeight::from_u32(300);
+        let last_known_chain_height = BlockHeight::from_u32(199);
+        let transaction_height = 250;
+
+        let ufvk = UnifiedSpendingKey::from_seed(&NETWORK, &[0u8; 32], AccountId::ZERO)
+            .expect("seed should derive")
+            .to_unified_full_viewing_key();
+        assert!(ufvk.transparent().is_some());
+        let mut ufvks = HashMap::new();
+        ufvks.insert(AccountId::ZERO, ufvk);
+
+        let config = TransparentAddressDiscovery {
+            gap_limit: 2,
+            scopes: TransparentAddressDiscoveryScopes {
+                external: true,
+                internal: true,
+                refund: false,
+            },
+        };
+
+        let wallet = Arc::new(RwLock::new(TestWallet {
+            sync_state: SyncState::new(),
+            transparent_addresses: BTreeMap::new(),
+        }));
+
+        // Responder standing in for `client::fetch::fetch`. The wallet has no known addresses, so
+        // the requests arrive in this order:
+        //   request 0: external index 0  -> one transaction (scan target collected)
+        //   request 1: external index 1  -> empty
+        //   request 2: external index 2  -> empty (gap limit reached, external scope persisted)
+        //   request 3: internal index 0  -> server error (not retried by the client)
+        let (fetch_request_sender, mut fetch_request_receiver) =
+            mpsc::unbounded_channel::<FetchRequest>();
+        let raw_transaction = empty_v5_raw_transaction(transaction_height);
+        let responder = tokio::spawn(async move {
+            let mut request_count = 0usize;
+            while let Some(request) = fetch_request_receiver.recv().await {
+                let FetchRequest::TransparentAddressTxs(reply_sender, _) = request else {
+                    panic!("unexpected fetch request");
+                };
+                let reply = match request_count {
+                    0 => Ok(raw_transaction_stream(raw_transaction.clone(), 1)),
+                    1 | 2 => Ok(raw_transaction_stream(raw_transaction.clone(), 0)),
+                    _ => Err(tonic::Status::internal("simulated server failure")),
+                };
+                let _ = reply_sender.send(reply);
+                request_count += 1;
+            }
+            request_count
+        });
+
+        let result = update_addresses_and_scan_targets(
+            &NETWORK,
+            wallet.clone(),
+            fetch_request_sender,
+            &ufvks,
+            last_known_chain_height,
+            chain_height,
+            config,
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "expected the simulated server failure to propagate"
+        );
+
+        let request_count = responder.await.expect("responder should not panic");
+        assert_eq!(request_count, 4);
+
+        let wallet_guard = wallet.read().await;
+        let persisted_addresses = wallet_guard.get_transparent_addresses().unwrap();
+        let persisted_scan_targets = &wallet_guard.get_sync_state().unwrap().scan_targets;
+
+        assert!(
+            persisted_addresses.is_empty() || !persisted_scan_targets.is_empty(),
+            "addresses were persisted without their scan targets after an error: \
+             persisted addresses = {persisted_addresses:?}, \
+             persisted scan targets = {persisted_scan_targets:?}"
+        );
+    }
+}
