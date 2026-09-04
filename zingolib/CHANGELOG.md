@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `LightClient::shutdown_sync` stops the sync engine with a caller-supplied
+  bound on the graceful wait, aborting the task when the engine outlives it,
+  and reports the outcome as the new `SyncShutdown` enum. Unlike
+  `await_sync`, the interrupted path never captures part witnesses over
+  half-synced state.
+
 ### Changed
 - BREAKING: `LightClient::update_current_price` follows the route
   resolver instead of refusing while Mixnet Mode is switched off

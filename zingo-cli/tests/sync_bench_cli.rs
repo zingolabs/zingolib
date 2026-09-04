@@ -12,31 +12,14 @@
 
 #![forbid(unsafe_code)]
 
+#[path = "support/cli_session.rs"]
+mod cli_session;
+
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// The number of mainnet blocks the benchmark syncs.
-const SYNC_WINDOW: u32 = 20_000;
-
-/// The mainnet chain height on the day the benchmark was authored.
-const TIP_AT_AUTHORING: u32 = 3_445_000;
-
-/// The fixed wallet birthday, one sync window below the authoring-day tip.
-const BENCH_BIRTHDAY: u32 = TIP_AT_AUTHORING - SYNC_WINDOW;
-
 /// The default seconds of budget, overridable via `SYNC_BENCH_BUDGET_SECS`.
 const DEFAULT_BUDGET_SECS: u64 = 540;
-
-/// The default indexer URI, overridable via `SYNC_BENCH_INDEXER`.
-const DEFAULT_INDEXER: &str = "https://zec.rocks:443";
-
-/// The cadence at which the harness polls the child for exit.
-const CHILD_POLL: Duration = Duration::from_millis(500);
-
-/// A BIP-39 mnemonic holding no funds, so the sync measures pure scanning.
-const BENCH_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
-     abandon abandon abandon abandon abandon abandon abandon abandon \
-     abandon abandon abandon abandon abandon abandon abandon art";
 
 #[test]
 #[ignore = "network-bound timing benchmark; run explicitly"]
@@ -49,17 +32,14 @@ fn cli_syncs_20k_mainnet_blocks_within_budget() {
     );
     // An empty SYNC_BENCH_INDEXER omits --server entirely, measuring the
     // commit's own indexer resolution instead of a pin.
-    let indexer =
-        std::env::var("SYNC_BENCH_INDEXER").unwrap_or_else(|_| DEFAULT_INDEXER.to_string());
+    let indexer = std::env::var("SYNC_BENCH_INDEXER")
+        .unwrap_or_else(|_| cli_session::DEFAULT_INDEXER.to_string());
     // Whitespace-split launch flags for A/B cells the fixed grammar lacks,
     // e.g. `--no-mixnet` at commits that still offer it, or `--online`.
     let extra_args = std::env::var("SYNC_BENCH_EXTRA_ARGS").unwrap_or_default();
 
     let cli = env!("CARGO_BIN_EXE_zingo-cli");
-    // The nym-proxy built from the same checkout sits beside the CLI binary,
-    // so a commit whose startup provisions the mixnet finds a
-    // protocol-matched proxy.
-    let proxy = std::path::Path::new(cli).with_file_name("nym-proxy");
+    let proxy = cli_session::nym_proxy_beside(cli);
     let data_dir = tempfile::tempdir().expect("a wallet tempdir opens");
 
     let mut args: Vec<String> = vec![
@@ -70,9 +50,9 @@ fn cli_syncs_20k_mainnet_blocks_within_budget() {
             .expect("the tempdir path renders")
             .into(),
         "--seed".into(),
-        BENCH_MNEMONIC.into(),
+        cli_session::MNEMONIC.into(),
         "--birthday".into(),
-        BENCH_BIRTHDAY.to_string(),
+        cli_session::BIRTHDAY.to_string(),
         "--waitsync".into(),
     ];
     if !indexer.is_empty() {
@@ -99,12 +79,13 @@ fn cli_syncs_20k_mainnet_blocks_within_budget() {
             child.kill().expect("the child dies");
             child.wait().expect("the killed child reaps");
             panic!(
-                "SYNC_BENCH_CLI: budget of {}s exceeded at {SYNC_WINDOW} blocks from \
-                 {BENCH_BIRTHDAY}",
-                budget.as_secs()
+                "SYNC_BENCH_CLI: budget of {}s exceeded at {} blocks from {}",
+                budget.as_secs(),
+                cli_session::SYNC_WINDOW,
+                cli_session::BIRTHDAY
             );
         }
-        std::thread::sleep(CHILD_POLL);
+        std::thread::sleep(cli_session::CHILD_POLL);
     };
     let elapsed = started.elapsed().as_secs_f64();
 
@@ -127,13 +108,16 @@ fn cli_syncs_20k_mainnet_blocks_within_budget() {
         .max()
         .expect("the height output carries a number");
     assert!(
-        synced_height >= TIP_AT_AUTHORING,
-        "SYNC_BENCH_CLI: wallet height {synced_height} never reached {TIP_AT_AUTHORING}; \
-         the session did not sync. stdout:\n{stdout}"
+        synced_height >= cli_session::TIP_AT_AUTHORING,
+        "SYNC_BENCH_CLI: wallet height {synced_height} never reached {}; \
+         the session did not sync. stdout:\n{stdout}",
+        cli_session::TIP_AT_AUTHORING
     );
 
     println!(
-        "SYNC_BENCH_CLI: {SYNC_WINDOW} blocks from {BENCH_BIRTHDAY} via {indexer} to height \
-         {synced_height} in {elapsed:.1}s"
+        "SYNC_BENCH_CLI: {} blocks from {} via {indexer} to height \
+         {synced_height} in {elapsed:.1}s",
+        cli_session::SYNC_WINDOW,
+        cli_session::BIRTHDAY
     );
 }
