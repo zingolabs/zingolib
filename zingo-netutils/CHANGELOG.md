@@ -37,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parking it on a cadence whose answer cannot change.
 
 ### Added
+- `nym_proxy::BootstrapEvent` and the observed lifecycle entries
+  `NymProxy::start_observed`, `NymProxy::start_over_observed`, and
+  `NymProxy::reconnect_observed`: every acquisition race — the first
+  bootstrap and each reconnect after a proxy death — reports its steps as
+  typed events naming the Exit Node each concerns, while `start`,
+  `start_over`, and `reconnect` remain thin silent renderings over the same
+  path, so the two narrations cannot drift. `PullFailed` carries the pull's
+  whole typed `zingo_net_diag::NetOpFailure` — the stage, the target, and
+  the cause chain — rather than a line rendered for a human, so a
+  diagnostics surface renders structure instead of parsing prose.
 - The `socks5-fetch` feature and the `socks5_fetch` module: one HTTP request
   carried through a conduit, classified into a typed `zingo_net_diag`
   failure. `ConduitDial::fetch_text` is the entry, and it is the first
