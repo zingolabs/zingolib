@@ -3788,4 +3788,173 @@ mod test {
             ));
         }
     }
+
+    /// REPRO: pool-truncation-clears-earlier-pools.
+    ///
+    /// [`crate::sync::truncate_to_pool_activation_height`] documents that
+    /// the target pool and any pool from a later network upgrade have
+    /// their shard trees cleared, while earlier pools only roll back to
+    /// the next checkpoint above the rescan height. The loop selects
+    /// pools to clear with `target_pool >= pool`. `ShieldedPool` orders
+    /// Sapling < Orchard < Ironwood, so an ironwood target clears all
+    /// three trees. The cleared trees are reseeded with the frontier at
+    /// the wallet birthday while scan ranges are only reopened from
+    /// `max(activation, birthday)`. With a birthday below the NU6.3
+    /// activation, sapling and orchard leaves between birthday and the
+    /// activation are gone from the trees and their scan ranges stay
+    /// `Scanned`, so they are never rebuilt.
+    mod pool_activation_truncation {
+        use incrementalmerkletree::{Hashable, Marking, Retention};
+        use orchard::tree::MerkleHashOrchard;
+        use tokio::sync::mpsc;
+        use zcash_protocol::ShieldedPool;
+        use zcash_protocol::consensus::BlockHeight;
+        use zcash_protocol::local_consensus::LocalNetwork;
+        use zingo_netutils::lightwallet_protocol::TreeState;
+
+        use crate::client::FetchRequest;
+        use crate::error::SyncError;
+        use crate::mocks::MockWalletBuilder;
+        use crate::sync::{ScanPriority, ScanRange, truncate_to_pool_activation_height};
+        use crate::wallet::traits::{SyncShardTrees, SyncWallet};
+        use crate::wallet::{ShardTrees, SyncState};
+
+        const BIRTHDAY: u32 = 10;
+        const NU6_3_ACTIVATION: u32 = 100;
+
+        const NETWORK: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+            nu6_2: Some(BlockHeight::from_u32(1)),
+            nu6_3: Some(BlockHeight::from_u32(NU6_3_ACTIVATION)),
+        };
+
+        /// An empty tree state at `height`, the minimal reply the
+        /// frontier fetch accepts.
+        fn empty_tree_state(height: BlockHeight) -> TreeState {
+            TreeState {
+                network: "test".to_string(),
+                height: u64::from(u32::from(height)),
+                hash: "00".repeat(32),
+                time: 0,
+                sapling_tree: String::new(),
+                orchard_tree: String::new(),
+                ironwood_tree: String::new(),
+            }
+        }
+
+        /// Answers every tree state request with an empty tree state at
+        /// the requested height.
+        fn spawn_fake_fetcher() -> mpsc::UnboundedSender<FetchRequest> {
+            let (sender, mut receiver) = mpsc::unbounded_channel::<FetchRequest>();
+            tokio::spawn(async move {
+                while let Some(request) = receiver.recv().await {
+                    match request {
+                        FetchRequest::TreeState(reply, height) => {
+                            reply.send(Ok(empty_tree_state(height))).unwrap();
+                        }
+                        other => panic!("unexpected fetch request: {other:?}"),
+                    }
+                }
+            });
+            sender
+        }
+
+        #[tokio::test]
+        async fn ironwood_truncation_keeps_sapling_and_orchard_leaves_below_activation() {
+            // Sapling and orchard hold one leaf per scanned height between
+            // the birthday and a height well below the NU6.3 activation.
+            let mut shard_trees = ShardTrees::new();
+            for height in BIRTHDAY..=20 {
+                let retention = Retention::Checkpoint {
+                    id: BlockHeight::from_u32(height),
+                    marking: Marking::Marked,
+                };
+                shard_trees
+                    .sapling
+                    .append(sapling_crypto::Node::empty_leaf(), retention)
+                    .unwrap();
+                shard_trees
+                    .orchard
+                    .append(MerkleHashOrchard::empty_leaf(), retention)
+                    .unwrap();
+            }
+            let sapling_before = shard_trees.sapling.max_leaf_position(None).unwrap();
+            let orchard_before = shard_trees.orchard.max_leaf_position(None).unwrap();
+            assert!(sapling_before.is_some());
+            assert!(orchard_before.is_some());
+
+            let sync_state = SyncState::new_for_test(vec![
+                ScanRange::from_parts(
+                    BlockHeight::from_u32(BIRTHDAY)..BlockHeight::from_u32(50),
+                    ScanPriority::Scanned,
+                ),
+                ScanRange::from_parts(
+                    BlockHeight::from_u32(50)..BlockHeight::from_u32(150),
+                    ScanPriority::Scanned,
+                ),
+            ]);
+            let mut wallet = MockWalletBuilder::new()
+                .birthday(BlockHeight::from_u32(BIRTHDAY))
+                .sync_state(sync_state)
+                .shard_trees(shard_trees)
+                .create_mock_wallet();
+
+            let result = truncate_to_pool_activation_height(
+                &NETWORK,
+                spawn_fake_fetcher(),
+                &mut wallet,
+                ShieldedPool::Ironwood,
+                BlockHeight::from_u32(120),
+                7,
+                5,
+            )
+            .await;
+            assert!(
+                matches!(
+                    result,
+                    Ok(SyncError::PoolHistoryReopened {
+                        pool: zcash_protocol::PoolType::Shielded(ShieldedPool::Ironwood),
+                        ..
+                    })
+                ),
+                "unexpected result: {result:?}"
+            );
+
+            // Scan ranges below the rescan height are left `Scanned`, so
+            // whatever the trees lost below it is never rebuilt.
+            let rescan_from = BlockHeight::from_u32(NU6_3_ACTIVATION);
+            let scan_ranges = wallet.get_sync_state().unwrap().scan_ranges().to_vec();
+            assert!(
+                scan_ranges
+                    .iter()
+                    .filter(|range| range.block_range().end <= rescan_from)
+                    .all(|range| range.priority().is_scanned()),
+                "scan ranges below rescan_from were reopened: {scan_ranges:?}"
+            );
+
+            // Sapling and orchard are earlier pools than ironwood. Their
+            // checkpoints all sit below the rescan height, so the documented
+            // behaviour leaves them untouched.
+            let shard_trees = wallet.get_shard_trees_mut().unwrap();
+            assert_eq!(
+                shard_trees.sapling.max_leaf_position(None).unwrap(),
+                sapling_before,
+                "ironwood truncation cleared the sapling tree: leaves in [birthday, rescan_from) \
+                 are gone and their scan ranges remain Scanned"
+            );
+            assert_eq!(
+                shard_trees.orchard.max_leaf_position(None).unwrap(),
+                orchard_before,
+                "ironwood truncation cleared the orchard tree: leaves in [birthday, rescan_from) \
+                 are gone and their scan ranges remain Scanned"
+            );
+        }
+    }
 }
