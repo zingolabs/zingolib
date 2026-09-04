@@ -2778,6 +2778,128 @@ mod test {
         }
     }
 
+    /// Truncating a wallet back to a pool's activation height rewinds the
+    /// stores and the scan ranges together, so the wallet never claims a
+    /// height is scanned while the history for it has been deleted.
+    mod pool_truncation_atomicity {
+        use std::collections::BTreeMap;
+
+        use tokio::sync::mpsc;
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::{ShieldedPool, consensus::BlockHeight, local_consensus::LocalNetwork};
+
+        use crate::client::FetchRequest;
+        use crate::mocks::MockWalletBuilder;
+        use crate::sync::{ScanPriority, ScanRange, truncate_to_pool_activation_height};
+        use crate::wallet::{
+            SyncState, TreeBounds, WalletBlock,
+            traits::{SyncBlocks, SyncWallet},
+        };
+
+        /// Orchard (Nu5) activates at height 20, so a wallet born at 10
+        /// rescans from 20 when its orchard history is rejected.
+        const LOCAL_NETWORK: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(20)),
+            nu6: Some(BlockHeight::from_u32(20)),
+            nu6_1: Some(BlockHeight::from_u32(20)),
+            nu6_2: Some(BlockHeight::from_u32(20)),
+            nu6_3: Some(BlockHeight::from_u32(20)),
+        };
+        const BIRTHDAY: BlockHeight = BlockHeight::from_u32(10);
+        const BELOW_HEIGHT: BlockHeight = BlockHeight::from_u32(15);
+        const ABOVE_HEIGHT: BlockHeight = BlockHeight::from_u32(25);
+
+        /// A wallet block carrying only what truncation reads: its height.
+        fn block(height: BlockHeight) -> WalletBlock {
+            WalletBlock {
+                block_height: height,
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds: TreeBounds {
+                    sapling_initial_tree_size: 0,
+                    sapling_final_tree_size: 0,
+                    orchard_initial_tree_size: 0,
+                    orchard_final_tree_size: 0,
+                    ironwood_initial_tree_size: 0,
+                    ironwood_final_tree_size: 0,
+                },
+            }
+        }
+
+        // REPRO: claim `partial-truncation-on-frontier-fetch-error`.
+        // `truncate_to_pool_activation_height` calls `truncate_stores` and
+        // only then awaits `client::get_frontiers`. When that fetch fails
+        // the function returns early with the wallet blocks (and every
+        // other store) above `rescan_from` already deleted while the scan
+        // ranges covering them are still `Scanned`, so nothing rescans
+        // them.
+        #[tokio::test]
+        async fn frontier_fetch_failure_leaves_stores_and_scan_ranges_consistent() {
+            let wallet_blocks: BTreeMap<_, _> = [BELOW_HEIGHT, ABOVE_HEIGHT]
+                .into_iter()
+                .map(|height| (height, block(height)))
+                .collect();
+            let sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
+                BIRTHDAY..BlockHeight::from_u32(31),
+                ScanPriority::Scanned,
+            )]);
+            let mut wallet = MockWalletBuilder::new()
+                .birthday(BIRTHDAY)
+                .sync_state(sync_state)
+                .wallet_blocks(wallet_blocks)
+                .create_mock_wallet();
+
+            // No fetcher is running: the receiver is dropped so the
+            // frontier request fails with `ServerError::FetcherDropped`.
+            let (fetch_request_sender, fetch_request_receiver) =
+                mpsc::unbounded_channel::<FetchRequest>();
+            drop(fetch_request_receiver);
+
+            let result = truncate_to_pool_activation_height(
+                &LOCAL_NETWORK,
+                fetch_request_sender,
+                &mut wallet,
+                ShieldedPool::Orchard,
+                ABOVE_HEIGHT,
+                2,
+                1,
+            )
+            .await;
+            assert!(result.is_err(), "the frontier fetch cannot succeed here");
+
+            // The block below the rescan height is untouched either way.
+            assert!(wallet.get_wallet_block(BELOW_HEIGHT).is_ok());
+
+            // Invariant: a height is either still held in the stores or no
+            // longer claimed as scanned. A deleted block under a `Scanned`
+            // range is never rescanned.
+            let above_block_retained = wallet.get_wallet_block(ABOVE_HEIGHT).is_ok();
+            let above_range_scanned = wallet
+                .get_sync_state()
+                .unwrap()
+                .scan_ranges()
+                .iter()
+                .find(|range| range.block_range().contains(&ABOVE_HEIGHT))
+                .expect("a range covers the deleted block")
+                .priority()
+                .is_scanned();
+            assert!(
+                above_block_retained || !above_range_scanned,
+                "wallet block at {ABOVE_HEIGHT} deleted (retained: {above_block_retained}) \
+                 while its scan range is still marked scanned ({above_range_scanned}); \
+                 scan ranges: {:?}",
+                wallet.get_sync_state().unwrap().scan_ranges()
+            );
+        }
+    }
+
     /// The pool-accounting contract of [`crate::sync::sync_status`]:
     /// every output total on the status (the per-pool u32 fields, the
     /// u64 exact-ratio pair, and the f32 percentage) describes the
