@@ -21,8 +21,6 @@ use std::sync::Once;
 use std::sync::RwLock;
 use std::time::Duration;
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
 use json::object;
 use once_cell::sync::Lazy;
 use rustls::crypto::{CryptoProvider, ring::default_provider};
@@ -787,8 +785,8 @@ pub fn init_from_ufvk(
     )
 }
 
-pub fn init_from_b64(
-    base64_data: String,
+pub fn init_from_bytes(
+    wallet_bytes: Vec<u8>,
     server_uri: String,
     chain_hint: String,
     performance_level: String,
@@ -797,18 +795,7 @@ pub fn init_from_b64(
     with_panic_guard(|| {
         reset_lightclient();
 
-        let decoded_bytes = match STANDARD.decode(&base64_data) {
-            Ok(b) => b,
-            Err(e) => {
-                // The undecodable payload is wallet material; describe it by
-                // size only, never by content (audit Issues A and K).
-                return Err(ZingolibError::Init(format!(
-                    "Decoding Base64: {}, Size: {}",
-                    e,
-                    base64_data.len()
-                )));
-            }
-        };
+        let decoded_bytes = wallet_bytes;
 
         // Offline (empty server uri) has no server, so the caller-supplied
         // `chain_hint` is meaningless — and the wallet already stores its own
@@ -928,8 +915,6 @@ fn map_wallet_save(
 }
 
 pub fn save_wallet_bytes() -> Result<Option<Vec<u8>>, ZingolibError> {
-    // Return the wallet as raw bytes; the platforms own the file format and
-    // encode base64 at their write sites.
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
             let mut wallet = lightclient.wallet().write().await;
@@ -1147,23 +1132,23 @@ mod init_error_channel_tests {
     }
 
     #[test]
-    fn undecodable_wallet_base64_travels_on_the_error_channel() {
+    fn unreadable_wallet_bytes_travel_on_the_error_channel() {
         let _serial = lock_discipline_tests::serialized();
-        let error = init_from_b64(
-            "!!!not-base64!!!".to_string(),
+        let error = init_from_bytes(
+            b"!!!not-a-wallet!!!".to_vec(),
             String::new(),
             "main".to_string(),
             "Medium".to_string(),
             1,
         )
-        .expect_err("undecodable wallet bytes must be typed, not prose in the data channel");
+        .expect_err("unreadable wallet bytes must be typed, not prose in the data channel");
         assert!(
             matches!(error, ZingolibError::Init(_)),
             "the failure must be the typed Init variant: {error}"
         );
         assert!(
-            !error.to_string().contains("!!!not-base64!!!"),
-            "the failure must not embed the payload it could not decode: {error}"
+            !error.to_string().contains("not-a-wallet"),
+            "the failure must not embed the payload it could not read: {error}"
         );
     }
 }

@@ -62,8 +62,8 @@ namespace zingo {
   );
 
   [Throws=ZingolibError]
-  string init_from_b64(
-      string datab64,
+  string init_from_bytes(
+      bytes wallet_bytes,
       string serveruri,
       string chainhint,
       string performancelevel,
