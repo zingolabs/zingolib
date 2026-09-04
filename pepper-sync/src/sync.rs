@@ -3788,4 +3788,60 @@ mod test {
             ));
         }
     }
+
+    /// REPRO (mempool-parse-failure-aborts-sync): a mempool transaction the
+    /// server streams that does not parse must be skipped, not turned into a
+    /// session abort. `process_mempool_transaction` currently maps the parse
+    /// failure to `ServerError::InvalidTransaction` and returns it, and the
+    /// main loop arm (`Some(raw_transaction) = mempool_transaction_receiver
+    /// .recv()`) applies `?` to that result, so one garbage transaction ends
+    /// the whole sync session.
+    mod mempool_parse_failure {
+        use std::collections::HashMap;
+
+        use zcash_protocol::consensus::{BlockHeight, MAIN_NETWORK};
+        use zingo_netutils::lightwallet_protocol::RawTransaction;
+
+        use crate::mocks::{MockWallet, MockWalletBuilder};
+        use crate::sync::{ScanPriority, ScanRange, process_mempool_transaction};
+        use crate::wallet::{SyncState, traits::SyncTransactions};
+
+        /// A wallet synced through `chain_height` with no transactions.
+        fn synced_wallet(chain_height: u32) -> MockWallet {
+            let sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
+                BlockHeight::from_u32(1)..BlockHeight::from_u32(chain_height + 1),
+                ScanPriority::Scanned,
+            )]);
+            MockWalletBuilder::new()
+                .sync_state(sync_state)
+                .create_mock_wallet()
+        }
+
+        /// Intended behaviour: an unparseable mempool transaction is
+        /// tolerated. The call returns `Ok` and the wallet is unchanged, so
+        /// the sync loop keeps running.
+        #[tokio::test]
+        async fn malformed_mempool_transaction_is_skipped_not_fatal() {
+            let mut wallet = synced_wallet(2_000_000);
+            let raw_transaction = RawTransaction {
+                data: vec![0xde, 0xad, 0xbe, 0xef],
+                height: 0,
+            };
+
+            let result = process_mempool_transaction(
+                &MAIN_NETWORK,
+                &HashMap::new(),
+                &mut wallet,
+                raw_transaction,
+            )
+            .await;
+
+            assert!(
+                result.is_ok(),
+                "a malformed mempool transaction must be skipped, got: {:?}",
+                result.err()
+            );
+            assert!(wallet.get_wallet_transactions().unwrap().is_empty());
+        }
+    }
 }
