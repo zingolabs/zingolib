@@ -214,21 +214,22 @@ fn total_spends_to_address_answer_beside_a_held_read_guard() {
 }
 
 #[test]
-fn spendable_balance_with_address_refuses_beside_a_held_read_guard() {
+fn spendable_balance_with_address_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();
-    // A never-synced wallet cannot propose, so the endpoint's correct
-    // answer is the typed Send refusal, still delivered beside the guard.
-    let outcome = outcome_under_held_read_lock(|| {
+    // A never-synced wallet has nothing to send, and the endpoint answers
+    // zero beside the guard.
+    let answer = answer_under_held_read_lock(|| {
         get_spendable_balance_with_address(
             get_developer_donation_address().expect("static address"),
             "false".to_string(),
         )
     });
-    match outcome {
-        Err(ZingolibError::Send(_)) => (),
-        other => panic!("expected the typed Send refusal, got: {other:?}"),
-    }
+    assert_eq!(
+        answer["spendable_balance"].as_u64(),
+        Some(0),
+        "the fixture wallet's max send value is zero: {answer}"
+    );
 }
 
 #[test]
