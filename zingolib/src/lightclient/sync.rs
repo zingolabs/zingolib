@@ -27,6 +27,26 @@ pub const SYNC_SPAN_OPEN: &str = "SYNC_SPAN=open";
 /// Minted log marker closing the sync engine's span, carrying its duration.
 pub const SYNC_SPAN_CLOSE: &str = "SYNC_SPAN=close";
 
+/// The cadence at which completion polls reread the sync task.
+// Completion-detection quantum: at 500ms this added up to half a
+// second of pure quantization to every sync_and_await; the sync
+// engine's own session on a regtest chain runs ~1.4s, so the poll
+// interval was a visible fraction of every test's sync cost.
+const SYNC_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// The outcome of a bounded sync-engine shutdown.
+#[derive(Debug)]
+pub enum SyncShutdown {
+    /// No sync task was running, so there was nothing to stop.
+    NotRunning,
+    /// The engine honored the stop and reported its session's result.
+    Stopped(SyncResult),
+    /// The engine ended by reporting the session's error.
+    Failed(SyncError<WalletError>),
+    /// The engine outlived the bound and its task was aborted.
+    Aborted,
+}
+
 impl LightClient {
     /// Launches a task for syncing the wallet to the latest state of the block chain, storing the handle in the
     /// `sync_handle` field.
@@ -210,15 +230,39 @@ impl LightClient {
         }
     }
 
+    /// Stops the sync engine, waiting at most `bound` for a graceful stop before aborting the task.
+    pub async fn shutdown_sync(&mut self, bound: Duration) -> SyncShutdown {
+        if self.stop_sync().is_err() {
+            return SyncShutdown::NotRunning;
+        }
+        let graceful = timeout(bound, async {
+            let mut poll_interval = interval(SYNC_POLL_INTERVAL);
+            poll_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+            loop {
+                poll_interval.tick().await;
+                match self.poll_sync() {
+                    PollReport::NoHandle => return SyncShutdown::NotRunning,
+                    PollReport::NotReady => (),
+                    PollReport::Ready(Ok(result)) => return SyncShutdown::Stopped(result),
+                    PollReport::Ready(Err(e)) => return SyncShutdown::Failed(e),
+                }
+            }
+        })
+        .await;
+        match graceful {
+            Ok(outcome) => outcome,
+            Err(_elapsed) => {
+                self.abort_sync().await;
+                SyncShutdown::Aborted
+            }
+        }
+    }
+
     /// Awaits until sync has successfully completed or failed.
     /// Returns [`pepper_sync::sync::SyncResult`] if successful.
     /// Returns [`crate::lightclient::error::LightClientError`] on failure.
     pub async fn await_sync(&mut self) -> Result<SyncResult, LightClientError> {
-        // Completion-detection quantum: at 500ms this added up to half a
-        // second of pure quantization to every sync_and_await; the sync
-        // engine's own session on a regtest chain runs ~1.4s, so the poll
-        // interval was a visible fraction of every test's sync cost.
-        let mut interval = tokio::time::interval(Duration::from_millis(50));
+        let mut interval = tokio::time::interval(SYNC_POLL_INTERVAL);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
@@ -457,6 +501,34 @@ mod tests {
             client.sync_mode(),
             SyncMode::Shutdown,
             "the drop must not overwrite a shutdown request"
+        );
+    }
+
+    /// The bound the wedged shutdown is granted before it must abort.
+    const WEDGE_ABORT_BOUND: std::time::Duration = std::time::Duration::from_secs(30);
+
+    /// The virtual time the test grants the whole shutdown before calling it unbounded.
+    const WEDGE_PROOF_BOUND: std::time::Duration = std::time::Duration::from_secs(600);
+
+    /// HYPOTHESIS: stopping the engine returns within a bound even when the
+    /// engine never honors the stop. Falsified if a sync task that ignores
+    /// its shutdown mode holds the caller past `WEDGE_PROOF_BOUND`.
+    #[tokio::test(start_paused = true)]
+    async fn a_wedged_sync_task_cannot_outlive_the_shutdown_bound() {
+        let mut client = offline_client(SyncMode::Running).await;
+        client.sync_handle = Some(tokio::spawn(std::future::pending()));
+        let outcome =
+            tokio::time::timeout(WEDGE_PROOF_BOUND, client.shutdown_sync(WEDGE_ABORT_BOUND)).await;
+        let shutdown =
+            outcome.expect("the shutdown outlived WEDGE_PROOF_BOUND behind a wedged sync task");
+        assert!(
+            matches!(shutdown, super::SyncShutdown::Aborted),
+            "a wedged engine must be aborted, not reported as {shutdown:?}"
+        );
+        assert_eq!(
+            client.sync_mode(),
+            SyncMode::NotRunning,
+            "an aborted engine must read NotRunning"
         );
     }
 }

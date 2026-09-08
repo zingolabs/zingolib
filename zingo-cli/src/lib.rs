@@ -522,6 +522,14 @@ fn start_noninteractive(command: &commands::CliCommand, ch: CommandChannel) -> E
         ExitCode::FAILURE
     }
 }
+/// Dispatches the quit teardown to the command loop, narrating its trailer the way the one-shot path does.
+fn close_session(send_request: &impl Fn(Request) -> Result<String, String>) {
+    match send_request(Request::Command(commands::CliCommand::Quit)) {
+        Ok(trailer) => eprintln!("{trailer}"),
+        Err(rendered) => eprintln!("{rendered}"),
+    }
+}
+
 /// Runs the interactive prompt until it closes, returning the exit code the
 /// session earned: success when the user ended it, failure when the terminal
 /// did (ADR 0031).
@@ -620,11 +628,13 @@ fn start_interactive(cli_config: &CliConfigTemplate, ch: CommandChannel) -> Exit
             Err(rustyline::error::ReadlineError::Interrupted) => {
                 println!("CTRL-C");
                 info!("CTRL-C");
+                close_session(&send_request);
                 break ExitCode::SUCCESS;
             }
             Err(rustyline::error::ReadlineError::Eof) => {
                 println!("CTRL-D");
                 info!("CTRL-D");
+                close_session(&send_request);
                 break ExitCode::SUCCESS;
             }
             Err(err) => {
@@ -632,6 +642,7 @@ fn start_interactive(cli_config: &CliConfigTemplate, ch: CommandChannel) -> Exit
                 // hears failure rather than a clean close.
                 eprintln!("Error: the interactive prompt failed: {err}");
                 error!("the interactive prompt failed: {err}");
+                close_session(&send_request);
                 break ExitCode::FAILURE;
             }
         }
