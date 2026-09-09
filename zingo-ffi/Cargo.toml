@@ -1,47 +1,48 @@
 [workspace]
-members = ["lib", "android", "ios", "zingomobile_utils"]
+members = [
+    "lib",
+    "android",
+    "ios",
+    "zingomobile_utils",
+    "workbench",
+    "uniffi-bindgen",
+]
+
+# The mixnet proxy shim resolves in its own lockfile: nym-sdk's transitive
+# graph needs `crypto-common ^0.2`, irreconcilable with this workspace's pins.
+exclude = ["nym-proxy-ffi"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_v4.0.0" }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_v4.0.0" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_v4.0.0", features = [
-    "test_lwd_zcashd",
+zingolib = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_v6.0.0", features = [
+    "nym",
+    "perspective",
 ] }
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_v6.0.0" }
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_v6.0.0" }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
-zcash_address = "0.12"
-zcash_client_backend = { version = "0.23", features = [
+zcash_address = "0.13.0"
+zcash_client_backend = { version = "0.24.0-rc.1", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
-    "tor",
 ] }
-zcash_encoding = "0.4"
-zcash_keys = { version = "0.14", features = [
+zcash_keys = { version = "0.16.1", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
 ] }
-zcash_note_encryption = "0.4"
-zcash_proofs = "0.28"
-zcash_protocol = "0.9"
-zcash_transparent = "0.8"
+zcash_protocol = "0.10.0"
 
-zebra-chain = "9.0.0"
-
-zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", tag = "v0_2_with_nu6_2_upgrade" }
-
-bip0039 = { version = "0.13", features = ["rand"] }
+zingo_common_components = "0.4.0"
 zip32 = "0.2.0"
 uniffi = "0.29"
-tokio = "1"
-rustls = { version = "0.23", features = ["ring"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+rustls = { version = "0.23.37", features = ["ring"] }
 serde_json = "1"
 android_logger = "0.11"
-base64 = "0.22"
-env_logger = "0.10.0"
 http = "1"
 hex = "0.4"
 json = "0.12"
@@ -53,10 +54,19 @@ once_cell = "1"
 
 [profile.release]
 debug = 1
-lto = false
+lto = "thin"
 codegen-units = 1
-overflow-checks = false
+overflow-checks = true
+panic = "abort"
+opt-level = "z"
 
 [profile.test]
 opt-level = 3
-debug = false
+debug = 1
+
+[patch.crates-io]
+# Ironwood (NU6.3) proto fields (CompactTx.ironwoodActions, TreeState.ironwoodTree,
+# ShieldedProtocol.ironwood, ChainMetadata.ironwoodCommitmentTreeSize). Must match
+# the patch in zingolib (feat/ironwood) so the dependency graph resolves to a single
+# ironwood-aware lightwallet-protocol.
+lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust", rev = "9bdfdc77eb283f2a3d26c27100cc2ac90148cd93" }
