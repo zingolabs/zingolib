@@ -1446,7 +1446,7 @@ mod strict_chain {
 
     use crate::lightclient::LightClient;
     use crate::testutils::chain_generics::fixtures;
-    use crate::testutils::mock_indexer::{Fault, Rpc};
+    use crate::testutils::mock_indexer::{Fault, LostSendDestination, Rpc};
 
     use super::*;
 
@@ -1628,5 +1628,502 @@ mod strict_chain {
     #[tokio::test]
     async fn send_shield_cycle_on_the_mock_chain() {
         fixtures::send_shield_cycle::<MockNet>(1).await;
+    }
+
+    use nonempty::NonEmpty;
+    use pepper_sync::keys::transparent::TransparentScope;
+    use pepper_sync::wallet::OutputInterface;
+    use zcash_client_backend::data_api::OutputLockStore;
+    use zcash_client_backend::zip321::{Payment, TransactionRequest};
+    use zcash_primitives::transaction::TxId;
+
+    use crate::wallet::LightWallet;
+
+    const RETRIES_BEFORE_DELIVERY_CHECK: usize = 4;
+    const ONE_INPUT_SEND_FEE: u64 = 10_000;
+    const QUEUED_REJECTIONS: usize = 40;
+    const ZAINO_EXPIRED_MESSAGE: &str = "unhandled rpc-specific zaino_fetch::jsonrpsee::response::SendTransactionError error: RPC Error (code: -26): transaction has expired";
+
+    fn expected_after_one_send() -> u64 {
+        FUNDING - PAYMENT - ONE_INPUT_SEND_FEE
+    }
+
+    fn ironwood_notes_unspent(wallet: &LightWallet) -> bool {
+        wallet
+            .wallet_transactions
+            .values()
+            .flat_map(IronwoodNote::transaction_outputs)
+            .all(|note| note.spending_transaction().is_none())
+    }
+
+    fn refund_address_count(wallet: &LightWallet) -> usize {
+        wallet
+            .transparent_addresses()
+            .keys()
+            .filter(|id| id.scope() == TransparentScope::Refund)
+            .count()
+    }
+
+    async fn status_of(client: &LightClient, txid: &TxId) -> ConfirmationStatus {
+        client
+            .wallet()
+            .read()
+            .await
+            .wallet_transactions
+            .get(txid)
+            .unwrap()
+            .status()
+    }
+
+    async fn calculated_send(sender: &mut LightClient) -> NonEmpty<TxId> {
+        from_inputs::propose(
+            sender,
+            vec![(&external_address(PoolType::ORCHARD), PAYMENT, None)],
+        )
+        .await
+        .unwrap();
+        sender.calculate_stored_proposal().await.unwrap()
+    }
+
+    async fn expiry_of(sender: &LightClient, txid: &TxId) -> BlockHeight {
+        sender
+            .wallet()
+            .read()
+            .await
+            .wallet_transactions
+            .get(txid)
+            .unwrap()
+            .transaction()
+            .expiry_height()
+    }
+
+    async fn transmit_after_expiry(net: &MockNet, sender: &mut LightClient) -> NonEmpty<TxId> {
+        let calculated = calculated_send(sender).await;
+        let expiry = expiry_of(sender, &calculated[0]).await;
+        {
+            let mut chain = net.chain.write().await;
+            let tip = chain.tip();
+            chain.mine_empty_blocks(u32::from(expiry) - tip);
+        }
+        sender
+            .transmit_calculated(calculated.clone())
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            status_of(sender, &calculated[0]).await,
+            ConfirmationStatus::Failed(_)
+        ));
+        calculated
+    }
+
+    fn tex_request() -> TransactionRequest {
+        use pepper_sync::keys::decode_address;
+        use zcash_client_backend::address::Address;
+        use zcash_transparent::address::TransparentAddress;
+
+        let external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let taddr = external_wallet
+            .transparent_addresses()
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) =
+            decode_address(&external_wallet.chain_type(), &taddr).unwrap()
+        else {
+            panic!("a wallet-generated first taddr is p2pkh")
+        };
+        let tex_address = crate::testutils::interpret_taddr_as_tex_addr(
+            taddr_bytes,
+            &external_wallet.chain_type(),
+        );
+        TransactionRequest::new(vec![Payment::without_memo(
+            zcash_address::ZcashAddress::try_from_encoded(&tex_address).unwrap(),
+            Zatoshis::const_from_u64(PAYMENT),
+        )])
+        .unwrap()
+    }
+
+    async fn calculated_tex_send(sender: &mut LightClient) -> NonEmpty<TxId> {
+        sender
+            .propose_send(tex_request(), zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        let calculated = sender.calculate_stored_proposal().await.unwrap();
+        assert_eq!(calculated.len(), 2);
+        calculated
+    }
+
+    fn inject_send_failures(chain: &mut crate::testutils::mock_indexer::MockChain, count: usize) {
+        for _ in 0..count {
+            chain.faults.inject(
+                Rpc::SendTransaction,
+                Fault::Fail(Code::Unavailable, "mock outage".to_string()),
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn accepted_send_marked_failed_is_confirmed_after_mining() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        let calculated = calculated_send(&mut sender).await;
+        {
+            let mut chain = net.chain.write().await;
+            chain.lose_next_send_response = Some(LostSendDestination::Mempool);
+            chain
+                .faults
+                .inject(Rpc::SendTransaction, Fault::Delay(Duration::ZERO));
+            inject_send_failures(&mut chain, QUEUED_REJECTIONS);
+        }
+
+        sender
+            .transmit_calculated(calculated.clone())
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            status_of(&sender, &calculated[0]).await,
+            ConfirmationStatus::Failed(_)
+        ));
+        assert_eq!(net.chain.read().await.mempool_len(), 1);
+        assert!(ironwood_notes_unspent(&*sender.wallet().read().await));
+
+        net.chain.write().await.mine_mempool();
+        sender.sync_and_await().await.unwrap();
+        assert!(matches!(
+            status_of(&sender, &calculated[0]).await,
+            ConfirmationStatus::Confirmed(_)
+        ));
+        let expected = expected_after_one_send();
+        check_client_balances!(sender, i: expected o: 0 s: 0 t: 0);
+    }
+
+    #[tokio::test]
+    async fn released_inputs_are_reselected_after_a_rejection() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        transmit_after_expiry(&net, &mut sender).await;
+        assert!(ironwood_notes_unspent(&*sender.wallet().read().await));
+
+        sender.sync_and_await().await.unwrap();
+        let resent = from_inputs::quick_send(
+            &mut sender,
+            vec![(&external_address(PoolType::ORCHARD), PAYMENT, None)],
+        )
+        .await
+        .unwrap();
+        assert_eq!(net.chain.read().await.mempool_len(), 1);
+        net.chain.write().await.mine_mempool();
+        sender.sync_and_await().await.unwrap();
+        assert!(matches!(
+            status_of(&sender, &resent[0]).await,
+            ConfirmationStatus::Confirmed(_)
+        ));
+        let expected = expected_after_one_send();
+        check_client_balances!(sender, i: expected o: 0 s: 0 t: 0);
+    }
+
+    #[tokio::test]
+    async fn later_step_rejected_leaves_earlier_step_transmitted() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        let calculated = calculated_tex_send(&mut sender).await;
+        {
+            let mut chain = net.chain.write().await;
+            chain
+                .faults
+                .inject(Rpc::SendTransaction, Fault::Delay(Duration::ZERO));
+            inject_send_failures(&mut chain, RETRIES_BEFORE_DELIVERY_CHECK);
+        }
+
+        sender
+            .transmit_calculated(calculated.clone())
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            status_of(&sender, &calculated[0]).await,
+            ConfirmationStatus::Transmitted(_)
+        ));
+        assert!(matches!(
+            status_of(&sender, &calculated[1]).await,
+            ConfirmationStatus::Failed(_)
+        ));
+        assert_eq!(net.chain.read().await.mempool_len(), 1);
+
+        net.chain.write().await.mine_mempool();
+        sender.sync_and_await().await.unwrap();
+        assert!(matches!(
+            status_of(&sender, &calculated[0]).await,
+            ConfirmationStatus::Confirmed(_)
+        ));
+        assert!(matches!(
+            status_of(&sender, &calculated[1]).await,
+            ConfirmationStatus::Failed(_)
+        ));
+        let balance = sender
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert!(balance.confirmed_transparent_balance.unwrap().into_u64() > 0);
+    }
+
+    async fn failed_first_step_via_quick_send(net: &MockNet, sender: &mut LightClient) {
+        inject_send_failures(&mut *net.chain.write().await, QUEUED_REJECTIONS);
+        sender
+            .quick_send(tex_request(), zip32::AccountId::ZERO, true)
+            .await
+            .unwrap_err();
+    }
+
+    fn steps_by_status(wallet: &LightWallet) -> (Vec<TxId>, Vec<TxId>) {
+        let mut failed = Vec::new();
+        let mut calculated = Vec::new();
+        for transaction in wallet.wallet_transactions.values() {
+            match transaction.status() {
+                ConfirmationStatus::Failed(_) => failed.push(transaction.txid()),
+                ConfirmationStatus::Calculated(_) => calculated.push(transaction.txid()),
+                _ => (),
+            }
+        }
+        (failed, calculated)
+    }
+
+    #[tokio::test]
+    async fn failed_first_step_via_quick_send_truncates_refund_addresses() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        let refund_addresses_before = refund_address_count(&*sender.wallet().read().await);
+        failed_first_step_via_quick_send(&net, &mut sender).await;
+        let wallet = sender.wallet().read().await;
+        assert!(ironwood_notes_unspent(&wallet));
+        assert_eq!(refund_address_count(&wallet), refund_addresses_before);
+        assert_eq!(net.chain.read().await.mempool_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn failed_first_step_via_quick_send_fails_the_second_step() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        failed_first_step_via_quick_send(&net, &mut sender).await;
+        let (failed, calculated) = steps_by_status(&*sender.wallet().read().await);
+        assert_eq!(failed.len(), 1);
+        assert!(
+            calculated.is_empty(),
+            "the second step must not stay Calculated after the first step failed: {calculated:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_first_step_via_transmit_calculated_truncates_refund_addresses() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        let refund_addresses_before = refund_address_count(&*sender.wallet().read().await);
+        let calculated = calculated_tex_send(&mut sender).await;
+        inject_send_failures(&mut *net.chain.write().await, QUEUED_REJECTIONS);
+        sender
+            .transmit_calculated(calculated.clone())
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            status_of(&sender, &calculated[0]).await,
+            ConfirmationStatus::Failed(_)
+        ));
+        let wallet = sender.wallet().read().await;
+        assert!(ironwood_notes_unspent(&wallet));
+        assert_eq!(refund_address_count(&wallet), refund_addresses_before);
+    }
+
+    #[tokio::test]
+    async fn output_locks_are_released_after_a_rejection() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        transmit_after_expiry(&net, &mut sender).await;
+        let wallet = sender.wallet().read().await;
+        assert!(
+            wallet
+                .get_locked_outputs(zip32::AccountId::ZERO)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_send_survives_a_wallet_file_round_trip() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        let calculated = transmit_after_expiry(&net, &mut sender).await;
+        sender.save_task().await;
+        sender.wait_for_save().await;
+        sender.shutdown_save_task().await.unwrap();
+        drop(sender);
+
+        let mut reloaded = net.client_from_file(0).await;
+        reloaded.set_transmit_retry_interval(Duration::ZERO);
+        assert!(matches!(
+            status_of(&reloaded, &calculated[0]).await,
+            ConfirmationStatus::Failed(_)
+        ));
+        assert!(ironwood_notes_unspent(&*reloaded.wallet().read().await));
+
+        reloaded.sync_and_await().await.unwrap();
+        from_inputs::quick_send(
+            &mut reloaded,
+            vec![(&external_address(PoolType::ORCHARD), PAYMENT, None)],
+        )
+        .await
+        .unwrap();
+        net.chain.write().await.mine_mempool();
+        reloaded.sync_and_await().await.unwrap();
+        let expected = expected_after_one_send();
+        check_client_balances!(reloaded, i: expected o: 0 s: 0 t: 0);
+    }
+
+    #[tokio::test]
+    async fn a_rejection_is_retried_three_times_before_failing() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        let calculated = calculated_send(&mut sender).await;
+        {
+            let mut chain = net.chain.write().await;
+            for _ in 0..QUEUED_REJECTIONS {
+                chain.faults.inject(
+                    Rpc::SendTransaction,
+                    Fault::Fail(Code::Internal, ZAINO_EXPIRED_MESSAGE.to_string()),
+                );
+            }
+        }
+
+        sender
+            .transmit_calculated(calculated.clone())
+            .await
+            .unwrap_err();
+        let attempts =
+            QUEUED_REJECTIONS - net.chain.read().await.faults.pending(Rpc::SendTransaction);
+        assert!(attempts > 0);
+        assert_eq!(attempts % RETRIES_BEFORE_DELIVERY_CHECK, 0);
+        assert!(matches!(
+            status_of(&sender, &calculated[0]).await,
+            ConfirmationStatus::Failed(_)
+        ));
+    }
+
+    use zcash_primitives::transaction::Transaction;
+    use zcash_protocol::consensus::BranchId;
+
+    const BLOCK_FETCH_FAILURES: usize = 8;
+
+    fn expiry_of_bytes(net: &MockNet, bytes: &[u8]) -> BlockHeight {
+        Transaction::read(
+            bytes,
+            BranchId::for_height(&net.chain_type(), BlockHeight::from_u32(1)),
+        )
+        .unwrap()
+        .expiry_height()
+    }
+
+    async fn pending_txid(client: &LightClient) -> TxId {
+        client
+            .wallet()
+            .read()
+            .await
+            .wallet_transactions
+            .values()
+            .find(|transaction| transaction.status().is_pending())
+            .unwrap()
+            .txid()
+    }
+
+    async fn mine_past_expiry(net: &MockNet, expiry: BlockHeight) {
+        let mut chain = net.chain.write().await;
+        chain.mine_mempool();
+        let tip = chain.tip();
+        chain.mine_empty_blocks(u32::from(expiry) - tip);
+    }
+
+    async fn fail_next_block_fetches(net: &MockNet) {
+        let mut chain = net.chain.write().await;
+        for _ in 0..BLOCK_FETCH_FAILURES {
+            chain.faults.inject(
+                Rpc::BlockRange,
+                Fault::Fail(Code::Unavailable, "mock outage".to_string()),
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn received_transaction_is_not_failed_by_a_session_that_never_scans_its_block() {
+        let mut net = MockNet::launch().await;
+        let mut recipient = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .await;
+        let recipient_ua =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.chain.write().await.mine_empty_blocks(1);
+        recipient.sync_and_await().await.unwrap();
+
+        let funding = faucet_funding_transaction(vec![(&recipient_ua, FUNDING, None)]).await;
+        let expiry = expiry_of_bytes(&net, &funding);
+        net.chain.write().await.enter_mempool(funding);
+        recipient.sync_and_await().await.unwrap();
+        let txid = pending_txid(&recipient).await;
+        assert!(matches!(
+            status_of(&recipient, &txid).await,
+            ConfirmationStatus::Mempool(_)
+        ));
+
+        mine_past_expiry(&net, expiry).await;
+        fail_next_block_fetches(&net).await;
+        assert!(recipient.sync_and_await().await.is_err());
+        assert!(
+            !matches!(
+                status_of(&recipient, &txid).await,
+                ConfirmationStatus::Failed(_)
+            ),
+            "a received transaction mined in an unscanned block was marked Failed"
+        );
+
+        net.chain.write().await.faults.clear(Rpc::BlockRange);
+        recipient.sync_and_await().await.unwrap();
+        assert!(matches!(
+            status_of(&recipient, &txid).await,
+            ConfirmationStatus::Confirmed(_)
+        ));
+        check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
+    }
+
+    #[tokio::test]
+    async fn mined_send_inputs_stay_spent_through_a_session_that_never_scans_its_block() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        let sent = from_inputs::quick_send(
+            &mut sender,
+            vec![(&external_address(PoolType::ORCHARD), PAYMENT, None)],
+        )
+        .await
+        .unwrap();
+        let expiry = expiry_of(&sender, &sent[0]).await;
+
+        mine_past_expiry(&net, expiry).await;
+        fail_next_block_fetches(&net).await;
+        assert!(sender.sync_and_await().await.is_err());
+        assert!(
+            !matches!(
+                status_of(&sender, &sent[0]).await,
+                ConfirmationStatus::Failed(_)
+            ),
+            "a mined send in an unscanned block was marked Failed"
+        );
+        assert!(!ironwood_notes_unspent(&*sender.wallet().read().await));
+        let expected = expected_after_one_send();
+        check_client_balances!(sender, i: expected o: 0 s: 0 t: 0);
+
+        net.chain.write().await.faults.clear(Rpc::BlockRange);
+        sender.sync_and_await().await.unwrap();
+        assert!(matches!(
+            status_of(&sender, &sent[0]).await,
+            ConfirmationStatus::Confirmed(_)
+        ));
+        check_client_balances!(sender, i: expected o: 0 s: 0 t: 0);
     }
 }

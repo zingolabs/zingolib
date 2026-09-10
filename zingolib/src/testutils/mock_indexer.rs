@@ -22,7 +22,6 @@
 //! Available to zingolib's own unit tests and, via the `testutils`
 //! feature, to downstream test crates (e.g. libtonode-tests), the
 //! rescan-idempotence family's offline seam.
-#![allow(missing_docs)]
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
@@ -346,6 +345,10 @@ impl Faults {
 
     pub fn pending(&self, rpc: Rpc) -> usize {
         self.queued.get(&rpc).map_or(0, VecDeque::len)
+    }
+
+    pub fn clear(&mut self, rpc: Rpc) -> usize {
+        self.queued.remove(&rpc).map_or(0, |queued| queued.len())
     }
 
     fn take(&mut self, rpc: Rpc) -> Option<Fault> {
