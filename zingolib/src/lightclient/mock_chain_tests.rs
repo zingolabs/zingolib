@@ -1907,7 +1907,7 @@ mod strict_chain {
         let mut sender = funded_sender(&mut net).await;
         failed_first_step_via_quick_send(&net, &mut sender).await;
         let (failed, calculated) = steps_by_status(&*sender.wallet().read().await);
-        assert_eq!(failed.len(), 1);
+        assert_eq!(failed.len(), 2);
         assert!(
             calculated.is_empty(),
             "the second step must not stay Calculated after the first step failed: {calculated:?}"

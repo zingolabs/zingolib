@@ -503,8 +503,6 @@ where
     )
     .await?;
 
-    expire_transactions(&mut *wallet.write().await)?;
-
     publish_sync_status(&*wallet.read().await, &progress).await;
 
     // create channel for receiving scan results and launch scanner

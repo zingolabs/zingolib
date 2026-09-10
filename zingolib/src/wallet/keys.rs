@@ -459,6 +459,41 @@ impl LightWallet {
             .map(|id| id.address_index())
     }
 
+    pub(crate) fn truncate_failed_refund_addresses(&mut self) {
+        loop {
+            let Some((id, address)) = self
+                .transparent_addresses()
+                .iter()
+                .filter(|(id, _)| id.scope() == TransparentScope::Refund)
+                .max_by_key(|(id, _)| id.address_index())
+                .map(|(id, address)| (*id, address.clone()))
+            else {
+                return;
+            };
+            let mut paid = false;
+            let mut live = false;
+            for transaction in self.wallet_transactions.values() {
+                if transaction
+                    .transparent_coins()
+                    .iter()
+                    .any(|coin| coin.address() == address)
+                {
+                    paid = true;
+                    live |= !transaction.status().is_failed();
+                }
+            }
+            if !paid || live {
+                return;
+            }
+            let below = id
+                .address_index()
+                .index()
+                .checked_sub(1)
+                .and_then(NonHardenedChildIndex::from_index);
+            self.truncate_refund_addresses(below);
+        }
+    }
+
     /// Removes any refund address in the wallet above the given index.
     ///
     /// If `index_opt` is `None`, remove all refund addresses.
