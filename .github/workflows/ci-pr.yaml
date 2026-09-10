@@ -184,4 +184,4 @@ jobs:
   test:
     uses: ./.github/workflows/test.yaml
     with:
-      nextest-flags: "-E 'not test(slow)'"
+      nextest-flags: "-E 'not test(slow) and not package(libtonode-tests)'"
