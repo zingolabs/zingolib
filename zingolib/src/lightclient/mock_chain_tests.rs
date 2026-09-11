@@ -2254,4 +2254,80 @@ mod strict_chain {
         ));
         check_client_balances!(sender, i: expected o: 0 s: 0 t: 0);
     }
+
+    use crate::wallet::summary::data::{SendType, TransactionKind, TransactionSummary};
+
+    async fn summary_of(client: &LightClient, txid: &TxId) -> TransactionSummary {
+        client
+            .transaction_summaries(false)
+            .await
+            .unwrap()
+            .iter()
+            .find(|summary| summary.txid == *txid)
+            .unwrap()
+            .clone()
+    }
+
+    /// Failing a transaction releases its inputs, so the wallet no longer
+    /// records any spend in it. Its outgoing note already keeps it out of
+    /// `Received`, so what this guards is the rest of the sent shape: the
+    /// funding pool and the fee stay attributed to the failed send.
+    #[tokio::test]
+    async fn failed_send_reads_as_sent() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        let calculated = transmit_after_expiry(&net, &mut sender).await;
+        assert!(ironwood_notes_unspent(&*sender.wallet().read().await));
+
+        let failed = summary_of(&sender, &calculated[0]).await;
+        assert!(matches!(failed.status, ConfirmationStatus::Failed(_)));
+        assert_eq!(failed.kind, TransactionKind::Sent(SendType::Send));
+        assert_eq!(failed.value, PAYMENT);
+        assert_eq!(failed.fee, Some(ONE_INPUT_SEND_FEE));
+        assert_eq!(failed.pools_sent_from, vec![PoolType::IRONWOOD]);
+
+        // Sync releases nothing further and does not reclassify the failure.
+        sender.sync_and_await().await.unwrap();
+        let failed = summary_of(&sender, &calculated[0]).await;
+        assert_eq!(failed.kind, TransactionKind::Sent(SendType::Send));
+    }
+
+    /// The report in issue #2756: a wallet holding only transparent funds
+    /// shields, the shield fails, and history shows a receipt that paid a
+    /// fee. The failed shield must read as a shield.
+    #[tokio::test]
+    async fn failed_shield_reads_as_shield() {
+        let mut net = MockNet::launch().await;
+        let mut shielder = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .await;
+        shielder.set_transmit_retry_interval(Duration::ZERO);
+        let taddr = get_base_address(&shielder, PoolType::Transparent).await;
+        fund(&net, vec![(&taddr, FUNDING, None)], 1).await;
+        shielder.sync_and_await().await.unwrap();
+        check_client_balances!(shielder, i: 0 o: 0 s: 0 t: FUNDING);
+
+        shielder
+            .propose_shield(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        let calculated = shielder.calculate_stored_proposal().await.unwrap();
+        let expiry = expiry_of(&shielder, &calculated[0]).await;
+        mine_past_expiry(&net, expiry).await;
+        shielder
+            .transmit_calculated(calculated.clone())
+            .await
+            .unwrap_err();
+
+        let failed = summary_of(&shielder, &calculated[0]).await;
+        assert!(matches!(failed.status, ConfirmationStatus::Failed(_)));
+        assert_eq!(failed.kind, TransactionKind::Sent(SendType::Shield));
+        assert!(failed.fee.is_some());
+        assert_eq!(failed.pools_sent_from, vec![PoolType::TRANSPARENT]);
+        assert_eq!(failed.outgoing_transparent_coins, vec![]);
+
+        // The released coin is still the wallet's whole transparent balance.
+        shielder.sync_and_await().await.unwrap();
+        check_client_balances!(shielder, i: 0 o: 0 s: 0 t: FUNDING);
+    }
 }
