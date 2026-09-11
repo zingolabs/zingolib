@@ -1,5 +1,7 @@
 //! [`crate::wallet::LightWallet`] methods associated with keys and address derivation.
 
+use std::collections::BTreeSet;
+
 use pepper_sync::{
     keys::{
         decode_address,
@@ -460,11 +462,25 @@ impl LightWallet {
     }
 
     pub(crate) fn truncate_failed_refund_addresses(&mut self) {
+        let accounts: BTreeSet<zip32::AccountId> = self
+            .transparent_addresses()
+            .keys()
+            .filter(|id| id.scope() == TransparentScope::Refund)
+            .map(|id| id.account_id())
+            .collect();
+        for account_id in accounts {
+            self.truncate_failed_refund_addresses_of_account(account_id);
+        }
+    }
+
+    fn truncate_failed_refund_addresses_of_account(&mut self, account_id: zip32::AccountId) {
         loop {
             let Some((id, address)) = self
                 .transparent_addresses()
                 .iter()
-                .filter(|(id, _)| id.scope() == TransparentScope::Refund)
+                .filter(|(id, _)| {
+                    id.scope() == TransparentScope::Refund && id.account_id() == account_id
+                })
                 .max_by_key(|(id, _)| id.address_index())
                 .map(|(id, address)| (*id, address.clone()))
             else {
@@ -485,12 +501,7 @@ impl LightWallet {
             if !paid || live {
                 return;
             }
-            let below = id
-                .address_index()
-                .index()
-                .checked_sub(1)
-                .and_then(NonHardenedChildIndex::from_index);
-            self.truncate_refund_addresses(below);
+            self.transparent_addresses_mut().remove(&id);
         }
     }
 

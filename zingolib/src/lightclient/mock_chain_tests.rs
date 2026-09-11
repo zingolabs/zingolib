@@ -1444,6 +1444,8 @@ mod strict_chain {
     use zcash_protocol::value::Zatoshis;
     use zingo_status::confirmation_status::ConfirmationStatus;
 
+    use pepper_sync::wallet::KeyIdInterface;
+
     use crate::lightclient::LightClient;
     use crate::testutils::chain_generics::fixtures;
     use crate::testutils::mock_indexer::{Fault, LostSendDestination, Rpc};
@@ -1889,6 +1891,18 @@ mod strict_chain {
         (failed, calculated)
     }
 
+    fn refund_address_ids(
+        wallet: &LightWallet,
+        account_id: zip32::AccountId,
+    ) -> Vec<pepper_sync::keys::transparent::TransparentAddressId> {
+        wallet
+            .transparent_addresses()
+            .keys()
+            .filter(|id| id.scope() == TransparentScope::Refund && id.account_id() == account_id)
+            .copied()
+            .collect()
+    }
+
     async fn confirmed_tex_send(net: &MockNet, sender: &mut LightClient) -> NonEmpty<TxId> {
         let steps = sender
             .quick_send(tex_request(), zip32::AccountId::ZERO, true)
@@ -1913,8 +1927,52 @@ mod strict_chain {
             ));
         }
         let wallet = sender.wallet().read().await;
-        assert_eq!(refund_address_count(&wallet), 1);
+        assert_eq!(refund_address_ids(&wallet, zip32::AccountId::ZERO).len(), 1);
         assert_eq!(net.chain.read().await.mempool_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn failed_send_in_one_account_keeps_refund_addresses_of_other_accounts() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        confirmed_tex_send(&net, &mut sender).await;
+        let other_account = zip32::AccountId::try_from(1).unwrap();
+        let other_ua = {
+            let mut wallet = sender.wallet().write().await;
+            wallet.create_new_account().unwrap();
+            let (_, address) = wallet
+                .generate_unified_address(ReceiverSelection::all_shielded(), other_account)
+                .unwrap();
+            address.encode(&wallet.chain_type())
+        };
+        fund(&net, vec![(&other_ua, FUNDING, None)], 1).await;
+        sender.sync_and_await().await.unwrap();
+        assert_eq!(
+            sender
+                .account_balance(other_account)
+                .await
+                .unwrap()
+                .confirmed_ironwood_balance
+                .unwrap()
+                .into_u64(),
+            FUNDING
+        );
+        let first_account_refunds_before =
+            refund_address_ids(&*sender.wallet().read().await, zip32::AccountId::ZERO);
+        assert_eq!(first_account_refunds_before.len(), 1);
+
+        inject_send_failures(&mut *net.chain.write().await, QUEUED_REJECTIONS);
+        sender
+            .quick_send(tex_request(), other_account, true)
+            .await
+            .unwrap_err();
+
+        let wallet = sender.wallet().read().await;
+        assert_eq!(
+            refund_address_ids(&wallet, zip32::AccountId::ZERO),
+            first_account_refunds_before
+        );
+        assert!(refund_address_ids(&wallet, other_account).is_empty());
     }
 
     #[tokio::test]
