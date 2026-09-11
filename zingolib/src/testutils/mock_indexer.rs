@@ -87,17 +87,26 @@ const FAUCET_FUNDING: u64 = 1_000_000_000;
 const FAUCET_HEADROOM: u64 = 1_000_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The set of consensus checks applied to a submitted transaction.
 pub struct Rules {
+    /// Whether the consensus branch id must match the next block's.
     pub branch_id: bool,
+    /// Whether the expiry height must be at or above the next block.
     pub expiry: bool,
+    /// Whether every nullifier must be unrevealed on chain and in the mempool.
     pub nullifiers: bool,
+    /// Whether every anchor must be a past tree root.
     pub anchors: bool,
+    /// Whether every transparent input must exist and be unspent.
     pub transparent_inputs: bool,
+    /// Whether a spent coinbase output must have reached maturity.
     pub coinbase_maturity: bool,
+    /// Whether the fee must satisfy the ZIP 317 mempool policy.
     pub fees: bool,
 }
 
 impl Rules {
+    /// The rule set with every check enabled.
     pub const STRICT: Self = Self {
         branch_id: true,
         expiry: true,
@@ -108,6 +117,7 @@ impl Rules {
         fees: true,
     };
 
+    /// The rule set with every check disabled.
     pub const LAX: Self = Self {
         branch_id: false,
         expiry: false,
@@ -126,13 +136,18 @@ impl Default for Rules {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+/// A nullifier tagged with its shielded pool.
 pub enum PoolNullifier {
+    /// A Sapling nullifier.
     Sapling(sapling_crypto::Nullifier),
+    /// An Orchard nullifier.
     Orchard(orchard::note::Nullifier),
+    /// An Ironwood nullifier.
     Ironwood(orchard::note::Nullifier),
 }
 
 impl PoolNullifier {
+    /// Returns the pool this value belongs to.
     pub fn pool(&self) -> ShieldedPool {
         match self {
             Self::Sapling(_) => ShieldedPool::Sapling,
@@ -141,6 +156,7 @@ impl PoolNullifier {
         }
     }
 
+    /// Returns the 32-byte encoding.
     pub fn to_bytes(self) -> [u8; 32] {
         match self {
             Self::Sapling(nullifier) => nullifier.0,
@@ -150,13 +166,18 @@ impl PoolNullifier {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A tree root tagged with its shielded pool.
 pub enum PoolAnchor {
+    /// A Sapling anchor.
     Sapling(sapling_crypto::Anchor),
+    /// An Orchard anchor.
     Orchard(orchard::Anchor),
+    /// An Ironwood anchor.
     Ironwood(orchard::Anchor),
 }
 
 impl PoolAnchor {
+    /// Returns the pool this value belongs to.
     pub fn pool(&self) -> ShieldedPool {
         match self {
             Self::Sapling(_) => ShieldedPool::Sapling,
@@ -165,6 +186,7 @@ impl PoolAnchor {
         }
     }
 
+    /// Returns the 32-byte encoding.
     pub fn to_bytes(self) -> [u8; 32] {
         match self {
             Self::Sapling(anchor) => anchor.to_bytes(),
@@ -174,31 +196,53 @@ impl PoolAnchor {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// The reason the mock refused a submitted transaction.
 pub enum Rejection {
+    /// The bytes did not parse as a transaction.
     Unparseable(String),
+    /// The consensus branch id is not the next block's.
     BranchId {
+        /// The branch id at the next block height.
         expected: BranchId,
+        /// The branch id in the transaction.
         found: BranchId,
     },
+    /// The expiry height is below the next block.
     Expired {
+        /// The transaction's expiry height.
         expiry: BlockHeight,
+        /// The height of the next block.
         next_height: BlockHeight,
     },
+    /// The nullifier was already revealed.
     DuplicateNullifier(PoolNullifier),
+    /// The anchor is not a past tree root.
     UnknownAnchor(PoolAnchor),
+    /// The transparent input does not exist.
     UnknownInput(OutPoint),
+    /// The transparent input was already spent.
     SpentInput(OutPoint),
+    /// A coinbase output was spent before maturity.
     ImmatureCoinbase {
+        /// The height of the coinbase block.
         mined_at: BlockHeight,
+        /// The height of the next block.
         next_height: BlockHeight,
     },
+    /// Outputs exceed inputs by this amount.
     NegativeFee(Zatoshis),
+    /// The fee is below the minimum rate for the transaction size.
     FeeBelowMinimumRate {
+        /// The fee paid.
         fee: Zatoshis,
+        /// The minimum fee for the size.
         required: Zatoshis,
     },
+    /// More unpaid logical actions than the mempool admits.
     UnpaidActions {
+        /// Unpaid logical actions.
         unpaid: usize,
+        /// The block limit on unpaid actions.
         limit: usize,
     },
 }
@@ -273,6 +317,7 @@ impl fmt::Display for Rejection {
 }
 
 impl Rejection {
+    /// Returns the rejection as the gRPC status zaino would return.
     pub fn status(&self) -> Status {
         zaino_send_error(ZAINO_REJECTION_CODE, &self.to_string())
     }
@@ -282,6 +327,7 @@ fn zaino_send_error(code: i32, text: &str) -> Status {
     Status::internal(format!("{ZAINO_SEND_ERROR_PREFIX} (code: {code}): {text}"))
 }
 
+/// Applies zebra's ZIP 317 mempool checks: minimum fee rate and unpaid action limit.
 pub fn check_zip317_mempool_policy(
     logical_actions: usize,
     fee: Zatoshis,
@@ -307,46 +353,77 @@ pub fn check_zip317_mempool_policy(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// A `CompactTxStreamer` method a fault can target.
 pub enum Rpc {
+    /// `GetLatestBlock`.
     LatestBlock,
+    /// `GetBlock` and `GetBlockNullifiers`.
     Block,
+    /// `GetBlockRange` and `GetBlockRangeNullifiers`.
     BlockRange,
+    /// `GetTreeState`.
     TreeState,
+    /// `GetLatestTreeState`.
     LatestTreeState,
+    /// `GetSubtreeRoots`.
     SubtreeRoots,
+    /// `GetTransaction`.
     Transaction,
+    /// `SendTransaction`.
     SendTransaction,
+    /// `GetTaddressTxids` and `GetTaddressTransactions`.
     TaddressTxids,
+    /// `GetMempoolTx`.
     MempoolTx,
+    /// `GetMempoolStream`.
     MempoolStream,
+    /// `GetLightdInfo`.
     LightdInfo,
+    /// `GetTaddressBalance` and its stream variant.
     TaddressBalance,
+    /// `GetAddressUtxos` and its stream variant.
     AddressUtxos,
+    /// `Ping`.
     Ping,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// One injected failure, consumed by the next call to its RPC.
 pub enum Fault {
+    /// A call that fails with this gRPC status.
     Fail(Code, String),
+    /// A call that is delayed by this duration before it answers.
     Delay(Duration),
-    TruncateStream { after: usize },
-    EndStream { after: usize },
+    /// A stream that ends with an EOF error after this many items.
+    TruncateStream {
+        /// The number of items streamed before the error.
+        after: usize,
+    },
+    /// A stream that ends cleanly after this many items.
+    EndStream {
+        /// The number of items streamed before the end.
+        after: usize,
+    },
 }
 
 #[derive(Debug, Default)]
+/// Per-RPC queues of injected faults.
 pub struct Faults {
     queued: HashMap<Rpc, VecDeque<Fault>>,
 }
 
 impl Faults {
+    /// Queues a fault for the next call to `rpc`.
     pub fn inject(&mut self, rpc: Rpc, fault: Fault) {
         self.queued.entry(rpc).or_default().push_back(fault);
     }
 
+    /// Returns the number of faults still queued for `rpc`.
     pub fn pending(&self, rpc: Rpc) -> usize {
         self.queued.get(&rpc).map_or(0, VecDeque::len)
     }
 
+    /// Removes every queued fault for `rpc` and returns how many were removed.
     pub fn clear(&mut self, rpc: Rpc) -> usize {
         self.queued.remove(&rpc).map_or(0, |queued| queued.len())
     }
@@ -406,7 +483,9 @@ pub struct MockChain {
     mempool_subscribers: Vec<MempoolSubscriber>,
     revealed_nullifiers: BTreeSet<PoolNullifier>,
     spent_outpoints: HashSet<OutPoint>,
+    /// The checks applied to submitted transactions.
     pub rules: Rules,
+    /// The queued RPC faults.
     pub faults: Faults,
     /// Raw transactions delivered but still in the validator's
     /// download/verification queue: present enough to reject a
@@ -610,6 +689,7 @@ fn coinbase_script_sig(height: BlockHeight) -> Script {
     Script::read(encoded.as_slice()).expect("a height push is a valid script")
 }
 
+/// Serializes an unsigned transparent-only transaction for the branch at `height`.
 pub fn transparent_only_transaction(
     chain_type: &ChainType,
     height: BlockHeight,
@@ -666,6 +746,7 @@ impl MockChain {
         Self::with_activation_heights(ActivationHeights::default())
     }
 
+    /// Creates an empty regtest chain with the given activation schedule.
     pub fn with_activation_heights(activation_heights: ActivationHeights) -> Self {
         let sapling_tree = SaplingTree::empty();
         let orchard_tree = OrchardTree::empty();
@@ -695,6 +776,7 @@ impl MockChain {
         }
     }
 
+    /// Returns the chain type.
     pub fn chain_type(&self) -> ChainType {
         self.chain_type
     }
@@ -710,14 +792,17 @@ impl MockChain {
         self.blocks.len() as u32
     }
 
+    /// The height of the next block.
     pub fn next_height(&self) -> BlockHeight {
         BlockHeight::from_u32(self.tip() + 1)
     }
 
+    /// Returns the number of transactions in the mempool.
     pub fn mempool_len(&self) -> usize {
         self.mempool.len()
     }
 
+    /// Validates `bytes` under the chain's rules and enters the mempool on success.
     pub fn submit_transaction(&mut self, bytes: Vec<u8>) -> Result<TxId, Rejection> {
         let transaction = self.validate(&bytes)?;
         let txid = transaction.txid();
@@ -725,6 +810,7 @@ impl MockChain {
         Ok(txid)
     }
 
+    /// Adds `bytes` to the mempool without validation.
     pub fn enter_mempool(&mut self, bytes: Vec<u8>) {
         let raw = RawTransaction {
             data: bytes.clone(),
@@ -735,6 +821,7 @@ impl MockChain {
         self.mempool.push(bytes);
     }
 
+    /// Checks `bytes` against the chain's rules for the next block.
     pub fn validate(&self, bytes: &[u8]) -> Result<Transaction, Rejection> {
         let next_height = self.next_height();
         let expected_branch = BranchId::for_height(&self.chain_type, next_height);
@@ -875,6 +962,7 @@ impl MockChain {
         self.mine(None, raw_transactions);
     }
 
+    /// Mines the given raw transactions (plus a coinbase transaction).
     pub fn mine_block_rewarding(
         &mut self,
         miner: &str,
@@ -1064,6 +1152,7 @@ impl MockChain {
             .expect("fabricated and wallet-built transactions parse")
     }
 
+    /// Returns the unspent transparent outputs paying `address` mined at or above `start_height`.
     pub fn unspent_outputs(
         &self,
         address: &str,
@@ -1248,6 +1337,7 @@ pub struct MockIndexerService {
 }
 
 impl MockIndexerService {
+    /// Creates a service that serves `chain`.
     pub fn new(chain: Arc<RwLock<MockChain>>) -> Self {
         Self { chain }
     }
@@ -1728,6 +1818,7 @@ impl MockNet {
         Self::launch_with(MockChain::new()).await
     }
 
+    /// Launches the mock server on an ephemeral localhost port serving `chain`.
     pub async fn launch_with(chain: MockChain) -> Self {
         let chain_type = chain.chain_type();
         let chain = Arc::new(RwLock::new(chain));
@@ -1758,10 +1849,12 @@ impl MockNet {
         }
     }
 
+    /// Returns the chain type.
     pub fn chain_type(&self) -> ChainType {
         self.chain_type
     }
 
+    /// Returns the URI clients connect to.
     pub fn indexer_uri(&self) -> http::Uri {
         self.indexer_uri.clone()
     }
