@@ -3583,24 +3583,6 @@ pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
     })
 }
 
-/// Disable Mixnet Mode: the user's deliberate per-session consent to
-/// clearnet for the send and price surfaces.
-pub fn disable_mixnet() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                lightclient.disable_mixnet().await;
-                object! { "mixnet_indicator" => "off" }.pretty(2)
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
-    })
-}
-
 /// The current Mixnet Mode indicator: `off`, `bootstrapping`, `ready` (with the local
 /// SOCKS5 address), or `died` (unconsented proxy loss; sends refuse — run
 /// [`attach_mixnet`] or [`enable_mixnet`] to recover).
