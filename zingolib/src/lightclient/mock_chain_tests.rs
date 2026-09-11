@@ -1834,7 +1834,7 @@ mod strict_chain {
             chain
                 .faults
                 .inject(Rpc::SendTransaction, Fault::Delay(Duration::ZERO));
-            inject_send_failures(&mut chain, RETRIES_BEFORE_DELIVERY_CHECK);
+            inject_send_failures(&mut chain, QUEUED_REJECTIONS);
         }
 
         sender
@@ -1887,6 +1887,34 @@ mod strict_chain {
             }
         }
         (failed, calculated)
+    }
+
+    async fn confirmed_tex_send(net: &MockNet, sender: &mut LightClient) -> NonEmpty<TxId> {
+        let steps = sender
+            .quick_send(tex_request(), zip32::AccountId::ZERO, true)
+            .await
+            .unwrap();
+        assert_eq!(steps.len(), 2);
+        assert_eq!(net.chain.read().await.mempool_len(), 2);
+        net.chain.write().await.mine_mempool();
+        sender.sync_and_await().await.unwrap();
+        steps
+    }
+
+    #[tokio::test]
+    async fn tex_send_confirms_on_the_strict_mock_chain() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        let steps = confirmed_tex_send(&net, &mut sender).await;
+        for txid in &steps {
+            assert!(matches!(
+                status_of(&sender, txid).await,
+                ConfirmationStatus::Confirmed(_)
+            ));
+        }
+        let wallet = sender.wallet().read().await;
+        assert_eq!(refund_address_count(&wallet), 1);
+        assert_eq!(net.chain.read().await.mempool_len(), 0);
     }
 
     #[tokio::test]

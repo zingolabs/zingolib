@@ -461,6 +461,7 @@ type MempoolSubscriber = mpsc::UnboundedSender<Result<RawTransaction, Status>>;
 struct MempoolState {
     nullifiers: BTreeSet<PoolNullifier>,
     spends: HashSet<OutPoint>,
+    outputs: HashMap<OutPoint, TxOut>,
 }
 
 /// The fabricated chain: blocks, transactions, tree states, mempool.
@@ -866,7 +867,7 @@ impl MockChain {
         }
 
         let transparent_input_total =
-            self.check_transparent_inputs(&transaction, next_height, &mempool.spends)?;
+            self.check_transparent_inputs(&transaction, next_height, &mempool)?;
 
         if let (true, Some(input_total)) = (self.rules.fees, transparent_input_total) {
             check_fee(&transaction, input_total, bytes.len())?;
@@ -881,6 +882,16 @@ impl MockChain {
             let transaction = self.parse_transaction(bytes, next_height);
             state.nullifiers.extend(nullifiers_of(&transaction));
             state.spends.extend(spent_outpoints_of(&transaction));
+            let txid = transaction.txid();
+            for (n, output) in transaction
+                .transparent_bundle()
+                .into_iter()
+                .flat_map(|bundle| bundle.vout.iter().enumerate())
+            {
+                state
+                    .outputs
+                    .insert(OutPoint::new(*txid.as_ref(), n as u32), output.clone());
+            }
         }
         state
     }
@@ -889,7 +900,7 @@ impl MockChain {
         &self,
         transaction: &Transaction,
         next_height: BlockHeight,
-        mempool_spends: &HashSet<OutPoint>,
+        mempool: &MempoolState,
     ) -> Result<Option<Zatoshis>, Rejection> {
         let Some(bundle) = transaction.transparent_bundle() else {
             return Ok(Some(Zatoshis::ZERO));
@@ -901,17 +912,7 @@ impl MockChain {
         let mut all_known = true;
         for txin in &bundle.vin {
             let outpoint = txin.prevout();
-            let Some(mined) = self.transactions.get(outpoint.txid()) else {
-                if self.rules.transparent_inputs {
-                    return Err(Rejection::UnknownInput(outpoint.clone()));
-                }
-                all_known = false;
-                continue;
-            };
-            let previous = self.parse_transaction(&mined.bytes, mined.height);
-            let Some(previous_output) = previous
-                .transparent_bundle()
-                .and_then(|previous_bundle| previous_bundle.vout.get(outpoint.n() as usize))
+            let Some(previous_output) = self.previous_output(outpoint, next_height, mempool)?
             else {
                 if self.rules.transparent_inputs {
                     return Err(Rejection::UnknownInput(outpoint.clone()));
@@ -920,25 +921,39 @@ impl MockChain {
                 continue;
             };
             if self.rules.transparent_inputs
-                && (self.spent_outpoints.contains(outpoint) || mempool_spends.contains(outpoint))
+                && (self.spent_outpoints.contains(outpoint) || mempool.spends.contains(outpoint))
             {
                 return Err(Rejection::SpentInput(outpoint.clone()));
-            }
-            if self.rules.coinbase_maturity
-                && previous
-                    .transparent_bundle()
-                    .is_some_and(|previous_bundle| previous_bundle.is_coinbase())
-                && next_height - mined.height < COINBASE_MATURITY_BLOCKS
-            {
-                return Err(Rejection::ImmatureCoinbase {
-                    mined_at: mined.height,
-                    next_height,
-                });
             }
             total = (total + previous_output.value())
                 .expect("chain values stay within the money range");
         }
         Ok(all_known.then_some(total))
+    }
+
+    fn previous_output(
+        &self,
+        outpoint: &OutPoint,
+        next_height: BlockHeight,
+        mempool: &MempoolState,
+    ) -> Result<Option<TxOut>, Rejection> {
+        let Some(mined) = self.transactions.get(outpoint.txid()) else {
+            return Ok(mempool.outputs.get(outpoint).cloned());
+        };
+        let previous = self.parse_transaction(&mined.bytes, mined.height);
+        let Some(previous_bundle) = previous.transparent_bundle() else {
+            return Ok(None);
+        };
+        if self.rules.coinbase_maturity
+            && previous_bundle.is_coinbase()
+            && next_height - mined.height < COINBASE_MATURITY_BLOCKS
+        {
+            return Err(Rejection::ImmatureCoinbase {
+                mined_at: mined.height,
+                next_height,
+            });
+        }
+        Ok(previous_bundle.vout.get(outpoint.n() as usize).cloned())
     }
 
     /// The validator finishing verification: queued transactions enter
@@ -1368,6 +1383,28 @@ impl MockIndexerService {
             other => Ok(other),
         }
     }
+
+    async fn address_utxos(
+        &self,
+        arg: GetAddressUtxosArg,
+    ) -> Result<Vec<GetAddressUtxosReply>, Status> {
+        let chain = self.chain.read().await;
+        let start_height = BlockHeight::from_u32(arg.start_height as u32);
+        let mut address_utxos = Vec::new();
+        for address in &arg.addresses {
+            address_utxos.extend(
+                chain
+                    .unspent_outputs(address, start_height)
+                    .map_err(Status::invalid_argument)?,
+            );
+        }
+        address_utxos
+            .sort_by(|a, b| (a.height, &a.txid, a.index).cmp(&(b.height, &b.txid, b.index)));
+        if arg.max_entries > 0 {
+            address_utxos.truncate(arg.max_entries as usize);
+        }
+        Ok(address_utxos)
+    }
 }
 
 #[tonic::async_trait]
@@ -1747,22 +1784,7 @@ impl CompactTxStreamer for MockIndexerService {
         request: Request<GetAddressUtxosArg>,
     ) -> Result<Response<GetAddressUtxosReplyList>, Status> {
         self.fault_for(Rpc::AddressUtxos).await?;
-        let arg = request.into_inner();
-        let chain = self.chain.read().await;
-        let start_height = BlockHeight::from_u32(arg.start_height as u32);
-        let mut address_utxos = Vec::new();
-        for address in &arg.addresses {
-            address_utxos.extend(
-                chain
-                    .unspent_outputs(address, start_height)
-                    .map_err(Status::invalid_argument)?,
-            );
-        }
-        address_utxos
-            .sort_by(|a, b| (a.height, &a.txid, a.index).cmp(&(b.height, &b.txid, b.index)));
-        if arg.max_entries > 0 {
-            address_utxos.truncate(arg.max_entries as usize);
-        }
+        let address_utxos = self.address_utxos(request.into_inner()).await?;
         Ok(Response::new(GetAddressUtxosReplyList { address_utxos }))
     }
 
@@ -1771,12 +1793,9 @@ impl CompactTxStreamer for MockIndexerService {
         &self,
         request: Request<GetAddressUtxosArg>,
     ) -> Result<Response<Self::GetAddressUtxosStreamStream>, Status> {
-        let address_utxos = self
-            .get_address_utxos(request)
-            .await?
-            .into_inner()
-            .address_utxos;
-        Ok(Response::new(stream_with_fault(address_utxos, None)))
+        let fault = self.fault_for(Rpc::AddressUtxos).await?;
+        let address_utxos = self.address_utxos(request.into_inner()).await?;
+        Ok(Response::new(stream_with_fault(address_utxos, fault)))
     }
 
     async fn ping(
@@ -2277,6 +2296,36 @@ mod tests {
     }
 
     #[test]
+    fn mempool_outputs_are_spendable_before_they_are_mined() {
+        let mut chain = MockChain::new();
+        let miner = external_transparent_address();
+        let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
+        chain.mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
+        let first = transparent_spend(
+            &chain,
+            first_output(txid_of(&chain, &coinbase)),
+            SPEND_VALUE,
+            &miner,
+        );
+        let first_txid = chain.submit_transaction(first).unwrap();
+        let chained_value = Zatoshis::const_from_u64(980_000);
+        let second = transparent_spend(&chain, first_output(first_txid), chained_value, &miner);
+        chain.submit_transaction(second.clone()).unwrap();
+        assert_eq!(
+            chain.submit_transaction(second).unwrap_err(),
+            Rejection::SpentInput(first_output(first_txid))
+        );
+        assert_eq!(chain.mempool_len(), 2);
+        chain.mine_mempool();
+        let unspent = chain.unspent_outputs(&miner, HEIGHT_ONE).unwrap();
+        assert_eq!(unspent.len(), 1);
+        assert_eq!(
+            unspent[0].value_zat,
+            i64::from(ZatBalance::from(chained_value))
+        );
+    }
+
+    #[test]
     fn outputs_above_inputs_are_rejected() {
         let mut chain = MockChain::new();
         let miner = external_transparent_address();
@@ -2374,6 +2423,38 @@ mod tests {
             .unwrap()
             .into_inner();
         assert_eq!(stream.next().await.unwrap().unwrap().data, bytes);
+    }
+
+    #[tokio::test]
+    async fn address_utxos_stream_applies_injected_stream_faults() {
+        let chain = Arc::new(RwLock::new(MockChain::new()));
+        let miner = external_transparent_address();
+        {
+            let mut chain = chain.write().await;
+            chain.mine_block_rewarding(&miner, REWARD, vec![]);
+            chain.mine_block_rewarding(&miner, REWARD, vec![]);
+            chain
+                .faults
+                .inject(Rpc::AddressUtxos, Fault::TruncateStream { after: 1 });
+        }
+        let service = MockIndexerService::new(chain.clone());
+        let arg = GetAddressUtxosArg {
+            addresses: vec![miner],
+            start_height: 1,
+            max_entries: 0,
+        };
+        let mut stream = service
+            .get_address_utxos_stream(Request::new(arg))
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(stream.next().await.unwrap().is_ok());
+        assert_eq!(
+            stream.next().await.unwrap().unwrap_err().code(),
+            Code::Unavailable
+        );
+        assert!(stream.next().await.is_none());
+        assert_eq!(chain.read().await.faults.pending(Rpc::AddressUtxos), 0);
     }
 
     #[tokio::test]
