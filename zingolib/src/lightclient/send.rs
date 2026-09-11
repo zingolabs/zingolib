@@ -16,7 +16,7 @@ use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::config::ChainType;
-use crate::data::proposal::ZingoProposal;
+use crate::data::proposal::{OpReturnProposal, ZingoProposal};
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
 use crate::lightclient::indexer_history::{
     AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, IndexerHistoryHandle, now_unix_secs,
@@ -571,6 +571,7 @@ impl LightClient {
                     proposal,
                     shielding_account,
                 } => self.shield(proposal, shielding_account).await,
+                ZingoProposal::OpReturn(proposal) => self.send_op_return(proposal).await,
             };
 
             self.release_proposal_pause(resume_sync);
@@ -644,6 +645,10 @@ impl LightClient {
                         .map_err(SendError::CalculateShieldError),
                     Err(e) => Err(e),
                 }
+            }
+            ZingoProposal::OpReturn(proposal) => {
+                wallet.store_proposal(ZingoProposal::OpReturn(proposal));
+                return Err(SendError::OpReturnNotCalculable.into());
             }
         };
         drop(wallet);
@@ -730,6 +735,175 @@ impl LightClient {
         }
 
         reports
+    }
+
+    /// Proposes and transmits an OP_RETURN send skipping proposal
+    /// confirmation. See [`Self::propose_send_with_op_return`] for the
+    /// proposal and [`OpReturnProposal`] for the two transactions.
+    ///
+    /// If sync is running, it is paused before creating the proposal. If
+    /// `resume_sync` is `true`, the engine is restored to its prior mode
+    /// after the send. If `false`, it stays paused for the caller to
+    /// resume.
+    ///
+    /// Returns the transmit reports for both transactions, deshield first.
+    pub async fn quick_send_with_op_return(
+        &mut self,
+        recipient: &str,
+        amount: zcash_protocol::value::Zatoshis,
+        data: crate::wallet::transparent::OpReturnData,
+        account_id: zip32::AccountId,
+        resume_sync: bool,
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        let guard = self.pause_sync_scoped().ok();
+        let reports = match self
+            .create_op_return_proposal(recipient, amount, data, account_id)
+            .await
+        {
+            Ok(proposal) => self.send_op_return(proposal).await,
+            Err(e) => Err(e),
+        };
+        if let Some(guard) = guard
+            && !resume_sync
+        {
+            guard.disarm();
+        }
+
+        reports
+    }
+
+    /// Reserves the source address of `proposal`, transmits its deshield,
+    /// then builds and transmits the OP_RETURN send that spends it.
+    ///
+    /// The source address must still be the next unreserved Refund-scope
+    /// address. If another send reserved it after the proposal was made,
+    /// the proposal is stale and is refused. A deshield that fails before
+    /// transmission releases the reservation.
+    ///
+    /// If a step fails after the deshield is transmitted, the error is
+    /// [`SendError::OpReturnAfterDeshield`]. It names the deshield txid.
+    /// If the OP_RETURN transaction was not built, the proposal is stored
+    /// again with that txid and the next `send_stored_proposal` resumes
+    /// from the OP_RETURN step. If it was built, it stays in the wallet
+    /// with `Calculated` status and the error names its txid.
+    ///
+    /// A proposal that carries a deshield txid skips the reservation and
+    /// the deshield.
+    ///
+    /// Returns the transmit reports for both transactions, deshield first.
+    /// A resumed send returns the OP_RETURN report only.
+    async fn send_op_return(
+        &mut self,
+        proposal: OpReturnProposal,
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        let account = proposal.sending_account();
+
+        let (deshield_reports, deshield_txid) = match proposal.deshield_txid() {
+            Some(txid) => (None, txid),
+            None => {
+                let highest_before = {
+                    let mut wallet = self.wallet().write().await;
+                    let (next_id, next_address) = wallet
+                        .derive_refund_addresses(1, account)
+                        .map_err(|e| SendError::OpReturn(WalletError::from(e)))?[0];
+                    if next_id != proposal.source_address_id()
+                        || next_address != *proposal.source_address()
+                    {
+                        return Err(SendError::OpReturnSourceAddressStale.into());
+                    }
+                    let highest_before = wallet.highest_refund_address_index();
+                    wallet
+                        .generate_refund_addresses(1, account)
+                        .map_err(|e| SendError::OpReturn(WalletError::from(e)))?;
+                    highest_before
+                };
+
+                match self.send(proposal.deshield().clone(), account).await {
+                    Ok(reports) => {
+                        let txid = reports.first().txid;
+                        (Some(reports), txid)
+                    }
+                    Err(e) => {
+                        let transmitted = matches!(
+                            e,
+                            LightClientError::SendError(SendError::TransmissionError(_))
+                        );
+                        if !transmitted {
+                            self.wallet()
+                                .write()
+                                .await
+                                .truncate_refund_addresses(highest_before);
+                        }
+                        return Err(e);
+                    }
+                }
+            }
+        };
+
+        let op_return_txid = {
+            let mut wallet = self.wallet().write().await;
+            let built = wallet
+                .get_migration_heights()
+                .map_err(SendError::OpReturn)
+                .and_then(|heights| {
+                    heights
+                        .map(|(target, _)| target)
+                        .ok_or(SendError::OpReturn(WalletError::NoSyncData))
+                })
+                .and_then(|target_height| {
+                    wallet
+                        .find_transparent_output(deshield_txid, proposal.source_address())
+                        .map(|(outpoint, txout)| (outpoint, txout, target_height))
+                        .map_err(SendError::OpReturn)
+                })
+                .and_then(|(source_outpoint, source_txout, target_height)| {
+                    wallet
+                        .build_op_return_send(
+                            account,
+                            proposal.source_address_id(),
+                            source_outpoint,
+                            source_txout,
+                            proposal.recipient(),
+                            proposal.amount(),
+                            proposal.data(),
+                            target_height,
+                        )
+                        .map_err(SendError::OpReturn)
+                });
+            match built {
+                Ok(txid) => txid,
+                Err(e) => {
+                    wallet.store_proposal(ZingoProposal::OpReturn(
+                        proposal.with_deshield_txid(deshield_txid),
+                    ));
+                    return Err(SendError::OpReturnAfterDeshield {
+                        deshield_txid,
+                        op_return_txid: None,
+                        source: Box::new(e.into()),
+                    }
+                    .into());
+                }
+            }
+        };
+
+        let op_return_reports = self
+            .transmit_transactions(NonEmpty::new(op_return_txid))
+            .await
+            .map_err(|e| SendError::OpReturnAfterDeshield {
+                deshield_txid,
+                op_return_txid: Some(op_return_txid),
+                source: Box::new(e),
+            })?;
+
+        Ok(match deshield_reports {
+            Some(mut reports) => {
+                for report in op_return_reports {
+                    reports.push(report);
+                }
+                reports
+            }
+            None => op_return_reports,
+        })
     }
 
     /// Shields all transparent funds skipping proposal confirmation. The
@@ -1717,5 +1891,153 @@ mod transparent_policy {
                 }
             )))
         ));
+    }
+}
+
+#[cfg(test)]
+mod op_return {
+    use pepper_sync::keys::transparent::TransparentScope;
+    use zcash_primitives::transaction::TxId;
+    use zcash_protocol::value::Zatoshis;
+
+    use crate::data::proposal::{OpReturnProposal, ZingoProposal};
+    use crate::lightclient::LightClient;
+    use crate::lightclient::error::{LightClientError, SendError};
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::wallet::error::WalletError;
+    use crate::wallet::transparent::OpReturnData;
+
+    const ACCOUNT: zip32::AccountId = zip32::AccountId::ZERO;
+
+    async fn client() -> LightClient {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(1_000_000)
+            .build();
+        LightClient::new_for_test(wallet).await
+    }
+
+    async fn proposal(client: &mut LightClient) -> OpReturnProposal {
+        client
+            .create_op_return_proposal(
+                zingo_test_vectors::EXT_TADDR,
+                Zatoshis::const_from_u64(100_000),
+                OpReturnData::new(b"payload".to_vec()).unwrap(),
+                ACCOUNT,
+            )
+            .await
+            .unwrap()
+    }
+
+    async fn reserved_refund_addresses(client: &LightClient) -> usize {
+        client
+            .wallet()
+            .read()
+            .await
+            .transparent_addresses()
+            .keys()
+            .filter(|id| id.scope() == TransparentScope::Refund)
+            .count()
+    }
+
+    /// A proposal whose source address another send reserved is refused.
+    /// Nothing is reserved or sent. The other reservation is untouched.
+    #[tokio::test]
+    async fn stale_source_address_is_refused() {
+        let mut client = client().await;
+        let proposal = proposal(&mut client).await;
+        client
+            .wallet()
+            .write()
+            .await
+            .generate_refund_addresses(1, ACCOUNT)
+            .unwrap();
+
+        let result = client.send_op_return(proposal).await;
+
+        assert!(matches!(
+            result,
+            Err(LightClientError::SendError(
+                SendError::OpReturnSourceAddressStale
+            ))
+        ));
+        assert_eq!(reserved_refund_addresses(&client).await, 1);
+    }
+
+    /// A deshield that fails before transmission releases the
+    /// reservation. An Indexerless client fails at preflight.
+    #[tokio::test]
+    async fn deshield_failure_before_transmission_releases_the_reservation() {
+        let mut client = client().await;
+        let proposal = proposal(&mut client).await;
+
+        let result = client.send_op_return(proposal).await;
+
+        assert!(matches!(result, Err(LightClientError::Offline)));
+        assert_eq!(reserved_refund_addresses(&client).await, 0);
+    }
+
+    /// A proposal with a deshield txid skips the reservation and the
+    /// deshield. A failure in the OP_RETURN step stores the proposal
+    /// again with that txid and reports it.
+    #[tokio::test]
+    async fn resume_skips_the_deshield_and_reports_the_txid_on_failure() {
+        let mut client = client().await;
+        let deshield_txid = TxId::from_bytes([9u8; 32]);
+        let proposal = proposal(&mut client)
+            .await
+            .with_deshield_txid(deshield_txid);
+
+        let result = client.send_op_return(proposal).await;
+
+        match result {
+            Err(LightClientError::SendError(SendError::OpReturnAfterDeshield {
+                deshield_txid: reported,
+                op_return_txid,
+                source,
+            })) => {
+                assert_eq!(reported, deshield_txid);
+                assert_eq!(op_return_txid, None);
+                assert!(matches!(
+                    *source,
+                    LightClientError::SendError(SendError::OpReturn(
+                        WalletError::TransactionNotFound(_)
+                    ))
+                ));
+            }
+            other => panic!("expected OpReturnAfterDeshield, got {other:?}"),
+        }
+        assert_eq!(reserved_refund_addresses(&client).await, 0);
+        match client.wallet().write().await.take_proposal() {
+            Some(ZingoProposal::OpReturn(stored)) => {
+                assert_eq!(stored.deshield_txid(), Some(deshield_txid));
+            }
+            other => panic!("expected the proposal stored again, got {other:?}"),
+        }
+    }
+
+    /// The stale check and the release do not apply to a resumed send.
+    /// Another reservation made after the deshield does not refuse it.
+    #[tokio::test]
+    async fn resume_ignores_the_stale_check() {
+        let mut client = client().await;
+        let proposal = proposal(&mut client)
+            .await
+            .with_deshield_txid(TxId::from_bytes([9u8; 32]));
+        client
+            .wallet()
+            .write()
+            .await
+            .generate_refund_addresses(1, ACCOUNT)
+            .unwrap();
+
+        let result = client.send_op_return(proposal).await;
+
+        assert!(matches!(
+            result,
+            Err(LightClientError::SendError(
+                SendError::OpReturnAfterDeshield { .. }
+            ))
+        ));
+        assert_eq!(reserved_refund_addresses(&client).await, 1);
     }
 }
