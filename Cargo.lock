@@ -4641,7 +4641,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a241614
 
 [[package]]
 name = "zingolib"
-version = "5.0.0"
+version = "6.0.0"
 dependencies = [
  "append-only-vec",
  "bech32",

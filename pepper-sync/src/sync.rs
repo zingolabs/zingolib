@@ -43,7 +43,7 @@ use crate::wallet::{
     KeyIdInterface, NoteInterface, NullifierMap, OutputId, OutputInterface, PoolActivation,
     ScanTarget, SyncMode, SyncState, WalletBlock, WalletTransaction,
 };
-use crate::witness::LocatedTreeData;
+use crate::witness::{ANCHOR_RETENTION_INTERVALS, LocatedTreeData};
 
 use crate::witness;
 
@@ -67,6 +67,13 @@ pub mod truncate;
 /// upstream by documentation rather than import. If zebra ever moves
 /// its boundary, this constant is the one place that follows it.
 pub const MAX_REORG_ALLOWANCE: u32 = 100;
+
+/// The maximum number of checkpoints in the rolling window for re-org handling and chain tip anchor spends.
+pub const SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE: u32 = MAX_REORG_ALLOWANCE + 1;
+
+/// The maximum total number of checkpoints a shard tree persists.
+pub const MAX_SHARDTREE_CHECKPOINTS: u32 =
+    SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + ANCHOR_RETENTION_INTERVALS;
 
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
@@ -448,7 +455,6 @@ where
         .await
     });
 
-    // create channel for receiving scan results and launch scanner
     let ufvks = wallet
         .read()
         .await
@@ -630,6 +636,8 @@ where
             .await?;
 
             expire_transactions(&mut *wallet.write().await)?;
+
+            repin_anchor_checkpoints(consensus_parameters, &mut *wallet.write().await)?;
         }
 
         // now transparent scan targets and subtree roots have been added, set ranges to be prioritized for scanning.
@@ -1852,8 +1860,9 @@ where
     H: incrementalmerkletree::Hashable + Clone + PartialEq,
 {
     let mut truncation_height = None;
+    let checkpoint_count = tree.store().checkpoint_count().expect("infallible");
     tree.store()
-        .for_each_checkpoint((MAX_REORG_ALLOWANCE + 1) as usize, |height, _| {
+        .for_each_checkpoint(checkpoint_count, |height, _| {
             if truncation_height.is_some() {
                 return Ok(());
             }
@@ -2163,6 +2172,7 @@ where
             fetch_request_sender,
             scan_range,
             highest_scanned_height,
+            witness::anchor_retention_policy(consensus_parameters),
             sapling_located_trees,
             orchard_located_trees,
             ironwood_located_trees,
@@ -2446,6 +2456,36 @@ where
         &mut shard_trees.ironwood,
     )?;
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
+
+    Ok(())
+}
+
+/// Re-derives the pinned anchor-checkpoint set of each shard tree from the retention policy in
+/// force for `consensus_parameters`, as of the wallet's newest scanned block.
+fn repin_anchor_checkpoints<W>(
+    consensus_parameters: &impl consensus::Parameters,
+    wallet: &mut W,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncShardTrees,
+{
+    let Some(policy) = witness::anchor_retention_policy(consensus_parameters) else {
+        return Ok(());
+    };
+    let Some(highest_scanned_height) = wallet
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .highest_scanned_height()
+    else {
+        return Ok(());
+    };
+    let window = witness::anchor_retention_window(&policy, highest_scanned_height);
+    let shard_trees = wallet
+        .get_shard_trees_mut()
+        .map_err(SyncError::WalletError)?;
+    witness::repin_anchor_checkpoints(&policy, &window, shard_trees.sapling.store_mut());
+    witness::repin_anchor_checkpoints(&policy, &window, shard_trees.orchard.store_mut());
+    witness::repin_anchor_checkpoints(&policy, &window, shard_trees.ironwood.store_mut());
 
     Ok(())
 }
@@ -2887,6 +2927,60 @@ mod test {
             ));
             // The wallet was cleared for rescan.
             assert!(wallet.get_wallet_block(BlockHeight::from_u32(6)).is_err());
+        }
+
+        /// The balance path reads the newest sapling checkpoint as the anchor.
+        fn assert_every_tree_holds_a_checkpoint(wallet: &mut crate::mocks::MockWallet) {
+            use crate::wallet::traits::SyncShardTrees;
+            use shardtree::store::ShardStore as _;
+
+            let shard_trees = wallet.get_shard_trees_mut().unwrap();
+            let sapling = shard_trees.sapling.store().max_checkpoint_id().unwrap();
+            let orchard = shard_trees.orchard.store().max_checkpoint_id().unwrap();
+            let ironwood = shard_trees.ironwood.store().max_checkpoint_id().unwrap();
+            assert!(
+                sapling.is_some() && orchard.is_some() && ironwood.is_some(),
+                "a shard tree lost its last checkpoint: sapling {sapling:?}, orchard {orchard:?}, ironwood {ironwood:?}"
+            );
+        }
+
+        /// A target below the birthday clears every store but keeps a checkpoint.
+        #[test]
+        fn clear_all_truncation_leaves_a_checkpoint_in_every_tree() {
+            let mut shard_trees = ShardTrees::new();
+            for height in 6..=10u32 {
+                shard_trees
+                    .sapling
+                    .append_checkpoint(BlockHeight::from_u32(height))
+                    .unwrap();
+            }
+            let mut wallet = synced_wallet(shard_trees);
+
+            truncate_wallet_data(&mut wallet, BlockHeight::from_u32(3)).unwrap();
+
+            assert!(wallet.get_wallet_block(BlockHeight::from_u32(6)).is_err());
+            assert_every_tree_holds_a_checkpoint(&mut wallet);
+        }
+
+        /// The rescan recovery must also leave a checkpoint in every tree.
+        #[test]
+        fn rescan_recovery_leaves_a_checkpoint_in_every_tree() {
+            let mut shard_trees = ShardTrees::new();
+            for height in 9..=10u32 {
+                shard_trees
+                    .orchard
+                    .append_checkpoint(BlockHeight::from_u32(height))
+                    .unwrap();
+            }
+            let mut wallet = synced_wallet(shard_trees);
+
+            let result = truncate_wallet_data(&mut wallet, BlockHeight::from_u32(8));
+
+            assert!(matches!(
+                result,
+                Err(crate::error::SyncError::TruncationError(_, _))
+            ));
+            assert_every_tree_holds_a_checkpoint(&mut wallet);
         }
     }
 

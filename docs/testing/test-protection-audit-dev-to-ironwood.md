@@ -120,7 +120,7 @@ ensure_taddrs_from_old_seeds_work) both PRESERVED byte-for-byte
 Proposal rig (→ lightclient/propose.rs, wallet/propose.rs, and
 lightclient/send.rs for the transparent-policy case):
 ptfm_insufficient_funds PRESERVED (exact InsufficientFunds{10_000,
-30_000}); ptfm_zero_value PRESERVED (ZeroValueSendAll);
+20_001}); ptfm_zero_value PRESERVED (InsufficientFunds{20_000, 20_001});
 toggle_zennies_for_zingo PRESERVED (max_send_value arithmetic);
 propose_orchard_dust_to_sapling PRESERVED (Ok, FIXME carried);
 four_coin_shield_proposal_shape (from

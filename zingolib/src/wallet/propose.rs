@@ -1,9 +1,14 @@
 //! creating proposals from wallet data
 
+use zcash_address::ZcashAddress;
 use zcash_client_backend::{
-    data_api::wallet::{
-        ConfirmationsPolicy,
-        input_selection::{GreedyInputSelector, SpendPolicy},
+    data_api::{
+        MaxSpendMode,
+        wallet::{
+            ConfirmationsPolicy,
+            input_selection::{GreedyInputSelector, LockedInputPolicy, SpendPolicy},
+            propose_send_max_transfer,
+        },
     },
     fees::{DustAction, DustOutputPolicy},
     zip321::TransactionRequest,
@@ -20,8 +25,14 @@ use super::{
     error::{ProposeSendError, ProposeShieldError, WalletError},
 };
 use crate::{
+    ZENNIES_FOR_ZINGO_AMOUNT,
     config::ChainType,
-    data::proposal::{ProportionalFeeProposal, ZingoProposal},
+    data::{
+        proposal::{ProportionalFeeProposal, ZingoProposal},
+        receivers::{Receiver, transaction_request_from_receivers},
+    },
+    get_zennies_for_zingo_address,
+    utils::conversion::address_from_str,
 };
 use pepper_sync::{
     keys::transparent::TransparentScope,
@@ -79,6 +90,114 @@ impl LightWallet {
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
             &SpendPolicy::default(),
             None,
+            None,
+        )
+        .map_err(ProposeSendError::Proposal)
+    }
+
+    /// Creates a proposal that sends the whole shielded spendable balance,
+    /// less the fee, to `address`. With `zennies_for_zingo` set, a
+    /// [`ZENNIES_FOR_ZINGO_AMOUNT`] payment is added and the send-all
+    /// amount is reduced to cover it.
+    ///
+    /// The zenny variant is sized by a send-max proposal over every
+    /// spendable note. The two-payment request is proposed once. If the
+    /// extra output raised the fee, it is proposed a second time with the
+    /// recipient amount reduced by that increase. The corrected request
+    /// sums to the sized input total. Selection takes every note, the
+    /// output count is unchanged, and the fee is the same. The second
+    /// result is final.
+    pub(crate) fn create_send_all_proposal(
+        &mut self,
+        address: ZcashAddress,
+        zennies_for_zingo: bool,
+        memo: Option<MemoBytes>,
+        account_id: zip32::AccountId,
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
+        if !zennies_for_zingo {
+            return self.propose_send_max(address, memo, account_id);
+        }
+
+        let sizing = self.propose_send_max(address.clone(), None, account_id)?;
+        let sizing_step = sizing.steps().first();
+        let max_to_recipient = recipient_amount(&sizing);
+        let input_total = (max_to_recipient + sizing_step.balance().fee_required()).ok_or(
+            ProposeSendError::Proposal(zcash_client_backend::data_api::error::Error::BalanceError(
+                zcash_protocol::value::BalanceError::Overflow,
+            )),
+        )?;
+        let zenny_amount = Zatoshis::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("hard-coded");
+        let Some(recipient_amount) =
+            (max_to_recipient - zenny_amount).filter(|amount| *amount > Zatoshis::ZERO)
+        else {
+            let required = (zenny_amount + sizing_step.balance().fee_required())
+                .and_then(|value| value + Zatoshis::const_from_u64(1))
+                .unwrap_or(Zatoshis::const_from_u64(zcash_protocol::value::MAX_MONEY));
+            return Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                    available: input_total,
+                    required,
+                },
+            ));
+        };
+
+        let zenny_address = address_from_str(get_zennies_for_zingo_address(self.chain_type))
+            .expect("hard-coded address");
+        let request = |amount: Zatoshis| {
+            transaction_request_from_receivers(vec![
+                Receiver::new(address.clone(), amount, memo.clone()),
+                Receiver::new(zenny_address.clone(), zenny_amount, None),
+            ])
+        };
+
+        let first_attempt = self.create_send_proposal(request(recipient_amount)?, account_id);
+        let required = match &first_attempt {
+            Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                    required, ..
+                },
+            )) => *required,
+            _ => return first_attempt,
+        };
+        let Some(corrected_amount) = (required - input_total)
+            .and_then(|fee_increase| recipient_amount - fee_increase)
+            .filter(|amount| *amount > Zatoshis::ZERO)
+        else {
+            return first_attempt;
+        };
+        self.create_send_proposal(request(corrected_amount)?, account_id)
+    }
+
+    fn propose_send_max(
+        &mut self,
+        address: ZcashAddress,
+        memo: Option<MemoBytes>,
+        account_id: zip32::AccountId,
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
+        let chain_type = self.chain_type;
+        let confirmations_policy =
+            ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false);
+
+        propose_send_max_transfer::<
+            LightWallet,
+            ChainType,
+            zcash_primitives::transaction::fees::zip317::FeeRule,
+            WalletError,
+        >(
+            self,
+            &chain_type,
+            account_id,
+            &[
+                ShieldedPool::Ironwood,
+                ShieldedPool::Orchard,
+                ShieldedPool::Sapling,
+            ],
+            &zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+            address,
+            memo,
+            MaxSpendMode::MaxSpendable,
+            confirmations_policy,
+            &LockedInputPolicy::Exclude,
             None,
         )
         .map_err(ProposeSendError::Proposal)
@@ -267,6 +386,18 @@ impl LightWallet {
                 })
             })
     }
+}
+
+/// The amount of the first payment in a proposal's first step.
+pub(crate) fn recipient_amount(proposal: &ProportionalFeeProposal) -> Zatoshis {
+    proposal
+        .steps()
+        .first()
+        .transaction_request()
+        .payments()
+        .get(&0)
+        .and_then(|payment| payment.amount())
+        .unwrap_or(Zatoshis::ZERO)
 }
 
 #[cfg(test)]
