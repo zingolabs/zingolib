@@ -469,11 +469,11 @@ impl LightWallet {
             .map(|id| id.account_id())
             .collect();
         for account_id in accounts {
-            self.truncate_failed_refund_addresses_of_account(account_id);
+            self.truncate_failed_refund_addresses_for_account(account_id);
         }
     }
 
-    fn truncate_failed_refund_addresses_of_account(&mut self, account_id: zip32::AccountId) {
+    fn truncate_failed_refund_addresses_for_account(&mut self, account_id: zip32::AccountId) {
         loop {
             let Some((id, address)) = self
                 .transparent_addresses()
