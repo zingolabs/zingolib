@@ -1059,6 +1059,21 @@ impl MockChain {
             &self.ironwood_tree,
         ));
         self.mempool_subscribers.clear();
+        self.evict_expired_from_mempool();
+    }
+
+    fn evict_expired_from_mempool(&mut self) {
+        let next_height = self.next_height();
+        let chain_type = self.chain_type;
+        self.mempool.retain(|bytes| {
+            let expiry = Transaction::read(
+                bytes.as_slice(),
+                BranchId::for_height(&chain_type, next_height),
+            )
+            .expect("mempool transactions parse")
+            .expiry_height();
+            expiry == NO_EXPIRY || expiry >= next_height
+        });
     }
 
     /// Mines `count` empty blocks, advancing the tip without new outputs.
@@ -2163,6 +2178,18 @@ mod tests {
         let evicted = chain.reorg_to(2);
         assert_eq!(evicted, vec![bytes.clone()]);
         chain.submit_transaction(bytes).unwrap();
+    }
+
+    #[tokio::test]
+    async fn expired_mempool_transactions_are_evicted_when_a_block_is_mined() {
+        let mut chain = lax_anchors();
+        let bytes = funding_bytes().await;
+        let expiry = chain.parse_transaction(&bytes, HEIGHT_ONE).expiry_height();
+        chain.submit_transaction(bytes).unwrap();
+        chain.mine_empty_blocks(u32::from(expiry) - 1);
+        assert_eq!(chain.mempool_len(), 1);
+        chain.mine_empty_blocks(1);
+        assert_eq!(chain.mempool_len(), 0);
     }
 
     #[tokio::test]
