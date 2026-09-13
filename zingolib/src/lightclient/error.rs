@@ -74,7 +74,6 @@ pub enum LightClientError {
     /// synchronization endpoint's host, which would let that server correlate
     /// the wallet's sync stream with its migration cohort (ADR 0011,
     /// 2026-07-23).
-    #[cfg(feature = "nym")]
     #[error(
         "the migration transmission target '{host}' is the synchronization endpoint; migration \
          parts never go to the sync server. Configure a different migration_transmission_uri or \
@@ -84,12 +83,10 @@ pub enum LightClientError {
         /// The host both endpoints share.
         host: String,
     },
-    /// No Destination remains to carry migration parts over the mixnet,
-    /// with the typed refusal saying whether exclusion or an empty pool
-    /// emptied the draw.
-    #[cfg(feature = "nym")]
+    /// No Destination remains to carry migration parts, with the typed
+    /// refusal saying whether exclusion or an empty set emptied the draw.
     #[error(transparent)]
-    NoEligibleDestination(#[from] crate::destination::NoEligibleDestinations),
+    NoEligibleDestination(#[from] crate::destination::servers::NoEligibleDestinations),
 }
 
 /// Errors from the Orchard→Ironwood migration entry points

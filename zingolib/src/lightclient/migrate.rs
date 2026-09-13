@@ -913,42 +913,44 @@ impl LightClient {
     /// forbidden as a target (ADR 0022: a `migration_transmission_uri` on the
     /// sync operator's domain is refused, and the draw excludes that
     /// operator). Clearnet carries parts only when the user deliberately
-    /// toggled the mode off, or in a build without the `nym` feature: then
-    /// the dedicated `migration_transmission_uri` when configured, else the
-    /// synchronization endpoint with a logged correlation warning, else
-    /// [`LightClientError::Offline`] with no traffic emitted.
+    /// toggled the mode off, or in a build without the `nym` feature, and
+    /// then draws under the same policy over direct connections (ADR 0022
+    /// as amended 2026-09-11): the dedicated `migration_transmission_uri`
+    /// when configured, else the Destination Server set, and
+    /// [`LightClientError::Offline`] with no traffic emitted when a
+    /// clearnet session has neither a sync indexer nor a configured target.
     fn migration_transmission_client(
         &self,
     ) -> Result<transmission_route::RoutedTransmissionClient, LightClientError> {
+        use transmission_route::MigrationWire;
+
+        let sync_indexer = self.indexer_uri();
         #[cfg(feature = "nym")]
-        if let crate::mixnet::MixnetRoute::Mixnet(conduit) = self.mixnet_route()? {
+        let wire = match self.mixnet_route()? {
             // The guard travels into the client, which dials on every
             // submission long after this function returns.
-            let dial = conduit.dial();
-            let sync_indexer = self.indexer_uri();
-            let candidates = transmission_route::eligible_candidates(
-                self.migration_transmission_uri.clone(),
-                sync_indexer.as_ref(),
-            )?;
-            return Ok(transmission_route::RoutedTransmissionClient::Mixnet(
-                transmission_route::MixnetTransmissionClient::new(dial, candidates),
-            ));
-        }
-
-        let clearnet = match &self.migration_transmission_uri {
-            Some(uri) => transmission_grpc::GrpcTransmissionClient::new(uri.clone()),
-            None => {
-                let indexer_uri = self.indexer_uri().ok_or(LightClientError::Offline)?;
-                log::warn!(
-                    "no dedicated migration transmission endpoint configured; parts will be \
-                     transmitted to the synchronization endpoint, which lets that server \
-                     correlate synchronization with migration activity"
-                );
-                transmission_grpc::GrpcTransmissionClient::new(indexer_uri)
-            }
+            crate::mixnet::MixnetRoute::Mixnet(conduit) => MigrationWire::Mixnet(conduit.dial()),
+            crate::mixnet::MixnetRoute::Clearnet => MigrationWire::Clearnet,
         };
-        Ok(transmission_route::RoutedTransmissionClient::Clearnet(
-            clearnet,
+        #[cfg(not(feature = "nym"))]
+        let wire = MigrationWire::Clearnet;
+        // A ready mixnet needs no sync indexer (ruling 2026-07-29); a
+        // clearnet session with nothing configured emits no traffic.
+        if matches!(wire, MigrationWire::Clearnet)
+            && sync_indexer.is_none()
+            && self.migration_transmission_uri.is_none()
+        {
+            return Err(LightClientError::Offline);
+        }
+        let candidates = transmission_route::candidates(
+            self.migration_transmission_uri.clone(),
+            sync_indexer.as_ref(),
+            &self.destination_servers,
+            wire.transport(),
+            &self.indexer_history.health().lock().expect("health mutex"),
+        )?;
+        Ok(transmission_route::RoutedTransmissionClient::new(
+            wire, candidates,
         ))
     }
 
@@ -2324,7 +2326,7 @@ fn record_part_route(
         route: attempt_route,
         kind: AttemptKind::Send,
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
-        phase: None,
+        fault_domain: None,
         outcome,
     });
 }
@@ -4445,11 +4447,16 @@ mod tests {
         use zcash_primitives::transaction::TxId;
 
         /// A client whose Mixnet Mode is Ready at the mock tunnel endpoint,
-        /// the posture every connected session holds.
+        /// the posture every connected session holds, with a sync indexer
+        /// configured and never dialed: the regtest rotation policy draws
+        /// the sync indexer alone, so the draw needs one to name.
         #[cfg(feature = "nym")]
         async fn ready_client(tip: u32) -> (LightClient, BoundNote) {
             let (wallet, bound_note) = wallet_with_migration_note(tip);
             let mut client = LightClient::new_for_test(wallet).await;
+            client
+                .set_indexer_uri_lazy("http://127.0.0.1:1".parse().expect("a static uri"))
+                .expect("a lazy indexer needs no connection");
             client
                 .switch_on_mixnet_for_tests(crate::mocks::transmission::MOCK_SOCKS5_ADDR)
                 .await;
@@ -4468,10 +4475,7 @@ mod tests {
                 .migration_transmission_client()
                 .expect("a ready session resolves a wire");
             assert!(
-                matches!(
-                    resolved,
-                    crate::lightclient::migrate::transmission_route::RoutedTransmissionClient::Mixnet(_)
-                ),
+                resolved.is_mixnet(),
                 "a ready session must resolve the mixnet wire"
             );
         }

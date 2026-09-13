@@ -1201,10 +1201,12 @@ mod perspective {
 
 /// A mock-chain send travels the mixnet route and says so: the receipt
 /// names the Destination that accepted the transaction and the
-/// session's SOCKS5 endpoint, never the sync indexer. Mock-net clients
-/// run with Mixnet Mode switched on, so the Destination draw, the
-/// escalation rounds, and the cap all run for real; only the bytes take
-/// the mock indexer's channel instead of the tunnel.
+/// session's SOCKS5 endpoint. Mock-net clients run with Mixnet Mode
+/// switched on, so the Destination draw, the escalation rounds, and the
+/// cap all run for real; only the bytes take the mock indexer's channel
+/// instead of the tunnel. A regtest session's rotation policy names the
+/// configured sync indexer as its sole Destination, so that is the host
+/// the receipt must name.
 #[cfg(feature = "nym")]
 #[tokio::test]
 async fn a_mock_chain_send_reports_the_mixnet_route() {
@@ -1239,15 +1241,16 @@ async fn a_mock_chain_send_reports_the_mixnet_route() {
                     via_socks5,
                     &crate::mocks::transmission::MOCK_SOCKS5_ADDR.to_string()
                 );
-                assert!(
-                    crate::destination::DESTINATION_INDEXERS
-                        .iter()
-                        .any(|entry| entry.contains(destination.as_str())),
-                    "the winning Destination {destination} is not drawn from the curated pool"
+                assert_eq!(
+                    destination,
+                    net.indexer_uri()
+                        .host()
+                        .expect("the mock indexer has a host"),
+                    "a regtest draw names the sync indexer alone"
                 );
             }
-            TransmitRoute::Clearnet { indexer } => {
-                panic!("a mixnet-on session leaked the transmission to clearnet at {indexer}")
+            TransmitRoute::Clearnet { destination } => {
+                panic!("a mixnet-on session leaked the transmission to clearnet at {destination}")
             }
         }
     }
@@ -1425,5 +1428,236 @@ async fn shardtree_roundtrip_restores_retained_checkpoints() {
             shard_trees.ironwood.store(),
             chain_height
         ));
+    }
+}
+
+/// The mainnet rotation policy, driven end to end without a network. The
+/// sync indexer, a suppressing Destination, and an accepting one are three
+/// mock indexers on three loopback hosts, so the operator exclusion, the
+/// hedged race, and the delivery run over real gRPC. The sync indexer
+/// listens on IPv6 loopback because it is only ever excluded by a send,
+/// never dialed by one: the IPv6 dependency sits on the side no arm
+/// contacts.
+mod mainnet_rotation_offline {
+    use super::*;
+    use crate::destination::servers::{DestinationServerSet, RotationPolicy};
+    use crate::lightclient::LightClient;
+    use crate::lightclient::send::TransmitRoute;
+
+    struct Stage {
+        sync: MockNet,
+        suppressing: MockNet,
+        accepting: MockNet,
+    }
+
+    impl Stage {
+        fn host_of(net: &MockNet) -> String {
+            crate::destination::Host::of_uri(net.indexer_uri()).to_string()
+        }
+
+        fn set_over(&self, nets: &[&MockNet]) -> DestinationServerSet {
+            DestinationServerSet::from_uris(
+                RotationPolicy::ExcludeSyncOperator,
+                nets.iter().map(|net| net.indexer_uri().clone()),
+            )
+        }
+    }
+
+    async fn stage() -> (Stage, LightClient) {
+        let mut sync = MockNet::launch_on("[::1]").await;
+        let suppressing = MockNet::launch_on("localhost").await;
+        suppressing.chain.write().await.reject_all_sends = true;
+        let accepting = MockNet::launch().await;
+
+        let mut recipient = sync
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .await;
+        let recipient_ua =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        sync.chain.write().await.mine_empty_blocks(1);
+        fund(&sync, vec![(&recipient_ua, 100_000, None)], 1).await;
+        recipient.sync_and_await().await.unwrap();
+        // The suppressing arm burns its retries in milliseconds rather
+        // than seconds.
+        recipient.set_transmit_retry_interval(std::time::Duration::from_millis(10));
+        (
+            Stage {
+                sync,
+                suppressing,
+                accepting,
+            },
+            recipient,
+        )
+    }
+
+    /// HYPOTHESIS: with the sync indexer in the set, a suppressing
+    /// Destination, and an accepting one, the send confirms at the
+    /// accepting Destination, and the sync indexer never sees the bytes
+    /// nor an attempt. Falsified if the receipt names any other host, the
+    /// sync mempool holds the transaction, or the history records the
+    /// sync host.
+    #[tokio::test]
+    async fn a_clearnet_send_routes_around_the_suppressor_and_never_the_sync_indexer() {
+        let (stage, mut recipient) = stage().await;
+        #[cfg(feature = "nym")]
+        recipient.disable_mixnet().await;
+        recipient.set_destination_servers_for_tests(stage.set_over(&[
+            &stage.sync,
+            &stage.suppressing,
+            &stage.accepting,
+        ]));
+
+        let reports = from_inputs::quick_send_reported(
+            &mut recipient,
+            vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+        )
+        .await
+        .unwrap();
+
+        let accepting_host = Stage::host_of(&stage.accepting);
+        for report in &reports {
+            match &report.route {
+                TransmitRoute::Clearnet { destination } => assert_eq!(
+                    destination, &accepting_host,
+                    "the receipt names the Destination that confirmed delivery"
+                ),
+                other => panic!("a switched-off session reported {other:?}"),
+            }
+        }
+        assert_eq!(
+            stage.sync.chain.read().await.mempool_len(),
+            0,
+            "the sync indexer never receives the transmission"
+        );
+        assert_eq!(
+            stage.accepting.chain.read().await.mempool_len(),
+            reports.len(),
+            "every transaction landed at the accepting Destination"
+        );
+        let sync_host = Stage::host_of(&stage.sync);
+        assert!(
+            recipient
+                .indexer_history_handle()
+                .load()
+                .iter()
+                .all(|attempt| attempt.host.to_string() != sync_host),
+            "no send attempt is ever recorded against the sync indexer"
+        );
+    }
+
+    /// HYPOTHESIS: when every eligible Destination suppresses, the send
+    /// fails typed and the sync indexer is never the fallback. Falsified
+    /// if the send succeeds, or the sync mempool holds the transaction.
+    #[tokio::test]
+    async fn an_all_suppressing_draw_fails_closed_rather_than_falling_back() {
+        let (stage, mut recipient) = stage().await;
+        #[cfg(feature = "nym")]
+        recipient.disable_mixnet().await;
+        recipient
+            .set_destination_servers_for_tests(stage.set_over(&[&stage.sync, &stage.suppressing]));
+
+        let refused = from_inputs::quick_send_reported(
+            &mut recipient,
+            vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+        )
+        .await
+        .expect_err("a suppressed transmission surfaces");
+        assert!(
+            matches!(
+                refused,
+                crate::lightclient::error::LightClientError::SendError(
+                    crate::lightclient::error::SendError::TransmissionError(_)
+                )
+            ),
+            "the refusal is the typed transmission failure: {refused}"
+        );
+        assert!(
+            stage.suppressing.chain.read().await.rejected_sends > 0,
+            "the suppressing Destination was contacted"
+        );
+        assert_eq!(
+            stage.sync.chain.read().await.mempool_len(),
+            0,
+            "a refused draw never falls back to the sync indexer"
+        );
+    }
+
+    /// The same race over the mixnet-attached wire: the draw and the
+    /// receipt are the mixnet's while each arm's bytes take the mock's
+    /// channel, and the sync indexer is excluded exactly as on clearnet.
+    #[cfg(feature = "nym")]
+    #[tokio::test]
+    async fn a_mixnet_send_routes_around_the_suppressor_and_never_the_sync_indexer() {
+        let (stage, mut recipient) = stage().await;
+        recipient.set_destination_servers_for_tests(stage.set_over(&[
+            &stage.sync,
+            &stage.suppressing,
+            &stage.accepting,
+        ]));
+
+        let reports = from_inputs::quick_send_reported(
+            &mut recipient,
+            vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+        )
+        .await
+        .unwrap();
+
+        let accepting_host = Stage::host_of(&stage.accepting);
+        for report in &reports {
+            match &report.route {
+                TransmitRoute::Mixnet { destination, .. } => {
+                    assert_eq!(destination, &accepting_host)
+                }
+                other => panic!("a mixnet-on session reported {other:?}"),
+            }
+        }
+        assert_eq!(stage.sync.chain.read().await.mempool_len(), 0);
+        assert_eq!(
+            stage.accepting.chain.read().await.mempool_len(),
+            reports.len()
+        );
+    }
+
+    /// HYPOTHESIS: a trusted sync indexer receives the send itself, on
+    /// mainnet policy, and no public Destination is contacted. Falsified
+    /// if the bytes land anywhere but the sync mempool or the suppressor
+    /// sees an attempt. The trusted branch is dormant in production
+    /// (ruling 2026-09-12); this pins it for the day configuration feeds it.
+    #[tokio::test]
+    async fn a_trusted_sync_indexer_receives_the_send_alone() {
+        let (stage, mut recipient) = stage().await;
+        #[cfg(feature = "nym")]
+        recipient.disable_mixnet().await;
+        recipient.set_destination_servers_for_tests(
+            stage
+                .set_over(&[&stage.suppressing, &stage.accepting])
+                .with_trusted([stage.sync.indexer_uri().clone()]),
+        );
+
+        let reports = from_inputs::quick_send_reported(
+            &mut recipient,
+            vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+        )
+        .await
+        .unwrap();
+
+        let sync_host = Stage::host_of(&stage.sync);
+        for report in &reports {
+            match &report.route {
+                TransmitRoute::Clearnet { destination } => assert_eq!(destination, &sync_host),
+                other => panic!("a switched-off session reported {other:?}"),
+            }
+        }
+        assert_eq!(
+            stage.sync.chain.read().await.mempool_len(),
+            reports.len(),
+            "the trusted sync indexer holds the transmission"
+        );
+        assert_eq!(stage.accepting.chain.read().await.mempool_len(), 0);
+        assert_eq!(
+            stage.suppressing.chain.read().await.rejected_sends,
+            0,
+            "no public Destination is contacted while a trusted one is reachable"
+        );
     }
 }

@@ -104,6 +104,13 @@ pub struct MockChain {
     /// duplicate probe of a queued transaction. At zero the probe is
     /// answered with the mempool-phase rejection instead.
     pub queued_rejections_before_promotion: u8,
+    /// Standing fault: every `send_transaction` is refused and nothing is
+    /// kept. The shape of a Destination that accepts the connection and
+    /// declines to relay, the adversary Destination Rotation routes
+    /// around.
+    pub reject_all_sends: bool,
+    /// How many submissions `reject_all_sends` refused.
+    pub rejected_sends: u32,
     /// One entry per `GetTaddressTxids` request served: the address, the
     /// requested range, and how many transactions were streamed back.
     /// Diagnostic surface for transparent-detection failures.
@@ -194,6 +201,8 @@ impl MockChain {
             download_queue: Vec::new(),
             lose_next_send_response: None,
             queued_rejections_before_promotion: 0,
+            reject_all_sends: false,
+            rejected_sends: 0,
             taddr_request_log: Vec::new(),
             branch_seed: 0,
         }
@@ -217,6 +226,11 @@ impl MockChain {
         let txid = transaction.txid().to_string();
         self.mempool.push(bytes);
         txid
+    }
+
+    /// How many transactions the mempool holds.
+    pub fn mempool_len(&self) -> usize {
+        self.mempool.len()
     }
 
     /// The validator finishing verification: queued transactions enter
@@ -591,6 +605,12 @@ impl CompactTxStreamer for MockIndexerService {
     ) -> Result<Response<SendResponse>, Status> {
         let mut chain = self.chain.write().await;
         let bytes = request.into_inner().data;
+        if chain.reject_all_sends {
+            chain.rejected_sends += 1;
+            return Err(Status::internal(
+                "mock fault: this Destination suppresses every transaction",
+            ));
+        }
         // The validator rejects resubmitted bytes rather than
         // re-accepting them, with a phase-specific message; reproduce
         // both rejections verbatim as zainod 0.6.0-rc.1 surfaces them
@@ -845,10 +865,18 @@ impl MockNet {
     /// Launches the mock server on an ephemeral localhost port with an
     /// empty chain.
     pub async fn launch() -> Self {
+        Self::launch_on("127.0.0.1").await
+    }
+
+    /// Launches the mock server on an ephemeral port of `host`, a
+    /// loopback name such as `localhost` or `[::1]`. Destination
+    /// identity is the host string, so several mocks on distinct
+    /// loopback hosts stand in for distinct operators.
+    pub async fn launch_on(host: &str) -> Self {
         let chain = Arc::new(RwLock::new(MockChain::new()));
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        let listener = tokio::net::TcpListener::bind(format!("{host}:0"))
             .await
-            .expect("an ephemeral localhost port binds");
+            .expect("an ephemeral loopback port binds");
         let port = listener
             .local_addr()
             .expect("bound socket has an address")
@@ -863,15 +891,20 @@ impl MockNet {
                 .await
                 .ok();
         });
-        let indexer_uri: http::Uri = format!("http://127.0.0.1:{port}")
+        let indexer_uri: http::Uri = format!("http://{host}:{port}")
             .parse()
-            .expect("a localhost uri parses");
+            .expect("a loopback uri parses");
         Self {
             chain,
             indexer_uri,
             wallet_dirs: Vec::new(),
             _server: server,
         }
+    }
+
+    /// Where the mock indexer listens.
+    pub fn indexer_uri(&self) -> &http::Uri {
+        &self.indexer_uri
     }
 
     /// Builds a `LightClient` for `mnemonic` (birthday 1) dialed at the

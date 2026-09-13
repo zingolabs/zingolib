@@ -1,5 +1,6 @@
-//! Censorship-resistant transmission over the Nym mixnet: a hedged
-//! Destination Rotation over the curated Destination list.
+//! Censorship-resistant transmission: a hedged Destination Rotation over
+//! the session's Destination Server set, on whichever wire the injected
+//! pull runner dials (clearnet or the mixnet tunnel).
 //!
 //! The adversary is a Destination that suppresses a send (accepting the
 //! connection but declining to relay, stalling silently, or misreporting
@@ -19,7 +20,7 @@
 //! duplicate-in-mempool, queued-probe, delivery-check) rather than
 //! duplicating it: each pull is a call to `resilient_transmit`
 //! (`crate::lightclient::transmit`, crate-private, so no intra-doc link
-//! from this public module), the same policy the clearnet path runs. The escalation logic itself is
+//! from this public module), one policy for every wire. The escalation logic itself is
 //! the shared pure racing planner ([`zingo_netutils::arm_race`]) under its
 //! [`LaunchPolicy::Hedged`]. This module drives the planner's actions over
 //! borrowed futures and owns the single hedge timer the planner schedules.

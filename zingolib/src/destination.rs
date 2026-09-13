@@ -1,53 +1,11 @@
-//! The Correspondable trait and the curated Destination list.
+//! The Destination vocabulary: the [`Correspondable`] party a Transmission
+//! addresses, its endpoint-grain [`Host`], and the accountable [`Operator`]
+//! behind it.
 //!
-//! This list is kept deliberately separate from the sync-server list:
-//! Destinations are chosen for reliable transaction relay, sync servers
-//! for low query latency, so tuning one must not reshape the other.
-//!
-//! # Provenance
-//!
-//! Populated 2026-07-21 from a three-way discovery sweep: the hosh.zec.rocks
-//! tracker (via its 2026-04-18 Internet Archive snapshot. The live site was
-//! down), the hardcoded server lists of open-source Zcash wallets (Ywallet,
-//! Zashi, zingo-mobile, zingo-pc, Cake, Unstoppable, Nerdbank, zecwallet
-//! lineage), and a Zcash community-forum / ZecHub web sweep, yielding 130
-//! candidate endpoints. Every candidate was then probed live with a
-//! `GetLightdInfo` gRPC call. Exactly 19 answered on mainnet, all lightwalletd
-//! instances synced to the same chain tip. Every zaino deployment and the
-//! entire `lightwalletd.com` and `zcash-infra.com` fleets were dead.
-//!
-//! The entries below are those 19 survivors deduplicated to ONE endpoint per
-//! operator, because the party Destination Rotation defends against is the
-//! operator, not the DNS name: a uniform pick over an operator-diverse pool
-//! spreads sends across accumulating parties, where a pool listing one
-//! operator's many regional endpoints would overweight that operator.
-//! Live regional variants folded into their operator's single entry:
-//! - `zec.rocks:443` also answers as `na.`, `sa.`, `eu.`, `ap.zec.rocks:443`
-//!   (`me.`, `zcashd.`, and `zaino.unsafe.` variants were dead).
-//! - `us.zec.stardust.rest:443` also answers as `eu.zec.stardust.rest:443`
-//!   (`eu2.` and `jp.` were dead).
-//!
-//! Distinct-operator status is inferred from domains and confirmed as far as
-//! observable (the entries resolve to unrelated IPs), but operator identity
-//! is ultimately self-asserted, and a sybil operator running several entries
-//! would weaken rotation. Operational vetting of this list (liveness over
-//! time, relay honesty, operator diversity) is a tracked follow-up. See
-//! `docs/adr/0011-nym-mixnet-transmission.md`.
-//!
-//! # Port-443 restriction
-//!
-//! This list carries only Transmission targets reached over the mixnet, so an
-//! endpoint the mixnet cannot reach is worse than useless: it wastes
-//! escalation rounds on a certain failure. A 2026-07-21 paired clearnet/mixnet
-//! probe (the `network probe` diagnostic) found a clean split: every port-443
-//! Destination answered over the mixnet, while all three port-9067 entries
-//! (`lwd.zcashexplorer.app`, `zec.alexxiy.top`, `carover0.xyz`) completed the
-//! SOCKS5 tunnel but then failed the TLS handshake with an EOF. The mixnet
-//! exit gateways relay the standard 443 but mishandle the non-standard
-//! lightwalletd port. Their clearnet TLS works, so this is a mixnet-reachability
-//! property, not a dead host. Because the list is mixnet-only, they are
-//! excluded. Any future entry MUST be port 443 for the same reason, a rule the
-//! `every_entry_is_port_443` test enforces.
+//! The Destinations a session may draw from live in [`servers`], derived
+//! from the indexer registry per chain; their per-session standing lives
+//! in [`health`]; the hedged race a Transmission runs over a draw lives in
+//! [`rotation`].
 
 #![forbid(unsafe_code)]
 
@@ -80,7 +38,7 @@ impl Correspondable for zingo_netutils::indexers::Indexer {
     fn address(&self) -> Uri {
         self.uri
             .parse()
-            .expect("the census tests pin every entry parseable")
+            .expect("the registry tests pin every entry parseable")
     }
 
     fn operator(&self) -> Option<String> {
@@ -102,136 +60,20 @@ impl Correspondable for zingo_price::PriceSource {
 }
 
 pub mod health;
-#[cfg(feature = "nym")]
-pub(crate) mod pool;
-
-/// Curated Destinations (mainnet): the publicly reachable indexers found
-/// by the 2026-07-21 discovery sweep, one endpoint per operator, restricted to
-/// those the mixnet can actually reach. See the module docs for provenance,
-/// the operator-diversity rationale, and the port-443 restriction.
-pub const DESTINATION_INDEXERS: &[&str] = &[
-    "https://zec.rocks:443",
-    "https://us.zec.stardust.rest:443",
-    "https://zec-node.cakewallet.com:443",
-    "https://lightwalletd.mainnet.cipherscan.app:443",
-    "https://lwd.z0n.jp:443",
-    "https://l.ombie.cash:443",
-    "https://zec.0xrpc.io:443",
-    "https://myzec.cryptover.site:443",
-    "https://zcashlw.devshore.ovh:443",
-    "https://znode.roamerx.win:443",
-    "https://webhighway.website:443",
-];
-
-/// Parses [`DESTINATION_INDEXERS`] into `Uri`s, skipping any that fail to parse.
-///
-/// This is the raw curated list, for diagnostic surfaces that carry no wallet
-/// data (the `network probe` pairing). A transmission draw MUST NOT use it
-/// directly: it goes through `eligible_destinations` (crate-private, so no
-/// intra-doc link from this public item), which enforces the
-/// destination-is-never-the-sync-indexer invariant (ADR 0022).
-pub fn destination_indexers() -> Vec<Uri> {
-    DESTINATION_INDEXERS
-        .iter()
-        .filter_map(|entry| entry.parse().ok())
-        .collect()
-}
-
-/// Nothing safe to draw for a transmission, so the send refuses rather
-/// than transmit to the sync indexer.
-#[cfg(feature = "nym")]
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum NoEligibleDestinations {
-    /// Every pool entry belongs to the sync indexer's operator.
-    #[error(
-        "no eligible Destination: every entry in the pool belongs to the \
-         sync indexer's operator ({0}), and a Destination is never \
-         allowed to be the sync indexer"
-    )]
-    AllBelongToSyncOperator(Operator),
-    /// The pool held no Destinations before any exclusion applied.
-    #[error("no eligible Destination: the pool is empty")]
-    EmptyPool,
-}
-
-/// The pool a transmission draw is allowed to use: the curated
-/// Destinations minus every entry operated by the party that runs
-/// `sync_indexer`.
-///
-/// This is the sole sanctioned pool constructor for any surface that hands a
-/// raw transaction to a drawn indexer (ADR 0022). The sync indexer already
-/// holds the wallet's address set, so a draw that lands on it would hand that
-/// same party the transmission too, defeating Destination Rotation exactly
-/// where it matters most. Exclusion is by operator, not by exact URI, for the same
-/// reason the list holds one endpoint per operator: `eu.zec.rocks` and
-/// `zec.rocks` are the same accumulating party.
-///
-/// Refuses with [`NoEligibleDestinations`] if the exclusion empties the pool,
-/// so a misconfigured list fails closed instead of silently transmitting to
-/// the sync indexer.
-///
-/// An Indexerless session passes `None`: it has no accumulating sync
-/// operator to exclude, so the ADR 0022 invariant holds vacuously over the
-/// full pool (ruling 2026-07-29).
-#[cfg(feature = "nym")]
-pub(crate) fn eligible_destinations(
-    sync_indexer: Option<&Uri>,
-    health: &health::Health,
-) -> Result<Vec<Uri>, NoEligibleDestinations> {
-    let candidates = destination_indexers();
-    if candidates.is_empty() {
-        return Err(NoEligibleDestinations::EmptyPool);
-    }
-    let pool = match sync_indexer {
-        Some(sync_indexer) => eligible_from(candidates, sync_indexer)?,
-        None => candidates,
-    };
-    Ok(health.filter_with_floor(pool))
-}
-
-/// Pure core of [`eligible_destinations`], over an arbitrary pool for
-/// testability. Crate-visible so the migration draw's pool filtering
-/// (`eligible_candidates`) delegates here instead of growing a second,
-/// divergent exclusion (ADR 0022 requires one).
-#[cfg(feature = "nym")]
-pub(crate) fn eligible_from(
-    pool: Vec<Uri>,
-    sync_indexer: &Uri,
-) -> Result<Vec<Uri>, NoEligibleDestinations> {
-    if pool.is_empty() {
-        return Err(NoEligibleDestinations::EmptyPool);
-    }
-    match Operator::of_uri(sync_indexer) {
-        None => Ok(pool),
-        Some(sync_operator) => {
-            let eligible: Vec<Uri> = pool
-                .into_iter()
-                .filter(|entry| Operator::of_uri(entry).as_ref() != Some(&sync_operator))
-                .collect();
-            if eligible.is_empty() {
-                return Err(NoEligibleDestinations::AllBelongToSyncOperator(
-                    sync_operator,
-                ));
-            }
-            Ok(eligible)
-        }
-    }
-}
+pub mod rotation;
+pub mod servers;
 
 /// Whether two hosts belong to the same accumulating operator: their
 /// operator keys match. This is the one predicate every transmission
 /// surface uses to compare a candidate against the sync indexer (ADR 0022).
-#[cfg(feature = "nym")]
 pub(crate) fn same_operator(host_a: &str, host_b: &str) -> bool {
     Operator::of_host(host_a) == Operator::of_host(host_b)
 }
 
 /// The accumulating administrative authority behind a Destination host, keyed by its registrable parent domain.
-#[cfg(feature = "nym")]
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Operator(String);
 
-#[cfg(feature = "nym")]
 impl Operator {
     /// The Operator of `host`, approximated as the lowercased last two dot-separated labels (the whole host when it has fewer) — an approximation that can only over-exclude, never letting the sync indexer's operator through.
     pub(crate) fn of_host(host: &str) -> Self {
@@ -254,7 +96,6 @@ impl Operator {
     }
 }
 
-#[cfg(feature = "nym")]
 impl std::fmt::Display for Operator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
@@ -301,138 +142,26 @@ impl From<&Host> for String {
     }
 }
 
-#[cfg(all(test, feature = "nym"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn every_entry_parses() {
+    fn an_operator_is_the_registrable_parent_domain_case_insensitively() {
         assert_eq!(
-            destination_indexers().len(),
-            DESTINATION_INDEXERS.len(),
-            "every Destination URI must parse"
+            Operator::of_host("EU.zec.rocks"),
+            Operator::of_host("zec.rocks")
         );
-    }
-
-    #[test]
-    fn every_entry_is_https() {
-        // Mixnet transmission is TLS-only end to end, so the exit gateway that
-        // terminates the tunnel cannot read or tamper with the traffic. Every
-        // Destination must be https; the transmit path refuses anything
-        // else at dial time.
-        for entry in destination_indexers() {
-            assert_eq!(
-                entry.scheme_str(),
-                Some("https"),
-                "Destination entry {entry} must be https"
-            );
-        }
-    }
-
-    #[test]
-    fn every_entry_is_port_443() {
-        // The mixnet exit gateways relay 443 but mishandle non-standard ports
-        // (2026-07-21 paired probe: every port-9067 entry failed the
-        // TLS handshake over the tunnel). Since this list is mixnet-only, a
-        // non-443 entry is a guaranteed escalation failure. See the module
-        // docs.
-        for entry in destination_indexers() {
-            assert_eq!(
-                entry.port_u16(),
-                Some(443),
-                "Destination entry {entry} must be port 443 to traverse the mixnet"
-            );
-        }
-    }
-
-    #[test]
-    fn one_endpoint_per_operator() {
-        // Destination Rotation defends against the operator, not the DNS
-        // name: no two entries may share a registrable parent domain.
-        let operator_domains: Vec<Operator> = DESTINATION_INDEXERS
-            .iter()
-            .map(|entry| {
-                let host = entry
-                    .parse::<Uri>()
-                    .expect("checked by every_entry_parses")
-                    .host()
-                    .expect("every Destination URI has a host")
-                    .to_string();
-                Operator::of_host(&host)
-            })
-            .collect();
-        let mut deduped = operator_domains.clone();
-        deduped.sort();
-        deduped.dedup();
-        assert_eq!(
-            deduped.len(),
-            operator_domains.len(),
-            "two Destination entries share an operator domain: {operator_domains:?}"
+        assert_ne!(
+            Operator::of_host("zec.rocks"),
+            Operator::of_host("zec.rockz")
         );
+        assert_eq!(Operator::of_host("localhost").to_string(), "localhost");
     }
 
     #[test]
-    fn the_sync_indexers_operator_is_excluded_from_the_destination_pool() {
-        // A regional variant, not the listed URI, so this fails if exclusion
-        // ever weakens to exact-URI matching: the accumulating party is the
-        // operator (ADR 0022).
-        let sync: Uri = "https://eu.zec.rocks:443".parse().unwrap();
-        let pool = eligible_destinations(Some(&sync), &health::Health::default())
-            .expect("ten operators remain");
-        assert_eq!(pool.len(), DESTINATION_INDEXERS.len() - 1);
-        assert!(
-            pool.iter()
-                .all(|entry| Operator::of_host(entry.host().unwrap())
-                    != Operator::of_host("zec.rocks")),
-            "the sync indexer's operator must never appear among the eligible Destinations"
-        );
-    }
-
-    #[test]
-    fn a_sync_indexer_outside_the_pool_excludes_nothing() {
-        let sync: Uri = "https://my.private.indexer.example:443".parse().unwrap();
-        let pool = eligible_destinations(Some(&sync), &health::Health::default())
-            .expect("nothing to exclude");
-        assert_eq!(pool.len(), DESTINATION_INDEXERS.len());
-    }
-
-    #[test]
-    fn an_indexerless_session_draws_from_the_full_pool() {
-        let pool =
-            eligible_destinations(None, &health::Health::default()).expect("nothing to exclude");
-        assert_eq!(pool.len(), DESTINATION_INDEXERS.len());
-    }
-
-    /// HYPOTHESIS: a pool owned wholly by the sync indexer's operator
-    /// refuses by naming that operator, so the send fails closed instead
-    /// of falling back to transmitting through the sync indexer.
-    /// Falsified if the refusal is the empty-pool story or renders a
-    /// blank operator.
-    #[test]
-    fn an_emptied_pool_refuses_rather_than_drawing_the_sync_indexer() {
-        let sync: Uri = "https://na.zec.rocks:443".parse().unwrap();
-        let pool = vec!["https://zec.rocks:443".parse().unwrap()];
-        let err = eligible_from(pool, &sync).expect_err("the pool must empty");
-        assert_eq!(
-            err,
-            NoEligibleDestinations::AllBelongToSyncOperator(Operator::of_host("zec.rocks"))
-        );
-        assert!(err.to_string().contains("zec.rocks"), "{err}");
-    }
-
-    /// HYPOTHESIS: an empty pool refuses as empty — never as an exclusion
-    /// story — whether or not the sync URI resolves an operator.
-    /// Falsified if either shape yields an operator-owned refusal or an
-    /// operator name in the rendering.
-    #[test]
-    fn an_empty_pool_refuses_as_empty_never_as_operator_owned() {
-        let hostless: Uri = "/no-host".parse().unwrap();
-        let resolvable: Uri = "https://na.zec.rocks:443".parse().unwrap();
-        for sync in [hostless, resolvable] {
-            let err = eligible_from(Vec::new(), &sync).expect_err("an empty pool must refuse");
-            assert_eq!(err, NoEligibleDestinations::EmptyPool);
-            assert!(err.to_string().contains("the pool is empty"), "{err}");
-            assert!(!err.to_string().contains("operator"), "{err}");
-        }
+    fn same_operator_compares_by_operator_key() {
+        assert!(same_operator("eu.zec.rocks", "na.zec.rocks"));
+        assert!(!same_operator("eu.zec.rocks", "l.ombie.cash"));
     }
 }

@@ -78,6 +78,16 @@ The session's memory of Observations, one per Exit Node, remembered
 only through the Exit Pool's own draws and consulted to order
 sampling: fresh-Proven first, then unknown, Failed only at exhaustion.
 
+**Destination Server set** (ruled 2026-09-11, pending review):
+The Destinations one session may transmit to, on any wire: the indexer
+registry partitioned to the wallet's chain, one endpoint per operator,
+drawn under the chain's rotation policy (mainnet excludes the sync
+operator, testnet includes the sync indexer, regtest names it alone),
+beside a trusted half of servers the user vouches for, drawn alone when
+reachable and not yet fed by configuration. Derived at session open,
+never serialized. Distinct from the Exit Pool, which holds mixnet exits.
+_Avoid_: "Destination pool", "curated Destination list".
+
 ### Command classes
 
 **Readiness budget**:

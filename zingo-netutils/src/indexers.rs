@@ -307,6 +307,18 @@ pub const INDEXERS: &[Indexer] = &[
         region_key: "",
         obsolete: false,
     },
+    Indexer {
+        uri: "https://lightwalletd.mainnet.cipherscan.app:443",
+        chain: IndexerChain::Main,
+        region_key: "",
+        obsolete: false,
+    },
+    Indexer {
+        uri: "https://webhighway.website:443",
+        chain: IndexerChain::Main,
+        region_key: "",
+        obsolete: false,
+    },
 ];
 
 /// Indexer URIs with 100% uptime over 30 days, as reported by the

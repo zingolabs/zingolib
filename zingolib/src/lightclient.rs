@@ -196,10 +196,14 @@ pub struct LightClient {
     /// randomised cadence, where the platform affords one (ADR 0048).
     #[cfg(feature = "nym")]
     rotation_watchdog: Option<tokio::task::JoinHandle<()>>,
+    /// The Destinations this session may transmit to, on any wire: the
+    /// indexer registry partitioned to the wallet's chain under that
+    /// chain's rotation policy (ADR 0022 as amended 2026-09-11).
+    destination_servers: crate::destination::servers::DestinationServerSet,
     /// The session's exit authority: Reservations, the NodeHealthIndex, and
     /// the acquirer Proven Clients are born from.
     #[cfg(feature = "nym")]
-    destination_pools: std::sync::Arc<crate::destination::pool::Pools>,
+    exit_pools: std::sync::Arc<crate::mixnet::pools::Pools>,
     /// The session-level Mixnet Mode status channel (ADR 0024, decision 2):
     /// the one shared watch every subscriber reads. Transport transitions
     /// publish from the supervisor's tasks, slot transitions from the
@@ -285,6 +289,9 @@ impl LightClient {
 
         Ok(LightClient {
             indexer,
+            destination_servers: crate::destination::servers::DestinationServerSet::for_chain(
+                &config.chain_type(),
+            ),
             migration_transmission_uri: config.migration_transmission_uri(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
@@ -308,7 +315,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            destination_pools: crate::destination::pool::Pools::new(),
+            exit_pools: crate::mixnet::pools::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
@@ -328,8 +335,11 @@ impl LightClient {
     #[cfg(any(test, feature = "testutils"))]
     pub async fn new_for_test(wallet: crate::wallet::LightWallet) -> Self {
         zingo_netutils::ensure_default_crypto_provider();
+        let destination_servers =
+            crate::destination::servers::DestinationServerSet::for_chain(&wallet.chain_type());
         LightClient {
             indexer: None,
+            destination_servers,
             migration_transmission_uri: None,
             wallet: WalletMeta::new(
                 std::env::temp_dir().join("zingolib-synthetic-wallet"),
@@ -358,7 +368,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            destination_pools: crate::destination::pool::Pools::new(),
+            exit_pools: crate::mixnet::pools::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
@@ -416,6 +426,9 @@ impl LightClient {
 
         Ok(LightClient {
             indexer,
+            destination_servers: crate::destination::servers::DestinationServerSet::for_chain(
+                &config.chain_type(),
+            ),
             migration_transmission_uri: config.migration_transmission_uri(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
@@ -439,7 +452,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            destination_pools: crate::destination::pool::Pools::new(),
+            exit_pools: crate::mixnet::pools::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
@@ -597,6 +610,29 @@ impl LightClient {
     ) -> Result<(), zingo_netutils::GetClientError> {
         self.indexer = Some(zingo_netutils::GrpcIndexer::new(server).await?);
         Ok(())
+    }
+
+    /// Points the client at `server` without connecting, for a test that
+    /// needs a configured sync indexer no RPC ever reaches: a regtest
+    /// session's rotation policy names the sync indexer as its sole
+    /// Destination, so a draw needs one even when nothing is transmitted.
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn set_indexer_uri_lazy(
+        &mut self,
+        server: http::Uri,
+    ) -> Result<(), zingo_netutils::GetClientError> {
+        self.indexer = Some(zingo_netutils::GrpcIndexer::new_lazy(server)?);
+        Ok(())
+    }
+
+    /// Replaces the session's Destination Server set, for a test that
+    /// drives a chain's rotation policy over mock indexers.
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn set_destination_servers_for_tests(
+        &mut self,
+        servers: crate::destination::servers::DestinationServerSet,
+    ) {
+        self.destination_servers = servers;
     }
 
     /// Disconnects every network capability of the client, returning only

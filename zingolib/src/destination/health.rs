@@ -12,15 +12,31 @@ pub(crate) const UNHEALTHY_FAILURE_THRESHOLD: u32 = 2;
 #[cfg_attr(not(feature = "nym"), allow(dead_code))]
 const MINIMUM_ELIGIBLE_DESTINATIONS: usize = 4;
 
-/// Which party a failed attempt is charged against.
+/// Which component a failed attempt is attributed to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FailurePhase {
-    /// The tunnel failed before reaching the destination: the exit's.
+pub enum FaultDomain {
+    /// The tunnel failed before reaching the destination: the exit node's fault.
     Tunnel,
-    /// The destination answered badly or not at all: the Destination's.
+    /// The destination answered badly or not at all: the Destination's fault.
     Destination,
-    /// The evidence cannot say which party failed.
-    Unattributed,
+    /// The evidence cannot say which component failed.
+    Unknown,
+}
+
+/// The component a failure stage is attributed to, unknown when the stage
+/// cannot say which side failed.
+pub(crate) fn fault_domain(stage: &zingo_net_diag::NetOpStage) -> FaultDomain {
+    use zingo_net_diag::NetOpStage;
+    match stage {
+        NetOpStage::RouteResolution
+        | NetOpStage::LocalProxyConnect
+        | NetOpStage::SocksHandshake
+        | NetOpStage::TunnelTransport => FaultDomain::Tunnel,
+        NetOpStage::RemoteTls | NetOpStage::RemoteHttp | NetOpStage::PayloadDecode => {
+            FaultDomain::Destination
+        }
+        _ => FaultDomain::Unknown,
+    }
 }
 
 /// One Destination's standing this session.
@@ -39,11 +55,16 @@ pub struct Health {
 impl Health {
     /// Charges one attempt's outcome against the host it contacted, counting
     /// a failure only when the evidence names this Destination.
-    pub(crate) fn note(&mut self, host: &super::Host, failed: bool, phase: Option<FailurePhase>) {
+    pub(crate) fn note(
+        &mut self,
+        host: &super::Host,
+        failed: bool,
+        fault_domain: Option<FaultDomain>,
+    ) {
         let standing = self.standings.entry(host.clone()).or_default();
         if !failed {
             standing.successes += 1;
-        } else if phase == Some(FailurePhase::Destination) {
+        } else if fault_domain == Some(FaultDomain::Destination) {
             standing.failures += 1;
         }
     }
@@ -94,18 +115,18 @@ mod tests {
         super::super::Host::of_host_str(name)
     }
 
-    /// HYPOTHESIS: only a Destination-phase failure counts against a
+    /// HYPOTHESIS: only a failure attributed to the Destination counts against a
     /// Destination; a tunnel failure is the exit's and never demotes it.
     #[test]
-    fn a_tunnel_failure_never_charges_the_destination() {
+    fn a_tunnel_failure_is_never_attributed_to_the_destination() {
         let mut health = Health::default();
         for _ in 0..UNHEALTHY_FAILURE_THRESHOLD {
-            health.note(&host("tunnelled.example"), true, Some(FailurePhase::Tunnel));
+            health.note(&host("tunnelled.example"), true, Some(FaultDomain::Tunnel));
             health.note(&host("unknown.example"), true, None);
             health.note(
                 &host("refusing.example"),
                 true,
-                Some(FailurePhase::Destination),
+                Some(FaultDomain::Destination),
             );
         }
         assert!(health.is_healthy(&host("tunnelled.example")));
@@ -119,11 +140,7 @@ mod tests {
     fn a_success_redeems_a_failing_destination() {
         let mut health = Health::default();
         for _ in 0..UNHEALTHY_FAILURE_THRESHOLD {
-            health.note(
-                &host("flaky.example"),
-                true,
-                Some(FailurePhase::Destination),
-            );
+            health.note(&host("flaky.example"), true, Some(FaultDomain::Destination));
         }
         assert!(!health.is_healthy(&host("flaky.example")));
         health.note(&host("flaky.example"), false, None);
@@ -137,7 +154,7 @@ mod tests {
         let mut health = Health::default();
         let roomy = uris(&["a", "b", "c", "d", "e", "f"]);
         for _ in 0..UNHEALTHY_FAILURE_THRESHOLD {
-            health.note(&host("a"), true, Some(FailurePhase::Destination));
+            health.note(&host("a"), true, Some(FaultDomain::Destination));
         }
         let filtered = health.filter_with_floor(roomy.clone());
         assert_eq!(filtered.len(), roomy.len() - 1, "the unhealthy one goes");

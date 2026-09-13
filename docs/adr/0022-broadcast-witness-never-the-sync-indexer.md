@@ -79,3 +79,35 @@ witnesses. A user who syncs against a private indexer excludes nothing and
 draws from the full pool. Regression tests pin the operator-level exclusion,
 the untouched pool for an out-of-list sync server, and the fail-closed refusal
 on an emptied pool.
+
+## Amendment (2026-09-11): per chain, on every transport, from the registry
+
+Three corrections, ruled with ADR 0050.
+
+What the sync indexer holds. The context above says "the wallet's full
+address set". Shielded addresses never leave the wallet: compact blocks
+come down in ranges and trial decryption is local. What the sync indexer
+learns is every transparent address, sent in the clear by
+`get_taddress_txids` and `get_address_utxos`; every txid the wallet owns a
+shielded note in, because the wallet fetches the full transaction by txid
+after a trial-decryption hit; and the client IP on clearnet sync. The
+invariant stands on that linkage, and it is enough: the operator holding
+the owned-txid set must not also receive the raw transaction.
+
+The clearnet exemption is revoked. Toggling the mixnet off is consent to
+expose the client IP to a Destination; it is not consent to hand the
+broadcast to the sync operator. A switched-off session draws through the
+same set as a ready one and races the same escalation over direct
+connections. Diagnostic traffic carrying no wallet data stays exempt.
+
+The invariant is a chain policy, and the pool is the Destination Server
+set. The sanctioned constructor is `DestinationServerSet::draw`, which
+reads the registry partitioned to the session's chain and applies the
+exclusion at draw time against the current sync indexer. Mainnet keeps
+`ExcludeSyncOperator` exactly as decided above. Testnet draws under
+`IncludeSyncIndexer` and regtest under `SyncIndexerOnly`: those chains carry
+no value, and their registries hold no operator diversity to rotate over,
+so the exclusion there could only refuse. A trusted server the user
+vouches for is drawn alone on any chain; that half of the set is wired in
+code and not yet fed by configuration (ADR 0050, amendment 2026-09-12). The hand-curated
+`DESTINATION_INDEXERS` and `eligible_witnesses` are retired.
