@@ -119,18 +119,24 @@ impl LightWallet {
         }
 
         let sizing = self.propose_send_max(address.clone(), None, account_id)?;
-        let sizing_step = sizing.steps().first();
-        let max_to_recipient = recipient_amount(&sizing);
-        let input_total = (max_to_recipient + sizing_step.balance().fee_required()).ok_or(
+        let overflow = || {
             ProposeSendError::Proposal(zcash_client_backend::data_api::error::Error::BalanceError(
                 zcash_protocol::value::BalanceError::Overflow,
-            )),
-        )?;
+            ))
+        };
+        let sizing_fee = sizing
+            .steps()
+            .iter()
+            .map(|step| step.balance().fee_required())
+            .sum::<Option<Zatoshis>>()
+            .ok_or_else(overflow)?;
+        let max_to_recipient = recipient_amount(&sizing);
+        let input_total = (max_to_recipient + sizing_fee).ok_or_else(overflow)?;
         let zenny_amount = Zatoshis::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("hard-coded");
         let Some(recipient_amount) =
             (max_to_recipient - zenny_amount).filter(|amount| *amount > Zatoshis::ZERO)
         else {
-            let required = (zenny_amount + sizing_step.balance().fee_required())
+            let required = (zenny_amount + sizing_fee)
                 .and_then(|value| value + Zatoshis::const_from_u64(1))
                 .unwrap_or(Zatoshis::const_from_u64(zcash_protocol::value::MAX_MONEY));
             return Err(ProposeSendError::Proposal(
@@ -388,11 +394,11 @@ impl LightWallet {
     }
 }
 
-/// The amount of the first payment in a proposal's first step.
+/// The amount of the first payment in a proposal's last step.
 pub(crate) fn recipient_amount(proposal: &ProportionalFeeProposal) -> Zatoshis {
     proposal
         .steps()
-        .first()
+        .last()
         .transaction_request()
         .payments()
         .get(&0)

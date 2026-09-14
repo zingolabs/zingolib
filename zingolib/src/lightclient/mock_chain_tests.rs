@@ -12,14 +12,17 @@
 use pepper_sync::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 use pepper_sync::wallet::IronwoodNote;
 use shardtree::store::ShardStore;
+use zcash_address::ZcashAddress;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::value::Zatoshis;
 
 use crate::check_client_balances;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::mock_indexer::{MockNet, faucet_funding_transaction};
 use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+use crate::wallet::error::ProposeSendError;
 use crate::wallet::keys::unified::ReceiverSelection;
 
 /// An address belonging to no wallet on the mock net, so sends to it
@@ -36,6 +39,28 @@ fn external_address(pool: PoolType) -> String {
         .generate_unified_address(selection, zip32::AccountId::ZERO)
         .unwrap();
     unified_address.encode(&external_wallet.chain_type())
+}
+
+/// Returns a TEX-encoded taddr from an external wallet.
+fn external_tex_address() -> String {
+    use pepper_sync::keys::decode_address;
+    use zcash_client_backend::address::Address;
+    use zcash_transparent::address::TransparentAddress;
+
+    let external_wallet =
+        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+    let taddr = external_wallet
+        .transparent_addresses()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) =
+        decode_address(&external_wallet.chain_type(), &taddr).unwrap()
+    else {
+        panic!("a wallet-generated first taddr is p2pkh")
+    };
+    crate::testutils::interpret_taddr_as_tex_addr(taddr_bytes, &external_wallet.chain_type())
 }
 
 /// Funds `client` with one faucet-built transaction mined into the next
@@ -78,6 +103,154 @@ async fn funded_send_confirms_on_the_mock_chain() {
     // 100_000 funding minus the 20_000 payment and its 10_000 one-orchard-
     // spend, two-logical-action ZIP-317 fee.
     check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
+}
+
+/// Tests that max_send_value() returns a non-zero value for a wallet
+/// with funds.
+#[tokio::test]
+async fn max_send_value_to_tex_empties_the_wallet() {
+    let funding = 100_000;
+    let mut net = MockNet::launch().await;
+    let mut sender = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+    let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
+
+    net.chain.write().await.mine_empty_blocks(1);
+    fund(&net, vec![(&sender_ua, funding, None)], 1).await;
+    sender.sync_and_await().await.unwrap();
+    check_client_balances!(sender, i: funding o: 0 s: 0 t: 0);
+
+    let tex_address = external_tex_address();
+    let max_send_value = sender
+        .max_send_value(
+            ZcashAddress::try_from_encoded(&tex_address).unwrap(),
+            false,
+            zip32::AccountId::ZERO,
+        )
+        .await
+        .unwrap();
+    assert!(
+        max_send_value > Zatoshis::ZERO,
+        "a funded wallet can send to a TEX address"
+    );
+
+    from_inputs::quick_send(
+        &mut sender,
+        vec![(&tex_address, max_send_value.into_u64(), None)],
+    )
+    .await
+    .unwrap();
+    net.chain.write().await.mine_mempool();
+    sender.sync_and_await().await.unwrap();
+
+    check_client_balances!(sender, i: 0 o: 0 s: 0 t: 0);
+}
+
+/// Tests that max_send_value() returns a non-zero value for a wallet and that it works with zennies.
+#[tokio::test]
+async fn max_send_value_to_tex_with_zennies_empties_the_wallet() {
+    let funding = 2 * crate::ZENNIES_FOR_ZINGO_AMOUNT;
+    let mut net = MockNet::launch().await;
+    let mut sender = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+    let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
+
+    net.chain.write().await.mine_empty_blocks(1);
+    fund(&net, vec![(&sender_ua, funding, None)], 1).await;
+    sender.sync_and_await().await.unwrap();
+    check_client_balances!(sender, i: funding o: 0 s: 0 t: 0);
+
+    let tex_address = external_tex_address();
+    let max_send_value = sender
+        .max_send_value(
+            ZcashAddress::try_from_encoded(&tex_address).unwrap(),
+            true,
+            zip32::AccountId::ZERO,
+        )
+        .await
+        .unwrap();
+    assert!(
+        max_send_value > Zatoshis::ZERO,
+        "a wallet funded past the zenny can send to a TEX address"
+    );
+
+    let zenny_address = crate::get_zennies_for_zingo_address(sender.chain_type());
+    from_inputs::quick_send(
+        &mut sender,
+        vec![
+            (&tex_address, max_send_value.into_u64(), None),
+            (zenny_address, crate::ZENNIES_FOR_ZINGO_AMOUNT, None),
+        ],
+    )
+    .await
+    .unwrap();
+    net.chain.write().await.mine_mempool();
+    sender.sync_and_await().await.unwrap();
+
+    check_client_balances!(sender, i: 0 o: 0 s: 0 t: 0);
+}
+
+/// Tests that max_send_value() to a shielded address, without zennies,
+/// spends the whole balance across the ironwood and sapling pools.
+#[tokio::test]
+async fn max_send_value_to_shielded_empties_the_wallet() {
+    let ironwood_funding = 100_000;
+    let sapling_funding = 50_000;
+    let mut net = MockNet::launch().await;
+    let mut sender = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+    let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
+    let sender_sapling = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Sapling)).await;
+
+    net.chain.write().await.mine_empty_blocks(1);
+    fund(
+        &net,
+        vec![
+            (&sender_ua, ironwood_funding, None),
+            (&sender_sapling, sapling_funding, None),
+        ],
+        1,
+    )
+    .await;
+    sender.sync_and_await().await.unwrap();
+    check_client_balances!(sender, i: ironwood_funding o: 0 s: sapling_funding t: 0);
+
+    let recipient = external_address(PoolType::ORCHARD);
+    let max_send_value = sender
+        .max_send_value(
+            ZcashAddress::try_from_encoded(&recipient).unwrap(),
+            false,
+            zip32::AccountId::ZERO,
+        )
+        .await
+        .unwrap();
+    assert!(
+        max_send_value > Zatoshis::ZERO,
+        "a funded wallet can send to a shielded address"
+    );
+
+    let one_zat = Zatoshis::const_from_u64(1);
+    let past_max = (max_send_value + one_zat).unwrap();
+    assert!(matches!(
+        from_inputs::propose(&mut sender, vec![(&recipient, past_max.into_u64(), None)]).await,
+        Err(ProposeSendError::Proposal(
+            zcash_client_backend::data_api::error::Error::InsufficientFunds { .. }
+        ))
+    ));
+
+    from_inputs::quick_send(
+        &mut sender,
+        vec![(&recipient, max_send_value.into_u64(), None)],
+    )
+    .await
+    .unwrap();
+    net.chain.write().await.mine_mempool();
+    sender.sync_and_await().await.unwrap();
+
+    check_client_balances!(sender, i: 0 o: 0 s: 0 t: 0);
 }
 
 /// Mock-chain twin of libtonode `slow::list_value_transfers_check_fees`
