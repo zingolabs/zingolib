@@ -196,9 +196,7 @@ pub struct LightClient {
     /// randomised cadence, where the platform affords one (ADR 0048).
     #[cfg(feature = "nym")]
     rotation_watchdog: Option<tokio::task::JoinHandle<()>>,
-    /// The Destinations this session may transmit to, on any wire: the
-    /// indexer registry partitioned to the wallet's chain under that
-    /// chain's rotation policy (ADR 0022 as amended 2026-09-11).
+    /// The indexers this session may broadcast to.
     destination_servers: crate::destination::servers::DestinationServerSet,
     /// The session's exit authority: Reservations, the NodeHealthIndex, and
     /// the acquirer Proven Clients are born from.
@@ -291,6 +289,8 @@ impl LightClient {
             indexer,
             destination_servers: crate::destination::servers::DestinationServerSet::for_chain(
                 &config.chain_type(),
+                config.remote_indexer_trust(),
+                config.indexers().to_vec(),
             ),
             migration_transmission_uri: config.migration_transmission_uri(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
@@ -335,8 +335,11 @@ impl LightClient {
     #[cfg(any(test, feature = "testutils"))]
     pub async fn new_for_test(wallet: crate::wallet::LightWallet) -> Self {
         zingo_netutils::ensure_default_crypto_provider();
-        let destination_servers =
-            crate::destination::servers::DestinationServerSet::for_chain(&wallet.chain_type());
+        let destination_servers = crate::destination::servers::DestinationServerSet::for_chain(
+            &wallet.chain_type(),
+            None,
+            Vec::new(),
+        );
         LightClient {
             indexer: None,
             destination_servers,
@@ -428,6 +431,8 @@ impl LightClient {
             indexer,
             destination_servers: crate::destination::servers::DestinationServerSet::for_chain(
                 &config.chain_type(),
+                config.remote_indexer_trust(),
+                config.indexers().to_vec(),
             ),
             migration_transmission_uri: config.migration_transmission_uri(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
@@ -612,10 +617,7 @@ impl LightClient {
         Ok(())
     }
 
-    /// Points the client at `server` without connecting, for a test that
-    /// needs a configured sync indexer no RPC ever reaches: a regtest
-    /// session's rotation policy names the sync indexer as its sole
-    /// Destination, so a draw needs one even when nothing is transmitted.
+    /// Points the client at `server` without connecting.
     #[cfg(any(test, feature = "testutils"))]
     pub fn set_indexer_uri_lazy(
         &mut self,
@@ -625,8 +627,12 @@ impl LightClient {
         Ok(())
     }
 
-    /// Replaces the session's Destination Server set, for a test that
-    /// drives a chain's rotation policy over mock indexers.
+    /// Adds or replaces the classification of one indexer.
+    pub fn add_indexer(&mut self, indexer: crate::destination::servers::IndexerConfig) {
+        self.destination_servers.add_indexer(indexer);
+    }
+
+    /// Replaces the session's Destination Server set.
     #[cfg(any(test, feature = "testutils"))]
     pub fn set_destination_servers_for_tests(
         &mut self,
@@ -852,6 +858,80 @@ mod tests {
     use tempfile::TempDir;
     use zingo_common_components::protocol::ActivationHeights;
     use zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED;
+
+    #[tokio::test]
+    async fn indexer_classifications_reach_the_set_through_every_constructor() {
+        use crate::destination::servers::{IndexerConfig, Trust};
+
+        let own: http::Uri = "https://node.mine.example:443".parse().unwrap();
+        let other: http::Uri = "https://other.example:443".parse().unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let builder = || {
+            ClientConfig::builder()
+                .set_chain_type(ChainType::Mainnet)
+                .set_wallet_dir(temp_dir.path().to_path_buf())
+                .add_indexer(IndexerConfig::new(own.clone()).trust(Trust::Untrusted))
+                .set_remote_indexer_trust(Trust::Trusted)
+        };
+        use zcash_protocol::consensus::{NetworkUpgrade, Parameters as _};
+        let sapling_activation = ChainType::Mainnet
+            .activation_height(NetworkUpgrade::Sapling)
+            .expect("mainnet schedules Sapling");
+        let config = builder()
+            .set_wallet_config(WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: CHIMNEY_BETTER_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: u32::from(sapling_activation),
+                wallet_settings: default_test_wallet_settings(),
+            })
+            .build()
+            .unwrap();
+        assert_eq!(config.indexers().len(), 1);
+        assert_eq!(config.remote_indexer_trust(), Some(Trust::Trusted));
+
+        let mut created = LightClient::new(config, false).await.unwrap();
+        let bytes = created
+            .wallet()
+            .write()
+            .await
+            .save()
+            .expect("save returned an error")
+            .expect("nothing to save");
+        let read = LightClient::from_reader(
+            Cursor::new(bytes),
+            builder()
+                .set_wallet_config(WalletConfig::Read)
+                .build()
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        for client in [&created, &read] {
+            assert_eq!(
+                client.destination_servers.trust_of(&own),
+                Trust::Untrusted,
+                "an explicit trust outranks the override"
+            );
+            assert_eq!(
+                client.destination_servers.trust_of(&other),
+                Trust::Trusted,
+                "the override replaces mainnet's untrusted default"
+            );
+            assert!(
+                !client
+                    .destination_servers
+                    .registry_reachable(crate::destination::servers::Transport::Mixnet)
+                    .is_empty(),
+                "a mainnet session holds the mainnet registry"
+            );
+        }
+
+        created.add_indexer(IndexerConfig::new(other.clone()).trust(Trust::Untrusted));
+        assert_eq!(
+            created.destination_servers.trust_of(&other),
+            Trust::Untrusted
+        );
+    }
 
     #[tokio::test]
     async fn new_wallet_from_phrase() {

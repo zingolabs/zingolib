@@ -15,16 +15,15 @@ const MINIMUM_ELIGIBLE_DESTINATIONS: usize = 4;
 /// Which component a failed attempt is attributed to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FaultDomain {
-    /// The tunnel failed before reaching the destination: the exit node's fault.
+    /// The tunnel failed before reaching the destination.
     Tunnel,
-    /// The destination answered badly or not at all: the Destination's fault.
+    /// The destination answered badly or not at all.
     Destination,
     /// The evidence cannot say which component failed.
     Unknown,
 }
 
-/// The component a failure stage is attributed to, unknown when the stage
-/// cannot say which side failed.
+/// The component a failure stage is attributed to.
 pub(crate) fn fault_domain(stage: &zingo_net_diag::NetOpStage) -> FaultDomain {
     use zingo_net_diag::NetOpStage;
     match stage {

@@ -1,48 +1,5 @@
-//! The Destination Server set: the Destinations one session may draw a
-//! Transmission's target from.
-//!
-//! The set is derived, never curated by hand: it is the indexer registry
-//! (`zingo_netutils::indexers`) partitioned to the session's chain, one
-//! entry per operator. It is built once when the session opens and lives
-//! only in memory, so it follows every registry update and writes nothing
-//! beside the wallet. Every surface that hands a raw transaction to a
-//! drawn indexer, on every transport, draws through
-//! [`DestinationServerSet::draw`] (ADR 0022 as amended 2026-09-11, ADR
-//! 0050).
-//!
-//! # Trusted and untrusted
-//!
-//! The set has two halves. The untrusted half is the registry: public
-//! operators the wallet spreads its sends across so no one of them holds
-//! both the sync view and the broadcast. The trusted half is servers the
-//! user vouches for, which may hold both because they are the user's own
-//! party; a draw with a trusted member reachable over the wire goes there
-//! alone, with no exclusion and no rotation, and a dead trusted member is
-//! a typed failure rather than a fall-through to public operators. Trust
-//! is asserted by configuration, never inferred from registry membership.
-//! The trusted half is wired in code and not yet fed by any configuration
-//! (ruling 2026-09-12): every production session builds it empty, so the
-//! live draw is the untrusted branch.
-//!
-//! # Reachability is a transport fact
-//!
-//! A 2026-07-21 paired clearnet/mixnet probe found a clean split: every
-//! port-443 Destination answered over the mixnet, while every port-9067
-//! entry completed the SOCKS5 tunnel and then failed the TLS handshake. The
-//! exit gateways relay the standard port and mishandle the lightwalletd
-//! one. Those hosts answer on clearnet, so the restriction belongs to the
-//! draw's transport argument, not to the set: a mixnet draw keeps port 443
-//! only and a clearnet draw keeps every member.
-//!
-//! # Operator diversity
-//!
-//! The party Destination Rotation defends against is the operator, not the
-//! DNS name, so the set holds one endpoint per operator: a uniform pick
-//! over an operator-diverse set spreads sends across accumulating parties,
-//! where several regional endpoints of one operator would overweight it.
-//! Operator identity is inferred from the registrable parent domain and is
-//! ultimately self-asserted; a sybil operator running several entries would
-//! weaken rotation.
+//! The indexers a session may broadcast to, and the rule that draws from them
+//! (ADR 0050).
 
 use http::Uri;
 use zingo_netutils::indexers::{Indexer, IndexerChain};
@@ -51,48 +8,178 @@ use super::Operator;
 use super::health::Health;
 use crate::config::ChainType;
 
-/// The one port the mixnet exit policy carries (ADR 0029).
 const MIXNET_PORT: u16 = 443;
 
-/// The wire a draw must be reachable over.
+const HTTP_DEFAULT_PORT: u16 = 80;
+
+/// The wire a broadcast travels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Transport {
-    /// A direct connection: every member is reachable.
+    /// A direct connection.
     Clearnet,
-    /// Through the mixnet's SOCKS5 tunnel: port 443 only.
+    /// The mixnet's SOCKS5 tunnel.
     Mixnet,
 }
 
-/// What the chain lets the untrusted draw do about the sync indexer. The
-/// adversary model behind Destination Rotation (ADR 0011) is a mainnet
-/// concern; the test chains carry no value and have no operator-diverse
-/// registry to rotate over.
+/// Whether an indexer's operator may link the wallet to its transactions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RotationPolicy {
-    /// Mainnet: the sync indexer's operator never receives a Transmission,
-    /// and a draw the exclusion empties refuses (ADR 0022).
-    ExcludeSyncOperator,
-    /// Testnet: the registry's members and the sync indexer together, one
-    /// entry per operator.
-    IncludeSyncIndexer,
-    /// Regtest: the registry lists nothing, so the configured sync indexer
-    /// is implicitly trusted and is the sole Destination.
-    SyncIndexerOnly,
+pub enum Trust {
+    /// It may.
+    Trusted,
+    /// It may not.
+    Untrusted,
 }
 
-impl RotationPolicy {
-    /// The policy `chain` rules.
-    pub fn for_chain(chain: &ChainType) -> Self {
+impl Trust {
+    /// The trust `chain` gives an unclassified remote indexer.
+    pub fn remote_default(chain: &ChainType) -> Self {
         match chain {
-            ChainType::Mainnet => RotationPolicy::ExcludeSyncOperator,
-            ChainType::Testnet => RotationPolicy::IncludeSyncIndexer,
-            ChainType::Regtest(_) => RotationPolicy::SyncIndexerOnly,
+            ChainType::Mainnet => Trust::Untrusted,
+            ChainType::Testnet | ChainType::Regtest(_) => Trust::Trusted,
         }
     }
 }
 
-/// The registry partition `chain` reads; `None` for regtest, which the
-/// registry does not carry.
+/// What an indexer is used for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    /// Sync only.
+    Sync,
+    /// Broadcast only.
+    Broadcast,
+    /// Both.
+    SyncAndBroadcast,
+}
+
+impl Role {
+    fn broadcasts(self) -> bool {
+        matches!(self, Role::Broadcast | Role::SyncAndBroadcast)
+    }
+}
+
+/// Where an indexer runs, relative to the wallet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Location {
+    /// On the wallet's machine or local network.
+    Local,
+    /// Anywhere else.
+    Remote,
+}
+
+impl Location {
+    /// The location `uri`'s host names.
+    pub fn of_uri(uri: &Uri) -> Self {
+        let Some(host) = uri.host() else {
+            return Location::Remote;
+        };
+        let host = host
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .trim_end_matches('.');
+        let lowered = host.to_ascii_lowercase();
+        let local_name = lowered == "localhost"
+            || lowered.ends_with(".localhost")
+            || lowered.ends_with(".local");
+        let address = host
+            .parse::<std::net::IpAddr>()
+            .map(|address| address.to_canonical());
+        let local_address = match address {
+            Ok(std::net::IpAddr::V4(address)) => {
+                address.is_loopback()
+                    || address.is_private()
+                    || address.is_link_local()
+                    || address.is_unspecified()
+            }
+            Ok(std::net::IpAddr::V6(address)) => {
+                address.is_loopback()
+                    || address.is_unspecified()
+                    || address.is_unique_local()
+                    || address.is_unicast_link_local()
+            }
+            Err(_) => false,
+        };
+        if local_name || local_address {
+            Location::Local
+        } else {
+            Location::Remote
+        }
+    }
+}
+
+/// A consumer's classification of one indexer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IndexerConfig {
+    uri: Uri,
+    role: Option<Role>,
+    trust: Option<Trust>,
+    #[cfg(any(test, feature = "testutils"))]
+    location: Option<Location>,
+}
+
+impl IndexerConfig {
+    /// The indexer at `uri`, unclassified.
+    pub fn new(uri: Uri) -> Self {
+        IndexerConfig {
+            uri,
+            role: None,
+            trust: None,
+            #[cfg(any(test, feature = "testutils"))]
+            location: None,
+        }
+    }
+
+    /// Sets its role.
+    #[must_use]
+    pub fn role(mut self, role: Role) -> Self {
+        self.role = Some(role);
+        self
+    }
+
+    /// Sets its trust.
+    #[must_use]
+    pub fn trust(mut self, trust: Trust) -> Self {
+        self.trust = Some(trust);
+        self
+    }
+
+    /// Overrides the location its URI implies.
+    #[cfg(any(test, feature = "testutils"))]
+    #[must_use]
+    pub fn location(mut self, location: Location) -> Self {
+        self.location = Some(location);
+        self
+    }
+
+    /// Where the indexer is addressed.
+    pub fn uri(&self) -> &Uri {
+        &self.uri
+    }
+
+    fn location_override(&self) -> Option<Location> {
+        #[cfg(any(test, feature = "testutils"))]
+        {
+            self.location
+        }
+        #[cfg(not(any(test, feature = "testutils")))]
+        {
+            None
+        }
+    }
+}
+
+fn same_endpoint(a: &Uri, b: &Uri) -> bool {
+    let port = |uri: &Uri| {
+        uri.port_u16().unwrap_or(match uri.scheme_str() {
+            Some("https") => MIXNET_PORT,
+            _ => HTTP_DEFAULT_PORT,
+        })
+    };
+    a.host()
+        .zip(b.host())
+        .is_some_and(|(a_host, b_host)| a_host.eq_ignore_ascii_case(b_host))
+        && port(a) == port(b)
+}
+
 fn registry_chain(chain: &ChainType) -> Option<IndexerChain> {
     match chain {
         ChainType::Mainnet => Some(IndexerChain::Main),
@@ -101,224 +188,332 @@ fn registry_chain(chain: &ChainType) -> Option<IndexerChain> {
     }
 }
 
-/// One member: where it is addressed and who answers for it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct DestinationServer {
+#[derive(Clone, Debug)]
+struct Classified {
     uri: Uri,
     operator: Operator,
+    trust: Trust,
+    role: Role,
+    location: Location,
 }
 
-impl DestinationServer {
+impl Classified {
     fn reachable_over(&self, transport: Transport) -> bool {
         match transport {
             Transport::Clearnet => true,
             Transport::Mixnet => {
-                self.uri.scheme_str() == Some("https")
+                self.location == Location::Remote
+                    && self.uri.scheme_str() == Some("https")
                     && self.uri.port_u16().unwrap_or(MIXNET_PORT) == MIXNET_PORT
             }
         }
     }
 }
 
-/// Nothing safe to draw for a transmission, so the surface refuses rather
-/// than transmit somewhere the policy forbids.
+/// Why a broadcast has no Destination.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum NoEligibleDestinations {
-    /// Every reachable member belongs to the sync indexer's operator.
+    /// Every reachable entry belongs to the untrusted sync indexer's operator.
     #[error(
         "no eligible Destination: every reachable entry belongs to the \
-         sync indexer's operator ({0}), and a Destination is never \
-         allowed to be the sync indexer"
+         untrusted sync indexer's operator ({0}), and a mixnet broadcast \
+         never goes to it"
     )]
     AllBelongToSyncOperator(Operator),
-    /// The chain has no member reachable over the transport, before any
-    /// exclusion applied.
-    #[error("no eligible Destination: the set holds nothing reachable over {0:?}")]
+    /// Nothing is reachable over the transport.
+    #[error("no eligible Destination: no configured or registry indexer is reachable over {0:?}")]
     Empty(Transport),
-    /// The chain's only Destination is the sync indexer, and none is
-    /// configured.
-    #[error(
-        "no eligible Destination: this chain transmits to the sync indexer, and none is configured"
-    )]
-    NoSyncIndexer,
 }
 
-/// The Destinations a session may transmit to: the trusted servers the
-/// user vouched for, and the registry's entries for its chain, one per
-/// operator, drawn under the chain's [`RotationPolicy`] when no trusted
-/// server is reachable.
+/// The ordered Destinations one broadcast may contact.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Draw {
+    destinations: Vec<Uri>,
+    preferred: usize,
+}
+
+impl Draw {
+    /// Every Destination the race may contact.
+    pub fn destinations(&self) -> &[Uri] {
+        &self.destinations
+    }
+
+    /// How many leading Destinations keep their order.
+    pub fn preferred(&self) -> usize {
+        self.preferred
+    }
+}
+
+/// The indexers a session may broadcast to.
 #[derive(Clone, Debug)]
 pub struct DestinationServerSet {
-    policy: RotationPolicy,
-    trusted: Vec<DestinationServer>,
-    registry: Vec<DestinationServer>,
-}
-
-fn members_of(uris: impl IntoIterator<Item = Uri>) -> Vec<DestinationServer> {
-    uris.into_iter()
-        .filter_map(|uri| {
-            let operator = Operator::of_uri(&uri)?;
-            Some(DestinationServer { uri, operator })
-        })
-        .collect()
-}
-
-/// `members` reachable over `transport`, the first entry of each operator
-/// only, in the order given.
-fn one_per_operator(members: &[DestinationServer], transport: Transport) -> Vec<Uri> {
-    let mut seen: Vec<&Operator> = Vec::new();
-    members
-        .iter()
-        .filter(|member| member.reachable_over(transport))
-        .filter(|member| {
-            if seen.contains(&&member.operator) {
-                false
-            } else {
-                seen.push(&member.operator);
-                true
-            }
-        })
-        .map(|member| member.uri.clone())
-        .collect()
+    remote_trust: Trust,
+    configured: Vec<IndexerConfig>,
+    registry: Vec<(Uri, Operator)>,
 }
 
 impl DestinationServerSet {
-    /// The set for a session on `chain`, read from the registry, with no
-    /// trusted server: the shape every production session builds today.
-    pub fn for_chain(chain: &ChainType) -> Self {
+    /// The set for `chain`, with the consumer's classifications and remote trust.
+    pub fn for_chain(
+        chain: &ChainType,
+        remote_trust: Option<Trust>,
+        configured: Vec<IndexerConfig>,
+    ) -> Self {
         let entries = registry_chain(chain)
             .into_iter()
             .flat_map(zingo_netutils::indexers::active);
-        Self::from_entries(RotationPolicy::for_chain(chain), entries)
+        let mut set = Self::from_entries(
+            remote_trust.unwrap_or_else(|| Trust::remote_default(chain)),
+            entries,
+        );
+        configured
+            .into_iter()
+            .for_each(|config| set.add_indexer(config));
+        set
     }
 
-    /// A set over `entries` under `policy`, the seam a test injects a
-    /// registry through. Entries are kept in the order given; the first
-    /// entry of an operator reachable over a transport is the one that
-    /// operator's draw addresses.
     pub(crate) fn from_entries<'a>(
-        policy: RotationPolicy,
+        remote_trust: Trust,
         entries: impl IntoIterator<Item = &'a Indexer>,
     ) -> Self {
         Self::from_uris(
-            policy,
+            remote_trust,
             entries
                 .into_iter()
                 .filter_map(|entry| entry.uri.parse::<Uri>().ok()),
         )
     }
 
-    /// A set whose registry is `uris` under `policy`, for a test whose
-    /// Destinations are mock indexers on ports chosen at run time.
-    pub fn from_uris(policy: RotationPolicy, uris: impl IntoIterator<Item = Uri>) -> Self {
+    /// A set whose registry is `uris`.
+    pub fn from_uris(remote_trust: Trust, uris: impl IntoIterator<Item = Uri>) -> Self {
         DestinationServerSet {
-            policy,
-            trusted: Vec::new(),
-            registry: members_of(uris),
+            remote_trust,
+            configured: Vec::new(),
+            registry: uris
+                .into_iter()
+                .filter_map(|uri| Operator::of_uri(&uri).map(|operator| (uri, operator)))
+                .collect(),
         }
     }
 
-    /// The set with `uris` as its trusted servers. Nothing in production
-    /// calls this yet (ruling 2026-09-12): the configuration that would
-    /// let a user vouch for a server is not wired, so it serves the tests
-    /// that pin the trusted branch until it is.
-    pub fn with_trusted(mut self, uris: impl IntoIterator<Item = Uri>) -> Self {
-        self.trusted = members_of(uris);
+    /// A set whose registry names each entry's operator.
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn registry_for_tests<'a>(
+        remote_trust: Trust,
+        entries: impl IntoIterator<Item = (Uri, &'a str)>,
+    ) -> Self {
+        DestinationServerSet {
+            remote_trust,
+            configured: Vec::new(),
+            registry: entries
+                .into_iter()
+                .map(|(uri, operator)| (uri, Operator::of_host(operator)))
+                .collect(),
+        }
+    }
+
+    /// The set with `config` added.
+    #[must_use]
+    pub fn with_indexer(mut self, config: IndexerConfig) -> Self {
+        self.add_indexer(config);
         self
     }
 
-    /// The policy the untrusted draw runs under.
-    pub fn policy(&self) -> RotationPolicy {
-        self.policy
+    /// Adds or replaces the classification of `config`'s endpoint.
+    pub fn add_indexer(&mut self, config: IndexerConfig) {
+        match self
+            .configured
+            .iter_mut()
+            .find(|existing| same_endpoint(&existing.uri, &config.uri))
+        {
+            Some(existing) => *existing = config,
+            None => self.configured.push(config),
+        }
     }
 
-    /// The trusted servers, in the order given.
-    pub fn trusted(&self) -> Vec<Uri> {
-        self.trusted
+    /// The trust an unclassified remote indexer receives.
+    pub fn remote_trust(&self) -> Trust {
+        self.remote_trust
+    }
+
+    /// The trust `uri` resolves to.
+    pub fn trust_of(&self, uri: &Uri) -> Trust {
+        self.resolve(uri, self.config_for(uri))
+    }
+
+    fn config_for(&self, uri: &Uri) -> Option<&IndexerConfig> {
+        self.configured
             .iter()
-            .map(|member| member.uri.clone())
+            .find(|config| same_endpoint(&config.uri, uri))
+    }
+
+    fn resolve(&self, uri: &Uri, config: Option<&IndexerConfig>) -> Trust {
+        let location = config
+            .and_then(IndexerConfig::location_override)
+            .unwrap_or_else(|| Location::of_uri(uri));
+        config
+            .and_then(|config| config.trust)
+            .unwrap_or(match location {
+                Location::Local => Trust::Trusted,
+                Location::Remote => self.remote_trust,
+            })
+    }
+
+    fn classify(&self, uri: &Uri) -> Option<Classified> {
+        let config = self.config_for(uri);
+        Some(Classified {
+            uri: uri.clone(),
+            operator: Operator::of_uri(uri)?,
+            trust: self.resolve(uri, config),
+            role: config
+                .and_then(|config| config.role)
+                .unwrap_or(Role::SyncAndBroadcast),
+            location: config
+                .and_then(IndexerConfig::location_override)
+                .unwrap_or_else(|| Location::of_uri(uri)),
+        })
+    }
+
+    /// The registry entries reachable over `transport`, one per operator.
+    pub fn registry_reachable(&self, transport: Transport) -> Vec<Uri> {
+        let mut seen: Vec<&Operator> = Vec::new();
+        self.registry
+            .iter()
+            .filter(|(uri, _)| {
+                transport == Transport::Clearnet
+                    || uri.scheme_str() == Some("https")
+                        && uri.port_u16().unwrap_or(MIXNET_PORT) == MIXNET_PORT
+            })
+            .filter(|(_, operator)| {
+                if seen.contains(&operator) {
+                    false
+                } else {
+                    seen.push(operator);
+                    true
+                }
+            })
+            .map(|(uri, _)| uri.clone())
             .collect()
     }
 
-    /// Every registry member reachable over `transport`, one per
-    /// operator, before any exclusion or Health applies: the view a
-    /// diagnostic that carries no wallet data (the `network probe`
-    /// pairing) measures. A transmission never draws from this directly.
-    pub(crate) fn reachable(&self, transport: Transport) -> Vec<Uri> {
-        one_per_operator(&self.registry, transport)
-    }
-
-    /// The Destinations one transmission may contact over `transport`:
-    /// the trusted servers reachable over it when there are any, else the
-    /// registry with `sync_indexer` handled as the policy rules and
-    /// `health`'s floor applied, in registry order for the caller's own
-    /// shuffle.
-    ///
-    /// A trusted server that is reachable and dead fails the transmission
-    /// typed; it never falls through to the registry, since that would
-    /// hand the send to public operators exactly when the user chose
-    /// otherwise. A trusted server the wire cannot reach (a LAN node over
-    /// the mixnet) does fall through: the tunnel hides the client and the
-    /// node never sees the send.
-    ///
-    /// The sync indexer is read at draw time rather than at construction,
-    /// so a session that rebinds its sync indexer (the Server-Selection
-    /// Sweep does) never draws against a stale exclusion.
+    /// The Destinations one broadcast over `transport` may contact.
     pub fn draw(
         &self,
         transport: Transport,
         sync_indexer: Option<&Uri>,
         health: &Health,
-    ) -> Result<Vec<Uri>, NoEligibleDestinations> {
-        let trusted = one_per_operator(&self.trusted, transport);
-        if !trusted.is_empty() {
-            return Ok(trusted);
-        }
-        let pool = match self.policy {
-            RotationPolicy::SyncIndexerOnly => {
-                return sync_indexer
-                    .cloned()
-                    .map(|uri| vec![uri])
-                    .ok_or(NoEligibleDestinations::NoSyncIndexer);
-            }
-            RotationPolicy::IncludeSyncIndexer => {
-                let with_sync = members_of(sync_indexer.cloned())
-                    .into_iter()
-                    .chain(self.registry.iter().cloned())
-                    .collect::<Vec<_>>();
-                let reachable = one_per_operator(&with_sync, transport);
-                if reachable.is_empty() {
-                    return Err(NoEligibleDestinations::Empty(transport));
-                }
-                reachable
-            }
-            RotationPolicy::ExcludeSyncOperator => {
-                let reachable = self.reachable(transport);
-                if reachable.is_empty() {
-                    return Err(NoEligibleDestinations::Empty(transport));
-                }
-                match sync_indexer.and_then(Operator::of_uri) {
-                    None => reachable,
-                    Some(sync_operator) => {
-                        let eligible: Vec<Uri> = reachable
-                            .into_iter()
-                            .filter(|entry| {
-                                Operator::of_uri(entry).as_ref() != Some(&sync_operator)
-                            })
-                            .collect();
-                        if eligible.is_empty() {
-                            return Err(NoEligibleDestinations::AllBelongToSyncOperator(
-                                sync_operator,
-                            ));
-                        }
-                        eligible
+    ) -> Result<Draw, NoEligibleDestinations> {
+        self.draw_reaching(transport, transport, sync_indexer, health)
+    }
+
+    /// [`Self::draw`] with reachability judged over `reach`.
+    pub(crate) fn draw_reaching(
+        &self,
+        transport: Transport,
+        reach: Transport,
+        sync_indexer: Option<&Uri>,
+        health: &Health,
+    ) -> Result<Draw, NoEligibleDestinations> {
+        let sync = sync_indexer.and_then(|uri| self.classify(uri));
+        let excluded_operator = sync
+            .as_ref()
+            .filter(|sync| transport == Transport::Mixnet && sync.trust == Trust::Untrusted)
+            .map(|sync| sync.operator.clone());
+        let excluded = |candidate: &Classified| {
+            candidate.trust == Trust::Untrusted
+                && excluded_operator.as_ref() == Some(&candidate.operator)
+        };
+
+        let configured = self
+            .configured
+            .iter()
+            .filter(|config| {
+                sync_indexer.is_none_or(|sync_uri| !same_endpoint(&config.uri, sync_uri))
+            })
+            .filter_map(|config| self.classify(&config.uri))
+            .filter(|candidate| candidate.role.broadcasts() && candidate.reachable_over(reach));
+        let sync_candidate = sync
+            .clone()
+            .filter(|sync| sync.role.broadcasts() && sync.reachable_over(reach));
+        let registry: Vec<Classified> = if transport == Transport::Mixnet {
+            self.registry
+                .iter()
+                .map(|(uri, operator)| Classified {
+                    uri: uri.clone(),
+                    operator: operator.clone(),
+                    trust: self.remote_trust,
+                    role: Role::Broadcast,
+                    location: Location::Remote,
+                })
+                .filter(|candidate| candidate.reachable_over(reach))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        let mut dropped_by_exclusion = false;
+        let mut trusted: Vec<Uri> = Vec::new();
+        let mut untrusted: Vec<(Classified, bool)> = Vec::new();
+        let tiers = configured
+            .map(|candidate| (candidate, true))
+            .chain(sync_candidate.map(|candidate| (candidate, false)))
+            .chain(registry.into_iter().map(|candidate| (candidate, false)));
+        for (candidate, is_configured) in tiers {
+            match candidate.trust {
+                Trust::Trusted => {
+                    if !trusted
+                        .iter()
+                        .any(|kept| same_endpoint(kept, &candidate.uri))
+                    {
+                        trusted.push(candidate.uri);
                     }
                 }
+                Trust::Untrusted if excluded(&candidate) => dropped_by_exclusion = true,
+                Trust::Untrusted => untrusted.push((candidate, is_configured)),
             }
-        };
-        Ok(health.filter_with_floor(pool))
+        }
+
+        let mut seen: Vec<Operator> = Vec::new();
+        let mut preferred = Vec::new();
+        let mut rest = Vec::new();
+        for (candidate, is_configured) in untrusted {
+            if seen.contains(&candidate.operator) {
+                continue;
+            }
+            seen.push(candidate.operator);
+            if is_configured {
+                preferred.push(candidate.uri);
+            } else {
+                rest.push(candidate.uri);
+            }
+        }
+
+        if !trusted.is_empty() {
+            return Ok(Draw {
+                destinations: trusted,
+                preferred: 0,
+            });
+        }
+        let preferred_len = preferred.len();
+        let mut destinations = preferred;
+        destinations.extend(health.filter_with_floor(rest));
+        if destinations.is_empty() {
+            return Err(match excluded_operator {
+                Some(operator) if dropped_by_exclusion => {
+                    NoEligibleDestinations::AllBelongToSyncOperator(operator)
+                }
+                _ => NoEligibleDestinations::Empty(transport),
+            });
+        }
+        Ok(Draw {
+            destinations,
+            preferred: preferred_len,
+        })
     }
 }
+
+#[cfg(test)]
+mod draw_exhaustive;
 
 #[cfg(test)]
 mod tests {
@@ -349,38 +544,179 @@ mod tests {
         ]
     }
 
+    fn mainnet_set() -> DestinationServerSet {
+        DestinationServerSet::from_entries(Trust::Untrusted, &mainnet_registry())
+    }
+
     fn regtest() -> ChainType {
         ChainType::Regtest(crate::ActivationHeights::default())
     }
 
+    fn drawn(set: &DestinationServerSet, transport: Transport, sync: Option<&Uri>) -> Vec<Uri> {
+        set.draw(transport, sync, &Health::default())
+            .expect("the draw has candidates")
+            .destinations()
+            .to_vec()
+    }
+
     #[test]
-    fn each_chain_rules_its_policy() {
+    fn locations_follow_the_address() {
+        let table = [
+            ("http://127.0.0.1:9067", Location::Local),
+            ("http://127.255.255.255:9067", Location::Local),
+            ("http://126.255.255.255:9067", Location::Remote),
+            ("http://128.0.0.0:9067", Location::Remote),
+            ("http://10.0.0.0:9067", Location::Local),
+            ("http://10.255.255.255:9067", Location::Local),
+            ("http://11.0.0.0:9067", Location::Remote),
+            ("http://172.15.255.255:9067", Location::Remote),
+            ("http://172.16.0.0:9067", Location::Local),
+            ("http://172.31.255.255:9067", Location::Local),
+            ("http://172.32.0.0:9067", Location::Remote),
+            ("http://192.167.255.255:9067", Location::Remote),
+            ("http://192.168.0.0:9067", Location::Local),
+            ("http://192.168.255.255:9067", Location::Local),
+            ("http://192.169.0.0:9067", Location::Remote),
+            ("http://169.254.0.0:9067", Location::Local),
+            ("http://169.254.255.255:9067", Location::Local),
+            ("http://169.253.255.255:9067", Location::Remote),
+            ("http://0.0.0.0:9067", Location::Local),
+            ("http://100.64.0.1:9067", Location::Remote),
+            ("https://8.8.8.8:443", Location::Remote),
+            ("http://[::1]:9067", Location::Local),
+            ("http://[::]:9067", Location::Local),
+            ("http://[fbff:ffff::1]:9067", Location::Remote),
+            ("http://[fc00::1]:9067", Location::Local),
+            ("http://[fdff:ffff::1]:9067", Location::Local),
+            ("http://[fe00::1]:9067", Location::Remote),
+            ("http://[fe80::1]:9067", Location::Local),
+            ("http://[febf:ffff::1]:9067", Location::Local),
+            ("http://[fec0::1]:9067", Location::Remote),
+            ("http://[::ffff:127.0.0.1]:9067", Location::Local),
+            ("http://[::ffff:192.168.1.1]:9067", Location::Local),
+            ("http://[::ffff:8.8.8.8]:9067", Location::Remote),
+            ("https://[2001:db8::1]:443", Location::Remote),
+            ("http://localhost:9067", Location::Local),
+            ("http://LOCALHOST:9067", Location::Local),
+            ("http://localhost.:9067", Location::Local),
+            ("http://api.localhost:9067", Location::Local),
+            ("http://node.local:9067", Location::Local),
+            ("http://node.LOCAL.:9067", Location::Local),
+            ("https://localhost.evil.example:443", Location::Remote),
+            ("https://evil-localhost.example:443", Location::Remote),
+            ("https://local.example:443", Location::Remote),
+            ("https://nodelocal:443", Location::Remote),
+            ("https://127.0.0.1.nip.io:443", Location::Remote),
+            ("https://zec.rocks:443", Location::Remote),
+            ("/no-host", Location::Remote),
+        ];
+        for (text, expected) in table {
+            assert_eq!(Location::of_uri(&uri(text)), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn endpoints_match_by_host_and_port() {
+        let table = [
+            ("https://node.example:443", "https://NODE.example", true),
+            ("http://node.example:80", "http://node.example", true),
+            (
+                "https://node.example:443",
+                "https://node.example:9067",
+                false,
+            ),
+            ("https://node.example", "http://node.example", false),
+            ("https://a.example:443", "https://b.example:443", false),
+            ("http://[::1]:9067", "http://[::1]:9067", true),
+            ("/no-host", "/no-host", false),
+        ];
+        for (a, b, expected) in table {
+            assert_eq!(same_endpoint(&uri(a), &uri(b)), expected, "{a} vs {b}");
+        }
+    }
+
+    #[test]
+    fn trust_resolves_explicit_then_location_then_default() {
+        let local = uri("http://192.168.1.10:9067");
+        let remote = uri("https://node.example:443");
+        for remote_trust in [Trust::Trusted, Trust::Untrusted] {
+            let bare = DestinationServerSet::from_uris(remote_trust, []);
+            assert_eq!(bare.trust_of(&local), Trust::Trusted);
+            assert_eq!(bare.trust_of(&remote), remote_trust);
+            for explicit in [Trust::Trusted, Trust::Untrusted] {
+                let set = DestinationServerSet::from_uris(remote_trust, [])
+                    .with_indexer(IndexerConfig::new(local.clone()).trust(explicit))
+                    .with_indexer(IndexerConfig::new(remote.clone()).trust(explicit));
+                assert_eq!(set.trust_of(&local), explicit);
+                assert_eq!(set.trust_of(&remote), explicit);
+            }
+        }
+        let set = DestinationServerSet::from_uris(Trust::Untrusted, [])
+            .with_indexer(IndexerConfig::new(local.clone()).location(Location::Remote));
         assert_eq!(
-            RotationPolicy::for_chain(&ChainType::Mainnet),
-            RotationPolicy::ExcludeSyncOperator
-        );
-        assert_eq!(
-            RotationPolicy::for_chain(&ChainType::Testnet),
-            RotationPolicy::IncludeSyncIndexer
-        );
-        assert_eq!(
-            RotationPolicy::for_chain(&regtest()),
-            RotationPolicy::SyncIndexerOnly
+            set.trust_of(&local),
+            Trust::Untrusted,
+            "a location override feeds the default"
         );
     }
 
-    /// HYPOTHESIS: the mainnet set is the registry's live mainnet entries,
-    /// one per operator, every mixnet-reachable member https on 443.
-    /// Falsified if a registry entry of another chain, an obsolete entry,
-    /// or a second endpoint of one operator reaches the mixnet draw.
     #[test]
-    fn the_mainnet_set_is_the_registry_partitioned_and_deduplicated() {
-        let set = DestinationServerSet::for_chain(&ChainType::Mainnet);
-        let reachable = set.reachable(Transport::Mixnet);
-        assert!(
-            !reachable.is_empty(),
-            "the registry carries live mainnet entries"
+    fn each_chain_reads_its_own_registry_partition() {
+        for (chain, own, other) in [
+            (ChainType::Mainnet, IndexerChain::Main, IndexerChain::Test),
+            (ChainType::Testnet, IndexerChain::Test, IndexerChain::Main),
+        ] {
+            let set = DestinationServerSet::for_chain(&chain, None, Vec::new());
+            let held: Vec<String> = set
+                .registry_reachable(Transport::Clearnet)
+                .iter()
+                .map(|entry| entry.to_string().trim_end_matches('/').to_string())
+                .collect();
+            assert!(!held.is_empty(), "{chain:?}");
+            for entry in &held {
+                assert!(
+                    zingo_netutils::indexers::active(own).any(|indexer| indexer.uri == entry),
+                    "{chain:?} holds {entry}, which is not an active entry of its chain"
+                );
+                assert!(
+                    !zingo_netutils::indexers::INDEXERS
+                        .iter()
+                        .any(|indexer| indexer.chain == other && indexer.uri == entry),
+                    "{chain:?} holds {entry} from the other chain"
+                );
+            }
+        }
+        let regtest = DestinationServerSet::for_chain(&regtest(), None, Vec::new());
+        assert!(regtest.registry_reachable(Transport::Clearnet).is_empty());
+    }
+
+    #[test]
+    fn for_chain_takes_the_consumer_override_and_classifications() {
+        let own = uri("https://node.mine.example:443");
+        let overridden =
+            DestinationServerSet::for_chain(&ChainType::Mainnet, Some(Trust::Trusted), Vec::new());
+        assert_eq!(overridden.remote_trust(), Trust::Trusted);
+        let classified = DestinationServerSet::for_chain(
+            &ChainType::Mainnet,
+            None,
+            vec![IndexerConfig::new(own.clone()).trust(Trust::Trusted)],
         );
+        assert_eq!(classified.remote_trust(), Trust::Untrusted);
+        assert_eq!(classified.trust_of(&own), Trust::Trusted);
+    }
+
+    #[test]
+    fn each_chain_rules_its_remote_default() {
+        assert_eq!(Trust::remote_default(&ChainType::Mainnet), Trust::Untrusted);
+        assert_eq!(Trust::remote_default(&ChainType::Testnet), Trust::Trusted);
+        assert_eq!(Trust::remote_default(&regtest()), Trust::Trusted);
+    }
+
+    #[test]
+    fn the_mainnet_registry_is_partitioned_and_deduplicated() {
+        let set = DestinationServerSet::for_chain(&ChainType::Mainnet, None, Vec::new());
+        let reachable = set.registry_reachable(Transport::Mixnet);
+        assert!(!reachable.is_empty());
         for entry in &reachable {
             assert_eq!(entry.scheme_str(), Some("https"), "{entry}");
             assert_eq!(entry.port_u16(), Some(MIXNET_PORT), "{entry}");
@@ -398,177 +734,161 @@ mod tests {
         assert_eq!(operators.len(), distinct, "one endpoint per operator");
     }
 
-    /// HYPOTHESIS: a testnet session draws only testnet entries. Falsified
-    /// if any mainnet host reaches a testnet draw, the 2026-09-11 defect
-    /// where every testnet send raced mainnet indexers.
     #[test]
     fn a_testnet_draw_never_names_a_mainnet_host() {
-        let set = DestinationServerSet::for_chain(&ChainType::Testnet);
+        let set = DestinationServerSet::for_chain(&ChainType::Testnet, None, Vec::new());
         let mainnet: Vec<String> = zingo_netutils::indexers::active(IndexerChain::Main)
             .map(|indexer| indexer.uri.to_string())
             .collect();
-        for transport in [Transport::Mixnet, Transport::Clearnet] {
-            let drawn = set
-                .draw(transport, None, &Health::default())
-                .expect("the registry carries testnet entries");
-            assert!(!drawn.is_empty());
-            for entry in drawn {
-                assert!(
-                    !mainnet.contains(&entry.to_string().trim_end_matches('/').to_string()),
-                    "a testnet draw named the mainnet host {entry}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn a_testnet_draw_keeps_the_sync_operator() {
-        let set = DestinationServerSet::for_chain(&ChainType::Testnet);
-        let sync = uri("https://testnet.zec.rocks:443");
-        let drawn = set
-            .draw(Transport::Mixnet, Some(&sync), &Health::default())
-            .expect("testnet never refuses on the sync operator");
-        assert!(
-            drawn
-                .iter()
-                .any(|entry| Operator::of_uri(entry) == Operator::of_uri(&sync)),
-            "testnet has one operator, so the draw must keep it: {drawn:?}"
-        );
-    }
-
-    /// HYPOTHESIS: a testnet draw is the union of the registry and the
-    /// sync indexer, so a private testnet indexer is a Destination beside
-    /// the public one, and an empty registry leaves the sync indexer
-    /// alone. Falsified if the sync indexer is missing from the union or
-    /// an unreachable one is drawn.
-    #[test]
-    fn a_testnet_draw_unions_the_registry_with_the_sync_indexer() {
-        let registry = [entry(
-            "https://testnet.public.example:443",
-            IndexerChain::Test,
-        )];
-        let set = DestinationServerSet::from_entries(RotationPolicy::IncludeSyncIndexer, &registry);
-        let private = uri("https://private.testnet.example:9067");
-        let drawn = set
-            .draw(Transport::Clearnet, Some(&private), &Health::default())
-            .expect("both remain");
-        assert_eq!(
-            drawn,
-            vec![private.clone(), uri("https://testnet.public.example:443")]
-        );
-        let over_mixnet = set
-            .draw(Transport::Mixnet, Some(&private), &Health::default())
-            .expect("the public one remains");
-        assert_eq!(over_mixnet, vec![uri("https://testnet.public.example:443")]);
-
-        let empty = DestinationServerSet::from_entries(RotationPolicy::IncludeSyncIndexer, &[]);
-        assert_eq!(
-            empty.draw(Transport::Clearnet, Some(&private), &Health::default()),
-            Ok(vec![private.clone()])
-        );
-        assert_eq!(
-            empty.draw(Transport::Mixnet, Some(&private), &Health::default()),
-            Err(NoEligibleDestinations::Empty(Transport::Mixnet))
-        );
-        assert_eq!(
-            empty.draw(Transport::Clearnet, None, &Health::default()),
-            Err(NoEligibleDestinations::Empty(Transport::Clearnet))
-        );
-    }
-
-    #[test]
-    fn a_regtest_draw_is_the_sync_indexer_alone() {
-        let set = DestinationServerSet::for_chain(&regtest());
-        let sync = uri("http://127.0.0.1:9067");
-        assert_eq!(
-            set.draw(Transport::Mixnet, Some(&sync), &Health::default()),
-            Ok(vec![sync.clone()])
-        );
-        assert_eq!(
-            set.draw(Transport::Clearnet, Some(&sync), &Health::default()),
-            Ok(vec![sync])
-        );
-        assert_eq!(
-            set.draw(Transport::Clearnet, None, &Health::default()),
-            Err(NoEligibleDestinations::NoSyncIndexer)
-        );
-    }
-
-    /// HYPOTHESIS: the mainnet exclusion is by operator, not exact URI,
-    /// and holds on both transports (ADR 0022 as amended). Falsified if a
-    /// regional variant of the sync operator survives either draw.
-    #[test]
-    fn the_sync_operators_regional_variant_is_excluded_on_every_transport() {
-        let registry = mainnet_registry();
-        let set =
-            DestinationServerSet::from_entries(RotationPolicy::ExcludeSyncOperator, &registry);
-        let sync = uri("https://na.zec.rocks:443");
-        for transport in [Transport::Mixnet, Transport::Clearnet] {
-            let drawn = set
-                .draw(transport, Some(&sync), &Health::default())
-                .expect("the example operators remain");
+        let destinations = drawn(&set, Transport::Mixnet, None);
+        assert!(!destinations.is_empty());
+        for entry in destinations {
             assert!(
-                drawn
-                    .iter()
-                    .all(|entry| Operator::of_uri(entry) != Operator::of_uri(&sync)),
-                "{transport:?} drew the sync operator: {drawn:?}"
+                !mainnet.contains(&entry.to_string().trim_end_matches('/').to_string()),
+                "a testnet draw named the mainnet host {entry}"
             );
         }
     }
 
     #[test]
-    fn a_mixnet_draw_drops_non_443_members_and_a_clearnet_draw_keeps_them() {
-        let registry = mainnet_registry();
-        let set =
-            DestinationServerSet::from_entries(RotationPolicy::ExcludeSyncOperator, &registry);
-        let two = uri("https://two.example:9067");
-        let mixnet = set
-            .draw(Transport::Mixnet, None, &Health::default())
-            .expect("members remain");
-        assert!(
-            !mixnet.contains(&two),
-            "port 9067 never traverses the mixnet"
+    fn a_clearnet_draw_never_rotates_across_the_registry() {
+        let sync = uri("https://zec.rocks:443");
+        assert_eq!(
+            drawn(&mainnet_set(), Transport::Clearnet, Some(&sync)),
+            vec![sync]
         );
+        assert_eq!(
+            mainnet_set().draw(Transport::Clearnet, None, &Health::default()),
+            Err(NoEligibleDestinations::Empty(Transport::Clearnet))
+        );
+    }
+
+    #[test]
+    fn a_mixnet_draw_excludes_the_untrusted_sync_operator() {
+        let sync = uri("https://na.zec.rocks:443");
+        let destinations = drawn(&mainnet_set(), Transport::Mixnet, Some(&sync));
+        assert!(!destinations.is_empty());
+        assert!(
+            destinations
+                .iter()
+                .all(|entry| Operator::of_uri(entry) != Operator::of_uri(&sync)),
+            "{destinations:?}"
+        );
+    }
+
+    #[test]
+    fn a_mixnet_draw_keeps_only_port_443() {
+        let destinations = drawn(&mainnet_set(), Transport::Mixnet, None);
+        assert!(!destinations.contains(&uri("https://two.example:9067")));
+        assert!(destinations.contains(&uri("https://one.example:443")));
+    }
+
+    #[test]
+    fn a_local_sync_indexer_takes_clearnet_and_yields_the_mixnet() {
+        let local = uri("http://192.168.1.10:9067");
+        assert_eq!(
+            drawn(&mainnet_set(), Transport::Clearnet, Some(&local)),
+            vec![local.clone()]
+        );
+        let over_mixnet = drawn(&mainnet_set(), Transport::Mixnet, Some(&local));
+        assert!(!over_mixnet.contains(&local));
+        assert_eq!(
+            over_mixnet.len(),
+            mainnet_set().registry_reachable(Transport::Mixnet).len(),
+            "a trusted local node excludes no registry operator"
+        );
+    }
+
+    #[test]
+    fn a_local_https_indexer_is_unreachable_over_the_mixnet() {
+        let local = uri("https://127.0.0.1:443");
+        let set = DestinationServerSet::from_uris(Trust::Trusted, []);
+        assert_eq!(
+            set.draw(Transport::Mixnet, Some(&local), &Health::default()),
+            Err(NoEligibleDestinations::Empty(Transport::Mixnet))
+        );
+    }
+
+    #[test]
+    fn a_trusted_remote_sync_indexer_is_drawn_alone() {
+        let own = uri("https://node.mine.example:443");
+        let set = mainnet_set().with_indexer(IndexerConfig::new(own.clone()).trust(Trust::Trusted));
+        for transport in [Transport::Mixnet, Transport::Clearnet] {
+            assert_eq!(drawn(&set, transport, Some(&own)), vec![own.clone()]);
+        }
+    }
+
+    #[test]
+    fn a_trusted_broadcast_indexer_is_drawn_alone() {
+        let vps = uri("https://vps.mine.example:443");
+        let sync = uri("https://zec.rocks:443");
+        let set = mainnet_set().with_indexer(
+            IndexerConfig::new(vps.clone())
+                .role(Role::Broadcast)
+                .trust(Trust::Trusted),
+        );
+        for transport in [Transport::Mixnet, Transport::Clearnet] {
+            assert_eq!(drawn(&set, transport, Some(&sync)), vec![vps.clone()]);
+        }
+    }
+
+    #[test]
+    fn a_configured_untrusted_broadcast_indexer_leads_the_race() {
+        let own = uri("https://relay.example:443");
+        let sync = uri("https://zec.rocks:443");
+        let set = mainnet_set().with_indexer(IndexerConfig::new(own.clone()).role(Role::Broadcast));
         let clearnet = set
-            .draw(Transport::Clearnet, None, &Health::default())
-            .expect("members remain");
-        assert!(
-            clearnet.contains(&two),
-            "clearnet reaches the lightwalletd port"
+            .draw(Transport::Clearnet, Some(&sync), &Health::default())
+            .expect("two candidates");
+        assert_eq!(clearnet.destinations(), &[own.clone(), sync.clone()]);
+        assert_eq!(clearnet.preferred(), 1);
+        let mixnet = set
+            .draw(Transport::Mixnet, Some(&sync), &Health::default())
+            .expect("the relay and the registry");
+        assert_eq!(mixnet.destinations()[0], own);
+        assert_eq!(mixnet.preferred(), 1);
+        assert!(!mixnet.destinations().contains(&sync));
+    }
+
+    #[test]
+    fn a_sync_only_indexer_never_receives_a_broadcast() {
+        let sync = uri("https://zec.rocks:443");
+        let set = mainnet_set().with_indexer(IndexerConfig::new(sync.clone()).role(Role::Sync));
+        assert_eq!(
+            set.draw(Transport::Clearnet, Some(&sync), &Health::default()),
+            Err(NoEligibleDestinations::Empty(Transport::Clearnet))
         );
     }
 
     #[test]
-    fn one_endpoint_per_operator_in_registry_order() {
-        let registry = mainnet_registry();
-        let set =
-            DestinationServerSet::from_entries(RotationPolicy::ExcludeSyncOperator, &registry);
-        let reachable = set.reachable(Transport::Mixnet);
-        assert_eq!(reachable[0], uri("https://zec.rocks:443"));
-        assert!(!reachable.contains(&uri("https://eu.zec.rocks:443")));
+    fn a_testnet_remote_sync_indexer_is_trusted_by_default() {
+        let set = DestinationServerSet::for_chain(&ChainType::Testnet, None, Vec::new());
+        let sync = uri("https://testnet.zec.rocks:443");
+        for transport in [Transport::Mixnet, Transport::Clearnet] {
+            assert!(drawn(&set, transport, Some(&sync)).contains(&sync));
+        }
     }
 
     #[test]
-    fn a_sync_indexer_outside_the_set_excludes_nothing() {
-        let registry = mainnet_registry();
-        let set =
-            DestinationServerSet::from_entries(RotationPolicy::ExcludeSyncOperator, &registry);
-        let sync = uri("https://my.private.indexer.example:443");
-        let drawn = set
-            .draw(Transport::Mixnet, Some(&sync), &Health::default())
-            .expect("nothing to exclude");
-        assert_eq!(drawn.len(), set.reachable(Transport::Mixnet).len());
+    fn a_regtest_draw_reaches_its_local_sync_indexer_over_clearnet_only() {
+        let set = DestinationServerSet::for_chain(&regtest(), None, Vec::new());
+        let sync = uri("http://127.0.0.1:9067");
+        assert_eq!(
+            drawn(&set, Transport::Clearnet, Some(&sync)),
+            vec![sync.clone()]
+        );
+        assert_eq!(
+            set.draw(Transport::Mixnet, Some(&sync), &Health::default()),
+            Err(NoEligibleDestinations::Empty(Transport::Mixnet))
+        );
     }
 
-    /// HYPOTHESIS: a set owned wholly by the sync operator refuses naming
-    /// that operator, so a mainnet send fails closed instead of falling
-    /// back to the sync indexer. Falsified if the refusal is the empty
-    /// story or renders a blank operator.
     #[test]
-    fn an_emptied_mainnet_draw_refuses_rather_than_drawing_the_sync_indexer() {
-        let registry = [entry("https://zec.rocks:443", IndexerChain::Main)];
-        let set =
-            DestinationServerSet::from_entries(RotationPolicy::ExcludeSyncOperator, &registry);
+    fn an_emptied_mixnet_draw_refuses_rather_than_drawing_the_sync_indexer() {
+        let set = DestinationServerSet::from_entries(
+            Trust::Untrusted,
+            &[entry("https://zec.rocks:443", IndexerChain::Main)],
+        );
         let sync = uri("https://na.zec.rocks:443");
         let err = set
             .draw(Transport::Mixnet, Some(&sync), &Health::default())
@@ -581,85 +901,16 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_mainnet_set_refuses_as_empty_never_as_operator_owned() {
-        let set = DestinationServerSet::from_entries(RotationPolicy::ExcludeSyncOperator, &[]);
-        let sync = uri("https://na.zec.rocks:443");
-        for sync in [None, Some(&sync)] {
-            let err = set
-                .draw(Transport::Mixnet, sync, &Health::default())
-                .expect_err("an empty set must refuse");
-            assert_eq!(err, NoEligibleDestinations::Empty(Transport::Mixnet));
-            assert!(!err.to_string().contains("operator"), "{err}");
-        }
-    }
-
-    /// HYPOTHESIS: every production set is built with no trusted server,
-    /// so the trusted branch is dormant until configuration feeds it
-    /// (ruling 2026-09-12). Falsified if any chain's set carries one.
-    #[test]
-    fn production_sets_carry_no_trusted_server() {
-        for chain in [ChainType::Mainnet, ChainType::Testnet, regtest()] {
-            assert!(
-                DestinationServerSet::for_chain(&chain).trusted().is_empty(),
-                "{chain:?} must build an empty trusted set"
-            );
-        }
-    }
-
-    /// HYPOTHESIS: a reachable trusted server is the sole Destination,
-    /// with no exclusion and no rotation, even when it is the sync
-    /// indexer on mainnet. Falsified if the draw names any registry member
-    /// or refuses the sync operator.
-    #[test]
-    fn a_reachable_trusted_server_is_drawn_alone() {
-        let registry = mainnet_registry();
-        let own = uri("https://node.mine.example:443");
-        let set =
-            DestinationServerSet::from_entries(RotationPolicy::ExcludeSyncOperator, &registry)
-                .with_trusted([own.clone()]);
-        for transport in [Transport::Mixnet, Transport::Clearnet] {
-            assert_eq!(
-                set.draw(transport, Some(&own), &Health::default()),
-                Ok(vec![own.clone()]),
-                "{transport:?}"
-            );
-        }
-    }
-
-    /// HYPOTHESIS: a trusted server the wire cannot reach falls through
-    /// to the untrusted draw on that wire only. Falsified if a LAN node
-    /// is drawn over the mixnet, or if the clearnet draw leaves it for the
-    /// registry.
-    #[test]
-    fn an_unreachable_trusted_server_falls_through_on_that_wire_only() {
-        let registry = mainnet_registry();
-        let lan = uri("http://192.168.1.10:9067");
-        let set =
-            DestinationServerSet::from_entries(RotationPolicy::ExcludeSyncOperator, &registry)
-                .with_trusted([lan.clone()]);
+    fn a_configured_classification_applies_to_the_same_endpoint_only() {
+        let own = uri("https://Node.Mine.Example:443");
+        let set = mainnet_set().with_indexer(IndexerConfig::new(own).trust(Trust::Trusted));
         assert_eq!(
-            set.draw(Transport::Clearnet, Some(&lan), &Health::default()),
-            Ok(vec![lan.clone()])
+            set.trust_of(&uri("https://node.mine.example")),
+            Trust::Trusted
         );
-        let over_mixnet = set
-            .draw(Transport::Mixnet, Some(&lan), &Health::default())
-            .expect("the registry carries the mixnet draw");
-        assert!(!over_mixnet.contains(&lan));
-        assert_eq!(over_mixnet, set.reachable(Transport::Mixnet));
-    }
-
-    /// The trusted servers are one per operator too: two names for one
-    /// node are one Destination.
-    #[test]
-    fn trusted_servers_are_one_per_operator() {
-        let set = DestinationServerSet::from_uris(RotationPolicy::ExcludeSyncOperator, [])
-            .with_trusted([
-                uri("https://a.mine.example:443"),
-                uri("https://b.mine.example:443"),
-            ]);
         assert_eq!(
-            set.draw(Transport::Clearnet, None, &Health::default()),
-            Ok(vec![uri("https://a.mine.example:443")])
+            set.trust_of(&uri("https://node.mine.example:9067")),
+            Trust::Untrusted
         );
     }
 }

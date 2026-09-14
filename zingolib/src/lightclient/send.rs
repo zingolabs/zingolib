@@ -117,11 +117,9 @@ fn resolve_transmit_route(
 /// The route one transmitted transaction traveled (ADR 0011).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TransmitRoute {
-    /// Direct submission to a drawn Destination (ADR 0022 as amended
-    /// 2026-09-11: the draw runs on every transport).
+    /// Direct submission to a drawn Destination.
     Clearnet {
-        /// The host of the Destination whose delivery confirmation won
-        /// the escalation.
+        /// The accepting Destination's host.
         destination: String,
     },
     /// Mixnet escalation over the Destinations (ADR 0022), reached
@@ -174,15 +172,11 @@ fn retarget_for_offline_signing<NoteRef: Clone>(
     )
 }
 
-/// A gRPC indexer as a [`TransmitTarget`]: it submits over an ordinary
-/// channel and delivery-checks with `get_transaction`. The mixnet wire
-/// supplies a SOCKS5-backed target to the same [`resilient_transmit`]
-/// policy.
+/// A gRPC indexer as a [`TransmitTarget`].
 struct ClearnetTarget(zingo_netutils::GrpcIndexer);
 
 impl ClearnetTarget {
-    /// A target for `destination`, connecting on first use. A URI the
-    /// channel refuses is a route-resolution failure against that host.
+    /// A target for `destination`, connecting on first use.
     fn lazy(destination: http::Uri) -> Result<Self, zingo_net_diag::NetOpFailure> {
         let host = crate::destination::Host::of_uri(&destination);
         zingo_netutils::GrpcIndexer::new_lazy(destination)
@@ -196,7 +190,6 @@ impl ClearnetTarget {
             })
     }
 
-    /// The taxonomy record of a gRPC status from `host`.
     fn failure(
         status: &zingo_netutils::Status,
         host: &crate::destination::Host,
@@ -269,17 +262,12 @@ impl TransmitTarget for zingo_netutils::Socks5Indexer {
 /// The wire one Transmission's pulls travel.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Wire {
-    /// A direct connection to each drawn Destination.
+    /// Direct connections.
     Clearnet,
-    /// The session's standing mixnet client, which every pull multiplexes
-    /// over: one proven egress for all wallet-correlated streams.
+    /// The session's standing mixnet client.
     #[cfg(feature = "nym")]
     Mixnet { shared_socks5: std::net::SocketAddr },
-    /// A test-attached slot: the draw, the escalation, and the reported
-    /// route are the mixnet's, while each arm's bytes take the mock
-    /// indexer's channel instead of a tunnel. The tunnel's byte transport
-    /// is pinned by zingo-netutils' own tests, so no packet leaves the
-    /// process. Production builds carry no such wire.
+    /// A test-attached slot whose arms submit over the mock indexer's channel.
     #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
     MixnetOverMock { shared_socks5: std::net::SocketAddr },
 }
@@ -291,10 +279,16 @@ impl Wire {
             Wire::Clearnet => Transport::Clearnet,
             #[cfg(feature = "nym")]
             Wire::Mixnet { .. } => Transport::Mixnet,
-            // The mock arms dial direct, so reachability is the direct
-            // wire's: a mock indexer on a loopback port is a Destination.
             #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
-            Wire::MixnetOverMock { .. } => Transport::Clearnet,
+            Wire::MixnetOverMock { .. } => Transport::Mixnet,
+        }
+    }
+
+    fn reach(self) -> crate::destination::servers::Transport {
+        match self {
+            #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+            Wire::MixnetOverMock { .. } => crate::destination::servers::Transport::Clearnet,
+            other => other.transport(),
         }
     }
 
@@ -338,17 +332,7 @@ struct TransmitContext<'a> {
     retry_interval: std::time::Duration,
 }
 
-/// Transmit one transaction as the hedged Destination Rotation over
-/// `wire` (ADR 0011, ADR 0040): each arm runs the shared
-/// [`resilient_transmit`] policy against one drawn Destination, and the
-/// escalation widens on evidence until a Destination confirms delivery or
-/// the cap is reached.
-///
-/// The draw comes from the session's
-/// [`DestinationServerSet`](crate::destination::servers::DestinationServerSet),
-/// never a raw list, so the chain's rotation policy holds on every
-/// transport (ADR 0022 as amended 2026-09-11). A refused draw is a typed
-/// error, never a fallback.
+/// Transmits one transaction as a hedged race over the Destinations drawn for `wire`.
 async fn transmit_one_transaction(
     wire: Wire,
     servers: &crate::destination::servers::DestinationServerSet,
@@ -358,8 +342,9 @@ async fn transmit_one_transaction(
     txid: &TxId,
     context: &TransmitContext<'_>,
 ) -> Result<(String, TransmitRoute), TransmitError> {
-    let destinations = servers.draw(
+    let draw = servers.draw_reaching(
         wire.transport(),
+        wire.reach(),
         sync_indexer,
         &context.history.health().lock().expect("health mutex"),
     )?;
@@ -367,7 +352,7 @@ async fn transmit_one_transaction(
         Wire::Clearnet => {
             rotate_transmit(
                 wire,
-                &destinations,
+                &draw,
                 ClearnetTarget::lazy,
                 ClearnetTarget::failure,
                 tx_bytes,
@@ -381,7 +366,7 @@ async fn transmit_one_transaction(
         Wire::Mixnet { shared_socks5 } => {
             rotate_transmit(
                 wire,
-                &destinations,
+                &draw,
                 |destination| {
                     Ok(zingo_netutils::Socks5Indexer::new(
                         shared_socks5,
@@ -401,7 +386,7 @@ async fn transmit_one_transaction(
         Wire::MixnetOverMock { .. } => {
             rotate_transmit(
                 wire,
-                &destinations,
+                &draw,
                 ClearnetTarget::lazy,
                 ClearnetTarget::failure,
                 tx_bytes,
@@ -414,14 +399,11 @@ async fn transmit_one_transaction(
     }
 }
 
-/// The race over `destinations`: `make_target` builds one arm's target for
-/// a drawn Destination, `describe_failure` turns the arm's typed failure
-/// into the taxonomy record the escalation collects whole. Each arm is
-/// recorded into the history and attributed to the component its stage names.
+/// Races `draw`, building each arm's target with `make_target`.
 #[allow(clippy::too_many_arguments)]
 async fn rotate_transmit<T, M, F>(
     wire: Wire,
-    destinations: &[http::Uri],
+    draw: &crate::destination::servers::Draw,
     make_target: M,
     describe_failure: F,
     tx_bytes: &[u8],
@@ -472,7 +454,8 @@ where
     };
 
     escalating_transmit(
-        destinations,
+        draw.destinations(),
+        draw.preferred(),
         &mut rand::rngs::OsRng,
         MAX_TRANSMISSION_DESTINATIONS,
         run_pull,
@@ -950,12 +933,6 @@ impl LightClient {
         let indexer = self.indexer.clone();
 
         // Resolve the Mixnet Mode route once for the whole send (ADR 0011).
-        // `Clearnet` draws over direct connections; `Mixnet(conduit)` routes
-        // the escalation through the conduit's SOCKS5 proxy — with or
-        // without a sync indexer (ruling 2026-07-29); `Bootstrapping` fails
-        // closed here, before any submission, rather than leaking to
-        // clearnet. Without the `nym` feature there is no mixnet, so the
-        // wire is clearnet and demands the indexer.
         // The guard is bound for the whole send, so the conduit counts this
         // transmission as outstanding until the escalation finishes.
         #[cfg(feature = "nym")]
@@ -967,7 +944,10 @@ impl LightClient {
         #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
         let mock_arms = matches!(
             *self.mixnet_slot.lock().expect("mixnet slot mutex"),
-            crate::mixnet::MixnetSlot::AttachedForTests { .. }
+            crate::mixnet::MixnetSlot::AttachedForTests {
+                mock_arms: true,
+                ..
+            }
         );
         #[cfg(feature = "nym")]
         let wire = match transmit_dial.as_ref().map(|dial| dial.socks5()) {
@@ -1023,10 +1003,6 @@ impl LightClient {
                     WalletError::TransactionWrite(e)
                 })?;
 
-            // The retry / duplicate-in-mempool / queued-probe policy is defined
-            // once in `transmit::resilient_transmit` and runs per escalation
-            // arm on every wire. Wallet-state effects stay here, around the
-            // pure transmission.
             let dispatched = std::time::Instant::now();
             let transmit_context = TransmitContext {
                 progress: &progress,
@@ -1126,6 +1102,91 @@ impl LightClient {
 mod transmit_error_seam {
     use super::*;
 
+    #[cfg(feature = "nym")]
+    #[test]
+    fn the_route_resolver_fails_closed_in_every_state() {
+        use crate::mixnet::{MixnetNotReady, MixnetRoute};
+
+        let socks5 = crate::mocks::transmission::MOCK_SOCKS5_ADDR;
+        let ready = || {
+            Ok(MixnetRoute::Mixnet(crate::mixnet::MixnetConduit::over(
+                socks5,
+            )))
+        };
+        for has_indexer in [true, false] {
+            let dial = resolve_transmit_route(has_indexer, ready())
+                .expect("a ready conduit carries the send")
+                .expect("the mixnet route dials the conduit");
+            assert_eq!(dial.socks5(), socks5);
+        }
+        assert!(matches!(
+            resolve_transmit_route(true, Ok(MixnetRoute::Clearnet)),
+            Ok(None)
+        ));
+        assert!(matches!(
+            resolve_transmit_route(false, Ok(MixnetRoute::Clearnet)),
+            Err(LightClientError::Offline)
+        ));
+        assert!(matches!(
+            resolve_transmit_route(false, Err(MixnetNotReady::Unattached)),
+            Err(LightClientError::Offline)
+        ));
+        assert!(matches!(
+            resolve_transmit_route(true, Err(MixnetNotReady::Unattached)),
+            Err(LightClientError::MixnetNotReady(MixnetNotReady::Unattached))
+        ));
+        for has_indexer in [true, false] {
+            for not_ready in [MixnetNotReady::Bootstrapping, MixnetNotReady::Died] {
+                assert!(
+                    matches!(
+                        resolve_transmit_route(has_indexer, Err(not_ready)),
+                        Err(LightClientError::MixnetNotReady(refusal)) if refusal == not_ready
+                    ),
+                    "{not_ready:?} with an indexer: {has_indexer}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn each_wire_draws_reaches_records_and_reports_its_own_transport() {
+        use crate::destination::servers::Transport;
+
+        let host = crate::destination::Host::of_host_str("node.example");
+        assert_eq!(Wire::Clearnet.transport(), Transport::Clearnet);
+        assert_eq!(Wire::Clearnet.reach(), Transport::Clearnet);
+        assert_eq!(Wire::Clearnet.attempt_route(), AttemptRoute::Clearnet);
+        assert!(!Wire::Clearnet.is_mixnet());
+        assert_eq!(
+            Wire::Clearnet.route_to(&host),
+            TransmitRoute::Clearnet {
+                destination: "node.example".to_string()
+            }
+        );
+        #[cfg(feature = "nym")]
+        {
+            let shared_socks5 = crate::mocks::transmission::MOCK_SOCKS5_ADDR;
+            let mixnet = Wire::Mixnet { shared_socks5 };
+            assert_eq!(mixnet.transport(), Transport::Mixnet);
+            assert_eq!(mixnet.reach(), Transport::Mixnet);
+            assert_eq!(mixnet.attempt_route(), AttemptRoute::Mixnet);
+            assert!(mixnet.is_mixnet());
+            let mock = Wire::MixnetOverMock { shared_socks5 };
+            assert_eq!(mock.transport(), Transport::Mixnet);
+            assert_eq!(mock.reach(), Transport::Clearnet);
+            assert_eq!(mock.attempt_route(), AttemptRoute::Mixnet);
+            for wire in [mixnet, mock] {
+                assert_eq!(
+                    wire.route_to(&host),
+                    TransmitRoute::Mixnet {
+                        destination: "node.example".to_string(),
+                        via_socks5: shared_socks5.to_string(),
+                    }
+                );
+            }
+        }
+    }
+
     /// The chain height a seam test hands the transmitter; nothing on the
     /// refusal path reads it.
     const ARBITRARY_HEIGHT: u64 = 0;
@@ -1158,15 +1219,14 @@ mod transmit_error_seam {
         );
     }
 
-    /// HYPOTHESIS: a draw with nothing to offer refuses as the typed draw
-    /// variant before any network touch. Falsified if the refusal is any
-    /// other variant.
     #[tokio::test]
     async fn an_empty_draw_refuses_typed() {
         let history = IndexerHistoryHandle::default();
         let progress = TransmitProgressHandle::default();
         let servers = crate::destination::servers::DestinationServerSet::for_chain(
             &ChainType::Regtest(crate::ActivationHeights::default()),
+            None,
+            Vec::new(),
         );
         let refusal = transmit_one_transaction(
             Wire::Clearnet,
@@ -1185,7 +1245,9 @@ mod transmit_error_seam {
         .expect_err("no indexer must refuse");
         assert!(matches!(
             refusal,
-            TransmitError::Draw(crate::destination::servers::NoEligibleDestinations::NoSyncIndexer)
+            TransmitError::Draw(crate::destination::servers::NoEligibleDestinations::Empty(
+                crate::destination::servers::Transport::Clearnet
+            ))
         ));
     }
 }

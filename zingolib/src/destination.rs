@@ -1,11 +1,4 @@
-//! The Destination vocabulary: the [`Correspondable`] party a Transmission
-//! addresses, its endpoint-grain [`Host`], and the accountable [`Operator`]
-//! behind it.
-//!
-//! The Destinations a session may draw from live in [`servers`], derived
-//! from the indexer registry per chain; their per-session standing lives
-//! in [`health`]; the hedged race a Transmission runs over a draw lives in
-//! [`rotation`].
+//! The Destination vocabulary: [`Correspondable`], [`Host`], and [`Operator`].
 
 #![forbid(unsafe_code)]
 

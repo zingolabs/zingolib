@@ -1,5 +1,4 @@
-//! How migration parts choose their wire (ADR 0011, amendment 2026-07-23;
-//! ADR 0022 as amended 2026-09-11).
+//! How migration parts choose their wire (ADR 0011, amendment 2026-07-23).
 //!
 //! Migration-part transmissions obey the Mixnet Mode policy like every other
 //! transmitting surface: while the mode is on they travel ONLY over the
@@ -7,16 +6,6 @@
 //! never falling back to clearnet), and clearnet carries them only when the
 //! user deliberately toggled the mode off for the session, or in a build
 //! compiled without the `nym` feature.
-//!
-//! On either wire, each part is submitted to one Destination drawn at
-//! random per submission (Destination Rotation for migration parts) from
-//! the session's Destination Server set under the chain's rotation policy.
-//! On mainnet the synchronization endpoint's *operator* is forbidden as a
-//! target: a configured `migration_transmission_uri` on the sync operator's
-//! domain is refused, and the draw excludes that operator through the same
-//! set the send escalation draws from, so a sync connection to a regional
-//! variant (`eu.zec.rocks`) still bars the operator's Destination
-//! (`zec.rocks`).
 
 use crate::wallet::migration::transmission::{
     PartTransmissionError, TransmissionClient, TransmissionReceipt,
@@ -30,23 +19,21 @@ use zcash_primitives::transaction::TxId;
 
 use super::transmission_grpc::GrpcTransmissionClient;
 
-use crate::destination::servers::{DestinationServerSet, RotationPolicy, Transport};
+use crate::destination::servers::{
+    DestinationServerSet, Location, NoEligibleDestinations, Transport, Trust,
+};
 use crate::lightclient::error::LightClientError;
 
-/// The wire the Mixnet Mode policy resolved for this session's parts.
+/// The wire migration parts travel.
 pub enum MigrationWire {
-    /// Direct submission, the deliberate mixnet opt-out, or a build
-    /// without the `nym` feature.
+    /// Direct submission.
     Clearnet,
-    /// Submission through the local SOCKS5 proxy. The conduit's guard is
-    /// held for the client's whole life because the client dials on every
-    /// submission (ADR 0048).
+    /// Submission through the local SOCKS5 proxy.
     #[cfg(feature = "nym")]
     Mixnet(zingo_netutils::conduit::ConduitDial),
 }
 
 impl MigrationWire {
-    /// The reachability a draw over this wire needs.
     pub(crate) fn transport(&self) -> Transport {
         match self {
             MigrationWire::Clearnet => Transport::Clearnet,
@@ -56,25 +43,17 @@ impl MigrationWire {
     }
 }
 
-/// The [`TransmissionClient`] the Mixnet Mode policy resolved for this
-/// session: one randomly drawn Destination per submission, over the wire
-/// the route chose, and nothing else. The ZIP 318 no-synchronization
-/// guarantee holds structurally here: the client holds no sync channel.
+/// The [`TransmissionClient`] the Mixnet Mode policy resolved for this session.
 pub struct RoutedTransmissionClient {
     wire: MigrationWire,
-    /// The eligible targets ([`candidates`]): nonempty, drawn under the
-    /// chain's rotation policy.
     candidates: Vec<http::Uri>,
 }
 
 impl RoutedTransmissionClient {
-    /// A client over `wire`, drawing each submission's target from
-    /// `candidates`.
     pub(crate) fn new(wire: MigrationWire, candidates: Vec<http::Uri>) -> Self {
         RoutedTransmissionClient { wire, candidates }
     }
 
-    /// Whether parts travel the mixnet.
     #[cfg(all(test, feature = "nym"))]
     pub(crate) fn is_mixnet(&self) -> bool {
         !matches!(self.wire, MigrationWire::Clearnet)
@@ -147,13 +126,7 @@ async fn submit_over_socks5(
     })
 }
 
-/// The targets migration parts may go to over `transport`: the configured
-/// `migration_transmission_uri` alone when set, otherwise the session's
-/// Destination Server set drawn under its policy. On mainnet the
-/// synchronization endpoint's operator is forbidden either way (ADR 0022),
-/// so no server correlates a wallet's sync stream with its migration
-/// cohort, and a draw the exclusion empties refuses with a typed error
-/// rather than falling back.
+/// The targets migration parts may go to over `transport`.
 pub(crate) fn candidates(
     configured: Option<http::Uri>,
     sync_indexer: Option<&http::Uri>,
@@ -164,22 +137,29 @@ pub(crate) fn candidates(
     use crate::destination::same_operator;
 
     if let Some(configured) = configured {
-        let shares_sync_operator = servers.policy() == RotationPolicy::ExcludeSyncOperator
-            && configured
-                .host()
-                .zip(sync_indexer.and_then(http::Uri::host))
-                .is_some_and(|(candidate, sync)| same_operator(candidate, sync));
-        if shares_sync_operator {
+        let shares_untrusted_sync_operator = transport == Transport::Mixnet
+            && sync_indexer.is_some_and(|sync| {
+                servers.trust_of(sync) == Trust::Untrusted
+                    && configured
+                        .host()
+                        .zip(sync.host())
+                        .is_some_and(|(candidate, sync)| same_operator(candidate, sync))
+            });
+        if shares_untrusted_sync_operator {
             return Err(
                 LightClientError::MigrationTransmissionTargetIsSyncEndpoint {
                     host: configured.host().unwrap_or_default().to_string(),
                 },
             );
         }
+        if transport == Transport::Mixnet && Location::of_uri(&configured) == Location::Local {
+            return Err(NoEligibleDestinations::Empty(Transport::Mixnet).into());
+        }
         return Ok(vec![configured]);
     }
     servers
         .draw(transport, sync_indexer, health)
+        .map(|draw| draw.destinations().to_vec())
         .map_err(LightClientError::from)
 }
 
@@ -187,69 +167,65 @@ pub(crate) fn candidates(
 mod tests {
     use super::*;
     use crate::destination::health::Health;
-    use zingo_netutils::indexers::{Indexer, IndexerChain};
+    use crate::destination::servers::IndexerConfig;
 
     fn uri(text: &str) -> http::Uri {
         text.parse().expect("static uri")
     }
 
-    fn entry(uri: &'static str) -> Indexer {
-        Indexer {
-            uri,
-            chain: IndexerChain::Main,
-            region_key: "",
-            obsolete: false,
-        }
-    }
-
     fn mainnet_set() -> DestinationServerSet {
-        DestinationServerSet::from_entries(
-            RotationPolicy::ExcludeSyncOperator,
-            &[
-                entry("https://zec.rocks:443"),
-                entry("https://other.example:443"),
-                entry("https://third.example:443"),
+        DestinationServerSet::from_uris(
+            Trust::Untrusted,
+            [
+                uri("https://zec.rocks:443"),
+                uri("https://other.example:443"),
+                uri("https://third.example:443"),
             ],
         )
     }
 
-    /// HYPOTHESIS: exclusion is by operator, not exact host (ADR 0022). A
-    /// sync connection to a regional variant must still bar the operator's
-    /// listed Destination, on both transports. Falsified if the draw
-    /// weakens to exact-host matching, the regression PR #2527's review
-    /// found on this path.
     #[test]
-    fn the_sync_operators_regional_variant_is_excluded_from_the_draw() {
+    fn the_sync_operators_regional_variant_is_excluded_over_the_mixnet() {
         let sync = uri("https://eu.zec.rocks:443");
-        for transport in [Transport::Mixnet, Transport::Clearnet] {
-            let drawn = candidates(
-                None,
-                Some(&sync),
-                &mainnet_set(),
-                transport,
-                &Health::default(),
-            )
-            .expect("two remain");
-            assert_eq!(
-                drawn,
-                vec![
-                    uri("https://other.example:443"),
-                    uri("https://third.example:443")
-                ]
-            );
-        }
+        let drawn = candidates(
+            None,
+            Some(&sync),
+            &mainnet_set(),
+            Transport::Mixnet,
+            &Health::default(),
+        )
+        .expect("two remain");
+        assert_eq!(
+            drawn,
+            vec![
+                uri("https://other.example:443"),
+                uri("https://third.example:443")
+            ]
+        );
     }
 
-    /// HYPOTHESIS: a configured transmission target equal to the sync endpoint
-    /// is refused outright on mainnet, not silently accepted.
     #[test]
-    fn a_configured_target_on_the_sync_host_is_refused() {
+    fn clearnet_parts_go_to_the_sync_indexer() {
+        let sync = uri("https://eu.zec.rocks:443");
+        let drawn = candidates(
+            None,
+            Some(&sync),
+            &mainnet_set(),
+            Transport::Clearnet,
+            &Health::default(),
+        )
+        .expect("the sync indexer broadcasts");
+        assert_eq!(drawn, vec![sync]);
+    }
+
+    #[test]
+    fn a_configured_target_on_the_untrusted_sync_host_is_refused_over_the_mixnet() {
         let sync = uri("https://sync.example:443");
         let refused = candidates(
             Some(uri("https://sync.example:9067")),
             Some(&sync),
             &mainnet_set(),
-            Transport::Clearnet,
+            Transport::Mixnet,
             &Health::default(),
         );
         assert!(matches!(
@@ -258,11 +234,8 @@ mod tests {
         ));
     }
 
-    /// HYPOTHESIS: the configured-target refusal is also operator-level: a
-    /// `migration_transmission_uri` on the sync operator's regional variant is
-    /// refused, since both hosts are the same accumulating party (ADR 0022).
     #[test]
-    fn a_configured_target_on_the_sync_operators_variant_is_refused() {
+    fn a_configured_target_on_the_untrusted_sync_operators_variant_is_refused() {
         let sync = uri("https://zec.rocks:443");
         let refused = candidates(
             Some(uri("https://eu.zec.rocks:443")),
@@ -277,26 +250,60 @@ mod tests {
         ));
     }
 
-    /// A test chain never refuses a configured target on the sync
-    /// operator: its policy allows the operator, so the refusal would bar
-    /// the only server there is.
     #[test]
-    fn a_test_chain_accepts_a_configured_target_on_the_sync_operator() {
-        let sync = uri("https://testnet.zec.rocks:443");
-        let set = DestinationServerSet::from_entries(RotationPolicy::IncludeSyncIndexer, &[]);
-        let drawn = candidates(
-            Some(uri("https://testnet.zec.rocks:443")),
+    fn a_configured_target_on_the_sync_host_is_used_when_the_rule_allows() {
+        let sync = uri("https://node.mine.example:443");
+        let target = uri("https://node.mine.example:9067");
+        let clearnet = candidates(
+            Some(target.clone()),
             Some(&sync),
-            &set,
+            &mainnet_set(),
+            Transport::Clearnet,
+            &Health::default(),
+        )
+        .expect("clearnet keeps the target");
+        assert_eq!(clearnet, vec![target.clone()]);
+        let trusted =
+            mainnet_set().with_indexer(IndexerConfig::new(sync.clone()).trust(Trust::Trusted));
+        let mixnet = candidates(
+            Some(target.clone()),
+            Some(&sync),
+            &trusted,
             Transport::Mixnet,
             &Health::default(),
         )
-        .expect("the test chain keeps its one server");
-        assert_eq!(drawn, vec![sync]);
+        .expect("a trusted sync host allows its own target");
+        assert_eq!(mixnet, vec![target]);
     }
 
-    /// A configured target on a different host is the sole candidate. The
-    /// set is not consulted.
+    #[test]
+    fn a_local_configured_target_is_refused_over_the_mixnet_only() {
+        let lan = uri("http://192.168.1.10:9067");
+        assert!(matches!(
+            candidates(
+                Some(lan.clone()),
+                None,
+                &mainnet_set(),
+                Transport::Mixnet,
+                &Health::default(),
+            ),
+            Err(LightClientError::NoEligibleDestination(
+                NoEligibleDestinations::Empty(Transport::Mixnet)
+            ))
+        ));
+        assert_eq!(
+            candidates(
+                Some(lan.clone()),
+                None,
+                &mainnet_set(),
+                Transport::Clearnet,
+                &Health::default(),
+            )
+            .expect("clearnet reaches the local target"),
+            vec![lan]
+        );
+    }
+
     #[test]
     fn a_distinct_configured_target_is_the_sole_candidate() {
         let sync = uri("https://sync.example:443");
@@ -304,14 +311,13 @@ mod tests {
             Some(uri("https://dedicated.example:443")),
             Some(&sync),
             &mainnet_set(),
-            Transport::Clearnet,
+            Transport::Mixnet,
             &Health::default(),
         )
         .expect("the override stands alone");
         assert_eq!(drawn, vec![uri("https://dedicated.example:443")]);
     }
 
-    /// With no sync endpoint configured there is nothing to exclude.
     #[test]
     fn no_sync_indexer_excludes_nothing() {
         let drawn = candidates(
@@ -325,15 +331,11 @@ mod tests {
         assert_eq!(drawn.len(), 3);
     }
 
-    /// HYPOTHESIS: emptying the draw is a typed refusal, never an empty
-    /// silent no-op that would strand due parts without a diagnosis.
     #[test]
     fn an_emptied_draw_is_a_typed_refusal() {
         let sync = uri("https://only.example:443");
-        let set = DestinationServerSet::from_entries(
-            RotationPolicy::ExcludeSyncOperator,
-            &[entry("https://only.example:443")],
-        );
+        let set =
+            DestinationServerSet::from_uris(Trust::Untrusted, [uri("https://only.example:443")]);
         let refused = candidates(
             None,
             Some(&sync),
@@ -349,12 +351,10 @@ mod tests {
         ));
     }
 
-    /// The production set draws the registry itself: syncing against a
-    /// registry operator's regional variant leaves the rest of the set,
-    /// with that operator absent.
     #[test]
     fn the_mainnet_set_draws_the_registry_minus_the_sync_operator() {
-        let set = DestinationServerSet::for_chain(&crate::config::ChainType::Mainnet);
+        let set =
+            DestinationServerSet::for_chain(&crate::config::ChainType::Mainnet, None, Vec::new());
         let sync = uri("https://eu.zec.rocks:443");
         let drawn = candidates(
             None,
@@ -364,7 +364,10 @@ mod tests {
             &Health::default(),
         )
         .expect("the registry minus one operator");
-        assert_eq!(drawn.len(), set.reachable(Transport::Mixnet).len() - 1);
+        assert_eq!(
+            drawn.len(),
+            set.registry_reachable(Transport::Mixnet).len() - 1
+        );
         assert!(
             drawn
                 .iter()

@@ -1,6 +1,5 @@
 //! Censorship-resistant transmission: a hedged Destination Rotation over
-//! the session's Destination Server set, on whichever wire the injected
-//! pull runner dials (clearnet or the mixnet tunnel).
+//! drawn Destinations.
 //!
 //! The adversary is a Destination that suppresses a send (accepting the
 //! connection but declining to relay, stalling silently, or misreporting
@@ -100,9 +99,10 @@ impl<E: std::fmt::Display + std::fmt::Debug> std::error::Error for EscalationErr
 /// Transmit to `indexers` as a hedged Destination Rotation, returning the
 /// server-reported txid of the first Destination to confirm delivery.
 /// `run_pull` submits to one indexer and resolves to `Ok(server_txid)` on
-/// confirmed delivery or `Err(msg)` otherwise. `rng` chooses the random
-/// order (Destination Rotation), and `cap` bounds the distinct
-/// Destinations contacted.
+/// confirmed delivery or `Err(msg)` otherwise. The first `preferred`
+/// indexers are contacted in the order given; `rng` shuffles the rest
+/// (Destination Rotation), and `cap` bounds the distinct Destinations
+/// contacted.
 ///
 /// One pull launches first; a further pull launches only after
 /// [`TRANSMISSION_HEDGE_INTERVAL`] of silence or immediately on a pull's
@@ -116,6 +116,7 @@ impl<E: std::fmt::Display + std::fmt::Debug> std::error::Error for EscalationErr
 /// [`RaceProgress`](zingo_netutils::arm_race::RaceProgress) snapshot for display.
 pub(crate) async fn escalating_transmit<A, F, E, R, P, T>(
     indexers: &[Uri],
+    preferred: usize,
     rng: &mut R,
     cap: usize,
     run_pull: A,
@@ -132,10 +133,8 @@ where
         return Err(EscalationError::NoIndexers);
     }
 
-    // One shuffle yields both the initial random pick and a repetition-free
-    // random escalation order: no indexer is contacted twice.
     let mut order: Vec<usize> = (0..indexers.len()).collect();
-    order.shuffle(rng);
+    order[preferred.min(indexers.len())..].shuffle(rng);
 
     let host_of = |arm: usize| {
         let indexer = &indexers[order[arm]];
@@ -339,6 +338,7 @@ mod tests {
         let mock = MockArms::new(&[]);
         let err = escalating_transmit(
             &[],
+            0,
             &mut StdRng::seed_from_u64(1),
             6,
             |u| mock.run(u),
@@ -363,6 +363,7 @@ mod tests {
         ]);
         let ok = escalating_transmit(
             &indexers,
+            0,
             &mut StdRng::seed_from_u64(7),
             6,
             |u| mock.run(u),
@@ -400,6 +401,7 @@ mod tests {
 
         let ok = escalating_transmit(
             &indexers,
+            0,
             &mut StdRng::seed_from_u64(seed),
             6,
             |u| mock.run(u),
@@ -433,6 +435,7 @@ mod tests {
 
         let err = escalating_transmit(
             &indexers,
+            0,
             &mut StdRng::seed_from_u64(3),
             MAX_TRANSMISSION_DESTINATIONS,
             |u| mock.run(u),
@@ -461,6 +464,7 @@ mod tests {
 
         let err = escalating_transmit(
             &indexers,
+            0,
             &mut StdRng::seed_from_u64(5),
             6,
             |u| mock.run(u),
@@ -489,6 +493,7 @@ mod tests {
 
         let err = escalating_transmit(
             &indexers,
+            0,
             &mut StdRng::seed_from_u64(5),
             6,
             |u| mock.run(u),
@@ -529,6 +534,7 @@ mod tests {
         let lines = Mutex::new(Vec::<String>::new());
         let _ = escalating_transmit(
             &indexers,
+            0,
             &mut StdRng::seed_from_u64(11),
             MAX_TRANSMISSION_DESTINATIONS,
             |u| mock.run(u),
@@ -569,6 +575,7 @@ mod tests {
             OBSERVATION_BUDGET,
             escalating_transmit(
                 &indexers,
+                0,
                 &mut StdRng::seed_from_u64(2),
                 MAX_TRANSMISSION_DESTINATIONS,
                 |u| mock.run(u),
@@ -602,6 +609,7 @@ mod tests {
         let first_run = MockArms::new(&scripts);
         let _ = escalating_transmit(
             &indexers,
+            0,
             &mut StdRng::seed_from_u64(99),
             6,
             |u| first_run.run(u),
@@ -612,6 +620,7 @@ mod tests {
         let second_run = MockArms::new(&scripts);
         let _ = escalating_transmit(
             &indexers,
+            0,
             &mut StdRng::seed_from_u64(99),
             6,
             |u| second_run.run(u),
@@ -624,5 +633,33 @@ mod tests {
             second_run.contacted()[0],
             "the seed fixes the opening Destination"
         );
+    }
+
+    #[tokio::test]
+    async fn the_preferred_head_opens_the_race_in_order() {
+        let hosts = ["a", "b", "c", "d", "e"];
+        let indexers = uris(&hosts);
+        let scripts: Vec<(&str, Result<&str, &str>)> = vec![
+            ("a", Err("suppressed")),
+            ("b", Ok("txid")),
+            ("c", Ok("txid")),
+            ("d", Ok("txid")),
+            ("e", Ok("txid")),
+        ];
+        for seed in 0..8 {
+            let mock = MockArms::new(&scripts);
+            let ok = escalating_transmit(
+                &indexers,
+                2,
+                &mut StdRng::seed_from_u64(seed),
+                MAX_TRANSMISSION_DESTINATIONS,
+                |u| mock.run(u),
+                |_| (),
+            )
+            .await
+            .expect("the second preferred indexer accepts");
+            assert_eq!(ok, "txid");
+            assert_eq!(mock.contacted(), vec!["a", "b"], "seed {seed}");
+        }
     }
 }

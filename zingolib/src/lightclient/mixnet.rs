@@ -978,12 +978,28 @@ impl LightClient {
     /// indexer's channel without ever dialing the address.
     #[cfg(any(test, feature = "testutils"))]
     pub async fn switch_on_mixnet_for_tests(&mut self, socks5_addr: std::net::SocketAddr) {
+        self.attach_mixnet_for_tests(socks5_addr, true).await;
+    }
+
+    /// Switch Mixnet Mode on over the SOCKS5 relay at `socks5_addr`, with real mixnet arms.
+    #[cfg(any(test, feature = "testutils"))]
+    pub async fn switch_on_mixnet_through_for_tests(&mut self, socks5_addr: std::net::SocketAddr) {
+        self.attach_mixnet_for_tests(socks5_addr, false).await;
+    }
+
+    #[cfg(any(test, feature = "testutils"))]
+    async fn attach_mixnet_for_tests(
+        &mut self,
+        socks5_addr: std::net::SocketAddr,
+        mock_arms: bool,
+    ) {
         self.vacate_mixnet_slot().await;
         swap_slot(
             &self.mixnet_slot,
             crate::mixnet::MixnetSlot::AttachedForTests {
                 socks5_addr,
                 conduit: crate::mixnet::MixnetConduit::over(socks5_addr),
+                mock_arms,
             },
         );
         // Every slot transition publishes (the one-shared-watch invariant),
@@ -1070,7 +1086,7 @@ impl LightClient {
             .map_or_else(
                 || {
                     self.destination_servers
-                        .reachable(crate::destination::servers::Transport::Mixnet)
+                        .registry_reachable(crate::destination::servers::Transport::Mixnet)
                 },
                 |uri| vec![uri],
             )

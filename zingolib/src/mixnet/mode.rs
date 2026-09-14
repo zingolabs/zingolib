@@ -119,16 +119,16 @@ pub(crate) enum MixnetSlot {
     /// A stand-in transport for chain-mock tests: reports
     /// [`Indicator::Ready`] at the given address without a child, watcher,
     /// or probe, so the tests exercise the fail-closed route resolver and
-    /// the escalation orchestration for real. Only
-    /// `LightClient::switch_on_mixnet_for_tests` constructs it, and the
-    /// transmit path pairs it with arms that submit over the mock indexer's
-    /// channel — the address is never dialed.
+    /// the escalation orchestration for real.
     #[cfg(any(test, feature = "testutils"))]
     AttachedForTests {
         /// The address the stand-in publishes into its status.
         socks5_addr: std::net::SocketAddr,
         /// The conduit the route resolver hands to Ready-mode surfaces.
         conduit: crate::mixnet::MixnetConduit,
+        /// Whether sends submit over the mock indexer's channel instead of the
+        /// SOCKS5 wire.
+        mock_arms: bool,
     },
 }
 

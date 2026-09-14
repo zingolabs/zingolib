@@ -83,8 +83,7 @@ pub enum LightClientError {
         /// The host both endpoints share.
         host: String,
     },
-    /// No Destination remains to carry migration parts, with the typed
-    /// refusal saying whether exclusion or an empty set emptied the draw.
+    /// No Destination remains to carry migration parts.
     #[error(transparent)]
     NoEligibleDestination(#[from] crate::destination::servers::NoEligibleDestinations),
 }

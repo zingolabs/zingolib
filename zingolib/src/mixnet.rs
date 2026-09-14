@@ -4,8 +4,6 @@
 //! This module holds the mixnet control and policy logic: the five-state
 //! [`Indicator`], the fail-closed [`route`] resolver shared by every mixnet-only
 //! surface, and the [`supervisor`] that owns the spawned `nym-proxy` child.
-//! The Destination Rotation a send runs over this transport lives in
-//! `crate::destination::rotation`, because it runs over clearnet too.
 #![forbid(unsafe_code)]
 #![cfg(feature = "nym")]
 
