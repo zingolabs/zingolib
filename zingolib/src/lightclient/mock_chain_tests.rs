@@ -1445,6 +1445,7 @@ mod strict_chain {
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     use pepper_sync::wallet::KeyIdInterface;
+    use pepper_sync::wallet::traits::SyncWallet;
 
     use crate::lightclient::LightClient;
     use crate::testutils::chain_generics::fixtures;
@@ -2253,5 +2254,202 @@ mod strict_chain {
             ConfirmationStatus::Confirmed(_)
         ));
         check_client_balances!(sender, i: expected o: 0 s: 0 t: 0);
+    }
+
+    const HELD_FETCH: Duration = Duration::from_secs(8);
+    const TRANSACTION_FETCH_FAILURES: usize = 8;
+    const HOLD_POLL: Duration = Duration::from_millis(10);
+    const HOLD_WAIT_LIMIT: Duration = Duration::from_secs(4);
+    const BLOCKS_BELOW_EXPIRY_AT_LAST_SYNC: u32 = 5;
+    const REORG_VERIFY_BLOCKS: u32 = 10;
+
+    async fn fully_scanned_height(client: &LightClient) -> BlockHeight {
+        client
+            .wallet()
+            .read()
+            .await
+            .get_sync_state()
+            .unwrap()
+            .fully_scanned_height()
+            .unwrap()
+    }
+
+    async fn wait_until_scanned_through(client: &LightClient, height: BlockHeight) {
+        let started = tokio::time::Instant::now();
+        while fully_scanned_height(client).await < height {
+            assert!(
+                started.elapsed() < HOLD_WAIT_LIMIT,
+                "the sync engine did not scan through {height} in time"
+            );
+            tokio::time::sleep(HOLD_POLL).await;
+        }
+    }
+
+    async fn wait_until_fetch_is_held(net: &MockNet) {
+        let started = tokio::time::Instant::now();
+        while net.chain.read().await.faults.pending(Rpc::Transaction) > 0 {
+            assert!(
+                started.elapsed() < HOLD_WAIT_LIMIT,
+                "the sync engine did not request the transaction in time"
+            );
+            tokio::time::sleep(HOLD_POLL).await;
+        }
+    }
+
+    /// Syncs a recipient whose last known chain height is a few blocks below
+    /// the expiry of a funding transaction that is still in the mempool.
+    async fn mempool_transaction_near_expiry(
+        net: &mut MockNet,
+    ) -> (LightClient, String, TxId, BlockHeight) {
+        let mut recipient = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .await;
+        let recipient_ua =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.chain.write().await.mine_empty_blocks(1);
+        recipient.sync_and_await().await.unwrap();
+
+        let funding = faucet_funding_transaction(vec![(&recipient_ua, FUNDING, None)]).await;
+        let expiry = expiry_of_bytes(net, &funding);
+        {
+            let mut chain = net.chain.write().await;
+            chain.enter_mempool(funding);
+            let last_sync_height = u32::from(expiry) - BLOCKS_BELOW_EXPIRY_AT_LAST_SYNC;
+            let tip = chain.tip();
+            assert!(last_sync_height > tip);
+            chain.mine_empty_blocks(last_sync_height - tip);
+        }
+        recipient.sync_and_await().await.unwrap();
+        let txid = pending_txid(&recipient).await;
+        assert!(matches!(
+            status_of(&recipient, &txid).await,
+            ConfirmationStatus::Mempool(_)
+        ));
+        (recipient, recipient_ua, txid, expiry)
+    }
+
+    /// Mines past `expiry`, then funds `recipient_ua` in a block above the
+    /// reorg verification range so that block is scanned by a separate task
+    /// after the expiry height is already scanned.
+    async fn mine_past_expiry_and_fund_above_verify_range(
+        net: &MockNet,
+        recipient_ua: &str,
+        expiry: BlockHeight,
+    ) {
+        {
+            let mut chain = net.chain.write().await;
+            let verify_end =
+                u32::from(expiry) - BLOCKS_BELOW_EXPIRY_AT_LAST_SYNC + REORG_VERIFY_BLOCKS;
+            let tip = chain.tip();
+            chain.mine_empty_blocks(verify_end - tip);
+            assert_eq!(chain.mempool_len(), 0);
+        }
+        fund(net, vec![(recipient_ua, FUNDING, None)], 0).await;
+    }
+
+    #[tokio::test]
+    async fn stopped_session_that_scanned_past_expiry_fails_the_transaction() {
+        let mut net = MockNet::launch().await;
+        let (mut recipient, recipient_ua, txid, expiry) =
+            mempool_transaction_near_expiry(&mut net).await;
+        mine_past_expiry_and_fund_above_verify_range(&net, &recipient_ua, expiry).await;
+        net.chain
+            .write()
+            .await
+            .faults
+            .inject(Rpc::Transaction, Fault::Delay(HELD_FETCH));
+
+        recipient.sync().await.unwrap();
+        wait_until_scanned_through(&recipient, expiry).await;
+        recipient.stop_sync().unwrap();
+        recipient.await_sync().await.unwrap();
+        assert!(fully_scanned_height(&recipient).await >= expiry);
+        assert!(
+            matches!(
+                status_of(&recipient, &txid).await,
+                ConfirmationStatus::Failed(_)
+            ),
+            "a stopped session scanned past the expiry height without failing the transaction"
+        );
+
+        recipient.sync_and_await().await.unwrap();
+        assert!(matches!(
+            status_of(&recipient, &txid).await,
+            ConfirmationStatus::Failed(_)
+        ));
+        check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
+    }
+
+    #[tokio::test]
+    async fn failed_session_that_scanned_past_expiry_fails_the_transaction() {
+        let mut net = MockNet::launch().await;
+        let (mut recipient, recipient_ua, txid, expiry) =
+            mempool_transaction_near_expiry(&mut net).await;
+        mine_past_expiry_and_fund_above_verify_range(&net, &recipient_ua, expiry).await;
+        {
+            let mut chain = net.chain.write().await;
+            for _ in 0..TRANSACTION_FETCH_FAILURES {
+                chain.faults.inject(
+                    Rpc::Transaction,
+                    Fault::Fail(Code::Unavailable, "mock outage".to_string()),
+                );
+            }
+        }
+
+        assert!(recipient.sync_and_await().await.is_err());
+        assert!(fully_scanned_height(&recipient).await >= expiry);
+        assert!(
+            matches!(
+                status_of(&recipient, &txid).await,
+                ConfirmationStatus::Failed(_)
+            ),
+            "a failed session scanned past the expiry height without failing the transaction"
+        );
+
+        net.chain.write().await.faults.clear(Rpc::Transaction);
+        recipient.sync_and_await().await.unwrap();
+        assert!(matches!(
+            status_of(&recipient, &txid).await,
+            ConfirmationStatus::Failed(_)
+        ));
+        check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
+    }
+
+    #[tokio::test]
+    async fn stopped_session_does_not_fail_a_transaction_mined_in_an_unscanned_block() {
+        let mut net = MockNet::launch().await;
+        let (mut recipient, _, txid, expiry) = mempool_transaction_near_expiry(&mut net).await;
+        {
+            let mut chain = net.chain.write().await;
+            let tip = chain.tip();
+            chain.mine_empty_blocks(u32::from(expiry) - 1 - tip);
+            chain.mine_mempool();
+            assert_eq!(chain.tip(), u32::from(expiry));
+        }
+        net.chain
+            .write()
+            .await
+            .faults
+            .inject(Rpc::Transaction, Fault::Delay(HELD_FETCH));
+
+        recipient.sync().await.unwrap();
+        wait_until_fetch_is_held(&net).await;
+        recipient.stop_sync().unwrap();
+        recipient.await_sync().await.unwrap();
+        assert!(fully_scanned_height(&recipient).await < expiry);
+        assert!(
+            !matches!(
+                status_of(&recipient, &txid).await,
+                ConfirmationStatus::Failed(_)
+            ),
+            "a transaction mined in an unscanned block was marked Failed by a stopped session"
+        );
+
+        recipient.sync_and_await().await.unwrap();
+        assert!(matches!(
+            status_of(&recipient, &txid).await,
+            ConfirmationStatus::Confirmed(_)
+        ));
+        check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
     }
 }
