@@ -1362,7 +1362,7 @@ mod tests {
         }
     }
 
-    /// HYPOTHESIS: stop() on an attached transport is a deliberate teardown
+    /// stop() on an attached transport is a deliberate teardown
     /// to Unattached — never Died, and never the wallet's SwitchedOff.
     /// Falsified if a live attachment reports anything but the transport
     /// lifecycle states. Address validation lives at the consumer seam,
@@ -1387,7 +1387,7 @@ mod tests {
         proxy.stop().await;
     }
 
-    /// HYPOTHESIS: an attached endpoint that dies refuses the route — the
+    /// Asserts that an attached endpoint that dies refuses the route — the
     /// fail-closed invariant holds for the attached transport end to end.
     /// Attaches to a refusing localhost port, waits for the real readiness
     /// gate to land Died, and resolves the route. Falsified if the route
@@ -1395,7 +1395,7 @@ mod tests {
     #[tokio::test]
     async fn an_attached_endpoint_that_dies_refuses_the_route() {
         use crate::mixnet::route::MixnetNotReady;
-        use crate::mixnet::route::resolve_route;
+        use crate::mixnet::route::resolve_mixnet_only_route;
 
         // Port 9 (discard) on localhost refuses; the readiness round trip
         // fails fast and the driver lands Died.
@@ -1414,7 +1414,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         assert_eq!(
-            resolve_route(
+            resolve_mixnet_only_route(
                 proxy.mode(),
                 proxy
                     .socks5_addr()

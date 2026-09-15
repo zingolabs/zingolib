@@ -515,3 +515,43 @@ route as a two-variant enum, mixnet with its SOCKS5 endpoint or clearnet,
 replacing the tunnel-endpoint string, and `PriceFetchRequiresMixnet`
 leaves the error surface as unreachable. `probe_destinations` remains
 mixnet-only, since its subject is the mixnet transport itself.
+
+## Amendment (2026-09-11): the send route splits from the price route
+
+The one route resolver, keyed on the transport state alone, is replaced
+by two. The mobile wrapper needs a per-session choice of where a
+transaction travels, changeable while the client runs, and it needs the
+price display to keep working through the mixnet whatever that choice is.
+Encoding the choice in the transport state (`SwitchedOff`) tied the two
+surfaces together and cost the consumer a transport teardown to reach
+clearnet, so the choice moves off the transport and onto the client.
+
+The amended rule. The client holds a `TransmitPolicy`, `Mixnet` or
+`Clearnet`, readable and settable through `&self` at any time and never
+persisted. Every session starts under `Mixnet`, since the absence of a
+choice is not consent to clearnet. The price fetch and the liveness probe
+are mixnet-only: `resolve_mixnet_only_route` yields the session's conduit
+while the transport is `Ready` and refuses in every other state, and the
+policy never reaches it. Transmission and migration parts follow
+`resolve_send_route`: under `Clearnet` the route is clearnet at once,
+whatever the transport state, and under `Mixnet` it is exactly the
+mixnet-only outcome. `SwitchedOff` stays in the state set because the
+startup opt-out and the in-session disable still land there, but both
+resolvers read it as a missing transport, so the 2026-08-26 amendment's
+clearnet price tier is retired and `PriceFetchRoute::Clearnet` leaves the
+attestation. Two user acts set the policy besides the setter. The
+startup opt-out (`OptedOutThisSession`) lands `SwitchedOff` and
+`Clearnet` together, so an opted-out session transmits over the indexer
+as ADR 0024 promised. Every enable (`enable_mixnet`,
+`enable_mixnet_via_host`, `attach_mixnet`) sets `Mixnet` the moment it
+is asked for, before the transport exists, so a send during the
+bootstrap refuses as `Bootstrapping` rather than travelling the clearnet
+route the user has just turned away from. A failed enable restores the
+policy the user had before: a session that never chose clearnet keeps
+refusing, and a session that chose clearnet keeps sending there, because
+an attempt that did not take changed nothing the user asked for. A
+transport that dies after a settled enable keeps the `Mixnet` policy, so
+sends refuse as `Died` until the user acts. `disable_mixnet` alone is a
+transport act and leaves the policy where it stands. The session driver, the status channel, and the CLI's
+`network` family are unchanged, and the CLI does not yet expose the
+policy. The state by policy matrix is pinned in `mixnet::route`'s tests.

@@ -19,6 +19,14 @@ trust. Above the seam, "mixnet" names the wallet's transport domain:
 channel, the probes, and the consent semantics.
 _Avoid_: "nym" for the wallet-side domain; "mixnet" for the vendor stack
 
+**Transmit policy** (ratified 2026-09-11):
+The client's per-session choice of where a transaction travels,
+`Mixnet` or `Clearnet`, held beside the transport slot and never in it.
+Read by the send route alone: the price fetch and the probe are
+mixnet-only and never consult it.
+_Avoid_: "switched off" for the clearnet choice; that names a transport
+state, which both routes read as a missing transport
+
 **Mobile platform** (ratified 2026-08-11):
 The embedding application layer on a subprocess-forbidding OS — the
 mobile app hosting the proxy shim — which implements `ProxyHost` below

@@ -903,8 +903,8 @@ impl LightClient {
     }
 
     /// The transmit-only client parts are submitted through, resolved by the
-    /// Mixnet Mode policy (ADR 0011, amendment 2026-07-23) like every other
-    /// transmitting surface.
+    /// session's transmit policy (ADR 0011, amendments 2026-07-23 and
+    /// 2026-09-11) like every other transmitting surface.
     fn migration_transmission_client(
         &self,
     ) -> Result<transmission_route::RoutedTransmissionClient, LightClientError> {
@@ -912,7 +912,7 @@ impl LightClient {
 
         let sync_indexer = self.indexer_uri();
         #[cfg(feature = "nym")]
-        let wire = match self.mixnet_route()? {
+        let wire = match self.send_route()? {
             // The guard travels into the client, which dials on every
             // submission long after this function returns.
             crate::mixnet::MixnetRoute::Mixnet(conduit) => MigrationWire::Mixnet(conduit.dial()),

@@ -46,7 +46,9 @@ pub(crate) use mode::MixnetSlot;
 
 pub(crate) use mode::StandingClient;
 
-pub use route::{MixnetNotReady, MixnetRoute, resolve_route};
+pub use route::{
+    MixnetNotReady, MixnetRoute, TransmitPolicy, resolve_mixnet_only_route, resolve_send_route,
+};
 
 /// Conduit, defined below the seam (ADR 0046).
 pub use zingo_netutils::conduit::MixnetConduit;

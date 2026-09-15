@@ -54,17 +54,10 @@ pub enum LightClientError {
     #[cfg(feature = "nym")]
     #[error("Price fetch error.")]
     PriceError(#[from] PriceError),
-    /// A mixnet-only surface was attempted while the mixnet was bootstrapping.
+    /// A mixnet-covered surface was attempted while the mixnet was unavailable.
     #[cfg(feature = "nym")]
     #[error(transparent)]
     MixnetNotReady(#[from] crate::mixnet::MixnetNotReady),
-    /// The mixnet liveness probe was requested while Mixnet Mode is toggled off.
-    #[cfg(feature = "nym")]
-    #[error(
-        "the mixnet liveness probe requires Mixnet Mode, which is off; \
-         enable Mixnet Mode to probe Destinations"
-    )]
-    ProbeRequiresMixnet,
     /// A probe target outside the one endpoint shape the mixnet exit
     /// policy carries.
     #[cfg(feature = "nym")]

@@ -122,13 +122,10 @@ pub struct MixnetPriceFetch {
     pub route: PriceFetchRoute,
 }
 
-/// The route one price fetch traveled.
+/// The route one price fetch traveled. The price fetch is mixnet-only.
 #[cfg(feature = "nym")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PriceFetchRoute {
-    /// Untunneled HTTP straight to the price sources: the route a
-    /// switched-off Mixnet Mode consents to.
-    Clearnet,
     /// The mixnet tunnel, reached through its local SOCKS5 endpoint.
     Mixnet {
         /// The local SOCKS5 endpoint the fetch traveled through.
@@ -188,6 +185,13 @@ pub struct LightClient {
     /// deliberate disable stays distinguishable from a transport's absence.
     #[cfg(feature = "nym")]
     mixnet_slot: std::sync::Arc<std::sync::Mutex<crate::mixnet::MixnetSlot>>,
+    /// Whether transmissions take the mixnet route: the consumer's per-session
+    /// [`TransmitPolicy`](crate::mixnet::TransmitPolicy), held beside the
+    /// slot rather than in it so the transport never learns the send
+    /// setting and a price lookup cannot read it. Atomic so it flips through
+    /// `&self` while a send or a bootstrap is in flight.
+    #[cfg(feature = "nym")]
+    transmit_over_mixnet: std::sync::atomic::AtomicBool,
     /// The expiry watchdog driving a new ProofAcquisition the moment the
     /// Standing Client's proof stops being epoch-fresh.
     #[cfg(feature = "nym")]
@@ -311,6 +315,8 @@ impl LightClient {
                 crate::mixnet::MixnetSlot::Unattached,
             )),
             #[cfg(feature = "nym")]
+            transmit_over_mixnet: std::sync::atomic::AtomicBool::new(true),
+            #[cfg(feature = "nym")]
             standing_watchdog: None,
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
@@ -366,6 +372,8 @@ impl LightClient {
             mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Unattached,
             )),
+            #[cfg(feature = "nym")]
+            transmit_over_mixnet: std::sync::atomic::AtomicBool::new(true),
             #[cfg(feature = "nym")]
             standing_watchdog: None,
             #[cfg(feature = "nym")]
@@ -452,6 +460,8 @@ impl LightClient {
             mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Unattached,
             )),
+            #[cfg(feature = "nym")]
+            transmit_over_mixnet: std::sync::atomic::AtomicBool::new(true),
             #[cfg(feature = "nym")]
             standing_watchdog: None,
             #[cfg(feature = "nym")]
@@ -806,11 +816,11 @@ impl LightClient {
     }
 
     /// Record the deliberate clearnet consent for a test client: with the
-    /// mixnet compiled in, the slot moves to
-    /// [`Indicator::SwitchedOff`](crate::mixnet::Indicator) — the same act
-    /// the CLI's `network off` performs — so scenario sends transmit over
-    /// clearnet instead of refusing `MixnetNotReady`. Without the `nym`
-    /// feature the wallet has no mixnet surface and this is a no-op.
+    /// mixnet compiled in, the transmit policy moves to
+    /// [`TransmitPolicy::Clearnet`](crate::mixnet::TransmitPolicy), so
+    /// scenario sends transmit over clearnet instead of refusing
+    /// `MixnetNotReady`. Without the `nym` feature the wallet has no mixnet
+    /// surface and this is a no-op.
     ///
     /// Deliberately unconditional, because a caller keying the consent on
     /// its own feature set desyncs from zingolib's and compiles the consent
@@ -818,7 +828,7 @@ impl LightClient {
     #[cfg(any(test, feature = "testutils"))]
     pub async fn consent_to_clearnet_for_tests(&mut self) {
         #[cfg(feature = "nym")]
-        self.disable_mixnet().await;
+        self.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
     }
 
     #[cfg(any(test, feature = "testutils"))]

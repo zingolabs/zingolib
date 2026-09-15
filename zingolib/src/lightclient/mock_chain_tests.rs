@@ -1459,12 +1459,12 @@ async fn a_mock_chain_send_reports_the_mixnet_route() {
 }
 
 /// The falsifier for [`a_mock_chain_send_reports_the_mixnet_route`]: the
-/// deliberate toggle-off is the one act that routes a transmission over
-/// clearnet as informed consent, and its receipt names the sync indexer
-/// rather than a Destination.
+/// clearnet transmit policy routes a transmission over clearnet even while
+/// the mixnet stands ready, and its receipt names the sync indexer rather
+/// than a Destination.
 #[cfg(feature = "nym")]
 #[tokio::test]
-async fn switching_the_mixnet_off_reports_the_clearnet_route() {
+async fn the_clearnet_policy_reports_the_clearnet_route_over_a_ready_mixnet() {
     use crate::lightclient::send::TransmitRoute;
 
     let mut net = MockNet::launch().await;
@@ -1478,7 +1478,8 @@ async fn switching_the_mixnet_off_reports_the_clearnet_route() {
     fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
     recipient.sync_and_await().await.unwrap();
 
-    recipient.disable_mixnet().await;
+    assert!(recipient.read_mixnet_indicator().is_ready());
+    recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
 
     let reports = from_inputs::quick_send_reported(
         &mut recipient,
@@ -1490,7 +1491,7 @@ async fn switching_the_mixnet_off_reports_the_clearnet_route() {
     for report in &reports {
         assert!(
             matches!(report.route, TransmitRoute::Clearnet { .. }),
-            "a switched-off session reported {:?} instead of clearnet",
+            "a clearnet-policy session reported {:?} instead of clearnet",
             report.route
         );
     }
@@ -2801,7 +2802,7 @@ mod mainnet_broadcast_offline {
     async fn a_clearnet_send_goes_to_the_untrusted_sync_indexer_alone() {
         let (stage, mut recipient) = stage().await;
         #[cfg(feature = "nym")]
-        recipient.disable_mixnet().await;
+        recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
         recipient.set_destination_servers_for_tests(stage.set_over(&[
             (&stage.suppressing, SUPPRESSOR),
             (&stage.accepting, ACCEPTOR),
@@ -2821,7 +2822,7 @@ mod mainnet_broadcast_offline {
     async fn a_trusted_broadcast_indexer_receives_the_send_alone() {
         let (stage, mut recipient) = stage().await;
         #[cfg(feature = "nym")]
-        recipient.disable_mixnet().await;
+        recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
         recipient.set_destination_servers_for_tests(
             stage
                 .set_over(&[(&stage.suppressing, SUPPRESSOR)])

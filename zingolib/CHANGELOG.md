@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add `mixnet::TransmitPolicy` (`Mixnet`, `Clearnet`), the per-session send route choice, with `LightClient::transmit_policy` and `set_transmit_policy`. Every session starts under `Mixnet`; `MixnetStartPolicy::OptedOutThisSession` sets `Clearnet`, and `enable_mixnet`, `enable_mixnet_via_host`, and `attach_mixnet` set `Mixnet` before the transport exists, so sends refuse during the bootstrap. A failed enable restores the policy the session had before.
+- Add `mixnet::resolve_mixnet_only_route` and `LightClient::mixnet_only_route`, the route of the price fetch and the liveness probe: the conduit while `Ready`, a typed refusal otherwise.
+- Add `mixnet::resolve_send_route` and `LightClient::send_route`, the route of a transmission under the transmit policy: clearnet at once under `Clearnet`, the mixnet-only outcome under `Mixnet`.
+
+### Changed
+- **Breaking:** `update_current_price` is mixnet-only again. `Indicator::SwitchedOff` refuses it as `MixnetNotReady::Unattached` and the transmit policy has no effect on it.
+- **Breaking:** transmissions and migration parts follow the transmit policy rather than `Indicator::SwitchedOff`. `consent_to_clearnet_for_tests` sets the policy instead of switching the transport off.
+- **Breaking:** `MixnetNotReady::Unattached` no longer offers switching off as a remedy in its message.
+
+### Removed
+- **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
+- **Breaking:** remove `PriceFetchRoute::Clearnet` and `LightClientError::ProbeRequiresMixnet`, both unreachable once the price fetch and the probe are mixnet-only.
+
 ## [6.0.0] - 2026-09-07
 
 ### Added
