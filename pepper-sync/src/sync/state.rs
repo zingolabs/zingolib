@@ -968,6 +968,11 @@ pub(super) fn calculate_scanned_outputs<W>(wallet: &W) -> Result<(u32, u32, u32)
 where
     W: SyncWallet + SyncBlocks,
 {
+    tracing::debug!(
+        "\ncalc scanned outputs scan ranges:\n {:?}",
+        wallet.get_sync_state()?.scan_ranges()
+    );
+
     Ok(wallet
         .get_sync_state()?
         .scan_ranges()

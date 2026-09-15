@@ -657,6 +657,7 @@ where
         .await?;
 
         // publish sync status prior to scanning
+        tracing::debug!("pre-scan publish_sync_status");
         publish_sync_status(&*wallet.read().await, &progress).await;
 
         'scan: loop {
@@ -682,6 +683,11 @@ where
                         // not lost and correctly follow on from the wallets current in-use address list.
                         scanner.transparent_gap_addresses = updated_transparent_gap_addresses;
                     }
+                    tracing::debug!(
+                        "\npre-publish blocks:\n {:?}",
+                        wallet_guard.get_wallet_blocks_mut().unwrap()
+                    );
+                    tracing::debug!("post-scan publish_sync_status");
                     publish_sync_status(&*wallet_guard, &progress).await;
                     wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
                     drop(wallet_guard);
@@ -1626,8 +1632,16 @@ where
                     },
                 )
                 .await?;
+                tracing::debug!(
+                    "\npre add_scanned_blocks scanned_blocks:\n {:?}",
+                    &scanned_blocks
+                );
                 add_scanned_blocks(wallet, scanned_blocks, &scan_range)
                     .map_err(SyncError::WalletError)?;
+                tracing::debug!(
+                    "\npost add_scanned_blocks blocks:\n {:?}",
+                    wallet.get_wallet_blocks_mut().unwrap()
+                );
 
                 state::set_scanned_scan_range(
                     wallet
@@ -2351,7 +2365,10 @@ where
             || wallet_transaction_heights.contains(height)
     });
 
-    dbg!(&scanned_blocks);
+    tracing::debug!(
+        "\npost-retain add_scanned_blocks scanned_blocks:\n {:?}",
+        &scanned_blocks
+    );
 
     wallet.append_wallet_blocks(scanned_blocks)?;
 

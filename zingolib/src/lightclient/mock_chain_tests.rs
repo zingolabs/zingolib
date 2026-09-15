@@ -1036,6 +1036,7 @@ mod perspective {
         PerformanceLevel, SyncConfig, TransparentAddressDiscovery,
         TransparentAddressDiscoveryScopes,
     };
+    use tracing_subscriber::EnvFilter;
     use zcash_keys::encoding::AddressCodec;
     use zip32::AccountId;
 
@@ -1211,6 +1212,10 @@ mod perspective {
 
     #[tokio::test]
     async fn gap_address_compact_block_scanning() {
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .init();
+
         let mut net = MockNet::launch().await;
         let mut recipient = net
             .client(

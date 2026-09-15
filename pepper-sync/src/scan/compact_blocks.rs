@@ -171,44 +171,44 @@ where
                 transaction::shielded_output_count(transaction, ShieldedPool::Orchard);
             ironwood_final_tree_size +=
                 transaction::shielded_output_count(transaction, ShieldedPool::Ironwood);
-
-            set_checkpoint_retentions(
-                block_height,
-                &mut witness_data.sapling_leaves_and_retentions,
-            );
-            set_checkpoint_retentions(
-                block_height,
-                &mut witness_data.orchard_leaves_and_retentions,
-            );
-            set_checkpoint_retentions(
-                block_height,
-                &mut witness_data.ironwood_leaves_and_retentions,
-            );
-
-            let wallet_block = WalletBlock {
-                block_height,
-                block_hash,
-                prev_hash: block::get_compact_prev_hash(block),
-                time: block.time,
-                txids: block
-                    .vtx
-                    .iter()
-                    .map(transaction::get_compact_txid)
-                    .collect(),
-                tree_bounds: TreeBounds {
-                    sapling_initial_tree_size,
-                    sapling_final_tree_size,
-                    orchard_initial_tree_size,
-                    orchard_final_tree_size,
-                    ironwood_initial_tree_size,
-                    ironwood_final_tree_size,
-                },
-            };
-
-            check_tree_size(block, &wallet_block)?;
-
-            wallet_blocks.insert(wallet_block.block_height(), wallet_block);
         }
+
+        set_checkpoint_retentions(
+            block_height,
+            &mut witness_data.sapling_leaves_and_retentions,
+        );
+        set_checkpoint_retentions(
+            block_height,
+            &mut witness_data.orchard_leaves_and_retentions,
+        );
+        set_checkpoint_retentions(
+            block_height,
+            &mut witness_data.ironwood_leaves_and_retentions,
+        );
+
+        let wallet_block = WalletBlock {
+            block_height,
+            block_hash,
+            prev_hash: block::get_compact_prev_hash(block),
+            time: block.time,
+            txids: block
+                .vtx
+                .iter()
+                .map(transaction::get_compact_txid)
+                .collect(),
+            tree_bounds: TreeBounds {
+                sapling_initial_tree_size,
+                sapling_final_tree_size,
+                orchard_initial_tree_size,
+                orchard_final_tree_size,
+                ironwood_initial_tree_size,
+                ironwood_final_tree_size,
+            },
+        };
+
+        check_tree_size(block, &wallet_block)?;
+
+        wallet_blocks.insert(wallet_block.block_height(), wallet_block);
     }
 
     // retry transparent compact block scanning until the gap limit has been satisfied
