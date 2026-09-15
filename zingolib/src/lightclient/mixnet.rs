@@ -504,7 +504,7 @@ impl LightClient {
     /// Take whatever transport the slot holds and shut it down, leaving the
     /// `Unattached` that a failed enable also deliberately leaves behind: a
     /// failure must not silently reinstate a prior `SwitchedOff`. The
-    /// transmit policy is untouched either way.
+    /// transmit policy is not this method's to touch.
     pub(super) async fn vacate_mixnet_slot(&mut self) {
         self.exit_pools.clear_acquirer();
         // Boot's unspent conduits go with the session: a teardown before
@@ -705,10 +705,22 @@ impl LightClient {
     /// gets — narrating on the session channel as the slot owner while the
     /// birth runs on its own channel, holding only the bound exit's lease,
     /// and leaving any failure `Unattached`.
+    ///
+    /// The enable is the user's consent to the mixnet from the moment it
+    /// is asked for, so the transmit policy moves to
+    /// [`TransmitPolicy::Mixnet`](crate::mixnet::TransmitPolicy) before the
+    /// birth starts: a send during the bootstrap refuses as `Bootstrapping`
+    /// rather than travelling a clearnet route the user has just turned
+    /// away from. A failed enable restores the policy the user had before,
+    /// so a session that chose clearnet keeps sending there after an
+    /// attempt that did not take, and a session that never chose it keeps
+    /// refusing.
     async fn enable_mixnet_from(
         &mut self,
         acquirer: std::sync::Arc<crate::mixnet::acquire::Acquirer>,
     ) -> Result<(), crate::mixnet::acquire::TransportError> {
+        let policy_before = self.transmit_policy();
+        self.set_transmit_policy(crate::mixnet::TransmitPolicy::Mixnet);
         self.vacate_mixnet_slot().await;
         // The slot owner alone speaks on the session channel: one
         // Bootstrapping for the whole enable, the settled state after it,
@@ -755,7 +767,9 @@ impl LightClient {
             }
             Err(error) => {
                 // A failed enable leaves Unattached rather than a prior
-                // SwitchedOff; subscribers must see it.
+                // SwitchedOff, and hands the policy back to the user's
+                // earlier choice; subscribers must see the settled state.
+                self.set_transmit_policy(policy_before);
                 self.publish_mixnet_slot_state();
                 Err(error)
             }
@@ -838,11 +852,20 @@ impl LightClient {
     ///     assert_eq!(client.read_mixnet_indicator(), Indicator::Unattached);
     /// });
     /// ```
+    ///
+    /// Like every enable, the attach is the user's consent to the mixnet
+    /// from the moment it is asked for: the transmit policy moves to
+    /// [`TransmitPolicy::Mixnet`](crate::mixnet::TransmitPolicy) before the
+    /// attach, so a send while the readiness gate runs refuses as
+    /// `Bootstrapping` rather than leaking. A refused attach restores the
+    /// policy the user had before.
     pub async fn attach_mixnet(
         &mut self,
         socks5_addr: &str,
         exits: &[crate::mixnet::ExitNodeId],
     ) -> Result<(), crate::mixnet::MixnetProxyError> {
+        let policy_before = self.transmit_policy();
+        self.set_transmit_policy(crate::mixnet::TransmitPolicy::Mixnet);
         self.vacate_mixnet_slot().await;
         let attached = socks5_addr
             .parse()
@@ -874,8 +897,10 @@ impl LightClient {
                 Ok(())
             }
             Err(error) => {
-                // A failed enable leaves Unattached rather than a prior
-                // SwitchedOff; subscribers must see it.
+                // A refused attach leaves Unattached rather than a prior
+                // SwitchedOff, and hands the policy back to the user's
+                // earlier choice; subscribers must see the settled state.
+                self.set_transmit_policy(policy_before);
                 self.publish_mixnet_slot_state();
                 Err(error)
             }
@@ -1013,6 +1038,8 @@ impl LightClient {
         // Every slot transition publishes (the one-shared-watch invariant),
         // the stand-in included.
         self.publish_mixnet_slot_state();
+        // The stand-in carries the enable's consent act.
+        self.set_transmit_policy(crate::mixnet::TransmitPolicy::Mixnet);
     }
 
     /// The proxy's latest bootstrap progress line while Mixnet Mode is
@@ -1906,13 +1933,14 @@ mod tests {
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
         }
 
-        /// HYPOTHESIS: a failed enable never reinstates a prior `SwitchedOff`,
-        /// even when the mobile platform address fails to parse: from
-        /// `SwitchedOff`, a failed `attach_mixnet` lands `Unattached` and
-        /// publishes it, and the transmit policy is untouched. Falsified if
-        /// the mode remains `SwitchedOff` or the policy moves.
+        /// HYPOTHESIS: a failed enable hands the session back as the user
+        /// had it: from `SwitchedOff` under the clearnet policy, a failed
+        /// `attach_mixnet` lands `Unattached` and publishes it, and the
+        /// policy is `Clearnet` again, so the user who chose clearnet keeps
+        /// sending there after an enable that did not take. Falsified if
+        /// the mode remains `SwitchedOff` or the policy ends elsewhere.
         #[tokio::test]
-        async fn a_failed_attach_lands_unattached_and_leaves_the_policy() {
+        async fn a_failed_attach_restores_the_policy_the_user_had() {
             let mut client = LightClient::new_for_test(wallet()).await;
             client.disable_mixnet().await;
             client.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
@@ -1935,7 +1963,101 @@ mod tests {
             assert_eq!(
                 client.transmit_policy(),
                 crate::mixnet::TransmitPolicy::Clearnet,
-                "an enable act never touches the transmit policy"
+                "a failed enable must hand the policy back"
+            );
+            assert_eq!(
+                client.send_route(),
+                Ok(crate::mixnet::MixnetRoute::Clearnet),
+                "the user who chose clearnet keeps sending there"
+            );
+        }
+
+        /// HYPOTHESIS: the enable is the mixnet consent from the moment it
+        /// is asked for, so a send during the bootstrap refuses rather than
+        /// travelling the clearnet route the user just turned away from.
+        /// Attaches to a refusing localhost port from a clearnet session:
+        /// the attach is accepted, the readiness gate runs, and the send
+        /// route reads `Bootstrapping` while it does. Falsified if the send
+        /// route yields clearnet at any point after the attach.
+        #[tokio::test]
+        async fn a_send_during_the_bootstrap_refuses_rather_than_leak() {
+            let mut client = LightClient::new_for_test(wallet()).await;
+            client.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
+            assert_eq!(client.send_route(), Ok(crate::mixnet::MixnetRoute::Clearnet));
+
+            client
+                .attach_mixnet("127.0.0.1:9", &[crate::mixnet::ExitNodeId::from("exit-alpha")])
+                .await
+                .expect("a well-formed address and a named exit attach");
+
+            assert_eq!(
+                client.transmit_policy(),
+                crate::mixnet::TransmitPolicy::Mixnet,
+                "the attach itself is the consent, before readiness"
+            );
+            assert!(
+                matches!(
+                    client.send_route(),
+                    Err(crate::mixnet::MixnetNotReady::Bootstrapping
+                        | crate::mixnet::MixnetNotReady::Died)
+                ),
+                "a send after the attach must refuse until the gate settles, got {:?}",
+                client.send_route()
+            );
+            client.go_offline().await;
+        }
+
+        /// HYPOTHESIS: a failed enable on a session that never chose
+        /// clearnet keeps refusing sends: the default `Mixnet` policy
+        /// stands and the slot is `Unattached`. Falsified if the failure
+        /// opens a clearnet send.
+        #[tokio::test]
+        async fn a_failed_attach_without_a_clearnet_choice_still_refuses() {
+            let mut client = LightClient::new_for_test(wallet()).await;
+
+            client
+                .attach_mixnet("not-an-address", &[])
+                .await
+                .expect_err("an unparseable mobile platform address must fail the attach");
+
+            assert_eq!(
+                client.send_route(),
+                Err(crate::mixnet::MixnetNotReady::Unattached)
+            );
+        }
+
+        /// HYPOTHESIS: a runtime enable after the startup opt-out brings
+        /// sends back to the mixnet: the policy the opt-out set to
+        /// `Clearnet` is `Mixnet` again once the enable settles. Falsified
+        /// if a ready transport is paired with a clearnet send route.
+        #[tokio::test]
+        async fn enabling_after_the_opt_out_routes_sends_over_the_mixnet() {
+            let mut client = LightClient::new_for_test(wallet()).await;
+            client
+                .start_mixnet_session(
+                    crate::mixnet::ProvisionStrategy::Spawn(
+                        crate::mixnet::provision::SpawnHints::default(),
+                    ),
+                    crate::mixnet::MixnetStartPolicy::OptedOutThisSession,
+                )
+                .await
+                .expect("the opt-out provisions nothing and cannot fail");
+            assert_eq!(
+                client.transmit_policy(),
+                crate::mixnet::TransmitPolicy::Clearnet
+            );
+
+            let socks5_addr = crate::mocks::transmission::MOCK_SOCKS5_ADDR;
+            client.attach_mixnet_for_tests(socks5_addr, true).await;
+
+            assert!(client.read_mixnet_indicator().is_ready());
+            assert_eq!(
+                client.transmit_policy(),
+                crate::mixnet::TransmitPolicy::Mixnet
+            );
+            assert!(
+                matches!(client.send_route(), Ok(crate::mixnet::MixnetRoute::Mixnet(_))),
+                "a ready transport after an enable must carry the sends"
             );
         }
 

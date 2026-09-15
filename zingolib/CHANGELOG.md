@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Add `mixnet::TransmitPolicy` (`Mixnet`, `Clearnet`), the per-session send route choice, with `LightClient::transmit_policy` and `set_transmit_policy`. Every session starts under `Mixnet`; `MixnetStartPolicy::OptedOutThisSession` sets `Clearnet`.
+- Add `mixnet::TransmitPolicy` (`Mixnet`, `Clearnet`), the per-session send route choice, with `LightClient::transmit_policy` and `set_transmit_policy`. Every session starts under `Mixnet`; `MixnetStartPolicy::OptedOutThisSession` sets `Clearnet`, and `enable_mixnet`, `enable_mixnet_via_host`, and `attach_mixnet` set `Mixnet` before the transport exists, so sends refuse during the bootstrap. A failed enable restores the policy the session had before.
 - Add `mixnet::resolve_mixnet_only_route` and `LightClient::mixnet_only_route`, the route of the price fetch and the liveness probe: the conduit while `Ready`, a typed refusal otherwise.
 - Add `mixnet::resolve_send_route` and `LightClient::send_route`, the route of a transmission under the transmit policy: clearnet at once under `Clearnet`, the mixnet-only outcome under `Mixnet`.
 
