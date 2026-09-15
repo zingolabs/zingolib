@@ -119,11 +119,11 @@ fn record_probe(
         route,
         kind: AttemptKind::Probe,
         millis: leg.millis,
-        phase: leg
+        fault_domain: leg
             .outcome
             .as_ref()
             .err()
-            .map(|failure| crate::mixnet::charge_phase(&failure.stage)),
+            .map(|failure| crate::mixnet::fault_domain(&failure.stage)),
         outcome: match &leg.outcome {
             Ok(_) => Ok(()),
             // The history store is a pre-existing rendered-text seam

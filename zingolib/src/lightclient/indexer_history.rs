@@ -122,8 +122,8 @@ pub struct IndexerAttempt {
     pub millis: u64,
     /// `Ok(())` on success, or the sanitized failure category.
     pub outcome: Result<(), FailureKind>,
-    /// Which party a failure is charged against, when the evidence says.
-    pub phase: Option<health::FailurePhase>,
+    /// Which component a failure is attributed to, when the evidence says.
+    pub fault_domain: Option<health::FaultDomain>,
 }
 
 /// The current time as seconds since the Unix epoch.
@@ -159,7 +159,7 @@ impl IndexerHistoryHandle {
         self.health.lock().expect("health mutex").note(
             &attempt.host,
             attempt.outcome.is_err(),
-            attempt.phase,
+            attempt.fault_domain,
         );
         let mut attempts = self.attempts.lock().expect("attempts mutex");
         if attempts.len() >= MAX_HISTORY_ATTEMPTS {
@@ -189,9 +189,7 @@ mod tests {
             route: AttemptRoute::Mixnet,
             kind: AttemptKind::Send,
             millis: 1234,
-            phase: outcome
-                .is_err()
-                .then_some(health::FailurePhase::Destination),
+            fault_domain: outcome.is_err().then_some(health::FaultDomain::Destination),
             outcome,
         }
     }
@@ -258,12 +256,12 @@ mod tests {
         );
     }
 
-    /// HYPOTHESIS: recording reaches the session's Health, so charged failures
+    /// HYPOTHESIS: recording reaches the session's Health, so attributed failures
     /// accumulate there until the host crosses the threshold. Falsified if the
     /// standing is unchanged by recording, which would leave the draws blind
     /// to every attempt the reporters made.
     #[test]
-    fn recording_charges_the_host_in_health() {
+    fn recording_attributes_the_failure_to_the_host_in_health() {
         let handle = IndexerHistoryHandle::default();
         let host = Host::of_host_str("carover0.xyz");
         let healthy = |handle: &IndexerHistoryHandle| {
@@ -276,11 +274,14 @@ mod tests {
 
         for _ in 0..health::UNHEALTHY_FAILURE_THRESHOLD - 1 {
             handle.record(&an_attempt("carover0.xyz", Err(FailureKind::Unreachable)));
-            assert!(healthy(&handle), "one charge short of the threshold holds");
+            assert!(
+                healthy(&handle),
+                "one attributed failure short of the threshold holds"
+            );
         }
         handle.record(&an_attempt("carover0.xyz", Err(FailureKind::Unreachable)));
 
-        assert!(!healthy(&handle), "the threshold charge lands");
+        assert!(!healthy(&handle), "the threshold failure lands");
     }
 
     /// HYPOTHESIS: a probe that exhausts its leg budget classifies as a

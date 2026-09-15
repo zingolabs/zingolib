@@ -127,10 +127,22 @@ impl LightWallet {
         Ok((address_id, external_address))
     }
 
-    /// Generates 'n' new transparent addresses of `refund` (ephemeral) scope for the given `account_id`.
-    /// The new addresses are added to the wallet and returned.
-    pub fn generate_refund_addresses(
-        &mut self,
+    /// Derives, without reserving, the next `n` refund-scope (ephemeral)
+    /// transparent addresses for the given `account_id`. Pure: the wallet
+    /// is not modified, so an abandoned proposal leaves no trace and its
+    /// indexes are reused. Reservation — insertion into the wallet's
+    /// address book — happens only when a transaction bearing the address
+    /// comes into existence (ADR 0010).
+    ///
+    /// Public so a caller can name the address a coming proposal will spend
+    /// through to a counterparty that wants it before the transaction exists.
+    /// A swap provider that reads the refund destination off the deposit's
+    /// origin is the case this serves. Every call answers with the same
+    /// indexes until an apply reserves them, so a quote the user walks away
+    /// from leaves the gap limit where it was. A proposal applied in between
+    /// claims those indexes, and the next call answers with the ones after.
+    pub fn derive_refund_addresses(
+        &self,
         n: usize,
         account_id: zip32::AccountId,
     ) -> Result<Vec<(TransparentAddressId, TransparentAddress)>, KeyError> {
@@ -150,7 +162,7 @@ impl LightWallet {
             })?
             .index() as usize;
 
-        let refund_addresses = (first_index..(first_index + n))
+        (first_index..(first_index + n))
             .map(|address_index| {
                 let address_id = TransparentAddressId::new(
                     account_id,
@@ -164,14 +176,25 @@ impl LightWallet {
                     .ok_or(KeyError::NoAccountKeys)?
                     .generate_transparent_address(address_id.address_index(), address_id.scope())?;
 
-                self.transparent_addresses.insert(
-                    address_id,
-                    transparent::encode_address(&self.chain_type, refund_address),
-                );
-
                 Ok((address_id, refund_address))
             })
-            .collect::<Result<Vec<(TransparentAddressId, TransparentAddress)>, KeyError>>()?;
+            .collect()
+    }
+
+    /// Generates 'n' new transparent addresses of `refund` (ephemeral) scope for the given `account_id`.
+    /// The new addresses are added to the wallet and returned.
+    pub fn generate_refund_addresses(
+        &mut self,
+        n: usize,
+        account_id: zip32::AccountId,
+    ) -> Result<Vec<(TransparentAddressId, TransparentAddress)>, KeyError> {
+        let refund_addresses = self.derive_refund_addresses(n, account_id)?;
+        for (address_id, refund_address) in &refund_addresses {
+            self.transparent_addresses.insert(
+                *address_id,
+                transparent::encode_address(&self.chain_type, *refund_address),
+            );
+        }
         self.save_required = true;
 
         Ok(refund_addresses)
@@ -663,6 +686,58 @@ uregtest1n22mmna853578fakgx6z6adn24ey5r7wfye8ulhscqc9hvm0rf5czxjuz9te0zzc8j93y35
             transparent::encode_address(&network, new_taddress),
             "\
 tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
+        );
+    }
+
+    /// The property ADR 0010 bought by moving reservation to apply time, and
+    /// the one an external caller now depends on: the address it names to a
+    /// counterparty is the address the next proposal spends through, however
+    /// many times it asks in between.
+    #[test]
+    fn deriving_a_refund_address_answers_with_the_same_index_until_apply() {
+        let wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+
+        let first = wallet
+            .derive_refund_addresses(1, zip32::AccountId::ZERO)
+            .unwrap();
+        let again = wallet
+            .derive_refund_addresses(1, zip32::AccountId::ZERO)
+            .unwrap();
+
+        assert_eq!(first, again);
+        assert_eq!(
+            first[0].0,
+            TransparentAddressId::new(
+                zip32::AccountId::ZERO,
+                TransparentScope::Refund,
+                NonHardenedChildIndex::ZERO
+            )
+        );
+    }
+
+    /// Reserving is what moves the index on, so a caller that reserves before
+    /// naming an address to a counterparty names one the proposal will not
+    /// use. That was the bug this method was made public to retire.
+    #[test]
+    fn reserving_a_refund_address_moves_the_next_derivation_on() {
+        let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+
+        let reserved = wallet
+            .generate_refund_addresses(1, zip32::AccountId::ZERO)
+            .unwrap();
+        let next = wallet
+            .derive_refund_addresses(1, zip32::AccountId::ZERO)
+            .unwrap();
+
+        assert_eq!(
+            reserved[0].0.address_index(),
+            NonHardenedChildIndex::ZERO,
+            "the first reservation takes index zero"
+        );
+        assert_eq!(
+            next[0].0.address_index(),
+            NonHardenedChildIndex::from_index(1).unwrap(),
+            "a reserved index is spent, so the next derivation moves past it"
         );
     }
 }

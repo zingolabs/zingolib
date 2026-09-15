@@ -503,6 +503,8 @@ where
     )
     .await?;
 
+    expire_transactions(&mut *wallet.write().await)?;
+
     publish_sync_status(&*wallet.read().await, &progress).await;
 
     // create channel for receiving scan results and launch scanner
@@ -536,6 +538,7 @@ where
                     &mut nullifier_map_limit_exceeded,
                 )
                 .await?;
+                expire_transactions(&mut *wallet_guard)?;
                 wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
                 publish_sync_status(&*wallet_guard, &progress).await;
                 drop(wallet_guard);
@@ -577,6 +580,7 @@ where
                                 panic!("sync data must exist!");
                             }
                         };
+                        expire_transactions(&mut *wallet_guard)?;
                         wallet_guard
                             .set_save_flag()
                             .map_err(SyncError::WalletError)?;
@@ -655,8 +659,6 @@ where
             panic!("sync data must exist!");
         }
     };
-    // all blocks up to the last known chain height are now scanned, so any transaction still
-    // pending past its expiry height is genuinely expired.
     expire_transactions(&mut *wallet_guard)?;
     // once sync is complete, all nullifiers will have been re-fetched so this note metadata can be discarded.
     for transaction in wallet_guard
@@ -2492,20 +2494,21 @@ where
     Ok(())
 }
 
-/// Transaction status will be set to `Failed` if it's still unconfirmed when the chain reaches it's expiry height.
+/// Transaction status will be set to `Failed` if it's still unconfirmed when the wallet's fully scanned height
+/// reaches its expiry height.
 ///
 /// Transactions with an expiry height of 0 never expire (ZIP-203).
 ///
-/// Must only be called after all blocks up to the wallet's last known chain height have been scanned, otherwise a
-/// transaction mined near its expiry height would be marked `Failed` before the block containing it is scanned.
+/// A transaction mined in a block that is not yet scanned is never marked `Failed`, so this is safe to call at any
+/// point of a sync session.
 fn expire_transactions<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncTransactions,
 {
-    let last_known_chain_height = wallet
+    let fully_scanned_height = wallet
         .get_sync_state()
         .map_err(SyncError::WalletError)?
-        .last_known_chain_height()
+        .fully_scanned_height()
         .expect("wallet height must exist after scan ranges have been updated");
     let wallet_transactions = wallet
         .get_wallet_transactions_mut()
@@ -2517,7 +2520,7 @@ where
             let expiry_height = transaction.transaction().expiry_height();
             transaction.status().is_pending()
                 && expiry_height > BlockHeight::from_u32(0)
-                && last_known_chain_height >= expiry_height
+                && fully_scanned_height >= expiry_height
         })
         .map(super::wallet::WalletTransaction::txid)
         .collect::<Vec<_>>();
@@ -3739,13 +3742,51 @@ mod test {
         use crate::sync::{ScanPriority, ScanRange, expire_transactions};
         use crate::wallet::{SyncState, WalletTransaction};
 
+        const UNSCANNED_START: u32 = 51;
+        const UNSCANNED_END: u32 = 91;
+        const CHAIN_HEIGHT: u32 = 200;
+
         /// Creates a mock wallet with all blocks scanned up to `chain_height`.
         fn wallet_at_height(chain_height: u32, transactions: Vec<WalletTransaction>) -> MockWallet {
-            let sync_state = SyncState {
-                scan_ranges: vec![ScanRange::from_parts(
+            wallet_with_scan_ranges(
+                vec![ScanRange::from_parts(
                     BlockHeight::from_u32(1)..BlockHeight::from_u32(chain_height + 1),
                     ScanPriority::Scanned,
                 )],
+                transactions,
+            )
+        }
+
+        /// Creates a mock wallet whose blocks up to [`CHAIN_HEIGHT`] are scanned, except for the range from
+        /// [`UNSCANNED_START`] to [`UNSCANNED_END`].
+        fn wallet_with_unscanned_range(transactions: Vec<WalletTransaction>) -> MockWallet {
+            wallet_with_scan_ranges(
+                vec![
+                    ScanRange::from_parts(
+                        BlockHeight::from_u32(1)..BlockHeight::from_u32(UNSCANNED_START),
+                        ScanPriority::Scanned,
+                    ),
+                    ScanRange::from_parts(
+                        BlockHeight::from_u32(UNSCANNED_START)
+                            ..BlockHeight::from_u32(UNSCANNED_END),
+                        ScanPriority::Historic,
+                    ),
+                    ScanRange::from_parts(
+                        BlockHeight::from_u32(UNSCANNED_END)
+                            ..BlockHeight::from_u32(CHAIN_HEIGHT + 1),
+                        ScanPriority::Scanned,
+                    ),
+                ],
+                transactions,
+            )
+        }
+
+        fn wallet_with_scan_ranges(
+            scan_ranges: Vec<ScanRange>,
+            transactions: Vec<WalletTransaction>,
+        ) -> MockWallet {
+            let sync_state = SyncState {
+                scan_ranges,
                 ..Default::default()
             };
             let wallet_transactions: HashMap<TxId, WalletTransaction> = transactions
@@ -3819,6 +3860,42 @@ mod test {
             assert!(matches!(
                 transaction_status(&wallet, txid),
                 ConfirmationStatus::Mempool(_)
+            ));
+        }
+
+        #[test]
+        fn pending_transaction_with_expiry_above_an_unscanned_range_is_untouched() {
+            let txid = TxId::from_bytes([1; 32]);
+            let transaction = WalletTransaction::new_for_test_with_expiry(
+                txid,
+                ConfirmationStatus::Mempool(BlockHeight::from_u32(UNSCANNED_START - 1)),
+                BlockHeight::from_u32(UNSCANNED_END),
+            );
+            let mut wallet = wallet_with_unscanned_range(vec![transaction]);
+
+            expire_transactions(&mut wallet).unwrap();
+
+            assert!(matches!(
+                transaction_status(&wallet, txid),
+                ConfirmationStatus::Mempool(_)
+            ));
+        }
+
+        #[test]
+        fn pending_transaction_with_expiry_below_an_unscanned_range_is_failed() {
+            let txid = TxId::from_bytes([1; 32]);
+            let transaction = WalletTransaction::new_for_test_with_expiry(
+                txid,
+                ConfirmationStatus::Mempool(BlockHeight::from_u32(1)),
+                BlockHeight::from_u32(UNSCANNED_START - 1),
+            );
+            let mut wallet = wallet_with_unscanned_range(vec![transaction]);
+
+            expire_transactions(&mut wallet).unwrap();
+
+            assert!(matches!(
+                transaction_status(&wallet, txid),
+                ConfirmationStatus::Failed(_)
             ));
         }
 

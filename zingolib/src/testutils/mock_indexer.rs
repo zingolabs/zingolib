@@ -506,6 +506,12 @@ pub struct MockChain {
     /// duplicate probe of a queued transaction. At zero the probe is
     /// answered with the mempool-phase rejection instead.
     pub queued_rejections_before_promotion: u8,
+    /// Standing fault: every `send_transaction` is refused with an internal status.
+    pub reject_all_sends: bool,
+    /// Standing fault: every `send_transaction` is answered with this error code.
+    pub answer_sends_with_error_code: Option<i32>,
+    /// How many submissions the standing faults refused.
+    pub rejected_sends: u32,
     /// One entry per `GetTaddressTxids` request served: the address, the
     /// requested range, and how many transactions were streamed back.
     /// Diagnostic surface for transparent-detection failures.
@@ -772,6 +778,9 @@ impl MockChain {
             download_queue: Vec::new(),
             lose_next_send_response: None,
             queued_rejections_before_promotion: 0,
+            reject_all_sends: false,
+            answer_sends_with_error_code: None,
+            rejected_sends: 0,
             taddr_request_log: Vec::new(),
             branch_seed: 0,
         }
@@ -1537,6 +1546,19 @@ impl CompactTxStreamer for MockIndexerService {
         self.fault_for(Rpc::SendTransaction).await?;
         let mut chain = self.chain.write().await;
         let bytes = request.into_inner().data;
+        if chain.reject_all_sends {
+            chain.rejected_sends += 1;
+            return Err(Status::internal(
+                "mock fault: this Destination suppresses every transaction",
+            ));
+        }
+        if let Some(error_code) = chain.answer_sends_with_error_code {
+            chain.rejected_sends += 1;
+            return Ok(Response::new(SendResponse {
+                error_code,
+                error_message: "mock fault: this Destination rejects the transaction".to_string(),
+            }));
+        }
         // The validator rejects resubmitted bytes rather than
         // re-accepting them, with a phase-specific message; reproduce
         // both rejections verbatim as zainod 0.6.0-rc.1 surfaces them
@@ -1841,6 +1863,7 @@ pub struct MockNet {
     pub chain: Arc<RwLock<MockChain>>,
     chain_type: ChainType,
     indexer_uri: http::Uri,
+    addr: std::net::SocketAddr,
     wallet_dirs: Vec<tempfile::TempDir>,
     _server: tokio::task::JoinHandle<()>,
 }
@@ -1854,33 +1877,60 @@ impl MockNet {
 
     /// Launches the mock server on an ephemeral localhost port serving `chain`.
     pub async fn launch_with(chain: MockChain) -> Self {
+        Self::serve(chain, None).await
+    }
+
+    /// Launches the mock over TLS with the committed localhost certificate.
+    pub async fn launch_tls() -> Self {
+        zingo_netutils::ensure_default_crypto_provider();
+        Self::serve(
+            MockChain::new(),
+            Some(tonic::transport::Identity::from_pem(
+                zingo_netutils::test_tls::LOCALHOST_CERT_PEM,
+                zingo_netutils::test_tls::LOCALHOST_KEY_PEM,
+            )),
+        )
+        .await
+    }
+
+    async fn serve(chain: MockChain, tls: Option<tonic::transport::Identity>) -> Self {
         let chain_type = chain.chain_type();
         let chain = Arc::new(RwLock::new(chain));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("an ephemeral localhost port binds");
-        let port = listener
-            .local_addr()
-            .expect("bound socket has an address")
-            .port();
+        let addr = listener.local_addr().expect("bound socket has an address");
         let service = MockIndexerService::new(chain.clone());
+        let scheme = if tls.is_some() { "https" } else { "http" };
+        let mut builder = tonic::transport::Server::builder();
+        if let Some(identity) = tls {
+            builder = builder
+                .tls_config(tonic::transport::ServerTlsConfig::new().identity(identity))
+                .expect("the committed localhost identity loads");
+        }
         let server = tokio::spawn(async move {
-            tonic::transport::Server::builder()
+            builder
                 .add_service(CompactTxStreamerServer::new(service))
                 .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
                 .await
                 .ok();
         });
-        let indexer_uri: http::Uri = format!("http://127.0.0.1:{port}")
+        let indexer_uri: http::Uri = format!("{scheme}://127.0.0.1:{}", addr.port())
             .parse()
             .expect("a localhost uri parses");
         Self {
             chain,
             chain_type,
             indexer_uri,
+            addr,
             wallet_dirs: Vec::new(),
             _server: server,
         }
+    }
+
+    /// The socket the mock listens on.
+    pub fn addr(&self) -> std::net::SocketAddr {
+        self.addr
     }
 
     /// Returns the chain type.

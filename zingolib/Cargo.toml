@@ -17,6 +17,7 @@ perspective = []
 nym = ["zingo-netutils/socks5-transmit", "zingo-price/socks5-fetch"]
 testutils = [
     "perspective",
+    "zingo-netutils/testutils",
     "portpicker",
     "zingo_test_vectors",
     "tempfile",

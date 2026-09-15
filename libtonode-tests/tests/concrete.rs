@@ -1689,6 +1689,118 @@ async fn mine_to_transparent_coinbase_maturity() {
     assert_eq!(mature_balance, scenarios::mined_block_rewards_total(3));
 }
 
+/// `propose_send_with_op_return` reports the fee of both transactions.
+/// `send_stored_proposal` broadcasts a deshield and a transparent-only
+/// transaction from a shielded balance. After mining, both confirm. The
+/// second transaction pays the recipient, carries the payload in an
+/// OP_RETURN output, and has no change. The deshield pays exactly the
+/// amount plus the OP_RETURN fee.
+#[tokio::test]
+async fn propose_and_send_with_op_return_confirms_on_chain() {
+    use zingolib::wallet::transparent::OpReturnData;
+
+    /// A payload under the 80-byte limit.
+    const PAYLOAD: &[u8] = b"zingolib op_return payload";
+    let amount = Zatoshis::const_from_u64(100_000);
+
+    let (ref local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
+
+    scenarios::send_and_bump(
+        local_net,
+        &mut faucet,
+        vec![(
+            &get_base_address_macro!(recipient, "unified"),
+            500_000,
+            None,
+        )],
+    )
+    .await;
+    recipient.sync_and_await().await.unwrap();
+
+    let recipient_address = get_base_address_macro!(faucet, "transparent");
+    let data = OpReturnData::new(PAYLOAD.to_vec()).unwrap();
+
+    let proposal = recipient
+        .propose_send_with_op_return(&recipient_address, amount, data, zip32::AccountId::ZERO)
+        .await
+        .unwrap();
+    let op_return_fee = proposal.op_return_fee();
+    let deshield_fee = proposal.deshield_fee().unwrap();
+    assert_eq!(
+        proposal.total_fee().unwrap(),
+        (deshield_fee + op_return_fee).unwrap(),
+        "total fee is the sum of both transaction fees"
+    );
+    assert_eq!(
+        zingolib::data::proposal::total_payment_amount(proposal.deshield()).unwrap(),
+        (amount + op_return_fee).unwrap(),
+        "the deshield pays the amount plus the OP_RETURN fee"
+    );
+
+    let txids = recipient.send_stored_proposal(false).await.unwrap();
+    assert_eq!(txids.len(), 2, "a deshield and an OP_RETURN send are sent");
+    let deshield_txid = txids[0];
+    let op_return_txid = txids[1];
+
+    increase_height_and_wait_for_client(local_net, &mut recipient, 3)
+        .await
+        .unwrap();
+
+    let wallet = recipient.wallet();
+    let wallet = wallet.read().await;
+
+    let deshield = wallet
+        .wallet_transactions
+        .get(&deshield_txid)
+        .expect("deshield recorded");
+    assert!(deshield.status().is_confirmed(), "deshield confirmed");
+
+    let op_return_tx = wallet
+        .wallet_transactions
+        .get(&op_return_txid)
+        .expect("OP_RETURN send recorded");
+    assert!(
+        op_return_tx.status().is_confirmed(),
+        "OP_RETURN send confirmed"
+    );
+
+    let bundle = op_return_tx
+        .transaction()
+        .transparent_bundle()
+        .expect("OP_RETURN send is a transparent transaction");
+
+    assert_eq!(bundle.vin.len(), 1, "spends the single deshield output");
+
+    assert_eq!(
+        bundle.vout.len(),
+        2,
+        "recipient + OP_RETURN, no change output"
+    );
+
+    let op_return_out = bundle
+        .vout
+        .iter()
+        .find(|out| out.value() == Zatoshis::ZERO)
+        .expect("a zero-value OP_RETURN output");
+    let script = op_return_out.script_pubkey().0.0.clone();
+    assert_eq!(script[0], 0x6a, "null-data script starts with OP_RETURN");
+    assert!(
+        script.windows(PAYLOAD.len()).any(|w| w == PAYLOAD),
+        "the OP_RETURN carries the payload verbatim"
+    );
+
+    let recipient_out = bundle
+        .vout
+        .iter()
+        .find(|out| out.value() == amount)
+        .expect("a recipient output paying the amount");
+    assert_ne!(
+        recipient_out.value(),
+        Zatoshis::ZERO,
+        "the recipient output is the non-null-data output"
+    );
+}
+
 mod testnet_test {
     use pepper_sync::sync_status;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;

@@ -12,14 +12,17 @@
 use pepper_sync::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 use pepper_sync::wallet::IronwoodNote;
 use shardtree::store::ShardStore;
+use zcash_address::ZcashAddress;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::value::Zatoshis;
 
 use crate::check_client_balances;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::mock_indexer::{MockNet, faucet_funding_transaction};
 use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+use crate::wallet::error::ProposeSendError;
 use crate::wallet::keys::unified::ReceiverSelection;
 
 /// An address belonging to no wallet on the mock net, so sends to it
@@ -36,6 +39,44 @@ fn external_address(pool: PoolType) -> String {
         .generate_unified_address(selection, zip32::AccountId::ZERO)
         .unwrap();
     unified_address.encode(&external_wallet.chain_type())
+}
+
+/// Returns a TEX-encoded taddr from an external wallet.
+fn external_tex_address() -> String {
+    use pepper_sync::keys::decode_address;
+    use zcash_client_backend::address::Address;
+    use zcash_transparent::address::TransparentAddress;
+
+    let external_wallet =
+        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+    let taddr = external_wallet
+        .transparent_addresses()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) =
+        decode_address(&external_wallet.chain_type(), &taddr).unwrap()
+    else {
+        panic!("a wallet-generated first taddr is p2pkh")
+    };
+    crate::testutils::interpret_taddr_as_tex_addr(taddr_bytes, &external_wallet.chain_type())
+}
+
+/// Mines one empty block, one funding block, and `extra_blocks` into every
+/// chain in `nets`.
+async fn fund_mirrored(
+    nets: &[&MockNet],
+    receivers: Vec<(&str, u64, Option<&str>)>,
+    extra_blocks: u32,
+) {
+    let funding = faucet_funding_transaction(receivers).await;
+    for net in nets {
+        let mut chain = net.chain.write().await;
+        chain.mine_empty_blocks(1);
+        chain.mine_block(vec![funding.clone()]);
+        chain.mine_empty_blocks(extra_blocks);
+    }
 }
 
 /// Funds `client` with one faucet-built transaction mined into the next
@@ -78,6 +119,154 @@ async fn funded_send_confirms_on_the_mock_chain() {
     // 100_000 funding minus the 20_000 payment and its 10_000 one-orchard-
     // spend, two-logical-action ZIP-317 fee.
     check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
+}
+
+/// Tests that max_send_value() returns a non-zero value for a wallet
+/// with funds.
+#[tokio::test]
+async fn max_send_value_to_tex_empties_the_wallet() {
+    let funding = 100_000;
+    let mut net = MockNet::launch().await;
+    let mut sender = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+    let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
+
+    net.chain.write().await.mine_empty_blocks(1);
+    fund(&net, vec![(&sender_ua, funding, None)], 1).await;
+    sender.sync_and_await().await.unwrap();
+    check_client_balances!(sender, i: funding o: 0 s: 0 t: 0);
+
+    let tex_address = external_tex_address();
+    let max_send_value = sender
+        .max_send_value(
+            ZcashAddress::try_from_encoded(&tex_address).unwrap(),
+            false,
+            zip32::AccountId::ZERO,
+        )
+        .await
+        .unwrap();
+    assert!(
+        max_send_value > Zatoshis::ZERO,
+        "a funded wallet can send to a TEX address"
+    );
+
+    from_inputs::quick_send(
+        &mut sender,
+        vec![(&tex_address, max_send_value.into_u64(), None)],
+    )
+    .await
+    .unwrap();
+    net.chain.write().await.mine_mempool();
+    sender.sync_and_await().await.unwrap();
+
+    check_client_balances!(sender, i: 0 o: 0 s: 0 t: 0);
+}
+
+/// Tests that max_send_value() returns a non-zero value for a wallet and that it works with zennies.
+#[tokio::test]
+async fn max_send_value_to_tex_with_zennies_empties_the_wallet() {
+    let funding = 2 * crate::ZENNIES_FOR_ZINGO_AMOUNT;
+    let mut net = MockNet::launch().await;
+    let mut sender = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+    let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
+
+    net.chain.write().await.mine_empty_blocks(1);
+    fund(&net, vec![(&sender_ua, funding, None)], 1).await;
+    sender.sync_and_await().await.unwrap();
+    check_client_balances!(sender, i: funding o: 0 s: 0 t: 0);
+
+    let tex_address = external_tex_address();
+    let max_send_value = sender
+        .max_send_value(
+            ZcashAddress::try_from_encoded(&tex_address).unwrap(),
+            true,
+            zip32::AccountId::ZERO,
+        )
+        .await
+        .unwrap();
+    assert!(
+        max_send_value > Zatoshis::ZERO,
+        "a wallet funded past the zenny can send to a TEX address"
+    );
+
+    let zenny_address = crate::get_zennies_for_zingo_address(sender.chain_type());
+    from_inputs::quick_send(
+        &mut sender,
+        vec![
+            (&tex_address, max_send_value.into_u64(), None),
+            (zenny_address, crate::ZENNIES_FOR_ZINGO_AMOUNT, None),
+        ],
+    )
+    .await
+    .unwrap();
+    net.chain.write().await.mine_mempool();
+    sender.sync_and_await().await.unwrap();
+
+    check_client_balances!(sender, i: 0 o: 0 s: 0 t: 0);
+}
+
+/// Tests that max_send_value() to a shielded address, without zennies,
+/// spends the whole balance across the ironwood and sapling pools.
+#[tokio::test]
+async fn max_send_value_to_shielded_empties_the_wallet() {
+    let ironwood_funding = 100_000;
+    let sapling_funding = 50_000;
+    let mut net = MockNet::launch().await;
+    let mut sender = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .await;
+    let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
+    let sender_sapling = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Sapling)).await;
+
+    net.chain.write().await.mine_empty_blocks(1);
+    fund(
+        &net,
+        vec![
+            (&sender_ua, ironwood_funding, None),
+            (&sender_sapling, sapling_funding, None),
+        ],
+        1,
+    )
+    .await;
+    sender.sync_and_await().await.unwrap();
+    check_client_balances!(sender, i: ironwood_funding o: 0 s: sapling_funding t: 0);
+
+    let recipient = external_address(PoolType::ORCHARD);
+    let max_send_value = sender
+        .max_send_value(
+            ZcashAddress::try_from_encoded(&recipient).unwrap(),
+            false,
+            zip32::AccountId::ZERO,
+        )
+        .await
+        .unwrap();
+    assert!(
+        max_send_value > Zatoshis::ZERO,
+        "a funded wallet can send to a shielded address"
+    );
+
+    let one_zat = Zatoshis::const_from_u64(1);
+    let past_max = (max_send_value + one_zat).unwrap();
+    assert!(matches!(
+        from_inputs::propose(&mut sender, vec![(&recipient, past_max.into_u64(), None)]).await,
+        Err(ProposeSendError::Proposal(
+            zcash_client_backend::data_api::error::Error::InsufficientFunds { .. }
+        ))
+    ));
+
+    from_inputs::quick_send(
+        &mut sender,
+        vec![(&recipient, max_send_value.into_u64(), None)],
+    )
+    .await
+    .unwrap();
+    net.chain.write().await.mine_mempool();
+    sender.sync_and_await().await.unwrap();
+
+    check_client_balances!(sender, i: 0 o: 0 s: 0 t: 0);
 }
 
 /// Mock-chain twin of libtonode `slow::list_value_transfers_check_fees`
@@ -1209,10 +1398,10 @@ mod perspective {
 
 /// A mock-chain send travels the mixnet route and says so: the receipt
 /// names the Destination that accepted the transaction and the
-/// session's SOCKS5 endpoint, never the sync indexer. Mock-net clients
-/// run with Mixnet Mode switched on, so the Destination draw, the
-/// escalation rounds, and the cap all run for real; only the bytes take
-/// the mock indexer's channel instead of the tunnel.
+/// session's SOCKS5 endpoint. Mock-net clients run with Mixnet Mode
+/// switched on, so the Destination draw, the escalation rounds, and the
+/// cap all run for real; only the bytes take the mock indexer's channel
+/// instead of the tunnel.
 #[cfg(feature = "nym")]
 #[tokio::test]
 async fn a_mock_chain_send_reports_the_mixnet_route() {
@@ -1247,15 +1436,16 @@ async fn a_mock_chain_send_reports_the_mixnet_route() {
                     via_socks5,
                     &crate::mocks::transmission::MOCK_SOCKS5_ADDR.to_string()
                 );
-                assert!(
-                    crate::destination::DESTINATION_INDEXERS
-                        .iter()
-                        .any(|entry| entry.contains(destination.as_str())),
-                    "the winning Destination {destination} is not drawn from the curated pool"
+                assert_eq!(
+                    destination,
+                    net.indexer_uri()
+                        .host()
+                        .expect("the mock indexer has a host"),
+                    "a regtest draw names the sync indexer alone"
                 );
             }
-            TransmitRoute::Clearnet { indexer } => {
-                panic!("a mixnet-on session leaked the transmission to clearnet at {indexer}")
+            TransmitRoute::Clearnet { destination } => {
+                panic!("a mixnet-on session leaked the transmission to clearnet at {destination}")
             }
         }
     }
@@ -1445,6 +1635,7 @@ mod strict_chain {
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     use pepper_sync::wallet::KeyIdInterface;
+    use pepper_sync::wallet::traits::SyncWallet;
 
     use crate::lightclient::LightClient;
     use crate::testutils::chain_generics::fixtures;
@@ -2329,5 +2520,656 @@ mod strict_chain {
         // The released coin is still the wallet's whole transparent balance.
         shielder.sync_and_await().await.unwrap();
         check_client_balances!(shielder, i: 0 o: 0 s: 0 t: FUNDING);
+    }
+
+    const HELD_FETCH: Duration = Duration::from_secs(8);
+    const TRANSACTION_FETCH_FAILURES: usize = 8;
+    const HOLD_POLL: Duration = Duration::from_millis(10);
+    const HOLD_WAIT_LIMIT: Duration = Duration::from_secs(4);
+    const BLOCKS_BELOW_EXPIRY_AT_LAST_SYNC: u32 = 5;
+    const REORG_VERIFY_BLOCKS: u32 = 10;
+
+    async fn fully_scanned_height(client: &LightClient) -> BlockHeight {
+        client
+            .wallet()
+            .read()
+            .await
+            .get_sync_state()
+            .unwrap()
+            .fully_scanned_height()
+            .unwrap()
+    }
+
+    async fn wait_until_scanned_through(client: &LightClient, height: BlockHeight) {
+        let started = tokio::time::Instant::now();
+        while fully_scanned_height(client).await < height {
+            assert!(
+                started.elapsed() < HOLD_WAIT_LIMIT,
+                "the sync engine did not scan through {height} in time"
+            );
+            tokio::time::sleep(HOLD_POLL).await;
+        }
+    }
+
+    async fn wait_until_fetch_is_held(net: &MockNet) {
+        let started = tokio::time::Instant::now();
+        while net.chain.read().await.faults.pending(Rpc::Transaction) > 0 {
+            assert!(
+                started.elapsed() < HOLD_WAIT_LIMIT,
+                "the sync engine did not request the transaction in time"
+            );
+            tokio::time::sleep(HOLD_POLL).await;
+        }
+    }
+
+    /// Syncs a recipient whose last known chain height is a few blocks below
+    /// the expiry of a funding transaction that is still in the mempool.
+    async fn mempool_transaction_near_expiry(
+        net: &mut MockNet,
+    ) -> (LightClient, String, TxId, BlockHeight) {
+        let mut recipient = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .await;
+        let recipient_ua =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.chain.write().await.mine_empty_blocks(1);
+        recipient.sync_and_await().await.unwrap();
+
+        let funding = faucet_funding_transaction(vec![(&recipient_ua, FUNDING, None)]).await;
+        let expiry = expiry_of_bytes(net, &funding);
+        {
+            let mut chain = net.chain.write().await;
+            chain.enter_mempool(funding);
+            let last_sync_height = u32::from(expiry) - BLOCKS_BELOW_EXPIRY_AT_LAST_SYNC;
+            let tip = chain.tip();
+            assert!(last_sync_height > tip);
+            chain.mine_empty_blocks(last_sync_height - tip);
+        }
+        recipient.sync_and_await().await.unwrap();
+        let txid = pending_txid(&recipient).await;
+        assert!(matches!(
+            status_of(&recipient, &txid).await,
+            ConfirmationStatus::Mempool(_)
+        ));
+        (recipient, recipient_ua, txid, expiry)
+    }
+
+    /// Mines past `expiry`, then funds `recipient_ua` in a block above the
+    /// reorg verification range so that block is scanned by a separate task
+    /// after the expiry height is already scanned.
+    async fn mine_past_expiry_and_fund_above_verify_range(
+        net: &MockNet,
+        recipient_ua: &str,
+        expiry: BlockHeight,
+    ) {
+        {
+            let mut chain = net.chain.write().await;
+            let verify_end =
+                u32::from(expiry) - BLOCKS_BELOW_EXPIRY_AT_LAST_SYNC + REORG_VERIFY_BLOCKS;
+            let tip = chain.tip();
+            chain.mine_empty_blocks(verify_end - tip);
+            assert_eq!(chain.mempool_len(), 0);
+        }
+        fund(net, vec![(recipient_ua, FUNDING, None)], 0).await;
+    }
+
+    #[tokio::test]
+    async fn stopped_session_that_scanned_past_expiry_fails_the_transaction() {
+        let mut net = MockNet::launch().await;
+        let (mut recipient, recipient_ua, txid, expiry) =
+            mempool_transaction_near_expiry(&mut net).await;
+        mine_past_expiry_and_fund_above_verify_range(&net, &recipient_ua, expiry).await;
+        net.chain
+            .write()
+            .await
+            .faults
+            .inject(Rpc::Transaction, Fault::Delay(HELD_FETCH));
+
+        recipient.sync().await.unwrap();
+        wait_until_scanned_through(&recipient, expiry).await;
+        recipient.stop_sync().unwrap();
+        recipient.await_sync().await.unwrap();
+        assert!(fully_scanned_height(&recipient).await >= expiry);
+        assert!(
+            matches!(
+                status_of(&recipient, &txid).await,
+                ConfirmationStatus::Failed(_)
+            ),
+            "a stopped session scanned past the expiry height without failing the transaction"
+        );
+
+        recipient.sync_and_await().await.unwrap();
+        assert!(matches!(
+            status_of(&recipient, &txid).await,
+            ConfirmationStatus::Failed(_)
+        ));
+        check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
+    }
+
+    #[tokio::test]
+    async fn failed_session_that_scanned_past_expiry_fails_the_transaction() {
+        let mut net = MockNet::launch().await;
+        let (mut recipient, recipient_ua, txid, expiry) =
+            mempool_transaction_near_expiry(&mut net).await;
+        mine_past_expiry_and_fund_above_verify_range(&net, &recipient_ua, expiry).await;
+        {
+            let mut chain = net.chain.write().await;
+            for _ in 0..TRANSACTION_FETCH_FAILURES {
+                chain.faults.inject(
+                    Rpc::Transaction,
+                    Fault::Fail(Code::Unavailable, "mock outage".to_string()),
+                );
+            }
+        }
+
+        assert!(recipient.sync_and_await().await.is_err());
+        assert!(fully_scanned_height(&recipient).await >= expiry);
+        assert!(
+            matches!(
+                status_of(&recipient, &txid).await,
+                ConfirmationStatus::Failed(_)
+            ),
+            "a failed session scanned past the expiry height without failing the transaction"
+        );
+
+        net.chain.write().await.faults.clear(Rpc::Transaction);
+        recipient.sync_and_await().await.unwrap();
+        assert!(matches!(
+            status_of(&recipient, &txid).await,
+            ConfirmationStatus::Failed(_)
+        ));
+        check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
+    }
+
+    #[tokio::test]
+    async fn stopped_session_does_not_fail_a_transaction_mined_in_an_unscanned_block() {
+        let mut net = MockNet::launch().await;
+        let (mut recipient, _, txid, expiry) = mempool_transaction_near_expiry(&mut net).await;
+        {
+            let mut chain = net.chain.write().await;
+            let tip = chain.tip();
+            chain.mine_empty_blocks(u32::from(expiry) - 1 - tip);
+            chain.mine_mempool();
+            assert_eq!(chain.tip(), u32::from(expiry));
+        }
+        net.chain
+            .write()
+            .await
+            .faults
+            .inject(Rpc::Transaction, Fault::Delay(HELD_FETCH));
+
+        recipient.sync().await.unwrap();
+        wait_until_fetch_is_held(&net).await;
+        recipient.stop_sync().unwrap();
+        recipient.await_sync().await.unwrap();
+        assert!(fully_scanned_height(&recipient).await < expiry);
+        assert!(
+            !matches!(
+                status_of(&recipient, &txid).await,
+                ConfirmationStatus::Failed(_)
+            ),
+            "a transaction mined in an unscanned block was marked Failed by a stopped session"
+        );
+
+        recipient.sync_and_await().await.unwrap();
+        assert!(matches!(
+            status_of(&recipient, &txid).await,
+            ConfirmationStatus::Confirmed(_)
+        ));
+        check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
+    }
+}
+
+/// The mainnet broadcast rule, end to end over mock indexers.
+mod mainnet_broadcast_offline {
+    use super::*;
+    use crate::destination::servers::{DestinationServerSet, IndexerConfig, Location, Role, Trust};
+    use crate::lightclient::LightClient;
+    use crate::lightclient::error::LightClientError;
+    use crate::lightclient::send::{TransmitReport, TransmitRoute};
+    use nonempty::NonEmpty;
+
+    const SUPPRESSOR: &str = "suppressor.example";
+    const ACCEPTOR: &str = "acceptor.example";
+
+    struct Stage {
+        sync: MockNet,
+        suppressing: MockNet,
+        accepting: MockNet,
+    }
+
+    impl Stage {
+        fn set_over(&self, entries: &[(&MockNet, &str)]) -> DestinationServerSet {
+            DestinationServerSet::registry_for_tests(
+                Trust::Untrusted,
+                entries
+                    .iter()
+                    .map(|(net, operator)| (net.indexer_uri(), *operator)),
+            )
+            .with_indexer(IndexerConfig::new(self.sync.indexer_uri()).location(Location::Remote))
+        }
+
+        async fn received(&self) -> (usize, usize, u32) {
+            (
+                self.sync.chain.read().await.mempool_len(),
+                self.accepting.chain.read().await.mempool_len(),
+                self.suppressing.chain.read().await.rejected_sends,
+            )
+        }
+    }
+
+    async fn stage() -> (Stage, LightClient) {
+        let mut sync = MockNet::launch().await;
+        let suppressing = MockNet::launch().await;
+        suppressing.chain.write().await.reject_all_sends = true;
+        let accepting = MockNet::launch().await;
+
+        let mut recipient = sync
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .await;
+        let recipient_ua =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        fund_mirrored(
+            &[&sync, &suppressing, &accepting],
+            vec![(&recipient_ua, 100_000, None)],
+            1,
+        )
+        .await;
+        recipient.sync_and_await().await.unwrap();
+        recipient.set_transmit_retry_interval(std::time::Duration::from_millis(10));
+        (
+            Stage {
+                sync,
+                suppressing,
+                accepting,
+            },
+            recipient,
+        )
+    }
+
+    async fn send(
+        recipient: &mut LightClient,
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        from_inputs::quick_send_reported(
+            recipient,
+            vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_clearnet_send_goes_to_the_untrusted_sync_indexer_alone() {
+        let (stage, mut recipient) = stage().await;
+        #[cfg(feature = "nym")]
+        recipient.disable_mixnet().await;
+        recipient.set_destination_servers_for_tests(stage.set_over(&[
+            (&stage.suppressing, SUPPRESSOR),
+            (&stage.accepting, ACCEPTOR),
+        ]));
+
+        let reports = send(&mut recipient).await.unwrap();
+
+        assert!(
+            reports
+                .iter()
+                .all(|report| matches!(report.route, TransmitRoute::Clearnet { .. }))
+        );
+        assert_eq!(stage.received().await, (reports.len(), 0, 0));
+    }
+
+    #[tokio::test]
+    async fn a_trusted_broadcast_indexer_receives_the_send_alone() {
+        let (stage, mut recipient) = stage().await;
+        #[cfg(feature = "nym")]
+        recipient.disable_mixnet().await;
+        recipient.set_destination_servers_for_tests(
+            stage
+                .set_over(&[(&stage.suppressing, SUPPRESSOR)])
+                .with_indexer(
+                    IndexerConfig::new(stage.accepting.indexer_uri())
+                        .role(Role::Broadcast)
+                        .trust(Trust::Trusted)
+                        .location(Location::Remote),
+                ),
+        );
+
+        let reports = send(&mut recipient).await.unwrap();
+
+        assert_eq!(stage.received().await, (0, reports.len(), 0));
+    }
+
+    #[cfg(feature = "nym")]
+    #[tokio::test]
+    async fn a_mixnet_send_routes_around_the_suppressor_and_never_the_sync_indexer() {
+        let (stage, mut recipient) = stage().await;
+        recipient.set_destination_servers_for_tests(stage.set_over(&[
+            (&stage.suppressing, SUPPRESSOR),
+            (&stage.accepting, ACCEPTOR),
+        ]));
+
+        let reports = send(&mut recipient).await.unwrap();
+
+        assert!(
+            reports
+                .iter()
+                .all(|report| matches!(report.route, TransmitRoute::Mixnet { .. }))
+        );
+        let (sync, accepting, _) = stage.received().await;
+        assert_eq!((sync, accepting), (0, reports.len()));
+    }
+
+    #[cfg(feature = "nym")]
+    #[tokio::test]
+    async fn an_all_suppressing_mixnet_draw_fails_closed() {
+        let (stage, mut recipient) = stage().await;
+        recipient
+            .set_destination_servers_for_tests(stage.set_over(&[(&stage.suppressing, SUPPRESSOR)]));
+
+        let refused = send(&mut recipient)
+            .await
+            .expect_err("a suppressed transmission surfaces");
+        assert!(
+            matches!(
+                refused,
+                LightClientError::SendError(
+                    crate::lightclient::error::SendError::TransmissionError(_)
+                )
+            ),
+            "the refusal is the typed transmission failure: {refused}"
+        );
+        let (sync, _, rejected) = stage.received().await;
+        assert_eq!(
+            sync, 0,
+            "a refused draw never falls back to the sync indexer"
+        );
+        assert!(rejected > 0, "the suppressing Destination was contacted");
+    }
+}
+
+/// The real mixnet wire, end to end through a loopback SOCKS5 relay.
+#[cfg(feature = "nym")]
+mod mixnet_wire_offline {
+    use super::*;
+    use crate::destination::health::FaultDomain;
+    use crate::destination::servers::{DestinationServerSet, IndexerConfig, Location, Role, Trust};
+    use crate::lightclient::LightClient;
+    use crate::lightclient::error::LightClientError;
+    use crate::lightclient::migrate::transmission_route::{
+        MigrationWire, RoutedTransmissionClient,
+    };
+    use crate::lightclient::send::{TransmitReport, TransmitRoute};
+    use crate::testutils::mock_indexer::Rules;
+    use crate::testutils::socks5_relay::{Destination, Socks5Relay, destination_of};
+    use crate::wallet::migration::transmission::{
+        PartTransmissionError, TransmissionClient as _, TransmissionRoute,
+    };
+    use nonempty::NonEmpty;
+
+    const ACCEPTOR_URI: &str = "https://localhost:443";
+    const SUPPRESSOR_URI: &str = "https://127.0.0.1:443";
+    const UNROUTED_URI: &str = "https://unrouted.example:443";
+    const ACCEPTOR: &str = "acceptor.example";
+    const SUPPRESSOR: &str = "suppressor.example";
+    const UNROUTED: &str = "unrouted.example";
+    const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+    fn uri(text: &str) -> http::Uri {
+        text.parse().expect("a static uri")
+    }
+
+    struct Stage {
+        sync: MockNet,
+        accepting: MockNet,
+        suppressing: MockNet,
+        relay: Socks5Relay,
+    }
+
+    impl Stage {
+        fn set_over(&self, entries: &[(&str, &str)]) -> DestinationServerSet {
+            DestinationServerSet::registry_for_tests(
+                Trust::Untrusted,
+                entries
+                    .iter()
+                    .map(|(text, operator)| (uri(text), *operator)),
+            )
+            .with_indexer(IndexerConfig::new(self.sync.indexer_uri()).location(Location::Remote))
+        }
+
+        fn sync_destination(&self) -> Destination {
+            destination_of(&self.sync.indexer_uri())
+        }
+    }
+
+    async fn relayed() -> (Socks5Relay, MockNet, MockNet) {
+        let accepting = MockNet::launch_tls().await;
+        let suppressing = MockNet::launch_tls().await;
+        suppressing.chain.write().await.reject_all_sends = true;
+        let relay = Socks5Relay::launch().await;
+        relay.route(&uri(ACCEPTOR_URI), accepting.addr());
+        relay.route(&uri(SUPPRESSOR_URI), suppressing.addr());
+        (relay, accepting, suppressing)
+    }
+
+    async fn stage() -> (Stage, LightClient) {
+        let mut sync = MockNet::launch().await;
+        let (relay, accepting, suppressing) = relayed().await;
+        let mut recipient = sync
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .await;
+        let recipient_ua =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        fund_mirrored(
+            &[&sync, &accepting, &suppressing],
+            vec![(&recipient_ua, 100_000, None)],
+            1,
+        )
+        .await;
+        recipient.sync_and_await().await.unwrap();
+        recipient.set_transmit_retry_interval(std::time::Duration::from_millis(10));
+        recipient
+            .switch_on_mixnet_through_for_tests(relay.addr())
+            .await;
+        (
+            Stage {
+                sync,
+                accepting,
+                suppressing,
+                relay,
+            },
+            recipient,
+        )
+    }
+
+    async fn send(
+        recipient: &mut LightClient,
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        from_inputs::quick_send_reported(
+            recipient,
+            vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_mixnet_send_crosses_the_tunnel_to_a_registry_destination() {
+        let (stage, mut recipient) = stage().await;
+        recipient.set_destination_servers_for_tests(
+            stage.set_over(&[(ACCEPTOR_URI, ACCEPTOR), (SUPPRESSOR_URI, SUPPRESSOR)]),
+        );
+
+        let reports = send(&mut recipient).await.unwrap();
+
+        for report in &reports {
+            assert_eq!(
+                report.route,
+                TransmitRoute::Mixnet {
+                    destination: "localhost".to_string(),
+                    via_socks5: stage.relay.addr().to_string(),
+                }
+            );
+        }
+        assert_eq!(
+            stage.accepting.chain.read().await.mempool_len(),
+            reports.len()
+        );
+        assert_eq!(stage.sync.chain.read().await.mempool_len(), 0);
+        let allowed = [
+            destination_of(&uri(ACCEPTOR_URI)),
+            destination_of(&uri(SUPPRESSOR_URI)),
+        ];
+        let requested = stage.relay.requested();
+        assert!(!requested.is_empty());
+        assert!(
+            requested
+                .iter()
+                .all(|destination| allowed.contains(destination)),
+            "the exit learned a destination outside the registry: {requested:?}"
+        );
+        assert!(!requested.contains(&stage.sync_destination()));
+    }
+
+    #[tokio::test]
+    async fn failed_arms_are_attributed_to_the_component_that_failed() {
+        let (stage, mut recipient) = stage().await;
+        recipient.set_destination_servers_for_tests(
+            stage.set_over(&[(SUPPRESSOR_URI, SUPPRESSOR), (UNROUTED_URI, UNROUTED)]),
+        );
+
+        let refused = send(&mut recipient)
+            .await
+            .expect_err("no Destination accepts");
+        assert!(
+            matches!(
+                refused,
+                LightClientError::SendError(
+                    crate::lightclient::error::SendError::TransmissionError(_)
+                )
+            ),
+            "{refused}"
+        );
+        let attempts = recipient.indexer_history_handle().load();
+        let fault_of = |host: &str| {
+            attempts
+                .iter()
+                .find(|attempt| attempt.host.as_str() == host)
+                .unwrap_or_else(|| panic!("no attempt against {host}: {attempts:?}"))
+                .fault_domain
+        };
+        assert_eq!(fault_of("127.0.0.1"), Some(FaultDomain::Destination));
+        assert_eq!(fault_of("unrouted.example"), Some(FaultDomain::Tunnel));
+        assert!(stage.suppressing.chain.read().await.rejected_sends > 0);
+        assert!(
+            stage
+                .relay
+                .requested()
+                .contains(&destination_of(&uri(UNROUTED_URI))),
+            "the unroutable arm asked the exit for its Destination"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_trusted_broadcast_indexer_receives_the_mixnet_send_alone() {
+        let (stage, mut recipient) = stage().await;
+        recipient.set_destination_servers_for_tests(
+            stage
+                .set_over(&[(SUPPRESSOR_URI, SUPPRESSOR)])
+                .with_indexer(
+                    IndexerConfig::new(uri(ACCEPTOR_URI))
+                        .role(Role::Broadcast)
+                        .trust(Trust::Trusted)
+                        .location(Location::Remote),
+                ),
+        );
+
+        let reports = send(&mut recipient).await.unwrap();
+
+        assert_eq!(
+            stage.accepting.chain.read().await.mempool_len(),
+            reports.len()
+        );
+        assert_eq!(stage.suppressing.chain.read().await.rejected_sends, 0);
+        let acceptor = destination_of(&uri(ACCEPTOR_URI));
+        assert!(
+            stage
+                .relay
+                .requested()
+                .iter()
+                .all(|destination| *destination == acceptor),
+            "{:?}",
+            stage.relay.requested()
+        );
+    }
+
+    #[tokio::test]
+    async fn the_network_probe_measures_the_registry_through_the_tunnel() {
+        let (stage, mut recipient) = stage().await;
+        recipient.set_destination_servers_for_tests(
+            stage.set_over(&[(ACCEPTOR_URI, ACCEPTOR), (SUPPRESSOR_URI, SUPPRESSOR)]),
+        );
+
+        let probes = recipient
+            .probe_destinations(None, PROBE_TIMEOUT)
+            .await
+            .expect("a ready mixnet probes");
+
+        let mut hosts: Vec<&str> = probes.iter().map(|probe| probe.host.as_str()).collect();
+        hosts.sort_unstable();
+        assert_eq!(hosts, vec!["127.0.0.1", "localhost"]);
+        for probe in &probes {
+            assert!(probe.leg.outcome.is_ok(), "{probe:?}");
+        }
+        assert!(!stage.relay.requested().contains(&stage.sync_destination()));
+    }
+
+    #[tokio::test]
+    async fn a_migration_part_crosses_the_tunnel() {
+        const REJECTION_CODE: i32 = -26;
+        const REJECTOR_URI: &str = "https://localhost:8443";
+
+        let (relay, accepting, suppressing) = relayed().await;
+        let rejecting = MockNet::launch_tls().await;
+        for net in [&accepting, &suppressing, &rejecting] {
+            net.chain.write().await.rules = Rules::LAX;
+        }
+        rejecting.chain.write().await.answer_sends_with_error_code = Some(REJECTION_CODE);
+        relay.route(&uri(REJECTOR_URI), rejecting.addr());
+        let part =
+            faucet_funding_transaction(vec![(&external_address(PoolType::ORCHARD), 20_000, None)])
+                .await;
+        let expiry = BlockHeight::from_u32(1);
+        let client_for = |target: &str| {
+            RoutedTransmissionClient::new(
+                MigrationWire::Mixnet(crate::mixnet::MixnetConduit::over(relay.addr()).dial()),
+                vec![uri(target)],
+            )
+        };
+
+        let receipt = client_for(ACCEPTOR_URI)
+            .submit(part.clone(), expiry)
+            .await
+            .expect("the acceptor takes the part");
+        assert_eq!(
+            receipt.route,
+            TransmissionRoute::Mixnet {
+                destination: "localhost".to_string(),
+                via_socks5: relay.addr().to_string(),
+            }
+        );
+        assert_eq!(accepting.chain.read().await.mempool_len(), 1);
+
+        assert!(matches!(
+            client_for(REJECTOR_URI).submit(part.clone(), expiry).await,
+            Err(PartTransmissionError::Rejected(_))
+        ));
+        assert!(matches!(
+            client_for(SUPPRESSOR_URI)
+                .submit(part.clone(), expiry)
+                .await,
+            Err(PartTransmissionError::Transport(_))
+        ));
+        assert!(matches!(
+            client_for(UNROUTED_URI).submit(part, expiry).await,
+            Err(PartTransmissionError::Transport(_))
+        ));
     }
 }

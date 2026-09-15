@@ -109,6 +109,21 @@ pub use socks5_transmit::{ProxyDialFailure, Socks5Indexer, Socks5TransmitError, 
 #[cfg(feature = "socks5-transmit")]
 pub mod sentinel;
 
+/// The committed localhost certificate and key.
+#[cfg(any(test, feature = "testutils"))]
+pub mod test_tls {
+    /// The self-signed `localhost` certificate.
+    pub const LOCALHOST_CERT_PEM: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test-data/localhost.pem"
+    ));
+    /// Its private key.
+    pub const LOCALHOST_KEY_PEM: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test-data/localhost.key"
+    ));
+}
+
 fn client_tls_config() -> ClientTlsConfig {
     // The config built here is consumed by rustls at connect time; make
     // sure a process-level CryptoProvider exists before that happens.
