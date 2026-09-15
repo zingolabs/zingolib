@@ -12,6 +12,7 @@ on:
       - ".cargo/**"
       - "rust-toolchain.toml"
       - ".github/workflows/**"
+      - "deny.toml"
   push:
     branches: [stable, dev]
 
@@ -27,6 +28,18 @@ concurrency:
 jobs:
   reject-trailing-whitespace:
     uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@20485fed7a080e381130ed8120419dc81acae641
+
+  cargo-deny:
+    name: Cargo Deny
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check bans
 
   cargo-checkmate:
     uses: ./.github/workflows/cargo-checkmate.yaml
