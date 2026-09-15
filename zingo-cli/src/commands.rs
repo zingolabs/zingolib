@@ -1339,9 +1339,9 @@ fn render_status(
     use zingolib::mixnet::Indicator;
 
     match mode {
-        Indicator::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled, \
-             and no consent to clearnet has been given: send and price-fetch refuse. Run \
-             `network on` to enable the mixnet, or `network off` to use clearnet."
+        Indicator::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled: \
+             price-fetch refuses, and send refuses under the mixnet transmit policy. Run \
+             `network on` to enable the mixnet."
             .to_string(),
         Indicator::SwitchedOff => {
             "Mixnet Mode: switched off (price-fetch refuses; send follows the transmit policy)"

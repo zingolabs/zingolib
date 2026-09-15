@@ -884,8 +884,9 @@ impl LightClient {
 
     /// Disable Mixnet Mode — the deliberate, per-session choice that alone
     /// reaches [`Indicator::SwitchedOff`](crate::mixnet::Indicator) — shutting
-    /// down any running transport so the mixnet-only surfaces route over
-    /// clearnet as informed consent.
+    /// down any running transport. A transport act only: the transmit
+    /// policy is untouched, so where a send travels afterwards is the
+    /// policy's answer, and the mixnet-only surfaces refuse.
     pub async fn disable_mixnet(&mut self) {
         // Revoked consent stops every networking act this session started:
         // the health sweep's survey halts with the standing transport.
@@ -910,7 +911,10 @@ impl LightClient {
     /// endpoint) and blocks until the standing client is born proven, under
     /// [`MixnetStartPolicy::OptedOutThisSession`](crate::mixnet::MixnetStartPolicy)
     /// records the startup opt-out as the explicit act that reaches switched
-    /// off, returns any provisioning failure typed while leaving the mode
+    /// off and sets the transmit policy to
+    /// [`TransmitPolicy::Clearnet`](crate::mixnet::TransmitPolicy), so the
+    /// session's sends travel over the indexer (ADR 0024, consent at start),
+    /// returns any provisioning failure typed while leaving the mode
     /// unattached — refusal, never a silent clearnet — and never respawns on
     /// its own, recovery staying explicit through
     /// [`Indicator::needs_recovery`](crate::mixnet::Indicator::needs_recovery).
@@ -922,6 +926,10 @@ impl LightClient {
         match policy {
             crate::mixnet::MixnetStartPolicy::OptedOutThisSession => {
                 self.disable_mixnet().await;
+                // The opt-out is the user's explicit clearnet consent for
+                // this session, so it is the one production act that sets
+                // the policy. The price fetch stays mixnet-only regardless.
+                self.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
                 Ok(())
             }
             crate::mixnet::MixnetStartPolicy::ForcedOn => match strategy {
@@ -1927,8 +1935,9 @@ mod tests {
 
         /// The driver entry honors the startup opt-out (ADR 0024, consent
         /// at start): OptedOutThisSession lands SwitchedOff without
-        /// provisioning anything — the strategy is never exercised — and
-        /// the transition reaches subscribers through the session channel.
+        /// provisioning anything — the strategy is never exercised — sets
+        /// the transmit policy to clearnet so sends still travel, and the
+        /// transition reaches subscribers through the session channel.
         #[tokio::test]
         async fn the_driver_records_the_startup_opt_out_and_publishes_it() {
             let mut client = LightClient::new_for_test(wallet()).await;
@@ -1937,6 +1946,11 @@ mod tests {
                 subscriber.borrow().mode,
                 crate::mixnet::Indicator::Unattached,
                 "the channel opens in the ground state"
+            );
+            assert_eq!(
+                client.transmit_policy(),
+                crate::mixnet::TransmitPolicy::Mixnet,
+                "the session starts under the mixnet policy"
             );
 
             client
@@ -1959,6 +1973,21 @@ mod tests {
                 subscriber.borrow().mode,
                 crate::mixnet::Indicator::SwitchedOff,
                 "the slot transition must reach subscribers"
+            );
+            assert_eq!(
+                client.transmit_policy(),
+                crate::mixnet::TransmitPolicy::Clearnet,
+                "the opt-out is the session's clearnet consent"
+            );
+            assert_eq!(
+                client.send_route(),
+                Ok(crate::mixnet::MixnetRoute::Clearnet),
+                "an opted-out session must still transmit"
+            );
+            assert_eq!(
+                client.mixnet_only_route().err(),
+                Some(crate::mixnet::MixnetNotReady::Unattached),
+                "the opt-out never opens a clearnet price fetch"
             );
         }
 

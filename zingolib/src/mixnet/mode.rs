@@ -99,9 +99,11 @@ impl std::str::FromStr for Indicator {
 /// The wallet's mixnet transport slot: the explicit state [`Indicator`] is
 /// read from. An enum rather than `Option<MixnetProxy>` because dropping the
 /// handle on disable would erase the very bit that separates
-/// [`Indicator::SwitchedOff`] (consent to clearnet) from
+/// [`Indicator::SwitchedOff`] (a deliberate disable) from
 /// [`Indicator::Unattached`] (absence of a transport) — the flattening the
-/// 2026-07-28 amendment of ADR 0011 retires.
+/// 2026-07-28 amendment of ADR 0011 retires. Neither consents to clearnet:
+/// since the 2026-09-11 amendment that is the transmit policy's answer,
+/// held on the client beside this slot.
 // One slot lives per client and never in a collection, so the size skew
 // between the unit states and the attached transport costs nothing; boxing
 // would add only indirection.
@@ -110,8 +112,8 @@ pub(crate) enum MixnetSlot {
     /// No transport and no consent recorded. The initial state, and the
     /// state a failed enable leaves behind.
     Unattached,
-    /// The user's deliberate per-session disable. The one slot state that
-    /// consents to clearnet.
+    /// The user's deliberate per-session disable. Both route resolvers
+    /// read it as a missing transport.
     SwitchedOff,
     /// The session's Standing Client, in whatever lifecycle state its
     /// transport reports.

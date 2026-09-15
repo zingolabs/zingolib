@@ -746,9 +746,9 @@ mod network_command_parsing {
 
         assert_eq!(
             render_status(Indicator::Unattached, None, None),
-            "Mixnet Mode: unattached. The mixnet has not been enabled, and no consent to \
-             clearnet has been given: send and price-fetch refuse. Run `network on` to enable \
-             the mixnet, or `network off` to use clearnet.",
+            "Mixnet Mode: unattached. The mixnet has not been enabled: price-fetch refuses, \
+             and send refuses under the mixnet transmit policy. Run `network on` to enable \
+             the mixnet.",
             "absence is not consent: unattached names refusal, never clearnet"
         );
         assert_eq!(

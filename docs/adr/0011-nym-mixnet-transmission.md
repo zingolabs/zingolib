@@ -539,6 +539,10 @@ mixnet-only outcome. `SwitchedOff` stays in the state set because the
 startup opt-out and the in-session disable still land there, but both
 resolvers read it as a missing transport, so the 2026-08-26 amendment's
 clearnet price tier is retired and `PriceFetchRoute::Clearnet` leaves the
-attestation. The session driver, the status channel, and the CLI's
+attestation. The startup opt-out (`OptedOutThisSession`) is the one
+production act that sets the policy: it lands `SwitchedOff` and
+`Clearnet` together, so an opted-out session transmits over the indexer
+as ADR 0024 promised. `disable_mixnet` alone is a transport act and
+leaves the policy where the consumer put it. The session driver, the status channel, and the CLI's
 `network` family are unchanged, and the CLI does not yet expose the
 policy. The state by policy matrix is pinned in `mixnet::route`'s tests.
