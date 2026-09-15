@@ -1983,10 +1983,16 @@ mod tests {
         async fn a_send_during_the_bootstrap_refuses_rather_than_leak() {
             let mut client = LightClient::new_for_test(wallet()).await;
             client.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
-            assert_eq!(client.send_route(), Ok(crate::mixnet::MixnetRoute::Clearnet));
+            assert_eq!(
+                client.send_route(),
+                Ok(crate::mixnet::MixnetRoute::Clearnet)
+            );
 
             client
-                .attach_mixnet("127.0.0.1:9", &[crate::mixnet::ExitNodeId::from("exit-alpha")])
+                .attach_mixnet(
+                    "127.0.0.1:9",
+                    &[crate::mixnet::ExitNodeId::from("exit-alpha")],
+                )
                 .await
                 .expect("a well-formed address and a named exit attach");
 
@@ -2056,7 +2062,10 @@ mod tests {
                 crate::mixnet::TransmitPolicy::Mixnet
             );
             assert!(
-                matches!(client.send_route(), Ok(crate::mixnet::MixnetRoute::Mixnet(_))),
+                matches!(
+                    client.send_route(),
+                    Ok(crate::mixnet::MixnetRoute::Mixnet(_))
+                ),
                 "a ready transport after an enable must carry the sends"
             );
         }
