@@ -719,7 +719,7 @@ mod network_command_parsing {
             kind: AttemptKind::Send,
             millis: 10,
             outcome,
-            phase: None,
+            fault_domain: None,
         };
         let tunnel = Err(FailureKind::Unreachable);
         let attempts = vec![

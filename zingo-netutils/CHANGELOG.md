@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `test_tls`, behind `testutils`: the committed localhost certificate and
+  key. A `Socks5Indexer` in a `testutils` build also trusts that
+  certificate, so a test can serve a Destination over TLS behind a loopback
+  SOCKS5 relay and run the real tunneled path offline. A build without
+  `testutils` trusts the webpki roots alone, as before.
+
 ### Fixed
 - `conduit::MixnetConduit::in_flight` counts guards rather than references
   to the shared core, so cloning a conduit no longer reads as using it. A

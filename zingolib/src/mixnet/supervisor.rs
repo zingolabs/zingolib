@@ -665,7 +665,7 @@ impl MixnetProxy {
     }
 }
 
-impl crate::destination::pool::PoolTransport for MixnetProxy {
+impl crate::mixnet::pools::PoolTransport for MixnetProxy {
     fn socks5_addr(&self) -> Option<std::net::SocketAddr> {
         MixnetProxy::socks5_addr(self)
     }

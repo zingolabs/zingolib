@@ -1587,10 +1587,10 @@ fn render_transmit_report(report: &zingolib::lightclient::send::TransmitReport) 
     use zingolib::lightclient::send::TransmitRoute;
     let rtt_ms = u64::try_from(report.round_trip.as_millis()).unwrap_or(u64::MAX);
     match &report.route {
-        TransmitRoute::Clearnet { indexer } => object! {
+        TransmitRoute::Clearnet { destination } => object! {
             "txid" => report.txid.to_string(),
             "over_mixnet" => false,
-            "indexer" => indexer.clone(),
+            "destination" => destination.clone(),
             "rtt_ms" => rtt_ms,
         },
         TransmitRoute::Mixnet {

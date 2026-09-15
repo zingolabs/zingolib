@@ -1,5 +1,7 @@
 //! [`crate::wallet::LightWallet`] methods associated with keys and address derivation.
 
+use std::collections::BTreeSet;
+
 use pepper_sync::{
     keys::{
         decode_address,
@@ -480,6 +482,50 @@ impl LightWallet {
             .filter(|id| id.scope() == TransparentScope::Refund)
             .max_by_key(|id| id.address_index())
             .map(|id| id.address_index())
+    }
+
+    pub(crate) fn truncate_failed_refund_addresses(&mut self) {
+        let accounts: BTreeSet<zip32::AccountId> = self
+            .transparent_addresses()
+            .keys()
+            .filter(|id| id.scope() == TransparentScope::Refund)
+            .map(|id| id.account_id())
+            .collect();
+        for account_id in accounts {
+            self.truncate_failed_refund_addresses_for_account(account_id);
+        }
+    }
+
+    fn truncate_failed_refund_addresses_for_account(&mut self, account_id: zip32::AccountId) {
+        loop {
+            let Some((id, address)) = self
+                .transparent_addresses()
+                .iter()
+                .filter(|(id, _)| {
+                    id.scope() == TransparentScope::Refund && id.account_id() == account_id
+                })
+                .max_by_key(|(id, _)| id.address_index())
+                .map(|(id, address)| (*id, address.clone()))
+            else {
+                return;
+            };
+            let mut paid = false;
+            let mut live = false;
+            for transaction in self.wallet_transactions.values() {
+                if transaction
+                    .transparent_coins()
+                    .iter()
+                    .any(|coin| coin.address() == address)
+                {
+                    paid = true;
+                    live |= !transaction.status().is_failed();
+                }
+            }
+            if !paid || live {
+                return;
+            }
+            self.transparent_addresses_mut().remove(&id);
+        }
     }
 
     /// Removes any refund address in the wallet above the given index.
