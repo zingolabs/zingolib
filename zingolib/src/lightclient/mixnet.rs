@@ -502,9 +502,9 @@ async fn standing_rotation_watchdog(
 
 impl LightClient {
     /// Take whatever transport the slot holds and shut it down, leaving the
-    /// `Unattached` that a failed enable also deliberately leaves behind,
-    /// because the enable act revoked any standing clearnet consent and a
-    /// failure must not silently reinstate a prior `SwitchedOff`.
+    /// `Unattached` that a failed enable also deliberately leaves behind: a
+    /// failure must not silently reinstate a prior `SwitchedOff`. The
+    /// transmit policy is untouched either way.
     pub(super) async fn vacate_mixnet_slot(&mut self) {
         self.exit_pools.clear_acquirer();
         // Boot's unspent conduits go with the session: a teardown before
@@ -754,8 +754,8 @@ impl LightClient {
                 Ok(())
             }
             Err(error) => {
-                // A failed enable leaves Unattached (the user's enable revoked
-                // any standing clearnet consent); subscribers must see it.
+                // A failed enable leaves Unattached rather than a prior
+                // SwitchedOff; subscribers must see it.
                 self.publish_mixnet_slot_state();
                 Err(error)
             }
@@ -874,8 +874,8 @@ impl LightClient {
                 Ok(())
             }
             Err(error) => {
-                // A failed enable leaves Unattached (the enable act revoked
-                // any standing clearnet consent); subscribers must see it.
+                // A failed enable leaves Unattached rather than a prior
+                // SwitchedOff; subscribers must see it.
                 self.publish_mixnet_slot_state();
                 Err(error)
             }
@@ -1906,15 +1906,16 @@ mod tests {
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
         }
 
-        /// HYPOTHESIS: an enable act revokes standing clearnet consent even
-        /// when the mobile platform address fails to parse — from `SwitchedOff`,
-        /// a failed `attach_mixnet` lands `Unattached` and publishes it.
-        /// Falsified if the mode remains `SwitchedOff` after the failed
-        /// attach.
+        /// HYPOTHESIS: a failed enable never reinstates a prior `SwitchedOff`,
+        /// even when the mobile platform address fails to parse: from
+        /// `SwitchedOff`, a failed `attach_mixnet` lands `Unattached` and
+        /// publishes it, and the transmit policy is untouched. Falsified if
+        /// the mode remains `SwitchedOff` or the policy moves.
         #[tokio::test]
-        async fn a_failed_attach_revokes_clearnet_consent() {
+        async fn a_failed_attach_lands_unattached_and_leaves_the_policy() {
             let mut client = LightClient::new_for_test(wallet()).await;
             client.disable_mixnet().await;
+            client.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
             let subscriber = client.subscribe_mixnet_status();
 
             client
@@ -1929,7 +1930,12 @@ mod tests {
             assert_eq!(
                 subscriber.borrow().mode,
                 crate::mixnet::Indicator::Unattached,
-                "subscribers must see the revocation"
+                "subscribers must see the settled state"
+            );
+            assert_eq!(
+                client.transmit_policy(),
+                crate::mixnet::TransmitPolicy::Clearnet,
+                "an enable act never touches the transmit policy"
             );
         }
 
