@@ -63,6 +63,22 @@ fn external_tex_address() -> String {
     crate::testutils::interpret_taddr_as_tex_addr(taddr_bytes, &external_wallet.chain_type())
 }
 
+/// Mines one empty block, one funding block, and `extra_blocks` into every
+/// chain in `nets`.
+async fn fund_mirrored(
+    nets: &[&MockNet],
+    receivers: Vec<(&str, u64, Option<&str>)>,
+    extra_blocks: u32,
+) {
+    let funding = faucet_funding_transaction(receivers).await;
+    for net in nets {
+        let mut chain = net.chain.write().await;
+        chain.mine_empty_blocks(1);
+        chain.mine_block(vec![funding.clone()]);
+        chain.mine_empty_blocks(extra_blocks);
+    }
+}
+
 /// Funds `client` with one faucet-built transaction mined into the next
 /// mock block, followed by `extra_blocks` empty blocks.
 async fn fund(net: &MockNet, receivers: Vec<(&str, u64, Option<&str>)>, extra_blocks: u32) {
@@ -1382,10 +1398,10 @@ mod perspective {
 
 /// A mock-chain send travels the mixnet route and says so: the receipt
 /// names the Destination that accepted the transaction and the
-/// session's SOCKS5 endpoint, never the sync indexer. Mock-net clients
-/// run with Mixnet Mode switched on, so the Destination draw, the
-/// escalation rounds, and the cap all run for real; only the bytes take
-/// the mock indexer's channel instead of the tunnel.
+/// session's SOCKS5 endpoint. Mock-net clients run with Mixnet Mode
+/// switched on, so the Destination draw, the escalation rounds, and the
+/// cap all run for real; only the bytes take the mock indexer's channel
+/// instead of the tunnel.
 #[cfg(feature = "nym")]
 #[tokio::test]
 async fn a_mock_chain_send_reports_the_mixnet_route() {
@@ -1420,15 +1436,16 @@ async fn a_mock_chain_send_reports_the_mixnet_route() {
                     via_socks5,
                     &crate::mocks::transmission::MOCK_SOCKS5_ADDR.to_string()
                 );
-                assert!(
-                    crate::destination::DESTINATION_INDEXERS
-                        .iter()
-                        .any(|entry| entry.contains(destination.as_str())),
-                    "the winning Destination {destination} is not drawn from the curated pool"
+                assert_eq!(
+                    destination,
+                    net.indexer_uri()
+                        .host()
+                        .expect("the mock indexer has a host"),
+                    "a regtest draw names the sync indexer alone"
                 );
             }
-            TransmitRoute::Clearnet { indexer } => {
-                panic!("a mixnet-on session leaked the transmission to clearnet at {indexer}")
+            TransmitRoute::Clearnet { destination } => {
+                panic!("a mixnet-on session leaked the transmission to clearnet at {destination}")
             }
         }
     }
@@ -2624,5 +2641,459 @@ mod strict_chain {
             ConfirmationStatus::Confirmed(_)
         ));
         check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
+    }
+}
+
+/// The mainnet broadcast rule, end to end over mock indexers.
+mod mainnet_broadcast_offline {
+    use super::*;
+    use crate::destination::servers::{DestinationServerSet, IndexerConfig, Location, Role, Trust};
+    use crate::lightclient::LightClient;
+    use crate::lightclient::error::LightClientError;
+    use crate::lightclient::send::{TransmitReport, TransmitRoute};
+    use nonempty::NonEmpty;
+
+    const SUPPRESSOR: &str = "suppressor.example";
+    const ACCEPTOR: &str = "acceptor.example";
+
+    struct Stage {
+        sync: MockNet,
+        suppressing: MockNet,
+        accepting: MockNet,
+    }
+
+    impl Stage {
+        fn set_over(&self, entries: &[(&MockNet, &str)]) -> DestinationServerSet {
+            DestinationServerSet::registry_for_tests(
+                Trust::Untrusted,
+                entries
+                    .iter()
+                    .map(|(net, operator)| (net.indexer_uri(), *operator)),
+            )
+            .with_indexer(IndexerConfig::new(self.sync.indexer_uri()).location(Location::Remote))
+        }
+
+        async fn received(&self) -> (usize, usize, u32) {
+            (
+                self.sync.chain.read().await.mempool_len(),
+                self.accepting.chain.read().await.mempool_len(),
+                self.suppressing.chain.read().await.rejected_sends,
+            )
+        }
+    }
+
+    async fn stage() -> (Stage, LightClient) {
+        let mut sync = MockNet::launch().await;
+        let suppressing = MockNet::launch().await;
+        suppressing.chain.write().await.reject_all_sends = true;
+        let accepting = MockNet::launch().await;
+
+        let mut recipient = sync
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .await;
+        let recipient_ua =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        fund_mirrored(
+            &[&sync, &suppressing, &accepting],
+            vec![(&recipient_ua, 100_000, None)],
+            1,
+        )
+        .await;
+        recipient.sync_and_await().await.unwrap();
+        recipient.set_transmit_retry_interval(std::time::Duration::from_millis(10));
+        (
+            Stage {
+                sync,
+                suppressing,
+                accepting,
+            },
+            recipient,
+        )
+    }
+
+    async fn send(
+        recipient: &mut LightClient,
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        from_inputs::quick_send_reported(
+            recipient,
+            vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_clearnet_send_goes_to_the_untrusted_sync_indexer_alone() {
+        let (stage, mut recipient) = stage().await;
+        #[cfg(feature = "nym")]
+        recipient.disable_mixnet().await;
+        recipient.set_destination_servers_for_tests(stage.set_over(&[
+            (&stage.suppressing, SUPPRESSOR),
+            (&stage.accepting, ACCEPTOR),
+        ]));
+
+        let reports = send(&mut recipient).await.unwrap();
+
+        assert!(
+            reports
+                .iter()
+                .all(|report| matches!(report.route, TransmitRoute::Clearnet { .. }))
+        );
+        assert_eq!(stage.received().await, (reports.len(), 0, 0));
+    }
+
+    #[tokio::test]
+    async fn a_trusted_broadcast_indexer_receives_the_send_alone() {
+        let (stage, mut recipient) = stage().await;
+        #[cfg(feature = "nym")]
+        recipient.disable_mixnet().await;
+        recipient.set_destination_servers_for_tests(
+            stage
+                .set_over(&[(&stage.suppressing, SUPPRESSOR)])
+                .with_indexer(
+                    IndexerConfig::new(stage.accepting.indexer_uri())
+                        .role(Role::Broadcast)
+                        .trust(Trust::Trusted)
+                        .location(Location::Remote),
+                ),
+        );
+
+        let reports = send(&mut recipient).await.unwrap();
+
+        assert_eq!(stage.received().await, (0, reports.len(), 0));
+    }
+
+    #[cfg(feature = "nym")]
+    #[tokio::test]
+    async fn a_mixnet_send_routes_around_the_suppressor_and_never_the_sync_indexer() {
+        let (stage, mut recipient) = stage().await;
+        recipient.set_destination_servers_for_tests(stage.set_over(&[
+            (&stage.suppressing, SUPPRESSOR),
+            (&stage.accepting, ACCEPTOR),
+        ]));
+
+        let reports = send(&mut recipient).await.unwrap();
+
+        assert!(
+            reports
+                .iter()
+                .all(|report| matches!(report.route, TransmitRoute::Mixnet { .. }))
+        );
+        let (sync, accepting, _) = stage.received().await;
+        assert_eq!((sync, accepting), (0, reports.len()));
+    }
+
+    #[cfg(feature = "nym")]
+    #[tokio::test]
+    async fn an_all_suppressing_mixnet_draw_fails_closed() {
+        let (stage, mut recipient) = stage().await;
+        recipient
+            .set_destination_servers_for_tests(stage.set_over(&[(&stage.suppressing, SUPPRESSOR)]));
+
+        let refused = send(&mut recipient)
+            .await
+            .expect_err("a suppressed transmission surfaces");
+        assert!(
+            matches!(
+                refused,
+                LightClientError::SendError(
+                    crate::lightclient::error::SendError::TransmissionError(_)
+                )
+            ),
+            "the refusal is the typed transmission failure: {refused}"
+        );
+        let (sync, _, rejected) = stage.received().await;
+        assert_eq!(
+            sync, 0,
+            "a refused draw never falls back to the sync indexer"
+        );
+        assert!(rejected > 0, "the suppressing Destination was contacted");
+    }
+}
+
+/// The real mixnet wire, end to end through a loopback SOCKS5 relay.
+#[cfg(feature = "nym")]
+mod mixnet_wire_offline {
+    use super::*;
+    use crate::destination::health::FaultDomain;
+    use crate::destination::servers::{DestinationServerSet, IndexerConfig, Location, Role, Trust};
+    use crate::lightclient::LightClient;
+    use crate::lightclient::error::LightClientError;
+    use crate::lightclient::migrate::transmission_route::{
+        MigrationWire, RoutedTransmissionClient,
+    };
+    use crate::lightclient::send::{TransmitReport, TransmitRoute};
+    use crate::testutils::mock_indexer::Rules;
+    use crate::testutils::socks5_relay::{Destination, Socks5Relay, destination_of};
+    use crate::wallet::migration::transmission::{
+        PartTransmissionError, TransmissionClient as _, TransmissionRoute,
+    };
+    use nonempty::NonEmpty;
+
+    const ACCEPTOR_URI: &str = "https://localhost:443";
+    const SUPPRESSOR_URI: &str = "https://127.0.0.1:443";
+    const UNROUTED_URI: &str = "https://unrouted.example:443";
+    const ACCEPTOR: &str = "acceptor.example";
+    const SUPPRESSOR: &str = "suppressor.example";
+    const UNROUTED: &str = "unrouted.example";
+    const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+    fn uri(text: &str) -> http::Uri {
+        text.parse().expect("a static uri")
+    }
+
+    struct Stage {
+        sync: MockNet,
+        accepting: MockNet,
+        suppressing: MockNet,
+        relay: Socks5Relay,
+    }
+
+    impl Stage {
+        fn set_over(&self, entries: &[(&str, &str)]) -> DestinationServerSet {
+            DestinationServerSet::registry_for_tests(
+                Trust::Untrusted,
+                entries
+                    .iter()
+                    .map(|(text, operator)| (uri(text), *operator)),
+            )
+            .with_indexer(IndexerConfig::new(self.sync.indexer_uri()).location(Location::Remote))
+        }
+
+        fn sync_destination(&self) -> Destination {
+            destination_of(&self.sync.indexer_uri())
+        }
+    }
+
+    async fn relayed() -> (Socks5Relay, MockNet, MockNet) {
+        let accepting = MockNet::launch_tls().await;
+        let suppressing = MockNet::launch_tls().await;
+        suppressing.chain.write().await.reject_all_sends = true;
+        let relay = Socks5Relay::launch().await;
+        relay.route(&uri(ACCEPTOR_URI), accepting.addr());
+        relay.route(&uri(SUPPRESSOR_URI), suppressing.addr());
+        (relay, accepting, suppressing)
+    }
+
+    async fn stage() -> (Stage, LightClient) {
+        let mut sync = MockNet::launch().await;
+        let (relay, accepting, suppressing) = relayed().await;
+        let mut recipient = sync
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .await;
+        let recipient_ua =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        fund_mirrored(
+            &[&sync, &accepting, &suppressing],
+            vec![(&recipient_ua, 100_000, None)],
+            1,
+        )
+        .await;
+        recipient.sync_and_await().await.unwrap();
+        recipient.set_transmit_retry_interval(std::time::Duration::from_millis(10));
+        recipient
+            .switch_on_mixnet_through_for_tests(relay.addr())
+            .await;
+        (
+            Stage {
+                sync,
+                accepting,
+                suppressing,
+                relay,
+            },
+            recipient,
+        )
+    }
+
+    async fn send(
+        recipient: &mut LightClient,
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        from_inputs::quick_send_reported(
+            recipient,
+            vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_mixnet_send_crosses_the_tunnel_to_a_registry_destination() {
+        let (stage, mut recipient) = stage().await;
+        recipient.set_destination_servers_for_tests(
+            stage.set_over(&[(ACCEPTOR_URI, ACCEPTOR), (SUPPRESSOR_URI, SUPPRESSOR)]),
+        );
+
+        let reports = send(&mut recipient).await.unwrap();
+
+        for report in &reports {
+            assert_eq!(
+                report.route,
+                TransmitRoute::Mixnet {
+                    destination: "localhost".to_string(),
+                    via_socks5: stage.relay.addr().to_string(),
+                }
+            );
+        }
+        assert_eq!(
+            stage.accepting.chain.read().await.mempool_len(),
+            reports.len()
+        );
+        assert_eq!(stage.sync.chain.read().await.mempool_len(), 0);
+        let allowed = [
+            destination_of(&uri(ACCEPTOR_URI)),
+            destination_of(&uri(SUPPRESSOR_URI)),
+        ];
+        let requested = stage.relay.requested();
+        assert!(!requested.is_empty());
+        assert!(
+            requested
+                .iter()
+                .all(|destination| allowed.contains(destination)),
+            "the exit learned a destination outside the registry: {requested:?}"
+        );
+        assert!(!requested.contains(&stage.sync_destination()));
+    }
+
+    #[tokio::test]
+    async fn failed_arms_are_attributed_to_the_component_that_failed() {
+        let (stage, mut recipient) = stage().await;
+        recipient.set_destination_servers_for_tests(
+            stage.set_over(&[(SUPPRESSOR_URI, SUPPRESSOR), (UNROUTED_URI, UNROUTED)]),
+        );
+
+        let refused = send(&mut recipient)
+            .await
+            .expect_err("no Destination accepts");
+        assert!(
+            matches!(
+                refused,
+                LightClientError::SendError(
+                    crate::lightclient::error::SendError::TransmissionError(_)
+                )
+            ),
+            "{refused}"
+        );
+        let attempts = recipient.indexer_history_handle().load();
+        let fault_of = |host: &str| {
+            attempts
+                .iter()
+                .find(|attempt| attempt.host.as_str() == host)
+                .unwrap_or_else(|| panic!("no attempt against {host}: {attempts:?}"))
+                .fault_domain
+        };
+        assert_eq!(fault_of("127.0.0.1"), Some(FaultDomain::Destination));
+        assert_eq!(fault_of("unrouted.example"), Some(FaultDomain::Tunnel));
+        assert!(stage.suppressing.chain.read().await.rejected_sends > 0);
+        assert!(
+            stage
+                .relay
+                .requested()
+                .contains(&destination_of(&uri(UNROUTED_URI))),
+            "the unroutable arm asked the exit for its Destination"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_trusted_broadcast_indexer_receives_the_mixnet_send_alone() {
+        let (stage, mut recipient) = stage().await;
+        recipient.set_destination_servers_for_tests(
+            stage
+                .set_over(&[(SUPPRESSOR_URI, SUPPRESSOR)])
+                .with_indexer(
+                    IndexerConfig::new(uri(ACCEPTOR_URI))
+                        .role(Role::Broadcast)
+                        .trust(Trust::Trusted)
+                        .location(Location::Remote),
+                ),
+        );
+
+        let reports = send(&mut recipient).await.unwrap();
+
+        assert_eq!(
+            stage.accepting.chain.read().await.mempool_len(),
+            reports.len()
+        );
+        assert_eq!(stage.suppressing.chain.read().await.rejected_sends, 0);
+        let acceptor = destination_of(&uri(ACCEPTOR_URI));
+        assert!(
+            stage
+                .relay
+                .requested()
+                .iter()
+                .all(|destination| *destination == acceptor),
+            "{:?}",
+            stage.relay.requested()
+        );
+    }
+
+    #[tokio::test]
+    async fn the_network_probe_measures_the_registry_through_the_tunnel() {
+        let (stage, mut recipient) = stage().await;
+        recipient.set_destination_servers_for_tests(
+            stage.set_over(&[(ACCEPTOR_URI, ACCEPTOR), (SUPPRESSOR_URI, SUPPRESSOR)]),
+        );
+
+        let probes = recipient
+            .probe_destinations(None, PROBE_TIMEOUT)
+            .await
+            .expect("a ready mixnet probes");
+
+        let mut hosts: Vec<&str> = probes.iter().map(|probe| probe.host.as_str()).collect();
+        hosts.sort_unstable();
+        assert_eq!(hosts, vec!["127.0.0.1", "localhost"]);
+        for probe in &probes {
+            assert!(probe.leg.outcome.is_ok(), "{probe:?}");
+        }
+        assert!(!stage.relay.requested().contains(&stage.sync_destination()));
+    }
+
+    #[tokio::test]
+    async fn a_migration_part_crosses_the_tunnel() {
+        const REJECTION_CODE: i32 = -26;
+        const REJECTOR_URI: &str = "https://localhost:8443";
+
+        let (relay, accepting, suppressing) = relayed().await;
+        let rejecting = MockNet::launch_tls().await;
+        for net in [&accepting, &suppressing, &rejecting] {
+            net.chain.write().await.rules = Rules::LAX;
+        }
+        rejecting.chain.write().await.answer_sends_with_error_code = Some(REJECTION_CODE);
+        relay.route(&uri(REJECTOR_URI), rejecting.addr());
+        let part =
+            faucet_funding_transaction(vec![(&external_address(PoolType::ORCHARD), 20_000, None)])
+                .await;
+        let expiry = BlockHeight::from_u32(1);
+        let client_for = |target: &str| {
+            RoutedTransmissionClient::new(
+                MigrationWire::Mixnet(crate::mixnet::MixnetConduit::over(relay.addr()).dial()),
+                vec![uri(target)],
+            )
+        };
+
+        let receipt = client_for(ACCEPTOR_URI)
+            .submit(part.clone(), expiry)
+            .await
+            .expect("the acceptor takes the part");
+        assert_eq!(
+            receipt.route,
+            TransmissionRoute::Mixnet {
+                destination: "localhost".to_string(),
+                via_socks5: relay.addr().to_string(),
+            }
+        );
+        assert_eq!(accepting.chain.read().await.mempool_len(), 1);
+
+        assert!(matches!(
+            client_for(REJECTOR_URI).submit(part.clone(), expiry).await,
+            Err(PartTransmissionError::Rejected(_))
+        ));
+        assert!(matches!(
+            client_for(SUPPRESSOR_URI)
+                .submit(part.clone(), expiry)
+                .await,
+            Err(PartTransmissionError::Transport(_))
+        ));
+        assert!(matches!(
+            client_for(UNROUTED_URI).submit(part, expiry).await,
+            Err(PartTransmissionError::Transport(_))
+        ));
     }
 }

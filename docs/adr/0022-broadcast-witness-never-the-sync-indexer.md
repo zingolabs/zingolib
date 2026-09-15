@@ -79,3 +79,32 @@ witnesses. A user who syncs against a private indexer excludes nothing and
 draws from the full pool. Regression tests pin the operator-level exclusion,
 the untouched pool for an out-of-list sync server, and the fail-closed refusal
 on an emptied pool.
+
+## Amendment (2026-09-14): the invariant binds untrusted sync indexers over the mixnet
+
+Three corrections, ruled with ADR 0050.
+
+What the sync indexer holds. The context above says "the wallet's full
+address set". Shielded addresses never leave the wallet: compact blocks
+come down in ranges and trial decryption is local. What the sync indexer
+learns is every transparent address, sent in the clear by
+`get_taddress_txids` and `get_address_utxos`; every txid the wallet owns a
+note in, its own sends included once they are mined, because the wallet
+fetches the full transaction by txid after a trial-decryption hit; and the
+client IP on clearnet sync. So the invariant keeps the broadcast moment
+and any unmined transaction from the sync indexer, and it keeps a mixnet
+send's timing from being tied to the wallet's clearnet sync.
+
+The clearnet exemption stands, now as a rule rather than an exemption: a
+clearnet broadcast never draws the registry. On clearnet the sync indexer
+already holds the wallet's IP and learns each send once mined, so a
+second Destination only adds a party. A clearnet send goes to the sync
+indexer, or to a broadcast indexer the user configured.
+
+The invariant is a trust rule. It binds an untrusted sync indexer: over
+the mixnet it and every untrusted entry its operator runs are excluded. A
+sync indexer the user trusts, or one on the local network, which is
+trusted by default, may receive the broadcast. The sanctioned draw is
+`DestinationServerSet::draw`, which reads the registry for the session's
+chain and applies the rule against the current sync indexer. The
+hand-curated `DESTINATION_INDEXERS` and `eligible_witnesses` are retired.
