@@ -11,9 +11,6 @@ use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 use zcash_protocol::consensus::BranchId;
-use zcash_transparent::keys::NonHardenedChildIndex;
-
-use pepper_sync::keys::transparent::{TransparentAddressId, TransparentScope};
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -66,6 +63,7 @@ pub(crate) enum TransmitError {
 }
 
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
+use crate::wallet::LightWallet;
 use crate::wallet::error::WalletError;
 use crate::wallet::output::OutputRef;
 
@@ -465,6 +463,13 @@ where
     .map_err(TransmitError::Escalation)
 }
 
+fn fail_unsent(wallet: &mut LightWallet, calculated_txids: &NonEmpty<TxId>, from: usize) {
+    let unsent: Vec<TxId> = calculated_txids.iter().skip(from).copied().collect();
+    pepper_sync::set_transactions_failed(&mut wallet.wallet_transactions, unsent);
+    wallet.truncate_failed_refund_addresses();
+    wallet.save_required = true;
+}
+
 impl LightClient {
     async fn send(
         &mut self,
@@ -495,35 +500,7 @@ impl LightClient {
             })?;
         drop(wallet);
 
-        let transmission_result = self.transmit_transactions(calculated_txids).await;
-        if transmission_result.is_err() {
-            let mut wallet = self.wallet().write().await;
-            let new_refund_address_index = highest_refund_address_index
-                .map_or(Some(NonHardenedChildIndex::ZERO), |i| i.next());
-            let new_refund_address = new_refund_address_index.and_then(|i| {
-                wallet
-                    .transparent_addresses()
-                    .get(&TransparentAddressId::new(
-                        sending_account,
-                        TransparentScope::Refund,
-                        i,
-                    ))
-                    .cloned()
-            });
-            let truncate = new_refund_address.is_some_and(|addr| {
-                let deshielding_tx = wallet.wallet_transactions.values().find(|tx| {
-                    tx.transparent_coins()
-                        .iter()
-                        .any(|coin| coin.address() == addr)
-                });
-                deshielding_tx.is_some_and(|tx| tx.status().is_failed())
-            });
-            if truncate {
-                wallet.truncate_refund_addresses(highest_refund_address_index);
-            }
-        }
-
-        transmission_result
+        self.transmit_transactions(calculated_txids).await
     }
 
     async fn shield(
@@ -995,11 +972,7 @@ impl LightClient {
                 .transaction()
                 .write(&mut transaction_bytes)
                 .map_err(|e| {
-                    pepper_sync::set_transactions_failed(
-                        &mut wallet.wallet_transactions,
-                        vec![*txid],
-                    );
-                    wallet.save_required = true;
+                    fail_unsent(&mut wallet, &calculated_txids, index);
                     WalletError::TransactionWrite(e)
                 })?;
 
@@ -1038,11 +1011,7 @@ impl LightClient {
                     if wire.is_mixnet() {
                         self.note_standing_exit_suspicion();
                     }
-                    pepper_sync::set_transactions_failed(
-                        &mut wallet.wallet_transactions,
-                        vec![*txid],
-                    );
-                    wallet.save_required = true;
+                    fail_unsent(&mut wallet, &calculated_txids, index);
                     // The typed failure is rendered only here, at the
                     // report's existing prose field.
                     return Err(SendError::TransmissionError(
