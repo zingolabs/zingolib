@@ -968,11 +968,6 @@ pub(super) fn calculate_scanned_outputs<W>(wallet: &W) -> Result<(u32, u32, u32)
 where
     W: SyncWallet + SyncBlocks,
 {
-    tracing::debug!(
-        "\ncalc scanned outputs scan ranges:\n {:?}",
-        wallet.get_sync_state()?.scan_ranges()
-    );
-
     Ok(wallet
         .get_sync_state()?
         .scan_ranges()
@@ -1195,12 +1190,6 @@ pub(super) fn add_shard_ranges(
                         start: previous_subtree_completing_height,
                         end: subtree_completing_height + 1,
                     });
-
-                    tracing::debug!(
-                        "{:?} subtree root height: {}",
-                        shielded_protocol,
-                        subtree_completing_height
-                    );
 
                     subtree_completing_height
                 } else {

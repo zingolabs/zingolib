@@ -228,10 +228,7 @@ where
         new_transparent_inuse_addresses,
         updated_transparent_gap_addresses,
     } = scan_data;
-    tracing::debug!(
-        "\npost scan_compact_blocks wallet_blocks:\n {:?}",
-        &wallet_blocks
-    );
+
     scan_targets.append(&mut decrypted_scan_targets);
     transparent_inuse_addresses.extend(new_transparent_inuse_addresses.clone());
 
