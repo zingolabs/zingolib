@@ -843,3 +843,59 @@ impl ScanTask {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // REPRO: `ScanWorker::run` never observes the `JoinHandle` of its spawned task and only clears
+    // `is_scanning` at the end of the loop body. If `scan` panics (reachable from server data via the
+    // `panic!("compact blocks do not match scan range!")` check in `scan.rs`), the worker stays
+    // "scanning" forever, no result or error is ever reported, and `Scanner::idle_worker` never returns
+    // it. Intended invariant: a panicked worker must be reported (error on the result channel or
+    // through the handle) or must go idle.
+    #[tokio::test]
+    async fn panicked_scan_worker_is_reported_or_idle() {
+        let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
+        let (fetch_request_sender, _fetch_request_receiver) =
+            mpsc::unbounded_channel::<FetchRequest>();
+
+        let mut worker = ScanWorker::new(
+            0,
+            consensus::MainNetwork,
+            scan_results_sender,
+            fetch_request_sender,
+            HashMap::new(),
+        );
+        worker.run(1024);
+
+        // Scan range 10..20 with no compact blocks: `scan` panics before producing any result.
+        let scan_task = ScanTask::from_parts(
+            ScanRange::from_parts(
+                BlockHeight::from_u32(10)..BlockHeight::from_u32(20),
+                ScanPriority::Historic,
+            ),
+            None,
+            None,
+            BTreeSet::new(),
+            HashMap::new(),
+        );
+        worker.add_scan_task(scan_task);
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let handle = worker.handle.as_ref().expect("worker should be running");
+        assert!(
+            handle.is_finished(),
+            "worker task should have panicked and finished"
+        );
+
+        let reported = matches!(scan_results_receiver.try_recv(), Ok((_, Err(_))));
+
+        assert!(
+            reported || !worker.is_scanning(),
+            "a panicked scan worker must be reported or marked idle, but is_scanning={} and no result was sent",
+            worker.is_scanning()
+        );
+    }
+}
