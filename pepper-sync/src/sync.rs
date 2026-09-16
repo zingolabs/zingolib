@@ -77,7 +77,7 @@ pub const MAX_SHARDTREE_CHECKPOINTS: u32 =
 
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
-const CHECK_NEW_BLOCKS_INTERVAL: u64 = 90;
+const CHECK_NEW_BLOCKS_INTERVAL: u64 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 ///
@@ -487,10 +487,10 @@ where
     let mut continuous_sync_interval =
         tokio::time::interval(Duration::from_secs(CHECK_NEW_BLOCKS_INTERVAL));
     continuous_sync_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    continuous_sync_interval.tick().await;
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     'continuous_sync: loop {
+        continuous_sync_interval.reset();
         let mut reorg_occured = false;
         scanner.state.reverify();
         let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
@@ -612,11 +612,18 @@ where
         }
 
         if new_blocks_mined || reorg_occured {
-            // only perform transparent address discovery on the first continuous sync loop.
-            // transparent data in newly mined blocks during the sync session will be scanned in compact blocks.
-            // address discovery is still necessary as scanning compact blocks non-linearly may lead to missing funds
-            // or requiring rescanning multiple times.
+            update_subtree_roots(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                &mut *wallet.write().await,
+            )
+            .await?;
+
             if !first_verification_complete {
+                // only perform transparent address discovery on the first continuous sync loop.
+                // transparent data in newly mined blocks during the sync session will be scanned in compact blocks.
+                // address discovery is still necessary as scanning compact blocks non-linearly may lead to missing funds
+                // or requiring rescanning multiple times.
                 scanner.transparent_gap_addresses.extend(
                     transparent::address_discovery(
                         consensus_parameters,
@@ -629,35 +636,28 @@ where
                     )
                     .await?,
                 );
+
+                // frontier is added after subtree roots to retain subtree roots below birthday
+                add_initial_frontier(
+                    consensus_parameters,
+                    fetch_request_sender.clone(),
+                    &mut *wallet.write().await,
+                )
+                .await?;
             }
 
-            update_subtree_roots(
+            // now transparent scan targets and subtree roots have been added, set ranges to be prioritized for scanning.
+            state::prioritize_scan_ranges(
                 consensus_parameters,
-                fetch_request_sender.clone(),
+                chain_height,
                 &mut *wallet.write().await,
             )
-            .await?;
+            .map_err(SyncError::WalletError)?;
 
             expire_transactions(&mut *wallet.write().await)?;
 
             repin_anchor_checkpoints(consensus_parameters, &mut *wallet.write().await)?;
         }
-
-        // now transparent scan targets and subtree roots have been added, set ranges to be prioritized for scanning.
-        state::prioritize_scan_ranges(
-            consensus_parameters,
-            chain_height,
-            &mut *wallet.write().await,
-        )
-        .map_err(SyncError::WalletError)?;
-
-        // frontier is added after subtree roots to retain subtree roots below birthday
-        add_initial_frontier(
-            consensus_parameters,
-            fetch_request_sender.clone(),
-            &mut *wallet.write().await,
-        )
-        .await?;
 
         // publish sync status prior to scanning
         publish_sync_status(&*wallet.read().await, &progress).await;
