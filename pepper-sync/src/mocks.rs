@@ -16,8 +16,8 @@ pub(super) enum MockWalletError {
     AnErrorVariant(String),
 }
 
-type SyncStatePatch = Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError>>;
-type GetBirthdayPatch = Box<dyn Fn(&BlockHeight) -> Result<BlockHeight, MockWalletError>>;
+type SyncStatePatch = Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError> + Send>;
+type GetBirthdayPatch = Box<dyn Fn(&BlockHeight) -> Result<BlockHeight, MockWalletError> + Send>;
 pub(super) struct MockWallet {
     birthday: BlockHeight,
     sync_state: SyncState,
