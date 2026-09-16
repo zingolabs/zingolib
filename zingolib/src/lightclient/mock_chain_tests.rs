@@ -1030,7 +1030,7 @@ async fn failed_split_round_transmit_strands_calculated_transactions() {
 #[cfg(feature = "perspective")]
 mod perspective {
     use std::num::NonZeroU32;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use pepper_sync::config::{
         PerformanceLevel, SyncConfig, TransparentAddressDiscovery,
@@ -1210,6 +1210,9 @@ mod perspective {
         );
     }
 
+    // TODO: this test is long due to mock chain not serving the mempoool stream correctly. if it closes the stream
+    // when a block is mined the sync engine will automatically check for new blocks instead of waiting until the backup interval has passed.
+    // setting the interval below the expected interval of blocks being mined will harm sync efficiency.
     #[tokio::test]
     async fn gap_address_compact_block_scanning() {
         tracing_subscriber::fmt()
@@ -1285,29 +1288,27 @@ mod perspective {
         }
         net.chain.write().await.mine_block(funding_txs);
 
-        // let timeout = Duration::from_secs(150);
-        // let assert_start = Instant::now();
-        // while !(recipient
-        //     .latest_sync_status()
-        //     .unwrap()
-        //     .scan_ranges
-        //     .last()
-        //     .unwrap()
-        //     .block_range()
-        //     .end
-        //     - 1
-        //     == 11.into()
-        //     && recipient.latest_sync_status().unwrap().is_complete())
-        // {
-        //     if assert_start.elapsed() >= timeout {
-        //         panic!("test time exceeded expected time to scan newly mined blocks");
-        //     }
-        //     tokio::time::sleep(Duration::from_millis(100)).await;
-        // }
+        let timeout = Duration::from_secs(150);
+        let assert_start = Instant::now();
+        while !(recipient
+            .latest_sync_status()
+            .unwrap()
+            .scan_ranges
+            .last()
+            .unwrap()
+            .block_range()
+            .end
+            == 12.into()
+            && recipient.latest_sync_status().unwrap().is_complete())
+        {
+            if assert_start.elapsed() >= timeout {
+                panic!("test time exceeded expected time to scan newly mined blocks");
+            }
+            tokio::time::sleep(Duration::from_millis(2_000)).await;
+        }
 
         recipient.stop_sync().unwrap();
         recipient.await_sync().await.unwrap();
-        recipient.sync_and_await().await.unwrap();
 
         // check all funds have been received and addresses have been added to the wallet, including the addresses
         // beyond the gap limit to prove the new blocks are being rescanend until the gap limit is satisfied
@@ -1324,9 +1325,6 @@ mod perspective {
                         && *wallet_addr == addr.encode(&recipient.chain_type()))
             );
         }
-
-        recipient.stop_sync().unwrap();
-        recipient.await_sync().await.unwrap();
     }
 }
 

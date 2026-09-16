@@ -77,6 +77,8 @@ pub const MAX_SHARDTREE_CHECKPOINTS: u32 =
 
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
+const CHECK_NEW_BLOCKS_INTERVAL: u64 = 90;
+
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 ///
 /// `percentage_outputs_scanned` is a much more accurate indicator of sync completion than `percentage_blocks_scanned`.
@@ -482,7 +484,8 @@ where
     let mut first_verification_complete = false;
     let mut mempool_shutdown_timer = None;
     let mut nullifier_map_limit_exceeded = false;
-    let mut continuous_sync_interval = tokio::time::interval(Duration::from_secs(120));
+    let mut continuous_sync_interval =
+        tokio::time::interval(Duration::from_secs(CHECK_NEW_BLOCKS_INTERVAL));
     continuous_sync_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     continuous_sync_interval.tick().await;
     let mut interval = tokio::time::interval(Duration::from_millis(50));
