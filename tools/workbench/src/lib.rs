@@ -7,6 +7,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod wallet_grammars;
+
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command};
 
