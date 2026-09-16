@@ -484,13 +484,30 @@ pub struct BatchReport {
 }
 
 /// What one pass of the due-part transmission loop achieved.
-struct SelectedTransmission {
-    /// The parts the endpoint accepted, in submission order.
-    sent: Vec<TxId>,
-    /// The submission error that stopped the loop, if one did. The part being
-    /// submitted stays signed (its transaction already recorded in the
-    /// wallet) and due, so a later attempt resubmits it.
-    submit_failure: Option<crate::wallet::migration::PartTransmissionError>,
+#[must_use]
+enum Transmission {
+    /// Every submission the pass attempted was accepted, in submission order.
+    Complete(Vec<TxId>),
+    /// A submission failed and the pass stopped there.
+    Halted {
+        /// The parts accepted before the failure, in submission order.
+        sent: Vec<TxId>,
+        /// The part whose submission failed. It stays signed (its
+        /// transaction already recorded in the wallet) and due, so a later
+        /// attempt resubmits it.
+        part: PartId,
+        /// Why the endpoint did not take it.
+        error: crate::wallet::migration::PartTransmissionError,
+    },
+}
+
+impl Transmission {
+    /// The accepted txids, for callers that carry on past a failed part.
+    fn into_sent(self) -> Vec<TxId> {
+        match self {
+            Transmission::Complete(sent) | Transmission::Halted { sent, .. } => sent,
+        }
+    }
 }
 
 /// The transactions of a completed migration.
@@ -980,7 +997,10 @@ impl LightClient {
         &mut self,
         client: &impl TransmissionClient,
     ) -> Result<Vec<TxId>, LightClientError> {
-        Ok(self.transmit_due_parts_selected(client, None).await?.sent)
+        Ok(self
+            .transmit_due_parts_selected(client, None)
+            .await?
+            .into_sent())
     }
 
     /// The due-part transmission loop, optionally narrowed to a single part so
@@ -995,7 +1015,7 @@ impl LightClient {
         &mut self,
         client: &impl TransmissionClient,
         only: Option<PartId>,
-    ) -> Result<SelectedTransmission, LightClientError> {
+    ) -> Result<Transmission, LightClientError> {
         type ProveHandle = tokio::task::JoinHandle<
             Result<(usize, TxId, Vec<u8>), crate::wallet::error::WalletError>,
         >;
@@ -1146,19 +1166,19 @@ impl LightClient {
                         .ok_or(MigrationError::NoMigration)??;
                     sent.push(txid);
                 }
-                Err(e) => {
-                    log::warn!("part submission failed, leaving the part signed: {e}");
-                    return Ok(SelectedTransmission {
-                        sent,
-                        submit_failure: Some(e),
-                    });
+                Err(error) => {
+                    log::warn!("part submission failed, leaving the part signed: {error}");
+                    let part = wallet
+                        .migration
+                        .as_ref()
+                        .ok_or(MigrationError::NoMigration)?
+                        .parts[index]
+                        .id;
+                    return Ok(Transmission::Halted { sent, part, error });
                 }
             }
         }
-        Ok(SelectedTransmission {
-            sent,
-            submit_failure: None,
-        })
+        Ok(Transmission::Complete(sent))
     }
 
     /// Abandons the migration. Parts already confirmed naturally stand.
@@ -1263,7 +1283,7 @@ impl LightClient {
             let txids = self
                 .transmit_due_parts_selected(&client, Some(part_id))
                 .await?
-                .sent;
+                .into_sent();
             if !txids.is_empty() {
                 sent.extend(txids);
                 tokio::time::sleep(spacing).await;
@@ -1405,13 +1425,14 @@ impl LightClient {
                 // and due, so a retry resubmits it. Reporting it as `Slid`
                 // would tell the caller it was not sendable and nothing was
                 // attempted, when the transaction exists and never left.
-                Ok(SelectedTransmission {
-                    submit_failure: Some(e),
+                Ok(Transmission::Halted {
+                    part: failed_part,
+                    error,
                     ..
                 }) => {
-                    let error = e.to_string();
+                    let error = error.to_string();
                     report.outcomes.push(PartOutcome {
-                        part: *part,
+                        part: failed_part,
                         denomination: *denomination,
                         result: PartSendResult::Failed {
                             error: error.clone(),
@@ -1420,7 +1441,7 @@ impl LightClient {
                     report.halted = Some(error);
                     break;
                 }
-                Ok(SelectedTransmission { sent: txids, .. }) if !txids.is_empty() => {
+                Ok(Transmission::Complete(txids)) if !txids.is_empty() => {
                     sent += 1;
                     report.outcomes.push(PartOutcome {
                         part: *part,
