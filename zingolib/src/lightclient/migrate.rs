@@ -483,6 +483,16 @@ pub struct BatchReport {
     pub halted: Option<String>,
 }
 
+/// What one pass of the due-part transmission loop achieved.
+struct SelectedTransmission {
+    /// The parts the endpoint accepted, in submission order.
+    sent: Vec<TxId>,
+    /// The submission error that stopped the loop, if one did. The part being
+    /// submitted stays signed (its transaction already recorded in the
+    /// wallet) and due, so a later attempt resubmits it.
+    submit_failure: Option<crate::wallet::migration::PartTransmissionError>,
+}
+
 /// The transactions of a completed migration.
 #[derive(Debug, Clone)]
 pub struct MigrationSummary {
@@ -970,7 +980,7 @@ impl LightClient {
         &mut self,
         client: &impl TransmissionClient,
     ) -> Result<Vec<TxId>, LightClientError> {
-        self.transmit_due_parts_selected(client, None).await
+        Ok(self.transmit_due_parts_selected(client, None).await?.sent)
     }
 
     /// The due-part transmission loop, optionally narrowed to a single part so
@@ -985,7 +995,7 @@ impl LightClient {
         &mut self,
         client: &impl TransmissionClient,
         only: Option<PartId>,
-    ) -> Result<Vec<TxId>, LightClientError> {
+    ) -> Result<SelectedTransmission, LightClientError> {
         type ProveHandle = tokio::task::JoinHandle<
             Result<(usize, TxId, Vec<u8>), crate::wallet::error::WalletError>,
         >;
@@ -1138,11 +1148,17 @@ impl LightClient {
                 }
                 Err(e) => {
                     log::warn!("part submission failed, leaving the part signed: {e}");
-                    break;
+                    return Ok(SelectedTransmission {
+                        sent,
+                        submit_failure: Some(e),
+                    });
                 }
             }
         }
-        Ok(sent)
+        Ok(SelectedTransmission {
+            sent,
+            submit_failure: None,
+        })
     }
 
     /// Abandons the migration. Parts already confirmed naturally stand.
@@ -1246,7 +1262,8 @@ impl LightClient {
         for part_id in overdue {
             let txids = self
                 .transmit_due_parts_selected(&client, Some(part_id))
-                .await?;
+                .await?
+                .sent;
             if !txids.is_empty() {
                 sent.extend(txids);
                 tokio::time::sleep(spacing).await;
@@ -1383,7 +1400,27 @@ impl LightClient {
         let mut sent = 0u32;
         for (index, (part, denomination)) in owed.iter().enumerate() {
             match self.transmit_due_parts_selected(client, Some(*part)).await {
-                Ok(txids) if !txids.is_empty() => {
+                // The part was built and signed (it is already in the wallet,
+                // pending) but the endpoint did not take it. It stays signed
+                // and due, so a retry resubmits it. Reporting it as `Slid`
+                // would tell the caller it was not sendable and nothing was
+                // attempted, when the transaction exists and never left.
+                Ok(SelectedTransmission {
+                    submit_failure: Some(e),
+                    ..
+                }) => {
+                    let error = e.to_string();
+                    report.outcomes.push(PartOutcome {
+                        part: *part,
+                        denomination: *denomination,
+                        result: PartSendResult::Failed {
+                            error: error.clone(),
+                        },
+                    });
+                    report.halted = Some(error);
+                    break;
+                }
+                Ok(SelectedTransmission { sent: txids, .. }) if !txids.is_empty() => {
                     sent += 1;
                     report.outcomes.push(PartOutcome {
                         part: *part,
@@ -3514,6 +3551,90 @@ mod tests {
                 None,
                 "the progress side channel returns to idle"
             );
+        }
+
+        /// HYPOTHESIS: a part whose submission the endpoint refuses is
+        /// reported `Failed` and halts the batch, rather than `Slid`: its
+        /// transaction was built and recorded, it just never left, and it
+        /// stays signed so the next batch resubmits it. Falsified if the
+        /// report reads `Slid` with no halt, or the part leaves `Signed`.
+        #[tokio::test]
+        async fn a_refused_submission_is_reported_failed_not_slid() {
+            const TIP: u32 = 300;
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let own_txid = TxId::from_bytes([7; 32]);
+            let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            part.assign(current_bucket).expect("fresh parts are bound");
+            part.mark_signed(own_txid, window_end, Some(vec![0xAB; 64]))
+                .expect("assigned parts sign");
+            wallet.migration = Some(scheduled_state(params, vec![part]));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let transmission_client = MockTransmissionClient::default();
+            transmission_client
+                .fail
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            let report = client
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
+                .await
+                .unwrap();
+
+            let halted = report
+                .halted
+                .as_deref()
+                .expect("a refused submission halts the batch");
+            assert!(
+                halted.contains("mock transport failure"),
+                "the halt carries the submission error, got {halted:?}"
+            );
+            assert_eq!(
+                report.outcomes,
+                vec![PartOutcome {
+                    part: PartId(0),
+                    denomination: NOTE_VALUE,
+                    result: PartSendResult::Failed {
+                        error: halted.to_string(),
+                    },
+                }]
+            );
+            assert_eq!(
+                client
+                    .wallet()
+                    .read()
+                    .await
+                    .migration
+                    .as_ref()
+                    .unwrap()
+                    .parts[0]
+                    .state,
+                PartState::Signed,
+                "the refused part stays signed, due for a resubmission"
+            );
+
+            // The endpoint recovers: the next batch resubmits the same part.
+            transmission_client
+                .fail
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+            let retry = client
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
+                .await
+                .unwrap();
+            assert_eq!(
+                retry.outcomes,
+                vec![PartOutcome {
+                    part: PartId(0),
+                    denomination: NOTE_VALUE,
+                    result: PartSendResult::Sent(own_txid),
+                }]
+            );
+            assert!(retry.halted.is_none());
         }
 
         /// HYPOTHESIS: a failed part's report carries every layer of the
