@@ -437,3 +437,148 @@ pub(super) fn update_spent_coins(
             }
         });
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, HashMap};
+
+    use shardtree::store::ShardStore;
+    use zcash_protocol::consensus::BlockHeight;
+
+    use crate::{
+        mocks::{MockWallet, MockWalletBuilder, MockWalletError},
+        wallet::{
+            ShardTrees, SyncState, WalletTransaction,
+            traits::{SyncShardTrees, SyncTransactions, SyncWallet},
+        },
+    };
+
+    /// Wraps a `MockWallet` and fails `get_wallet_transactions_mut`, which is the first
+    /// fallible call after `update_spent_notes` has taken the shard trees out of the wallet.
+    struct FailingTransactionsWallet {
+        inner: MockWallet,
+    }
+
+    impl SyncWallet for FailingTransactionsWallet {
+        type Error = MockWalletError;
+
+        fn get_birthday(&self) -> Result<BlockHeight, Self::Error> {
+            self.inner.get_birthday()
+        }
+
+        fn get_sync_state(&self) -> Result<&SyncState, Self::Error> {
+            self.inner.get_sync_state()
+        }
+
+        fn get_sync_state_mut(&mut self) -> Result<&mut SyncState, Self::Error> {
+            self.inner.get_sync_state_mut()
+        }
+
+        fn get_unified_full_viewing_keys(
+            &self,
+        ) -> Result<HashMap<zip32::AccountId, zcash_keys::keys::UnifiedFullViewingKey>, Self::Error>
+        {
+            self.inner.get_unified_full_viewing_keys()
+        }
+
+        fn add_orchard_address(
+            &mut self,
+            account_id: zip32::AccountId,
+            address: orchard::Address,
+            diversifier_index: zip32::DiversifierIndex,
+        ) -> Result<(), Self::Error> {
+            self.inner
+                .add_orchard_address(account_id, address, diversifier_index)
+        }
+
+        fn add_sapling_address(
+            &mut self,
+            account_id: zip32::AccountId,
+            address: sapling_crypto::PaymentAddress,
+            diversifier_index: zip32::DiversifierIndex,
+        ) -> Result<(), Self::Error> {
+            self.inner
+                .add_sapling_address(account_id, address, diversifier_index)
+        }
+
+        fn get_transparent_addresses(
+            &self,
+        ) -> Result<&BTreeMap<crate::keys::transparent::TransparentAddressId, String>, Self::Error>
+        {
+            self.inner.get_transparent_addresses()
+        }
+
+        fn get_transparent_addresses_mut(
+            &mut self,
+        ) -> Result<
+            &mut BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
+            Self::Error,
+        > {
+            self.inner.get_transparent_addresses_mut()
+        }
+    }
+
+    impl SyncTransactions for FailingTransactionsWallet {
+        fn get_wallet_transactions(
+            &self,
+        ) -> Result<&HashMap<zcash_protocol::TxId, WalletTransaction>, Self::Error> {
+            self.inner.get_wallet_transactions()
+        }
+
+        fn get_wallet_transactions_mut(
+            &mut self,
+        ) -> Result<&mut HashMap<zcash_protocol::TxId, WalletTransaction>, Self::Error> {
+            Err(MockWalletError::AnErrorVariant(
+                "wallet transactions unavailable".to_string(),
+            ))
+        }
+    }
+
+    impl SyncShardTrees for FailingTransactionsWallet {
+        fn get_shard_trees(&self) -> Result<&ShardTrees, Self::Error> {
+            self.inner.get_shard_trees()
+        }
+
+        fn get_shard_trees_mut(&mut self) -> Result<&mut ShardTrees, Self::Error> {
+            self.inner.get_shard_trees_mut()
+        }
+    }
+
+    // REPRO: claim `mem-take-leaves-empty-shard-trees`. `update_spent_notes` moves the wallet's
+    // shard trees out with `std::mem::take` and only writes them back on the happy path, so any
+    // error raised in between leaves the wallet holding `ShardTrees::default()`.
+    #[test]
+    fn failed_spent_note_update_keeps_wallet_shard_trees() {
+        let checkpoint = BlockHeight::from_u32(5);
+        let mut shard_trees = ShardTrees::new();
+        assert!(shard_trees.orchard.checkpoint(checkpoint).unwrap());
+
+        let mut wallet = FailingTransactionsWallet {
+            inner: MockWalletBuilder::new()
+                .shard_trees(shard_trees)
+                .create_mock_wallet(),
+        };
+
+        let result = super::update_spent_notes(
+            &mut wallet,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            true,
+        );
+        assert!(result.is_err());
+
+        let newest_checkpoint = wallet
+            .get_shard_trees_mut()
+            .unwrap()
+            .orchard
+            .store()
+            .max_checkpoint_id()
+            .unwrap();
+        assert_eq!(
+            newest_checkpoint,
+            Some(checkpoint),
+            "shard trees must survive a failed spent note update"
+        );
+    }
+}
