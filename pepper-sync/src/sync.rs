@@ -685,6 +685,7 @@ where
                         // not lost and correctly follow on from the wallets current in-use address list.
                         scanner.transparent_gap_addresses = updated_transparent_gap_addresses;
                     }
+                    expire_transactions(&mut *wallet_guard)?;
                     publish_sync_status(&*wallet_guard, &progress).await;
                     wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
                     drop(wallet_guard);

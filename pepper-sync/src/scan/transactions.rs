@@ -34,7 +34,7 @@ use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
-    error::{ScanError, ServerError},
+    error::ScanError,
     keys::{self, KeyId, transparent::TransparentAddressId},
     wallet::{
         IronwoodNote, NullifierMap, OrchardNote, OutgoingIronwoodNote, OutgoingNote,
@@ -109,9 +109,13 @@ pub(crate) async fn scan_transactions(
         .await
         {
             Ok((tx, height)) => (tx, height),
-            Err(ServerError::RequestFailed(_)) => {
-                continue;
-            }
+            // TODO: continue if the request failed and the scan target was added externally by the consumer. there
+            // may also be a case where re-org has occured between gathering transparent scan targets pre-scan and
+            // scanning which may result in the transaction no longer existing. this would cause a repeated failure
+            // of sync if not removed.
+            // Err(ServerError::RequestFailed(e)) => {
+            //     continue;
+            // }
             Err(e) => {
                 return Err(e.into());
             }
