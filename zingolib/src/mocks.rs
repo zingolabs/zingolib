@@ -682,7 +682,7 @@ pub mod proposal {
 /// Mock for the migration transmission client.
 pub(crate) mod transmission {
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use zcash_protocol::consensus::BlockHeight;
 
@@ -717,6 +717,8 @@ pub(crate) mod transmission {
         pub submissions: Mutex<Vec<(Vec<u8>, BlockHeight)>>,
         /// When set, every submit fails.
         pub fail: AtomicBool,
+        /// Submits fail once this many were accepted. `usize::MAX` never.
+        pub fail_from: AtomicUsize,
         /// The route every receipt from this client names.
         route: TransmissionRoute,
     }
@@ -726,6 +728,7 @@ pub(crate) mod transmission {
             MockTransmissionClient {
                 submissions: Mutex::new(Vec::new()),
                 fail: AtomicBool::new(false),
+                fail_from: AtomicUsize::new(usize::MAX),
                 route: TransmissionRoute::Mixnet {
                     destination: MOCK_DESTINATION.to_string(),
                     via_socks5: MOCK_SOCKS5_ADDR.to_string(),
@@ -753,7 +756,10 @@ pub(crate) mod transmission {
             raw_tx: Vec<u8>,
             expiry_height: BlockHeight,
         ) -> Result<TransmissionReceipt, PartTransmissionError> {
-            if self.fail.load(Ordering::Relaxed) {
+            let accepted = self.submissions.lock().unwrap().len();
+            if self.fail.load(Ordering::Relaxed)
+                || accepted >= self.fail_from.load(Ordering::Relaxed)
+            {
                 return Err(PartTransmissionError::Transport(
                     "mock transport failure".to_string(),
                 ));
