@@ -6315,7 +6315,7 @@ dependencies = [
 [[package]]
 name = "rustls-platform-verifier"
 version = "0.7.0"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_nym_rc0#f65251c5648ebdb96f00d3f2a9de92b11e139abb"
+source = "git+https://github.com/zingolabs/zingolib?rev=ec4547c8#ec4547c8760dd7ced37626ee7a9a57f07a595ae2"
 dependencies = [
  "log",
  "rustls 0.23.43",
@@ -9105,12 +9105,12 @@ dependencies = [
 [[package]]
 name = "zingo-net-diag"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_nym_rc0#f65251c5648ebdb96f00d3f2a9de92b11e139abb"
+source = "git+https://github.com/zingolabs/zingolib?rev=ec4547c8#ec4547c8760dd7ced37626ee7a9a57f07a595ae2"
 
 [[package]]
 name = "zingo-netutils"
 version = "5.0.1"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_nym_rc0#f65251c5648ebdb96f00d3f2a9de92b11e139abb"
+source = "git+https://github.com/zingolabs/zingolib?rev=ec4547c8#ec4547c8760dd7ced37626ee7a9a57f07a595ae2"
 dependencies = [
  "http 1.5.0",
  "hyper-util",
