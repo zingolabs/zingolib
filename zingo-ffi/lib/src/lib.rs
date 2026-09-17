@@ -151,7 +151,11 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
             | SendError::CalculateSendError(_)
             | SendError::RetargetError(_)
             | SendError::NoStoredProposal
-            | SendError::TransmissionError(_) => ZingolibError::Send(text),
+            | SendError::TransmissionError(_)
+            | SendError::OpReturn(_)
+            | SendError::OpReturnNotCalculable
+            | SendError::OpReturnSourceAddressStale
+            | SendError::OpReturnAfterDeshield { .. } => ZingolibError::Send(text),
         },
         LightClientError::ClientError(_) | LightClientError::IndexerError(_) => {
             ZingolibError::Indexer(text)
@@ -160,9 +164,7 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::WalletError(_) => ZingolibError::Wallet(text),
         LightClientError::Offline => ZingolibError::Offline,
         LightClientError::PriceError(_) => ZingolibError::Read(text),
-        LightClientError::MixnetNotReady(_) | LightClientError::ProbeRequiresMixnet => {
-            ZingolibError::Mixnet(text)
-        }
+        LightClientError::MixnetNotReady(_) => ZingolibError::Mixnet(text),
         // A deliberate choice (#1229): exhausting the eligible Destinations
         // is a server-topology problem, not a mixnet refusal — switching the
         // synchronization endpoint changes eligibility, so the app's
@@ -948,7 +950,9 @@ mod ffi_error_routing_tests {
     #[test]
     fn excluded_indexer_exhaustion_is_an_indexer_failure_not_a_refusal() {
         let mapped = ffi_error(LightClientError::NoEligibleDestination(
-            zingolib::destination::NoEligibleDestinations::EmptyPool,
+            zingolib::destination::servers::NoEligibleDestinations::Empty(
+                zingolib::destination::servers::Transport::Mixnet,
+            ),
         ));
         assert!(
             matches!(&mapped, ZingolibError::Indexer(_)),
@@ -3583,24 +3587,6 @@ pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
     })
 }
 
-/// Disable Mixnet Mode: the user's deliberate per-session consent to
-/// clearnet for the send and price surfaces.
-pub fn disable_mixnet() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            Ok(RT.block_on(async move {
-                lightclient.disable_mixnet().await;
-                object! { "mixnet_indicator" => "off" }.pretty(2)
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
-    })
-}
-
 /// The current Mixnet Mode indicator: `off`, `bootstrapping`, `ready` (with the local
 /// SOCKS5 address), or `died` (unconsented proxy loss; sends refuse — run
 /// [`attach_mixnet`] or [`enable_mixnet`] to recover).
@@ -3633,6 +3619,41 @@ pub fn mixnet_bootstrap_detail() -> Result<String, ZingolibError> {
         if let Some(lightclient) = &*guard {
             let detail = lightclient.mixnet_bootstrap_detail().unwrap_or_default();
             Ok(object! { "detail" => detail }.pretty(2))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
+/// The transmit policy as the strings the app layer sends and reads.
+fn transmit_policy_string(policy: zingolib::mixnet::TransmitPolicy) -> &'static str {
+    match policy {
+        zingolib::mixnet::TransmitPolicy::Mixnet => "mixnet",
+        zingolib::mixnet::TransmitPolicy::Clearnet => "clearnet",
+    }
+}
+
+/// Sets where this session's transactions travel, `mixnet` or `clearnet`; the price fetch stays mixnet-only.
+pub fn set_transmit_policy(policy: String) -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let chosen = match policy.as_str() {
+            "mixnet" => zingolib::mixnet::TransmitPolicy::Mixnet,
+            "clearnet" => zingolib::mixnet::TransmitPolicy::Clearnet,
+            other => {
+                return Err(ZingolibError::Mixnet(format!(
+                    "unknown transmit policy: {other}"
+                )));
+            }
+        };
+        let guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &*guard {
+            lightclient.set_transmit_policy(chosen);
+            Ok(
+                object! { "transmit_policy" => transmit_policy_string(lightclient.transmit_policy()) }
+                    .pretty(2),
+            )
         } else {
             Err(ZingolibError::LightclientNotInitialized)
         }
