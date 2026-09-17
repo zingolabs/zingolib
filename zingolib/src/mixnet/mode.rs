@@ -99,9 +99,11 @@ impl std::str::FromStr for Indicator {
 /// The wallet's mixnet transport slot: the explicit state [`Indicator`] is
 /// read from. An enum rather than `Option<MixnetProxy>` because dropping the
 /// handle on disable would erase the very bit that separates
-/// [`Indicator::SwitchedOff`] (consent to clearnet) from
+/// [`Indicator::SwitchedOff`] (a deliberate disable) from
 /// [`Indicator::Unattached`] (absence of a transport) — the flattening the
-/// 2026-07-28 amendment of ADR 0011 retires.
+/// 2026-07-28 amendment of ADR 0011 retires. Neither consents to clearnet:
+/// since the 2026-09-11 amendment that is the transmit policy's answer,
+/// held on the client beside this slot.
 // One slot lives per client and never in a collection, so the size skew
 // between the unit states and the attached transport costs nothing; boxing
 // would add only indirection.
@@ -110,8 +112,8 @@ pub(crate) enum MixnetSlot {
     /// No transport and no consent recorded. The initial state, and the
     /// state a failed enable leaves behind.
     Unattached,
-    /// The user's deliberate per-session disable. The one slot state that
-    /// consents to clearnet.
+    /// The user's deliberate per-session disable. Both route resolvers
+    /// read it as a missing transport.
     SwitchedOff,
     /// The session's Standing Client, in whatever lifecycle state its
     /// transport reports.
@@ -119,16 +121,16 @@ pub(crate) enum MixnetSlot {
     /// A stand-in transport for chain-mock tests: reports
     /// [`Indicator::Ready`] at the given address without a child, watcher,
     /// or probe, so the tests exercise the fail-closed route resolver and
-    /// the escalation orchestration for real. Only
-    /// `LightClient::switch_on_mixnet_for_tests` constructs it, and the
-    /// transmit path pairs it with arms that submit over the mock indexer's
-    /// channel — the address is never dialed.
+    /// the escalation orchestration for real.
     #[cfg(any(test, feature = "testutils"))]
     AttachedForTests {
         /// The address the stand-in publishes into its status.
         socks5_addr: std::net::SocketAddr,
         /// The conduit the route resolver hands to Ready-mode surfaces.
         conduit: crate::mixnet::MixnetConduit,
+        /// Whether sends submit over the mock indexer's channel instead of the
+        /// SOCKS5 wire.
+        mock_arms: bool,
     },
 }
 
@@ -140,7 +142,7 @@ pub(crate) struct StandingClient {
     /// The bound exit's Reservation, recycled by drop; `None` for a
     /// mobile-attached endpoint, whose exit the host drew outside this
     /// session's Exit Pool.
-    exit_reservation: Option<crate::destination::pool::exit_pool::Reservation>,
+    exit_reservation: Option<crate::mixnet::pools::exit_pool::Reservation>,
     /// Whether this client's birth answered the Sentinel itself; a
     /// trusting birth stands on a stale EpochProven observation instead.
     born_probed: bool,
@@ -168,7 +170,7 @@ impl StandingClient {
     /// Sentinel or trusted a stale EpochProven observation.
     pub(crate) fn new(
         proxy: MixnetProxy,
-        exit_reservation: Option<crate::destination::pool::exit_pool::Reservation>,
+        exit_reservation: Option<crate::mixnet::pools::exit_pool::Reservation>,
         born_probed: bool,
     ) -> Self {
         StandingClient {
@@ -249,7 +251,7 @@ impl StandingClient {
     pub(crate) fn exit_node(&self) -> Option<&crate::mixnet::ExitNodeId> {
         self.exit_reservation
             .as_ref()
-            .map(crate::destination::pool::exit_pool::Reservation::node)
+            .map(crate::mixnet::pools::exit_pool::Reservation::node)
     }
 
     /// Whether this client still stands on stale, unconfirmed proof.

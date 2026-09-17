@@ -239,6 +239,16 @@ async fn bounded_rpc<T>(
     }
 }
 
+/// Webpki roots, plus the committed localhost certificate in test builds.
+fn tunnel_tls_config() -> ClientTlsConfig {
+    let config = ClientTlsConfig::new().with_webpki_roots();
+    #[cfg(any(test, feature = "testutils"))]
+    let config = config.ca_certificate(tonic::transport::Certificate::from_pem(
+        crate::test_tls::LOCALHOST_CERT_PEM,
+    ));
+    config
+}
+
 /// One indexer reached through the local SOCKS5 proxy, every operation
 /// opening its own https tunnel under one round-trip bound.
 pub struct Socks5Indexer {
@@ -405,7 +415,7 @@ impl Socks5Indexer {
             // `tokio::time::timeout` and classifies the elapse as
             // [`Socks5TransmitError::TimedOut`] (issue #2564).
             .connect_timeout(timeout)
-            .tls_config(ClientTlsConfig::new().with_webpki_roots())
+            .tls_config(tunnel_tls_config())
             .map_err(|e| Socks5TransmitError::TunnelTransport {
                 destination: destination.clone(),
                 detail: error_chain(&e),

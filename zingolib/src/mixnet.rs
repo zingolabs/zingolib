@@ -3,12 +3,7 @@
 //!
 //! This module holds the mixnet control and policy logic: the five-state
 //! [`Indicator`], the fail-closed [`route`] resolver shared by every mixnet-only
-//! surface, the escalating [`destination_rotation`] over an injected per-arm
-//! runner and random-number generator, the curated Destination list, and
-//! the [`supervisor`] that owns the spawned `nym-proxy` child. The escalation
-//! orchestrates the shared per-submission resilience policy across rounds, and
-//! because its arm runner and RNG are injected, the round, escalation, and cap
-//! logic runs in CI without a reachable mixnet or real time.
+//! surface, and the [`supervisor`] that owns the spawned `nym-proxy` child.
 #![forbid(unsafe_code)]
 #![cfg(feature = "nym")]
 
@@ -17,26 +12,7 @@ pub mod acquire;
 /// Exit identity, defined below the seam (ADR 0046).
 pub use zingo_netutils::exit::{BlankExitNodeId, ExitNodeId};
 
-/// The party a failure stage charges, unattributed when the stage cannot
-/// say which side failed.
-pub(crate) fn charge_phase(
-    stage: &zingo_net_diag::NetOpStage,
-) -> crate::destination::health::FailurePhase {
-    use crate::destination::health::FailurePhase;
-    use zingo_net_diag::NetOpStage;
-    match stage {
-        NetOpStage::RouteResolution
-        | NetOpStage::LocalProxyConnect
-        | NetOpStage::SocksHandshake
-        | NetOpStage::TunnelTransport => FailurePhase::Tunnel,
-        NetOpStage::RemoteTls | NetOpStage::RemoteHttp | NetOpStage::PayloadDecode => {
-            FailurePhase::Destination
-        }
-        _ => FailurePhase::Unattributed,
-    }
-}
-
-pub mod destination_rotation;
+pub(crate) use crate::destination::health::fault_domain;
 
 pub mod driver;
 
@@ -51,6 +27,8 @@ pub mod provision;
 pub mod route;
 
 pub mod speed;
+
+pub(crate) mod pools;
 
 pub mod supervisor;
 
@@ -68,7 +46,9 @@ pub(crate) use mode::MixnetSlot;
 
 pub(crate) use mode::StandingClient;
 
-pub use route::{MixnetNotReady, MixnetRoute, resolve_route};
+pub use route::{
+    MixnetNotReady, MixnetRoute, TransmitPolicy, resolve_mixnet_only_route, resolve_send_route,
+};
 
 /// Conduit, defined below the seam (ADR 0046).
 pub use zingo_netutils::conduit::MixnetConduit;

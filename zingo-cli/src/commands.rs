@@ -305,12 +305,8 @@ async fn confirm(lightclient: &mut LightClient) -> Result<String, CommandError> 
 async fn current_price(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.update_current_price().await {
         Ok(fetch) => {
-            let route = match &fetch.route {
-                zingolib::lightclient::PriceFetchRoute::Mixnet { via_socks5 } => {
-                    format!("over the mixnet via {via_socks5}")
-                }
-                zingolib::lightclient::PriceFetchRoute::Clearnet => "over clearnet".to_string(),
-            };
+            let zingolib::lightclient::PriceFetchRoute::Mixnet { via_socks5 } = &fetch.route;
+            let route = format!("over the mixnet via {via_socks5}");
             Ok(format!(
                 "current price: {} USD (source: {}, rtt: {} ms, fetched {})",
                 fetch.usd,
@@ -1343,12 +1339,13 @@ fn render_status(
     use zingolib::mixnet::Indicator;
 
     match mode {
-        Indicator::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled, \
-             and no consent to clearnet has been given: send and price-fetch refuse. Run \
-             `network on` to enable the mixnet, or `network off` to use clearnet."
+        Indicator::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled: \
+             price-fetch refuses, and send refuses under the mixnet transmit policy. Run \
+             `network on` to enable the mixnet."
             .to_string(),
         Indicator::SwitchedOff => {
-            "Mixnet Mode: switched off (send and price-fetch use clearnet)".to_string()
+            "Mixnet Mode: switched off (price-fetch refuses; send follows the transmit policy)"
+                .to_string()
         }
         Indicator::Bootstrapping => match bootstrap_detail {
             Some(detail) => format!(
@@ -1590,10 +1587,10 @@ fn render_transmit_report(report: &zingolib::lightclient::send::TransmitReport) 
     use zingolib::lightclient::send::TransmitRoute;
     let rtt_ms = u64::try_from(report.round_trip.as_millis()).unwrap_or(u64::MAX);
     match &report.route {
-        TransmitRoute::Clearnet { indexer } => object! {
+        TransmitRoute::Clearnet { destination } => object! {
             "txid" => report.txid.to_string(),
             "over_mixnet" => false,
-            "indexer" => indexer.clone(),
+            "destination" => destination.clone(),
             "rtt_ms" => rtt_ms,
         },
         TransmitRoute::Mixnet {

@@ -139,6 +139,16 @@ pub enum WalletError {
         "Cannot create a new wallet: a wallet file already exists at this path. Use WalletConfig::Read to load the existing wallet."
     )]
     WalletAlreadyCreated,
+    /// The OP_RETURN send recipient is not a P2PKH, P2SH, or TEX address.
+    #[error("OP_RETURN send recipient must be a P2PKH, P2SH, or TEX address.")]
+    OpReturnRecipientNotTransparent,
+    /// The deshield transaction has no transparent output paying the
+    /// reserved source address. This is an internal invariant failure.
+    #[error("Deshield output not found in the deshield transaction.")]
+    DeshieldOutputNotFound,
+    /// Building a transparent-only transaction failed.
+    #[error("Transparent transaction build failed: {0}")]
+    TransparentBuild(String),
 }
 
 /// Price error. Exists only in nym builds: the fetch compiles only with

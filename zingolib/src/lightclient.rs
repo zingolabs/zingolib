@@ -122,13 +122,10 @@ pub struct MixnetPriceFetch {
     pub route: PriceFetchRoute,
 }
 
-/// The route one price fetch traveled.
+/// The route one price fetch traveled. The price fetch is mixnet-only.
 #[cfg(feature = "nym")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PriceFetchRoute {
-    /// Untunneled HTTP straight to the price sources: the route a
-    /// switched-off Mixnet Mode consents to.
-    Clearnet,
     /// The mixnet tunnel, reached through its local SOCKS5 endpoint.
     Mixnet {
         /// The local SOCKS5 endpoint the fetch traveled through.
@@ -188,6 +185,13 @@ pub struct LightClient {
     /// deliberate disable stays distinguishable from a transport's absence.
     #[cfg(feature = "nym")]
     mixnet_slot: std::sync::Arc<std::sync::Mutex<crate::mixnet::MixnetSlot>>,
+    /// Whether transmissions take the mixnet route: the consumer's per-session
+    /// [`TransmitPolicy`](crate::mixnet::TransmitPolicy), held beside the
+    /// slot rather than in it so the transport never learns the send
+    /// setting and a price lookup cannot read it. Atomic so it flips through
+    /// `&self` while a send or a bootstrap is in flight.
+    #[cfg(feature = "nym")]
+    transmit_over_mixnet: std::sync::atomic::AtomicBool,
     /// The expiry watchdog driving a new ProofAcquisition the moment the
     /// Standing Client's proof stops being epoch-fresh.
     #[cfg(feature = "nym")]
@@ -196,10 +200,12 @@ pub struct LightClient {
     /// randomised cadence, where the platform affords one (ADR 0048).
     #[cfg(feature = "nym")]
     rotation_watchdog: Option<tokio::task::JoinHandle<()>>,
+    /// The indexers this session may broadcast to.
+    destination_servers: crate::destination::servers::DestinationServerSet,
     /// The session's exit authority: Reservations, the NodeHealthIndex, and
     /// the acquirer Proven Clients are born from.
     #[cfg(feature = "nym")]
-    destination_pools: std::sync::Arc<crate::destination::pool::Pools>,
+    exit_pools: std::sync::Arc<crate::mixnet::pools::Pools>,
     /// The session-level Mixnet Mode status channel (ADR 0024, decision 2):
     /// the one shared watch every subscriber reads. Transport transitions
     /// publish from the supervisor's tasks, slot transitions from the
@@ -285,6 +291,11 @@ impl LightClient {
 
         Ok(LightClient {
             indexer,
+            destination_servers: crate::destination::servers::DestinationServerSet::for_chain(
+                &config.chain_type(),
+                config.remote_indexer_trust(),
+                config.indexers().to_vec(),
+            ),
             migration_transmission_uri: config.migration_transmission_uri(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
@@ -304,11 +315,13 @@ impl LightClient {
                 crate::mixnet::MixnetSlot::Unattached,
             )),
             #[cfg(feature = "nym")]
+            transmit_over_mixnet: std::sync::atomic::AtomicBool::new(true),
+            #[cfg(feature = "nym")]
             standing_watchdog: None,
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            destination_pools: crate::destination::pool::Pools::new(),
+            exit_pools: crate::mixnet::pools::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
@@ -328,8 +341,14 @@ impl LightClient {
     #[cfg(any(test, feature = "testutils"))]
     pub async fn new_for_test(wallet: crate::wallet::LightWallet) -> Self {
         zingo_netutils::ensure_default_crypto_provider();
+        let destination_servers = crate::destination::servers::DestinationServerSet::for_chain(
+            &wallet.chain_type(),
+            None,
+            Vec::new(),
+        );
         LightClient {
             indexer: None,
+            destination_servers,
             migration_transmission_uri: None,
             wallet: WalletMeta::new(
                 std::env::temp_dir().join("zingolib-synthetic-wallet"),
@@ -354,11 +373,13 @@ impl LightClient {
                 crate::mixnet::MixnetSlot::Unattached,
             )),
             #[cfg(feature = "nym")]
+            transmit_over_mixnet: std::sync::atomic::AtomicBool::new(true),
+            #[cfg(feature = "nym")]
             standing_watchdog: None,
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            destination_pools: crate::destination::pool::Pools::new(),
+            exit_pools: crate::mixnet::pools::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
@@ -416,6 +437,11 @@ impl LightClient {
 
         Ok(LightClient {
             indexer,
+            destination_servers: crate::destination::servers::DestinationServerSet::for_chain(
+                &config.chain_type(),
+                config.remote_indexer_trust(),
+                config.indexers().to_vec(),
+            ),
             migration_transmission_uri: config.migration_transmission_uri(),
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
@@ -435,11 +461,13 @@ impl LightClient {
                 crate::mixnet::MixnetSlot::Unattached,
             )),
             #[cfg(feature = "nym")]
+            transmit_over_mixnet: std::sync::atomic::AtomicBool::new(true),
+            #[cfg(feature = "nym")]
             standing_watchdog: None,
             #[cfg(feature = "nym")]
             rotation_watchdog: None,
             #[cfg(feature = "nym")]
-            destination_pools: crate::destination::pool::Pools::new(),
+            exit_pools: crate::mixnet::pools::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
@@ -597,6 +625,30 @@ impl LightClient {
     ) -> Result<(), zingo_netutils::GetClientError> {
         self.indexer = Some(zingo_netutils::GrpcIndexer::new(server).await?);
         Ok(())
+    }
+
+    /// Points the client at `server` without connecting.
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn set_indexer_uri_lazy(
+        &mut self,
+        server: http::Uri,
+    ) -> Result<(), zingo_netutils::GetClientError> {
+        self.indexer = Some(zingo_netutils::GrpcIndexer::new_lazy(server)?);
+        Ok(())
+    }
+
+    /// Adds or replaces the classification of one indexer.
+    pub fn add_indexer(&mut self, indexer: crate::destination::servers::IndexerConfig) {
+        self.destination_servers.add_indexer(indexer);
+    }
+
+    /// Replaces the session's Destination Server set.
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn set_destination_servers_for_tests(
+        &mut self,
+        servers: crate::destination::servers::DestinationServerSet,
+    ) {
+        self.destination_servers = servers;
     }
 
     /// Disconnects every network capability of the client, returning only
@@ -764,11 +816,11 @@ impl LightClient {
     }
 
     /// Record the deliberate clearnet consent for a test client: with the
-    /// mixnet compiled in, the slot moves to
-    /// [`Indicator::SwitchedOff`](crate::mixnet::Indicator) — the same act
-    /// the CLI's `network off` performs — so scenario sends transmit over
-    /// clearnet instead of refusing `MixnetNotReady`. Without the `nym`
-    /// feature the wallet has no mixnet surface and this is a no-op.
+    /// mixnet compiled in, the transmit policy moves to
+    /// [`TransmitPolicy::Clearnet`](crate::mixnet::TransmitPolicy), so
+    /// scenario sends transmit over clearnet instead of refusing
+    /// `MixnetNotReady`. Without the `nym` feature the wallet has no mixnet
+    /// surface and this is a no-op.
     ///
     /// Deliberately unconditional, because a caller keying the consent on
     /// its own feature set desyncs from zingolib's and compiles the consent
@@ -776,7 +828,7 @@ impl LightClient {
     #[cfg(any(test, feature = "testutils"))]
     pub async fn consent_to_clearnet_for_tests(&mut self) {
         #[cfg(feature = "nym")]
-        self.disable_mixnet().await;
+        self.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
     }
 
     #[cfg(any(test, feature = "testutils"))]
@@ -816,6 +868,80 @@ mod tests {
     use tempfile::TempDir;
     use zingo_common_components::protocol::ActivationHeights;
     use zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED;
+
+    #[tokio::test]
+    async fn indexer_classifications_reach_the_set_through_every_constructor() {
+        use crate::destination::servers::{IndexerConfig, Trust};
+
+        let own: http::Uri = "https://node.mine.example:443".parse().unwrap();
+        let other: http::Uri = "https://other.example:443".parse().unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let builder = || {
+            ClientConfig::builder()
+                .set_chain_type(ChainType::Mainnet)
+                .set_wallet_dir(temp_dir.path().to_path_buf())
+                .add_indexer(IndexerConfig::new(own.clone()).trust(Trust::Untrusted))
+                .set_remote_indexer_trust(Trust::Trusted)
+        };
+        use zcash_protocol::consensus::{NetworkUpgrade, Parameters as _};
+        let sapling_activation = ChainType::Mainnet
+            .activation_height(NetworkUpgrade::Sapling)
+            .expect("mainnet schedules Sapling");
+        let config = builder()
+            .set_wallet_config(WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: CHIMNEY_BETTER_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: u32::from(sapling_activation),
+                wallet_settings: default_test_wallet_settings(),
+            })
+            .build()
+            .unwrap();
+        assert_eq!(config.indexers().len(), 1);
+        assert_eq!(config.remote_indexer_trust(), Some(Trust::Trusted));
+
+        let mut created = LightClient::new(config, false).await.unwrap();
+        let bytes = created
+            .wallet()
+            .write()
+            .await
+            .save()
+            .expect("save returned an error")
+            .expect("nothing to save");
+        let read = LightClient::from_reader(
+            Cursor::new(bytes),
+            builder()
+                .set_wallet_config(WalletConfig::Read)
+                .build()
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        for client in [&created, &read] {
+            assert_eq!(
+                client.destination_servers.trust_of(&own),
+                Trust::Untrusted,
+                "an explicit trust outranks the override"
+            );
+            assert_eq!(
+                client.destination_servers.trust_of(&other),
+                Trust::Trusted,
+                "the override replaces mainnet's untrusted default"
+            );
+            assert!(
+                !client
+                    .destination_servers
+                    .registry_reachable(crate::destination::servers::Transport::Mixnet)
+                    .is_empty(),
+                "a mainnet session holds the mainnet registry"
+            );
+        }
+
+        created.add_indexer(IndexerConfig::new(other.clone()).trust(Trust::Untrusted));
+        assert_eq!(
+            created.destination_servers.trust_of(&other),
+            Trust::Untrusted
+        );
+    }
 
     #[tokio::test]
     async fn new_wallet_from_phrase() {

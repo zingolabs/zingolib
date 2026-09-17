@@ -903,52 +903,51 @@ impl LightClient {
     }
 
     /// The transmit-only client parts are submitted through, resolved by the
-    /// Mixnet Mode policy (ADR 0011, amendment 2026-07-23) like every other
-    /// transmitting surface.
-    ///
-    /// While the mode is on, parts travel ONLY over the mixnet (failing
-    /// closed with [`MixnetNotReady`](crate::mixnet::MixnetNotReady) while the
-    /// proxy bootstraps or after it dies) to one Destination drawn at
-    /// random per submission, with the synchronization endpoint's operator
-    /// forbidden as a target (ADR 0022: a `migration_transmission_uri` on the
-    /// sync operator's domain is refused, and the draw excludes that
-    /// operator). Clearnet carries parts only when the user deliberately
-    /// toggled the mode off, or in a build without the `nym` feature: then
-    /// the dedicated `migration_transmission_uri` when configured, else the
-    /// synchronization endpoint with a logged correlation warning, else
-    /// [`LightClientError::Offline`] with no traffic emitted.
+    /// session's transmit policy (ADR 0011, amendments 2026-07-23 and
+    /// 2026-09-11) like every other transmitting surface.
     fn migration_transmission_client(
         &self,
     ) -> Result<transmission_route::RoutedTransmissionClient, LightClientError> {
+        use transmission_route::MigrationWire;
+
+        let sync_indexer = self.indexer_uri();
         #[cfg(feature = "nym")]
-        if let crate::mixnet::MixnetRoute::Mixnet(conduit) = self.mixnet_route()? {
+        let wire = match self.send_route()? {
             // The guard travels into the client, which dials on every
             // submission long after this function returns.
-            let dial = conduit.dial();
-            let sync_indexer = self.indexer_uri();
-            let candidates = transmission_route::eligible_candidates(
-                self.migration_transmission_uri.clone(),
-                sync_indexer.as_ref(),
-            )?;
-            return Ok(transmission_route::RoutedTransmissionClient::Mixnet(
-                transmission_route::MixnetTransmissionClient::new(dial, candidates),
-            ));
-        }
-
-        let clearnet = match &self.migration_transmission_uri {
-            Some(uri) => transmission_grpc::GrpcTransmissionClient::new(uri.clone()),
-            None => {
-                let indexer_uri = self.indexer_uri().ok_or(LightClientError::Offline)?;
-                log::warn!(
-                    "no dedicated migration transmission endpoint configured; parts will be \
-                     transmitted to the synchronization endpoint, which lets that server \
-                     correlate synchronization with migration activity"
-                );
-                transmission_grpc::GrpcTransmissionClient::new(indexer_uri)
-            }
+            crate::mixnet::MixnetRoute::Mixnet(conduit) => MigrationWire::Mixnet(conduit.dial()),
+            crate::mixnet::MixnetRoute::Clearnet => MigrationWire::Clearnet,
         };
-        Ok(transmission_route::RoutedTransmissionClient::Clearnet(
-            clearnet,
+        #[cfg(not(feature = "nym"))]
+        let wire = MigrationWire::Clearnet;
+        if matches!(wire, MigrationWire::Clearnet)
+            && sync_indexer.is_none()
+            && self.migration_transmission_uri.is_none()
+        {
+            return Err(LightClientError::Offline);
+        }
+        let candidates = transmission_route::candidates(
+            self.migration_transmission_uri.clone(),
+            sync_indexer.as_ref(),
+            &self.destination_servers,
+            wire.transport(),
+            &self.indexer_history.health().lock().expect("health mutex"),
+        )?;
+        let reaches_untrusted_sync = matches!(wire, MigrationWire::Clearnet)
+            && sync_indexer.as_ref().is_some_and(|sync| {
+                candidates.contains(sync)
+                    && self.destination_servers.trust_of(sync)
+                        == crate::destination::servers::Trust::Untrusted
+            });
+        if reaches_untrusted_sync {
+            log::warn!(
+                "no dedicated migration transmission endpoint configured; parts will be \
+                 transmitted to the synchronization endpoint, which lets that server \
+                 correlate synchronization with migration activity"
+            );
+        }
+        Ok(transmission_route::RoutedTransmissionClient::new(
+            wire, candidates,
         ))
     }
 
@@ -2324,7 +2323,7 @@ fn record_part_route(
         route: attempt_route,
         kind: AttemptKind::Send,
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
-        phase: None,
+        fault_domain: None,
         outcome,
     });
 }
@@ -4444,12 +4443,15 @@ mod tests {
         use crate::wallet::migration::TransmissionRoute;
         use zcash_primitives::transaction::TxId;
 
-        /// A client whose Mixnet Mode is Ready at the mock tunnel endpoint,
-        /// the posture every connected session holds.
+        /// A client whose Mixnet Mode is Ready at the mock tunnel endpoint, with a
+        /// remote sync indexer that is never dialed.
         #[cfg(feature = "nym")]
         async fn ready_client(tip: u32) -> (LightClient, BoundNote) {
             let (wallet, bound_note) = wallet_with_migration_note(tip);
             let mut client = LightClient::new_for_test(wallet).await;
+            client
+                .set_indexer_uri_lazy("https://indexer.example:443".parse().expect("a static uri"))
+                .expect("a lazy indexer needs no connection");
             client
                 .switch_on_mixnet_for_tests(crate::mocks::transmission::MOCK_SOCKS5_ADDR)
                 .await;
@@ -4468,10 +4470,7 @@ mod tests {
                 .migration_transmission_client()
                 .expect("a ready session resolves a wire");
             assert!(
-                matches!(
-                    resolved,
-                    crate::lightclient::migrate::transmission_route::RoutedTransmissionClient::Mixnet(_)
-                ),
+                resolved.is_mixnet(),
                 "a ready session must resolve the mixnet wire"
             );
         }
