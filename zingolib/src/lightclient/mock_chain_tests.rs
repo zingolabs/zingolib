@@ -1759,7 +1759,6 @@ async fn shardtree_roundtrip_restores_retained_checkpoints() {
 mod strict_chain {
     use std::time::Duration;
 
-    use tracing_subscriber::EnvFilter;
     use zaino_proto::tonic::Code;
     use zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS;
     use zcash_protocol::value::Zatoshis;
@@ -2779,10 +2778,6 @@ mod strict_chain {
 
     #[tokio::test]
     async fn failed_session_that_scanned_past_expiry_fails_the_transaction() {
-        tracing_subscriber::fmt()
-            .with_env_filter(EnvFilter::from_default_env())
-            .init();
-
         let mut net = MockNet::launch().await;
         let (mut recipient, recipient_ua, txid, expiry) =
             mempool_transaction_near_expiry(&mut net).await;
