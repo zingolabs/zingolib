@@ -245,7 +245,7 @@ pub enum ScanError {
     /// Continuity error.
     #[error("continuity error")]
     ContinuityError(#[from] ContinuityError),
-    /// Zcash client backend scan error
+    /// Invalid encoding.
     #[error(transparent)]
     EncodingError(#[from] EncodingInvalid),
     /// Invalid sapling nullifier
@@ -298,6 +298,17 @@ pub enum ScanError {
     /// Failed to parse encoded address.
     #[error("failed to parse encoded address")]
     AddressParseError(#[from] zcash_address::unified::ParseError),
+    /// Compact transaction contained transparent output with value outside the valid zatoshi range.
+    #[error(
+        "compact transaction contained transparent output with value {0} which is outside the valid zatoshi range"
+    )]
+    TransparentOutputInvalidValue(u64),
+    /// All transparent addresses are already in use.
+    #[error("all transparent addresses are already in use")]
+    AllAddressesInUse,
+    /// Transparent address derivation error.
+    #[error("transparent address derivation error. {0}")]
+    TransparentAddressDerivationError(bip32::Error),
 }
 
 /// The encoding of a compact Sapling output or compact Orchard action was invalid.

@@ -2150,6 +2150,7 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_protocol",
+ "zcash_script",
  "zcash_transparent",
  "zingo-memo",
  "zingo-netutils",

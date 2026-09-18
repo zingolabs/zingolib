@@ -85,6 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::default(),
                     performance_level: PerformanceLevel::High,
+                    shutdown_on_completion: true,
                 },
                 min_confirmations: NonZeroU32::new(3).unwrap(),
             },

@@ -96,7 +96,7 @@ async fn fund(net: &MockNet, receivers: Vec<(&str, u64, Option<&str>)>, extra_bl
 async fn funded_send_confirms_on_the_mock_chain() {
     let mut net = MockNet::launch().await;
     let mut recipient = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     let recipient_ua =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
@@ -128,7 +128,7 @@ async fn max_send_value_to_tex_empties_the_wallet() {
     let funding = 100_000;
     let mut net = MockNet::launch().await;
     let mut sender = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
 
@@ -169,7 +169,7 @@ async fn max_send_value_to_tex_with_zennies_empties_the_wallet() {
     let funding = 2 * crate::ZENNIES_FOR_ZINGO_AMOUNT;
     let mut net = MockNet::launch().await;
     let mut sender = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
 
@@ -216,7 +216,7 @@ async fn max_send_value_to_shielded_empties_the_wallet() {
     let sapling_funding = 50_000;
     let mut net = MockNet::launch().await;
     let mut sender = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
     let sender_sapling = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Sapling)).await;
@@ -281,7 +281,7 @@ async fn max_send_value_to_shielded_empties_the_wallet() {
 async fn list_value_transfers_check_fees() {
     let mut net = MockNet::launch().await;
     let mut recipient = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     let recipient_ua =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
@@ -320,7 +320,7 @@ async fn list_value_transfers_check_fees() {
 async fn self_send_to_t_displays_as_one_transaction() {
     let mut net = MockNet::launch().await;
     let mut recipient = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     let recipient_ua =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
@@ -422,7 +422,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     let recipient_initial_funds = 100_000_000;
     let mut net = MockNet::launch().await;
     let mut recipient = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     let recipient_ua = get_base_address(&recipient, PoolType::IRONWOOD).await;
     // The external destinations: the abandon-art wallet's sapling UA and
@@ -796,7 +796,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
 
     let mut net = MockNet::launch().await;
     let mut client = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     let pmc_unified = get_base_address(&client, PoolType::Shielded(ShieldedPool::Orchard)).await;
     let pmc_taddr = get_base_address(&client, PoolType::Transparent).await;
@@ -989,7 +989,7 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
 
     let mut net = MockNet::launch().await;
     let mut recipient = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     recipient.set_transmit_retry_interval(std::time::Duration::ZERO);
     let recipient_ua =
@@ -1052,7 +1052,7 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
 
     let mut net = MockNet::launch().await;
     let mut recipient = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     recipient.set_transmit_retry_interval(std::time::Duration::ZERO);
     let recipient_ua =
@@ -1144,7 +1144,7 @@ async fn failed_split_round_transmit_strands_calculated_transactions() {
         chain.mine_empty_blocks(TIP);
     }
     let mut client = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     client.set_transmit_retry_interval(std::time::Duration::ZERO);
     client
@@ -1222,11 +1222,23 @@ async fn failed_split_round_transmit_strands_calculated_transactions() {
 /// The offline twins whose assertions read the editorial surface.
 #[cfg(feature = "perspective")]
 mod perspective {
+    use std::num::NonZeroU32;
+    use std::time::{Duration, Instant};
+
+    use pepper_sync::config::{
+        PerformanceLevel, SyncConfig, TransparentAddressDiscovery,
+        TransparentAddressDiscoveryScopes,
+    };
+    use tracing_subscriber::EnvFilter;
+    use zcash_keys::encoding::AddressCodec;
+    use zip32::AccountId;
+
     use crate::lightclient::LightClient;
     use crate::perspective::value_transfer::{
         SelfSendValueTransfer, SentValueTransfer, ValueTransfer, ValueTransferKind, ValueTransfers,
     };
     use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
+    use crate::wallet::WalletSettings;
 
     use super::*;
 
@@ -1245,7 +1257,7 @@ mod perspective {
             chain.mine_empty_blocks(TIP);
         }
         let mut client = net
-            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
             .await;
         client
             .sync_and_await()
@@ -1277,7 +1289,7 @@ mod perspective {
     async fn zero_value_receipts() {
         let mut net = MockNet::launch().await;
         let mut recipient = net
-            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
             .await;
         let recipient_ua = get_base_address(&recipient, PoolType::IRONWOOD).await;
 
@@ -1394,6 +1406,123 @@ mod perspective {
             migration.memos,
         );
     }
+
+    // TODO: this test is long due to mock chain not serving the mempoool stream correctly. if it closes the stream
+    // when a block is mined the sync engine will automatically check for new blocks instead of waiting until the backup interval has passed.
+    // setting the interval below the expected interval of blocks being mined will harm sync efficiency.
+    #[tokio::test]
+    async fn gap_address_compact_block_scanning() {
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .init();
+
+        let mut net = MockNet::launch().await;
+        let mut recipient = net
+            .client(
+                zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+                Some(WalletSettings {
+                    sync_config: SyncConfig {
+                        transparent_address_discovery: TransparentAddressDiscovery {
+                            gap_limit: 3,
+                            scopes: TransparentAddressDiscoveryScopes::default(),
+                        },
+                        performance_level: PerformanceLevel::High,
+                        shutdown_on_completion: false,
+                    },
+                    min_confirmations: NonZeroU32::try_from(1)
+                        .expect("hard-coded non-zero integer"),
+                }),
+            )
+            .await;
+
+        // start the recipient syncing continuously and wait for the chain to be fully scanned
+        net.chain.write().await.mine_empty_blocks(10);
+        recipient.sync().await.unwrap();
+        while recipient
+            .latest_sync_status()
+            .is_none_or(|status| !status.is_complete())
+        {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        // generate gap_limit+2 new taddrs without adding them directly to the wallet and fund them to trigger gap
+        // address scanning in the chain tip compact blocks
+        let recipient_clone = net
+            .client(
+                zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+                Some(WalletSettings {
+                    sync_config: SyncConfig {
+                        transparent_address_discovery: TransparentAddressDiscovery {
+                            gap_limit: 3,
+                            scopes: TransparentAddressDiscoveryScopes::default(),
+                        },
+                        performance_level: PerformanceLevel::High,
+                        shutdown_on_completion: false,
+                    },
+                    min_confirmations: NonZeroU32::try_from(1)
+                        .expect("hard-coded non-zero integer"),
+                }),
+            )
+            .await;
+        let mut gap_taddrs = Vec::new();
+        let mut funding_txs = Vec::new();
+        for _ in 0..5 {
+            let gap_taddr = recipient_clone
+                .wallet()
+                .write()
+                .await
+                .generate_transparent_address(AccountId::ZERO, false)
+                .unwrap();
+            gap_taddrs.push(gap_taddr);
+
+            let funding_tx = faucet_funding_transaction(vec![(
+                &gap_taddr.1.encode(&recipient.chain_type()),
+                100_000,
+                None,
+            )])
+            .await;
+            funding_txs.push(funding_tx);
+        }
+        net.chain.write().await.mine_block(funding_txs);
+
+        let timeout = Duration::from_secs(150);
+        let assert_start = Instant::now();
+        while !(recipient
+            .latest_sync_status()
+            .unwrap()
+            .scan_ranges
+            .last()
+            .unwrap()
+            .block_range()
+            .end
+            == 12.into()
+            && recipient.latest_sync_status().unwrap().is_complete())
+        {
+            if assert_start.elapsed() >= timeout {
+                panic!("test time exceeded expected time to scan newly mined blocks");
+            }
+            tokio::time::sleep(Duration::from_millis(2_000)).await;
+        }
+
+        recipient.stop_sync().unwrap();
+        recipient.await_sync().await.unwrap();
+
+        // check all funds have been received and addresses have been added to the wallet, including the addresses
+        // beyond the gap limit to prove the new blocks are being rescanend until the gap limit is satisfied
+        check_client_balances!(recipient, i: 0 o: 0 s: 0 t: 500_000);
+        for (id, addr) in gap_taddrs {
+            assert!(
+                recipient
+                    .wallet()
+                    .read()
+                    .await
+                    .transparent_addresses()
+                    .iter()
+                    .any(|(wallet_addr_id, wallet_addr)| *wallet_addr_id == id
+                        && *wallet_addr == addr.encode(&recipient.chain_type()))
+            );
+        }
+    }
 }
 
 /// A mock-chain send travels the mixnet route and says so: the receipt
@@ -1409,7 +1538,7 @@ async fn a_mock_chain_send_reports_the_mixnet_route() {
 
     let mut net = MockNet::launch().await;
     let mut recipient = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     let recipient_ua =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
@@ -1469,7 +1598,7 @@ async fn the_clearnet_policy_reports_the_clearnet_route_over_a_ready_mixnet() {
 
     let mut net = MockNet::launch().await;
     let mut recipient = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     let recipient_ua =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
@@ -1548,7 +1677,7 @@ async fn shardtree_roundtrip_restores_retained_checkpoints() {
     let mut chain_height = 500;
     let mut net = MockNet::launch().await;
     let mut recipient = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
 
     net.chain.write().await.mine_empty_blocks(chain_height - 2);
@@ -1651,7 +1780,7 @@ mod strict_chain {
 
     async fn funded_sender(net: &mut MockNet) -> LightClient {
         let mut sender = net
-            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
             .await;
         sender.set_transmit_retry_interval(Duration::ZERO);
         let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
@@ -1742,7 +1871,7 @@ mod strict_chain {
     async fn sync_recovers_from_a_truncated_block_stream() {
         let mut net = MockNet::launch().await;
         let mut recipient = net
-            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
             .await;
         let recipient_ua =
             get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
@@ -1762,7 +1891,7 @@ mod strict_chain {
     async fn sync_fails_while_the_indexer_is_unavailable() {
         let mut net = MockNet::launch().await;
         let mut client = net
-            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
             .await;
         net.chain.write().await.mine_empty_blocks(2);
         {
@@ -1781,7 +1910,7 @@ mod strict_chain {
     async fn coinbase_reward_becomes_spendable_after_maturity() {
         let mut net = MockNet::launch().await;
         let mut miner = net
-            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
             .await;
         miner.set_transmit_retry_interval(Duration::ZERO);
         let miner_taddr = get_base_address(&miner, PoolType::Transparent).await;
@@ -2333,7 +2462,7 @@ mod strict_chain {
     async fn received_transaction_is_not_failed_by_a_session_that_never_scans_its_block() {
         let mut net = MockNet::launch().await;
         let mut recipient = net
-            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
             .await;
         let recipient_ua =
             get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
@@ -2374,7 +2503,7 @@ mod strict_chain {
     async fn received_transaction_that_expires_unmined_is_failed() {
         let mut net = MockNet::launch().await;
         let mut recipient = net
-            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
             .await;
         let recipient_ua =
             get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
@@ -2491,7 +2620,7 @@ mod strict_chain {
     async fn failed_shield_reads_as_shield() {
         let mut net = MockNet::launch().await;
         let mut shielder = net
-            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
             .await;
         shielder.set_transmit_retry_interval(Duration::ZERO);
         let taddr = get_base_address(&shielder, PoolType::Transparent).await;
@@ -2569,7 +2698,7 @@ mod strict_chain {
         net: &mut MockNet,
     ) -> (LightClient, String, TxId, BlockHeight) {
         let mut recipient = net
-            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
             .await;
         let recipient_ua =
             get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
@@ -2766,7 +2895,7 @@ mod mainnet_broadcast_offline {
         let accepting = MockNet::launch().await;
 
         let mut recipient = sync
-            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
             .await;
         let recipient_ua =
             get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
@@ -2955,7 +3084,7 @@ mod mixnet_wire_offline {
         let mut sync = MockNet::launch().await;
         let (relay, accepting, suppressing) = relayed().await;
         let mut recipient = sync
-            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
             .await;
         let recipient_ua =
             get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;

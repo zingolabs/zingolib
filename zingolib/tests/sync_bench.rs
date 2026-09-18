@@ -61,6 +61,7 @@ async fn sync_20k_mainnet_blocks_within_budget() {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::default(),
                     performance_level: PerformanceLevel::High,
+                    shutdown_on_completion: true,
                 },
                 min_confirmations: NonZeroU32::new(3).unwrap(),
             },
