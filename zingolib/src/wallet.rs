@@ -150,7 +150,7 @@ pub struct LightWallet {
     /// Orchard→Ironwood migration state, present while a migration is
     /// planned or in flight. Wallet-file-local by design: restore-from-seed
     /// starts fresh.
-    pub migration: Option<migration::MigrationState>,
+    pub(crate) migration: Option<migration::MigrationState>,
     /// Send proposal
     send_proposal: Option<ZingoProposal>,
     /// Advisory output locks reserving an in-flight proposal's inputs. Process
@@ -161,6 +161,15 @@ pub struct LightWallet {
 }
 
 impl LightWallet {
+    pub fn migration(&self) -> Option<&migration::MigrationState> {
+        self.migration.as_ref()
+    }
+
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn set_migration(&mut self, state: Option<migration::MigrationState>) {
+        self.migration = state;
+    }
+
     /// Create a new in-memory wallet from [`crate::config::WalletConfig`].
     ///
     /// # Error

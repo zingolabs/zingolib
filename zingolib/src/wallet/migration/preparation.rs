@@ -1,9 +1,9 @@
-//! Phase 1 planning and execution: note splitting, plus the fee model shared
-//! with the Phase 2 parts.
+//! Phase 1 planning and execution: note preparation, plus the fee model shared
+//! with the Phase 2 transfers.
 //!
 //! [`plan_migration`] turns the wallet's Orchard note values into a
-//! [`MigrationPlan`]: the note-splitting rounds that resize the notes to
-//! exactly `denomination + part_fee`, and the denominations of the parts the
+//! [`ScheduledMigrationPlan`]: the note-preparation rounds that resize the notes to
+//! exactly `denomination + transfer_fee`, and the denominations of the transfers the
 //! wallet will send once splitting completes.
 
 use zcash_protocol::value::Zatoshis;
@@ -47,20 +47,20 @@ pub(crate) const SWEEP_MIN: u64 = 2 * MARGINAL_FEE;
 /// `BundleType::num_actions` by test.
 const MIN_BUNDLE_ACTIONS: u64 = 2;
 
-/// The canonical ZIP-317 fee of one part. A part carries TWO bundles, an
+/// The canonical ZIP-317 fee of one transfer. A transfer carries TWO bundles, an
 /// Orchard bundle (1 spend, padded to 2 actions) and an Ironwood bundle
 /// (1 output, padded to 2 actions), so it pays for 4 logical actions. Every
-/// split note is sized `denomination + part_fee` so the part balances
+/// funding note is sized `denomination + transfer_fee` so the transfer balances
 /// exactly.
 ///
 /// ZIP 318 says only "the canonical fee (provisionally the ZIP 317 minimum
 /// fee)" at
 /// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>,
 /// and the reference crate models a 2-source-action, 1-unpadded-destination
-/// shape, so the three readings price a part at 10 000, 15 000, and (here)
-/// 20 000 zatoshis. The value feeds part sizing and the consent hash, so
+/// shape, so the three readings price a transfer at 10 000, 15 000, and (here)
+/// 20 000 zatoshis. The value feeds transfer sizing and the consent hash, so
 /// aligning it is a ratification decision, not an import.
-pub(crate) const CANONICAL_PART_FEE: u64 = MARGINAL_FEE * 2 * MIN_BUNDLE_ACTIONS;
+pub(crate) const CANONICAL_TRANSFER_FEE: u64 = MARGINAL_FEE * 2 * MIN_BUNDLE_ACTIONS;
 
 /// The number of logical actions the builder will produce for a bundle of
 /// `n_in` spends and `n_out` outputs at the given bundle version, asked of the
@@ -82,7 +82,7 @@ pub(in crate::wallet::migration) fn bundle_actions(
 /// carry the given action counts, from the crate's own fee rule.
 ///
 /// ZIP-317's conventional fee depends on nothing but the action counts, so the
-/// rule ignores the network and target height it is handed and the
+/// rule ignores the network and scheduled broadcast height it is handed and the
 /// placeholders below never reach a decision.
 pub(in crate::wallet::migration) fn zip317_fee(
     orchard_actions: usize,
@@ -116,28 +116,53 @@ fn orchard_version(post_activation: bool) -> orchard::bundle::BundleVersion {
     }
 }
 
-/// The ZIP-317 conventional fee for an Orchard-only note-splitting
+/// The ZIP-317 conventional fee for an Orchard-only note-preparation
 /// transaction with `n_in` spends and `n_out` outputs.
-pub(crate) fn note_split_fee(n_in: usize, n_out: usize, post_activation: bool) -> u64 {
+pub(crate) fn note_preparation_fee(n_in: usize, n_out: usize, post_activation: bool) -> u64 {
     zip317_fee(
         bundle_actions(orchard_version(post_activation), n_in, n_out),
         0,
     )
 }
 
-/// If a note of value `v` is already part-ready, sized exactly
-/// `denomination + part_fee`, returns that denomination.
-pub(crate) fn part_denomination(value: u64, params: &MigrationParams) -> Option<u64> {
+/// If a note of value `v` is already a funding note, sized exactly
+/// `denomination + transfer_fee`, returns that denomination.
+pub(crate) fn funding_denomination(value: u64, params: &MigrationParams) -> Option<u64> {
     value
-        .checked_sub(params.part_fee)
+        .checked_sub(params.transfer_fee)
         .filter(|d| params.denominations.contains(d))
 }
 
-/// One planned Orchard→Orchard note-splitting transaction. All values are
+/// What one Orchard note is to the migration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoteClass {
+    /// Sized exactly `denomination + transfer_fee`: it funds one transfer as
+    /// it is.
+    FundingNote {
+        /// The denomination the note funds.
+        denomination: u64,
+    },
+    /// Above the sweep minimum but not a funding note: note preparation
+    /// spends it.
+    NeedsPreparation,
+    /// At or below the sweep minimum: never selected, always residual.
+    Residual,
+}
+
+/// Classifies one note value under `params`. Pure.
+pub fn classify_note(value: u64, params: &MigrationParams) -> NoteClass {
+    match funding_denomination(value, params) {
+        Some(denomination) => NoteClass::FundingNote { denomination },
+        None if value > params.sweep_min => NoteClass::NeedsPreparation,
+        None => NoteClass::Residual,
+    }
+}
+
+/// One planned Orchard→Orchard note-preparation transaction. All values are
 /// zatoshis. The fee is implied: `sum(inputs) − sum(outputs)`, always at
 /// least the ZIP-317 conventional fee for its action count.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NoteSplitTx {
+pub struct PreparationTx {
     /// Values of the notes this transaction spends (bounded by
     /// [`MigrationParams::max_actions_per_split_tx`]).
     pub inputs: Vec<u64>,
@@ -146,7 +171,7 @@ pub struct NoteSplitTx {
     pub outputs: Vec<u64>,
 }
 
-impl NoteSplitTx {
+impl PreparationTx {
     /// The implied fee: `sum(inputs) − sum(outputs)`.
     pub fn fee(&self) -> u64 {
         self.inputs.iter().sum::<u64>() - self.outputs.iter().sum::<u64>()
@@ -157,11 +182,11 @@ impl NoteSplitTx {
 /// pre-Ironwood (V2) Orchard notes. Only the destination differs.
 #[derive(Debug, Clone, Copy)]
 pub(in crate::wallet::migration) enum MigrationOutputs<'a> {
-    /// Phase 1 note splitting: Orchard→Orchard self-sends, one output per
+    /// Phase 1 note preparation: Orchard→Orchard self-sends, one output per
     /// value. Nothing crosses a pool boundary.
     Orchard(&'a [u64]),
     /// A pool-crossing transfer into Ironwood: exactly one output, no change.
-    /// Both the ZIP 318 parts and the immediate migration are built this way.
+    /// Both the ZIP 318 transfers and the immediate migration are built this way.
     Ironwood(u64),
 }
 
@@ -175,55 +200,55 @@ impl MigrationOutputs<'_> {
     }
 }
 
-/// A complete migration plan: note-splitting rounds, then one part per
+/// A complete migration plan: note-preparation rounds, then one transfer per
 /// denomination. Pure data, nothing is signed or sent.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MigrationPlan {
-    /// Note-splitting rounds, executed in order. Transactions within a round
+pub struct ScheduledMigrationPlan {
+    /// Note-preparation rounds, executed in order. Transactions within a round
     /// are independent. Each round's outputs must confirm before the next
     /// round spends them.
-    pub split_rounds: Vec<Vec<NoteSplitTx>>,
-    /// The denominations of the parts to send once splitting completes
+    pub preparation_rounds: Vec<Vec<PreparationTx>>,
+    /// The denominations of the transfers to send once splitting completes
     /// (largest first). Includes denominations of notes that are already
-    /// part-ready. Each costs one [`MigrationParams::part_fee`] on top.
-    pub parts: Vec<u64>,
+    /// funding. Each costs one [`MigrationParams::transfer_fee`] on top.
+    pub transfers: Vec<u64>,
     /// Total value residual in dust notes (each at most
     /// [`MigrationParams::sweep_min`]) plus any balance too small to form
     /// even the smallest denomination.
     pub residual: u64,
 }
 
-impl MigrationPlan {
-    /// True when no note splitting is required and the parts can be sent now.
-    pub fn is_split(&self) -> bool {
-        self.split_rounds.is_empty()
+impl ScheduledMigrationPlan {
+    /// True when no note preparation is required and the transfers can be sent now.
+    pub fn is_prepared(&self) -> bool {
+        self.preparation_rounds.is_empty()
     }
 
-    /// Total fees across all note-splitting transactions.
-    pub fn split_fee(&self) -> u64 {
-        self.split_rounds
+    /// Total fees across all note-preparation transactions.
+    pub fn preparation_fee(&self) -> u64 {
+        self.preparation_rounds
             .iter()
             .flatten()
-            .map(NoteSplitTx::fee)
+            .map(PreparationTx::fee)
             .sum()
     }
 
-    /// Total fees the parts will pay (one part fee per denomination).
-    pub fn parts_fee(&self, params: &MigrationParams) -> u64 {
-        self.parts.len() as u64 * params.part_fee
+    /// Total fees the transfers will pay (one transfer fee per denomination).
+    pub fn transfers_fee(&self, params: &MigrationParams) -> u64 {
+        self.transfers.len() as u64 * params.transfer_fee
     }
 }
 
 /// A collision-resistant digest of a plan, recorded at consent time (with
 /// [`MigrationParams::params_hash`]) so any later replan requires fresh
 /// consent.
-pub fn plan_hash(plan: &MigrationPlan) -> [u8; 32] {
+pub fn plan_hash(plan: &ScheduledMigrationPlan) -> [u8; 32] {
     let mut hasher = blake2b_simd::Params::new()
         .hash_length(32)
         .personal(b"ZingoMigPlanV0__")
         .to_state();
-    hasher.update(&(plan.split_rounds.len() as u64).to_le_bytes());
-    for round in &plan.split_rounds {
+    hasher.update(&(plan.preparation_rounds.len() as u64).to_le_bytes());
+    for round in &plan.preparation_rounds {
         hasher.update(&(round.len() as u64).to_le_bytes());
         for tx in round {
             hasher.update(&(tx.inputs.len() as u64).to_le_bytes());
@@ -236,8 +261,8 @@ pub fn plan_hash(plan: &MigrationPlan) -> [u8; 32] {
             }
         }
     }
-    hasher.update(&(plan.parts.len() as u64).to_le_bytes());
-    for denomination in &plan.parts {
+    hasher.update(&(plan.transfers.len() as u64).to_le_bytes());
+    for denomination in &plan.transfers {
         hasher.update(&denomination.to_le_bytes());
     }
     hasher.update(&plan.residual.to_le_bytes());
@@ -251,8 +276,8 @@ pub fn plan_hash(plan: &MigrationPlan) -> [u8; 32] {
 /// Plans a full migration for a wallet whose spendable Orchard notes have the
 /// given values (zatoshis). Deterministic and pure.
 ///
-/// Notes already sized `denomination + part_fee` are left untouched (their
-/// denominations appear directly in `parts`), so a migration interrupted and
+/// Notes already sized `denomination + transfer_fee` are left untouched (their
+/// denominations appear directly in `transfers`), so a migration interrupted and
 /// replanned never re-splits finished notes. Everything else worth more than
 /// [`MigrationParams::sweep_min`] is split:
 ///
@@ -260,37 +285,53 @@ pub fn plan_hash(plan: &MigrationPlan) -> [u8; 32] {
 ///    budget, merge groups of at most that many notes into one note each
 ///    (smallest first).
 /// 2. **Sizing**: spend the remaining notes into notes sized exactly
-///    `denomination + part_fee` — consolidating the smallest inputs into one
+///    `denomination + transfer_fee` — consolidating the smallest inputs into one
 ///    funding note first whenever the pool plus the targets would exceed one
 ///    transaction's total budget — where the denominations are the
 ///    [`decompose`]-ition of what is left after all fees. When the balance
 ///    needs more target notes than fit one transaction (whale balances),
 ///    splitting recurses through intermediate notes.
 ///
-/// `post_activation` selects the note-splitting fee model (see
-/// `note_split_fee`): pass whether the transactions will confirm at or
+/// `post_activation` selects the note-preparation fee model (see
+/// `note_preparation_fee`): pass whether the transactions will confirm at or
 /// after the NU6.3 activation height.
 pub fn plan_migration(
     note_values: &[u64],
     post_activation: bool,
     params: &MigrationParams,
-) -> MigrationPlan {
-    let mut parts: Vec<u64> = Vec::new();
+) -> ScheduledMigrationPlan {
+    let mut transfers: Vec<u64> = Vec::new();
     let mut pool: Vec<u64> = Vec::new();
     let mut residual: u64 = 0;
     let max_notes = side_budget(params);
+    let mut funded_rounds: Vec<Vec<PreparationTx>> = Vec::new();
 
-    for &value in note_values {
-        if let Some(denomination) = part_denomination(value, params) {
-            parts.push(denomination);
-        } else if value > params.sweep_min {
-            pool.push(value);
-        } else {
+    let mut note_values = note_values.to_vec();
+    note_values.sort_unstable();
+    for value in note_values {
+        if let Some(denomination) = funding_denomination(value, params) {
+            transfers.push(denomination);
+        } else if value <= params.sweep_min {
             residual += value;
+        } else if let Some(denominations) = funded_denominations(value, post_activation, params) {
+            let targets: Vec<u64> = denominations
+                .iter()
+                .map(|d| d + params.transfer_fee)
+                .collect();
+            let rounds = prepare_into(vec![value], &targets, None, post_activation, params);
+            for (index, round) in rounds.into_iter().enumerate() {
+                if funded_rounds.len() <= index {
+                    funded_rounds.push(Vec::new());
+                }
+                funded_rounds[index].extend(round);
+            }
+            transfers.extend(denominations);
+        } else {
+            pool.push(value);
         }
     }
 
-    let mut split_rounds: Vec<Vec<NoteSplitTx>> = Vec::new();
+    let mut preparation_rounds: Vec<Vec<PreparationTx>> = Vec::new();
 
     // Reduction: k-ary fold until at most `max_notes` notes remain. Merging
     // the smallest notes first absorbs the most numerous fragments earliest.
@@ -304,7 +345,7 @@ pub fn plan_migration(
                 continue;
             }
             let merged =
-                group.iter().sum::<u64>() - note_split_fee(group.len(), 1, post_activation);
+                group.iter().sum::<u64>() - note_preparation_fee(group.len(), 1, post_activation);
             // Post-activation, a trailing pair of near-floor notes can merge
             // to at most `sweep_min`: a note the residual policy refuses to
             // spend, and one a replan after an interruption would leave as residual.
@@ -318,13 +359,13 @@ pub fn plan_migration(
                 next.extend_from_slice(group);
                 continue;
             }
-            round.push(NoteSplitTx {
+            round.push(PreparationTx {
                 inputs: group.to_vec(),
                 outputs: vec![merged],
             });
             next.push(merged);
         }
-        split_rounds.push(round);
+        preparation_rounds.push(round);
         pool = next;
     }
 
@@ -342,8 +383,14 @@ pub fn plan_migration(
             if denominations.is_empty() {
                 break denominations;
             }
-            let overhead = denominations.len() as u64 * params.part_fee
-                + split_into_fee(pool.len(), denominations.len(), post_activation, params);
+            let overhead = denominations.len() as u64 * params.transfer_fee
+                + prepare_into_fee(
+                    pool.len(),
+                    denominations.len(),
+                    false,
+                    post_activation,
+                    params,
+                );
             let denomination_sum: u64 = denominations.iter().sum();
             if denomination_sum + overhead <= total {
                 break denominations;
@@ -358,26 +405,48 @@ pub fn plan_migration(
             // Not even the smallest denomination is fundable: the pooled
             // value is residual. Undo any pointless consolidation rounds.
             residual += total
-                + split_rounds
+                + preparation_rounds
                     .iter()
                     .flatten()
-                    .map(NoteSplitTx::fee)
+                    .map(PreparationTx::fee)
                     .sum::<u64>();
-            split_rounds.clear();
+            preparation_rounds.clear();
         } else {
-            // The pool never contains part-ready notes (those were diverted
-            // into `parts` above), so sizing is always required here.
-            let targets: Vec<u64> = denominations.iter().map(|d| d + params.part_fee).collect();
-            split_rounds.extend(split_into(pool, &targets, post_activation, params));
-            parts.extend(denominations);
+            // The pool never contains funding notes (those were diverted
+            // into `transfers` above), so sizing is always required here.
+            let targets: Vec<u64> = denominations
+                .iter()
+                .map(|d| d + params.transfer_fee)
+                .collect();
+            let funded = targets.iter().sum::<u64>()
+                + prepare_into_fee(pool.len(), targets.len(), true, post_activation, params);
+            let change = total
+                .checked_sub(funded)
+                .filter(|change| *change > params.sweep_min);
+            residual += change.unwrap_or(0);
+            preparation_rounds.extend(prepare_into(
+                pool,
+                &targets,
+                change,
+                post_activation,
+                params,
+            ));
+            transfers.extend(denominations);
         }
     }
 
-    parts.sort_unstable_by(|a, b| b.cmp(a));
+    for (index, round) in funded_rounds.into_iter().enumerate() {
+        if preparation_rounds.len() <= index {
+            preparation_rounds.push(Vec::new());
+        }
+        preparation_rounds[index].extend(round);
+    }
 
-    MigrationPlan {
-        split_rounds,
-        parts,
+    transfers.sort_unstable_by(|a, b| b.cmp(a));
+
+    ScheduledMigrationPlan {
+        preparation_rounds,
+        transfers,
         residual,
     }
 }
@@ -390,7 +459,7 @@ pub fn plan_migration(
 /// pooled note strictly exceeds `sweep_min`, and three such notes clear the
 /// merge fee with a note the residual policy accepts, where a pair might
 /// not (the reduction loop guards the same hazard by carrying pairs).
-/// Count-based only, so [`split_into_fee`] models it exactly. Callers
+/// Count-based only, so [`prepare_into_fee`] models it exactly. Callers
 /// guarantee `n_in + m` exceeds the budget.
 fn merge_group_len(n_in: usize, m: usize, params: &MigrationParams) -> usize {
     (n_in + m + 1 - params.max_actions_per_split_tx)
@@ -401,16 +470,23 @@ fn merge_group_len(n_in: usize, m: usize, params: &MigrationParams) -> usize {
 /// Total ZIP-317 fee of splitting `n_in` notes into `m` target notes,
 /// recursing through intermediates when `m` exceeds the per-transaction
 /// budget, and consolidating inputs first when spends plus outputs would
-/// exceed the total budget (mirroring [`split_into`]).
-fn split_into_fee(n_in: usize, m: usize, post_activation: bool, params: &MigrationParams) -> u64 {
+/// exceed the total budget (mirroring [`prepare_into`]).
+fn prepare_into_fee(
+    n_in: usize,
+    m: usize,
+    with_change: bool,
+    post_activation: bool,
+    params: &MigrationParams,
+) -> u64 {
     let max_notes = side_budget(params);
-    if m <= max_notes {
-        if n_in + m > params.max_actions_per_split_tx {
-            let group_len = merge_group_len(n_in, m, params);
-            note_split_fee(group_len, 1, post_activation)
-                + note_split_fee(n_in - group_len + 1, m, post_activation)
+    let n_out = m + usize::from(with_change);
+    if n_out <= max_notes {
+        if n_in + n_out > params.max_actions_per_split_tx {
+            let group_len = merge_group_len(n_in, n_out, params);
+            note_preparation_fee(group_len, 1, post_activation)
+                + note_preparation_fee(n_in - group_len + 1, n_out, post_activation)
         } else {
-            note_split_fee(n_in, m, post_activation)
+            note_preparation_fee(n_in, n_out, post_activation)
         }
     } else {
         // One future transaction per chunk of `max_notes` targets, funded by
@@ -420,16 +496,37 @@ fn split_into_fee(n_in: usize, m: usize, post_activation: bool, params: &Migrati
         let mut remaining = m;
         for _ in 0..chunks {
             let len = remaining.min(max_notes);
-            total += note_split_fee(1, len, post_activation);
+            total += note_preparation_fee(1, len, post_activation);
             remaining -= len;
         }
-        total + split_into_fee(n_in, chunks, post_activation, params)
+        total + prepare_into_fee(n_in, chunks, with_change, post_activation, params)
     }
 }
 
-/// Materializes the note-splitting rounds that turn `inputs` into exactly
-/// `targets`. Mirrors [`split_into_fee`]. The final transaction's fee absorbs
-/// any slack between the input total and the exact target-side requirement.
+fn funded_denominations(
+    value: u64,
+    post_activation: bool,
+    params: &MigrationParams,
+) -> Option<Vec<u64>> {
+    let upper = decompose(Zatoshis::const_from_u64(value), params)
+        .outputs()
+        .len();
+    (1..=upper).find_map(|count| {
+        let overhead = count as u64 * params.transfer_fee
+            + prepare_into_fee(1, count, false, post_activation, params);
+        let candidate = decompose(
+            Zatoshis::const_from_u64(value.checked_sub(overhead)?),
+            params,
+        );
+        (candidate.outputs().len() == count && u64::from(candidate.remainder()) == 0)
+            .then(|| candidate.outputs().iter().map(|z| u64::from(*z)).collect())
+    })
+}
+
+/// Materializes the note-preparation rounds that turn `inputs` into exactly
+/// `targets`. Mirrors [`prepare_into_fee`]. `change` is the residual note,
+/// created by the transaction that spends `inputs`. That transaction's fee
+/// absorbs any slack too small to form a note.
 ///
 /// The budget is a total: a transaction's spends and outputs together must
 /// fit [`MigrationParams::max_actions_per_split_tx`] (ZIP 318's 16-action
@@ -437,44 +534,47 @@ fn split_into_fee(n_in: usize, m: usize, post_activation: bool, params: &Migrati
 /// smallest inputs consolidate into one funding note first, in a round of
 /// their own, and the sizing transaction spends the consolidated note
 /// beside the survivors.
-fn split_into(
+fn prepare_into(
     mut inputs: Vec<u64>,
     targets: &[u64],
+    change: Option<u64>,
     post_activation: bool,
     params: &MigrationParams,
-) -> Vec<Vec<NoteSplitTx>> {
+) -> Vec<Vec<PreparationTx>> {
     let max_notes = side_budget(params);
-    if targets.len() <= max_notes {
+    let n_out = targets.len() + usize::from(change.is_some());
+    if n_out <= max_notes {
         let mut rounds = Vec::new();
-        if inputs.len() + targets.len() > params.max_actions_per_split_tx {
-            let group_len = merge_group_len(inputs.len(), targets.len(), params);
+        if inputs.len() + n_out > params.max_actions_per_split_tx {
+            let group_len = merge_group_len(inputs.len(), n_out, params);
             inputs.sort_unstable();
             let group: Vec<u64> = inputs.drain(..group_len).collect();
             let merged =
-                group.iter().sum::<u64>() - note_split_fee(group.len(), 1, post_activation);
-            rounds.push(vec![NoteSplitTx {
+                group.iter().sum::<u64>() - note_preparation_fee(group.len(), 1, post_activation);
+            rounds.push(vec![PreparationTx {
                 inputs: group,
                 outputs: vec![merged],
             }]);
             inputs.push(merged);
         }
-        rounds.push(vec![NoteSplitTx {
-            inputs,
-            outputs: targets.to_vec(),
-        }]);
+        let mut outputs = targets.to_vec();
+        outputs.extend(change);
+        rounds.push(vec![PreparationTx { inputs, outputs }]);
         return rounds;
     }
     let chunks: Vec<&[u64]> = targets.chunks(max_notes).collect();
     let intermediates: Vec<u64> = chunks
         .iter()
-        .map(|chunk| chunk.iter().sum::<u64>() + note_split_fee(1, chunk.len(), post_activation))
+        .map(|chunk| {
+            chunk.iter().sum::<u64>() + note_preparation_fee(1, chunk.len(), post_activation)
+        })
         .collect();
-    let mut rounds = split_into(inputs, &intermediates, post_activation, params);
+    let mut rounds = prepare_into(inputs, &intermediates, change, post_activation, params);
     rounds.push(
         intermediates
             .iter()
             .zip(&chunks)
-            .map(|(&intermediate, chunk)| NoteSplitTx {
+            .map(|(&intermediate, chunk)| PreparationTx {
                 inputs: vec![intermediate],
                 outputs: chunk.to_vec(),
             })
@@ -562,10 +662,10 @@ impl crate::wallet::LightWallet {
 
     /// The values of the account's live pre-Ironwood (V2) Orchard notes:
     /// unspent, whether anchored, freshly confirmed, or still pending. The
-    /// Phase 1 status projection plans over this set, so a note-splitting
+    /// Phase 1 status projection plans over this set, so a note-preparation
     /// round in flight reads as its pending outputs instead of as vanished
-    /// value, the trap [`Self::note_split_in_flight`] documents rules the
-    /// anchored [`Self::migration_note_values`] out for status use. Failed
+    /// value, which rules the anchored [`Self::migration_note_values`] out
+    /// for status use. Failed
     /// transactions' outputs never existed on chain and are excluded.
     pub(crate) fn live_v2_note_values(&self, account: zip32::AccountId) -> Vec<u64> {
         use pepper_sync::wallet::{KeyIdInterface as _, NoteInterface as _, OutputInterface as _};
@@ -585,80 +685,14 @@ impl crate::wallet::LightWallet {
             .collect()
     }
 
-    /// Given an account, returns whether any wallet transaction confirmed
-    /// above the migration anchor holds an unspent V2 (pre-Ironwood) Orchard
-    /// note that account owns, a note that is mined but not yet spendable.
-    /// Errors when the wallet holds no sync data to take the anchor from.
-    #[allow(clippy::result_large_err)]
-    pub(crate) fn unanchored_v2_outputs(
-        &self,
-        account: zip32::AccountId,
-    ) -> Result<bool, crate::wallet::error::WalletError> {
-        use pepper_sync::wallet::{KeyIdInterface as _, NoteInterface as _, OutputInterface as _};
-
-        let (_, anchor_height) = self
-            .get_migration_heights()?
-            .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-        // A failed transaction carries no confirmed height
-        Ok(self
-            .wallet_transactions
-            .values()
-            .filter(|transaction| {
-                transaction
-                    .status()
-                    .get_confirmed_height()
-                    .is_some_and(|height| height > anchor_height)
-            })
-            .flat_map(|transaction| {
-                pepper_sync::wallet::OrchardNote::transaction_outputs(transaction)
-            })
-            .any(|note| {
-                note.key_id().account_id() == account
-                    && note.note().version() == orchard::note::NoteVersion::V2
-                    && note.spending_transaction().is_none()
-            }))
-    }
-
-    /// True when a note-splitting round this account initiated is still
-    /// confirming: a pending (built, transmitted, or mempool, but not yet
-    /// confirmed) transaction holds account-owned pre-Ironwood (V2) Orchard
-    /// outputs. Those are the self-notes a round creates. While they are
-    /// unconfirmed the round's spent inputs have also left the spendable set,
-    /// so a replan sees an empty pool and would otherwise report the migration
-    /// falsely complete.
-    ///
-    /// This is the stateless, derived replacement for a round's stored
-    /// `pending_txids`: it lets [`crate::lightclient::LightClient::quick_split`]
-    /// tell "a round is still in flight, sync and retry" apart from "fully
-    /// split, done" without persisting any migration phase. It reads the
-    /// round's *outputs* rather than its inputs' spend marks, which a
-    /// not-yet-transmitted transaction does not carry. Under the flow's
-    /// sync-between-rounds contract there are no unrelated pending Orchard
-    /// receipts, so this is precise. Were there, treating them as "wait" is
-    /// the safe reading.
-    pub(crate) fn note_split_in_flight(&self, account: zip32::AccountId) -> bool {
-        use pepper_sync::wallet::{KeyIdInterface as _, NoteInterface as _, OutputInterface as _};
-
-        self.wallet_transactions
-            .values()
-            .filter(|transaction| transaction.status().is_pending())
-            .flat_map(|transaction| {
-                pepper_sync::wallet::OrchardNote::transaction_outputs(transaction)
-            })
-            .any(|note| {
-                note.key_id().account_id() == account
-                    && note.note().version() == orchard::note::NoteVersion::V2
-            })
-    }
-
-    /// Builds, proves, signs and records one planned note-splitting
+    /// Builds, proves, signs and records one planned note-preparation
     /// transaction (Orchard→Orchard self-send). Returns its txid. Transmission
     /// is the caller's step.
     #[allow(clippy::result_large_err)]
-    pub(crate) fn build_note_split_transaction(
+    pub(crate) fn build_preparation_transaction(
         &mut self,
         account: zip32::AccountId,
-        planned: &NoteSplitTx,
+        planned: &PreparationTx,
     ) -> Result<zcash_primitives::transaction::TxId, crate::wallet::error::WalletError> {
         self.build_migration_transaction_inner(
             account,
@@ -946,42 +980,45 @@ mod tests {
     /// longer share an action. The crates own that rule and the split fee
     /// follows it by asking them. These figures pin the answer.
     #[test]
-    fn note_split_fee_follows_the_activation_boundary() {
-        assert_eq!(note_split_fee(1, 1, false), 10_000);
-        assert_eq!(note_split_fee(32, 1, false), 160_000);
-        assert_eq!(note_split_fee(32, 1, true), 165_000);
+    fn note_preparation_fee_follows_the_activation_boundary() {
+        assert_eq!(note_preparation_fee(1, 1, false), 10_000);
+        assert_eq!(note_preparation_fee(32, 1, false), 160_000);
+        assert_eq!(note_preparation_fee(32, 1, true), 165_000);
     }
 
     #[test]
-    fn part_fee_matches_the_crates() {
+    fn transfer_fee_matches_the_crates() {
         use orchard::bundle::BundleVersion;
 
-        // A part has an Orchard bundle (1 spend, cross-address disabled
+        // A transfer has an Orchard bundle (1 spend, cross-address disabled
         // post-NU6.3) and an Ironwood bundle (1 output, cross-address
         // enabled). The fee covers the sum of both bundles' padded actions.
         assert_eq!(
-            CANONICAL_PART_FEE,
+            CANONICAL_TRANSFER_FEE,
             zip317_fee(
                 bundle_actions(BundleVersion::orchard_v3(), 1, 0),
                 bundle_actions(BundleVersion::ironwood_v3(), 0, 1),
             )
         );
-        assert_eq!(CANONICAL_PART_FEE, 20_000);
-        assert_eq!(params().part_fee, CANONICAL_PART_FEE);
+        assert_eq!(CANONICAL_TRANSFER_FEE, 20_000);
+        assert_eq!(params().transfer_fee, CANONICAL_TRANSFER_FEE);
     }
 
     #[test]
-    fn part_denomination_requires_exact_sizing() {
+    fn funding_denomination_requires_exact_sizing() {
         let params = params();
-        let fee = params.part_fee;
-        assert_eq!(part_denomination(1_000_000 + fee, &params), Some(1_000_000));
+        let fee = params.transfer_fee;
         assert_eq!(
-            part_denomination(100 * COIN + fee, &params),
+            funding_denomination(1_000_000 + fee, &params),
+            Some(1_000_000)
+        );
+        assert_eq!(
+            funding_denomination(100 * COIN + fee, &params),
             Some(100 * COIN)
         );
-        assert_eq!(part_denomination(1_000_000, &params), None); // fee missing
-        assert_eq!(part_denomination(1_000_000 + fee + 1, &params), None);
-        assert_eq!(part_denomination(0, &params), None);
+        assert_eq!(funding_denomination(1_000_000, &params), None); // fee missing
+        assert_eq!(funding_denomination(1_000_000 + fee + 1, &params), None);
+        assert_eq!(funding_denomination(0, &params), None);
     }
 
     #[test]
@@ -997,39 +1034,34 @@ mod tests {
 
     /// Runs [`assert_plan_executes_in_era`] in both fee eras and returns the
     /// post-activation plan.
-    fn assert_plan_executes(notes: &[u64], params: &MigrationParams) -> MigrationPlan {
+    fn assert_plan_executes(notes: &[u64], params: &MigrationParams) -> ScheduledMigrationPlan {
         assert_plan_executes_in_era(notes, false, params);
         assert_plan_executes_in_era(notes, true, params)
     }
 
     /// Simulates plan execution: every round's inputs must be present in the
     /// wallet's note multiset at that point, and the final multiset must be
-    /// exactly the part-ready notes. Returns the plan for further checks.
+    /// exactly the funding notes. Returns the plan for further checks.
     fn assert_plan_executes_in_era(
         notes: &[u64],
         post_activation: bool,
         params: &MigrationParams,
-    ) -> MigrationPlan {
+    ) -> ScheduledMigrationPlan {
         use std::collections::HashMap;
         let max_notes = side_budget(params);
         let plan = plan_migration(notes, post_activation, params);
 
         let mut available: HashMap<u64, i64> = HashMap::new();
+        let mut unselected: u64 = 0;
         for &note in notes {
-            if part_denomination(note, params).is_none() && note <= params.sweep_min {
+            if funding_denomination(note, params).is_none() && note <= params.sweep_min {
+                unselected += note;
                 continue; // residual, never spent
-            }
-            // With empty splitting + empty parts, pooled notes are residual.
-            if plan.split_rounds.is_empty()
-                && plan.parts.is_empty()
-                && part_denomination(note, params).is_none()
-            {
-                continue;
             }
             *available.entry(note).or_insert(0) += 1;
         }
 
-        for round in &plan.split_rounds {
+        for round in &plan.preparation_rounds {
             for tx in round {
                 assert!((2..=max_notes).contains(&tx.inputs.len()) || tx.inputs.len() == 1);
                 assert!(tx.inputs.len() <= max_notes, "too many inputs");
@@ -1041,7 +1073,8 @@ mod tests {
                     tx.outputs.len(),
                     params.max_actions_per_split_tx
                 );
-                let min_fee = note_split_fee(tx.inputs.len(), tx.outputs.len(), post_activation);
+                let min_fee =
+                    note_preparation_fee(tx.inputs.len(), tx.outputs.len(), post_activation);
                 assert!(tx.fee() >= min_fee, "fee below ZIP-317 conventional");
                 for input in &tx.inputs {
                     let count = available.entry(*input).or_insert(0);
@@ -1052,20 +1085,36 @@ mod tests {
             // Outputs only become spendable after the whole round confirms.
             for tx in round {
                 for output in &tx.outputs {
-                    assert!(*output > params.sweep_min, "note splitting created dust");
+                    assert!(*output > params.sweep_min, "note preparation created dust");
                     *available.entry(*output).or_insert(0) += 1;
                 }
             }
         }
 
-        // What remains must be exactly the parts, each note d + part_fee.
-        let mut expected: HashMap<u64, i64> = HashMap::new();
-        for &denomination in &plan.parts {
-            *expected.entry(denomination + params.part_fee).or_insert(0) += 1;
+        // What remains must be the transfers, each note d + transfer_fee, plus the
+        // residual notes.
+        for &denomination in &plan.transfers {
+            let count = available
+                .entry(denomination + params.transfer_fee)
+                .or_insert(0);
+            assert!(*count > 0, "a planned transfer has no funding note");
+            *count -= 1;
         }
-        available.retain(|_, count| *count != 0);
-        expected.retain(|_, count| *count != 0);
-        assert_eq!(available, expected, "post-splitting notes ≠ part set");
+        let leftover: u64 = available
+            .iter()
+            .map(|(value, count)| {
+                assert!(
+                    funding_denomination(*value, params).is_none() || *count == 0,
+                    "a funding note is not booked as a transfer"
+                );
+                value * u64::try_from(*count).expect("counts never go negative")
+            })
+            .sum();
+        assert_eq!(
+            leftover + unselected,
+            plan.residual,
+            "post-splitting residual notes ≠ plan residual"
+        );
 
         plan
     }
@@ -1073,8 +1122,11 @@ mod tests {
     /// Asserts the selection invariant: no planned transaction spends a note
     /// worth at most `sweep_min`, whether it is a wallet note or an
     /// intermediate created by an earlier round.
-    fn assert_planned_inputs_exceed_sweep_min(plan: &MigrationPlan, params: &MigrationParams) {
-        for (round, transactions) in plan.split_rounds.iter().enumerate() {
+    fn assert_planned_inputs_exceed_sweep_min(
+        plan: &ScheduledMigrationPlan,
+        params: &MigrationParams,
+    ) {
+        for (round, transactions) in plan.preparation_rounds.iter().enumerate() {
             for tx in transactions {
                 for &input in &tx.inputs {
                     assert!(
@@ -1108,19 +1160,19 @@ mod tests {
         for post_activation in [false, true] {
             let plan = assert_plan_executes_in_era(&notes, post_activation, &params);
             assert!(
-                plan.parts.len() >= 2,
+                plan.transfers.len() >= 2,
                 "the shape under test needs several targets, got {:?}",
-                plan.parts
+                plan.transfers
             );
             // The consolidation prepends its own round, and the sizing
             // transaction still mixes multiple spends with multiple
             // outputs — the shape that used to bust the budget.
             assert!(
-                plan.split_rounds.len() >= 2,
+                plan.preparation_rounds.len() >= 2,
                 "expected consolidation + sizing"
             );
             assert!(
-                plan.split_rounds
+                plan.preparation_rounds
                     .iter()
                     .flatten()
                     .any(|tx| tx.inputs.len() >= 2 && tx.outputs.len() >= 2),
@@ -1141,10 +1193,18 @@ mod tests {
         for post_activation in [false, true] {
             let plan = plan_migration(&notes, post_activation, &params);
             assert_planned_inputs_exceed_sweep_min(&plan, &params);
-            assert_eq!(plan.residual, dust.iter().sum::<u64>());
+            let change: u64 = plan
+                .preparation_rounds
+                .last()
+                .expect("the pool is split")
+                .iter()
+                .flat_map(|tx| tx.outputs.iter())
+                .filter(|output| funding_denomination(**output, &params).is_none())
+                .sum();
+            assert_eq!(plan.residual, dust.iter().sum::<u64>() + change);
             // The note one zatoshi above the boundary is selected.
             assert!(
-                plan.split_rounds[0]
+                plan.preparation_rounds[0]
                     .iter()
                     .any(|tx| tx.inputs.contains(&(params.sweep_min + 1)))
             );
@@ -1165,7 +1225,7 @@ mod tests {
     #[test]
     fn consolidation_never_creates_a_sub_sweep_min_intermediate() {
         let params = params();
-        // Twelve full consolidation groups (enough to fund a 0.01-ZEC part
+        // Twelve full consolidation groups (enough to fund a 0.01-ZEC transfer
         // after the merge fees of the 16-action shape) plus a trailing pair
         // that would merge to 9_000 zatoshis, below the sweep minimum.
         let notes = vec![12_000u64; 12 * side_budget(&params) + 2];
@@ -1178,9 +1238,9 @@ mod tests {
         // merges only the full groups, and the sizing round spends the pair
         // directly.
         let plan = plan_migration(&notes, true, &params);
-        assert_eq!(plan.split_rounds[0].len(), 12);
+        assert_eq!(plan.preparation_rounds[0].len(), 12);
         assert_eq!(
-            plan.split_rounds[1][0]
+            plan.preparation_rounds[1][0]
                 .inputs
                 .iter()
                 .filter(|&&value| value == 12_000)
@@ -1193,11 +1253,11 @@ mod tests {
     fn already_split_wallet_skips_splitting() {
         // Notes already sized denomination + fee: no splitting needed.
         let params = params();
-        let fee = params.part_fee;
+        let fee = params.transfer_fee;
         let notes = vec![COIN + fee, COIN / 10 + fee, 1_000_000 + fee];
         let plan = assert_plan_executes(&notes, &params);
-        assert!(plan.is_split());
-        assert_eq!(plan.parts, vec![COIN, COIN / 10, 1_000_000]);
+        assert!(plan.is_prepared());
+        assert_eq!(plan.transfers, vec![COIN, COIN / 10, 1_000_000]);
         assert_eq!(plan.residual, 0);
     }
 
@@ -1206,8 +1266,8 @@ mod tests {
         let params = params();
         let notes = vec![5_000, params.sweep_min, 1];
         let plan = assert_plan_executes(&notes, &params);
-        assert!(plan.split_rounds.is_empty());
-        assert!(plan.parts.is_empty());
+        assert!(plan.preparation_rounds.is_empty());
+        assert!(plan.transfers.is_empty());
         assert_eq!(plan.residual, 5_000 + params.sweep_min + 1);
     }
 
@@ -1216,26 +1276,26 @@ mod tests {
         // Two sweepable notes that cannot fund even the smallest target.
         let notes = vec![20_000, 30_000];
         let plan = assert_plan_executes(&notes, &params());
-        assert!(plan.split_rounds.is_empty());
-        assert!(plan.parts.is_empty());
+        assert!(plan.preparation_rounds.is_empty());
+        assert!(plan.transfers.is_empty());
         assert_eq!(plan.residual, 50_000);
     }
 
     #[test]
-    fn single_note_is_split_in_one_transaction() {
+    fn single_note_is_prepared_in_one_transaction() {
         let params = params();
         let notes = vec![123_456_789]; // 1.23456789 ZEC
         let plan = assert_plan_executes(&notes, &params);
-        assert_eq!(plan.split_rounds.len(), 1);
-        assert_eq!(plan.split_rounds[0].len(), 1);
-        let tx = &plan.split_rounds[0][0];
+        assert_eq!(plan.preparation_rounds.len(), 1);
+        assert_eq!(plan.preparation_rounds[0].len(), 1);
+        let tx = &plan.preparation_rounds[0][0];
         assert_eq!(tx.inputs, vec![123_456_789]);
-        // Conservation: everything is either a denomination, a part fee, or
+        // Conservation: everything is either a denomination, a transfer fee, or
         // a splitting fee.
-        let denomination_sum: u64 = plan.parts.iter().sum();
+        let denomination_sum: u64 = plan.transfers.iter().sum();
         assert_eq!(
             123_456_789,
-            denomination_sum + plan.parts_fee(&params) + plan.split_fee() + plan.residual
+            denomination_sum + plan.transfers_fee(&params) + plan.preparation_fee() + plan.residual
         );
     }
 
@@ -1247,17 +1307,20 @@ mod tests {
         let notes = vec![150_000u64; 500];
         let plan = assert_plan_executes(&notes, &params);
         assert!(
-            plan.split_rounds.len() >= 2,
+            plan.preparation_rounds.len() >= 2,
             "expected consolidation + sizing rounds"
         );
         // First round: one merge per full-or-partial chunk of the spend budget.
         let max_notes = side_budget(&params);
-        assert_eq!(plan.split_rounds[0].len(), 500usize.div_ceil(max_notes));
-        for tx in &plan.split_rounds[0] {
+        assert_eq!(
+            plan.preparation_rounds[0].len(),
+            500usize.div_ceil(max_notes)
+        );
+        for tx in &plan.preparation_rounds[0] {
             assert!(tx.inputs.len() <= max_notes);
             assert_eq!(tx.outputs.len(), 1);
         }
-        assert!(!plan.parts.is_empty());
+        assert!(!plan.transfers.is_empty());
     }
 
     #[test]
@@ -1266,8 +1329,8 @@ mod tests {
         let params = params();
         let notes = vec![500_000 * COIN];
         let plan = assert_plan_executes(&notes, &params);
-        assert!(plan.parts.len() >= 49);
-        for round in &plan.split_rounds {
+        assert!(plan.transfers.len() >= 49);
+        for round in &plan.preparation_rounds {
             for tx in round {
                 assert!(tx.outputs.len() <= side_budget(&params));
             }
@@ -1281,25 +1344,25 @@ mod tests {
         let params = params();
         let notes = vec![12_000_000 * COIN];
         let plan = assert_plan_executes(&notes, &params);
-        assert!(plan.parts.len() > params.max_actions_per_split_tx);
-        assert!(plan.split_rounds.len() >= 3);
+        assert!(plan.transfers.len() > params.max_actions_per_split_tx);
+        assert!(plan.preparation_rounds.len() >= 3);
     }
 
     #[test]
     fn mixed_wallet_leaves_ready_notes_untouched() {
-        // One part-ready note + fragments: the ready note is never spent by
-        // note splitting (verified by assert_plan_executes) and its
-        // denomination appears in the parts.
+        // One funding note + fragments: the ready note is never spent by
+        // note preparation (verified by assert_plan_executes) and its
+        // denomination appears in the transfers.
         let params = params();
-        let mut notes = vec![10 * COIN + params.part_fee];
+        let mut notes = vec![10 * COIN + params.transfer_fee];
         notes.extend(vec![200_000u64; 50]);
         let plan = assert_plan_executes(&notes, &params);
-        assert!(plan.parts.contains(&(10 * COIN)));
+        assert!(plan.transfers.contains(&(10 * COIN)));
     }
 
     proptest! {
         // Fundamental invariant: the plan executes (round linkage holds, no
-        // dust created, ZIP-317 fees respected, ends exactly part-ready)
+        // dust created, ZIP-317 fees respected, ends exactly funding)
         // and value is conserved across the whole migration.
         #[test]
         fn plan_executes_and_conserves_value(
@@ -1308,10 +1371,10 @@ mod tests {
             let params = params();
             let plan = assert_plan_executes(&notes, &params);
             let total: u64 = notes.iter().sum();
-            let denomination_sum: u64 = plan.parts.iter().sum();
+            let denomination_sum: u64 = plan.transfers.iter().sum();
             prop_assert_eq!(
                 total,
-                denomination_sum + plan.parts_fee(&params) + plan.split_fee() + plan.residual
+                denomination_sum + plan.transfers_fee(&params) + plan.preparation_fee() + plan.residual
             );
         }
 
@@ -1324,14 +1387,14 @@ mod tests {
             let params = params();
             let plan = assert_plan_executes(&notes, &params);
             let total: u64 = notes.iter().sum();
-            let denomination_sum: u64 = plan.parts.iter().sum();
+            let denomination_sum: u64 = plan.transfers.iter().sum();
             prop_assert_eq!(
                 total,
-                denomination_sum + plan.parts_fee(&params) + plan.split_fee() + plan.residual
+                denomination_sum + plan.transfers_fee(&params) + plan.preparation_fee() + plan.residual
             );
             // log_K bound: 400 notes at a budget of 32 → one consolidation round
             // plus sizing.
-            prop_assert!(plan.split_rounds.len() <= 4);
+            prop_assert!(plan.preparation_rounds.len() <= 4);
         }
 
         // The per-transaction budget is honored whatever its value. The
@@ -1345,5 +1408,245 @@ mod tests {
             params.max_actions_per_split_tx = budget;
             assert_plan_executes(&notes, &params);
         }
+    }
+
+    #[test]
+    fn scheduled_plan_conserves_value() {
+        let params = params();
+        let cases: [&[u64]; 4] = [
+            &[1_999_999],
+            &[3_000_000],
+            &[5_999_999],
+            &[1_400_000, 1_400_000],
+        ];
+        for note_values in cases {
+            let plan = plan_migration(note_values, true, &params);
+            let total: u64 = note_values.iter().sum();
+            let conventional: u64 = plan
+                .preparation_rounds
+                .iter()
+                .flatten()
+                .map(|tx| note_preparation_fee(tx.inputs.len(), tx.outputs.len(), true))
+                .sum();
+            let parts_sum: u64 = plan.transfers.iter().sum();
+            let accounted = parts_sum + plan.transfers_fee(&params) + conventional + plan.residual;
+            assert_eq!(
+                accounted,
+                total,
+                "plan over {note_values:?} loses {} zatoshis: transfers {parts_sum} + transfers_fee {} + \
+                 conventional split fees {conventional} + residual {} != balance {total}; plan {plan:?}",
+                total - accounted,
+                plan.transfers_fee(&params),
+                plan.residual,
+            );
+        }
+    }
+
+    #[test]
+    fn plan_hash_is_invariant_under_note_enumeration_order() {
+        let params = params();
+        let ascending = [2_000_000u64, 3_000_000];
+        let descending = [3_000_000u64, 2_000_000];
+        let one = plan_migration(&ascending, true, &params);
+        let other = plan_migration(&descending, true, &params);
+        assert_eq!(
+            (one.transfers.clone(), one.residual),
+            (other.transfers.clone(), other.residual),
+            "the two enumerations must describe the same migration"
+        );
+        assert_eq!(
+            plan_hash(&one),
+            plan_hash(&other),
+            "the consent digest of the same note set changes with enumeration order: {ascending:?} \
+             against {descending:?}; plans {one:?} and {other:?}"
+        );
+    }
+
+    fn drive_rounds(start: &[u64], params: &MigrationParams, limit: usize) -> (Vec<u64>, usize) {
+        let mut notes = start.to_vec();
+        let mut executed = 0;
+        while executed < limit {
+            let plan = plan_migration(&notes, true, params);
+            if plan.is_prepared() {
+                break;
+            }
+            let round = plan.preparation_rounds[0].clone();
+            for transaction in &round {
+                for input in &transaction.inputs {
+                    let index = notes
+                        .iter()
+                        .position(|note| note == input)
+                        .expect("a planned input names a note the wallet holds");
+                    notes.remove(index);
+                }
+            }
+            for transaction in &round {
+                notes.extend(transaction.outputs.iter().copied());
+            }
+            executed += 1;
+        }
+        (notes, executed)
+    }
+
+    #[test]
+    fn replanned_rounds_converge_within_round_bound() {
+        use crate::lightclient::migrate::MAX_ROUNDS;
+
+        let params = params();
+        let balance = 4_700_000_000_000u64;
+        let planned = plan_migration(&[balance], true, &params)
+            .preparation_rounds
+            .len();
+
+        let (notes, executed) = drive_rounds(&[balance], &params, MAX_ROUNDS);
+        assert!(
+            executed < MAX_ROUNDS,
+            "a plan of {planned} rounds must not exhaust the {MAX_ROUNDS}-round bound; \
+             after {executed} replanned rounds the notes are still {notes:?}"
+        );
+    }
+
+    #[test]
+    fn replanned_round_does_not_respend_note_at_same_value() {
+        let params = params();
+        let balance = 1_000_000_000_000u64;
+
+        let first = plan_migration(&[balance], true, &params);
+        assert_eq!(
+            first.preparation_rounds.len(),
+            2,
+            "the plan for {balance} zatoshis announces two rounds: {first:?}"
+        );
+        let after_first_round: Vec<u64> = first.preparation_rounds[0]
+            .iter()
+            .flat_map(|transaction| transaction.outputs.iter().copied())
+            .collect();
+
+        let next = plan_migration(&after_first_round, true, &params);
+        assert!(
+            !next.is_prepared(),
+            "the wallet after round zero still needs splitting: {next:?}"
+        );
+        for transaction in &next.preparation_rounds[0] {
+            let recreated: Vec<u64> = transaction
+                .inputs
+                .iter()
+                .copied()
+                .filter(|input| transaction.outputs.contains(input))
+                .collect();
+            assert!(
+                recreated.is_empty(),
+                "replanning after round zero yields a round-zero transaction that spends \
+                 {recreated:?} and recreates the same value, burning a fee of {} for no progress: \
+                 {transaction:?}",
+                transaction.fee()
+            );
+        }
+    }
+
+    #[test]
+    fn classify_note_names_a_funding_note_by_its_denomination() {
+        let params = params();
+        let fee = params.transfer_fee;
+        for denomination in params.denominations().iter().copied() {
+            assert_eq!(
+                classify_note(denomination + fee, &params),
+                NoteClass::FundingNote { denomination },
+                "a note sized denomination + transfer fee funds one transfer as it is"
+            );
+        }
+        assert_eq!(
+            classify_note(1_000_000 + fee + 1, &params),
+            NoteClass::NeedsPreparation,
+            "one zatoshi off the funding size is not a funding note"
+        );
+        assert_eq!(
+            classify_note(1_000_000, &params),
+            NoteClass::NeedsPreparation,
+            "a bare denomination without the transfer fee still needs preparation"
+        );
+    }
+
+    #[test]
+    fn classify_note_splits_preparation_from_residual_at_the_sweep_minimum() {
+        let params = params();
+        assert_eq!(
+            classify_note(params.sweep_min + 1, &params),
+            NoteClass::NeedsPreparation
+        );
+        assert_eq!(
+            classify_note(params.sweep_min, &params),
+            NoteClass::Residual
+        );
+        assert_eq!(classify_note(1, &params), NoteClass::Residual);
+        assert_eq!(classify_note(0, &params), NoteClass::Residual);
+    }
+
+    #[test]
+    fn classify_note_agrees_with_plan_migration_over_the_same_notes() {
+        let params = params();
+        let fee = params.transfer_fee;
+        let notes = [
+            1_000_000 + fee,
+            2_000_000 + fee,
+            2_000_000 + fee,
+            params.sweep_min,
+            5_000,
+            1,
+            123_456_789,
+        ];
+        let plan = plan_migration(&notes, true, &params);
+
+        let mut funding: Vec<u64> = notes
+            .iter()
+            .filter_map(|value| match classify_note(*value, &params) {
+                NoteClass::FundingNote { denomination } => Some(denomination),
+                _ => None,
+            })
+            .collect();
+        funding.sort_unstable();
+        let mut planned = plan.transfers.clone();
+        planned.sort_unstable();
+        for denomination in &funding {
+            let position = planned
+                .iter()
+                .position(|planned| planned == denomination)
+                .unwrap_or_else(|| {
+                    panic!("funding denomination {denomination} is missing from the transfers")
+                });
+            planned.remove(position);
+        }
+
+        let residual: u64 = notes
+            .iter()
+            .filter(|value| classify_note(**value, &params) == NoteClass::Residual)
+            .sum();
+        assert!(
+            plan.residual >= residual,
+            "every residual-classified value is booked as residual: plan {} < classified {residual}",
+            plan.residual
+        );
+        assert!(
+            !plan.is_prepared(),
+            "a note that needs preparation leaves the plan unprepared"
+        );
+    }
+
+    #[test]
+    fn a_wallet_without_notes_needing_preparation_is_prepared_with_the_exact_residual() {
+        let params = params();
+        let fee = params.transfer_fee;
+        let notes = [5_000_000 + fee, 1_000_000 + fee, params.sweep_min, 7];
+        assert!(
+            notes
+                .iter()
+                .all(|value| classify_note(*value, &params) != NoteClass::NeedsPreparation)
+        );
+
+        let plan = plan_migration(&notes, true, &params);
+
+        assert!(plan.is_prepared());
+        assert_eq!(plan.transfers, [5_000_000, 1_000_000]);
+        assert_eq!(plan.residual, params.sweep_min + 7);
     }
 }
