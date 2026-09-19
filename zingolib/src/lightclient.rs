@@ -157,17 +157,11 @@ pub struct LightClient {
     /// never serialized, minted by the proposing calls, released when the
     /// proposal is consumed, cleared, or fails to come into existence.
     proposal_pause_guard: Option<sync::SyncPauseGuard>,
-    /// Live progress of an in-progress immediate migration, or `None` when idle.
-    /// A side channel off the wallet lock, so it stays pollable while build and
-    /// transmit hold the wallet write lock across their loops.
-    immediate_migration_progress: migrate::ImmediateMigrationProgressHandle,
-    /// Live progress of the note-splitting round a [`Self::quick_split`] call
-    /// is building/transmitting, or `None` when idle. The Phase 1 counterpart
-    /// to `immediate_migration_progress`, the same off-the-wallet-lock side channel.
-    split_progress: migrate::SplitProgressHandle,
-    /// Live progress of a running migration execute batch
-    /// ([`Self::execute_due_parts`]), the same side-channel pattern.
-    batch_progress: migrate::BatchProgressHandle,
+    /// Live progress of whatever migration work a step is doing, `Idle`
+    /// between steps. A side channel off the wallet lock, so it stays
+    /// readable while build and transmit hold the wallet write lock across
+    /// their loops.
+    migration_progress: migrate::MigrationProgressHandle,
     /// The latest progress line of an in-flight Transmission, or `None` when
     /// idle. A side channel like `immediate_migration_progress`, updated by
     /// `transmit_transactions` (submissions, retries, probes, escalation rounds)
@@ -304,9 +298,7 @@ impl LightClient {
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
             proposal_pause_guard: None,
-            immediate_migration_progress: migrate::ImmediateMigrationProgressHandle::default(),
-            split_progress: migrate::SplitProgressHandle::default(),
-            batch_progress: migrate::BatchProgressHandle::default(),
+            migration_progress: migrate::MigrationProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             transmit_retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
@@ -351,7 +343,12 @@ impl LightClient {
             destination_servers,
             migration_transmission_uri: None,
             wallet: WalletMeta::new(
-                std::env::temp_dir().join("zingolib-synthetic-wallet"),
+                tempfile::Builder::new()
+                    .prefix("zingolib-synthetic-wallet-")
+                    .tempdir()
+                    .expect("a temp dir for the synthetic wallet")
+                    .keep()
+                    .join("wallet.dat"),
                 wallet,
             ),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
@@ -360,9 +357,7 @@ impl LightClient {
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
             proposal_pause_guard: None,
-            immediate_migration_progress: migrate::ImmediateMigrationProgressHandle::default(),
-            split_progress: migrate::SplitProgressHandle::default(),
-            batch_progress: migrate::BatchProgressHandle::default(),
+            migration_progress: migrate::MigrationProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
             // Synthetic test wallets have no durable directory; the default
             // handle records nowhere and loads empty.
@@ -450,9 +445,7 @@ impl LightClient {
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
             proposal_pause_guard: None,
-            immediate_migration_progress: migrate::ImmediateMigrationProgressHandle::default(),
-            split_progress: migrate::SplitProgressHandle::default(),
-            batch_progress: migrate::BatchProgressHandle::default(),
+            migration_progress: migrate::MigrationProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             transmit_retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
@@ -492,7 +485,7 @@ impl LightClient {
     /// transmitting call (send, shield, transmit, migrate), which borrow
     /// `&mut self`, then poll [`transmit::TransmitProgressHandle::latest`]
     /// concurrently, the same side-channel pattern as
-    /// [`Self::immediate_migration_progress_handle`]. The line narrates submissions,
+    /// [`Self::migration_progress`]. The line narrates submissions,
     /// retries, queued probes, and mixnet escalation rounds.
     pub fn transmit_progress_handle(&self) -> transmit::TransmitProgressHandle {
         self.transmit_progress.clone()
@@ -511,73 +504,8 @@ impl LightClient {
         self.indexer_history.clone()
     }
 
-    /// A cloneable handle to the migration's live progress. Grab it *before*
-    /// starting an immediate migration, then poll [`migrate::ImmediateMigrationProgressHandle::status`]
-    /// concurrently while the immediate migration holds `&mut self`.
-    ///
-    /// The handle reads a side channel, not the wallet, so it never blocks on
-    /// the wallet write lock the immediate migration holds. It is how a
-    /// concurrent poller (a spawned task, or the consumer's existing
-    /// sync-status loop) observes progress.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # async fn run(
-    /// #     mut client: zingolib::lightclient::LightClient,
-    /// #     account: zip32::AccountId,
-    /// # ) -> Result<(), zingolib::lightclient::error::LightClientError> {
-    /// // Grab the handle up front. The immediate migration will borrow `client` exclusively.
-    /// let progress = client.immediate_migration_progress_handle();
-    ///
-    /// // Report from a second task. `status()` reads a side channel, so it
-    /// // never blocks on the wallet lock the immediate migration holds across its loops. It
-    /// // reads `None` before the immediate migration arms it and once the immediate migration finishes, so
-    /// // the `if let` simply skips those ticks.
-    /// let reporter = tokio::spawn(async move {
-    ///     loop {
-    ///         if let Some(p) = progress.status() {
-    ///             println!("built {}/{}  sent {}/{}", p.built, p.total, p.sent, p.total);
-    ///         }
-    ///         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-    ///     }
-    /// });
-    ///
-    /// // The one-call entry pauses any running sync itself, migrates against
-    /// // that stable state, and resumes sync afterwards (the `true`).
-    /// // Completion is the returned summary (not a progress value), after
-    /// // which the handle reads `None` again.
-    /// let summary = client.quick_immediate_migration(account, true).await?;
-    /// reporter.abort();
-    ///
-    /// println!(
-    ///     "migrated {} zat across {} transactions",
-    ///     summary.migrated,
-    ///     summary.txids.len(),
-    /// );
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn immediate_migration_progress_handle(&self) -> migrate::ImmediateMigrationProgressHandle {
-        self.immediate_migration_progress.clone()
-    }
-
-    /// A cloneable handle to the note-splitting round's live progress. Grab it
-    /// *before* calling [`Self::quick_split`], then poll
-    /// [`migrate::SplitProgressHandle::status`] concurrently while the round
-    /// holds `&mut self`, the Phase 1 counterpart to
-    /// [`Self::immediate_migration_progress_handle`].
-    pub fn split_progress_handle(&self) -> migrate::SplitProgressHandle {
-        self.split_progress.clone()
-    }
-
-    /// A cloneable handle to the execute batch's live progress. Grab it
-    /// *before* starting the batch, then poll
-    /// [`migrate::BatchProgressHandle::status`] concurrently while the
-    /// batch holds `&mut self`, the same pattern as
-    /// [`Self::immediate_migration_progress_handle`].
-    pub fn batch_progress_handle(&self) -> migrate::BatchProgressHandle {
-        self.batch_progress.clone()
+    pub fn migration_progress(&self) -> tokio::sync::watch::Receiver<migrate::MigrationProgress> {
+        self.migration_progress.subscribe()
     }
 
     /// Returns the wallet's mnemonic phrase as a string.
@@ -749,6 +677,27 @@ impl LightClient {
         account_id: zip32::AccountId,
     ) -> Result<AccountBalance, BalanceError> {
         self.wallet().read().await.account_balance(account_id)
+    }
+
+    /// Wrapper for [`crate::wallet::LightWallet::note_summaries`]: the
+    /// wallet's notes of one shielded pool, each with its reservation flag.
+    pub async fn note_summaries(
+        &self,
+        pool: zcash_protocol::ShieldedPool,
+        include_spent_notes: bool,
+    ) -> crate::wallet::summary::data::NoteSummaries {
+        let wallet = self.wallet().read().await;
+        match pool {
+            zcash_protocol::ShieldedPool::Sapling => {
+                wallet.note_summaries::<pepper_sync::wallet::SaplingNote>(include_spent_notes)
+            }
+            zcash_protocol::ShieldedPool::Orchard => {
+                wallet.note_summaries::<pepper_sync::wallet::OrchardNote>(include_spent_notes)
+            }
+            zcash_protocol::ShieldedPool::Ironwood => {
+                wallet.note_summaries::<pepper_sync::wallet::IronwoodNote>(include_spent_notes)
+            }
+        }
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::transaction_summaries`].

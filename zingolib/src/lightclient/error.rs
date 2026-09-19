@@ -93,59 +93,49 @@ pub enum MigrationError {
     /// A second migration was started while one is in progress.
     #[error("A migration is already in progress.")]
     AlreadyInProgress,
-    /// ZIP 244 folds the anchor into the signature hash, so a transaction
-    /// signed ahead of its boundary commits to the wrong anchor.
-    #[error(
-        "The pre-signed strategy is unavailable until the Ironwood transaction digest excludes the anchor from the signature hash."
-    )]
-    PreSignedUnavailable,
-    /// The wallet's notes changed between planning and consent, so the
-    /// consented plan no longer describes what would be sent.
-    #[error("The wallet's notes changed since the plan was displayed. Re-plan and re-confirm.")]
-    ConsentStale,
-    /// The transmission cadence can change only while every part is unsent.
-    #[error("Phase 2 has begun; the transmission cadence can no longer change.")]
-    CadenceFixed,
-    /// Note splitting kept producing new rounds past the round bound.
-    #[error("Migration did not converge within {0} rounds.")]
-    SplitDidNotConverge(usize),
-    /// A note-splitting transaction failed or disappeared from the wallet.
-    #[error("Note-splitting transaction {0} failed or disappeared.")]
-    SplitTransactionFailed(TxId),
-    /// Note-splitting transactions were not confirmed within the polling
-    /// window.
-    #[error("Timed out waiting for note-splitting transactions to confirm.")]
-    SplitConfirmationTimeout,
-    /// The scheduled flow was asked to start over a plan that still needs
-    /// note splitting, which no scheduled-flow driver executes yet.
-    #[error(
-        "The wallet's notes need splitting before a scheduled migration, and the scheduled flow \
-         does not drive note splitting yet. Run the immediate migration instead."
-    )]
-    NoteSplittingRequired,
-    /// The one-call immediate path found a consented scheduled migration
-    /// and must not collapse its schedule.
-    #[error(
-        "A consented scheduled migration is in progress. Let it run (auto transmitting), advance \
-         it with catch-up, or cancel it before an immediate migration."
-    )]
-    ScheduledMigrationExists,
-    /// The migration in progress belongs to a different account.
-    #[error("The migration in progress belongs to a different account.")]
-    DifferentAccount,
-    /// The Ironwood era is too young to hold a part. A part transmits in one
-    /// bucket and anchors in a lower one, and both must sit above the NU6.3
-    /// activation, so the earliest window that can hold a part opens two
-    /// buckets above the activation's. Until then there is no legal anchor,
-    /// whatever the wallet's notes look like.
-    #[error(
-        "The Ironwood era is too young for a migration part: the first window that can \
-         hold one opens at height {retry_after}. Retry after it."
-    )]
-    IronwoodEraTooYoung {
-        /// The first transmission window boundary that can hold a part.
-        retry_after: zcash_protocol::consensus::BlockHeight,
+    /// The plan is not the wallet's current plan.
+    #[error("The plan does not match the wallet's current notes. Plan again.")]
+    PlanMismatch,
+    /// The schedule can change only while every transfer is unsigned.
+    #[error("A transfer is signed; the schedule can no longer change.")]
+    ScheduleFixed,
+    /// The proposed schedule does not match the wallet's funding notes.
+    #[error("The proposed schedule does not match the wallet's current notes. Propose again.")]
+    ScheduleMismatch,
+    /// A note-preparation round is still in flight.
+    #[error("A note-preparation round is still confirming.")]
+    RoundPending {
+        /// The transactions of that round.
+        txids: Vec<TxId>,
     },
+    /// Note preparation is finished; the next step is the schedule.
+    #[error("Note preparation is complete; commit a schedule.")]
+    AlreadyPrepared,
+    /// The command needs note preparation to be complete.
+    #[error("Note preparation is not complete.")]
+    NotPrepared,
+    /// The command needs a committed schedule.
+    #[error("No schedule is committed.")]
+    NotScheduled,
+    /// The wallet's view of the chain is older than one window. Sync first.
+    #[error(
+        "The wallet last saw the chain at height {last_known_height} more than one window ago. Sync first."
+    )]
+    StaleChainView {
+        /// The last height the wallet scanned.
+        last_known_height: zcash_protocol::consensus::BlockHeight,
+    },
+    /// The transfer is not pending, so it cannot be released.
+    #[error("Transfer {0} is not pending.")]
+    TransferNotPending(u32),
+    /// The plan is of the other migration mode.
+    #[error("The plan is of the wrong migration mode for this command.")]
+    WrongPlanMode,
+    /// Note preparation kept producing new rounds past the round bound.
+    #[error("Migration did not converge within {0} rounds.")]
+    PreparationDidNotConverge(usize),
+    #[error(transparent)]
+    InvalidParams(#[from] crate::wallet::migration::InvalidMigrationParams),
 }
 
 #[derive(Debug, thiserror::Error)]

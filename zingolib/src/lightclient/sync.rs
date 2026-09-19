@@ -48,6 +48,7 @@ impl LightClient {
             .sync_config
             .clone();
         let wallet = self.wallet().clone();
+        let housekept_wallet = wallet.clone();
         let sync_mode = self.sync_mode.clone();
         let (progress_sender, progress_receiver) = tokio::sync::watch::channel(None);
         self.sync_progress = progress_receiver;
@@ -71,6 +72,12 @@ impl LightClient {
                 started.elapsed().as_millis(),
                 if outcome.is_ok() { "ok" } else { "err" }
             );
+            if outcome.is_ok()
+                && let Err(error) =
+                    super::migrate::reconcile_wallet_migration(&mut *housekept_wallet.write().await)
+            {
+                tracing::warn!("migration reconciliation after sync failed: {error}");
+            }
             outcome
         });
         self.sync_handle = Some(sync_handle);
@@ -231,7 +238,7 @@ impl LightClient {
                         // Boundary checkpoints are only retained for a finite
                         // window; capture migration part witnesses while they
                         // are available.
-                        self.wallet().write().await.refresh_part_witnesses()?;
+                        self.reconcile_migration().await?;
                     }
                     return result;
                 }

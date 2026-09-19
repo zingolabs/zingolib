@@ -1,30 +1,28 @@
-//! How migration parts choose their wire (ADR 0011, amendment 2026-07-23).
+//! How migration transfers choose their wire (ADR 0011, amendment 2026-07-23).
 //!
-//! Migration-part transmissions obey the Mixnet Mode policy like every other
+//! Migration-transfer transmissions obey the Mixnet Mode policy like every other
 //! transmitting surface: while the mode is on they travel ONLY over the
 //! mixnet (failing closed while it bootstraps or after the proxy dies,
 //! never falling back to clearnet), and clearnet carries them only when the
 //! user deliberately toggled the mode off for the session, or in a build
 //! compiled without the `nym` feature.
 
-use crate::wallet::migration::transmission::{
-    PartTransmissionError, TransmissionClient, TransmissionReceipt,
+use crate::wallet::migration::broadcast::{
+    BroadcastClient, BroadcastReceipt, TransferBroadcastError,
 };
 use zcash_protocol::consensus::BlockHeight;
 
 #[cfg(feature = "nym")]
-use crate::wallet::migration::transmission::TransmissionRoute;
-#[cfg(feature = "nym")]
-use zcash_primitives::transaction::TxId;
+use crate::wallet::migration::broadcast::BroadcastRoute;
 
-use super::transmission_grpc::GrpcTransmissionClient;
+use super::broadcast_grpc::GrpcBroadcastClient;
 
 use crate::destination::servers::{
     DestinationServerSet, Location, NoEligibleDestinations, Transport, Trust,
 };
 use crate::lightclient::error::LightClientError;
 
-/// The wire migration parts travel.
+/// The wire migration transfers travel.
 pub enum MigrationWire {
     /// Direct submission.
     Clearnet,
@@ -43,48 +41,47 @@ impl MigrationWire {
     }
 }
 
-/// The [`TransmissionClient`] the Mixnet Mode policy resolved for this session.
-pub struct RoutedTransmissionClient {
+/// The [`BroadcastClient`] the Mixnet Mode policy resolved for this session.
+pub struct RoutedBroadcastClient {
     wire: MigrationWire,
     candidates: Vec<http::Uri>,
 }
 
-impl RoutedTransmissionClient {
+impl RoutedBroadcastClient {
     pub(crate) fn new(wire: MigrationWire, candidates: Vec<http::Uri>) -> Self {
-        RoutedTransmissionClient { wire, candidates }
-    }
-
-    #[cfg(all(test, feature = "nym"))]
-    pub(crate) fn is_mixnet(&self) -> bool {
-        !matches!(self.wire, MigrationWire::Clearnet)
+        RoutedBroadcastClient { wire, candidates }
     }
 }
 
-impl TransmissionClient for RoutedTransmissionClient {
+impl BroadcastClient for RoutedBroadcastClient {
     async fn submit(
         &self,
         raw_tx: Vec<u8>,
         expiry_height: BlockHeight,
-    ) -> Result<TransmissionReceipt, PartTransmissionError> {
+    ) -> Result<BroadcastReceipt, TransferBroadcastError> {
         use rand::seq::SliceRandom as _;
 
-        let indexer = self
-            .candidates
-            .choose(&mut rand::rngs::OsRng)
-            .ok_or_else(|| {
-                PartTransmissionError::Transport("no transmission candidates".to_string())
-            })?;
-        match &self.wire {
-            MigrationWire::Clearnet => {
-                GrpcTransmissionClient::new(indexer.clone())
-                    .submit(raw_tx, expiry_height)
-                    .await
-            }
-            #[cfg(feature = "nym")]
-            MigrationWire::Mixnet(dial) => {
-                submit_over_socks5(dial, indexer, raw_tx, expiry_height).await
+        let mut candidates = self.candidates.clone();
+        candidates.shuffle(&mut rand::rngs::OsRng);
+        let mut last = TransferBroadcastError::NoCandidates;
+        for indexer in &candidates {
+            let submitted = match &self.wire {
+                MigrationWire::Clearnet => {
+                    GrpcBroadcastClient::new(indexer.clone())
+                        .submit(raw_tx.clone(), expiry_height)
+                        .await
+                }
+                #[cfg(feature = "nym")]
+                MigrationWire::Mixnet(dial) => {
+                    submit_over_socks5(dial, indexer, raw_tx.clone(), expiry_height).await
+                }
+            };
+            match submitted {
+                Err(error @ TransferBroadcastError::Transport { .. }) => last = error,
+                verdict => return verdict,
             }
         }
+        Err(last)
     }
 }
 
@@ -94,39 +91,36 @@ async fn submit_over_socks5(
     indexer: &http::Uri,
     raw_tx: Vec<u8>,
     expiry_height: BlockHeight,
-) -> Result<TransmissionReceipt, PartTransmissionError> {
+) -> Result<BroadcastReceipt, TransferBroadcastError> {
+    let route = BroadcastRoute::Mixnet {
+        destination: super::broadcast_grpc::host_of(indexer),
+        via_socks5: dial.socks5().to_string(),
+    };
     let txid_hex = zingo_netutils::Socks5Indexer::new(
         dial.socks5(),
         indexer.clone(),
-        super::transmission_grpc::MIGRATION_SUBMIT_TIMEOUT,
+        super::broadcast_grpc::MIGRATION_SUBMIT_TIMEOUT,
     )
     .send_transaction(&raw_tx, u64::from(u32::from(expiry_height)))
     .await
     .map_err(|error| {
-        // The taxonomy's own failover reading maps onto PartTransmissionError's
+        // The taxonomy's own failover reading maps onto TransferBroadcastError's
         // contract: a failover candidate was not consumed (Transport,
-        // retryable: the part falls to reconciliation), a verdict was.
-        let rendered = error.to_string();
+        // retryable: the transfer falls to reconciliation), a verdict was.
+        let message = error.to_string();
         if error.is_failover_candidate() {
-            PartTransmissionError::Transport(rendered)
+            TransferBroadcastError::Transport {
+                route: route.clone(),
+                message,
+            }
         } else {
-            PartTransmissionError::Rejected(rendered)
+            super::broadcast_grpc::rejection(message, route.clone())
         }
     })?;
-    let txid: TxId =
-        crate::utils::conversion::txid_from_hex_encoded_str(&txid_hex).map_err(|e| {
-            PartTransmissionError::Rejected(format!("endpoint returned an invalid txid: {e}"))
-        })?;
-    Ok(TransmissionReceipt {
-        txid,
-        route: TransmissionRoute::Mixnet {
-            destination: super::transmission_grpc::host_of(indexer),
-            via_socks5: dial.socks5().to_string(),
-        },
-    })
+    super::broadcast_grpc::receipt_of(&txid_hex, route)
 }
 
-/// The targets migration parts may go to over `transport`.
+/// The targets migration transfers may go to over `transport`.
 pub(crate) fn candidates(
     configured: Option<http::Uri>,
     sync_indexer: Option<&http::Uri>,
@@ -349,6 +343,148 @@ mod tests {
                 crate::destination::servers::NoEligibleDestinations::AllBelongToSyncOperator(_)
             ))
         ));
+    }
+
+    mod failover {
+        use super::*;
+        use crate::testutils::mock_indexer::{MockNet, Rules, faucet_funding_transaction};
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+        use crate::wallet::keys::unified::ReceiverSelection;
+        use crate::wallet::migration::broadcast::BroadcastRoute;
+
+        const EXPIRY: BlockHeight = BlockHeight::from_u32(1);
+
+        async fn unreachable_uri() -> http::Uri {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("an ephemeral localhost port binds");
+            let port = listener
+                .local_addr()
+                .expect("bound socket has an address")
+                .port();
+            drop(listener);
+            uri(&format!("http://127.0.0.1:{port}"))
+        }
+
+        async fn accepting_net() -> MockNet {
+            let net = MockNet::launch().await;
+            net.chain.write().await.rules = Rules::LAX;
+            net
+        }
+
+        async fn transfer_bytes() -> Vec<u8> {
+            let mut external_wallet =
+                SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+            let (_, unified_address) = external_wallet
+                .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
+                .unwrap();
+            let address = unified_address.encode(&external_wallet.chain_type());
+            faucet_funding_transaction(vec![(address.as_str(), 20_000, None)]).await
+        }
+
+        fn clearnet(candidates: Vec<http::Uri>) -> RoutedBroadcastClient {
+            RoutedBroadcastClient::new(MigrationWire::Clearnet, candidates)
+        }
+
+        #[tokio::test]
+        async fn submit_fails_over_past_unreachable_candidates_to_the_one_that_accepts() {
+            let accepting = accepting_net().await;
+            let candidates = vec![
+                unreachable_uri().await,
+                unreachable_uri().await,
+                accepting.indexer_uri(),
+            ];
+            let transfer = transfer_bytes().await;
+
+            let receipt = clearnet(candidates)
+                .submit(transfer, EXPIRY)
+                .await
+                .expect("the reachable candidate takes the transfer");
+
+            assert_eq!(
+                receipt.route,
+                BroadcastRoute::Clearnet {
+                    endpoint: "127.0.0.1".to_string()
+                }
+            );
+            assert_eq!(accepting.chain.read().await.mempool_len(), 1);
+        }
+
+        #[tokio::test]
+        async fn submit_with_every_candidate_unreachable_reports_the_transport_failure() {
+            let candidates = vec![unreachable_uri().await, unreachable_uri().await];
+
+            let refused = clearnet(candidates)
+                .submit(vec![0xAB; 64], EXPIRY)
+                .await
+                .expect_err("no candidate is reachable");
+
+            assert!(
+                matches!(refused, TransferBroadcastError::Transport { .. }),
+                "an exhausted candidate list surfaces the last transport error, got {refused:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn submit_with_no_candidates_reports_no_candidates() {
+            let refused = clearnet(Vec::new())
+                .submit(vec![0xAB; 64], EXPIRY)
+                .await
+                .expect_err("nothing to submit to");
+
+            assert!(
+                matches!(refused, TransferBroadcastError::NoCandidates),
+                "{refused:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_rejection_is_returned_at_once_without_trying_another_candidate() {
+            let first = MockNet::launch().await;
+            let second = MockNet::launch().await;
+            for net in [&first, &second] {
+                net.chain.write().await.reject_all_sends = true;
+            }
+            let candidates = vec![
+                unreachable_uri().await,
+                first.indexer_uri(),
+                second.indexer_uri(),
+            ];
+
+            let refused = clearnet(candidates)
+                .submit(vec![0xAB; 64], EXPIRY)
+                .await
+                .expect_err("every reachable candidate rejects");
+
+            assert!(
+                matches!(refused, TransferBroadcastError::Rejected { .. }),
+                "a rejection is a verdict, not a transport failure: {refused:?}"
+            );
+            let contacted =
+                first.chain.read().await.rejected_sends + second.chain.read().await.rejected_sends;
+            assert_eq!(
+                contacted, 1,
+                "the first rejection ends the attempt; the other candidate is never contacted"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_rejection_after_a_transport_failure_is_the_rejection() {
+            let rejecting = MockNet::launch().await;
+            rejecting.chain.write().await.reject_all_sends = true;
+            let candidates = vec![unreachable_uri().await, rejecting.indexer_uri()];
+
+            let refused = clearnet(candidates)
+                .submit(vec![0xAB; 64], EXPIRY)
+                .await
+                .expect_err("the reachable candidate rejects");
+
+            assert!(
+                matches!(refused, TransferBroadcastError::Rejected { .. }),
+                "the rejection replaces the earlier transport failure: {refused:?}"
+            );
+            assert_eq!(rejecting.chain.read().await.rejected_sends, 1);
+        }
     }
 
     #[test]
