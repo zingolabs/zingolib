@@ -315,8 +315,8 @@ async fn reload_wallet_from_file() {
 async fn wallet_round_trips_migration_state_at_current_version() {
     use crate::wallet::LightWallet;
     use crate::wallet::migration::{
-        BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId,
-        PartRecord, SigningStrategy,
+        BoundNote, MigrationParams, MigrationPhase, MigrationState, PlanCommitment,
+        SigningStrategy, TransferId, TransferRecord,
     };
     use pepper_sync::wallet::OutputId;
     use zcash_primitives::transaction::TxId;
@@ -330,8 +330,8 @@ async fn wallet_round_trips_migration_state_at_current_version() {
     assert!(wallet.migration.is_none(), "pre-42 wallet has no migration");
 
     let params = MigrationParams::provisional(wallet.chain_type());
-    let mut part = PartRecord::new(
-        PartId(0),
+    let mut part = TransferRecord::new(
+        TransferId(0),
         100_000_000,
         BoundNote {
             output_id: OutputId::new(TxId::from_bytes([3; 32]), 1),
@@ -341,17 +341,17 @@ async fn wallet_round_trips_migration_state_at_current_version() {
     );
     part.assign(12).unwrap();
     let state = MigrationState {
-        consent: ConsentBinding {
+        commitment: PlanCommitment {
             params_hash: params.params_hash(),
             plan_hash: [6; 32],
-            consented_at: 1_782_000_000,
+            committed_at: 1_782_000_000,
         },
         params,
         strategy: SigningStrategy::LazyAtBoundary,
         mode: crate::wallet::migration::MigrationMode::Scheduled,
         account: zip32::AccountId::ZERO,
-        phase: MigrationPhase::PartsScheduled,
-        parts: vec![part],
+        phase: MigrationPhase::Scheduled,
+        transfers: vec![part],
     };
     wallet.migration = Some(state.clone());
     wallet.save_required = true;
@@ -415,8 +415,8 @@ impl CurrentVersionWallet {
 /// not detect a reader that picked the wrong layout.
 async fn current_version_wallet_bytes() -> CurrentVersionWallet {
     use crate::wallet::migration::{
-        BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId,
-        PartRecord, SigningStrategy,
+        BoundNote, MigrationParams, MigrationPhase, MigrationState, PlanCommitment,
+        SigningStrategy, TransferId, TransferRecord,
     };
     use pepper_sync::wallet::OutputId;
     use zcash_encoding::Optional;
@@ -432,8 +432,8 @@ async fn current_version_wallet_bytes() -> CurrentVersionWallet {
     wallet.price_list.set_start_time(1_782_000_000);
 
     let params = MigrationParams::provisional(wallet.chain_type());
-    let mut part = PartRecord::new(
-        PartId(0),
+    let mut part = TransferRecord::new(
+        TransferId(0),
         100_000_000,
         BoundNote {
             output_id: OutputId::new(TxId::from_bytes([3; 32]), 1),
@@ -443,17 +443,17 @@ async fn current_version_wallet_bytes() -> CurrentVersionWallet {
     );
     part.assign(12).unwrap();
     wallet.migration = Some(MigrationState {
-        consent: ConsentBinding {
+        commitment: PlanCommitment {
             params_hash: params.params_hash(),
             plan_hash: [6; 32],
-            consented_at: 1_782_000_000,
+            committed_at: 1_782_000_000,
         },
         params,
         strategy: SigningStrategy::LazyAtBoundary,
         mode: crate::wallet::migration::MigrationMode::Scheduled,
         account: zip32::AccountId::ZERO,
-        phase: MigrationPhase::PartsScheduled,
-        parts: vec![part],
+        phase: MigrationPhase::Scheduled,
+        transfers: vec![part],
     });
 
     wallet.save_required = true;
@@ -682,6 +682,15 @@ mod validation {
                     HospitalMuseumVersion::V27,
                 )),
                 regtest,
+            ),
+            (
+                NetworkSeedVersion::Regtest(RegtestSeedVersion::HospitalMuseum(
+                    HospitalMuseumVersion::V42Migration,
+                )),
+                NetworkSeedVersion::Regtest(RegtestSeedVersion::HospitalMuseum(
+                    HospitalMuseumVersion::V42Migration,
+                ))
+                .chain_type(),
             ),
             (
                 NetworkSeedVersion::Regtest(RegtestSeedVersion::AbandonAbandon(
@@ -1034,6 +1043,345 @@ mod version_forty {
             <Mnemonic>::from_entropy([0x55; 32].to_vec())
                 .unwrap()
                 .phrase()
+        );
+    }
+}
+
+mod v42_migration_fixture {
+    use pepper_sync::wallet::{NoteInterface as _, OrchardNote, OutputId, OutputInterface as _};
+    use zcash_protocol::consensus::BlockHeight;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use super::*;
+    use crate::lightclient::migrate::TransferProgress;
+    use crate::wallet::LightWallet;
+    use crate::wallet::migration::{
+        MigrationMode, MigrationPhase, SigningStrategy, TransferId, TransferState,
+    };
+
+    const FUNDING_TXID: &str = "9db7e76c6dde10cc7b4aab0686e7ad5c5d3be96a5a52d1cd90b8556250a1df6a";
+    const PART_ZERO_TXID: &str = "74e319016d4a3643a1758785f0ad087f0e1104bc0f51957acb75c96ca4142545";
+    const PART_ONE_TXID: &str = "bf188cbe62051004bc39b7b2acb20478913d3b15e731fe9e0a756204de51e35f";
+    const PARAMS_HASH: &str = "c4a51c771da9edb76b5199640f4c46c3a4e77a6e8fb15ec37865e13553a9cdac";
+    const PLAN_HASH: &str = "f9e75428dfb8f3ec9550dd68b23a39ada98aa8c8e73cfab6e337aa1c4c5b42d8";
+    const COMMITTED_AT: u64 = 1_788_990_210;
+    const TIP: u32 = 460;
+    const FUNDING_HEIGHT: u32 = 4;
+    const PART_ZERO_CONFIRMED_AT: u32 = 356;
+    const PART_ONE_BUILT_AT: u32 = 433;
+    const PART_FEE: u64 = 20_000;
+    const CANONICAL_EXPIRY: u32 = 69_120;
+
+    fn fixture() -> NetworkSeedVersion {
+        NetworkSeedVersion::Regtest(RegtestSeedVersion::HospitalMuseum(
+            HospitalMuseumVersion::V42Migration,
+        ))
+    }
+
+    fn funding_output(output_index: u32) -> OutputId {
+        OutputId::new(
+            crate::utils::conversion::txid_from_hex_encoded_str(FUNDING_TXID)
+                .expect("the pinned funding txid decodes"),
+            output_index,
+        )
+    }
+
+    #[tokio::test]
+    async fn the_loaded_migration_answers_the_new_client_api() {
+        let client = fixture().load_example_wallet().await;
+        let status = client
+            .migration_status()
+            .await
+            .expect("the loaded migration reports its status");
+        assert_eq!(status.phase, Some(MigrationPhase::Scheduled));
+        let progress: Vec<(TransferId, TransferProgress, u32)> = status
+            .transfers
+            .iter()
+            .map(|transfer| (transfer.id, transfer.progress, transfer.missed_windows))
+            .collect();
+        assert_eq!(
+            progress,
+            vec![
+                (TransferId(0), TransferProgress::Confirmed, 0),
+                (TransferId(1), TransferProgress::Broadcast, 0),
+                (TransferId(2), TransferProgress::Pending, 0),
+            ],
+            "every pinned transfer reports its progress under the new status API"
+        );
+        assert_eq!(status.transfers_total, 3);
+        assert_eq!(status.transfers_confirmed, 1);
+        assert_eq!(status.value_total, 5_000_000 + 2_000_000 + 1_000_000);
+        assert_eq!(status.value_migrated, 5_000_000);
+        assert!(
+            status
+                .transfers
+                .iter()
+                .all(|transfer| transfer.window.is_some()),
+            "every pinned transfer is scheduled into a window"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_loaded_migration_reserves_the_funding_notes_of_its_pending_transfers() {
+        let client = fixture().load_example_wallet().await;
+        let wallet = client.wallet().read().await;
+        let mut reserved = wallet.reserved_output_ids();
+        reserved.sort();
+        assert_eq!(
+            reserved,
+            vec![funding_output(1), funding_output(2)],
+            "the broadcast and the assigned transfers keep their funding notes reserved; the \
+             confirmed transfer's note is spent and no longer reserved"
+        );
+        assert_eq!(
+            wallet.reserved_orchard_value(),
+            (2_000_000 + PART_FEE) + (1_000_000 + PART_FEE)
+        );
+    }
+
+    #[tokio::test]
+    async fn writing_the_loaded_wallet_upgrades_its_migration_section_to_version_5() {
+        let client = fixture().load_example_wallet().await;
+        let mut wallet = client.wallet().write().await;
+        let chain_type = wallet.chain_type();
+        let loaded = wallet
+            .migration()
+            .expect("the fixture carries a migration")
+            .clone();
+
+        let mut section = Vec::new();
+        crate::wallet::migration::store::write(&mut section, &loaded)
+            .expect("the loaded state writes");
+        assert_eq!(section[0], 5, "the section is rewritten at version 5");
+
+        let mut bytes = Vec::new();
+        wallet
+            .write(&mut bytes, &chain_type)
+            .expect("the loaded wallet writes");
+        assert!(
+            bytes.ends_with(&section),
+            "the migration section is the wallet file's tail"
+        );
+
+        let recovered =
+            LightWallet::read(bytes.as_slice(), chain_type).expect("the rewritten wallet reads");
+        assert_eq!(
+            recovered.current_version(),
+            LightWallet::serialized_version()
+        );
+        assert_eq!(
+            recovered.migration(),
+            Some(&loaded),
+            "the round trip after the upgrade preserves the loaded state"
+        );
+        assert_eq!(
+            recovered.reserved_output_ids(),
+            wallet.reserved_output_ids()
+        );
+    }
+
+    #[tokio::test]
+    async fn the_pinned_file_carries_a_version_4_section() {
+        let client = fixture().load_example_wallet().await;
+        let wallet = client.wallet().read().await;
+        let loaded = wallet
+            .migration()
+            .expect("the fixture carries a migration")
+            .clone();
+
+        let section_with = |count: usize| {
+            let mut truncated = loaded.clone();
+            truncated.transfers = loaded.transfers()[..count].to_vec();
+            let mut section = Vec::new();
+            crate::wallet::migration::store::write(&mut section, &truncated)
+                .expect("the truncated state writes");
+            section
+        };
+        let mut as_version_4 = section_with(loaded.transfers().len());
+        as_version_4[0] = 4;
+        for count in (1..=loaded.transfers().len()).rev() {
+            let transfer_end = section_with(count).len() - 1;
+            assert_eq!(
+                &as_version_4[transfer_end - 5..transfer_end],
+                &[0, 0, 0, 0, 0],
+                "a transfer read from version 4 writes an empty history"
+            );
+            as_version_4.drain(transfer_end - 5..transfer_end);
+        }
+
+        let pinned =
+            std::fs::read(fixture().example_wallet_path()).expect("the pinned wallet file reads");
+        assert!(
+            pinned.ends_with(&as_version_4),
+            "the pinned file ends with the version-4 encoding of the loaded state"
+        );
+    }
+
+    struct PinnedPart {
+        id: u32,
+        denomination: u64,
+        output_index: u32,
+        bucket: u64,
+        anchor_bucket: u64,
+        target: u32,
+        state: TransferState,
+        txid: Option<&'static str>,
+        expiry: Option<u32>,
+        attempts: u8,
+        witness_position: u64,
+    }
+
+    #[tokio::test]
+    async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v42_migration() {
+        let pinned = [
+            PinnedPart {
+                id: 0,
+                denomination: 5_000_000,
+                output_index: 0,
+                bucket: 2,
+                anchor_bucket: 1,
+                target: 355,
+                state: TransferState::Confirmed {
+                    height: BlockHeight::from_u32(PART_ZERO_CONFIRMED_AT),
+                },
+                txid: Some(PART_ZERO_TXID),
+                expiry: Some(CANONICAL_EXPIRY),
+                attempts: 1,
+                witness_position: 0,
+            },
+            PinnedPart {
+                id: 1,
+                denomination: 2_000_000,
+                output_index: 1,
+                bucket: 3,
+                anchor_bucket: 2,
+                target: 460,
+                state: TransferState::Broadcast,
+                txid: Some(PART_ONE_TXID),
+                expiry: Some(CANONICAL_EXPIRY),
+                attempts: 1,
+                witness_position: 1,
+            },
+            PinnedPart {
+                id: 2,
+                denomination: 1_000_000,
+                output_index: 2,
+                bucket: 4,
+                anchor_bucket: 2,
+                target: 581,
+                state: TransferState::Assigned,
+                txid: None,
+                expiry: None,
+                attempts: 0,
+                witness_position: 2,
+            },
+        ];
+
+        let fixture = fixture();
+        let client = fixture.load_example_wallet().await;
+        let wallet = client.wallet().read().await;
+
+        assert_eq!(wallet.current_version(), LightWallet::serialized_version());
+        assert_eq!(wallet.current_version(), 42);
+        assert_wallet_capability_matches_seed(&wallet, fixture.example_wallet_seed()).await;
+        assert_eq!(
+            wallet.sync_state.last_known_chain_height(),
+            Some(BlockHeight::from_u32(TIP))
+        );
+
+        let state = wallet.migration().expect("the fixture carries a migration");
+        assert_eq!(state.mode(), MigrationMode::Scheduled);
+        assert_eq!(*state.phase(), MigrationPhase::Scheduled);
+        assert_eq!(state.strategy(), SigningStrategy::LazyAtBoundary);
+        assert_eq!(state.account(), zip32::AccountId::ZERO);
+        assert_eq!(state.params().k_max(), 1);
+        assert_eq!(state.params().bucket_modulus(), 144);
+        assert_eq!(state.params().transfer_fee(), PART_FEE);
+        assert_eq!(hex::encode(state.commitment().params_hash), PARAMS_HASH);
+        assert_eq!(
+            state.commitment().params_hash,
+            state.params().params_hash(),
+            "the committed parameter hash is the hash of the stored parameters"
+        );
+        assert_eq!(hex::encode(state.commitment().plan_hash), PLAN_HASH);
+        assert_eq!(state.commitment().committed_at, COMMITTED_AT);
+
+        assert_eq!(state.transfers().len(), pinned.len());
+        for (part, expected) in state.transfers().iter().zip(&pinned) {
+            assert_eq!(part.id, TransferId(expected.id));
+            assert_eq!(part.denomination, expected.denomination);
+            assert_eq!(part.bucket_index, Some(expected.bucket));
+            assert_eq!(part.anchor_bucket, Some(expected.anchor_bucket));
+            assert_eq!(
+                part.target_height,
+                Some(BlockHeight::from_u32(expected.target))
+            );
+            assert_eq!(part.state, expected.state);
+            assert_eq!(
+                part.txid.map(|txid| txid.to_string()),
+                expected.txid.map(str::to_string)
+            );
+            assert_eq!(
+                part.expiry_height,
+                expected.expiry.map(BlockHeight::from_u32)
+            );
+            assert_eq!(part.attempts, expected.attempts);
+            assert_eq!(
+                part.anchor_witness.as_ref().map(|witness| witness.position),
+                Some(expected.witness_position)
+            );
+            assert!(
+                part.previous_txids.is_empty(),
+                "a version-4 section carries no discarded signatures"
+            );
+            assert_eq!(
+                part.missed_windows, 0,
+                "a version-4 section carries no missed-window count"
+            );
+
+            let bound = part.note.expect("every fixture part is bound");
+            assert_eq!(bound.output_id.txid().to_string(), FUNDING_TXID);
+            assert_eq!(bound.output_id.output_index(), expected.output_index);
+            let note = wallet
+                .wallet_transactions
+                .values()
+                .flat_map(OrchardNote::transaction_outputs)
+                .find(|note| note.output_id() == bound.output_id)
+                .expect("the bound note is a real wallet note");
+            assert_eq!(note.value(), expected.denomination + PART_FEE);
+            assert_eq!(
+                note.nullifier()
+                    .expect("scanned notes carry nullifiers")
+                    .to_bytes(),
+                bound.nullifier
+            );
+            assert_eq!(
+                note.spending_transaction().map(|txid| txid.to_string()),
+                expected.txid.map(str::to_string),
+                "a sent part's note is spent by that part's transaction"
+            );
+        }
+
+        let status_of = |txid: &str| {
+            wallet
+                .wallet_transactions
+                .values()
+                .find(|tx| tx.txid().to_string() == txid)
+                .map(|tx| tx.status())
+                .unwrap_or_else(|| panic!("transaction {txid} is in the wallet"))
+        };
+        assert_eq!(wallet.wallet_transactions.len(), 3);
+        assert_eq!(
+            status_of(FUNDING_TXID),
+            ConfirmationStatus::Confirmed(BlockHeight::from_u32(FUNDING_HEIGHT))
+        );
+        assert_eq!(
+            status_of(PART_ZERO_TXID),
+            ConfirmationStatus::Confirmed(BlockHeight::from_u32(PART_ZERO_CONFIRMED_AT))
+        );
+        assert_eq!(
+            status_of(PART_ONE_TXID),
+            ConfirmationStatus::Calculated(BlockHeight::from_u32(PART_ONE_BUILT_AT))
         );
     }
 }

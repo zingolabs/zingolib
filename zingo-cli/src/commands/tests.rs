@@ -234,71 +234,144 @@ mod migration_command_parsing {
     }
 
     #[test]
-    fn start_parses_hash_and_per_bucket() {
+    fn plan_parses_bare() {
+        assert_eq!(
+            parse(&["plan"]).expect("bare plan parses"),
+            MigrationSubCommand::Plan
+        );
+        assert!(parse(&["plan", "extra"]).is_err());
+    }
+
+    #[test]
+    fn commit_parses_the_plan_hash() {
         let hash_hex = "11".repeat(32);
         assert_eq!(
-            parse(&["start", &hash_hex, "--per-bucket", "3"]).expect("well-formed arguments parse"),
-            MigrationSubCommand::Start {
+            parse(&["commit", &hash_hex]).expect("a well-formed plan hash parses"),
+            MigrationSubCommand::Commit {
                 plan_hash: [0x11; 32],
-                per_bucket: Some(3),
             }
         );
     }
 
     #[test]
-    fn malformed_plan_hash_is_refused_at_parse() {
-        assert!(parse(&["start", "abc"]).is_err());
+    fn commit_refuses_a_missing_or_malformed_plan_hash_at_parse() {
+        assert!(parse(&["commit"]).is_err());
+        assert!(parse(&["commit", "abc"]).is_err());
+        assert!(parse(&["commit", &"zz".repeat(32)]).is_err());
+        assert!(parse(&["commit", &"11".repeat(31)]).is_err());
     }
 
     #[test]
-    fn continue_parses_bare() {
+    fn prepare_parses_bare() {
         assert_eq!(
-            parse(&["continue"]).expect("bare continue parses"),
-            MigrationSubCommand::Continue
+            parse(&["prepare"]).expect("bare prepare parses"),
+            MigrationSubCommand::Prepare
         );
+        assert!(parse(&["prepare", "extra"]).is_err());
     }
 
     #[test]
-    fn windows_parses_bare() {
+    fn schedule_defaults_to_one_transfer_per_window() {
+        assert_eq!(
+            parse(&["schedule"]).expect("bare schedule parses"),
+            MigrationSubCommand::Schedule { per_window: 1 }
+        );
+        assert_eq!(
+            parse(&["schedule", "4"]).expect("a per-window count parses"),
+            MigrationSubCommand::Schedule { per_window: 4 }
+        );
+        assert!(parse(&["schedule", "many"]).is_err());
+    }
+
+    #[test]
+    fn broadcast_defaults_spacing_to_thirty_seconds() {
+        assert_eq!(
+            parse(&["broadcast"]).expect("bare broadcast parses"),
+            MigrationSubCommand::Broadcast {
+                spacing: std::time::Duration::from_secs(30),
+            }
+        );
+        assert_eq!(
+            parse(&["broadcast", "5"]).expect("a spaced broadcast parses"),
+            MigrationSubCommand::Broadcast {
+                spacing: std::time::Duration::from_secs(5),
+            }
+        );
+        assert!(parse(&["broadcast", "soon"]).is_err());
+    }
+
+    #[test]
+    fn send_missed_defaults_spacing_to_thirty_seconds() {
+        assert_eq!(
+            parse(&["send_missed"]).expect(
+                "bare send_missed parses: the migration grammar is snake_case like every other \
+                 family (`send_all`, `min_confirmations`)"
+            ),
+            MigrationSubCommand::SendMissed {
+                spacing: std::time::Duration::from_secs(30),
+            }
+        );
+        assert!(
+            parse(&["send-missed"]).is_err(),
+            "the kebab-case spelling is not part of the grammar"
+        );
+        assert_eq!(
+            parse(&["send_missed", "0"]).expect("a spaced send_missed parses"),
+            MigrationSubCommand::SendMissed {
+                spacing: std::time::Duration::ZERO,
+            }
+        );
+        assert!(parse(&["send_missed", "soon"]).is_err());
+    }
+
+    #[test]
+    fn release_requires_a_transfer_id() {
+        assert_eq!(
+            parse(&["release", "2"]).expect("a transfer id parses"),
+            MigrationSubCommand::Release { transfer: 2 }
+        );
+        assert!(parse(&["release"]).is_err());
+        assert!(parse(&["release", "-1"]).is_err());
+        assert!(parse(&["release", "two"]).is_err());
+    }
+
+    #[test]
+    fn status_windows_and_cancel_parse_bare() {
+        assert_eq!(
+            parse(&["status"]).expect("bare status parses"),
+            MigrationSubCommand::Status
+        );
         assert_eq!(
             parse(&["windows"]).expect("bare windows parses"),
             MigrationSubCommand::Windows
         );
-    }
-
-    #[test]
-    fn cadence_requires_a_count() {
         assert_eq!(
-            parse(&["cadence", "4"]).expect("well-formed cadence parses"),
-            MigrationSubCommand::Cadence { per_bucket: 4 }
-        );
-        assert!(parse(&["cadence"]).is_err());
-    }
-
-    #[test]
-    fn execute_defaults_spacing_to_thirty_seconds() {
-        assert_eq!(
-            parse(&["execute"]).expect("bare execute parses"),
-            MigrationSubCommand::Execute {
-                spacing: std::time::Duration::from_secs(30),
-            }
-        );
-        assert_eq!(
-            parse(&["execute", "5"]).expect("spaced execute parses"),
-            MigrationSubCommand::Execute {
-                spacing: std::time::Duration::from_secs(5),
-            }
+            parse(&["cancel"]).expect("bare cancel parses"),
+            MigrationSubCommand::Cancel
         );
     }
 
     #[test]
-    fn catchup_defaults_spacing_to_thirty_seconds() {
-        assert_eq!(
-            parse(&["catchup"]).expect("bare catchup parses"),
-            MigrationSubCommand::Catchup {
-                spacing: std::time::Duration::from_secs(30),
-            }
-        );
+    fn retired_subcommands_are_refused_at_parse() {
+        let hash_hex = "11".repeat(32);
+        for retired in [
+            &["start", &hash_hex][..],
+            &["start", &hash_hex, "--per-bucket", "3"][..],
+            &["step"][..],
+            &["cadence", "4"][..],
+            &["execute"][..],
+            &["execute", "5"][..],
+            &["continue"][..],
+            &["auto"][..],
+            &["reconcile"][..],
+            &["catchup"][..],
+        ] {
+            assert!(
+                parse(retired).is_err(),
+                "`migration {}` must no longer parse",
+                retired.join(" ")
+            );
+        }
     }
 
     #[test]
@@ -309,9 +382,9 @@ mod migration_command_parsing {
 }
 
 #[cfg(test)]
-mod drain_and_split_command_parsing {
-    //! Pins the clap derive grammars of the mobile-parity migration
-    //! commands: `drain` and `split` accept exactly `plan` or `now`,
+mod drain_command_parsing {
+    //! Pins the clap derive grammar of the mobile-parity immediate
+    //! migration command: `drain` accepts exactly `plan` or `now`,
     //! refusing everything else at the parse boundary.
 
     use clap::Parser as _;
@@ -341,24 +414,17 @@ mod drain_and_split_command_parsing {
     }
 
     #[test]
-    fn split_accepts_exactly_plan_or_now() {
-        let parse = |args: &[&str]| {
-            let line = std::iter::once("split").chain(args.iter().copied());
-            CommandLine::try_parse_from(line).map(|line| match line.command {
-                CliCommand::Split { sub } => sub,
-                other => panic!("`split` must parse to the split family: {other:?}"),
-            })
-        };
-        assert_eq!(
-            parse(&["plan"]).expect("split plan parses"),
-            SplitSubCommand::Plan
-        );
-        assert_eq!(
-            parse(&["now"]).expect("split now parses"),
-            SplitSubCommand::Now
-        );
-        for junk in [&[][..], &["bogus"][..], &["plan", "extra"][..]] {
-            assert!(parse(junk).is_err());
+    fn split_is_no_longer_a_command() {
+        for args in [
+            &["split"][..],
+            &["split", "plan"][..],
+            &["split", "now"][..],
+        ] {
+            assert!(
+                CommandLine::try_parse_from(args.iter().copied()).is_err(),
+                "`{}` must no longer parse",
+                args.join(" ")
+            );
         }
     }
 }
@@ -987,10 +1053,10 @@ mod offline_contract {
     //! The `change_server` pin lives at the REPL dispatch, not here: see
     //! `offline_mode_refusal` and its tests in `crate::tests`.
     //!
-    //! Deliberately untested, with the reasoning on record: `drain now`,
-    //! `split now`, and `migration catchup` refuse at the transmit stage,
-    //! whose pre-flight `transmit` and `quicksend` pin below (each extra
-    //! case would buy another proving run, not another guarantee).
+    //! Deliberately untested, with the reasoning on record: `drain now`
+    //! refuses at the transmit stage, whose pre-flight `transmit` and
+    //! `quicksend` pin below (each extra case would buy another proving
+    //! run, not another guarantee).
     //! `network probe` refuses offline and is pinned below. `network on`
     //! is deliberately untested here: it is the consent act that switches
     //! an offline session to Online Mode (ADR 0026), and both its indexer
@@ -1352,12 +1418,6 @@ mod offline_contract {
         }
 
         #[test]
-        fn split_plan() {
-            let output = assert_works_offline(&mut funded_offline_client(), "split", &["plan"]);
-            assert!(output.contains("split_rounds"), "{output}");
-        }
-
-        #[test]
         fn migration_plan() {
             let output = assert_works_offline(&mut funded_offline_client(), "migration", &["plan"]);
             assert!(output.contains("plan_hash"), "{output}");
@@ -1367,12 +1427,103 @@ mod offline_contract {
         fn migration_status() {
             let output =
                 assert_works_offline(&mut funded_offline_client(), "migration", &["status"]);
-            assert!(output.contains("phase"), "{output}");
+            assert!(output.contains("\"phase\":"), "{output}");
+            assert!(output.contains("\"transfers\":"), "{output}");
+            assert!(output.contains("\"windows\":"), "{output}");
         }
 
         #[test]
         fn migration_windows() {
             assert_unblocked_offline(&mut funded_offline_client(), "migration", &["windows"]);
+        }
+
+        fn planned_hash(client: &mut LightClient) -> String {
+            let plan = assert_works_offline(client, "migration", &["plan"]);
+            json::parse(&plan).expect("migration plan returns JSON")["plan_hash"]
+                .as_str()
+                .expect("plan_hash is a string")
+                .to_string()
+        }
+
+        #[test]
+        fn migration_commit_reserves_the_orchard_note_offline() {
+            let mut client = funded_offline_client();
+            let plan_hash = planned_hash(&mut client);
+            let output = assert_works_offline(&mut client, "migration", &["commit", &plan_hash]);
+            assert!(output.contains("committed"), "{output}");
+            let status = assert_works_offline(&mut client, "migration", &["status"]);
+            assert!(
+                status.contains("\"phase\": \"committed\""),
+                "a plan that needs note preparation commits to Committed: {status}"
+            );
+            let reserved =
+                RT.block_on(async { client.wallet().read().await.reserved_output_ids() });
+            assert_eq!(
+                reserved.len(),
+                1,
+                "the committed migration reserves the wallet's one Orchard note"
+            );
+        }
+
+        #[test]
+        fn migration_commit_of_a_funding_note_lands_prepared_offline() {
+            let mut client = RT.block_on(LightClient::new_for_test(
+                SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                    .orchard_note(1_020_000)
+                    .build(),
+            ));
+            let plan = assert_works_offline(&mut client, "migration", &["plan"]);
+            let parsed = json::parse(&plan).expect("migration plan returns JSON");
+            assert_eq!(
+                parsed["preparation_rounds"].as_usize(),
+                Some(0),
+                "a note worth denomination plus fee needs no preparation: {plan}"
+            );
+            let plan_hash = parsed["plan_hash"]
+                .as_str()
+                .expect("plan_hash is a string")
+                .to_string();
+            assert_works_offline(&mut client, "migration", &["commit", &plan_hash]);
+            let status = assert_works_offline(&mut client, "migration", &["status"]);
+            assert!(
+                status.contains("\"phase\": \"prepared\""),
+                "a plan with no preparation round commits straight to Prepared: {status}"
+            );
+        }
+
+        #[test]
+        fn migration_commit_with_a_stale_hash_fails_on_the_plan_never_on_connectivity() {
+            let stale = "11".repeat(32);
+            let rendered = assert_unblocked_offline(
+                &mut funded_offline_client(),
+                "migration",
+                &["commit", &stale],
+            );
+            assert!(rendered.contains("notes changed"), "{rendered}");
+        }
+
+        #[test]
+        fn migration_release_fails_on_the_migration_never_on_connectivity() {
+            let rendered = assert_unblocked_offline(
+                &mut funded_offline_client(),
+                "migration",
+                &["release", "0"],
+            );
+            assert!(rendered.contains("No migration"), "{rendered}");
+        }
+
+        #[test]
+        fn migration_cancel_works_offline() {
+            let mut client = funded_offline_client();
+            let rendered = assert_unblocked_offline(&mut client, "migration", &["cancel"]);
+            assert!(rendered.contains("No migration"), "{rendered}");
+
+            let plan_hash = planned_hash(&mut client);
+            assert_works_offline(&mut client, "migration", &["commit", &plan_hash]);
+            let output = assert_works_offline(&mut client, "migration", &["cancel"]);
+            assert!(output.contains("canceled"), "{output}");
+            let status = assert_works_offline(&mut client, "migration", &["status"]);
+            assert!(status.contains("\"phase\": null"), "{status}");
         }
 
         /// `network status` reads the wallet's mode: an offline session never
@@ -1471,30 +1622,36 @@ mod offline_contract {
             assert_refuses_offline_via_err(&mut funded_offline_client(), "quickshield", &[]);
         }
 
-        /// `migrate` syncs before building anything, so the refusal
-        /// arrives from the sync pre-flight with no proving spent.
         #[test]
-        fn migrate() {
-            assert_refuses_offline_via_err(&mut funded_offline_client(), "migrate", &[]);
+        fn migration_prepare() {
+            assert_refuses_offline_via_err(&mut funded_offline_client(), "migration", &["prepare"]);
         }
 
         #[test]
-        fn migration_continue() {
+        fn migration_schedule() {
             assert_refuses_offline_via_err(
                 &mut funded_offline_client(),
                 "migration",
-                &["continue"],
+                &["schedule", "2"],
             );
         }
 
         #[test]
-        fn migration_execute() {
-            assert_refuses_offline_via_err(&mut funded_offline_client(), "migration", &["execute"]);
+        fn migration_broadcast() {
+            assert_refuses_offline_via_err(
+                &mut funded_offline_client(),
+                "migration",
+                &["broadcast", "0"],
+            );
         }
 
         #[test]
-        fn migration_auto() {
-            assert_refuses_offline_via_err(&mut funded_offline_client(), "migration", &["auto"]);
+        fn migration_send_missed() {
+            assert_refuses_offline_via_err(
+                &mut funded_offline_client(),
+                "migration",
+                &["send_missed", "0"],
+            );
         }
 
         /// `current_price` is mixnet-only (ADR 0011): an offline session
@@ -1681,7 +1838,6 @@ mod finding_pins {
         "network",
         "migration",
         "drain",
-        "split",
     ];
 
     /// HYPOTHESIS: no family's long help advertises a nested `help` that

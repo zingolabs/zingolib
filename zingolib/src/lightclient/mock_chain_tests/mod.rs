@@ -9,6 +9,8 @@
 //! live versions are never removed. They eventually move to a gated
 //! "pre-migration" mod once side-by-side equivalence is documented).
 
+mod migration;
+
 use pepper_sync::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 use pepper_sync::wallet::IronwoodNote;
 use shardtree::store::ShardStore;
@@ -1100,11 +1102,11 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
     check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
 }
 
-/// A failed transmit inside a note-splitting round must not leave any
+/// A failed transmit inside a note-preparation round must not leave any
 /// transaction stranded in `Calculated`. The immediate migration sibling
 /// (`migrate_immediately`) fails every unsent transaction so the
-/// notes it reserved become spendable again. The split round in
-/// `migrate_to_ironwood` must enforce the same invariant, or the
+/// notes it reserved become spendable again. The preparation round in
+/// `broadcast_preparation_round` must enforce the same invariant, or the
 /// transactions queued behind the failing one keep their notes marked
 /// spent by transactions that never reached the network, and a replan
 /// silently excludes that value until expiry self-heals it (~40 blocks
@@ -1168,11 +1170,22 @@ async fn failed_split_round_transmit_strands_calculated_transactions() {
         chain.queued_rejections_before_promotion = u8::MAX;
     }
 
-    let err = client
-        .migrate_to_ironwood(AccountId::ZERO)
+    let plan = client
+        .plan_migration(
+            AccountId::ZERO,
+            crate::wallet::migration::MigrationMode::Scheduled,
+        )
         .await
-        .expect_err("the first split transaction's transmit fails");
-    eprintln!("migrate_to_ironwood returned: {err:?}");
+        .expect("planning is pure");
+    client
+        .commit_migration(AccountId::ZERO, &plan)
+        .await
+        .expect("the plan commits");
+    let err = client
+        .broadcast_preparation_round()
+        .await
+        .expect_err("the first preparation transaction's transmit fails");
+    eprintln!("broadcast_preparation_round returned: {err:?}");
 
     // Diagnostics and precondition: the round must have reached the
     // transmit stage (exactly one transaction Failed there).
@@ -1333,10 +1346,17 @@ mod perspective {
     async fn immediate_migration_is_a_migration_value_transfer() {
         use zip32::AccountId;
 
-        let (net, mut client) = orchard_funded_client().await;
+        use crate::wallet::migration::MigrationMode;
 
+        let (net, mut client) = orchard_funded_client().await;
+        client.sync_and_await().await.unwrap();
+
+        let plan = client
+            .plan_migration(AccountId::ZERO, MigrationMode::Immediate)
+            .await
+            .expect("planning is pure");
         let summary = client
-            .migrate_immediately(AccountId::ZERO)
+            .migrate_immediately(AccountId::ZERO, &plan)
             .await
             .expect("the immediate migration builds and transmits");
         assert_eq!(
@@ -2895,14 +2915,12 @@ mod mixnet_wire_offline {
     use crate::destination::servers::{DestinationServerSet, IndexerConfig, Location, Role, Trust};
     use crate::lightclient::LightClient;
     use crate::lightclient::error::LightClientError;
-    use crate::lightclient::migrate::transmission_route::{
-        MigrationWire, RoutedTransmissionClient,
-    };
+    use crate::lightclient::migrate::broadcast_route::{MigrationWire, RoutedBroadcastClient};
     use crate::lightclient::send::{TransmitReport, TransmitRoute};
     use crate::testutils::mock_indexer::Rules;
     use crate::testutils::socks5_relay::{Destination, Socks5Relay, destination_of};
-    use crate::wallet::migration::transmission::{
-        PartTransmissionError, TransmissionClient as _, TransmissionRoute,
+    use crate::wallet::migration::broadcast::{
+        BroadcastClient as _, BroadcastRoute, TransferBroadcastError,
     };
     use nonempty::NonEmpty;
 
@@ -3139,7 +3157,7 @@ mod mixnet_wire_offline {
                 .await;
         let expiry = BlockHeight::from_u32(1);
         let client_for = |target: &str| {
-            RoutedTransmissionClient::new(
+            RoutedBroadcastClient::new(
                 MigrationWire::Mixnet(crate::mixnet::MixnetConduit::over(relay.addr()).dial()),
                 vec![uri(target)],
             )
@@ -3151,7 +3169,7 @@ mod mixnet_wire_offline {
             .expect("the acceptor takes the part");
         assert_eq!(
             receipt.route,
-            TransmissionRoute::Mixnet {
+            BroadcastRoute::Mixnet {
                 destination: "localhost".to_string(),
                 via_socks5: relay.addr().to_string(),
             }
@@ -3160,17 +3178,17 @@ mod mixnet_wire_offline {
 
         assert!(matches!(
             client_for(REJECTOR_URI).submit(part.clone(), expiry).await,
-            Err(PartTransmissionError::Rejected(_))
+            Err(TransferBroadcastError::Rejected { .. })
         ));
         assert!(matches!(
             client_for(SUPPRESSOR_URI)
                 .submit(part.clone(), expiry)
                 .await,
-            Err(PartTransmissionError::Transport(_))
+            Err(TransferBroadcastError::Transport { .. })
         ));
         assert!(matches!(
             client_for(UNROUTED_URI).submit(part, expiry).await,
-            Err(PartTransmissionError::Transport(_))
+            Err(TransferBroadcastError::Transport { .. })
         ));
     }
 }

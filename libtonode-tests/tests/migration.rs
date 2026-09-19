@@ -4,22 +4,28 @@
 //! (pepper-sync V3 note scanning, the lightwalletd Ironwood parser and
 //! zebra witness serving), so it is ignored until those land. The other
 //! tests exercise the migration state machine against a live regtest chain
-//! with today's stack: bound-note reservation, external-spend invalidation
-//! and the no-sync transmit path.
+//! with today's stack: the funding-note reservation, external-spend
+//! invalidation, the release of a transfer and the no-sync broadcast path.
+
+use std::time::Duration;
 
 use pepper_sync::wallet::{NoteInterface, OrchardNote, OutputId, OutputInterface};
-use zcash_local_net::validator::Validator;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::PoolType;
+use zingolib::config::{ClientConfig, WalletConfig};
 use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
+use zingolib::lightclient::error::{LightClientError, MigrationError};
+use zingolib::lightclient::migrate::{MigrationPlan, TransferBroadcastResult, TransferProgress};
 use zingolib::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
 };
+use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs;
+use zingolib::wallet::error::ProposeSendError;
 use zingolib::wallet::migration::{
-    BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId, PartRecord,
-    PartState, RecommendedAction, SigningStrategy, bucket_index,
+    BoundNote, MigrationMode, MigrationParams, MigrationPhase, MigrationState, TransferId,
+    TransferRecord, TransferState, bucket_index,
 };
 use zingolib_testutils::scenarios::{
     self, generate_n_blocks_return_new_height, increase_height_and_wait_for_client,
@@ -64,13 +70,20 @@ fn note_by_value(notes: &[NoteRecord], value: u64) -> &NoteRecord {
         .unwrap_or_else(|| panic!("no note of {value} zatoshis in the wallet"))
 }
 
-/// Persists a hand-built [`MigrationState`] whose parts are bound to real
-/// wallet notes, standing in for the completed note-splitting phase so the
-/// Phase 2 machinery can be exercised before Ironwood lands on the node
-/// path. `bucket_index` assigns every part to that bucket. `None` leaves
-/// them bound but unscheduled. `bucket_modulus` overrides the provisional
-/// bucket geometry: every consumer of the schedule reads it from the
-/// injected state, so a test can shrink the chain it must mine.
+fn note_by_id(notes: &[NoteRecord], output_id: OutputId) -> &NoteRecord {
+    notes
+        .iter()
+        .find(|note| note.output_id == output_id)
+        .expect("the note is still in the wallet")
+}
+
+/// Persists a hand-built [`MigrationState`] whose transfers are bound to
+/// real wallet notes, standing in for a committed schedule so the broadcast
+/// machinery can be exercised before Ironwood lands on the node path.
+/// `bucket_index` assigns every transfer to that window. `None` leaves them
+/// bound but unscheduled. `bucket_modulus` overrides the provisional bucket
+/// geometry: every consumer of the schedule reads it from the injected
+/// state, so a test can shrink the chain it must mine.
 async fn inject_scheduled_migration(
     client: &LightClient,
     bound: Vec<(u64, OutputId, [u8; 32])>,
@@ -80,65 +93,121 @@ async fn inject_scheduled_migration(
     let mut wallet = client.wallet().write().await;
     let mut params = MigrationParams::provisional(wallet.chain_type());
     if let Some(bucket_modulus) = bucket_modulus {
-        params.bucket_modulus = bucket_modulus;
+        params = params.with_bucket_modulus(bucket_modulus);
     }
-    let parts = bound
+    let transfers = bound
         .into_iter()
         .enumerate()
         .map(|(index, (denomination, output_id, nullifier))| {
-            let mut part = PartRecord::new(
-                PartId(u32::try_from(index).expect("test part count fits u32")),
+            let mut transfer = TransferRecord::new(
+                TransferId(u32::try_from(index).expect("test transfer count fits u32")),
                 denomination,
                 BoundNote {
                     output_id,
                     nullifier,
-                    // Never read on these paths: materialization revalidates
-                    // it, but these tests stop before materializing.
                     commitment: [0; 32],
                 },
             );
             if let Some(bucket_index) = bucket_index {
-                part.assign(bucket_index).expect("fresh parts are bound");
+                transfer
+                    .assign(bucket_index)
+                    .expect("fresh transfers are bound");
             }
-            part
+            transfer
         })
         .collect();
-    wallet.migration = Some(MigrationState {
-        consent: ConsentBinding {
-            params_hash: params.params_hash(),
-            plan_hash: [0; 32],
-            consented_at: 0,
-        },
+    wallet.set_migration(Some(MigrationState::scheduled_for_tests(
         params,
-        strategy: SigningStrategy::LazyAtBoundary,
-        mode: zingolib::wallet::migration::MigrationMode::Scheduled,
-        account: AccountId::ZERO,
-        phase: MigrationPhase::PartsScheduled,
-        parts,
-    });
+        transfers,
+        AccountId::ZERO,
+    )));
 }
 
-/// A part's bound note is excluded from ordinary input selection while
-/// another note can satisfy the request, the fallback pass consumes it when
-/// nothing else can, and the external spend then invalidates the part on
-/// reconciliation. The remainder left behind sits exactly at the Sweep
-/// Minimum, so under the ratified completion rule (#2493 finding 8) no
-/// replan is offered (a replan would strand everything it planned), and
-/// the next reconciliation concludes the migration with the remainder
-/// disclosed as its residual.
+async fn stamp_newest_wallet_block_now(client: &LightClient) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("the clock is past the epoch")
+        .as_secs() as u32;
+    client
+        .wallet()
+        .write()
+        .await
+        .wallet_blocks
+        .values_mut()
+        .next_back()
+        .expect("a synced wallet holds blocks")
+        .set_time_for_test(now);
+}
+
+async fn orchard_balances(client: &LightClient) -> (u64, u64) {
+    let balance = client
+        .wallet()
+        .read()
+        .await
+        .account_balance(AccountId::ZERO)
+        .unwrap();
+    (
+        balance
+            .confirmed_orchard_balance
+            .map_or(0, |zats| zats.into_u64()),
+        balance
+            .reserved_orchard_balance
+            .map_or(0, |zats| zats.into_u64()),
+    )
+}
+
+/// A second client restored from the recipient's seed into its own data
+/// directory: the same keys, no migration state, so its sends are external
+/// to the migration.
+async fn twin_of(recipient: &LightClient) -> LightClient {
+    let chain_type = recipient.wallet().read().await.chain_type();
+    let wallet_dir = std::env::temp_dir().join(format!(
+        "zingo-migration-twin-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("the clock is past the epoch")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&wallet_dir).unwrap();
+    let config = ClientConfig::builder()
+        .set_indexer_uri(
+            recipient
+                .indexer_uri()
+                .expect("the recipient is connected to the local net"),
+        )
+        .set_chain_type(chain_type)
+        .set_wallet_dir(wallet_dir)
+        .set_wallet_config(WalletConfig::MnemonicPhrase {
+            mnemonic_phrase: zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+            no_of_accounts: 1.try_into().unwrap(),
+            birthday: 1,
+            wallet_settings: default_test_wallet_settings(),
+        })
+        .build()
+        .unwrap();
+    let mut twin = LightClient::new_clearnet_consented(config, true)
+        .await
+        .unwrap();
+    twin.sync_and_await().await.unwrap();
+    twin
+}
+
+/// The funding note of a scheduled transfer is reserved: an ordinary send
+/// never selects it while a free note can pay, and a send only the reserved
+/// note could pay is refused with the typed reservation error instead of
+/// consuming it. Releasing the transfer frees the note again, and the
+/// released transfer counts as terminal, so the migration completes with
+/// the remaining Orchard balance disclosed as its residual.
 #[tokio::test]
-async fn bound_note_reservation_and_external_spend_invalidation() {
-    // Two V2 Orchard notes: the 100_000 note plays a bound split note, the
-    // 50_000 note is free. The whole test then stays below the activation
-    // height: reservation and reconciliation are era-independent, and
-    // pre-activation orchard-only sends keep the note values' fee
-    // arithmetic balanced.
+async fn a_reserved_funding_note_is_refused_to_ordinary_sends_until_released() {
     let (local_net, faucet, mut recipient) =
         pre_ironwood_funded_recipient(|_| vec![100_000, 50_000]).await;
     let faucet_address = get_base_address_macro!(faucet, "unified");
 
     let notes = orchard_note_records(&recipient).await;
     let reserved = note_by_value(&notes, 100_000);
+    let reserved_id = reserved.output_id;
     inject_scheduled_migration(
         &recipient,
         vec![(100_000, reserved.output_id, reserved.nullifier)],
@@ -146,10 +215,17 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
         None,
     )
     .await;
-    let reserved_id = reserved.output_id;
+    assert_eq!(
+        recipient.wallet().read().await.reserved_output_ids(),
+        vec![reserved_id],
+        "the scheduled transfer reserves exactly its funding note"
+    );
+    assert_eq!(
+        orchard_balances(&recipient).await,
+        (50_000, 100_000),
+        "the confirmed Orchard balance excludes the reserved note, reported on its own"
+    );
 
-    // An ordinary send the free note can cover must leave the bound note
-    // alone.
     from_inputs::quick_send(&mut recipient, vec![(&faucet_address, 20_000, None)])
         .await
         .unwrap();
@@ -158,89 +234,153 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
         .unwrap();
     let notes = orchard_note_records(&recipient).await;
     assert!(
-        notes
-            .iter()
-            .find(|note| note.output_id == reserved_id)
-            .expect("the bound note is still in the wallet")
+        note_by_id(&notes, reserved_id)
             .spending_transaction
             .is_none(),
-        "an ordinary send must not consume a bound note while another note suffices"
+        "an ordinary send must not consume a reserved note while another note suffices"
     );
     assert!(
         note_by_value(&notes, 50_000).spending_transaction.is_some(),
         "the free note covers the ordinary send"
     );
 
-    // A send only the bound note can cover goes through anyway: the
-    // reservation biases selection, it never blocks a spend.
+    let refused = from_inputs::propose(&mut recipient, vec![(&faucet_address, 100_000, None)])
+        .await
+        .expect_err("a send only the reserved note could pay is refused");
+    assert!(
+        matches!(
+            refused,
+            ProposeSendError::ReservedForMigration { reserved: 100_000 }
+        ),
+        "the refusal carries the reserved value: {refused:?}"
+    );
+    let notes = orchard_note_records(&recipient).await;
+    assert!(
+        note_by_id(&notes, reserved_id)
+            .spending_transaction
+            .is_none(),
+        "the refusal leaves the reserved note untouched"
+    );
+
+    recipient.release_transfer(TransferId(0)).await.unwrap();
+    assert!(
+        recipient
+            .wallet()
+            .read()
+            .await
+            .reserved_output_ids()
+            .is_empty(),
+        "a released transfer reserves nothing"
+    );
+    let status = recipient.migration_status().await.unwrap();
+    assert_eq!(status.transfers[0].progress, TransferProgress::Released);
+
     from_inputs::quick_send(&mut recipient, vec![(&faucet_address, 100_000, None)])
         .await
-        .unwrap();
+        .expect("the released note pays the same send");
     increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
     let notes = orchard_note_records(&recipient).await;
     assert!(
-        notes
-            .iter()
-            .find(|note| note.output_id == reserved_id)
-            .expect("the bound note is still in the wallet")
+        note_by_id(&notes, reserved_id)
             .spending_transaction
             .is_some(),
-        "the fallback pass consumes the bound note when nothing else can pay"
+        "the released note is spent by the ordinary send"
     );
 
-    // Reconciliation sees the external spend, invalidates the part and
-    // recommends replanning the remainder.
-    let report = recipient.reconcile_migration().await.unwrap();
-    assert!(
-        report.actions.iter().any(|action| matches!(
-            action,
-            RecommendedAction::MarkInvalidated { part } if *part == PartId(0)
-        )),
-        "the external spend must invalidate the part: {:?}",
-        report.actions
+    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        .await
+        .unwrap();
+    let (confirmed, reserved) = orchard_balances(&recipient).await;
+    assert_eq!(reserved, 0);
+    let wallet = recipient.wallet().read().await;
+    assert_eq!(
+        *wallet.migration().unwrap().phase(),
+        MigrationPhase::Complete {
+            residual: confirmed
+        },
+        "with its only transfer released the migration completes, disclosing the remaining \
+         Orchard balance as its residual"
     );
-    // The surviving change note is exactly the Sweep Minimum (10_000):
-    // not worth replanning, so no replan is offered (ratified completion
-    // rule; the prior behavior offered a replan that could only strand).
+}
+
+/// A spend of a funding note from outside the migration (a second wallet on
+/// the same seed, which holds no migration state) invalidates its transfer
+/// on the next reconciliation, which runs after the synchronization that
+/// sees the spend. With every transfer terminal the migration completes.
+#[tokio::test]
+async fn an_external_spend_of_a_funding_note_invalidates_its_transfer() {
+    let (local_net, faucet, mut recipient) =
+        pre_ironwood_funded_recipient(|_| vec![100_000, 50_000]).await;
+    let faucet_address = get_base_address_macro!(faucet, "unified");
+
+    let notes = orchard_note_records(&recipient).await;
+    let reserved = note_by_value(&notes, 100_000);
+    let reserved_id = reserved.output_id;
+    inject_scheduled_migration(
+        &recipient,
+        vec![(100_000, reserved.output_id, reserved.nullifier)],
+        None,
+        None,
+    )
+    .await;
+
+    let mut twin = twin_of(&recipient).await;
+    assert_eq!(
+        orchard_balances(&twin).await,
+        (150_000, 0),
+        "the twin holds the same notes and reserves nothing"
+    );
+    from_inputs::quick_send(&mut twin, vec![(&faucet_address, 100_000, None)])
+        .await
+        .expect("the twin spends both notes: the amount plus the fee exceeds either one");
+    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        .await
+        .unwrap();
+
+    let notes = orchard_note_records(&recipient).await;
     assert!(
-        !report
-            .actions
-            .iter()
-            .any(|action| matches!(action, RecommendedAction::ReplanRemainder)),
-        "a remainder at the Sweep Minimum must not prompt a replan: {:?}",
-        report.actions
+        note_by_id(&notes, reserved_id)
+            .spending_transaction
+            .is_some(),
+        "the recipient sees the external spend of its funding note"
+    );
+    let status = recipient.migration_status().await.unwrap();
+    assert_eq!(
+        status.transfers[0].progress,
+        TransferProgress::Invalid,
+        "the external spend invalidates the transfer: {status:?}"
     );
     {
         let wallet = recipient.wallet().read().await;
         assert_eq!(
-            wallet.migration.as_ref().unwrap().parts[0].state,
-            PartState::Invalidated
+            wallet.migration().unwrap().transfers()[0].state,
+            TransferState::Invalidated,
+            "reconciliation after the sync applies the invalidation"
+        );
+        assert!(
+            wallet.reserved_output_ids().is_empty(),
+            "an invalidated transfer reserves nothing"
         );
     }
 
-    // With every part terminal and nothing worth replanning, the next
-    // reconciliation concludes the migration, disclosing the stranded
-    // remainder as its residual.
-    let report = recipient.reconcile_migration().await.unwrap();
-    assert!(
-        report
-            .actions
-            .iter()
-            .any(|action| matches!(action, RecommendedAction::MarkComplete { residual: 10_000 })),
-        "an all-terminal migration with a Sweep-Minimum remainder must \
-         complete: {:?}",
-        report.actions
-    );
+    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        .await
+        .unwrap();
+    let (confirmed, _) = orchard_balances(&recipient).await;
     let wallet = recipient.wallet().read().await;
     assert_eq!(
-        wallet.migration.as_ref().unwrap().phase,
-        MigrationPhase::Complete { residual: 10_000 }
+        *wallet.migration().unwrap().phase(),
+        MigrationPhase::Complete {
+            residual: confirmed
+        },
+        "with its only transfer invalidated the migration completes, disclosing the change \
+         the twin's send left behind as its residual"
     );
 }
 
-/// A due part whose boundary tree state is unavailable is skipped with no
+/// A due transfer whose boundary tree state is unavailable is skipped with no
 /// writes and no synchronization (the ZIP 318 decoupling requirement). The
 /// wallet leaps past the boundary in a single sync, so the boundary
 /// checkpoint falls outside shardtree's retention window and the witness
@@ -249,7 +389,7 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
 async fn unavailable_boundary_tree_state_skips_without_sync() {
     use pepper_sync::sync::MAX_REORG_ALLOWANCE;
 
-    // The blocks mined behind the wallet's back before the transmit
+    // The blocks mined behind the wallet's back before the broadcast
     // attempt: enough to prove the skip performs no hidden sync, few
     // enough to stay inside the bucket.
     const HIDDEN_BLOCKS: u32 = 10;
@@ -268,7 +408,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     // retention, so that boundary's checkpoint is pruned, and far enough
     // below the third boundary that the hidden blocks stay inside the
     // bucket. The second boundary rather than the first, because the
-    // transmit path skips a part whose boundary lies below the NU6.3
+    // broadcast path skips a transfer whose boundary lies below the NU6.3
     // activation, and the deferred activation below sits past the first.
     const TARGET_TIP: u32 = 2 * PRUNED_BUCKET_MODULUS
         + MAX_REORG_ALLOWANCE
@@ -282,7 +422,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     // earlier; the deferred activation leaves margin beyond that, and
     // still lies below [`TARGET_TIP`] so the leap crosses it.
     const TRANSPARENT_DEFERRED_NU6_3: u32 = COINBASE_MATURITY_BLOCKS + 30;
-    // The part is scheduled at the second bucket boundary; the transmit
+    // The transfer is scheduled at the second bucket boundary; the broadcast
     // path requires that boundary to sit at or above the activation.
     const _: () = assert!(2 * PRUNED_BUCKET_MODULUS >= TRANSPARENT_DEFERRED_NU6_3);
 
@@ -298,8 +438,8 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     .await;
 
     // Mature the faucet's coinbase, shield it into pre-Ironwood Orchard,
-    // and fund the recipient with the note the part will bind, all below
-    // the activation height.
+    // and fund the recipient with the note the transfer will bind, all
+    // below the activation height.
     increase_height_and_wait_for_client(&local_net, &mut faucet, COINBASE_MATURITY_BLOCKS)
         .await
         .unwrap();
@@ -358,72 +498,160 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     .await;
 
     // New blocks the wallet has not seen: a hidden sync inside the
-    // transmit path would advance the wallet's known height.
+    // broadcast path would advance the wallet's known height.
     generate_n_blocks_return_new_height(&local_net, HIDDEN_BLOCKS).await;
 
-    let sent = recipient.transmit_due_parts().await.unwrap();
-    assert!(sent.is_empty(), "nothing must be transmitted: {sent:?}");
+    stamp_newest_wallet_block_now(&recipient).await;
+    let report = recipient
+        .broadcast_due_transfers(Duration::ZERO)
+        .await
+        .unwrap();
+    assert!(
+        report.sent_txids().is_empty(),
+        "nothing must be transmitted: {report:?}"
+    );
+    assert!(
+        report.halted.is_none(),
+        "a skip is not a failure: {report:?}"
+    );
+    assert!(
+        report
+            .outcomes
+            .iter()
+            .all(|outcome| outcome.result == TransferBroadcastResult::Slid),
+        "an unwitnessable transfer slides to a coming window: {report:?}"
+    );
 
     let wallet = recipient.wallet().read().await;
-    let part = &wallet.migration.as_ref().unwrap().parts[0];
-    assert_eq!(part.state, PartState::Assigned, "a skip writes nothing");
-    assert_eq!(part.attempts, 0, "a skip records no attempt");
-    assert!(part.anchor_witness.is_none());
+    let transfer = &wallet.migration().unwrap().transfers()[0];
+    assert_eq!(
+        transfer.state,
+        TransferState::Assigned,
+        "a skip writes nothing"
+    );
+    assert_eq!(transfer.attempts, 0, "a skip records no attempt");
+    assert!(transfer.anchor_witness.is_none());
     assert_eq!(
         wallet.sync_state.last_known_chain_height(),
         Some(known_height),
-        "the transmit path must never synchronize"
+        "the broadcast path must never synchronize"
     );
 }
 
-/// The full two-phase run: note splitting to denomination-sized notes, then
-/// one canonical part per note, ending with every part confirmed and the
-/// migrated value equal to the sum of the planned denominations.
+/// The full two-phase run through the explicit commands: commit the plan,
+/// broadcast the note-preparation rounds until every note is a funding
+/// note, commit a schedule, then broadcast each window's transfers, ending
+/// with every transfer confirmed and the migrated value equal to the sum of
+/// the planned denominations.
 #[ignore = "pending Ironwood node support: pepper-sync V3 scanning, lightwalletd Ironwood \
             parser and zebra witness serving"]
 #[tokio::test]
 async fn two_phase_migration_end_to_end() {
-    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
-    let recipient_address = get_base_address_macro!(recipient, "unified");
+    const BLOCK_BUDGET: u32 = 2_000;
 
     // An amount that quantizes into several denominations plus dust.
-    from_inputs::quick_send(&mut faucet, vec![(&recipient_address, 1_250_000, None)])
-        .await
-        .unwrap();
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-        .await
-        .unwrap();
+    let (local_net, _faucet, mut recipient) =
+        pre_ironwood_funded_recipient(|_| vec![1_250_000]).await;
+    cross_ironwood_activation(&local_net, &mut recipient).await;
 
     let plan = recipient
-        .plan_ironwood_migration(AccountId::ZERO)
+        .plan_migration(AccountId::ZERO, MigrationMode::Scheduled)
         .await
         .unwrap();
-    let expected_parts = plan.parts.clone();
-    let expected_migrated: u64 = expected_parts.iter().sum();
-    assert!(!expected_parts.is_empty());
-
-    // The one-call waits on confirmations, so blocks are mined alongside it
-    // until it returns.
-    let summary = {
-        let migrate = recipient.migrate_to_ironwood(AccountId::ZERO);
-        tokio::pin!(migrate);
-        loop {
-            tokio::select! {
-                result = &mut migrate => break result.unwrap(),
-                () = tokio::time::sleep(std::time::Duration::from_secs(2)) => {
-                    local_net.validator().generate_blocks(1).await.unwrap();
-                }
-            }
-        }
+    let MigrationPlan::Scheduled(scheduled) = &plan else {
+        panic!("a scheduled plan request yields a scheduled plan");
     };
-    assert_eq!(summary.part_txids.len(), expected_parts.len());
+    let expected_transfers = scheduled.transfers.clone();
+    let expected_migrated: u64 = expected_transfers.iter().sum();
+    assert!(!expected_transfers.is_empty());
+    assert!(
+        !scheduled.preparation_rounds.is_empty(),
+        "a single large note needs note preparation"
+    );
+
+    recipient
+        .commit_migration(AccountId::ZERO, &plan)
+        .await
+        .unwrap();
+    assert_eq!(
+        recipient.migration_status().await.unwrap().phase,
+        Some(MigrationPhase::Committed)
+    );
+
+    let mut preparation_txids = Vec::new();
+    let mut blocks_mined = 0;
+    loop {
+        match recipient.broadcast_preparation_round().await {
+            Ok(round) => preparation_txids.extend(round.txids),
+            Err(LightClientError::MigrationError(MigrationError::AlreadyPrepared)) => break,
+            Err(LightClientError::MigrationError(MigrationError::RoundPending { .. })) => {
+                blocks_mined += 1;
+                assert!(
+                    blocks_mined < BLOCK_BUDGET,
+                    "note preparation did not confirm within {BLOCK_BUDGET} blocks"
+                );
+                increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+                    .await
+                    .unwrap();
+            }
+            Err(other) => panic!("note preparation failed: {other:?}"),
+        }
+    }
+    assert!(!preparation_txids.is_empty());
+    assert_eq!(
+        recipient.migration_status().await.unwrap().phase,
+        Some(MigrationPhase::Prepared)
+    );
+
+    let proposed = recipient.propose_schedule(1).await.unwrap();
+    assert_eq!(proposed.transfers.len(), expected_transfers.len());
+    recipient.commit_schedule(&proposed).await.unwrap();
+    assert_eq!(
+        recipient.migration_status().await.unwrap().phase,
+        Some(MigrationPhase::Scheduled)
+    );
+    assert_eq!(
+        recipient.wallet().read().await.reserved_output_ids().len(),
+        expected_transfers.len(),
+        "the committed schedule reserves one funding note per transfer"
+    );
+
+    let mut transfer_txids = Vec::new();
+    let mut blocks_mined = 0;
+    loop {
+        stamp_newest_wallet_block_now(&recipient).await;
+        let report = recipient
+            .broadcast_due_transfers(Duration::ZERO)
+            .await
+            .unwrap();
+        assert!(report.halted.is_none(), "{report:?}");
+        transfer_txids.extend(report.sent_txids());
+        if matches!(
+            recipient.migration_status().await.unwrap().phase,
+            Some(MigrationPhase::Complete { .. })
+        ) {
+            break;
+        }
+        blocks_mined += 1;
+        assert!(
+            blocks_mined < BLOCK_BUDGET,
+            "the schedule did not complete within {BLOCK_BUDGET} blocks"
+        );
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+            .await
+            .unwrap();
+    }
+    assert_eq!(transfer_txids.len(), expected_transfers.len());
 
     let status = recipient.migration_status().await.unwrap();
-    assert!(matches!(
-        status.phase,
-        Some(MigrationPhase::Complete { .. })
-    ));
-    assert_eq!(status.parts_confirmed, status.parts_total);
+    assert_eq!(status.transfers_confirmed, status.transfers_total);
+    assert!(
+        status
+            .transfers
+            .iter()
+            .all(|transfer| transfer.progress == TransferProgress::Confirmed),
+        "{status:?}"
+    );
 
     // The state machine's own accounting of the migrated value...
     assert_eq!(status.value_migrated, expected_migrated);
@@ -442,18 +670,18 @@ async fn two_phase_migration_end_to_end() {
         "the migrated value must appear in the Ironwood pool"
     );
 
-    // Every confirmed part spends Orchard into the wallet's own Ironwood pool,
-    // so it must be classified as a migration value transfer, not a plain
-    // send-to-self.
+    // Every confirmed transfer spends Orchard into the wallet's own Ironwood
+    // pool, so it must be classified as a migration value transfer, not a
+    // plain send-to-self.
     let value_transfers = recipient.value_transfers(true).await.unwrap();
-    for part_txid in &summary.part_txids {
+    for transfer_txid in &transfer_txids {
         assert!(
-            value_transfers.iter().any(|vt| vt.txid == *part_txid
+            value_transfers.iter().any(|vt| vt.txid == *transfer_txid
                 && vt.kind
                     == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
                         SelfSendValueTransfer::Migration,
                     ))),
-            "part {part_txid:?} must be classified as a migration value transfer"
+            "transfer {transfer_txid:?} must be classified as a migration value transfer"
         );
     }
 }
@@ -568,7 +796,7 @@ async fn cross_ironwood_activation(local_net: &MeteredNet, recipient: &mut Light
 }
 
 /// The immediate migration: every spendable Orchard note is spent into Ironwood in
-/// one pass, with no note splitting and no schedule. The Orchard pool empties
+/// one pass, with no note preparation and no schedule. The Orchard pool empties
 /// down to the disclosed dust, and the same value less fees appears in the
 /// Ironwood pool. That second half is what proves the funds actually crossed.
 #[tokio::test]
@@ -590,24 +818,34 @@ async fn migrate_all_orchard_to_ironwood() {
         .into_u64();
     assert_eq!(orchard_before, 317_000 + 1_250_000 + 88_000);
 
+    recipient.sync_and_await().await.unwrap();
     let plan = recipient
-        .plan_immediate_migration(AccountId::ZERO)
+        .plan_migration(AccountId::ZERO, MigrationMode::Immediate)
         .await
         .unwrap();
+    let MigrationPlan::Immediate(immediate) = &plan else {
+        panic!("an immediate plan request yields an immediate plan");
+    };
     // Three modest notes fit one transaction: no chunking here.
-    assert_eq!(plan.transactions.len(), 1);
+    assert_eq!(immediate.transactions.len(), 1);
     assert_eq!(
-        plan.migrated + plan.fee + plan.residual,
+        immediate.migrated + immediate.fee + immediate.residual,
         orchard_before,
         "the plan must account for every zatoshi"
     );
+    let (expected_transactions, expected_migrated) =
+        (immediate.transactions.len(), immediate.migrated);
 
     let summary = recipient
-        .migrate_immediately(AccountId::ZERO)
+        .migrate_immediately(AccountId::ZERO, &plan)
         .await
         .unwrap();
-    assert_eq!(summary.txids.len(), plan.transactions.len());
-    assert_eq!(summary.migrated, plan.migrated);
+    assert_eq!(summary.txids.len(), expected_transactions);
+    assert_eq!(summary.migrated, expected_migrated);
+    assert!(
+        recipient.wallet().read().await.migration().is_none(),
+        "an immediate migration stores no migration state"
+    );
 
     increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
@@ -633,7 +871,7 @@ async fn migrate_all_orchard_to_ironwood() {
             .map(|zats| zats.into_u64())
             .unwrap_or(0),
         summary.migrated,
-        "the immediate migrationed value must appear in the Ironwood pool"
+        "the immediately migrated value must appear in the Ironwood pool"
     );
 
     // The immediate migration moves Orchard funds into the wallet's own Ironwood pool, so
@@ -660,25 +898,29 @@ async fn immediate_migration_chunks_a_fragmented_wallet() {
     // transaction. Distinct values keep every payment in the ZIP-321
     // request unique.
     let (local_net, _faucet, mut recipient) = pre_ironwood_funded_recipient(|params| {
-        (0..params.max_actions_per_split_tx as u64 + 3)
+        (0..params.max_actions_per_split_tx() as u64 + 3)
             .map(|index| 100_000 + index)
             .collect()
     })
     .await;
     cross_ironwood_activation(&local_net, &mut recipient).await;
 
+    recipient.sync_and_await().await.unwrap();
     let plan = recipient
-        .plan_immediate_migration(AccountId::ZERO)
+        .plan_migration(AccountId::ZERO, MigrationMode::Immediate)
         .await
         .unwrap();
+    let MigrationPlan::Immediate(immediate) = &plan else {
+        panic!("an immediate plan request yields an immediate plan");
+    };
     assert_eq!(
-        plan.transactions.len(),
+        immediate.transactions.len(),
         2,
         "the notes must chunk into two transactions"
     );
 
     let summary = recipient
-        .migrate_immediately(AccountId::ZERO)
+        .migrate_immediately(AccountId::ZERO, &plan)
         .await
         .unwrap();
     assert_eq!(summary.txids.len(), 2);

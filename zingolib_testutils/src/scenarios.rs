@@ -49,6 +49,7 @@ use zingolib::testutils::port_to_localhost_uri;
 use zingolib::testutils::sync_to_target_height;
 use zingolib::testutils::timed;
 use zingolib::wallet::keys::unified::ReceiverSelection;
+use zingolib::wallet::migration::MigrationMode;
 
 /// Default regtest network processes for testing and zingo-cli regtest mode:
 /// the Core stack, zainod in front of zebrad.
@@ -439,8 +440,12 @@ async fn normalize_shielded_faucet_balance<V, I>(
         .unwrap();
         local_net.validator().generate_blocks(1).await.unwrap();
         sync_client_to_validator_tip(local_net, faucet).await;
+        let plan = faucet
+            .plan_migration(zip32::AccountId::ZERO, MigrationMode::Immediate)
+            .await
+            .unwrap();
         let migration_summary = faucet
-            .migrate_immediately(zip32::AccountId::ZERO)
+            .migrate_immediately(zip32::AccountId::ZERO, &plan)
             .await
             .unwrap();
         assert_eq!(

@@ -111,6 +111,7 @@ pub enum RegtestSeedVersion {
 pub enum HospitalMuseumVersion {
     /// wallet was last saved in this serialization version
     V27,
+    V42Migration,
 }
 #[allow(missing_docs)] // described in parent enum
 #[non_exhaustive]
@@ -129,7 +130,35 @@ pub enum AbsurdAmountVersion {
     OrchOnly,
 }
 
+const MIGRATION_FIXTURE_NU6_3_HEIGHT: u32 = 16;
+
 impl NetworkSeedVersion {
+    #[must_use]
+    pub fn chain_type(&self) -> ChainType {
+        match self {
+            NetworkSeedVersion::Regtest(RegtestSeedVersion::HospitalMuseum(
+                HospitalMuseumVersion::V42Migration,
+            )) => ChainType::Regtest(
+                ActivationHeights::builder()
+                    .set_overwinter(Some(1))
+                    .set_sapling(Some(1))
+                    .set_blossom(Some(1))
+                    .set_heartwood(Some(1))
+                    .set_canopy(Some(1))
+                    .set_nu5(Some(2))
+                    .set_nu6(Some(2))
+                    .set_nu6_1(Some(5))
+                    .set_nu6_2(Some(5))
+                    .set_nu6_3(Some(MIGRATION_FIXTURE_NU6_3_HEIGHT))
+                    .set_nu7(None)
+                    .build(),
+            ),
+            NetworkSeedVersion::Regtest(_) => ChainType::Regtest(ActivationHeights::default()),
+            NetworkSeedVersion::Testnet(_) => ChainType::Testnet,
+            NetworkSeedVersion::Mainnet(_) => ChainType::Mainnet,
+        }
+    }
+
     /// Loads wallet from test wallet files.
     // TODO: improve with macro
     #[must_use]
@@ -138,6 +167,8 @@ impl NetworkSeedVersion {
             NetworkSeedVersion::Regtest(seed) => match seed {
                 RegtestSeedVersion::HospitalMuseum(version) => match version {
                     HospitalMuseumVersion::V27 => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/regtest/hmvasmuvwmssvichcarbpoct/v27/zingo-wallet.dat",
+                    ),
+                    HospitalMuseumVersion::V42Migration => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/regtest/hmvasmuvwmssvichcarbpoct/v42_migration/zingo-wallet.dat",
                     ),
                 },
                 RegtestSeedVersion::AbandonAbandon(version) => match version {
@@ -196,7 +227,7 @@ impl NetworkSeedVersion {
                 let indexer_uri = MAINNET_INDEXER.parse::<Uri>().unwrap();
                 ClientConfig::builder()
                     .set_indexer_uri(indexer_uri)
-                    .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
+                    .set_chain_type(self.chain_type())
                     .set_wallet_name(
                         self.example_wallet_path()
                             .file_name()

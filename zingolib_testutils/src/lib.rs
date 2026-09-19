@@ -2,6 +2,7 @@
 
 pub mod attribution;
 pub mod chain_cache;
+pub mod fixtures;
 pub mod observability;
 pub mod scenarios;
 pub mod setup_metrics;
