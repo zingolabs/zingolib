@@ -98,6 +98,9 @@ pub enum WalletError {
     /// Persisted migration state failed an integrity check.
     #[error("Migration state corrupt: {0}")]
     MigrationStateCorrupt(String),
+    /// The migration's notes need preparation before they can be bound.
+    #[error("Note preparation has not finished.")]
+    MigrationNotPrepared,
     /// A placement asked for a transmission window whose candidate anchor set is
     /// empty: every bucket below it is ruled out by the Ironwood era floor or
     /// by the part's own bound note, leaving no boundary at age one or more to
@@ -346,6 +349,14 @@ pub enum ProposeSendError {
     /// failed to construct a transaction request
     #[error("{0}")]
     TransactionRequestFailed(#[from] zcash_client_backend::zip321::Zip321Error),
+    /// The free notes cannot pay, and notes worth `reserved` zatoshis are
+    /// reserved for the migration. Release a transfer or cancel the
+    /// migration to spend them.
+    #[error("insufficient free funds: {reserved} zatoshis are reserved for the migration")]
+    ReservedForMigration {
+        /// The reserved value, in zatoshis.
+        reserved: u64,
+    },
 }
 
 /// Errors that can result from constructing shield proposals.

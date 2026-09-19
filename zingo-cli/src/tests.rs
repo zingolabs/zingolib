@@ -440,6 +440,58 @@ mod mode_of_operation {
             assert_no_arg_command("delete", CliCommand::Delete);
         }
 
+        #[test]
+        fn migration_commands_parse_at_the_argument_parse() {
+            use crate::commands::MigrationSubCommand;
+
+            let plan_hash = "22".repeat(32);
+            for (args, expected) in [
+                (vec!["plan"], MigrationSubCommand::Plan),
+                (
+                    vec!["commit", plan_hash.as_str()],
+                    MigrationSubCommand::Commit {
+                        plan_hash: [0x22; 32],
+                    },
+                ),
+                (vec!["prepare"], MigrationSubCommand::Prepare),
+                (
+                    vec!["schedule", "3"],
+                    MigrationSubCommand::Schedule { per_window: 3 },
+                ),
+                (
+                    vec!["broadcast", "5"],
+                    MigrationSubCommand::Broadcast {
+                        spacing: std::time::Duration::from_secs(5),
+                    },
+                ),
+                (
+                    vec!["send_missed"],
+                    MigrationSubCommand::SendMissed {
+                        spacing: std::time::Duration::from_secs(30),
+                    },
+                ),
+                (
+                    vec!["release", "1"],
+                    MigrationSubCommand::Release { transfer: 1 },
+                ),
+                (vec!["status"], MigrationSubCommand::Status),
+                (vec!["windows"], MigrationSubCommand::Windows),
+                (vec!["cancel"], MigrationSubCommand::Cancel),
+            ] {
+                let mut line = vec![examples::BIN_NAME, "migration"];
+                line.extend(args);
+                assert_command(&line, CliCommand::Migration { sub: expected });
+            }
+            for retired in ["start", "step", "cadence", "execute"] {
+                assert!(
+                    build_clap_app()
+                        .try_get_matches_from([examples::BIN_NAME, "migration", retired])
+                        .is_err(),
+                    "`migration {retired}` must no longer parse"
+                );
+            }
+        }
+
         /// A command the grammar does not know now refuses at the process's
         /// own argument parse, before any wallet work begins.
         #[test]
@@ -1299,9 +1351,7 @@ mod offline_mode_pin {
     //! Indexerless capability. The command-surface half lives in
     //! `commands::offline_contract`.
 
-    use crate::commands::{
-        CliCommand, DrainSubCommand, MigrationSubCommand, SplitSubCommand, SyncSubCommand,
-    };
+    use crate::commands::{CliCommand, DrainSubCommand, MigrationSubCommand, SyncSubCommand};
     use crate::{Communications, offline_mode_refusal};
 
     /// One sample per network-requiring shape the gate must refuse.
@@ -1311,7 +1361,6 @@ mod offline_mode_pin {
             CliCommand::Confirm,
             CliCommand::CurrentPrice,
             CliCommand::Info,
-            CliCommand::Migrate,
             CliCommand::Quicksend { args: Vec::new() },
             CliCommand::Quickshield,
             CliCommand::Rescan,
@@ -1322,11 +1371,21 @@ mod offline_mode_pin {
             CliCommand::Drain {
                 sub: DrainSubCommand::Now,
             },
-            CliCommand::Split {
-                sub: SplitSubCommand::Now,
+            CliCommand::Migration {
+                sub: MigrationSubCommand::Prepare,
             },
             CliCommand::Migration {
-                sub: MigrationSubCommand::Continue,
+                sub: MigrationSubCommand::Schedule { per_window: 1 },
+            },
+            CliCommand::Migration {
+                sub: MigrationSubCommand::Broadcast {
+                    spacing: std::time::Duration::from_secs(30),
+                },
+            },
+            CliCommand::Migration {
+                sub: MigrationSubCommand::SendMissed {
+                    spacing: std::time::Duration::from_secs(30),
+                },
             },
         ]
     }
@@ -1346,17 +1405,25 @@ mod offline_mode_pin {
             CliCommand::Drain {
                 sub: DrainSubCommand::Plan,
             },
-            CliCommand::Split {
-                sub: SplitSubCommand::Plan,
-            },
             CliCommand::Migration {
                 sub: MigrationSubCommand::Plan,
+            },
+            CliCommand::Migration {
+                sub: MigrationSubCommand::Commit {
+                    plan_hash: [0x11; 32],
+                },
+            },
+            CliCommand::Migration {
+                sub: MigrationSubCommand::Release { transfer: 0 },
             },
             CliCommand::Migration {
                 sub: MigrationSubCommand::Status,
             },
             CliCommand::Migration {
                 sub: MigrationSubCommand::Windows,
+            },
+            CliCommand::Migration {
+                sub: MigrationSubCommand::Cancel,
             },
             CliCommand::Version,
         ]

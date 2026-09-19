@@ -592,3 +592,7 @@ extend = "base-script"
 script.main = '''
 exec makers container-test --package libtonode-tests --features extra-credit-tests "$@"
 '''
+
+[tasks.gen-migration-fixture]
+command = "cargo"
+args = ["run", "-q", "-p", "zingolib_testutils", "--bin", "gen-migration-fixture", "--", "${@}"]

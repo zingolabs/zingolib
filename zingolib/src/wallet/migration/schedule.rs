@@ -1,12 +1,12 @@
 //! Bucket math and schedule assignment (ZIP 318 Phase 2).
 //!
 //! Buckets are delimited by *boundaries*: block heights ≡ 0 (mod `M`).
-//! Bucket `i` spans heights `[i·M, (i+1)·M)`. A part assigned to bucket `i`
+//! Bucket `i` spans heights `[i·M, (i+1)·M)`. A transfer assigned to bucket `i`
 //! transmits while the chain is inside it.
 //!
-//! A part's *anchor* is a separate bucket from its transmission window. The
+//! A transfer's *anchor* is a separate bucket from its broadcast window. The
 //! anchor sits a canonically drawn age below the window, never zero
-//! (`ANCHOR_AGE_CAP` bounds how far), so a part always proves against a
+//! (`ANCHOR_AGE_CAP` bounds how far), so a transfer always proves against a
 //! boundary the chain has already left. Because that boundary is identical
 //! for every wallet anchoring there, it carries no per-wallet timing
 //! information, and because its window has closed, its ZIP 318 *cohort* (the
@@ -21,14 +21,14 @@ use zcash_protocol::consensus::BlockHeight;
 use crate::wallet::error::WalletError;
 
 use super::params::MigrationParams;
-use super::parts::{PartId, PartRecord, PartState};
+use super::transfers::{TransferId, TransferRecord, TransferState};
 
-/// Draws the advisory transmission target for one part from the canonical
+/// Draws the advisory transmission target for one transfer from the canonical
 /// transfer-delay law: the ZIP 318 exponential inter-arrival distribution
-/// (mean 144 blocks, capped at 576), offset from the part's window boundary
-/// (<https://zips.z.cash/zip-0318#transferscheduling>). The draw can land
-/// past the window; the target is advisory (ADR 0017), so a late target
-/// only aims the reminder and never gates sendability. Chaining successive
+/// (mean 144 blocks, capped at 576), offset from the transfer's window boundary
+/// (<https://zips.z.cash/zip-0318#transferscheduling>). A draw past the
+/// window is redrawn, so the reminder the target aims (ADR 0017) falls
+/// inside the window. The target never gates sendability. Chaining successive
 /// transfers (each delay drawn from the previous transfer rather than the
 /// boundary) arrives with the scheduling delegation; the divergence ledger
 /// records that gap.
@@ -38,14 +38,19 @@ fn random_target_in_bucket(
     params: &MigrationParams,
 ) -> BlockHeight {
     let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
-    let offset = SchedulingParams::ZIP_318.transfer_delay().draw(rng);
+    let offset = std::iter::repeat_with(|| SchedulingParams::ZIP_318.transfer_delay().draw(rng))
+        .take(TARGET_DRAW_ATTEMPTS)
+        .find(|offset| *offset < params.bucket_modulus)
+        .unwrap_or(params.bucket_modulus - 1);
     BlockHeight::from_u32(boundary + offset)
 }
+
+const TARGET_DRAW_ATTEMPTS: usize = 32;
 
 /// Zcash target block spacing in seconds, used to estimate window times.
 /// Matches the spacing ZIP 318's block-count constants assume; see
 /// <https://zips.z.cash/zip-0318#transferscheduling>.
-const TARGET_BLOCK_SPACING_SECONDS: u64 = 75;
+pub(crate) const TARGET_BLOCK_SPACING_SECONDS: u64 = 75;
 
 // The ZIP 318 expiry and anchor-age constants are imported from the
 // canonical reference crate, never restated. `EXPIRY_MODULUS` (34 560
@@ -80,8 +85,8 @@ pub fn bucket_index(height: BlockHeight, bucket_modulus: u32) -> u64 {
 }
 
 /// The boundary that opens `bucket_index`. It is the anchor height of every
-/// part whose *anchor bucket* this is, which is never the same bucket the
-/// part transmits in.
+/// transfer whose *anchor bucket* this is, which is never the same bucket the
+/// transfer transmits in.
 pub fn boundary_of(bucket_index: u64, bucket_modulus: u32) -> BlockHeight {
     BlockHeight::from_u32(
         u32::try_from(bucket_index * u64::from(bucket_modulus))
@@ -95,12 +100,12 @@ fn previous_boundary(height: BlockHeight, bucket_modulus: u32) -> BlockHeight {
     boundary_of(bucket_index(height, bucket_modulus), bucket_modulus)
 }
 
-/// The two floors a part's candidate anchor bucket must clear, resolved for
-/// one part.
+/// The two floors a transfer's candidate anchor bucket must clear, resolved for
+/// one transfer.
 ///
 /// The *era floor* is network-wide: an anchor must sit strictly above the
-/// Pool Activation's bucket. The *anchorability floor* is per part: an
-/// anchor must sit at or above the boundary covering the part's own bound
+/// Pool Activation's bucket. The *anchorability floor* is per transfer: an
+/// anchor must sit at or above the boundary covering the transfer's own bound
 /// note, because a note has no Merkle path under a root that predates it.
 /// Both are ZIP 318 candidate-set conditions (a) and (b).
 #[derive(Debug, Clone, Copy)]
@@ -110,10 +115,10 @@ pub struct AnchorFloor {
 }
 
 impl AnchorFloor {
-    /// The floors for a part whose bound note confirmed at
+    /// The floors for a transfer whose bound note confirmed at
     /// `note_confirmed_at`. `None` (still unconfirmed) floors nothing: an
     /// unconfirmed note has no tree position to anchor at any boundary, and
-    /// [`crate::wallet::LightWallet::prepare_part`] declines it on that
+    /// [`crate::wallet::LightWallet::build_transfer`] declines it on that
     /// ground rather than this one.
     #[must_use]
     pub fn new(activation: PoolActivation, note_confirmed_at: Option<BlockHeight>) -> Self {
@@ -123,7 +128,7 @@ impl AnchorFloor {
         }
     }
 
-    /// The lowest bucket this part may anchor at: the higher of the two
+    /// The lowest bucket this transfer may anchor at: the higher of the two
     /// floors.
     #[must_use]
     pub fn lowest_anchor_bucket(&self, bucket_modulus: u32) -> u64 {
@@ -134,7 +139,7 @@ impl AnchorFloor {
         era.max(anchorability)
     }
 
-    /// The earliest transmission window this part may be scheduled into: one
+    /// The earliest broadcast window this transfer may be scheduled into: one
     /// bucket above its lowest legal anchor, because an anchor always sits
     /// at least one bucket below its window.
     ///
@@ -148,19 +153,19 @@ impl AnchorFloor {
     }
 }
 
-/// The anchor bucket for a part transmitting in `window`: `window − a` for a
+/// The anchor bucket for a transfer broadcastting in `window`: `window − a` for a
 /// canonically drawn age (`Geometric(1/2)`, never zero, capped at
 /// `ANCHOR_AGE_CAP`), redrawn until it clears `floor`.
 ///
 /// Delegates to the canonical
 /// [`zcash_pool_migration::scheduling::draw_anchor_boundary`]
 /// (<https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>), mapped
-/// into bucket space: the part's window boundary plays the observed chain
+/// into bucket space: the transfer's window boundary plays the observed chain
 /// tip, so the most recent boundary is the window's own and the drawn anchor
 /// is `window − a` exactly as the retired local draw computed it. Seeded
 /// golden vectors captured from that local implementation pin the
 /// equivalence. `None` when the candidate set is empty, which is the
-/// caller's signal that `window` is too early for this part rather than a
+/// caller's signal that `window` is too early for this transfer rather than a
 /// transient condition.
 pub fn draw_anchor_bucket(
     window: u64,
@@ -183,11 +188,11 @@ pub fn draw_anchor_bucket(
     Some(u64::from(u32::from(anchor)) / u64::from(bucket_modulus))
 }
 
-/// The first bucket a part may be scheduled into: strictly after
+/// The first bucket a transfer may be scheduled into: strictly after
 /// `now_height`'s bucket, and never below the earliest window its anchor
 /// floors permit.
 ///
-/// This is the single bucket chooser: every site that schedules a part
+/// This is the single bucket chooser: every site that schedules a transfer
 /// into a future bucket derives the bucket from here, never from raw
 /// arithmetic.
 pub fn first_permitted_bucket(
@@ -199,26 +204,6 @@ pub fn first_permitted_bucket(
         .max(floor.earliest_window(params.bucket_modulus))
 }
 
-/// The first transmission window boundary that can hold an Ironwood part at
-/// all: two buckets above the Pool Activation's bucket, since the lowest
-/// legal anchor is the bucket above the activation's and a window sits a
-/// further bucket above its anchor.
-///
-/// Below this height the Ironwood era is too young to hold both, whatever
-/// the wallet's notes look like. Named for the era, not for anchorability:
-/// the constraint is which consensus branch the window's implied target
-/// commits to, not whether a Merkle path exists (issue #2493, finding 6,
-/// and ADR 0014's corrected reason).
-pub fn first_ironwood_era_window_boundary(
-    activation: PoolActivation,
-    bucket_modulus: u32,
-) -> BlockHeight {
-    boundary_of(
-        bucket_index(activation.height(), bucket_modulus) + 2,
-        bucket_modulus,
-    )
-}
-
 /// The first bucket whose boundary sits at or above `height`. The modulus
 /// is nonzero by the [`MigrationParams::bucket_modulus`] invariant
 /// (enforced at store read), as in every bucket computation.
@@ -226,54 +211,54 @@ fn bucket_at_or_after(height: BlockHeight, bucket_modulus: u32) -> u64 {
     u64::from(u32::from(height)).div_ceil(u64::from(bucket_modulus))
 }
 
-/// Places a part in `bucket` with a fresh random target inside the
+/// Places a transfer in `bucket` with a fresh random target inside the
 /// bucket's window and a freshly drawn anchor below it.
 ///
 /// This and [`place_immediate`] are the only placement operations: every
-/// move of a part between buckets (initial scheduling, rebuild after
-/// expiry) passes through one of them, so a part can never carry a
+/// move of a transfer between buckets (initial scheduling, rebuild after
+/// expiry) passes through one of them, so a transfer can never carry a
 /// target or an anchor left over from a previous bucket (issue #2493,
 /// finding 7), and every placement chooses, by name, between jittered and
 /// immediate.
 ///
-/// Re-drawing the anchor here is what keeps the age honest. A part shifted
+/// Re-drawing the anchor here is what keeps the age honest. A transfer shifted
 /// into a later window while keeping an old anchor would silently age past
 /// `ANCHOR_AGE_CAP`; because every move lands here, none can.
 #[allow(clippy::result_large_err)]
 pub fn place(
-    part: &mut PartRecord,
+    transfer: &mut TransferRecord,
     bucket: u64,
     floor: &AnchorFloor,
     rng: &mut (impl Rng + CryptoRng),
     params: &MigrationParams,
 ) -> Result<(), WalletError> {
     let anchor = anchor_for(bucket, floor, rng, params)?;
-    transition_to_bucket(part, bucket)?;
-    part.anchor_bucket = Some(anchor);
-    part.target_height = Some(random_target_in_bucket(bucket, rng, params));
+    transition_to_bucket(transfer, bucket)?;
+    transfer.anchor_bucket = Some(anchor);
+    transfer.target_height = Some(random_target_in_bucket(bucket, rng, params));
     Ok(())
 }
 
-/// Places a part in `bucket` due the moment the window is open, the
+/// Places a transfer in `bucket` due the moment the window is open, the
 /// catch-up and immediate-mode operation, where firing now is the
 /// disclosed intent. See [`place`] for the placement monopoly.
 ///
-/// Immediate is about *when the part fires*, not what it proves against:
+/// Immediate is about *when the transfer fires*, not what it proves against:
 /// the anchor is drawn at age one or more here exactly as in [`place`].
 /// Disclosing the send time is the accepted cost of catch-up; handing the
-/// part an empty cohort as well is not.
+/// transfer an empty cohort as well is not.
 #[allow(clippy::result_large_err)]
 pub fn place_immediate(
-    part: &mut PartRecord,
+    transfer: &mut TransferRecord,
     bucket: u64,
     floor: &AnchorFloor,
     rng: &mut (impl Rng + CryptoRng),
     params: &MigrationParams,
 ) -> Result<(), WalletError> {
     let anchor = anchor_for(bucket, floor, rng, params)?;
-    transition_to_bucket(part, bucket)?;
-    part.anchor_bucket = Some(anchor);
-    part.target_height = None;
+    transition_to_bucket(transfer, bucket)?;
+    transfer.anchor_bucket = Some(anchor);
+    transfer.target_height = None;
     Ok(())
 }
 
@@ -294,48 +279,48 @@ fn anchor_for(
     )
 }
 
-/// Routes a placement through the part's legal state transition: fresh
-/// parts assign, expired parts reassign, assigned parts shift. Any other
+/// Routes a placement through the transfer's legal state transition: fresh
+/// transfers assign, expired transfers reassign, assigned transfers shift. Any other
 /// state yields the state machine's own transition error.
 #[allow(clippy::result_large_err)]
-fn transition_to_bucket(part: &mut PartRecord, bucket: u64) -> Result<(), WalletError> {
-    match part.state {
-        PartState::Bound => part.assign(bucket),
-        PartState::Expired => part.reassign(bucket),
-        _ => part.shift(bucket),
+fn transition_to_bucket(transfer: &mut TransferRecord, bucket: u64) -> Result<(), WalletError> {
+    match transfer.state {
+        TransferState::Bound => transfer.assign(bucket),
+        TransferState::Expired => transfer.reassign(bucket),
+        _ => transfer.shift(bucket),
     }
 }
 
-/// Assigns every [`PartState::Bound`] part to a transmission window, draws its
+/// Assigns every [`TransferState::Bound`] transfer to a broadcast window, draws its
 /// anchor below that window, and picks a random transmission target inside it.
 ///
-/// Multiplicity `k = clamp(ceil(parts / target_sessions), 1, k_max)` parts
+/// Multiplicity `k = clamp(ceil(transfers / target_sessions), 1, k_max)` transfers
 /// share each *batch*. Batches fill consecutive buckets, largest
 /// denominations first. Bucket assignments are deterministic; target heights
 /// and anchor ages within each window are randomized.
 ///
-/// A batch is this wallet's own parts sharing one window, and is not a ZIP
-/// 318 *cohort*: with per-part anchor ages the parts of one batch no longer
-/// share an anchor, and a cohort is the set of parts network-wide that do.
+/// A batch is this wallet's own transfers sharing one window, and is not a ZIP
+/// 318 *cohort*: with per-transfer anchor ages the transfers of one batch no longer
+/// share an anchor, and a cohort is the set of transfers network-wide that do.
 ///
-/// `note_confirmed_at` resolves each part's bound note's confirmation
-/// height, the per-part half of [`AnchorFloor`]. The first window is floored
+/// `note_confirmed_at` resolves each transfer's bound note's confirmation
+/// height, the per-transfer half of [`AnchorFloor`]. The first window is floored
 /// cohort-wide at the highest [`AnchorFloor::earliest_window`] across the
-/// parts, because windows are shared even though anchors are not: a window
-/// no part could anchor under would strand the whole batch.
+/// transfers, because windows are shared even though anchors are not: a window
+/// no transfer could anchor under would strand the whole batch.
 #[allow(clippy::result_large_err)]
 pub fn plan_schedule(
-    parts: &mut [PartRecord],
+    transfers: &mut [TransferRecord],
     now_height: BlockHeight,
     activation: PoolActivation,
-    note_confirmed_at: impl Fn(&PartRecord) -> Option<BlockHeight>,
+    note_confirmed_at: impl Fn(&TransferRecord) -> Option<BlockHeight>,
     params: &MigrationParams,
     rng: &mut (impl Rng + CryptoRng),
 ) -> Result<(), WalletError> {
-    let unassigned: Vec<usize> = parts
+    let unassigned: Vec<usize> = transfers
         .iter()
         .enumerate()
-        .filter(|(_, part)| part.state == PartState::Bound)
+        .filter(|(_, transfer)| transfer.state == TransferState::Bound)
         .map(|(index, _)| index)
         .collect();
     if unassigned.is_empty() {
@@ -343,16 +328,16 @@ pub fn plan_schedule(
     }
 
     let k = u64::try_from(unassigned.len())
-        .expect("part count fits u64")
+        .expect("transfer count fits u64")
         .div_ceil(u64::from(params.target_sessions.max(1)))
         .clamp(1, u64::from(params.k_max.max(1)));
 
-    // Largest denominations first, ties broken by part id for determinism.
+    // Largest denominations first, ties broken by transfer id for determinism.
     let mut ranked = unassigned;
     ranked.sort_by_key(|&index| {
         (
-            std::cmp::Reverse(parts[index].denomination),
-            parts[index].id,
+            std::cmp::Reverse(transfers[index].denomination),
+            transfers[index].id,
         )
     });
 
@@ -373,102 +358,112 @@ pub fn plan_schedule(
     let first_bucket = ranked.iter().fold(
         bucket_index(now_height, params.bucket_modulus),
         |earliest, &index| {
-            let floor = AnchorFloor::new(activation, note_confirmed_at(&parts[index]));
+            let floor = AnchorFloor::new(activation, note_confirmed_at(&transfers[index]));
             earliest.max(floor.earliest_window(params.bucket_modulus))
         },
     );
     for (rank, index) in ranked.into_iter().enumerate() {
-        let floor = AnchorFloor::new(activation, note_confirmed_at(&parts[index]));
+        let floor = AnchorFloor::new(activation, note_confirmed_at(&transfers[index]));
         let bucket = first_bucket + rank as u64 / k;
-        place(&mut parts[index], bucket, &floor, rng, params)?;
+        place(&mut transfers[index], bucket, &floor, rng, params)?;
     }
     Ok(())
 }
 
-/// One future transmission window: what a mobile platform scheduler (for example
+/// One future broadcast window: what a mobile platform scheduler (for example
 /// `BGTaskScheduler` or `WorkManager`) feeds into its earliest-begin request.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TransmissionWindow {
-    /// The bucket the parts are assigned to.
+pub struct BroadcastWindow {
+    /// The bucket the transfers are assigned to.
     pub bucket_index: u64,
-    /// The bucket's opening boundary, also the parts' anchor height.
+    /// The bucket's opening boundary, also the transfers' anchor height.
     pub boundary: BlockHeight,
-    /// The parts due in this window.
-    pub part_ids: Vec<PartId>,
+    /// The transfers due in this window.
+    pub transfer_ids: Vec<TransferId>,
     /// Rough unix time the boundary is expected to be mined, extrapolated
     /// from `now` at the target block spacing. Aim silent work here: the
     /// boundary's tree state is only witnessable for a finite retention
     /// after it, so a sync shortly after this moment secures the window.
     pub window_opens_unix_time: u64,
-    /// Rough unix time the window's *latest* per-part random target is
-    /// expected. Aim the user-facing wake here: at this moment every part
+    /// Rough unix time the window's *latest* per-transfer random target is
+    /// expected. Aim the user-facing wake here: at this moment every transfer
     /// of the window is due, so one visit sends the whole batch.
     pub latest_target_unix_time: u64,
 }
 
 /// Rough unix time `height` is expected to be mined, extrapolated from
 /// `now_height` at the target block spacing (past heights estimate as now).
-fn estimated_unix_at(height: BlockHeight, now_height: BlockHeight, now_unix: u64) -> u64 {
+pub(crate) fn estimated_unix_at(
+    height: BlockHeight,
+    now_height: BlockHeight,
+    now_unix: u64,
+) -> u64 {
     let blocks_until = u64::from(u32::from(height).saturating_sub(u32::from(now_height)));
     now_unix + blocks_until * TARGET_BLOCK_SPACING_SECONDS
 }
 
-/// Whether a part is due to transmit right now: it still awaits transmission
-/// ([`PartState::Assigned`] or [`PartState::Signed`]) and its window is open,
+/// Whether a transfer is due to transmit right now: it still awaits transmission
+/// ([`TransferState::Assigned`] or [`TransferState::Signed`]) and its window is open,
 /// meaning it is assigned to `current_bucket`, whose boundary is at or below the tip
-/// by definition. The part's random `target_height` no longer gates
+/// by definition. The transfer's random `target_height` no longer gates
 /// sendability. It is advisory, exposed only as the reminder hint
-/// [`TransmissionWindow::latest_target_unix_time`], so a part is due for the whole
+/// [`BroadcastWindow::latest_target_unix_time`], so a transfer is due for the whole
 /// open window rather than only from its target onward.
 ///
-/// The single-part rule shared by the transmission loop and the "due now" status
-/// read, so a status can never advertise a part a send would decline. It does
-/// *not* fold in earlier, missed windows: an overdue part sits in a bucket
+/// The single-transfer rule shared by the transmission loop and the "due now" status
+/// read, so a status can never advertise a transfer a send would decline. It does
+/// *not* fold in earlier, missed windows: an overdue transfer sits in a bucket
 /// below `current_bucket` and is catch-up's business.
-pub fn part_in_current_bucket(part: &PartRecord, current_bucket: u64) -> bool {
-    matches!(part.state, PartState::Assigned | PartState::Signed)
-        && part.bucket_index == Some(current_bucket)
+pub fn transfer_in_current_bucket(transfer: &TransferRecord, current_bucket: u64) -> bool {
+    matches!(
+        transfer.state,
+        TransferState::Assigned | TransferState::Signed
+    ) && transfer.bucket_index == Some(current_bucket)
 }
 
 /// The transmission windows within the next `horizon` buckets, soonest first.
 ///
-/// Pure: reads only the given parts and clock inputs. Parts whose bucket has
+/// Pure: reads only the given transfers and clock inputs. Transfers whose bucket has
 /// already passed are reconciliation's business and are not listed here.
 pub fn upcoming_windows(
-    parts: &[PartRecord],
+    transfers: &[TransferRecord],
     now_height: BlockHeight,
     now_unix: u64,
     horizon: u64,
     params: &MigrationParams,
-) -> Vec<TransmissionWindow> {
+) -> Vec<BroadcastWindow> {
     let current_bucket = bucket_index(now_height, params.bucket_modulus);
-    let mut buckets: std::collections::BTreeMap<u64, (Vec<PartId>, Option<BlockHeight>)> =
+    let mut buckets: std::collections::BTreeMap<u64, (Vec<TransferId>, Option<BlockHeight>)> =
         std::collections::BTreeMap::new();
-    for part in parts {
-        if !matches!(part.state, PartState::Assigned | PartState::Signed) {
+    for transfer in transfers {
+        if !matches!(
+            transfer.state,
+            TransferState::Assigned | TransferState::Signed
+        ) {
             continue;
         }
-        let Some(bucket) = part.bucket_index else {
+        let Some(bucket) = transfer.bucket_index else {
             continue;
         };
         if bucket > current_bucket && bucket <= current_bucket.saturating_add(horizon) {
-            let (part_ids, latest_target) = buckets.entry(bucket).or_default();
-            part_ids.push(part.id);
-            *latest_target = (*latest_target).max(part.target_height);
+            let (transfer_ids, latest_target) = buckets.entry(bucket).or_default();
+            transfer_ids.push(transfer.id);
+            *latest_target = (*latest_target).max(transfer.target_height);
         }
     }
 
     buckets
         .into_iter()
-        .map(|(bucket, (part_ids, latest_target))| {
+        .map(|(bucket, (transfer_ids, latest_target))| {
             let boundary = boundary_of(bucket, params.bucket_modulus);
-            // A part without a target (a catch-up shift) is due at the
+            // A transfer without a target (a catch-up shift) is due at the
             // window opening, which every in-window target is at or past.
-            let latest_target = latest_target.unwrap_or(boundary + 1);
-            TransmissionWindow {
+            let last_block = boundary_of(bucket + 1, params.bucket_modulus) - 1;
+            let latest_target = latest_target.unwrap_or(boundary + 1).min(last_block);
+            BroadcastWindow {
                 bucket_index: bucket,
                 boundary,
-                part_ids,
+                transfer_ids,
                 window_opens_unix_time: estimated_unix_at(boundary, now_height, now_unix),
                 latest_target_unix_time: estimated_unix_at(latest_target, now_height, now_unix),
             }
@@ -477,8 +472,8 @@ pub fn upcoming_windows(
 }
 
 /// One window of the schedule's timeline: the bucket, its block range, and
-/// how far its parts have come. The rendering counterpart to
-/// [`TransmissionWindow`], which feeds mobile platform schedulers strictly future
+/// how far its transfers have come. The rendering counterpart to
+/// [`BroadcastWindow`], which feeds mobile platform schedulers strictly future
 /// windows. This reports every window the schedule touches, finished ones
 /// included.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -491,9 +486,9 @@ pub struct WindowReport {
     pub close: BlockHeight,
     /// Whether the chain tip is inside this window.
     pub is_current: bool,
-    /// Parts assigned to this window.
+    /// Transfers assigned to this window.
     pub parts_total: u32,
-    /// Parts confirmed.
+    /// Transfers confirmed.
     pub parts_confirmed: u32,
     /// Total value assigned to this window, in zatoshis.
     pub value_total: u64,
@@ -502,12 +497,12 @@ pub struct WindowReport {
 }
 
 /// The window timeline, earliest first: one report per bucket holding at
-/// least one part, plus always the window the tip is inside, so the
+/// least one transfer, plus always the window the tip is inside, so the
 /// calendar exists (with zero tallies) before any migration is scheduled.
-/// Pure over the given parts and tip. Parts not yet assigned to a bucket
+/// Pure over the given transfers and tip. Transfers not yet assigned to a bucket
 /// have no window and are not listed.
 pub fn window_timeline(
-    parts: &[PartRecord],
+    transfers: &[TransferRecord],
     now_height: BlockHeight,
     params: &MigrationParams,
 ) -> Vec<WindowReport> {
@@ -522,16 +517,16 @@ pub fn window_timeline(
     let current_bucket = bucket_index(now_height, params.bucket_modulus);
     let mut buckets: std::collections::BTreeMap<u64, Tally> = std::collections::BTreeMap::new();
     buckets.entry(current_bucket).or_default();
-    for part in parts {
-        let Some(bucket) = part.bucket_index else {
+    for transfer in transfers {
+        let Some(bucket) = transfer.bucket_index else {
             continue;
         };
         let tally = buckets.entry(bucket).or_default();
         tally.parts_total += 1;
-        tally.value_total += part.denomination;
-        if matches!(part.state, PartState::Confirmed { .. }) {
+        tally.value_total += transfer.denomination;
+        if matches!(transfer.state, TransferState::Confirmed { .. }) {
             tally.parts_confirmed += 1;
-            tally.value_migrated += part.denomination;
+            tally.value_migrated += transfer.denomination;
         }
     }
 
@@ -554,7 +549,7 @@ pub fn window_timeline(
 mod tests {
     use super::*;
     use crate::config::ChainType;
-    use crate::wallet::migration::parts::BoundNote;
+    use crate::wallet::migration::transfers::BoundNote;
     use pepper_sync::wallet::OutputId;
     use proptest::prelude::*;
     use zcash_pool_migration::scheduling::{ANCHOR_AGE_CAP, EXPIRY_MODULUS, EXPIRY_WINDOW};
@@ -574,20 +569,20 @@ mod tests {
 
     /// The matching weakest anchorability floor: notes confirmed at height
     /// zero exist under every boundary.
-    fn old_notes(_part: &PartRecord) -> Option<BlockHeight> {
+    fn old_notes(_part: &TransferRecord) -> Option<BlockHeight> {
         Some(BlockHeight::from_u32(0))
     }
 
     /// The [`AnchorFloor`] matching [`no_floor`] and [`old_notes`], for the
-    /// placement operations, which take one part's floor rather than a
+    /// placement operations, which take one transfer's floor rather than a
     /// lookup.
     fn weakest_floor() -> AnchorFloor {
         AnchorFloor::new(no_floor(), Some(BlockHeight::from_u32(0)))
     }
 
-    fn bound_part(id: u32, denomination: u64) -> PartRecord {
-        PartRecord::new(
-            PartId(id),
+    fn bound_part(id: u32, denomination: u64) -> TransferRecord {
+        TransferRecord::new(
+            TransferId(id),
             denomination,
             BoundNote {
                 output_id: OutputId::new(TxId::from_bytes([id as u8; 32]), id),
@@ -597,7 +592,7 @@ mod tests {
         )
     }
 
-    fn parts_with_denominations(denominations: &[u64]) -> Vec<PartRecord> {
+    fn parts_with_denominations(denominations: &[u64]) -> Vec<TransferRecord> {
         denominations
             .iter()
             .enumerate()
@@ -606,23 +601,23 @@ mod tests {
     }
 
     /// Issue #2493, finding 6: consent given before the NU6.3 activation
-    /// must not schedule any part whose *anchor* predates the activation.
+    /// must not schedule any transfer whose *anchor* predates the activation.
     /// The window such an anchor belongs to would commit to a pre-NU6.3
     /// consensus branch, in which no Ironwood bundle exists, so every
     /// transmission attempt skips and the whole consented batch slides into the
-    /// correlation-disclosed catch-up path. Note splitting is explicitly
+    /// correlation-disclosed catch-up path. Note preparation is explicitly
     /// permitted before activation (module doc), so a fully split wallet at a
     /// pre-activation consent height is a supported state.
     #[test]
     fn schedule_respects_the_era_floor() {
         let params = params();
-        let mut parts = parts_with_denominations(&[1_000_000, 2_000_000]);
+        let mut transfers = parts_with_denominations(&[1_000_000, 2_000_000]);
         // Consent at height 10; the activation lies far above it.
         let now = BlockHeight::from_u32(10);
         let activation = BlockHeight::from_u32(1_000);
 
         plan_schedule(
-            &mut parts,
+            &mut transfers,
             now,
             PoolActivation::new_for_test(activation),
             old_notes,
@@ -631,27 +626,27 @@ mod tests {
         )
         .unwrap();
 
-        for part in &parts {
-            let anchor = boundary_of(part.anchor_bucket.unwrap(), params.bucket_modulus);
+        for transfer in &transfers {
+            let anchor = boundary_of(transfer.anchor_bucket.unwrap(), params.bucket_modulus);
             assert!(
                 anchor > activation,
-                "part {:?} anchors at {anchor:?}, not strictly above the \
+                "transfer {:?} anchors at {anchor:?}, not strictly above the \
                  NU6.3 activation {activation:?}",
-                part.id,
+                transfer.id,
             );
             // And the window is strictly above the anchor, so it clears the
             // activation without the floor being restated on it.
             assert!(
-                part.bucket_index.unwrap() > part.anchor_bucket.unwrap(),
-                "part {:?} must transmit above the bucket it anchors in",
-                part.id,
+                transfer.bucket_index.unwrap() > transfer.anchor_bucket.unwrap(),
+                "transfer {:?} must transmit above the bucket it anchors in",
+                transfer.id,
             );
         }
     }
 
     /// Every accepted anchor sits inside the candidate set: at least one
     /// bucket below the window, at or above both floors, and within the age
-    /// cap. The first bound is the age-never-zero rule: a part must never
+    /// cap. The first bound is the age-never-zero rule: a transfer must never
     /// prove against the boundary of the window it is transmitting in,
     /// because that boundary is the newest tree state there is and its
     /// cohort has not accumulated yet. The delegated `draw_anchor_boundary`
@@ -715,35 +710,42 @@ mod tests {
             "the earliest window is one bucket above the lowest anchor"
         );
 
-        let mut part = bound_part(0, 1_000_000);
+        let mut transfer = bound_part(0, 1_000_000);
         assert!(matches!(
-            place(&mut part, lowest, &floor, &mut rand::rngs::OsRng, &params),
+            place(
+                &mut transfer,
+                lowest,
+                &floor,
+                &mut rand::rngs::OsRng,
+                &params
+            ),
             Err(WalletError::MigrationNoLegalAnchor { .. })
         ));
     }
 
-    /// Issue #2493, finding 7 (ratified form): every move of a part
+    /// Issue #2493, finding 7 (ratified form): every move of a transfer
     /// between buckets goes through a placement operation, and the
     /// jittered one draws a fresh random target inside the new bucket's
     /// window. A stale target from the old bucket (or a cleared-to-None
-    /// target treated as immediately due) would fire the rebuilt part at
+    /// target treated as immediately due) would fire the rebuilt transfer at
     /// its window's first block: the boundary clustering the jitter
     /// exists to prevent, correlated across every wallet that rebuilds
     /// after an expiry.
     #[test]
     fn place_draws_a_fresh_target_from_the_new_boundary() {
         let params = params();
-        let mut part = bound_part(0, 1_000_000);
-        part.assign(1).unwrap();
+        let mut transfer = bound_part(0, 1_000_000);
+        transfer.assign(1).unwrap();
         // The schedule's randomized target inside bucket 1's window.
         let old_target = boundary_of(1, params.bucket_modulus) + 17;
-        part.target_height = Some(old_target);
-        part.mark_signed(TxId::from_bytes([9; 32]), old_target + 40, None)
+        transfer.target_height = Some(old_target);
+        transfer
+            .mark_signed(TxId::from_bytes([9; 32]), old_target + 40, None)
             .unwrap();
-        part.mark_expired().unwrap();
+        transfer.mark_expired().unwrap();
 
         place(
-            &mut part,
+            &mut transfer,
             5,
             &weakest_floor(),
             &mut rand::rngs::OsRng,
@@ -751,10 +753,11 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(part.state, PartState::Assigned);
+        assert_eq!(transfer.state, TransferState::Assigned);
         let boundary = u32::from(boundary_of(5, params.bucket_modulus));
         let target = u32::from(
-            part.target_height
+            transfer
+                .target_height
                 .expect("jittered placement draws a fresh target"),
         );
         let cap = SchedulingParams::ZIP_318.transfer_delay().cap().get();
@@ -769,12 +772,12 @@ mod tests {
     #[test]
     fn schedule_fills_consecutive_buckets_largest_first() {
         let params = params();
-        // 13 parts, target 6 sessions → k = 3, so 5 buckets: 3+3+3+3+1.
+        // 13 transfers, target 6 sessions → k = 3, so 5 buckets: 3+3+3+3+1.
         let denominations: Vec<u64> = (1..=13).map(|i| i * 1_000_000).collect();
-        let mut parts = parts_with_denominations(&denominations);
+        let mut transfers = parts_with_denominations(&denominations);
         let now = BlockHeight::from_u32(10_000);
         plan_schedule(
-            &mut parts,
+            &mut transfers,
             now,
             no_floor(),
             old_notes,
@@ -785,34 +788,34 @@ mod tests {
 
         // The first batch opens in the current bucket, not the next.
         let first_bucket = bucket_index(now, params.bucket_modulus);
-        for part in &parts {
-            assert_eq!(part.state, PartState::Assigned);
-            let bucket = part.bucket_index.unwrap();
+        for transfer in &transfers {
+            assert_eq!(transfer.state, TransferState::Assigned);
+            let bucket = transfer.bucket_index.unwrap();
             assert!(bucket >= first_bucket, "current or future bucket");
-            // Target is drawn from the part's boundary under the canonical
+            // Target is drawn from the transfer's boundary under the canonical
             // delay law (mean 66, capped at 576; it may pass the window,
             // and the target is advisory per ADR 0017).
             let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
-            let target = u32::from(part.target_height.unwrap());
+            let target = u32::from(transfer.target_height.unwrap());
             let cap = SchedulingParams::ZIP_318.transfer_delay().cap().get();
             assert!(target >= boundary && target <= boundary + cap);
         }
         // Largest denominations land in the earliest buckets.
-        for a in &parts {
-            for b in &parts {
+        for a in &transfers {
+            for b in &transfers {
                 if a.denomination > b.denomination {
                     assert!(a.bucket_index.unwrap() <= b.bucket_index.unwrap());
                 }
             }
         }
         let distinct: std::collections::BTreeSet<u64> =
-            parts.iter().filter_map(|p| p.bucket_index).collect();
+            transfers.iter().filter_map(|p| p.bucket_index).collect();
         assert_eq!(distinct.len(), 5);
     }
 
-    /// The timeline reports every bucket holding a part, earliest first,
+    /// The timeline reports every bucket holding a transfer, earliest first,
     /// with per-window confirmation tallies and the current-window marker.
-    /// Unassigned parts have no window and are not listed.
+    /// Unassigned transfers have no window and are not listed.
     #[test]
     fn window_timeline_tallies_windows_past_and_future() {
         let params = params();
@@ -850,9 +853,9 @@ mod tests {
         assert_eq!(future.value_migrated, 0);
     }
 
-    /// The calendar exists before any schedule: with no parts at all the
+    /// The calendar exists before any schedule: with no transfers at all the
     /// timeline still reports the window the tip is inside, zero tallies.
-    /// With parts elsewhere, the empty current window is still listed.
+    /// With transfers elsewhere, the empty current window is still listed.
     #[test]
     fn window_timeline_always_reports_the_current_window() {
         let params = params();
@@ -875,32 +878,34 @@ mod tests {
         assert_eq!(timeline[1].bucket_index, 9);
     }
 
-    /// The random target no longer gates sendability: a current-bucket part
+    /// The random target no longer gates sendability: a current-bucket transfer
     /// awaiting transmission is due for the whole open window, the exact case the
     /// old target-gated predicate rejected. Bucket membership plus
     /// awaiting-transmission state is the whole rule.
     #[test]
-    fn part_in_current_bucket_ignores_the_target_height() {
+    fn transfer_in_current_bucket_ignores_the_target_height() {
         let params = params();
         let current_bucket = 40;
-        let mut part = bound_part(0, 1_000_000);
-        part.assign(current_bucket).unwrap();
+        let mut transfer = bound_part(0, 1_000_000);
+        transfer.assign(current_bucket).unwrap();
         // A target high in the window, above where an early-window tip sits.
-        part.target_height = Some(boundary_of(current_bucket, params.bucket_modulus) + 100);
+        transfer.target_height = Some(boundary_of(current_bucket, params.bucket_modulus) + 100);
 
         assert!(
-            part_in_current_bucket(&part, current_bucket),
+            transfer_in_current_bucket(&transfer, current_bucket),
             "Assigned with its target still ahead is due"
         );
         assert!(
-            !part_in_current_bucket(&part, current_bucket + 1),
-            "a part of another bucket is not due"
+            !transfer_in_current_bucket(&transfer, current_bucket + 1),
+            "a transfer of another bucket is not due"
         );
 
-        part.mark_confirmed(BlockHeight::from_u32(20_000)).unwrap();
+        transfer
+            .mark_confirmed(BlockHeight::from_u32(20_000))
+            .unwrap();
         assert!(
-            !part_in_current_bucket(&part, current_bucket),
-            "a confirmed part is not due"
+            !transfer_in_current_bucket(&transfer, current_bucket),
+            "a confirmed transfer is not due"
         );
     }
 
@@ -910,10 +915,10 @@ mod tests {
     #[test]
     fn first_batch_opens_in_the_current_bucket_when_the_notes_are_settled() {
         let params = params();
-        let mut parts = parts_with_denominations(&[3_000_000, 2_000_000, 1_000_000]);
+        let mut transfers = parts_with_denominations(&[3_000_000, 2_000_000, 1_000_000]);
         let now = BlockHeight::from_u32(10_000);
         plan_schedule(
-            &mut parts,
+            &mut transfers,
             now,
             no_floor(),
             old_notes,
@@ -923,15 +928,19 @@ mod tests {
         .unwrap();
 
         let current_bucket = bucket_index(now, params.bucket_modulus);
-        let earliest = parts.iter().filter_map(|p| p.bucket_index).min().unwrap();
+        let earliest = transfers
+            .iter()
+            .filter_map(|p| p.bucket_index)
+            .min()
+            .unwrap();
         assert_eq!(
             earliest, current_bucket,
             "notes settled a bucket or more ago pay nothing for the anchor age: \
              the current bucket still has legal anchors below it"
         );
-        for part in &parts {
+        for transfer in &transfers {
             assert!(
-                part.anchor_bucket.unwrap() < part.bucket_index.unwrap(),
+                transfer.anchor_bucket.unwrap() < transfer.bucket_index.unwrap(),
                 "even in the open window the anchor is a closed bucket"
             );
         }
@@ -947,11 +956,11 @@ mod tests {
     #[test]
     fn a_fresh_split_costs_one_window() {
         let params = params();
-        let mut parts = parts_with_denominations(&[3_000_000, 2_000_000, 1_000_000]);
+        let mut transfers = parts_with_denominations(&[3_000_000, 2_000_000, 1_000_000]);
         let now = BlockHeight::from_u32(10_000);
         let split_confirmed = now - 3;
         plan_schedule(
-            &mut parts,
+            &mut transfers,
             now,
             no_floor(),
             |_| Some(split_confirmed),
@@ -960,24 +969,28 @@ mod tests {
         )
         .unwrap();
 
-        let earliest = parts.iter().filter_map(|p| p.bucket_index).min().unwrap();
+        let earliest = transfers
+            .iter()
+            .filter_map(|p| p.bucket_index)
+            .min()
+            .unwrap();
         assert_eq!(
             earliest,
             bucket_index(now, params.bucket_modulus) + 2,
             "the anchor clears the fresh notes and the window clears the anchor"
         );
-        for part in &parts {
-            let anchor = boundary_of(part.anchor_bucket.unwrap(), params.bucket_modulus);
+        for transfer in &transfers {
+            let anchor = boundary_of(transfer.anchor_bucket.unwrap(), params.bucket_modulus);
             assert!(
                 anchor >= split_confirmed,
-                "every part must anchor at or above its own notes"
+                "every transfer must anchor at or above its own notes"
             );
         }
     }
 
     proptest! {
         // Totality, target-in-window, cohort bound and session count for any
-        // part set and parameterization. Bucket assignments are deterministic;
+        // transfer set and parameterization. Bucket assignments are deterministic;
         // target_height is intentionally random so we only pin bucket structure.
         #[test]
         fn schedule_properties(
@@ -991,9 +1004,9 @@ mod tests {
             params.k_max = k_max;
             let now = BlockHeight::from_u32(now);
 
-            let mut parts = parts_with_denominations(&denominations);
+            let mut transfers = parts_with_denominations(&denominations);
             plan_schedule(
-            &mut parts,
+            &mut transfers,
             now,
             no_floor(),
             old_notes,
@@ -1006,14 +1019,14 @@ mod tests {
                 .clamp(1, u64::from(k_max));
             let mut cohort_sizes: std::collections::BTreeMap<u64, u64> = Default::default();
             let current_bucket = bucket_index(now, params.bucket_modulus);
-            for part in &parts {
-                prop_assert_eq!(part.state, PartState::Assigned, "total");
-                let bucket = part.bucket_index.unwrap();
+            for transfer in &transfers {
+                prop_assert_eq!(transfer.state, TransferState::Assigned, "total");
+                let bucket = transfer.bucket_index.unwrap();
                 prop_assert!(bucket >= current_bucket, "current or future buckets");
                 *cohort_sizes.entry(bucket).or_default() += 1;
                 // Target is within the bucket's window.
                 let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
-                let target = u32::from(part.target_height.unwrap());
+                let target = u32::from(transfer.target_height.unwrap());
                 let cap = SchedulingParams::ZIP_318.transfer_delay().cap().get();
                 prop_assert!(
                     target >= boundary && target <= boundary + cap,
@@ -1046,11 +1059,11 @@ mod tests {
     #[test]
     fn upcoming_windows_lists_future_windows_within_the_horizon() {
         let params = params();
-        let mut parts = parts_with_denominations(&[100, 200, 300, 400, 500, 600, 700]);
+        let mut transfers = parts_with_denominations(&[100, 200, 300, 400, 500, 600, 700]);
         let now = BlockHeight::from_u32(10_000);
         let now_unix = 1_780_000_000;
         plan_schedule(
-            &mut parts,
+            &mut transfers,
             now,
             no_floor(),
             old_notes,
@@ -1059,25 +1072,26 @@ mod tests {
         )
         .unwrap();
 
-        let windows = upcoming_windows(&parts, now, now_unix, u64::MAX, &params);
-        let listed: usize = windows.iter().map(|w| w.part_ids.len()).sum();
+        let windows = upcoming_windows(&transfers, now, now_unix, u64::MAX, &params);
+        let listed: usize = windows.iter().map(|w| w.transfer_ids.len()).sum();
 
         // upcoming_windows lists strictly future windows. The first batch opens
         // in the current bucket and is surfaced through `due_now`, not here, so
-        // every future-bucket part appears and no current-bucket one does.
+        // every future-bucket transfer appears and no current-bucket one does.
         let current_bucket = bucket_index(now, params.bucket_modulus);
-        let future_parts = parts
+        let future_parts = transfers
             .iter()
-            .filter(|part| {
-                part.bucket_index
+            .filter(|transfer| {
+                transfer
+                    .bucket_index
                     .is_some_and(|bucket| bucket > current_bucket)
             })
             .count();
         assert!(
-            future_parts > 0 && future_parts < parts.len(),
+            future_parts > 0 && future_parts < transfers.len(),
             "the fixture must span current and future buckets"
         );
-        assert_eq!(listed, future_parts, "every future-bucket part appears");
+        assert_eq!(listed, future_parts, "every future-bucket transfer appears");
         assert!(
             windows
                 .iter()
@@ -1094,14 +1108,14 @@ mod tests {
             );
             assert!(window.window_opens_unix_time > now_unix);
 
-            // The user-facing wake time is the window's latest per-part
+            // The user-facing wake time is the window's latest per-transfer
             // target, never earlier than the window opening.
-            let latest_target = parts
+            let latest_target = transfers
                 .iter()
-                .filter(|part| part.bucket_index == Some(window.bucket_index))
-                .filter_map(|part| part.target_height)
+                .filter(|transfer| transfer.bucket_index == Some(window.bucket_index))
+                .filter_map(|transfer| transfer.target_height)
                 .max()
-                .expect("scheduled parts carry targets");
+                .expect("scheduled transfers carry targets");
             assert_eq!(
                 window.latest_target_unix_time,
                 estimated_unix_at(latest_target, now, now_unix)
@@ -1109,19 +1123,19 @@ mod tests {
             assert!(window.latest_target_unix_time >= window.window_opens_unix_time);
         }
 
-        // A confirmed part never appears in a window.
-        parts[0]
+        // A confirmed transfer never appears in a window.
+        transfers[0]
             .mark_confirmed(BlockHeight::from_u32(20_000))
             .unwrap();
-        let windows = upcoming_windows(&parts, now, now_unix, u64::MAX, &params);
+        let windows = upcoming_windows(&transfers, now, now_unix, u64::MAX, &params);
         assert!(
             windows
                 .iter()
-                .all(|window| !window.part_ids.contains(&PartId(0)))
+                .all(|window| !window.transfer_ids.contains(&TransferId(0)))
         );
 
         // The horizon bounds the listing.
-        assert!(upcoming_windows(&parts, now, now_unix, 0, &params).is_empty());
+        assert!(upcoming_windows(&transfers, now, now_unix, 0, &params).is_empty());
     }
 
     /// Pins the ZIP 318 values imported from `zcash_pool_migration`, the
@@ -1307,5 +1321,47 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn window_wake_time_precedes_window_close() {
+        const PARTS: usize = 40;
+        let mut params = params();
+        params.k_max = 1;
+        let mut transfers = parts_with_denominations(&[100; PARTS]);
+        let now = BlockHeight::from_u32(10_000);
+        plan_schedule(
+            &mut transfers,
+            now,
+            no_floor(),
+            old_notes,
+            &params,
+            &mut rand::rngs::OsRng,
+        )
+        .unwrap();
+
+        let windows = upcoming_windows(&transfers, now, 0, u64::MAX, &params);
+        assert!(!windows.is_empty(), "future windows exist");
+
+        let modulus = params.bucket_modulus;
+        let offenders: Vec<(u64, u64, u32)> = windows
+            .iter()
+            .filter_map(|window| {
+                let close = u32::from(boundary_of(window.bucket_index + 1, modulus));
+                let aimed_height = u32::from(now)
+                    + (window.latest_target_unix_time / TARGET_BLOCK_SPACING_SECONDS) as u32;
+                (aimed_height >= close).then_some((
+                    window.bucket_index,
+                    u64::from(aimed_height),
+                    close,
+                ))
+            })
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "latest_target_unix_time is the moment a client is told every transfer of the window \
+             is due, so it must fall inside the window; these windows aim the wake at or past \
+             their own close, where the batch is already Missed: {offenders:?}"
+        );
     }
 }

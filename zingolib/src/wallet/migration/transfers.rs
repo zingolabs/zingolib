@@ -1,7 +1,7 @@
-//! Part records and their state machine (ZIP 318 Phase 2).
+//! Transfer records and their state machine (ZIP 318 Phase 2).
 //!
-//! A *part* is one canonical migration transaction: a single Orchard spend of
-//! a split note and a single Ironwood output of one denomination. Each part
+//! A *transfer* is one canonical migration transaction: a single Orchard spend of
+//! a funding note and a single Ironwood output of one denomination. Each transfer
 //! is bound to a specific note at split-completion time and walks the state
 //! machine below. "Overdue" is deliberately not a state: it is computed by
 //! reconciliation from the schedule and the clock, never persisted, so clock
@@ -11,7 +11,9 @@
 //! Bound → Assigned → Signed → Broadcast → Confirmed
 //!             ↑          │        │
 //!             └─ Expired ┴────────┘   (rebuilt: same denomination, fresh bucket)
-//! any pre-Confirmed state → Invalidated  (bound note spent outside the migration)
+//! any state but Released → Invalidated  (bound note spent outside the migration)
+//! any pre-Confirmed state → Released     (the user took the transfer out)
+//! Released → Confirmed                   (its transaction on the wire mined anyway)
 //! ```
 
 use pepper_sync::wallet::OutputId;
@@ -20,19 +22,19 @@ use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::error::WalletError;
 
-/// Stable identifier of a part within one migration: its index in
-/// [`super::MigrationState::parts`].
+/// Stable identifier of a transfer within one migration: its index in
+/// [`super::MigrationState::transfers`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PartId(pub u32);
+pub struct TransferId(pub u32);
 
-/// The Orchard note a part is bound to at split-completion time.
+/// The Orchard note a transfer is bound to at split-completion time.
 ///
 /// The `output_id` is the wallet-local handle used to build the transaction.
 /// The nullifier is the chain-facing identity used by reconciliation to
-/// detect both external spends and parts that mined without being recorded.
+/// detect both external spends and transfers that mined without being recorded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoundNote {
-    /// Wallet-local handle: txid and output index of the split note.
+    /// Wallet-local handle: txid and output index of the funding note.
     pub output_id: OutputId,
     /// The note's nullifier.
     pub nullifier: [u8; 32],
@@ -40,13 +42,13 @@ pub struct BoundNote {
     pub commitment: [u8; 32],
 }
 
-/// The immutable anchor data of a part, captured from the wallet's Orchard
-/// shard tree as soon as the part's boundary checkpoint is available (the
+/// The immutable anchor data of a transfer, captured from the wallet's Orchard
+/// shard tree as soon as the transfer's boundary checkpoint is available (the
 /// checkpoint retention window is finite, the tree state at a boundary is
 /// not). Materialization then needs no tree access at all.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoundaryWitness {
-    /// Orchard root at the boundary: the part's anchor.
+    /// Orchard root at the boundary: the transfer's anchor.
     pub anchor: [u8; 32],
     /// The bound note's leaf position.
     pub position: u64,
@@ -57,22 +59,22 @@ pub struct BoundaryWitness {
 /// How Phase 2 transactions are signed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SigningStrategy {
-    /// Build and sign each part at its transmission boundary. The only sound
+    /// Build and sign each transfer at its transmission boundary. The only sound
     /// strategy while ZIP 244 commits the anchor into the signature hash.
     LazyAtBoundary,
-    /// Sign every part at consent time and persist the raw transactions.
+    /// Sign every transfer at consent time and persist the raw transactions.
     /// Becomes sound only if the Ironwood transaction digest excludes the
     /// anchor from the signature hash. Until that consensus question
-    /// resolves, `start_ironwood_migration` rejects it.
+    /// resolves, `commit_migration` rejects it.
     PreSigned,
 }
 
-/// Where a part is in its lifecycle.
+/// Where a transfer is in its lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PartState {
+pub enum TransferState {
     /// Note bound, no bucket assigned yet.
     Bound,
-    /// Assigned to a transmission window, with an anchor drawn below it.
+    /// Assigned to a broadcast window, with an anchor drawn below it.
     Assigned,
     /// Built and signed (txid and expiry recorded). Transient under
     /// [`SigningStrategy::LazyAtBoundary`], durable under
@@ -82,63 +84,75 @@ pub enum PartState {
     Broadcast,
     /// Mined and confirmed at this height. Terminal.
     Confirmed {
-        /// The height the part confirmed at.
+        /// The height the transfer confirmed at.
         height: BlockHeight,
     },
     /// Reached its expiry height unmined. Rebuilt with the same denomination
-    /// and a fresh bucket via `PartRecord::reassign`.
+    /// and a fresh bucket via `TransferRecord::reassign`.
     Expired,
     /// The bound note was spent outside the migration. Terminal. The
     /// remaining balance is replanned under fresh consent.
     Invalidated,
+    /// Released by the user. Terminal unless a transaction of it is still
+    /// on the wire; then it confirms or the wire is abandoned first.
+    Released,
 }
 
-impl PartState {
+impl TransferState {
     fn name(&self) -> &'static str {
         match self {
-            PartState::Bound => "Bound",
-            PartState::Assigned => "Assigned",
-            PartState::Signed => "Signed",
-            PartState::Broadcast => "Broadcast",
-            PartState::Confirmed { .. } => "Confirmed",
-            PartState::Expired => "Expired",
-            PartState::Invalidated => "Invalidated",
+            TransferState::Bound => "Bound",
+            TransferState::Assigned => "Assigned",
+            TransferState::Signed => "Signed",
+            TransferState::Broadcast => "Broadcast",
+            TransferState::Confirmed { .. } => "Confirmed",
+            TransferState::Expired => "Expired",
+            TransferState::Invalidated => "Invalidated",
+            TransferState::Released => "Released",
         }
+    }
+
+    /// Whether the transfer is done: nothing will change it again.
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            TransferState::Confirmed { .. } | TransferState::Invalidated | TransferState::Released
+        )
     }
 }
 
-/// One part of the migration schedule, persisted in the wallet file.
+/// One transfer of the migration schedule, persisted in the wallet file.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PartRecord {
-    /// Stable identifier (index into the migration's part list).
-    pub id: PartId,
-    /// The canonical denomination this part transfers, in zatoshis.
+pub struct TransferRecord {
+    /// Stable identifier (index into the migration's transfer list).
+    pub id: TransferId,
+    /// The canonical denomination this transfer transfers, in zatoshis.
     pub denomination: u64,
-    /// The split note this part spends. Set at binding time and kept through
+    /// The funding note this transfer spends. Set at binding time and kept through
     /// every rebuild (the note does not change on expiry, only the anchor).
     pub note: Option<BoundNote>,
-    /// The bucket this part transmits in: it is due while the chain tip is
+    /// The bucket this transfer transmits in: it is due while the chain tip is
     /// inside the window `[bucket_index · M, (bucket_index + 1) · M)`. The
-    /// builder's target height comes from here. Distinct from
-    /// `Self::anchor_bucket`, which is where the part *proves*.
+    /// builder's scheduled broadcast height comes from here. Distinct from
+    /// `Self::anchor_bucket`, which is where the transfer *proves*.
     pub bucket_index: Option<u64>,
-    /// The bucket whose opening boundary this part anchors its Orchard spend
+    /// The bucket whose opening boundary this transfer anchors its Orchard spend
     /// to, always at least one bucket below [`Self::bucket_index`] (see
-    /// [`super::schedule::draw_anchor_bucket`]). Drawn per part at placement
-    /// time, so two parts of one batch usually carry different anchors.
+    /// [`super::schedule::draw_anchor_bucket`]). Drawn per transfer at placement
+    /// time, so two transfers of one batch usually carry different anchors.
     ///
-    /// `None` on a part read from a migration section written before anchors
+    /// `None` on a transfer read from a migration section written before anchors
     /// were drawn separately (inner version 3 and below) whose transaction is
     /// not yet signed; the next placement, or
-    /// `crate::wallet::LightWallet::refresh_part_witnesses`, draws one.
+    /// `crate::wallet::LightWallet::refresh_transfer_witnesses`, draws one.
     pub(crate) anchor_bucket: Option<u64>,
-    /// A randomly chosen block within the bucket window at which the part
+    /// A randomly chosen block within the bucket window at which the transfer
     /// fires. Randomizing the target within `[boundary, boundary + M)`
-    /// prevents the server from seeing all parts cluster at the boundary.
+    /// prevents the server from seeing all transfers cluster at the boundary.
     /// Cleared whenever the bucket changes so a fresh target is chosen.
     pub target_height: Option<BlockHeight>,
     /// Lifecycle state.
-    pub state: PartState,
+    pub state: TransferState,
     /// Txid of the built transaction, set when signed.
     pub txid: Option<TxId>,
     /// Expiry height of the built transaction, set when signed.
@@ -156,29 +170,86 @@ pub struct PartRecord {
     /// Transmission attempts so far. Incremented (and persisted) before every
     /// submit so a crash between submit and record is detectable.
     pub attempts: u8,
+    /// The txids of discarded signatures. A spend by any of them is this
+    /// transfer's own.
+    pub previous_txids: Vec<TxId>,
+    /// How many windows this transfer missed.
+    pub missed_windows: u32,
 }
 
-impl PartRecord {
-    /// A freshly bound part: denomination fixed, note bound, no bucket yet.
-    pub fn new(id: PartId, denomination: u64, note: BoundNote) -> Self {
-        PartRecord {
+impl TransferRecord {
+    /// A freshly bound transfer: denomination fixed, note bound, no bucket yet.
+    pub fn new(id: TransferId, denomination: u64, note: BoundNote) -> Self {
+        TransferRecord {
             id,
             denomination,
             note: Some(note),
             bucket_index: None,
             anchor_bucket: None,
             target_height: None,
-            state: PartState::Bound,
+            state: TransferState::Bound,
             txid: None,
             expiry_height: None,
             signed_blob: None,
             anchor_witness: None,
             attempts: 0,
+            previous_txids: Vec::new(),
+            missed_windows: 0,
         }
     }
 
+    /// Whether `txid` is this transfer's own transaction, current or discarded.
+    pub fn owns_txid(&self, txid: &TxId) -> bool {
+        self.txid.as_ref() == Some(txid) || self.previous_txids.contains(txid)
+    }
+
+    /// `{Signed, Broadcast} → Expired`: drops the signature. Its txid, when
+    /// it has one, joins `previous_txids`, so a late confirmation of the old
+    /// transaction is still recognised as this transfer's own.
     #[allow(clippy::result_large_err)]
-    fn transition(&mut self, allowed_from: &[&str], to: PartState) -> Result<(), WalletError> {
+    pub(crate) fn discard_signature(&mut self) -> Result<Option<TxId>, WalletError> {
+        self.transition(&["Signed", "Broadcast"], TransferState::Expired)?;
+        Ok(self.forget_wire())
+    }
+
+    /// `{Bound, Assigned, Signed, Broadcast, Expired} → Released`: the user
+    /// took the transfer out of the migration. A transaction already on the
+    /// wire stays recorded until it confirms or is abandoned.
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn mark_released(&mut self) -> Result<(), WalletError> {
+        self.transition(
+            &["Bound", "Assigned", "Signed", "Broadcast", "Expired"],
+            TransferState::Released,
+        )
+    }
+
+    /// Whether a transaction of this transfer may still mine: it was
+    /// submitted and not yet confirmed or abandoned.
+    pub fn is_on_the_wire(&self) -> bool {
+        self.txid.is_some()
+            && matches!(
+                self.state,
+                TransferState::Broadcast | TransferState::Released
+            )
+            || (self.state == TransferState::Signed && self.attempts > 0)
+    }
+
+    /// Forgets the current transaction: its txid joins `previous_txids`.
+    pub(crate) fn forget_wire(&mut self) -> Option<TxId> {
+        let txid = self.txid.take();
+        self.previous_txids.extend(txid);
+        self.expiry_height = None;
+        self.signed_blob = None;
+        txid
+    }
+
+    /// `Assigned → Assigned` in a later window after a missed one.
+    pub(crate) fn record_missed_window(&mut self) {
+        self.missed_windows = self.missed_windows.saturating_add(1);
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn transition(&mut self, allowed_from: &[&str], to: TransferState) -> Result<(), WalletError> {
         let from = self.state.name();
         if !allowed_from.contains(&from) {
             return Err(WalletError::MigrationInvalidTransition {
@@ -190,33 +261,19 @@ impl PartRecord {
         Ok(())
     }
 
-    /// `Bound → Assigned`: the schedule placed this part in a transmission
+    /// `Bound → Assigned`: the schedule placed this transfer in a transmission
     /// window.
     ///
     /// Clears `Self::anchor_bucket`, as every bucket transition does: the
     /// placement operations in `super::schedule` are the only writers of an
     /// anchor, and they set it immediately after transitioning. A caller that
-    /// assigns directly leaves the part anchorless rather than carrying an
+    /// assigns directly leaves the transfer anchorless rather than carrying an
     /// anchor drawn against a different window.
     #[allow(clippy::result_large_err)]
     pub fn assign(&mut self, bucket_index: u64) -> Result<(), WalletError> {
-        self.transition(&["Bound"], PartState::Assigned)?;
+        self.transition(&["Bound"], TransferState::Assigned)?;
         self.bucket_index = Some(bucket_index);
         self.anchor_bucket = None;
-        Ok(())
-    }
-
-    /// `Assigned → Bound`: return the part to the unscheduled pool so a
-    /// fresh schedule can re-bucket it (a cadence change before Phase 2
-    /// begins). Clears every scheduling artifact. The binding to its note
-    /// stands.
-    #[allow(clippy::result_large_err)]
-    pub(crate) fn unassign(&mut self) -> Result<(), WalletError> {
-        self.transition(&["Assigned"], PartState::Bound)?;
-        self.bucket_index = None;
-        self.anchor_bucket = None;
-        self.target_height = None;
-        self.anchor_witness = None;
         Ok(())
     }
 
@@ -225,10 +282,10 @@ impl PartRecord {
     /// consent needed since the denomination and total are unchanged).
     #[allow(clippy::result_large_err)]
     pub(crate) fn reassign(&mut self, bucket_index: u64) -> Result<(), WalletError> {
-        self.transition(&["Expired"], PartState::Assigned)?;
+        self.transition(&["Expired"], TransferState::Assigned)?;
         self.bucket_index = Some(bucket_index);
         self.anchor_bucket = None;
-        self.txid = None;
+        self.previous_txids.extend(self.txid.take());
         self.expiry_height = None;
         self.signed_blob = None;
         self.anchor_witness = None;
@@ -243,7 +300,7 @@ impl PartRecord {
         expiry_height: BlockHeight,
         signed_blob: Option<Vec<u8>>,
     ) -> Result<(), WalletError> {
-        self.transition(&["Assigned"], PartState::Signed)?;
+        self.transition(&["Assigned"], TransferState::Signed)?;
         self.txid = Some(txid);
         self.expiry_height = Some(expiry_height);
         self.signed_blob = signed_blob;
@@ -251,7 +308,7 @@ impl PartRecord {
     }
 
     /// Records a submit attempt. Persist the record between this and the
-    /// actual submission, so an unrecorded-but-mined part is detectable.
+    /// actual submission, so an unrecorded-but-mined transfer is detectable.
     pub(crate) fn record_attempt(&mut self) {
         self.attempts = self.attempts.saturating_add(1);
     }
@@ -259,45 +316,57 @@ impl PartRecord {
     /// `Signed → Broadcast`: the transaction was submitted.
     #[allow(clippy::result_large_err)]
     pub(crate) fn mark_broadcast(&mut self) -> Result<(), WalletError> {
-        self.transition(&["Signed"], PartState::Broadcast)
+        self.transition(&["Signed"], TransferState::Broadcast)
     }
 
     /// `{Assigned, Signed, Broadcast, Expired} → Confirmed`: the bound note's
-    /// nullifier was revealed by this part's own transaction. Reachable from
+    /// nullifier was revealed by this transfer's own transaction. Reachable from
     /// pre-transmission states because a crash between submit and record leaves
     /// the persisted state behind the chain.
     #[allow(clippy::result_large_err)]
     pub(crate) fn mark_confirmed(&mut self, height: BlockHeight) -> Result<(), WalletError> {
         self.transition(
-            &["Assigned", "Signed", "Broadcast", "Expired"],
-            PartState::Confirmed { height },
+            &["Assigned", "Signed", "Broadcast", "Expired", "Released"],
+            TransferState::Confirmed { height },
         )
     }
 
-    /// `{Assigned, Signed, Broadcast} → Expired`: the signed transaction
-    /// reached its expiry height unmined.
+    /// `Confirmed → Broadcast`: the chain no longer holds the transaction.
     #[allow(clippy::result_large_err)]
-    pub(crate) fn mark_expired(&mut self) -> Result<(), WalletError> {
-        self.transition(&["Assigned", "Signed", "Broadcast"], PartState::Expired)
+    pub(crate) fn mark_reorged(&mut self) -> Result<(), WalletError> {
+        self.transition(&["Confirmed"], TransferState::Broadcast)
     }
 
-    /// `{Bound, Assigned, Signed, Broadcast, Expired} → Invalidated`: the
-    /// bound note was spent by a non-migration transaction.
+    #[cfg(test)]
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn mark_expired(&mut self) -> Result<(), WalletError> {
+        self.transition(&["Assigned", "Signed", "Broadcast"], TransferState::Expired)
+    }
+
+    /// `{Bound, Assigned, Signed, Broadcast, Expired, Confirmed} → Invalidated`:
+    /// the bound note was spent by a non-migration transaction.
     #[allow(clippy::result_large_err)]
     pub(crate) fn mark_invalidated(&mut self) -> Result<(), WalletError> {
         self.transition(
-            &["Bound", "Assigned", "Signed", "Broadcast", "Expired"],
-            PartState::Invalidated,
+            &[
+                "Bound",
+                "Assigned",
+                "Signed",
+                "Broadcast",
+                "Expired",
+                "Confirmed",
+            ],
+            TransferState::Invalidated,
         )
     }
 
-    /// Moves an [`PartState::Assigned`] part to another bucket (schedule
-    /// shift after a missed window). Signed parts cannot shift: their anchor
+    /// Moves an [`TransferState::Assigned`] transfer to another bucket (schedule
+    /// shift after a missed window). Signed transfers cannot shift: their anchor
     /// is already fixed to the old boundary, so they expire and reassign
     /// instead.
     #[allow(clippy::result_large_err)]
     pub(crate) fn shift(&mut self, bucket_index: u64) -> Result<(), WalletError> {
-        if self.state != PartState::Assigned {
+        if self.state != TransferState::Assigned {
             return Err(WalletError::MigrationInvalidTransition {
                 from: self.state.name(),
                 to: "Assigned",
@@ -311,7 +380,7 @@ impl PartRecord {
     }
 }
 
-/// A part's proving work, owning everything the build needs.
+/// A transfer's proving work, owning everything the build needs.
 ///
 /// Naming the captured set is the point: a closure hid it in a body, where
 /// nothing stated what crossed to the proving thread. Every field is owned,
@@ -321,16 +390,16 @@ pub struct ProveOnce {
     usk: zcash_keys::keys::UnifiedSpendingKey,
     /// The historical Orchard root the spend commits to.
     anchor: orchard::Anchor,
-    /// The bound note the part spends.
+    /// The bound note the transfer spends.
     note: orchard::Note,
     /// That note's path to the anchor.
     merkle_path: orchard::tree::MerklePath,
     /// The chain the transaction is built for.
     chain_type: crate::config::ChainType,
-    /// The part's value, which the Ironwood output carries.
+    /// The transfer's value, which the Ironwood output carries.
     denomination: u64,
-    /// The fee this part pays, as a non-standard fixed rule.
-    part_fee: u64,
+    /// The fee this transfer pays, as a non-standard fixed rule.
+    transfer_fee: u64,
     /// The height whose consensus branch the transaction commits to.
     target_height: BlockHeight,
     /// The height past which the transaction is no longer valid.
@@ -339,25 +408,25 @@ pub struct ProveOnce {
     params: super::MigrationParams,
 }
 
-/// Outcome of `crate::wallet::LightWallet::prepare_part`: either a ready
-/// proving closure or the reason the part must be skipped.
-pub enum PrepareResult {
+/// Outcome of `crate::wallet::LightWallet::build_transfer`: either a ready
+/// proving closure or the reason the transfer must be skipped.
+pub enum BuildResult {
     /// All wallet data was extracted. The proving work does the
-    /// CPU-intensive part on a background thread.
+    /// CPU-intensive transfer on a background thread.
     Ready {
         /// The proving work, boxed so this variant stays the size of a
         /// pointer rather than of every field the build needs.
         prove: Box<ProveOnce>,
-        /// First block of the part's bucket window (the builder's target).
+        /// First block of the transfer's bucket window (the builder's target).
         target_height: BlockHeight,
         /// Expiry height of the built transaction.
         expiry_height: BlockHeight,
     },
-    /// The wallet's tree state is not yet ready for this part.
+    /// The wallet's tree state is not yet ready for this transfer.
     Skip(SkipReason),
 }
 
-/// What materializing a part produced.
+/// What materializing a transfer produced.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MaterializeOutcome {
     /// The canonical transaction was built, signed and recorded.
@@ -365,61 +434,61 @@ pub enum MaterializeOutcome {
         /// The transaction's id.
         txid: TxId,
         /// The raw transaction bytes, ready for
-        /// [`super::transmission::TransmissionClient::submit`].
+        /// [`super::broadcast::BroadcastClient::submit`].
         raw_tx: Vec<u8>,
     },
-    /// The part cannot be materialized right now. Never triggers a
-    /// synchronization. The part falls to reconciliation.
+    /// The transfer cannot be materialized right now. Never triggers a
+    /// synchronization. The transfer falls to reconciliation.
     Skip(SkipReason),
 }
 
-/// Why a part was skipped instead of materialized.
+/// Why a transfer was skipped instead of materialized.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkipReason {
-    /// The wallet has not scanned as far as the part's boundary, so the
+    /// The wallet has not scanned as far as the transfer's boundary, so the
     /// tree state that anchors it is not yet known.
     StaleTreeState {
         /// The height every block at or below which is scanned, if any.
         scanned_to: Option<BlockHeight>,
-        /// The boundary the part anchors to.
+        /// The boundary the transfer anchors to.
         boundary: BlockHeight,
     },
     /// Every checkpoint at or below the boundary has been pruned, so the
     /// boundary's tree state is unrecoverable. Reconciliation reassigns the
-    /// part to a coming bucket.
+    /// transfer to a coming bucket.
     MissedBoundary {
         /// The boundary whose tree state is unavailable.
         boundary: BlockHeight,
     },
-    /// The part's anchor boundary predates the NU6.3 activation height. The
+    /// The transfer's anchor boundary predates the NU6.3 activation height. The
     /// window such an anchor belongs to would commit to a pre-NU6.3
     /// consensus branch, in which no Ironwood bundle exists. The schedule's
     /// era floor keeps new placements out of this state and the immediate
     /// path refuses too-young eras up front, so it survives only in a
-    /// schedule persisted before the floor existed. Such a part heals
-    /// through the overdue classification and the consented catch-up.
+    /// schedule persisted before the floor existed. Such a transfer heals
+    /// through the missed classification and the reschedule.
     BoundaryBeforeActivation {
-        /// The boundary the part anchors to.
+        /// The boundary the transfer anchors to.
         boundary: BlockHeight,
         /// The NU6.3 activation height it fails to reach.
         activation: BlockHeight,
     },
-    /// The part carries no anchor bucket: a schedule persisted before
+    /// The transfer carries no anchor bucket: a schedule persisted before
     /// anchors were drawn separately from transmission windows (migration
     /// section inner version 3 and below). Proving cannot invent one,
     /// because the age draw is what keeps the anchor out of the open window.
-    /// `crate::wallet::LightWallet::refresh_part_witnesses` draws it at
+    /// `crate::wallet::LightWallet::refresh_transfer_witnesses` draws it at
     /// the next synchronization, which is also when its witness becomes
     /// capturable, so this reason clears itself.
     AnchorNotDrawn,
     /// The bound note is already spent (the user insistently spent it, or a
     /// restart raced an earlier transmission). Reconciliation invalidates the
-    /// part and recommends a remainder replan.
+    /// transfer and recommends a remainder replan.
     BoundNoteSpent {
         /// The spent note's wallet output id.
         bound: OutputId,
     },
-    /// The wallet's record of the bound note no longer matches the part
+    /// The wallet's record of the bound note no longer matches the transfer
     /// record (nullifier disagreement). Reconciliation resolves the
     /// divergence.
     BoundNoteMismatch {
@@ -429,7 +498,7 @@ pub enum SkipReason {
 }
 
 impl crate::wallet::LightWallet {
-    /// The wallet's record of a part's bound note.
+    /// The wallet's record of a transfer's bound note.
     #[allow(clippy::result_large_err)]
     fn bound_orchard_note(
         &self,
@@ -447,18 +516,18 @@ impl crate::wallet::LightWallet {
             .ok_or(WalletError::MigrationBoundNoteMissing(output_id))
     }
 
-    /// The confirmation height of one part's bound note, or `None` while it
+    /// The confirmation height of one transfer's bound note, or `None` while it
     /// is unconfirmed or unknown to the wallet.
     ///
-    /// This is the lowest boundary *this part* can anchor at: a note has no
-    /// Merkle path under an anchor that predates it. It is the per-part half
+    /// This is the lowest boundary *this transfer* can anchor at: a note has no
+    /// Merkle path under an anchor that predates it. It is the per-transfer half
     /// of [`super::schedule::AnchorFloor`], matching ZIP 318's per-transfer
     /// funding-creation condition. The floor was previously taken as a
-    /// maximum across every part, which forced the whole schedule up to the
-    /// newest note's boundary; each part now clears only its own.
+    /// maximum across every transfer, which forced the whole schedule up to the
+    /// newest note's boundary; each transfer now clears only its own.
     #[must_use]
-    pub(crate) fn bound_note_confirmed_at(&self, part: &PartRecord) -> Option<BlockHeight> {
-        let bound = part.note?;
+    pub(crate) fn bound_note_confirmed_at(&self, transfer: &TransferRecord) -> Option<BlockHeight> {
+        let bound = transfer.note?;
         self.wallet_transactions
             .get(&bound.output_id.txid())?
             .status()
@@ -503,19 +572,29 @@ impl crate::wallet::LightWallet {
         })
     }
 
-    /// Captures the boundary anchor and witness for one part from the local
+    fn boundary_root(&self, boundary: BlockHeight) -> Option<[u8; 32]> {
+        let checkpoint = self.boundary_anchor_checkpoint(boundary)?;
+        self.shard_trees
+            .orchard
+            .root_at_checkpoint_id(&checkpoint)
+            .ok()
+            .flatten()
+            .map(|root| root.to_bytes())
+    }
+
+    /// Captures the boundary anchor and witness for one transfer from the local
     /// shard tree, if a checkpoint holding the boundary's tree survives.
     /// Local-only: never touches the network.
     #[allow(clippy::result_large_err)]
     fn capture_boundary_witness(
         &mut self,
-        part: &PartRecord,
+        transfer: &TransferRecord,
         boundary: BlockHeight,
     ) -> Result<Option<BoundaryWitness>, WalletError> {
         use pepper_sync::wallet::NoteInterface as _;
 
-        let bound = part.note.ok_or(WalletError::MigrationStateCorrupt(
-            "part has no bound note".to_string(),
+        let bound = transfer.note.ok_or(WalletError::MigrationStateCorrupt(
+            "transfer has no bound note".to_string(),
         ))?;
         let position = self.bound_orchard_note(bound.output_id)?.position().ok_or(
             WalletError::MigrationStateCorrupt("bound note has no tree position".to_string()),
@@ -561,53 +640,75 @@ impl crate::wallet::LightWallet {
         }))
     }
 
-    /// Caches the boundary anchor and witness of every part whose anchor
+    /// Caches the boundary anchor and witness of every transfer whose anchor
     /// checkpoint is currently retained. Call after synchronization: the
     /// retention window is finite and a captured witness is good forever.
     ///
-    /// Because a part's anchor sits at least one full bucket below its
-    /// transmission window, every part gets a whole window's worth of
+    /// Because a transfer's anchor sits at least one full bucket below its
+    /// broadcast window, every transfer gets a whole window's worth of
     /// synchronizations in which to capture its witness before it is due.
     /// That runway is what makes it survivable that pepper-sync checkpoints
     /// wherever Orchard outputs happen to land rather than on the boundary
     /// grid (ADR 0018).
     ///
-    /// Also draws the anchor of any part that has none: a schedule persisted
+    /// Also draws the anchor of any transfer that has none: a schedule persisted
     /// before anchors were drawn separately from windows. Drawing it here
     /// rather than at proving time keeps the placement and the capture in the
-    /// same pass, so the part is ready before its window opens.
+    /// same pass, so the transfer is ready before its window opens.
     ///
     /// A wallet with no witness work — no migration state at all, or no
-    /// [`PartState::Assigned`] part awaiting its witness — returns without
+    /// [`TransferState::Assigned`] transfer awaiting its witness — returns without
     /// consulting the activation schedule, so this ambient post-sync call
     /// never blocks synchronization on a network that never activates NU6.3
     /// (where the start paths refuse loudly, so such work cannot arise).
     /// With work present, a missing NU6.3 activation is a real fault and
     /// errors.
     #[allow(clippy::result_large_err)]
-    pub(crate) fn refresh_part_witnesses(&mut self) -> Result<(), WalletError> {
+    pub(crate) fn refresh_transfer_witnesses(&mut self) -> Result<(), WalletError> {
         self.with_migration_state(|wallet, state| {
-            let mut pending = state
-                .parts
+            for transfer in state
+                .transfers
                 .iter_mut()
-                .filter(|part| part.state == PartState::Assigned && part.anchor_witness.is_none())
+                .filter(|transfer| transfer.state == TransferState::Assigned)
+            {
+                let Some((anchor_bucket, witness)) =
+                    transfer.anchor_bucket.zip(transfer.anchor_witness.as_ref())
+                else {
+                    continue;
+                };
+                let boundary =
+                    super::schedule::boundary_of(anchor_bucket, state.params.bucket_modulus);
+                if wallet
+                    .boundary_root(boundary)
+                    .is_some_and(|root| root != witness.anchor)
+                {
+                    transfer.anchor_witness = None;
+                    wallet.save_required = true;
+                }
+            }
+            let mut pending = state
+                .transfers
+                .iter_mut()
+                .filter(|transfer| {
+                    transfer.state == TransferState::Assigned && transfer.anchor_witness.is_none()
+                })
                 .peekable();
             if pending.peek().is_none() {
                 return Ok(());
             }
             let activation = wallet.ironwood_activation()?;
-            for part in pending {
-                let Some(bucket) = part.bucket_index else {
+            for transfer in pending {
+                let Some(bucket) = transfer.bucket_index else {
                     continue;
                 };
-                if part.anchor_bucket.is_none() {
+                if transfer.anchor_bucket.is_none() {
                     let floor = super::schedule::AnchorFloor::new(
                         activation,
-                        wallet.bound_note_confirmed_at(part),
+                        wallet.bound_note_confirmed_at(transfer),
                     );
-                    // A legacy part whose window is now too close for any
+                    // A legacy transfer whose window is now too close for any
                     // legal anchor is left alone: reconciliation classifies
-                    // it overdue and catch-up re-places it into a window
+                    // it missed and reschedules it into a window
                     // that has room.
                     if let Some(anchor) = super::schedule::draw_anchor_bucket(
                         bucket,
@@ -615,19 +716,23 @@ impl crate::wallet::LightWallet {
                         &mut rand::rngs::OsRng,
                         state.params.bucket_modulus,
                     ) {
-                        part.anchor_bucket = Some(anchor);
+                        transfer.anchor_bucket = Some(anchor);
                         wallet.save_required = true;
                     } else {
                         continue;
                     }
                 }
-                let anchor_bucket = part
+                let anchor_bucket = transfer
                     .anchor_bucket
                     .expect("just drawn or already present above");
                 let boundary =
                     super::schedule::boundary_of(anchor_bucket, state.params.bucket_modulus);
-                if let Some(witness) = wallet.capture_boundary_witness(part, boundary)? {
-                    part.anchor_witness = Some(witness);
+                let witness = match wallet.capture_boundary_witness(transfer, boundary) {
+                    Err(WalletError::MigrationBoundNoteMissing(_)) => continue,
+                    captured => captured?,
+                };
+                if let Some(witness) = witness {
+                    transfer.anchor_witness = Some(witness);
                     wallet.save_required = true;
                 }
             }
@@ -636,40 +741,40 @@ impl crate::wallet::LightWallet {
         .unwrap_or(Ok(()))
     }
 
-    /// Extracts all wallet data needed to prove one [`PartState::Assigned`]
-    /// part and returns it as an owned proving closure. Returns
-    /// [`PrepareResult::Skip`] when the part cannot be materialized in this
+    /// Extracts all wallet data needed to prove one [`TransferState::Assigned`]
+    /// transfer and returns it as an owned proving closure. Returns
+    /// [`BuildResult::Skip`] when the transfer cannot be materialized in this
     /// pass (the tree state is unavailable, the boundary predates the
     /// NU6.3 activation, or the bound note is spent or has diverged from
-    /// the part record), so one part's condition never aborts the whole
-    /// transmission pass. Skipped parts fall to reconciliation.
+    /// the transfer record), so one transfer's condition never aborts the whole
+    /// transmission pass. Skipped transfers fall to reconciliation.
     ///
     /// The returned closure does not reference the wallet, so callers can run
     /// multiple closures concurrently on background threads. Mutates
-    /// `part.anchor_witness` if the boundary witness needs capturing.
+    /// `transfer.anchor_witness` if the boundary witness needs capturing.
     #[allow(clippy::result_large_err)]
-    pub(crate) fn prepare_part(
+    pub(crate) fn build_transfer(
         &mut self,
         account: zip32::AccountId,
-        part: &mut PartRecord,
+        transfer: &mut TransferRecord,
         params: &super::MigrationParams,
-    ) -> Result<PrepareResult, WalletError> {
+    ) -> Result<BuildResult, WalletError> {
         use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
 
-        if part.state != PartState::Assigned {
+        if transfer.state != TransferState::Assigned {
             return Err(WalletError::MigrationInvalidTransition {
-                from: part.state.name(),
+                from: transfer.state.name(),
                 to: "Signed",
             });
         }
-        let window = part
+        let window = transfer
             .bucket_index
-            .expect("assigned parts always carry a bucket");
-        // The anchor is where the part proves; the window is where it fires
-        // and what its target height (and so its consensus branch) comes
+            .expect("assigned transfers always carry a bucket");
+        // The anchor is where the transfer proves; the window is where it fires
+        // and what its scheduled broadcast height (and so its consensus branch) comes
         // from. They are different buckets, the anchor always the lower.
-        let Some(anchor_bucket) = part.anchor_bucket else {
-            return Ok(PrepareResult::Skip(SkipReason::AnchorNotDrawn));
+        let Some(anchor_bucket) = transfer.anchor_bucket else {
+            return Ok(BuildResult::Skip(SkipReason::AnchorNotDrawn));
         };
         let boundary = super::schedule::boundary_of(anchor_bucket, params.bucket_modulus);
 
@@ -680,7 +785,7 @@ impl crate::wallet::LightWallet {
         .ok_or_else(|| WalletError::MigrationBuild("NU6.3 has no activation height".to_string()))?
         .height();
         if boundary < activation {
-            return Ok(PrepareResult::Skip(SkipReason::BoundaryBeforeActivation {
+            return Ok(BuildResult::Skip(SkipReason::BoundaryBeforeActivation {
                 boundary,
                 activation,
             }));
@@ -692,21 +797,23 @@ impl crate::wallet::LightWallet {
         // the boundary's tree state is known all the same.
         let scanned_to = self.sync_state.fully_scanned_height();
         if scanned_to.is_none_or(|scanned| scanned < boundary) {
-            return Ok(PrepareResult::Skip(SkipReason::StaleTreeState {
+            return Ok(BuildResult::Skip(SkipReason::StaleTreeState {
                 scanned_to,
                 boundary,
             }));
         }
 
-        if part.anchor_witness.is_none() {
-            part.anchor_witness = self.capture_boundary_witness(part, boundary)?;
+        if transfer.anchor_witness.is_none() {
+            transfer.anchor_witness = self.capture_boundary_witness(transfer, boundary)?;
         }
-        let Some(boundary_witness) = part.anchor_witness.clone() else {
-            return Ok(PrepareResult::Skip(SkipReason::MissedBoundary { boundary }));
+        let Some(boundary_witness) = transfer.anchor_witness.clone() else {
+            return Ok(BuildResult::Skip(SkipReason::MissedBoundary { boundary }));
         };
 
         // Revalidate the bound note.
-        let bound = part.note.expect("witnessed parts have a bound note");
+        let bound = transfer
+            .note
+            .expect("witnessed transfers have a bound note");
         let (note, note_value) = {
             let wallet_note = self.bound_orchard_note(bound.output_id)?;
             if wallet_note.note().version() != orchard::note::NoteVersion::V2 {
@@ -718,21 +825,21 @@ impl crate::wallet::LightWallet {
                 .nullifier()
                 .is_none_or(|nullifier| nullifier.to_bytes() != bound.nullifier)
             {
-                return Ok(PrepareResult::Skip(SkipReason::BoundNoteMismatch {
+                return Ok(BuildResult::Skip(SkipReason::BoundNoteMismatch {
                     bound: bound.output_id,
                 }));
             }
             if wallet_note.spending_transaction().is_some() {
-                return Ok(PrepareResult::Skip(SkipReason::BoundNoteSpent {
+                return Ok(BuildResult::Skip(SkipReason::BoundNoteSpent {
                     bound: bound.output_id,
                 }));
             }
             (*wallet_note.note(), wallet_note.value())
         };
-        if note_value != part.denomination + params.part_fee {
+        if note_value != transfer.denomination + params.transfer_fee {
             return Err(WalletError::MigrationDeviation(format!(
-                "bound note value {} is not denomination {} + part fee {}",
-                note_value, part.denomination, params.part_fee
+                "bound note value {} is not denomination {} + transfer fee {}",
+                note_value, transfer.denomination, params.transfer_fee
             )));
         }
 
@@ -769,12 +876,12 @@ impl crate::wallet::LightWallet {
             .try_into()?;
 
         let chain_type = self.chain_type;
-        let denomination = part.denomination;
-        let part_fee = params.part_fee;
-        // The target comes from the transmission window, not the anchor. It
+        let denomination = transfer.denomination;
+        let transfer_fee = params.transfer_fee;
+        // The target comes from the broadcast window, not the anchor. It
         // selects the consensus branch the transaction commits to, so it must
         // sit in the Ironwood era; the anchor is a historical Orchard root
-        // and is legal at any retained boundary above the part's own note.
+        // and is legal at any retained boundary above the transfer's own note.
         // Deriving the target from the anchor was what made a pre-activation
         // anchor look like a consensus problem (ADR 0014, ADR 0018).
         let target_height = super::schedule::boundary_of(window, params.bucket_modulus) + 1;
@@ -788,27 +895,27 @@ impl crate::wallet::LightWallet {
             merkle_path,
             chain_type,
             denomination,
-            part_fee,
+            transfer_fee,
             target_height,
             expiry_height,
             params: params_clone,
         });
 
-        Ok(PrepareResult::Ready {
+        Ok(BuildResult::Ready {
             prove,
             target_height,
             expiry_height,
         })
     }
 
-    /// Records a materialized part in the wallet after proving: stores the
-    /// transaction, transitions the part to [`PartState::Signed`].
+    /// Records a materialized transfer in the wallet after proving: stores the
+    /// transaction, transitions the transfer to [`TransferState::Signed`].
     ///
     /// Called sequentially in Phase C after all parallel proving is complete.
     #[allow(clippy::result_large_err)]
-    pub(crate) fn record_part_result(
+    pub(crate) fn record_transfer_result(
         &mut self,
-        part: &mut PartRecord,
+        transfer: &mut TransferRecord,
         txid: TxId,
         raw_tx: &[u8],
         target_height: BlockHeight,
@@ -824,14 +931,14 @@ impl crate::wallet::LightWallet {
             SigningStrategy::LazyAtBoundary => None,
             SigningStrategy::PreSigned => Some(raw_tx.to_vec()),
         };
-        part.mark_signed(txid, expiry_height, signed_blob)?;
+        transfer.mark_signed(txid, expiry_height, signed_blob)?;
         self.save_required = true;
         Ok(())
     }
 
     /// Builds, proves, signs and records the canonical transaction for one
-    /// [`PartState::Assigned`] part: exactly one Orchard spend of the bound
-    /// note, exactly one Ironwood output of the part's denomination, no
+    /// [`TransferState::Assigned`] transfer: exactly one Orchard spend of the bound
+    /// note, exactly one Ironwood output of the transfer's denomination, no
     /// other components, the canonical fee, the previous-boundary anchor,
     /// the canonical expiry and `lock_time = 0`. Any deviation is a hard
     /// error, never a fallback.
@@ -840,26 +947,26 @@ impl crate::wallet::LightWallet {
     /// unavailable it returns [`MaterializeOutcome::Skip`] without writing
     /// anything.
     ///
-    /// For parallel proving of multiple parts, see `Self::prepare_part` and
-    /// `Self::record_part_result`.
+    /// For parallel proving of multiple transfers, see `Self::build_transfer` and
+    /// `Self::record_transfer_result`.
     #[allow(clippy::result_large_err)]
     pub fn materialize_part(
         &mut self,
         account: zip32::AccountId,
-        part: &mut PartRecord,
+        transfer: &mut TransferRecord,
         strategy: SigningStrategy,
         params: &super::MigrationParams,
     ) -> Result<MaterializeOutcome, WalletError> {
-        match self.prepare_part(account, part, params)? {
-            PrepareResult::Skip(reason) => Ok(MaterializeOutcome::Skip(reason)),
-            PrepareResult::Ready {
+        match self.build_transfer(account, transfer, params)? {
+            BuildResult::Skip(reason) => Ok(MaterializeOutcome::Skip(reason)),
+            BuildResult::Ready {
                 prove,
                 target_height,
                 expiry_height,
             } => {
                 let (txid, raw_tx) = prove.prove()?;
-                self.record_part_result(
-                    part,
+                self.record_transfer_result(
+                    transfer,
                     txid,
                     &raw_tx,
                     target_height,
@@ -873,7 +980,7 @@ impl crate::wallet::LightWallet {
 }
 
 impl ProveOnce {
-    /// Builds, proves, and signs the part's transaction, yielding its txid
+    /// Builds, proves, and signs the transfer's transaction, yielding its txid
     /// and raw bytes.
     #[allow(clippy::result_large_err)]
     pub(crate) fn prove(self) -> Result<(TxId, Vec<u8>), WalletError> {
@@ -884,7 +991,7 @@ impl ProveOnce {
             merkle_path,
             chain_type,
             denomination,
-            part_fee,
+            transfer_fee,
             target_height,
             expiry_height,
             params: params_clone,
@@ -898,7 +1005,7 @@ impl ProveOnce {
         let internal_ovk = orchard_fvk.to_ovk(zip32::Scope::Internal);
 
         let fee_rule = zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(
-            Zatoshis::from_u64(part_fee)?,
+            Zatoshis::from_u64(transfer_fee)?,
         );
         let build_config = BuildConfig::Standard {
             sapling_anchor: None,
@@ -954,10 +1061,10 @@ impl ProveOnce {
 }
 
 /// Enforces the canonical migration-transaction predicate of ZIP 318. Any
-/// deviation is a hard error: a non-canonical part must never leave the
+/// deviation is a hard error: a non-canonical transfer must never leave the
 /// wallet, because it would fingerprint it.
 #[allow(clippy::result_large_err)]
-fn verify_canonical_part(
+pub(crate) fn verify_canonical_part(
     transaction: &zcash_primitives::transaction::Transaction,
     denomination: u64,
     expiry_height: BlockHeight,
@@ -966,66 +1073,66 @@ fn verify_canonical_part(
     let deviation = |what: &str| Err(WalletError::MigrationDeviation(what.to_string()));
 
     if transaction.transparent_bundle().is_some() {
-        return deviation("part carries a transparent bundle");
+        return deviation("transfer carries a transparent bundle");
     }
     if transaction.sapling_bundle().is_some() {
-        return deviation("part carries a sapling bundle");
+        return deviation("transfer carries a sapling bundle");
     }
     if transaction.lock_time() != 0 {
-        return deviation("part has a non-zero lock time");
+        return deviation("transfer has a non-zero lock time");
     }
     if transaction.expiry_height() != expiry_height {
-        return deviation("part's expiry is not the canonical expiry");
+        return deviation("transfer's expiry is not the canonical expiry");
     }
 
     let Some(orchard_bundle) = transaction.orchard_bundle() else {
-        return deviation("part has no Orchard bundle");
+        return deviation("transfer has no Orchard bundle");
     };
     if orchard_bundle.actions().len() != 2 {
-        return deviation("part's Orchard bundle is not padded to two actions");
+        return deviation("transfer's Orchard bundle is not padded to two actions");
     }
-    let orchard_out = i64::try_from(denomination + params.part_fee).expect("fits i64");
+    let orchard_out = i64::try_from(denomination + params.transfer_fee).expect("fits i64");
     if i64::from(orchard_bundle.value_balance()) != orchard_out {
-        return deviation("part's Orchard value balance is not denomination + fee");
+        return deviation("transfer's Orchard value balance is not denomination + fee");
     }
 
     let Some(ironwood_bundle) = transaction.ironwood_bundle() else {
-        return deviation("part has no Ironwood bundle");
+        return deviation("transfer has no Ironwood bundle");
     };
     if ironwood_bundle.actions().len() != 2 {
-        return deviation("part's Ironwood bundle is not padded to two actions");
+        return deviation("transfer's Ironwood bundle is not padded to two actions");
     }
     if i64::from(ironwood_bundle.value_balance()) != -i64::try_from(denomination).expect("fits i64")
     {
-        return deviation("part's Ironwood value balance is not the denomination");
+        return deviation("transfer's Ironwood value balance is not the denomination");
     }
 
     Ok(())
 }
 
 impl crate::wallet::LightWallet {
-    /// Binds every part-ready note to a [`PartRecord`], the switch from
+    /// Binds every funding note to a [`TransferRecord`], the switch from
     /// value-based to deterministic note targeting. Called once, when note
     /// splitting completes.
     ///
-    /// Every spendable pre-Ironwood (V2) note must either be part-ready
-    /// (valued `denomination + part_fee`) or dust below the sweep minimum.
-    /// Anything else means splitting has not finished and binding refuses to
-    /// proceed. Ready notes become parts largest first, ties broken by
+    /// Every spendable pre-Ironwood (V2) note must either be funding
+    /// (valued `denomination + transfer_fee`) or residual. When the planner still
+    /// finds a split round over the notes, splitting has not finished and
+    /// binding refuses to proceed. Ready notes become transfers largest first, ties broken by
     /// output id, so binding is deterministic for a given note set.
     #[allow(clippy::result_large_err)]
-    pub fn bind_parts_to_notes(
+    pub fn bind_transfers_to_notes(
         &self,
         state: &mut super::MigrationState,
         account: zip32::AccountId,
     ) -> Result<(), WalletError> {
         use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
 
-        use super::split::part_denomination;
+        use super::preparation::funding_denomination;
 
-        if !state.parts.is_empty() {
+        if !state.transfers.is_empty() {
             return Err(WalletError::MigrationStateCorrupt(
-                "parts are already bound".to_string(),
+                "transfers are already bound".to_string(),
             ));
         }
 
@@ -1033,6 +1140,7 @@ impl crate::wallet::LightWallet {
             .get_migration_heights()?
             .ok_or(WalletError::NoSyncData)?;
         let mut ready: Vec<(u64, BoundNote)> = Vec::new();
+        let mut values: Vec<u64> = Vec::new();
         for note in self
             .spendable_notes::<pepper_sync::wallet::OrchardNote>(
                 anchor_height,
@@ -1043,8 +1151,9 @@ impl crate::wallet::LightWallet {
             .into_iter()
             .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
         {
-            match part_denomination(note.value(), &state.params) {
-                Some(denomination) => ready.push((
+            values.push(note.value());
+            if let Some(denomination) = funding_denomination(note.value(), &state.params) {
+                ready.push((
                     denomination,
                     BoundNote {
                         output_id: note.output_id(),
@@ -1057,25 +1166,28 @@ impl crate::wallet::LightWallet {
                         )
                         .to_bytes(),
                     },
-                )),
-                None if note.value() > state.params.sweep_min => {
-                    return Err(WalletError::MigrationStateCorrupt(format!(
-                        "cannot bind parts: note of {} zatoshis is neither part-ready nor dust",
-                        note.value()
-                    )));
-                }
-                None => (),
+                ));
             }
+        }
+        if state.phase != super::MigrationPhase::Scheduled
+            && !super::preparation::plan_migration(
+                &values,
+                self.preparations_confirm_post_activation(),
+                &state.params,
+            )
+            .is_prepared()
+        {
+            return Err(WalletError::MigrationNotPrepared);
         }
 
         ready
             .sort_by_key(|(denomination, note)| (std::cmp::Reverse(*denomination), note.output_id));
-        state.parts = ready
+        state.transfers = ready
             .into_iter()
             .enumerate()
             .map(|(index, (denomination, note))| {
-                PartRecord::new(
-                    PartId(u32::try_from(index).expect("part count fits u32")),
+                TransferRecord::new(
+                    TransferId(u32::try_from(index).expect("transfer count fits u32")),
                     denomination,
                     note,
                 )
@@ -1107,36 +1219,37 @@ mod tests {
     #[test]
     fn reassign_is_reachable_only_from_expired() {
         for state in ALL_STATES {
-            let is_expired = matches!(state, PartState::Expired);
-            let mut part = part_in(state);
+            let is_expired = matches!(state, TransferState::Expired);
+            let mut transfer = part_in(state);
             if is_expired {
-                part.reassign(5).expect("expired parts reassign");
+                transfer.reassign(5).expect("expired transfers reassign");
             } else {
                 assert!(
-                    part.reassign(5).is_err(),
+                    transfer.reassign(5).is_err(),
                     "reassign must be illegal from {:?}",
-                    part.state,
+                    transfer.state,
                 );
             }
         }
     }
 
-    fn part_in(state: PartState) -> PartRecord {
-        let mut part = PartRecord::new(PartId(0), 100_000, bound_note());
-        part.state = state;
-        part
+    fn part_in(state: TransferState) -> TransferRecord {
+        let mut transfer = TransferRecord::new(TransferId(0), 100_000, bound_note());
+        transfer.state = state;
+        transfer
     }
 
-    const ALL_STATES: [PartState; 7] = [
-        PartState::Bound,
-        PartState::Assigned,
-        PartState::Signed,
-        PartState::Broadcast,
-        PartState::Confirmed {
+    const ALL_STATES: [TransferState; 8] = [
+        TransferState::Bound,
+        TransferState::Assigned,
+        TransferState::Signed,
+        TransferState::Broadcast,
+        TransferState::Confirmed {
             height: BlockHeight::from_u32(100),
         },
-        PartState::Expired,
-        PartState::Invalidated,
+        TransferState::Expired,
+        TransferState::Invalidated,
+        TransferState::Released,
     ];
 
     /// Exhaustive legal/illegal edge matrix over every (state, transition)
@@ -1144,21 +1257,21 @@ mod tests {
     #[test]
     fn transition_matrix() {
         for from in ALL_STATES {
-            let legal_assign = matches!(from, PartState::Bound);
+            let legal_assign = matches!(from, TransferState::Bound);
             assert_eq!(
                 part_in(from).assign(3).is_ok(),
                 legal_assign,
                 "assign from {from:?}"
             );
 
-            let legal_reassign = matches!(from, PartState::Expired);
+            let legal_reassign = matches!(from, TransferState::Expired);
             assert_eq!(
                 part_in(from).reassign(4).is_ok(),
                 legal_reassign,
                 "reassign from {from:?}"
             );
 
-            let legal_signed = matches!(from, PartState::Assigned);
+            let legal_signed = matches!(from, TransferState::Assigned);
             assert_eq!(
                 part_in(from)
                     .mark_signed(TxId::from_bytes([9; 32]), BlockHeight::from_u32(500), None)
@@ -1167,7 +1280,7 @@ mod tests {
                 "mark_signed from {from:?}"
             );
 
-            let legal_transmission = matches!(from, PartState::Signed);
+            let legal_transmission = matches!(from, TransferState::Signed);
             assert_eq!(
                 part_in(from).mark_broadcast().is_ok(),
                 legal_transmission,
@@ -1176,7 +1289,11 @@ mod tests {
 
             let legal_confirmed = matches!(
                 from,
-                PartState::Assigned | PartState::Signed | PartState::Broadcast | PartState::Expired
+                TransferState::Assigned
+                    | TransferState::Signed
+                    | TransferState::Broadcast
+                    | TransferState::Expired
+                    | TransferState::Released
             );
             assert_eq!(
                 part_in(from)
@@ -1188,7 +1305,7 @@ mod tests {
 
             let legal_expired = matches!(
                 from,
-                PartState::Assigned | PartState::Signed | PartState::Broadcast
+                TransferState::Assigned | TransferState::Signed | TransferState::Broadcast
             );
             assert_eq!(
                 part_in(from).mark_expired().is_ok(),
@@ -1196,8 +1313,15 @@ mod tests {
                 "mark_expired from {from:?}"
             );
 
+            let legal_reorged = matches!(from, TransferState::Confirmed { .. });
+            assert_eq!(
+                part_in(from).mark_reorged().is_ok(),
+                legal_reorged,
+                "mark_reorged from {from:?}"
+            );
+
             let legal_invalidated =
-                !matches!(from, PartState::Confirmed { .. } | PartState::Invalidated);
+                !matches!(from, TransferState::Invalidated | TransferState::Released);
             assert_eq!(
                 part_in(from).mark_invalidated().is_ok(),
                 legal_invalidated,
@@ -1208,39 +1332,40 @@ mod tests {
 
     #[test]
     fn reassign_clears_stale_transaction_artifacts() {
-        let mut part = part_in(PartState::Assigned);
-        part.mark_signed(
-            TxId::from_bytes([9; 32]),
-            BlockHeight::from_u32(500),
-            Some(vec![1, 2, 3]),
-        )
-        .unwrap();
-        part.record_attempt();
-        part.mark_broadcast().unwrap();
-        part.mark_expired().unwrap();
+        let mut transfer = part_in(TransferState::Assigned);
+        transfer
+            .mark_signed(
+                TxId::from_bytes([9; 32]),
+                BlockHeight::from_u32(500),
+                Some(vec![1, 2, 3]),
+            )
+            .unwrap();
+        transfer.record_attempt();
+        transfer.mark_broadcast().unwrap();
+        transfer.mark_expired().unwrap();
 
-        part.reassign(7).unwrap();
-        assert_eq!(part.state, PartState::Assigned);
-        assert_eq!(part.bucket_index, Some(7));
-        assert_eq!(part.txid, None);
-        assert_eq!(part.expiry_height, None);
-        assert_eq!(part.signed_blob, None);
+        transfer.reassign(7).unwrap();
+        assert_eq!(transfer.state, TransferState::Assigned);
+        assert_eq!(transfer.bucket_index, Some(7));
+        assert_eq!(transfer.txid, None);
+        assert_eq!(transfer.expiry_height, None);
+        assert_eq!(transfer.signed_blob, None);
         // The note binding and attempt history survive the rebuild.
-        assert!(part.note.is_some());
-        assert_eq!(part.attempts, 1);
+        assert!(transfer.note.is_some());
+        assert_eq!(transfer.attempts, 1);
     }
 
     #[test]
     fn failed_transition_leaves_the_record_untouched() {
-        let mut part = part_in(PartState::Bound);
-        let before = part.clone();
-        assert!(part.mark_broadcast().is_err());
-        assert_eq!(part, before);
+        let mut transfer = part_in(TransferState::Bound);
+        let before = transfer.clone();
+        assert!(transfer.mark_broadcast().is_err());
+        assert_eq!(transfer, before);
     }
 
     /// A regtest wallet on a chain that never activates NU6.3: the custom-chain
     /// shape whose ambient post-sync refresh must not block synchronization
-    /// (branch `fix/refresh_part_witnesses`).
+    /// (branch `fix/refresh_transfer_witnesses`).
     fn no_nu6_3_wallet() -> crate::wallet::LightWallet {
         let heights = zingo_common_components::protocol::ActivationHeights::builder()
             .set_overwinter(Some(1))
@@ -1262,22 +1387,22 @@ mod tests {
         .build()
     }
 
-    fn scheduled_state(parts: Vec<PartRecord>) -> crate::wallet::migration::MigrationState {
+    fn scheduled_state(transfers: Vec<TransferRecord>) -> crate::wallet::migration::MigrationState {
         let params = crate::wallet::migration::MigrationParams::provisional(
             crate::config::ChainType::Mainnet,
         );
         crate::wallet::migration::MigrationState {
-            consent: crate::wallet::migration::ConsentBinding {
+            commitment: crate::wallet::migration::PlanCommitment {
                 params_hash: params.params_hash(),
                 plan_hash: [0; 32],
-                consented_at: 0,
+                committed_at: 0,
             },
             params,
             strategy: crate::wallet::migration::SigningStrategy::LazyAtBoundary,
             mode: crate::wallet::migration::MigrationMode::Scheduled,
             account: zip32::AccountId::ZERO,
-            phase: crate::wallet::migration::MigrationPhase::PartsScheduled,
-            parts,
+            phase: crate::wallet::migration::MigrationPhase::Scheduled,
+            transfers,
         }
     }
 
@@ -1289,39 +1414,455 @@ mod tests {
     fn refresh_without_migration_state_is_inert_on_no_nu6_3_chain() {
         let mut wallet = no_nu6_3_wallet();
         wallet
-            .refresh_part_witnesses()
+            .refresh_transfer_witnesses()
             .expect("a wallet with no migration state must sync on a no-NU6.3 chain");
     }
 
-    /// The gate's grain: migration state whose parts carry no witness work
+    /// The gate's grain: migration state whose transfers carry no witness work
     /// (nothing Assigned-and-unwitnessed) is likewise inert, so terminal or
     /// fully-witnessed migration history never blocks synchronization even
     /// if the activation lookup breaks.
     #[test]
     fn refresh_without_actionable_parts_is_inert_on_no_nu6_3_chain() {
         let mut wallet = no_nu6_3_wallet();
-        wallet.migration = Some(scheduled_state(vec![part_in(PartState::Bound)]));
+        wallet.migration = Some(scheduled_state(vec![part_in(TransferState::Bound)]));
         wallet
-            .refresh_part_witnesses()
+            .refresh_transfer_witnesses()
             .expect("migration state without witness work must not consult the activation");
     }
 
-    /// The loud arm: an Assigned part awaiting its witness on a chain with
+    /// The loud arm: an Assigned transfer awaiting its witness on a chain with
     /// no NU6.3 activation can only mean a real fault (the start paths
     /// refuse on such chains), so the refresh errors instead of silently
     /// stalling the migration.
     #[test]
     fn refresh_with_pending_work_errors_on_no_nu6_3_chain() {
         let mut wallet = no_nu6_3_wallet();
-        let mut part = PartRecord::new(PartId(0), 100_000, bound_note());
-        part.assign(3).expect("bound parts assign");
-        wallet.migration = Some(scheduled_state(vec![part]));
+        let mut transfer = TransferRecord::new(TransferId(0), 100_000, bound_note());
+        transfer.assign(3).expect("bound transfers assign");
+        wallet.migration = Some(scheduled_state(vec![transfer]));
         assert!(
             matches!(
-                wallet.refresh_part_witnesses(),
+                wallet.refresh_transfer_witnesses(),
                 Err(WalletError::MigrationBuild(_))
             ),
             "pending witness work with no NU6.3 activation must error loudly"
+        );
+    }
+
+    fn regtest_params() -> super::super::MigrationParams {
+        super::super::MigrationParams::provisional(crate::config::ChainType::Regtest(
+            zingo_common_components::protocol::ActivationHeights::default(),
+        ))
+    }
+
+    fn unbound_scheduled_state(
+        params: super::super::MigrationParams,
+    ) -> super::super::MigrationState {
+        super::super::MigrationState {
+            commitment: super::super::PlanCommitment {
+                params_hash: params.params_hash(),
+                plan_hash: [0; 32],
+                committed_at: 0,
+            },
+            params,
+            strategy: SigningStrategy::LazyAtBoundary,
+            mode: super::super::MigrationMode::Scheduled,
+            account: zip32::AccountId::ZERO,
+            phase: super::super::MigrationPhase::Committed,
+            transfers: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn bind_accepts_every_note_the_plan_books_as_residual() {
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+        use crate::wallet::migration::preparation::plan_migration;
+
+        let params = regtest_params();
+        let part_ready =
+            params.denominations().last().copied().expect("ladder") + params.transfer_fee();
+        let orphan = 500_000;
+        assert!(orphan > params.sweep_min());
+        assert!(orphan < *params.denominations().last().expect("ladder"));
+
+        let plan = plan_migration(&[part_ready, orphan], true, &params);
+        assert!(
+            plan.is_prepared(),
+            "the planner reports nothing left to split: {plan:?}"
+        );
+        assert_eq!(
+            plan.residual, orphan,
+            "the planner books the {orphan} zatoshi note as residual"
+        );
+
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(part_ready)
+            .orchard_note(orphan)
+            .tip(100)
+            .build();
+        let mut state = unbound_scheduled_state(params);
+        let bound = wallet.bind_transfers_to_notes(&mut state, zip32::AccountId::ZERO);
+        assert!(
+            bound.is_ok(),
+            "binding must accept every note the planner books as residual, got {bound:?}"
+        );
+    }
+
+    #[test]
+    fn witness_refresh_tolerates_missing_bound_note() {
+        use pepper_sync::wallet::{NoteInterface as _, OrchardNote, OutputInterface as _};
+
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+        use crate::wallet::migration::schedule;
+
+        const NOTE: u64 = 1_020_000;
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(NOTE)
+                .tip(360)
+                .build();
+        let params = regtest_params();
+        let bound = wallet
+            .wallet_transactions
+            .values()
+            .flat_map(OrchardNote::transaction_outputs)
+            .find(|note| note.value() == NOTE)
+            .map(|note| BoundNote {
+                output_id: note.output_id(),
+                nullifier: note
+                    .nullifier()
+                    .expect("scanned notes carry nullifiers")
+                    .to_bytes(),
+                commitment: [0; 32],
+            })
+            .expect("the wallet holds the fabricated note");
+        let bucket = schedule::bucket_index(
+            wallet.sync_state.last_known_chain_height().expect("synced"),
+            params.bucket_modulus,
+        );
+        let mut transfer = TransferRecord::new(TransferId(0), NOTE, bound);
+        transfer.assign(bucket).expect("fresh transfers are bound");
+        let mut state = unbound_scheduled_state(params);
+        state.phase = super::super::MigrationPhase::Scheduled;
+        state.transfers = vec![transfer];
+        wallet.migration = Some(state);
+
+        wallet.clear_all();
+
+        let refreshed = wallet.refresh_transfer_witnesses();
+        assert!(
+            refreshed.is_ok(),
+            "refresh_transfer_witnesses runs after every successful sync and is documented never \
+             to block synchronization; after a rescan the migration survives while the bound \
+             note's transaction does not, and the pass raises a hard error instead of the skip \
+             every other unavailable-evidence condition gets: {refreshed:?}"
+        );
+    }
+
+    fn signed_transfer(state: TransferState) -> TransferRecord {
+        let mut transfer = part_in(TransferState::Assigned);
+        transfer
+            .mark_signed(
+                TxId::from_bytes([9; 32]),
+                BlockHeight::from_u32(500),
+                Some(vec![1, 2, 3]),
+            )
+            .unwrap();
+        if state == TransferState::Broadcast {
+            transfer.record_attempt();
+            transfer.mark_broadcast().unwrap();
+        }
+        transfer
+    }
+
+    #[test]
+    fn discard_signature_moves_a_signed_or_broadcast_transfer_to_expired() {
+        for state in [TransferState::Signed, TransferState::Broadcast] {
+            let mut transfer = signed_transfer(state);
+            let txid = transfer.txid.unwrap();
+
+            let discarded = transfer.discard_signature().unwrap();
+
+            assert_eq!(discarded, Some(txid));
+            assert_eq!(transfer.state, TransferState::Expired, "from {state:?}");
+            assert_eq!(transfer.previous_txids, vec![txid]);
+            assert_eq!(transfer.txid, None);
+            assert_eq!(transfer.expiry_height, None);
+            assert_eq!(transfer.signed_blob, None);
+            assert!(transfer.note.is_some(), "the funding note stays bound");
+        }
+    }
+
+    #[test]
+    fn discard_signature_accumulates_every_discarded_txid() {
+        let mut transfer = signed_transfer(TransferState::Broadcast);
+        let first = transfer.discard_signature().unwrap().unwrap();
+        transfer.reassign(8).unwrap();
+        let second = TxId::from_bytes([10; 32]);
+        transfer
+            .mark_signed(second, BlockHeight::from_u32(900), None)
+            .unwrap();
+
+        let discarded = transfer.discard_signature().unwrap();
+
+        assert_eq!(discarded, Some(second));
+        assert_eq!(transfer.previous_txids, vec![first, second]);
+    }
+
+    #[test]
+    fn discard_signature_is_refused_from_every_other_state() {
+        for state in ALL_STATES {
+            if matches!(state, TransferState::Signed | TransferState::Broadcast) {
+                continue;
+            }
+            let mut transfer = part_in(state);
+            transfer.txid = Some(TxId::from_bytes([9; 32]));
+            let before = transfer.clone();
+
+            assert!(
+                transfer.discard_signature().is_err(),
+                "discard_signature must be illegal from {state:?}"
+            );
+            assert_eq!(
+                transfer, before,
+                "a refused discard leaves the record untouched"
+            );
+        }
+    }
+
+    #[test]
+    fn owns_txid_recognises_the_current_and_every_discarded_txid() {
+        let mut transfer = signed_transfer(TransferState::Broadcast);
+        let discarded = transfer.discard_signature().unwrap().unwrap();
+        transfer.reassign(8).unwrap();
+        let current = TxId::from_bytes([10; 32]);
+        transfer
+            .mark_signed(current, BlockHeight::from_u32(900), None)
+            .unwrap();
+
+        assert!(transfer.owns_txid(&current));
+        assert!(transfer.owns_txid(&discarded));
+        assert!(!transfer.owns_txid(&TxId::from_bytes([11; 32])));
+    }
+
+    #[test]
+    fn owns_txid_is_false_for_an_unsigned_transfer() {
+        let transfer = part_in(TransferState::Bound);
+        assert!(!transfer.owns_txid(&TxId::from_bytes([9; 32])));
+    }
+
+    #[test]
+    fn mark_released_is_reachable_from_every_pre_confirmed_state_only() {
+        for state in ALL_STATES {
+            let releasable = matches!(
+                state,
+                TransferState::Bound
+                    | TransferState::Assigned
+                    | TransferState::Signed
+                    | TransferState::Broadcast
+                    | TransferState::Expired
+            );
+            let mut transfer = part_in(state);
+            let released = transfer.mark_released();
+            assert_eq!(released.is_ok(), releasable, "mark_released from {state:?}");
+            if releasable {
+                assert_eq!(transfer.state, TransferState::Released);
+            } else {
+                assert_eq!(transfer.state, state, "a refused release changes nothing");
+            }
+        }
+    }
+
+    #[test]
+    fn record_missed_window_counts_and_saturates() {
+        let mut transfer = part_in(TransferState::Assigned);
+        assert_eq!(transfer.missed_windows, 0);
+
+        transfer.record_missed_window();
+        transfer.record_missed_window();
+        assert_eq!(transfer.missed_windows, 2);
+
+        transfer.missed_windows = u32::MAX;
+        transfer.record_missed_window();
+        assert_eq!(transfer.missed_windows, u32::MAX, "the counter saturates");
+    }
+
+    #[test]
+    fn is_terminal_holds_for_exactly_the_three_terminal_states() {
+        for state in ALL_STATES {
+            let terminal = matches!(
+                state,
+                TransferState::Confirmed { .. }
+                    | TransferState::Invalidated
+                    | TransferState::Released
+            );
+            assert_eq!(state.is_terminal(), terminal, "is_terminal for {state:?}");
+        }
+    }
+
+    #[test]
+    fn a_fresh_transfer_carries_no_history() {
+        let transfer = TransferRecord::new(TransferId(3), 100_000, bound_note());
+        assert_eq!(transfer.state, TransferState::Bound);
+        assert!(transfer.previous_txids.is_empty());
+        assert_eq!(transfer.missed_windows, 0);
+        assert_eq!(transfer.attempts, 0);
+    }
+
+    #[test]
+    fn reassign_archives_the_txid_of_an_expired_transfer() {
+        let stale = TxId::from_bytes([9; 32]);
+        let mut transfer = part_in(TransferState::Expired);
+        transfer.txid = Some(stale);
+        transfer.expiry_height = Some(BlockHeight::from_u32(500));
+        transfer.signed_blob = Some(vec![1, 2, 3]);
+
+        transfer.reassign(7).unwrap();
+
+        assert_eq!(transfer.state, TransferState::Assigned);
+        assert_eq!(transfer.txid, None);
+        assert_eq!(
+            transfer.previous_txids,
+            vec![stale],
+            "the stale txid is archived so a late confirmation still counts as our own"
+        );
+        assert!(transfer.owns_txid(&stale));
+        assert_eq!(transfer.expiry_height, None);
+        assert_eq!(transfer.signed_blob, None);
+    }
+
+    #[test]
+    fn reassign_without_a_txid_leaves_the_archive_untouched() {
+        let earlier = TxId::from_bytes([4; 32]);
+        let mut transfer = part_in(TransferState::Expired);
+        transfer.previous_txids = vec![earlier];
+        assert_eq!(transfer.txid, None);
+
+        transfer.reassign(7).unwrap();
+
+        assert_eq!(transfer.previous_txids, vec![earlier]);
+    }
+
+    #[test]
+    fn discard_signature_tolerates_a_signed_transfer_without_a_txid() {
+        for state in [TransferState::Signed, TransferState::Broadcast] {
+            let mut transfer = part_in(state);
+            assert_eq!(transfer.txid, None);
+
+            let discarded = transfer
+                .discard_signature()
+                .expect("the discard is legal without a txid");
+
+            assert_eq!(discarded, None, "from {state:?}");
+            assert_eq!(transfer.state, TransferState::Expired, "from {state:?}");
+            assert!(transfer.previous_txids.is_empty(), "nothing to archive");
+        }
+    }
+
+    #[test]
+    fn mark_confirmed_from_released_keeps_the_txid_that_mined() {
+        let own = TxId::from_bytes([9; 32]);
+        let mut transfer = signed_transfer(TransferState::Broadcast);
+        transfer.mark_released().unwrap();
+        assert_eq!(transfer.txid, Some(own));
+        assert!(transfer.is_on_the_wire());
+
+        transfer.mark_confirmed(BlockHeight::from_u32(600)).unwrap();
+
+        assert_eq!(
+            transfer.state,
+            TransferState::Confirmed {
+                height: BlockHeight::from_u32(600)
+            }
+        );
+        assert_eq!(transfer.txid, Some(own));
+        assert!(
+            !transfer.is_on_the_wire(),
+            "a confirmed transaction has left the wire"
+        );
+    }
+
+    #[test]
+    fn forget_wire_archives_the_txid_and_drops_the_signature_artifacts() {
+        let own = TxId::from_bytes([9; 32]);
+        let mut transfer = signed_transfer(TransferState::Broadcast);
+        transfer.mark_released().unwrap();
+
+        let forgotten = transfer.forget_wire();
+
+        assert_eq!(forgotten, Some(own));
+        assert_eq!(transfer.txid, None);
+        assert_eq!(transfer.previous_txids, vec![own]);
+        assert_eq!(transfer.expiry_height, None);
+        assert_eq!(transfer.signed_blob, None);
+        assert_eq!(
+            transfer.state,
+            TransferState::Released,
+            "forgetting the wire changes no state"
+        );
+        assert_eq!(transfer.attempts, 1, "the attempt history survives");
+        assert!(!transfer.is_on_the_wire());
+    }
+
+    #[test]
+    fn forget_wire_is_idempotent() {
+        let own = TxId::from_bytes([9; 32]);
+        let mut transfer = signed_transfer(TransferState::Broadcast);
+        transfer.forget_wire();
+
+        let again = transfer.forget_wire();
+
+        assert_eq!(again, None);
+        assert_eq!(
+            transfer.previous_txids,
+            vec![own],
+            "no duplicate archive entry"
+        );
+    }
+
+    #[test]
+    fn is_on_the_wire_holds_for_exactly_the_submitted_unresolved_states() {
+        let own = TxId::from_bytes([9; 32]);
+        for state in ALL_STATES {
+            for attempts in [0u8, 1, 3] {
+                for txid in [None, Some(own)] {
+                    let mut transfer = part_in(state);
+                    transfer.attempts = attempts;
+                    transfer.txid = txid;
+
+                    let expected = match state {
+                        TransferState::Broadcast | TransferState::Released => txid.is_some(),
+                        TransferState::Signed => attempts > 0,
+                        TransferState::Bound
+                        | TransferState::Assigned
+                        | TransferState::Confirmed { .. }
+                        | TransferState::Expired
+                        | TransferState::Invalidated => false,
+                    };
+                    assert_eq!(
+                        transfer.is_on_the_wire(),
+                        expected,
+                        "is_on_the_wire for {state:?} with attempts {attempts} and txid {txid:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_signed_transfer_is_on_the_wire_only_once_an_attempt_is_recorded() {
+        let mut transfer = signed_transfer(TransferState::Signed);
+        assert!(
+            !transfer.is_on_the_wire(),
+            "a signature that never left the device cannot mine"
+        );
+
+        transfer.record_attempt();
+
+        assert!(
+            transfer.is_on_the_wire(),
+            "a crash between the attempt record and the broadcast record leaves the transaction possibly submitted"
         );
     }
 }

@@ -6,39 +6,39 @@ use zcash_pool_migration::scheduling::AnchorBucketInterval;
 
 use crate::config::ChainType;
 
-use super::split::{CANONICAL_PART_FEE, SWEEP_MIN};
+use super::preparation::{CANONICAL_TRANSFER_FEE, SWEEP_MIN};
 
 /// The constants ZIP 318 leaves to ratification, gathered so the planner,
-/// schedule and part builders all read one source. Every value is provisional
+/// schedule and transfer builders all read one source. Every value is provisional
 /// until the ZIP is ratified. Changing one only touches [`MigrationParams::provisional`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MigrationParams {
     /// Bumped when ratified constants replace the provisional ones.
-    pub version: u32,
+    pub(crate) version: u32,
     /// Canonical denominations in zatoshis, ordered largest first so a greedy
     /// decomposition walks it directly.
-    pub denominations: Vec<u64>,
+    pub(crate) denominations: Vec<u64>,
     /// `DENOM_CAP`: the largest permitted denomination.
-    pub denom_cap: u64,
+    pub(crate) denom_cap: u64,
     /// `MAX_RESIDUAL_VALUE`: the smallest permitted denomination. Leftover
     /// value strictly below this cannot be migrated as a standard note.
-    pub max_residual_value: u64,
+    pub(crate) max_residual_value: u64,
     /// Notes worth at most this are left as residual rather than selected for
     /// migration. Provisionally twice the ZIP-317 marginal fee: a deliberate
     /// safety factor, requiring a selected note to return strictly more than
     /// double the marginal action cost it adds, instead of breaking even
     /// against `MARGINAL_FEE` itself.
-    pub sweep_min: u64,
+    pub(crate) sweep_min: u64,
     /// `M`: bucket boundaries are the block heights ≡ 0 (mod `M`).
     /// Invariant: nonzero. `provisional` never produces zero and the
     /// store rejects one at read, so bucket arithmetic may divide by it.
-    pub bucket_modulus: u32,
-    /// `K_MAX`: the per-batch multiplicity bound: how many parts may share one
-    /// transmission window.
-    pub k_max: u32,
+    pub(crate) bucket_modulus: u32,
+    /// `K_MAX`: the per-batch multiplicity bound: how many transfers may share one
+    /// broadcast window.
+    pub(crate) k_max: u32,
     /// The signing-session target the schedule aims at for typical balances.
-    pub target_sessions: u32,
-    /// The total note budget of one note-splitting transaction: its spends
+    pub(crate) target_sessions: u32,
+    /// The total note budget of one note-preparation transaction: its spends
     /// and outputs together never exceed this. Post-NU6.3 every note is one
     /// Orchard action (cross-address transfers disabled), so the budget is
     /// the ZIP 318 preparation shape of 16 actions
@@ -46,10 +46,103 @@ pub struct MigrationParams {
     /// activation, shared actions make such a transaction at most 15
     /// actions. Padding to exactly 16 arrives with the builder capability
     /// the divergence ledger tracks.
-    pub max_actions_per_split_tx: usize,
-    /// The canonical ZIP-317 fee of one part. Every split note is sized
-    /// `denomination + part_fee` so the part balances exactly.
-    pub part_fee: u64,
+    pub(crate) max_actions_per_split_tx: usize,
+    /// The canonical ZIP-317 fee of one transfer. Every funding note is sized
+    /// `denomination + transfer_fee` so the transfer balances exactly.
+    pub(crate) transfer_fee: u64,
+}
+
+impl MigrationParams {
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    pub fn denominations(&self) -> &[u64] {
+        &self.denominations
+    }
+
+    pub fn sweep_min(&self) -> u64 {
+        self.sweep_min
+    }
+
+    pub fn bucket_modulus(&self) -> u32 {
+        self.bucket_modulus
+    }
+
+    pub fn k_max(&self) -> u32 {
+        self.k_max
+    }
+
+    pub fn target_sessions(&self) -> u32 {
+        self.target_sessions
+    }
+
+    pub fn max_actions_per_split_tx(&self) -> usize {
+        self.max_actions_per_split_tx
+    }
+
+    pub fn transfer_fee(&self) -> u64 {
+        self.transfer_fee
+    }
+
+    pub fn validate(&self) -> Result<(), InvalidMigrationParams> {
+        if self.bucket_modulus == 0 {
+            return Err(InvalidMigrationParams::ZeroBucketModulus);
+        }
+        if self.k_max == 0 {
+            return Err(InvalidMigrationParams::ZeroPartsPerWindow);
+        }
+        if self.target_sessions == 0 {
+            return Err(InvalidMigrationParams::ZeroTargetSessions);
+        }
+        if self.max_actions_per_split_tx < 2 {
+            return Err(InvalidMigrationParams::ActionBoundTooSmall);
+        }
+        if self.denominations.is_empty() {
+            return Err(InvalidMigrationParams::NoDenominations);
+        }
+        if self.denominations.windows(2).any(|pair| pair[0] <= pair[1]) {
+            return Err(InvalidMigrationParams::DenominationsNotDescending);
+        }
+        if self
+            .denominations
+            .iter()
+            .any(|value| *value <= self.sweep_min)
+        {
+            return Err(InvalidMigrationParams::DenominationBelowSweepMin);
+        }
+        Ok(())
+    }
+
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn with_bucket_modulus(mut self, bucket_modulus: u32) -> Self {
+        self.bucket_modulus = bucket_modulus;
+        self
+    }
+
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn with_k_max(mut self, k_max: u32) -> Self {
+        self.k_max = k_max;
+        self
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum InvalidMigrationParams {
+    #[error("bucket_modulus must be nonzero")]
+    ZeroBucketModulus,
+    #[error("transfers per window must be at least one")]
+    ZeroPartsPerWindow,
+    #[error("target sessions must be at least one")]
+    ZeroTargetSessions,
+    #[error("the preparation action bound must be at least two")]
+    ActionBoundTooSmall,
+    #[error("the denomination ladder is empty")]
+    NoDenominations,
+    #[error("the denomination ladder must be strictly descending")]
+    DenominationsNotDescending,
+    #[error("every denomination must exceed the sweep minimum")]
+    DenominationBelowSweepMin,
 }
 
 /// The ZIP 318 canonical denomination set: every value `n × 10^k` zatoshis
@@ -104,7 +197,7 @@ impl MigrationParams {
         MigrationParams {
             // Version 2: the preparation bound moved to the ZIP's 16-action
             // shape and the target-draw law moved to the canonical
-            // exponential distribution. The part fee still awaits the
+            // exponential distribution. The transfer fee still awaits the
             // builder capability for the unpadded Ironwood action (the
             // divergence ledger tracks it), and will carry its own bump.
             version: 2,
@@ -118,7 +211,7 @@ impl MigrationParams {
             // ZIP 318 standardizes 16-action preparation transactions
             // (<https://zips.z.cash/zip-0318#notepreparationtransactions>).
             max_actions_per_split_tx: 16,
-            part_fee: CANONICAL_PART_FEE,
+            transfer_fee: CANONICAL_TRANSFER_FEE,
         }
     }
 
@@ -141,7 +234,7 @@ impl MigrationParams {
         hasher.update(&self.k_max.to_le_bytes());
         hasher.update(&self.target_sessions.to_le_bytes());
         hasher.update(&(self.max_actions_per_split_tx as u64).to_le_bytes());
-        hasher.update(&self.part_fee.to_le_bytes());
+        hasher.update(&self.transfer_fee.to_le_bytes());
         hasher
             .finalize()
             .as_bytes()
@@ -168,6 +261,32 @@ mod tests {
     /// Pins the digest encoding: an accidental change to the field order or
     /// widths shows up as a mismatch here. Update the vector deliberately
     /// when the provisional values change.
+    #[test]
+    fn validation_rejects_degenerate_parameter_sets() {
+        let params = MigrationParams::provisional(ChainType::Mainnet);
+        assert_eq!(params.validate(), Ok(()));
+        assert_eq!(
+            params.clone().with_k_max(0).validate(),
+            Err(InvalidMigrationParams::ZeroPartsPerWindow)
+        );
+        assert_eq!(
+            params.clone().with_bucket_modulus(0).validate(),
+            Err(InvalidMigrationParams::ZeroBucketModulus)
+        );
+        let mut ascending = params.clone();
+        ascending.denominations.reverse();
+        assert_eq!(
+            ascending.validate(),
+            Err(InvalidMigrationParams::DenominationsNotDescending)
+        );
+        let mut empty = params;
+        empty.denominations.clear();
+        assert_eq!(
+            empty.validate(),
+            Err(InvalidMigrationParams::NoDenominations)
+        );
+    }
+
     #[test]
     fn params_hash_is_stable() {
         let params = MigrationParams::provisional(ChainType::Mainnet);

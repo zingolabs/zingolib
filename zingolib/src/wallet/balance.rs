@@ -27,8 +27,11 @@ pub struct AccountBalance {
     /// Sum of confirmed and unconfirmed ironwood balances.
     pub total_ironwood_balance: Option<Zatoshis>,
 
-    /// Sum of unspent orchard note values in confirmed blocks excluding dust.
+    /// Sum of unspent orchard note values in confirmed blocks excluding dust
+    /// and excluding the notes reserved for the migration.
     pub confirmed_orchard_balance: Option<Zatoshis>,
+    /// Sum of the orchard note values reserved for the migration.
+    pub reserved_orchard_balance: Option<Zatoshis>,
     /// Sum of unspent orchard note values in unconfirmed blocks excluding dust.
     pub unconfirmed_orchard_balance: Option<Zatoshis>,
     /// Sum of confirmed and unconfirmed orchard balances.
@@ -59,6 +62,7 @@ impl std::fmt::Display for AccountBalance {
     total_ironwood_balance: {}
 
     confirmed_orchard_balance: {}
+    reserved_orchard_balance: {}
     unconfirmed_orchard_balance: {}
     total_orchard_balance: {}
 
@@ -83,6 +87,10 @@ impl std::fmt::Display for AccountBalance {
                     format_zatoshis(zats)
                 }),
             self.confirmed_orchard_balance
+                .map_or("no view capability".to_string(), |zats| {
+                    format_zatoshis(zats)
+                }),
+            self.reserved_orchard_balance
                 .map_or("no view capability".to_string(), |zats| {
                     format_zatoshis(zats)
                 }),
@@ -129,6 +137,7 @@ impl From<AccountBalance> for json::JsonValue {
             "unconfirmed_ironwood_balance" => value.unconfirmed_ironwood_balance.map(zcash_protocol::value::Zatoshis::into_u64),
             "total_ironwood_balance" => value.total_ironwood_balance.map(zcash_protocol::value::Zatoshis::into_u64),
             "confirmed_orchard_balance" => value.confirmed_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+            "reserved_orchard_balance" => value.reserved_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
             "unconfirmed_orchard_balance" => value.unconfirmed_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
             "total_orchard_balance" => value.total_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
             "confirmed_sapling_balance" => value.confirmed_sapling_balance.map(zcash_protocol::value::Zatoshis::into_u64),
@@ -221,18 +230,39 @@ impl LightWallet {
         let total_ironwood_balance = confirmed_ironwood_balance
             .and_then(|confirmed| unconfirmed_ironwood_balance + confirmed);
 
-        let confirmed_orchard_balance =
-            match self.confirmed_balance_excluding_dust::<OrchardNote>(account_id) {
-                Ok(zats) => Some(zats),
-                Err(BalanceError::KeyError(KeyError::NoViewCapability)) => None,
-                Err(e) => return Err(e),
-            };
-        let unconfirmed_orchard_balance =
-            match self.unconfirmed_balance_excluding_dust::<OrchardNote>(account_id) {
-                Ok(zats) => Some(zats),
-                Err(BalanceError::KeyError(KeyError::NoViewCapability)) => None,
-                Err(e) => return Err(e),
-            };
+        let reserved = self.reserved_output_ids();
+        let confirmed_orchard_balance = match self.get_filtered_balance::<OrchardNote, _>(
+            |output, transaction: &WalletTransaction| {
+                OrchardNote::value(output) > MARGINAL_FEE.into_u64()
+                    && transaction.status().is_confirmed()
+                    && !reserved.contains(&output.output_id())
+            },
+            account_id,
+        ) {
+            Ok(zats) => Some(zats),
+            Err(BalanceError::KeyError(KeyError::NoViewCapability)) => None,
+            Err(e) => return Err(e),
+        };
+        let reserved_orchard_balance = match self.get_filtered_balance::<OrchardNote, _>(
+            |output, _: &WalletTransaction| reserved.contains(&output.output_id()),
+            account_id,
+        ) {
+            Ok(zats) => Some(zats),
+            Err(BalanceError::KeyError(KeyError::NoViewCapability)) => None,
+            Err(e) => return Err(e),
+        };
+        let unconfirmed_orchard_balance = match self.get_filtered_balance::<OrchardNote, _>(
+            |output, transaction: &WalletTransaction| {
+                OrchardNote::value(output) > MARGINAL_FEE.into_u64()
+                    && transaction.status().is_pending()
+                    && !reserved.contains(&output.output_id())
+            },
+            account_id,
+        ) {
+            Ok(zats) => Some(zats),
+            Err(BalanceError::KeyError(KeyError::NoViewCapability)) => None,
+            Err(e) => return Err(e),
+        };
         let total_orchard_balance =
             confirmed_orchard_balance.and_then(|confirmed| unconfirmed_orchard_balance + confirmed);
 
@@ -271,6 +301,7 @@ impl LightWallet {
             unconfirmed_ironwood_balance,
             total_ironwood_balance,
             confirmed_orchard_balance,
+            reserved_orchard_balance,
             unconfirmed_orchard_balance,
             total_orchard_balance,
             confirmed_sapling_balance,
@@ -688,4 +719,260 @@ mod test {
     //         Some(1_605_001)
     //     );
     // }
+}
+
+#[cfg(test)]
+mod migration_reservation {
+    use pepper_sync::wallet::{
+        NoteInterface as _, OrchardNote, OutputId, OutputInterface as _, WalletTransaction,
+    };
+    use zcash_protocol::consensus::BlockHeight;
+    use zcash_protocol::value::Zatoshis;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::wallet::LightWallet;
+    use crate::wallet::migration::{
+        BoundNote, MigrationMode, MigrationParams, MigrationPhase, MigrationState, PlanCommitment,
+        SigningStrategy, TransferId, TransferRecord,
+    };
+
+    const FUNDING_NOTE: u64 = 100_000;
+    const RESIDUAL_NOTE: u64 = 50_000;
+    const ACCOUNT: zip32::AccountId = zip32::AccountId::ZERO;
+
+    fn orchard_wallet() -> LightWallet {
+        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(FUNDING_NOTE)
+            .orchard_note(RESIDUAL_NOTE)
+            .build()
+    }
+
+    fn migration_state(
+        wallet: &LightWallet,
+        phase: MigrationPhase,
+        transfers: Vec<TransferRecord>,
+    ) -> MigrationState {
+        let params = MigrationParams::provisional(wallet.chain_type());
+        MigrationState {
+            commitment: PlanCommitment {
+                params_hash: params.params_hash(),
+                plan_hash: [0; 32],
+                committed_at: 0,
+            },
+            params,
+            strategy: SigningStrategy::LazyAtBoundary,
+            mode: MigrationMode::Scheduled,
+            account: ACCOUNT,
+            phase,
+            transfers,
+        }
+    }
+
+    fn scheduled_wallet_with_bound_funding_note() -> LightWallet {
+        let mut wallet = orchard_wallet();
+        let bound = wallet
+            .wallet_transactions
+            .values()
+            .flat_map(OrchardNote::transaction_outputs)
+            .find(|note| note.value() == FUNDING_NOTE)
+            .map(|note| BoundNote {
+                output_id: note.output_id(),
+                nullifier: note
+                    .nullifier()
+                    .expect("scanned notes carry nullifiers")
+                    .to_bytes(),
+                commitment: [0; 32],
+            })
+            .expect("the wallet holds the funding note");
+        let transfer = TransferRecord::new(TransferId(0), FUNDING_NOTE, bound);
+        wallet.migration = Some(migration_state(
+            &wallet,
+            MigrationPhase::Scheduled,
+            vec![transfer],
+        ));
+        wallet
+    }
+
+    #[test]
+    fn account_balance_reports_the_reserved_value_and_excludes_it_from_confirmed() {
+        let mut wallet = orchard_wallet();
+        wallet.migration = Some(migration_state(&wallet, MigrationPhase::Committed, vec![]));
+
+        let balance = wallet.account_balance(ACCOUNT).unwrap();
+
+        assert_eq!(
+            balance.reserved_orchard_balance,
+            Some(Zatoshis::const_from_u64(FUNDING_NOTE + RESIDUAL_NOTE)),
+            "a committed migration reserves every pre-Ironwood note"
+        );
+        assert_eq!(
+            balance.confirmed_orchard_balance,
+            Some(Zatoshis::ZERO),
+            "the confirmed balance excludes the reserved value"
+        );
+    }
+
+    #[test]
+    fn account_balance_splits_the_funding_note_from_the_residual_once_scheduled() {
+        let wallet = scheduled_wallet_with_bound_funding_note();
+
+        let balance = wallet.account_balance(ACCOUNT).unwrap();
+
+        assert_eq!(
+            balance.reserved_orchard_balance,
+            Some(Zatoshis::const_from_u64(FUNDING_NOTE))
+        );
+        assert_eq!(
+            balance.confirmed_orchard_balance,
+            Some(Zatoshis::const_from_u64(RESIDUAL_NOTE))
+        );
+    }
+
+    #[test]
+    fn total_orchard_balance_is_confirmed_plus_unconfirmed_without_the_reserved_value() {
+        let wallet = scheduled_wallet_with_bound_funding_note();
+
+        let balance = wallet.account_balance(ACCOUNT).unwrap();
+
+        assert_eq!(
+            balance.unconfirmed_orchard_balance,
+            Some(Zatoshis::ZERO),
+            "every synthetic note is confirmed"
+        );
+        assert_eq!(
+            balance.total_orchard_balance,
+            Some(Zatoshis::const_from_u64(RESIDUAL_NOTE)),
+            "the total is the confirmed free value plus the unconfirmed value; the reserved value is reported separately"
+        );
+        assert_eq!(
+            balance.total_orchard_balance,
+            balance
+                .confirmed_orchard_balance
+                .and_then(|confirmed| confirmed + balance.unconfirmed_orchard_balance.unwrap())
+        );
+    }
+
+    fn make_note_unconfirmed(wallet: &mut LightWallet, value: u64) -> OutputId {
+        let (txid, notes) = wallet
+            .wallet_transactions
+            .iter()
+            .find_map(|(txid, transaction)| {
+                let notes = OrchardNote::transaction_outputs(transaction);
+                notes
+                    .iter()
+                    .any(|note| note.value() == value)
+                    .then(|| (*txid, notes.to_vec()))
+            })
+            .expect("the wallet holds the fabricated note");
+        let output_id = notes[0].output_id();
+        wallet.wallet_transactions.insert(
+            txid,
+            WalletTransaction::new_for_test_with_orchard_notes(
+                txid,
+                ConfirmationStatus::Mempool(BlockHeight::from_u32(20)),
+                notes,
+                vec![],
+            ),
+        );
+        assert!(
+            wallet
+                .wallet_transactions
+                .get(&txid)
+                .expect("just inserted")
+                .status()
+                .is_pending()
+        );
+        output_id
+    }
+
+    #[test]
+    fn an_unconfirmed_reserved_output_counts_as_reserved_and_not_as_unconfirmed() {
+        let mut wallet = orchard_wallet();
+        make_note_unconfirmed(&mut wallet, FUNDING_NOTE);
+        let baseline = wallet.account_balance(ACCOUNT).unwrap();
+        assert_eq!(
+            baseline.unconfirmed_orchard_balance,
+            Some(Zatoshis::const_from_u64(FUNDING_NOTE)),
+            "without a migration the pending note is unconfirmed value"
+        );
+        assert_eq!(baseline.reserved_orchard_balance, Some(Zatoshis::ZERO));
+
+        wallet.migration = Some(migration_state(&wallet, MigrationPhase::Committed, vec![]));
+        let balance = wallet.account_balance(ACCOUNT).unwrap();
+
+        assert_eq!(
+            balance.unconfirmed_orchard_balance,
+            Some(Zatoshis::ZERO),
+            "the unconfirmed balance excludes the reserved pending note"
+        );
+        assert_eq!(
+            balance.confirmed_orchard_balance,
+            Some(Zatoshis::ZERO),
+            "the confirmed balance excludes the reserved confirmed note"
+        );
+        assert_eq!(
+            balance.reserved_orchard_balance,
+            Some(Zatoshis::const_from_u64(FUNDING_NOTE + RESIDUAL_NOTE)),
+            "the reserved balance counts confirmed and unconfirmed reserved outputs"
+        );
+        assert_eq!(balance.total_orchard_balance, Some(Zatoshis::ZERO));
+    }
+
+    #[test]
+    fn a_scheduled_transfer_bound_to_an_unconfirmed_note_reserves_it_alone() {
+        let mut wallet = orchard_wallet();
+        let pending = make_note_unconfirmed(&mut wallet, FUNDING_NOTE);
+        let bound = wallet
+            .wallet_transactions
+            .values()
+            .flat_map(OrchardNote::transaction_outputs)
+            .find(|note| note.output_id() == pending)
+            .map(|note| BoundNote {
+                output_id: note.output_id(),
+                nullifier: note
+                    .nullifier()
+                    .expect("scanned notes carry nullifiers")
+                    .to_bytes(),
+                commitment: [0; 32],
+            })
+            .expect("the pending note is in the wallet");
+        let transfer = TransferRecord::new(TransferId(0), FUNDING_NOTE, bound);
+        wallet.migration = Some(migration_state(
+            &wallet,
+            MigrationPhase::Scheduled,
+            vec![transfer],
+        ));
+
+        let balance = wallet.account_balance(ACCOUNT).unwrap();
+
+        assert_eq!(balance.unconfirmed_orchard_balance, Some(Zatoshis::ZERO));
+        assert_eq!(
+            balance.reserved_orchard_balance,
+            Some(Zatoshis::const_from_u64(FUNDING_NOTE))
+        );
+        assert_eq!(
+            balance.confirmed_orchard_balance,
+            Some(Zatoshis::const_from_u64(RESIDUAL_NOTE)),
+            "the unbound confirmed residual stays free"
+        );
+        assert_eq!(
+            balance.total_orchard_balance,
+            Some(Zatoshis::const_from_u64(RESIDUAL_NOTE))
+        );
+    }
+
+    #[test]
+    fn reserved_orchard_balance_is_zero_without_a_migration() {
+        let wallet = orchard_wallet();
+        assert!(wallet.migration.is_none());
+
+        let balance = wallet.account_balance(ACCOUNT).unwrap();
+
+        assert_eq!(balance.reserved_orchard_balance, Some(Zatoshis::ZERO));
+        assert_eq!(
+            balance.confirmed_orchard_balance,
+            Some(Zatoshis::const_from_u64(FUNDING_NOTE + RESIDUAL_NOTE))
+        );
+    }
 }

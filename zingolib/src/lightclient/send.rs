@@ -1049,8 +1049,7 @@ impl LightClient {
             // server txid verified. Each is a no-op unless its owner armed the
             // side channel (an immediate migration or a note-splitting round),
             // and the two are mutually exclusive in practice.
-            self.immediate_migration_progress.set_sent(index as u32 + 1);
-            self.split_progress.set_sent(index as u32 + 1);
+            self.migration_progress.set_sent(index as u32 + 1);
 
             reports.push(TransmitReport {
                 txid: *txid,

@@ -1,22 +1,16 @@
-//! On-launch reconciliation (ZIP 318: the primary catch-up mechanism).
+//! Reconciliation (ZIP 318: the on-launch reconciliation).
 //!
 //! [`reconcile`] is a pure function of the persisted [`MigrationState`] and a
-//! read-only [`ChainView`], so a client can call it on every launch and as
-//! often as it needs to. It classifies every part and returns the recommended
-//! actions. Applying them (and obtaining user consent where required) is the
-//! caller's job.
+//! read-only [`ChainView`], so a client can call it after every sync and at
+//! the start of every command. It classifies every transfer and returns the
+//! actions to apply. Applying them is the caller's job.
 
 use pepper_sync::wallet::OutputId;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 
-use super::parts::{PartId, PartRecord, PartState};
+use super::transfers::{TransferId, TransferRecord, TransferState};
 use super::{MigrationPhase, MigrationState};
-
-/// About two hours at the 75-second target spacing: the slip a best-effort
-/// background scheduler is allowed before reconciliation surfaces a part as
-/// overdue (ZIP 318 treats such slips as normal operation).
-const SLIP_TOLERANCE_BLOCKS: u32 = 96;
 
 /// Read-only chain facts, implemented by the wallet and by test mocks.
 /// Everything reconciliation knows about the chain flows through here.
@@ -28,7 +22,7 @@ pub trait ChainView {
     /// evidence of spends and transaction inclusion is complete, with every
     /// block at or below it scanned with its nullifiers mapped. This is
     /// the only lawful input to judgments that condemn (a transaction
-    /// expired-unmined, a part dead): the chain tip runs ahead of
+    /// expired-unmined, a transfer dead): the chain tip runs ahead of
     /// scanning, and condemning against it invites false invalidation
     /// (issue #2493, finding 8). Forward planning may use
     /// [`Self::chain_tip`].
@@ -49,137 +43,130 @@ pub trait ChainView {
     fn orchard_confirmed_spendable(&self, account: zip32::AccountId) -> u64;
 }
 
-/// How reconciliation classified one part.
+/// How reconciliation classified one transfer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PartClass {
-    /// Nothing to do: waiting for its window, or its window is open.
+pub enum TransferClass {
+    /// Nothing to do: waiting for its window, its window is open, or its
+    /// transaction is in flight.
     OnTrack,
-    /// Its window passed recently (within the slip tolerance). Normal
-    /// operation, never surfaced as an error.
-    SlippedWithinTolerance,
-    /// Its window passed beyond the slip tolerance without a transmission.
-    Overdue,
-    /// Signed, its window passed, and its transaction is still valid:
-    /// transmitting it now would mine a permanent lateness fingerprint
-    /// (the cleartext expiry and the stale anchor single the part out
-    /// within its denomination cohort), so it waits out its expiry and
-    /// rebuilds fresh, on-chain indistinguishable from an on-schedule
-    /// part. Not part of the catch-up batch. Surfaced so status can say
-    /// why nothing was sent and when the rebuild comes.
-    AwaitingExpiry {
-        /// The expiry height being waited out.
-        expiry: BlockHeight,
-    },
-    /// Its transaction reached expiry unmined.
+    /// Its window closed without a confirmation. Reconciliation reschedules
+    /// it into a later window.
+    Missed,
+    /// Its transaction reached expiry unmined. Rescheduled the same way.
     Expired,
     /// Its bound note was spent outside the migration.
     Invalidated,
     /// Mined and confirmed.
     Confirmed,
+    /// Recorded as confirmed, but the chain no longer holds its transaction.
+    Reorged,
+    /// The user took it out of the migration.
+    Released,
 }
 
-/// What the caller should do next. Actions marked "safe unattended" are
-/// applied by `LightClient::reconcile_migration` without user interaction.
-/// The others need consent or a user-facing disclosure.
+/// What the caller should do next. Every action is safe unattended and is
+/// applied by the client's reconciliation pass.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecommendedAction {
-    /// A note-splitting round is still confirming. Keep waiting.
-    AwaitSplitConfirmation,
-    /// A note-splitting transaction failed or expired. The failure released
-    /// its notes, so the retry is a replan: drive
-    /// [`crate::lightclient::LightClient::continue_note_splitting`] once the
-    /// round's remaining transactions resolve.
-    RetrySplit {
+    /// A note-preparation round is still confirming. Keep waiting.
+    AwaitPreparationConfirmation,
+    /// A note-preparation transaction failed or expired. Its notes are free
+    /// again, and the next preparation round replans over them.
+    RetryPreparation {
         /// The failed transaction.
         txid: TxId,
     },
-    /// Note splitting needs driving: it has not started, or the pending
-    /// round fully confirmed.
-    /// [`crate::lightclient::LightClient::continue_note_splitting`] replans
-    /// from the wallet's notes and either executes the next round or, once
-    /// every note is part-ready, binds the parts and schedules them.
-    /// Whether the confirmed round was the last one is only decidable by
-    /// that replan, which pure reconciliation cannot perform.
-    ContinueNoteSplitting,
-    /// The part's own transaction mined but the record lagged (for example a
-    /// crash between submit and record). Safe unattended.
+    /// Note preparation needs driving: it has not started, or the pending
+    /// round fully confirmed. Only a replan can tell whether more rounds
+    /// remain, which pure reconciliation cannot perform.
+    ContinueNotePreparation,
+    /// The transfer's own transaction mined but the record lagged (for
+    /// example a crash between submit and record).
     PromoteConfirmed {
-        /// The part to promote.
-        part: PartId,
+        /// The transfer to promote.
+        transfer: TransferId,
         /// The confirmation height.
         height: BlockHeight,
     },
-    /// The part expired unmined: rebuild with the same denomination against
-    /// a fresh boundary. Safe unattended, no fresh consent (denomination and
-    /// total are unchanged).
-    Rebuild {
-        /// The part to rebuild.
-        part: PartId,
-    },
-    /// The part's bound note was spent outside the migration. Safe
-    /// unattended (marking only, the replan below needs consent).
+    /// The transfer's bound note was spent outside the migration.
     MarkInvalidated {
-        /// The part to mark.
-        part: PartId,
+        /// The transfer to mark.
+        transfer: TransferId,
     },
-    /// Invalidated value remains in the Orchard pool: re-quantize the
-    /// remainder into a new plan. Requires fresh consent.
-    ReplanRemainder,
-    /// Overdue parts should be offered for immediate, sequenced sending.
-    /// Requires the user-facing disclosure that sending at application-open
-    /// time correlates the transmissions with the user's activity.
-    PromptCatchUp {
-        /// The overdue parts.
-        parts: Vec<PartId>,
-        /// Always true: the disclosure is a ZIP 318 MUST.
-        disclosure_required: bool,
+    /// The transfer missed its window and carries no signature. Place it in
+    /// a later window.
+    Reschedule {
+        /// The transfer to place again.
+        transfer: TransferId,
     },
-    /// Every part confirmed and the leftover Orchard balance is below the
-    /// economic threshold. Safe unattended. The client surfaces the residual
-    /// disclosure.
+    /// The transfer carries a signature that will not mine: it never left
+    /// the device, or the chain shows no trace of it one window after its
+    /// own closed, or it expired. Drop the signature and place it in a
+    /// later window.
+    DiscardAndReschedule {
+        /// The transfer to re-sign later.
+        transfer: TransferId,
+    },
+    /// Every transfer is terminal and the evidence is complete. Only the
+    /// residual remains in Orchard.
     MarkComplete {
         /// The unmigrated leftover, in zatoshis.
         residual: u64,
     },
+    /// A confirmed transfer lost its block. Demote it to broadcast.
+    Demote {
+        /// The transfer to demote.
+        transfer: TransferId,
+    },
+    /// A completed migration holds a reorged transfer. Return to `Scheduled`.
+    Reopen,
+    /// A released transfer's transaction did not mine one window after its
+    /// own closed, or reached its expiry. Mark it failed and forget it.
+    AbandonWire {
+        /// The released transfer.
+        transfer: TransferId,
+    },
 }
 
-/// One part's classification.
+/// One transfer's classification.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PartAssessment {
-    /// The part.
-    pub id: PartId,
+pub struct TransferAssessment {
+    /// The transfer.
+    pub id: TransferId,
     /// Its classification.
-    pub class: PartClass,
+    pub class: TransferClass,
 }
 
 /// The outcome of a reconciliation pass.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ReconcileReport {
-    /// Per-part classifications (empty before parts are bound).
-    pub assessments: Vec<PartAssessment>,
+    /// Per-transfer classifications (empty before transfers are bound).
+    pub assessments: Vec<TransferAssessment>,
     /// What to do about them, deduplicated.
     pub actions: Vec<RecommendedAction>,
 }
 
-/// Classifies every part of `state` against the chain view and recommends
-/// actions. Pure: reads nothing but its arguments and writes nothing.
+/// Classifies every transfer of `state` against the chain view and
+/// recommends actions. Pure: reads nothing but its arguments and writes
+/// nothing.
 pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileReport {
     let mut report = ReconcileReport::default();
 
     match &state.phase {
-        MigrationPhase::Planned => {
+        MigrationPhase::Committed => {
             report
                 .actions
-                .push(RecommendedAction::ContinueNoteSplitting);
+                .push(RecommendedAction::ContinueNotePreparation);
             return report;
         }
-        MigrationPhase::NoteSplitting { pending_txids, .. } => {
+        MigrationPhase::Prepared => return report,
+        MigrationPhase::Preparing { pending_txids, .. } => {
             let mut all_confirmed = true;
             for txid in pending_txids {
                 if chain.transaction_failed(txid) {
                     report
                         .actions
-                        .push(RecommendedAction::RetrySplit { txid: *txid });
+                        .push(RecommendedAction::RetryPreparation { txid: *txid });
                     all_confirmed = false;
                 } else if chain.transaction_confirmed_height(txid).is_none() {
                     all_confirmed = false;
@@ -188,227 +175,264 @@ pub fn reconcile(state: &MigrationState, chain: &impl ChainView) -> ReconcileRep
             if all_confirmed {
                 report
                     .actions
-                    .push(RecommendedAction::ContinueNoteSplitting);
+                    .push(RecommendedAction::ContinueNotePreparation);
             } else if report.actions.is_empty() {
                 report
                     .actions
-                    .push(RecommendedAction::AwaitSplitConfirmation);
+                    .push(RecommendedAction::AwaitPreparationConfirmation);
             }
             return report;
         }
-        MigrationPhase::Complete { .. } => return report,
-        MigrationPhase::PartsScheduled => (),
+        MigrationPhase::Complete { .. } => {
+            let chain_tip = chain.chain_tip();
+            for transfer in &state.transfers {
+                let class = classify(transfer, state, chain, chain_tip, &mut report);
+                report.assessments.push(TransferAssessment {
+                    id: transfer.id,
+                    class,
+                });
+            }
+            if report
+                .assessments
+                .iter()
+                .any(|assessment| assessment.class == TransferClass::Reorged)
+            {
+                report.actions.push(RecommendedAction::Reopen);
+            }
+            return report;
+        }
+        MigrationPhase::Scheduled => (),
     }
 
     let chain_tip = chain.chain_tip();
-    let mut overdue = Vec::new();
-    let mut any_invalidated = false;
-    // Completion is judged on the persisted states only: promotions
-    // recommended by this very pass complete on the next one, after they
-    // have been applied and saved.
-    let all_terminal = state.parts.iter().all(|part| {
-        matches!(
-            part.state,
-            PartState::Confirmed { .. } | PartState::Invalidated
-        )
-    });
-
-    for part in &state.parts {
-        let class = classify(part, state, chain, chain_tip, &mut report);
-        match class {
-            PartClass::Overdue => overdue.push(part.id),
-            PartClass::Invalidated => any_invalidated = true,
-            _ => (),
-        }
-        report
-            .assessments
-            .push(PartAssessment { id: part.id, class });
-    }
-
-    if !overdue.is_empty() {
-        report.actions.push(RecommendedAction::PromptCatchUp {
-            parts: overdue,
-            disclosure_required: true,
+    let all_terminal = state
+        .transfers
+        .iter()
+        .all(|transfer| transfer.state.is_terminal());
+    let mut all_settled = true;
+    for transfer in &state.transfers {
+        let class = classify(transfer, state, chain, chain_tip, &mut report);
+        all_settled &= matches!(
+            (transfer.state, class),
+            (TransferState::Confirmed { .. }, TransferClass::Confirmed)
+                | (TransferState::Invalidated, TransferClass::Invalidated)
+                | (TransferState::Released, TransferClass::Released)
+        );
+        report.assessments.push(TransferAssessment {
+            id: transfer.id,
+            class,
         });
     }
-    let spendable = chain.orchard_confirmed_spendable(state.account);
-    if any_invalidated && spendable > state.params.sweep_min {
-        // The ZIP 318 invalidation predicate: a worthwhile
-        // confirmed-spendable Orchard balance remains while a scheduled
-        // part is invalid. At or below the Sweep Minimum a replan would
-        // leave everything it planned as residual, so no replan is offered.
-        report.actions.push(RecommendedAction::ReplanRemainder);
-    }
-    // The completion rule: when every part is terminal, the migration
-    // concludes unless a worthwhile remainder exists. Complete means
-    // "nothing left for this migration to do", not "everything migrated".
-    // An insistently spent-away migration completes with zero confirmed
-    // parts, reported faithfully by the status surface.
-    if all_terminal && !state.parts.is_empty() {
-        if spendable <= state.params.sweep_min {
-            report.actions.push(RecommendedAction::MarkComplete {
-                residual: spendable,
-            });
-        } else if !any_invalidated {
-            // Fee rounding left an economic amount behind: quantize it into
-            // a final transfer (fresh consent, it is a new plan). The
-            // invalidated case pushed ReplanRemainder above.
-            report.actions.push(RecommendedAction::ReplanRemainder);
-        }
+
+    let evidence_complete = chain_tip.is_some_and(|tip| {
+        chain
+            .spend_evidence_height()
+            .is_some_and(|evidence| evidence >= tip)
+    });
+    if all_terminal && all_settled && evidence_complete {
+        report.actions.push(RecommendedAction::MarkComplete {
+            residual: chain.orchard_confirmed_spendable(state.account),
+        });
     }
 
     report
 }
 
-/// The parts a user-triggered
-/// [`crate::lightclient::LightClient::execute_due_parts`] would transmit this
-/// instant, computed read-only from a reconcile `report` and the schedule.
-///
-/// This is the current window's parts whose random target the chain has
-/// reached, plus the overdue parts catch-up folds into the current window,
-/// only the [`PartState::Assigned`] ones, since a [`PartState::Signed`]
-/// overdue part keeps its stale anchor and is rebuilt rather than folded.
-/// Parts reconciliation would instead confirm, invalidate or rebuild are
-/// excluded: a natively-current part is admitted only while it is still
-/// classified [`PartClass::OnTrack`].
-///
-/// Mirrors `execute_due_parts` (which folds via the same reconcile pass) so a
-/// "batch due now" shown to the user can never name a part a send would not
-/// build. `report` must come from [`reconcile`] over the same `parts`.
-pub fn due_now_parts(
-    parts: &[PartRecord],
+/// The transfers a broadcast would attempt this instant: the ones in the
+/// window the chain is inside, still awaiting broadcast, that reconciliation
+/// leaves on track. `report` must come from [`reconcile`] over the same
+/// `transfers`.
+pub fn due_now_transfers(
+    transfers: &[TransferRecord],
     report: &ReconcileReport,
     now_height: BlockHeight,
     params: &super::params::MigrationParams,
-) -> Vec<PartId> {
+) -> Vec<TransferId> {
     let current_bucket = super::schedule::bucket_index(now_height, params.bucket_modulus);
-    let overdue: std::collections::HashSet<PartId> = report
-        .actions
+    transfers
         .iter()
-        .find_map(|action| match action {
-            RecommendedAction::PromptCatchUp { parts, .. } => Some(parts.iter().copied().collect()),
-            _ => None,
+        .filter(|transfer| {
+            report.assessments.iter().any(|assessment| {
+                assessment.id == transfer.id && assessment.class == TransferClass::OnTrack
+            }) && super::schedule::transfer_in_current_bucket(transfer, current_bucket)
         })
-        .unwrap_or_default();
-    let on_track: std::collections::HashSet<PartId> = report
-        .assessments
-        .iter()
-        .filter(|assessment| assessment.class == PartClass::OnTrack)
-        .map(|assessment| assessment.id)
-        .collect();
-
-    parts
-        .iter()
-        .filter(|part| {
-            if overdue.contains(&part.id) {
-                // Catch-up folds only Assigned overdue parts into the current
-                // window (target reset, due at once); a Signed one is left for
-                // a rebuild against a fresh boundary and is not sent this batch.
-                part.state == PartState::Assigned
-            } else {
-                // A natively-current part goes out as soon as its window is
-                // open. Gating on OnTrack drops the parts reconciliation will
-                // confirm, invalidate or expire instead of sending. They
-                // would otherwise leak through the state/bucket check while
-                // still Assigned or Signed.
-                on_track.contains(&part.id)
-                    && super::schedule::part_in_current_bucket(part, current_bucket)
-            }
-        })
-        .map(|part| part.id)
+        .map(|transfer| transfer.id)
         .collect()
 }
 
-fn classify(
-    part: &super::parts::PartRecord,
+fn classify_released_wire(
+    transfer: &TransferRecord,
     state: &MigrationState,
     chain: &impl ChainView,
     chain_tip: Option<BlockHeight>,
     report: &mut ReconcileReport,
-) -> PartClass {
-    match part.state {
-        PartState::Confirmed { .. } => return PartClass::Confirmed,
-        PartState::Invalidated => return PartClass::Invalidated,
-        PartState::Expired => {
-            report
-                .actions
-                .push(RecommendedAction::Rebuild { part: part.id });
-            return PartClass::Expired;
+) -> TransferClass {
+    let spend = transfer
+        .note
+        .and_then(|bound| chain.note_spend(bound.output_id));
+    match spend {
+        Some((txid, Some(height))) if transfer.owns_txid(&txid) => {
+            report.actions.push(RecommendedAction::PromoteConfirmed {
+                transfer: transfer.id,
+                height,
+            });
+            return TransferClass::Confirmed;
         }
-        PartState::Bound | PartState::Assigned | PartState::Signed | PartState::Broadcast => (),
+        Some((txid, Some(_))) if !transfer.owns_txid(&txid) => {
+            report.actions.push(RecommendedAction::AbandonWire {
+                transfer: transfer.id,
+            });
+            return TransferClass::OnTrack;
+        }
+        _ => (),
+    }
+    let evidence = chain.spend_evidence_height();
+    let expired = transfer
+        .expiry_height
+        .is_some_and(|expiry| evidence.is_some_and(|evidence| evidence >= expiry));
+    let modulus = state.params.bucket_modulus;
+    let lost = chain_tip.is_some()
+        && transfer.bucket_index.is_some_and(|bucket| {
+            let window_end = super::schedule::boundary_of(bucket + 1, modulus);
+            evidence.is_some_and(|evidence| evidence >= window_end + modulus)
+        });
+    if expired || lost {
+        report.actions.push(RecommendedAction::AbandonWire {
+            transfer: transfer.id,
+        });
+    }
+    TransferClass::OnTrack
+}
+
+fn classify(
+    transfer: &TransferRecord,
+    state: &MigrationState,
+    chain: &impl ChainView,
+    chain_tip: Option<BlockHeight>,
+    report: &mut ReconcileReport,
+) -> TransferClass {
+    match transfer.state {
+        TransferState::Confirmed { height } => {
+            let evidence_reached = chain
+                .spend_evidence_height()
+                .is_some_and(|evidence| evidence >= height);
+            if !evidence_reached {
+                return TransferClass::Confirmed;
+            }
+            let spend = transfer
+                .note
+                .and_then(|bound| chain.note_spend(bound.output_id));
+            return match spend {
+                Some((txid, Some(_))) if transfer.owns_txid(&txid) => TransferClass::Confirmed,
+                Some((_, Some(_))) => {
+                    report.actions.push(RecommendedAction::MarkInvalidated {
+                        transfer: transfer.id,
+                    });
+                    TransferClass::Invalidated
+                }
+                _ => {
+                    report.actions.push(RecommendedAction::Demote {
+                        transfer: transfer.id,
+                    });
+                    TransferClass::Reorged
+                }
+            };
+        }
+        TransferState::Invalidated => return TransferClass::Invalidated,
+        TransferState::Released if transfer.txid.is_none() => return TransferClass::Released,
+        TransferState::Released => {
+            return classify_released_wire(transfer, state, chain, chain_tip, report);
+        }
+        TransferState::Expired => {
+            report.actions.push(RecommendedAction::Reschedule {
+                transfer: transfer.id,
+            });
+            return TransferClass::Expired;
+        }
+        TransferState::Bound
+        | TransferState::Assigned
+        | TransferState::Signed
+        | TransferState::Broadcast => (),
     }
 
-    // The bound note's spend is the ground truth: our own txid means the
-    // part mined (even if a crash lost the Broadcast record), any other
-    // txid means an external spend invalidated it.
-    if let Some(bound) = part.note
+    if let Some(bound) = transfer.note
         && let Some((spending_txid, height)) = chain.note_spend(bound.output_id)
     {
-        if part.txid == Some(spending_txid) {
-            if let Some(height) = height {
-                report.actions.push(RecommendedAction::PromoteConfirmed {
-                    part: part.id,
-                    height,
-                });
-                return PartClass::Confirmed;
-            }
-            // Our transaction is in flight, nothing to do.
-            return PartClass::OnTrack;
+        if !transfer.owns_txid(&spending_txid) {
+            report.actions.push(RecommendedAction::MarkInvalidated {
+                transfer: transfer.id,
+            });
+            return TransferClass::Invalidated;
         }
-        report
-            .actions
-            .push(RecommendedAction::MarkInvalidated { part: part.id });
-        return PartClass::Invalidated;
+        if let Some(height) = height {
+            report.actions.push(RecommendedAction::PromoteConfirmed {
+                transfer: transfer.id,
+                height,
+            });
+            return TransferClass::Confirmed;
+        }
     }
 
     let Some(tip) = chain_tip else {
-        return PartClass::OnTrack;
+        return TransferClass::OnTrack;
     };
+    let evidence = chain.spend_evidence_height();
+    let signed = matches!(
+        transfer.state,
+        TransferState::Signed | TransferState::Broadcast
+    );
 
-    // Expiry: a signed-or-broadcast transaction is condemned as dead only
-    // on complete evidence. The Spend-Evidence Height must reach the
-    // expiry, so every block the transaction could have mined in has been
-    // scanned with its nullifiers mapped. Judging against the chain tip
-    // here condemned parts whose exonerating spend sat in the unscanned
-    // gap (issue #2493, finding 8).
-    if matches!(part.state, PartState::Signed | PartState::Broadcast)
-        && part.expiry_height.is_some_and(|expiry_height| {
-            chain
-                .spend_evidence_height()
-                .is_some_and(|evidence| evidence >= expiry_height)
-        })
+    if signed
+        && transfer
+            .expiry_height
+            .is_some_and(|expiry_height| evidence.is_some_and(|evidence| evidence >= expiry_height))
     {
         report
             .actions
-            .push(RecommendedAction::Rebuild { part: part.id });
-        return PartClass::Expired;
+            .push(RecommendedAction::DiscardAndReschedule {
+                transfer: transfer.id,
+            });
+        return TransferClass::Expired;
     }
 
-    // Window position for parts that still await transmission.
-    if matches!(part.state, PartState::Assigned | PartState::Signed)
-        && let Some(bucket) = part.bucket_index
-    {
-        let window_end = super::schedule::boundary_of(bucket + 1, state.params.bucket_modulus);
-        if tip >= window_end {
-            let blocks_past = u32::from(tip) - u32::from(window_end);
-            return if blocks_past <= SLIP_TOLERANCE_BLOCKS {
-                PartClass::SlippedWithinTolerance
-            } else if part.state == PartState::Signed {
-                // An overdue signed part is not catch-up material: its
-                // still-valid transaction waits out its expiry rather than
-                // minting a lateness fingerprint (see
-                // [`PartClass::AwaitingExpiry`]).
-                match part.expiry_height {
-                    Some(expiry) => PartClass::AwaitingExpiry { expiry },
-                    None => PartClass::Overdue,
-                }
-            } else {
-                PartClass::Overdue
-            };
+    let Some(bucket) = transfer.bucket_index else {
+        return TransferClass::OnTrack;
+    };
+    let modulus = state.params.bucket_modulus;
+    let window_end = super::schedule::boundary_of(bucket + 1, modulus);
+    if tip < window_end {
+        return TransferClass::OnTrack;
+    }
+    match transfer.state {
+        TransferState::Assigned => {
+            report.actions.push(RecommendedAction::Reschedule {
+                transfer: transfer.id,
+            });
+            TransferClass::Missed
         }
+        TransferState::Signed if transfer.attempts == 0 => {
+            report
+                .actions
+                .push(RecommendedAction::DiscardAndReschedule {
+                    transfer: transfer.id,
+                });
+            TransferClass::Missed
+        }
+        TransferState::Signed | TransferState::Broadcast => {
+            let lost = evidence.is_some_and(|evidence| evidence >= window_end + modulus);
+            if lost {
+                report
+                    .actions
+                    .push(RecommendedAction::DiscardAndReschedule {
+                        transfer: transfer.id,
+                    });
+                TransferClass::Missed
+            } else {
+                TransferClass::OnTrack
+            }
+        }
+        _ => TransferClass::OnTrack,
     }
-
-    PartClass::OnTrack
 }
 
 impl ChainView for crate::wallet::LightWallet {
@@ -450,7 +474,7 @@ impl ChainView for crate::wallet::LightWallet {
 
     fn transaction_failed(&self, txid: &TxId) -> bool {
         // An absent record is *unknown*, not failed: after a restore from
-        // backup an in-flight split transaction has no wallet record yet may
+        // backup an in-flight preparation transactions has no wallet record yet may
         // still confirm. Reporting it failed would retry the split and race
         // the original.
         self.wallet_transactions
@@ -479,11 +503,15 @@ impl ChainView for crate::wallet::LightWallet {
 
 #[cfg(test)]
 mod tests {
-    use super::super::parts::{BoundNote, PartRecord};
-    use super::super::{ConsentBinding, MigrationParams, SigningStrategy};
+    use std::collections::HashMap;
+
+    use super::super::schedule::{boundary_of, bucket_index};
+    use super::super::transfers::{BoundNote, TransferRecord};
+    use super::super::{MigrationMode, MigrationParams, PlanCommitment, SigningStrategy};
     use super::*;
     use crate::config::ChainType;
-    use std::collections::HashMap;
+
+    const TIP: u32 = 10_000;
 
     struct MockChainView {
         tip: Option<BlockHeight>,
@@ -497,15 +525,29 @@ mod tests {
     impl Default for MockChainView {
         fn default() -> Self {
             MockChainView {
-                tip: Some(BlockHeight::from_u32(10_000)),
-                // Evidence keeps pace with the tip unless a test says
-                // otherwise.
-                spend_evidence: Some(BlockHeight::from_u32(10_000)),
+                tip: Some(height(TIP)),
+                spend_evidence: Some(height(TIP)),
                 note_spends: HashMap::new(),
                 confirmed: HashMap::new(),
                 failed: Vec::new(),
                 orchard_spendable: 0,
             }
+        }
+    }
+
+    impl MockChainView {
+        fn at(tip: u32, evidence: u32) -> Self {
+            MockChainView {
+                tip: Some(height(tip)),
+                spend_evidence: Some(height(evidence)),
+                ..Default::default()
+            }
+        }
+
+        fn with_note_spend(mut self, seed: u8, txid: TxId, mined_at: Option<u32>) -> Self {
+            self.note_spends
+                .insert(output_id(seed), (txid, mined_at.map(height)));
+            self
         }
     }
 
@@ -530,450 +572,997 @@ mod tests {
         }
     }
 
+    fn height(h: u32) -> BlockHeight {
+        BlockHeight::from_u32(h)
+    }
+
+    fn txid(seed: u8) -> TxId {
+        TxId::from_bytes([seed; 32])
+    }
+
     fn params() -> MigrationParams {
         MigrationParams::provisional(ChainType::Mainnet)
+    }
+
+    fn modulus() -> u32 {
+        params().bucket_modulus
+    }
+
+    fn tip_bucket() -> u64 {
+        bucket_index(height(TIP), modulus())
+    }
+
+    fn window_end(bucket: u64) -> u32 {
+        u32::from(boundary_of(bucket + 1, modulus()))
     }
 
     fn output_id(seed: u8) -> OutputId {
         OutputId::new(TxId::from_bytes([seed; 32]), u32::from(seed))
     }
 
-    fn scheduled_state(parts: Vec<PartRecord>) -> MigrationState {
+    fn scheduled_state(transfers: Vec<TransferRecord>) -> MigrationState {
         let params = params();
         MigrationState {
-            consent: ConsentBinding {
+            commitment: PlanCommitment {
                 params_hash: params.params_hash(),
                 plan_hash: [0; 32],
-                consented_at: 0,
+                committed_at: 0,
             },
             params,
             strategy: SigningStrategy::LazyAtBoundary,
-            mode: crate::wallet::migration::MigrationMode::Scheduled,
+            mode: MigrationMode::Scheduled,
             account: zip32::AccountId::ZERO,
-            phase: MigrationPhase::PartsScheduled,
-            parts,
+            phase: MigrationPhase::Scheduled,
+            transfers,
         }
     }
 
-    fn assigned_part(id: u32, bucket: u64) -> PartRecord {
-        let mut part = PartRecord::new(
-            PartId(id),
+    fn assigned_transfer(id: u32, bucket: u64) -> TransferRecord {
+        let seed = u8::try_from(id).expect("test ids fit u8");
+        let mut transfer = TransferRecord::new(
+            TransferId(id),
             100_000_000,
             BoundNote {
-                output_id: output_id(id as u8),
-                nullifier: [id as u8; 32],
-                commitment: [id as u8; 32],
+                output_id: output_id(seed),
+                nullifier: [seed; 32],
+                commitment: [seed; 32],
             },
         );
-        part.assign(bucket).unwrap();
-        part
+        transfer.assign(bucket).unwrap();
+        transfer
     }
 
-    /// Bucket arithmetic for the provisional M = 144 and tip 10_000: the tip
-    /// sits in bucket 69.
-    const M: u32 = 144;
-    const TIP_BUCKET: u64 = 10_000 / M as u64;
-
-    /// Issue #2493, finding 8: a migration whose every part is terminal
-    /// and whose replannable balance is zero must reach a terminal
-    /// recommendation. An `Invalidated` part with nothing left to replan
-    /// currently satisfies neither `MarkComplete` (not every part is
-    /// `Confirmed`) nor `ReplanRemainder` (no spendable balance), so
-    /// reconcile recommends nothing forever and the stuck state blocks
-    /// both the immediate migration and the immediate migration until the user finds
-    /// `cancel`.
-    #[test]
-    fn terminal_parts_with_nothing_replannable_reach_complete() {
-        let mut confirmed = assigned_part(0, TIP_BUCKET - 2);
-        confirmed
-            .mark_confirmed(BlockHeight::from_u32(9_000))
-            .unwrap();
-        let mut invalidated = assigned_part(1, TIP_BUCKET - 2);
-        invalidated.mark_invalidated().unwrap();
-        let state = scheduled_state(vec![confirmed, invalidated]);
-
-        // The default view's confirmed-spendable Orchard balance is zero:
-        // nothing remains to replan.
-        let report = reconcile(&state, &MockChainView::default());
-
-        assert!(
-            report
-                .actions
-                .iter()
-                .any(|action| matches!(action, RecommendedAction::MarkComplete { .. })),
-            "every part is terminal and nothing is replannable, yet the \
-             migration cannot conclude: {:?}",
-            report.actions,
-        );
+    fn signed_transfer(id: u32, bucket: u64, own: TxId, expiry: u32) -> TransferRecord {
+        let mut transfer = assigned_transfer(id, bucket);
+        transfer.mark_signed(own, height(expiry), None).unwrap();
+        transfer
     }
 
-    #[test]
-    fn future_and_open_windows_are_on_track() {
-        let state = scheduled_state(vec![
-            assigned_part(0, TIP_BUCKET),     // window open
-            assigned_part(1, TIP_BUCKET + 3), // future
-        ]);
-        let report = reconcile(&state, &MockChainView::default());
-        assert!(
-            report
-                .assessments
-                .iter()
-                .all(|a| a.class == PartClass::OnTrack)
-        );
-        assert!(report.actions.is_empty());
+    fn broadcast_transfer(id: u32, bucket: u64, own: TxId, expiry: u32) -> TransferRecord {
+        let mut transfer = signed_transfer(id, bucket, own, expiry);
+        transfer.record_attempt();
+        transfer.mark_broadcast().unwrap();
+        transfer
+    }
+
+    fn confirmed_transfer(id: u32, own: TxId, confirmed_at: u32) -> TransferRecord {
+        let mut transfer = broadcast_transfer(id, tip_bucket() - 2, own, 20_000);
+        transfer.mark_confirmed(height(confirmed_at)).unwrap();
+        transfer
+    }
+
+    fn class_of(report: &ReconcileReport, id: u32) -> TransferClass {
+        report
+            .assessments
+            .iter()
+            .find(|assessment| assessment.id == TransferId(id))
+            .map(|assessment| assessment.class)
+            .unwrap_or_else(|| panic!("transfer {id} was not assessed: {report:?}"))
+    }
+
+    fn recommends_completion(report: &ReconcileReport) -> bool {
+        report
+            .actions
+            .iter()
+            .any(|action| matches!(action, RecommendedAction::MarkComplete { .. }))
+    }
+
+    fn due_now(state: &MigrationState, report: &ReconcileReport, now: u32) -> Vec<TransferId> {
+        due_now_transfers(&state.transfers, report, height(now), &state.params)
     }
 
     #[test]
-    fn recent_slips_are_silent_and_older_ones_prompt_catch_up() {
-        // Bucket TIP_BUCKET - 1's window closed at the tip's own boundary,
-        // so a tip just past that boundary is within the slip tolerance.
-        let state = scheduled_state(vec![assigned_part(0, TIP_BUCKET - 1)]);
-        let mut chain = MockChainView {
-            tip: Some(BlockHeight::from_u32(
-                (TIP_BUCKET as u32) * M + SLIP_TOLERANCE_BLOCKS,
-            )),
-            ..Default::default()
-        };
-        let report = reconcile(&state, &chain);
-        assert_eq!(
-            report.assessments[0].class,
-            PartClass::SlippedWithinTolerance
-        );
-        assert!(report.actions.is_empty(), "slips are not surfaced");
-
-        chain.tip = Some(BlockHeight::from_u32(
-            (TIP_BUCKET as u32) * M + SLIP_TOLERANCE_BLOCKS + 1,
-        ));
-        let report = reconcile(&state, &chain);
-        assert_eq!(report.assessments[0].class, PartClass::Overdue);
-        assert_eq!(
-            report.actions,
-            vec![RecommendedAction::PromptCatchUp {
-                parts: vec![PartId(0)],
-                disclosure_required: true,
-            }]
-        );
-    }
-
-    #[test]
-    fn due_now_reports_the_current_window_regardless_of_the_target() {
-        // Tip 10_000 sits in bucket TIP_BUCKET; its window is
-        // [TIP_BUCKET*144, (TIP_BUCKET+1)*144) = [9936, 10080).
-        let mut part = assigned_part(0, TIP_BUCKET);
-        part.target_height = Some(BlockHeight::from_u32(10_040)); // advisory only
-        let state = scheduled_state(vec![part]);
-
-        // The tip is below the random target, yet the window is open: the part
-        // is due, because the target no longer gates sendability.
-        let chain = MockChainView::default();
-        let report = reconcile(&state, &chain);
-        assert_eq!(
-            due_now_parts(
-                &state.parts,
-                &report,
-                chain.chain_tip().unwrap(),
-                &state.params,
-            ),
-            vec![PartId(0)],
-            "a current-window part is due even with its target ahead",
-        );
-
-        // And it stays due later in the window, past the target.
-        let chain = MockChainView {
-            tip: Some(BlockHeight::from_u32(10_060)),
-            ..Default::default()
-        };
-        let report = reconcile(&state, &chain);
-        assert_eq!(
-            due_now_parts(
-                &state.parts,
-                &report,
-                BlockHeight::from_u32(10_060),
-                &state.params,
-            ),
-            vec![PartId(0)],
-        );
-    }
-
-    #[test]
-    fn due_now_folds_assigned_overdue_parts_but_not_signed_ones() {
-        // Bucket TIP_BUCKET - 2 closed well beyond the slip tolerance. The
-        // Assigned part is Overdue and folds into the batch; the Signed one is
-        // classified AwaitingExpiry (it waits out its expiry and rebuilds
-        // rather than transmitting late), so it is outside the catch-up batch
-        // and never folds.
-        let assigned = assigned_part(0, TIP_BUCKET - 2);
-        let mut signed = assigned_part(1, TIP_BUCKET - 2);
-        signed
-            .mark_signed(
-                TxId::from_bytes([9; 32]),
-                BlockHeight::from_u32(20_000),
-                None,
-            )
-            .unwrap();
-        let state = scheduled_state(vec![assigned, signed]);
-
-        let chain = MockChainView::default();
-        let report = reconcile(&state, &chain);
-        assert!(
-            report.actions.contains(&RecommendedAction::PromptCatchUp {
-                parts: vec![PartId(0)],
-                disclosure_required: true,
-            }),
-            "only the Assigned overdue part is surfaced for catch-up",
-        );
-        assert!(
-            matches!(
-                report
-                    .assessments
-                    .iter()
-                    .find(|assessment| assessment.id == PartId(1))
-                    .map(|assessment| assessment.class),
-                Some(PartClass::AwaitingExpiry { .. })
-            ),
-            "the signed overdue part awaits its expiry instead of catching up",
-        );
-        assert_eq!(
-            due_now_parts(
-                &state.parts,
-                &report,
-                chain.chain_tip().unwrap(),
-                &state.params,
-            ),
-            vec![PartId(0)],
-            "only the Assigned overdue part is sendable this instant",
-        );
-    }
-
-    #[test]
-    fn due_now_excludes_future_windows() {
-        let part = assigned_part(0, TIP_BUCKET + 3);
-        let state = scheduled_state(vec![part]);
-        let chain = MockChainView::default();
-        let report = reconcile(&state, &chain);
-        assert!(
-            due_now_parts(
-                &state.parts,
-                &report,
-                chain.chain_tip().unwrap(),
-                &state.params,
-            )
-            .is_empty(),
-            "a part whose window has not opened is a future window, not a due batch",
-        );
-    }
-
-    #[test]
-    fn due_now_omits_a_current_part_reconciliation_will_invalidate() {
-        // A current-window Assigned part whose bound note was spent outside the
-        // migration: reconcile classifies it Invalidated, so a tap would not
-        // send it and `due_now` must not advertise it. With no random target
-        // it clears the bucket predicate, so only the OnTrack class gate drops
-        // it, the property that gate exists for.
-        let mut part = assigned_part(0, TIP_BUCKET);
-        part.target_height = None;
-        let state = scheduled_state(vec![part]);
-        let mut chain = MockChainView::default();
-        chain.note_spends.insert(
-            output_id(0),
-            (
-                TxId::from_bytes([250; 32]),
-                Some(BlockHeight::from_u32(9_990)),
-            ),
-        );
-        let report = reconcile(&state, &chain);
-        assert_eq!(report.assessments[0].class, PartClass::Invalidated);
-        assert!(
-            due_now_parts(
-                &state.parts,
-                &report,
-                chain.chain_tip().unwrap(),
-                &state.params,
-            )
-            .is_empty(),
-            "an externally-spent part is not sendable and must not be advertised",
-        );
-    }
-
-    #[test]
-    fn expired_transactions_are_rebuilt() {
-        let mut part = assigned_part(0, TIP_BUCKET - 2);
-        part.mark_signed(
-            TxId::from_bytes([9; 32]),
-            BlockHeight::from_u32(9_000),
-            None,
-        )
-        .unwrap();
-        part.mark_broadcast().unwrap();
-        let state = scheduled_state(vec![part]);
-        let report = reconcile(&state, &MockChainView::default());
-        assert_eq!(report.assessments[0].class, PartClass::Expired);
-        assert!(
-            report
-                .actions
-                .contains(&RecommendedAction::Rebuild { part: PartId(0) })
-        );
-    }
-
-    #[test]
-    fn external_spend_invalidates_and_replans() {
-        let state = scheduled_state(vec![assigned_part(0, TIP_BUCKET + 1)]);
-        let mut chain = MockChainView::default();
-        chain.note_spends.insert(
-            output_id(0),
-            (
-                TxId::from_bytes([250; 32]),
-                Some(BlockHeight::from_u32(9_990)),
-            ),
-        );
-        chain.orchard_spendable = 50_000_000; // change from the external spend
-        let report = reconcile(&state, &chain);
-        assert_eq!(report.assessments[0].class, PartClass::Invalidated);
-        assert!(
-            report
-                .actions
-                .contains(&RecommendedAction::MarkInvalidated { part: PartId(0) })
-        );
-        assert!(report.actions.contains(&RecommendedAction::ReplanRemainder));
-    }
-
-    #[test]
-    fn crash_between_broadcast_and_record_promotes_via_nullifier() {
-        // The part is persisted as Signed (the crash lost the Broadcast
-        // record), but its own transaction spent the bound note on-chain.
-        let own_txid = TxId::from_bytes([9; 32]);
-        let mut part = assigned_part(0, TIP_BUCKET - 1);
-        part.mark_signed(own_txid, BlockHeight::from_u32(20_000), None)
-            .unwrap();
-        let state = scheduled_state(vec![part]);
-        let mut chain = MockChainView::default();
-        chain
-            .note_spends
-            .insert(output_id(0), (own_txid, Some(BlockHeight::from_u32(9_995))));
-        let report = reconcile(&state, &chain);
-        assert_eq!(report.assessments[0].class, PartClass::Confirmed);
-        assert_eq!(
-            report.actions,
-            vec![RecommendedAction::PromoteConfirmed {
-                part: PartId(0),
-                height: BlockHeight::from_u32(9_995),
-            }]
-        );
-    }
-
-    #[test]
-    fn all_confirmed_with_dust_residual_completes() {
-        let mut part = assigned_part(0, TIP_BUCKET - 2);
-        part.mark_signed(
-            TxId::from_bytes([9; 32]),
-            BlockHeight::from_u32(20_000),
-            None,
-        )
-        .unwrap();
-        part.mark_broadcast().unwrap();
-        part.mark_confirmed(BlockHeight::from_u32(9_999)).unwrap();
-        let state = scheduled_state(vec![part]);
-        let mut chain = MockChainView {
-            orchard_spendable: 5_000, // below the sweep minimum
-            ..Default::default()
-        };
-        let report = reconcile(&state, &chain);
-        assert_eq!(
-            report.actions,
-            vec![RecommendedAction::MarkComplete { residual: 5_000 }]
-        );
-
-        // An economic leftover instead asks for a final transfer.
-        chain.orchard_spendable = 5_000_000;
-        let report = reconcile(&state, &chain);
-        assert_eq!(report.actions, vec![RecommendedAction::ReplanRemainder]);
-    }
-
-    #[test]
-    fn split_rounds_gate_on_confirmation() {
-        let split_txid = TxId::from_bytes([1; 32]);
+    fn committed_phase_continues_note_preparation() {
         let mut state = scheduled_state(Vec::new());
-        state.phase = MigrationPhase::NoteSplitting {
+        state.phase = MigrationPhase::Committed;
+
+        let report = reconcile(&state, &MockChainView::default());
+
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::ContinueNotePreparation]
+        );
+        assert!(report.assessments.is_empty());
+    }
+
+    #[test]
+    fn prepared_phase_recommends_nothing() {
+        let mut state = scheduled_state(Vec::new());
+        state.phase = MigrationPhase::Prepared;
+
+        let report = reconcile(&state, &MockChainView::default());
+
+        assert_eq!(report, ReconcileReport::default());
+    }
+
+    #[test]
+    fn preparing_phase_awaits_an_unconfirmed_round() {
+        let mut state = scheduled_state(Vec::new());
+        state.phase = MigrationPhase::Preparing {
             round: 0,
-            pending_txids: vec![split_txid],
+            pending_txids: vec![txid(1), txid(2)],
         };
         let mut chain = MockChainView::default();
+        chain.confirmed.insert(txid(1), height(9_000));
 
         let report = reconcile(&state, &chain);
-        assert_eq!(
-            report.actions,
-            vec![RecommendedAction::AwaitSplitConfirmation]
-        );
 
-        chain.failed.push(split_txid);
-        let report = reconcile(&state, &chain);
         assert_eq!(
             report.actions,
-            vec![RecommendedAction::RetrySplit { txid: split_txid }]
-        );
-
-        chain.failed.clear();
-        chain
-            .confirmed
-            .insert(split_txid, BlockHeight::from_u32(9_000));
-        let report = reconcile(&state, &chain);
-        assert_eq!(
-            report.actions,
-            vec![RecommendedAction::ContinueNoteSplitting],
-            "a fully confirmed round hands back to the splitting driver, \
-             which alone can tell a finished split from one needing more rounds"
+            vec![RecommendedAction::AwaitPreparationConfirmation],
+            "one unconfirmed preparation transaction holds the round"
         );
     }
 
     #[test]
-    fn reinstall_offers_a_fresh_migration() {
-        // No persisted migration state at all: reconcile is never reached.
-        // The wallet's remaining Orchard balance produces a fresh plan. This
-        // test pins the adjacent behavior: a Planned state only recommends
-        // continuing note splitting.
+    fn preparing_phase_retries_a_failed_round_transaction() {
         let mut state = scheduled_state(Vec::new());
-        state.phase = MigrationPhase::Planned;
-        let report = reconcile(&state, &MockChainView::default());
+        state.phase = MigrationPhase::Preparing {
+            round: 0,
+            pending_txids: vec![txid(1), txid(2)],
+        };
+        let mut chain = MockChainView::default();
+        chain.failed.push(txid(1));
+
+        let report = reconcile(&state, &chain);
+
         assert_eq!(
             report.actions,
-            vec![RecommendedAction::ContinueNoteSplitting]
+            vec![RecommendedAction::RetryPreparation { txid: txid(1) }],
+            "a failed preparation transaction is retried and the round is not awaited"
         );
     }
 
-    /// After a restore from backup the wallet's transaction map no longer
-    /// contains an in-flight split transaction, but the persisted migration
-    /// state still names it in `pending_txids`. An unknown txid is not
-    /// *recorded as failed* (the `ChainView::transaction_failed` contract),
-    /// so reconciliation must keep waiting rather than retry the split and
-    /// race its own in-flight transaction. This exercises the real
-    /// `LightWallet` implementation, not `MockChainView`.
     #[test]
-    fn unknown_txid_after_restore_is_not_classified_failed() {
+    fn preparing_phase_continues_note_preparation_once_the_round_confirms() {
+        let mut state = scheduled_state(Vec::new());
+        state.phase = MigrationPhase::Preparing {
+            round: 1,
+            pending_txids: vec![txid(1), txid(2)],
+        };
+        let mut chain = MockChainView::default();
+        chain.confirmed.insert(txid(1), height(9_000));
+        chain.confirmed.insert(txid(2), height(9_001));
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::ContinueNotePreparation]
+        );
+    }
+
+    #[test]
+    fn an_unknown_preparation_txid_after_restore_awaits_confirmation() {
         use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
         let wallet =
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
-
-        let in_flight_txid = TxId::from_bytes([42; 32]);
-        assert!(!wallet.wallet_transactions.contains_key(&in_flight_txid));
-
-        // Contract-level assertion: an unknown transaction is not failed.
+        let in_flight = txid(42);
+        assert!(!wallet.wallet_transactions.contains_key(&in_flight));
         assert!(
-            !wallet.transaction_failed(&in_flight_txid),
-            "an unknown txid must not be reported as failed",
+            !wallet.transaction_failed(&in_flight),
+            "an unknown txid is not recorded as failed"
         );
 
-        // Behavior-level assertion: reconciliation awaits confirmation
-        // instead of recommending a retry that races the in-flight split.
         let mut state = scheduled_state(Vec::new());
-        state.phase = MigrationPhase::NoteSplitting {
+        state.phase = MigrationPhase::Preparing {
             round: 0,
-            pending_txids: vec![in_flight_txid],
+            pending_txids: vec![in_flight],
         };
         let report = reconcile(&state, &wallet);
+
         assert_eq!(
             report.actions,
-            vec![RecommendedAction::AwaitSplitConfirmation],
+            vec![RecommendedAction::AwaitPreparationConfirmation],
+            "reconciliation waits rather than retrying a round that may still confirm"
         );
+    }
+
+    #[test]
+    fn complete_phase_reopens_on_a_reorged_transfer() {
+        let own = txid(9);
+        let mut state = scheduled_state(vec![confirmed_transfer(0, own, 9_990)]);
+        state.phase = MigrationPhase::Complete { residual: 0 };
+
+        let report = reconcile(&state, &MockChainView::default());
+
+        assert_eq!(class_of(&report, 0), TransferClass::Reorged);
+        assert!(report.actions.contains(&RecommendedAction::Demote {
+            transfer: TransferId(0)
+        }));
+        assert!(report.actions.contains(&RecommendedAction::Reopen));
+    }
+
+    #[test]
+    fn complete_phase_with_settled_transfers_recommends_nothing() {
+        let own = txid(9);
+        let mut state = scheduled_state(vec![confirmed_transfer(0, own, 9_990)]);
+        state.phase = MigrationPhase::Complete { residual: 0 };
+        let chain = MockChainView::default().with_note_spend(0, own, Some(9_990));
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(class_of(&report, 0), TransferClass::Confirmed);
+        assert!(report.actions.is_empty(), "{:?}", report.actions);
+    }
+
+    #[test]
+    fn assigned_transfers_in_the_open_and_future_windows_are_on_track() {
+        let state = scheduled_state(vec![
+            assigned_transfer(0, tip_bucket()),
+            assigned_transfer(1, tip_bucket() + 3),
+        ]);
+
+        let report = reconcile(&state, &MockChainView::default());
+
+        assert_eq!(class_of(&report, 0), TransferClass::OnTrack);
+        assert_eq!(class_of(&report, 1), TransferClass::OnTrack);
+        assert!(report.actions.is_empty(), "{:?}", report.actions);
+    }
+
+    #[test]
+    fn assigned_transfer_whose_window_closed_is_missed_and_rescheduled() {
+        let state = scheduled_state(vec![assigned_transfer(0, tip_bucket() - 1)]);
+
+        let report = reconcile(&state, &MockChainView::default());
+
+        assert_eq!(class_of(&report, 0), TransferClass::Missed);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::Reschedule {
+                transfer: TransferId(0)
+            }]
+        );
+    }
+
+    #[test]
+    fn assigned_transfer_is_on_track_until_the_block_that_closes_its_window() {
+        let bucket = tip_bucket() - 1;
+        let state = scheduled_state(vec![assigned_transfer(0, bucket)]);
+        let last_block = window_end(bucket) - 1;
+
+        let report = reconcile(&state, &MockChainView::at(last_block, last_block));
+        assert_eq!(class_of(&report, 0), TransferClass::OnTrack);
+
+        let report = reconcile(&state, &MockChainView::at(last_block + 1, last_block));
+        assert_eq!(
+            class_of(&report, 0),
+            TransferClass::Missed,
+            "the window closes at the tip, without waiting for evidence"
+        );
+    }
+
+    #[test]
+    fn unsent_signed_transfer_past_its_window_is_missed_and_its_signature_discarded() {
+        let transfer = signed_transfer(0, tip_bucket() - 1, txid(9), 20_000);
+        assert_eq!(transfer.attempts, 0);
+        let state = scheduled_state(vec![transfer]);
+
+        let report = reconcile(&state, &MockChainView::default());
+
+        assert_eq!(class_of(&report, 0), TransferClass::Missed);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::DiscardAndReschedule {
+                transfer: TransferId(0)
+            }]
+        );
+    }
+
+    #[test]
+    fn submitted_transfer_past_its_window_stays_on_track_for_one_more_window() {
+        let bucket = tip_bucket() - 1;
+        let state = scheduled_state(vec![broadcast_transfer(0, bucket, txid(9), 20_000)]);
+        let cutoff = window_end(bucket) + modulus();
+
+        let report = reconcile(&state, &MockChainView::at(cutoff, cutoff - 1));
+        assert_eq!(class_of(&report, 0), TransferClass::OnTrack);
+        assert!(report.actions.is_empty(), "{:?}", report.actions);
+
+        let report = reconcile(&state, &MockChainView::at(cutoff, cutoff));
+        assert_eq!(class_of(&report, 0), TransferClass::Missed);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::DiscardAndReschedule {
+                transfer: TransferId(0)
+            }]
+        );
+    }
+
+    #[test]
+    fn signed_transfer_with_an_attempt_recorded_is_treated_as_submitted() {
+        let bucket = tip_bucket() - 1;
+        let mut transfer = signed_transfer(0, bucket, txid(9), 20_000);
+        transfer.record_attempt();
+        let state = scheduled_state(vec![transfer]);
+        let cutoff = window_end(bucket) + modulus();
+
+        let report = reconcile(&state, &MockChainView::at(cutoff, cutoff - 1));
+        assert_eq!(
+            class_of(&report, 0),
+            TransferClass::OnTrack,
+            "a crash between the attempt record and the broadcast record keeps the signature"
+        );
+
+        let report = reconcile(&state, &MockChainView::at(cutoff, cutoff));
+        assert_eq!(class_of(&report, 0), TransferClass::Missed);
+        assert!(
+            report
+                .actions
+                .contains(&RecommendedAction::DiscardAndReschedule {
+                    transfer: TransferId(0)
+                })
+        );
+    }
+
+    #[test]
+    fn submitted_transfer_whose_expiry_the_evidence_reached_is_expired_and_discarded() {
+        let expiry = 9_990;
+        let state = scheduled_state(vec![broadcast_transfer(
+            0,
+            tip_bucket() - 1,
+            txid(9),
+            expiry,
+        )]);
+
+        let report = reconcile(&state, &MockChainView::at(TIP, expiry - 1));
+        assert_eq!(
+            class_of(&report, 0),
+            TransferClass::OnTrack,
+            "the tip past the expiry is not evidence that the transaction did not mine"
+        );
+
+        let report = reconcile(&state, &MockChainView::at(TIP, expiry));
+        assert_eq!(class_of(&report, 0), TransferClass::Expired);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::DiscardAndReschedule {
+                transfer: TransferId(0)
+            }]
+        );
+    }
+
+    #[test]
+    fn own_spend_mined_promotes_the_transfer_to_confirmed() {
+        let own = txid(9);
+        let state = scheduled_state(vec![signed_transfer(0, tip_bucket() - 1, own, 20_000)]);
+        let chain = MockChainView::default().with_note_spend(0, own, Some(9_995));
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(class_of(&report, 0), TransferClass::Confirmed);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::PromoteConfirmed {
+                transfer: TransferId(0),
+                height: height(9_995),
+            }]
+        );
+    }
+
+    #[test]
+    fn own_spend_by_a_discarded_signature_promotes_rather_than_invalidates() {
+        let discarded = txid(9);
+        let mut transfer = signed_transfer(0, tip_bucket() - 3, discarded, 9_500);
+        transfer.discard_signature().unwrap();
+        transfer.reassign(tip_bucket() + 1).unwrap();
+        assert_eq!(transfer.previous_txids, vec![discarded]);
+        let state = scheduled_state(vec![transfer]);
+        let chain = MockChainView::default().with_note_spend(0, discarded, Some(9_400));
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(class_of(&report, 0), TransferClass::Confirmed);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::PromoteConfirmed {
+                transfer: TransferId(0),
+                height: height(9_400),
+            }]
+        );
+    }
+
+    #[test]
+    fn own_spend_pending_keeps_the_transfer_on_track_while_its_window_checks_apply() {
+        let own = txid(9);
+        let state = scheduled_state(vec![broadcast_transfer(0, tip_bucket(), own, 20_000)]);
+        let chain = MockChainView::default().with_note_spend(0, own, None);
+
+        let report = reconcile(&state, &chain);
+        assert_eq!(class_of(&report, 0), TransferClass::OnTrack);
+        assert!(report.actions.is_empty(), "{:?}", report.actions);
+
+        let bucket = tip_bucket() - 1;
+        let state = scheduled_state(vec![broadcast_transfer(0, bucket, own, 20_000)]);
+        let cutoff = window_end(bucket) + modulus();
+        let chain = MockChainView::at(cutoff, cutoff).with_note_spend(0, own, None);
+
+        let report = reconcile(&state, &chain);
+        assert_eq!(
+            class_of(&report, 0),
+            TransferClass::Missed,
+            "a pending own spend does not exempt the transfer from the extra-window cutoff"
+        );
+        assert!(
+            report
+                .actions
+                .contains(&RecommendedAction::DiscardAndReschedule {
+                    transfer: TransferId(0)
+                })
+        );
+    }
+
+    #[test]
+    fn foreign_spend_invalidates_the_transfer() {
+        let foreign = txid(250);
+        let state = scheduled_state(vec![assigned_transfer(0, tip_bucket() + 1)]);
+
+        let chain = MockChainView::default().with_note_spend(0, foreign, Some(9_990));
+        let report = reconcile(&state, &chain);
+        assert_eq!(class_of(&report, 0), TransferClass::Invalidated);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::MarkInvalidated {
+                transfer: TransferId(0)
+            }]
+        );
+
+        let chain = MockChainView::default().with_note_spend(0, foreign, None);
+        let report = reconcile(&state, &chain);
+        assert_eq!(
+            class_of(&report, 0),
+            TransferClass::Invalidated,
+            "a pending foreign spend already takes the funding note"
+        );
+    }
+
+    #[test]
+    fn persisted_expired_transfer_is_rescheduled() {
+        let mut transfer = assigned_transfer(0, tip_bucket() - 2);
+        transfer.mark_expired().unwrap();
+        let state = scheduled_state(vec![transfer]);
+
+        let report = reconcile(&state, &MockChainView::default());
+
+        assert_eq!(class_of(&report, 0), TransferClass::Expired);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::Reschedule {
+                transfer: TransferId(0)
+            }]
+        );
+    }
+
+    #[test]
+    fn released_transfer_is_released_with_no_action() {
+        let mut transfer = assigned_transfer(0, tip_bucket() - 2);
+        transfer.mark_released().unwrap();
+        let state = scheduled_state(vec![transfer]);
+        let chain = MockChainView::default().with_note_spend(0, txid(250), Some(9_990));
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(class_of(&report, 0), TransferClass::Released);
+        assert!(
+            !report
+                .actions
+                .contains(&RecommendedAction::MarkInvalidated {
+                    transfer: TransferId(0)
+                }),
+            "a released note is the user's to spend: {:?}",
+            report.actions
+        );
+    }
+
+    fn released_on_the_wire(id: u32, bucket: u64, own: TxId, expiry: u32) -> TransferRecord {
+        let mut transfer = broadcast_transfer(id, bucket, own, expiry);
+        transfer.mark_released().unwrap();
+        assert!(transfer.is_on_the_wire());
+        transfer
+    }
+
+    #[test]
+    fn released_transfer_whose_own_spend_mined_is_promoted_to_confirmed() {
+        let own = txid(9);
+        let state = scheduled_state(vec![released_on_the_wire(0, tip_bucket() - 1, own, 20_000)]);
+        let chain = MockChainView::default().with_note_spend(0, own, Some(9_995));
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(class_of(&report, 0), TransferClass::Confirmed);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::PromoteConfirmed {
+                transfer: TransferId(0),
+                height: height(9_995),
+            }]
+        );
+    }
+
+    #[test]
+    fn released_transfer_whose_discarded_signature_mined_is_promoted_to_confirmed() {
+        let discarded = txid(9);
+        let current = txid(10);
+        let mut transfer = broadcast_transfer(0, tip_bucket() - 3, discarded, 9_500);
+        transfer.discard_signature().unwrap();
+        transfer.reassign(tip_bucket() - 1).unwrap();
+        transfer.mark_signed(current, height(20_000), None).unwrap();
+        transfer.record_attempt();
+        transfer.mark_broadcast().unwrap();
+        transfer.mark_released().unwrap();
+        assert_eq!(transfer.previous_txids, vec![discarded]);
+        let state = scheduled_state(vec![transfer]);
+        let chain = MockChainView::default().with_note_spend(0, discarded, Some(9_400));
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(class_of(&report, 0), TransferClass::Confirmed);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::PromoteConfirmed {
+                transfer: TransferId(0),
+                height: height(9_400),
+            }]
+        );
+    }
+
+    #[test]
+    fn released_transfer_whose_note_a_foreign_transaction_spent_abandons_the_wire() {
+        let own = txid(9);
+        let state = scheduled_state(vec![released_on_the_wire(0, tip_bucket() - 1, own, 20_000)]);
+        let chain = MockChainView::default().with_note_spend(0, txid(250), Some(9_990));
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(
+            class_of(&report, 0),
+            TransferClass::OnTrack,
+            "the pass that abandons the wire does not settle the transfer"
+        );
+        assert!(report.actions.contains(&RecommendedAction::AbandonWire {
+            transfer: TransferId(0)
+        }));
+        assert!(
+            !report
+                .actions
+                .contains(&RecommendedAction::MarkInvalidated {
+                    transfer: TransferId(0)
+                }),
+            "a released note is never invalidated: {:?}",
+            report.actions
+        );
+    }
+
+    #[test]
+    fn released_transfer_with_a_pending_foreign_spend_stays_on_the_wire() {
+        let own = txid(9);
+        let state = scheduled_state(vec![released_on_the_wire(0, tip_bucket(), own, 20_000)]);
+        let chain = MockChainView::default().with_note_spend(0, txid(250), None);
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(class_of(&report, 0), TransferClass::OnTrack);
+        assert!(
+            report.actions.is_empty(),
+            "an unmined foreign spend decides nothing yet: {:?}",
+            report.actions
+        );
+    }
+
+    #[test]
+    fn released_transfer_whose_expiry_the_evidence_reached_abandons_the_wire() {
+        let expiry = 9_990;
+        let state = scheduled_state(vec![released_on_the_wire(0, tip_bucket(), txid(9), expiry)]);
+
+        let report = reconcile(&state, &MockChainView::at(TIP, expiry - 1));
+        assert_eq!(class_of(&report, 0), TransferClass::OnTrack);
+        assert!(
+            report.actions.is_empty(),
+            "the tip past the expiry is not evidence that the transaction did not mine: {:?}",
+            report.actions
+        );
+
+        let report = reconcile(&state, &MockChainView::at(TIP, expiry));
+        assert_eq!(class_of(&report, 0), TransferClass::OnTrack);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::AbandonWire {
+                transfer: TransferId(0)
+            }]
+        );
+    }
+
+    #[test]
+    fn released_transfer_unspent_one_window_past_its_window_end_abandons_the_wire() {
+        let bucket = tip_bucket() - 1;
+        let state = scheduled_state(vec![released_on_the_wire(0, bucket, txid(9), 20_000)]);
+        let cutoff = window_end(bucket) + modulus();
+
+        let report = reconcile(&state, &MockChainView::at(cutoff, cutoff - 1));
+        assert_eq!(class_of(&report, 0), TransferClass::OnTrack);
+        assert!(report.actions.is_empty(), "{:?}", report.actions);
+
+        let report = reconcile(&state, &MockChainView::at(cutoff, cutoff));
+        assert_eq!(class_of(&report, 0), TransferClass::OnTrack);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::AbandonWire {
+                transfer: TransferId(0)
+            }]
+        );
+    }
+
+    #[test]
+    fn released_transfer_on_the_wire_is_on_track_and_never_settled_for_completion() {
+        let own = txid(9);
+        let state = scheduled_state(vec![released_on_the_wire(0, tip_bucket(), own, 20_000)]);
+
+        let report = reconcile(&state, &MockChainView::default());
+
+        assert_eq!(class_of(&report, 0), TransferClass::OnTrack);
+        assert!(report.actions.is_empty(), "{:?}", report.actions);
+        assert!(
+            !recommends_completion(&report),
+            "a transaction still on the wire holds the migration open: {:?}",
+            report.actions
+        );
+
+        let chain = MockChainView::default().with_note_spend(0, own, None);
+        let report = reconcile(&state, &chain);
+        assert_eq!(class_of(&report, 0), TransferClass::OnTrack);
+        assert!(!recommends_completion(&report), "{:?}", report.actions);
+    }
+
+    #[test]
+    fn released_transfer_without_a_txid_is_settled() {
+        let mut transfer = released_on_the_wire(0, tip_bucket(), txid(9), 20_000);
+        transfer.forget_wire();
+        assert_eq!(transfer.txid, None);
+        let state = scheduled_state(vec![transfer]);
+
+        let report = reconcile(&state, &MockChainView::default());
+
+        assert_eq!(class_of(&report, 0), TransferClass::Released);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::MarkComplete { residual: 0 }],
+            "an abandoned wire leaves nothing to wait for"
+        );
+    }
+
+    #[test]
+    fn released_transfer_without_a_txid_ignores_spends_of_its_note() {
+        let mut transfer = released_on_the_wire(0, tip_bucket(), txid(9), 20_000);
+        transfer.forget_wire();
+        let state = scheduled_state(vec![transfer]);
+        let chain = MockChainView::at(TIP, 9_000).with_note_spend(0, txid(250), Some(9_990));
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(class_of(&report, 0), TransferClass::Released);
+        assert!(
+            report.actions.is_empty(),
+            "the released note is the user's to spend: {:?}",
+            report.actions
+        );
+    }
+
+    #[test]
+    fn confirmed_transfer_whose_note_is_unspent_at_evidence_is_reorged_and_demoted() {
+        let state = scheduled_state(vec![confirmed_transfer(0, txid(9), 9_990)]);
+
+        let report = reconcile(&state, &MockChainView::at(TIP, 9_990));
+
+        assert_eq!(class_of(&report, 0), TransferClass::Reorged);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::Demote {
+                transfer: TransferId(0)
+            }]
+        );
+    }
+
+    #[test]
+    fn confirmed_transfer_whose_note_a_foreign_transaction_spent_is_invalidated() {
+        let state = scheduled_state(vec![confirmed_transfer(0, txid(9), 9_990)]);
+        let chain = MockChainView::default().with_note_spend(0, txid(250), Some(9_990));
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(class_of(&report, 0), TransferClass::Invalidated);
+        assert!(
+            report
+                .actions
+                .contains(&RecommendedAction::MarkInvalidated {
+                    transfer: TransferId(0)
+                })
+        );
+        assert!(!report.actions.contains(&RecommendedAction::Demote {
+            transfer: TransferId(0)
+        }));
+    }
+
+    #[test]
+    fn migration_does_not_complete_while_invalidating_a_confirmed_transfer() {
+        let state = scheduled_state(vec![confirmed_transfer(0, txid(9), 9_990)]);
+        let chain = MockChainView::default().with_note_spend(0, txid(250), Some(9_990));
+
+        let report = reconcile(&state, &chain);
+
+        assert!(
+            report
+                .actions
+                .contains(&RecommendedAction::MarkInvalidated {
+                    transfer: TransferId(0)
+                })
+        );
+        assert!(
+            !recommends_completion(&report),
+            "the pass that invalidates a confirmed transfer cannot also conclude: {:?}",
+            report.actions
+        );
+    }
+
+    #[test]
+    fn confirmed_transfer_below_evidence_stays_confirmed() {
+        let state = scheduled_state(vec![confirmed_transfer(0, txid(9), 9_990)]);
+
+        let report = reconcile(&state, &MockChainView::at(TIP, 9_989));
+
+        assert_eq!(class_of(&report, 0), TransferClass::Confirmed);
+        assert!(report.actions.is_empty(), "{:?}", report.actions);
+    }
+
+    #[test]
+    fn confirmed_transfer_with_its_own_spend_mined_stays_confirmed() {
+        let own = txid(9);
+        let state = scheduled_state(vec![confirmed_transfer(0, own, 9_990)]);
+        let chain = MockChainView::at(TIP, 9_989).with_note_spend(0, own, Some(9_990));
+
+        let report = reconcile(&state, &chain);
+        assert_eq!(class_of(&report, 0), TransferClass::Confirmed);
+
+        let chain = MockChainView::default().with_note_spend(0, own, Some(9_990));
+        let report = reconcile(&state, &chain);
+        assert_eq!(class_of(&report, 0), TransferClass::Confirmed);
+    }
+
+    #[test]
+    fn migration_completes_when_every_transfer_is_settled_and_evidence_reaches_the_tip() {
+        let own = txid(9);
+        let mut invalidated = assigned_transfer(1, tip_bucket() - 2);
+        invalidated.mark_invalidated().unwrap();
+        let mut released = assigned_transfer(2, tip_bucket() - 2);
+        released.mark_released().unwrap();
+        let state = scheduled_state(vec![
+            confirmed_transfer(0, own, 9_990),
+            invalidated,
+            released,
+        ]);
+        let mut chain = MockChainView::default().with_note_spend(0, own, Some(9_990));
+        chain.orchard_spendable = 5_000_000;
+
+        let report = reconcile(&state, &chain);
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::MarkComplete {
+                residual: 5_000_000
+            }]
+        );
+
+        chain.spend_evidence = Some(height(TIP - 1));
+        let report = reconcile(&state, &chain);
+        assert!(
+            !recommends_completion(&report),
+            "evidence short of the tip cannot conclude: {:?}",
+            report.actions
+        );
+    }
+
+    #[test]
+    fn completion_residual_is_the_confirmed_spendable_balance_whatever_its_size() {
+        let own = txid(9);
+        let state = scheduled_state(vec![confirmed_transfer(0, own, 9_990)]);
+
+        for residual in [0, 5_000, 5_000_000, 250_000_000] {
+            let mut chain = MockChainView::default().with_note_spend(0, own, Some(9_990));
+            chain.orchard_spendable = residual;
+            let report = reconcile(&state, &chain);
+            assert_eq!(
+                report.actions,
+                vec![RecommendedAction::MarkComplete { residual }],
+                "a fundable leftover never stalls completion"
+            );
+        }
+    }
+
+    #[test]
+    fn migration_with_no_transfers_completes() {
+        let state = scheduled_state(Vec::new());
+        let chain = MockChainView {
+            orchard_spendable: 1_234,
+            ..Default::default()
+        };
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(
+            report.actions,
+            vec![RecommendedAction::MarkComplete { residual: 1_234 }]
+        );
+    }
+
+    #[test]
+    fn migration_does_not_complete_while_demoting_a_transfer() {
+        let own = txid(9);
+        let state = scheduled_state(vec![confirmed_transfer(0, own, 9_990)]);
+        let chain = MockChainView::default().with_note_spend(0, own, None);
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(class_of(&report, 0), TransferClass::Reorged);
+        assert!(report.actions.contains(&RecommendedAction::Demote {
+            transfer: TransferId(0)
+        }));
+        assert!(
+            !recommends_completion(&report),
+            "the pass that demotes a transfer cannot also conclude: {:?}",
+            report.actions
+        );
+    }
+
+    #[test]
+    fn migration_does_not_complete_while_invalidating_a_transfer() {
+        let own = txid(9);
+        let state = scheduled_state(vec![
+            confirmed_transfer(0, own, 9_990),
+            assigned_transfer(1, tip_bucket() + 1),
+        ]);
+        let chain = MockChainView::default()
+            .with_note_spend(0, own, Some(9_990))
+            .with_note_spend(1, txid(250), Some(9_995));
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(class_of(&report, 1), TransferClass::Invalidated);
+        assert!(
+            report
+                .actions
+                .contains(&RecommendedAction::MarkInvalidated {
+                    transfer: TransferId(1)
+                })
+        );
+        assert!(
+            !recommends_completion(&report),
+            "a transfer classified terminal but not yet persisted so is not settled: {:?}",
+            report.actions
+        );
+    }
+
+    #[test]
+    fn migration_does_not_complete_while_promoting_a_transfer() {
+        let own = txid(9);
+        let state = scheduled_state(vec![signed_transfer(0, tip_bucket() - 1, own, 20_000)]);
+        let chain = MockChainView::default().with_note_spend(0, own, Some(9_995));
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(class_of(&report, 0), TransferClass::Confirmed);
+        assert!(!recommends_completion(&report), "{:?}", report.actions);
+    }
+
+    #[test]
+    fn due_now_names_the_on_track_transfers_of_the_current_window() {
+        let current = tip_bucket();
+        let state = scheduled_state(vec![
+            assigned_transfer(0, current),
+            signed_transfer(1, current, txid(11), 20_000),
+            broadcast_transfer(2, current, txid(12), 20_000),
+            assigned_transfer(3, current + 1),
+            assigned_transfer(4, current - 1),
+        ]);
+        let chain = MockChainView::default();
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(class_of(&report, 2), TransferClass::OnTrack);
+        assert_eq!(class_of(&report, 3), TransferClass::OnTrack);
+        assert_eq!(class_of(&report, 4), TransferClass::Missed);
+        assert_eq!(
+            due_now(&state, &report, TIP),
+            vec![TransferId(0), TransferId(1)],
+            "assigned or signed in the open window, and nothing already broadcast, ahead, or missed"
+        );
+    }
+
+    #[test]
+    fn due_now_excludes_a_transfer_reconciliation_will_confirm_invalidate_or_reschedule() {
+        let current = tip_bucket();
+        let state = scheduled_state(vec![
+            signed_transfer(0, current, txid(10), 20_000),
+            assigned_transfer(1, current),
+            signed_transfer(2, current, txid(12), TIP),
+            assigned_transfer(3, current),
+        ]);
+        let chain = MockChainView::default()
+            .with_note_spend(0, txid(10), Some(9_995))
+            .with_note_spend(1, txid(250), Some(9_995));
+
+        let report = reconcile(&state, &chain);
+
+        assert_eq!(class_of(&report, 0), TransferClass::Confirmed);
+        assert_eq!(class_of(&report, 1), TransferClass::Invalidated);
+        assert_eq!(class_of(&report, 2), TransferClass::Expired);
+        assert!(
+            report
+                .actions
+                .contains(&RecommendedAction::PromoteConfirmed {
+                    transfer: TransferId(0),
+                    height: height(9_995),
+                })
+        );
+        assert!(
+            report
+                .actions
+                .contains(&RecommendedAction::MarkInvalidated {
+                    transfer: TransferId(1)
+                })
+        );
+        assert!(
+            report
+                .actions
+                .contains(&RecommendedAction::DiscardAndReschedule {
+                    transfer: TransferId(2)
+                })
+        );
+        assert_eq!(
+            due_now(&state, &report, TIP),
+            vec![TransferId(3)],
+            "only the transfer reconciliation leaves on track is due"
+        );
+    }
+
+    #[test]
+    fn due_now_ignores_the_target_height() {
+        let mut transfer = assigned_transfer(0, tip_bucket());
+        transfer.target_height = Some(height(TIP + 40));
+        let state = scheduled_state(vec![transfer]);
+
+        let report = reconcile(&state, &MockChainView::default());
+        assert_eq!(due_now(&state, &report, TIP), vec![TransferId(0)]);
+
+        let later = TIP + 60;
+        let report = reconcile(&state, &MockChainView::at(later, later));
+        assert_eq!(due_now(&state, &report, later), vec![TransferId(0)]);
+    }
+
+    #[test]
+    fn due_now_is_empty_for_a_future_window() {
+        let state = scheduled_state(vec![assigned_transfer(0, tip_bucket() + 1)]);
+
+        let report = reconcile(&state, &MockChainView::default());
+
+        assert!(due_now(&state, &report, TIP).is_empty());
     }
 }

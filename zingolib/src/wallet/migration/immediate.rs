@@ -3,11 +3,11 @@
 //!
 //! ZIP 318 offers the user two options at the migration entry point:
 //! *migrate with privacy*, the scheduled two-phase flow implemented in
-//! [`super::split`] and [`super::parts`], and *migrate immediately*, a single
+//! [`super::preparation`] and [`super::transfers`], and *migrate immediately*, a single
 //! transfer with no delay and minimal privacy. This module is the second.
 //!
 //! A **immediate migration transaction** spends pre-Ironwood (V2) Orchard notes and creates
-//! exactly one Ironwood output, wallet-internal, with no change. A ZIP 318 part
+//! exactly one Ironwood output, wallet-internal, with no change. A ZIP 318 transfer
 //! looks the same, except that an immediate migration takes many inputs rather than one and
 //! its output carries the notes' real value rather than a canonical
 //! denomination. That value is precisely what makes it non-private: the amount
@@ -17,14 +17,14 @@
 //! Immediate migration transactions do not depend on one another. There is no change output and no
 //! conditioning round, so when an account holds more notes than fit in one
 //! transaction the plan simply chunks them, and every chunk is built and
-//! transmitted in the same pass. There are no rounds to drive and nothing to
+//! broadcastted in the same pass. There are no rounds to drive and nothing to
 //! wait for.
 
 use orchard::bundle::BundleVersion;
 use zcash_primitives::transaction::TxId;
 
 use super::params::MigrationParams;
-use super::split::{MigrationOutputs, bundle_actions, side_budget, zip317_fee};
+use super::preparation::{MigrationOutputs, bundle_actions, side_budget, zip317_fee};
 use crate::wallet::error::WalletError;
 
 /// The ZIP-317 conventional fee of a immediate migration transaction with `n_in` Orchard
@@ -34,7 +34,7 @@ use crate::wallet::error::WalletError;
 /// and an Ironwood bundle (one output, no spends). Both the padding and the
 /// fee come from the crates.
 ///
-/// Unlike [`super::split::note_split_fee`] this is era-independent: the Orchard
+/// Unlike [`super::preparation::note_preparation_fee`] this is era-independent: the Orchard
 /// bundle has no outputs, so whether `orchard_v3` permits a spend and an output
 /// to share an action makes no difference to the count (pinned by test).
 fn immediate_migration_fee(n_in: usize) -> u64 {
@@ -181,7 +181,7 @@ impl crate::wallet::LightWallet {
 mod tests {
     use super::*;
     use crate::config::ChainType;
-    use crate::wallet::migration::split::{CANONICAL_PART_FEE, MARGINAL_FEE, SWEEP_MIN};
+    use crate::wallet::migration::preparation::{CANONICAL_TRANSFER_FEE, MARGINAL_FEE, SWEEP_MIN};
 
     /// The provisional parameter set every test plans under, the same set
     /// [`crate::wallet::LightWallet::plan_immediate_migration`] resolves.
@@ -191,7 +191,7 @@ mod tests {
 
     /// An immediate migration's Orchard bundle has no outputs, so `orchard_v3`'s ban on
     /// cross-address transfers cannot change its action count. That is what
-    /// lets `immediate_migration_fee` ignore the activation era that `note_split_fee` has to
+    /// lets `immediate_migration_fee` ignore the activation era that `note_preparation_fee` has to
     /// take as an argument.
     #[test]
     fn immediate_migration_fee_is_era_independent() {
@@ -204,16 +204,16 @@ mod tests {
         }
     }
 
-    /// A one-input immediate migration transaction is exactly a ZIP 318 part: same two bundles, same
+    /// A one-input immediate migration transaction is exactly a ZIP 318 transfer: same two bundles, same
     /// padding. The two fee models must agree, or one of them is wrong.
     #[test]
-    fn single_input_immediate_tx_costs_a_canonical_part_fee() {
-        assert_eq!(immediate_migration_fee(1), CANONICAL_PART_FEE);
-        assert_eq!(immediate_migration_fee(2), CANONICAL_PART_FEE);
+    fn single_input_immediate_tx_costs_a_canonical_transfer_fee() {
+        assert_eq!(immediate_migration_fee(1), CANONICAL_TRANSFER_FEE);
+        assert_eq!(immediate_migration_fee(2), CANONICAL_TRANSFER_FEE);
         // Beyond the bundle minimum each extra spend costs one marginal fee.
         assert_eq!(
             immediate_migration_fee(3),
-            CANONICAL_PART_FEE + MARGINAL_FEE
+            CANONICAL_TRANSFER_FEE + MARGINAL_FEE
         );
     }
 

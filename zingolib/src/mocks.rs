@@ -687,7 +687,7 @@ pub(crate) mod transmission {
     use zcash_protocol::consensus::BlockHeight;
 
     use crate::wallet::migration::{
-        PartTransmissionError, TransmissionClient, TransmissionReceipt, TransmissionRoute,
+        BroadcastClient, BroadcastReceipt, BroadcastRoute, TransferBroadcastError,
     };
 
     /// The port of the mock's stand-in tunnel endpoint, reserved by no
@@ -712,7 +712,7 @@ pub(crate) mod transmission {
     /// so a validation pass can assert over the wire every part traveled.
     /// [`Self::clearnet`] builds one that answers clearnet instead, the
     /// leak a mixnet-only migration must never produce.
-    pub struct MockTransmissionClient {
+    pub struct MockBroadcastClient {
         /// Raw transactions received, with their expiry heights.
         pub submissions: Mutex<Vec<(Vec<u8>, BlockHeight)>>,
         /// When set, every submit fails.
@@ -720,16 +720,16 @@ pub(crate) mod transmission {
         /// Submits fail once this many were accepted. `usize::MAX` never.
         pub fail_from: AtomicUsize,
         /// The route every receipt from this client names.
-        route: TransmissionRoute,
+        route: BroadcastRoute,
     }
 
-    impl Default for MockTransmissionClient {
+    impl Default for MockBroadcastClient {
         fn default() -> Self {
-            MockTransmissionClient {
+            MockBroadcastClient {
                 submissions: Mutex::new(Vec::new()),
                 fail: AtomicBool::new(false),
                 fail_from: AtomicUsize::new(usize::MAX),
-                route: TransmissionRoute::Mixnet {
+                route: BroadcastRoute::Mixnet {
                     destination: MOCK_DESTINATION.to_string(),
                     via_socks5: MOCK_SOCKS5_ADDR.to_string(),
                 },
@@ -737,38 +737,39 @@ pub(crate) mod transmission {
         }
     }
 
-    impl MockTransmissionClient {
+    impl MockBroadcastClient {
         /// A client whose receipts name a clearnet route, for the falsifier
         /// half of a mixnet-only assertion.
         pub fn clearnet() -> Self {
-            MockTransmissionClient {
-                route: TransmissionRoute::Clearnet {
+            MockBroadcastClient {
+                route: BroadcastRoute::Clearnet {
                     endpoint: "mock.clearnet.indexer".to_string(),
                 },
-                ..MockTransmissionClient::default()
+                ..MockBroadcastClient::default()
             }
         }
     }
 
-    impl TransmissionClient for MockTransmissionClient {
+    impl BroadcastClient for MockBroadcastClient {
         async fn submit(
             &self,
             raw_tx: Vec<u8>,
             expiry_height: BlockHeight,
-        ) -> Result<TransmissionReceipt, PartTransmissionError> {
+        ) -> Result<BroadcastReceipt, TransferBroadcastError> {
             let accepted = self.submissions.lock().unwrap().len();
             if self.fail.load(Ordering::Relaxed)
                 || accepted >= self.fail_from.load(Ordering::Relaxed)
             {
-                return Err(PartTransmissionError::Transport(
-                    "mock transport failure".to_string(),
-                ));
+                return Err(TransferBroadcastError::Transport {
+                    route: self.route.clone(),
+                    message: "mock transport failure".to_string(),
+                });
             }
             self.submissions
                 .lock()
                 .unwrap()
                 .push((raw_tx, expiry_height));
-            Ok(TransmissionReceipt {
+            Ok(BroadcastReceipt {
                 txid: super::default_txid(),
                 route: self.route.clone(),
             })

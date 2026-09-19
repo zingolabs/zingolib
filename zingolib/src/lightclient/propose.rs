@@ -1330,88 +1330,6 @@ mod proposal_shape {
         );
     }
 
-    /// A note bound to a pending migration part is withheld from ordinary
-    /// input selection while a free note can satisfy the request (the
-    /// ZIP 318 soft reservation). This is the unit-level twin of the
-    /// libtonode `bound_note_reservation_and_external_spend_invalidation`
-    /// scenario, and it fails alongside the exhausted-pool regression
-    /// above: a stale remainder made the never-block fallback consume the
-    /// bound note although the free note had already covered the target.
-    #[tokio::test]
-    async fn reservation_withholds_bound_note_while_a_free_note_suffices() {
-        use pepper_sync::wallet::{NoteInterface as _, OrchardNote, OutputInterface as _};
-
-        use crate::wallet::migration::{
-            BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId,
-            PartRecord, SigningStrategy,
-        };
-
-        let mut wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-                .orchard_note(100_000)
-                .orchard_note(50_000)
-                .build();
-
-        let (output_id, nullifier) = wallet
-            .wallet_transactions
-            .values()
-            .flat_map(OrchardNote::transaction_outputs)
-            .find(|note| note.value() == 100_000)
-            .map(|note| {
-                (
-                    note.output_id(),
-                    note.nullifier()
-                        .expect("scanned notes carry nullifiers")
-                        .to_bytes(),
-                )
-            })
-            .expect("the wallet holds the 100_000 note");
-
-        let params = MigrationParams::provisional(wallet.chain_type());
-        wallet.migration = Some(MigrationState {
-            consent: ConsentBinding {
-                params_hash: params.params_hash(),
-                plan_hash: [0; 32],
-                consented_at: 0,
-            },
-            params,
-            strategy: SigningStrategy::LazyAtBoundary,
-            mode: crate::wallet::migration::MigrationMode::Scheduled,
-            account: zip32::AccountId::ZERO,
-            phase: MigrationPhase::PartsScheduled,
-            parts: vec![PartRecord::new(
-                PartId(0),
-                100_000,
-                BoundNote {
-                    output_id,
-                    nullifier,
-                    commitment: [0; 32],
-                },
-            )],
-        });
-        let mut client = LightClient::new_for_test(wallet).await;
-
-        let destination = external_address(PoolType::Shielded(ShieldedPool::Ironwood));
-        let proposal =
-            from_inputs::propose(&mut client, vec![(destination.as_str(), 20_000, None)])
-                .await
-                .unwrap();
-        let selected: Vec<u64> = proposal
-            .steps()
-            .first()
-            .shielded_inputs()
-            .expect("a shielded send selects shielded inputs")
-            .notes()
-            .iter()
-            .map(|note| u64::from(note.note().value()))
-            .collect();
-        assert_eq!(
-            selected,
-            [50_000],
-            "the free note covers the send; the bound note stays reserved"
-        );
-    }
-
     /// Migrated from libtonode `slow::dust_sends_change_correctly`: a send
     /// of less than the fee still proposes, since the fee comes out of the
     /// selected note and the remainder returns as change. The original
@@ -2310,5 +2228,264 @@ mod op_return {
             client.wallet().write().await.take_proposal(),
             Some(ZingoProposal::OpReturn(_))
         ));
+    }
+}
+
+#[cfg(test)]
+mod migration_reservation {
+    use pepper_sync::wallet::{NoteInterface as _, OrchardNote, OutputInterface as _};
+    use zcash_protocol::consensus::BlockHeight;
+
+    use crate::lightclient::LightClient;
+    use crate::testutils::lightclient::from_inputs;
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::utils::conversion::address_from_str;
+    use crate::wallet::LightWallet;
+    use crate::wallet::error::ProposeSendError;
+    use crate::wallet::keys::unified::ReceiverSelection;
+    use crate::wallet::migration::{
+        BoundNote, MigrationMode, MigrationParams, MigrationPhase, MigrationState, PlanCommitment,
+        SigningStrategy, TransferId, TransferRecord, TransferState,
+    };
+
+    const FUNDING_NOTE: u64 = 100_000;
+    const RESIDUAL_NOTE: u64 = 50_000;
+    const IRONWOOD_NOTE: u64 = 60_000;
+
+    fn external_ironwood_address() -> String {
+        let mut external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let (_, unified_address) = external_wallet
+            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
+            .unwrap();
+        unified_address.encode(&external_wallet.chain_type())
+    }
+
+    fn orchard_wallet() -> LightWallet {
+        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(FUNDING_NOTE)
+            .orchard_note(RESIDUAL_NOTE)
+            .build()
+    }
+
+    fn bound_note_of(wallet: &LightWallet, value: u64) -> BoundNote {
+        wallet
+            .wallet_transactions
+            .values()
+            .flat_map(OrchardNote::transaction_outputs)
+            .find(|note| note.value() == value)
+            .map(|note| BoundNote {
+                output_id: note.output_id(),
+                nullifier: note
+                    .nullifier()
+                    .expect("scanned notes carry nullifiers")
+                    .to_bytes(),
+                commitment: [0; 32],
+            })
+            .expect("the wallet holds the fabricated note")
+    }
+
+    fn migration_state(
+        wallet: &LightWallet,
+        phase: MigrationPhase,
+        transfers: Vec<TransferRecord>,
+    ) -> MigrationState {
+        let params = MigrationParams::provisional(wallet.chain_type());
+        MigrationState {
+            commitment: PlanCommitment {
+                params_hash: params.params_hash(),
+                plan_hash: [0; 32],
+                committed_at: 0,
+            },
+            params,
+            strategy: SigningStrategy::LazyAtBoundary,
+            mode: MigrationMode::Scheduled,
+            account: zip32::AccountId::ZERO,
+            phase,
+            transfers,
+        }
+    }
+
+    fn scheduled_wallet(state: TransferState) -> LightWallet {
+        let mut wallet = orchard_wallet();
+        let mut transfer = TransferRecord::new(
+            TransferId(0),
+            FUNDING_NOTE,
+            bound_note_of(&wallet, FUNDING_NOTE),
+        );
+        transfer.state = state;
+        wallet.migration = Some(migration_state(
+            &wallet,
+            MigrationPhase::Scheduled,
+            vec![transfer],
+        ));
+        wallet
+    }
+
+    fn committed_wallet() -> LightWallet {
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(FUNDING_NOTE)
+                .orchard_note(RESIDUAL_NOTE)
+                .ironwood_note(IRONWOOD_NOTE)
+                .build();
+        wallet.migration = Some(migration_state(&wallet, MigrationPhase::Committed, vec![]));
+        wallet
+    }
+
+    async fn selected_values(client: &mut LightClient, amount: u64) -> Vec<u64> {
+        let destination = external_ironwood_address();
+        let proposal = from_inputs::propose(client, vec![(destination.as_str(), amount, None)])
+            .await
+            .expect("the free notes pay the send");
+        let mut selected: Vec<u64> = proposal
+            .steps()
+            .first()
+            .shielded_inputs()
+            .expect("a shielded send selects shielded inputs")
+            .notes()
+            .iter()
+            .map(|note| u64::from(note.note().value()))
+            .collect();
+        selected.sort_unstable();
+        selected
+    }
+
+    async fn assert_send_refused_as_reserved(client: &mut LightClient, amount: u64) {
+        let destination = external_ironwood_address();
+        let refused =
+            from_inputs::propose(client, vec![(destination.as_str(), amount, None)]).await;
+        let expected = client.wallet().read().await.reserved_orchard_value();
+        assert!(expected > 0, "the wallet reserves something");
+        match refused {
+            Err(ProposeSendError::ReservedForMigration { reserved }) => {
+                assert_eq!(reserved, expected, "the refusal carries the reserved value");
+            }
+            other => panic!("expected ReservedForMigration, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn committed_migration_reserves_every_v2_orchard_note() {
+        let wallet = committed_wallet();
+        assert_eq!(wallet.reserved_output_ids().len(), 2);
+        assert_eq!(
+            wallet.reserved_orchard_value(),
+            FUNDING_NOTE + RESIDUAL_NOTE,
+            "both pre-Ironwood notes are reserved while the plan is committed"
+        );
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        assert_eq!(
+            selected_values(&mut client, 20_000).await,
+            [IRONWOOD_NOTE],
+            "the free Ironwood note pays the send; the reserved Orchard notes stay untouched"
+        );
+    }
+
+    #[tokio::test]
+    async fn committed_migration_refuses_a_send_the_free_notes_cannot_pay() {
+        let mut client = LightClient::new_for_test(committed_wallet()).await;
+
+        assert_send_refused_as_reserved(&mut client, IRONWOOD_NOTE).await;
+    }
+
+    #[tokio::test]
+    async fn committed_migration_excludes_reserved_notes_from_send_all() {
+        let mut client = LightClient::new_for_test(committed_wallet()).await;
+
+        let proposal = client
+            .propose_send_all(
+                address_from_str(&external_ironwood_address()).unwrap(),
+                false,
+                None,
+                zip32::AccountId::ZERO,
+            )
+            .await
+            .expect("send-all proposes over the free note");
+
+        let step = proposal.steps().first();
+        let selected: Vec<u64> = step
+            .shielded_inputs()
+            .expect("a shielded send-all selects shielded inputs")
+            .notes()
+            .iter()
+            .map(|note| u64::from(note.note().value()))
+            .collect();
+        assert_eq!(
+            selected,
+            [IRONWOOD_NOTE],
+            "send-all skips the reserved notes"
+        );
+        let fee = u64::from(step.balance().fee_required());
+        let payment: u64 = step
+            .transaction_request()
+            .payments()
+            .values()
+            .map(|payment| u64::from(payment.amount().expect("send-all payments carry amounts")))
+            .sum();
+        assert_eq!(payment + fee, IRONWOOD_NOTE);
+    }
+
+    #[tokio::test]
+    async fn scheduled_migration_reserves_only_the_funding_notes() {
+        let wallet = scheduled_wallet(TransferState::Bound);
+        assert_eq!(
+            wallet.reserved_orchard_value(),
+            FUNDING_NOTE,
+            "only the bound funding note is reserved once the schedule is committed"
+        );
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        assert_eq!(
+            selected_values(&mut client, 20_000).await,
+            [RESIDUAL_NOTE],
+            "the residual note is free and pays the send; the funding note stays reserved"
+        );
+    }
+
+    #[tokio::test]
+    async fn scheduled_migration_refuses_a_send_that_needs_the_funding_note() {
+        let mut client = LightClient::new_for_test(scheduled_wallet(TransferState::Bound)).await;
+
+        assert_send_refused_as_reserved(&mut client, RESIDUAL_NOTE).await;
+    }
+
+    #[tokio::test]
+    async fn released_or_confirmed_transfer_frees_its_note() {
+        for state in [
+            TransferState::Released,
+            TransferState::Confirmed {
+                height: BlockHeight::from_u32(10),
+            },
+        ] {
+            let wallet = scheduled_wallet(state);
+            assert!(
+                wallet.reserved_output_ids().is_empty(),
+                "a {state:?} transfer reserves nothing"
+            );
+            let mut client = LightClient::new_for_test(wallet).await;
+
+            assert_eq!(
+                selected_values(&mut client, 70_000).await,
+                [FUNDING_NOTE],
+                "the {state:?} transfer's note is selectable again"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn no_migration_reserves_nothing() {
+        let wallet = orchard_wallet();
+        assert!(wallet.migration.is_none());
+        assert!(wallet.reserved_output_ids().is_empty());
+        assert_eq!(wallet.reserved_orchard_value(), 0);
+        let mut client = LightClient::new_for_test(wallet).await;
+
+        assert_eq!(
+            selected_values(&mut client, FUNDING_NOTE).await,
+            [RESIDUAL_NOTE, FUNDING_NOTE],
+            "without a migration every Orchard note is selectable"
+        );
     }
 }

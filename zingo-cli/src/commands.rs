@@ -27,14 +27,14 @@ use pepper_sync::wallet::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote
 use zingo_common_components::protocol::ActivationHeights;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::migrate::{
-    ImmediateMigrationPhase, ImmediateMigrationStatus, PartSendResult, SplitOutcome, SplitPhase,
-    SplitStatus, SplitStep,
+    BatchReport, ImmediateMigrationPhase, ImmediateMigrationStatus, MigrationPlan,
+    MigrationProgress, PreparationPhase, PreparationStatus, TransferBroadcastResult,
 };
 use zingolib::lightclient::{LightClient, SaveShutdown, TransmitProgressHandle};
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
-use zingolib::wallet::migration::{self, MigrationPhase};
+use zingolib::wallet::migration::{self, MigrationMode, MigrationPhase};
 
 pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
@@ -71,9 +71,7 @@ async fn with_heartbeat<T>(
 /// an operation holds.
 struct ProgressPeek {
     transmit: TransmitProgressHandle,
-    batch: zingolib::lightclient::migrate::BatchProgressHandle,
-    drain: zingolib::lightclient::migrate::ImmediateMigrationProgressHandle,
-    split: zingolib::lightclient::migrate::SplitProgressHandle,
+    migration: tokio::sync::watch::Receiver<MigrationProgress>,
     #[cfg(feature = "nym")]
     mixnet: tokio::sync::watch::Receiver<zingolib::mixnet::MixnetStatus>,
 }
@@ -82,9 +80,7 @@ impl ProgressPeek {
     fn from_client(lightclient: &LightClient) -> Self {
         Self {
             transmit: lightclient.transmit_progress_handle(),
-            batch: lightclient.batch_progress_handle(),
-            drain: lightclient.immediate_migration_progress_handle(),
-            split: lightclient.split_progress_handle(),
+            migration: lightclient.migration_progress(),
             #[cfg(feature = "nym")]
             mixnet: lightclient.subscribe_mixnet_status(),
         }
@@ -94,14 +90,8 @@ impl ProgressPeek {
         if let Some(line) = self.transmit.latest() {
             return Some(line);
         }
-        if let Some(status) = self.batch.status() {
-            return Some(batch_progress_line(&status));
-        }
-        if let Some(status) = self.drain.status() {
-            return Some(drain_progress_line(&status));
-        }
-        if let Some(status) = self.split.status() {
-            return Some(split_progress_line(&status));
+        if let Some(line) = migration_progress_line(&self.migration.borrow()) {
+            return Some(line);
         }
         #[cfg(feature = "nym")]
         if let Some(detail) = self.mixnet.borrow().bootstrap_detail.clone() {
@@ -423,10 +413,6 @@ async fn messages(
         Ok(value_transfers) => Ok(json::JsonValue::from(value_transfers).pretty(JSON_INDENT)),
         Err(e) => Err(not_yet_typed(e)),
     }
-}
-
-async fn migrate(lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(run_migrate(lightclient).await?)
 }
 
 async fn migration(
@@ -1114,13 +1100,6 @@ async fn drain(
     Ok(run_drain(sub, lightclient).await?)
 }
 
-async fn split(
-    sub: SplitSubCommand,
-    lightclient: &mut LightClient,
-) -> Result<String, CommandError> {
-    Ok(run_split(sub, lightclient).await?)
-}
-
 #[cfg(feature = "nym")]
 async fn network(
     sub: Option<NetworkSubCommand>,
@@ -1608,11 +1587,12 @@ fn render_transmit_report(report: &zingolib::lightclient::send::TransmitReport) 
 
 fn render_migration_phase(phase: &MigrationPhase) -> String {
     match phase {
-        MigrationPhase::Planned => "planned".to_string(),
-        MigrationPhase::NoteSplitting { round, .. } => {
-            format!("note splitting (round {round})")
+        MigrationPhase::Committed => "committed".to_string(),
+        MigrationPhase::Preparing { round, .. } => {
+            format!("note preparation (round {round})")
         }
-        MigrationPhase::PartsScheduled => "parts scheduled".to_string(),
+        MigrationPhase::Prepared => "prepared".to_string(),
+        MigrationPhase::Scheduled => "scheduled".to_string(),
         MigrationPhase::Complete { residual } => {
             format!("complete ({residual} zatoshis residual)")
         }
@@ -1625,6 +1605,10 @@ fn render_migration_phase(phase: &MigrationPhase) -> String {
 pub enum MigrationCommandError {
     #[error("sync failed")]
     Sync(#[source] zingolib::lightclient::error::LightClientError),
+    #[error(
+        "the wallet's notes changed since that plan hash was computed; run `migration plan` again"
+    )]
+    StalePlan,
     #[error(transparent)]
     Client(#[from] zingolib::lightclient::error::LightClientError),
 }
@@ -1632,41 +1616,45 @@ pub enum MigrationCommandError {
 /// A parsed migration command, its arguments parsed completely at the clap
 /// derive grammar before any wallet access.
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
+#[command(rename_all = "snake_case")]
 pub(crate) enum MigrationSubCommand {
     #[command(about = "Compute the plan and print its hash, sending nothing")]
     Plan,
-    #[command(about = "Record consent to the plan with that hash and begin")]
-    Start {
+    #[command(about = "Commit to the plan with that hash; reserves the Orchard notes")]
+    Commit {
         #[arg(value_name = "plan_hash_hex", value_parser = parse_plan_hash)]
         plan_hash: [u8; 32],
-        #[arg(long, value_name = "parts")]
-        per_bucket: Option<u32>,
     },
-    #[command(about = "Sync, then drive one splitting step")]
-    Continue,
-    #[command(about = "Reset parts-per-window and redraw the schedule")]
-    Cadence {
-        #[arg(value_name = "parts")]
-        per_bucket: u32,
+    #[command(about = "Sync, then build and broadcast the next note-preparation round")]
+    Prepare,
+    #[command(
+        about = "Sync, then draw and commit the schedule with this many transfers per window"
+    )]
+    Schedule {
+        #[arg(value_name = "transfers", default_value = "1")]
+        per_window: u32,
     },
-    #[command(about = "Sync, then send every part owed right now in one spaced batch")]
-    Execute {
+    #[command(about = "Sync, then broadcast the transfers of the open window, spaced apart")]
+    Broadcast {
         #[arg(value_name = "spacing_seconds", default_value = "30", value_parser = parse_spacing)]
         spacing: std::time::Duration,
     },
-    #[command(about = "Sync, then transmit whatever the current window has due")]
-    Auto,
-    #[command(about = "Report the balance, phase, part counts, and coming windows")]
+    #[command(
+        about = "Sync, then move the transfers that missed a window into this one and broadcast"
+    )]
+    SendMissed {
+        #[arg(value_name = "spacing_seconds", default_value = "30", value_parser = parse_spacing)]
+        spacing: std::time::Duration,
+    },
+    #[command(about = "Take one pending transfer out of the migration")]
+    Release {
+        #[arg(value_name = "transfer_id")]
+        transfer: u32,
+    },
+    #[command(about = "Report the balance, phase, transfer states, and the windows")]
     Status,
     #[command(about = "List each window's block range, position, and confirmations")]
     Windows,
-    #[command(about = "Check the schedule against the chain and apply what is safe")]
-    Reconcile,
-    #[command(about = "Send overdue parts now, spaced by the given seconds")]
-    Catchup {
-        #[arg(value_name = "spacing_seconds", default_value = "30", value_parser = parse_spacing)]
-        spacing: std::time::Duration,
-    },
     #[command(about = "Abandon the migration, keeping its confirmed parts")]
     Cancel,
 }
@@ -1694,18 +1682,53 @@ fn txids_json<T: ToString>(txids: &[T]) -> json::JsonValue {
         .into()
 }
 
-/// Runs the `migrate` command. Its errors cross the dispatch seam as
-/// [`CommandError::Migration`].
-async fn run_migrate(lightclient: &mut LightClient) -> Result<String, MigrationCommandError> {
-    let summary = lightclient
-        .migrate_to_ironwood(zip32::AccountId::ZERO)
-        .await?;
-    Ok(object! {
-        "split_txids" => txids_json(&summary.split_txids),
-        "part_txids" => txids_json(&summary.part_txids),
-        "residual" => summary.residual,
+async fn scheduled_plan(lightclient: &LightClient) -> Result<MigrationPlan, MigrationCommandError> {
+    Ok(lightclient
+        .plan_migration(zip32::AccountId::ZERO, MigrationMode::Scheduled)
+        .await?)
+}
+
+fn split_of(plan: &MigrationPlan) -> &migration::ScheduledMigrationPlan {
+    match plan {
+        MigrationPlan::Scheduled(split) => split,
+        MigrationPlan::Immediate(_) => {
+            unreachable!("`MigrationMode::Scheduled` plans in scheduled mode")
+        }
     }
-    .pretty(JSON_INDENT))
+}
+
+fn render_transfer_outcome(
+    outcome: &zingolib::lightclient::migrate::TransferOutcome,
+) -> json::JsonValue {
+    object! {
+        "transfer" => outcome.transfer.0,
+        "denomination" => outcome.denomination,
+        "result" => match &outcome.result {
+            TransferBroadcastResult::Sent(receipt) => object! {
+                "sent" => receipt.txid.to_string(),
+                "over_mixnet" => receipt.route.is_mixnet(),
+            },
+            TransferBroadcastResult::Slid => object! { "slid" => true },
+            TransferBroadcastResult::NotDue { window_opens_unix_time } => {
+                object! { "not_due_until" => *window_opens_unix_time }
+            }
+            TransferBroadcastResult::Failed { error } => {
+                object! { "failed" => error.clone() }
+            }
+        },
+    }
+}
+
+fn render_batch_report(report: &BatchReport) -> String {
+    object! {
+        "outcomes" => report
+            .outcomes
+            .iter()
+            .map(render_transfer_outcome)
+            .collect::<Vec<_>>(),
+        "halted" => report.halted.clone(),
+    }
+    .pretty(JSON_INDENT)
 }
 
 /// Runs one `migration` sub-command.
@@ -1715,110 +1738,102 @@ async fn run_migration(
 ) -> Result<String, MigrationCommandError> {
     Ok(match sub {
         MigrationSubCommand::Plan => {
-            let plan = lightclient
-                .plan_ironwood_migration(zip32::AccountId::ZERO)
-                .await?;
+            let plan = scheduled_plan(lightclient).await?;
+            let plan = split_of(&plan);
             object! {
-                "split_rounds" => plan.split_rounds.len(),
-                "split_transactions" => plan.split_rounds.iter().map(Vec::len).sum::<usize>(),
-                "split_fee" => plan.split_fee(),
-                "parts" => plan.parts.clone(),
+                "preparation_rounds" => plan.preparation_rounds.len(),
+                "preparation_transactions" => plan.preparation_rounds.iter().map(Vec::len).sum::<usize>(),
+                "preparation_fee" => plan.preparation_fee(),
+                "transfers" => plan.transfers.clone(),
                 "residual" => plan.residual,
-                "plan_hash" => hex::encode(migration::plan_hash(&plan)),
+                "plan_hash" => hex::encode(migration::plan_hash(plan)),
             }
             .pretty(JSON_INDENT)
         }
-        MigrationSubCommand::Start {
-            plan_hash,
-            per_bucket,
-        } => {
-            lightclient
-                .start_ironwood_migration(
-                    zip32::AccountId::ZERO,
-                    migration::SigningStrategy::LazyAtBoundary,
-                    plan_hash,
-                    per_bucket,
-                )
-                .await?;
-            "Migration started.".to_string()
-        }
-        MigrationSubCommand::Continue => {
-            lightclient
-                .sync_and_await()
-                .await
-                .map_err(MigrationCommandError::Sync)?;
-            match lightclient.continue_note_splitting().await? {
-                SplitStep::RoundTransmitted { round, txids } => object! {
-                    "round" => round,
-                    "split_txids" => txids_json(&txids),
-                }
-                .pretty(JSON_INDENT),
-                SplitStep::AwaitingConfirmation { pending } if pending.is_empty() => {
-                    "Round confirmed; waiting for the anchor to reach its outputs. \
-                     Sync and retry."
-                        .to_string()
-                }
-                SplitStep::AwaitingConfirmation { pending } => object! {
-                    "awaiting_confirmation" => txids_json(&pending),
-                }
-                .pretty(JSON_INDENT),
-                SplitStep::SplittingComplete => {
-                    "Note splitting complete; parts are scheduled.".to_string()
-                }
+        MigrationSubCommand::Commit { plan_hash } => {
+            let plan = scheduled_plan(lightclient).await?;
+            if migration::plan_hash(split_of(&plan)) != plan_hash {
+                return Err(MigrationCommandError::StalePlan);
             }
+            lightclient
+                .commit_migration(zip32::AccountId::ZERO, &plan)
+                .await?;
+            "Migration committed.".to_string()
         }
-        MigrationSubCommand::Cadence { per_bucket } => {
-            lightclient.reschedule_parts(per_bucket).await?;
-            format!("Cadence set to {per_bucket} per window; the schedule was re-drawn.")
-        }
-        MigrationSubCommand::Execute { spacing } => {
+        MigrationSubCommand::Prepare => {
             lightclient
                 .sync_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
-            let report = lightclient.execute_due_parts(spacing).await?;
+            let round = lightclient.broadcast_preparation_round().await?;
             object! {
-                "outcomes" => report
-                    .outcomes
+                "round" => round.round,
+                "preparation_txids" => txids_json(&round.txids),
+            }
+            .pretty(JSON_INDENT)
+        }
+        MigrationSubCommand::Schedule { per_window } => {
+            lightclient
+                .sync_and_await()
+                .await
+                .map_err(MigrationCommandError::Sync)?;
+            let proposed = lightclient.propose_schedule(per_window).await?;
+            lightclient.commit_schedule(&proposed).await?;
+            object! {
+                "transfers_per_window" => proposed.transfers_per_window,
+                "transfers" => proposed
+                    .transfers
                     .iter()
-                    .map(|outcome| object! {
-                        "part" => outcome.part.0,
-                        "denomination" => outcome.denomination,
-                        "result" => match &outcome.result {
-                            PartSendResult::Sent(txid) => object! { "sent" => txid.to_string() },
-                            PartSendResult::Slid => object! { "slid" => true },
-                            PartSendResult::NotDue { window_opens_unix_time } => {
-                                object! { "not_due_until" => *window_opens_unix_time }
-                            }
-                            PartSendResult::Failed { error } => {
-                                object! { "failed" => error.clone() }
-                            }
-                        },
+                    .map(|transfer| object! {
+                        "denomination" => transfer.denomination,
+                        "window" => transfer.window,
+                        "boundary" => u32::from(transfer.boundary),
+                        "scheduled_broadcast_height" => u32::from(transfer.scheduled_broadcast_height),
+                        "scheduled_broadcast_unix_time" => transfer.scheduled_broadcast_unix_time,
                     })
                     .collect::<Vec<_>>(),
-                "halted" => report.halted,
             }
             .pretty(JSON_INDENT)
         }
-        MigrationSubCommand::Auto => {
+        MigrationSubCommand::Broadcast { spacing } => {
             lightclient
                 .sync_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
-            let txids = lightclient.auto_transmit_if_due().await?;
-            if txids.is_empty() {
-                "No parts due yet.".to_string()
-            } else {
-                object! { "transmitted" => txids_json(&txids) }.pretty(JSON_INDENT)
-            }
+            render_batch_report(&lightclient.broadcast_due_transfers(spacing).await?)
+        }
+        MigrationSubCommand::SendMissed { spacing } => {
+            lightclient
+                .sync_and_await()
+                .await
+                .map_err(MigrationCommandError::Sync)?;
+            render_batch_report(&lightclient.broadcast_missed_now(spacing).await?)
+        }
+        MigrationSubCommand::Release { transfer } => {
+            lightclient
+                .release_transfer(migration::TransferId(transfer))
+                .await?;
+            format!("Transfer {transfer} released.")
         }
         MigrationSubCommand::Status => {
             let status = lightclient.migration_status().await?;
             object! {
                 "orchard_confirmed_spendable" => status.orchard_confirmed_spendable,
                 "phase" => status.phase.as_ref().map(render_migration_phase),
-                "parts_total" => status.parts_total,
-                "parts_confirmed" => status.parts_confirmed,
+                "transfers" => status
+                    .transfers
+                    .iter()
+                    .map(|transfer| object! {
+                        "id" => transfer.id.0,
+                        "denomination" => transfer.denomination,
+                        "window" => transfer.window,
+                        "scheduled_broadcast_unix_time" => transfer.scheduled_broadcast_unix_time,
+                        "progress" => format!("{:?}", transfer.progress).to_lowercase(),
+                        "missed_windows" => transfer.missed_windows,
+                    })
+                    .collect::<Vec<_>>(),
+                "transfers_total" => status.transfers_total,
+                "transfers_confirmed" => status.transfers_confirmed,
                 "value_total" => status.value_total,
                 "value_migrated" => status.value_migrated,
                 "upcoming_windows" => status
@@ -1827,73 +1842,50 @@ async fn run_migration(
                     .map(|window| object! {
                         "bucket_index" => window.bucket_index,
                         "boundary" => u32::from(window.boundary),
-                        "part_ids" => window.part_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
+                        "transfer_ids" => window.transfer_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
                         "window_opens_unix_time" => window.window_opens_unix_time,
                         "latest_target_unix_time" => window.latest_target_unix_time,
                     })
                     .collect::<Vec<_>>(),
                 "due_now" => status.due_now.as_ref().map(|batch| object! {
                     "boundary" => u32::from(batch.boundary),
-                    "part_ids" => batch.part_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
+                    "transfer_ids" => batch.transfer_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
                     "denominations" => batch.denominations.clone(),
                 }),
+                "windows" => status
+                    .windows
+                    .as_deref()
+                    .map(render_windows),
             }
             .pretty(JSON_INDENT)
         }
-        MigrationSubCommand::Windows => {
-            let timeline = lightclient.window_timeline().await?;
-            match timeline {
-                None => "Wallet has no chain height yet; sync first.".to_string(),
-                Some(windows) => object! {
-                    "windows" => windows
-                        .iter()
-                        .map(|window| object! {
-                            "bucket_index" => window.bucket_index,
-                            "opens" => u32::from(window.boundary),
-                            "closes" => u32::from(window.close),
-                            "is_current" => window.is_current,
-                            "parts_confirmed" => window.parts_confirmed,
-                            "parts_total" => window.parts_total,
-                            "value_migrated" => window.value_migrated,
-                            "value_total" => window.value_total,
-                        })
-                        .collect::<Vec<_>>(),
-                }
-                .pretty(JSON_INDENT),
-            }
-        }
-        MigrationSubCommand::Reconcile => {
-            let report = lightclient.reconcile_migration().await?;
-            object! {
-                "assessments" => report
-                    .assessments
-                    .iter()
-                    .map(|assessment| object! {
-                        "part" => assessment.id.0,
-                        "class" => format!("{:?}", assessment.class),
-                    })
-                    .collect::<Vec<_>>(),
-                "actions" => report
-                    .actions
-                    .iter()
-                    .map(|action| format!("{action:?}"))
-                    .collect::<Vec<_>>(),
-            }
-            .pretty(JSON_INDENT)
-        }
-        MigrationSubCommand::Catchup { spacing } => {
-            let txids = lightclient.catch_up_migration(spacing).await?;
-            if txids.is_empty() {
-                "No overdue parts.".to_string()
-            } else {
-                object! { "part_txids" => txids_json(&txids) }.pretty(JSON_INDENT)
-            }
-        }
+        MigrationSubCommand::Windows => match lightclient.migration_status().await?.windows {
+            None => "Wallet has no chain height yet; sync first.".to_string(),
+            Some(windows) => object! { "windows" => render_windows(&windows) }.pretty(JSON_INDENT),
+        },
         MigrationSubCommand::Cancel => {
-            lightclient.cancel_ironwood_migration().await?;
+            lightclient.cancel_migration().await?;
             "Migration canceled.".to_string()
         }
     })
+}
+
+fn render_windows(windows: &[zingolib::wallet::migration::WindowReport]) -> Vec<json::JsonValue> {
+    windows
+        .iter()
+        .map(|window| {
+            object! {
+                "bucket_index" => window.bucket_index,
+                "opens" => u32::from(window.boundary),
+                "closes" => u32::from(window.close),
+                "is_current" => window.is_current,
+                "parts_confirmed" => window.parts_confirmed,
+                "parts_total" => window.parts_total,
+                "value_migrated" => window.value_migrated,
+                "value_total" => window.value_total,
+            }
+        })
+        .collect()
 }
 
 /// A parsed `drain` sub-command, at the clap derive grammar.
@@ -1905,18 +1897,18 @@ pub(crate) enum DrainSubCommand {
     Now,
 }
 
-/// A parsed `split` sub-command, at the clap derive grammar.
-#[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
-pub(crate) enum SplitSubCommand {
-    #[command(about = "Preview the remaining rounds, sending nothing")]
-    Plan,
-    #[command(about = "Run one splitting round")]
-    Now,
+fn migration_progress_line(progress: &MigrationProgress) -> Option<String> {
+    match progress {
+        MigrationProgress::Idle => None,
+        MigrationProgress::Sending(status) => Some(batch_progress_line(status)),
+        MigrationProgress::Immediate(status) => Some(drain_progress_line(status)),
+        MigrationProgress::Preparing(status) => Some(split_progress_line(status)),
+    }
 }
 
-/// Renders an in-flight execute batch snapshot as the heartbeat's detail
+/// Renders an in-flight part batch snapshot as the heartbeat's detail
 /// line, the same [`zingolib::lightclient::migrate::BatchStatus`] a mobile
-/// progress screen polls during `execute_due_parts`.
+/// progress screen polls while a step sends a window's parts.
 fn batch_progress_line(status: &zingolib::lightclient::migrate::BatchStatus) -> String {
     use zingolib::lightclient::migrate::BatchPhase;
     match status.phase {
@@ -1942,10 +1934,10 @@ fn drain_progress_line(status: &ImmediateMigrationStatus) -> String {
 
 /// Renders an in-flight note-splitting round snapshot as the heartbeat's
 /// detail line, mirroring [`drain_progress_line`].
-fn split_progress_line(status: &SplitStatus) -> String {
+fn split_progress_line(status: &PreparationStatus) -> String {
     match status.phase {
-        SplitPhase::Building => format!("built {}/{}", status.built, status.total),
-        SplitPhase::Transmitting => format!("sent {}/{}", status.sent, status.total),
+        PreparationPhase::Building => format!("built {}/{}", status.built, status.total),
+        PreparationPhase::Transmitting => format!("sent {}/{}", status.sent, status.total),
     }
 }
 
@@ -1959,22 +1951,23 @@ async fn run_drain(
     sub: DrainSubCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, MigrationCommandError> {
+    let plan = lightclient
+        .plan_migration(zip32::AccountId::ZERO, MigrationMode::Immediate)
+        .await?;
+    let MigrationPlan::Immediate(immediate) = &plan else {
+        unreachable!("`MigrationMode::Immediate` plans in immediate mode");
+    };
     Ok(match sub {
-        DrainSubCommand::Plan => {
-            let plan = lightclient
-                .plan_immediate_migration(zip32::AccountId::ZERO)
-                .await?;
-            object! {
-                "transactions" => plan.transactions.len(),
-                "migrated" => plan.migrated,
-                "fee" => plan.fee,
-                "residual" => plan.residual,
-            }
-            .pretty(JSON_INDENT)
+        DrainSubCommand::Plan => object! {
+            "transactions" => immediate.transactions.len(),
+            "migrated" => immediate.migrated,
+            "fee" => immediate.fee,
+            "residual" => immediate.residual,
         }
+        .pretty(JSON_INDENT),
         DrainSubCommand::Now => {
             let summary = lightclient
-                .quick_immediate_migration(zip32::AccountId::ZERO, true)
+                .migrate_immediately(zip32::AccountId::ZERO, &plan)
                 .await?;
             object! {
                 "txids" => txids_json(&summary.txids),
@@ -1983,47 +1976,6 @@ async fn run_drain(
                 "residual" => summary.residual,
             }
             .pretty(JSON_INDENT)
-        }
-    })
-}
-
-/// Runs `split plan` or `split now`.
-///
-/// `plan` previews the remaining rounds and sends nothing. `now` runs one
-/// round, writing progress lines to stderr while it runs. It returns the
-/// round's txids, or a message explaining why nothing was sent.
-async fn run_split(
-    sub: SplitSubCommand,
-    lightclient: &mut LightClient,
-) -> Result<String, MigrationCommandError> {
-    Ok(match sub {
-        SplitSubCommand::Plan => {
-            let plan = lightclient.plan_note_split(zip32::AccountId::ZERO).await?;
-            object! {
-                "split_rounds" => plan.split_rounds.len(),
-                "split_transactions" => plan.split_rounds.iter().map(Vec::len).sum::<usize>(),
-                "split_fee" => plan.split_fee(),
-                "parts" => plan.parts.clone(),
-                "residual" => plan.residual,
-            }
-            .pretty(JSON_INDENT)
-        }
-        SplitSubCommand::Now => {
-            match lightclient
-                .quick_split(zip32::AccountId::ZERO, true)
-                .await?
-            {
-                SplitOutcome::Round { txids } => {
-                    object! { "split_txids" => txids_json(&txids) }.pretty(JSON_INDENT)
-                }
-                SplitOutcome::AwaitingConfirmation => {
-                    "A previous round has not confirmed yet; nothing was sent. Sync and retry."
-                        .to_string()
-                }
-                SplitOutcome::Complete => {
-                    "Every note is part-ready; splitting is complete.".to_string()
-                }
-            }
         }
     })
 }
@@ -2243,22 +2195,6 @@ pub(crate) enum CliCommand {
     )]
     Messages { filter: Option<String> },
     #[command(
-        about = "Migrate all Orchard funds to the Ironwood pool in one interactive run.",
-        long_about = indoc! {r"
-            Migrate all Orchard funds to the Ironwood pool in one interactive run.
-
-            Runs ZIP 318's two phases back to back: note-splitting rounds of Orchard
-            self-sends, each awaited to confirmation, then one migration transaction per
-            part, transmitted immediately.
-
-            Privacy disclosure (ZIP 318): parts go out alongside each other and
-            alongside synchronization, so the server can correlate them with this
-            wallet's activity. The `migration` command spreads them across
-            anchor-height buckets instead.
-        "}
-    )]
-    Migrate,
-    #[command(
         about = "Drive the scheduled Orchard to Ironwood migration",
         long_about = indoc! {r"
             Drive the scheduled Orchard to Ironwood migration (ZIP 318).
@@ -2268,28 +2204,22 @@ pub(crate) enum CliCommand {
             `start` records consent to the plan with that hash and begins. --per-bucket
             caps how many parts share a transmission window: lower is more private, higher
             is faster. Fails if the notes changed since planning.
-            `continue` syncs, then drives one splitting step, transmitting the next
-            round of self-sends or, once every note is part-ready, binding the parts and
-            scheduling them. Repeat, syncing between rounds, until it reports them
-            scheduled.
+            `step` syncs, then advances the migration by one step: it reconciles
+            against the chain and then transmits the next note-splitting round, sends
+            the parts the current window owes, or reports what it is waiting for.
+            Run it at every launch and repeat until it reports the migration complete.
             `cadence` resets parts-per-window and redraws the schedule. Usable until the
             first part is signed, so the choice can wait for splitting to end.
-            `execute` syncs, then sends everything owed right now in one batch, the
-            current window's due parts plus any missed windows', spaced by the given
-            seconds (default 30). Reports each part's outcome. The manual counterpart
-            to `auto`.
-            `auto` syncs, then transmits whatever the current window has due. Run it
-            periodically to drive the migration hands-off.
-            `status` reports the Orchard confirmed-spendable balance, the phase, part
-            counts and values, and the coming windows.
+            `execute` is `step` with an explicit spacing in seconds (default 30)
+            between the part sends of one window, never simultaneous.
+            Disclosure (ZIP 318): sending at a user-present time, and sending the
+            missed windows a step folds into the current one, correlates the
+            transmissions with this wallet's activity.
+            `status` reports the Orchard confirmed-spendable balance, the phase, each
+            part's state, the counts and values, and the windows.
             `windows` lists each window's block range, whether the chain is inside it,
             and how many parts and how much value confirmed. The current window is
             reported even with no migration running.
-            `reconcile` checks the persisted schedule against the chain and applies what
-            is safe unattended. Run it after every sync.
-            `catchup` sends overdue parts now, spaced by the given seconds (default 30).
-            Disclosure (ZIP 318): sending at catch-up time correlates the transmissions
-            with this wallet's activity.
             `cancel` abandons the migration. Confirmed parts stand, pending ones are
             dropped and their notes released.
         "}
@@ -2562,29 +2492,6 @@ pub(crate) enum CliCommand {
     )]
     SpendableBalance,
     #[command(
-        about = "Split Orchard notes into ZIP 318 part sizes, one round per call.",
-        long_about = indoc! {r"
-            Resize the wallet's Orchard notes into ZIP 318 part sizes, one round of
-            Orchard self-sends per call.
-
-            The rounds reveal no value and may run before NU6.3 activation. Each call
-            replans from the wallet's confirmed notes and persists no migration state.
-            Refused while a scheduled migration is active, since that flow does its own
-            splitting.
-
-            `plan` previews the remaining rounds, transactions, fees, resulting
-            denominations and residual dust. Nothing is signed or sent, and zero rounds
-            means every note is already part-ready.
-            `now` runs one round. Sync first, and again between rounds until each
-            round's self-sends confirm. It reports when a prior round is still
-            confirming and when splitting is done.
-        "}
-    )]
-    Split {
-        #[command(subcommand)]
-        sub: SplitSubCommand,
-    },
-    #[command(
         about = "Sync the wallet to the latest state of the blockchain.",
         long_about = indoc! {r"
             Sync the wallet to the chain tip.
@@ -2687,7 +2594,6 @@ impl CliCommand {
             CliCommand::MaxSendValue { .. } => "MaxSendValue",
             CliCommand::MemobytesToAddress => "MemobytesToAddress",
             CliCommand::Messages { .. } => "Messages",
-            CliCommand::Migrate => "Migrate",
             CliCommand::Migration { .. } => "Migration",
             #[cfg(feature = "nym")]
             CliCommand::Network { .. } => "Network",
@@ -2711,7 +2617,6 @@ impl CliCommand {
             CliCommand::Settings { .. } => "Settings",
             CliCommand::Shield => "Shield",
             CliCommand::SpendableBalance => "SpendableBalance",
-            CliCommand::Split { .. } => "Split",
             CliCommand::Sync { .. } => "Sync",
             CliCommand::TAddresses => "TAddresses",
             CliCommand::Transactions => "Transactions",
@@ -2772,7 +2677,6 @@ impl CliCommand {
             | CliCommand::MaxSendValue { .. }
             | CliCommand::MemobytesToAddress
             | CliCommand::Messages { .. }
-            | CliCommand::Migrate
             | CliCommand::Migration { .. }
             | CliCommand::NewAddress { .. }
             | CliCommand::NewTaddress
@@ -2791,7 +2695,6 @@ impl CliCommand {
             | CliCommand::Settings { .. }
             | CliCommand::Shield
             | CliCommand::SpendableBalance
-            | CliCommand::Split { .. }
             | CliCommand::Sync { .. }
             | CliCommand::TAddresses
             | CliCommand::Transactions
@@ -2809,21 +2712,18 @@ impl CliCommand {
         match self {
             CliCommand::Confirm
             | CliCommand::CurrentPrice
-            | CliCommand::Migrate
             | CliCommand::Quicksend { .. }
             | CliCommand::Quickshield
             | CliCommand::Transmit { .. } => true,
             #[cfg(feature = "nym")]
             CliCommand::Network { sub } => matches!(sub, Some(NetworkSubCommand::Probe { .. })),
             CliCommand::Drain { sub } => matches!(sub, DrainSubCommand::Now),
-            CliCommand::Split { sub } => matches!(sub, SplitSubCommand::Now),
             CliCommand::Migration { sub } => matches!(
                 sub,
-                MigrationSubCommand::Start { .. }
-                    | MigrationSubCommand::Continue
-                    | MigrationSubCommand::Execute { .. }
-                    | MigrationSubCommand::Auto
-                    | MigrationSubCommand::Catchup { .. }
+                MigrationSubCommand::Prepare
+                    | MigrationSubCommand::Schedule { .. }
+                    | MigrationSubCommand::Broadcast { .. }
+                    | MigrationSubCommand::SendMissed { .. }
             ),
             CliCommand::Addresses
             | CliCommand::Balance
@@ -2989,7 +2889,6 @@ fn every_command() -> Vec<CliCommand> {
         CliCommand::MaxSendValue { args: Vec::new() },
         CliCommand::MemobytesToAddress,
         CliCommand::Messages { filter: None },
-        CliCommand::Migrate,
         CliCommand::Migration {
             sub: MigrationSubCommand::Plan,
         },
@@ -3028,9 +2927,6 @@ fn every_command() -> Vec<CliCommand> {
         CliCommand::Settings { sub: None },
         CliCommand::Shield,
         CliCommand::SpendableBalance,
-        CliCommand::Split {
-            sub: SplitSubCommand::Plan,
-        },
         CliCommand::Sync {
             sub: SyncSubCommand::Status,
         },
@@ -3197,7 +3093,6 @@ async fn run_parsed(
         CliCommand::MaxSendValue { args } => max_send_value(&name, &args, lightclient).await,
         CliCommand::MemobytesToAddress => memobytes_to_address(lightclient).await,
         CliCommand::Messages { filter } => messages(filter.as_deref(), lightclient).await,
-        CliCommand::Migrate => migrate(lightclient).await,
         CliCommand::Migration { sub } => migration(sub, lightclient).await,
         CliCommand::NewAddress { receivers } => new_address(receivers, lightclient).await,
         CliCommand::NewTaddress => taddress(lightclient, true).await,
@@ -3221,7 +3116,6 @@ async fn run_parsed(
         CliCommand::Settings { sub } => settings(sub, lightclient).await,
         CliCommand::Shield => shield(lightclient).await,
         CliCommand::SpendableBalance => spendable_balance(lightclient).await,
-        CliCommand::Split { sub } => split(sub, lightclient).await,
         CliCommand::Sync { sub } => sync(sub, lightclient).await,
         CliCommand::TAddresses => t_addresses(lightclient).await,
         CliCommand::Transactions => transactions(lightclient).await,

@@ -77,7 +77,11 @@ const ZAINO_DUPLICATE_CODE: i32 = -1;
 const ZAINO_REJECTION_CODE: i32 = -26;
 const STREAM_EOF_MESSAGE: &str = "Unexpected EOF decoding stream.";
 const MEMPOOL_RAW_TRANSACTION_HEIGHT: u64 = 0;
-const BLOCK_TIME_BASE: u32 = 1_700_000_000;
+static BLOCK_TIME_BASE: std::sync::LazyLock<u32> = std::sync::LazyLock::new(|| {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(1_700_000_000, |since| since.as_secs() as u32)
+});
 const OP_SMALL_INTEGER_BASE: u8 = 0x50;
 const SMALL_INTEGER_MAX: u32 = 16;
 const SIGN_BIT: u8 = 0x80;
@@ -1063,7 +1067,7 @@ impl MockChain {
             height: u64::from(u32::from(height)),
             hash: fabricated_branch_hash(u32::from(height), self.branch_seed),
             prev_hash,
-            time: BLOCK_TIME_BASE + u32::from(height),
+            time: *BLOCK_TIME_BASE + u32::from(height),
             header: vec![],
             vtx,
             chain_metadata: Some(ChainMetadata {
@@ -1242,7 +1246,7 @@ impl MockChain {
             network: "regtest".to_string(),
             height: u64::from(height),
             hash: hex::encode(hash),
-            time: BLOCK_TIME_BASE + height,
+            time: *BLOCK_TIME_BASE + height,
             sapling_tree,
             orchard_tree,
             ironwood_tree,
@@ -2071,6 +2075,37 @@ pub async fn faucet_funding_transaction(receivers: Vec<(&str, u64, Option<&str>)
     let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED)
         .ironwood_note(total + FAUCET_HEADROOM)
         .build();
+    funding_transaction_from(wallet, receivers).await
+}
+
+/// A funding transaction from a pre-Ironwood Orchard faucet, built under `activation_heights`.
+pub async fn pre_ironwood_funding_transaction(
+    activation_heights: ActivationHeights,
+    receivers: Vec<(&str, u64, Option<&str>)>,
+) -> Vec<u8> {
+    let ironwood_height = activation_heights
+        .nu6_3()
+        .expect("a pre-Ironwood faucet needs a scheduled NU6.3 activation");
+    let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED)
+        .activation_heights(activation_heights)
+        .tip(ironwood_height - PRE_IRONWOOD_TARGET_MARGIN)
+        .orchard_note(faucet_reserve(&receivers))
+        .build();
+    funding_transaction_from(wallet, receivers).await
+}
+
+const FAUCET_FEE_HEADROOM: u64 = 1_000_000;
+
+const PRE_IRONWOOD_TARGET_MARGIN: u32 = 2;
+
+fn faucet_reserve(receivers: &[(&str, u64, Option<&str>)]) -> u64 {
+    receivers.iter().map(|(_, value, _)| value).sum::<u64>() + FAUCET_FEE_HEADROOM
+}
+
+async fn funding_transaction_from(
+    wallet: crate::wallet::LightWallet,
+    receivers: Vec<(&str, u64, Option<&str>)>,
+) -> Vec<u8> {
     let mut faucet = LightClient::new_for_test(wallet).await;
     let proposal = from_inputs::propose(&mut faucet, receivers)
         .await

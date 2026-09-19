@@ -92,7 +92,7 @@ impl LightWallet {
             None,
             None,
         )
-        .map_err(ProposeSendError::Proposal)
+        .map_err(|error| self.reserved_or(error))
     }
 
     /// Creates a proposal that sends the whole shielded spendable balance,
@@ -206,7 +206,30 @@ impl LightWallet {
             &LockedInputPolicy::Exclude,
             None,
         )
-        .map_err(ProposeSendError::Proposal)
+        .map_err(|error| self.reserved_or(error))
+    }
+
+    fn reserved_or(
+        &self,
+        error: zcash_client_backend::data_api::error::Error<
+            WalletError,
+            WalletError,
+            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+            crate::wallet::output::OutputRef,
+        >,
+    ) -> ProposeSendError {
+        match error {
+            zcash_client_backend::data_api::error::Error::InsufficientFunds { .. }
+                if self.reserved_orchard_value() > 0 =>
+            {
+                ProposeSendError::ReservedForMigration {
+                    reserved: self.reserved_orchard_value(),
+                }
+            }
+            error => ProposeSendError::Proposal(error),
+        }
     }
 
     /// The shield operation consumes a proposal that transfers value
@@ -527,5 +550,191 @@ mod test {
         wallet
             .create_send_proposal(request, zip32::AccountId::ZERO)
             .expect("can propose from existing data");
+    }
+}
+
+#[cfg(test)]
+mod migration_reservation {
+    use pepper_sync::wallet::{NoteInterface as _, OrchardNote, OutputInterface as _};
+    use zcash_address::ZcashAddress;
+
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::utils::conversion::address_from_str;
+    use crate::wallet::LightWallet;
+    use crate::wallet::error::ProposeSendError;
+    use crate::wallet::keys::unified::ReceiverSelection;
+    use crate::wallet::migration::{
+        BoundNote, MigrationMode, MigrationParams, MigrationPhase, MigrationState, PlanCommitment,
+        SigningStrategy, TransferId, TransferRecord,
+    };
+
+    const FUNDING_NOTE: u64 = 1_020_000;
+    const RESIDUAL_NOTE: u64 = 50_000;
+    const ACCOUNT: zip32::AccountId = zip32::AccountId::ZERO;
+
+    fn external_address() -> ZcashAddress {
+        let mut external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let (_, unified_address) = external_wallet
+            .generate_unified_address(ReceiverSelection::orchard_only(), ACCOUNT)
+            .unwrap();
+        address_from_str(&unified_address.encode(&external_wallet.chain_type()))
+            .expect("a wallet-generated address parses")
+    }
+
+    fn migration_state(
+        wallet: &LightWallet,
+        phase: MigrationPhase,
+        transfers: Vec<TransferRecord>,
+    ) -> MigrationState {
+        let params = MigrationParams::provisional(wallet.chain_type());
+        MigrationState {
+            commitment: PlanCommitment {
+                params_hash: params.params_hash(),
+                plan_hash: [0; 32],
+                committed_at: 0,
+            },
+            params,
+            strategy: SigningStrategy::LazyAtBoundary,
+            mode: MigrationMode::Scheduled,
+            account: ACCOUNT,
+            phase,
+            transfers,
+        }
+    }
+
+    fn bound_note_of(wallet: &LightWallet, value: u64) -> BoundNote {
+        wallet
+            .wallet_transactions
+            .values()
+            .flat_map(OrchardNote::transaction_outputs)
+            .find(|note| note.value() == value)
+            .map(|note| BoundNote {
+                output_id: note.output_id(),
+                nullifier: note
+                    .nullifier()
+                    .expect("scanned notes carry nullifiers")
+                    .to_bytes(),
+                commitment: [0; 32],
+            })
+            .expect("the wallet holds the fabricated note")
+    }
+
+    fn assert_refused_as_reserved(
+        refused: Result<crate::data::proposal::ProportionalFeeProposal, ProposeSendError>,
+        expected: u64,
+    ) {
+        match refused {
+            Err(ProposeSendError::ReservedForMigration { reserved }) => {
+                assert_eq!(reserved, expected, "the refusal carries the reserved value");
+            }
+            Err(other) => panic!("expected ReservedForMigration, got {other:?}"),
+            Ok(proposal) => panic!("expected ReservedForMigration, got a proposal: {proposal:?}"),
+        }
+    }
+
+    #[test]
+    fn send_all_over_only_reserved_notes_is_refused_as_reserved() {
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(FUNDING_NOTE)
+                .orchard_note(RESIDUAL_NOTE)
+                .build();
+        wallet.migration = Some(migration_state(&wallet, MigrationPhase::Committed, vec![]));
+        assert_eq!(
+            wallet.reserved_orchard_value(),
+            FUNDING_NOTE + RESIDUAL_NOTE
+        );
+
+        let refused = wallet.create_send_all_proposal(external_address(), false, None, ACCOUNT);
+
+        assert_refused_as_reserved(refused, FUNDING_NOTE + RESIDUAL_NOTE);
+    }
+
+    #[test]
+    fn send_all_with_zennies_over_only_reserved_notes_is_refused_as_reserved() {
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(FUNDING_NOTE)
+                .build();
+        wallet.migration = Some(migration_state(&wallet, MigrationPhase::Committed, vec![]));
+
+        let refused = wallet.create_send_all_proposal(external_address(), true, None, ACCOUNT);
+
+        assert_refused_as_reserved(refused, FUNDING_NOTE);
+    }
+
+    #[test]
+    fn send_all_is_refused_as_reserved_when_the_only_note_is_a_bound_funding_note() {
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(FUNDING_NOTE)
+                .build();
+        let transfer = TransferRecord::new(
+            TransferId(0),
+            FUNDING_NOTE,
+            bound_note_of(&wallet, FUNDING_NOTE),
+        );
+        wallet.migration = Some(migration_state(
+            &wallet,
+            MigrationPhase::Scheduled,
+            vec![transfer],
+        ));
+        assert_eq!(wallet.reserved_orchard_value(), FUNDING_NOTE);
+
+        let refused = wallet.create_send_all_proposal(external_address(), false, None, ACCOUNT);
+
+        assert_refused_as_reserved(refused, FUNDING_NOTE);
+    }
+
+    #[test]
+    fn send_all_over_free_notes_proposes_while_a_funding_note_is_reserved() {
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(FUNDING_NOTE)
+                .orchard_note(RESIDUAL_NOTE)
+                .build();
+        let transfer = TransferRecord::new(
+            TransferId(0),
+            FUNDING_NOTE,
+            bound_note_of(&wallet, FUNDING_NOTE),
+        );
+        wallet.migration = Some(migration_state(
+            &wallet,
+            MigrationPhase::Scheduled,
+            vec![transfer],
+        ));
+
+        let proposal = wallet
+            .create_send_all_proposal(external_address(), false, None, ACCOUNT)
+            .expect("the free residual note pays the send-all");
+
+        let step = proposal.steps().first();
+        let selected: Vec<u64> = step
+            .shielded_inputs()
+            .expect("a shielded send-all selects shielded inputs")
+            .notes()
+            .iter()
+            .map(|note| u64::from(note.note().value()))
+            .collect();
+        assert_eq!(
+            selected,
+            [RESIDUAL_NOTE],
+            "the reserved funding note is never selected"
+        );
+    }
+
+    #[test]
+    fn send_all_with_no_reserved_value_reports_the_ordinary_insufficient_funds() {
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
+        assert_eq!(wallet.reserved_orchard_value(), 0);
+
+        let refused = wallet.create_send_all_proposal(external_address(), false, None, ACCOUNT);
+
+        assert!(
+            matches!(refused, Err(ProposeSendError::Proposal(_))),
+            "with nothing reserved the refusal is the plain proposal error: {refused:?}"
+        );
     }
 }

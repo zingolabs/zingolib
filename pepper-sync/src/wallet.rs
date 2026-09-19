@@ -1036,6 +1036,14 @@ pub struct TransparentCoin {
 }
 
 #[cfg(feature = "test-features")]
+impl WalletBlock {
+    /// Sets the time the block was mined, for testing purposes.
+    pub fn set_time_for_test(&mut self, time: u32) {
+        self.time = time;
+    }
+}
+
+#[cfg(feature = "test-features")]
 impl TransparentCoin {
     /// Creates a minimal received coin for testing purposes. The script
     /// must be the real locking script for `address`: spendable-output
