@@ -11,15 +11,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `mixnet::TransmitPolicy` (`Mixnet`, `Clearnet`), the per-session send route choice, with `LightClient::transmit_policy` and `set_transmit_policy`. Every session starts under `Mixnet`; `MixnetStartPolicy::OptedOutThisSession` sets `Clearnet`, and `enable_mixnet`, `enable_mixnet_via_host`, and `attach_mixnet` set `Mixnet` before the transport exists, so sends refuse during the bootstrap. A failed enable restores the policy the session had before.
 - Add `mixnet::resolve_mixnet_only_route` and `LightClient::mixnet_only_route`, the route of the price fetch and the liveness probe: the conduit while `Ready`, a typed refusal otherwise.
 - Add `mixnet::resolve_send_route` and `LightClient::send_route`, the route of a transmission under the transmit policy: clearnet at once under `Clearnet`, the mixnet-only outcome under `Mixnet`.
+- Add `LightClient::note_summaries`, `LightWallet::{reserved_output_ids, reserved_orchard_value}`, `wallet::migration::{classify_note, NoteClass}`.
 
 ### Changed
 - **Breaking:** `update_current_price` is mixnet-only again. `Indicator::SwitchedOff` refuses it as `MixnetNotReady::Unattached` and the transmit policy has no effect on it.
 - **Breaking:** transmissions and migration parts follow the transmit policy rather than `Indicator::SwitchedOff`. `consent_to_clearnet_for_tests` sets the policy instead of switching the transport off.
 - **Breaking:** `MixnetNotReady::Unattached` no longer offers switching off as a remedy in its message.
+- **Breaking:** rename the migration types to the ZIP 318 terms: `Part*` to `Transfer*`, `SplitPlan` to `ScheduledMigrationPlan`, `NoteSplitTx` to `PreparationTx`, `part_fee` to `transfer_fee`, `Transmission*` to `Broadcast*` on the migration path, `wallet::migration::{split, parts, transmission}` to `{preparation, transfers, broadcast}`.
+- **Breaking:** `MigrationPhase` is `Committed`, `Preparing`, `Prepared`, `Scheduled`, `Complete`.
+- **Breaking:** replace `start_migration`, `step_migration`, `set_migration_schedule` with `commit_migration`, `recommit_migration`, `broadcast_preparation_round`, `propose_schedule`, `commit_schedule`, `broadcast_due_transfers`, `broadcast_missed_now`, `release_transfer`, `migrate_immediately`. Each refuses with a typed `MigrationError` when it is not valid.
+- **Breaking:** `migration_status` reports data only: `transfers: Vec<TransferStatus>`, `transfers_total`, `transfers_confirmed`, `due_now`, `upcoming_windows`, `windows`.
+- **Breaking:** reconciliation runs after each sync and at the start of each command. A missed window is rescheduled automatically; a dead signature is discarded and re-signed instead of waiting for its expiry.
+- **Breaking:** the reservation is hard. A send that needs a reserved note fails with `ProposeSendError::ReservedForMigration`. `AccountBalance` gains `reserved_orchard_balance`; `NoteSummary` gains `reserved`.
+- **Breaking:** `ProposedSchedule` is plain data with `schedule_hash()`.
+- **Breaking:** `TransferState` gains `Released`; `TransferRecord` gains `previous_txids` and `missed_windows`.
+- **Breaking:** `TransferBroadcastError` variants carry their route; `AlreadyKnown` and `NoCandidates` are new.
+- **Breaking:** the wallet file's migration section is version 5. Version 4 reads.
+- A migration command writes the wallet file only while the save task runs.
+- **Breaking:** the CLI `migration` family is `plan`, `commit`, `prepare`, `schedule`, `broadcast`, `send_missed`, `release`, `status`, `windows`, `cancel`.
+- **Breaking:** `MigrationState`, `MigrationParams`, and `LightWallet::migration` are read-only outside the crate; `MigrationParams::validate` rejects degenerate parameters. `ConsentBinding` is renamed `PlanCommitment`, `MigrationError::ConsentStale` is renamed `PlanMismatch`.
 
 ### Removed
 - **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
 - **Breaking:** remove `PriceFetchRoute::Clearnet` and `LightClientError::ProbeRequiresMixnet`, both unreachable once the price fetch and the probe are mixnet-only.
+- **Breaking:** remove `complete_migration_now`, `MigrationSummary`, `StepResult`, `SendOptions`, `PartStatus`, `missed_parts`, the CLI `migrate` command, and the `MigrationError` variants `CadenceFixed`, `NoteSplittingRequired`, `SplitTransactionFailed`, `SplitConfirmationTimeout`, `IronwoodEraTooYoung`, `PreSignedUnavailable`, `ScheduledMigrationExists`, `DifferentAccount`.
+
+### Fixed
+- The scheduled plan leaves the sub-denomination remainder in Orchard as a residual note instead of paying it as fee.
+- `plan_hash` no longer depends on note order, and a replan after a preparation round no longer spends an intermediate note again.
+- The wallet reader rejects a bucket index that does not fit a block height.
+- Scheduled broadcast heights are drawn inside their window.
+- A confirmed transfer whose note a foreign transaction spent is invalidated, not demoted, and a pass that changes a transfer does not complete the migration.
+- A migration completes only when the spend evidence reaches the tip.
+- Migrated value counts only transfers classified confirmed.
+- A failed wallet file write rolls the migration back in memory.
+- A submission the endpoint already holds counts as broadcast.
 
 ## [6.0.0] - 2026-09-07
 

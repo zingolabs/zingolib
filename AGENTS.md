@@ -75,6 +75,7 @@ Goal: produce prose and code that reads as if written by a specific, competent h
 - Cut hype words: powerful, effortless, blazing-fast, supercharge, transform, unlock, simply, just.
 - Don't pitch benefits at the reader ("you'll love how fast it is", "say goodbye to X", "no more Y"). State what the thing does and let it stand.
 - Avoid the staccato rhythm of short fragments stacked for impact, exclamatory energy, and calls to action. That cadence is built to persuade, not to inform.
+- Define things with a noun phrase, not a sentence: "The plan and parameter hashes recorded when a migration starts." Say what it is. Leave what it does for later.
 
 ### Code (all languages)
 

@@ -118,13 +118,20 @@ visible on-chain, transmitted at once.
 _Avoid_: drain
 
 **Scheduled migration**:
-The private ZIP 318 flow: note splitting into denominations, then parts
-transmitted across buckets.
+The private ZIP 318 flow: note preparation into funding notes, then
+transfers broadcast across windows. Two commit points: the plan, then the
+schedule.
 
-**Note splitting**:
-Phase 1 of the scheduled flow: Orchard self-sends that resize notes to
-exactly denomination + part fee.
-_Avoid_: note preparation (upstream's synonym; splitting is our term)
+**Note preparation** (ratified 2026-09-17):
+Phase 1 of the scheduled flow: Orchard self-sends that divide or combine
+notes into funding notes, sized exactly denomination + transfer fee. The
+ZIP 318 term.
+_Avoid_: note splitting (the earlier local term; preparation also combines)
+
+**Commit** (ratified 2026-09-17):
+Recording the user's consent to a plan (the first commit point) or to a
+proposed schedule (the second). ZIP 318's "the schedule is committed".
+_Avoid_: start, confirm
 
 **Consolidation**:
 Merging fragmented notes into fewer notes without crossing pools. Within
@@ -137,8 +144,24 @@ _Avoid_: reduction
 A canonical migration amount, {1, 2, 5} × 10^k ZEC. What the Shielded Labs
 document calls amount "buckets". Never use bucket for amounts here.
 
-**Part**:
+**Transfer** (ratified 2026-09-17):
 One scheduled pool-crossing transaction carrying exactly one denomination.
+ZIP 318's "migration transaction", also its "scheduled transfer".
+_Avoid_: part (ZIP 318's parenthetical synonym, retired here)
+
+**Funding note** (ratified 2026-09-17):
+An Orchard note sized exactly denomination + transfer fee, so it funds one
+transfer as it is. The ZIP 318 term.
+_Avoid_: part-ready note
+
+**Reserve / release** (ratified 2026-09-17):
+A reserved note is never selected by an ordinary send. Committing a plan
+reserves every pre-Ironwood Orchard note of the account; committing the
+schedule narrows the reservation to the funding notes of the pending
+transfers; releasing a transfer or cancelling frees them. Derived from the
+migration record, never stored. Our term: ZIP 318 has none and assumes the
+user may spend outside the migration.
+_Avoid_: lock (collides with the wallet lock), mark, soft reservation
 
 **Residual**:
 Value the migration abandons: notes at or below the sweep minimum, plus
@@ -157,6 +180,18 @@ A time window of M consecutive blocks (ZIP 318 sense). Never an amount.
 **Boundary**:
 The block height that opens a bucket (height ≡ 0 mod M), also the anchor
 height of the bucket's parts.
+
+**Window** (ratified 2026-09-17):
+The bucket a transfer broadcasts in. A transfer is due for the whole open
+window. A window that closes without its broadcast is *missed*: the
+transfer is rescheduled into a later window and counts the miss. Our term;
+ZIP 318 speaks of the scheduled broadcast height.
+
+**Scheduled broadcast height** (ratified 2026-09-17):
+The block height inside the window a transfer aims its broadcast at, drawn
+from the ZIP 318 delay law. Advisory: it aims the reminder and never gates
+the broadcast.
+_Avoid_: target height
 
 **Window timeline**:
 The chain's windows around the tip, each carrying the schedule's

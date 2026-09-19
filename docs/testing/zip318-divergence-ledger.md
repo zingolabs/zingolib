@@ -25,7 +25,7 @@ delegation deferred under ADR 0020's standing pull.
 ## Delegated (Landing C: the mirrors are deleted)
 
 The anchor draw delegates to `scheduling::draw_anchor_boundary`, mapped
-into bucket space with the part's window boundary playing the observed
+into bucket space with the transfer's window boundary playing the observed
 chain tip; the local geometric age draw and rejection loop are deleted,
 and seeded golden vectors captured from the retired mirror pin the
 equivalence
@@ -44,7 +44,7 @@ delegation arrives with the planning-layer delegation.
 
 ## Blocked (divergent, dependency named)
 
-The part transfer's Ironwood bundle is padded to two actions and its fee
+The transfer's Ironwood bundle is padded to two actions and its fee
 is 20 000 zatoshis, against the canonical single unpadded Ironwood
 action and 15 000
 (<https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>).
@@ -54,11 +54,11 @@ in 0.30. The divergence unblocks with the librustzcash stack bump to the
 0.30 line, which is also what the deferred PCZT builders require. The
 fee change carries its own `MigrationParams` version bump when it lands.
 
-Part ordering is largest-denomination-first and deterministic:
-`plan_schedule` ranks the quantized parts so the largest land in the
+Transfer ordering is largest-denomination-first and deterministic:
+`plan_schedule` ranks the quantized transfers so the largest land in the
 earliest windows, while the ZIP requires a uniformly random shuffle and
 names largest-first as its counterexample — the ordering lets an
-observer infer migration progress from any part it can attribute, and
+observer infer migration progress from any transfer it can attribute, and
 makes the sequence predictable to a targeted adversary who knows the
 balance (<https://zips.z.cash/zip-0318#transferscheduling>). The batch
 scheduler consumes the ranking, so the shuffle cannot be dropped in
@@ -66,7 +66,7 @@ without it; it arrives with the scheduling delegation to the upstream
 `schedule` machinery (which shuffles internally), deferred under ADR
 0020's standing pull.
 
-Preparation broadcasts are not temporally decoupled: splitting rounds
+Preparation broadcasts are not temporally decoupled: preparation rounds
 broadcast back-to-back, each round as soon as the previous one confirms,
 while the canonical law spaces preparation broadcasts by exponential
 delays with mean `PREP_MEAN_DELAY` (24 blocks) capped at
@@ -77,6 +77,36 @@ the coming schedule
 exports the law (`draw_prep_delay`, `schedule_prep_broadcast_heights`);
 adoption arrives with the scheduling delegation, deferred under ADR
 0020's standing pull.
+
+## Deliberate (ratified 2026-09-17)
+
+The reservation is hard. The ZIP assumes the user may spend Orchard funds
+outside the migration and requires the wallet to detect the spend and
+rebuild the schedule
+(<https://zips.z.cash/zip-0318#errorhandling>). This wallet never selects
+a reserved note for an ordinary send: the proposal fails with the reserved
+amount, and the user releases a transfer or cancels to spend it. The
+detect-and-rebuild path stays, because another device with the same seed
+can still spend the note. Chosen because a spent funding note breaks the
+committed plan, leaves off-denomination change, and costs more
+preparation transactions.
+
+A submitted transfer that missed its window is discarded and re-signed
+one window after its own closed, when the scanned chain shows its note
+unspent. The ZIP says a stored signed transaction "MUST NOT be discarded"
+on a transient failure and offers the user "send now or retry in the
+background". This wallet keeps and retries within the window, then
+treats the transaction as lost. The old transaction can still mine later;
+then two transactions spend one note, one confirms, and reconciliation
+counts either as this transfer's own (`previous_txids`). Chosen so a lost
+transaction waits hours, not the 30 to 60 days of the canonical expiry.
+A signed transfer that never left the device is re-signed at once.
+
+A missed window is rescheduled automatically into a later window, with
+the miss counted on the transfer, and the explicit "send now"
+(`broadcast_missed_now`) stays for the on-launch prompt the ZIP
+requires. The ZIP's "retry in the background" is the default; the count
+lets the consumer decide when to prompt.
 
 ## Retained local (the ZIP standardizes no value)
 
