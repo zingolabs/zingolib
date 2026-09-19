@@ -345,6 +345,7 @@ pub struct NoteSummary {
     pub output_index: u32,
     pub account_id: zip32::AccountId,
     pub scope: Scope,
+    pub reserved: bool,
 }
 
 impl std::fmt::Display for NoteSummary {
@@ -368,6 +369,7 @@ impl std::fmt::Display for NoteSummary {
                 output index: {}
                 account id: {}
                 scope: {}
+                reserved: {}
             }}",
             self.value,
             self.status,
@@ -378,7 +380,8 @@ impl std::fmt::Display for NoteSummary {
             self.txid,
             self.output_index,
             u32::from(self.account_id),
-            self.scope
+            self.scope,
+            self.reserved
         )
     }
 }
@@ -395,6 +398,7 @@ impl From<NoteSummary> for json::JsonValue {
             "output_index" => note.output_index,
             "account_id" => u32::from(note.account_id),
             "scope" => note.scope.to_string(),
+            "reserved" => note.reserved,
         }
     }
 }

@@ -292,6 +292,7 @@ impl LightWallet {
     where
         N: NoteInterface<KeyId = pepper_sync::keys::KeyId>,
     {
+        let reserved = self.reserved_output_ids();
         let note_summaries = self
             .wallet_outputs::<N>()
             .into_iter()
@@ -321,6 +322,7 @@ impl LightWallet {
                     output_index: note.output_id().output_index(),
                     account_id: note.key_id().account_id,
                     scope: note.key_id().scope.into(),
+                    reserved: reserved.contains(&note.output_id()),
                 }
             })
             .collect();
@@ -746,5 +748,126 @@ mod tests {
             .build();
         let client = LightClient::new_for_test(wallet).await;
         check_client_balances!(client, i: value o: value s: value t: value);
+    }
+}
+
+#[cfg(test)]
+mod reserved_note_summaries {
+    use pepper_sync::wallet::{NoteInterface as _, OrchardNote, OutputInterface as _};
+    use zcash_protocol::ShieldedPool;
+
+    use crate::lightclient::LightClient;
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::wallet::LightWallet;
+    use crate::wallet::migration::{
+        BoundNote, MigrationMode, MigrationParams, MigrationPhase, MigrationState, PlanCommitment,
+        SigningStrategy, TransferId, TransferRecord,
+    };
+    use crate::wallet::summary::data::NoteSummaries;
+
+    const FUNDING_NOTE: u64 = 100_000;
+    const RESIDUAL_NOTE: u64 = 50_000;
+
+    fn scheduled_wallet_with_bound_funding_note() -> LightWallet {
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(FUNDING_NOTE)
+                .orchard_note(RESIDUAL_NOTE)
+                .build();
+        let bound = wallet
+            .wallet_transactions
+            .values()
+            .flat_map(OrchardNote::transaction_outputs)
+            .find(|note| note.value() == FUNDING_NOTE)
+            .map(|note| BoundNote {
+                output_id: note.output_id(),
+                nullifier: note
+                    .nullifier()
+                    .expect("scanned notes carry nullifiers")
+                    .to_bytes(),
+                commitment: [0; 32],
+            })
+            .expect("the wallet holds the funding note");
+        let params = MigrationParams::provisional(wallet.chain_type());
+        wallet.migration = Some(MigrationState {
+            commitment: PlanCommitment {
+                params_hash: params.params_hash(),
+                plan_hash: [0; 32],
+                committed_at: 0,
+            },
+            params,
+            strategy: SigningStrategy::LazyAtBoundary,
+            mode: MigrationMode::Scheduled,
+            account: zip32::AccountId::ZERO,
+            phase: MigrationPhase::Scheduled,
+            transfers: vec![TransferRecord::new(TransferId(0), FUNDING_NOTE, bound)],
+        });
+        wallet
+    }
+
+    fn reserved_by_value(summaries: &NoteSummaries) -> Vec<(u64, bool)> {
+        let mut pairs: Vec<(u64, bool)> = summaries
+            .iter()
+            .map(|summary| (summary.value, summary.reserved))
+            .collect();
+        pairs.sort_unstable();
+        pairs
+    }
+
+    #[test]
+    fn note_summaries_flag_the_reserved_funding_note() {
+        let wallet = scheduled_wallet_with_bound_funding_note();
+
+        let summaries = wallet.note_summaries::<OrchardNote>(false);
+
+        assert_eq!(
+            reserved_by_value(&summaries),
+            [(RESIDUAL_NOTE, false), (FUNDING_NOTE, true)],
+            "the bound funding note is reserved; the residual note is free"
+        );
+    }
+
+    #[test]
+    fn note_summary_json_carries_the_reservation_flag() {
+        let wallet = scheduled_wallet_with_bound_funding_note();
+
+        let rendered = json::JsonValue::from(wallet.note_summaries::<OrchardNote>(false));
+
+        let mut flags: Vec<(u64, bool)> = rendered["note_summaries"]
+            .members()
+            .map(|note| {
+                (
+                    note["value"].as_u64().expect("value is a number"),
+                    note["reserved"].as_bool().expect("reserved is a boolean"),
+                )
+            })
+            .collect();
+        flags.sort_unstable();
+        assert_eq!(flags, [(RESIDUAL_NOTE, false), (FUNDING_NOTE, true)]);
+    }
+
+    #[tokio::test]
+    async fn client_note_summaries_match_the_wallet_list() {
+        let wallet = scheduled_wallet_with_bound_funding_note();
+        let expected = reserved_by_value(&wallet.note_summaries::<OrchardNote>(false));
+        let client = LightClient::new_for_test(wallet).await;
+
+        let summaries = client.note_summaries(ShieldedPool::Orchard, false).await;
+
+        assert_eq!(reserved_by_value(&summaries), expected);
+        assert_eq!(expected, [(RESIDUAL_NOTE, false), (FUNDING_NOTE, true)]);
+    }
+
+    #[test]
+    fn no_note_is_reserved_without_a_migration() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(FUNDING_NOTE)
+            .orchard_note(RESIDUAL_NOTE)
+            .build();
+
+        let summaries = wallet.note_summaries::<OrchardNote>(false);
+
+        assert_eq!(summaries.len(), 2);
+        assert!(summaries.iter().all(|summary| !summary.reserved));
     }
 }
