@@ -225,7 +225,7 @@ impl LightClient {
     /// Returns the maximum value that can be sent from `account_id` to
     /// `address`: the shielded spendable balance less the fee, and less
     /// the [`crate::ZENNIES_FOR_ZINGO_AMOUNT`] payment if
-    /// `zennies_for_zingo` is set. Zero when nothing can be sent.
+    /// `zennies_for_zingo` is set.
     pub async fn max_send_value(
         &self,
         address: ZcashAddress,
@@ -611,7 +611,13 @@ mod send_all {
             .map(|payment| u64::from(payment.amount().unwrap()))
             .sum();
         assert_eq!(payment + fee, 150_000);
-        assert!(step.balance().proposed_change().is_empty());
+        let change: u64 = step
+            .balance()
+            .proposed_change()
+            .iter()
+            .map(|change| u64::from(change.value()))
+            .sum();
+        assert_eq!(change, 0, "send-all leaves no non-dust value behind");
     }
 
     #[tokio::test]
@@ -888,6 +894,175 @@ mod send_all {
                 .unwrap(),
             Zatoshis::from_u64(initial_funds - zennies_magnitude - expected_fee).unwrap()
         );
+    }
+
+    /// Returns a TEX-encoded taddr from an external wallet, as a
+    /// `ZcashAddress` ready for a payment.
+    fn external_tex_address() -> zcash_address::ZcashAddress {
+        use pepper_sync::keys::decode_address;
+        use zcash_client_backend::address::Address;
+        use zcash_transparent::address::TransparentAddress;
+
+        let external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let taddr = external_wallet
+            .transparent_addresses()
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) =
+            decode_address(&external_wallet.chain_type(), &taddr).unwrap()
+        else {
+            panic!("a wallet-generated first taddr is p2pkh")
+        };
+        let tex_address = crate::testutils::interpret_taddr_as_tex_addr(
+            taddr_bytes,
+            &external_wallet.chain_type(),
+        );
+        zcash_address::ZcashAddress::try_from_encoded(&tex_address).unwrap()
+    }
+
+    /// Pins the zero-valued change note the send path always writes,
+    /// which the send-max sizing does not price. With two legacy Orchard
+    /// notes a post-NU6.3 orchard_v3 bundle costs spends + outputs rather
+    /// than max(spends, outputs), so that change output is worth one more
+    /// logical action, and the reported max must still send to a TEX
+    /// recipient.
+    #[tokio::test]
+    async fn max_send_value_to_tex_with_legacy_orchard_notes_is_sendable() {
+        let mut client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(100_000)
+                .orchard_note(50_000)
+                .build(),
+        )
+        .await;
+        let destination = external_tex_address();
+
+        let max = client
+            .max_send_value(destination.clone(), false, zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert!(
+            max > Zatoshis::ZERO,
+            "two legacy orchard notes must report a sendable max to a TEX address"
+        );
+
+        let request = zcash_client_backend::zip321::TransactionRequest::new(vec![
+            zcash_client_backend::zip321::Payment::without_memo(destination.clone(), max),
+        ])
+        .unwrap();
+        client
+            .propose_send(request, zip32::AccountId::ZERO)
+            .await
+            .expect("the reported max must actually propose");
+
+        let past_max = (max + Zatoshis::const_from_u64(1)).unwrap();
+        let past_request = zcash_client_backend::zip321::TransactionRequest::new(vec![
+            zcash_client_backend::zip321::Payment::without_memo(destination, past_max),
+        ])
+        .unwrap();
+        assert!(matches!(
+            client
+                .propose_send(past_request, zip32::AccountId::ZERO)
+                .await,
+            Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::InsufficientFunds { .. }
+            ))
+        ));
+    }
+
+    /// Pins the same unpriced change output against a shielded
+    /// destination, where the two legacy Orchard notes still make it cost
+    /// an extra action but the send carries no padded transparent leg.
+    #[tokio::test]
+    async fn max_send_value_to_shielded_with_legacy_orchard_notes_is_sendable() {
+        let mut client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(100_000)
+                .orchard_note(50_000)
+                .build(),
+        )
+        .await;
+        let destination = external_address(PoolType::ORCHARD);
+
+        let max = client
+            .max_send_value(destination.clone(), false, zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert!(
+            max > Zatoshis::ZERO,
+            "two legacy orchard notes must report a sendable max to a shielded address"
+        );
+
+        let request = zcash_client_backend::zip321::TransactionRequest::new(vec![
+            zcash_client_backend::zip321::Payment::without_memo(destination.clone(), max),
+        ])
+        .unwrap();
+        client
+            .propose_send(request, zip32::AccountId::ZERO)
+            .await
+            .expect("the reported max must actually propose");
+
+        let past_max = (max + Zatoshis::const_from_u64(1)).unwrap();
+        let past_request = zcash_client_backend::zip321::TransactionRequest::new(vec![
+            zcash_client_backend::zip321::Payment::without_memo(destination, past_max),
+        ])
+        .unwrap();
+        assert!(matches!(
+            client
+                .propose_send(past_request, zip32::AccountId::ZERO)
+                .await,
+            Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::InsufficientFunds { .. }
+            ))
+        ));
+    }
+
+    /// Pins the unpriced change output under the heaviest shape: a
+    /// zennies send-all to a TEX recipient from two legacy Orchard notes,
+    /// where that output costs an extra action in a two-step send. The
+    /// reported max and the send-all proposal must both stand.
+    #[tokio::test]
+    async fn send_all_with_zfz_from_legacy_orchard_notes_to_tex_converges() {
+        let mut client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(2_000_000)
+                .orchard_note(2_000_000)
+                .build(),
+        )
+        .await;
+        let destination = external_tex_address();
+
+        let max = client
+            .max_send_value(destination.clone(), true, zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert!(
+            max > Zatoshis::ZERO,
+            "two legacy orchard notes must report a sendable zennies max to a TEX address"
+        );
+
+        client
+            .propose_send_all(destination.clone(), true, None, zip32::AccountId::ZERO)
+            .await
+            .expect("send-all with zennies must converge to a proposal");
+
+        let zenny_address =
+            address_from_str(crate::get_zennies_for_zingo_address(client.chain_type())).unwrap();
+        let request = zcash_client_backend::zip321::TransactionRequest::new(vec![
+            zcash_client_backend::zip321::Payment::without_memo(destination, max),
+            zcash_client_backend::zip321::Payment::without_memo(
+                zenny_address,
+                Zatoshis::const_from_u64(crate::ZENNIES_FOR_ZINGO_AMOUNT),
+            ),
+        ])
+        .unwrap();
+        client
+            .propose_send(request, zip32::AccountId::ZERO)
+            .await
+            .expect("the max plus the zenny payment must propose");
     }
 }
 
