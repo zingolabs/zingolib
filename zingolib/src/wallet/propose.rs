@@ -110,18 +110,19 @@ impl LightWallet {
     /// [`ZENNIES_FOR_ZINGO_AMOUNT`] payment is added and the send-all
     /// amount is reduced to cover it.
     ///
-    /// A send-max proposal over every spendable note sizes the send and
-    /// is then discarded. The proposal returned comes from
-    /// [`Self::create_send_proposal`], the path a plain send of the same
-    /// amount takes, so the two agree on the fee and the send-all keeps
-    /// the change memo.
+    /// A send-max proposal over every spendable note sizes the send. The
+    /// proposal returned comes from [`Self::create_send_proposal`], the
+    /// path a plain send of the same amount takes, so the two agree on the
+    /// fee and the send-all keeps the change memo.
     ///
     /// Sizing prices step 0 with no change output, while the send path
     /// always writes one, so the sized amount can overshoot what the
     /// selected notes cover. An `InsufficientFunds` answer names that
     /// shortfall, the recipient amount drops by it, and the request goes
-    /// out again, up to [`SEND_ALL_PROPOSAL_ATTEMPTS`] times. The last
-    /// error stands if the amount never balances.
+    /// out again, up to [`SEND_ALL_PROPOSAL_ATTEMPTS`] times.
+    ///
+    /// If the amount never balances, the send-max proposal is returned, or
+    /// [`ProposeSendError::SendAllUnbalanced`] with `zennies_for_zingo` set.
     pub(crate) fn create_send_all_proposal(
         &mut self,
         address: ZcashAddress,
@@ -177,8 +178,8 @@ impl LightWallet {
             transaction_request_from_receivers(receivers)
         };
 
-        let mut attempt = self.create_send_proposal(request(amount)?, account_id);
-        for _ in 1..SEND_ALL_PROPOSAL_ATTEMPTS {
+        for _ in 0..SEND_ALL_PROPOSAL_ATTEMPTS {
+            let attempt = self.create_send_proposal(request(amount)?, account_id);
             let Err(ProposeSendError::Proposal(
                 zcash_client_backend::data_api::error::Error::InsufficientFunds {
                     required,
@@ -188,17 +189,16 @@ impl LightWallet {
             else {
                 return attempt;
             };
-            let Some(corrected_amount) = (*required - *available)
-                .filter(|shortfall| *shortfall > Zatoshis::ZERO)
-                .and_then(|shortfall| amount - shortfall)
-                .filter(|amount| *amount > Zatoshis::ZERO)
-            else {
-                return attempt;
-            };
-            amount = corrected_amount;
-            attempt = self.create_send_proposal(request(amount)?, account_id);
+            match send_all_correction(amount, *required, *available) {
+                SendAllCorrection::Retry(corrected_amount) => amount = corrected_amount,
+                SendAllCorrection::NothingToSend => return attempt,
+                SendAllCorrection::Unbalanced => break,
+            }
         }
-        attempt
+        match zenny_receiver {
+            None => Ok(sizing),
+            Some(_) => Err(ProposeSendError::SendAllUnbalanced),
+        }
     }
 
     fn propose_send_max(
@@ -431,6 +431,82 @@ pub(crate) fn recipient_amount(proposal: &ProportionalFeeProposal) -> Zatoshis {
         .get(&0)
         .and_then(|payment| payment.amount())
         .unwrap_or(Zatoshis::ZERO)
+}
+
+/// The next step of the send-all correction, once the send path has
+/// refused a recipient amount.
+#[derive(Debug, PartialEq, Eq)]
+enum SendAllCorrection {
+    /// Propose again with this recipient amount.
+    Retry(Zatoshis),
+    /// Balance too small to send anything.
+    NothingToSend,
+    /// Reducing the amount cannot help.
+    Unbalanced,
+}
+
+/// Classifies the send path's refusal of `amount`, which reported the
+/// selected inputs as `available` against the `required` total.
+fn send_all_correction(
+    amount: Zatoshis,
+    required: Zatoshis,
+    available: Zatoshis,
+) -> SendAllCorrection {
+    let Some(shortfall) = (required - available).filter(|shortfall| *shortfall > Zatoshis::ZERO)
+    else {
+        return SendAllCorrection::Unbalanced;
+    };
+    match (amount - shortfall).filter(|corrected| *corrected > Zatoshis::ZERO) {
+        Some(corrected) => SendAllCorrection::Retry(corrected),
+        None => SendAllCorrection::NothingToSend,
+    }
+}
+
+#[cfg(test)]
+mod send_all_correction {
+    use zcash_protocol::value::Zatoshis;
+
+    use super::{SendAllCorrection, send_all_correction};
+
+    fn zats(value: u64) -> Zatoshis {
+        Zatoshis::const_from_u64(value)
+    }
+
+    #[test]
+    fn a_shortfall_below_the_amount_retries_with_the_amount_reduced() {
+        assert_eq!(
+            send_all_correction(zats(125_000), zats(155_000), zats(150_000)),
+            SendAllCorrection::Retry(zats(120_000))
+        );
+    }
+
+    #[test]
+    fn a_shortfall_equal_to_the_amount_leaves_nothing_to_send() {
+        assert_eq!(
+            send_all_correction(zats(5_000), zats(155_000), zats(150_000)),
+            SendAllCorrection::NothingToSend
+        );
+    }
+
+    #[test]
+    fn a_shortfall_above_the_amount_leaves_nothing_to_send() {
+        assert_eq!(
+            send_all_correction(zats(25_000), zats(1_035_000), zats(1_000_000)),
+            SendAllCorrection::NothingToSend
+        );
+    }
+
+    #[test]
+    fn a_refusal_with_no_shortfall_is_unbalanced() {
+        assert_eq!(
+            send_all_correction(zats(76_000), zats(101_000), zats(160_000)),
+            SendAllCorrection::Unbalanced
+        );
+        assert_eq!(
+            send_all_correction(zats(76_000), zats(160_000), zats(160_000)),
+            SendAllCorrection::Unbalanced
+        );
+    }
 }
 
 #[cfg(test)]

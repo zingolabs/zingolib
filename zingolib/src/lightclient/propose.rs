@@ -225,7 +225,9 @@ impl LightClient {
     /// Returns the maximum value that can be sent from `account_id` to
     /// `address`: the shielded spendable balance less the fee, and less
     /// the [`crate::ZENNIES_FOR_ZINGO_AMOUNT`] payment if
-    /// `zennies_for_zingo` is set.
+    /// `zennies_for_zingo` is set. A wallet that cannot cover the fee
+    /// reports zero. A wallet that still needs a scan returns the
+    /// `ScanRequired` error.
     pub async fn max_send_value(
         &self,
         address: ZcashAddress,
@@ -240,9 +242,9 @@ impl LightClient {
         );
         match proposal {
             Ok(proposal) => Ok(recipient_amount(&proposal)),
-            Err(ProposeSendError::Proposal(
-                ProposalError::InsufficientFunds { .. } | ProposalError::ScanRequired,
-            )) => Ok(Zatoshis::ZERO),
+            Err(ProposeSendError::Proposal(ProposalError::InsufficientFunds { .. })) => {
+                Ok(Zatoshis::ZERO)
+            }
             Err(e) => Err(e),
         }
     }
@@ -642,7 +644,7 @@ mod send_all {
     }
 
     #[tokio::test]
-    async fn max_send_value_is_zero_for_an_unsynced_wallet() {
+    async fn max_send_value_requires_a_scan_on_an_unsynced_wallet() {
         let config = crate::config::ClientConfig::builder()
             .set_wallet_config(crate::config::WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
@@ -654,17 +656,18 @@ mod send_all {
             .unwrap();
         let client = LightClient::new(config, true).await.unwrap();
 
-        assert_eq!(
+        assert!(matches!(
             client
                 .max_send_value(
                     external_transparent_address(),
                     false,
                     zip32::AccountId::ZERO
                 )
-                .await
-                .unwrap(),
-            Zatoshis::ZERO
-        );
+                .await,
+            Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::ScanRequired
+            ))
+        ));
     }
 
     #[tokio::test]
@@ -1063,6 +1066,42 @@ mod send_all {
             .propose_send(request, zip32::AccountId::ZERO)
             .await
             .expect("the max plus the zenny payment must propose");
+    }
+
+    /// The selector refuses 80_000 from the Ironwood note alone.
+    #[tokio::test]
+    async fn send_all_to_tex_falls_back_when_the_selector_refuses_the_sized_amount() {
+        let mut client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .ironwood_note(100_000)
+                .sapling_note(15_000)
+                .build(),
+        )
+        .await;
+        let destination = external_tex_address();
+
+        let proposal = client
+            .propose_send_all(destination.clone(), false, None, zip32::AccountId::ZERO)
+            .await
+            .expect("the send-max proposal stands in for the refused request");
+        let fee: u64 = proposal
+            .steps()
+            .iter()
+            .map(|step| step.balance().fee_required().into_u64())
+            .sum();
+        assert_eq!(
+            crate::wallet::propose::recipient_amount(&proposal),
+            Zatoshis::const_from_u64(80_000)
+        );
+        assert_eq!(fee, 35_000);
+
+        assert_eq!(
+            client
+                .max_send_value(destination, false, zip32::AccountId::ZERO)
+                .await
+                .unwrap(),
+            Zatoshis::const_from_u64(80_000)
+        );
     }
 }
 

@@ -346,6 +346,9 @@ pub enum ProposeSendError {
     /// failed to construct a transaction request
     #[error("{0}")]
     TransactionRequestFailed(#[from] zcash_client_backend::zip321::Zip321Error),
+    /// Send-all amount did not balance against the send path
+    #[error("the send-all amount did not balance against the send path")]
+    SendAllUnbalanced,
 }
 
 /// Errors that can result from constructing shield proposals.
