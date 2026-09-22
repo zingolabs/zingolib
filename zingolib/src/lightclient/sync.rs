@@ -143,7 +143,9 @@ impl LightClient {
     }
 
     /// Returns the sync engine's most recently published status without touching the wallet lock.
-    // TODO: return result with status error
+    // TODO: should hold a result with either a sync status or the error returned when calling sync status.
+    // when the lightclient is created it should call sync status to update the channel with the stored
+    // sync status. this will be from the sync state stored in the wallet, either new or restored from file.
     pub fn latest_sync_status(&self) -> Option<pepper_sync::sync::SyncStatus> {
         self.sync_progress.borrow().clone()
     }

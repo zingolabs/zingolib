@@ -1,5 +1,7 @@
 //! Entrypoint for sync engine
 
+// TODO: check we are not storing a large number of outpoints now we scan transaprent data in compact blocks
+
 use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
 use std::ops::Range;
@@ -744,7 +746,6 @@ where
                     }
 
                     if check_for_new_blocks && scanner.is_verified() {
-                        continuous_sync_interval.reset();
                         check_for_new_blocks = false;
                         first_verification_complete = true;
                         continue 'continuous_sync;
@@ -793,7 +794,7 @@ where
             panic!("sync data must exist!");
         }
     };
-    // TODO: return an error if progress is not updated
+    // error is ignored as correct sync status data will be returned in the SyncResult return
     let _ignore_error = progress.send(Some(sync_status.clone()));
 
     drop(wallet_guard);
@@ -1550,9 +1551,10 @@ where
                 }
                 let mut map_nullifiers = !*nullifier_map_limit_exceeded;
 
-                // TODO: do we need to remove this now we scan compact blocks?
-                // all transparent spend locations are known before scanning so there is no need to map outpoints from untargetted ranges.
-                // outpoints of untargetted ranges will still be checked before being discarded.
+                // all transparent spend locations are known before scanning so there is no need to map outpoints from
+                // untargetted ranges. outpoints of untargetted ranges will still be checked before being discarded.
+                // outpoints from newly mined blocks will always have a priority of `Verify` or `ChainTip` which is
+                // higher priority than `FoundNote`.
                 let map_outpoints = scan_range.priority() >= ScanPriority::FoundNote;
 
                 // always map nullifiers if scanning the lowest range to be scanned for final spend detection.
