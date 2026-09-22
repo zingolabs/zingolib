@@ -2318,20 +2318,17 @@ pub fn remove_transaction(txid: String) -> Result<String, ZingolibError> {
     })
 }
 
-// we don't use this anymore...
-pub fn get_spendable_balance_with_address(
-    address: String,
-    zennies: String,
-) -> Result<String, ZingolibError> {
+/// The most the wallet can show as sendable to `address`. Display only:
+/// zingolib sizes it with a send-max proposal, whose amount an ordinary
+/// `send` request can still be refused for. A send of this amount travels
+/// through `send_all`, never through `send`.
+pub fn get_spendable_balance_with_address(address: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         let address = address_from_str(&address)
             .map_err(|_| ZingolibError::InvalidInput("unknown address format".to_string()))?;
-        let zennies = zennies.parse().map_err(|_| {
-            ZingolibError::InvalidInput("failed to parse zennies setting".to_string())
-        })?;
         RT.block_on(async move {
             let bal = lightclient
-                .max_send_value(address, zennies, AccountId::ZERO)
+                .max_send_value(address, AccountId::ZERO)
                 .await
                 .map_err(|e| ffi_error(SendError::from(e).into()))?;
             Ok(object! { "spendable_balance" => bal.into_u64() }.pretty(2))
@@ -2698,6 +2695,62 @@ pub fn send(send_json: String) -> Result<String, ZingolibError> {
             .pretty(2))
         })
     })
+}
+
+/// Proposes a transfer of the whole shielded spendable balance to
+/// `address`, for `confirm` to transmit. The propose phase of a MAX send:
+/// `send` cannot carry it, because the amount `get_spendable_balance_with_address`
+/// reports is sized by a send-max proposal that an ordinary send request can
+/// be refused for (zingolib's `max_send_value` is display-only).
+///
+/// Returns the same shape as `send`, plus `amount`: what the recipient
+/// actually receives, which the caller writes back into the amount field so
+/// the figure shown is the figure sent.
+pub fn send_all(address: String, memo: String) -> Result<String, ZingolibError> {
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let address = ZcashAddress::try_from_encoded(&address)
+                .map_err(|e| ZingolibError::InvalidInput(format!("invalid address: {e}")))?;
+            let memo = if memo.is_empty() {
+                None
+            } else {
+                Some(
+                    interpret_memo_string(memo)
+                        .map_err(|e| ZingolibError::InvalidInput(format!("invalid memo: {e}")))?,
+                )
+            };
+
+            let proposal = lightclient
+                .propose_send_all(address, memo, AccountId::ZERO)
+                .await
+                .map_err(|e| ffi_error(SendError::from(e).into()))?;
+            let fee = total_fee(&proposal).map_err(|e| ZingolibError::Send(e.to_string()))?;
+            let amount = proposal_recipient_amount(&proposal);
+            Ok(object! {
+                "amount" => amount.into_u64(),
+                "fee" => fee.into_u64(),
+                "source_pools" => proposal_source_pools(&proposal),
+                "destination_pools" => proposal_destination_pools(&proposal),
+            }
+            .pretty(2))
+        })
+    })
+}
+
+/// The value the send-all recipient receives. A send to a TEX address travels
+/// in two steps, and the recipient's payment rides the last one, so the
+/// lookup reads that step rather than the first.
+fn proposal_recipient_amount<FeeRuleT, NoteRef>(
+    proposal: &Proposal<FeeRuleT, NoteRef>,
+) -> Zatoshis {
+    proposal
+        .steps()
+        .last()
+        .transaction_request()
+        .payments()
+        .get(&0)
+        .and_then(|payment| payment.amount())
+        .unwrap_or(Zatoshis::ZERO)
 }
 
 pub fn shield() -> Result<String, ZingolibError> {
