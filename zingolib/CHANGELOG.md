@@ -13,11 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `mixnet::resolve_send_route` and `LightClient::send_route`, the route of a transmission under the transmit policy: clearnet at once under `Clearnet`, the mixnet-only outcome under `Mixnet`.
 
 ### Changed
+- `max_send_value` is for display only. To send the whole balance, call `propose_send_all` and then `send_stored_proposal`. A `propose_send` request for the reported amount can be refused by the input selector.
 - **Breaking:** `update_current_price` is mixnet-only again. `Indicator::SwitchedOff` refuses it as `MixnetNotReady::Unattached` and the transmit policy has no effect on it.
 - **Breaking:** transmissions and migration parts follow the transmit policy rather than `Indicator::SwitchedOff`. `consent_to_clearnet_for_tests` sets the policy instead of switching the transport off.
 - **Breaking:** `MixnetNotReady::Unattached` no longer offers switching off as a remedy in its message.
 
 ### Removed
+- **Breaking:** remove the `zennies_for_zingo` parameter from `LightClient::propose_send_all` and `LightClient::max_send_value`, since upstream send-max cannot carry a second payment.
 - **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
 - **Breaking:** remove `PriceFetchRoute::Clearnet` and `LightClientError::ProbeRequiresMixnet`, both unreachable once the price fetch and the probe are mixnet-only.
 
