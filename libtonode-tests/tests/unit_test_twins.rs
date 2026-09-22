@@ -889,8 +889,7 @@ TransactionSummary {
                         panic!()
                     }
                 }
-                ProposeSendError::TransactionRequestFailed(_)
-                | ProposeSendError::SendAllUnbalanced => panic!(),
+                ProposeSendError::TransactionRequestFailed(_) => panic!(),
             },
             _ => panic!(),
         }

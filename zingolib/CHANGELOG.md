@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `MixnetNotReady::Unattached` no longer offers switching off as a remedy in its message.
 
 ### Removed
+- **Breaking:** remove the `zennies_for_zingo` parameter from `LightClient::propose_send_all` and `LightClient::max_send_value`, since upstream send-max cannot carry a second payment.
 - **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
 - **Breaking:** remove `PriceFetchRoute::Clearnet` and `LightClientError::ProbeRequiresMixnet`, both unreachable once the price fetch and the probe are mixnet-only.
 

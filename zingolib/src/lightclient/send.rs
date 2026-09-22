@@ -1251,12 +1251,7 @@ mod built_transaction_shape {
     async fn build_one_send(wallet: LightWallet) -> (u32, u32, BranchId) {
         let mut client = LightClient::new_for_test(wallet).await;
         let proposal = client
-            .propose_send_all(
-                external_orchard_address(),
-                false,
-                None,
-                zip32::AccountId::ZERO,
-            )
+            .propose_send_all(external_orchard_address(), None, zip32::AccountId::ZERO)
             .await
             .unwrap();
         let txids = client

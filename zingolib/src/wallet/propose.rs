@@ -25,14 +25,11 @@ use super::{
     error::{ProposeSendError, ProposeShieldError, WalletError},
 };
 use crate::{
-    ZENNIES_FOR_ZINGO_AMOUNT,
     config::ChainType,
     data::{
         proposal::{ProportionalFeeProposal, ZingoProposal},
         receivers::{Receiver, transaction_request_from_receivers},
     },
-    get_zennies_for_zingo_address,
-    utils::conversion::address_from_str,
 };
 use pepper_sync::{
     keys::transparent::TransparentScope,
@@ -41,10 +38,10 @@ use pepper_sync::{
 
 /// How many times [`LightWallet::create_send_all_proposal`] proposes a
 /// send-all request, the first attempt included. Each retry can surface
-/// only one more fee step that the sizing pass left unpriced, and two
-/// such steps are known: the change output the send path always writes,
-/// and the zenny payment. The remaining attempt covers a selection that
-/// shifts once under the reduced amount.
+/// only one more fee step that the sizing pass left unpriced, and one
+/// such step is known: the change output the send path always writes.
+/// The remaining attempts cover a selection that shifts under the
+/// reduced amount.
 ///
 /// This may not be the best solution. The correct one would require a change upstream.
 const SEND_ALL_PROPOSAL_ATTEMPTS: u32 = 4;
@@ -106,9 +103,7 @@ impl LightWallet {
     }
 
     /// Creates a proposal that sends the whole shielded spendable balance,
-    /// less the fee, to `address`. With `zennies_for_zingo` set, a
-    /// [`ZENNIES_FOR_ZINGO_AMOUNT`] payment is added and the send-all
-    /// amount is reduced to cover it.
+    /// less the fee, to `address`.
     ///
     /// A send-max proposal over every spendable note sizes the send. The
     /// proposal returned comes from [`Self::create_send_proposal`], the
@@ -121,61 +116,22 @@ impl LightWallet {
     /// shortfall, the recipient amount drops by it, and the request goes
     /// out again, up to [`SEND_ALL_PROPOSAL_ATTEMPTS`] times.
     ///
-    /// If the amount never balances, the send-max proposal is returned, or
-    /// [`ProposeSendError::SendAllUnbalanced`] with `zennies_for_zingo` set.
+    /// If the amount never balances, the send-max proposal is returned.
     pub(crate) fn create_send_all_proposal(
         &mut self,
         address: ZcashAddress,
-        zennies_for_zingo: bool,
         memo: Option<MemoBytes>,
         account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let sizing = self.propose_send_max(address.clone(), memo.clone(), account_id)?;
-        let max_to_recipient = recipient_amount(&sizing);
-
-        let (mut amount, zenny_receiver) = if zennies_for_zingo {
-            let zenny_amount = Zatoshis::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("hard-coded");
-            let overflow = || {
-                ProposeSendError::Proposal(
-                    zcash_client_backend::data_api::error::Error::BalanceError(
-                        zcash_protocol::value::BalanceError::Overflow,
-                    ),
-                )
-            };
-            let sizing_fee = sizing
-                .steps()
-                .iter()
-                .map(|step| step.balance().fee_required())
-                .sum::<Option<Zatoshis>>()
-                .ok_or_else(overflow)?;
-            let input_total = (max_to_recipient + sizing_fee).ok_or_else(overflow)?;
-            let Some(recipient_amount) =
-                (max_to_recipient - zenny_amount).filter(|amount| *amount > Zatoshis::ZERO)
-            else {
-                let required = (zenny_amount + sizing_fee)
-                    .and_then(|value| value + Zatoshis::const_from_u64(1))
-                    .unwrap_or(Zatoshis::const_from_u64(zcash_protocol::value::MAX_MONEY));
-                return Err(ProposeSendError::Proposal(
-                    zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                        available: input_total,
-                        required,
-                    },
-                ));
-            };
-            let zenny_address = address_from_str(get_zennies_for_zingo_address(self.chain_type))
-                .expect("hard-coded address");
-            (
-                recipient_amount,
-                Some(Receiver::new(zenny_address, zenny_amount, None)),
-            )
-        } else {
-            (max_to_recipient, None)
-        };
+        let mut amount = recipient_amount(&sizing);
 
         let request = |amount: Zatoshis| {
-            let mut receivers = vec![Receiver::new(address.clone(), amount, memo.clone())];
-            receivers.extend(zenny_receiver.clone());
-            transaction_request_from_receivers(receivers)
+            transaction_request_from_receivers(vec![Receiver::new(
+                address.clone(),
+                amount,
+                memo.clone(),
+            )])
         };
 
         for _ in 0..SEND_ALL_PROPOSAL_ATTEMPTS {
@@ -195,10 +151,7 @@ impl LightWallet {
                 SendAllCorrection::Unbalanced => break,
             }
         }
-        match zenny_receiver {
-            None => Ok(sizing),
-            Some(_) => Err(ProposeSendError::SendAllUnbalanced),
-        }
+        Ok(sizing)
     }
 
     fn propose_send_max(
