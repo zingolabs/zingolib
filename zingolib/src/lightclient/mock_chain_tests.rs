@@ -1759,6 +1759,35 @@ mod strict_chain {
     }
 
     #[tokio::test]
+    async fn wait_for_sync_on_a_shared_reference_closes_the_status_channel() {
+        let mut net = MockNet::launch().await;
+        let mut client = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .await;
+        net.chain.write().await.mine_empty_blocks(2);
+
+        client.sync().await.unwrap();
+        let mut status = client.subscribe_sync_status();
+        let shared = &client;
+        shared.wait_for_sync().await;
+
+        assert!(
+            status.changed().await.is_ok(),
+            "the sync engine pushed a status update"
+        );
+        assert!(status.borrow_and_update().is_some());
+        assert!(
+            status.changed().await.is_err(),
+            "the watch channel closed when sync finished"
+        );
+        client.await_sync().await.unwrap();
+        assert_eq!(
+            client.sync_mode(),
+            pepper_sync::wallet::SyncMode::NotRunning
+        );
+    }
+
+    #[tokio::test]
     async fn sync_fails_while_the_indexer_is_unavailable() {
         let mut net = MockNet::launch().await;
         let mut client = net
