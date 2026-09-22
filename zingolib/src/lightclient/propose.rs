@@ -224,7 +224,8 @@ impl LightClient {
     /// Returns the maximum value that can be sent from `account_id` to
     /// `address`: the shielded spendable balance less the fee. A wallet
     /// that cannot cover the fee reports zero. A wallet that still needs
-    /// a scan returns the `ScanRequired` error.
+    /// a scan returns the `ScanRequired` error. To send that amount, use
+    /// [`Self::propose_send_all`] rather than a `propose_send` request.
     pub async fn max_send_value(
         &self,
         address: ZcashAddress,
