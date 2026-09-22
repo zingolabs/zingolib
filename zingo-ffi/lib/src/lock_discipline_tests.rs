@@ -218,16 +218,17 @@ fn spendable_balance_with_address_answers_beside_a_held_read_guard() {
     let _serial = serialized();
     init_offline_wallet();
     // A never-synced wallet knows no chain height, so zingolib refuses to
-    // size a send: the endpoint refuses beside the guard rather than
-    // queueing behind it.
-    let outcome = outcome_under_held_read_lock(|| {
+    // size a send. That is a wallet with nothing to send yet: the endpoint
+    // answers zero beside the guard.
+    let answer = answer_under_held_read_lock(|| {
         get_spendable_balance_with_address(
             get_developer_donation_address().expect("static address"),
         )
     });
-    assert!(
-        outcome.is_err(),
-        "the never-synced fixture wallet cannot size a send: {outcome:?}"
+    assert_eq!(
+        answer["spendable_balance"].as_u64(),
+        Some(0),
+        "the fixture wallet's max send value is zero: {answer}"
     );
 }
 

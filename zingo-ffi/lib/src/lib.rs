@@ -54,6 +54,7 @@ use zingolib::lightclient::migrate::SplitStep;
 use zingolib::netutils::{GrpcIndexer, Indexer};
 use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
 use zingolib::wallet::WalletSettings;
+use zingolib::wallet::error::ProposeSendError;
 use zingolib::wallet::keys::{
     WalletAddressRef,
     unified::{ReceiverSelection, UnifiedKeyStore},
@@ -2322,15 +2323,24 @@ pub fn remove_transaction(txid: String) -> Result<String, ZingolibError> {
 /// zingolib sizes it with a send-max proposal, whose amount an ordinary
 /// `send` request can still be refused for. A send of this amount travels
 /// through `send_all`, never through `send`.
+///
+/// A wallet whose sync has never run holds no scan range, so zingolib knows
+/// no chain height and refuses to size anything (`ScanRequired`). That is a
+/// wallet with nothing to send yet, not a failure: it reports zero, so the
+/// Send screen shows a zero rather than an error that stands there for as
+/// long as the server is down or the user stays offline.
 pub fn get_spendable_balance_with_address(address: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         let address = address_from_str(&address)
             .map_err(|_| ZingolibError::InvalidInput("unknown address format".to_string()))?;
         RT.block_on(async move {
-            let bal = lightclient
-                .max_send_value(address, AccountId::ZERO)
-                .await
-                .map_err(|e| ffi_error(SendError::from(e).into()))?;
+            let bal = match lightclient.max_send_value(address, AccountId::ZERO).await {
+                Ok(bal) => bal,
+                Err(ProposeSendError::Proposal(
+                    zcash_client_backend::data_api::error::Error::ScanRequired,
+                )) => Zatoshis::ZERO,
+                Err(e) => return Err(ffi_error(SendError::from(e).into())),
+            };
             Ok(object! { "spendable_balance" => bal.into_u64() }.pretty(2))
         })
     })
