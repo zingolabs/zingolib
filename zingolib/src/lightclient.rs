@@ -263,17 +263,14 @@ impl LightClient {
                     .map_err(LightClientError::FileError)?
             }
             _ => {
-                #[cfg(not(any(target_os = "ios", target_os = "android")))]
-                {
-                    if !overwrite && config.get_wallet_path().exists() {
-                        return Err(LightClientError::FileError(std::io::Error::new(
-                            std::io::ErrorKind::AlreadyExists,
-                            format!(
-                                "Cannot save to given data directory as a wallet file already exists at:\n{}",
-                                config.get_wallet_path().display()
-                            ),
-                        )));
-                    }
+                if !overwrite && config.get_wallet_path().exists() {
+                    return Err(LightClientError::FileError(std::io::Error::new(
+                        std::io::ErrorKind::AlreadyExists,
+                        format!(
+                            "Cannot save to given data directory as a wallet file already exists at:\n{}",
+                            config.get_wallet_path().display()
+                        ),
+                    )));
                 }
 
                 LightWallet::new(config.chain_type(), config.wallet_config())?
@@ -967,7 +964,7 @@ mod tests {
 
         assert!(matches!(
             lc_file_exists_error,
-            LightClientError::FileError(_)
+            LightClientError::FileError(ref e) if e.kind() == std::io::ErrorKind::AlreadyExists
         ));
 
         // The first transparent address and unified address should be derived
