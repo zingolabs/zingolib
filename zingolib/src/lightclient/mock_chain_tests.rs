@@ -141,7 +141,6 @@ async fn max_send_value_to_tex_empties_the_wallet() {
     let max_send_value = sender
         .max_send_value(
             ZcashAddress::try_from_encoded(&tex_address).unwrap(),
-            false,
             zip32::AccountId::ZERO,
         )
         .await
@@ -163,53 +162,6 @@ async fn max_send_value_to_tex_empties_the_wallet() {
     check_client_balances!(sender, i: 0 o: 0 s: 0 t: 0);
 }
 
-/// Tests that max_send_value() returns a non-zero value for a wallet and that it works with zennies.
-#[tokio::test]
-async fn max_send_value_to_tex_with_zennies_empties_the_wallet() {
-    let funding = 2 * crate::ZENNIES_FOR_ZINGO_AMOUNT;
-    let mut net = MockNet::launch().await;
-    let mut sender = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
-        .await;
-    let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&sender_ua, funding, None)], 1).await;
-    sender.sync_and_await().await.unwrap();
-    check_client_balances!(sender, i: funding o: 0 s: 0 t: 0);
-
-    let tex_address = external_tex_address();
-    let max_send_value = sender
-        .max_send_value(
-            ZcashAddress::try_from_encoded(&tex_address).unwrap(),
-            true,
-            zip32::AccountId::ZERO,
-        )
-        .await
-        .unwrap();
-    assert!(
-        max_send_value > Zatoshis::ZERO,
-        "a wallet funded past the zenny can send to a TEX address"
-    );
-
-    let zenny_address = crate::get_zennies_for_zingo_address(sender.chain_type());
-    from_inputs::quick_send(
-        &mut sender,
-        vec![
-            (&tex_address, max_send_value.into_u64(), None),
-            (zenny_address, crate::ZENNIES_FOR_ZINGO_AMOUNT, None),
-        ],
-    )
-    .await
-    .unwrap();
-    net.chain.write().await.mine_mempool();
-    sender.sync_and_await().await.unwrap();
-
-    check_client_balances!(sender, i: 0 o: 0 s: 0 t: 0);
-}
-
-/// Tests that max_send_value() to a shielded address, without zennies,
-/// spends the whole balance across the ironwood and sapling pools.
 #[tokio::test]
 async fn max_send_value_to_shielded_empties_the_wallet() {
     let ironwood_funding = 100_000;
@@ -238,7 +190,6 @@ async fn max_send_value_to_shielded_empties_the_wallet() {
     let max_send_value = sender
         .max_send_value(
             ZcashAddress::try_from_encoded(&recipient).unwrap(),
-            false,
             zip32::AccountId::ZERO,
         )
         .await
@@ -1885,6 +1836,35 @@ mod strict_chain {
         recipient.sync_and_await().await.unwrap();
         assert_eq!(net.chain.read().await.faults.pending(Rpc::BlockRange), 0);
         check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
+    }
+
+    #[tokio::test]
+    async fn wait_for_sync_on_a_shared_reference_closes_the_status_channel() {
+        let mut net = MockNet::launch().await;
+        let mut client = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        net.chain.write().await.mine_empty_blocks(2);
+
+        client.sync().await.unwrap();
+        let mut status = client.subscribe_sync_status();
+        let shared = &client;
+        shared.wait_for_sync().await;
+
+        assert!(
+            status.changed().await.is_ok(),
+            "the sync engine pushed a status update"
+        );
+        assert!(status.borrow_and_update().is_some());
+        assert!(
+            status.changed().await.is_err(),
+            "the watch channel closed when sync finished"
+        );
+        client.await_sync().await.unwrap();
+        assert_eq!(
+            client.sync_mode(),
+            pepper_sync::wallet::SyncMode::NotRunning
+        );
     }
 
     #[tokio::test]

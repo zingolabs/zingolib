@@ -150,6 +150,16 @@ impl LightClient {
         self.sync_progress.borrow().clone()
     }
 
+    /// Subscribes to the status updates the sync engine pushes during the Sync Session the
+    /// latest [`Self::sync`] launched.
+    ///
+    /// The receiver covers that one session. Subscribe again after each [`Self::sync`].
+    pub fn subscribe_sync_status(
+        &self,
+    ) -> tokio::sync::watch::Receiver<Option<pepper_sync::sync::SyncStatus>> {
+        self.sync_progress.clone()
+    }
+
     /// Returns the lightclient's sync mode in non-atomic (enum) form.
     pub fn sync_mode(&self) -> SyncMode {
         SyncMode::from_atomic_u8(self.sync_mode.clone())
@@ -211,6 +221,16 @@ impl LightClient {
                 .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
             PollReport::NoHandle
         }
+    }
+
+    /// Waits until the engine of the Sync Session the latest [`Self::sync`] launched has
+    /// returned, and resolves at once when no engine runs.
+    ///
+    /// The session's result remains with the client for [`Self::await_sync`], which collects
+    /// it and refreshes the migration part witnesses.
+    pub async fn wait_for_sync(&self) {
+        let mut status = self.subscribe_sync_status();
+        while status.changed().await.is_ok() {}
     }
 
     /// Awaits until sync has successfully completed or failed.
@@ -391,6 +411,7 @@ impl Drop for SyncPauseGuard {
 
 #[cfg(test)]
 mod tests {
+    use futures::FutureExt as _;
     use pepper_sync::wallet::SyncMode;
 
     use super::atomic;
@@ -460,6 +481,43 @@ mod tests {
             client.sync_mode(),
             SyncMode::Shutdown,
             "the drop must not overwrite a shutdown request"
+        );
+    }
+
+    #[tokio::test]
+    async fn wait_for_sync_resolves_at_once_without_an_engine() {
+        let client = offline_client(SyncMode::NotRunning).await;
+        assert!(
+            client.wait_for_sync().now_or_never().is_some(),
+            "no engine holds the status channel open"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_wait_and_the_subscription_end_with_the_engine() {
+        let mut client = offline_client(SyncMode::Running).await;
+        let (engine, status) = tokio::sync::watch::channel(None);
+        client.sync_progress = status;
+        let mut subscriber = client.subscribe_sync_status();
+
+        engine.send_replace(None);
+        assert!(
+            client.wait_for_sync().now_or_never().is_none(),
+            "a running engine holds the wait open"
+        );
+        assert!(
+            subscriber.changed().await.is_ok(),
+            "the push reaches the subscriber"
+        );
+
+        drop(engine);
+        assert!(
+            client.wait_for_sync().now_or_never().is_some(),
+            "the engine returning releases the wait"
+        );
+        assert!(
+            subscriber.changed().await.is_err(),
+            "the subscription closes with the session"
         );
     }
 }

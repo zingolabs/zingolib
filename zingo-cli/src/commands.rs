@@ -397,10 +397,9 @@ async fn max_send_value(
     args: &[String],
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    let (address, zennies_for_zingo) =
-        utils::parse_max_send_value_args(&as_strs(args)).map_err(|e| usage(name, e))?;
+    let address = utils::parse_max_send_value_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     match lightclient
-        .max_send_value(address, zennies_for_zingo, zip32::AccountId::ZERO)
+        .max_send_value(address, zip32::AccountId::ZERO)
         .await
     {
         Ok(bal) => Ok(object! { "max_send_value" => bal.into_u64() }.pretty(JSON_INDENT)),
@@ -658,10 +657,9 @@ async fn send_all(
     args: &[String],
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    let (address, zennies_for_zingo, memo) =
-        utils::parse_send_all_args(&as_strs(args)).map_err(|e| usage(name, e))?;
+    let (address, memo) = utils::parse_send_all_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     match lightclient
-        .propose_send_all(address, zennies_for_zingo, memo, zip32::AccountId::ZERO)
+        .propose_send_all(address, memo, zip32::AccountId::ZERO)
         .await
     {
         Ok(proposal) => {
@@ -2216,12 +2214,10 @@ pub(crate) enum CliCommand {
         long_about = indoc! {r"
             Print the most the wallet can send to an address: shielded spendable
             balance less the fee. Mid-sync this can trail the confirmed balance.
-            `zennies_for_zingo` also budgets 1_000_000 ZAT to the ZingoLabs developer
-            address.
         "},
         override_usage = concat!(
             "max_send_value <address>\n",
-            "       max_send_value { \"address\": \"<address>\", \"zennies_for_zingo\": <true|false> }",
+            "       max_send_value { \"address\": \"<address>\" }",
         )
     )]
     MaxSendValue { args: Vec<String> },
@@ -2500,8 +2496,7 @@ pub(crate) enum CliCommand {
         about = "Propose a transfer of all shielded ZEC to one address, for 'confirm' to transmit.",
         long_about = concat!(
             "Propose a transfer of every shielded ZEC to one address. Shows the fee,\n",
-            "then 'confirm' transmits it. `zennies_for_zingo` adds 1_000_000 ZAT to the\n",
-            "zingolabs developer address per transaction.\n",
+            "then 'confirm' transmits it.\n",
             "\n",
             "Skips transparent funds: shield those first, see `help shield`.\n",
             "\n",
@@ -2515,7 +2510,7 @@ pub(crate) enum CliCommand {
         ),
         override_usage = concat!(
             "send_all <address> \"<optional memo>\"\n",
-            "       send_all '{ \"address\": \"<address>\", \"memo\": \"<optional memo>\", \"zennies_for_zingo\": <true|false> }'",
+            "       send_all '{ \"address\": \"<address>\", \"memo\": \"<optional memo>\" }'",
         )
     )]
     SendAll { args: Vec<String> },
