@@ -23,7 +23,6 @@ use std::time::Duration;
 
 use json::object;
 use once_cell::sync::Lazy;
-use rustls::crypto::{CryptoProvider, ring::default_provider};
 
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
@@ -1529,15 +1528,6 @@ mod parse_and_stub_error_channel_tests {
             );
         }
     }
-
-    #[test]
-    fn crypto_provider_install_succeeds_and_is_idempotent() {
-        for attempt in 1..=2 {
-            let value = set_crypto_default_provider_to_ring()
-                .expect("installing the ring provider must succeed");
-            assert_eq!(value, "true", "attempt {attempt} must resolve plain data");
-        }
-    }
 }
 
 pub fn get_developer_donation_address() -> Result<String, ZingolibError> {
@@ -1546,18 +1536,6 @@ pub fn get_developer_donation_address() -> Result<String, ZingolibError> {
 
 pub fn get_zennies_for_zingo_donation_address() -> Result<String, ZingolibError> {
     with_panic_guard(|| Ok(zingolib::ZENNIES_FOR_ZINGO_DONATION_ADDRESS.to_string()))
-}
-
-pub fn set_crypto_default_provider_to_ring() -> Result<String, ZingolibError> {
-    with_panic_guard(|| match CryptoProvider::get_default() {
-        Some(_) => Ok("true".to_string()),
-        None => match default_provider().install_default() {
-            Ok(_) => Ok("true".to_string()),
-            Err(_) => Err(ZingolibError::Init(
-                "failed to install the ring crypto provider".to_string(),
-            )),
-        },
-    })
 }
 
 pub fn get_latest_block_server(server_uri: String) -> Result<String, ZingolibError> {
@@ -1959,7 +1937,6 @@ mod wallet_validation_tests {
     use super::*;
 
     fn saved_wallet(chain_hint: &str) -> Vec<u8> {
-        let _ = set_crypto_default_provider_to_ring();
         init_from_seed(
             "hospital museum valve antique skate museum \
              unfold vocal weird milk scale social vessel identify \

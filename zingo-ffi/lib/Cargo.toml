@@ -22,7 +22,6 @@ android_logger = { workspace = true }
 log = { workspace = true }
 uniffi = { workspace = true, features = ["cli"] }
 tokio = { workspace = true }
-rustls = { workspace = true }
 serde_json = { workspace = true }
 zip32 = { workspace = true }
 thiserror = { workspace = true }
