@@ -491,6 +491,9 @@ UniFFI, and the runtime-boundary generalization remains in force; only
 the shim's hosting repository changes. This workspace keeps the desktop
 `nym-proxy` binary and its `bundle-nym-proxy` workbench tool.
 
+This amendment is reversed by ADR 0052 (2026-09-23): the shim returns to
+`zingo-netutils/nym-proxy-ffi/` as part of the Binding Layer.
+
 ## Amendment (2026-08-26): the switched-off consent covers the price fetch
 
 The 2026-07-28 ruling above, that the switched-off consent covers

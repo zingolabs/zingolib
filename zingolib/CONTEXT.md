@@ -321,6 +321,12 @@
 
 **Reference Consumer** — A consumer whose charter is to prove zingolib's consumer surface sufficient, not to serve users: it holds no funds and makes no product promises, and its own code is confined to a typed one-to-one projection of the surface, a provisioning adapter, and a renderer — no wallet logic, no policy, no minted strings. It builds against the workspace at HEAD so that a surface change which breaks the consumer contract fails in the merging pull request's CI rather than weeks later in another repo, and it is for that reason the one consumer exempt from ADR 0024's rev-pinning rule, which disciplines external consumers. The first Reference Consumer is the planned `zingo-tauri` desktop app. Ratified 2026-08-03. See `docs/adr/0028-the-reference-consumer-lives-in-repo-in-an-excluded-sub-workspace.md`.
 
+**Binding Layer** — The foreign-language projection of zingolib's consumer surface: the UniFFI crate, the Swift and Kotlin bindings generated from it, thin idiomatic wrappers over those bindings, and the platform packaging that ships them. It knows no UI framework, so any mobile consumer (zingo-mobile, Edge) can link it unchanged. Ruled 2026-09-23, pending review. *Avoid*: FFI (ambiguous between the Rust crate alone and the whole layer), the mobile Rust.
+
+**RN Bridge** — A React Native app's native modules and app shell, which marshal calls between JavaScript and the Binding Layer and own nothing else. Each React Native consumer keeps its own RN Bridge in its own repository. Ruled 2026-09-23, pending review. *Avoid*: native modules (names the mechanism, not the role), FFI.
+
+**Prebuilt bundle** — A compiled native artifact of the Binding Layer, such as an Android `.so` set or an iOS XCFramework, that one repository builds and another consumes without rebuilding it. Ruled 2026-09-23, pending review. *Avoid*: bundle alone, and never "bundle" for grouping changes into one pull request.
+
 ---
 
 ## Testing
