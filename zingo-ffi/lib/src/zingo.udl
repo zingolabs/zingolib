@@ -97,7 +97,7 @@ namespace zingo {
   string get_value_transfers();
 
   [Throws=ZingolibError]
-  string set_crypto_default_provider_to_ring();
+  string ensure_crypto_default_provider();
 
   [Throws=ZingolibError]
   string poll_sync();
