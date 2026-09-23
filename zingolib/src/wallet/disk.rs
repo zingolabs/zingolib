@@ -156,7 +156,7 @@ impl LightWallet {
     /// 0015, docs/adr/0015-landing-in-dev-ships-the-wallet-file-format.md).
     #[must_use]
     pub const fn serialized_version() -> u64 {
-        42
+        44
     }
 
     /// Upper bound on the version word [`Self::read_recovery_info`] accepts:
@@ -257,7 +257,7 @@ impl LightWallet {
             ..32 => Self::read_v0(reader, chain_type, version),
             // 43 is a burned version number with the final 42 layout; see
             // the `serialized_version` docs and ADR 0015.
-            32..=43 => Self::read_v32(reader, chain_type, version),
+            32..=44 => Self::read_v32(reader, chain_type, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -497,8 +497,9 @@ impl LightWallet {
             save_required: false,
             wallet_settings: WalletSettings {
                 sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                    transparent_address_discovery: TransparentAddressDiscovery::default(),
                     performance_level: PerformanceLevel::High,
+                    shutdown_on_completion: false,
                 },
                 min_confirmations: NonZeroU32::try_from(3).unwrap(),
             },
@@ -723,8 +724,9 @@ impl LightWallet {
         } else {
             WalletSettings {
                 sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                    transparent_address_discovery: TransparentAddressDiscovery::default(),
                     performance_level: PerformanceLevel::High,
+                    shutdown_on_completion: false,
                 },
                 min_confirmations: NonZeroU32::try_from(3).unwrap(),
             }

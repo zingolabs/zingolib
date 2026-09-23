@@ -82,6 +82,7 @@ zcash_primitives = { version = "0.30.0", features = ["non-standard-fees"] }
 zcash_proofs = "0.30.0"
 zcash_protocol = "0.10.4" # public API (TODO: remove from public API)
 zcash_transparent = "0.10.0"
+zcash_script = "0.4.5"
 
 ### Blockchain Protocol
 bip0039 = { version = "0.14", features = ["rand"] }
