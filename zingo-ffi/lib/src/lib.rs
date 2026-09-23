@@ -1528,14 +1528,6 @@ mod parse_and_stub_error_channel_tests {
             );
         }
     }
-
-    #[test]
-    fn crypto_provider_install_succeeds_and_is_idempotent() {
-        for attempt in 1..=2 {
-            let value = ensure_crypto_default_provider().expect("the provider must be in place");
-            assert_eq!(value, "true", "attempt {attempt} must resolve plain data");
-        }
-    }
 }
 
 pub fn get_developer_donation_address() -> Result<String, ZingolibError> {
@@ -1544,22 +1536,6 @@ pub fn get_developer_donation_address() -> Result<String, ZingolibError> {
 
 pub fn get_zennies_for_zingo_donation_address() -> Result<String, ZingolibError> {
     with_panic_guard(|| Ok(zingolib::ZENNIES_FOR_ZINGO_DONATION_ADDRESS.to_string()))
-}
-
-/// Makes sure the process has a rustls provider before anything opens a TLS
-/// connection, which a background worker cannot take for granted: it runs
-/// with the App closed and nothing else has touched the library yet.
-///
-/// The install is zingolib's own. Installing one here instead would win the
-/// race sometimes and cost the post-quantum key exchange when it did:
-/// zingolib asks for aws-lc-rs with X25519MLKEM768, ML-KEM exists on no other
-/// provider, and rustls keeps whichever provider lands first. Guarded and
-/// idempotent, so calling it beside zingolib's own calls is free.
-pub fn ensure_crypto_default_provider() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        zingolib::ensure_default_crypto_provider();
-        Ok("true".to_string())
-    })
 }
 
 pub fn get_latest_block_server(server_uri: String) -> Result<String, ZingolibError> {
@@ -1961,7 +1937,6 @@ mod wallet_validation_tests {
     use super::*;
 
     fn saved_wallet(chain_hint: &str) -> Vec<u8> {
-        let _ = ensure_crypto_default_provider();
         init_from_seed(
             "hospital museum valve antique skate museum \
              unfold vocal weird milk scale social vessel identify \
