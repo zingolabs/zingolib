@@ -171,8 +171,7 @@ namespace zingo {
 
   [Throws=ZingolibError]
   string get_spendable_balance_with_address(
-    string address, 
-    string zennies
+    string address
   );
 
   [Throws=ZingolibError]
@@ -224,6 +223,12 @@ namespace zingo {
   [Throws=ZingolibError]
   string send(
     string send_json
+  );
+
+  [Throws=ZingolibError]
+  string send_all(
+    string address,
+    string memo
   );
 
   [Throws=ZingolibError]
