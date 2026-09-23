@@ -3664,38 +3664,3 @@ pub fn mixnet_bootstrap_detail() -> Result<String, ZingolibError> {
         }
     })
 }
-
-/// The transmit policy as the strings the app layer sends and reads.
-fn transmit_policy_string(policy: zingolib::mixnet::TransmitPolicy) -> &'static str {
-    match policy {
-        zingolib::mixnet::TransmitPolicy::Mixnet => "mixnet",
-        zingolib::mixnet::TransmitPolicy::Clearnet => "clearnet",
-    }
-}
-
-/// Sets where this session's transactions travel, `mixnet` or `clearnet`; the price fetch stays mixnet-only.
-pub fn set_transmit_policy(policy: String) -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let chosen = match policy.as_str() {
-            "mixnet" => zingolib::mixnet::TransmitPolicy::Mixnet,
-            "clearnet" => zingolib::mixnet::TransmitPolicy::Clearnet,
-            other => {
-                return Err(ZingolibError::Mixnet(format!(
-                    "unknown transmit policy: {other}"
-                )));
-            }
-        };
-        let guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &*guard {
-            lightclient.set_transmit_policy(chosen);
-            Ok(
-                object! { "transmit_policy" => transmit_policy_string(lightclient.transmit_policy()) }
-                    .pretty(2),
-            )
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
-    })
-}

@@ -302,9 +302,4 @@ namespace zingo {
 
   [Throws=ZingolibError]
   string mixnet_bootstrap_detail();
-
-  [Throws=ZingolibError]
-  string set_transmit_policy(
-    string policy
-  );
 };
