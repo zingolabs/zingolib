@@ -944,4 +944,137 @@ mod tests {
 
         assert!(check_tree_size(&compact_block, &wallet_block).is_ok());
     }
+
+    const GAP_LIMIT: u32 = 3;
+
+    fn transparent_test_ufvk() -> UnifiedFullViewingKey {
+        zcash_keys::keys::UnifiedSpendingKey::from_seed(
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &[7; 32],
+            AccountId::ZERO,
+        )
+        .expect("a 32 byte seed derives a spending key")
+        .to_unified_full_viewing_key()
+    }
+
+    fn external_address(
+        ufvk: &UnifiedFullViewingKey,
+        index: u32,
+    ) -> zcash_transparent::address::TransparentAddress {
+        use zcash_transparent::keys::IncomingViewingKey as _;
+
+        ufvk.transparent()
+            .expect("the test key has a transparent component")
+            .derive_external_ivk()
+            .unwrap()
+            .derive_address(
+                zcash_transparent::keys::NonHardenedChildIndex::from_index(index).unwrap(),
+            )
+            .unwrap()
+    }
+
+    /// The address map the scanner expects, keyed by encoded address, for the given external indexes.
+    fn external_addresses(
+        ufvk: &UnifiedFullViewingKey,
+        indexes: impl IntoIterator<Item = u32>,
+    ) -> HashMap<String, TransparentAddressId> {
+        indexes
+            .into_iter()
+            .map(|index| {
+                (
+                    keys::transparent::encode_address(
+                        &zcash_protocol::consensus::MAIN_NETWORK,
+                        external_address(ufvk, index),
+                    ),
+                    TransparentAddressId::new(
+                        AccountId::ZERO,
+                        TransparentScope::External,
+                        zcash_transparent::keys::NonHardenedChildIndex::from_index(index).unwrap(),
+                    ),
+                )
+            })
+            .collect()
+    }
+
+    /// A block with one transaction paying the external address at `index`.
+    fn block_funding_external_address(
+        ufvk: &UnifiedFullViewingKey,
+        height: u64,
+        index: u32,
+    ) -> CompactBlock {
+        let script = Script::from(external_address(ufvk, index).script());
+        let mut compact_block = block_with_served_ironwood_actions(0, 10);
+        compact_block.height = height;
+        compact_block.vtx[0].vout = vec![zingo_netutils::lightwallet_protocol::TxOut {
+            value: 100_000,
+            script_pub_key: script.0.0,
+        }];
+        compact_block
+    }
+
+    fn scan_block(
+        ufvk: &UnifiedFullViewingKey,
+        compact_block: CompactBlock,
+        inuse_addresses: &HashMap<String, TransparentAddressId>,
+        gap_addresses: &HashMap<String, TransparentAddressId>,
+    ) -> ScanData {
+        scan_compact_blocks(
+            vec![compact_block],
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &HashMap::from([(AccountId::ZERO, ufvk.clone())]),
+            initial_scan_data(10),
+            100,
+            inuse_addresses.clone(),
+            gap_addresses.clone(),
+            GAP_LIMIT,
+        )
+        .unwrap()
+    }
+
+    /// Funding a gap address moves it, and every gap address below it, to in-use, and derives new gap addresses
+    /// so the gap limit is kept past the highest address in use. The updated gap addresses are then used to scan
+    /// the next block, so an address just past the gap is not found and the last address in the gap is.
+    #[test]
+    fn gap_addresses_move_to_inuse_and_are_replaced() {
+        let ufvk = transparent_test_ufvk();
+        let mut inuse_addresses = external_addresses(&ufvk, [0]);
+        let mut gap_addresses = external_addresses(&ufvk, 1..=3);
+
+        // fund index 3 only: the unfunded 1 and 2 move to in-use with it
+        let block_a = block_funding_external_address(&ufvk, 100, 3);
+        let scan_data = scan_block(&ufvk, block_a, &inuse_addresses, &gap_addresses);
+        assert_eq!(
+            scan_data.new_transparent_inuse_addresses,
+            external_addresses(&ufvk, 1..=3)
+        );
+        assert_eq!(
+            scan_data.updated_transparent_gap_addresses,
+            external_addresses(&ufvk, 4..=6)
+        );
+        assert_eq!(scan_data.decrypted_scan_targets.len(), 1);
+        inuse_addresses.extend(scan_data.new_transparent_inuse_addresses);
+        gap_addresses = scan_data.updated_transparent_gap_addresses;
+
+        // fund index 7, one past the gap: nothing is found and the gap is unchanged
+        let block_b = block_funding_external_address(&ufvk, 101, 7);
+        let scan_data = scan_block(&ufvk, block_b, &inuse_addresses, &gap_addresses);
+        assert!(scan_data.new_transparent_inuse_addresses.is_empty());
+        assert_eq!(scan_data.updated_transparent_gap_addresses, gap_addresses);
+        assert!(scan_data.decrypted_scan_targets.is_empty());
+
+        // fund index 6, the last address in the gap: 4 to 6 move to in-use
+        let block_c = block_funding_external_address(&ufvk, 102, 6);
+        let scan_data = scan_block(&ufvk, block_c, &inuse_addresses, &gap_addresses);
+        assert_eq!(
+            scan_data.new_transparent_inuse_addresses,
+            external_addresses(&ufvk, 4..=6)
+        );
+        assert_eq!(
+            scan_data.updated_transparent_gap_addresses,
+            external_addresses(&ufvk, 7..=9)
+        );
+        assert_eq!(scan_data.decrypted_scan_targets.len(), 1);
+        inuse_addresses.extend(scan_data.new_transparent_inuse_addresses);
+        assert_eq!(inuse_addresses, external_addresses(&ufvk, 0..=6));
+    }
 }
