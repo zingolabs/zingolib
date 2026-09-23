@@ -42,6 +42,9 @@ where
     /// Sync mode error.
     #[error("sync mode error")]
     SyncModeError(#[from] SyncModeError),
+    /// Sync status error.
+    #[error("sync status error")]
+    SyncStatusError(#[from] SyncStatusError<E>),
     /// Chain error.
     #[error("wallet height {0} is more than {1} blocks ahead of best chain height {2}")]
     ChainError(u32, u32, u32),
@@ -218,6 +221,9 @@ where
     /// No sync data. Wallet has never been synced with the block chain.
     #[error("No sync data. Wallet has never been synced with the block chain.")]
     NoSyncData,
+    /// Sync progress channel is closed. Receiver has been dropped.
+    #[error("Sync progress channel is closed. Receiver has been dropped.")]
+    SyncProgressChannelClosed,
     /// Wallet error.
     #[error("wallet error. {0}")]
     WalletError(E),

@@ -662,7 +662,7 @@ where
         }
 
         // publish sync status prior to scanning
-        publish_sync_status(&*wallet.read().await, &progress).await;
+        publish_sync_status(&*wallet.read().await, &progress).await?;
 
         'scan: loop {
             tokio::select! {
@@ -792,6 +792,9 @@ where
         }
         Err(SyncStatusError::NoSyncData) => {
             panic!("sync data must exist!");
+        }
+        Err(SyncStatusError::SyncProgressChannelClosed) => {
+            panic!("unreachable. outside of the context of progress channel.");
         }
     };
     // error is ignored as correct sync status data will be returned in the SyncResult return
@@ -1110,19 +1113,26 @@ where
     })
 }
 
-/// Publishes the wallet's current sync status to the progress channel, ignoring an unreadable status and a closed channel.
-async fn publish_sync_status<W>(wallet: &W, progress: &watch::Sender<Option<SyncStatus>>)
+/// Publishes the wallet's current sync status to the progress channel.
+async fn publish_sync_status<W>(
+    wallet: &W,
+    progress: &watch::Sender<Option<SyncStatus>>,
+) -> Result<(), SyncStatusError<W::Error>>
 where
     W: SyncWallet + SyncBlocks,
 {
     match sync_status(wallet).await {
         Ok(status) => {
-            progress.send(Some(status)).unwrap();
+            progress
+                .send(Some(status))
+                .map_err(|_| SyncStatusError::SyncProgressChannelClosed)?;
         }
         Err(e) => {
-            panic!("{e}");
+            return Err(e);
         }
     }
+
+    Ok(())
 }
 
 /// Scans a pending `transaction` of a given `status`, adding to the wallet and updating output spend statuses.
