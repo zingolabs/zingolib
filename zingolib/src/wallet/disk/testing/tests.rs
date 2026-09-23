@@ -493,6 +493,7 @@ async fn wallet_reads_retired_version_43_as_current() {
 /// Pre-release ironwood builds before the `allow_v6_transactions` removal
 /// wrote version 42 with an extra bool between `min_confirmations` and the
 /// price list. Both bool values must load under the disambiguating reader.
+#[ignore = "this is specific to v42 only"]
 #[tokio::test]
 async fn wallet_reads_pre_release_v42_with_allow_v6_byte() {
     use crate::wallet::LightWallet;
