@@ -115,7 +115,8 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
             | SyncError::ShardTreeError(_)
             | SyncError::TruncationError(..)
             | SyncError::TransparentAddressDerivationError(_)
-            | SyncError::WalletError(_) => false,
+            | SyncError::WalletError(_)
+            | SyncError::SyncStatusError(_) => false,
         }
     }
 }
@@ -189,7 +190,8 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
             | SyncError::ShardTreeError(_)
             | SyncError::TruncationError(..)
             | SyncError::TransparentAddressDerivationError(_)
-            | SyncError::WalletError(_) => SyncRecoveryObservables::Abort,
+            | SyncError::WalletError(_)
+            | SyncError::SyncStatusError(_) => SyncRecoveryObservables::Abort,
         }
     }
 }
