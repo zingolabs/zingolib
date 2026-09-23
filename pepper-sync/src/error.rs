@@ -42,6 +42,9 @@ where
     /// Sync mode error.
     #[error("sync mode error")]
     SyncModeError(#[from] SyncModeError),
+    /// Sync status error.
+    #[error("sync status error")]
+    SyncStatusError(#[from] SyncStatusError<E>),
     /// Chain error.
     #[error("wallet height {0} is more than {1} blocks ahead of best chain height {2}")]
     ChainError(u32, u32, u32),
@@ -112,7 +115,8 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
             | SyncError::ShardTreeError(_)
             | SyncError::TruncationError(..)
             | SyncError::TransparentAddressDerivationError(_)
-            | SyncError::WalletError(_) => false,
+            | SyncError::WalletError(_)
+            | SyncError::SyncStatusError(_) => false,
         }
     }
 }
@@ -186,7 +190,8 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
             | SyncError::ShardTreeError(_)
             | SyncError::TruncationError(..)
             | SyncError::TransparentAddressDerivationError(_)
-            | SyncError::WalletError(_) => SyncRecoveryObservables::Abort,
+            | SyncError::WalletError(_)
+            | SyncError::SyncStatusError(_) => SyncRecoveryObservables::Abort,
         }
     }
 }
@@ -218,6 +223,9 @@ where
     /// No sync data. Wallet has never been synced with the block chain.
     #[error("No sync data. Wallet has never been synced with the block chain.")]
     NoSyncData,
+    /// Sync progress channel is closed. Receiver has been dropped.
+    #[error("Sync progress channel is closed. Receiver has been dropped.")]
+    SyncProgressChannelClosed,
     /// Wallet error.
     #[error("wallet error. {0}")]
     WalletError(E),
@@ -245,7 +253,7 @@ pub enum ScanError {
     /// Continuity error.
     #[error("continuity error")]
     ContinuityError(#[from] ContinuityError),
-    /// Zcash client backend scan error
+    /// Invalid encoding.
     #[error(transparent)]
     EncodingError(#[from] EncodingInvalid),
     /// Invalid sapling nullifier
@@ -298,6 +306,17 @@ pub enum ScanError {
     /// Failed to parse encoded address.
     #[error("failed to parse encoded address")]
     AddressParseError(#[from] zcash_address::unified::ParseError),
+    /// Compact transaction contained transparent output with value outside the valid zatoshi range.
+    #[error(
+        "compact transaction contained transparent output with value {0} which is outside the valid zatoshi range"
+    )]
+    TransparentOutputInvalidValue(u64),
+    /// All transparent addresses are already in use.
+    #[error("all transparent addresses are already in use")]
+    AllAddressesInUse,
+    /// Transparent address derivation error.
+    #[error("transparent address derivation error. {0}")]
+    TransparentAddressDerivationError(bip32::Error),
 }
 
 /// The encoding of a compact Sapling output or compact Orchard action was invalid.
