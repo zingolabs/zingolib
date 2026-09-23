@@ -365,7 +365,8 @@ an activation-heights override. The parameters precondition dissolved:
 the sapling proving parameters are embedded in the zingolib crate.
 
 - Gap 2: `send_all::send_all_with_zfz_injects_the_zennies_payment`
-  (zingolib/src/lightclient/propose.rs).
+  (zingolib/src/lightclient/propose.rs), since removed with the
+  `zennies_for_zingo` option.
 - Gap 1a: closing balance pinned on
   `multi_input_sapling_send_with_orchard_change_no_panic` (o: 0,
   s: 10_000; observed green solo, 72.6s).
