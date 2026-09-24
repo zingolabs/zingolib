@@ -11,16 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `mixnet::TransmitPolicy` (`Mixnet`, `Clearnet`), the per-session send route choice, with `LightClient::transmit_policy` and `set_transmit_policy`. Every session starts under `Mixnet`; `MixnetStartPolicy::OptedOutThisSession` sets `Clearnet`, and `enable_mixnet`, `enable_mixnet_via_host`, and `attach_mixnet` set `Mixnet` before the transport exists, so sends refuse during the bootstrap. A failed enable restores the policy the session had before.
 - Add `mixnet::resolve_mixnet_only_route` and `LightClient::mixnet_only_route`, the route of the price fetch and the liveness probe: the conduit while `Ready`, a typed refusal otherwise.
 - Add `mixnet::resolve_send_route` and `LightClient::send_route`, the route of a transmission under the transmit policy: clearnet at once under `Clearnet`, the mixnet-only outcome under `Mixnet`.
+- Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
 
 ### Changed
 - `max_send_value` is for display only. To send the whole balance, call `propose_send_all` and then `send_stored_proposal`. A `propose_send` request for the reported amount can be refused by the input selector.
 - **Breaking:** `update_current_price` is mixnet-only again. `Indicator::SwitchedOff` refuses it as `MixnetNotReady::Unattached` and the transmit policy has no effect on it.
 - **Breaking:** transmissions and migration parts follow the transmit policy rather than `Indicator::SwitchedOff`. `consent_to_clearnet_for_tests` sets the policy instead of switching the transport off.
 - **Breaking:** `MixnetNotReady::Unattached` no longer offers switching off as a remedy in its message.
+- Default wallet settings (`ClientConfigBuilder::default` and wallets read from files without stored settings) use `TransparentAddressDiscovery::default()` instead of `minimal()`, and set `shutdown_on_completion` to `false`, so sync runs continuously by default.
+- Wallet file serialized version bumped to 44; the stored `SyncConfig` now includes `shutdown_on_completion`. Versions up to 44 are read.
+- **Breaking:** `testutils::mock_indexer::MockNet::client` takes an `Option<WalletSettings>`; `None` uses `default_test_wallet_settings`, which now sets `shutdown_on_completion` to `true`.
 
 ### Removed
 - **Breaking:** remove the `zennies_for_zingo` parameter from `LightClient::propose_send_all` and `LightClient::max_send_value`, since upstream send-max cannot carry a second payment.
 - **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
+- **Breaking:** remove the `sync::sync_status` re-export of `pepper_sync::sync_status`. Use `LightClient::latest_sync_status` or `pepper_sync::sync_status` directly.
 - **Breaking:** remove `PriceFetchRoute::Clearnet` and `LightClientError::ProbeRequiresMixnet`, both unreachable once the price fetch and the probe are mixnet-only.
 
 ## [6.0.0] - 2026-09-07
