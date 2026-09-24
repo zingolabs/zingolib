@@ -8,12 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add `LightClient::sync_to_tip_and_await`, which syncs to the chain tip and returns whatever the stored `shutdown_on_completion` setting is. The override applies to that sync only and the stored sync config is not modified.
 - Add `mixnet::TransmitPolicy` (`Mixnet`, `Clearnet`), the per-session send route choice, with `LightClient::transmit_policy` and `set_transmit_policy`. Every session starts under `Mixnet`; `MixnetStartPolicy::OptedOutThisSession` sets `Clearnet`, and `enable_mixnet`, `enable_mixnet_via_host`, and `attach_mixnet` set `Mixnet` before the transport exists, so sends refuse during the bootstrap. A failed enable restores the policy the session had before.
 - Add `mixnet::resolve_mixnet_only_route` and `LightClient::mixnet_only_route`, the route of the price fetch and the liveness probe: the conduit while `Ready`, a typed refusal otherwise.
 - Add `mixnet::resolve_send_route` and `LightClient::send_route`, the route of a transmission under the transmit policy: clearnet at once under `Clearnet`, the mixnet-only outcome under `Mixnet`.
 - Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
 
 ### Changed
+- `migrate_to_ironwood` and `migrate_immediately` sync with `sync_to_tip_and_await`, so they return when the wallet is configured for continuous sync. Sync must not already be running when they are called: stop any background sync and await its shutdown first, or they fail with `SyncModeError::SyncAlreadyRunning`.
 - `max_send_value` is for display only. To send the whole balance, call `propose_send_all` and then `send_stored_proposal`. A `propose_send` request for the reported amount can be refused by the input selector.
 - **Breaking:** `update_current_price` is mixnet-only again. `Indicator::SwitchedOff` refuses it as `MixnetNotReady::Unattached` and the transmit policy has no effect on it.
 - **Breaking:** transmissions and migration parts follow the transmit policy rather than `Indicator::SwitchedOff`. `consent_to_clearnet_for_tests` sets the policy instead of switching the transport off.

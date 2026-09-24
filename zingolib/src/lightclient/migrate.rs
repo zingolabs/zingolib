@@ -1671,7 +1671,9 @@ impl LightClient {
     /// of every unsent transaction spendable. Calling it again re-plans and
     /// sends the remainder.
     ///
-    /// Syncs the wallet before migrating. Consumers that own the sync
+    /// Syncs the wallet to the chain tip before migrating, via
+    /// [`Self::sync_to_tip_and_await`], whatever the wallet's
+    /// `shutdown_on_completion` setting. Consumers that own the sync
     /// lifecycle and keep a background sync running should call
     /// [`Self::quick_immediate_migration`] instead, which migrates
     /// against current wallet state without launching its own sync.
@@ -1686,7 +1688,7 @@ impl LightClient {
             return Err(MigrationError::AlreadyInProgress.into());
         }
 
-        self.sync_and_await().await?;
+        self.sync_to_tip_and_await().await?;
         let sync = self.pause_sync_scoped()?;
         self.migrate_immediately_presynced(account, &sync).await
     }
@@ -1695,7 +1697,7 @@ impl LightClient {
     /// *current* state, without syncing first.
     ///
     /// This is [`Self::migrate_immediately`] minus the leading
-    /// `sync_and_await`, for consumers that own the sync lifecycle and keep a
+    /// `sync_to_tip_and_await`, for consumers that own the sync lifecycle and keep a
     /// background sync running continuously (e.g. zingo-mobile). Calling the
     /// syncing variant from such a consumer collides with the running sync
     /// and fails with [`pepper_sync::error::SyncModeError::SyncAlreadyRunning`].
@@ -2024,6 +2026,13 @@ impl LightClient {
     /// Replans from wallet state before every round, so a migration
     /// interrupted by external spends, expiry or restart picks up where the
     /// notes actually are.
+    ///
+    /// Syncs to the chain tip before each round and while awaiting
+    /// confirmations, via [`Self::sync_to_tip_and_await`], so it returns even
+    /// when the wallet is configured for continuous sync
+    /// (`shutdown_on_completion == false`). Sync must not already be running:
+    /// stop any background sync and await its shutdown before calling, or this
+    /// fails with [`pepper_sync::error::SyncModeError::SyncAlreadyRunning`].
     pub async fn migrate_to_ironwood(
         &mut self,
         account: zip32::AccountId,
@@ -2040,7 +2049,7 @@ impl LightClient {
         let mut part_txids = Vec::new();
 
         for _ in 0..MAX_ROUNDS {
-            self.sync_and_await().await?;
+            self.sync_to_tip_and_await().await?;
             // Plan and (when the plan is split) bind under one write guard,
             // the same single-borrow bracket as `start_ironwood_migration`:
             // the notes hashed into the recorded consent are the notes
@@ -2216,7 +2225,7 @@ impl LightClient {
         txids: &[TxId],
     ) -> Result<(), LightClientError> {
         for _ in 0..MAX_CONFIRMATION_POLLS {
-            self.sync_and_await().await?;
+            self.sync_to_tip_and_await().await?;
             let (all_confirmed, failed) = {
                 let wallet = self.wallet().read().await;
                 let statuses: Vec<_> = txids

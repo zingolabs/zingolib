@@ -1742,7 +1742,7 @@ async fn run_migration(
         }
         MigrationSubCommand::Continue => {
             lightclient
-                .sync_and_await()
+                .sync_to_tip_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
             match lightclient.continue_note_splitting().await? {
@@ -1771,7 +1771,7 @@ async fn run_migration(
         }
         MigrationSubCommand::Execute { spacing } => {
             lightclient
-                .sync_and_await()
+                .sync_to_tip_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
             let report = lightclient.execute_due_parts(spacing).await?;
@@ -1800,7 +1800,7 @@ async fn run_migration(
         }
         MigrationSubCommand::Auto => {
             lightclient
-                .sync_and_await()
+                .sync_to_tip_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
             let txids = lightclient.auto_transmit_if_due().await?;
