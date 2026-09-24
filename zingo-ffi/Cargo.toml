@@ -20,7 +20,6 @@ zingolib = { git = "https://github.com/zingolabs/zingolib", rev = "b5936610", fe
 ] }
 pepper-sync = { git = "https://github.com/zingolabs/zingolib", rev = "b5936610" }
 zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "b5936610" }
-regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
 zcash_address = "0.13.0"
