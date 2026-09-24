@@ -139,7 +139,10 @@ Todo → `ready-for-human`, Canceled → `wontfix`) plus two **labels**
 
 ### Domain docs
 
-**Single-context**: one `CONTEXT.md` + `docs/adr/` at the repo root. See
+**Single-context**: one `CONTEXT.md` at the repo root. Decision records live
+in [zingolabs/zingo-adrs](https://github.com/zingolabs/zingo-adrs), which this
+repository holds as a submodule at `docs/adr/`; zingolib's records sit under
+`docs/adr/zingolib/`. Propose a record in zingo-adrs, never here. See
 `docs/agents/domain.md`.
 
 ### Pending designs
