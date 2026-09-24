@@ -6,6 +6,7 @@ use std::sync::atomic;
 use std::time::Duration;
 
 use futures::FutureExt;
+use pepper_sync::config::SyncConfig;
 use pepper_sync::error::{SyncError, SyncModeError, SyncRecoveryObservables};
 use pepper_sync::wallet::SyncMode;
 use tokio::time::MissedTickBehavior;
@@ -32,6 +33,19 @@ impl LightClient {
     /// `sync_handle` field.
     // TODO: add realtime sync updates to zingo-cli when it can handle printing during user input
     pub async fn sync(&mut self) -> Result<(), LightClientError> {
+        let sync_config = self
+            .wallet()
+            .read()
+            .await
+            .wallet_settings
+            .sync_config
+            .clone();
+        self.sync_with_config(sync_config).await
+    }
+
+    /// Launches sync as [`Self::sync`] does, with `sync_config` in place of the wallet's
+    /// stored sync config. The stored config is not modified.
+    async fn sync_with_config(&mut self, sync_config: SyncConfig) -> Result<(), LightClientError> {
         if self.sync_mode() != SyncMode::NotRunning {
             return Err(LightClientError::SyncModeError(
                 SyncModeError::SyncAlreadyRunning,
@@ -40,13 +54,6 @@ impl LightClient {
 
         let client = self.require_indexer()?.clone();
         let chain_type = self.chain_type();
-        let sync_config = self
-            .wallet()
-            .read()
-            .await
-            .wallet_settings
-            .sync_config
-            .clone();
         let wallet = self.wallet().clone();
         let sync_mode = self.sync_mode.clone();
         let (progress_sender, progress_receiver) = tokio::sync::watch::channel(None);
@@ -265,6 +272,32 @@ impl LightClient {
     /// Calls [`crate::lightclient::LightClient::sync`] and then [`crate::lightclient::LightClient::await_sync`].
     pub async fn sync_and_await(&mut self) -> Result<SyncResult, LightClientError> {
         self.sync().await?;
+        self.await_sync().await
+    }
+
+    /// Syncs to the chain tip and awaits completion, regardless of the wallet's stored
+    /// `shutdown_on_completion` setting.
+    ///
+    /// For callers that need sync to return, such as the migration flows, when the wallet may
+    /// be configured for continuous sync. `shutdown_on_completion` is overridden for this sync
+    /// session only; the stored sync config is not modified.
+    ///
+    /// A running or paused sync is stopped and awaited first, and its result is discarded.
+    /// The stopped sync is not relaunched: a consumer that keeps sync running relaunches it
+    /// with [`Self::sync`] when this returns.
+    pub async fn sync_to_tip_and_await(&mut self) -> Result<SyncResult, LightClientError> {
+        if self.stop_sync().is_ok() {
+            let _stopped_session_result = self.await_sync().await;
+        }
+        let mut sync_config = self
+            .wallet()
+            .read()
+            .await
+            .wallet_settings
+            .sync_config
+            .clone();
+        sync_config.shutdown_on_completion = true;
+        self.sync_with_config(sync_config).await?;
         self.await_sync().await
     }
 
