@@ -2,13 +2,35 @@
 enum ZingolibError {
     "LightclientNotInitialized",
     "LightclientLockPoisoned",
-    "Panic"
+    "Panic",
+    "Save",
+    "Init",
+    "Sync",
+    "Rescan",
+    "Read",
+    "Send",
+    "Shield",
+    "InvalidInput",
+    "Wallet",
+    "Indexer",
+    "Offline",
+    "SideChannelPoisoned",
+    "MigrationNotInProgress",
+    "MigrationAlreadyInProgress",
+    "MigrationConsentStale",
+    "MigrationCadenceFixed",
+    "MigrationSplit",
+    "Migration",
+    "Mixnet"
 };
 
 namespace zingo {
 
   [Throws=ZingolibError]
   string init_logging();
+
+  [Throws=ZingolibError]
+  string set_broadcast_candidates(string candidates_json);
 
   [Throws=ZingolibError]
   string init_new(
@@ -40,8 +62,8 @@ namespace zingo {
   );
 
   [Throws=ZingolibError]
-  string init_from_b64(
-      string datab64,
+  string init_from_bytes(
+      bytes wallet_bytes,
       string serveruri,
       string chainhint,
       string performancelevel,
@@ -49,7 +71,13 @@ namespace zingo {
   );
 
   [Throws=ZingolibError]
-  string save_to_b64();
+  bytes? save_wallet_bytes();
+
+  [Throws=ZingolibError]
+  string read_wallet_recovery_info(bytes wallet_bytes);
+
+  [Throws=ZingolibError]
+  void validate_wallet_bytes(bytes wallet_bytes);
 
   [Throws=ZingolibError]
   string get_latest_block_server(
@@ -67,9 +95,6 @@ namespace zingo {
 
   [Throws=ZingolibError]
   string get_value_transfers();
-
-  [Throws=ZingolibError]
-  string set_crypto_default_provider_to_ring();
 
   [Throws=ZingolibError]
   string poll_sync();
@@ -143,8 +168,7 @@ namespace zingo {
 
   [Throws=ZingolibError]
   string get_spendable_balance_with_address(
-    string address, 
-    string zennies
+    string address
   );
 
   [Throws=ZingolibError]
@@ -169,9 +193,6 @@ namespace zingo {
 
   [Throws=ZingolibError]
   string create_new_transparent_address();
-
-  [Throws=ZingolibError]
-  string reserve_ephemeral_address();
 
   [Throws=ZingolibError]
   string check_my_address(
@@ -202,8 +223,83 @@ namespace zingo {
   );
 
   [Throws=ZingolibError]
+  string send_all(
+    string address,
+    string memo
+  );
+
+  [Throws=ZingolibError]
   string shield();
 
   [Throws=ZingolibError]
   string confirm();
+
+  [Throws=ZingolibError]
+  string plan_orchard_drain();
+
+  [Throws=ZingolibError]
+  string drain_orchard_to_ironwood();
+
+  [Throws=ZingolibError]
+  string drain_status();
+
+  [Throws=ZingolibError]
+  string plan_ironwood_migration();
+
+  [Throws=ZingolibError]
+  string start_ironwood_migration(
+    string plan_hash_hex,
+    u32? per_bucket
+  );
+
+  [Throws=ZingolibError]
+  string continue_note_splitting();
+
+  [Throws=ZingolibError]
+  string quick_split();
+
+  [Throws=ZingolibError]
+  string split_status();
+
+  [Throws=ZingolibError]
+  string reschedule_parts(
+    u32 per_bucket
+  );
+
+  [Throws=ZingolibError]
+  string migration_status();
+
+  [Throws=ZingolibError]
+  string window_timeline();
+
+  [Throws=ZingolibError]
+  string reconcile_migration();
+
+  [Throws=ZingolibError]
+  string execute_due_parts(
+    u64 spacing_ms
+  );
+
+  [Throws=ZingolibError]
+  string execute_due_parts_status();
+
+  [Throws=ZingolibError]
+  string cancel_ironwood_migration();
+
+  [Throws=ZingolibError]
+  string attach_mixnet(
+    string socks5_addr,
+    string exit_node
+  );
+
+  [Throws=ZingolibError]
+  string enable_mixnet(
+    string proxy_path
+  );
+
+  [Throws=ZingolibError]
+  string mixnet_indicator();
+
+  [Throws=ZingolibError]
+  string mixnet_bootstrap_detail();
 };
