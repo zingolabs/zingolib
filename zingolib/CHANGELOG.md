@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `MixnetNotReady::Unattached` no longer offers switching off as a remedy in its message.
 - Default wallet settings (`ClientConfigBuilder::default` and wallets read from files without stored settings) use `TransparentAddressDiscovery::default()` instead of `minimal()`, and set `shutdown_on_completion` to `false`, so sync runs continuously by default.
 - Wallet file serialized version bumped to 44; the stored `SyncConfig` now includes `shutdown_on_completion`. Versions up to 44 are read.
+- zingolib sets `shutdown_on_completion` to `false` by default. Wallet files from earlier versions, which lack the `shutdown_on_completion` byte, read it as `false`, so existing wallets also sync continuously. Consumers must set the sync config accordingly before each call to sync. Otherwise, awaiting a sync that is expected to return at the chain tip will wait indefinitely.
 - **Breaking:** `testutils::mock_indexer::MockNet::client` takes an `Option<WalletSettings>`; `None` uses `default_test_wallet_settings`, which now sets `shutdown_on_completion` to `true`.
 
 ### Removed
