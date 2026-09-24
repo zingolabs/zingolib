@@ -1,5 +1,5 @@
-//! The Nym mixnet proxy as a UniFFI component for mobile (ADR 0011 mobile
-//! amendment, CP-3).
+//! The Nym mixnet proxy as a UniFFI component for mobile (zingolib/0011
+//! mobile amendment, CP-3).
 //!
 //! iOS cannot spawn the `nym-proxy` child process the desktop model relies on,
 //! and nym-sdk cannot link into the wallet's compile unit (the crypto-common

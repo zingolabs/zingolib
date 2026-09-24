@@ -349,7 +349,7 @@ lazy_static! {
 
 // An optional dedicated migration-transmission endpoint, read at every client
 // construction. The library owns the curated Destination pool and always
-// excludes the synchronization operator (ADR 0022), so a mixnet migration works
+// excludes the synchronization operator (zingolib/0022), so a mixnet migration works
 // without any app input. `Some` names one dedicated endpoint distinct from the
 // sync operator; `None` (the default) lets the library draw its curated pool.
 static MIGRATION_TRANSMISSION_URI: Lazy<RwLock<Option<http::Uri>>> =
@@ -529,7 +529,7 @@ struct ConnectionParams {
     chain_type: ChainType,
     wallet_settings: WalletSettings,
     /// `None` in Offline mode: no Indexer is ever configured and the client
-    /// stays Indexerless (zingolib ADR 0001). `Some(uri)` when a real server
+    /// stays Indexerless (zingolib/0001). `Some(uri)` when a real server
     /// was selected.
     lightwalletd_uri: Option<http::Uri>,
 }
@@ -560,7 +560,7 @@ fn build_connection_params(
     };
 
     // Offline Mode = empty uri → no Indexer is ever configured; the client
-    // stays Indexerless (zingolib ADR 0001), and `require_indexer()` gates
+    // stays Indexerless (zingolib/0001), and `require_indexer()` gates
     // sync/send with `Offline`. A real server yields `Some(uri)`.
     let lightwalletd_uri = if uri.is_empty() {
         None
@@ -703,7 +703,7 @@ pub fn init_new(
             // (Indexerless): there is no server to query, so fall back to
             // zingolib's Library Birthday — a per-chain height already mined
             // when the linked zingolib release was cut, hence always a safe
-            // floor for a newly-generated seed (see zingolib ADR 0007). A
+            // floor for a newly-generated seed (see zingolib/0007). A
             // caller-supplied `birthday > 0` still wins as an explicit
             // override. Mirrors zingo-cli's offline new-wallet path.
             let chain_height = match &params.lightwalletd_uri {
@@ -3089,7 +3089,7 @@ pub fn continue_note_splitting() -> Result<String, ZingolibError> {
 
 /// Executes one round of Phase 1 note splitting as a send-shaped call — the
 /// mobile entry point for the private path's splitting, the counterpart to
-/// `quick_immediate_migration` for the immediate path (ADR 0016). Unlike the old
+/// `quick_immediate_migration` for the immediate path (zingolib/0016). Unlike the old
 /// `start_ironwood_migration` + `continue_note_splitting` driver it persists no
 /// migration state: it pauses sync internally, plans against current confirmed
 /// notes, builds and transmits one round, then restores sync before it returns
