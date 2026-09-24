@@ -1214,9 +1214,37 @@ async fn sync_to_tip_and_await_returns_under_continuous_sync() {
     );
 }
 
-/// `migrate_to_ironwood` syncs before each round. Under continuous sync that
-/// sync must still return, or the migration never reaches its round. The
-/// setup mirrors `failed_split_round_transmit_strands_calculated_transactions`:
+/// `sync_to_tip_and_await` stops a running continuous sync, then syncs to
+/// the chain tip and returns.
+#[tokio::test]
+async fn sync_to_tip_and_await_stops_running_continuous_sync() {
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(10);
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    client.sync().await.expect("continuous sync launches");
+
+    tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        client.sync_to_tip_and_await(),
+    )
+    .await
+    .expect("sync returns at the chain tip")
+    .expect("sync succeeds");
+
+    assert_eq!(
+        client.sync_mode(),
+        pepper_sync::wallet::SyncMode::NotRunning
+    );
+}
+
+/// `migrate_to_ironwood` syncs before each round. Under continuous sync, with
+/// a sync already running, that sync must still return, or the
+/// migration never reaches its round. The setup mirrors `failed_split_round_transmit_strands_calculated_transactions`:
 /// the first split transaction's transmit fails deterministically, so reaching
 /// that failure proves the round's sync returned.
 #[tokio::test]
@@ -1259,6 +1287,7 @@ async fn migrate_to_ironwood_returns_under_continuous_sync() {
         chain.lose_next_send_response = Some(LostSendDestination::DownloadQueue);
         chain.queued_rejections_before_promotion = u8::MAX;
     }
+    client.sync().await.expect("continuous sync launches");
 
     tokio::time::timeout(
         std::time::Duration::from_secs(120),

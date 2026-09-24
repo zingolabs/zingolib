@@ -282,8 +282,13 @@ impl LightClient {
     /// be configured for continuous sync. `shutdown_on_completion` is overridden for this sync
     /// session only; the stored sync config is not modified.
     ///
-    /// Returns [`SyncModeError::SyncAlreadyRunning`] if sync is already running.
+    /// A running or paused sync is stopped and awaited first, and its result is discarded.
+    /// The stopped sync is not relaunched: a consumer that keeps sync running relaunches it
+    /// with [`Self::sync`] when this returns.
     pub async fn sync_to_tip_and_await(&mut self) -> Result<SyncResult, LightClientError> {
+        if self.stop_sync().is_ok() {
+            let _stopped_session_result = self.await_sync().await;
+        }
         let mut sync_config = self
             .wallet()
             .read()

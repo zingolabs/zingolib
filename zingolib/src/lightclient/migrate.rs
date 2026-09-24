@@ -1673,8 +1673,9 @@ impl LightClient {
     ///
     /// Syncs the wallet to the chain tip before migrating, via
     /// [`Self::sync_to_tip_and_await`], whatever the wallet's
-    /// `shutdown_on_completion` setting. Consumers that own the sync
-    /// lifecycle and keep a background sync running should call
+    /// `shutdown_on_completion` setting. A running sync is stopped first and
+    /// is not relaunched. Consumers that own the sync lifecycle and keep sync
+    /// running should call
     /// [`Self::quick_immediate_migration`] instead, which migrates
     /// against current wallet state without launching its own sync.
     pub async fn migrate_immediately(
@@ -1697,10 +1698,9 @@ impl LightClient {
     /// *current* state, without syncing first.
     ///
     /// This is [`Self::migrate_immediately`] minus the leading
-    /// `sync_to_tip_and_await`, for consumers that own the sync lifecycle and keep a
-    /// background sync running continuously (e.g. zingo-mobile). Calling the
-    /// syncing variant from such a consumer collides with the running sync
-    /// and fails with [`pepper_sync::error::SyncModeError::SyncAlreadyRunning`].
+    /// `sync_to_tip_and_await`, for consumers that own the sync lifecycle and keep
+    /// sync running continuously (e.g. zingo-mobile). The syncing
+    /// variant stops such a consumer's running sync and leaves it stopped.
     /// This entry point lets the caller drive sync itself.
     ///
     /// The caller is responsible for keeping the wallet synced before
@@ -1775,8 +1775,8 @@ impl LightClient {
     ///
     /// This is the send-family entry point for the immediate migration, and
     /// the only immediate-migration entry point that crosses the UniFFI boundary:
-    /// [`Self::migrate_immediately`] self-syncs and so collides with a
-    /// consumer's continuous background sync, and the internal
+    /// [`Self::migrate_immediately`] self-syncs and so stops a consumer's
+    /// continuous sync, and the internal
     /// `migrate_immediately_presynced` takes a
     /// [`SyncPauseGuard`] that cannot cross FFI. The caller keeps the wallet
     /// synced, exactly as it must before any send.
@@ -2030,9 +2030,9 @@ impl LightClient {
     /// Syncs to the chain tip before each round and while awaiting
     /// confirmations, via [`Self::sync_to_tip_and_await`], so it returns even
     /// when the wallet is configured for continuous sync
-    /// (`shutdown_on_completion == false`). Sync must not already be running:
-    /// stop any background sync and await its shutdown before calling, or this
-    /// fails with [`pepper_sync::error::SyncModeError::SyncAlreadyRunning`].
+    /// (`shutdown_on_completion == false`). A running sync is
+    /// stopped first and is not relaunched; the caller relaunches it with
+    /// [`Self::sync`] when this returns.
     pub async fn migrate_to_ironwood(
         &mut self,
         account: zip32::AccountId,
