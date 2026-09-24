@@ -3560,17 +3560,18 @@ pub fn cancel_ironwood_migration() -> Result<String, ZingolibError> {
 /// The Mixnet Mode indicator as the strings the app layer shows.
 fn mixnet_indicator_string(indicator: zingolib::mixnet::Indicator) -> &'static str {
     match indicator {
-        zingolib::mixnet::Indicator::SwitchedOff => "off",
         zingolib::mixnet::Indicator::Bootstrapping => "bootstrapping",
         // A Standing Client born on an EpochProven observation routes exactly
         // as Ready, so the app must not hold its surfaces shut waiting for a
         // round trip the library already treats as unnecessary.
         zingolib::mixnet::Indicator::Ready
         | zingolib::mixnet::Indicator::PreviouslyProvenThisEpoch => "ready",
-        // A never-attached transport (spawn/attach failed) is not consent to
+        // A never-attached or switched-off transport is not consent to
         // clearnet; report it as `died` so the app fails closed and reconnects
         // rather than opening the mixnet-only surfaces.
-        zingolib::mixnet::Indicator::Died | zingolib::mixnet::Indicator::Unattached => "died",
+        zingolib::mixnet::Indicator::Died
+        | zingolib::mixnet::Indicator::Unattached
+        | zingolib::mixnet::Indicator::SwitchedOff => "died",
     }
 }
 
@@ -3627,7 +3628,7 @@ pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
     })
 }
 
-/// The current Mixnet Mode indicator: `off`, `bootstrapping`, `ready` (with the local
+/// The current Mixnet Mode indicator: `bootstrapping`, `ready` (with the local
 /// SOCKS5 address), or `died` (unconsented proxy loss; sends refuse — run
 /// [`attach_mixnet`] or [`enable_mixnet`] to recover).
 pub fn mixnet_indicator() -> Result<String, ZingolibError> {
