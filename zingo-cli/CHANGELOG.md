@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation a second time to decide where log output goes.
 
 ### Changed
+- `migrate`, `migration continue`, `migration execute` and `migration auto` sync to the chain tip and return when the wallet is configured for continuous sync. A sync already running before the command is stopped for it and relaunched after it.
+- Sync runs continuously: without `--waitsync`, the sync engine stays
+  running after reaching the chain tip and scans newly mined blocks as they
+  arrive. With `--waitsync`, sync shuts down once the wallet is up to date.
+- New wallets use the default transparent address discovery (with gap
+  limit) instead of the minimal discovery.
 - `current_price` works while Mixnet Mode is switched off, fetching over
   clearnet as the toggle-off consents to (ADR 0011, amendment
   2026-08-26), and its output names the route the fetch traveled.

@@ -148,8 +148,11 @@ impl LightWallet {
     ///
     /// Version 43 is burned: builds between the two revisions of 42 wrote
     /// it with the final version 42 layout, so it is accepted at read as 42
-    /// and must never be assigned to a new layout. The next format bump is
-    /// 44.
+    /// and must never be assigned to a new layout.
+    ///
+    /// Changes in version 44:
+    /// `SyncConfig` serialized version 2, which appends the
+    /// `shutdown_on_completion` bool.
     ///
     /// Landing in dev ships a format: every layout that has landed in dev
     /// must remain readable, and the wallet writable, forever after (ADR

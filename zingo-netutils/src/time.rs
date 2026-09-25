@@ -163,6 +163,19 @@ mod tests {
 /// patience for a single gRPC call on the send and query paths.
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Bound on establishing a connection to an indexer: TCP, TLS and the HTTP/2
+/// handshake together.
+///
+/// A request's own deadline (`Request::set_timeout`, which tonic enforces on
+/// the client) only starts once the channel has a connection to send it on.
+/// Without this bound, a channel that has to reconnect over a path that has
+/// gone silent — a dropped network, a machine that slept, a NAT that forgot
+/// the mapping — waits for that connection forever, and so does every request
+/// queued behind it, none of them reaching the point where their deadline
+/// would fire. Nothing fails, so nothing reports: a sync in that state stays
+/// "running" with no progress and no error until the process is restarted.
+pub const INDEXER_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Bound on waiting for the next message on a gRPC stream, so a stalled
 /// server ends the wait as a typed timeout rather than hanging the consumer.
 /// Shared by pepper-sync's client and scanner, which formerly each carried

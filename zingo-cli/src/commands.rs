@@ -425,14 +425,41 @@ async fn messages(
 }
 
 async fn migrate(lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(run_migrate(lightclient).await?)
+    let sync_was_running = lightclient.sync_mode() != SyncMode::NotRunning;
+    let result = run_migrate(lightclient).await;
+    if sync_was_running {
+        relaunch_sync(lightclient).await;
+    }
+    Ok(result?)
 }
 
 async fn migration(
     sub: MigrationSubCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    Ok(run_migration(sub, lightclient).await?)
+    let sync_was_running = matches!(
+        sub,
+        MigrationSubCommand::Continue
+            | MigrationSubCommand::Execute { .. }
+            | MigrationSubCommand::Auto
+    ) && lightclient.sync_mode() != SyncMode::NotRunning;
+    let result = run_migration(sub, lightclient).await;
+    if sync_was_running {
+        relaunch_sync(lightclient).await;
+    }
+    Ok(result?)
+}
+
+/// Relaunches the sync that a migration command's sync to the chain tip
+/// stopped.
+async fn relaunch_sync(lightclient: &mut LightClient) {
+    match lightclient.sync().await {
+        Ok(())
+        | Err(zingolib::lightclient::error::LightClientError::SyncModeError(
+            pepper_sync::error::SyncModeError::SyncAlreadyRunning,
+        )) => (),
+        Err(e) => eprintln!("Error: failed to relaunch sync. {}", render_error_chain(&e)),
+    }
 }
 
 /// The `new_address` argument: `o`, `z`, or both, naming the receivers the
@@ -1742,7 +1769,7 @@ async fn run_migration(
         }
         MigrationSubCommand::Continue => {
             lightclient
-                .sync_and_await()
+                .sync_to_tip_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
             match lightclient.continue_note_splitting().await? {
@@ -1771,7 +1798,7 @@ async fn run_migration(
         }
         MigrationSubCommand::Execute { spacing } => {
             lightclient
-                .sync_and_await()
+                .sync_to_tip_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
             let report = lightclient.execute_due_parts(spacing).await?;
@@ -1800,7 +1827,7 @@ async fn run_migration(
         }
         MigrationSubCommand::Auto => {
             lightclient
-                .sync_and_await()
+                .sync_to_tip_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
             let txids = lightclient.auto_transmit_if_due().await?;
