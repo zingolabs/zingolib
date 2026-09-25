@@ -2,7 +2,7 @@
 name = "zingo-nym-proxy-ffi"
 version = "0.1.0"
 edition = "2024"
-description = "UniFFI shim hosting the Nym mixnet SOCKS5 proxy for mobile (ADR 0011, CP-3)."
+description = "UniFFI shim hosting the Nym mixnet SOCKS5 proxy for mobile (zingolib/0011, CP-3)."
 
 # The mobile host loads this as a dynamic library (cdylib for the loaded
 # framework) or links it statically (staticlib for the iOS XCFramework slices).
@@ -51,7 +51,7 @@ members = []
 # own stanza never reaches this workspace and the nym stack would otherwise
 # resolve the real `rustls-platform-verifier`. On Android that verifier
 # rejects `validator.nymtech.net` for carrying no OCSP responder, and the
-# mixnet never starts. This restates zingolib ADR 0021 here: verification is
+# mixnet never starts. This restates zingolib/0021 here: verification is
 # the compiled-in Mozilla bundle, identically on every platform.
 [patch.crates-io]
 rustls-platform-verifier = { git = "https://github.com/zingolabs/zingolib", rev = "ec4547c8" }
