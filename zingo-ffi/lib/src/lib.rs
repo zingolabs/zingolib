@@ -3683,31 +3683,27 @@ fn mixnet_indicator_string(indicator: zingolib::mixnet::Indicator) -> &'static s
     }
 }
 
+/// The wallet's current Mixnet Mode indicator as the JSON reply of a transport act.
+fn mixnet_indicator_json(lightclient: &LightClient) -> String {
+    object! { "mixnet_indicator" => mixnet_indicator_string(lightclient.read_mixnet_indicator()) }
+        .pretty(2)
+}
+
 /// Attach Mixnet Mode to an already-running, platform-hosted SOCKS5 endpoint
 /// (the UniFFI proxy shim's address) that bound `exit_node`. Readiness is
 /// validated by a data round trip; poll [`mixnet_indicator`] for
 /// `bootstrapping` -> `ready`, or `died`.
 pub fn attach_mixnet(socks5_addr: String, exit_node: String) -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
+    with_initialized_lightclient(|lightclient| {
         let exit = zingolib::mixnet::ExitNodeId::parse(&exit_node)
             .map_err(|_| ZingolibError::Mixnet("the shim reported no exit node".to_string()))?;
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            RT.block_on(async move {
-                lightclient
-                    .attach_mixnet(&socks5_addr, &[exit])
-                    .await
-                    .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
-                Ok(
-                    object! { "mixnet_indicator" => mixnet_indicator_string(lightclient.read_mixnet_indicator()) }
-                        .pretty(2),
-                )
-            })
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+        RT.block_on(async move {
+            lightclient
+                .attach_mixnet(&socks5_addr, &[exit])
+                .await
+                .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
+            Ok(mixnet_indicator_json(lightclient))
+        })
     })
 }
 
@@ -3715,24 +3711,14 @@ pub fn attach_mixnet(socks5_addr: String, exit_node: String) -> Result<String, Z
 /// `proxy_path` (the exec fallback; Android-attached and iOS builds use
 /// [`attach_mixnet`] instead).
 pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            RT.block_on(async move {
-                lightclient
-                    .enable_mixnet(std::path::Path::new(&proxy_path))
-                    .await
-                    .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
-                Ok(
-                    object! { "mixnet_indicator" => mixnet_indicator_string(lightclient.read_mixnet_indicator()) }
-                        .pretty(2),
-                )
-            })
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            lightclient
+                .enable_mixnet(std::path::Path::new(&proxy_path))
+                .await
+                .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
+            Ok(mixnet_indicator_json(lightclient))
+        })
     })
 }
 
@@ -3786,21 +3772,11 @@ mod mixnet_indicator_wire_tests {
 /// A transport act only (the transmit policy is untouched), so the
 /// mixnet-only surfaces keep refusing afterwards.
 pub fn disable_mixnet() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            RT.block_on(async move {
-                lightclient.disable_mixnet().await;
-                Ok(
-                    object! { "mixnet_indicator" => mixnet_indicator_string(lightclient.read_mixnet_indicator()) }
-                        .pretty(2),
-                )
-            })
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            lightclient.disable_mixnet().await;
+            Ok(mixnet_indicator_json(lightclient))
+        })
     })
 }
 
