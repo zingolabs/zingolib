@@ -51,6 +51,7 @@ pub(super) fn scan_compact_blocks<P>(
     transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
     mut transparent_gap_addresses: HashMap<String, TransparentAddressId>,
     transparent_gap_limit: u32,
+    transparent_scan_floor: BlockHeight,
 ) -> Result<ScanData, ScanError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -211,20 +212,33 @@ where
         wallet_blocks.insert(wallet_block.block_height(), wallet_block);
     }
 
-    // retry transparent compact block scanning until the gap limit has been satisfied
+    // transparent address discovery has already located all relevant transactions at or below the transparent scan
+    // floor so only the transparent data of blocks above the floor is scanned.
+    // compact blocks are in height order, verified by the continuity check.
+    let transparent_scan_blocks = &compact_blocks[compact_blocks
+        .partition_point(|block| block::get_compact_height(block) <= transparent_scan_floor)..];
+
+    // collect the transparent inputs for spend detection
     let mut outpoints = BTreeMap::new();
+    for block in transparent_scan_blocks {
+        let block_height = block::get_compact_height(block);
+        for transaction in &block.vtx {
+            collect_outpoints_compact(&mut outpoints, block_height, transaction);
+        }
+    }
+
+    // retry transparent compact block scanning until the gap limit has been satisfied
     let mut new_transparent_inuse_addresses = HashMap::new();
     'gap: loop {
         let mut gap_addresses_in_use = BTreeSet::new();
 
-        for block in &compact_blocks {
+        for block in transparent_scan_blocks {
             let block_height = block::get_compact_height(block);
 
             for transaction in &block.vtx {
                 let txid = transaction::get_compact_txid(transaction);
 
-                // check transparent outputs against inuse and gap addresses and add outpoints to map
-                // TODO: only enable for blocks above the initial chain height when sync session started
+                // check transparent outputs against inuse and gap addresses
                 for output in transaction.vout.iter() {
                     let output = zcash_transparent::bundle::TxOut::new(
                         Zatoshis::from_u64(output.value)
@@ -257,7 +271,6 @@ where
                         }
                     }
                 }
-                collect_outpoints_compact(&mut outpoints, block_height, transaction);
             }
         }
 
@@ -703,6 +716,7 @@ fn set_checkpoint_retentions<L>(
 
 #[cfg(test)]
 mod tests {
+    use zcash_primitives::transaction::TxId;
     use zingo_netutils::lightwallet_protocol::{ChainMetadata, CompactTx};
 
     use super::*;
@@ -825,6 +839,7 @@ mod tests {
             HashMap::new(),
             HashMap::new(),
             10,
+            BlockHeight::from_u32(0),
         )
         .unwrap();
 
@@ -853,6 +868,7 @@ mod tests {
             HashMap::new(),
             HashMap::new(),
             10,
+            BlockHeight::from_u32(0),
         );
 
         assert!(matches!(
@@ -1018,6 +1034,22 @@ mod tests {
         inuse_addresses: &HashMap<String, TransparentAddressId>,
         gap_addresses: &HashMap<String, TransparentAddressId>,
     ) -> ScanData {
+        scan_block_above_floor(
+            ufvk,
+            compact_block,
+            inuse_addresses,
+            gap_addresses,
+            BlockHeight::from_u32(0),
+        )
+    }
+
+    fn scan_block_above_floor(
+        ufvk: &UnifiedFullViewingKey,
+        compact_block: CompactBlock,
+        inuse_addresses: &HashMap<String, TransparentAddressId>,
+        gap_addresses: &HashMap<String, TransparentAddressId>,
+        transparent_scan_floor: BlockHeight,
+    ) -> ScanData {
         scan_compact_blocks(
             vec![compact_block],
             &zcash_protocol::consensus::MAIN_NETWORK,
@@ -1027,6 +1059,7 @@ mod tests {
             inuse_addresses.clone(),
             gap_addresses.clone(),
             GAP_LIMIT,
+            transparent_scan_floor,
         )
         .unwrap()
     }
@@ -1076,5 +1109,89 @@ mod tests {
         assert_eq!(scan_data.decrypted_scan_targets.len(), 1);
         inuse_addresses.extend(scan_data.new_transparent_inuse_addresses);
         assert_eq!(inuse_addresses, external_addresses(&ufvk, 0..=6));
+    }
+
+    /// Only the transparent inputs of blocks above the transparent scan floor are collected, as transparent address
+    /// discovery has already located all relevant transactions at or below the floor.
+    #[test]
+    fn outpoints_only_collected_above_transparent_scan_floor() {
+        fn block_spending_outpoint(height: u64, hash: u8, prevout_txid: [u8; 32]) -> CompactBlock {
+            let mut compact_block = block_with_served_ironwood_actions(0, 10);
+            compact_block.height = height;
+            compact_block.hash = vec![hash; 32];
+            compact_block.prev_hash = vec![hash - 1; 32];
+            compact_block.vtx[0].txid = vec![hash + 10; 32];
+            compact_block.vtx[0].vin = vec![zingo_netutils::lightwallet_protocol::CompactTxIn {
+                prevout_txid: prevout_txid.to_vec(),
+                prevout_index: 0,
+            }];
+            compact_block
+        }
+
+        let scan_data = scan_compact_blocks(
+            vec![
+                block_spending_outpoint(100, 1, [20; 32]),
+                block_spending_outpoint(101, 2, [21; 32]),
+            ],
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &HashMap::new(),
+            initial_scan_data(10),
+            100,
+            HashMap::new(),
+            HashMap::new(),
+            GAP_LIMIT,
+            BlockHeight::from_u32(100),
+        )
+        .unwrap();
+
+        assert_eq!(
+            scan_data.outpoints.into_iter().collect::<Vec<_>>(),
+            vec![(
+                OutputId::new(TxId::from_bytes([21; 32]), 0),
+                ScanTarget {
+                    block_height: BlockHeight::from_u32(101),
+                    txid: TxId::from_bytes([12; 32]),
+                    narrow_scan_area: true,
+                },
+            )]
+        );
+    }
+
+    /// Transparent outputs of blocks at or below the transparent scan floor are not checked against the in-use and
+    /// gap addresses, as transparent address discovery has already located all relevant transactions at or below the
+    /// floor. The same blocks are scanned above the floor to show the outputs would otherwise be found.
+    #[test]
+    fn transparent_outputs_only_scanned_above_transparent_scan_floor() {
+        let ufvk = transparent_test_ufvk();
+        let inuse_addresses = external_addresses(&ufvk, [0]);
+        let gap_addresses = external_addresses(&ufvk, 1..=3);
+
+        for (index, expected_new_inuse_addresses) in
+            [(0, HashMap::new()), (2, external_addresses(&ufvk, 1..=2))]
+        {
+            let scan_data = scan_block_above_floor(
+                &ufvk,
+                block_funding_external_address(&ufvk, 100, index),
+                &inuse_addresses,
+                &gap_addresses,
+                BlockHeight::from_u32(100),
+            );
+            assert!(scan_data.decrypted_scan_targets.is_empty());
+            assert!(scan_data.new_transparent_inuse_addresses.is_empty());
+            assert_eq!(scan_data.updated_transparent_gap_addresses, gap_addresses);
+
+            let scan_data = scan_block_above_floor(
+                &ufvk,
+                block_funding_external_address(&ufvk, 100, index),
+                &inuse_addresses,
+                &gap_addresses,
+                BlockHeight::from_u32(99),
+            );
+            assert_eq!(scan_data.decrypted_scan_targets.len(), 1);
+            assert_eq!(
+                scan_data.new_transparent_inuse_addresses,
+                expected_new_inuse_addresses
+            );
+        }
     }
 }
