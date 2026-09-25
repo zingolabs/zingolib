@@ -10,8 +10,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- Continuous sync (ADR 0051). BREAKING: `config::SyncConfig` gains a
+  `shutdown_on_completion` field. When `false`, `sync` keeps running once the
+  wallet reaches the chain tip, checking for newly mined blocks (on mempool
+  stream closure and every ten seconds) and scanning them, until the consumer
+  sets `SyncMode::Shutdown`. When `true`, sync shuts down and returns once the
+  wallet is fully up to date, while still picking up blocks mined during the
+  session. Both paths now share a single shutdown sequence.
+- `SyncConfig` serialization version bumped to 2 to persist
+  `shutdown_on_completion`; version 1 configs read it as `false`.
+- Transparent outputs and spends in newly mined blocks are detected from
+  compact block transparent data, matched against the wallet's in-use and gap
+  addresses, rather than re-running the transparent address RPCs. Historical
+  sync still uses the RPCs for address discovery. A gap address found in use
+  is moved to the in-use set and the gap is replenished.
+- BREAKING: `error::SyncError::SyncStatusError` variant, returned when
+  publishing sync progress fails.
+- BREAKING: `error::SyncStatusError::SyncProgressChannelClosed` variant,
+  returned when the sync progress receiver has been dropped.
+- BREAKING: `error::ScanError` variants `TransparentOutputInvalidValue`,
+  `AllAddressesInUse`, and `TransparentAddressDerivationError`.
 
 ### Changed
+- `wallet::traits::SyncWallet::get_transparent_addresses` and
+  `get_transparent_addresses_mut` document that the returned addresses must be
+  in use and must not include gap addresses.
+- `sync::SyncResult` `Display` output is headed "Sync result" instead of
+  "Sync completed succesfully", since sync may now return on explicit shutdown.
 - BREAKING: the truncation rescan announces itself. `error::SyncError::PoolHistoryReopened`
   is now a struct variant carrying the pool, the rescan height, the
   disagreeing block, and both tree sizes, and it renders one

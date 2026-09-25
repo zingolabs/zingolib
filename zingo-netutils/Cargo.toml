@@ -48,7 +48,11 @@ reqwest = { workspace = true, optional = true, default-features = false, feature
     "rustls-tls-webpki-roots-no-provider",
     "socks",
 ] }
-hyper-util = { version = "0.1.20", optional = true }
+# A direct dependency, not only through `socks5-transmit`: GrpcIndexer builds
+# its own HTTP connector so the connect timeout covers the TLS handshake (see
+# `indexer_connector`). tonic already depends on it with these features, so
+# nothing new enters the lockfile.
+hyper-util = { version = "0.1.20", features = ["client-legacy", "tokio"] }
 tower = { version = "0.5", optional = true }
 tokio = { workspace = true, optional = true, features = [
     "time",
@@ -75,7 +79,6 @@ testutils = []
 # SOCKS5 port.
 socks5-transmit = [
     "dep:tokio-socks",
-    "dep:hyper-util",
     "dep:tower",
     "dep:tokio",
     # Transmit failures render their cause chains over the one sanctioned

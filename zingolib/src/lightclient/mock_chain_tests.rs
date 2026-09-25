@@ -1170,6 +1170,144 @@ async fn failed_split_round_transmit_strands_calculated_transactions() {
     );
 }
 
+/// Wallet settings for continuous sync: `shutdown_on_completion` unset.
+fn continuous_sync_wallet_settings() -> crate::wallet::WalletSettings {
+    let mut settings = crate::testutils::default_test_wallet_settings();
+    settings.sync_config.shutdown_on_completion = false;
+    settings
+}
+
+/// `sync_to_tip_and_await` returns at the chain tip when the wallet is
+/// configured for continuous sync, and leaves the stored setting unchanged.
+#[tokio::test]
+async fn sync_to_tip_and_await_returns_under_continuous_sync() {
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(10);
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+
+    tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        client.sync_to_tip_and_await(),
+    )
+    .await
+    .expect("sync returns at the chain tip")
+    .expect("sync succeeds");
+
+    assert_eq!(
+        client.sync_mode(),
+        pepper_sync::wallet::SyncMode::NotRunning
+    );
+    assert!(
+        !client
+            .wallet()
+            .read()
+            .await
+            .wallet_settings
+            .sync_config
+            .shutdown_on_completion,
+        "the stored sync config must not be modified"
+    );
+}
+
+/// `sync_to_tip_and_await` stops a running continuous sync, then syncs to
+/// the chain tip and returns.
+#[tokio::test]
+async fn sync_to_tip_and_await_stops_running_continuous_sync() {
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(10);
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    client.sync().await.expect("continuous sync launches");
+
+    tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        client.sync_to_tip_and_await(),
+    )
+    .await
+    .expect("sync returns at the chain tip")
+    .expect("sync succeeds");
+
+    assert_eq!(
+        client.sync_mode(),
+        pepper_sync::wallet::SyncMode::NotRunning
+    );
+}
+
+/// `migrate_to_ironwood` syncs before each round. Under continuous sync, with
+/// a sync already running, that sync must still return, or the
+/// migration never reaches its round. The setup mirrors `failed_split_round_transmit_strands_calculated_transactions`:
+/// the first split transaction's transmit fails deterministically, so reaching
+/// that failure proves the round's sync returned.
+#[tokio::test]
+async fn migrate_to_ironwood_returns_under_continuous_sync() {
+    use zip32::AccountId;
+
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use crate::testutils::mock_indexer::LostSendDestination;
+    use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
+
+    const NOTES: u32 = 17;
+    const NOTE_VALUE: u64 = 120_000;
+    const TIP: u32 = 41;
+
+    let mut net = MockNet::launch().await;
+    {
+        let mut chain = net.chain.write().await;
+        chain.rules.anchors = false;
+        chain.mine_empty_blocks(TIP);
+    }
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    client.set_transmit_retry_interval(std::time::Duration::ZERO);
+    client
+        .sync_to_tip_and_await()
+        .await
+        .expect("initial sync succeeds");
+    {
+        let wallet_lock = client.wallet().clone();
+        let mut wallet = wallet_lock.write().await;
+        inject_confirmed_orchard_notes(&mut wallet, NOTES, NOTE_VALUE, TIP);
+    }
+    {
+        let mut chain = net.chain.write().await;
+        chain.lose_next_send_response = Some(LostSendDestination::DownloadQueue);
+        chain.queued_rejections_before_promotion = u8::MAX;
+    }
+    client.sync().await.expect("continuous sync launches");
+
+    tokio::time::timeout(
+        std::time::Duration::from_secs(120),
+        client.migrate_to_ironwood(AccountId::ZERO),
+    )
+    .await
+    .expect("migrate_to_ironwood returns under continuous sync")
+    .expect_err("the first split transaction's transmit fails");
+
+    let wallet = client.wallet().read().await;
+    assert!(
+        wallet
+            .wallet_transactions
+            .values()
+            .any(|tx| matches!(tx.status(), ConfirmationStatus::Failed(_))),
+        "the round reached its transmit stage, so its sync returned"
+    );
+    assert!(!wallet.wallet_settings.sync_config.shutdown_on_completion);
+}
+
 /// The offline twins whose assertions read the editorial surface.
 #[cfg(feature = "perspective")]
 mod perspective {
