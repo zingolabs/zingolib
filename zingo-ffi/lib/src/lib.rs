@@ -3672,12 +3672,14 @@ fn mixnet_indicator_string(indicator: zingolib::mixnet::Indicator) -> &'static s
         // round trip the library already treats as unnecessary.
         zingolib::mixnet::Indicator::Ready
         | zingolib::mixnet::Indicator::PreviouslyProvenThisEpoch => "ready",
-        // A never-attached or switched-off transport is not consent to
+        // The deliberate switch-off is the one state the app must NOT recover
+        // from: it is the user's own act (going Offline), so it earns its own
+        // string and reads as a resting mode rather than as trouble.
+        zingolib::mixnet::Indicator::SwitchedOff => "off",
+        // A never-attached or unconsented-loss transport is not consent to
         // clearnet; report it as `died` so the app fails closed and reconnects
         // rather than opening the mixnet-only surfaces.
-        zingolib::mixnet::Indicator::Died
-        | zingolib::mixnet::Indicator::Unattached
-        | zingolib::mixnet::Indicator::SwitchedOff => "died",
+        zingolib::mixnet::Indicator::Died | zingolib::mixnet::Indicator::Unattached => "died",
     }
 }
 
@@ -3734,9 +3736,78 @@ pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
     })
 }
 
+/// The indicator wire contract (zingo-mobile#1427): the app layer switches on
+/// these strings, and the one distinction that matters to it is deliberate
+/// versus unconsented. A switch-off the app cannot tell apart from a death is
+/// a reconnect chasing the user's own choice to go Offline.
+#[cfg(test)]
+mod mixnet_indicator_wire_tests {
+    use super::*;
+
+    #[test]
+    fn a_deliberate_switch_off_is_its_own_string() {
+        assert_eq!(
+            mixnet_indicator_string(zingolib::mixnet::Indicator::SwitchedOff),
+            "off"
+        );
+    }
+
+    #[test]
+    fn an_unconsented_loss_and_a_never_attached_transport_both_fail_closed() {
+        for indicator in [
+            zingolib::mixnet::Indicator::Died,
+            zingolib::mixnet::Indicator::Unattached,
+        ] {
+            assert_eq!(
+                mixnet_indicator_string(indicator),
+                "died",
+                "{indicator:?} must fail closed rather than read as a resting mode"
+            );
+        }
+    }
+
+    #[test]
+    fn a_proven_transport_routes_exactly_as_ready() {
+        for indicator in [
+            zingolib::mixnet::Indicator::Ready,
+            zingolib::mixnet::Indicator::PreviouslyProvenThisEpoch,
+        ] {
+            assert_eq!(mixnet_indicator_string(indicator), "ready");
+        }
+    }
+}
+
+/// Switch Mixnet Mode off deliberately, shutting the wallet's side of the
+/// transport down and landing `off` — the one indicator the app never
+/// recovers from on its own. The wallet half of the go-offline moment: the
+/// host stops the proxy it owns, and the slot is vacated here FIRST so the
+/// standing watchdog cannot report the death we are causing on purpose.
+///
+/// A transport act only (the transmit policy is untouched), so the
+/// mixnet-only surfaces keep refusing afterwards.
+pub fn disable_mixnet() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT
+            .write()
+            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            RT.block_on(async move {
+                lightclient.disable_mixnet().await;
+                Ok(
+                    object! { "mixnet_indicator" => mixnet_indicator_string(lightclient.read_mixnet_indicator()) }
+                        .pretty(2),
+                )
+            })
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
+}
+
 /// The current Mixnet Mode indicator: `bootstrapping`, `ready` (with the local
-/// SOCKS5 address), or `died` (unconsented proxy loss; sends refuse — run
-/// [`attach_mixnet`] or [`enable_mixnet`] to recover).
+/// SOCKS5 address), `off` (switched off deliberately through
+/// [`disable_mixnet`]; nothing to recover), or `died` (unconsented proxy loss;
+/// sends refuse — run [`attach_mixnet`] or [`enable_mixnet`] to recover).
 pub fn mixnet_indicator() -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         let guard = LIGHTCLIENT

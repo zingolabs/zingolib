@@ -298,6 +298,9 @@ namespace zingo {
   );
 
   [Throws=ZingolibError]
+  string disable_mixnet();
+
+  [Throws=ZingolibError]
   string mixnet_indicator();
 
   [Throws=ZingolibError]
