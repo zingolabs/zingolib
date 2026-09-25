@@ -3784,37 +3784,32 @@ pub fn disable_mixnet() -> Result<String, ZingolibError> {
 /// SOCKS5 address), `off` (switched off deliberately through
 /// [`disable_mixnet`]; nothing to recover), or `died` (unconsented proxy loss;
 /// sends refuse — run [`attach_mixnet`] or [`enable_mixnet`] to recover).
+///
+/// A status read, so it takes the read lock: the app polls this every two
+/// seconds while a draw is proving itself, and the write lock would have
+/// parked each poll behind whatever long act held it — a sync, a save, the
+/// attach itself.
 pub fn mixnet_indicator() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &*guard {
-            let mut status = object! {
-                "mixnet_indicator" => mixnet_indicator_string(lightclient.read_mixnet_indicator()),
-            };
-            if let Some(addr) = lightclient.mixnet_socks5_addr() {
-                status["socks5_addr"] = addr.to_string().into();
-            }
-            Ok(status.pretty(2))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
+    with_initialized_lightclient_read(|lightclient| {
+        let mut status = object! {
+            "mixnet_indicator" => mixnet_indicator_string(lightclient.read_mixnet_indicator()),
+        };
+        if let Some(addr) = lightclient.mixnet_socks5_addr() {
+            status["socks5_addr"] = addr.to_string().into();
         }
+        Ok(status.pretty(2))
     })
 }
 
 /// The proxy's latest bootstrap progress line while Mixnet Mode is
 /// bootstrapping, so the app can narrate the connect race; empty otherwise.
+///
+/// Read under the read lock, like [`mixnet_indicator`]: the coordinator fetches
+/// this narration on the same tick, so parking it behind a write would stall
+/// the very progress line it exists to report.
 pub fn mixnet_bootstrap_detail() -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let guard = LIGHTCLIENT
-            .write()
-            .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &*guard {
-            let detail = lightclient.mixnet_bootstrap_detail().unwrap_or_default();
-            Ok(object! { "detail" => detail }.pretty(2))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
+    with_initialized_lightclient_read(|lightclient| {
+        let detail = lightclient.mixnet_bootstrap_detail().unwrap_or_default();
+        Ok(object! { "detail" => detail }.pretty(2))
     })
 }
