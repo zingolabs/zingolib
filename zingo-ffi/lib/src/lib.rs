@@ -118,17 +118,60 @@ pub enum ZingolibError {
     Mixnet(String),
 }
 
+/// The separator between two layers of a rendered cause chain, and the one
+/// that replaces it when the layer above already closed its own sentence
+/// ("Sync error.: shard tree error" reads badly). The upstream text itself is
+/// never edited: `the_funnel_preserves_the_upstream_message_verbatim_in_the_variant`
+/// holds the funnel to forwarding zingolib's prose unparaphrased.
+const CAUSE_CHAIN_SEPARATOR: &str = ": ";
+const CAUSE_CHAIN_SEPARATOR_AFTER_SENTENCE: &str = " ";
+
+/// Renders `error` and every `source()` link that still adds information as
+/// one line, so a message crossing the FFI carries the whole cause chain
+/// instead of only its outermost layer. Without this, a wrapper declared
+/// `#[error("Sync error.")]` crosses as exactly that and the failure it
+/// wraps never reaches the report.
+///
+/// Walking `source()` blindly would repeat text instead. Two shapes in
+/// zingolib's taxonomy already print their own cause: `#[error(transparent)]`
+/// delegates `Display` to it outright, and a variant that interpolates it
+/// (`#[error("wallet error. {0}")]`) has embedded it. Both leave the cause's
+/// rendering at the tail of what we have, so a link is appended only when the
+/// text so far does not already end with it. The walk continues either way:
+/// a skipped layer's own source still belongs on the line.
+fn chain_text(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut text = error.to_string();
+    let mut link = error.source();
+    while let Some(cause) = link {
+        let cause_text = cause.to_string();
+        if !text.ends_with(&cause_text) {
+            text.push_str(if text.ends_with(['.', '!', '?', ':']) {
+                CAUSE_CHAIN_SEPARATOR_AFTER_SENTENCE
+            } else {
+                CAUSE_CHAIN_SEPARATOR
+            });
+            text.push_str(&cause_text);
+        }
+        link = cause.source();
+    }
+    text
+}
+
 impl ZingolibError {
     fn init(e: impl ToString) -> Self {
         Self::Init(e.to_string())
     }
 
-    fn sync(e: impl ToString) -> Self {
-        Self::Sync(e.to_string())
+    /// From an error, preserving its `source()` chain. `init` stays on
+    /// `ToString` because most of its callers compose their own message;
+    /// the ones that do hold an error pass `chain_text` themselves.
+    fn sync(e: &(dyn std::error::Error + 'static)) -> Self {
+        Self::Sync(chain_text(e))
     }
 
-    fn read(e: impl ToString) -> Self {
-        Self::Read(e.to_string())
+    /// From an error, preserving its `source()` chain.
+    fn read(e: &(dyn std::error::Error + 'static)) -> Self {
+        Self::Read(chain_text(e))
     }
 }
 
@@ -137,7 +180,7 @@ impl ZingolibError {
 /// fails compilation here instead of degrading to prose in the data channel.
 fn ffi_error(e: LightClientError) -> ZingolibError {
     use zingolib::lightclient::error::MigrationError;
-    let text = e.to_string();
+    let text = chain_text(&e);
     match e {
         LightClientError::SyncLaunchError
         | LightClientError::SyncNotRunning
@@ -874,13 +917,13 @@ pub fn init_from_bytes(
                             break;
                         }
                         Err(e) => {
-                            last_error = ZingolibError::init(e);
+                            last_error = ZingolibError::init(chain_text(&e));
                             continue;
                         }
                     }
                 }
                 Err(e) => {
-                    last_error = ZingolibError::init(e);
+                    last_error = ZingolibError::init(chain_text(&e));
                     continue;
                 }
             }
@@ -959,6 +1002,69 @@ mod ffi_error_routing_tests {
             "exhaustion routes as server-suspect, so it must not wear the mixnet marker: {mapped:?}"
         );
         assert!(mapped.to_string().starts_with("Error: indexer:"));
+    }
+}
+
+/// The cause-chain contract: a failure crossing the FFI carries every layer
+/// that still says something, because the layer a user can report is the only
+/// one we ever get. zingolabs/zingo-mobile#1424 arrived as "shard tree error"
+/// and nothing else — no pool, no tree address — because the boundary
+/// rendered only the outermost layer.
+#[cfg(test)]
+mod cause_chain_tests {
+    use super::*;
+
+    #[test]
+    fn a_wrapper_that_prints_nothing_of_its_cause_gains_the_whole_chain() {
+        let mapped = ffi_error(LightClientError::SyncError(
+            pepper_sync::error::SyncError::ChainError(1, 2, 3),
+        ));
+        let text = mapped.to_string();
+        // `LightClientError::SyncError` is declared `#[error("Sync error.")]`,
+        // with no interpolation: before the chain walk this was the entire
+        // message that crossed.
+        assert!(
+            text.contains("wallet height 1 is more than 2 blocks ahead"),
+            "the cause must survive the crossing: {text}"
+        );
+        assert!(
+            !text.contains(".:"),
+            "a layer's sentence period must not collide with the separator: {text}"
+        );
+    }
+
+    #[test]
+    fn a_transparent_wrapper_does_not_repeat_its_cause() {
+        let mapped = ffi_error(LightClientError::MixnetNotReady(
+            zingolib::mixnet::MixnetNotReady::Bootstrapping,
+        ));
+        let text = mapped.to_string();
+        assert_eq!(
+            text.matches("bootstrapping").count(),
+            1,
+            "`#[error(transparent)]` already prints its source: {text}"
+        );
+    }
+
+    #[test]
+    fn an_interpolating_wrapper_does_not_repeat_its_cause() {
+        #[derive(Debug, thiserror::Error)]
+        #[error("the leaf failed")]
+        struct Leaf;
+
+        #[derive(Debug, thiserror::Error)]
+        #[error("wallet error. {0}")]
+        struct Interpolating(#[from] Leaf);
+
+        #[derive(Debug, thiserror::Error)]
+        #[error("outer")]
+        struct Outer(#[from] Interpolating);
+
+        let text = chain_text(&Outer(Interpolating(Leaf)));
+        assert_eq!(
+            text, "outer: wallet error. the leaf failed",
+            "a variant that interpolates its source has already printed it"
+        );
     }
 }
 
@@ -1542,15 +1648,15 @@ pub fn get_latest_block_server(server_uri: String) -> Result<String, ZingolibErr
     with_panic_guard(|| {
         let lightwalletd_uri: http::Uri = server_uri
             .parse()
-            .map_err(|e| ZingolibError::read(format!("failed to parse uri. {e}")))?;
+            .map_err(|e| ZingolibError::Read(format!("failed to parse uri. {e}")))?;
         RT.block_on(async move {
             let mut indexer = GrpcIndexer::new(lightwalletd_uri)
                 .await
-                .map_err(ZingolibError::read)?;
+                .map_err(|e| ZingolibError::read(&e))?;
             let block_id = indexer
                 .get_latest_block(INDEXER_REQUEST_TIMEOUT)
                 .await
-                .map_err(ZingolibError::read)?;
+                .map_err(|e| ZingolibError::read(&e))?;
             Ok(block_id.height.to_string())
         })
     })
@@ -1614,7 +1720,7 @@ pub fn get_value_transfers() -> Result<String, ZingolibError> {
                             )
                         })
                         .collect(),
-                    Err(e) => return Err(ZingolibError::read(e)),
+                    Err(e) => return Err(ZingolibError::read(&e)),
                 };
 
             match wallet.value_transfers(true).await {
@@ -1623,7 +1729,7 @@ pub fn get_value_transfers() -> Result<String, ZingolibError> {
                     splice_migrated_values(&mut json_vts, &migrated_by_txid);
                     Ok(json_vts.pretty(2))
                 }
-                Err(e) => Err(ZingolibError::read(e)),
+                Err(e) => Err(ZingolibError::read(&e)),
             }
         })
     })
@@ -1647,7 +1753,7 @@ pub fn poll_sync() -> Result<String, ZingolibError> {
                 }
                 .pretty(2))
             }
-            Err(e) => Err(ZingolibError::sync(e)),
+            Err(e) => Err(ZingolibError::sync(&e)),
         },
     })
 }
@@ -1701,7 +1807,7 @@ fn run_sync() -> Result<String, ZingolibError> {
             // instead of `expect` — panicking would poison LIGHTCLIENT.
             match lightclient.resume_sync() {
                 Ok(_) => Ok("Resuming sync task...".to_string()),
-                Err(e) => Err(ZingolibError::sync(e)),
+                Err(e) => Err(ZingolibError::sync(&e)),
             }
         } else {
             RT.block_on(async {
@@ -1716,7 +1822,7 @@ fn run_sync() -> Result<String, ZingolibError> {
                     Err(LightClientError::SyncModeError(SyncModeError::SyncAlreadyRunning)) => {
                         Ok("Sync task already running.".to_string())
                     }
-                    Err(e) => Err(ZingolibError::sync(e)),
+                    Err(e) => Err(ZingolibError::sync(&e)),
                 }
             })
         }
@@ -1726,7 +1832,7 @@ fn run_sync() -> Result<String, ZingolibError> {
 pub fn pause_sync() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| match lightclient.pause_sync() {
         Ok(_) => Ok("Pausing sync task...".to_string()),
-        Err(e) => Err(ZingolibError::sync(e)),
+        Err(e) => Err(ZingolibError::sync(&e)),
     })
 }
 
@@ -1736,7 +1842,7 @@ fn status_sync() -> Result<String, ZingolibError> {
             let wallet = lightclient.wallet().read().await;
             match pepper_sync::sync_status(&*wallet).await {
                 Ok(status) => Ok(json::JsonValue::from(status).pretty(2)),
-                Err(e) => Err(ZingolibError::sync(e)),
+                Err(e) => Err(ZingolibError::sync(&e)),
             }
         })
     })
@@ -2219,7 +2325,7 @@ pub fn get_messages(address: String) -> Result<String, ZingolibError> {
                 .await
             {
                 Ok(value_transfers) => Ok(json::JsonValue::from(value_transfers).pretty(2)),
-                Err(e) => Err(ZingolibError::read(e)),
+                Err(e) => Err(ZingolibError::read(&e)),
             }
         })
     })
@@ -2230,7 +2336,7 @@ pub fn get_balance() -> Result<String, ZingolibError> {
         RT.block_on(async move {
             match lightclient.account_balance(AccountId::ZERO).await {
                 Ok(bal) => Ok(json::JsonValue::from(bal).pretty(2)),
-                Err(e) => Err(ZingolibError::read(e)),
+                Err(e) => Err(ZingolibError::read(&e)),
             }
         })
     })
@@ -2241,7 +2347,7 @@ pub fn get_total_memobytes_to_address() -> Result<String, ZingolibError> {
         RT.block_on(async move {
             match lightclient.do_total_memobytes_to_address().await {
                 Ok(total_memo_bytes) => Ok(json::JsonValue::from(total_memo_bytes).pretty(2)),
-                Err(e) => Err(ZingolibError::read(e)),
+                Err(e) => Err(ZingolibError::read(&e)),
             }
         })
     })
@@ -2252,7 +2358,7 @@ pub fn get_total_value_to_address() -> Result<String, ZingolibError> {
         RT.block_on(async move {
             match lightclient.do_total_value_to_address().await {
                 Ok(total_values) => Ok(json::JsonValue::from(total_values).pretty(2)),
-                Err(e) => Err(ZingolibError::read(e)),
+                Err(e) => Err(ZingolibError::read(&e)),
             }
         })
     })
@@ -2263,7 +2369,7 @@ pub fn get_total_spends_to_address() -> Result<String, ZingolibError> {
         RT.block_on(async move {
             match lightclient.do_total_spends_to_address().await {
                 Ok(total_spends) => Ok(json::JsonValue::from(total_spends).pretty(2)),
-                Err(e) => Err(ZingolibError::read(e)),
+                Err(e) => Err(ZingolibError::read(&e)),
             }
         })
     })
@@ -2329,7 +2435,7 @@ pub fn get_spendable_balance_total() -> Result<String, ZingolibError> {
             let wallet = lightclient.wallet().read().await;
             let spendable_balance = wallet
                 .shielded_spendable_balance(AccountId::ZERO, false)
-                .map_err(ZingolibError::read)?;
+                .map_err(|e| ZingolibError::read(&e))?;
             Ok(object! {
                 "spendable_balance" => spendable_balance.into_u64(),
             }
