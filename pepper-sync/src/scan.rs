@@ -147,6 +147,7 @@ where
         mut scan_targets,
         mut transparent_inuse_addresses,
         transparent_gap_addresses,
+        transparent_scan_floor,
     } = scan_task;
 
     if compact_blocks
@@ -213,6 +214,7 @@ where
             transparent_inuse_addresses_clone,
             transparent_gap_addresses,
             transparent_gap_limit,
+            transparent_scan_floor,
         )
     })
     .await

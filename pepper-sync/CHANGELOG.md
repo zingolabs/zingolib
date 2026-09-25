@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   addresses, rather than re-running the transparent address RPCs. Historical
   sync still uses the RPCs for address discovery. A gap address found in use
   is moved to the in-use set and the gap is replenished.
+  Compact block transparent data is only scanned for blocks mined during the
+  sync session (or re-orged during it), as transparent address discovery has
+  already located all relevant transactions up to the session's initial chain
+  height. This prevents the transparent inputs of all other scanned blocks
+  from being stored in the wallet's outpoint map. Transparent address discovery now runs at
+  the start of every sync session, even if no blocks were mined since the
+  last one.
 - BREAKING: `error::SyncError::SyncStatusError` variant, returned when
   publishing sync progress fails.
 - BREAKING: `error::SyncStatusError::SyncProgressChannelClosed` variant,
