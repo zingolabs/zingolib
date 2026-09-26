@@ -1,4 +1,4 @@
-//! The chain-cache mechanism of ADR 0003 (`docs/adr/0003-test-owned-chain-caches.md`).
+//! The chain-cache mechanism of ADR 0003 (`docs/adr/zingolib/0003-test-owned-chain-caches.md`).
 //!
 //! Each test owns at most one cache under `chain_caches/<binary>/<test>/`,
 //! holding a `blocks.hex` replay record of the blocks its setup generated

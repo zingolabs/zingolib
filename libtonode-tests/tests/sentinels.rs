@@ -10,7 +10,7 @@
 //! whenever one of those inputs changes.
 //!
 //! Each test names the claim its failure disproves. The claims and
-//! their history live in `docs/adr/0003-test-owned-chain-caches.md`
+//! their history live in `docs/adr/zingolib/0003-test-owned-chain-caches.md`
 //! and the Launch block entry of `CONTEXT.md`.
 #![cfg(feature = "sentinels")]
 

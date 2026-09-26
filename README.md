@@ -25,6 +25,22 @@ Zingo-CLI does automatic note and utxo management, which means it doesn't allow 
     * When sending an outgoing transaction to a shielded address, Zingo-CLI can decide to use the transaction to additionally shield your sapling funds (i.e., send your sapling funds to your own orchard address in the same transaction)
 * Transparent funds are only spent via explicit shield operations
 
+## Architecture decision records
+
+Architecture decision records live in
+[zingolabs/zingo-adrs](https://github.com/zingolabs/zingo-adrs). This
+repository checks in only a submodule pointer to it at `docs/adr/`, so the
+directory is empty until you materialise it, and zingolib's own records then
+sit under `docs/adr/zingolib/`. Propose a record in zingo-adrs, never here.
+
+```sh
+# materialise the records after cloning
+git submodule update --init docs/adr
+
+# advance the pointer to the current dev of zingo-adrs, then commit
+git submodule update --remote docs/adr
+```
+
 ## Compiling from source
 
 #### Pre-requisites

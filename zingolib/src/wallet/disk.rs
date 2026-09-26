@@ -156,7 +156,7 @@ impl LightWallet {
     ///
     /// Landing in dev ships a format: every layout that has landed in dev
     /// must remain readable, and the wallet writable, forever after (ADR
-    /// 0015, docs/adr/0015-landing-in-dev-ships-the-wallet-file-format.md).
+    /// 0015, docs/adr/zingolib/0015-landing-in-dev-ships-the-wallet-file-format.md).
     #[must_use]
     pub const fn serialized_version() -> u64 {
         44

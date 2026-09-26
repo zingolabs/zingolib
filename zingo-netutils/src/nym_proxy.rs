@@ -6,7 +6,7 @@
 //! lockfile, never the parent workspace's, because nym-sdk's transitive
 //! graph requires `crypto-common ^0.2`, which cannot coexist with the parent
 //! workspace's `crypto-common =0.2.0-rc.1` pin. See
-//! `docs/adr/0011-nym-mixnet-transmission.md`.
+//! `docs/adr/zingolib/0011-nym-mixnet-transmission.md`.
 //!
 //! # Architecture
 //!
