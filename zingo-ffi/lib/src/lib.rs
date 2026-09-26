@@ -3780,15 +3780,10 @@ pub fn disable_mixnet() -> Result<String, ZingolibError> {
     })
 }
 
-/// The current Mixnet Mode indicator: `bootstrapping`, `ready` (with the local
-/// SOCKS5 address), `off` (switched off deliberately through
-/// [`disable_mixnet`]; nothing to recover), or `died` (unconsented proxy loss;
-/// sends refuse — run [`attach_mixnet`] or [`enable_mixnet`] to recover).
-///
-/// A status read, so it takes the read lock: the app polls this every two
-/// seconds while a draw is proving itself, and the write lock would have
-/// parked each poll behind whatever long act held it — a sync, a save, the
-/// attach itself.
+/// Reports the Mixnet Mode indicator (`bootstrapping`, `ready` with its SOCKS5
+/// address, `off` after [`disable_mixnet`], or `died`) under the read lock,
+/// which lets it run beside other readers but still waits for any writer, such
+/// as a sync, a save, or [`attach_mixnet`].
 pub fn mixnet_indicator() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         let mut status = object! {
