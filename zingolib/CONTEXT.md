@@ -317,7 +317,7 @@
 
 ## Consumers
 
-**zingolib** is a Rust library. Its primary integration surface is the `LightClient` API, consumed directly by other Rust crates and programs. One known consumer is **zingo-mobile**, which wraps `zingolib` via a UniFFI-generated FFI layer (Kotlin/Swift). `zingo-cli` is a power-user/developer CLI built on the same library.
+**zingolib** is a Rust library. Its primary integration surface is the `LightClient` API, consumed directly by other Rust crates and programs. One known consumer is **zingo-mobile**, which wraps `zingolib` via the Binding Layer. `zingo-cli` is a power-user/developer CLI built on the same library.
 
 **Reference Consumer** — A consumer whose charter is to prove zingolib's consumer surface sufficient, not to serve users: it holds no funds and makes no product promises, and its own code is confined to a typed one-to-one projection of the surface, a provisioning adapter, and a renderer — no wallet logic, no policy, no minted strings. It builds against the workspace at HEAD so that a surface change which breaks the consumer contract fails in the merging pull request's CI rather than weeks later in another repo, and it is for that reason the one consumer exempt from ADR 0024's rev-pinning rule, which disciplines external consumers. The first Reference Consumer is the planned `zingo-tauri` desktop app. Ratified 2026-08-03. See `docs/adr/zingolib/0028-the-reference-consumer-lives-in-repo-in-an-excluded-sub-workspace.md`.
 
@@ -334,6 +334,12 @@
 **Record citation** — Each scope of zingo-adrs numbers its records in its own sequence. A bare `ADR-NNNN` cites a record in the citing repository's own scope, and a citation into another scope carries the path (`zaino/0016`, or the org-level `003`). *Avoid*: bare numbers across scopes.
 
 **Record status** — The first line under a record's `## Status` heading, one of `proposed`, `accepted`, or `superseded by` a record citation. Prose after that line may narrow a partial supersession; the line itself is the whole record's standing. *Avoid*: draft, deprecated, retired, "no longer applies".
+
+**Binding Layer** — The foreign-language projection of zingolib's consumer surface: the two UniFFI crates (the wallet crate and the Nym proxy crate), the Swift and Kotlin bindings generated from them, thin idiomatic wrappers over those bindings, and the platform packaging that ships them. It knows no UI framework, so any mobile consumer, zingo-mobile today or a future Edge integration, can link it unchanged. Ruled 2026-09-23, pending review. *Avoid*: FFI (ambiguous between one Rust crate and the whole layer), the mobile Rust. See `docs/adr/zingolib/0054-the-binding-layer-lives-beside-the-surface-it-wraps.md`.
+
+**RN Bridge** — A React Native app's native modules and app shell, which marshal calls between JavaScript and the Binding Layer. Beyond marshalling it owns one thing, the app-serviced host of the Mixnet Session: it holds the Nym proxy's handle, watches for the proxy's death, and releases the handle. Each React Native consumer keeps its own RN Bridge in its own repository. Ruled 2026-09-23, pending review. *Avoid*: native modules (names the mechanism, not the role), FFI. See `docs/adr/zingolib/0054-the-binding-layer-lives-beside-the-surface-it-wraps.md`.
+
+**Prebuilt Bundle** — A compiled native artifact of the Binding Layer, such as an Android `.so` set or an iOS XCFramework, that one repository builds and another consumes without rebuilding it. Ruled 2026-09-23, pending review. *Avoid*: bundle alone, and never "bundle" for grouping changes into one pull request. See `docs/adr/zingolib/0054-the-binding-layer-lives-beside-the-surface-it-wraps.md`.
 
 ---
 
