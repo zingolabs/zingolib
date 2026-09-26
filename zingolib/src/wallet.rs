@@ -440,6 +440,9 @@ impl LightWallet {
     ///
     /// Adds scan targets to the new sync state to prioritise scanning relevant parts of the chain on rescan.
     /// Addresses are not cleared.
+    ///
+    /// Calling this function while the wallet is syncing will cause sync errors and require an additional clear while
+    /// sync is stopped to recover.
     pub fn clear_all(&mut self) {
         let chain_height_opt = self.sync_state.last_known_chain_height();
         self.sync_state = SyncState::new();

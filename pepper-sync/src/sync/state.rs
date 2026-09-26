@@ -763,6 +763,7 @@ pub(crate) fn create_scan_task<W>(
     wallet: &mut W,
     nullifier_map_limit_exceeded: bool,
     transparent_gap_addresses: HashMap<String, TransparentAddressId>,
+    transparent_scan_floor: BlockHeight,
 ) -> Result<Option<ScanTask>, W::Error>
 where
     W: SyncWallet + SyncBlocks + SyncNullifiers,
@@ -782,6 +783,7 @@ where
                 BTreeSet::new(),
                 HashMap::new(),
                 HashMap::new(),
+                transparent_scan_floor,
             )))
         } else {
             // in continuous sync there is a case where the range directly below the newly mined block (chain tip) is
@@ -829,6 +831,7 @@ where
                 scan_targets,
                 transparent_inuse_addresses,
                 transparent_gap_addresses,
+                transparent_scan_floor,
             )))
         }
     } else {

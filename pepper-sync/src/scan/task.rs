@@ -72,6 +72,13 @@ pub(crate) struct Scanner<P> {
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
     transparent_gap_limit: u32,
     pub(crate) transparent_gap_addresses: HashMap<String, TransparentAddressId>,
+    /// Compact block transparent data is only scanned above this height. This includes checking transparent outputs
+    /// against the wallet's in-use and gap addresses and mapping transparent inputs to the wallet's outpoint map.
+    ///
+    /// Set to the chain height at the start of the sync session, as transparent address discovery has already located
+    /// all relevant transactions at or below this height. Lowered if a re-org truncates the wallet below this height
+    /// during the sync session as the re-orged blocks are not covered by transparent address discovery.
+    pub(crate) transparent_scan_floor: Option<BlockHeight>,
 }
 
 impl<P> Scanner<P>
@@ -98,6 +105,14 @@ where
             ufvks,
             transparent_gap_limit,
             transparent_gap_addresses: HashMap::new(),
+            transparent_scan_floor: None,
+        }
+    }
+
+    /// Lowers the transparent scan floor to `height` if `height` is below the current floor.
+    pub(crate) fn lower_transparent_scan_floor(&mut self, height: BlockHeight) {
+        if let Some(floor) = self.transparent_scan_floor.as_mut() {
+            *floor = (*floor).min(height);
         }
     }
 
@@ -291,6 +306,8 @@ where
                 wallet,
                 nullifier_map_limit_exceeded,
                 self.transparent_gap_addresses.clone(),
+                self.transparent_scan_floor
+                    .expect("transparent scan floor should be set before scanning"),
             )? {
                 loader.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
@@ -773,6 +790,7 @@ pub(crate) struct ScanTask {
     pub(crate) scan_targets: BTreeSet<ScanTarget>,
     pub(crate) transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
     pub(crate) transparent_gap_addresses: HashMap<String, TransparentAddressId>,
+    pub(crate) transparent_scan_floor: BlockHeight,
 }
 
 impl ScanTask {
@@ -783,6 +801,7 @@ impl ScanTask {
         scan_targets: BTreeSet<ScanTarget>,
         transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
         transparent_gap_addresses: HashMap<String, TransparentAddressId>,
+        transparent_scan_floor: BlockHeight,
     ) -> Self {
         Self {
             compact_blocks: Vec::new(),
@@ -792,6 +811,7 @@ impl ScanTask {
             scan_targets,
             transparent_inuse_addresses,
             transparent_gap_addresses,
+            transparent_scan_floor,
         }
     }
 
@@ -864,6 +884,7 @@ impl ScanTask {
                 scan_targets: lower_task_scan_targets,
                 transparent_inuse_addresses: self.transparent_inuse_addresses.clone(),
                 transparent_gap_addresses: self.transparent_gap_addresses.clone(),
+                transparent_scan_floor: self.transparent_scan_floor,
             },
             ScanTask {
                 compact_blocks: upper_compact_blocks,
@@ -876,6 +897,7 @@ impl ScanTask {
                 scan_targets: upper_task_scan_targets,
                 transparent_inuse_addresses: self.transparent_inuse_addresses,
                 transparent_gap_addresses: self.transparent_gap_addresses,
+                transparent_scan_floor: self.transparent_scan_floor,
             },
         ))
     }
