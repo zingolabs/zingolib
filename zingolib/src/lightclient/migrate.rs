@@ -1786,7 +1786,7 @@ impl LightClient {
     /// through [`Self::immediate_migration_progress_handle`]. Like every immediate path it
     /// puts the wallet's real amounts on-chain, correlated with each other and
     /// the caller's activity. The caller must disclose this (ZIP 318). See
-    /// `docs/adr/0019-immediate-migration-is-send-shaped.md`.
+    /// `docs/adr/zingolib/0019-immediate-migration-is-send-shaped.md`.
     pub async fn quick_immediate_migration(
         &mut self,
         account: zip32::AccountId,
@@ -1816,7 +1816,7 @@ impl LightClient {
     ///
     /// It is the same projection as [`Self::plan_ironwood_migration`], named
     /// for the Phase 1 mental model of the fused, stateless splitting flow
-    /// (`docs/adr/0016-note-splitting-is-a-stateless-fused-call.md`).
+    /// (`docs/adr/zingolib/0016-note-splitting-is-a-stateless-fused-call.md`).
     pub async fn plan_note_split(
         &self,
         account: zip32::AccountId,
@@ -1827,7 +1827,7 @@ impl LightClient {
     /// Executes one round of Phase 1 note splitting as a send-shaped call,
     /// the mobile-facing entry point for the *private* migration path's
     /// splitting, the counterpart to [`Self::quick_immediate_migration`] for the immediate
-    /// path. See `docs/adr/0016-note-splitting-is-a-stateless-fused-call.md`.
+    /// path. See `docs/adr/zingolib/0016-note-splitting-is-a-stateless-fused-call.md`.
     ///
     /// Like [`Self::quick_send`] it pauses sync internally, plans against the
     /// wallet's *current* confirmed notes without synchronizing, and restores

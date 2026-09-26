@@ -13,7 +13,7 @@
 //! once, the race stops at `MAX_TRANSMISSION_DESTINATIONS` distinct
 //! Destinations, and the first confirmed delivery wins with the rest
 //! abandoned. See
-//! `docs/adr/0040-sends-escalation-is-a-hedged-race-of-full-paths.md`.
+//! `docs/adr/zingolib/0040-sends-escalation-is-a-hedged-race-of-full-paths.md`.
 //!
 //! This orchestrates the shared per-submission policy (retry,
 //! duplicate-in-mempool, queued-probe, delivery-check) rather than
