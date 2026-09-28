@@ -84,6 +84,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     set to failed in cases other than re-org truncation.
 
 ### Fixed
+- The mempool monitor counts a mempool transaction as unprocessed before
+  sending it to the sync engine rather than after. The count was incremented
+  only once the send completed, so the mempool drain could observe a zero
+  count while a transaction was queued and end the sync session without
+  processing it, leaving the transaction's wallet record in `Transmitted`
+  status until the next session.
 - Subtree roots are fetched, and the initial frontier added, at the start of
   every sync session before scanning begins, even if no blocks were mined
   since the last session (#2782). Continuous sync had moved this behind a new
