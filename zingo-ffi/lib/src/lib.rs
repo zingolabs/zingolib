@@ -624,6 +624,7 @@ fn build_connection_params(
         sync_config: SyncConfig {
             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             performance_level: performancetype,
+            shutdown_on_completion: true,
         },
         min_confirmations: NonZeroU32::try_from(min_confirmations)
             .map_err(|_| ZingolibError::init("min_confirmations must be greater than 0"))?,
