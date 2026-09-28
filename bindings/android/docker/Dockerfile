@@ -1,7 +1,7 @@
 # The tool layer of zingo-mobile's rust/android/docker/Dockerfile at the
 # Freeze Commit, without its sources. The workbench builder mounts this
 # repository and runs the per-ABI steps in a container of this image.
-FROM zingodevops/android_builder:018
+FROM docker.io/zingodevops/android_builder:018
 
 RUN apt update \
     && apt upgrade -y \
