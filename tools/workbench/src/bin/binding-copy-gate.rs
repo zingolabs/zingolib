@@ -6,6 +6,8 @@ use std::fs;
 use std::iter;
 use std::path;
 
+use workbench::binding_layer;
+
 /// The program name that prefixes every diagnostic.
 const PROGRAM: &str = "binding-copy-gate";
 
@@ -46,29 +48,14 @@ const PROGRAM_NAME_ARGUMENTS: usize = 1;
 /// The file names that a placement commit may touch.
 const MANIFEST_FILE_NAMES: [&str; 2] = ["Cargo.toml", "Cargo.lock"];
 
-/// The binding languages that zingo-mobile generates.
-const LANGUAGES: [&str; 2] = ["kotlin", "swift"];
-
 /// The scratch directory, under the zingolib root, that holds generated bindings.
 const SCRATCH_DIR: &str = "target/binding-copy-gate";
 
 /// The subdirectory of each side's scratch directory that holds cargo's build output.
 const CARGO_TARGET_SUBDIR: &str = "cargo";
 
-/// The cargo profile directory that a build without `--release` writes to.
-const DEBUG_PROFILE_DIR: &str = "debug";
-
-/// The proxy crate's library name, from which its dynamic library file name derives.
-const PROXY_LIB_NAME: &str = "zingo_nym_proxy_ffi";
-
-/// The binary in the wallet crate that generates bindings from the UDL file.
-const WALLET_BINDGEN_BIN: &str = "uniffi-bindgen";
-
-/// The package that holds the bindgen for library-mode generation.
-const LIBRARY_BINDGEN_PACKAGE: &str = "zingo-uniffi-bindgen";
-
-/// The binary that generates the proxy crate's bindings from its built library.
-const LIBRARY_BINDGEN_BIN: &str = "zingo-uniffi-bindgen";
+/// The cargo profile that the gate builds with, since generated bindings do not depend on it.
+const GATE_PROFILE: binding_layer::Profile = binding_layer::Profile::Debug;
 
 /// The `cargo tree` arguments that print a crate's complete resolved graph.
 const TREE_ARGS: [&str; 11] = [
@@ -187,28 +174,6 @@ const GATED_CRATES: [GatedCrate; 3] = [
         workspace: Workspace::Proxy,
     },
 ];
-
-/// The binding set that gate 3 generates for one crate.
-#[derive(Clone, Copy)]
-enum Generation {
-    /// The wallet crate's bindings, generated from its UDL file.
-    Wallet,
-    /// The proxy crate's bindings, generated from its built library.
-    Proxy,
-}
-
-impl Generation {
-    /// The prefix of this binding set's output directory names.
-    fn label(self) -> &'static str {
-        match self {
-            Generation::Wallet => "wallet",
-            Generation::Proxy => "proxy",
-        }
-    }
-}
-
-/// Every binding set that gate 3 generates.
-const GENERATIONS: [Generation; 2] = [Generation::Wallet, Generation::Proxy];
 
 /// One equivalence gate.
 #[derive(Clone, Copy)]
@@ -388,7 +353,7 @@ fn graph_checks(
 ) -> Result<Vec<Check>, Vec<String>> {
     let touched = workbench::git(&[
         "-C",
-        utf8(&copy_side.root)?,
+        workbench::utf8(&copy_side.root)?,
         "diff",
         "--name-only",
         invocation.import,
@@ -403,8 +368,8 @@ fn graph_checks(
     };
     let source_prefixes = [
         ZINGOLIB_GIT_SOURCE,
-        utf8(&tfc_side.root)?,
-        utf8(&copy_side.root)?,
+        workbench::utf8(&tfc_side.root)?,
+        workbench::utf8(&copy_side.root)?,
     ];
     let tree_checks = GATED_CRATES
         .iter()
@@ -425,9 +390,9 @@ fn binding_checks(tfc_side: &Side, copy_side: &Side) -> Result<Vec<Check>, Vec<S
     let scratch = copy_side.file(SCRATCH_DIR);
     generate_bindings(tfc_side, &scratch)?;
     generate_bindings(copy_side, &scratch)?;
-    binding_sets()
+    binding_layer::binding_sets()
         .map(|(generation, language)| {
-            let output = output_name(generation, language);
+            let output = binding_layer::output_name(generation, language);
             let tfc_files = file_map(&scratch.join(tfc_side.name).join(&output))?;
             let copy_files = file_map(&scratch.join(copy_side.name).join(&output))?;
             Ok(Check {
@@ -441,54 +406,29 @@ fn binding_checks(tfc_side: &Side, copy_side: &Side) -> Result<Vec<Check>, Vec<S
 /// Generate every binding set for one side into its scratch directory.
 fn generate_bindings(side: &Side, scratch: &path::Path) -> Result<(), Vec<String>> {
     let side_dir = scratch.join(side.name);
-    if side_dir.exists() {
-        fs::remove_dir_all(&side_dir)
-            .map_err(|e| vec![format!("cannot clear {}: {e}", side_dir.display())])?;
-    }
     let target_dir = side_dir.join(CARGO_TARGET_SUBDIR);
     let proxy_library = build_proxy_library(side, &target_dir)?;
     let wallet_crate = side.file(side.layout.wallet_crate);
     let udl = side.file(side.layout.udl);
     let wallet_workspace = side.file(side.layout.manifest(Workspace::Wallet));
-    binding_sets().try_for_each(|(generation, language)| {
-        let out_dir = side_dir.join(output_name(generation, language));
-        let generate_args = match generation {
-            Generation::Wallet => vec![
-                "run",
-                "--locked",
-                "--manifest-path",
-                utf8(&wallet_crate)?,
-                "--target-dir",
-                utf8(&target_dir)?,
-                "--bin",
-                WALLET_BINDGEN_BIN,
-                "--",
-                "generate",
-                utf8(&udl)?,
-            ],
-            Generation::Proxy => vec![
-                "run",
-                "--locked",
-                "--manifest-path",
-                utf8(&wallet_workspace)?,
-                "--target-dir",
-                utf8(&target_dir)?,
-                "--package",
-                LIBRARY_BINDGEN_PACKAGE,
-                "--bin",
-                LIBRARY_BINDGEN_BIN,
-                "--",
-                "generate",
-                "--library",
-                utf8(&proxy_library)?,
-            ],
-        };
-        let language_args = ["--language", language, "--out-dir", utf8(&out_dir)?];
-        workbench::stdout_of(
-            "cargo",
-            &[generate_args.as_slice(), &language_args].concat(),
-        )
-        .map(drop)
+    let inputs = binding_layer::BindgenInputs {
+        wallet_crate: workbench::utf8(&wallet_crate)?,
+        udl: workbench::utf8(&udl)?,
+        wallet_workspace: workbench::utf8(&wallet_workspace)?,
+        proxy_library: workbench::utf8(&proxy_library)?,
+        target_dir: workbench::utf8(&target_dir)?,
+    };
+    binding_layer::binding_sets().try_for_each(|(generation, language)| {
+        let out_dir =
+            workbench::fresh_dir(&side_dir.join(binding_layer::output_name(generation, language)))?;
+        let args = binding_layer::bindgen_args(
+            generation,
+            language,
+            &inputs,
+            workbench::utf8(&out_dir)?,
+            GATE_PROFILE,
+        );
+        workbench::stdout_of_owned("cargo", &args).map(drop)
     })
 }
 
@@ -497,20 +437,27 @@ fn build_proxy_library(side: &Side, target_dir: &path::Path) -> Result<path::Pat
     workbench::stdout_of(
         "cargo",
         &[
-            "build",
-            "--locked",
-            "--manifest-path",
-            utf8(&side.file(side.layout.manifest(Workspace::Proxy)))?,
-            "--target-dir",
-            utf8(target_dir)?,
-            "--lib",
-        ],
+            [
+                "build",
+                "--locked",
+                "--manifest-path",
+                workbench::utf8(&side.file(side.layout.manifest(Workspace::Proxy)))?,
+                "--target-dir",
+                workbench::utf8(target_dir)?,
+                "--lib",
+            ]
+            .as_slice(),
+            GATE_PROFILE.cargo_args(),
+        ]
+        .concat(),
     )?;
-    Ok(target_dir.join(DEBUG_PROFILE_DIR).join(format!(
-        "{}{PROXY_LIB_NAME}{}",
-        env::consts::DLL_PREFIX,
-        env::consts::DLL_SUFFIX
-    )))
+    Ok(target_dir
+        .join(GATE_PROFILE.directory())
+        .join(binding_layer::library_file(
+            env::consts::DLL_PREFIX,
+            binding_layer::PROXY_LIB_NAME,
+            env::consts::DLL_SUFFIX,
+        )))
 }
 
 /// Print one crate's complete resolved graph on one side, with the named sources erased.
@@ -522,7 +469,7 @@ fn resolved_tree(
     let manifest = side.file(side.layout.manifest(gated.workspace));
     let location = [
         "--manifest-path",
-        utf8(&manifest)?,
+        workbench::utf8(&manifest)?,
         "--package",
         gated.package,
     ];
@@ -534,7 +481,7 @@ fn resolved_tree(
 fn object_id(repository: &path::Path, rev: &str, file: &str) -> Result<String, Vec<String>> {
     workbench::git(&[
         "-C",
-        utf8(repository)?,
+        workbench::utf8(repository)?,
         "rev-parse",
         &format!("{rev}:{file}"),
     ])
@@ -545,7 +492,7 @@ fn object_id(repository: &path::Path, rev: &str, file: &str) -> Result<String, V
 fn commit_id(repository: &path::Path, rev: &str) -> Result<String, Vec<String>> {
     workbench::git(&[
         "-C",
-        utf8(repository)?,
+        workbench::utf8(repository)?,
         "rev-parse",
         "--verify",
         &format!("{rev}^{{commit}}"),
@@ -586,24 +533,6 @@ fn files_under(directory: &path::Path) -> Result<Vec<path::PathBuf>, Vec<String>
         })
         .collect::<Result<Vec<_>, _>>()
         .map(|nested| nested.concat())
-}
-
-/// A path as UTF-8, or a diagnostic naming it.
-fn utf8(file: &path::Path) -> Result<&str, Vec<String>> {
-    file.to_str()
-        .ok_or_else(|| vec![format!("{} is not valid UTF-8", file.display())])
-}
-
-/// Every pairing of a binding set with a language, in a fixed order.
-fn binding_sets() -> impl Iterator<Item = (Generation, &'static str)> {
-    GENERATIONS
-        .into_iter()
-        .flat_map(|generation| LANGUAGES.map(|language| (generation, language)))
-}
-
-/// The name of the scratch directory that holds one binding set in one language.
-fn output_name(generation: Generation, language: &str) -> String {
-    format!("{}-{language}", generation.label())
 }
 
 /// The report of a gate whose checks all match, or the diagnostics of every check that differs.

@@ -7,6 +7,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod binding_layer;
+
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command, Stdio};
 
@@ -43,6 +45,31 @@ pub fn stdout_of(program: &str, args: &[&str]) -> Result<String, Vec<String>> {
         return Err(vec![format!("`{program} {}` failed", args.join(" "))]);
     }
     String::from_utf8(output.stdout).map_err(|e| vec![format!("{program} output not utf-8: {e}")])
+}
+
+/// Run `<program> <args>` over owned arguments, exactly as [`stdout_of`] does.
+pub fn stdout_of_owned(program: &str, args: &[String]) -> Result<String, Vec<String>> {
+    stdout_of(
+        program,
+        &args.iter().map(String::as_str).collect::<Vec<_>>(),
+    )
+}
+
+/// A path as UTF-8, or a one-line diagnostic naming it.
+pub fn utf8(file: &Path) -> Result<&str, Vec<String>> {
+    file.to_str()
+        .ok_or_else(|| vec![format!("{} is not valid UTF-8", file.display())])
+}
+
+/// Remove a directory if it exists, create it empty, and return its path.
+pub fn fresh_dir(directory: &Path) -> Result<PathBuf, Vec<String>> {
+    if directory.exists() {
+        std::fs::remove_dir_all(directory)
+            .map_err(|e| vec![format!("cannot clear {}: {e}", directory.display())])?;
+    }
+    std::fs::create_dir_all(directory)
+        .map_err(|e| vec![format!("cannot create {}: {e}", directory.display())])?;
+    Ok(directory.to_path_buf())
 }
 
 /// Run `git <args>` and return its stdout, or a one-line diagnostic on failure.
