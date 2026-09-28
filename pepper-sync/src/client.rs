@@ -522,9 +522,13 @@ mod tests {
             (ShieldedPool::Orchard, ORCHARD_ACTIVATION),
             (ShieldedPool::Ironwood, IRONWOOD_ACTIVATION),
         ] {
-            get_frontiers(spawn_fetcher(pool), &NETWORK, (activation_height - 1).into())
-                .await
-                .unwrap();
+            get_frontiers(
+                spawn_fetcher(pool),
+                &NETWORK,
+                (activation_height - 1).into(),
+            )
+            .await
+            .unwrap();
 
             for height in [activation_height, activation_height + 1] {
                 assert!(matches!(

@@ -214,9 +214,7 @@ impl ServerError {
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError
-            | ServerError::TreeStateNotServed { .. } => {
-                SyncRecoveryObservables::ServerUnavailable
-            }
+            | ServerError::TreeStateNotServed { .. } => SyncRecoveryObservables::ServerUnavailable,
             // Empty chain. No point retrying anywhere.
             ServerError::GenesisBlockOnly => SyncRecoveryObservables::Abort,
         }
