@@ -3404,6 +3404,8 @@ mod test {
             time::Duration,
         };
 
+        use zingo_netutils::time::MEMPOOL_DRAIN_CEILING;
+
         use crate::sync::{MempoolDrainVerdict, mempool_drain_verdict};
 
         /// One row of the drain-policy table:
@@ -3464,10 +3466,13 @@ mod test {
                 // Ceiling with a stream that never connected: the
                 // pre-c90f8d309 semantics. A dead stream must not
                 // hold the session open.
+                // Written as the ceiling itself: a literal chosen against
+                // one value of it stops testing the ceiling the moment the
+                // constant moves.
                 (
                     Arc::new(AtomicBool::new(false)),
                     Arc::new(AtomicU32::new(0)),
-                    Duration::from_millis(1_000),
+                    MEMPOOL_DRAIN_CEILING,
                     None,
                     MempoolDrainVerdict::ShutdownAndDrainComplete,
                     "ceiling without stream",
