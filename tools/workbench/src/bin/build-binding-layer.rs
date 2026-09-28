@@ -420,6 +420,7 @@ fn android_plan(
             .into_iter()
             .chain(strip(wallet_library(abi), &abi.env(&wallet_target)))
     });
+    let bindgen_abi = &binding_layer::ANDROID_ABIS[FIRST_POSITION];
     let proxy_steps = abis.iter().enumerate().flat_map(|(position, abi)| {
         let build = ndk_build(
             abi,
@@ -431,7 +432,7 @@ fn android_plan(
             bindgen(
                 binding_layer::Generation::Proxy,
                 &proxy_library(abi),
-                abi.env(&wallet_target),
+                bindgen_abi.env(&wallet_target),
             )
         });
         [build]
@@ -866,6 +867,26 @@ mod tests {
             .filter(|command| command.contains("--library"))
             .count();
         assert_eq!(generations, PROXY_GENERATIONS_PER_BUILD);
+    }
+
+    #[test]
+    fn proxy_bindgen_takes_the_aarch64_environment_whatever_the_selection() {
+        let x86: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS
+            .iter()
+            .filter(|abi| abi.jni_dir == "x86")
+            .collect();
+        let plan = android_plan(&roots(), "out", &x86);
+        let expected_cc = binding_layer::ANDROID_ABIS[FIRST_POSITION].cc();
+        let bindgen_env = plan.iter().find_map(|step| match step {
+            Step::Run { env, command, .. } if command.iter().any(|arg| arg == "--library") => {
+                Some(env.clone())
+            }
+            _ => None,
+        });
+        assert!(bindgen_env
+            .unwrap()
+            .iter()
+            .any(|(key, value)| key == "CC" && *value == expected_cc));
     }
 
     #[test]

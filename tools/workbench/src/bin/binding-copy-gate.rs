@@ -13,7 +13,13 @@ const PROGRAM: &str = "binding-copy-gate";
 
 /// The invocation shape, reported when the arguments do not parse.
 const USAGE: &str = "usage: binding-copy-gate <import|graph|bindings|artifacts|ios-artifacts|all> \
-    --mobile <zingo-mobile checkout at TFC> --tfc <rev> --import <rev> --placement <rev>";
+    --mobile <zingo-mobile checkout at TFC> --tfc <rev> --tar <rev> --import <rev> --placement <rev>";
+
+/// The flag that names the Aligned Rev.
+const TAR_FLAG: &str = "--tar";
+
+/// The revision of this checkout that the gates judge.
+const HEAD: &str = "HEAD";
 
 /// The flag that names a zingo-mobile checkout at the Freeze Commit.
 const MOBILE_FLAG: &str = "--mobile";
@@ -45,8 +51,22 @@ const FIRST_LINE_NUMBER: usize = 1;
 /// The number of leading command-line arguments that name the program itself.
 const PROGRAM_NAME_ARGUMENTS: usize = 1;
 
-/// The file names that a placement commit may touch.
-const MANIFEST_FILE_NAMES: [&str; 2] = ["Cargo.toml", "Cargo.lock"];
+/// The manifests and lockfiles of the copied crates, the only copied paths the branch may change.
+const COPIED_MANIFESTS: [&str; 4] = [
+    "zingo-ffi/Cargo.toml",
+    "zingo-ffi/Cargo.lock",
+    "zingo-netutils/nym-proxy-ffi/Cargo.toml",
+    "zingo-netutils/nym-proxy-ffi/Cargo.lock",
+];
+
+/// The parent manifests whose workspaces the placement excludes the copies from.
+const PARENT_MANIFESTS: [&str; 2] = ["Cargo.toml", "zingo-netutils/Cargo.toml"];
+
+/// The directories that the branch adds beside the copy: the packaging and the gate tooling.
+const BRANCH_DIRECTORIES: [&str; 2] = ["bindings", "tools/workbench"];
+
+/// The separator between a directory and the paths under it.
+const PATH_SEPARATOR: char = '/';
 
 /// The scratch directory, under the zingolib root, that holds generated bindings.
 const SCRATCH_DIR: &str = "target/binding-copy-gate";
@@ -425,11 +445,13 @@ impl Gate {
         }
     }
 
-    /// Whether this gate can run on the current operating system.
-    fn runs_here(self) -> bool {
+    /// What this host lacks to run this gate, if anything.
+    fn unmet_requirement(self) -> Option<&'static str> {
         match self {
-            Gate::IosArtifacts => env::consts::OS == binding_layer::MACOS,
-            _ => true,
+            Gate::IosArtifacts if env::consts::OS != binding_layer::MACOS => {
+                Some("needs macOS with Xcode")
+            }
+            _ => None,
         }
     }
 }
@@ -438,10 +460,14 @@ impl Gate {
 struct Invocation<'a> {
     /// The gates to run, in order.
     gates: Vec<Gate>,
+    /// Whether the selection was `all`, which reports gates this host cannot run as skipped.
+    all: bool,
     /// The zingo-mobile checkout at TFC.
     mobile: path::PathBuf,
     /// The Freeze Commit.
     tfc: &'a str,
+    /// The Aligned Rev.
+    tar: &'a str,
     /// The import commit.
     import: &'a str,
     /// The placement commit.
@@ -499,7 +525,12 @@ fn gate_all(args: &[String]) -> Result<Vec<String>, Vec<String>> {
     let invocation = parse(args)?;
     let tfc_side = Side {
         name: "tfc",
-        root: invocation.mobile.clone(),
+        root: fs::canonicalize(&invocation.mobile).map_err(|e| {
+            vec![format!(
+                "cannot resolve {}: {e}",
+                invocation.mobile.display()
+            )]
+        })?,
         layout: TFC_LAYOUT,
     };
     let copy_side = Side {
@@ -511,7 +542,12 @@ fn gate_all(args: &[String]) -> Result<Vec<String>, Vec<String>> {
     invocation
         .gates
         .iter()
-        .map(|gate| run_gate(*gate, &invocation, &tfc_side, &copy_side))
+        .map(|gate| match gate.unmet_requirement() {
+            Some(requirement) if invocation.all => {
+                Ok(vec![format!("gate {} SKIPPED  {requirement}", gate.name())])
+            }
+            _ => run_gate(*gate, &invocation, &tfc_side, &copy_side),
+        })
         .collect::<Result<Vec<_>, _>>()
         .map(|reports| reports.concat())
 }
@@ -519,8 +555,9 @@ fn gate_all(args: &[String]) -> Result<Vec<String>, Vec<String>> {
 /// Parse the gate selection and the four flags, all of which are required.
 fn parse(args: &[String]) -> Result<Invocation<'_>, Vec<String>> {
     let (selection, flags) = args.split_first().ok_or_else(|| vec![USAGE.to_string()])?;
-    let gates = if selection == ALL_GATES {
-        GATES.into_iter().filter(|gate| gate.runs_here()).collect()
+    let all = selection == ALL_GATES;
+    let gates = if all {
+        GATES.to_vec()
     } else {
         vec![Gate::named(selection)
             .ok_or_else(|| vec![format!("unknown gate `{selection}`"), USAGE.to_string()])?]
@@ -531,8 +568,10 @@ fn parse(args: &[String]) -> Result<Invocation<'_>, Vec<String>> {
     };
     Ok(Invocation {
         gates,
+        all,
         mobile: path::PathBuf::from(required(MOBILE_FLAG)?),
         tfc: required(TFC_FLAG)?,
+        tar: required(TAR_FLAG)?,
         import: required(IMPORT_FLAG)?,
         placement: required(PLACEMENT_FLAG)?,
     })
@@ -588,27 +627,51 @@ fn import_checks(
         .collect()
 }
 
-/// Gate 2: the placement touches only manifests, and each crate's resolved graph matches TFC's.
+/// Gate 2: the branch changes only what it may, starts at TAR, and each crate's graph matches TFC's.
 fn graph_checks(
     invocation: &Invocation,
     tfc_side: &Side,
     copy_side: &Side,
 ) -> Result<Vec<Check>, Vec<String>> {
-    let touched = workbench::git(&[
-        "-C",
-        workbench::utf8(&copy_side.root)?,
-        "diff",
-        "--name-only",
-        invocation.import,
-        invocation.placement,
-    ])?;
-    let placement_check = Check {
-        label: "placement touches only manifests and lockfiles".to_string(),
-        outcome: match non_manifest_paths(&touched).as_slice() {
-            [] => Ok(()),
-            strays => Err(format!("also touches {}", strays.join(", "))),
-        },
+    let copy_root = workbench::utf8(&copy_side.root)?;
+    let changed = |from: &str, to: &str, pathspecs: &[&str]| {
+        workbench::git(
+            &[
+                ["-C", copy_root, "diff", "--name-only", from, to, "--"].as_slice(),
+                pathspecs,
+            ]
+            .concat(),
+        )
     };
+    let copied: Vec<&str> = COPIED_PATHS.iter().map(|copied| copied.copy).collect();
+    let placement_check = paths_check(
+        "placement touches only its intended manifests",
+        &changed(invocation.import, invocation.placement, &[])?,
+        is_placement_path,
+    );
+    let copied_check = paths_check(
+        "copied paths change after the import only in their manifests",
+        &changed(invocation.import, HEAD, &copied)?,
+        |touched| COPIED_MANIFESTS.contains(&touched),
+    );
+    let ancestry_check = Check {
+        label: format!("the branch descends from TAR {}", invocation.tar),
+        outcome: workbench::git(&[
+            "-C",
+            copy_root,
+            "merge-base",
+            "--is-ancestor",
+            invocation.tar,
+            HEAD,
+        ])
+        .map(drop)
+        .map_err(|_| "TAR is not an ancestor of HEAD".to_string()),
+    };
+    let tar_check = paths_check(
+        "zingolib outside the copy, the placement, and the packaging is TAR's",
+        &changed(invocation.tar, HEAD, &[])?,
+        |touched| is_branch_path(touched, &copied),
+    );
     let source_prefixes = [
         ZINGOLIB_GIT_SOURCE,
         workbench::utf8(&tfc_side.root)?,
@@ -625,7 +688,10 @@ fn graph_checks(
             })
         })
         .collect::<Result<Vec<_>, Vec<String>>>()?;
-    Ok(iter::once(placement_check).chain(tree_checks).collect())
+    Ok([placement_check, copied_check, ancestry_check, tar_check]
+        .into_iter()
+        .chain(tree_checks)
+        .collect())
 }
 
 /// Gate 3: the bindings generated on each side match byte for byte.
@@ -1117,10 +1183,8 @@ fn release_profile_check(tfc_side: &Side, copy_side: &Side) -> Result<Check, Vec
 
 /// Gate 3's iOS half: zingo-mobile's XCFrameworks and Swift at TFC against the SwiftPM package's.
 fn ios_artifact_checks(tfc_side: &Side, copy_side: &Side) -> Result<Vec<Check>, Vec<String>> {
-    if !Gate::IosArtifacts.runs_here() {
-        return Err(vec![
-            "the iOS half of gate 3 requires macOS with Xcode".to_string()
-        ]);
+    if let Some(requirement) = Gate::IosArtifacts.unmet_requirement() {
+        return Err(vec![format!("the iOS half of gate 3 {requirement}")]);
     }
     let describe = tfc_describe(&tfc_side.root)?;
     let env = [(binding_layer::DESCRIBE_VARIABLE, describe.as_str())];
@@ -1372,18 +1436,39 @@ fn first_file_difference(
         .map_or(Ok(()), Err)
 }
 
-/// The touched paths whose file names are neither a manifest nor a lockfile.
-fn non_manifest_paths(touched: &str) -> Vec<&str> {
+/// A check that every touched path is one that the given rule allows.
+fn paths_check(label: &str, touched: &str, allowed: impl Fn(&str) -> bool) -> Check {
+    Check {
+        label: label.to_string(),
+        outcome: match stray_paths(touched, allowed).as_slice() {
+            [] => Ok(()),
+            strays => Err(format!("also touches {}", strays.join(", "))),
+        },
+    }
+}
+
+/// The touched paths, one per line, that the given rule does not allow.
+fn stray_paths(touched: &str, allowed: impl Fn(&str) -> bool) -> Vec<&str> {
     touched
         .lines()
-        .filter(|touched_path| {
-            let file_name = path::Path::new(touched_path)
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or_default();
-            !MANIFEST_FILE_NAMES.contains(&file_name)
-        })
+        .filter(|touched_path| !allowed(touched_path))
         .collect()
+}
+
+/// Whether a path is one that the placement commit is meant to touch.
+fn is_placement_path(touched: &str) -> bool {
+    COPIED_MANIFESTS.contains(&touched) || PARENT_MANIFESTS.contains(&touched)
+}
+
+/// Whether a path is one that the branch may change relative to TAR.
+fn is_branch_path(touched: &str, copied: &[&str]) -> bool {
+    let under = |directory: &&str| {
+        touched == *directory
+            || touched
+                .strip_prefix(directory)
+                .is_some_and(|rest| rest.starts_with(PATH_SEPARATOR))
+    };
+    is_placement_path(touched) || copied.iter().any(under) || BRANCH_DIRECTORIES.iter().any(under)
 }
 
 /// A `cargo tree` text with every source annotation that starts with a given prefix removed.
@@ -1455,11 +1540,26 @@ mod tests {
     }
 
     #[test]
-    fn manifest_paths_pass_and_others_are_named() {
-        let touched = "Cargo.toml\nzingo-ffi/Cargo.lock\nzingo-ffi/lib/src/lib.rs";
+    fn placement_allows_only_its_intended_manifests() {
+        let touched =
+            "Cargo.toml\nzingo-ffi/Cargo.lock\nzingo-ffi/lib/Cargo.toml\nzingo-ffi/lib/src/lib.rs";
         assert_eq!(
-            non_manifest_paths(touched),
-            vec!["zingo-ffi/lib/src/lib.rs"]
+            stray_paths(touched, is_placement_path),
+            vec!["zingo-ffi/lib/Cargo.toml", "zingo-ffi/lib/src/lib.rs"]
+        );
+    }
+
+    #[test]
+    fn branch_paths_cover_the_copy_the_packaging_and_the_tooling_only() {
+        let copied: Vec<&str> = COPIED_PATHS.iter().map(|copied| copied.copy).collect();
+        let touched = "zingo-ffi/lib/src/lib.rs\nbindings/android/build.gradle.kts\ntools/workbench/src/lib.rs\nzingo-ffi/Cargo.lock\npepper-sync/src/sync.rs\nbindingsx/file\nzingolib/Cargo.toml";
+        assert_eq!(
+            stray_paths(touched, |path| is_branch_path(path, &copied)),
+            vec![
+                "pepper-sync/src/sync.rs",
+                "bindingsx/file",
+                "zingolib/Cargo.toml"
+            ]
         );
     }
 
@@ -1485,6 +1585,8 @@ mod tests {
             "/m",
             "--tfc",
             "t",
+            "--tar",
+            "r",
             "--import",
             "i",
             "--placement",
@@ -1494,6 +1596,7 @@ mod tests {
         .to_vec();
         let invocation = parse(&args).unwrap();
         assert_eq!(invocation.gates.len(), GATES.len());
+        assert!(invocation.all);
         let (_, without_last) = args.split_last().unwrap();
         assert!(parse(without_last).is_err());
         assert!(parse(&["unknown".to_string()]).is_err());
