@@ -173,6 +173,12 @@ const DESCRIPTOR_PUNCTUATION: &[u8] = b"_.-";
 /// The name of the generated function that returns the descriptor, which is not itself a descriptor.
 const DESCRIPTOR_FUNCTION: &str = "zm_description";
 
+/// The length of the shortest descriptor body, the abbreviated hash that the wallet's build script keeps.
+const DESCRIPTOR_HASH_LENGTH: usize = 5;
+
+/// The length of the shortest descriptor, below which a `zm_` match is only stray bytes.
+const DESCRIPTOR_MIN_LENGTH: usize = DESCRIPTOR_PREFIX.len() + DESCRIPTOR_HASH_LENGTH;
+
 /// How to list and normalize a library's exported symbols.
 #[derive(Clone, Copy)]
 enum Symbols {
@@ -457,6 +463,18 @@ impl Side {
     fn file(&self, relative: &str) -> path::PathBuf {
         self.root.join(relative)
     }
+
+    /// The absolute directory that a bindgen working directory names on this side.
+    fn workdir(&self, workdir: binding_layer::Workdir) -> path::PathBuf {
+        let manifest = match workdir {
+            binding_layer::Workdir::WalletCrate => self.layout.wallet_crate,
+            binding_layer::Workdir::WalletWorkspace => self.layout.manifest(Workspace::Wallet),
+            binding_layer::Workdir::ProxyCrate => self.layout.manifest(Workspace::Proxy),
+        };
+        self.file(manifest)
+            .parent()
+            .map_or_else(|| self.root.clone(), path::Path::to_path_buf)
+    }
 }
 
 /// The outcome of one comparison inside a gate.
@@ -653,7 +671,13 @@ fn generate_bindings(side: &Side, scratch: &path::Path) -> Result<(), Vec<String
             workbench::utf8(&out_dir)?,
             GATE_PROFILE,
         );
-        workbench::stdout_of_owned("cargo", &args).map(drop)
+        workbench::stdout_in(
+            &side.workdir(binding_layer::bindgen_workdir(generation, language)),
+            "cargo",
+            &args.iter().map(String::as_str).collect::<Vec<_>>(),
+            &[],
+        )
+        .map(drop)
     })
 }
 
@@ -986,7 +1010,7 @@ fn exported_symbols(library: &path::Path, symbols: Symbols) -> Result<String, Ve
     .map(|listing| symbols.normalize(&listing))
 }
 
-/// The symbol and descriptor checks of one library that both sides carry.
+/// The symbol check of one library that both sides carry, and its descriptor check if it is the wallet's.
 fn library_pair_checks(
     label: &str,
     tfc_library: &path::Path,
@@ -998,19 +1022,35 @@ fn library_pair_checks(
             .map(|bytes| embedded_descriptors(&bytes))
             .map_err(|e| vec![format!("cannot read {}: {e}", library.display())])
     };
-    Ok(vec![
-        Check {
-            label: format!("exported symbols of {label}"),
-            outcome: first_difference(
-                &exported_symbols(tfc_library, symbols)?,
-                &exported_symbols(copy_library, symbols)?,
-            ),
-        },
-        Check {
-            label: format!("embedded zingo-mobile descriptor of {label}"),
-            outcome: set_difference(&descriptors(tfc_library)?, &descriptors(copy_library)?),
-        },
-    ])
+    let symbol_check = Check {
+        label: format!("exported symbols of {label}"),
+        outcome: first_difference(
+            &exported_symbols(tfc_library, symbols)?,
+            &exported_symbols(copy_library, symbols)?,
+        ),
+    };
+    let descriptor_check = is_wallet_library(tfc_library)
+        .then(|| -> Result<Check, Vec<String>> {
+            Ok(Check {
+                label: format!("embedded zingo-mobile descriptor of {label}"),
+                outcome: set_difference(&descriptors(tfc_library)?, &descriptors(copy_library)?),
+            })
+        })
+        .transpose()?;
+    Ok(iter::once(symbol_check).chain(descriptor_check).collect())
+}
+
+/// Whether a library file is the wallet's, the only library that embeds zingo-mobile's descriptor.
+fn is_wallet_library(library: &path::Path) -> bool {
+    let wallet_static = binding_layer::library_file(
+        binding_layer::LIBRARY_PREFIX,
+        binding_layer::WALLET_LIB_NAME,
+        binding_layer::STATIC_SUFFIX,
+    );
+    library
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == binding_layer::ANDROID_WALLET_LIBRARY || name == wallet_static)
 }
 
 /// The C-ABI symbol names in a listing, sorted and without Rust-mangled names or archive headers.
@@ -1046,7 +1086,9 @@ fn embedded_descriptors(bytes: &[u8]) -> collections::BTreeSet<String> {
                 .map(|byte| char::from(*byte))
                 .collect::<String>()
         })
-        .filter(|candidate| !candidate.starts_with(DESCRIPTOR_FUNCTION))
+        .filter(|candidate| {
+            candidate.len() >= DESCRIPTOR_MIN_LENGTH && !candidate.starts_with(DESCRIPTOR_FUNCTION)
+        })
         .collect()
 }
 

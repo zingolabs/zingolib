@@ -45,8 +45,22 @@ pub fn stdout_with_env(
     args: &[&str],
     env: &[(&str, &str)],
 ) -> Result<String, Vec<String>> {
+    stdout_in(Path::new(CURRENT_DIR), program, args, env)
+}
+
+/// The working directory that a command inherits unless a caller names another.
+const CURRENT_DIR: &str = ".";
+
+/// Run `<program> <args>` from a directory with extra environment, exactly as [`stdout_of`] does otherwise.
+pub fn stdout_in(
+    directory: &Path,
+    program: &str,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> Result<String, Vec<String>> {
     let output = Command::new(program)
         .args(args)
+        .current_dir(directory)
         .envs(env.iter().copied())
         .stderr(Stdio::inherit())
         .output()

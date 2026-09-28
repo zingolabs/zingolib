@@ -1,5 +1,11 @@
+/// The language of the Android bindings.
+pub const KOTLIN: &str = "kotlin";
+
+/// The language of the iOS bindings.
+pub const SWIFT: &str = "swift";
+
 /// The binding languages that zingo-mobile generates.
-pub const LANGUAGES: [&str; 2] = ["kotlin", "swift"];
+pub const LANGUAGES: [&str; 2] = [KOTLIN, SWIFT];
 
 /// The binary in the wallet crate that generates bindings from the UDL file.
 const WALLET_BINDGEN_BIN: &str = "uniffi-bindgen";
@@ -209,6 +215,26 @@ pub fn binding_sets() -> impl Iterator<Item = (Generation, &'static str)> {
         .flat_map(|generation| LANGUAGES.map(|language| (generation, language)))
 }
 
+/// A directory that a bindgen run starts in, which decides whose `uniffi.toml` library mode applies.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Workdir {
+    /// The wallet crate's directory.
+    WalletCrate,
+    /// The wallet-side workspace's directory, where library mode sees no proxy configuration.
+    WalletWorkspace,
+    /// The proxy crate's directory, where library mode applies the proxy's configuration.
+    ProxyCrate,
+}
+
+/// The directory that zingo-mobile's builders generate one binding set in one language from.
+pub fn bindgen_workdir(generation: Generation, language: &str) -> Workdir {
+    match (generation, language) {
+        (Generation::Wallet, _) => Workdir::WalletCrate,
+        (Generation::Proxy, KOTLIN) => Workdir::ProxyCrate,
+        (Generation::Proxy, _) => Workdir::WalletWorkspace,
+    }
+}
+
 /// The name of the directory that holds one binding set in one language.
 pub fn output_name(generation: Generation, language: &str) -> String {
     format!("{}-{language}", generation.label())
@@ -315,5 +341,20 @@ mod tests {
         assert!(ANDROID_ABIS
             .iter()
             .all(|abi| abi.cc().contains(ANDROID_API_LEVEL)));
+    }
+
+    #[test]
+    fn only_the_proxy_kotlin_generates_where_the_proxy_configuration_applies() {
+        assert_eq!(
+            bindgen_workdir(Generation::Proxy, KOTLIN),
+            Workdir::ProxyCrate
+        );
+        assert_eq!(
+            bindgen_workdir(Generation::Proxy, SWIFT),
+            Workdir::WalletWorkspace
+        );
+        assert!(LANGUAGES
+            .iter()
+            .all(|language| bindgen_workdir(Generation::Wallet, language) == Workdir::WalletCrate));
     }
 }

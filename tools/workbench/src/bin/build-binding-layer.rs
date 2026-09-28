@@ -355,13 +355,16 @@ fn android_plan(
     let bindgen = |generation, proxy: &str, env: Vec<(String, String)>| {
         let (wallet_crate, udl, wallet_workspace, proxy_library) = bindgen_inputs(proxy);
         Step::Run {
-            workdir: wallet_crate_dir.clone(),
+            workdir: roots.run_path(workdir_dir(binding_layer::bindgen_workdir(
+                generation,
+                binding_layer::KOTLIN,
+            ))),
             env,
             command: [
                 vec!["cargo".to_string()],
                 binding_layer::bindgen_args(
                     generation,
-                    KOTLIN,
+                    binding_layer::KOTLIN,
                     &binding_layer::BindgenInputs {
                         wallet_crate: &wallet_crate,
                         udl: &udl,
@@ -471,11 +474,14 @@ fn android_plan(
     .collect()
 }
 
-/// The language of the Android bindings.
-const KOTLIN: &str = "kotlin";
-
-/// The language of the iOS bindings.
-const SWIFT: &str = "swift";
+/// The directory, relative to the zingolib root, that a bindgen working directory names.
+fn workdir_dir(workdir: binding_layer::Workdir) -> &'static str {
+    match workdir {
+        binding_layer::Workdir::WalletCrate => WALLET_CRATE_DIR,
+        binding_layer::Workdir::WalletWorkspace => WALLET_WORKSPACE_DIR,
+        binding_layer::Workdir::ProxyCrate => PROXY_CRATE_DIR,
+    }
+}
 
 /// The position of the first element in a sequence.
 const FIRST_POSITION: usize = 0;
@@ -537,19 +543,22 @@ fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
     let wallet_generated = format!("{relative_out}/{GENERATED_DIR}/wallet");
     let proxy_generated = format!("{relative_out}/{GENERATED_DIR}/proxy");
     let headers = format!("{relative_out}/{GENERATED_DIR}/headers");
-    let bindgen = |generation, out: &str, workdir: &str| {
+    let bindgen = |generation, out: &str| {
         let wallet_crate = format!("{wallet_crate_dir}/{MANIFEST}");
         let udl = format!("{wallet_crate_dir}/{UDL}");
         let wallet_workspace = format!("{wallet_workspace_dir}/{MANIFEST}");
         let proxy_library = library(&proxy_target, IOS_DEVICE_TARGET, &proxy_static);
         Step::Run {
-            workdir: workdir.to_string(),
+            workdir: roots.run_path(workdir_dir(binding_layer::bindgen_workdir(
+                generation,
+                binding_layer::SWIFT,
+            ))),
             env: env.clone(),
             command: [
                 vec!["cargo".to_string()],
                 binding_layer::bindgen_args(
                     generation,
-                    SWIFT,
+                    binding_layer::SWIFT,
                     &binding_layer::BindgenInputs {
                         wallet_crate: &wallet_crate,
                         udl: &udl,
@@ -631,11 +640,7 @@ fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
             Step::FreshDir(host(&wallet_generated)),
             Step::FreshDir(host(&proxy_generated)),
             Step::FreshDir(host(&headers)),
-            bindgen(
-                binding_layer::Generation::Wallet,
-                &wallet_generated,
-                &wallet_crate_dir,
-            ),
+            bindgen(binding_layer::Generation::Wallet, &wallet_generated),
         ],
         cargo_builds(&wallet_crate_dir, &wallet_target, &[]),
         lipo(&wallet_target, &wallet_static).into_iter().collect(),
@@ -644,11 +649,7 @@ fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
             &proxy_target,
             &["-p", binding_layer::PROXY_PACKAGE],
         ),
-        vec![bindgen(
-            binding_layer::Generation::Proxy,
-            &proxy_generated,
-            &wallet_workspace_dir,
-        )],
+        vec![bindgen(binding_layer::Generation::Proxy, &proxy_generated)],
         lipo(&proxy_target, &proxy_static).into_iter().collect(),
         vec![
             Step::Copy {
