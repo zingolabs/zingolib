@@ -39,7 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AllAddressesInUse`, and `TransparentAddressDerivationError`.
 - BREAKING: `error::ServerError::TreeStateNotServed` variant, returned when the
   server omits a shielded pool's tree state at or above the pool's activation
-  height.
+  height. The server does not serve that pool, so retrying the same server
+  will not succeed: the error recommends
+  `SyncRecoveryObservables::ServerUnavailable`, and the consumer should switch
+  to a different server and sync again.
 - BREAKING: `error::ScanError::TreeSizeNotReported` variant, returned when
   block metadata reports a tree size of zero where the wallet has calculated a
   non-zero tree size.
