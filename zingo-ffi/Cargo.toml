@@ -14,12 +14,12 @@ exclude = ["nym-proxy-ffi"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", rev = "b5936610", features = [
+zingolib = { git = "https://github.com/zingolabs/zingolib", rev = "bd9e74ee0", features = [
     "nym",
     "perspective",
 ] }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", rev = "b5936610" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "b5936610" }
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", rev = "bd9e74ee0" }
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "bd9e74ee0" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
 zcash_address = "0.13.0"
