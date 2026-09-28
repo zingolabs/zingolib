@@ -1154,6 +1154,36 @@ async fn assert_ironwood_note_statuses(
     }
 }
 
+/// Sync until the wallet records `txid` in the mempool. The mempool
+/// monitor only runs within a sync session, and a session can end
+/// before the indexer, which polls the validator's mempool, streams a
+/// freshly sent transaction.
+async fn sync_until_in_mempool(
+    client: &mut LightClient,
+    txid: zcash_primitives::transaction::TxId,
+) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        client.sync_and_await().await.unwrap();
+        let in_mempool = client
+            .wallet()
+            .read()
+            .await
+            .wallet_transactions
+            .get(&txid)
+            .is_some_and(|transaction| {
+                matches!(transaction.status(), ConfirmationStatus::Mempool(_))
+            });
+        if in_mempool {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "transaction {txid} not observed in the mempool within 30 seconds"
+        );
+    }
+}
+
 /// Coalesced from the former `mempool_and_balance` and
 /// `mempool_spends_correctly_marked_pending_spent`
 /// (protection-dominance analysis): one funded recipient walks two
@@ -1190,7 +1220,7 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     )
     .await
     .unwrap();
-    recipient.sync_and_await().await.unwrap();
+    sync_until_in_mempool(&mut recipient, *small_txids.first()).await;
     let after_small = funded - (small + u64::from(MINIMUM_FEE));
     assert_ironwood_split(&recipient, after_small, 0, after_small).await;
     assert_ironwood_note_statuses(
@@ -1227,7 +1257,7 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     )
     .await
     .unwrap();
-    recipient.sync_and_await().await.unwrap();
+    sync_until_in_mempool(&mut recipient, *big_txids.first()).await;
     // One orchard spend, one sapling output, orchard change: the
     // ZIP-317 fee the former test pinned implicitly via its
     // 880_000 post-state.

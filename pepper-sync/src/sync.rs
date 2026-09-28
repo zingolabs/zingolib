@@ -2654,12 +2654,13 @@ where
                         mempool_stream_message = mempool_stream.message() => {
                             match mempool_stream_message {
                                 Ok(Some(raw_transaction)) => {
+                                     // counted before sending so the drain verdict never observes a zero count
+                                     // while a transaction is queued in the channel.
+                                     unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
                                      match mempool_transaction_sender
                                         .send(MempoolMessage::Transaction(raw_transaction))
                                         .await {
-                                            Ok(_) => {
-                                                unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
-                                            }
+                                            Ok(_) => (),
                                             Err(_) => {
                                                 unprocessed_transactions_count.store(0, atomic::Ordering::Release);
                                                 shutdown_mempool.store(true, atomic::Ordering::Release);
