@@ -142,7 +142,7 @@ impl ServerError {
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError
             | ServerError::GenesisBlockOnly
-            | ServerError::IronwoodTreeStateNotServed(_) => false,
+            | ServerError::TreeStateNotServed { .. } => false,
         }
     }
 }
@@ -214,7 +214,7 @@ impl ServerError {
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError
-            | ServerError::IronwoodTreeStateNotServed(_) => {
+            | ServerError::TreeStateNotServed { .. } => {
                 SyncRecoveryObservables::ServerUnavailable
             }
             // Empty chain. No point retrying anywhere.
@@ -427,12 +427,17 @@ pub enum ServerError {
     /// Server reports only the genesis block exists.
     #[error("server reports only the genesis block exists.")]
     GenesisBlockOnly,
-    /// Server did not return the Ironwood note commitment tree state for a height at or above the Ironwood
+    /// Server did not return a shielded pool's note commitment tree state for a height at or above the pool's
     /// activation height.
     #[error(
-        "server does not serve the ironwood note commitment tree state at height {0}. connect to a server that serves ironwood."
+        "server does not serve the {pool} note commitment tree state at height {height}. connect to a server that serves {pool}."
     )]
-    IronwoodTreeStateNotServed(BlockHeight),
+    TreeStateNotServed {
+        /// The pool whose tree state was omitted.
+        pool: PoolType,
+        /// The requested block height.
+        height: BlockHeight,
+    },
 }
 
 /// Sync mode error.

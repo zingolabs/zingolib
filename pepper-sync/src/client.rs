@@ -12,7 +12,10 @@ use std::{
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::{
+    PoolType, ShieldedPool,
+    consensus::{self, BlockHeight},
+};
 
 use zingo_netutils::{
     Indexer, TransparentIndexer,
@@ -259,13 +262,32 @@ pub(crate) async fn get_frontiers(
         .map_err(|_| ServerError::FetcherDropped)?
         .map_err(ServerError::RequestFailed)?;
 
-    // servers omit the ironwood tree state below the ironwood activation height. at and above the activation height,
-    // an empty tree is served as a serialized empty tree, so an omitted tree state means the server does not serve
-    // ironwood.
-    if tree_state.ironwood_tree.is_empty()
-        && consensus_parameters.is_nu_active(consensus::NetworkUpgrade::Nu6_3, block_height)
-    {
-        return Err(ServerError::IronwoodTreeStateNotServed(block_height));
+    // servers omit a pool's tree state below the pool's activation height. at and above the activation height, an
+    // empty tree is served as a serialized empty tree, so an omitted tree state means the server does not serve the
+    // pool.
+    for (pool, tree, network_upgrade) in [
+        (
+            ShieldedPool::Sapling,
+            &tree_state.sapling_tree,
+            consensus::NetworkUpgrade::Sapling,
+        ),
+        (
+            ShieldedPool::Orchard,
+            &tree_state.orchard_tree,
+            consensus::NetworkUpgrade::Nu5,
+        ),
+        (
+            ShieldedPool::Ironwood,
+            &tree_state.ironwood_tree,
+            consensus::NetworkUpgrade::Nu6_3,
+        ),
+    ] {
+        if tree.is_empty() && consensus_parameters.is_nu_active(network_upgrade, block_height) {
+            return Err(ServerError::TreeStateNotServed {
+                pool: PoolType::Shielded(pool),
+                height: block_height,
+            });
+        }
     }
 
     tree_state.try_into().map_err(ServerError::InvalidFrontier)
@@ -433,21 +455,41 @@ mod tests {
 
     use super::*;
 
+    const SAPLING_ACTIVATION: u32 = 100;
+    const ORCHARD_ACTIVATION: u32 = 200;
+    const IRONWOOD_ACTIVATION: u32 = 300;
+
     const NETWORK: LocalNetwork = LocalNetwork {
         overwinter: Some(BlockHeight::from_u32(1)),
-        sapling: Some(BlockHeight::from_u32(1)),
-        blossom: Some(BlockHeight::from_u32(1)),
-        heartwood: Some(BlockHeight::from_u32(1)),
-        canopy: Some(BlockHeight::from_u32(1)),
-        nu5: Some(BlockHeight::from_u32(1)),
-        nu6: Some(BlockHeight::from_u32(1)),
-        nu6_1: Some(BlockHeight::from_u32(1)),
-        nu6_2: Some(BlockHeight::from_u32(1)),
-        nu6_3: Some(BlockHeight::from_u32(100)),
+        sapling: Some(BlockHeight::from_u32(SAPLING_ACTIVATION)),
+        blossom: Some(BlockHeight::from_u32(SAPLING_ACTIVATION)),
+        heartwood: Some(BlockHeight::from_u32(SAPLING_ACTIVATION)),
+        canopy: Some(BlockHeight::from_u32(SAPLING_ACTIVATION)),
+        nu5: Some(BlockHeight::from_u32(ORCHARD_ACTIVATION)),
+        nu6: Some(BlockHeight::from_u32(ORCHARD_ACTIVATION)),
+        nu6_1: Some(BlockHeight::from_u32(ORCHARD_ACTIVATION)),
+        nu6_2: Some(BlockHeight::from_u32(ORCHARD_ACTIVATION)),
+        nu6_3: Some(BlockHeight::from_u32(IRONWOOD_ACTIVATION)),
     };
 
-    /// Answers tree state requests with empty sapling and orchard trees and the given ironwood tree field.
-    fn spawn_fetcher(ironwood_tree: &'static str) -> mpsc::UnboundedSender<FetchRequest> {
+    /// Serialized empty commitment tree, as served at and above a pool's activation height.
+    const EMPTY_TREE: &str = "000000";
+
+    /// Answers tree state requests with an empty tree for every pool except `omitted_pool`, whose tree state field
+    /// is left empty.
+    fn spawn_fetcher(omitted_pool: ShieldedPool) -> mpsc::UnboundedSender<FetchRequest> {
+        let tree = |pool: ShieldedPool| {
+            if pool == omitted_pool {
+                String::new()
+            } else {
+                EMPTY_TREE.to_string()
+            }
+        };
+        let (sapling_tree, orchard_tree, ironwood_tree) = (
+            tree(ShieldedPool::Sapling),
+            tree(ShieldedPool::Orchard),
+            tree(ShieldedPool::Ironwood),
+        );
         let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
         tokio::spawn(async move {
             while let Some(fetch_request) = fetch_request_receiver.recv().await {
@@ -456,7 +498,9 @@ mod tests {
                         let _ignore_error = reply_sender.send(Ok(TreeState {
                             height: u64::from(block_height),
                             hash: "00".repeat(32),
-                            ironwood_tree: ironwood_tree.to_string(),
+                            sapling_tree: sapling_tree.clone(),
+                            orchard_tree: orchard_tree.clone(),
+                            ironwood_tree: ironwood_tree.clone(),
                             ..Default::default()
                         }));
                     }
@@ -468,26 +512,27 @@ mod tests {
         fetch_request_sender
     }
 
-    /// Servers omit the ironwood tree state below the ironwood activation height and serve an empty tree as
-    /// `000000` at the activation height, so an omitted ironwood tree state at or above the activation height means
-    /// the server does not serve ironwood.
+    /// Servers omit a pool's tree state below the pool's activation height and serve an empty tree as `000000` at
+    /// the activation height, so an omitted tree state at or above the activation height means the server does not
+    /// serve the pool.
     #[tokio::test]
-    async fn omitted_ironwood_tree_state_is_rejected_at_or_above_activation() {
-        let below_activation = get_frontiers(spawn_fetcher(""), &NETWORK, 99.into())
-            .await
-            .unwrap();
-        assert_eq!(below_activation.final_ironwood_tree().tree_size(), 0);
+    async fn omitted_tree_state_is_rejected_at_or_above_activation() {
+        for (pool, activation_height) in [
+            (ShieldedPool::Sapling, SAPLING_ACTIVATION),
+            (ShieldedPool::Orchard, ORCHARD_ACTIVATION),
+            (ShieldedPool::Ironwood, IRONWOOD_ACTIVATION),
+        ] {
+            get_frontiers(spawn_fetcher(pool), &NETWORK, (activation_height - 1).into())
+                .await
+                .unwrap();
 
-        let empty_at_activation = get_frontiers(spawn_fetcher("000000"), &NETWORK, 100.into())
-            .await
-            .unwrap();
-        assert_eq!(empty_at_activation.final_ironwood_tree().tree_size(), 0);
-
-        for height in [100, 101] {
-            assert!(matches!(
-                get_frontiers(spawn_fetcher(""), &NETWORK, height.into()).await,
-                Err(ServerError::IronwoodTreeStateNotServed(h)) if h == height.into()
-            ));
+            for height in [activation_height, activation_height + 1] {
+                assert!(matches!(
+                    get_frontiers(spawn_fetcher(pool), &NETWORK, height.into()).await,
+                    Err(ServerError::TreeStateNotServed { pool: PoolType::Shielded(p), height: h })
+                        if p == pool && h == height.into()
+                ));
+            }
         }
     }
 }

@@ -37,9 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returned when the sync progress receiver has been dropped.
 - BREAKING: `error::ScanError` variants `TransparentOutputInvalidValue`,
   `AllAddressesInUse`, and `TransparentAddressDerivationError`.
-- BREAKING: `error::ServerError::IronwoodTreeStateNotServed` variant, returned
-  when the server omits the Ironwood tree state at or above the Ironwood
-  activation height.
+- BREAKING: `error::ServerError::TreeStateNotServed` variant, returned when the
+  server omits a shielded pool's tree state at or above the pool's activation
+  height.
 - BREAKING: `error::ScanError::TreeSizeNotReported` variant, returned when
   block metadata reports a tree size of zero where the wallet has calculated a
   non-zero tree size.
@@ -48,9 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: `wallet::traits::SyncShardTrees::update_shard_trees` takes the
   consensus parameters as its first argument.
 - A server that does not serve Ironwood is an error. Failing to fetch Ironwood
-  subtree roots fails sync instead of being tolerated, an omitted Ironwood tree
-  state at or above the Ironwood activation height returns
-  `ServerError::IronwoodTreeStateNotServed`, and a zero tree size in block
+  subtree roots fails sync instead of being tolerated, an omitted Sapling,
+  Orchard or Ironwood tree state at or above the pool's activation height
+  returns `ServerError::TreeStateNotServed`, and a zero tree size in block
   metadata where the wallet has calculated a non-zero tree size returns
   `ScanError::TreeSizeNotReported` instead of being logged as a warning. Both
   errors recommend `SyncRecoveryObservables::ServerUnavailable`.
