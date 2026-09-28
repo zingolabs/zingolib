@@ -8,7 +8,7 @@
 #![forbid(unsafe_code)]
 
 use std::path::{Path, PathBuf};
-use std::process::{exit, Command};
+use std::process::{exit, Command, Stdio};
 
 /// Run a tool `body`, reporting diagnostics as `"{prog}: {line}"` to stderr and
 /// exiting `1` on error. On success runs `on_ok` (e.g. to print a result) and
@@ -32,16 +32,22 @@ pub fn run<T>(
     }
 }
 
+/// Run `<program> <args>` with stderr inherited and return its stdout, or a one-line diagnostic on failure.
+pub fn stdout_of(program: &str, args: &[&str]) -> Result<String, Vec<String>> {
+    let output = Command::new(program)
+        .args(args)
+        .stderr(Stdio::inherit())
+        .output()
+        .map_err(|e| vec![format!("failed to run {program}: {e}")])?;
+    if !output.status.success() {
+        return Err(vec![format!("`{program} {}` failed", args.join(" "))]);
+    }
+    String::from_utf8(output.stdout).map_err(|e| vec![format!("{program} output not utf-8: {e}")])
+}
+
 /// Run `git <args>` and return its stdout, or a one-line diagnostic on failure.
 pub fn git(args: &[&str]) -> Result<String, Vec<String>> {
-    let output = Command::new("git")
-        .args(args)
-        .output()
-        .map_err(|e| vec![format!("failed to run git: {e}")])?;
-    if !output.status.success() {
-        return Err(vec![format!("`git {}` failed", args.join(" "))]);
-    }
-    String::from_utf8(output.stdout).map_err(|e| vec![format!("git output not utf-8: {e}")])
+    stdout_of("git", args)
 }
 
 /// Repository root via `git rev-parse --show-toplevel`.
@@ -56,21 +62,33 @@ pub fn read(path: &Path) -> Result<String, Vec<String>> {
     std::fs::read_to_string(path).map_err(|e| vec![format!("cannot read {}: {e}", path.display())])
 }
 
+/// The value of the first `<flag> <value>` or `<flag>=<value>` argument, if present.
+pub fn flag_value<'a>(args: &'a [String], flag: &str) -> Result<Option<&'a str>, Vec<String>> {
+    flag_value_after(args, flag, &format!("{flag}="))
+}
+
+/// The recursive step of [`flag_value`], given the flag's joined `<flag>=` prefix.
+fn flag_value_after<'a>(
+    args: &'a [String],
+    flag: &str,
+    joined_prefix: &str,
+) -> Result<Option<&'a str>, Vec<String>> {
+    match args {
+        [] => Ok(None),
+        [arg, rest @ ..] => match arg.strip_prefix(joined_prefix) {
+            Some(value) => Ok(Some(value)),
+            None if arg == flag => rest
+                .first()
+                .map(|value| Some(value.as_str()))
+                .ok_or_else(|| vec![format!("{flag} requires a value")]),
+            None => flag_value_after(rest, flag, joined_prefix),
+        },
+    }
+}
+
 /// The value of a `--dest <dir>` or `--dest=<dir>` argument, if present.
 pub fn parse_dest(args: &[String]) -> Result<Option<PathBuf>, Vec<String>> {
-    let mut iter = args.iter();
-    while let Some(arg) = iter.next() {
-        if let Some(dir) = arg.strip_prefix("--dest=") {
-            return Ok(Some(PathBuf::from(dir)));
-        }
-        if arg == "--dest" {
-            let dir = iter
-                .next()
-                .ok_or_else(|| vec!["--dest requires a directory argument".to_string()])?;
-            return Ok(Some(PathBuf::from(dir)));
-        }
-    }
-    Ok(None)
+    Ok(flag_value(args, "--dest")?.map(PathBuf::from))
 }
 
 /// The pinned, validated rustc channel from `<root>/rust-toolchain.toml`.
