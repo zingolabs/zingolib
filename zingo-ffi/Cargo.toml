@@ -1,26 +1,16 @@
 [workspace]
 members = [
     "lib",
-    "android",
-    "ios",
-    "zingomobile_utils",
-    "workbench",
     "uniffi-bindgen",
 ]
-
-# The mixnet proxy shim resolves in its own lockfile: nym-sdk's transitive
-# graph needs `crypto-common ^0.2`, irreconcilable with this workspace's pins.
-exclude = ["nym-proxy-ffi"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", rev = "bd9e74ee0", features = [
+zingolib = { path = "../zingolib", features = [
     "nym",
     "perspective",
 ] }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", rev = "bd9e74ee0" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "bd9e74ee0" }
-zingomobile_utils = { path = "zingomobile_utils" }
+pepper-sync = { path = "../pepper-sync" }
 
 zcash_address = "0.13.0"
 zcash_client_backend = { version = "0.24.0-rc.1", features = [

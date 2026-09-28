@@ -2223,7 +2223,6 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.5.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=bd9e74ee0#bd9e74ee0fd666684ba1b8cc872a21d99eb635ef"
 dependencies = [
  "bip32",
  "byteorder",
@@ -2362,15 +2361,6 @@ dependencies = [
  "cpufeatures 0.2.17",
  "opaque-debug",
  "universal-hash",
-]
-
-[[package]]
-name = "portpicker"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be97d76faf1bfab666e1375477b23fde79eccf0276e9b63b92a39d676a889ba9"
-dependencies = [
- "rand 0.8.7",
 ]
 
 [[package]]
@@ -2809,16 +2799,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustandroid"
-version = "2.0.0"
-dependencies = [
- "tokio",
- "zcash_local_net",
- "zingolib_testutils",
- "zingomobile_utils",
-]
-
-[[package]]
 name = "rustc-hash"
 version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2831,15 +2811,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
 dependencies = [
  "semver",
-]
-
-[[package]]
-name = "rustios"
-version = "2.0.0"
-dependencies = [
- "tokio",
- "zingolib_testutils",
- "zingomobile_utils",
 ]
 
 [[package]]
@@ -3101,15 +3072,6 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
-]
-
-[[package]]
-name = "serde_spanned"
-version = "0.6.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf41e0cfaf7226dca15e8197172c295a782857fcb97fad1808a166870dee75a3"
-dependencies = [
- "serde",
 ]
 
 [[package]]
@@ -3524,47 +3486,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "toml"
-version = "0.8.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc1beb996b9d83529a9e75c17a1686767d148d70663143c7854d8b4a09ced362"
-dependencies = [
- "serde",
- "serde_spanned",
- "toml_datetime",
- "toml_edit",
-]
-
-[[package]]
-name = "toml_datetime"
-version = "0.6.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22cddaf88f4fbc13c51aebbf5f8eceb5c7c5a9da2ac40a13519eb5b0a0e8f11c"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "toml_edit"
-version = "0.22.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41fe8c660ae4257887cf66394862d21dbca4a6ddd26f04a3560410406a2f819a"
-dependencies = [
- "indexmap 2.14.0",
- "serde",
- "serde_spanned",
- "toml_datetime",
- "toml_write",
- "winnow",
-]
-
-[[package]]
-name = "toml_write"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
-
-[[package]]
 name = "tonic"
 version = "0.14.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3808,7 +3729,7 @@ dependencies = [
  "paste",
  "serde",
  "textwrap",
- "toml 0.5.11",
+ "toml",
  "uniffi_meta 0.28.3",
  "uniffi_udl 0.28.3",
 ]
@@ -3832,7 +3753,7 @@ dependencies = [
  "serde",
  "tempfile",
  "textwrap",
- "toml 0.5.11",
+ "toml",
  "uniffi_internal_macros",
  "uniffi_meta 0.29.5",
  "uniffi_pipeline",
@@ -3913,7 +3834,7 @@ dependencies = [
  "quote",
  "serde",
  "syn 2.0.119",
- "toml 0.5.11",
+ "toml",
  "uniffi_meta 0.28.3",
 ]
 
@@ -3930,7 +3851,7 @@ dependencies = [
  "quote",
  "serde",
  "syn 2.0.119",
- "toml 0.5.11",
+ "toml",
  "uniffi_meta 0.29.5",
 ]
 
@@ -4364,13 +4285,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
-name = "workbench"
-version = "0.1.0"
-dependencies = [
- "serde_json",
-]
-
-[[package]]
 name = "writeable"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4412,18 +4326,6 @@ dependencies = [
  "quote",
  "syn 2.0.119",
  "synstructure",
-]
-
-[[package]]
-name = "zaino-proto"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "120e9bb92547921333d63d8dc96ca7489694d5a87dc6e805152468bdd435646b"
-dependencies = [
- "prost",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
 ]
 
 [[package]]
@@ -4529,25 +4431,6 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zip32",
-]
-
-[[package]]
-name = "zcash_local_net"
-version = "0.7.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a2416144d1bbbae30aca02bec062d1492#89cf104a2416144d1bbbae30aca02bec062d1492"
-dependencies = [
- "hex",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "toml 0.8.23",
- "tracing",
- "zingo-consensus",
- "zingo_test_vectors",
 ]
 
 [[package]]
@@ -4816,14 +4699,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingo-consensus"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a2416144d1bbbae30aca02bec062d1492#89cf104a2416144d1bbbae30aca02bec062d1492"
-
-[[package]]
 name = "zingo-memo"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/zingolib?rev=bd9e74ee0#bd9e74ee0fd666684ba1b8cc872a21d99eb635ef"
 dependencies = [
  "zcash_address",
  "zcash_encoding",
@@ -4834,7 +4711,6 @@ dependencies = [
 [[package]]
 name = "zingo-net-diag"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=bd9e74ee0#bd9e74ee0fd666684ba1b8cc872a21d99eb635ef"
 dependencies = [
  "serde",
 ]
@@ -4842,7 +4718,6 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "5.0.1"
-source = "git+https://github.com/zingolabs/zingolib?rev=bd9e74ee0#bd9e74ee0fd666684ba1b8cc872a21d99eb635ef"
 dependencies = [
  "http",
  "hyper-util",
@@ -4864,7 +4739,6 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=bd9e74ee0#bd9e74ee0fd666684ba1b8cc872a21d99eb635ef"
 dependencies = [
  "byteorder",
  "serde",
@@ -4878,7 +4752,6 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.2.1"
-source = "git+https://github.com/zingolabs/zingolib?rev=bd9e74ee0#bd9e74ee0fd666684ba1b8cc872a21d99eb635ef"
 dependencies = [
  "byteorder",
  "zcash_protocol",
@@ -4902,14 +4775,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingo_test_vectors"
-version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a2416144d1bbbae30aca02bec062d1492#89cf104a2416144d1bbbae30aca02bec062d1492"
-
-[[package]]
 name = "zingolib"
 version = "6.0.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=bd9e74ee0#bd9e74ee0fd666684ba1b8cc872a21d99eb635ef"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -4931,7 +4798,6 @@ dependencies = [
  "nonempty",
  "orchard",
  "pepper-sync",
- "portpicker",
  "prost",
  "rand 0.8.7",
  "rust-embed",
@@ -4941,12 +4807,9 @@ dependencies = [
  "serde",
  "sha2 0.10.9",
  "shardtree",
- "tempfile",
  "thiserror 2.0.19",
  "tokio",
- "tokio-stream",
  "tracing",
- "zaino-proto",
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
@@ -4962,35 +4825,8 @@ dependencies = [
  "zingo-price",
  "zingo-status",
  "zingo_common_components",
- "zingo_test_vectors",
  "zip32",
 ]
-
-[[package]]
-name = "zingolib_testutils"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=bd9e74ee0#bd9e74ee0fd666684ba1b8cc872a21d99eb635ef"
-dependencies = [
- "http",
- "nonempty",
- "portpicker",
- "reqwest",
- "serde_json",
- "tempfile",
- "tokio",
- "zcash_local_net",
- "zcash_primitives",
- "zcash_protocol",
- "zingo-netutils",
- "zingo_common_components",
- "zingo_test_vectors",
- "zingolib",
- "zip32",
-]
-
-[[package]]
-name = "zingomobile_utils"
-version = "0.1.0"
 
 [[package]]
 name = "zip32"

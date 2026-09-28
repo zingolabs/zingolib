@@ -17,7 +17,9 @@ members = [
 # 0.30, which pins the same release candidate 0.29 did). Members still consume
 # netutils through the `zingo-netutils` path dependency below, resolved in
 # THIS lockfile with `nym` off. See docs/adr/zingolib/0011-nym-mixnet-transmission.md.
-exclude = ["zingo-netutils"]
+# zingo-ffi stays a standalone workspace with its own lockfile until
+# zingo-mobile repoints. See docs/adr/zingolib/0054.
+exclude = ["zingo-netutils", "zingo-ffi"]
 resolver = "2"
 
 [workspace.dependencies]
