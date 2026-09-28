@@ -19,6 +19,99 @@ pub const PROXY_LIB_NAME: &str = "zingo_nym_proxy_ffi";
 /// The proxy crate's package name, which cargo selects in its own workspace.
 pub const PROXY_PACKAGE: &str = "zingo-nym-proxy-ffi";
 
+/// The variable that carries zingo-mobile's `git describe` into the wallet's build script.
+pub const DESCRIBE_VARIABLE: &str = "ZINGO_MOBILE_GIT_DESCRIBE";
+
+/// The variable that tells cargo where to write build output.
+pub const TARGET_DIR_VARIABLE: &str = "CARGO_TARGET_DIR";
+
+/// The container engines to try, in order.
+pub const ENGINES: [&str; 2] = ["podman", "docker"];
+
+/// The Android API level that zingo-mobile's builder compiles against.
+pub const ANDROID_API_LEVEL: &str = "26";
+
+/// The Android output subdirectory that holds the Kotlin sources the AAR compiles.
+pub const KOTLIN_OUT_DIR: &str = "kotlin";
+
+/// The Android output subdirectory that holds the per-ABI libraries the AAR packages.
+pub const JNI_LIBS_DIR: &str = "jniLibs";
+
+/// The name under which zingo-mobile ships the wallet's Android library.
+pub const ANDROID_WALLET_LIBRARY: &str = "libuniffi_zingo.so";
+
+/// The prefix of a Unix library file name.
+pub const LIBRARY_PREFIX: &str = "lib";
+
+/// The suffix of an Android shared library.
+pub const SHARED_SUFFIX: &str = ".so";
+
+/// One Android ABI, with the environment that zingo-mobile's builder sets for it.
+pub struct AndroidAbi {
+    /// The Rust target triple.
+    pub triple: &'static str,
+    /// The directory name under `jniLibs`.
+    pub jni_dir: &'static str,
+    /// The prefix of the NDK clang wrapper, before the API level.
+    pub clang_prefix: &'static str,
+    /// The value of `CARGO_FEATURE_STD` that zingo-mobile's builder sets.
+    pub std_feature: &'static str,
+}
+
+impl AndroidAbi {
+    /// The NDK clang wrapper for this ABI at zingo-mobile's API level.
+    pub fn cc(&self) -> String {
+        format!("{}{ANDROID_API_LEVEL}-clang", self.clang_prefix)
+    }
+
+    /// The environment that zingo-mobile's builder sets while it builds this ABI.
+    pub fn env(&self, target_dir: &str) -> Vec<(String, String)> {
+        [
+            ("CARGO_FEATURE_STD", self.std_feature.to_string()),
+            ("CC", self.cc()),
+            (TARGET_DIR_VARIABLE, target_dir.to_string()),
+        ]
+        .map(|(key, value)| (key.to_string(), value))
+        .to_vec()
+    }
+}
+
+/// Every Android ABI, in the order that zingo-mobile's builder builds them.
+pub const ANDROID_ABIS: [AndroidAbi; 4] = [
+    AndroidAbi {
+        triple: "aarch64-linux-android",
+        jni_dir: "arm64-v8a",
+        clang_prefix: "aarch64-linux-android",
+        std_feature: "true",
+    },
+    AndroidAbi {
+        triple: "armv7-linux-androideabi",
+        jni_dir: "armeabi-v7a",
+        clang_prefix: "armv7a-linux-androideabi",
+        std_feature: "false",
+    },
+    AndroidAbi {
+        triple: "i686-linux-android",
+        jni_dir: "x86",
+        clang_prefix: "i686-linux-android",
+        std_feature: "false",
+    },
+    AndroidAbi {
+        triple: "x86_64-linux-android",
+        jni_dir: "x86_64",
+        clang_prefix: "x86_64-linux-android",
+        std_feature: "false",
+    },
+];
+
+/// The first container engine that answers `--version`.
+pub fn container_engine() -> Result<&'static str, Vec<String>> {
+    ENGINES
+        .into_iter()
+        .find(|engine| crate::stdout_of(engine, &["--version"]).is_ok())
+        .ok_or_else(|| vec![format!("none of {} is installed", ENGINES.join(", "))])
+}
+
 /// The binding set that the bindgen generates for one crate.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Generation {
@@ -188,5 +281,12 @@ mod tests {
     #[test]
     fn binding_sets_cover_every_generation_in_every_language() {
         assert_eq!(binding_sets().count(), GENERATIONS.len() * LANGUAGES.len());
+    }
+
+    #[test]
+    fn android_cc_carries_the_api_level() {
+        assert!(ANDROID_ABIS
+            .iter()
+            .all(|abi| abi.cc().contains(ANDROID_API_LEVEL)));
     }
 }

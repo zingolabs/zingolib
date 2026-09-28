@@ -12,7 +12,7 @@ use workbench::binding_layer;
 const PROGRAM: &str = "binding-copy-gate";
 
 /// The invocation shape, reported when the arguments do not parse.
-const USAGE: &str = "usage: binding-copy-gate <import|graph|bindings|all> \
+const USAGE: &str = "usage: binding-copy-gate <import|graph|bindings|artifacts|all> \
     --mobile <zingo-mobile checkout at TFC> --tfc <rev> --import <rev> --placement <rev>";
 
 /// The flag that names a zingo-mobile checkout at the Freeze Commit.
@@ -56,6 +56,126 @@ const CARGO_TARGET_SUBDIR: &str = "cargo";
 
 /// The cargo profile that the gate builds with, since generated bindings do not depend on it.
 const GATE_PROFILE: binding_layer::Profile = binding_layer::Profile::Debug;
+
+/// zingo-mobile's Android Dockerfile at TFC, relative to its root.
+const TFC_ANDROID_DOCKERFILE: &str = "rust/android/docker/Dockerfile";
+
+/// The build context that zingo-mobile's Android builder passes, relative to its root.
+const TFC_ANDROID_CONTEXT: &str = "rust";
+
+/// The Dockerfile stage that zingo-mobile's Android builder selects.
+const TFC_ANDROID_STAGE: &str = "build_android";
+
+/// The tag under which the gate builds zingo-mobile's Android image.
+const TFC_ANDROID_IMAGE: &str = "localhost/zingolib/binding-copy-gate-tfc-android";
+
+/// The directory at which zingo-mobile's Android image holds its `rust/` tree.
+const TFC_CONTAINER_RUST: &str = "/opt/zingo/rust";
+
+/// The arguments with which zingo-mobile's Android builder describes the checkout.
+const DESCRIBE_ARGS: [&str; 6] = [
+    "describe", "--dirty", "--always", "--long", "--match", "zingo-*",
+];
+
+/// The variable that points podman at a registries configuration.
+const REGISTRIES_VARIABLE: &str = "CONTAINERS_REGISTRIES_CONF";
+
+/// The registries configuration that lets podman resolve zingo-mobile's short image name as docker does.
+const REGISTRIES_CONF: &str = "unqualified-search-registries = [\"docker.io\"]\n";
+
+/// The file, under the scratch directory, that holds the registries configuration.
+const REGISTRIES_FILE: &str = "registries.conf";
+
+/// The scratch subdirectory that holds zingo-mobile's Android artifacts at TFC.
+const TFC_ANDROID_DIR: &str = "tfc-android";
+
+/// The scratch subdirectory that holds the unpacked AAR.
+const COPY_AAR_DIR: &str = "copy-aar";
+
+/// The AAR that `bundleReleaseAar` produces, relative to the zingolib root.
+const COPY_AAR: &str = "bindings/android/build/outputs/aar/zingo-binding-layer-release.aar";
+
+/// The builder output that the AAR packages, relative to the zingolib root.
+const COPY_BUILDER_OUTPUT: &str = "bindings/android/build/binding-layer";
+
+/// The directory inside an AAR that holds the per-ABI libraries.
+const AAR_JNI_DIR: &str = "jni";
+
+/// The manifest inside an AAR.
+const AAR_MANIFEST: &str = "AndroidManifest.xml";
+
+/// The Gradle library's build script, relative to the zingolib root.
+const COPY_GRADLE: &str = "bindings/android/build.gradle.kts";
+
+/// zingo-mobile's root Gradle build script at TFC, relative to its root.
+const TFC_ROOT_GRADLE: &str = "android/build.gradle.kts";
+
+/// zingo-mobile's app Gradle build script at TFC, relative to its root.
+const TFC_APP_GRADLE: &str = "android/app/build.gradle.kts";
+
+/// The text that precedes the minimum SDK in an AAR manifest.
+const AAR_MIN_SDK: Declared = Declared {
+    marker: "android:minSdkVersion=\"",
+    terminator: '"',
+};
+
+/// The text that precedes the minimum SDK in zingo-mobile's root build script.
+const TFC_MIN_SDK: Declared = Declared {
+    marker: "set(\"minSdkVersion\", ",
+    terminator: ')',
+};
+
+/// The text that precedes the NDK version in zingo-mobile's root build script.
+const TFC_NDK: Declared = Declared {
+    marker: "set(\"ndkVersion\", \"",
+    terminator: '"',
+};
+
+/// The text that precedes the NDK version in the Gradle library's build script.
+const COPY_NDK: Declared = Declared {
+    marker: "bindingNdkVersion = \"",
+    terminator: '"',
+};
+
+/// The text that precedes the JNA version in either build script.
+const JNA: Declared = Declared {
+    marker: "net.java.dev.jna:jna:",
+    terminator: '"',
+};
+
+/// The header of the Cargo release profile.
+const RELEASE_PROFILE_HEADER: &str = "[profile.release]";
+
+/// The character that opens every TOML table header.
+const TOML_TABLE_OPEN: char = '[';
+
+/// The tool that lists a library's symbols.
+const SYMBOL_TOOL: &str = "llvm-nm";
+
+/// The arguments that list only the names of a library's exported, defined dynamic symbols.
+const SYMBOL_ARGS: [&str; 4] = [
+    "--dynamic",
+    "--defined-only",
+    "--extern-only",
+    "--just-symbol-name",
+];
+
+/// Where a declared value sits in a text: after a marker and before a terminator.
+struct Declared {
+    /// The text immediately before the value.
+    marker: &'static str,
+    /// The character immediately after the value.
+    terminator: char,
+}
+
+impl Declared {
+    /// The value in a text, if the marker occurs.
+    fn find<'a>(&self, text: &'a str) -> Option<&'a str> {
+        text.split_once(self.marker)
+            .and_then(|(_, rest)| rest.split_once(self.terminator))
+            .map(|(value, _)| value)
+    }
+}
 
 /// The `cargo tree` arguments that print a crate's complete resolved graph.
 const TREE_ARGS: [&str; 11] = [
@@ -182,12 +302,14 @@ enum Gate {
     Import,
     /// Gate 2, which checks the placement and compares resolved graphs.
     Graph,
-    /// Gate 3, which compares the generated bindings.
+    /// Gate 3's first half, which compares the generated bindings.
     Bindings,
+    /// Gate 3's Android half, which compares zingo-mobile's Android artifacts with the AAR.
+    Artifacts,
 }
 
 /// Every gate, in the order that the remedies assume.
-const GATES: [Gate; 3] = [Gate::Import, Gate::Graph, Gate::Bindings];
+const GATES: [Gate; 4] = [Gate::Import, Gate::Graph, Gate::Bindings, Gate::Artifacts];
 
 impl Gate {
     /// The gate that a command-line name selects.
@@ -201,6 +323,7 @@ impl Gate {
             Gate::Import => "import",
             Gate::Graph => "graph",
             Gate::Bindings => "bindings",
+            Gate::Artifacts => "artifacts",
         }
     }
 }
@@ -322,6 +445,7 @@ fn run_gate(
         Gate::Import => import_checks(invocation, tfc_side, copy_side)?,
         Gate::Graph => graph_checks(invocation, tfc_side, copy_side)?,
         Gate::Bindings => binding_checks(tfc_side, copy_side)?,
+        Gate::Artifacts => artifact_checks(tfc_side, copy_side)?,
     };
     verdict(gate, &checks)
 }
@@ -535,6 +659,291 @@ fn files_under(directory: &path::Path) -> Result<Vec<path::PathBuf>, Vec<String>
         .map(|nested| nested.concat())
 }
 
+/// Gate 3's Android half: zingo-mobile's artifacts at TFC against the AAR and its builder output.
+fn artifact_checks(tfc_side: &Side, copy_side: &Side) -> Result<Vec<Check>, Vec<String>> {
+    let scratch = copy_side.file(SCRATCH_DIR);
+    let tfc_dir = workbench::fresh_dir(&scratch.join(TFC_ANDROID_DIR))?;
+    build_tfc_android(&tfc_side.root, &scratch, &tfc_dir)?;
+    let aar_dir = unpack_aar(&copy_side.file(COPY_AAR), &scratch.join(COPY_AAR_DIR))?;
+    let tfc_jni = tfc_dir.join(binding_layer::JNI_LIBS_DIR);
+    let copy_jni = aar_dir.join(AAR_JNI_DIR);
+    let tfc_abis = dir_names(&tfc_jni)?;
+    let abi_check = Check {
+        label: "Android ABI set".to_string(),
+        outcome: set_difference(&tfc_abis, &dir_names(&copy_jni)?),
+    };
+    let library_checks = tfc_abis
+        .iter()
+        .map(|abi| {
+            let tfc_files = dir_names(&tfc_jni.join(abi))?;
+            let copy_files = dir_names(&copy_jni.join(abi))?;
+            let symbols = tfc_files
+                .intersection(&copy_files)
+                .map(|library| {
+                    let relative = path::Path::new(abi).join(library);
+                    Ok(Check {
+                        label: format!("exported symbols of {}", relative.display()),
+                        outcome: first_difference(
+                            &exported_symbols(&tfc_jni.join(&relative))?,
+                            &exported_symbols(&copy_jni.join(&relative))?,
+                        ),
+                    })
+                })
+                .collect::<Result<Vec<_>, Vec<String>>>()?;
+            Ok(iter::once(Check {
+                label: format!("libraries for {abi}"),
+                outcome: set_difference(&tfc_files, &copy_files),
+            })
+            .chain(symbols)
+            .collect::<Vec<_>>())
+        })
+        .collect::<Result<Vec<Vec<Check>>, Vec<String>>>()?
+        .into_iter()
+        .flatten();
+    let kotlin_check = Check {
+        label: "generated Kotlin sources".to_string(),
+        outcome: first_file_difference(
+            &file_map(&tfc_dir.join(binding_layer::KOTLIN_OUT_DIR))?,
+            &file_map(
+                &copy_side
+                    .file(COPY_BUILDER_OUTPUT)
+                    .join(binding_layer::KOTLIN_OUT_DIR),
+            )?,
+        ),
+    };
+    let tfc_root_gradle = workbench::read(&tfc_side.file(TFC_ROOT_GRADLE))?;
+    let tfc_app_gradle = workbench::read(&tfc_side.file(TFC_APP_GRADLE))?;
+    let copy_gradle = workbench::read(&copy_side.file(COPY_GRADLE))?;
+    let aar_manifest = workbench::read(&aar_dir.join(AAR_MANIFEST))?;
+    let tfc_cargo = workbench::read(&tfc_side.file(TFC_LAYOUT.wallet_workspace))?;
+    let copy_cargo = workbench::read(&copy_side.file(COPY_LAYOUT.wallet_workspace))?;
+    let declared_checks = [
+        declared_check(
+            "minimum SDK",
+            TFC_MIN_SDK.find(&tfc_root_gradle),
+            AAR_MIN_SDK.find(&aar_manifest),
+        ),
+        declared_check(
+            "NDK version",
+            TFC_NDK.find(&tfc_root_gradle),
+            COPY_NDK.find(&copy_gradle),
+        ),
+        declared_check(
+            "JNA version",
+            JNA.find(&tfc_app_gradle),
+            JNA.find(&copy_gradle),
+        ),
+        declared_check(
+            "Cargo release profile",
+            toml_section(&tfc_cargo, RELEASE_PROFILE_HEADER).as_deref(),
+            toml_section(&copy_cargo, RELEASE_PROFILE_HEADER).as_deref(),
+        ),
+    ];
+    Ok(iter::once(abi_check)
+        .chain(library_checks)
+        .chain(iter::once(kotlin_check))
+        .chain(declared_checks)
+        .collect())
+}
+
+/// Build zingo-mobile's Android image at TFC as its builder does, and copy its artifacts out.
+fn build_tfc_android(
+    tfc_root: &path::Path,
+    scratch: &path::Path,
+    tfc_dir: &path::Path,
+) -> Result<(), Vec<String>> {
+    let engine = binding_layer::container_engine()?;
+    let registries = scratch.join(REGISTRIES_FILE);
+    fs::write(&registries, REGISTRIES_CONF)
+        .map_err(|e| vec![format!("cannot write {}: {e}", registries.display())])?;
+    let env = [(REGISTRIES_VARIABLE, workbench::utf8(&registries)?)];
+    let describe = workbench::git(
+        &[
+            ["-C", workbench::utf8(tfc_root)?].as_slice(),
+            DESCRIBE_ARGS.as_slice(),
+        ]
+        .concat(),
+    )?;
+    let describe_arg = format!("{}={}", binding_layer::DESCRIBE_VARIABLE, describe.trim());
+    workbench::stdout_with_env(
+        engine,
+        &[
+            "build",
+            "--target",
+            TFC_ANDROID_STAGE,
+            "--build-arg",
+            &describe_arg,
+            "--tag",
+            TFC_ANDROID_IMAGE,
+            "--file",
+            workbench::utf8(&tfc_root.join(TFC_ANDROID_DOCKERFILE))?,
+            workbench::utf8(&tfc_root.join(TFC_ANDROID_CONTEXT))?,
+        ],
+        &env,
+    )?;
+    let created = workbench::stdout_with_env(engine, &["create", TFC_ANDROID_IMAGE], &env)?;
+    let id = created.trim();
+    let copied = tfc_android_files().iter().try_for_each(|(from, to)| {
+        let destination = tfc_dir.join(to);
+        workbench::create_parent(&destination)?;
+        workbench::stdout_with_env(
+            engine,
+            &[
+                "cp",
+                &format!("{id}:{from}"),
+                workbench::utf8(&destination)?,
+            ],
+            &env,
+        )
+        .map(drop)
+    });
+    workbench::stdout_with_env(engine, &["rm", "--volumes", id], &env)?;
+    copied
+}
+
+/// Every artifact that zingo-mobile's Android builder copies out of its image, and where it lands.
+fn tfc_android_files() -> Vec<(String, String)> {
+    let release = binding_layer::Profile::Release.directory();
+    let shared = |lib_name| {
+        binding_layer::library_file(
+            binding_layer::LIBRARY_PREFIX,
+            lib_name,
+            binding_layer::SHARED_SUFFIX,
+        )
+    };
+    let wallet = shared(binding_layer::WALLET_LIB_NAME);
+    let proxy = shared(binding_layer::PROXY_LIB_NAME);
+    let jni_root = binding_layer::JNI_LIBS_DIR;
+    let wallet_name = binding_layer::ANDROID_WALLET_LIBRARY;
+    let libraries = binding_layer::ANDROID_ABIS.iter().flat_map(|abi| {
+        let triple = abi.triple;
+        let jni = format!("{jni_root}/{}", abi.jni_dir);
+        [
+            (
+                format!("{TFC_CONTAINER_RUST}/target/{triple}/{release}/{wallet}"),
+                format!("{jni}/{wallet_name}"),
+            ),
+            (
+                format!("{TFC_CONTAINER_RUST}/nym-proxy-ffi/target/{triple}/{release}/{proxy}"),
+                format!("{jni}/{proxy}"),
+            ),
+        ]
+    });
+    let kotlin_root = binding_layer::KOTLIN_OUT_DIR;
+    let wallet_kotlin = kotlin_file(binding_layer::WALLET_LIB_NAME);
+    let proxy_kotlin = kotlin_file(binding_layer::PROXY_LIB_NAME);
+    let sources = [
+        (
+            format!("{TFC_CONTAINER_RUST}/lib/src/{wallet_kotlin}"),
+            format!("{kotlin_root}/{wallet_kotlin}"),
+        ),
+        (
+            format!("{TFC_CONTAINER_RUST}/nym-proxy-ffi/generated-kotlin/{proxy_kotlin}"),
+            format!("{kotlin_root}/{proxy_kotlin}"),
+        ),
+    ];
+    libraries.chain(sources).collect()
+}
+
+/// The path, under a Kotlin source root, of the bindings that UniFFI generates for a library.
+fn kotlin_file(lib_name: &str) -> String {
+    format!("uniffi/{lib_name}/{lib_name}.kt")
+}
+
+/// Unpack an AAR into a fresh directory and return that directory.
+fn unpack_aar(aar: &path::Path, directory: &path::Path) -> Result<path::PathBuf, Vec<String>> {
+    if !aar.is_file() {
+        return Err(vec![format!(
+            "no AAR at {}: run the Gradle library's bundleReleaseAar first",
+            aar.display()
+        )]);
+    }
+    let unpacked = workbench::fresh_dir(directory)?;
+    workbench::stdout_of(
+        "unzip",
+        &[
+            "-q",
+            "-o",
+            workbench::utf8(aar)?,
+            "-d",
+            workbench::utf8(&unpacked)?,
+        ],
+    )?;
+    Ok(unpacked)
+}
+
+/// The names of the entries directly under a directory.
+fn dir_names(directory: &path::Path) -> Result<collections::BTreeSet<String>, Vec<String>> {
+    fs::read_dir(directory)
+        .map_err(|e| vec![format!("cannot list {}: {e}", directory.display())])?
+        .map(|entry| {
+            entry
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                .map_err(|e| vec![format!("cannot list {}: {e}", directory.display())])
+        })
+        .collect()
+}
+
+/// The names of a library's exported, defined dynamic symbols, one per line.
+fn exported_symbols(library: &path::Path) -> Result<String, Vec<String>> {
+    workbench::stdout_of(
+        SYMBOL_TOOL,
+        &[SYMBOL_ARGS.as_slice(), &[workbench::utf8(library)?]].concat(),
+    )
+}
+
+/// Nothing when two name sets are equal, or the names that only one side has.
+fn set_difference(
+    tfc_names: &collections::BTreeSet<String>,
+    copy_names: &collections::BTreeSet<String>,
+) -> Result<(), String> {
+    let joined = |names: collections::btree_set::Difference<'_, String>| {
+        names.cloned().collect::<Vec<_>>().join(", ")
+    };
+    match (
+        joined(tfc_names.difference(copy_names)),
+        joined(copy_names.difference(tfc_names)),
+    ) {
+        (only_tfc, only_copy) if only_tfc.is_empty() && only_copy.is_empty() => Ok(()),
+        (only_tfc, only_copy) => Err(format!(
+            "only at TFC: [{only_tfc}]; only in the copy: [{only_copy}]"
+        )),
+    }
+}
+
+/// The lines of a TOML table, from its header to the next table header.
+fn toml_section(text: &str, header: &str) -> Option<String> {
+    let from_header: Vec<&str> = text
+        .lines()
+        .skip_while(|line| line.trim() != header)
+        .collect();
+    let (first, rest) = from_header.split_first()?;
+    Some(
+        iter::once(*first)
+            .chain(
+                rest.iter()
+                    .copied()
+                    .take_while(|line| !line.trim_start().starts_with(TOML_TABLE_OPEN)),
+            )
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim_end()
+            .to_string(),
+    )
+}
+
+/// A check that a value declared at TFC equals the value declared in the copy.
+fn declared_check(label: &str, tfc_value: Option<&str>, copy_value: Option<&str>) -> Check {
+    Check {
+        label: label.to_string(),
+        outcome: match (tfc_value, copy_value) {
+            (Some(tfc), Some(copy)) => equal_or_describe(tfc, copy),
+            (None, _) => Err("not declared at TFC".to_string()),
+            (_, None) => Err("not declared in the copy".to_string()),
+        },
+    }
+}
+
 /// The report of a gate whose checks all match, or the diagnostics of every check that differs.
 fn verdict(gate: Gate, checks: &[Check]) -> Result<Vec<String>, Vec<String>> {
     let failures: Vec<String> = checks
@@ -735,5 +1144,63 @@ mod tests {
         let (_, without_last) = args.split_last().unwrap();
         assert!(parse(without_last).is_err());
         assert!(parse(&["unknown".to_string()]).is_err());
+    }
+
+    #[test]
+    fn declared_values_are_read_between_marker_and_terminator() {
+        assert_eq!(
+            TFC_MIN_SDK.find("        set(\"minSdkVersion\", 26)\n"),
+            Some("26")
+        );
+        assert_eq!(
+            AAR_MIN_SDK.find("<uses-sdk android:minSdkVersion=\"26\" />"),
+            Some("26")
+        );
+        assert_eq!(
+            JNA.find("    implementation(\"net.java.dev.jna:jna:5.18.1@aar\")"),
+            Some("5.18.1@aar")
+        );
+        assert_eq!(JNA.find("no dependency here"), None);
+    }
+
+    #[test]
+    fn toml_section_stops_at_the_next_table() {
+        let manifest = "[workspace]\nmembers = []\n\n[profile.release]\nlto = \"thin\"\n\n[profile.test]\ndebug = 1\n";
+        assert_eq!(
+            toml_section(manifest, RELEASE_PROFILE_HEADER).as_deref(),
+            Some("[profile.release]\nlto = \"thin\"")
+        );
+        assert_eq!(toml_section(manifest, "[patch.crates-io]"), None);
+    }
+
+    #[test]
+    fn set_difference_names_both_sides() {
+        let set = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| name.to_string())
+                .collect::<collections::BTreeSet<_>>()
+        };
+        assert_eq!(set_difference(&set(&["x86"]), &set(&["x86"])), Ok(()));
+        assert_eq!(
+            set_difference(&set(&["x86", "arm64-v8a"]), &set(&["x86", "x86_64"])),
+            Err("only at TFC: [arm64-v8a]; only in the copy: [x86_64]".to_string())
+        );
+    }
+
+    #[test]
+    fn tfc_android_files_cover_both_libraries_per_abi_and_both_kotlin_files() {
+        let files = tfc_android_files();
+        assert_eq!(
+            files.len(),
+            binding_layer::ANDROID_ABIS.len() * binding_layer::GENERATIONS.len()
+                + binding_layer::GENERATIONS.len()
+        );
+        assert!(files
+            .iter()
+            .any(|(_, to)| to == "jniLibs/arm64-v8a/libuniffi_zingo.so"));
+        assert!(files
+            .iter()
+            .any(|(_, to)| to == "kotlin/uniffi/zingo_nym_proxy_ffi/zingo_nym_proxy_ffi.kt"));
     }
 }

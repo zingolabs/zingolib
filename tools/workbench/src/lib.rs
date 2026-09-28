@@ -36,8 +36,18 @@ pub fn run<T>(
 
 /// Run `<program> <args>` with stderr inherited and return its stdout, or a one-line diagnostic on failure.
 pub fn stdout_of(program: &str, args: &[&str]) -> Result<String, Vec<String>> {
+    stdout_with_env(program, args, &[])
+}
+
+/// Run `<program> <args>` with extra environment, exactly as [`stdout_of`] does otherwise.
+pub fn stdout_with_env(
+    program: &str,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> Result<String, Vec<String>> {
     let output = Command::new(program)
         .args(args)
+        .envs(env.iter().copied())
         .stderr(Stdio::inherit())
         .output()
         .map_err(|e| vec![format!("failed to run {program}: {e}")])?;
@@ -59,6 +69,14 @@ pub fn stdout_of_owned(program: &str, args: &[String]) -> Result<String, Vec<Str
 pub fn utf8(file: &Path) -> Result<&str, Vec<String>> {
     file.to_str()
         .ok_or_else(|| vec![format!("{} is not valid UTF-8", file.display())])
+}
+
+/// Create the parent directory of a file, and any missing ancestors.
+pub fn create_parent(file: &Path) -> Result<(), Vec<String>> {
+    file.parent().map_or(Ok(()), |parent| {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| vec![format!("cannot create {}: {e}", parent.display())])
+    })
 }
 
 /// Remove a directory if it exists, create it empty, and return its path.

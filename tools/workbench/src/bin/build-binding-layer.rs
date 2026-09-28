@@ -2,6 +2,7 @@
 
 use std::env;
 use std::fs;
+use std::iter;
 use std::path;
 use std::process;
 
@@ -23,20 +24,11 @@ const OUT_FLAG: &str = "--out";
 /// The flag that selects one Android ABI instead of all of them.
 const ABI_FLAG: &str = "--abi";
 
-/// The variable that carries zingo-mobile's `git describe` into the wallet's build script.
-const DESCRIBE_VARIABLE: &str = "ZINGO_MOBILE_GIT_DESCRIBE";
-
 /// The variable that makes rustup ignore zingolib's toolchain pin, as zingo-mobile's builders do.
 const TOOLCHAIN_VARIABLE: &str = "RUSTUP_TOOLCHAIN";
 
 /// The toolchain that zingo-mobile's builders select.
 const BUILDER_TOOLCHAIN: &str = "stable";
-
-/// The variable that tells cargo where to write build output.
-const TARGET_DIR_VARIABLE: &str = "CARGO_TARGET_DIR";
-
-/// The container engines to try, in order.
-const ENGINES: [&str; 2] = ["podman", "docker"];
 
 /// The tag of the Android tool image that the builder builds and runs.
 const ANDROID_IMAGE: &str = "localhost/zingolib/binding-layer-android";
@@ -49,9 +41,6 @@ const ANDROID_CONTEXT: &str = "bindings/android/docker";
 
 /// The directory at which the container sees the zingolib root.
 const CONTAINER_ROOT: &str = "/opt/zingolib";
-
-/// The Android API level that zingo-mobile's builder compiles against.
-const ANDROID_API_LEVEL: &str = "26";
 
 /// The iOS deployment target that zingo-mobile's builder sets.
 const IOS_DEPLOYMENT_TARGET: &str = "16.0";
@@ -83,23 +72,8 @@ const BUILDER_PROFILE: binding_layer::Profile = binding_layer::Profile::Release;
 /// The directory under a target directory that the builder profile writes to.
 const PROFILE_DIR: &str = BUILDER_PROFILE.directory();
 
-/// The Android output subdirectory that holds the Kotlin sources the AAR compiles.
-const KOTLIN_OUT_DIR: &str = "kotlin";
-
-/// The Android output subdirectory that holds the per-ABI libraries the AAR packages.
-const JNI_LIBS_DIR: &str = "jniLibs";
-
 /// The iOS output subdirectory that holds intermediate generated files.
 const GENERATED_DIR: &str = "generated";
-
-/// The name under which zingo-mobile ships the wallet's Android library.
-const ANDROID_WALLET_LIBRARY: &str = "libuniffi_zingo.so";
-
-/// The prefix of a Unix library file name.
-const LIBRARY_PREFIX: &str = "lib";
-
-/// The suffix of an Android shared library.
-const SHARED_SUFFIX: &str = ".so";
 
 /// The suffix of an iOS static library.
 const STATIC_SUFFIX: &str = ".a";
@@ -145,64 +119,6 @@ const WALLET_SWIFT: &str = "zingo.swift";
 
 /// The proxy's generated Swift source.
 const PROXY_SWIFT: &str = "zingo_nym_proxy_ffi.swift";
-
-/// One Android ABI, with the environment that zingo-mobile's builder sets for it.
-struct AndroidAbi {
-    /// The Rust target triple.
-    triple: &'static str,
-    /// The directory name under `jniLibs`.
-    jni_dir: &'static str,
-    /// The prefix of the NDK clang wrapper, before the API level.
-    clang_prefix: &'static str,
-    /// The value of `CARGO_FEATURE_STD` that zingo-mobile's builder sets.
-    std_feature: &'static str,
-}
-
-impl AndroidAbi {
-    /// The NDK clang wrapper for this ABI at zingo-mobile's API level.
-    fn cc(&self) -> String {
-        format!("{}{ANDROID_API_LEVEL}-clang", self.clang_prefix)
-    }
-
-    /// The environment that zingo-mobile's builder sets while it builds this ABI.
-    fn env(&self, target_dir: &str) -> Vec<(String, String)> {
-        [
-            ("CARGO_FEATURE_STD", self.std_feature.to_string()),
-            ("CC", self.cc()),
-            (TARGET_DIR_VARIABLE, target_dir.to_string()),
-        ]
-        .map(|(key, value)| (key.to_string(), value))
-        .to_vec()
-    }
-}
-
-/// Every Android ABI, in the order that zingo-mobile's builder builds them.
-const ANDROID_ABIS: [AndroidAbi; 4] = [
-    AndroidAbi {
-        triple: "aarch64-linux-android",
-        jni_dir: "arm64-v8a",
-        clang_prefix: "aarch64-linux-android",
-        std_feature: "true",
-    },
-    AndroidAbi {
-        triple: "armv7-linux-androideabi",
-        jni_dir: "armeabi-v7a",
-        clang_prefix: "armv7a-linux-androideabi",
-        std_feature: "false",
-    },
-    AndroidAbi {
-        triple: "i686-linux-android",
-        jni_dir: "x86",
-        clang_prefix: "i686-linux-android",
-        std_feature: "false",
-    },
-    AndroidAbi {
-        triple: "x86_64-linux-android",
-        jni_dir: "x86_64",
-        clang_prefix: "x86_64-linux-android",
-        std_feature: "false",
-    },
-];
 
 /// The platform whose packaging to build.
 #[derive(Clone, Copy)]
@@ -291,12 +207,13 @@ fn main() {
 /// Build the selected platform's packaging and return its output directory.
 fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
     let (platform, out, abis) = parse(args)?;
-    let describe = env::var(DESCRIBE_VARIABLE)
+    let describe = env::var(binding_layer::DESCRIBE_VARIABLE)
         .ok()
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
             vec![format!(
-                "{DESCRIBE_VARIABLE} must name zingo-mobile's git describe"
+                "{} must name zingo-mobile's git describe",
+                binding_layer::DESCRIBE_VARIABLE
             )]
         })?;
     let root = workbench::repo_root()?;
@@ -314,7 +231,7 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
         .to_string();
     match platform {
         Platform::Android => {
-            let engine = container_engine()?;
+            let engine = binding_layer::container_engine()?;
             build_android_image(engine, &root)?;
             let id = start_container(engine, &root, &describe)?;
             let roots = Roots {
@@ -348,7 +265,14 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
 /// Parse the platform, the absolute output directory, and the selected Android ABIs.
 fn parse(
     args: &[String],
-) -> Result<(Platform, path::PathBuf, Vec<&'static AndroidAbi>), Vec<String>> {
+) -> Result<
+    (
+        Platform,
+        path::PathBuf,
+        Vec<&'static binding_layer::AndroidAbi>,
+    ),
+    Vec<String>,
+> {
     let (selection, flags) = args.split_first().ok_or_else(|| vec![USAGE.to_string()])?;
     let platform = match selection.as_str() {
         "android" => Platform::Android,
@@ -366,21 +290,13 @@ fn parse(
         .map_err(|e| vec![format!("cannot read the current directory: {e}")])?
         .join(out);
     let abis = match workbench::flag_value(flags, ABI_FLAG)? {
-        None => ANDROID_ABIS.iter().collect(),
-        Some(name) => vec![ANDROID_ABIS
+        None => binding_layer::ANDROID_ABIS.iter().collect(),
+        Some(name) => vec![binding_layer::ANDROID_ABIS
             .iter()
             .find(|abi| abi.jni_dir == name)
             .ok_or_else(|| vec![format!("unknown Android ABI `{name}`")])?],
     };
     Ok((platform, absolute_out, abis))
-}
-
-/// The first container engine that answers `--version`.
-fn container_engine() -> Result<&'static str, Vec<String>> {
-    ENGINES
-        .into_iter()
-        .find(|engine| workbench::stdout_of(engine, &["--version"]).is_ok())
-        .ok_or_else(|| vec![format!("none of {} is installed", ENGINES.join(", "))])
 }
 
 /// Build the Android tool image from its Dockerfile.
@@ -402,7 +318,7 @@ fn build_android_image(engine: &str, root: &path::Path) -> Result<(), Vec<String
 /// Start a long-lived container of the Android tool image with zingolib mounted, and return its id.
 fn start_container(engine: &str, root: &path::Path, describe: &str) -> Result<String, Vec<String>> {
     let mount = format!("{}:{CONTAINER_ROOT}", workbench::utf8(root)?);
-    let describe_env = format!("{DESCRIBE_VARIABLE}={describe}");
+    let describe_env = format!("{}={describe}", binding_layer::DESCRIBE_VARIABLE);
     let toolchain_env = format!("{TOOLCHAIN_VARIABLE}={BUILDER_TOOLCHAIN}");
     workbench::stdout_of(
         engine,
@@ -424,25 +340,29 @@ fn start_container(engine: &str, root: &path::Path, describe: &str) -> Result<St
 }
 
 /// The Android build plan: bindings, per-ABI libraries stripped as zingo-mobile strips them, then copies.
-fn android_plan(roots: &Roots, relative_out: &str, abis: &[&AndroidAbi]) -> Vec<Step> {
+fn android_plan(
+    roots: &Roots,
+    relative_out: &str,
+    abis: &[&binding_layer::AndroidAbi],
+) -> Vec<Step> {
     let wallet_target = roots.run_path(&format!("{BUILD_ROOT}/android/wallet"));
     let proxy_target = roots.run_path(&format!("{BUILD_ROOT}/android/proxy"));
-    let kotlin_out = roots.run_path(&format!("{relative_out}/{KOTLIN_OUT_DIR}"));
-    let wallet_library = |abi: &AndroidAbi| {
-        format!(
-            "{wallet_target}/{}/{PROFILE_DIR}/{}",
-            abi.triple,
-            binding_layer::library_file(
-                LIBRARY_PREFIX,
-                binding_layer::WALLET_LIB_NAME,
-                SHARED_SUFFIX
-            )
+    let kotlin_out = roots.run_path(&format!("{relative_out}/{}", binding_layer::KOTLIN_OUT_DIR));
+    let shared_library = |lib_name| {
+        binding_layer::library_file(
+            binding_layer::LIBRARY_PREFIX,
+            lib_name,
+            binding_layer::SHARED_SUFFIX,
         )
     };
-    let proxy_file =
-        binding_layer::library_file(LIBRARY_PREFIX, binding_layer::PROXY_LIB_NAME, SHARED_SUFFIX);
-    let proxy_library =
-        |abi: &AndroidAbi| format!("{proxy_target}/{}/{PROFILE_DIR}/{proxy_file}", abi.triple);
+    let wallet_file = shared_library(binding_layer::WALLET_LIB_NAME);
+    let proxy_file = shared_library(binding_layer::PROXY_LIB_NAME);
+    let wallet_library = |abi: &binding_layer::AndroidAbi| {
+        format!("{wallet_target}/{}/{PROFILE_DIR}/{wallet_file}", abi.triple)
+    };
+    let proxy_library = |abi: &binding_layer::AndroidAbi| {
+        format!("{proxy_target}/{}/{PROFILE_DIR}/{proxy_file}", abi.triple)
+    };
     let wallet_crate_dir = roots.run_path(WALLET_CRATE_DIR);
     let proxy_crate_dir = roots.run_path(PROXY_CRATE_DIR);
     let bindgen_inputs = |proxy: &str| {
@@ -497,20 +417,22 @@ fn android_plan(roots: &Roots, relative_out: &str, abis: &[&AndroidAbi]) -> Vec<
             command,
         })
     };
-    let ndk_build =
-        |abi: &AndroidAbi, workdir: &str, target_dir: &str, package: &[&str]| Step::Run {
-            workdir: workdir.to_string(),
-            env: abi.env(target_dir),
-            command: [
-                ["cargo", "ndk", "--target", abi.triple, "build"].as_slice(),
-                BUILDER_PROFILE.cargo_args(),
-                package,
-            ]
-            .concat()
-            .into_iter()
-            .map(String::from)
-            .collect(),
-        };
+    let ndk_build = |abi: &binding_layer::AndroidAbi,
+                     workdir: &str,
+                     target_dir: &str,
+                     package: &[&str]| Step::Run {
+        workdir: workdir.to_string(),
+        env: abi.env(target_dir),
+        command: [
+            ["cargo", "ndk", "--target", abi.triple, "build"].as_slice(),
+            BUILDER_PROFILE.cargo_args(),
+            package,
+        ]
+        .concat()
+        .into_iter()
+        .map(String::from)
+        .collect(),
+    };
     let wallet_steps = abis.iter().flat_map(|abi| {
         [ndk_build(abi, &wallet_crate_dir, &wallet_target, &[])]
             .into_iter()
@@ -536,11 +458,15 @@ fn android_plan(roots: &Roots, relative_out: &str, abis: &[&AndroidAbi]) -> Vec<
             .chain(strip(proxy_library(abi), &abi.env(&proxy_target)))
     });
     let host_copies = abis.iter().flat_map(|abi| {
-        let jni = format!("{relative_out}/{JNI_LIBS_DIR}/{}", abi.jni_dir);
+        let jni = format!(
+            "{relative_out}/{}/{}",
+            binding_layer::JNI_LIBS_DIR,
+            abi.jni_dir
+        );
         [
             Step::Copy {
                 from: host_of(roots, &wallet_library(abi)),
-                to: roots.host_path(&format!("{jni}/{ANDROID_WALLET_LIBRARY}")),
+                to: roots.host_path(&format!("{jni}/{}", binding_layer::ANDROID_WALLET_LIBRARY)),
             },
             Step::Copy {
                 from: host_of(roots, &proxy_library(abi)),
@@ -553,7 +479,10 @@ fn android_plan(roots: &Roots, relative_out: &str, abis: &[&AndroidAbi]) -> Vec<
         bindgen(
             binding_layer::Generation::Wallet,
             "",
-            vec![(TARGET_DIR_VARIABLE.to_string(), wallet_target.clone())],
+            vec![(
+                binding_layer::TARGET_DIR_VARIABLE.to_string(),
+                wallet_target.clone(),
+            )],
         ),
     ]
     .into_iter()
@@ -592,27 +521,31 @@ fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
             TOOLCHAIN_VARIABLE.to_string(),
             BUILDER_TOOLCHAIN.to_string(),
         ),
-        (DESCRIBE_VARIABLE.to_string(), describe.to_string()),
+        (
+            binding_layer::DESCRIBE_VARIABLE.to_string(),
+            describe.to_string(),
+        ),
     ];
     let wallet_target = roots.run_path(&format!("{BUILD_ROOT}/ios/wallet"));
     let proxy_target = roots.run_path(&format!("{BUILD_ROOT}/ios/proxy"));
     let with_target = |target_dir: &str| {
         [
             env.clone(),
-            vec![(TARGET_DIR_VARIABLE.to_string(), target_dir.to_string())],
+            vec![(
+                binding_layer::TARGET_DIR_VARIABLE.to_string(),
+                target_dir.to_string(),
+            )],
         ]
         .concat()
     };
     let wallet_crate_dir = roots.run_path(WALLET_CRATE_DIR);
     let proxy_crate_dir = roots.run_path(PROXY_CRATE_DIR);
     let wallet_workspace_dir = roots.run_path(WALLET_WORKSPACE_DIR);
-    let wallet_static = binding_layer::library_file(
-        LIBRARY_PREFIX,
-        binding_layer::WALLET_LIB_NAME,
-        STATIC_SUFFIX,
-    );
-    let proxy_static =
-        binding_layer::library_file(LIBRARY_PREFIX, binding_layer::PROXY_LIB_NAME, STATIC_SUFFIX);
+    let static_library = |lib_name| {
+        binding_layer::library_file(binding_layer::LIBRARY_PREFIX, lib_name, STATIC_SUFFIX)
+    };
+    let wallet_static = static_library(binding_layer::WALLET_LIB_NAME);
+    let proxy_static = static_library(binding_layer::PROXY_LIB_NAME);
     let library = |target_dir: &str, triple: &str, file: &str| {
         format!("{target_dir}/{triple}/{PROFILE_DIR}/{file}")
     };
@@ -807,7 +740,7 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
             command,
         } => run_command(runner, workdir, env, command),
         Step::Copy { from, to } => {
-            create_parent(to)?;
+            workbench::create_parent(to)?;
             fs::copy(from, to).map(drop).map_err(|e| {
                 vec![format!(
                     "cannot copy {} to {}: {e}",
@@ -826,7 +759,7 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
                 .map(|source| workbench::read(source))
                 .collect::<Result<Vec<_>, _>>()?
                 .join(separator);
-            create_parent(to)?;
+            workbench::create_parent(to)?;
             fs::write(to, contents).map_err(|e| vec![format!("cannot write {}: {e}", to.display())])
         }
         Step::FreshDir(directory) => workbench::fresh_dir(directory).map(drop),
@@ -841,6 +774,60 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
     }
 }
 
+/// A host process to start: its program, arguments, working directory, and extra environment.
+struct Invocation {
+    /// The program to start.
+    program: String,
+    /// The program's arguments.
+    args: Vec<String>,
+    /// The directory the host process starts in.
+    workdir: String,
+    /// The environment to add to the host process.
+    env: Vec<(String, String)>,
+}
+
+/// The host process that runs one command on a runner.
+fn invocation(
+    runner: &Runner,
+    workdir: &str,
+    env: &[(String, String)],
+    command: &[String],
+) -> Invocation {
+    match runner {
+        Runner::Host => Invocation {
+            program: command.first().cloned().unwrap_or_default(),
+            args: command
+                .iter()
+                .skip(PROGRAM_NAME_ARGUMENTS)
+                .cloned()
+                .collect(),
+            workdir: workdir.to_string(),
+            env: env.to_vec(),
+        },
+        Runner::Container { engine, id } => Invocation {
+            program: engine.to_string(),
+            args: [
+                "exec".to_string(),
+                "--workdir".to_string(),
+                workdir.to_string(),
+            ]
+            .into_iter()
+            .chain(
+                env.iter()
+                    .flat_map(|(key, value)| ["--env".to_string(), format!("{key}={value}")]),
+            )
+            .chain(iter::once(id.clone()))
+            .chain(command.iter().cloned())
+            .collect(),
+            workdir: CURRENT_DIR.to_string(),
+            env: vec![],
+        },
+    }
+}
+
+/// The working directory of a host process that only drives a container.
+const CURRENT_DIR: &str = ".";
+
 /// Run one command on the runner, streaming its output, and fail if it fails.
 fn run_command(
     runner: &Runner,
@@ -848,48 +835,18 @@ fn run_command(
     env: &[(String, String)],
     command: &[String],
 ) -> Result<(), Vec<String>> {
-    let (program, args) = command
-        .split_first()
-        .ok_or_else(|| vec!["a plan step has an empty command".to_string()])?;
-    let mut process = match runner {
-        Runner::Host => {
-            let mut host = process::Command::new(program);
-            host.args(args)
-                .current_dir(workdir)
-                .envs(env.iter().cloned());
-            host
-        }
-        Runner::Container { engine, id } => {
-            let mut container = process::Command::new(engine);
-            container
-                .arg("exec")
-                .args(["--workdir", workdir])
-                .args(
-                    env.iter()
-                        .flat_map(|(key, value)| ["--env".to_string(), format!("{key}={value}")]),
-                )
-                .arg(id)
-                .arg(program)
-                .args(args);
-            container
-        }
-    };
-    let status = process
+    let started = invocation(runner, workdir, env, command);
+    let status = process::Command::new(&started.program)
+        .args(&started.args)
+        .current_dir(&started.workdir)
+        .envs(started.env)
         .status()
-        .map_err(|e| vec![format!("cannot run {program}: {e}")])?;
+        .map_err(|e| vec![format!("cannot run {}: {e}", started.program)])?;
     if status.success() {
         Ok(())
     } else {
         Err(vec![format!("`{}` failed ({status})", command.join(" "))])
     }
-}
-
-/// Create the parent directory of a file.
-fn create_parent(file: &path::Path) -> Result<(), Vec<String>> {
-    file.parent().map_or(Ok(()), |parent| {
-        fs::create_dir_all(parent)
-            .map_err(|e| vec![format!("cannot create {}: {e}", parent.display())])
-    })
 }
 
 #[cfg(test)]
@@ -916,16 +873,8 @@ mod tests {
     }
 
     #[test]
-    fn android_cc_carries_the_api_level() {
-        assert_eq!(
-            ANDROID_ABIS[FIRST_POSITION].cc(),
-            "aarch64-linux-android26-clang"
-        );
-    }
-
-    #[test]
     fn android_plan_generates_the_proxy_bindings_once_after_the_first_abi() {
-        let abis: Vec<&AndroidAbi> = ANDROID_ABIS.iter().collect();
+        let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
         let plan = android_plan(&roots(), "bindings/android/build/binding-layer", &abis);
         let generations = commands(&plan)
             .into_iter()
@@ -936,7 +885,7 @@ mod tests {
 
     #[test]
     fn android_plan_copies_both_libraries_for_every_abi() {
-        let abis: Vec<&AndroidAbi> = ANDROID_ABIS.iter().collect();
+        let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
         let plan = android_plan(&roots(), "out", &abis);
         let copies = plan
             .iter()
@@ -944,7 +893,7 @@ mod tests {
             .count();
         assert_eq!(
             copies,
-            ANDROID_ABIS.len() * binding_layer::GENERATIONS.len()
+            binding_layer::ANDROID_ABIS.len() * binding_layer::GENERATIONS.len()
         );
     }
 
