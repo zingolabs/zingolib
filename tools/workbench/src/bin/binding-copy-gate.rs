@@ -12,7 +12,7 @@ use workbench::binding_layer;
 const PROGRAM: &str = "binding-copy-gate";
 
 /// The invocation shape, reported when the arguments do not parse.
-const USAGE: &str = "usage: binding-copy-gate <import|graph|bindings|artifacts|all> \
+const USAGE: &str = "usage: binding-copy-gate <import|graph|bindings|artifacts|ios-artifacts|all> \
     --mobile <zingo-mobile checkout at TFC> --tfc <rev> --import <rev> --placement <rev>";
 
 /// The flag that names a zingo-mobile checkout at the Freeze Commit.
@@ -149,16 +149,99 @@ const RELEASE_PROFILE_HEADER: &str = "[profile.release]";
 /// The character that opens every TOML table header.
 const TOML_TABLE_OPEN: char = '[';
 
-/// The tool that lists a library's symbols.
-const SYMBOL_TOOL: &str = "llvm-nm";
+/// The arguments that list only the names of a library's exported, defined symbols.
+const DEFINED_SYMBOL_ARGS: [&str; 3] = ["--defined-only", "--extern-only", "--just-symbol-name"];
 
-/// The arguments that list only the names of a library's exported, defined dynamic symbols.
-const SYMBOL_ARGS: [&str; 4] = [
-    "--dynamic",
-    "--defined-only",
-    "--extern-only",
-    "--just-symbol-name",
-];
+/// The argument that restricts a symbol listing to the dynamic symbol table.
+const DYNAMIC_SYMBOL_ARG: &str = "--dynamic";
+
+/// The character that ends an archive member's header in a symbol listing.
+const ARCHIVE_MEMBER_END: char = ':';
+
+/// The prefix that Mach-O adds to every C symbol name.
+const MACHO_PREFIX: char = '_';
+
+/// The prefixes of Rust-mangled symbol names, whose crate hashes depend on the crate's path.
+const RUST_MANGLING_PREFIXES: [&str; 2] = ["_ZN", "_R"];
+
+/// The bytes that start the zingo-mobile descriptor that the wallet embeds.
+const DESCRIPTOR_PREFIX: &[u8] = b"zm_";
+
+/// The punctuation that a descriptor may contain besides letters and digits.
+const DESCRIPTOR_PUNCTUATION: &[u8] = b"_.-";
+
+/// The name of the generated function that returns the descriptor, which is not itself a descriptor.
+const DESCRIPTOR_FUNCTION: &str = "zm_description";
+
+/// How to list and normalize a library's exported symbols.
+#[derive(Clone, Copy)]
+enum Symbols {
+    /// A shared library's dynamic symbols, compared in full.
+    Dynamic,
+    /// A static library's C-ABI symbols, with Rust-mangled names left out.
+    StaticFfi,
+}
+
+impl Symbols {
+    /// The tool that lists this kind of library's symbols.
+    fn tool(self) -> &'static str {
+        match self {
+            Symbols::Dynamic => "llvm-nm",
+            Symbols::StaticFfi => "nm",
+        }
+    }
+
+    /// The tool's arguments before the library path.
+    fn args(self) -> Vec<&'static str> {
+        match self {
+            Symbols::Dynamic => iter::once(DYNAMIC_SYMBOL_ARG)
+                .chain(DEFINED_SYMBOL_ARGS)
+                .collect(),
+            Symbols::StaticFfi => DEFINED_SYMBOL_ARGS.to_vec(),
+        }
+    }
+
+    /// The listing reduced to what the gate compares.
+    fn normalize(self, listing: &str) -> String {
+        match self {
+            Symbols::Dynamic => listing.to_string(),
+            Symbols::StaticFfi => ffi_symbols(listing),
+        }
+    }
+}
+
+/// The program that runs zingo-mobile's JavaScript builders.
+const NODE: &str = "node";
+
+/// zingo-mobile's iOS builder at TFC, relative to its root.
+const TFC_IOS_BUILDER: &str = "rust/ios/build_ios.mjs";
+
+/// The directory, relative to zingo-mobile's root, where its iOS builder writes.
+const TFC_IOS_DIR: &str = "ios";
+
+/// The SwiftPM package's builder output, relative to the zingolib root.
+const COPY_SWIFT_OUTPUT: &str = "bindings/swift/build";
+
+/// The SwiftPM manifest, relative to the zingolib root.
+const COPY_PACKAGE: &str = "bindings/swift/Package.swift";
+
+/// The workbench manifest, relative to the zingolib root.
+const WORKBENCH_MANIFEST: &str = "tools/workbench/Cargo.toml";
+
+/// The workbench binary that builds the Binding Layer's packaging.
+const BUILDER_BIN: &str = "build-binding-layer";
+
+/// The text that precedes the deployment target in zingo-mobile's iOS builder.
+const TFC_IOS_TARGET: Declared = Declared {
+    marker: "IPHONEOS_DEPLOYMENT_TARGET: '",
+    terminator: '\'',
+};
+
+/// The text that precedes the deployment target in the SwiftPM manifest.
+const COPY_IOS_TARGET: Declared = Declared {
+    marker: ".iOS(\"",
+    terminator: '"',
+};
 
 /// Where a declared value sits in a text: after a marker and before a terminator.
 struct Declared {
@@ -306,10 +389,18 @@ enum Gate {
     Bindings,
     /// Gate 3's Android half, which compares zingo-mobile's Android artifacts with the AAR.
     Artifacts,
+    /// Gate 3's iOS half, which compares zingo-mobile's XCFrameworks with the SwiftPM package's.
+    IosArtifacts,
 }
 
 /// Every gate, in the order that the remedies assume.
-const GATES: [Gate; 4] = [Gate::Import, Gate::Graph, Gate::Bindings, Gate::Artifacts];
+const GATES: [Gate; 5] = [
+    Gate::Import,
+    Gate::Graph,
+    Gate::Bindings,
+    Gate::Artifacts,
+    Gate::IosArtifacts,
+];
 
 impl Gate {
     /// The gate that a command-line name selects.
@@ -324,6 +415,15 @@ impl Gate {
             Gate::Graph => "graph",
             Gate::Bindings => "bindings",
             Gate::Artifacts => "artifacts",
+            Gate::IosArtifacts => "ios-artifacts",
+        }
+    }
+
+    /// Whether this gate can run on the current operating system.
+    fn runs_here(self) -> bool {
+        match self {
+            Gate::IosArtifacts => env::consts::OS == binding_layer::MACOS,
+            _ => true,
         }
     }
 }
@@ -402,7 +502,7 @@ fn gate_all(args: &[String]) -> Result<Vec<String>, Vec<String>> {
 fn parse(args: &[String]) -> Result<Invocation<'_>, Vec<String>> {
     let (selection, flags) = args.split_first().ok_or_else(|| vec![USAGE.to_string()])?;
     let gates = if selection == ALL_GATES {
-        GATES.to_vec()
+        GATES.into_iter().filter(|gate| gate.runs_here()).collect()
     } else {
         vec![Gate::named(selection)
             .ok_or_else(|| vec![format!("unknown gate `{selection}`"), USAGE.to_string()])?]
@@ -446,6 +546,7 @@ fn run_gate(
         Gate::Graph => graph_checks(invocation, tfc_side, copy_side)?,
         Gate::Bindings => binding_checks(tfc_side, copy_side)?,
         Gate::Artifacts => artifact_checks(tfc_side, copy_side)?,
+        Gate::IosArtifacts => ios_artifact_checks(tfc_side, copy_side)?,
     };
     verdict(gate, &checks)
 }
@@ -681,15 +782,16 @@ fn artifact_checks(tfc_side: &Side, copy_side: &Side) -> Result<Vec<Check>, Vec<
                 .intersection(&copy_files)
                 .map(|library| {
                     let relative = path::Path::new(abi).join(library);
-                    Ok(Check {
-                        label: format!("exported symbols of {}", relative.display()),
-                        outcome: first_difference(
-                            &exported_symbols(&tfc_jni.join(&relative))?,
-                            &exported_symbols(&copy_jni.join(&relative))?,
-                        ),
-                    })
+                    library_pair_checks(
+                        &relative.display().to_string(),
+                        &tfc_jni.join(&relative),
+                        &copy_jni.join(&relative),
+                        Symbols::Dynamic,
+                    )
                 })
-                .collect::<Result<Vec<_>, Vec<String>>>()?;
+                .collect::<Result<Vec<Vec<Check>>, Vec<String>>>()?
+                .into_iter()
+                .flatten();
             Ok(iter::once(Check {
                 label: format!("libraries for {abi}"),
                 outcome: set_difference(&tfc_files, &copy_files),
@@ -715,8 +817,6 @@ fn artifact_checks(tfc_side: &Side, copy_side: &Side) -> Result<Vec<Check>, Vec<
     let tfc_app_gradle = workbench::read(&tfc_side.file(TFC_APP_GRADLE))?;
     let copy_gradle = workbench::read(&copy_side.file(COPY_GRADLE))?;
     let aar_manifest = workbench::read(&aar_dir.join(AAR_MANIFEST))?;
-    let tfc_cargo = workbench::read(&tfc_side.file(TFC_LAYOUT.wallet_workspace))?;
-    let copy_cargo = workbench::read(&copy_side.file(COPY_LAYOUT.wallet_workspace))?;
     let declared_checks = [
         declared_check(
             "minimum SDK",
@@ -733,11 +833,7 @@ fn artifact_checks(tfc_side: &Side, copy_side: &Side) -> Result<Vec<Check>, Vec<
             JNA.find(&tfc_app_gradle),
             JNA.find(&copy_gradle),
         ),
-        declared_check(
-            "Cargo release profile",
-            toml_section(&tfc_cargo, RELEASE_PROFILE_HEADER).as_deref(),
-            toml_section(&copy_cargo, RELEASE_PROFILE_HEADER).as_deref(),
-        ),
+        release_profile_check(tfc_side, copy_side)?,
     ];
     Ok(iter::once(abi_check)
         .chain(library_checks)
@@ -757,14 +853,11 @@ fn build_tfc_android(
     fs::write(&registries, REGISTRIES_CONF)
         .map_err(|e| vec![format!("cannot write {}: {e}", registries.display())])?;
     let env = [(REGISTRIES_VARIABLE, workbench::utf8(&registries)?)];
-    let describe = workbench::git(
-        &[
-            ["-C", workbench::utf8(tfc_root)?].as_slice(),
-            DESCRIBE_ARGS.as_slice(),
-        ]
-        .concat(),
-    )?;
-    let describe_arg = format!("{}={}", binding_layer::DESCRIBE_VARIABLE, describe.trim());
+    let describe_arg = format!(
+        "{}={}",
+        binding_layer::DESCRIBE_VARIABLE,
+        tfc_describe(tfc_root)?
+    );
     workbench::stdout_with_env(
         engine,
         &[
@@ -884,12 +977,230 @@ fn dir_names(directory: &path::Path) -> Result<collections::BTreeSet<String>, Ve
         .collect()
 }
 
-/// The names of a library's exported, defined dynamic symbols, one per line.
-fn exported_symbols(library: &path::Path) -> Result<String, Vec<String>> {
+/// A library's exported, defined symbols, listed and normalized the given way.
+fn exported_symbols(library: &path::Path, symbols: Symbols) -> Result<String, Vec<String>> {
     workbench::stdout_of(
-        SYMBOL_TOOL,
-        &[SYMBOL_ARGS.as_slice(), &[workbench::utf8(library)?]].concat(),
+        symbols.tool(),
+        &[symbols.args().as_slice(), &[workbench::utf8(library)?]].concat(),
     )
+    .map(|listing| symbols.normalize(&listing))
+}
+
+/// The symbol and descriptor checks of one library that both sides carry.
+fn library_pair_checks(
+    label: &str,
+    tfc_library: &path::Path,
+    copy_library: &path::Path,
+    symbols: Symbols,
+) -> Result<Vec<Check>, Vec<String>> {
+    let descriptors = |library: &path::Path| {
+        fs::read(library)
+            .map(|bytes| embedded_descriptors(&bytes))
+            .map_err(|e| vec![format!("cannot read {}: {e}", library.display())])
+    };
+    Ok(vec![
+        Check {
+            label: format!("exported symbols of {label}"),
+            outcome: first_difference(
+                &exported_symbols(tfc_library, symbols)?,
+                &exported_symbols(copy_library, symbols)?,
+            ),
+        },
+        Check {
+            label: format!("embedded zingo-mobile descriptor of {label}"),
+            outcome: set_difference(&descriptors(tfc_library)?, &descriptors(copy_library)?),
+        },
+    ])
+}
+
+/// The C-ABI symbol names in a listing, sorted and without Rust-mangled names or archive headers.
+fn ffi_symbols(listing: &str) -> String {
+    listing
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.ends_with(ARCHIVE_MEMBER_END))
+        .map(|name| name.strip_prefix(MACHO_PREFIX).unwrap_or(name))
+        .filter(|name| {
+            !RUST_MANGLING_PREFIXES
+                .iter()
+                .any(|prefix| name.starts_with(prefix))
+        })
+        .collect::<collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Every zingo-mobile descriptor that a library's bytes contain.
+fn embedded_descriptors(bytes: &[u8]) -> collections::BTreeSet<String> {
+    bytes
+        .windows(DESCRIPTOR_PREFIX.len())
+        .enumerate()
+        .filter(|(_, window)| *window == DESCRIPTOR_PREFIX)
+        .filter_map(|(start, _)| bytes.get(start..))
+        .map(|tail| {
+            tail.iter()
+                .take_while(|byte| {
+                    byte.is_ascii_alphanumeric() || DESCRIPTOR_PUNCTUATION.contains(byte)
+                })
+                .map(|byte| char::from(*byte))
+                .collect::<String>()
+        })
+        .filter(|candidate| !candidate.starts_with(DESCRIPTOR_FUNCTION))
+        .collect()
+}
+
+/// The descriptor that zingo-mobile's builders compute for a checkout.
+fn tfc_describe(tfc_root: &path::Path) -> Result<String, Vec<String>> {
+    workbench::git(
+        &[
+            ["-C", workbench::utf8(tfc_root)?].as_slice(),
+            DESCRIBE_ARGS.as_slice(),
+        ]
+        .concat(),
+    )
+    .map(|describe| describe.trim().to_string())
+}
+
+/// A check that both sides declare the same Cargo release profile.
+fn release_profile_check(tfc_side: &Side, copy_side: &Side) -> Result<Check, Vec<String>> {
+    let tfc_cargo = workbench::read(&tfc_side.file(TFC_LAYOUT.wallet_workspace))?;
+    let copy_cargo = workbench::read(&copy_side.file(COPY_LAYOUT.wallet_workspace))?;
+    Ok(declared_check(
+        "Cargo release profile",
+        toml_section(&tfc_cargo, RELEASE_PROFILE_HEADER).as_deref(),
+        toml_section(&copy_cargo, RELEASE_PROFILE_HEADER).as_deref(),
+    ))
+}
+
+/// Gate 3's iOS half: zingo-mobile's XCFrameworks and Swift at TFC against the SwiftPM package's.
+fn ios_artifact_checks(tfc_side: &Side, copy_side: &Side) -> Result<Vec<Check>, Vec<String>> {
+    if !Gate::IosArtifacts.runs_here() {
+        return Err(vec![
+            "the iOS half of gate 3 requires macOS with Xcode".to_string()
+        ]);
+    }
+    let describe = tfc_describe(&tfc_side.root)?;
+    let env = [(binding_layer::DESCRIBE_VARIABLE, describe.as_str())];
+    workbench::run_streaming(
+        NODE,
+        &[workbench::utf8(&tfc_side.file(TFC_IOS_BUILDER))?],
+        &env,
+    )?;
+    let copy_out = copy_side.file(COPY_SWIFT_OUTPUT);
+    workbench::run_streaming(
+        "cargo",
+        &[
+            "run",
+            "--quiet",
+            "--manifest-path",
+            workbench::utf8(&copy_side.file(WORKBENCH_MANIFEST))?,
+            "--bin",
+            BUILDER_BIN,
+            "--",
+            "ios",
+            "--out",
+            workbench::utf8(&copy_out)?,
+        ],
+        &env,
+    )?;
+    let tfc_ios = tfc_side.file(TFC_IOS_DIR);
+    let xcframework_checks = binding_layer::XCFRAMEWORKS
+        .iter()
+        .map(|name| xcframework_checks(name, &tfc_ios.join(name), &copy_out.join(name)))
+        .collect::<Result<Vec<Vec<Check>>, Vec<String>>>()?
+        .into_iter()
+        .flatten();
+    let named_sources = |directory: &path::Path| {
+        binding_layer::SWIFT_SOURCES
+            .iter()
+            .map(|source| {
+                let file = directory.join(source);
+                fs::read(&file)
+                    .map(|bytes| (path::PathBuf::from(source), bytes))
+                    .map_err(|e| vec![format!("cannot read {}: {e}", file.display())])
+            })
+            .collect::<Result<collections::BTreeMap<_, _>, Vec<String>>>()
+    };
+    let swift_check = Check {
+        label: "generated Swift sources".to_string(),
+        outcome: first_file_difference(
+            &named_sources(&tfc_ios)?,
+            &named_sources(&copy_out.join(binding_layer::SWIFT_SOURCES_DIR))?,
+        ),
+    };
+    let deployment_check = declared_check(
+        "iOS deployment target",
+        TFC_IOS_TARGET.find(&workbench::read(&tfc_side.file(TFC_IOS_BUILDER))?),
+        COPY_IOS_TARGET.find(&workbench::read(&copy_side.file(COPY_PACKAGE))?),
+    );
+    Ok(xcframework_checks
+        .chain([
+            swift_check,
+            deployment_check,
+            release_profile_check(tfc_side, copy_side)?,
+        ])
+        .collect())
+}
+
+/// The checks of one XCFramework: its file list, its static libraries, and every other file's bytes.
+fn xcframework_checks(
+    name: &str,
+    tfc_dir: &path::Path,
+    copy_dir: &path::Path,
+) -> Result<Vec<Check>, Vec<String>> {
+    let tfc_files = relative_files(tfc_dir)?;
+    let copy_files = relative_files(copy_dir)?;
+    let listing = Check {
+        label: format!("files of {name}"),
+        outcome: set_difference(&tfc_files, &copy_files),
+    };
+    let per_file = tfc_files
+        .intersection(&copy_files)
+        .map(|relative| {
+            let label = format!("{name}/{relative}");
+            let tfc_file = tfc_dir.join(relative);
+            let copy_file = copy_dir.join(relative);
+            if relative.ends_with(binding_layer::STATIC_SUFFIX) {
+                library_pair_checks(&label, &tfc_file, &copy_file, Symbols::StaticFfi)
+            } else {
+                Ok(vec![Check {
+                    label: format!("bytes of {label}"),
+                    outcome: equal_bytes(&tfc_file, &copy_file)?,
+                }])
+            }
+        })
+        .collect::<Result<Vec<Vec<Check>>, Vec<String>>>()?
+        .into_iter()
+        .flatten();
+    Ok(iter::once(listing).chain(per_file).collect())
+}
+
+/// Every file under a directory, as a path relative to that directory.
+fn relative_files(directory: &path::Path) -> Result<collections::BTreeSet<String>, Vec<String>> {
+    files_under(directory)?
+        .iter()
+        .map(|file| {
+            file.strip_prefix(directory)
+                .map(|relative| relative.to_string_lossy().into_owned())
+                .map_err(|e| vec![format!("{} escapes its directory: {e}", file.display())])
+        })
+        .collect()
+}
+
+/// Nothing when two files hold the same bytes, or a note that they differ.
+fn equal_bytes(
+    tfc_file: &path::Path,
+    copy_file: &path::Path,
+) -> Result<Result<(), String>, Vec<String>> {
+    let read = |file: &path::Path| {
+        fs::read(file).map_err(|e| vec![format!("cannot read {}: {e}", file.display())])
+    };
+    Ok(if read(tfc_file)? == read(copy_file)? {
+        Ok(())
+    } else {
+        Err("the bytes differ".to_string())
+    })
 }
 
 /// Nothing when two name sets are equal, or the names that only one side has.
@@ -1185,6 +1496,24 @@ mod tests {
         assert_eq!(
             set_difference(&set(&["x86", "arm64-v8a"]), &set(&["x86", "x86_64"])),
             Err("only at TFC: [arm64-v8a]; only in the copy: [x86_64]".to_string())
+        );
+    }
+
+    #[test]
+    fn ffi_symbols_keep_c_names_and_drop_mangled_names_and_headers() {
+        let listing = "\nlibzingo.a(zingo-1a2b.o):\n_uniffi_zingo_fn_init\n__ZN5zingo4init17h0123456789abcdefE\n__RNvCs1_5zingo4init\n_ffi_zingo_rustbuffer_free\n_uniffi_zingo_fn_init\n";
+        assert_eq!(
+            ffi_symbols(listing),
+            "ffi_zingo_rustbuffer_free\nuniffi_zingo_fn_init"
+        );
+    }
+
+    #[test]
+    fn embedded_descriptors_find_descriptors_but_not_the_function_name() {
+        let bytes = b"\x00zm_2.0.24_320_f3d1a\x00junk zm_description17h00E\x00";
+        assert_eq!(
+            embedded_descriptors(bytes),
+            ["zm_2.0.24_320_f3d1a".to_string()].into_iter().collect()
         );
     }
 

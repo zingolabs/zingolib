@@ -45,9 +45,6 @@ const CONTAINER_ROOT: &str = "/opt/zingolib";
 /// The iOS deployment target that zingo-mobile's builder sets.
 const IOS_DEPLOYMENT_TARGET: &str = "16.0";
 
-/// The operating system name that Rust reports on macOS.
-const MACOS: &str = "macos";
-
 /// The directory under the zingolib root that holds the builder's cargo output.
 const BUILD_ROOT: &str = "target/binding-layer";
 
@@ -75,9 +72,6 @@ const PROFILE_DIR: &str = BUILDER_PROFILE.directory();
 /// The iOS output subdirectory that holds intermediate generated files.
 const GENERATED_DIR: &str = "generated";
 
-/// The suffix of an iOS static library.
-const STATIC_SUFFIX: &str = ".a";
-
 /// The iOS target that builds for devices.
 const IOS_DEVICE_TARGET: &str = "aarch64-apple-ios";
 
@@ -86,15 +80,6 @@ const IOS_SIMULATOR_TARGETS: [&str; 2] = ["aarch64-apple-ios-sim", "x86_64-apple
 
 /// The directory, under a target directory, that holds merged simulator libraries.
 const UNIVERSAL_SIMULATOR_DIR: &str = "universal-sim";
-
-/// The wallet XCFramework that zingo-mobile ships.
-const WALLET_XCFRAMEWORK: &str = "Zingolib.xcframework";
-
-/// The proxy XCFramework that zingo-mobile ships.
-const PROXY_XCFRAMEWORK: &str = "ZingoNymProxyFFI.xcframework";
-
-/// The Swift source directory that the SwiftPM package compiles, relative to the output directory.
-const SWIFT_SOURCES_DIR: &str = "Sources/ZingoBindings";
 
 /// The wallet's generated C header.
 const WALLET_HEADER: &str = "zingoFFI.h";
@@ -113,12 +98,6 @@ const COMBINED_MODULEMAP: &str = "module.modulemap";
 
 /// The text between the two module maps in the combined module map.
 const MODULEMAP_SEPARATOR: &str = "\n";
-
-/// The wallet's generated Swift source.
-const WALLET_SWIFT: &str = "zingo.swift";
-
-/// The proxy's generated Swift source.
-const PROXY_SWIFT: &str = "zingo_nym_proxy_ffi.swift";
 
 /// The platform whose packaging to build.
 #[derive(Clone, Copy)]
@@ -249,7 +228,7 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
             outcome
         }
         Platform::Ios => {
-            if env::consts::OS != MACOS {
+            if env::consts::OS != binding_layer::MACOS {
                 return Err(vec!["iOS packaging requires macOS with Xcode".to_string()]);
             }
             let roots = Roots {
@@ -542,7 +521,11 @@ fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
     let proxy_crate_dir = roots.run_path(PROXY_CRATE_DIR);
     let wallet_workspace_dir = roots.run_path(WALLET_WORKSPACE_DIR);
     let static_library = |lib_name| {
-        binding_layer::library_file(binding_layer::LIBRARY_PREFIX, lib_name, STATIC_SUFFIX)
+        binding_layer::library_file(
+            binding_layer::LIBRARY_PREFIX,
+            lib_name,
+            binding_layer::STATIC_SUFFIX,
+        )
     };
     let wallet_static = static_library(binding_layer::WALLET_LIB_NAME);
     let proxy_static = static_library(binding_layer::PROXY_LIB_NAME);
@@ -686,7 +669,7 @@ fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
             },
         ],
         xcframework(
-            WALLET_XCFRAMEWORK,
+            binding_layer::WALLET_XCFRAMEWORK,
             vec![
                 library(&wallet_target, IOS_DEVICE_TARGET, &wallet_static),
                 universal(&wallet_target, &wallet_static),
@@ -696,7 +679,7 @@ fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
         .into_iter()
         .collect(),
         xcframework(
-            PROXY_XCFRAMEWORK,
+            binding_layer::PROXY_XCFRAMEWORK,
             vec![
                 library(&proxy_target, IOS_DEVICE_TARGET, &proxy_static),
                 universal(&proxy_target, &proxy_static),
@@ -705,18 +688,19 @@ fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
         )
         .into_iter()
         .collect(),
-        vec![
-            Step::Copy {
-                from: host(&format!("{wallet_generated}/{WALLET_SWIFT}")),
-                to: host(&format!(
-                    "{relative_out}/{SWIFT_SOURCES_DIR}/{WALLET_SWIFT}"
-                )),
-            },
-            Step::Copy {
-                from: host(&format!("{proxy_generated}/{PROXY_SWIFT}")),
-                to: host(&format!("{relative_out}/{SWIFT_SOURCES_DIR}/{PROXY_SWIFT}")),
-            },
-        ],
+        [
+            (&wallet_generated, binding_layer::WALLET_SWIFT),
+            (&proxy_generated, binding_layer::PROXY_SWIFT),
+        ]
+        .map(|(generated, swift)| Step::Copy {
+            from: host(&format!("{generated}/{swift}")),
+            to: host(&format!(
+                "{relative_out}/{}/{swift}",
+                binding_layer::SWIFT_SOURCES_DIR
+            )),
+        })
+        .into_iter()
+        .collect(),
     ];
     steps.into_iter().flatten().collect()
 }

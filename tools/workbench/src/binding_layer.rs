@@ -46,6 +46,33 @@ pub const LIBRARY_PREFIX: &str = "lib";
 /// The suffix of an Android shared library.
 pub const SHARED_SUFFIX: &str = ".so";
 
+/// The suffix of an iOS static library.
+pub const STATIC_SUFFIX: &str = ".a";
+
+/// The operating system name that Rust reports on macOS.
+pub const MACOS: &str = "macos";
+
+/// The wallet XCFramework that zingo-mobile ships.
+pub const WALLET_XCFRAMEWORK: &str = "Zingolib.xcframework";
+
+/// The proxy XCFramework that zingo-mobile ships.
+pub const PROXY_XCFRAMEWORK: &str = "ZingoNymProxyFFI.xcframework";
+
+/// Both XCFrameworks, in the order that zingo-mobile's builder creates them.
+pub const XCFRAMEWORKS: [&str; 2] = [WALLET_XCFRAMEWORK, PROXY_XCFRAMEWORK];
+
+/// The Swift source directory that the SwiftPM package compiles, relative to the builder's output.
+pub const SWIFT_SOURCES_DIR: &str = "Sources/ZingoBindings";
+
+/// The wallet's generated Swift source.
+pub const WALLET_SWIFT: &str = "zingo.swift";
+
+/// The proxy's generated Swift source.
+pub const PROXY_SWIFT: &str = "zingo_nym_proxy_ffi.swift";
+
+/// Both generated Swift sources.
+pub const SWIFT_SOURCES: [&str; 2] = [WALLET_SWIFT, PROXY_SWIFT];
+
 /// One Android ABI, with the environment that zingo-mobile's builder sets for it.
 pub struct AndroidAbi {
     /// The Rust target triple.

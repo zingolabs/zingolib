@@ -57,6 +57,27 @@ pub fn stdout_with_env(
     String::from_utf8(output.stdout).map_err(|e| vec![format!("{program} output not utf-8: {e}")])
 }
 
+/// Run `<program> <args>` with extra environment and all output streamed, and fail if it fails.
+pub fn run_streaming(
+    program: &str,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> Result<(), Vec<String>> {
+    let status = Command::new(program)
+        .args(args)
+        .envs(env.iter().copied())
+        .status()
+        .map_err(|e| vec![format!("failed to run {program}: {e}")])?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(vec![format!(
+            "`{program} {}` failed ({status})",
+            args.join(" ")
+        )])
+    }
+}
+
 /// Run `<program> <args>` over owned arguments, exactly as [`stdout_of`] does.
 pub fn stdout_of_owned(program: &str, args: &[String]) -> Result<String, Vec<String>> {
     stdout_of(
