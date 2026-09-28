@@ -516,8 +516,8 @@ fn determine_block_range(
             let start = if let Some(range) = shard_ranges.last() {
                 range.end - 1
             } else {
-                // With no shard ranges at all (a server that does not serve
-                // this pool, or a pool freshly activated), fall back to the
+                // With no shard ranges at all (a pool freshly activated, with
+                // no complete shards), fall back to the
                 // pool's own history: the wallet birthday clamped to the
                 // pool's activation height. An unclamped birthday would let
                 // the chain-tip punch flood the entire wallet range.
@@ -1017,8 +1017,12 @@ where
 
         match block_height.cmp(&(sapling_activation_height - 1)) {
             cmp::Ordering::Greater => {
-                let frontiers =
-                    client::get_frontiers(fetch_request_sender.clone(), block_height).await?;
+                let frontiers = client::get_frontiers(
+                    fetch_request_sender.clone(),
+                    consensus_parameters,
+                    block_height,
+                )
+                .await?;
                 Ok((
                     frontiers
                         .final_sapling_tree()
@@ -1082,6 +1086,16 @@ pub(super) fn pop_newest_shard_range(sync_state: &mut SyncState, shielded_protoc
         ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.as_mut(),
     };
     shard_ranges.pop();
+}
+
+/// Removes all shard ranges of `shielded_protocol` so they can be rebuilt from the pool's subtree roots through
+/// [`add_shard_ranges`].
+pub(super) fn clear_shard_ranges(sync_state: &mut SyncState, shielded_protocol: ShieldedPool) {
+    match shielded_protocol {
+        ShieldedPool::Sapling => sync_state.sapling_shard_ranges.clear(),
+        ShieldedPool::Orchard => sync_state.orchard_shard_ranges.clear(),
+        ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.clear(),
+    }
 }
 
 /// Reopens for scanning every scanned range at or above `from_height`,
@@ -1392,8 +1406,8 @@ mod tests {
             vec![BlockHeight::from_u32(1_000)..BlockHeight::from_u32(18_000)];
         sync_state.orchard_shard_ranges =
             vec![BlockHeight::from_u32(1_000)..BlockHeight::from_u32(18_500)];
-        // Ironwood shard ranges are empty: a tolerated server condition, and the
-        // universal state on every network immediately after NU6.3 activation.
+        // Ironwood shard ranges are empty: the universal state on every network
+        // immediately after NU6.3 activation.
         assert!(sync_state.ironwood_shard_ranges.is_empty());
 
         set_chain_tip_scan_range(

@@ -500,15 +500,14 @@ fn check_tree_size(
             continue;
         }
 
+        // block metadata omits a tree size of zero, so a zero tree size where the wallet has calculated a non-zero
+        // tree size means the server does not report the tree size of this pool. rescanning would not resolve this.
         if metadata_size == 0 {
-            tracing::warn!(
-                "{pool:?} chain metadata reports no tree size at block {} against a wallet size \
-                 of {calculated_size}: either this server does not report the {pool:?} tree size, \
-                 or the wallet's record overstates a pool the chain holds nothing of. The next \
-                 block with a reported size decides.",
-                wallet_block.block_height(),
-            );
-            continue;
+            return Err(ScanError::TreeSizeNotReported {
+                shielded_protocol: PoolType::Shielded(pool),
+                height: wallet_block.block_height(),
+                calculated_size,
+            });
         }
 
         return Err(ScanError::IncorrectTreeSize {
@@ -650,6 +649,7 @@ pub(crate) async fn calculate_block_tree_bounds(
                 cmp::Ordering::Greater => {
                     let frontiers = client::get_frontiers(
                         fetch_request_sender.clone(),
+                        consensus_parameters,
                         block::get_compact_height(compact_block),
                     )
                     .await?;
@@ -939,24 +939,49 @@ mod tests {
     }
 
     /// A server that does not report a pool's tree size leaves it at zero
-    /// while the block still carries that pool's outputs. Failing sync there
-    /// would strand every wallet using such a server, and the wallet's own
-    /// record is not what is at fault, so this is tolerated.
+    /// while the block still carries that pool's outputs. The wallet's own
+    /// record is not at fault, so rather than reopening the pool's history
+    /// for a rescan that would never resolve it, the scan fails with an error
+    /// naming the unreported pool.
     #[test]
-    fn an_unreported_tree_size_does_not_fail_the_scan() {
+    fn an_unreported_tree_size_fails_the_scan() {
         let compact_block = block_with_served_ironwood_actions(5, 0);
         let wallet_block = wallet_block_with_ironwood_size(5);
 
-        assert!(check_tree_size(&compact_block, &wallet_block).is_ok());
+        assert!(matches!(
+            check_tree_size(&compact_block, &wallet_block),
+            Err(ScanError::TreeSizeNotReported {
+                shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
+                calculated_size: 5,
+                ..
+            })
+        ));
     }
 
     /// The wallet's count is cumulative, so against a non-reporting server
-    /// the mismatch persists onto blocks that serve no outputs of their
-    /// own; rejecting those would loop reopen-and-rescan forever.
+    /// the mismatch persists onto blocks that serve no outputs of their own.
     #[test]
-    fn an_unreported_tree_size_is_tolerated_on_blocks_without_outputs() {
+    fn an_unreported_tree_size_fails_the_scan_on_blocks_without_outputs() {
         let compact_block = block_with_served_ironwood_actions(0, 0);
         let wallet_block = wallet_block_with_ironwood_size(7);
+
+        assert!(matches!(
+            check_tree_size(&compact_block, &wallet_block),
+            Err(ScanError::TreeSizeNotReported {
+                shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
+                calculated_size: 7,
+                ..
+            })
+        ));
+    }
+
+    /// Block metadata omits a tree size of zero, as at the ironwood activation
+    /// block where the tree is still empty. A zero where the wallet also
+    /// calculates zero is an empty tree, not an unreported one.
+    #[test]
+    fn an_empty_tree_is_not_an_unreported_tree_size() {
+        let compact_block = block_with_served_ironwood_actions(0, 0);
+        let wallet_block = wallet_block_with_ironwood_size(0);
 
         assert!(check_tree_size(&compact_block, &wallet_block).is_ok());
     }

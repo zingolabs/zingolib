@@ -12,7 +12,10 @@ use std::{
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::{
+    PoolType, ShieldedPool,
+    consensus::{self, BlockHeight},
+};
 
 use zingo_netutils::{
     Indexer, TransparentIndexer,
@@ -246,6 +249,7 @@ pub(crate) async fn get_subtree_roots(
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub(crate) async fn get_frontiers(
     fetch_request_sender: UnboundedSender<FetchRequest>,
+    consensus_parameters: &impl consensus::Parameters,
     block_height: BlockHeight,
 ) -> Result<Frontiers, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
@@ -257,6 +261,34 @@ pub(crate) async fn get_frontiers(
         .await
         .map_err(|_| ServerError::FetcherDropped)?
         .map_err(ServerError::RequestFailed)?;
+
+    // servers omit a pool's tree state below the pool's activation height. at and above the activation height, an
+    // empty tree is served as a serialized empty tree, so an omitted tree state means the server does not serve the
+    // pool.
+    for (pool, tree, network_upgrade) in [
+        (
+            ShieldedPool::Sapling,
+            &tree_state.sapling_tree,
+            consensus::NetworkUpgrade::Sapling,
+        ),
+        (
+            ShieldedPool::Orchard,
+            &tree_state.orchard_tree,
+            consensus::NetworkUpgrade::Nu5,
+        ),
+        (
+            ShieldedPool::Ironwood,
+            &tree_state.ironwood_tree,
+            consensus::NetworkUpgrade::Nu6_3,
+        ),
+    ] {
+        if tree.is_empty() && consensus_parameters.is_nu_active(network_upgrade, block_height) {
+            return Err(ServerError::TreeStateNotServed {
+                pool: PoolType::Shielded(pool),
+                height: block_height,
+            });
+        }
+    }
 
     tree_state.try_into().map_err(ServerError::InvalidFrontier)
 }
@@ -410,6 +442,100 @@ where
                 if shutdown_mempool.load(atomic::Ordering::Acquire) {
                     return Err(MempoolError::ShutdownWithoutStream);
                 }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::mpsc;
+    use zcash_protocol::local_consensus::LocalNetwork;
+    use zingo_netutils::lightwallet_protocol::TreeState;
+
+    use super::*;
+
+    const SAPLING_ACTIVATION: u32 = 100;
+    const ORCHARD_ACTIVATION: u32 = 200;
+    const IRONWOOD_ACTIVATION: u32 = 300;
+
+    const NETWORK: LocalNetwork = LocalNetwork {
+        overwinter: Some(BlockHeight::from_u32(1)),
+        sapling: Some(BlockHeight::from_u32(SAPLING_ACTIVATION)),
+        blossom: Some(BlockHeight::from_u32(SAPLING_ACTIVATION)),
+        heartwood: Some(BlockHeight::from_u32(SAPLING_ACTIVATION)),
+        canopy: Some(BlockHeight::from_u32(SAPLING_ACTIVATION)),
+        nu5: Some(BlockHeight::from_u32(ORCHARD_ACTIVATION)),
+        nu6: Some(BlockHeight::from_u32(ORCHARD_ACTIVATION)),
+        nu6_1: Some(BlockHeight::from_u32(ORCHARD_ACTIVATION)),
+        nu6_2: Some(BlockHeight::from_u32(ORCHARD_ACTIVATION)),
+        nu6_3: Some(BlockHeight::from_u32(IRONWOOD_ACTIVATION)),
+    };
+
+    /// Serialized empty commitment tree, as served at and above a pool's activation height.
+    const EMPTY_TREE: &str = "000000";
+
+    /// Answers tree state requests with an empty tree for every pool except `omitted_pool`, whose tree state field
+    /// is left empty.
+    fn spawn_fetcher(omitted_pool: ShieldedPool) -> mpsc::UnboundedSender<FetchRequest> {
+        let tree = |pool: ShieldedPool| {
+            if pool == omitted_pool {
+                String::new()
+            } else {
+                EMPTY_TREE.to_string()
+            }
+        };
+        let (sapling_tree, orchard_tree, ironwood_tree) = (
+            tree(ShieldedPool::Sapling),
+            tree(ShieldedPool::Orchard),
+            tree(ShieldedPool::Ironwood),
+        );
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::TreeState(reply_sender, block_height) => {
+                        let _ignore_error = reply_sender.send(Ok(TreeState {
+                            height: u64::from(block_height),
+                            hash: "00".repeat(32),
+                            sapling_tree: sapling_tree.clone(),
+                            orchard_tree: orchard_tree.clone(),
+                            ironwood_tree: ironwood_tree.clone(),
+                            ..Default::default()
+                        }));
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+        });
+
+        fetch_request_sender
+    }
+
+    /// Servers omit a pool's tree state below the pool's activation height and serve an empty tree as `000000` at
+    /// the activation height, so an omitted tree state at or above the activation height means the server does not
+    /// serve the pool.
+    #[tokio::test]
+    async fn omitted_tree_state_is_rejected_at_or_above_activation() {
+        for (pool, activation_height) in [
+            (ShieldedPool::Sapling, SAPLING_ACTIVATION),
+            (ShieldedPool::Orchard, ORCHARD_ACTIVATION),
+            (ShieldedPool::Ironwood, IRONWOOD_ACTIVATION),
+        ] {
+            get_frontiers(
+                spawn_fetcher(pool),
+                &NETWORK,
+                (activation_height - 1).into(),
+            )
+            .await
+            .unwrap();
+
+            for height in [activation_height, activation_height + 1] {
+                assert!(matches!(
+                    get_frontiers(spawn_fetcher(pool), &NETWORK, height.into()).await,
+                    Err(ServerError::TreeStateNotServed { pool: PoolType::Shielded(p), height: h })
+                        if p == pool && h == height.into()
+                ));
             }
         }
     }
