@@ -4156,7 +4156,7 @@ mod test {
         use orchard::tree::MerkleHashOrchard;
         use tokio::sync::mpsc;
         use zcash_primitives::block::BlockHash;
-        use zcash_protocol::consensus::BlockHeight;
+        use zcash_protocol::consensus::{self, BlockHeight, Parameters as _};
         use zcash_protocol::local_consensus::LocalNetwork;
         use zcash_protocol::{PoolType, ShieldedPool};
         use zingo_netutils::lightwallet_protocol::{SubtreeRoot, TreeState};
@@ -4208,16 +4208,28 @@ mod test {
             }
         }
 
-        /// Answers tree state requests with empty note commitment trees.
+        /// Answers tree state requests with empty note commitment trees, omitting the ironwood tree state below the
+        /// ironwood activation height.
         fn spawn_fetcher() -> mpsc::UnboundedSender<FetchRequest> {
+            const EMPTY_TREE: &str = "000000";
             let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
             tokio::spawn(async move {
                 while let Some(fetch_request) = fetch_request_receiver.recv().await {
                     match fetch_request {
                         FetchRequest::TreeState(reply_sender, block_height) => {
+                            let ironwood_tree = if NETWORK
+                                .is_nu_active(consensus::NetworkUpgrade::Nu6_3, block_height)
+                            {
+                                EMPTY_TREE.to_string()
+                            } else {
+                                String::new()
+                            };
                             let _ignore_error = reply_sender.send(Ok(TreeState {
                                 height: u64::from(block_height),
                                 hash: "00".repeat(32),
+                                sapling_tree: EMPTY_TREE.to_string(),
+                                orchard_tree: EMPTY_TREE.to_string(),
+                                ironwood_tree,
                                 ..Default::default()
                             }));
                         }
