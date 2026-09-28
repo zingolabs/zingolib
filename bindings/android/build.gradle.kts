@@ -8,6 +8,7 @@ val bindingMinSdk = 26
 val bindingNdkVersion = "28.2.13676358"
 val jvmTargetVersion = JavaVersion.VERSION_17
 val jnaDependency = "net.java.dev.jna:jna:5.18.1@aar"
+val annotationDependency = "androidx.annotation:annotation:1.8.1"
 
 group = "org.zingolabs"
 
@@ -73,4 +74,5 @@ tasks.named("preBuild") {
 
 dependencies {
     api(jnaDependency)
+    compileOnly(annotationDependency)
 }
