@@ -37,8 +37,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returned when the sync progress receiver has been dropped.
 - BREAKING: `error::ScanError` variants `TransparentOutputInvalidValue`,
   `AllAddressesInUse`, and `TransparentAddressDerivationError`.
+- BREAKING: `error::ServerError::IronwoodTreeStateNotServed` variant, returned
+  when the server omits the Ironwood tree state at or above the Ironwood
+  activation height.
+- BREAKING: `error::ScanError::TreeSizeNotReported` variant, returned when
+  block metadata reports a tree size of zero where the wallet has calculated a
+  non-zero tree size.
 
 ### Changed
+- BREAKING: `wallet::traits::SyncShardTrees::update_shard_trees` takes the
+  consensus parameters as its first argument.
+- A server that does not serve Ironwood is an error. Failing to fetch Ironwood
+  subtree roots fails sync instead of being tolerated, an omitted Ironwood tree
+  state at or above the Ironwood activation height returns
+  `ServerError::IronwoodTreeStateNotServed`, and a zero tree size in block
+  metadata where the wallet has calculated a non-zero tree size returns
+  `ScanError::TreeSizeNotReported` instead of being logged as a warning. Both
+  errors recommend `SyncRecoveryObservables::ServerUnavailable`.
 - `wallet::traits::SyncWallet::get_transparent_addresses` and
   `get_transparent_addresses_mut` document that the returned addresses must be
   in use and must not include gap addresses.
@@ -64,6 +79,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recovers the full failure story by walking the `source()` chain.
 - `wallet::WalletTransaction::update_status`: added `fail_confirmed` bool for protecting against confirmed txs being
     set to failed in cases other than re-org truncation.
+
+### Fixed
+- Subtree roots are fetched, and the initial frontier added, at the start of
+  every sync session before scanning begins, even if no blocks were mined
+  since the last session (#2782). Continuous sync had moved this behind a new
+  block check, so a session restarted after a pool rescan could insert note
+  commitments before fetching the pool's subtree roots. The shard store then
+  hides the lower shards' missing roots from subtree root fetching, leaving
+  the wallet unable to compute the pool's tree root.
+- A pool rescan (`SyncError::PoolHistoryReopened`) clears the rescanned pool's
+  shard ranges along with its shard tree, so they are rebuilt from the subtree
+  roots fetched in the next session.
+- A pool rescan clears the shard trees of the rescanned pool and any pool
+  activated after it, and truncates the pools activated before it, as
+  documented. The condition was inverted, so an Ironwood rescan cleared the
+  Sapling and Orchard shard trees, losing their note commitments below the
+  Ironwood activation height.
 
 ### Removed
 

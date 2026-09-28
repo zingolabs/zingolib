@@ -246,6 +246,7 @@ pub(crate) async fn get_subtree_roots(
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub(crate) async fn get_frontiers(
     fetch_request_sender: UnboundedSender<FetchRequest>,
+    consensus_parameters: &impl consensus::Parameters,
     block_height: BlockHeight,
 ) -> Result<Frontiers, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
@@ -257,6 +258,15 @@ pub(crate) async fn get_frontiers(
         .await
         .map_err(|_| ServerError::FetcherDropped)?
         .map_err(ServerError::RequestFailed)?;
+
+    // servers omit the ironwood tree state below the ironwood activation height. at and above the activation height,
+    // an empty tree is served as a serialized empty tree, so an omitted tree state means the server does not serve
+    // ironwood.
+    if tree_state.ironwood_tree.is_empty()
+        && consensus_parameters.is_nu_active(consensus::NetworkUpgrade::Nu6_3, block_height)
+    {
+        return Err(ServerError::IronwoodTreeStateNotServed(block_height));
+    }
 
     tree_state.try_into().map_err(ServerError::InvalidFrontier)
 }
@@ -411,6 +421,73 @@ where
                     return Err(MempoolError::ShutdownWithoutStream);
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::mpsc;
+    use zcash_protocol::local_consensus::LocalNetwork;
+    use zingo_netutils::lightwallet_protocol::TreeState;
+
+    use super::*;
+
+    const NETWORK: LocalNetwork = LocalNetwork {
+        overwinter: Some(BlockHeight::from_u32(1)),
+        sapling: Some(BlockHeight::from_u32(1)),
+        blossom: Some(BlockHeight::from_u32(1)),
+        heartwood: Some(BlockHeight::from_u32(1)),
+        canopy: Some(BlockHeight::from_u32(1)),
+        nu5: Some(BlockHeight::from_u32(1)),
+        nu6: Some(BlockHeight::from_u32(1)),
+        nu6_1: Some(BlockHeight::from_u32(1)),
+        nu6_2: Some(BlockHeight::from_u32(1)),
+        nu6_3: Some(BlockHeight::from_u32(100)),
+    };
+
+    /// Answers tree state requests with empty sapling and orchard trees and the given ironwood tree field.
+    fn spawn_fetcher(ironwood_tree: &'static str) -> mpsc::UnboundedSender<FetchRequest> {
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::TreeState(reply_sender, block_height) => {
+                        let _ignore_error = reply_sender.send(Ok(TreeState {
+                            height: u64::from(block_height),
+                            hash: "00".repeat(32),
+                            ironwood_tree: ironwood_tree.to_string(),
+                            ..Default::default()
+                        }));
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+        });
+
+        fetch_request_sender
+    }
+
+    /// Servers omit the ironwood tree state below the ironwood activation height and serve an empty tree as
+    /// `000000` at the activation height, so an omitted ironwood tree state at or above the activation height means
+    /// the server does not serve ironwood.
+    #[tokio::test]
+    async fn omitted_ironwood_tree_state_is_rejected_at_or_above_activation() {
+        let below_activation = get_frontiers(spawn_fetcher(""), &NETWORK, 99.into())
+            .await
+            .unwrap();
+        assert_eq!(below_activation.final_ironwood_tree().tree_size(), 0);
+
+        let empty_at_activation = get_frontiers(spawn_fetcher("000000"), &NETWORK, 100.into())
+            .await
+            .unwrap();
+        assert_eq!(empty_at_activation.final_ironwood_tree().tree_size(), 0);
+
+        for height in [100, 101] {
+            assert!(matches!(
+                get_frontiers(spawn_fetcher(""), &NETWORK, height.into()).await,
+                Err(ServerError::IronwoodTreeStateNotServed(h)) if h == height.into()
+            ));
         }
     }
 }

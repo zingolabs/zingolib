@@ -141,7 +141,8 @@ impl ServerError {
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError
-            | ServerError::GenesisBlockOnly => false,
+            | ServerError::GenesisBlockOnly
+            | ServerError::IronwoodTreeStateNotServed(_) => false,
         }
     }
 }
@@ -175,6 +176,11 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
             SyncError::MempoolError(_) => SyncRecoveryObservables::MaybeRecoverableServer,
 
             SyncError::ScanError(ScanError::ServerError(e)) => e.recovery_recommendation(),
+            // The server does not report the tree size of a pool, so a
+            // different server is required.
+            SyncError::ScanError(ScanError::TreeSizeNotReported { .. }) => {
+                SyncRecoveryObservables::ServerUnavailable
+            }
             SyncError::ScanError(_) => SyncRecoveryObservables::Abort,
 
             // The wallet has already reopened the pool it could not account
@@ -207,7 +213,10 @@ impl ServerError {
             | ServerError::InvalidFrontier(_)
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
-            | ServerError::ChainVerificationError => SyncRecoveryObservables::ServerUnavailable,
+            | ServerError::ChainVerificationError
+            | ServerError::IronwoodTreeStateNotServed(_) => {
+                SyncRecoveryObservables::ServerUnavailable
+            }
             // Empty chain. No point retrying anywhere.
             ServerError::GenesisBlockOnly => SyncRecoveryObservables::Abort,
         }
@@ -284,6 +293,18 @@ pub enum ScanError {
         height: BlockHeight,
         /// Block metadata size
         block_metadata_size: u32,
+        /// Calculated size
+        calculated_size: u32,
+    },
+    /// Block metadata reports a tree size of zero where the wallet has calculated a non-zero tree size.
+    #[error(
+        "tree size not reported. at height {height}, {shielded_protocol} tree size recorded in block metadata is zero where the calculated size is {calculated_size}. connect to a server that serves {shielded_protocol}."
+    )]
+    TreeSizeNotReported {
+        /// Shielded protocol
+        shielded_protocol: PoolType,
+        /// The block height whose sizes disagreed.
+        height: BlockHeight,
         /// Calculated size
         calculated_size: u32,
     },
@@ -406,6 +427,12 @@ pub enum ServerError {
     /// Server reports only the genesis block exists.
     #[error("server reports only the genesis block exists.")]
     GenesisBlockOnly,
+    /// Server did not return the Ironwood note commitment tree state for a height at or above the Ironwood
+    /// activation height.
+    #[error(
+        "server does not serve the ironwood note commitment tree state at height {0}. connect to a server that serves ironwood."
+    )]
+    IronwoodTreeStateNotServed(BlockHeight),
 }
 
 /// Sync mode error.
