@@ -5,7 +5,7 @@
 //! server-reported txid. This path is deliberately light: it needs only a
 //! SOCKS5 client and the tonic machinery already present, no nym-sdk, so it
 //! resolves and builds in the main workspace's lockfile. See
-//! `docs/adr/0011-nym-mixnet-transmission.md`.
+//! `docs/adr/zingolib/0011-nym-mixnet-transmission.md`.
 //!
 //! Failures are typed by the connection phase that produced them (proxy-dial,
 //! tunnel establishment, post-tunnel transport, the RPC's own status, server
