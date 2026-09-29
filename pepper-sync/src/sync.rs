@@ -77,7 +77,9 @@ pub const MAX_SHARDTREE_CHECKPOINTS: u32 =
 
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
-const CHECK_NEW_BLOCKS_INTERVAL: u64 = 10;
+/// Interval in seconds at which continuous sync checks for newly mined blocks if the mempool stream has not signalled
+/// one.
+pub const CHECK_NEW_BLOCKS_INTERVAL: u64 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 ///
