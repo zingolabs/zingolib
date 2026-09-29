@@ -4,6 +4,7 @@ use std::collections;
 use std::env;
 use std::fs;
 use std::iter;
+use std::mem;
 use std::path;
 
 use workbench::binding_layer;
@@ -184,6 +185,12 @@ const MACHO_PREFIX: char = '_';
 /// The prefixes of Rust-mangled symbol names, whose crate hashes depend on the crate's path.
 const RUST_MANGLING_PREFIXES: [&str; 2] = ["_ZN", "_R"];
 
+/// The prefix of an LLVM-internal anonymous symbol name, which carries a content hash and a counter.
+const LLVM_ANONYMOUS_PREFIX: &str = "anon.";
+
+/// The marker that every LLVM-internal anonymous symbol name contains after its counter.
+const LLVM_ANONYMOUS_MARKER: &str = ".llvm.";
+
 /// The bytes that start the zingo-mobile descriptor that the wallet embeds.
 const DESCRIPTOR_PREFIX: &[u8] = b"zm_";
 
@@ -199,24 +206,19 @@ const DESCRIPTOR_HASH_LENGTH: usize = 5;
 /// The length of the shortest descriptor, below which a `zm_` match is only stray bytes.
 const DESCRIPTOR_MIN_LENGTH: usize = DESCRIPTOR_PREFIX.len() + DESCRIPTOR_HASH_LENGTH;
 
+/// The tool that lists every library's symbols, which exits zero on archive members without symbols.
+const SYMBOL_TOOL: &str = "llvm-nm";
+
 /// How to list and normalize a library's exported symbols.
 #[derive(Clone, Copy)]
 enum Symbols {
     /// A shared library's dynamic symbols, compared in full.
     Dynamic,
-    /// A static library's C-ABI symbols, with Rust-mangled names left out.
+    /// A static library's C-ABI symbols, with Rust-mangled and LLVM-anonymous names left out.
     StaticFfi,
 }
 
 impl Symbols {
-    /// The tool that lists this kind of library's symbols.
-    fn tool(self) -> &'static str {
-        match self {
-            Symbols::Dynamic => "llvm-nm",
-            Symbols::StaticFfi => "nm",
-        }
-    }
-
     /// The tool's arguments before the library path.
     fn args(self) -> Vec<&'static str> {
         match self {
@@ -235,6 +237,24 @@ impl Symbols {
         }
     }
 }
+
+/// The manifest at an XCFramework's root, whose library entries `xcodebuild` writes in no fixed order.
+const INFO_PLIST: &str = "Info.plist";
+
+/// The key line that opens the XCFramework manifest's list of library entries.
+const AVAILABLE_LIBRARIES_KEY: &str = "<key>AvailableLibraries</key>";
+
+/// The line that opens a property-list array.
+const PLIST_ARRAY_OPEN: &str = "<array>";
+
+/// The line that closes a property-list array.
+const PLIST_ARRAY_CLOSE: &str = "</array>";
+
+/// The line that opens a property-list dictionary.
+const PLIST_DICT_OPEN: &str = "<dict>";
+
+/// The line that closes a property-list dictionary.
+const PLIST_DICT_CLOSE: &str = "</dict>";
 
 /// The program that runs zingo-mobile's JavaScript builders.
 const NODE: &str = "node";
@@ -1065,7 +1085,7 @@ fn dir_names(directory: &path::Path) -> Result<collections::BTreeSet<String>, Ve
 /// A library's exported, defined symbols, listed and normalized the given way.
 fn exported_symbols(library: &path::Path, symbols: Symbols) -> Result<String, Vec<String>> {
     workbench::stdout_of(
-        symbols.tool(),
+        SYMBOL_TOOL,
         &[symbols.args().as_slice(), &[workbench::utf8(library)?]].concat(),
     )
     .map(|listing| symbols.normalize(&listing))
@@ -1126,6 +1146,9 @@ fn ffi_symbols(listing: &str) -> String {
                 .iter()
                 .any(|prefix| name.starts_with(prefix))
         })
+        .filter(|name| {
+            !(name.starts_with(LLVM_ANONYMOUS_PREFIX) && name.contains(LLVM_ANONYMOUS_MARKER))
+        })
         .collect::<collections::BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>()
@@ -1182,11 +1205,19 @@ fn ios_artifact_checks(tfc_side: &Side, copy_side: &Side) -> Result<Vec<Check>, 
         return Err(vec![format!("the iOS half of gate 3 {requirement}")]);
     }
     let describe = tfc_describe(&tfc_side.root)?;
-    let env = [(binding_layer::DESCRIBE_VARIABLE, describe.as_str())];
+    let describe_entry = (binding_layer::DESCRIBE_VARIABLE, describe.as_str());
+    let env = [describe_entry];
+    let tfc_env = [
+        describe_entry,
+        (
+            binding_layer::TOOLCHAIN_VARIABLE,
+            binding_layer::BUILDER_TOOLCHAIN,
+        ),
+    ];
     workbench::run_streaming(
         NODE,
         &[workbench::utf8(&tfc_side.file(TFC_IOS_BUILDER))?],
-        &env,
+        &tfc_env,
     )?;
     let copy_out = copy_side.file(COPY_SWIFT_OUTPUT);
     workbench::run_streaming(
@@ -1264,6 +1295,11 @@ fn xcframework_checks(
             let copy_file = copy_dir.join(relative);
             if relative.ends_with(binding_layer::STATIC_SUFFIX) {
                 library_pair_checks(&label, &tfc_file, &copy_file, Symbols::StaticFfi)
+            } else if relative == INFO_PLIST {
+                Ok(vec![Check {
+                    label: format!("contents of {label}"),
+                    outcome: equal_xcframework_plists(&tfc_file, &copy_file)?,
+                }])
             } else {
                 Ok(vec![Check {
                     label: format!("bytes of {label}"),
@@ -1287,6 +1323,64 @@ fn relative_files(directory: &path::Path) -> Result<collections::BTreeSet<String
                 .map_err(|e| vec![format!("{} escapes its directory: {e}", file.display())])
         })
         .collect()
+}
+
+/// Nothing when two XCFramework manifests agree once their library entries are sorted, or a note that they differ.
+fn equal_xcframework_plists(
+    tfc_file: &path::Path,
+    copy_file: &path::Path,
+) -> Result<Result<(), String>, Vec<String>> {
+    let canonical =
+        |file: &path::Path| workbench::read(file).map(|text| canonical_xcframework_plist(&text));
+    Ok(if canonical(tfc_file)? == canonical(copy_file)? {
+        Ok(())
+    } else {
+        Err("the manifests differ beyond the order of their library entries".to_string())
+    })
+}
+
+/// An XCFramework manifest's text with the entries of its `AvailableLibraries` array in sorted order.
+fn canonical_xcframework_plist(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let Some(array_open) = lines
+        .iter()
+        .position(|line| line.trim() == AVAILABLE_LIBRARIES_KEY)
+        .map(|key| key + 1)
+        .filter(|open| lines.get(*open).map(|line| line.trim()) == Some(PLIST_ARRAY_OPEN))
+    else {
+        return text.to_string();
+    };
+    let mut entries: Vec<Vec<&str>> = Vec::new();
+    let mut entry: Vec<&str> = Vec::new();
+    let mut depth = 0_usize;
+    let mut array_close = None;
+    for (position, line) in lines.iter().enumerate().skip(array_open + 1) {
+        let tag = line.trim();
+        if depth == 0 && tag == PLIST_ARRAY_CLOSE {
+            array_close = Some(position);
+            break;
+        }
+        entry.push(line);
+        if tag == PLIST_DICT_OPEN {
+            depth += 1;
+        } else if tag == PLIST_DICT_CLOSE {
+            depth = depth.saturating_sub(1);
+        }
+        if depth == 0 {
+            entries.push(mem::take(&mut entry));
+        }
+    }
+    let Some(array_close) = array_close else {
+        return text.to_string();
+    };
+    entries.sort();
+    lines[..=array_open]
+        .iter()
+        .copied()
+        .chain(entries.into_iter().flatten())
+        .chain(lines[array_close..].iter().copied())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Nothing when two files hold the same bytes, or a note that they differ.
@@ -1640,12 +1734,37 @@ mod tests {
     }
 
     #[test]
-    fn ffi_symbols_keep_c_names_and_drop_mangled_names_and_headers() {
-        let listing = "\nlibzingo.a(zingo-1a2b.o):\n_uniffi_zingo_fn_init\n__ZN5zingo4init17h0123456789abcdefE\n__RNvCs1_5zingo4init\n_ffi_zingo_rustbuffer_free\n_uniffi_zingo_fn_init\n";
+    fn ffi_symbols_keep_c_names_and_drop_mangled_and_anonymous_names_and_headers() {
+        let listing = "\nlibzingo.a(zingo-1a2b.o):\n_uniffi_zingo_fn_init\n__ZN5zingo4init17h0123456789abcdefE\n__RNvCs1_5zingo4init\n_anon.09f0247177e8ca7af6e80758e8c5d818.0.llvm.4913617149991479109\n_ffi_zingo_rustbuffer_free\n_uniffi_zingo_fn_init\n_anonymous_c_symbol\n";
         assert_eq!(
             ffi_symbols(listing),
-            "ffi_zingo_rustbuffer_free\nuniffi_zingo_fn_init"
+            "anonymous_c_symbol\nffi_zingo_rustbuffer_free\nuniffi_zingo_fn_init"
         );
+    }
+
+    #[test]
+    fn xcframework_plists_agree_across_library_entry_order_and_differ_on_content() {
+        let manifest = |first: &str, second: &str| {
+            format!(
+                "<plist version=\"1.0\">\n<dict>\n\t<key>AvailableLibraries</key>\n\t<array>\n{first}\n{second}\n\t</array>\n\t<key>XCFrameworkFormatVersion</key>\n\t<string>1.0</string>\n</dict>\n</plist>\n"
+            )
+        };
+        let entry = |identifier: &str| {
+            format!(
+                "\t\t<dict>\n\t\t\t<key>LibraryIdentifier</key>\n\t\t\t<string>{identifier}</string>\n\t\t\t<key>SupportedArchitectures</key>\n\t\t\t<array>\n\t\t\t\t<string>arm64</string>\n\t\t\t</array>\n\t\t</dict>"
+            )
+        };
+        let device = entry("ios-arm64");
+        let simulator = entry("ios-arm64_x86_64-simulator");
+        assert_eq!(
+            canonical_xcframework_plist(&manifest(&device, &simulator)),
+            canonical_xcframework_plist(&manifest(&simulator, &device))
+        );
+        assert_ne!(
+            canonical_xcframework_plist(&manifest(&device, &simulator)),
+            canonical_xcframework_plist(&manifest(&device, &entry("ios-x86_64-simulator")))
+        );
+        assert_eq!(canonical_xcframework_plist("no manifest"), "no manifest");
     }
 
     #[test]

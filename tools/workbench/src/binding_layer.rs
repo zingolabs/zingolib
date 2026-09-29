@@ -28,6 +28,12 @@ pub const PROXY_PACKAGE: &str = "zingo-nym-proxy-ffi";
 /// The variable that carries zingo-mobile's `git describe` into the wallet's build script.
 pub const DESCRIBE_VARIABLE: &str = "ZINGO_MOBILE_GIT_DESCRIBE";
 
+/// The variable that makes rustup ignore zingolib's toolchain pin, as zingo-mobile's builders do.
+pub const TOOLCHAIN_VARIABLE: &str = "RUSTUP_TOOLCHAIN";
+
+/// The toolchain that zingo-mobile's builders select.
+pub const BUILDER_TOOLCHAIN: &str = "stable";
+
 /// The variable that tells cargo where to write build output.
 pub const TARGET_DIR_VARIABLE: &str = "CARGO_TARGET_DIR";
 

@@ -33,12 +33,6 @@ const OUT_FLAG: &str = "--out";
 /// The flag that selects one Android ABI instead of all of them.
 const ABI_FLAG: &str = "--abi";
 
-/// The variable that makes rustup ignore zingolib's toolchain pin, as zingo-mobile's builders do.
-const TOOLCHAIN_VARIABLE: &str = "RUSTUP_TOOLCHAIN";
-
-/// The toolchain that zingo-mobile's builders select.
-const BUILDER_TOOLCHAIN: &str = "stable";
-
 /// The tag of the Android tool image that the builder builds and runs.
 const ANDROID_IMAGE: &str = "localhost/zingolib/binding-layer-android";
 
@@ -344,7 +338,10 @@ fn start_container(engine: &str, root: &path::Path) -> Result<String, Vec<String
 /// The environment that every Android step runs with, as zingo-mobile's Dockerfile and builder set it.
 fn android_base_env(describe: &str) -> Vec<(String, String)> {
     [
-        (TOOLCHAIN_VARIABLE, BUILDER_TOOLCHAIN),
+        (
+            binding_layer::TOOLCHAIN_VARIABLE,
+            binding_layer::BUILDER_TOOLCHAIN,
+        ),
         (binding_layer::DESCRIBE_VARIABLE, describe),
         ("LIBCLANG_PATH", LIBCLANG_PATH),
         ("CARGO_NDK_PLATFORM", binding_layer::ANDROID_API_LEVEL),
@@ -579,8 +576,8 @@ fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
             IOS_DEPLOYMENT_TARGET.to_string(),
         ),
         (
-            TOOLCHAIN_VARIABLE.to_string(),
-            BUILDER_TOOLCHAIN.to_string(),
+            binding_layer::TOOLCHAIN_VARIABLE.to_string(),
+            binding_layer::BUILDER_TOOLCHAIN.to_string(),
         ),
         (
             binding_layer::DESCRIBE_VARIABLE.to_string(),
