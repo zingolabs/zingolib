@@ -71,12 +71,61 @@ zingo-mobile branch `gate4_binding_layer_consumer` starts at TFC and consumes th
 - Use a Linux host, as zingo-mobile's CI does.
 - Install the Android SDK with NDK `28.2.13676358`, JDK 17, Node, yarn, rustup, and `cargo-nextest`.
 - Create an x86_64 emulator with the API 34 `default` system image. zingo-mobile's CI uses the same emulator.
-- Put `zebrad` and `zainod` on `PATH`, or name their directory in `TEST_BINARIES_DIR`.
-- zingo-mobile's `build_android.mjs` calls `docker`. With podman, provide a `docker` command, for example through the `podman-docker` package. Also let podman resolve zingo-mobile's short image name:
+- zingo-mobile's `build_android.mjs` calls `docker`. With podman, provide a `docker` command, for example through the `podman-docker` package or `ln --symbolic "$(command -v podman)" ~/.local/bin/docker`. Also let podman resolve zingo-mobile's short image name:
   ```sh
   printf 'unqualified-search-registries = ["docker.io"]\n' > ~/registries.conf
   export CONTAINERS_REGISTRIES_CONF=~/registries.conf
   ```
+
+### Preparing a checkout
+
+Steps 1 and 2 both prepare their zingo-mobile checkout in the same way, after they build it.
+
+1. Copy `zebrad` and `zainod` out of zingolib's `ci-build` image for TAR, as zingo-mobile's CI does. Run `cargo make compute-image-tag` in a zingolib checkout at TAR for the tag; at TAR it is `c64e0d1aaab97a`.
+   ```sh
+   container=$(podman create docker.io/zingodevops/ci-build:c64e0d1aaab97a)
+   mkdir -p rust/test_binaries/bins
+   podman cp "$container:/usr/bin/zebrad" rust/test_binaries/bins/
+   podman cp "$container:/usr/bin/zainod" rust/test_binaries/bins/
+   podman rm "$container"
+   ```
+2. Build the debug APKs that Detox checks for, and copy them to the paths it expects. Detox's `android.debug.x86_64` app names `apk/debug/app-x86_64-debug.apk`, but zingo-mobile's flavored debug build writes `apk/prod/debug/app-prod-debug.apk`. Without the copies, every `e2e` test fails before any app code runs.
+   ```sh
+   (cd android && ./gradlew assembleDebug assembleAndroidTest -DtestBuildType=debug)
+   apks=android/app/build/outputs/apk
+   mkdir -p "$apks/debug" "$apks/androidTest/debug"
+   cp "$apks/prod/debug/app-prod-debug.apk" "$apks/debug/app-x86_64-debug.apk"
+   cp "$apks/androidTest/prod/debug/app-prod-debug-androidTest.apk" \
+     "$apks/androidTest/debug/app-x86_64-debug-androidTest.apk"
+   ```
+   The CI `e2e` script installs the release APKs itself and runs Detox with `--reuse`, so the app under test is still the release build, and Metro is not needed.
+3. git stores zingo-mobile's CI test scripts without the executable bit, and zingo-mobile's CI makes them executable before it runs. Do the same, and restore git's mode when the runs finish, so that `git describe` does not report the checkout as dirty:
+   ```sh
+   chmod +x scripts/ci/android_integration_tests_ci.sh scripts/ci/e2e_tests_ci.sh
+   # after the runs:
+   chmod -x scripts/ci/android_integration_tests_ci.sh scripts/ci/e2e_tests_ci.sh
+   ```
+
+### Running the suites
+
+Boot the emulator headless on port 5554, where zingo-mobile's CI scripts expect it, and wait for it to finish booting:
+
+```sh
+emulator -avd <API 34 x86_64 AVD> -no-window -no-audio -no-boot-anim \
+  -gpu swiftshader_indirect -no-snapshot-save -port 5554 &
+adb -s emulator-5554 wait-for-device
+```
+
+From `rust/`, run each suite with the emulator kept between tests, as CI runs it:
+
+```sh
+export TEST_BINARIES_DIR="$(pwd)/test_binaries/bins"
+export KEEP_EMULATORS=1
+cargo nextest run android_integration::x86_64 --features ci --release --no-fail-fast
+cargo nextest run e2e::x86_64 --features ci --release --no-fail-fast
+```
+
+zingo-mobile's CI runs `android_integration` on every pull request. No CI workflow runs `e2e`, which is why its Detox paths went stale.
 
 ### 1. Baseline at TFC
 
@@ -93,14 +142,7 @@ cd android
   -PsplitApk=true
 ```
 
-With the emulator running, run each suite three times from `rust/`:
-
-```sh
-cargo nextest run android_integration::x86_64 --features ci --release
-cargo nextest run e2e::x86_64 --release
-```
-
-The `e2e` suite needs Metro. Run `yarn start` in a separate terminal first.
+Prepare the checkout, and run each suite three times.
 
 **Deliverable:** the outcome of each test in each of the three runs of each suite.
 
@@ -119,7 +161,7 @@ cd android
 
 Do not run `build_android.mjs` on this branch. Gradle builds the Binding Layer from the copy.
 
-With the emulator running, run each suite one time from `rust/`, with the same commands as in step 1.
+Prepare the checkout, and run each suite one time.
 
 **Deliverable:** the outcome of each test in each suite. A test that passes in all three baseline runs and fails here blocks the merge.
 
