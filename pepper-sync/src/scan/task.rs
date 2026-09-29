@@ -1,6 +1,7 @@
 use std::{
     borrow::BorrowMut,
     collections::{BTreeSet, HashMap},
+    ops::Range,
     sync::{
         Arc,
         atomic::{self, AtomicBool},
@@ -402,19 +403,13 @@ where
                 let mut current_block_ironwood_nullifier_count = 0;
                 let mut awaiting_first_block = true;
 
-                let mut block_stream = if fetch_nullifiers_only {
-                    client::get_nullifier_range(
-                        fetch_request_sender.clone(),
-                        scan_task.scan_range.block_range().clone(),
-                    )
-                    .await?
-                } else {
-                    client::get_compact_block_range(
-                        fetch_request_sender.clone(),
-                        scan_task.scan_range.block_range().clone(),
-                    )
-                    .await?
-                };
+                let (mut block_stream, mut stream_end) = open_block_stream(
+                    fetch_request_sender.clone(),
+                    scan_task.scan_range.block_range().clone(),
+                    fetch_nullifiers_only,
+                    scan_task.transparent_scan_floor,
+                )
+                .await?;
 
                 loop {
                     let msg_res: Result<Option<CompactBlock>, tonic::Status> =
@@ -434,21 +429,13 @@ where
                         {
                             tokio::time::sleep(Duration::from_secs(3)).await;
 
-                            let retry_range = retry_height..scan_task.scan_range.block_range().end;
-
-                            block_stream = if fetch_nullifiers_only {
-                                client::get_nullifier_range(
-                                    fetch_request_sender.clone(),
-                                    retry_range,
-                                )
-                                .await?
-                            } else {
-                                client::get_compact_block_range(
-                                    fetch_request_sender.clone(),
-                                    retry_range,
-                                )
-                                .await?
-                            };
+                            (block_stream, stream_end) = open_block_stream(
+                                fetch_request_sender.clone(),
+                                retry_height..scan_task.scan_range.block_range().end,
+                                fetch_nullifiers_only,
+                                scan_task.transparent_scan_floor,
+                            )
+                            .await?;
 
                             let first_msg_res: Result<Option<CompactBlock>, tonic::Status> =
                                 match tokio::time::timeout(
@@ -474,6 +461,20 @@ where
                     };
 
                     let Some(compact_block) = maybe_block else {
+                        if retry_height == stream_end
+                            && stream_end < scan_task.scan_range.block_range().end
+                        {
+                            // the stream ended at the transparent scan floor. continue with the blocks above the
+                            // floor, including their transparent data.
+                            (block_stream, stream_end) = open_block_stream(
+                                fetch_request_sender.clone(),
+                                retry_height..scan_task.scan_range.block_range().end,
+                                fetch_nullifiers_only,
+                                scan_task.transparent_scan_floor,
+                            )
+                            .await?;
+                            continue;
+                        }
                         break;
                     };
 
@@ -659,6 +660,42 @@ where
 
         Ok(())
     }
+}
+
+/// Opens a stream of compact blocks for `block_range` (end exclusive), or of nullifiers only if `fetch_nullifiers_only`
+/// is true.
+///
+/// Compact block transparent data is only fetched for blocks above the `transparent_scan_floor`. If `block_range`
+/// spans the floor, the stream ends at the floor and a new stream must be opened for the blocks above it.
+///
+/// Returns the stream and its end height (exclusive).
+async fn open_block_stream(
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    block_range: Range<BlockHeight>,
+    fetch_nullifiers_only: bool,
+    transparent_scan_floor: BlockHeight,
+) -> Result<(tonic::Streaming<CompactBlock>, BlockHeight), ServerError> {
+    if fetch_nullifiers_only {
+        let stream_end = block_range.end;
+        let block_stream = client::get_nullifier_range(fetch_request_sender, block_range).await?;
+
+        return Ok((block_stream, stream_end));
+    }
+
+    let include_transparent = block_range.start > transparent_scan_floor;
+    let stream_end = if include_transparent {
+        block_range.end
+    } else {
+        block_range.end.min(transparent_scan_floor + 1)
+    };
+    let block_stream = client::get_compact_block_range(
+        fetch_request_sender,
+        block_range.start..stream_end,
+        include_transparent,
+    )
+    .await?;
+
+    Ok((block_stream, stream_end))
 }
 
 pub(crate) struct ScanWorker<P> {

@@ -10,7 +10,7 @@ use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::{
     Indexer, TransparentIndexer,
     lightwallet_protocol::{
-        BlockId, BlockRange, CompactBlock, GetAddressUtxosArg, GetAddressUtxosReply,
+        BlockId, BlockRange, CompactBlock, GetAddressUtxosArg, GetAddressUtxosReply, PoolType,
         RawTransaction, TransparentAddressBlockFilter, TreeState, TxFilter,
     },
 };
@@ -111,9 +111,13 @@ where
             let block = get_block(client, block_height).await;
             let _ignore_error = sender.send(block);
         }
-        FetchRequest::CompactBlockRange(sender, block_range) => {
-            tracing::debug!("Fetching compact blocks. {:?}", &block_range);
-            let block_stream = get_block_range(client, block_range).await;
+        FetchRequest::CompactBlockRange(sender, block_range, include_transparent) => {
+            tracing::debug!(
+                "Fetching compact blocks. {:?}. include transparent: {}",
+                &block_range,
+                include_transparent
+            );
+            let block_stream = get_block_range(client, block_range, include_transparent).await;
             let _ignore_error = sender.send(block_stream);
         }
         FetchRequest::NullifierRange(sender, block_range) => {
@@ -188,9 +192,12 @@ where
         .await
 }
 
+/// Fetches compact blocks with shielded data only, or with transparent and shielded data if `include_transparent` is
+/// true.
 async fn get_block_range<C>(
     client: &mut C,
     block_range: Range<BlockHeight>,
+    include_transparent: bool,
 ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
@@ -206,7 +213,20 @@ where
                     height: u64::from(block_range.end) - 1,
                     hash: vec![],
                 }),
-                pool_types: vec![],
+                pool_types: if include_transparent {
+                    vec![
+                        PoolType::Transparent as i32,
+                        PoolType::Sapling as i32,
+                        PoolType::Orchard as i32,
+                        PoolType::Ironwood as i32,
+                    ]
+                } else {
+                    vec![
+                        PoolType::Sapling as i32,
+                        PoolType::Orchard as i32,
+                        PoolType::Ironwood as i32,
+                    ]
+                },
             },
             HEAVY_UNARY_TIMEOUT,
         )

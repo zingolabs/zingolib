@@ -46,8 +46,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: `error::ScanError::TreeSizeNotReported` variant, returned when
   block metadata reports a tree size of zero where the wallet has calculated a
   non-zero tree size.
+- BREAKING: `error::ServerError::UnsupportedProtocolVersion` variant, returned
+  at the start of sync when the server's `GetLightdInfo`
+  `lightwalletProtocolVersion` is missing or below v0.5.0. Such servers do not
+  serve the transparent and Ironwood data in compact blocks that sync requires.
+  The error recommends `SyncRecoveryObservables::ServerUnavailable`, and the
+  consumer should switch to a different server and sync again.
 
 ### Changed
+- BREAKING: `client::FetchRequest::CompactBlockRange` has an added `bool`
+  field. When true, compact blocks are requested with the `TRANSPARENT`,
+  `SAPLING`, `ORCHARD` and `IRONWOOD` pool types, otherwise with the default
+  (shielded only). Transparent data is only requested for blocks above the
+  transparent scan floor. Previously, no pool types were ever requested, so
+  compact blocks never contained the transparent data that is scanned for
+  blocks mined during the sync session.
 - BREAKING: `wallet::traits::SyncShardTrees::update_shard_trees` takes the
   consensus parameters as its first argument.
 - A server that does not serve Ironwood is an error. Failing to fetch Ironwood

@@ -142,7 +142,8 @@ impl ServerError {
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError
             | ServerError::GenesisBlockOnly
-            | ServerError::TreeStateNotServed { .. } => false,
+            | ServerError::TreeStateNotServed { .. }
+            | ServerError::UnsupportedProtocolVersion { .. } => false,
         }
     }
 }
@@ -214,7 +215,10 @@ impl ServerError {
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError
-            | ServerError::TreeStateNotServed { .. } => SyncRecoveryObservables::ServerUnavailable,
+            | ServerError::TreeStateNotServed { .. }
+            | ServerError::UnsupportedProtocolVersion { .. } => {
+                SyncRecoveryObservables::ServerUnavailable
+            }
             // Empty chain. No point retrying anywhere.
             ServerError::GenesisBlockOnly => SyncRecoveryObservables::Abort,
         }
@@ -435,6 +439,15 @@ pub enum ServerError {
         pool: PoolType,
         /// The requested block height.
         height: BlockHeight,
+    },
+    /// Server's lightwallet protocol version is too old to serve the transparent and Ironwood data in compact blocks
+    /// required for sync.
+    #[error(
+        "server lightwallet protocol version '{version}' does not serve transparent and ironwood data in compact blocks. v0.5.0 or later is required. change to a server that supports lightwallet protocol v0.5.0 or later and sync again."
+    )]
+    UnsupportedProtocolVersion {
+        /// The lightwallet protocol version reported by the server. Empty if the server does not report one.
+        version: String,
     },
 }
 

@@ -1761,6 +1761,8 @@ impl CompactTxStreamer for MockIndexerService {
             consensus_branch_id: format!("{branch_id:08x}"),
             block_height: u64::from(tip),
             estimated_height: u64::from(tip),
+            // the mock always serves transparent and ironwood data in compact blocks
+            lightwallet_protocol_version: "v0.5.0".to_string(),
             ..Default::default()
         }))
     }
