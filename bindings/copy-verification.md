@@ -56,7 +56,7 @@ The Gradle library has no Gradle wrapper, so use Gradle 8.14.3.
 
 ## Gate 4
 
-Gate 4 runs zingo-mobile's suites. On Android, these are the `android_integration` suite, which runs `RustFFITest.kt` among the instrumented tests, and the `e2e` suite. On iOS, this is the `ZingoTests` XCTest suite. The baseline is three runs of each suite at TFC. Record the outcome of each test in each run. A test that passes in all three baseline runs and fails on the copy blocks the merge. A test that fails at TFC and fails on the copy counts as preserved function.
+Gate 4 runs zingo-mobile's suites. On Android, this is the `android_integration` suite, which runs `RustFFITest.kt` among its ten instrumented test classes. On iOS, this is the `ZingoTests` XCTest suite. The Android `e2e` suite is not evidence, because it cannot pass at TFC: its Detox app path does not match zingo-mobile's flavored builds, and in release mode an unfiltered instrumentation run reaches a test that minification breaks. zingo-mobile#1465 records both causes. The baseline is three runs of each suite at TFC. Record the outcome of each test in each run. A test that passes in all three baseline runs and fails on the copy blocks the merge. A test that fails at TFC and fails on the copy counts as preserved function.
 
 zingo-mobile branch `gate4_binding_layer_consumer` starts at TFC and consumes the copy. It exists only for gate 4, and it never merges.
 
@@ -89,20 +89,11 @@ Steps 1 and 2 both prepare their zingo-mobile checkout in the same way, after th
    podman cp "$container:/usr/bin/zainod" rust/test_binaries/bins/
    podman rm "$container"
    ```
-2. Copy the x86_64 release APKs to the paths that Detox checks. Detox's `android.debug.x86_64` app names `apk/debug/app-x86_64-debug.apk`, and it derives the test APK's path from it, but zingo-mobile's builds never write those paths. Without the copies, every `e2e` test fails before any app code runs.
+2. git stores zingo-mobile's CI test script without the executable bit, and zingo-mobile's CI makes it executable before it runs. Do the same, and restore git's mode when the runs finish, so that `git describe` does not report the checkout as dirty:
    ```sh
-   apks=android/app/build/outputs/apk
-   mkdir -p "$apks/debug" "$apks/androidTest/debug"
-   cp "$apks/prod/release/app-prod-x86_64-release.apk" "$apks/debug/app-x86_64-debug.apk"
-   cp "$apks/androidTest/prod/release/app-prod-release-androidTest.apk" \
-     "$apks/androidTest/debug/app-x86_64-debug-androidTest.apk"
-   ```
-   Detox installs whatever sits at those paths. The release APKs match the release pair that the CI `e2e` script installs, so Metro is not needed. A debug app there crashes at start against the release test APK.
-3. git stores zingo-mobile's CI test scripts without the executable bit, and zingo-mobile's CI makes them executable before it runs. Do the same, and restore git's mode when the runs finish, so that `git describe` does not report the checkout as dirty:
-   ```sh
-   chmod +x scripts/ci/android_integration_tests_ci.sh scripts/ci/e2e_tests_ci.sh
+   chmod +x scripts/ci/android_integration_tests_ci.sh
    # after the runs:
-   chmod -x scripts/ci/android_integration_tests_ci.sh scripts/ci/e2e_tests_ci.sh
+   chmod -x scripts/ci/android_integration_tests_ci.sh
    ```
 
 ### Running the suites
@@ -115,16 +106,15 @@ emulator -avd <API 34 x86_64 AVD> -no-window -no-audio -no-boot-anim \
 adb -s emulator-5554 wait-for-device
 ```
 
-From `rust/`, run each suite with the emulator kept between tests, as CI runs it:
+From `rust/`, run the suite with the emulator kept between tests, as CI runs it:
 
 ```sh
 export TEST_BINARIES_DIR="$(pwd)/test_binaries/bins"
 export KEEP_EMULATORS=1
 cargo nextest run android_integration::x86_64 --features ci --release --no-fail-fast
-cargo nextest run e2e::x86_64 --features ci --release --no-fail-fast
 ```
 
-zingo-mobile's CI runs `android_integration` on every pull request. No CI workflow runs `e2e`, which is why its Detox paths went stale.
+At TFC, all ten tests pass in each of three runs.
 
 ### 1. Baseline at TFC
 
@@ -141,9 +131,9 @@ cd android
   -PsplitApk=true
 ```
 
-Prepare the checkout, and run each suite three times.
+Prepare the checkout, and run the suite three times.
 
-**Deliverable:** the outcome of each test in each of the three runs of each suite.
+**Deliverable:** the outcome of each test in each of the three runs.
 
 ### 2. Run on the copy
 
@@ -160,9 +150,9 @@ cd android
 
 Do not run `build_android.mjs` on this branch. Gradle builds the Binding Layer from the copy.
 
-Prepare the checkout, and run each suite one time.
+Prepare the checkout, and run the suite one time.
 
-**Deliverable:** the outcome of each test in each suite. A test that passes in all three baseline runs and fails here blocks the merge.
+**Deliverable:** the outcome of each test. A test that passes in all three baseline runs and fails here blocks the merge.
 
 ## Checklist for a macOS reviewer
 
