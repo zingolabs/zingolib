@@ -429,9 +429,13 @@ where
 
     tracing::info!("Starting sync...");
 
+    // transparent and ironwood data is required in compact blocks so the server must be checked before any tasks are
+    // launched.
+    let mut client_clone = client.clone();
+    client::check_lightwallet_protocol_version(&mut client_clone).await?;
+
     // create channel for sending fetch requests and launch fetcher task
     let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
-    let client_clone = client.clone();
     let fetcher_handle =
         tokio::spawn(
             async move { client::fetch::fetch(fetch_request_receiver, client_clone).await },

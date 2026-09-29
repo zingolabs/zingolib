@@ -1242,6 +1242,101 @@ async fn sync_to_tip_and_await_stops_running_continuous_sync() {
     );
 }
 
+/// Transparent address discovery only covers blocks up to the transparent scan floor, the chain height at the start of
+/// the sync session. Transparent funds received in a block mined during a continuous sync session are only detected
+/// if transparent data is requested in the compact blocks above the floor, as the mock, like a real server, only
+/// serves the data of the requested pools.
+#[tokio::test]
+async fn transparent_funds_mined_during_sync_session_are_detected() {
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(10);
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    let taddr = get_base_address(&client, PoolType::Transparent).await;
+
+    client.sync().await.expect("continuous sync launches");
+
+    // the first sync status is published after the session has fetched the chain height, setting the floor.
+    tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        client.subscribe_sync_status().wait_for(Option::is_some),
+    )
+    .await
+    .expect("sync publishes its status")
+    .expect("sync status channel open");
+
+    // mined directly into a block, bypassing the mempool, so the funds can only be detected from the compact block.
+    fund(&net, vec![(&taddr, 50_000, None)], 1).await;
+
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        loop {
+            if let crate::data::PollReport::Ready(result) = client.poll_sync() {
+                panic!("sync returned before the transparent funds were detected: {result:?}");
+            }
+            let transparent_balance = client
+                .account_balance(zip32::AccountId::ZERO)
+                .await
+                .unwrap()
+                .confirmed_transparent_balance
+                .unwrap()
+                .into_u64();
+            if transparent_balance == 50_000 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("transparent funds mined during the sync session are detected");
+
+    client.stop_sync().unwrap();
+    client.await_sync().await.unwrap();
+}
+
+/// Sync is rejected when the server's lightwallet protocol version is below v0.5.0, or not reported, as the server does
+/// not serve the transparent and ironwood data sync requires. The error recommends switching servers.
+#[tokio::test]
+async fn sync_rejects_server_below_minimum_lightwallet_protocol_version() {
+    use crate::lightclient::error::LightClientError;
+    use pepper_sync::error::{ServerError, SyncError, SyncRecoveryObservables};
+
+    for reported_version in ["v0.4.0", ""] {
+        let mut net = MockNet::launch().await;
+        {
+            let mut chain = net.chain.write().await;
+            chain.lightwallet_protocol_version = reported_version.to_string();
+            chain.mine_empty_blocks(10);
+        }
+        let mut client = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+
+        let error = client
+            .sync_and_await()
+            .await
+            .expect_err("sync against an old server fails");
+        let LightClientError::SyncError(sync_error) = &error else {
+            panic!("expected a sync error, got {error:?}");
+        };
+        assert!(
+            matches!(
+                sync_error,
+                SyncError::ServerError(ServerError::UnsupportedProtocolVersion { version })
+                    if version == reported_version
+            ),
+            "expected UnsupportedProtocolVersion for '{reported_version}', got {sync_error:?}"
+        );
+        assert_eq!(
+            sync_error.recovery_recommendation(),
+            SyncRecoveryObservables::ServerUnavailable
+        );
+    }
+}
+
 /// `migrate_to_ironwood` syncs before each round. Under continuous sync, with
 /// a sync already running, that sync must still return, or the
 /// migration never reaches its round. The setup mirrors `failed_split_round_transmit_strands_calculated_transactions`:

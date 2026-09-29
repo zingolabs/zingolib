@@ -62,9 +62,12 @@ pub enum FetchRequest {
         BlockHeight,
     ),
     /// Gets the specified range of compact blocks from the server (end exclusive).
+    ///
+    /// Compact blocks include transparent data if the `bool` is true, otherwise only shielded data.
     CompactBlockRange(
         oneshot::Sender<Result<tonic::Streaming<CompactBlock>, tonic::Status>>,
         Range<BlockHeight>,
+        bool,
     ),
     /// Gets the specified range of nullifiers from the server (end exclusive).
     NullifierRange(
@@ -96,6 +99,47 @@ pub enum FetchRequest {
         i32,
         u32,
     ),
+}
+
+/// Minimum lightwallet protocol version the server must serve. v0.4.0 added transparent data to compact blocks and
+/// v0.5.0 added the Ironwood pool.
+const MIN_LIGHTWALLET_PROTOCOL_VERSION: (u64, u64, u64) = (0, 5, 0);
+
+/// Checks the server's lightwallet protocol version is at least [`MIN_LIGHTWALLET_PROTOCOL_VERSION`] so that it serves
+/// the transparent and Ironwood data in compact blocks required for sync.
+///
+/// Servers that pre-date the protocol version field do not set it and are rejected.
+pub(crate) async fn check_lightwallet_protocol_version<C>(client: &mut C) -> Result<(), ServerError>
+where
+    C: Indexer,
+{
+    let version = fetch::get_lightd_info(client)
+        .await?
+        .lightwallet_protocol_version;
+
+    if parse_protocol_version(&version)
+        .is_some_and(|version| version >= MIN_LIGHTWALLET_PROTOCOL_VERSION)
+    {
+        Ok(())
+    } else {
+        Err(ServerError::UnsupportedProtocolVersion { version })
+    }
+}
+
+/// Parses a `major.minor.patch` version with an optional `v` prefix. Any pre-release or build suffix on the patch
+/// version is ignored.
+fn parse_protocol_version(version: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = version.trim().trim_start_matches('v').splitn(3, '.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?;
+    let patch = patch[..patch
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(patch.len())]
+        .parse()
+        .ok()?;
+
+    Some((major, minor, patch))
 }
 
 /// Gets the height of the blockchain from the server.
@@ -143,10 +187,15 @@ pub(crate) async fn get_compact_block(
 pub(crate) async fn get_compact_block_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
+    include_transparent: bool,
 ) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
-        .send(FetchRequest::CompactBlockRange(reply_sender, block_range))
+        .send(FetchRequest::CompactBlockRange(
+            reply_sender,
+            block_range,
+            include_transparent,
+        ))
         .map_err(|_| ServerError::FetcherDropped)?;
 
     let block_stream = reply_receiver
@@ -537,6 +586,29 @@ mod tests {
                         if p == pool && h == height.into()
                 ));
             }
+        }
+    }
+
+    /// Zaino reports the protocol version with a `v` prefix. Servers that pre-date the field report an empty string.
+    #[test]
+    fn protocol_version_is_parsed_and_compared() {
+        for (version, supported) in [
+            ("v0.5.0", true),
+            ("0.5.0", true),
+            ("v0.5.1-rc.1", true),
+            ("v1.0.0", true),
+            ("v0.4.1", false),
+            ("v0.4.0", false),
+            ("", false),
+            ("v0.5", false),
+            ("unknown", false),
+        ] {
+            assert_eq!(
+                parse_protocol_version(version)
+                    .is_some_and(|version| version >= MIN_LIGHTWALLET_PROTOCOL_VERSION),
+                supported,
+                "{version}"
+            );
         }
     }
 }

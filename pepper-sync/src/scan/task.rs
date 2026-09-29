@@ -1,6 +1,7 @@
 use std::{
     borrow::BorrowMut,
     collections::{BTreeSet, HashMap},
+    ops::Range,
     sync::{
         Arc,
         atomic::{self, AtomicBool},
@@ -402,19 +403,13 @@ where
                 let mut current_block_ironwood_nullifier_count = 0;
                 let mut awaiting_first_block = true;
 
-                let mut block_stream = if fetch_nullifiers_only {
-                    client::get_nullifier_range(
-                        fetch_request_sender.clone(),
-                        scan_task.scan_range.block_range().clone(),
-                    )
-                    .await?
-                } else {
-                    client::get_compact_block_range(
-                        fetch_request_sender.clone(),
-                        scan_task.scan_range.block_range().clone(),
-                    )
-                    .await?
-                };
+                let mut block_stream = open_block_stream(
+                    fetch_request_sender.clone(),
+                    scan_task.scan_range.block_range().clone(),
+                    fetch_nullifiers_only,
+                    scan_task.transparent_scan_floor,
+                )
+                .await?;
 
                 loop {
                     let msg_res: Result<Option<CompactBlock>, tonic::Status> =
@@ -434,21 +429,13 @@ where
                         {
                             tokio::time::sleep(Duration::from_secs(3)).await;
 
-                            let retry_range = retry_height..scan_task.scan_range.block_range().end;
-
-                            block_stream = if fetch_nullifiers_only {
-                                client::get_nullifier_range(
-                                    fetch_request_sender.clone(),
-                                    retry_range,
-                                )
-                                .await?
-                            } else {
-                                client::get_compact_block_range(
-                                    fetch_request_sender.clone(),
-                                    retry_range,
-                                )
-                                .await?
-                            };
+                            block_stream = open_block_stream(
+                                fetch_request_sender.clone(),
+                                retry_height..scan_task.scan_range.block_range().end,
+                                fetch_nullifiers_only,
+                                scan_task.transparent_scan_floor,
+                            )
+                            .await?;
 
                             let first_msg_res: Result<Option<CompactBlock>, tonic::Status> =
                                 match tokio::time::timeout(
@@ -659,6 +646,40 @@ where
 
         Ok(())
     }
+}
+
+/// Opens a stream of compact blocks for `block_range` (end exclusive), or of nullifiers only if `fetch_nullifiers_only`
+/// is true.
+///
+/// Compact block transparent data is only fetched if `block_range` contains blocks above the `transparent_scan_floor`.
+async fn open_block_stream(
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    block_range: Range<BlockHeight>,
+    fetch_nullifiers_only: bool,
+    transparent_scan_floor: BlockHeight,
+) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
+    if fetch_nullifiers_only {
+        client::get_nullifier_range(fetch_request_sender, block_range).await
+    } else {
+        let include_transparent = includes_blocks_above_floor(&block_range, transparent_scan_floor);
+        client::get_compact_block_range(fetch_request_sender, block_range, include_transparent)
+            .await
+    }
+}
+
+/// Returns true if `block_range` (end exclusive) contains blocks above the `transparent_scan_floor`, so their
+/// compact block transparent data must be fetched. Transparent data is not scanned at or below the floor, so fetching
+/// it for ranges at or below the floor wastes bandwidth.
+///
+/// Scan ranges do not span the floor: the floor is set to the chain height at the start of the sync session, and newly
+/// mined blocks form new scan ranges above it. If a re-org lowers the floor, it is lowered to one below the start of the
+/// verification range. If a range did span the floor, transparent data is fetched for the whole range so the transparent
+/// data of the blocks above the floor is not missed.
+fn includes_blocks_above_floor(
+    block_range: &Range<BlockHeight>,
+    transparent_scan_floor: BlockHeight,
+) -> bool {
+    block_range.end > transparent_scan_floor + 1
 }
 
 pub(crate) struct ScanWorker<P> {
@@ -900,5 +921,31 @@ impl ScanTask {
                 transparent_scan_floor: self.transparent_scan_floor,
             },
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transparent_data_is_only_requested_for_ranges_above_transparent_scan_floor() {
+        let floor = BlockHeight::from_u32(1_000);
+        for (block_range, include_transparent) in [
+            // below the floor
+            (floor - 10..floor - 5, false),
+            // ends at the floor
+            (floor - 5..floor + 1, false),
+            // spans the floor
+            (floor - 5..floor + 5, true),
+            // starts above the floor
+            (floor + 1..floor + 5, true),
+        ] {
+            assert_eq!(
+                includes_blocks_above_floor(&block_range, floor),
+                include_transparent,
+                "{block_range:?}"
+            );
+        }
     }
 }
