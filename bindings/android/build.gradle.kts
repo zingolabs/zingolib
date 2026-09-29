@@ -9,6 +9,7 @@ val bindingNdkVersion = "28.2.13676358"
 val jvmTargetVersion = JavaVersion.VERSION_17
 val jnaDependency = "net.java.dev.jna:jna:5.18.1@aar"
 val annotationDependency = "androidx.annotation:annotation:1.8.1"
+val releaseTagPrefix = "zingo-"
 
 group = "org.zingolabs"
 
@@ -20,8 +21,14 @@ val layerOutput: Provider<Directory> = prebuiltOutput.orElse(builderOutput)
 val consumerDescribe: Provider<String> = gradle.parent?.let { consumer ->
     providers.exec {
         workingDir = consumer.startParameter.currentDir
-        commandLine("git", "describe", "--dirty", "--always", "--long", "--match", "zingo-*")
-    }.standardOutput.asText.map { it.trim() }
+        commandLine("git", "describe", "--dirty", "--always", "--long", "--match", "$releaseTagPrefix*")
+    }.standardOutput.asText.map { it.trim() }.map { describe ->
+        check(describe.startsWith(releaseTagPrefix)) {
+            "The consuming build describes as '$describe', which is not a zingo-mobile release " +
+                "descriptor. Set ZINGO_MOBILE_GIT_DESCRIBE to zingo-mobile's descriptor."
+        }
+        describe
+    }
 } ?: providers.provider<String> { null }
 val gitDescribe: Provider<String> = providers.environmentVariable("ZINGO_MOBILE_GIT_DESCRIBE")
     .orElse(providers.gradleProperty("zingoMobileGitDescribe"))
@@ -32,7 +39,9 @@ val buildBindingLayer by tasks.registering(Exec::class) {
     description = "Builds the Binding Layer's Android libraries and Kotlin sources."
     onlyIf("no prebuilt Binding Layer is named") { !prebuiltOutput.isPresent }
     workingDir = zingolibRoot
-    environment("ZINGO_MOBILE_GIT_DESCRIBE", gitDescribe.getOrElse(""))
+    doFirst {
+        environment("ZINGO_MOBILE_GIT_DESCRIBE", gitDescribe.getOrElse(""))
+    }
     commandLine(
         listOf(
             "cargo", "run", "--quiet",
@@ -46,7 +55,7 @@ val buildBindingLayer by tasks.registering(Exec::class) {
             exclude("**/target/**", "**/build/**", ".git/**", "bindings/swift/**")
         }
     )
-    inputs.property("gitDescribe", gitDescribe.getOrElse(""))
+    inputs.property("gitDescribe", gitDescribe.orElse(""))
     inputs.property("selectedAbi", selectedAbi.getOrElse(""))
     outputs.dir(builderOutput)
 }
