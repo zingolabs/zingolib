@@ -60,7 +60,7 @@ Gate 4 runs zingo-mobile's suites. On Android, these are the `android_integratio
 
 zingo-mobile branch `gate4_binding_layer_consumer` starts at TFC and consumes the copy. It exists only for gate 4, and it never merges.
 
-- Android includes `bindings/android` as a Gradle included build. Set `ZINGOLIB_DIR` to a checkout of the copy's branch. Set `ZINGO_MOBILE_GIT_DESCRIBE` to the consumer branch's `git describe`. Do not run `rust/android/build_android.mjs`.
+- Android includes `bindings/android` as a Gradle included build. Set `ZINGOLIB_DIR` to a checkout of the copy's branch. Do not run `rust/android/build_android.mjs`. The Gradle library computes the consumer branch's descriptor itself, so `ZINGO_MOBILE_GIT_DESCRIBE` is optional.
 - iOS imports the Swift module `ZingoBindings`. The Xcode project needs the wiring in step 3 of the macOS checklist.
 - Run `yarn` in the consumer branch before a build.
 
@@ -106,11 +106,10 @@ The `e2e` suite needs Metro. Run `yarn start` in a separate terminal first.
 
 ### 2. Run on the copy
 
-Check out zingo-mobile branch `gate4_binding_layer_consumer`. Point it at a checkout of the copy's branch, and give it the consumer branch's descriptor:
+Check out zingo-mobile branch `gate4_binding_layer_consumer`, and point it at a checkout of the copy's branch. Do not set `ZINGO_MOBILE_GIT_DESCRIBE`: this step also tests that the Gradle library computes the consumer branch's descriptor itself.
 
 ```sh
 export ZINGOLIB_DIR=<copy checkout>
-export ZINGO_MOBILE_GIT_DESCRIBE=$(git describe --dirty --always --long --match 'zingo-*')
 yarn
 cd android
 ./gradlew assembleProdRelease assembleProdReleaseAndroidTest \
@@ -207,6 +206,27 @@ Restore the toolchain that you recorded:
 
 ```sh
 rustup default <recorded toolchain>
+```
+
+## Building in a consumer's CI
+
+zingo-mobile's CI builds the Android libraries in a container job that already runs in `android_builder:018`. Such a job cannot start another container. It runs the builder directly instead, one ABI at a time:
+
+```sh
+RUSTUP_TOOLCHAIN=stable \
+ZINGO_MOBILE_GIT_DESCRIBE=<consumer describe> \
+  cargo run \
+    --manifest-path zingolib/tools/workbench/Cargo.toml \
+    --bin build-binding-layer -- \
+    android --in-image --abi <abi> --out <output directory>
+```
+
+`RUSTUP_TOOLCHAIN=stable` keeps zingolib's toolchain pin from asking rustup for a toolchain that the image lacks. The job must also install the tools that `bindings/android/docker/Dockerfile` installs. The builder sets the build environment itself.
+
+A later job packages the cached output without rebuilding it:
+
+```sh
+./gradlew assembleProdRelease -PbindingLayerPrebuilt=<output directory>
 ```
 
 ## Known differences from zingo-mobile

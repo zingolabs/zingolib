@@ -14,12 +14,23 @@ group = "org.zingolabs"
 
 val zingolibRoot: File = rootDir.resolve("../..")
 val builderOutput: Provider<Directory> = layout.buildDirectory.dir("binding-layer")
+val prebuiltOutput: Provider<Directory> =
+    layout.dir(providers.gradleProperty("bindingLayerPrebuilt").map { file(it) })
+val layerOutput: Provider<Directory> = prebuiltOutput.orElse(builderOutput)
+val consumerDescribe: Provider<String> = gradle.parent?.let { consumer ->
+    providers.exec {
+        workingDir = consumer.startParameter.currentDir
+        commandLine("git", "describe", "--dirty", "--always", "--long", "--match", "zingo-*")
+    }.standardOutput.asText.map { it.trim() }
+} ?: providers.provider<String> { null }
 val gitDescribe: Provider<String> = providers.environmentVariable("ZINGO_MOBILE_GIT_DESCRIBE")
     .orElse(providers.gradleProperty("zingoMobileGitDescribe"))
+    .orElse(consumerDescribe)
 val selectedAbi: Provider<String> = providers.gradleProperty("bindingLayerAbi")
 
 val buildBindingLayer by tasks.registering(Exec::class) {
     description = "Builds the Binding Layer's Android libraries and Kotlin sources."
+    onlyIf("no prebuilt Binding Layer is named") { !prebuiltOutput.isPresent }
     workingDir = zingolibRoot
     environment("ZINGO_MOBILE_GIT_DESCRIBE", gitDescribe.getOrElse(""))
     commandLine(
@@ -56,8 +67,8 @@ android {
 
     sourceSets {
         getByName("main") {
-            java.srcDir(builderOutput.map { it.dir("kotlin") })
-            jniLibs.srcDir(builderOutput.map { it.dir("jniLibs") })
+            java.srcDir(layerOutput.map { it.dir("kotlin") })
+            jniLibs.srcDir(layerOutput.map { it.dir("jniLibs") })
         }
     }
 }

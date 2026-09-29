@@ -12,8 +12,17 @@ use workbench::binding_layer;
 const PROGRAM: &str = "build-binding-layer";
 
 /// The invocation shape, reported when the arguments do not parse.
-const USAGE: &str =
-    "usage: build-binding-layer <android|ios> --out <directory> [--abi <android abi>]";
+const USAGE: &str = "usage: build-binding-layer <android|ios> --out <directory> \
+    [--abi <android abi>] [--in-image]";
+
+/// The flag that runs the Android plan directly, inside a job that already runs in the builder image.
+const IN_IMAGE_FLAG: &str = "--in-image";
+
+/// The directory, in zingo-mobile's builder image, that holds libclang.
+const LIBCLANG_PATH: &str = "/usr/lib/llvm-18/lib";
+
+/// The C flags that zingo-mobile's builder sets for the aarch64 target.
+const AARCH64_C_FLAGS: &str = "-mno-outline-atomics";
 
 /// The number of leading command-line arguments that name the program itself.
 const PROGRAM_NAME_ARGUMENTS: usize = 1;
@@ -186,6 +195,7 @@ fn main() {
 /// Build the selected platform's packaging and return its output directory.
 fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
     let (platform, out, abis) = parse(args)?;
+    let in_image = args.iter().any(|arg| arg == IN_IMAGE_FLAG);
     let describe = env::var(binding_layer::DESCRIBE_VARIABLE)
         .ok()
         .filter(|value| !value.is_empty())
@@ -209,10 +219,20 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
         .ok_or_else(|| vec![format!("{} is not valid UTF-8", out.display())])?
         .to_string();
     match platform {
+        Platform::Android if in_image => {
+            let roots = Roots {
+                run: workbench::utf8(&root)?.to_string(),
+                host: root,
+            };
+            execute(
+                &Runner::Host,
+                &android_plan(&roots, &relative_out, &abis, &describe),
+            )
+        }
         Platform::Android => {
             let engine = binding_layer::container_engine()?;
             build_android_image(engine, &root)?;
-            let id = start_container(engine, &root, &describe)?;
+            let id = start_container(engine, &root)?;
             let roots = Roots {
                 host: root,
                 run: CONTAINER_ROOT.to_string(),
@@ -222,7 +242,7 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
                     engine,
                     id: id.clone(),
                 },
-                &android_plan(&roots, &relative_out, &abis),
+                &android_plan(&roots, &relative_out, &abis, &describe),
             );
             workbench::stdout_of(engine, &["rm", "--force", &id])?;
             outcome
@@ -295,10 +315,8 @@ fn build_android_image(engine: &str, root: &path::Path) -> Result<(), Vec<String
 }
 
 /// Start a long-lived container of the Android tool image with zingolib mounted, and return its id.
-fn start_container(engine: &str, root: &path::Path, describe: &str) -> Result<String, Vec<String>> {
+fn start_container(engine: &str, root: &path::Path) -> Result<String, Vec<String>> {
     let mount = format!("{}:{CONTAINER_ROOT}", workbench::utf8(root)?);
-    let describe_env = format!("{}={describe}", binding_layer::DESCRIBE_VARIABLE);
-    let toolchain_env = format!("{TOOLCHAIN_VARIABLE}={BUILDER_TOOLCHAIN}");
     workbench::stdout_of(
         engine,
         &[
@@ -306,10 +324,6 @@ fn start_container(engine: &str, root: &path::Path, describe: &str) -> Result<St
             "--detach",
             "--volume",
             &mount,
-            "--env",
-            &describe_env,
-            "--env",
-            &toolchain_env,
             ANDROID_IMAGE,
             "sleep",
             "infinity",
@@ -318,8 +332,60 @@ fn start_container(engine: &str, root: &path::Path, describe: &str) -> Result<St
     .map(|id| id.trim().to_string())
 }
 
+/// The environment that every Android step runs with, as zingo-mobile's Dockerfile and builder set it.
+fn android_base_env(describe: &str) -> Vec<(String, String)> {
+    [
+        (TOOLCHAIN_VARIABLE, BUILDER_TOOLCHAIN),
+        (binding_layer::DESCRIBE_VARIABLE, describe),
+        ("LIBCLANG_PATH", LIBCLANG_PATH),
+        ("CARGO_NDK_PLATFORM", binding_layer::ANDROID_API_LEVEL),
+        (
+            "CARGO_NDK_ANDROID_PLATFORM",
+            binding_layer::ANDROID_API_LEVEL,
+        ),
+        ("AR", "llvm-ar"),
+        ("LD", "ld"),
+        ("RANLIB", "llvm-ranlib"),
+        ("CFLAGS_aarch64_linux_android", AARCH64_C_FLAGS),
+        ("CXXFLAGS_aarch64_linux_android", AARCH64_C_FLAGS),
+    ]
+    .map(|(key, value)| (key.to_string(), value.to_string()))
+    .to_vec()
+}
+
+/// A plan whose every `Run` step starts from a base environment that the step's own entries override.
+fn with_base_env(plan: Vec<Step>, base: &[(String, String)]) -> Vec<Step> {
+    plan.into_iter()
+        .map(|step| match step {
+            Step::Run {
+                workdir,
+                env,
+                command,
+            } => Step::Run {
+                workdir,
+                env: [base.to_vec(), env].concat(),
+                command,
+            },
+            other => other,
+        })
+        .collect()
+}
+
 /// The Android build plan: bindings, per-ABI libraries stripped as zingo-mobile strips them, then copies.
 fn android_plan(
+    roots: &Roots,
+    relative_out: &str,
+    abis: &[&binding_layer::AndroidAbi],
+    describe: &str,
+) -> Vec<Step> {
+    with_base_env(
+        android_steps(roots, relative_out, abis),
+        &android_base_env(describe),
+    )
+}
+
+/// The Android steps before the base environment: bindings, per-ABI libraries, stripping, and copies.
+fn android_steps(
     roots: &Roots,
     relative_out: &str,
     abis: &[&binding_layer::AndroidAbi],
@@ -842,6 +908,20 @@ mod tests {
     /// The number of times one build generates the proxy bindings.
     const PROXY_GENERATIONS_PER_BUILD: usize = 1;
 
+    /// A descriptor for plans built in tests.
+    const TEST_DESCRIBE: &str = "zingo-2.0.24-0-gabcdef0";
+
+    #[test]
+    fn every_android_run_step_carries_the_base_environment() {
+        let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
+        let plan = android_plan(&roots(), "out", &abis, TEST_DESCRIBE);
+        let base = android_base_env(TEST_DESCRIBE);
+        assert!(plan.iter().all(|step| match step {
+            Step::Run { env, .. } => base.iter().all(|entry| env.contains(entry)),
+            _ => true,
+        }));
+    }
+
     fn roots() -> Roots {
         Roots {
             host: path::PathBuf::from("/host/zingolib"),
@@ -861,7 +941,12 @@ mod tests {
     #[test]
     fn android_plan_generates_the_proxy_bindings_once_after_the_first_abi() {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
-        let plan = android_plan(&roots(), "bindings/android/build/binding-layer", &abis);
+        let plan = android_plan(
+            &roots(),
+            "bindings/android/build/binding-layer",
+            &abis,
+            TEST_DESCRIBE,
+        );
         let generations = commands(&plan)
             .into_iter()
             .filter(|command| command.contains("--library"))
@@ -875,7 +960,7 @@ mod tests {
             .iter()
             .filter(|abi| abi.jni_dir == "x86")
             .collect();
-        let plan = android_plan(&roots(), "out", &x86);
+        let plan = android_plan(&roots(), "out", &x86, TEST_DESCRIBE);
         let expected_cc = binding_layer::ANDROID_ABIS[FIRST_POSITION].cc();
         let bindgen_env = plan.iter().find_map(|step| match step {
             Step::Run { env, command, .. } if command.iter().any(|arg| arg == "--library") => {
@@ -892,7 +977,7 @@ mod tests {
     #[test]
     fn android_plan_copies_both_libraries_for_every_abi() {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
-        let plan = android_plan(&roots(), "out", &abis);
+        let plan = android_plan(&roots(), "out", &abis, TEST_DESCRIBE);
         let copies = plan
             .iter()
             .filter(|step| matches!(step, Step::Copy { .. }))
