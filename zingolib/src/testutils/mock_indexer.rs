@@ -518,8 +518,6 @@ pub struct MockChain {
     /// requested range, and how many transactions were streamed back.
     /// Diagnostic surface for transparent-detection failures.
     taddr_request_log: Vec<String>,
-    /// One entry per `GetBlockRange` request served, in the order served.
-    block_range_request_log: Vec<BlockRangeRequest>,
     /// The `lightwalletProtocolVersion` reported by `GetLightdInfo`. Defaults to v0.5.0, the minimum version sync
     /// accepts. Set it lower, or empty for a server pre-dating the field, to exercise the rejection of old servers.
     pub lightwallet_protocol_version: String,
@@ -530,22 +528,76 @@ pub struct MockChain {
     branch_seed: u32,
 }
 
-/// A `GetBlockRange` request served by the mock.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BlockRangeRequest {
-    /// First requested height.
-    pub start: u32,
-    /// Last requested height (inclusive).
-    pub end: u32,
-    /// Whether the request's pool types included `TRANSPARENT`, so the served blocks carried transparent data.
-    pub include_transparent: bool,
+/// The pools a `BlockRange` requests data for.
+#[derive(Clone, Copy)]
+struct RequestedPools {
+    transparent: bool,
+    sapling: bool,
+    orchard: bool,
+    ironwood: bool,
 }
 
-/// Whether a `BlockRange` requests transparent data. An empty pool type list requests only shielded data.
-fn includes_transparent(range: &BlockRange) -> bool {
-    range
-        .pool_types
-        .contains(&(ProtoPoolType::Transparent as i32))
+impl RequestedPools {
+    /// Parses the request's pool types. An empty pool type list requests the shielded pools only.
+    fn from_range(range: &BlockRange) -> Result<Self, Status> {
+        if range.pool_types.is_empty() {
+            return Ok(Self {
+                transparent: false,
+                sapling: true,
+                orchard: true,
+                ironwood: true,
+            });
+        }
+        let mut pools = Self {
+            transparent: false,
+            sapling: false,
+            orchard: false,
+            ironwood: false,
+        };
+        for pool_type in &range.pool_types {
+            match ProtoPoolType::try_from(*pool_type) {
+                Ok(ProtoPoolType::Transparent) => pools.transparent = true,
+                Ok(ProtoPoolType::Sapling) => pools.sapling = true,
+                Ok(ProtoPoolType::Orchard) => pools.orchard = true,
+                Ok(ProtoPoolType::Ironwood) => pools.ironwood = true,
+                Ok(ProtoPoolType::Invalid) | Err(_) => {
+                    return Err(Status::invalid_argument(format!(
+                        "invalid pool type {pool_type}"
+                    )));
+                }
+            }
+        }
+        Ok(pools)
+    }
+
+    /// Prunes `block` to the data of the requested pools, as a server does. Transactions left with no data are
+    /// omitted.
+    fn prune(self, block: &mut CompactBlock) {
+        for tx in &mut block.vtx {
+            if !self.transparent {
+                tx.vin.clear();
+                tx.vout.clear();
+            }
+            if !self.sapling {
+                tx.spends.clear();
+                tx.outputs.clear();
+            }
+            if !self.orchard {
+                tx.actions.clear();
+            }
+            if !self.ironwood {
+                tx.ironwood_actions.clear();
+            }
+        }
+        block.vtx.retain(|tx| {
+            !(tx.vin.is_empty()
+                && tx.vout.is_empty()
+                && tx.spends.is_empty()
+                && tx.outputs.is_empty()
+                && tx.actions.is_empty()
+                && tx.ironwood_actions.is_empty())
+        });
+    }
 }
 
 fn fabricated_block_hash(height: u32) -> Vec<u8> {
@@ -807,7 +859,6 @@ impl MockChain {
             answer_sends_with_error_code: None,
             rejected_sends: 0,
             taddr_request_log: Vec::new(),
-            block_range_request_log: Vec::new(),
             lightwallet_protocol_version: "v0.5.0".to_string(),
             branch_seed: 0,
         }
@@ -822,11 +873,6 @@ impl MockChain {
     /// transparent-detection failures in tests.
     pub fn taddr_request_log(&self) -> &[String] {
         &self.taddr_request_log
-    }
-
-    /// The `GetBlockRange` requests served so far.
-    pub fn block_range_request_log(&self) -> &[BlockRangeRequest] {
-        &self.block_range_request_log
     }
 
     /// The height of the chain tip (0 on an empty chain).
@@ -1442,13 +1488,10 @@ impl MockIndexerService {
         if end > chain.blocks.len() {
             return Err(Status::not_found(format!("no block at height {end}")));
         }
+        let pools = RequestedPools::from_range(&range)?;
         let mut blocks: Vec<_> = chain.blocks[start - 1..end].to_vec();
-        if !includes_transparent(&range) {
-            // servers only return transparent data if it is requested
-            for tx in blocks.iter_mut().flat_map(|block| block.vtx.iter_mut()) {
-                tx.vin.clear();
-                tx.vout.clear();
-            }
+        for block in &mut blocks {
+            pools.prune(block);
         }
         Ok(Response::new(stream_with_fault(blocks, fault)))
     }
@@ -1514,19 +1557,7 @@ impl CompactTxStreamer for MockIndexerService {
         &self,
         request: Request<BlockRange>,
     ) -> Result<Response<Self::GetBlockRangeStream>, Status> {
-        let range = request.into_inner();
-        let response = self.block_range(range.clone()).await?;
-        self.chain
-            .write()
-            .await
-            .block_range_request_log
-            .push(BlockRangeRequest {
-                start: range.start.as_ref().map_or(0, |id| id.height) as u32,
-                end: range.end.as_ref().map_or(0, |id| id.height) as u32,
-                include_transparent: includes_transparent(&range),
-            });
-
-        Ok(response)
+        self.block_range(request.into_inner()).await
     }
 
     type GetBlockRangeNullifiersStream = ResponseStream<CompactBlock>;

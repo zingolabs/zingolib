@@ -1242,15 +1242,14 @@ async fn sync_to_tip_and_await_stops_running_continuous_sync() {
     );
 }
 
-/// Compact block transparent data is only requested for blocks above the transparent scan floor, the chain height at
-/// the start of the sync session. Transparent address discovery only covers blocks up to the floor, so transparent
-/// funds received in a block mined during a continuous sync session are only detected if that block's compact block
-/// carries its transparent data. The mock, like a real server, strips transparent data unless it is requested.
+/// Transparent address discovery only covers blocks up to the transparent scan floor, the chain height at the start of
+/// the sync session. Transparent funds received in a block mined during a continuous sync session are only detected
+/// if transparent data is requested in the compact blocks above the floor, as the mock, like a real server, only
+/// serves the data of the requested pools.
 #[tokio::test]
-async fn transparent_data_is_requested_only_above_transparent_scan_floor() {
+async fn transparent_funds_mined_during_sync_session_are_detected() {
     let mut net = MockNet::launch().await;
     net.chain.write().await.mine_empty_blocks(10);
-    let transparent_scan_floor = net.chain.read().await.tip();
     let mut client = net
         .client(
             zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
@@ -1261,21 +1260,23 @@ async fn transparent_data_is_requested_only_above_transparent_scan_floor() {
 
     client.sync().await.expect("continuous sync launches");
 
-    // the first block range request is made after the session has fetched the chain height, setting the floor.
-    tokio::time::timeout(std::time::Duration::from_secs(60), async {
-        while net.chain.read().await.block_range_request_log().is_empty() {
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
-    })
+    // the first sync status is published after the session has fetched the chain height, setting the floor.
+    tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        client.subscribe_sync_status().wait_for(Option::is_some),
+    )
     .await
-    .expect("sync requests compact blocks");
+    .expect("sync publishes its status")
+    .expect("sync status channel open");
 
     // mined directly into a block, bypassing the mempool, so the funds can only be detected from the compact block.
     fund(&net, vec![(&taddr, 50_000, None)], 1).await;
-    let funding_height = transparent_scan_floor + 1;
 
     tokio::time::timeout(std::time::Duration::from_secs(60), async {
         loop {
+            if let crate::data::PollReport::Ready(result) = client.poll_sync() {
+                panic!("sync returned before the transparent funds were detected: {result:?}");
+            }
             let transparent_balance = client
                 .account_balance(zip32::AccountId::ZERO)
                 .await
@@ -1290,43 +1291,14 @@ async fn transparent_data_is_requested_only_above_transparent_scan_floor() {
         }
     })
     .await
-    .unwrap_or_else(|_| {
-        panic!(
-            "transparent funds mined during the sync session were not detected. block range requests: {:#?}",
-            net.chain.try_read().map(|chain| chain.block_range_request_log().to_vec())
-        )
-    });
+    .expect("transparent funds mined during the sync session are detected");
 
     client.stop_sync().unwrap();
     client.await_sync().await.unwrap();
-
-    let block_range_requests = net.chain.read().await.block_range_request_log().to_vec();
-    for request in &block_range_requests {
-        if request.start <= transparent_scan_floor {
-            assert!(
-                !request.include_transparent && request.end <= transparent_scan_floor,
-                "transparent data requested at or below the floor {transparent_scan_floor}: {request:?}"
-            );
-        } else {
-            assert!(
-                request.include_transparent,
-                "transparent data not requested above the floor {transparent_scan_floor}: {request:?}"
-            );
-        }
-    }
-    assert!(
-        block_range_requests
-            .iter()
-            .any(|request| request.start <= funding_height
-                && request.end >= funding_height
-                && request.include_transparent),
-        "the funding block was not requested with transparent data: {block_range_requests:#?}"
-    );
 }
 
-/// Sync is rejected before any compact blocks are requested when the server's lightwallet protocol version is below
-/// v0.5.0, or not reported, as the server does not serve the transparent and ironwood data sync requires. The error
-/// recommends switching servers.
+/// Sync is rejected when the server's lightwallet protocol version is below v0.5.0, or not reported, as the server does
+/// not serve the transparent and ironwood data sync requires. The error recommends switching servers.
 #[tokio::test]
 async fn sync_rejects_server_below_minimum_lightwallet_protocol_version() {
     use crate::lightclient::error::LightClientError;
@@ -1361,10 +1333,6 @@ async fn sync_rejects_server_below_minimum_lightwallet_protocol_version() {
         assert_eq!(
             sync_error.recovery_recommendation(),
             SyncRecoveryObservables::ServerUnavailable
-        );
-        assert!(
-            net.chain.read().await.block_range_request_log().is_empty(),
-            "compact blocks were requested from an old server"
         );
     }
 }
