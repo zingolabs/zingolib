@@ -21,9 +21,6 @@ chain caches, and observability instruments.
 
 ## Architecture decision records
 
-Decisions live in [zingolabs/zingo-adrs](https://github.com/zingolabs/zingo-adrs),
-which this repository holds as a submodule at `docs/adr/`. zingolib's records
-sit under [`docs/adr/zingolib/`](docs/adr/zingolib/), and the org-scoped
-records that bind every zingolabs repository sit at the top of `docs/adr/`.
-Run `git submodule update --init docs/adr` to read them, and propose a record
-in zingo-adrs, never here.
+Decisions sit under [`docs/adr/zingolib/`](docs/adr/zingolib/). The
+[zingo-adrs README](https://github.com/zingolabs/zingo-adrs#pointing-a-code-repository-at-zingo-adrs) explains how to read them and propose a
+record.

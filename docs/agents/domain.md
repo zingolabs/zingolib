@@ -8,11 +8,9 @@ exploring the codebase. **Layout: single-context.**
 - **`CONTEXT.md`** at the repo root.
 - **`docs/adr/zingolib/`**: read ADRs that touch the area you're about to work in.
 
-`docs/adr/` is a submodule pointer to
-[zingolabs/zingo-adrs](https://github.com/zingolabs/zingo-adrs), so it is empty
-until you run `git submodule update --init docs/adr`. zingolib's own records sit
-under `docs/adr/zingolib/`; the org-scoped records that bind every zingolabs
-repository sit at the top of `docs/adr/`.
+`docs/adr/` is a submodule of zingo-adrs. The
+[zingo-adrs README](https://github.com/zingolabs/zingo-adrs#pointing-a-code-repository-at-zingo-adrs) explains how to initialise it and how its
+scopes map onto `docs/adr/`.
 
 If any of these files don't exist, **proceed silently**. Don't flag their absence;
 don't suggest creating them upfront. The `/domain-modeling` skill (reached via
@@ -42,10 +40,9 @@ per-crate `CONTEXT.md` files) and update this file.
 
 ## Proposing a record
 
-Records are never proposed in this repository. Open a pull request against
-`dev` in zingo-adrs that adds `zingolib/NNNN-kebab-title.md`, following the
-record shape its README describes. Then advance this repository's pointer with
-`git submodule update --remote docs/adr` and commit the new hash.
+Records are never proposed in this repository. The
+[zingo-adrs README](https://github.com/zingolabs/zingo-adrs#proposing-a-record) explains how, and a zingolib record goes in
+the `zingolib/` scope there.
 
 ## Use the glossary's vocabulary
 
