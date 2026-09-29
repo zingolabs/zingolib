@@ -525,17 +525,12 @@ fn gate_all(args: &[String]) -> Result<Vec<String>, Vec<String>> {
     let invocation = parse(args)?;
     let tfc_side = Side {
         name: "tfc",
-        root: fs::canonicalize(&invocation.mobile).map_err(|e| {
-            vec![format!(
-                "cannot resolve {}: {e}",
-                invocation.mobile.display()
-            )]
-        })?,
+        root: resolved(&invocation.mobile)?,
         layout: TFC_LAYOUT,
     };
     let copy_side = Side {
         name: "copy",
-        root: workbench::repo_root()?,
+        root: resolved(&workbench::repo_root()?)?,
         layout: COPY_LAYOUT,
     };
     require_checkout_at(&tfc_side.root, invocation.tfc)?;
@@ -552,7 +547,13 @@ fn gate_all(args: &[String]) -> Result<Vec<String>, Vec<String>> {
         .map(|reports| reports.concat())
 }
 
-/// Parse the gate selection and the four flags, all of which are required.
+/// A checkout's real path, since `cargo tree` prints real paths even when a checkout is reached through a symbolic link.
+fn resolved(checkout: &path::Path) -> Result<path::PathBuf, Vec<String>> {
+    fs::canonicalize(checkout)
+        .map_err(|e| vec![format!("cannot resolve {}: {e}", checkout.display())])
+}
+
+/// Parse the gate selection and its flags, all of which are required.
 fn parse(args: &[String]) -> Result<Invocation<'_>, Vec<String>> {
     let (selection, flags) = args.split_first().ok_or_else(|| vec![USAGE.to_string()])?;
     let all = selection == ALL_GATES;
@@ -634,6 +635,7 @@ fn graph_checks(
     copy_side: &Side,
 ) -> Result<Vec<Check>, Vec<String>> {
     let copy_root = workbench::utf8(&copy_side.root)?;
+    let tar = commit_id(&copy_side.root, invocation.tar)?;
     let changed = |from: &str, to: &str, pathspecs: &[&str]| {
         workbench::git(
             &[
@@ -656,20 +658,13 @@ fn graph_checks(
     );
     let ancestry_check = Check {
         label: format!("the branch descends from TAR {}", invocation.tar),
-        outcome: workbench::git(&[
-            "-C",
-            copy_root,
-            "merge-base",
-            "--is-ancestor",
-            invocation.tar,
-            HEAD,
-        ])
-        .map(drop)
-        .map_err(|_| "TAR is not an ancestor of HEAD".to_string()),
+        outcome: workbench::git(&["-C", copy_root, "merge-base", "--is-ancestor", &tar, HEAD])
+            .map(drop)
+            .map_err(|_| "TAR is not an ancestor of HEAD".to_string()),
     };
     let tar_check = paths_check(
         "zingolib outside the copy, the placement, and the packaging is TAR's",
-        &changed(invocation.tar, HEAD, &[])?,
+        &changed(&tar, HEAD, &[])?,
         |touched| is_branch_path(touched, &copied),
     );
     let source_prefixes = [
