@@ -1412,7 +1412,10 @@ async fn spend_in_range_scanned_without_mapping_is_detected_from_refetched_nulli
     // new blocks are verified before the chain tip range [21, 41) containing the note is scanned.
     net.chain.write().await.faults.inject(
         Rpc::BlockRange,
-        Fault::Delay(std::time::Duration::from_secs(12)),
+        Fault::Delay(
+            std::time::Duration::from_secs(pepper_sync::sync::CHECK_NEW_BLOCKS_INTERVAL)
+                + std::time::Duration::from_secs(2),
+        ),
     );
     client.sync().await.expect("continuous sync launches");
     tokio::time::timeout(

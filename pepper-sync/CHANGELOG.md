@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- `sync::CHECK_NEW_BLOCKS_INTERVAL`, the interval in seconds at which
+  continuous sync checks for newly mined blocks.
 - Continuous sync (ADR 0051). BREAKING: `config::SyncConfig` gains a
   `shutdown_on_completion` field. When `false`, `sync` keeps running once the
   wallet reaches the chain tip, checking for newly mined blocks (on mempool
