@@ -54,6 +54,8 @@ ZINGO_MOBILE_GIT_DESCRIBE=zingo-2.0.24-320-134-gf3d1ac9d4 \
 
 The Gradle library has no Gradle wrapper, so use Gradle 8.14.3.
 
+Never build the gate's AAR with `--in-image` or `-PbindingLayerPrebuilt`. The gate trusts the NDK, clang, and compiler because the builder runs every step in its own image. `--in-image` runs the steps on the host instead, and nothing checks that the host is that image.
+
 ## Gate 4
 
 Gate 4 runs zingo-mobile's suites. On Android, this is the `android_integration` suite, which runs `RustFFITest.kt` among its ten instrumented test classes. On iOS, this is the `ZingoTests` XCTest suite. The Android `e2e` suite is not evidence, because it cannot pass at TFC: its Detox app path does not match zingo-mobile's flavored builds, and in release mode an unfiltered instrumentation run reaches a test that minification breaks. zingo-mobile#1465 records both causes. The baseline is three runs of each suite at TFC. Record the outcome of each test in each run. A test that passes in all three baseline runs and fails on the copy blocks the merge. A test that fails at TFC and fails on the copy counts as preserved function.

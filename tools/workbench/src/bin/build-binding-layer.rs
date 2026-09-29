@@ -112,7 +112,10 @@ const MODULEMAP_SEPARATOR: &str = "\n";
 #[derive(Clone, Copy)]
 enum Platform {
     /// The Android libraries and Kotlin sources for the AAR.
-    Android,
+    Android {
+        /// Whether the calling job already runs in the builder image, so the plan runs on the host.
+        in_image: bool,
+    },
     /// The two XCFrameworks and Swift sources for the SwiftPM package.
     Ios,
 }
@@ -195,7 +198,6 @@ fn main() {
 /// Build the selected platform's packaging and return its output directory.
 fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
     let (platform, out, abis) = parse(args)?;
-    let in_image = args.iter().any(|arg| arg == IN_IMAGE_FLAG);
     let describe = env::var(binding_layer::DESCRIBE_VARIABLE)
         .ok()
         .filter(|value| !value.is_empty())
@@ -219,7 +221,7 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
         .ok_or_else(|| vec![format!("{} is not valid UTF-8", out.display())])?
         .to_string();
     match platform {
-        Platform::Android if in_image => {
+        Platform::Android { in_image: true } => {
             let roots = Roots {
                 run: workbench::utf8(&root)?.to_string(),
                 host: root,
@@ -229,7 +231,7 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
                 &android_plan(&roots, &relative_out, &abis, &describe),
             )
         }
-        Platform::Android => {
+        Platform::Android { in_image: false } => {
             let engine = binding_layer::container_engine()?;
             build_android_image(engine, &root)?;
             let id = start_container(engine, &root)?;
@@ -273,8 +275,15 @@ fn parse(
     Vec<String>,
 > {
     let (selection, flags) = args.split_first().ok_or_else(|| vec![USAGE.to_string()])?;
+    let in_image = flags.iter().any(|arg| arg == IN_IMAGE_FLAG);
     let platform = match selection.as_str() {
-        "android" => Platform::Android,
+        "android" => Platform::Android { in_image },
+        "ios" if in_image => {
+            return Err(vec![
+                format!("{IN_IMAGE_FLAG} applies only to android"),
+                USAGE.to_string(),
+            ])
+        }
         "ios" => Platform::Ios,
         other => {
             return Err(vec![
