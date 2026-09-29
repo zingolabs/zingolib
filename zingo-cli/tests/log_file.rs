@@ -105,13 +105,13 @@ fn interactive_mode_redirects_tracing_to_log_file() {
 }
 
 /// The error string that pepper_sync's `#[instrument(err)]` on
-/// `get_latest_block` logs when the gRPC call fails.
+/// `get_lightd_info` logs when the gRPC call fails.
 #[cfg(feature = "nym")]
 const EXPECTED_ERROR: &str = "pepper_sync::client::fetch";
 
 /// Starts a mock gRPC server where all methods return `DEADLINE_EXCEEDED`.
-/// The `#[instrument(err)]` on pepper_sync's `get_latest_block` emits a
-/// tracing ERROR when sync calls it and gets the error back.
+/// The `#[instrument(err)]` on pepper_sync's `get_lightd_info`, sync's first
+/// RPC, emits a tracing ERROR when sync calls it and gets the error back.
 ///
 /// Verifies:
 /// - The log file contains `ERROR` and the specific error message

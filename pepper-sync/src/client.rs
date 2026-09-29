@@ -35,7 +35,7 @@ pub(crate) mod fetch;
 
 const MAX_RETRIES: u8 = 3;
 
-use zingo_netutils::time::{STREAM_MSG_TIMEOUT, UNARY_RPC_TIMEOUT};
+use zingo_netutils::time::STREAM_MSG_TIMEOUT;
 
 async fn next_stream_item<T>(
     stream: &mut tonic::Streaming<T>,
@@ -113,8 +113,7 @@ pub(crate) async fn check_lightwallet_protocol_version<C>(client: &mut C) -> Res
 where
     C: Indexer,
 {
-    let version = client
-        .get_lightd_info(UNARY_RPC_TIMEOUT)
+    let version = fetch::get_lightd_info(client)
         .await?
         .lightwallet_protocol_version;
 

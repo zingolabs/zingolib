@@ -10,8 +10,8 @@ use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::{
     Indexer, TransparentIndexer,
     lightwallet_protocol::{
-        BlockId, BlockRange, CompactBlock, GetAddressUtxosArg, GetAddressUtxosReply, PoolType,
-        RawTransaction, TransparentAddressBlockFilter, TreeState, TxFilter,
+        BlockId, BlockRange, CompactBlock, GetAddressUtxosArg, GetAddressUtxosReply, LightdInfo,
+        PoolType, RawTransaction, TransparentAddressBlockFilter, TreeState, TxFilter,
     },
 };
 
@@ -164,6 +164,14 @@ where
             let _ignore_error = sender.send(raw_transaction_stream);
         }
     }
+}
+
+#[instrument(skip(client), name = "fetch::get_lightd_info", err, level = "info")]
+pub(super) async fn get_lightd_info<C>(client: &mut C) -> Result<LightdInfo, tonic::Status>
+where
+    C: Indexer,
+{
+    client.get_lightd_info(UNARY_RPC_TIMEOUT).await
 }
 
 #[instrument(skip(client), name = "fetch::get_latest_block", err, level = "info")]
