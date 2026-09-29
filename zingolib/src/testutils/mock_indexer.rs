@@ -600,6 +600,28 @@ impl RequestedPools {
     }
 }
 
+/// Reduces `block` to the shielded nullifiers, as a server does for `GetBlockNullifiers` and
+/// `GetBlockRangeNullifiers`: Sapling spend nullifiers and Orchard and Ironwood action nullifiers only. Transparent
+/// data, Sapling outputs, the rest of the action data and the commitment tree sizes are removed. Transactions left
+/// with no nullifiers are omitted.
+fn reduce_to_nullifiers(block: &mut CompactBlock) {
+    block.chain_metadata = None;
+    for tx in &mut block.vtx {
+        tx.vin.clear();
+        tx.vout.clear();
+        tx.outputs.clear();
+        for action in tx.actions.iter_mut().chain(tx.ironwood_actions.iter_mut()) {
+            *action = CompactOrchardAction {
+                nullifier: std::mem::take(&mut action.nullifier),
+                ..Default::default()
+            };
+        }
+    }
+    block.vtx.retain(|tx| {
+        !(tx.spends.is_empty() && tx.actions.is_empty() && tx.ironwood_actions.is_empty())
+    });
+}
+
 fn fabricated_block_hash(height: u32) -> Vec<u8> {
     fabricated_branch_hash(height, 0)
 }
@@ -1471,10 +1493,12 @@ impl MockIndexerService {
         }
     }
 
-    /// Serves the blocks of `range` for `GetBlockRange` and `GetBlockRangeNullifiers`.
+    /// Serves the blocks of `range` for `GetBlockRange`, or reduced to the shielded nullifiers for
+    /// `GetBlockRangeNullifiers` if `nullifiers_only` is true.
     async fn block_range(
         &self,
         range: BlockRange,
+        nullifiers_only: bool,
     ) -> Result<Response<ResponseStream<CompactBlock>>, Status> {
         let fault = self.fault_for(Rpc::BlockRange).await?;
         let start = range.start.as_ref().map_or(0, |id| id.height) as usize;
@@ -1492,6 +1516,9 @@ impl MockIndexerService {
         let mut blocks: Vec<_> = chain.blocks[start - 1..end].to_vec();
         for block in &mut blocks {
             pools.prune(block);
+            if nullifiers_only {
+                reduce_to_nullifiers(block);
+            }
         }
         Ok(Response::new(stream_with_fault(blocks, fault)))
     }
@@ -1549,7 +1576,10 @@ impl CompactTxStreamer for MockIndexerService {
         &self,
         request: Request<BlockId>,
     ) -> Result<Response<CompactBlock>, Status> {
-        self.get_block(request).await
+        let mut block = self.get_block(request).await?.into_inner();
+        reduce_to_nullifiers(&mut block);
+
+        Ok(Response::new(block))
     }
 
     type GetBlockRangeStream = ResponseStream<CompactBlock>;
@@ -1557,7 +1587,7 @@ impl CompactTxStreamer for MockIndexerService {
         &self,
         request: Request<BlockRange>,
     ) -> Result<Response<Self::GetBlockRangeStream>, Status> {
-        self.block_range(request.into_inner()).await
+        self.block_range(request.into_inner(), false).await
     }
 
     type GetBlockRangeNullifiersStream = ResponseStream<CompactBlock>;
@@ -1565,7 +1595,7 @@ impl CompactTxStreamer for MockIndexerService {
         &self,
         request: Request<BlockRange>,
     ) -> Result<Response<Self::GetBlockRangeNullifiersStream>, Status> {
-        self.block_range(request.into_inner()).await
+        self.block_range(request.into_inner(), true).await
     }
 
     async fn get_tree_state(
