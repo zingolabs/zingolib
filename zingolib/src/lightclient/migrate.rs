@@ -1785,8 +1785,7 @@ impl LightClient {
     /// transaction count, fee, and residual value), and observe live progress
     /// through [`Self::immediate_migration_progress_handle`]. Like every immediate path it
     /// puts the wallet's real amounts on-chain, correlated with each other and
-    /// the caller's activity. The caller must disclose this (ZIP 318). See
-    /// `zingo-adrs zingolib/0019`.
+    /// the caller's activity. The caller must disclose this (ZIP 318).
     pub async fn quick_immediate_migration(
         &mut self,
         account: zip32::AccountId,
@@ -1815,8 +1814,7 @@ impl LightClient {
     /// nothing needs splitting.
     ///
     /// It is the same projection as [`Self::plan_ironwood_migration`], named
-    /// for the Phase 1 mental model of the fused, stateless splitting flow
-    /// (`zingo-adrs zingolib/0016`).
+    /// for the Phase 1 mental model of the fused, stateless splitting flow.
     pub async fn plan_note_split(
         &self,
         account: zip32::AccountId,
@@ -1827,7 +1825,7 @@ impl LightClient {
     /// Executes one round of Phase 1 note splitting as a send-shaped call,
     /// the mobile-facing entry point for the *private* migration path's
     /// splitting, the counterpart to [`Self::quick_immediate_migration`] for the immediate
-    /// path. See `zingo-adrs zingolib/0016`.
+    /// path.
     ///
     /// Like [`Self::quick_send`] it pauses sync internally, plans against the
     /// wallet's *current* confirmed notes without synchronizing, and restores

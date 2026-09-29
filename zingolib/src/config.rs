@@ -39,7 +39,7 @@ pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 /// tip. The invariant is that the block has been mined, not merely named: a
 /// scheduled-but-future network-upgrade activation height does not qualify.
 /// Bumping this constant to a recently observed height is a release-checklist
-/// step. See `zingo-adrs zingolib/0007`.
+/// step.
 pub const LIB_BIRTHDAY_MAINNET: u32 = 3_411_499;
 
 /// The testnet Library Birthday. See [`LIB_BIRTHDAY_MAINNET`].
@@ -55,8 +55,7 @@ pub const LIB_BIRTHDAY_TESTNET: u32 = 4_134_000;
 /// Indexerless.
 ///
 /// Restores must not use this, since a restored seed or viewing key may predate
-/// the library and always requires a caller-supplied birthday. See
-/// `zingo-adrs zingolib/0007`.
+/// the library and always requires a caller-supplied birthday.
 pub fn lib_birthday(chain: ChainType) -> u32 {
     match chain {
         ChainType::Mainnet => LIB_BIRTHDAY_MAINNET,
