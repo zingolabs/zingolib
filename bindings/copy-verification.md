@@ -89,16 +89,15 @@ Steps 1 and 2 both prepare their zingo-mobile checkout in the same way, after th
    podman cp "$container:/usr/bin/zainod" rust/test_binaries/bins/
    podman rm "$container"
    ```
-2. Build the debug APKs that Detox checks for, and copy them to the paths it expects. Detox's `android.debug.x86_64` app names `apk/debug/app-x86_64-debug.apk`, but zingo-mobile's flavored debug build writes `apk/prod/debug/app-prod-debug.apk`. Without the copies, every `e2e` test fails before any app code runs.
+2. Copy the x86_64 release APKs to the paths that Detox checks. Detox's `android.debug.x86_64` app names `apk/debug/app-x86_64-debug.apk`, and it derives the test APK's path from it, but zingo-mobile's builds never write those paths. Without the copies, every `e2e` test fails before any app code runs.
    ```sh
-   (cd android && ./gradlew assembleDebug assembleAndroidTest -DtestBuildType=debug)
    apks=android/app/build/outputs/apk
    mkdir -p "$apks/debug" "$apks/androidTest/debug"
-   cp "$apks/prod/debug/app-prod-debug.apk" "$apks/debug/app-x86_64-debug.apk"
-   cp "$apks/androidTest/prod/debug/app-prod-debug-androidTest.apk" \
+   cp "$apks/prod/release/app-prod-x86_64-release.apk" "$apks/debug/app-x86_64-debug.apk"
+   cp "$apks/androidTest/prod/release/app-prod-release-androidTest.apk" \
      "$apks/androidTest/debug/app-x86_64-debug-androidTest.apk"
    ```
-   The CI `e2e` script installs the release APKs itself and runs Detox with `--reuse`, so the app under test is still the release build, and Metro is not needed.
+   Detox installs whatever sits at those paths. The release APKs match the release pair that the CI `e2e` script installs, so Metro is not needed. A debug app there crashes at start against the release test APK.
 3. git stores zingo-mobile's CI test scripts without the executable bit, and zingo-mobile's CI makes them executable before it runs. Do the same, and restore git's mode when the runs finish, so that `git describe` does not report the checkout as dirty:
    ```sh
    chmod +x scripts/ci/android_integration_tests_ci.sh scripts/ci/e2e_tests_ci.sh
