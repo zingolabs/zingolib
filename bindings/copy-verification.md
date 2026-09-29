@@ -58,7 +58,7 @@ Never build the gate's AAR with `--in-image` or `-PbindingLayerPrebuilt`. The ga
 
 ## Gate 4
 
-Gate 4 runs zingo-mobile's suites. On Android, this is the `android_integration` suite, which runs `RustFFITest.kt` among its ten instrumented test classes. On iOS, this is the `ZingoTests` XCTest suite. The Android `e2e` suite is not evidence, because it cannot pass at TFC: its Detox app path does not match zingo-mobile's flavored builds, and in release mode an unfiltered instrumentation run reaches a test that minification breaks. zingo-mobile#1465 records both causes. The baseline is three runs of each suite at TFC. Record the outcome of each test in each run. A test that passes in all three baseline runs and fails on the copy blocks the merge. A test that fails at TFC and fails on the copy counts as preserved function.
+Gate 4 runs zingo-mobile's suites. On Android, this is the `android_integration` suite, which runs `RustFFITest.kt` among its ten instrumented test classes. On iOS, this is the `ZingoTests` XCTest suite. The Android `e2e` suite is not evidence, because it cannot pass at TFC: its Detox app path does not match zingo-mobile's flavored builds, and in release mode an unfiltered instrumentation run reaches a test that minification breaks. zingo-mobile#1465 records both causes. On iOS, nine `Execute*` tests in `ZingoTests` cannot pass at TFC either. They need a lightwalletd server on port 20000, and nothing starts one. Seven of them also dial `10.0.2.2`, which is the Android emulator's alias for the host, and an iOS simulator cannot reach it. zingo-mobile runs none of the nine at TFC, because its `ios-integration-test` job is commented out. They fail on both sides and count as preserved function, so gate 4's iOS evidence is the other 25 tests. The baseline is three runs of each suite at TFC. Record the outcome of each test in each run. A test that passes in all three baseline runs and fails on the copy blocks the merge. A test that fails at TFC and fails on the copy counts as preserved function.
 
 zingo-mobile branch `gate4_binding_layer_consumer` starts at TFC and consumes the copy. It exists only for gate 4, and it never merges.
 
@@ -161,7 +161,7 @@ Prepare the checkout, and run the suite one time.
 ### Environment
 
 - Use Xcode with the iPhone 16 simulator on iOS 18.5, as zingo-mobile's CI does.
-- Install Node, yarn, CocoaPods, and rustup. Put `xcodebuild`, `lipo`, and `nm` on `PATH`.
+- Install Node, yarn, CocoaPods, and rustup. Put `xcodebuild`, `lipo`, and `llvm-nm` on `PATH`, for example from Homebrew's `llvm` package. The gate lists symbols with `llvm-nm`, because Apple's `nm` fails on archive members that carry no symbols.
 - zingo-mobile's `build_ios.mjs` runs `rustup default stable`, which changes your global default toolchain. Run `rustup default` first, and record the toolchain it prints.
 - Add the iOS targets:
   ```sh
@@ -179,7 +179,7 @@ Check out zingo-mobile at TFC in a throwaway worktree, because zingo-mobile's iO
 git -C <zingo-mobile checkout> worktree add --detach ../zingo-mobile-tfc f3d1ac9d4
 ```
 
-From the root of the copy's branch, run the `ios-artifacts` gate with `--mobile ../zingo-mobile-tfc`.
+From the root of the copy's branch, run the `ios-artifacts` gate with `--mobile ../zingo-mobile-tfc`. The gate builds both sides with the `stable` toolchain, as both builders expect, whatever toolchain zingolib pins.
 
 **Deliverable:** the gate's full output.
 
@@ -222,8 +222,11 @@ ZINGO_MOBILE_GIT_DESCRIBE=$(git -C <consumer checkout> describe --dirty --always
 In Xcode, in the consumer branch's project:
 
 1. Remove the references to `Zingolib.xcframework`, `ZingoNymProxyFFI.xcframework`, `zingo.swift`, and `zingo_nym_proxy_ffi.swift`.
-2. Add `<copy checkout>/bindings/swift` as a local package.
+2. Add `bindings/swift` of the copy as a local package, by a relative path. Check out the copy as `zingolib` beside the consumer checkout, so the path is `../../zingolib/bindings/swift` from `ios/`. An absolute path works on one machine only, and the project file is pushed.
 3. Link the `ZingoBindings` product into the `Zingo` and `ZingoTests` targets.
+4. After the first build, open the project in Xcode and confirm that both targets show `ZingoBindings` as linked. Xcode rewrites the project during that build.
+
+`e6331e912` on `gate4_binding_layer_consumer` carries this wiring with `relativePath = ../../zingolib/bindings/swift`.
 
 **Deliverable:** the app builds, and the change to `project.pbxproj` is pushed to the consumer branch.
 
