@@ -118,6 +118,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documented. The condition was inverted, so an Ironwood rescan cleared the
   Sapling and Orchard shard trees, losing their note commitments below the
   Ironwood activation height.
+- A `ScannedWithoutMapping` range is only selected to re-fetch its nullifiers
+  once it is the first unscanned range. It could also be selected as the
+  highest priority range while a lower range was still scanning, so the
+  re-fetched nullifiers were discarded and fetched again.
 
 ### Removed
 
