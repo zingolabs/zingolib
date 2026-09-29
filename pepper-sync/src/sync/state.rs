@@ -654,8 +654,14 @@ fn select_scan_range(
             // (`nullifier_map_limit_exceeded` is set `true`) then the range with the highest priority and lowest starting block
             // height is selected to allow notes to be spendable quickly on rescan, otherwise spends would not be detected as nullifiers will be temporarily discarded.
             // TODO: add this documentation of performance levels and order of scanning to pepper-sync doc comments
-            let mut scan_ranges_priority_sorted: Vec<(usize, ScanRange)> =
-                sync_state.scan_ranges.iter().cloned().enumerate().collect();
+            // `ScannedWithoutMapping` ranges are only selected above, when they are the first unscanned range.
+            let mut scan_ranges_priority_sorted: Vec<(usize, ScanRange)> = sync_state
+                .scan_ranges
+                .iter()
+                .cloned()
+                .enumerate()
+                .filter(|(_, range)| range.priority() != ScanPriority::ScannedWithoutMapping)
+                .collect();
             if nullifier_map_limit_exceeded {
                 scan_ranges_priority_sorted
                     .sort_by_key(|(_, range)| std::cmp::Reverse(range.block_range().start));
@@ -1484,6 +1490,36 @@ mod tests {
                 ScanRange::from_parts(200.into()..300.into(), ScanPriority::Historic),
                 ScanRange::from_parts(300.into()..400.into(), ScanPriority::Scanning),
             ]
+        );
+    }
+
+    /// A `ScannedWithoutMapping` range is not selected while a lower range is still scanning, as its re-fetched
+    /// nullifiers would be discarded. It is selected once it is the first unscanned range.
+    #[test]
+    fn scanned_without_mapping_range_waits_for_lower_ranges() {
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(1.into()..21.into(), ScanPriority::Scanned),
+            ScanRange::from_parts(21.into()..41.into(), ScanPriority::Scanning),
+            ScanRange::from_parts(41.into()..46.into(), ScanPriority::ScannedWithoutMapping),
+        ];
+        assert_eq!(
+            super::select_scan_range(&BASE_NETWORK, &mut sync_state, true),
+            None
+        );
+
+        sync_state.scan_ranges[1] =
+            ScanRange::from_parts(21.into()..41.into(), ScanPriority::Scanned);
+        assert_eq!(
+            super::select_scan_range(&BASE_NETWORK, &mut sync_state, true),
+            Some(ScanRange::from_parts(
+                41.into()..46.into(),
+                ScanPriority::ScannedWithoutMapping
+            ))
+        );
+        assert_eq!(
+            sync_state.scan_ranges[2].priority(),
+            ScanPriority::RefetchingNullifiers
         );
     }
 
