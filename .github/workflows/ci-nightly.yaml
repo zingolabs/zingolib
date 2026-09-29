@@ -69,6 +69,64 @@ jobs:
       - name: Run feature-census
         run: cargo run --manifest-path tools/workbench/Cargo.toml --bin feature-census -- --all
 
+  # The nightly tier of zingolib/0054: the AAR for all four ABIs. The PR
+  # tier builds only x86_64. zingo-mobile's reusable workflows below stay
+  # until RustFFITest.kt moves into zingolib, because they run it.
+  binding-layer-aar:
+    name: Binding Layer AAR (all ABIs)
+    runs-on: ubuntu-24.04
+    env:
+      ZINGO_MOBILE_GIT_DESCRIBE: zingolib-ci
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/workbench
+
+      - name: Install the NDK that the AAR declares
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Build the AAR
+        run: gradle --project-dir bindings/android bundleReleaseAar
+
+  # The nightly tier's iOS half: both XCFrameworks and the Swift sources
+  # that bindings/swift/Package.swift packages.
+  binding-layer-xcframeworks:
+    name: Binding Layer XCFrameworks
+    runs-on: macos-latest
+    env:
+      ZINGO_MOBILE_GIT_DESCRIBE: zingolib-ci
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      # The builder builds with the stable toolchain, as zingo-mobile's
+      # builders do, and its crates need bindgen-cli on iOS targets.
+      - name: Install the iOS targets and bindgen-cli
+        run: |
+          rustup target add --toolchain stable aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+          cargo +stable install --locked bindgen-cli
+
+      - name: Install protoc
+        run: brew install protobuf
+
+      - name: Build the XCFrameworks
+        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- ios --out bindings/swift/build
+
   create-timestamp:
     uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
 

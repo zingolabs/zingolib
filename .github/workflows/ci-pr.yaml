@@ -105,6 +105,68 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  # The Binding Layer's two workspaces, zingo-ffi and the proxy crate, stand
+  # outside the root and zingo-netutils workspaces (zingolib/0054), so the
+  # jobs above skip them. This job lints and tests both, then builds the
+  # x86_64 AAR, which also generates the Kotlin bindings. A zingolib change
+  # that breaks the Binding Layer's surface fails here, in its own PR.
+  binding-layer:
+    name: Binding Layer (zingo-ffi, proxy, x86_64 AAR)
+    runs-on: ubuntu-24.04
+    env:
+      RUSTFLAGS: -D warnings
+      # The wallet embeds a consumer's descriptor; zingolib's CI has none.
+      ZINGO_MOBILE_GIT_DESCRIBE: zingolib-ci
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            zingo-ffi
+            zingo-netutils/nym-proxy-ffi
+            tools/workbench
+
+      - name: Install protoc
+        run: |
+          if ! command -v protoc; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+          fi
+
+      - name: Format
+        run: |
+          cargo fmt --manifest-path zingo-ffi/Cargo.toml --all --check
+          cargo fmt --manifest-path zingo-netutils/nym-proxy-ffi/Cargo.toml --check
+
+      - name: Clippy
+        run: |
+          cargo clippy --manifest-path zingo-ffi/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path zingo-netutils/nym-proxy-ffi/Cargo.toml --all-targets -- -D warnings
+
+      # The live-mixnet tests stay behind their feature, which this job
+      # leaves off, so no test here reaches the Nym network.
+      - name: Test
+        run: |
+          cargo test --manifest-path zingo-ffi/Cargo.toml
+          cargo test --manifest-path zingo-netutils/nym-proxy-ffi/Cargo.toml
+
+      - name: Install the NDK that the AAR declares
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Build the x86_64 AAR
+        run: gradle --project-dir bindings/android bundleReleaseAar -PbindingLayerAbi=x86_64
+
   # The `nym` feature gates the mixnet transmission and price-fetch surfaces
   # (ADR 0011) in zingolib and zingo-cli. zingo-cli carries it as a default
   # feature (ADR 0026), so the --workspace jobs above compile the CLI's gated
