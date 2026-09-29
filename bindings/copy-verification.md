@@ -56,13 +56,73 @@ The Gradle library has no Gradle wrapper, so use Gradle 8.14.3.
 
 ## Gate 4
 
-Gate 4 runs zingo-mobile's suites: `RustFFITest.kt`, `ZingoTest.swift`, and the Detox tests. The baseline is three runs of each suite at TFC. Record the outcome of each test in each run. A test that passes in all three baseline runs and fails on the copy blocks the merge. A test that fails at TFC and fails on the copy counts as preserved function.
+Gate 4 runs zingo-mobile's suites. On Android, these are the `android_integration` suite, which runs `RustFFITest.kt` among the instrumented tests, and the `e2e` suite. On iOS, this is the `ZingoTests` XCTest suite. The baseline is three runs of each suite at TFC. Record the outcome of each test in each run. A test that passes in all three baseline runs and fails on the copy blocks the merge. A test that fails at TFC and fails on the copy counts as preserved function.
 
 zingo-mobile branch `gate4_binding_layer_consumer` starts at TFC and consumes the copy. It exists only for gate 4, and it never merges.
 
 - Android includes `bindings/android` as a Gradle included build. Set `ZINGOLIB_DIR` to a checkout of the copy's branch. Set `ZINGO_MOBILE_GIT_DESCRIBE` to the consumer branch's `git describe`. Do not run `rust/android/build_android.mjs`.
 - iOS imports the Swift module `ZingoBindings`. The Xcode project needs the wiring in step 3 of the macOS checklist.
 - Run `yarn` in the consumer branch before a build.
+
+## Checklist for gate 4 on Android
+
+### Environment
+
+- Use a Linux host, as zingo-mobile's CI does.
+- Install the Android SDK with NDK `28.2.13676358`, JDK 17, Node, yarn, rustup, and `cargo-nextest`.
+- Create an x86_64 emulator with the API 34 `default` system image. zingo-mobile's CI uses the same emulator.
+- Put `zebrad` and `zainod` on `PATH`, or name their directory in `TEST_BINARIES_DIR`.
+- zingo-mobile's `build_android.mjs` calls `docker`. With podman, provide a `docker` command, for example through the `podman-docker` package. Also let podman resolve zingo-mobile's short image name:
+  ```sh
+  printf 'unqualified-search-registries = ["docker.io"]\n' > ~/registries.conf
+  export CONTAINERS_REGISTRIES_CONF=~/registries.conf
+  ```
+
+### 1. Baseline at TFC
+
+Check out zingo-mobile at TFC in a throwaway worktree, and build the app with zingo-mobile's own builder:
+
+```sh
+git -C <zingo-mobile checkout> worktree add --detach ../zingo-mobile-tfc f3d1ac9d4
+cd ../zingo-mobile-tfc
+yarn
+node rust/android/build_android.mjs
+cd android
+./gradlew assembleProdRelease assembleProdReleaseAndroidTest \
+  -DtestBuildType=release \
+  -PsplitApk=true
+```
+
+With the emulator running, run each suite three times from `rust/`:
+
+```sh
+cargo nextest run android_integration::x86_64 --features ci --release
+cargo nextest run e2e::x86_64 --release
+```
+
+The `e2e` suite needs Metro. Run `yarn start` in a separate terminal first.
+
+**Deliverable:** the outcome of each test in each of the three runs of each suite.
+
+### 2. Run on the copy
+
+Check out zingo-mobile branch `gate4_binding_layer_consumer`. Point it at a checkout of the copy's branch, and give it the consumer branch's descriptor:
+
+```sh
+export ZINGOLIB_DIR=<copy checkout>
+export ZINGO_MOBILE_GIT_DESCRIBE=$(git describe --dirty --always --long --match 'zingo-*')
+yarn
+cd android
+./gradlew assembleProdRelease assembleProdReleaseAndroidTest \
+  -DtestBuildType=release \
+  -PsplitApk=true
+```
+
+Do not run `build_android.mjs` on this branch. Gradle builds the Binding Layer from the copy.
+
+With the emulator running, run each suite one time from `rust/`, with the same commands as in step 1.
+
+**Deliverable:** the outcome of each test in each suite. A test that passes in all three baseline runs and fails here blocks the merge.
 
 ## Checklist for a macOS reviewer
 
