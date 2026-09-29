@@ -1337,6 +1337,106 @@ async fn sync_rejects_server_below_minimum_lightwallet_protocol_version() {
     }
 }
 
+/// Waits until every block up to `height` is scanned.
+async fn wait_until_scanned_to(client: &crate::lightclient::LightClient, height: u32) {
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        loop {
+            {
+                let wallet = client.wallet();
+                let wallet = wallet.read().await;
+                let scan_ranges = wallet.sync_state.scan_ranges();
+                if scan_ranges.last().is_some_and(|range| {
+                    range.block_range().end == BlockHeight::from_u32(height + 1)
+                }) && scan_ranges
+                    .iter()
+                    .all(|range| range.priority() == pepper_sync::sync::ScanPriority::Scanned)
+                {
+                    return;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("blocks up to {height} were not scanned"));
+}
+
+/// When nullifiers are not mapped (a low performance level limits the nullifier map to zero), a range scanned before a
+/// lower unscanned range is set `ScannedWithoutMapping` and its nullifiers are discarded. Once all lower ranges are
+/// scanned, its nullifiers are re-fetched with `GetBlockRangeNullifiers` to detect spends of notes found in the lower
+/// ranges.
+///
+/// The note is received in the chain tip range below the session's verification range. Its spend is mined while that
+/// verification range is being fetched, so the new blocks are verified, and scanned without mapping, before the chain
+/// tip range containing the note. The spend is only detected from the re-fetched nullifiers.
+#[tokio::test]
+async fn spend_in_range_scanned_without_mapping_is_detected_from_refetched_nullifiers() {
+    use crate::testutils::mock_indexer::{Fault, Rpc};
+
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(10);
+    let mut settings = continuous_sync_wallet_settings();
+    settings.sync_config.performance_level = pepper_sync::config::PerformanceLevel::Low;
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(settings),
+        )
+        .await;
+    client.sync_to_tip_and_await().await.unwrap();
+
+    // a second client with the same seed builds the spend of the note.
+    let mut spender = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+        .await;
+    let ua = get_base_address(&client, PoolType::Shielded(ShieldedPool::Orchard)).await;
+    net.chain.write().await.mine_empty_blocks(14);
+    fund(&net, vec![(&ua, 100_000, None)], 15).await;
+    spender.sync_and_await().await.unwrap();
+    from_inputs::quick_send(
+        &mut spender,
+        vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+    )
+    .await
+    .unwrap();
+    // the spend is mined and re-orged out to hold it back until the sync session is running. it never enters the
+    // mempool while the client is syncing, so the spend can only be detected by scanning.
+    let spend = {
+        let mut chain = net.chain.write().await;
+        chain.mine_mempool();
+        chain.reorg_to(40)
+    };
+    assert_eq!(net.chain.read().await.tip(), 40);
+
+    // the fetch of the verification range is delayed until the continuous sync interval has flagged new blocks, so the
+    // new blocks are verified before the chain tip range [21, 41) containing the note is scanned.
+    net.chain.write().await.faults.inject(
+        Rpc::BlockRange,
+        Fault::Delay(std::time::Duration::from_secs(12)),
+    );
+    client.sync().await.expect("continuous sync launches");
+    tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        client.subscribe_sync_status().wait_for(Option::is_some),
+    )
+    .await
+    .expect("sync publishes its status")
+    .expect("sync status channel open");
+    {
+        let mut chain = net.chain.write().await;
+        chain.mine_block(spend);
+        chain.mine_empty_blocks(4);
+    }
+
+    wait_until_scanned_to(&client, 45).await;
+    client.stop_sync().unwrap();
+    client.await_sync().await.unwrap();
+
+    // 100_000 funding minus the 20_000 payment and its 10_000 fee. if the spend was not detected, the spent note would
+    // also be counted.
+    check_client_balances!(client, i: 70_000 o: 0 s: 0 t: 0);
+}
+
 /// `migrate_to_ironwood` syncs before each round. Under continuous sync, with
 /// a sync already running, that sync must still return, or the
 /// migration never reaches its round. The setup mirrors `failed_split_round_transmit_strands_calculated_transactions`:
