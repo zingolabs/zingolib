@@ -160,15 +160,52 @@ enum Runner {
     },
 }
 
-/// The two roots that a plan joins paths onto.
+/// The zingolib root and the output directory, each as the host and as `Run` steps see it.
+#[derive(Debug)]
 struct Roots {
     /// The zingolib root as the host sees it.
     host: path::PathBuf,
     /// The zingolib root as `Run` steps see it.
     run: String,
+    /// The output directory as the host sees it.
+    out_host: path::PathBuf,
+    /// The output directory as `Run` steps see it.
+    out_run: String,
 }
 
 impl Roots {
+    /// The roots of a plan whose `Run` steps execute on the host, where any output directory serves.
+    fn on_host(root: path::PathBuf, out: path::PathBuf) -> Result<Self, Vec<String>> {
+        Ok(Self {
+            run: workbench::utf8(&root)?.to_string(),
+            host: root,
+            out_run: workbench::utf8(&out)?.to_string(),
+            out_host: out,
+        })
+    }
+
+    /// The roots of a plan whose `Run` steps execute in the container, which mounts only the zingolib root.
+    fn in_container(root: path::PathBuf, out: path::PathBuf) -> Result<Self, Vec<String>> {
+        let relative_out = out
+            .strip_prefix(&root)
+            .map_err(|_| {
+                vec![format!(
+                    "{} is not inside {}, which is the only directory the container mounts",
+                    out.display(),
+                    root.display()
+                )]
+            })?
+            .to_str()
+            .ok_or_else(|| vec![format!("{} is not valid UTF-8", out.display())])?;
+        let out_run = format!("{CONTAINER_ROOT}/{relative_out}");
+        Ok(Self {
+            host: root,
+            run: CONTAINER_ROOT.to_string(),
+            out_run,
+            out_host: out,
+        })
+    }
+
     /// A path under the root as `Run` steps see it.
     fn run_path(&self, relative: &str) -> String {
         format!("{}/{relative}", self.run)
@@ -177,6 +214,16 @@ impl Roots {
     /// A path under the root as the host sees it.
     fn host_path(&self, relative: &str) -> path::PathBuf {
         self.host.join(relative)
+    }
+
+    /// A path under the output directory as `Run` steps see it.
+    fn out_run_path(&self, relative: &str) -> String {
+        format!("{}/{relative}", self.out_run)
+    }
+
+    /// A path under the output directory as the host sees it.
+    fn out_host_path(&self, relative: &str) -> path::PathBuf {
+        self.out_host.join(relative)
     }
 }
 
@@ -202,72 +249,38 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
             )]
         })?;
     let root = workbench::repo_root()?;
-    require_wallet_crate(&root)?;
-    let relative_out = out
-        .strip_prefix(&root)
-        .map_err(|_| {
-            vec![format!(
-                "{} is not inside {}",
-                out.display(),
-                root.display()
-            )]
-        })?
-        .to_str()
-        .ok_or_else(|| vec![format!("{} is not valid UTF-8", out.display())])?
-        .to_string();
-    match platform {
+    let roots = match platform {
         Platform::Android { in_image: true } => {
-            let roots = Roots {
-                run: workbench::utf8(&root)?.to_string(),
-                host: root,
-            };
-            execute(
-                &Runner::Host,
-                &android_plan(&roots, &relative_out, &abis, &describe),
-            )
+            let roots = Roots::on_host(root, out)?;
+            execute(&Runner::Host, &android_plan(&roots, &abis, &describe))?;
+            roots
         }
         Platform::Android { in_image: false } => {
+            let roots = Roots::in_container(root, out)?;
             let engine = binding_layer::container_engine()?;
-            build_android_image(engine, &root)?;
-            let id = start_container(engine, &root)?;
-            let roots = Roots {
-                host: root,
-                run: CONTAINER_ROOT.to_string(),
-            };
+            build_android_image(engine, &roots.host)?;
+            let id = start_container(engine, &roots.host)?;
             let outcome = execute(
                 &Runner::Container {
                     engine,
                     id: id.clone(),
                 },
-                &android_plan(&roots, &relative_out, &abis, &describe),
+                &android_plan(&roots, &abis, &describe),
             );
             workbench::stdout_of(engine, &["rm", "--force", &id])?;
-            outcome
+            outcome?;
+            roots
         }
         Platform::Ios => {
             if env::consts::OS != binding_layer::MACOS {
                 return Err(vec!["iOS packaging requires macOS with Xcode".to_string()]);
             }
-            let roots = Roots {
-                run: workbench::utf8(&root)?.to_string(),
-                host: root,
-            };
-            execute(&Runner::Host, &ios_plan(&roots, &relative_out, &describe))
+            let roots = Roots::on_host(root, out)?;
+            execute(&Runner::Host, &ios_plan(&roots, &describe))?;
+            roots
         }
-    }
-    .map(|()| out)
-}
-
-/// Fail with a diagnostic that names the root unless the root holds the wallet crate's manifest.
-fn require_wallet_crate(root: &path::Path) -> Result<(), Vec<String>> {
-    if root.join(WALLET_CRATE_DIR).join(MANIFEST).is_file() {
-        Ok(())
-    } else {
-        Err(vec![format!(
-            "{} is the wrong zingolib root: {WALLET_CRATE_DIR}/{MANIFEST} is absent from it",
-            root.display()
-        )])
-    }
+    };
+    Ok(roots.out_host)
 }
 
 /// Parse the platform, the absolute output directory, and the selected Android ABIs.
@@ -391,27 +404,15 @@ fn with_base_env(plan: Vec<Step>, base: &[(String, String)]) -> Vec<Step> {
 }
 
 /// The Android build plan: bindings, per-ABI libraries stripped as zingo-mobile strips them, then copies.
-fn android_plan(
-    roots: &Roots,
-    relative_out: &str,
-    abis: &[&binding_layer::AndroidAbi],
-    describe: &str,
-) -> Vec<Step> {
-    with_base_env(
-        android_steps(roots, relative_out, abis),
-        &android_base_env(describe),
-    )
+fn android_plan(roots: &Roots, abis: &[&binding_layer::AndroidAbi], describe: &str) -> Vec<Step> {
+    with_base_env(android_steps(roots, abis), &android_base_env(describe))
 }
 
 /// The Android steps before the base environment: bindings, per-ABI libraries, stripping, and copies.
-fn android_steps(
-    roots: &Roots,
-    relative_out: &str,
-    abis: &[&binding_layer::AndroidAbi],
-) -> Vec<Step> {
+fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step> {
     let wallet_target = roots.run_path(&format!("{BUILD_ROOT}/android/wallet"));
     let proxy_target = roots.run_path(&format!("{BUILD_ROOT}/android/proxy"));
-    let kotlin_out = roots.run_path(&format!("{relative_out}/{}", binding_layer::KOTLIN_OUT_DIR));
+    let kotlin_out = roots.out_run_path(binding_layer::KOTLIN_OUT_DIR);
     let shared_library = |lib_name| {
         binding_layer::library_file(
             binding_layer::LIBRARY_PREFIX,
@@ -526,24 +527,21 @@ fn android_steps(
             .chain(strip(proxy_library(abi), &abi.env(&proxy_target)))
     });
     let host_copies = abis.iter().flat_map(|abi| {
-        let jni = format!(
-            "{relative_out}/{}/{}",
-            binding_layer::JNI_LIBS_DIR,
-            abi.jni_dir
-        );
+        let jni = format!("{}/{}", binding_layer::JNI_LIBS_DIR, abi.jni_dir);
         [
             Step::Copy {
                 from: host_of(roots, &wallet_library(abi)),
-                to: roots.host_path(&format!("{jni}/{}", binding_layer::ANDROID_WALLET_LIBRARY)),
+                to: roots
+                    .out_host_path(&format!("{jni}/{}", binding_layer::ANDROID_WALLET_LIBRARY)),
             },
             Step::Copy {
                 from: host_of(roots, &proxy_library(abi)),
-                to: roots.host_path(&format!("{jni}/{proxy_file}")),
+                to: roots.out_host_path(&format!("{jni}/{proxy_file}")),
             },
         ]
     });
     [
-        Step::FreshDir(roots.host_path(relative_out)),
+        Step::FreshDir(roots.out_host.clone()),
         bindgen(
             binding_layer::Generation::Wallet,
             "",
@@ -582,7 +580,7 @@ fn host_of(roots: &Roots, run_path: &str) -> path::PathBuf {
 }
 
 /// The iOS build plan, which reproduces zingo-mobile's `build_ios.mjs` into the output directory.
-fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
+fn ios_plan(roots: &Roots, describe: &str) -> Vec<Step> {
     let env = vec![
         (
             "IPHONEOS_DEPLOYMENT_TARGET".to_string(),
@@ -626,9 +624,9 @@ fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
     };
     let universal =
         |target_dir: &str, file: &str| library(target_dir, UNIVERSAL_SIMULATOR_DIR, file);
-    let wallet_generated = format!("{relative_out}/{GENERATED_DIR}/wallet");
-    let proxy_generated = format!("{relative_out}/{GENERATED_DIR}/proxy");
-    let headers = format!("{relative_out}/{GENERATED_DIR}/headers");
+    let wallet_generated = format!("{GENERATED_DIR}/wallet");
+    let proxy_generated = format!("{GENERATED_DIR}/proxy");
+    let headers = format!("{GENERATED_DIR}/headers");
     let bindgen = |generation, out: &str| {
         let wallet_crate = format!("{wallet_crate_dir}/{MANIFEST}");
         let udl = format!("{wallet_crate_dir}/{UDL}");
@@ -652,7 +650,7 @@ fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
                         proxy_library: &proxy_library,
                         target_dir: &wallet_target,
                     },
-                    &roots.run_path(out),
+                    &roots.out_run_path(out),
                     binding_layer::Profile::Release,
                 ),
             ]
@@ -698,14 +696,14 @@ fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
         ]
     };
     let xcframework = |name: &str, libraries: Vec<String>, with_headers: bool| {
-        let output = roots.run_path(&format!("{relative_out}/{name}"));
+        let output = roots.out_run_path(name);
         let header_args = if with_headers {
-            vec!["-headers".to_string(), roots.run_path(&headers)]
+            vec!["-headers".to_string(), roots.out_run_path(&headers)]
         } else {
             vec![]
         };
         [
-            Step::Remove(host_of(roots, &output)),
+            Step::Remove(roots.out_host_path(name)),
             Step::Run {
                 workdir: roots.run.clone(),
                 env: env.clone(),
@@ -719,10 +717,10 @@ fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
             },
         ]
     };
-    let host = |relative: &str| roots.host_path(relative);
+    let host = |relative: &str| roots.out_host_path(relative);
     let steps: Vec<Vec<Step>> = vec![
         vec![
-            Step::FreshDir(host(relative_out)),
+            Step::FreshDir(roots.out_host.clone()),
             Step::FreshDir(host(&wallet_generated)),
             Step::FreshDir(host(&proxy_generated)),
             Step::FreshDir(host(&headers)),
@@ -781,10 +779,7 @@ fn ios_plan(roots: &Roots, relative_out: &str, describe: &str) -> Vec<Step> {
         ]
         .map(|(generated, swift)| Step::Copy {
             from: host(&format!("{generated}/{swift}")),
-            to: host(&format!(
-                "{relative_out}/{}/{swift}",
-                binding_layer::SWIFT_SOURCES_DIR
-            )),
+            to: host(&format!("{}/{swift}", binding_layer::SWIFT_SOURCES_DIR)),
         })
         .into_iter()
         .collect(),
@@ -912,17 +907,17 @@ fn run_command(
         .current_dir(&started.workdir)
         .envs(started.env)
         .status()
-        .map_err(|e| {
-            vec![format!(
-                "cannot run {} in {}: {e}",
-                started.program, started.workdir
-            )]
-        })?;
+        .map_err(|e| vec![start_failure(&started.program, workdir, &e)])?;
     if status.success() {
         Ok(())
     } else {
         Err(vec![format!("`{}` failed ({status})", command.join(" "))])
     }
+}
+
+/// The diagnostic for a host process that did not start, naming the step's working directory.
+fn start_failure(program: &str, step_workdir: &str, error: &std::io::Error) -> String {
+    format!("cannot run {program} for the step in {step_workdir}: {error}")
 }
 
 #[cfg(test)]
@@ -938,7 +933,7 @@ mod tests {
     #[test]
     fn every_android_run_step_carries_the_base_environment() {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
-        let plan = android_plan(&roots(), "out", &abis, TEST_DESCRIBE);
+        let plan = android_plan(&roots(), &abis, TEST_DESCRIBE);
         let base = android_base_env(TEST_DESCRIBE);
         assert!(plan.iter().all(|step| match step {
             Step::Run { env, .. } => base.iter().all(|entry| env.contains(entry)),
@@ -946,11 +941,21 @@ mod tests {
         }));
     }
 
+    /// The zingolib root as the host sees it in tests.
+    const HOST_ROOT: &str = "/host/zingolib";
+
+    /// An output directory outside the zingolib root.
+    const OUTSIDE_OUT: &str = "/host/consumer/android/build/binding-layer";
+
+    /// An output directory inside the zingolib root.
+    const INSIDE_OUT: &str = "/host/zingolib/bindings/android/build/binding-layer";
+
     fn roots() -> Roots {
-        Roots {
-            host: path::PathBuf::from("/host/zingolib"),
-            run: CONTAINER_ROOT.to_string(),
-        }
+        Roots::in_container(
+            path::PathBuf::from(HOST_ROOT),
+            path::PathBuf::from(INSIDE_OUT),
+        )
+        .unwrap()
     }
 
     fn commands(plan: &[Step]) -> Vec<String> {
@@ -965,12 +970,7 @@ mod tests {
     #[test]
     fn android_plan_generates_the_proxy_bindings_once_after_the_first_abi() {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
-        let plan = android_plan(
-            &roots(),
-            "bindings/android/build/binding-layer",
-            &abis,
-            TEST_DESCRIBE,
-        );
+        let plan = android_plan(&roots(), &abis, TEST_DESCRIBE);
         let generations = commands(&plan)
             .into_iter()
             .filter(|command| command.contains("--library"))
@@ -984,7 +984,7 @@ mod tests {
             .iter()
             .filter(|abi| abi.jni_dir == "x86")
             .collect();
-        let plan = android_plan(&roots(), "out", &x86, TEST_DESCRIBE);
+        let plan = android_plan(&roots(), &x86, TEST_DESCRIBE);
         let expected_cc = binding_layer::ANDROID_ABIS[FIRST_POSITION].cc();
         let bindgen_env = plan.iter().find_map(|step| match step {
             Step::Run { env, command, .. } if command.iter().any(|arg| arg == "--library") => {
@@ -1001,7 +1001,7 @@ mod tests {
     #[test]
     fn android_plan_copies_both_libraries_for_every_abi() {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
-        let plan = android_plan(&roots(), "out", &abis, TEST_DESCRIBE);
+        let plan = android_plan(&roots(), &abis, TEST_DESCRIBE);
         let copies = plan
             .iter()
             .filter(|step| matches!(step, Step::Copy { .. }))
@@ -1013,15 +1013,55 @@ mod tests {
     }
 
     #[test]
-    fn a_root_without_the_wallet_crate_is_refused_by_name() {
-        let consumer_root = workbench::repo_root().unwrap().join(WALLET_CRATE_DIR);
-        let diagnostic = require_wallet_crate(&consumer_root).unwrap_err().concat();
-        assert!(diagnostic.contains(workbench::utf8(&consumer_root).unwrap()));
+    fn the_container_refuses_an_output_directory_outside_the_mounted_root() {
+        let diagnostic = Roots::in_container(
+            path::PathBuf::from(HOST_ROOT),
+            path::PathBuf::from(OUTSIDE_OUT),
+        )
+        .unwrap_err()
+        .concat();
+        assert!(diagnostic.contains(OUTSIDE_OUT) && diagnostic.contains("mounts"));
     }
 
     #[test]
-    fn the_zingolib_root_holds_the_wallet_crate() {
-        assert!(require_wallet_crate(&workbench::repo_root().unwrap()).is_ok());
+    fn the_container_sees_the_output_directory_under_its_own_root() {
+        assert_eq!(
+            roots().out_run_path(binding_layer::KOTLIN_OUT_DIR),
+            format!(
+                "{CONTAINER_ROOT}/bindings/android/build/binding-layer/{}",
+                binding_layer::KOTLIN_OUT_DIR
+            )
+        );
+    }
+
+    #[test]
+    fn the_host_takes_an_output_directory_outside_the_root() {
+        let roots = Roots::on_host(
+            path::PathBuf::from(HOST_ROOT),
+            path::PathBuf::from(OUTSIDE_OUT),
+        )
+        .unwrap();
+        let plan = ios_plan(&roots, TEST_DESCRIBE);
+        assert!(matches!(
+            plan.first(),
+            Some(Step::FreshDir(directory)) if directory == path::Path::new(OUTSIDE_OUT)
+        ));
+        assert!(commands(&plan)
+            .iter()
+            .any(|command| command.contains(&format!("{OUTSIDE_OUT}/{GENERATED_DIR}/wallet"))));
+    }
+
+    #[test]
+    fn a_container_engine_that_does_not_start_is_reported_with_the_step_directory() {
+        let runner = Runner::Container {
+            engine: "absent-container-engine",
+            id: "container".to_string(),
+        };
+        let step_workdir = format!("{CONTAINER_ROOT}/{WALLET_CRATE_DIR}");
+        let diagnostic = run_command(&runner, &step_workdir, &[], &["cargo".to_string()])
+            .unwrap_err()
+            .concat();
+        assert!(diagnostic.contains(&step_workdir));
     }
 
     #[test]

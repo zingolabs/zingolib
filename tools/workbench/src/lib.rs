@@ -130,25 +130,40 @@ pub fn git(args: &[&str]) -> Result<String, Vec<String>> {
     stdout_of("git", args)
 }
 
-/// The workbench crate's directory, which cargo records when it compiles the crate.
-const WORKBENCH_DIR: &str = env!("CARGO_MANIFEST_DIR");
+/// The variable that names the workbench crate's directory when cargo runs a workbench binary.
+const MANIFEST_DIR_VARIABLE: &str = "CARGO_MANIFEST_DIR";
 
-/// The zingolib root, which is the git top level of the workbench crate's own checkout.
+/// The workbench crate's directory at the time cargo compiled the crate.
+const BUILT_WORKBENCH_DIR: &str = env!("CARGO_MANIFEST_DIR");
+
+/// The workbench crate's directory, relative to the zingolib root.
+const WORKBENCH_RELATIVE_DIR: &str = "tools/workbench";
+
+/// The manifest file name that every crate directory holds.
+const MANIFEST: &str = "Cargo.toml";
+
+/// The zingolib root, which is the directory that holds the workbench crate at `tools/workbench`.
 pub fn repo_root() -> Result<PathBuf, Vec<String>> {
-    repo_root_from(Path::new(CURRENT_DIR))
+    let workbench_dir = std::env::var_os(MANIFEST_DIR_VARIABLE)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(BUILT_WORKBENCH_DIR));
+    root_above(&workbench_dir)
 }
 
-/// The zingolib root, looked up by a `git` process that starts in the given directory.
-fn repo_root_from(start: &Path) -> Result<PathBuf, Vec<String>> {
-    Ok(PathBuf::from(
-        stdout_in(
-            start,
-            "git",
-            &["-C", WORKBENCH_DIR, "rev-parse", "--show-toplevel"],
-            &[],
-        )?
-        .trim(),
-    ))
+/// The zingolib root above a workbench crate directory, or a diagnostic that names the directory.
+fn root_above(workbench_dir: &Path) -> Result<PathBuf, Vec<String>> {
+    let depth = Path::new(WORKBENCH_RELATIVE_DIR).components().count();
+    Some(workbench_dir)
+        .filter(|dir| dir.ends_with(WORKBENCH_RELATIVE_DIR))
+        .and_then(|dir| dir.ancestors().nth(depth))
+        .filter(|root| root.join(WORKBENCH_RELATIVE_DIR).join(MANIFEST).is_file())
+        .map(Path::to_path_buf)
+        .ok_or_else(|| {
+            vec![format!(
+                "{} is not a workbench crate directory at <zingolib>/{WORKBENCH_RELATIVE_DIR}",
+                workbench_dir.display()
+            )]
+        })
 }
 
 /// Read `path` to a string, or a one-line `cannot read …` diagnostic.
@@ -234,21 +249,31 @@ fn is_concrete_numeric(channel: &str) -> bool {
 mod tests {
     use super::*;
 
-    /// The workbench crate's directory, relative to the zingolib root.
-    const WORKBENCH_RELATIVE_DIR: &str = "tools/workbench";
+    /// A workbench crate directory under a checkout that was moved or removed after the build.
+    const ABSENT_WORKBENCH_DIR: &str = "/absent/zingolib/tools/workbench";
 
     #[test]
-    fn root_lookup_from_outside_zingolib_gets_the_zingolib_root() {
-        let workbench_dir = Path::new(WORKBENCH_DIR).canonicalize().unwrap();
-        let zingolib_root = workbench_dir
-            .ancestors()
-            .find(|ancestor| ancestor.join(WORKBENCH_RELATIVE_DIR) == workbench_dir)
-            .unwrap();
-        let outside = zingolib_root.parent().unwrap();
+    fn the_root_is_two_directories_above_the_workbench_crate() {
+        let workbench_dir = Path::new(BUILT_WORKBENCH_DIR);
         assert_eq!(
-            repo_root_from(outside).unwrap().canonicalize().unwrap(),
-            zingolib_root
+            root_above(workbench_dir).unwrap(),
+            workbench_dir.parent().unwrap().parent().unwrap()
         );
+    }
+
+    #[test]
+    fn a_directory_that_is_not_the_workbench_crate_is_refused_by_name() {
+        let source_dir = Path::new(BUILT_WORKBENCH_DIR).join("src");
+        let diagnostic = root_above(&source_dir).unwrap_err().concat();
+        assert!(diagnostic.contains(source_dir.to_str().unwrap()));
+    }
+
+    #[test]
+    fn a_workbench_crate_directory_that_is_absent_is_refused_by_name() {
+        let diagnostic = root_above(Path::new(ABSENT_WORKBENCH_DIR))
+            .unwrap_err()
+            .concat();
+        assert!(diagnostic.contains(ABSENT_WORKBENCH_DIR));
     }
 
     #[test]
