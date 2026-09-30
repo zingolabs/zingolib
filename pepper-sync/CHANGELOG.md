@@ -97,6 +97,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recovers the full failure story by walking the `source()` chain.
 - `wallet::WalletTransaction::update_status`: added `fail_confirmed` bool for protecting against confirmed txs being
     set to failed in cases other than re-org truncation.
+- `wallet::SyncState` serialization version bumped to 5 to persist the
+  transparent scan floor. Earlier versions read it as unset, and the next sync
+  session's transparent address discovery then searches the blocks within the
+  re-org allowance of the last known chain height, as before.
 
 ### Fixed
 - A `ServerError::RequestFailed` caused by network weather is now recommended
@@ -135,6 +139,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once it is the first unscanned range. It could also be selected as the
   highest priority range while a lower range was still scanning, so the
   re-fetched nullifiers were discarded and fetched again.
+- Transparent transactions in blocks mined during a sync session that ended
+  before scanning them are found by the next session. Blocks mined during a
+  session are above its transparent scan floor and are only covered by
+  scanning their compact block transparent data. The next session set its
+  floor above them, and its transparent address discovery only searched the
+  blocks within the re-org allowance of the last known chain height, so
+  transactions in older unscanned blocks were never found. The transparent
+  scan floor is now stored in the wallet's sync state, and transparent address
+  discovery searches from the floor of the previous session.
 
 ### Removed
 

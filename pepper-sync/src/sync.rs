@@ -486,7 +486,6 @@ where
             .map_err(SyncError::WalletError)?,
     );
 
-    let mut initial_chain_height: Option<BlockHeight> = None;
     let mut check_for_new_blocks = false;
     let mut first_verification_complete = false;
     let mut mempool_shutdown_timer = None;
@@ -504,12 +503,6 @@ where
         if chain_height == 0.into() {
             return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
         }
-        let initial_chain_height = *initial_chain_height.get_or_insert(chain_height);
-        // transparent address discovery on the first continuous sync loop locates all relevant transactions up to
-        // the initial chain height. only the compact block transparent data of blocks mined after this is scanned.
-        scanner
-            .transparent_scan_floor
-            .get_or_insert(initial_chain_height);
 
         // hold wallet guard until initial sync state is set to avoid inconsistencies and potential subtraction overflows
         // when calculating sync status.
@@ -631,8 +624,8 @@ where
             // or requiring rescanning multiple times.
             // this is performed even if no new blocks have been mined since the last sync session as blocks mined during
             // the previous sync session were not covered by transparent address discovery and may not have been
-            // scanned. these blocks are now below the transparent scan floor so their compact block transparent data
-            // will not be scanned.
+            // scanned. these blocks are above the transparent scan floor of the previous sync session, which
+            // address discovery searches from.
             scanner.transparent_gap_addresses.extend(
                 transparent::address_discovery(
                     consensus_parameters,
@@ -645,6 +638,18 @@ where
                 )
                 .await?,
             );
+
+            // transparent address discovery has located all relevant transactions up to the chain height. only the
+            // compact block transparent data of blocks mined after this is scanned.
+            let mut wallet_guard = wallet.write().await;
+            wallet_guard
+                .get_sync_state_mut()
+                .map_err(SyncError::WalletError)?
+                .transparent_scan_floor = Some(chain_height);
+            wallet_guard
+                .set_save_flag()
+                .map_err(SyncError::WalletError)?;
+            drop(wallet_guard);
         }
 
         if new_blocks_mined || reorg_occured || !first_verification_complete {
@@ -696,7 +701,6 @@ where
                     let mut wallet_guard = wallet.write().await;
                     let ProcessedScanResults {
                         updated_transparent_gap_addresses,
-                        reorg_truncate_height,
                     } = process_scan_results(
                         consensus_parameters,
                         &mut *wallet_guard,
@@ -716,11 +720,6 @@ where
                         // for transparent data out-of-order, more checks must be applied here to ensure gap addresses are
                         // not lost and correctly follow on from the wallets current in-use address list.
                         scanner.transparent_gap_addresses = updated_transparent_gap_addresses;
-                    }
-                    if let Some(reorg_truncate_height) = reorg_truncate_height {
-                        // transparent address discovery is not performed again during this sync session so the
-                        // compact block transparent data of the re-orged blocks must be scanned.
-                        scanner.lower_transparent_scan_floor(reorg_truncate_height);
                     }
                     expire_transactions(&mut *wallet_guard)?;
                     publish_sync_status(&*wallet_guard, &progress).await?;
@@ -1440,14 +1439,12 @@ async fn mempool_drain_verdict(
 struct ProcessedScanResults {
     /// Transparent gap addresses after scanning, `None` if the scan results were discarded due to a re-org.
     updated_transparent_gap_addresses: Option<HashMap<String, TransparentAddressId>>,
-    /// Height the wallet was truncated to if a re-org was detected.
-    reorg_truncate_height: Option<BlockHeight>,
 }
 
 /// Scan post-processing.
 ///
-/// Returns the updated transparent gap addresses, or the truncation height in the case of a recovered error i.e.
-/// re-org.
+/// Returns the updated transparent gap addresses. A recovered error i.e. re-org truncates the wallet and lowers the
+/// transparent scan floor to the truncation height.
 #[allow(clippy::too_many_arguments)]
 async fn process_scan_results<W>(
     consensus_parameters: &(impl consensus::Parameters + Sync),
@@ -1569,7 +1566,6 @@ where
 
                     return Ok(ProcessedScanResults {
                         updated_transparent_gap_addresses: Some(updated_transparent_gap_addresses),
-                        reorg_truncate_height: None,
                     });
                 }
 
@@ -1704,7 +1700,6 @@ where
 
             Ok(ProcessedScanResults {
                 updated_transparent_gap_addresses: Some(updated_transparent_gap_addresses),
-                reorg_truncate_height: None,
             })
         }
         Err(ScanError::ContinuityError(ContinuityError::HashDiscontinuity { height, .. })) => {
@@ -1749,6 +1744,14 @@ where
 
                 let reorg_truncate_height = current_reorg_detection_start_height - 1;
                 truncate_wallet_data(wallet, reorg_truncate_height)?;
+                // transparent address discovery is not performed again during this sync session so the compact block
+                // transparent data of the re-orged blocks must be scanned.
+                state::lower_transparent_scan_floor(
+                    wallet
+                        .get_sync_state_mut()
+                        .map_err(SyncError::WalletError)?,
+                    reorg_truncate_height,
+                );
 
                 state::set_initial_state(
                     consensus_parameters,
@@ -1760,7 +1763,6 @@ where
 
                 Ok(ProcessedScanResults {
                     updated_transparent_gap_addresses: None,
-                    reorg_truncate_height: Some(reorg_truncate_height),
                 })
             } else {
                 Err(scan_results

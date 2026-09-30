@@ -1297,6 +1297,75 @@ async fn transparent_funds_mined_during_sync_session_are_detected() {
     client.await_sync().await.unwrap();
 }
 
+/// Blocks mined during a continuous sync session are above the transparent scan floor, so transparent address
+/// discovery has not covered them, and the session may end before scanning them. The transparent address discovery
+/// of the next session searches from the floor of the previous session, so transparent funds in those blocks are
+/// detected.
+///
+/// The fetch of the new blocks is held so the first session is stopped before scanning them. More blocks than the
+/// re-org allowance are mined above the funds, so they are below the blocks address discovery searches in case of
+/// re-org.
+#[tokio::test]
+async fn transparent_funds_in_blocks_unscanned_by_previous_sync_session_are_detected() {
+    use crate::testutils::mock_indexer::{Fault, Rpc};
+
+    const INITIAL_CHAIN_HEIGHT: u32 = 10;
+    const BLOCKS_MINED_ABOVE_FUNDS: u32 = pepper_sync::sync::MAX_REORG_ALLOWANCE + 50;
+    const FETCH_HOLD: std::time::Duration = std::time::Duration::from_secs(5);
+
+    let mut net = MockNet::launch().await;
+    net.chain
+        .write()
+        .await
+        .mine_empty_blocks(INITIAL_CHAIN_HEIGHT);
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    let taddr = get_base_address(&client, PoolType::Transparent).await;
+    client.sync().await.expect("continuous sync launches");
+    wait_until_scanned_to(&client, INITIAL_CHAIN_HEIGHT).await;
+
+    net.chain
+        .write()
+        .await
+        .faults
+        .inject(Rpc::BlockRange, Fault::Delay(FETCH_HOLD));
+    // mined directly into a block, bypassing the mempool, so the funds can only be detected by address discovery or
+    // from the compact block.
+    fund(&net, vec![(&taddr, 50_000, None)], BLOCKS_MINED_ABOVE_FUNDS).await;
+    let chain_height = net.chain.read().await.tip();
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        while client.latest_sync_status().is_none_or(|status| {
+            status.scan_ranges.last().is_none_or(|range| {
+                range.block_range().end != BlockHeight::from_u32(chain_height + 1)
+            })
+        }) {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the sync session creates the scan range of the new blocks");
+    client.stop_sync().unwrap();
+    client.await_sync().await.unwrap();
+    assert_eq!(
+        client
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .fully_scanned_height(),
+        Some(BlockHeight::from_u32(INITIAL_CHAIN_HEIGHT)),
+        "the sync session is stopped before the new blocks are scanned"
+    );
+
+    client.sync_to_tip_and_await().await.unwrap();
+
+    check_client_balances!(client, i: 0 o: 0 s: 0 t: 50_000);
+}
+
 /// Sync is rejected when the server's lightwallet protocol version is below v0.5.0, or not reported, as the server does
 /// not serve the transparent and ironwood data sync requires. The error recommends switching servers.
 #[tokio::test]

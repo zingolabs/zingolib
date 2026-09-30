@@ -769,7 +769,6 @@ pub(crate) fn create_scan_task<W>(
     wallet: &mut W,
     nullifier_map_limit_exceeded: bool,
     transparent_gap_addresses: HashMap<String, TransparentAddressId>,
-    transparent_scan_floor: BlockHeight,
 ) -> Result<Option<ScanTask>, W::Error>
 where
     W: SyncWallet + SyncBlocks + SyncNullifiers,
@@ -779,6 +778,10 @@ where
         wallet.get_sync_state_mut()?,
         nullifier_map_limit_exceeded,
     ) {
+        let transparent_scan_floor = wallet
+            .get_sync_state()?
+            .transparent_scan_floor
+            .expect("transparent scan floor should be set before scanning");
         if selected_range.priority() == ScanPriority::ScannedWithoutMapping {
             // all continuity checks and scanning is already complete, the scan worker will only re-fetch the nullifiers
             // for final spend detection.
@@ -842,6 +845,13 @@ where
         }
     } else {
         Ok(None)
+    }
+}
+
+/// Lowers the transparent scan floor to `height` if `height` is below the current floor.
+pub(super) fn lower_transparent_scan_floor(sync_state: &mut SyncState, height: BlockHeight) {
+    if let Some(floor) = sync_state.transparent_scan_floor.as_mut() {
+        *floor = (*floor).min(height);
     }
 }
 
@@ -1461,6 +1471,20 @@ mod tests {
                 ScanRange::from_parts(200.into()..251.into(), ScanPriority::Historic),
             ]
         );
+    }
+
+    /// A re-org lowers the transparent scan floor to the height the wallet was truncated to. A truncation above the
+    /// floor leaves it where it is, as transparent address discovery has only covered the blocks at or below it.
+    #[test]
+    fn lower_transparent_scan_floor() {
+        let mut sync_state = SyncState::new();
+        sync_state.transparent_scan_floor = Some(100.into());
+
+        super::lower_transparent_scan_floor(&mut sync_state, 110.into());
+        assert_eq!(sync_state.transparent_scan_floor, Some(100.into()));
+
+        super::lower_transparent_scan_floor(&mut sync_state, 90.into());
+        assert_eq!(sync_state.transparent_scan_floor, Some(90.into()));
     }
 
     /// Reopening splits the range straddling the height and returns every

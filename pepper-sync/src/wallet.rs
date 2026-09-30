@@ -146,6 +146,16 @@ pub struct SyncState {
     pub(crate) scan_targets: BTreeSet<ScanTarget>,
     /// Initial sync state.
     pub(crate) initial_sync_state: InitialSyncState,
+    /// Compact block transparent data is only scanned above this height. This includes checking transparent outputs
+    /// against the wallet's in-use and gap addresses and mapping transparent inputs to the wallet's outpoint map.
+    ///
+    /// Set to the chain height when transparent address discovery completes at the start of a sync session, as it has
+    /// located all relevant transactions at or below this height. Lowered if a re-org truncates the wallet below this
+    /// height during the sync session as the re-orged blocks are not covered by transparent address discovery.
+    ///
+    /// Blocks mined during a sync session are above the floor and may still be unscanned when the session ends, so
+    /// the transparent address discovery of the next sync session searches from the block above the floor.
+    pub(crate) transparent_scan_floor: Option<BlockHeight>,
 }
 
 impl SyncState {
@@ -159,6 +169,7 @@ impl SyncState {
             ironwood_shard_ranges: Vec::new(),
             scan_targets: BTreeSet::new(),
             initial_sync_state: InitialSyncState::new(),
+            transparent_scan_floor: None,
         }
     }
 

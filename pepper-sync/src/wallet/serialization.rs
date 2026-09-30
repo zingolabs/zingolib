@@ -91,7 +91,8 @@ impl ScanTarget {
 impl SyncState {
     fn serialized_version() -> u8 {
         // Version 4 inserts the ironwood shard ranges after the orchard ones.
-        4
+        // Version 5 appends the transparent scan floor.
+        5
     }
 
     /// Deserialize into `reader`
@@ -185,6 +186,13 @@ impl SyncState {
         })?
         .into_iter()
         .collect::<BTreeSet<_>>();
+        let transparent_scan_floor = if version >= 5 {
+            Optional::read(&mut reader, |r| {
+                Ok(BlockHeight::from_u32(r.read_u32::<LittleEndian>()?))
+            })?
+        } else {
+            None
+        };
 
         Ok(Self {
             scan_ranges,
@@ -193,6 +201,7 @@ impl SyncState {
             ironwood_shard_ranges,
             scan_targets,
             initial_sync_state: InitialSyncState::new(),
+            transparent_scan_floor,
         })
     }
 
@@ -224,7 +233,10 @@ impl SyncState {
             &mut writer,
             &self.scan_targets.iter().collect::<Vec<_>>(),
             |w, &scan_target| scan_target.write(w),
-        )
+        )?;
+        Optional::write(&mut writer, self.transparent_scan_floor, |w, floor| {
+            w.write_u32::<LittleEndian>(floor.into())
+        })
     }
 }
 
@@ -1404,6 +1416,39 @@ mod tests {
         let recovered = SyncState::read(bytes.as_slice()).expect("read should succeed");
         assert_eq!(recovered.ironwood_shard_ranges, state.ironwood_shard_ranges);
         assert_eq!(recovered.scan_ranges, state.scan_ranges);
+    }
+
+    // Helper: build a minimal v4 SyncState byte blob (no transparent scan floor).
+    // Format: version(1) | scan_ranges[0] | sapling_shard_ranges[0] |
+    //         orchard_shard_ranges[0] | ironwood_shard_ranges[0] | scan_targets[0]
+    fn v4_sync_state_bytes() -> Vec<u8> {
+        let mut out = Vec::new();
+        out.write_u8(4).unwrap();
+        Vector::write(&mut out, &[] as &[()], |_, _| Ok(())).unwrap();
+        Vector::write(&mut out, &[] as &[()], |_, _| Ok(())).unwrap();
+        Vector::write(&mut out, &[] as &[()], |_, _| Ok(())).unwrap();
+        Vector::write(&mut out, &[] as &[()], |_, _| Ok(())).unwrap();
+        Vector::write(&mut out, &[] as &[()], |_, _| Ok(())).unwrap();
+        out
+    }
+
+    #[test]
+    fn sync_state_v4_reads_with_unset_transparent_scan_floor() {
+        let bytes = v4_sync_state_bytes();
+        let sync_state = SyncState::read(bytes.as_slice()).expect("v4 should read cleanly");
+        assert_eq!(sync_state.transparent_scan_floor, None);
+    }
+
+    #[test]
+    fn sync_state_v5_roundtrip_preserves_transparent_scan_floor() {
+        for transparent_scan_floor in [None, Some(BlockHeight::from_u32(100))] {
+            let mut state = SyncState::new();
+            state.transparent_scan_floor = transparent_scan_floor;
+            let mut bytes = Vec::new();
+            state.write(&mut bytes).expect("write should succeed");
+            let recovered = SyncState::read(bytes.as_slice()).expect("read should succeed");
+            assert_eq!(recovered.transparent_scan_floor, transparent_scan_floor);
+        }
     }
 
     // Helper: build a minimal v1 NullifierMap byte blob (no ironwood BTreeMap).
