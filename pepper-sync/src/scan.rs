@@ -90,7 +90,7 @@ struct ScanData {
     decrypted_note_data: DecryptedNoteData,
     witness_data: WitnessData,
     new_transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
-    updated_transparent_gap_addresses: HashMap<String, TransparentAddressId>,
+    new_transparent_gap_addresses: HashMap<String, TransparentAddressId>,
 }
 
 #[derive(Debug)]
@@ -102,8 +102,10 @@ pub(crate) struct ScanResults {
     pub(crate) sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     pub(crate) orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
     pub(crate) ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
+    /// Transparent gap addresses found in use by scanning.
     pub(crate) new_transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
-    pub(crate) updated_transparent_gap_addresses: HashMap<String, TransparentAddressId>,
+    /// Transparent gap addresses derived to replace the gap addresses found in use.
+    pub(crate) new_transparent_gap_addresses: HashMap<String, TransparentAddressId>,
 }
 
 pub(crate) struct DecryptedNoteData {
@@ -185,7 +187,7 @@ where
             orchard_located_trees: Vec::new(),
             ironwood_located_trees: Vec::new(),
             new_transparent_inuse_addresses: HashMap::new(),
-            updated_transparent_gap_addresses: transparent_gap_addresses,
+            new_transparent_gap_addresses: HashMap::new(),
         });
     }
 
@@ -228,7 +230,7 @@ where
         decrypted_note_data,
         witness_data,
         new_transparent_inuse_addresses,
-        updated_transparent_gap_addresses,
+        new_transparent_gap_addresses,
     } = scan_data;
 
     scan_targets.append(&mut decrypted_scan_targets);
@@ -287,7 +289,7 @@ where
         orchard_located_trees,
         ironwood_located_trees,
         new_transparent_inuse_addresses,
-        updated_transparent_gap_addresses,
+        new_transparent_gap_addresses,
     })
 }
 

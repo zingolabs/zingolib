@@ -1369,8 +1369,14 @@ async fn wait_until_scanned_to(client: &crate::lightclient::LightClient, height:
 /// The note is received in the chain tip range below the session's verification range. Its spend is mined while that
 /// verification range is being fetched, so the new blocks are verified, and scanned without mapping, before the chain
 /// tip range containing the note. The spend is only detected from the re-fetched nullifiers.
-#[tokio::test]
-async fn spend_in_range_scanned_without_mapping_is_detected_from_refetched_nullifiers() {
+///
+/// Returns the mock net, the client left syncing continuously with every block up to height 45 scanned, and the
+/// client that built the spend.
+async fn continuous_sync_with_refetched_nullifiers() -> (
+    MockNet,
+    crate::lightclient::LightClient,
+    crate::lightclient::LightClient,
+) {
     use crate::testutils::mock_indexer::{Fault, Rpc};
 
     let mut net = MockNet::launch().await;
@@ -1432,12 +1438,49 @@ async fn spend_in_range_scanned_without_mapping_is_detected_from_refetched_nulli
     }
 
     wait_until_scanned_to(&client, 45).await;
+
+    (net, client, spender)
+}
+
+/// The spend of the note is detected from the nullifiers re-fetched by [`continuous_sync_with_refetched_nullifiers`].
+#[tokio::test]
+async fn spend_in_range_scanned_without_mapping_is_detected_from_refetched_nullifiers() {
+    let (_net, mut client, _spender) = continuous_sync_with_refetched_nullifiers().await;
     client.stop_sync().unwrap();
     client.await_sync().await.unwrap();
 
     // 100_000 funding minus the 20_000 payment and its 10_000 fee. if the spend was not detected, the spent note would
     // also be counted.
     check_client_balances!(client, i: 70_000 o: 0 s: 0 t: 0);
+}
+
+/// Re-fetched nullifiers carry no transparent data, so their scan results leave the scanner's transparent gap
+/// addresses as they are. Transparent funds received by a gap address in a block mined after the nullifiers were
+/// re-fetched are detected.
+#[tokio::test]
+async fn gap_address_funds_are_detected_after_nullifiers_are_refetched() {
+    use zcash_keys::encoding::AddressCodec;
+
+    let (net, mut client, spender) = continuous_sync_with_refetched_nullifiers().await;
+
+    // the client only holds the first transparent address of the seed, so the second is a gap address.
+    let (_, gap_taddr) = spender
+        .wallet()
+        .write()
+        .await
+        .generate_transparent_address(zip32::AccountId::ZERO, false)
+        .unwrap();
+    fund(
+        &net,
+        vec![(&gap_taddr.encode(&client.chain_type()), 50_000, None)],
+        0,
+    )
+    .await;
+    wait_until_scanned_to(&client, 46).await;
+    client.stop_sync().unwrap();
+    client.await_sync().await.unwrap();
+
+    check_client_balances!(client, i: 70_000 o: 0 s: 0 t: 50_000);
 }
 
 /// `migrate_to_ironwood` syncs before each round. Under continuous sync, with
