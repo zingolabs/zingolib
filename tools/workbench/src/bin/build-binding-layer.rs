@@ -13,7 +13,7 @@ use workbench::MANIFEST;
 const PROGRAM: &str = "build-binding-layer";
 
 /// The invocation shape, reported when the arguments do not parse.
-const USAGE: &str = "usage: build-binding-layer <android|ios> --out <directory> \
+const USAGE: &str = "usage: build-binding-layer <android|ios|kotlin> --out <directory> \
     [--abi <android abi>] [--in-image]";
 
 /// The flag that runs the Android plan directly, inside a job that already runs in the builder image.
@@ -110,6 +110,8 @@ enum Platform {
     },
     /// The two XCFrameworks and Swift sources for the SwiftPM package.
     Ios,
+    /// The Kotlin sources alone, generated on the host for the Gradle checks that compile against them.
+    Kotlin,
 }
 
 /// One action in a build plan.
@@ -303,6 +305,11 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
             execute(&Runner::Host, &ios_plan(&roots, &describe))?;
             roots
         }
+        Platform::Kotlin => {
+            let roots = Roots::on_host(root, out)?;
+            execute(&Runner::Host, &kotlin_plan(&roots, &describe))?;
+            roots
+        }
     };
     Ok(roots.out_host)
 }
@@ -322,13 +329,14 @@ fn parse(
     let in_image = flags.iter().any(|arg| arg == IN_IMAGE_FLAG);
     let platform = match selection.as_str() {
         "android" => Platform::Android { in_image },
-        "ios" if in_image => {
+        "ios" | "kotlin" if in_image => {
             return Err(vec![
                 format!("{IN_IMAGE_FLAG} applies only to android"),
                 USAGE.to_string(),
             ])
         }
         "ios" => Platform::Ios,
+        "kotlin" => Platform::Kotlin,
         other => {
             return Err(vec![
                 format!("unknown platform `{other}`"),
@@ -580,6 +588,84 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
     .chain(proxy_steps)
     .chain(host_copies)
     .collect()
+}
+
+/// The Kotlin plan: both binding sets from a host build of the proxy crate, with no NDK and no wallet build.
+fn kotlin_plan(roots: &Roots, describe: &str) -> Vec<Step> {
+    let env = vec![
+        (
+            binding_layer::TOOLCHAIN_VARIABLE.to_string(),
+            binding_layer::BUILDER_TOOLCHAIN.to_string(),
+        ),
+        (
+            binding_layer::DESCRIBE_VARIABLE.to_string(),
+            describe.to_string(),
+        ),
+    ];
+    let wallet_target = roots.run_path(&format!("{BUILD_ROOT}/host/wallet"));
+    let proxy_target = roots.run_path(&format!("{BUILD_ROOT}/host/proxy"));
+    let kotlin_out = roots.out_run_path(binding_layer::KOTLIN_OUT_DIR);
+    let wallet_crate_dir = roots.run_path(WALLET_CRATE_DIR);
+    let proxy_crate_dir = roots.run_path(PROXY_CRATE_DIR);
+    let proxy_library = format!(
+        "{proxy_target}/{PROFILE_DIR}/{}",
+        binding_layer::library_file(
+            env::consts::DLL_PREFIX,
+            binding_layer::PROXY_LIB_NAME,
+            env::consts::DLL_SUFFIX,
+        )
+    );
+    let bindgen = |generation| Step::Run {
+        workdir: roots.run_path(workdir_dir(binding_layer::bindgen_workdir(
+            generation,
+            binding_layer::KOTLIN,
+        ))),
+        env: env.clone(),
+        command: [
+            vec!["cargo".to_string()],
+            binding_layer::bindgen_args(
+                generation,
+                binding_layer::KOTLIN,
+                &binding_layer::BindgenInputs {
+                    wallet_crate: &format!("{wallet_crate_dir}/{MANIFEST}"),
+                    udl: &format!("{wallet_crate_dir}/{UDL}"),
+                    wallet_workspace: &roots
+                        .run_path(&format!("{WALLET_WORKSPACE_DIR}/{MANIFEST}")),
+                    proxy_library: &proxy_library,
+                    target_dir: &wallet_target,
+                },
+                &kotlin_out,
+                BUILDER_PROFILE,
+            ),
+        ]
+        .concat(),
+    };
+    let build_proxy = Step::Run {
+        workdir: proxy_crate_dir,
+        env: [
+            env.clone(),
+            vec![(
+                binding_layer::TARGET_DIR_VARIABLE.to_string(),
+                proxy_target.clone(),
+            )],
+        ]
+        .concat(),
+        command: [
+            ["cargo", "build", "--locked"].as_slice(),
+            BUILDER_PROFILE.cargo_args(),
+            &["--package", binding_layer::PROXY_PACKAGE],
+        ]
+        .concat()
+        .into_iter()
+        .map(String::from)
+        .collect(),
+    };
+    vec![
+        Step::FreshDir(roots.out_host.clone()),
+        bindgen(binding_layer::Generation::Wallet),
+        build_proxy,
+        bindgen(binding_layer::Generation::Proxy),
+    ]
 }
 
 /// The directory, relative to the zingolib root, that a bindgen working directory names.
@@ -1024,6 +1110,38 @@ mod tests {
             .unwrap()
             .iter()
             .any(|(key, value)| key == "CC" && *value == expected_cc));
+    }
+
+    /// Tests that the Kotlin plan generates both binding sets after one host build of the proxy crate, and starts no NDK build.
+    #[test]
+    fn kotlin_plan_generates_both_sets_from_one_host_proxy_build() {
+        let roots = Roots::on_host(
+            path::PathBuf::from(HOST_ROOT),
+            path::PathBuf::from(OUTSIDE_OUT),
+        )
+        .unwrap();
+        let plan = kotlin_plan(&roots, TEST_DESCRIBE);
+        let commands = commands(&plan);
+        assert!(
+            matches!(plan.first(), Some(Step::FreshDir(out)) if out == path::Path::new(OUTSIDE_OUT))
+        );
+        assert!(commands.iter().all(|command| !command.contains(" ndk ")));
+        let build = commands
+            .iter()
+            .position(|command| command.starts_with("cargo build"))
+            .unwrap();
+        let proxy_generation = commands
+            .iter()
+            .position(|command| command.contains("--library"))
+            .unwrap();
+        assert!(build < proxy_generation);
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|command| command.contains("--language kotlin"))
+                .count(),
+            binding_layer::GENERATIONS.len()
+        );
     }
 
     #[test]
