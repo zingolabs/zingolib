@@ -3917,14 +3917,15 @@ mod test {
             assert!(wallet.get_outpoints_mut().unwrap().is_empty());
         }
 
-        /// A spending transaction the scanner already confirmed is marked on the coin without the server fetching the transaction again.
+        /// A spending transaction the scanner already confirmed is marked on the coin without fetching the transaction
+        /// from the server again.
         #[tokio::test]
         async fn confirmed_spending_transaction_is_not_fetched() {
             let spending_record = spending_record(ConfirmationStatus::Confirmed(SPEND_HEIGHT));
             let spending_txid = spending_record.txid();
             let mut wallet = wallet_with_mapped_spend(spending_record);
             let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
-            // drop receiver so the test fails if the wallet attempts to fetch the transaction again unecessarily
+            // drop receiver so the test fails if the wallet attempts to fetch the transaction again unnecessarily
             drop(fetch_request_receiver);
 
             spend::update_transparent_spends(
