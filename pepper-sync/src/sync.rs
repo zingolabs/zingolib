@@ -695,7 +695,8 @@ where
                 Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
                     let mut wallet_guard = wallet.write().await;
                     let ProcessedScanResults {
-                        updated_transparent_gap_addresses,
+                        new_transparent_inuse_addresses,
+                        new_transparent_gap_addresses,
                         reorg_truncate_height,
                     } = process_scan_results(
                         consensus_parameters,
@@ -709,14 +710,18 @@ where
                         &mut nullifier_map_limit_exceeded,
                     )
                     .await?;
-                    if let Some(updated_transparent_gap_addresses) = updated_transparent_gap_addresses {
-                        // NOTE: this is safe in the current architecture as the correct set of gap addressses will be
-                        // determined before scanning begins and this update will only apply to the latest newly mined
-                        // block(s). If the sync engine is modified so there are cases where compact blocks may be scanned
-                        // for transparent data out-of-order, more checks must be applied here to ensure gap addresses are
-                        // not lost and correctly follow on from the wallets current in-use address list.
-                        scanner.transparent_gap_addresses = updated_transparent_gap_addresses;
-                    }
+                    // only the changes to the gap addresses are applied. scan results without compact block
+                    // transparent data, such as re-fetched nullifiers, carry no changes and leave the gap addresses
+                    // as they are.
+                    // NOTE: this is safe in the current architecture as the correct set of gap addressses will be
+                    // determined before scanning begins and these changes will only come from the latest newly mined
+                    // block(s). If the sync engine is modified so there are cases where compact blocks may be scanned
+                    // for transparent data out-of-order, more checks must be applied here to ensure gap addresses are
+                    // not lost and correctly follow on from the wallets current in-use address list.
+                    scanner.update_transparent_gap_addresses(
+                        &new_transparent_inuse_addresses,
+                        new_transparent_gap_addresses,
+                    );
                     if let Some(reorg_truncate_height) = reorg_truncate_height {
                         // transparent address discovery is not performed again during this sync session so the
                         // compact block transparent data of the re-orged blocks must be scanned.
@@ -1438,15 +1443,17 @@ async fn mempool_drain_verdict(
 
 /// Wallet updates from [`process_scan_results`] that must also be applied to the [`Scanner`].
 struct ProcessedScanResults {
-    /// Transparent gap addresses after scanning, `None` if the scan results were discarded due to a re-org.
-    updated_transparent_gap_addresses: Option<HashMap<String, TransparentAddressId>>,
+    /// Transparent gap addresses found in use by scanning.
+    new_transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
+    /// Transparent gap addresses derived to replace the gap addresses found in use.
+    new_transparent_gap_addresses: HashMap<String, TransparentAddressId>,
     /// Height the wallet was truncated to if a re-org was detected.
     reorg_truncate_height: Option<BlockHeight>,
 }
 
 /// Scan post-processing.
 ///
-/// Returns the updated transparent gap addresses, or the truncation height in the case of a recovered error i.e.
+/// Returns the changes to the transparent gap addresses, or the truncation height in the case of a recovered error i.e.
 /// re-org.
 #[allow(clippy::too_many_arguments)]
 async fn process_scan_results<W>(
@@ -1480,7 +1487,7 @@ where
                 orchard_located_trees,
                 ironwood_located_trees,
                 new_transparent_inuse_addresses,
-                updated_transparent_gap_addresses,
+                new_transparent_gap_addresses,
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
@@ -1568,7 +1575,8 @@ where
                     );
 
                     return Ok(ProcessedScanResults {
-                        updated_transparent_gap_addresses: Some(updated_transparent_gap_addresses),
+                        new_transparent_inuse_addresses,
+                        new_transparent_gap_addresses,
                         reorg_truncate_height: None,
                     });
                 }
@@ -1658,7 +1666,7 @@ where
                     sapling_located_trees,
                     orchard_located_trees,
                     ironwood_located_trees,
-                    new_transparent_inuse_addresses,
+                    &new_transparent_inuse_addresses,
                 )
                 .await?;
                 spend::update_transparent_spends(wallet).map_err(SyncError::WalletError)?;
@@ -1703,7 +1711,8 @@ where
             tracing::debug!("Scan results processed.");
 
             Ok(ProcessedScanResults {
-                updated_transparent_gap_addresses: Some(updated_transparent_gap_addresses),
+                new_transparent_inuse_addresses,
+                new_transparent_gap_addresses,
                 reorg_truncate_height: None,
             })
         }
@@ -1759,7 +1768,8 @@ where
                 .await?;
 
                 Ok(ProcessedScanResults {
-                    updated_transparent_gap_addresses: None,
+                    new_transparent_inuse_addresses: HashMap::new(),
+                    new_transparent_gap_addresses: HashMap::new(),
                     reorg_truncate_height: Some(reorg_truncate_height),
                 })
             } else {
@@ -2153,7 +2163,7 @@ async fn update_wallet_data<W>(
     sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
     ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
-    new_transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
+    new_transparent_inuse_addresses: &HashMap<String, TransparentAddressId>,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet
@@ -2254,7 +2264,7 @@ where
         .get_transparent_addresses_mut()
         .map_err(SyncError::WalletError)?;
     for (address, id) in new_transparent_inuse_addresses {
-        wallet_transparent_addresses.insert(id, address);
+        wallet_transparent_addresses.insert(*id, address.clone());
     }
 
     Ok(())
