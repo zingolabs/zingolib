@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use workbench::{git, read, repo_root, run};
+use workbench::{git, read, repo_root, run, MANIFEST};
 
 /// The blessed entries, one per line, relative to the repository root.
 const BLESSING_PATH: &str = "tools/workbench/feature-census-blessed.txt";
@@ -23,9 +23,6 @@ const DEFAULT_BASE: &str = "origin/dev";
 
 /// The fallback base for a checkout whose remote branch is absent.
 const FALLBACK_BASE: &str = "dev";
-
-/// The manifest filename every crate directory carries.
-const MANIFEST: &str = "Cargo.toml";
 
 /// The key a dependency's feature list is spelled under.
 const FEATURES_KEY: &str = "features = [";
