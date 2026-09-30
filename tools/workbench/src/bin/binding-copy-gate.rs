@@ -779,13 +779,10 @@ fn build_proxy_library(side: &Side, target_dir: &path::Path) -> Result<path::Pat
         ]
         .concat(),
     )?;
-    Ok(target_dir
-        .join(GATE_PROFILE.directory())
-        .join(binding_layer::library_file(
-            env::consts::DLL_PREFIX,
-            binding_layer::PROXY_LIB_NAME,
-            env::consts::DLL_SUFFIX,
-        )))
+    Ok(path::PathBuf::from(binding_layer::host_proxy_library(
+        workbench::utf8(target_dir)?,
+        GATE_PROFILE,
+    )))
 }
 
 /// Print one crate's complete resolved graph on one side, with the named sources erased.

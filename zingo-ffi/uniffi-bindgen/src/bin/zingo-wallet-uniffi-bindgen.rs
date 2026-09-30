@@ -1,16 +1,16 @@
 #![forbid(unsafe_code)]
 
-//! Project-local `uniffi-bindgen` for the wallet library, pinned to the
-//! workspace `uniffi` version `zingo` (rust/lib) compiles against. Run it
-//! against the UDL. It does not compile the wallet:
+//! Project-local `uniffi-bindgen` for the wallet library, on the workspace
+//! `uniffi` pin that `zingo` (zingo-ffi/lib) compiles against. Run it
+//! against the UDL, which needs the bindgen binary alone:
 //!
 //! ```text
 //! cargo run --package zingo-uniffi-bindgen --bin zingo-wallet-uniffi-bindgen -- \
-//!     generate rust/lib/src/zingo.udl --language kotlin --out-dir <out>
+//!     generate zingo-ffi/lib/src/zingo.udl --language kotlin --out-dir <out>
 //! ```
 //!
-//! `scripts/generate_kotlin_bindings.mjs` drives it.
+//! `build-binding-layer` (tools/workbench) drives it.
 
 fn main() {
-    uniffi_wallet::uniffi_bindgen_main()
+    uniffi::uniffi_bindgen_main()
 }

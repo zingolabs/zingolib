@@ -7,7 +7,7 @@ pub const SWIFT: &str = "swift";
 /// The binding languages that zingo-mobile generates.
 pub const LANGUAGES: [&str; 2] = [KOTLIN, SWIFT];
 
-/// The package that holds both bindgen binaries and depends on `uniffi` alone, so a run compiles no wallet.
+/// The package that holds both bindgen binaries, whose only dependency is `uniffi`.
 const BINDGEN_PACKAGE: &str = "zingo-uniffi-bindgen";
 
 /// The binary that generates the wallet's bindings from the UDL file.
@@ -276,6 +276,19 @@ pub fn bindgen_args(
     .into_iter()
     .map(String::from)
     .collect()
+}
+
+/// The proxy library that a host build with the given profile writes under a target directory.
+pub fn host_proxy_library(target_dir: &str, profile: Profile) -> String {
+    format!(
+        "{target_dir}/{}/{}",
+        profile.directory(),
+        library_file(
+            std::env::consts::DLL_PREFIX,
+            PROXY_LIB_NAME,
+            std::env::consts::DLL_SUFFIX,
+        )
+    )
 }
 
 /// The file name of a library with the given name, prefix, and suffix.

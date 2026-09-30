@@ -265,23 +265,15 @@ fn main() {
 /// Build the selected platform's packaging and return its output directory.
 fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
     let (platform, out, abis) = parse(args)?;
-    let describe = env::var(binding_layer::DESCRIBE_VARIABLE)
-        .ok()
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            vec![format!(
-                "{} must name zingo-mobile's git describe",
-                binding_layer::DESCRIBE_VARIABLE
-            )]
-        })?;
     let root = workbench::repo_root()?;
     let roots = match platform {
         Platform::Android { in_image: true } => {
             let roots = Roots::on_host(root, out)?;
-            execute(&Runner::Host, &android_plan(&roots, &abis, &describe))?;
+            execute(&Runner::Host, &android_plan(&roots, &abis, &descriptor()?))?;
             roots
         }
         Platform::Android { in_image: false } => {
+            let describe = descriptor()?;
             let roots = Roots::in_container(root, out)?;
             let engine = binding_layer::container_engine()?;
             build_android_image(engine, &roots.host)?;
@@ -302,16 +294,29 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
                 return Err(vec!["iOS packaging requires macOS with Xcode".to_string()]);
             }
             let roots = Roots::on_host(root, out)?;
-            execute(&Runner::Host, &ios_plan(&roots, &describe))?;
+            execute(&Runner::Host, &ios_plan(&roots, &descriptor()?))?;
             roots
         }
         Platform::Kotlin => {
             let roots = Roots::on_host(root, out)?;
-            execute(&Runner::Host, &kotlin_plan(&roots, &describe))?;
+            execute(&Runner::Host, &kotlin_plan(&roots))?;
             roots
         }
     };
     Ok(roots.out_host)
+}
+
+/// zingo-mobile's `zm_` descriptor from the environment, which the wallet's build script embeds.
+fn descriptor() -> Result<String, Vec<String>> {
+    env::var(binding_layer::DESCRIBE_VARIABLE)
+        .ok()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            vec![format!(
+                "{} must carry zingo-mobile's zm_ descriptor",
+                binding_layer::DESCRIBE_VARIABLE
+            )]
+        })
 }
 
 /// Parse the platform, the absolute output directory, and the selected Android ABIs.
@@ -399,17 +404,24 @@ fn start_container(engine: &str, root: &path::Path) -> Result<String, Vec<String
     .map(|id| id.trim().to_string())
 }
 
+/// The environment that selects zingo-mobile's toolchain for a step.
+fn toolchain_env() -> Vec<(String, String)> {
+    vec![(
+        binding_layer::TOOLCHAIN_VARIABLE.to_string(),
+        binding_layer::BUILDER_TOOLCHAIN.to_string(),
+    )]
+}
+
 /// The environment that selects zingo-mobile's toolchain and carries its descriptor into a step.
 fn builder_env(describe: &str) -> Vec<(String, String)> {
     [
-        (
-            binding_layer::TOOLCHAIN_VARIABLE,
-            binding_layer::BUILDER_TOOLCHAIN,
-        ),
-        (binding_layer::DESCRIBE_VARIABLE, describe),
+        toolchain_env(),
+        vec![(
+            binding_layer::DESCRIBE_VARIABLE.to_string(),
+            describe.to_string(),
+        )],
     ]
-    .map(|(key, value)| (key.to_string(), value.to_string()))
-    .to_vec()
+    .concat()
 }
 
 /// A `Run` step that generates one binding set into a directory, from the directory zingo-mobile's builders use.
@@ -419,14 +431,14 @@ fn bindgen_step(
     language: &str,
     inputs: &binding_layer::BindgenInputs,
     out: &str,
-    env: Vec<(String, String)>,
+    env: &[(String, String)],
     profile: binding_layer::Profile,
 ) -> Step {
     Step::Run {
         workdir: roots.run_path(workdir_dir(binding_layer::bindgen_workdir(
             generation, language,
         ))),
-        env,
+        env: env.to_vec(),
         command: [
             vec!["cargo".to_string()],
             binding_layer::bindgen_args(generation, language, inputs, out, profile),
@@ -438,14 +450,14 @@ fn bindgen_step(
 /// A `Run` step that invokes cargo with the given words, then the profile's arguments, then a package selection.
 fn cargo_step(
     workdir: &str,
-    env: Vec<(String, String)>,
+    env: &[(String, String)],
     words: &[&str],
     profile: binding_layer::Profile,
     package: &[&str],
 ) -> Step {
     Step::Run {
         workdir: workdir.to_string(),
-        env,
+        env: env.to_vec(),
         command: [["cargo"].as_slice(), words, profile.cargo_args(), package]
             .concat()
             .into_iter()
@@ -520,7 +532,7 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
     let proxy_crate_dir = roots.run_path(PROXY_CRATE_DIR);
     let udl = format!("{wallet_crate_dir}/{UDL}");
     let wallet_workspace = roots.run_path(&format!("{WALLET_WORKSPACE_DIR}/{MANIFEST}"));
-    let bindgen = |generation, proxy_library: &str, env: Vec<(String, String)>| {
+    let bindgen = |generation, proxy_library: &str, env: &[(String, String)]| {
         bindgen_step(
             roots,
             generation,
@@ -560,7 +572,7 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
         |abi: &binding_layer::AndroidAbi, workdir: &str, target_dir: &str, package: &[&str]| {
             cargo_step(
                 workdir,
-                abi.env(target_dir),
+                &abi.env(target_dir),
                 &["ndk", "--target", abi.triple, "build"],
                 BUILDER_PROFILE,
                 package,
@@ -583,7 +595,7 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
             bindgen(
                 binding_layer::Generation::Proxy,
                 &proxy_library(abi),
-                bindgen_abi.env(&wallet_target),
+                &bindgen_abi.env(&wallet_target),
             )
         });
         [build]
@@ -610,7 +622,7 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
         bindgen(
             binding_layer::Generation::Wallet,
             "",
-            vec![(
+            &[(
                 binding_layer::TARGET_DIR_VARIABLE.to_string(),
                 wallet_target.clone(),
             )],
@@ -623,24 +635,16 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
     .collect()
 }
 
-/// The profile of the Kotlin plan's host steps, whose only reader is library-mode bindgen, so nothing is optimized.
+/// The profile of the Kotlin plan's host steps, the bindgen binaries and the proxy build, which each serve one generation.
 const HOST_PROFILE: binding_layer::Profile = binding_layer::Profile::Debug;
 
-/// The Kotlin plan: both binding sets from a host build of the proxy crate, with no NDK and no wallet build.
-fn kotlin_plan(roots: &Roots, describe: &str) -> Vec<Step> {
-    let env = builder_env(describe);
+/// The Kotlin plan: both binding sets, from the UDL and a host build of the proxy crate.
+fn kotlin_plan(roots: &Roots) -> Vec<Step> {
+    let env = toolchain_env();
     let wallet_target = roots.run_path(&format!("{BUILD_ROOT}/host/wallet"));
     let proxy_target = roots.run_path(&format!("{BUILD_ROOT}/host/proxy"));
     let kotlin_out = roots.out_run_path(binding_layer::KOTLIN_OUT_DIR);
-    let proxy_library = format!(
-        "{proxy_target}/{}/{}",
-        HOST_PROFILE.directory(),
-        binding_layer::library_file(
-            env::consts::DLL_PREFIX,
-            binding_layer::PROXY_LIB_NAME,
-            env::consts::DLL_SUFFIX,
-        )
-    );
+    let proxy_library = binding_layer::host_proxy_library(&proxy_target, HOST_PROFILE);
     let inputs = binding_layer::BindgenInputs {
         udl: &roots.run_path(&format!("{WALLET_CRATE_DIR}/{UDL}")),
         wallet_workspace: &roots.run_path(&format!("{WALLET_WORKSPACE_DIR}/{MANIFEST}")),
@@ -654,13 +658,13 @@ fn kotlin_plan(roots: &Roots, describe: &str) -> Vec<Step> {
             binding_layer::KOTLIN,
             &inputs,
             &kotlin_out,
-            env.clone(),
+            &env,
             HOST_PROFILE,
         )
     };
     let build_proxy = cargo_step(
         &roots.run_path(PROXY_CRATE_DIR),
-        [
+        &[
             env.clone(),
             vec![(
                 binding_layer::TARGET_DIR_VARIABLE.to_string(),
@@ -701,7 +705,7 @@ fn host_of(roots: &Roots, run_path: &str) -> path::PathBuf {
     roots.host_path(relative)
 }
 
-/// The iOS build plan, which reproduces zingo-mobile's `build_ios.mjs` into the output directory.
+/// The iOS build plan, which writes the outputs of zingo-mobile's `build_ios.mjs` and generates the wallet bindings from the standalone package.
 fn ios_plan(roots: &Roots, describe: &str) -> Vec<Step> {
     let env = [
         vec![(
@@ -759,7 +763,7 @@ fn ios_plan(roots: &Roots, describe: &str) -> Vec<Step> {
             binding_layer::SWIFT,
             &inputs,
             &roots.out_run_path(out),
-            env.clone(),
+            &env,
             BUILDER_PROFILE,
         )
     };
@@ -768,7 +772,7 @@ fn ios_plan(roots: &Roots, describe: &str) -> Vec<Step> {
             .map(|triple| {
                 cargo_step(
                     workdir,
-                    with_target(target_dir),
+                    &with_target(target_dir),
                     &["build", "--target", triple],
                     BUILDER_PROFILE,
                     package,
@@ -1112,7 +1116,7 @@ mod tests {
             path::PathBuf::from(OUTSIDE_OUT),
         )
         .unwrap();
-        let plan = kotlin_plan(&roots, TEST_DESCRIBE);
+        let plan = kotlin_plan(&roots);
         let commands = commands(&plan);
         assert!(
             matches!(plan.first(), Some(Step::FreshDir(out)) if out == path::Path::new(OUTSIDE_OUT))
@@ -1148,7 +1152,7 @@ mod tests {
             path::PathBuf::from(OUTSIDE_OUT),
         )
         .unwrap();
-        let plan = kotlin_plan(&roots, TEST_DESCRIBE);
+        let plan = kotlin_plan(&roots);
         let build_target = plan
             .iter()
             .find_map(|step| match step {
@@ -1185,7 +1189,7 @@ mod tests {
             .all(|command| !command.contains("--release")));
     }
 
-    /// Tests that the Kotlin plan compiles no wallet: every bindgen runs from the package that depends on uniffi alone.
+    /// Tests that every Kotlin generation runs from the standalone bindgen package, whose only dependency is uniffi.
     #[test]
     fn kotlin_plan_runs_every_bindgen_from_the_standalone_package() {
         let roots = Roots::on_host(
@@ -1193,7 +1197,7 @@ mod tests {
             path::PathBuf::from(OUTSIDE_OUT),
         )
         .unwrap();
-        let generations = commands(&kotlin_plan(&roots, TEST_DESCRIBE))
+        let generations = commands(&kotlin_plan(&roots))
             .into_iter()
             .filter(|command| command.contains("--language kotlin"))
             .collect::<Vec<_>>();
