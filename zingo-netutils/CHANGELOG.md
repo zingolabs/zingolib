@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a superseded conduit permanently short of `Retired`.
 
 ### Changed
+- `time::MEMPOOL_DRAIN_SETTLE` is raised from 200 ms to 750 ms, and
+  `time::MEMPOOL_DRAIN_CEILING` from 1 s to 1.5 s to keep the settle window
+  inside it. zaino polls the validator's mempool every 500 ms by default, so
+  a 200 ms window let a sync session end before a transaction the validator
+  had just accepted was streamed to the wallet, leaving it in `Transmitted`
+  status until the next session.
 - `socks5_fetch::fetch_text_untunneled` no longer sits behind the
   `testutils` feature. It carries the clearnet price fetch a switched-off
   Mixnet Mode consents to (ADR 0011, amendment 2026-08-26), where it used

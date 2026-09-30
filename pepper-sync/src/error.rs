@@ -141,7 +141,9 @@ impl ServerError {
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError
-            | ServerError::GenesisBlockOnly => false,
+            | ServerError::GenesisBlockOnly
+            | ServerError::TreeStateNotServed { .. }
+            | ServerError::UnsupportedProtocolVersion { .. } => false,
         }
     }
 }
@@ -175,6 +177,11 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
             SyncError::MempoolError(_) => SyncRecoveryObservables::MaybeRecoverableServer,
 
             SyncError::ScanError(ScanError::ServerError(e)) => e.recovery_recommendation(),
+            // The server does not report the tree size of a pool, so a
+            // different server is required.
+            SyncError::ScanError(ScanError::TreeSizeNotReported { .. }) => {
+                SyncRecoveryObservables::ServerUnavailable
+            }
             SyncError::ScanError(_) => SyncRecoveryObservables::Abort,
 
             // The wallet has already reopened the pool it could not account
@@ -207,7 +214,11 @@ impl ServerError {
             | ServerError::InvalidFrontier(_)
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
-            | ServerError::ChainVerificationError => SyncRecoveryObservables::ServerUnavailable,
+            | ServerError::ChainVerificationError
+            | ServerError::TreeStateNotServed { .. }
+            | ServerError::UnsupportedProtocolVersion { .. } => {
+                SyncRecoveryObservables::ServerUnavailable
+            }
             // Empty chain. No point retrying anywhere.
             ServerError::GenesisBlockOnly => SyncRecoveryObservables::Abort,
         }
@@ -284,6 +295,18 @@ pub enum ScanError {
         height: BlockHeight,
         /// Block metadata size
         block_metadata_size: u32,
+        /// Calculated size
+        calculated_size: u32,
+    },
+    /// Block metadata reports a tree size of zero where the wallet has calculated a non-zero tree size.
+    #[error(
+        "tree size not reported. at height {height}, {shielded_protocol} tree size recorded in block metadata is zero where the calculated size is {calculated_size}. connect to a server that serves {shielded_protocol}."
+    )]
+    TreeSizeNotReported {
+        /// Shielded protocol
+        shielded_protocol: PoolType,
+        /// The block height whose sizes disagreed.
+        height: BlockHeight,
         /// Calculated size
         calculated_size: u32,
     },
@@ -406,6 +429,26 @@ pub enum ServerError {
     /// Server reports only the genesis block exists.
     #[error("server reports only the genesis block exists.")]
     GenesisBlockOnly,
+    /// Server did not return a shielded pool's note commitment tree state for a height at or above the pool's
+    /// activation height.
+    #[error(
+        "server does not serve the {pool} note commitment tree state at height {height}. connect to a server that serves {pool}."
+    )]
+    TreeStateNotServed {
+        /// The pool whose tree state was omitted.
+        pool: PoolType,
+        /// The requested block height.
+        height: BlockHeight,
+    },
+    /// Server's lightwallet protocol version is too old to serve the transparent and Ironwood data in compact blocks
+    /// required for sync.
+    #[error(
+        "server lightwallet protocol version '{version}' does not serve transparent and ironwood data in compact blocks. v0.5.0 or later is required. change to a server that supports lightwallet protocol v0.5.0 or later and sync again."
+    )]
+    UnsupportedProtocolVersion {
+        /// The lightwallet protocol version reported by the server. Empty if the server does not report one.
+        version: String,
+    },
 }
 
 /// Sync mode error.

@@ -197,11 +197,14 @@ pub const SCANNER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 /// The mempool drain's worst-case wait: the pre-c90f8d309 unconditional
 /// sleep, demoted to a ceiling so a stream that never connects cannot hold
 /// the session open.
-pub const MEMPOOL_DRAIN_CEILING: Duration = Duration::from_secs(1);
+pub const MEMPOOL_DRAIN_CEILING: Duration = Duration::from_millis(1500);
 
 /// One settle window after the mempool subscription, inside
-/// [`MEMPOOL_DRAIN_CEILING`].
-pub const MEMPOOL_DRAIN_SETTLE: Duration = Duration::from_millis(200);
+/// [`MEMPOOL_DRAIN_CEILING`]. Sized to one indexer mempool poll (zaino's
+/// default poll interval is 500 ms) plus margin for delivery, so a
+/// transaction accepted by the validator just before the session ends is
+/// still streamed to the wallet.
+pub const MEMPOOL_DRAIN_SETTLE: Duration = Duration::from_millis(750);
 
 /// Bound on waiting for the sync engine to acknowledge a start request.
 pub const SYNC_START_TIMEOUT: Duration = Duration::from_secs(3);

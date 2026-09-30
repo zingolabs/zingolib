@@ -516,8 +516,8 @@ fn determine_block_range(
             let start = if let Some(range) = shard_ranges.last() {
                 range.end - 1
             } else {
-                // With no shard ranges at all (a server that does not serve
-                // this pool, or a pool freshly activated), fall back to the
+                // With no shard ranges at all (a pool freshly activated, with
+                // no complete shards), fall back to the
                 // pool's own history: the wallet birthday clamped to the
                 // pool's activation height. An unclamped birthday would let
                 // the chain-tip punch flood the entire wallet range.
@@ -654,8 +654,14 @@ fn select_scan_range(
             // (`nullifier_map_limit_exceeded` is set `true`) then the range with the highest priority and lowest starting block
             // height is selected to allow notes to be spendable quickly on rescan, otherwise spends would not be detected as nullifiers will be temporarily discarded.
             // TODO: add this documentation of performance levels and order of scanning to pepper-sync doc comments
-            let mut scan_ranges_priority_sorted: Vec<(usize, ScanRange)> =
-                sync_state.scan_ranges.iter().cloned().enumerate().collect();
+            // `ScannedWithoutMapping` ranges are only selected above, when they are the first unscanned range.
+            let mut scan_ranges_priority_sorted: Vec<(usize, ScanRange)> = sync_state
+                .scan_ranges
+                .iter()
+                .cloned()
+                .enumerate()
+                .filter(|(_, range)| range.priority() != ScanPriority::ScannedWithoutMapping)
+                .collect();
             if nullifier_map_limit_exceeded {
                 scan_ranges_priority_sorted
                     .sort_by_key(|(_, range)| std::cmp::Reverse(range.block_range().start));
@@ -1017,8 +1023,12 @@ where
 
         match block_height.cmp(&(sapling_activation_height - 1)) {
             cmp::Ordering::Greater => {
-                let frontiers =
-                    client::get_frontiers(fetch_request_sender.clone(), block_height).await?;
+                let frontiers = client::get_frontiers(
+                    fetch_request_sender.clone(),
+                    consensus_parameters,
+                    block_height,
+                )
+                .await?;
                 Ok((
                     frontiers
                         .final_sapling_tree()
@@ -1082,6 +1092,16 @@ pub(super) fn pop_newest_shard_range(sync_state: &mut SyncState, shielded_protoc
         ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.as_mut(),
     };
     shard_ranges.pop();
+}
+
+/// Removes all shard ranges of `shielded_protocol` so they can be rebuilt from the pool's subtree roots through
+/// [`add_shard_ranges`].
+pub(super) fn clear_shard_ranges(sync_state: &mut SyncState, shielded_protocol: ShieldedPool) {
+    match shielded_protocol {
+        ShieldedPool::Sapling => sync_state.sapling_shard_ranges.clear(),
+        ShieldedPool::Orchard => sync_state.orchard_shard_ranges.clear(),
+        ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.clear(),
+    }
 }
 
 /// Reopens for scanning every scanned range at or above `from_height`,
@@ -1392,8 +1412,8 @@ mod tests {
             vec![BlockHeight::from_u32(1_000)..BlockHeight::from_u32(18_000)];
         sync_state.orchard_shard_ranges =
             vec![BlockHeight::from_u32(1_000)..BlockHeight::from_u32(18_500)];
-        // Ironwood shard ranges are empty: a tolerated server condition, and the
-        // universal state on every network immediately after NU6.3 activation.
+        // Ironwood shard ranges are empty: the universal state on every network
+        // immediately after NU6.3 activation.
         assert!(sync_state.ironwood_shard_ranges.is_empty());
 
         set_chain_tip_scan_range(
@@ -1470,6 +1490,36 @@ mod tests {
                 ScanRange::from_parts(200.into()..300.into(), ScanPriority::Historic),
                 ScanRange::from_parts(300.into()..400.into(), ScanPriority::Scanning),
             ]
+        );
+    }
+
+    /// A `ScannedWithoutMapping` range is not selected while a lower range is still scanning, as its re-fetched
+    /// nullifiers would be discarded. It is selected once it is the first unscanned range.
+    #[test]
+    fn scanned_without_mapping_range_waits_for_lower_ranges() {
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(1.into()..21.into(), ScanPriority::Scanned),
+            ScanRange::from_parts(21.into()..41.into(), ScanPriority::Scanning),
+            ScanRange::from_parts(41.into()..46.into(), ScanPriority::ScannedWithoutMapping),
+        ];
+        assert_eq!(
+            super::select_scan_range(&BASE_NETWORK, &mut sync_state, true),
+            None
+        );
+
+        sync_state.scan_ranges[1] =
+            ScanRange::from_parts(21.into()..41.into(), ScanPriority::Scanned);
+        assert_eq!(
+            super::select_scan_range(&BASE_NETWORK, &mut sync_state, true),
+            Some(ScanRange::from_parts(
+                41.into()..46.into(),
+                ScanPriority::ScannedWithoutMapping
+            ))
+        );
+        assert_eq!(
+            sync_state.scan_ranges[2].priority(),
+            ScanPriority::RefetchingNullifiers
         );
     }
 
