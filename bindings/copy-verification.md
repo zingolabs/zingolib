@@ -48,7 +48,7 @@ cargo run \
 The `artifacts` gate needs podman or docker, `llvm-nm`, and `unzip`. It reads the AAR from the Gradle library's `bundleReleaseAar` task. Build that AAR with TFC's descriptor:
 
 ```sh
-ZINGO_MOBILE_GIT_DESCRIBE=zingo-2.0.24-320-134-gf3d1ac9d4 \
+ZINGO_MOBILE_DESCRIPTOR=zm_2.0.24_f3d1a \
   gradle --project-dir bindings/android bundleReleaseAar
 ```
 
@@ -62,7 +62,7 @@ Gate 4 runs zingo-mobile's suites. On Android, this is the `android_integration`
 
 zingo-mobile branch `gate4_binding_layer_consumer` starts at TFC and consumes the copy. It exists only for gate 4, and it never merges.
 
-- Android includes `bindings/android` as a Gradle included build. Set `ZINGOLIB_DIR` to a checkout of the copy's branch. Do not run `rust/android/build_android.mjs`. The Gradle library computes the consumer branch's descriptor itself, so `ZINGO_MOBILE_GIT_DESCRIBE` is optional.
+- Android includes `bindings/android` as a Gradle included build. Set `ZINGOLIB_DIR` to a checkout of the copy's branch. Do not run `rust/android/build_android.mjs`. The Gradle library computes the consumer branch's descriptor itself, so `ZINGO_MOBILE_DESCRIPTOR` is optional.
 - iOS imports the Swift module `ZingoBindings`. The Xcode project needs the wiring in step 3 of the macOS checklist.
 - Run `yarn` in the consumer branch before a build.
 
@@ -139,7 +139,7 @@ Prepare the checkout, and run the suite three times.
 
 ### 2. Run on the copy
 
-Check out zingo-mobile branch `gate4_binding_layer_consumer`, and point it at a checkout of the copy's branch. Do not set `ZINGO_MOBILE_GIT_DESCRIBE`: this step also tests that the Gradle library computes the consumer branch's descriptor itself.
+Check out zingo-mobile branch `gate4_binding_layer_consumer`, and point it at a checkout of the copy's branch. Do not set `ZINGO_MOBILE_DESCRIPTOR`: this step also tests that the Gradle library computes the consumer branch's descriptor itself.
 
 ```sh
 export ZINGOLIB_DIR=<copy checkout>
@@ -212,7 +212,7 @@ xcodebuild test \
 Check out `gate4_binding_layer_consumer`. From the root of the copy's branch, build the SwiftPM package with the consumer branch's descriptor:
 
 ```sh
-ZINGO_MOBILE_GIT_DESCRIBE=$(git -C <consumer checkout> describe --dirty --always --long --match 'zingo-*') \
+ZINGO_MOBILE_DESCRIPTOR=$(cargo run --quiet --manifest-path <consumer checkout>/rust/Cargo.toml --bin zm-descriptor) \
   cargo run \
     --manifest-path tools/workbench/Cargo.toml \
     --bin build-binding-layer -- \
@@ -250,7 +250,7 @@ zingo-mobile's CI builds the Android libraries in a container job that already r
 
 ```sh
 RUSTUP_TOOLCHAIN=stable \
-ZINGO_MOBILE_GIT_DESCRIBE=<consumer describe> \
+ZINGO_MOBILE_DESCRIPTOR=<consumer descriptor> \
   cargo run \
     --manifest-path zingolib/tools/workbench/Cargo.toml \
     --bin build-binding-layer -- \
