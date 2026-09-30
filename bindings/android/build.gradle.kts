@@ -1,0 +1,98 @@
+plugins {
+    id("com.android.library") version "8.11.0"
+    id("org.jetbrains.kotlin.android") version "2.1.20"
+}
+
+val bindingCompileSdk = 36
+val bindingMinSdk = 26
+val bindingNdkVersion = "28.2.13676358"
+val jvmTargetVersion = JavaVersion.VERSION_17
+val jnaDependency = "net.java.dev.jna:jna:5.18.1@aar"
+val annotationDependency = "androidx.annotation:annotation:1.8.1"
+val releaseTagPrefix = "zingo-"
+
+group = "org.zingolabs"
+
+val zingolibRoot: File = rootDir.resolve("../..")
+val builderOutput: Provider<Directory> = layout.buildDirectory.dir("binding-layer")
+val prebuiltOutput: Provider<Directory> =
+    layout.dir(providers.gradleProperty("bindingLayerPrebuilt").map { file(it) })
+val layerOutput: Provider<Directory> = prebuiltOutput.orElse(builderOutput)
+val consumerDescribe: Provider<String> = gradle.parent?.let { consumer ->
+    providers.exec {
+        workingDir = consumer.startParameter.currentDir
+        commandLine("git", "describe", "--dirty", "--always", "--long", "--match", "$releaseTagPrefix*")
+    }.standardOutput.asText.map { it.trim() }.map { describe ->
+        check(describe.startsWith(releaseTagPrefix)) {
+            "The consuming build describes as '$describe', which is not a zingo-mobile release " +
+                "descriptor. Set ZINGO_MOBILE_GIT_DESCRIBE to zingo-mobile's descriptor."
+        }
+        describe
+    }
+} ?: providers.provider<String> { null }
+val gitDescribe: Provider<String> = providers.environmentVariable("ZINGO_MOBILE_GIT_DESCRIBE")
+    .orElse(providers.gradleProperty("zingoMobileGitDescribe"))
+    .orElse(consumerDescribe)
+val selectedAbi: Provider<String> = providers.gradleProperty("bindingLayerAbi")
+
+val buildBindingLayer by tasks.registering(Exec::class) {
+    description = "Builds the Binding Layer's Android libraries and Kotlin sources."
+    onlyIf("no prebuilt Binding Layer is named") { !prebuiltOutput.isPresent }
+    workingDir = zingolibRoot
+    doFirst {
+        environment("ZINGO_MOBILE_GIT_DESCRIBE", gitDescribe.getOrElse(""))
+    }
+    commandLine(
+        listOf(
+            "cargo", "run", "--quiet",
+            "--manifest-path", "tools/workbench/Cargo.toml",
+            "--bin", "build-binding-layer", "--",
+            "android", "--out", builderOutput.get().asFile.absolutePath,
+        ) + selectedAbi.map { listOf("--abi", it) }.getOrElse(emptyList())
+    )
+    inputs.files(
+        fileTree(zingolibRoot) {
+            exclude("**/target/**", "**/build/**", ".git/**", "bindings/swift/**")
+        }
+    )
+    inputs.property("gitDescribe", gitDescribe.orElse(""))
+    inputs.property("selectedAbi", selectedAbi.getOrElse(""))
+    outputs.dir(builderOutput)
+}
+
+android {
+    namespace = "org.zingolabs.bindinglayer"
+    compileSdk = bindingCompileSdk
+    ndkVersion = bindingNdkVersion
+
+    defaultConfig {
+        minSdk = bindingMinSdk
+    }
+
+    compileOptions {
+        sourceCompatibility = jvmTargetVersion
+        targetCompatibility = jvmTargetVersion
+    }
+
+    sourceSets {
+        getByName("main") {
+            java.srcDir(layerOutput.map { it.dir("kotlin") })
+            jniLibs.srcDir(layerOutput.map { it.dir("jniLibs") })
+        }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget(jvmTargetVersion.toString()))
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn(buildBindingLayer)
+}
+
+dependencies {
+    api(jnaDependency)
+    compileOnly(annotationDependency)
+}
