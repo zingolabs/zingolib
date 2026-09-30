@@ -265,10 +265,23 @@ A later job packages the cached output without rebuilding it:
 ./gradlew assembleProdRelease -PbindingLayerPrebuilt=<output directory>
 ```
 
+The Gradle checks that compile against the Kotlin sources take them from the `kotlin` mode, which runs on a plain host job. It generates both binding sets from the UDL and a host build of the proxy crate, and it needs `protoc` and the stable toolchain:
+
+```sh
+RUSTUP_TOOLCHAIN=stable \
+  cargo run \
+    --manifest-path zingolib/tools/workbench/Cargo.toml \
+    --bin build-binding-layer -- \
+    kotlin --out <output directory>
+```
+
+The output holds `kotlin/` alone, and the same `-PbindingLayerPrebuilt=<output directory>` points Gradle at it.
+
 ## Known differences from zingo-mobile
 
 - The generated Swift compiles into the SwiftPM module `ZingoBindings`, not the app's module. `zingolib/0054` records this exception.
 - The Gradle library has no Gradle wrapper, because a wrapper is a shell script.
+- `zingo-ffi/uniffi-bindgen/Cargo.toml` names the wallet's `uniffi` as `uniffi = { workspace = true, features = ["cli"] }`, and the binary calls `uniffi::uniffi_bindgen_main()`. At TFC, `rust/uniffi-bindgen` named it `uniffi_wallet` with its own `version = "0.29"`. The inherited pin keeps the generator on the version that the wallet's scaffolding links. zingo-mobile deleted `rust/uniffi-bindgen` in the repoint, and the change lives here alone.
 
 ## History
 

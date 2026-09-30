@@ -7,11 +7,11 @@ pub const SWIFT: &str = "swift";
 /// The binding languages that zingo-mobile generates.
 pub const LANGUAGES: [&str; 2] = [KOTLIN, SWIFT];
 
-/// The binary in the wallet crate that generates bindings from the UDL file.
-const WALLET_BINDGEN_BIN: &str = "uniffi-bindgen";
+/// The package that holds both bindgen binaries, whose only dependency is `uniffi`.
+const BINDGEN_PACKAGE: &str = "zingo-uniffi-bindgen";
 
-/// The package that holds the bindgen for library-mode generation.
-const LIBRARY_BINDGEN_PACKAGE: &str = "zingo-uniffi-bindgen";
+/// The binary that generates the wallet's bindings from the UDL file.
+const WALLET_BINDGEN_BIN: &str = "zingo-wallet-uniffi-bindgen";
 
 /// The binary that generates the proxy crate's bindings from its built library.
 const LIBRARY_BINDGEN_BIN: &str = "zingo-uniffi-bindgen";
@@ -202,8 +202,6 @@ impl Profile {
 
 /// The paths that a bindgen run reads, as seen by the process that runs it.
 pub struct BindgenInputs<'a> {
-    /// The wallet crate's manifest.
-    pub wallet_crate: &'a str,
     /// The wallet crate's UDL file.
     pub udl: &'a str,
     /// The wallet-side workspace manifest.
@@ -254,39 +252,43 @@ pub fn bindgen_args(
     out_dir: &str,
     profile: Profile,
 ) -> Vec<String> {
-    let selection: Vec<&str> = match generation {
-        Generation::Wallet => vec![
-            "--manifest-path",
-            inputs.wallet_crate,
-            "--bin",
-            WALLET_BINDGEN_BIN,
-            "--",
-            "generate",
-            inputs.udl,
-        ],
-        Generation::Proxy => vec![
-            "--manifest-path",
-            inputs.wallet_workspace,
-            "--package",
-            LIBRARY_BINDGEN_PACKAGE,
-            "--bin",
-            LIBRARY_BINDGEN_BIN,
-            "--",
-            "generate",
-            "--library",
-            inputs.proxy_library,
-        ],
+    let (bin, source): (&str, &[&str]) = match generation {
+        Generation::Wallet => (WALLET_BINDGEN_BIN, &[inputs.udl]),
+        Generation::Proxy => (LIBRARY_BINDGEN_BIN, &["--library", inputs.proxy_library]),
     };
     [
         &["run", "--locked", "--target-dir", inputs.target_dir],
         profile.cargo_args(),
-        selection.as_slice(),
+        &[
+            "--manifest-path",
+            inputs.wallet_workspace,
+            "--package",
+            BINDGEN_PACKAGE,
+            "--bin",
+            bin,
+            "--",
+            "generate",
+        ],
+        source,
         &["--language", language, "--out-dir", out_dir],
     ]
     .concat()
     .into_iter()
     .map(String::from)
     .collect()
+}
+
+/// The proxy library that a host build with the given profile writes under a target directory.
+pub fn host_proxy_library(target_dir: &str, profile: Profile) -> String {
+    format!(
+        "{target_dir}/{}/{}",
+        profile.directory(),
+        library_file(
+            std::env::consts::DLL_PREFIX,
+            PROXY_LIB_NAME,
+            std::env::consts::DLL_SUFFIX,
+        )
+    )
 }
 
 /// The file name of a library with the given name, prefix, and suffix.
@@ -299,9 +301,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wallet_args_select_the_udl_bindgen_and_place_the_profile_first() {
+    fn wallet_args_select_the_standalone_udl_bindgen_and_place_the_profile_first() {
         let inputs = BindgenInputs {
-            wallet_crate: "/w/lib/Cargo.toml",
             udl: "/w/lib/src/zingo.udl",
             wallet_workspace: "/w/Cargo.toml",
             proxy_library: "/p/libzingo_nym_proxy_ffi.so",
@@ -323,9 +324,11 @@ mod tests {
                 "/t",
                 "--release",
                 "--manifest-path",
-                "/w/lib/Cargo.toml",
+                "/w/Cargo.toml",
+                "--package",
+                "zingo-uniffi-bindgen",
                 "--bin",
-                "uniffi-bindgen",
+                "zingo-wallet-uniffi-bindgen",
                 "--",
                 "generate",
                 "/w/lib/src/zingo.udl",
