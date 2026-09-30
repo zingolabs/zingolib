@@ -229,6 +229,7 @@ where
 
     // retry transparent compact block scanning until the gap limit has been satisfied
     let mut new_transparent_inuse_addresses = HashMap::new();
+    let mut new_transparent_gap_addresses = HashMap::new();
     'gap: loop {
         let mut gap_addresses_in_use = BTreeSet::new();
 
@@ -335,7 +336,8 @@ where
                         new_gap_address_id,
                     )
                     .map_err(ScanError::TransparentAddressDerivationError)?;
-                    transparent_gap_addresses.insert(new_gap_address, new_gap_address_id);
+                    transparent_gap_addresses.insert(new_gap_address.clone(), new_gap_address_id);
+                    new_transparent_gap_addresses.insert(new_gap_address, new_gap_address_id);
 
                     // move the used gap address into inuse addresses
                     let new_inuse_address = transparent_gap_addresses
@@ -356,6 +358,8 @@ where
                     let new_inuse_address_entry = transparent_gap_addresses
                         .remove_entry(&new_inuse_address)
                         .expect("must exist in this scope!");
+                    // a gap address derived during this scan is also moved if it is found in use
+                    new_transparent_gap_addresses.remove(&new_inuse_address_entry.0);
                     new_transparent_inuse_addresses
                         .insert(new_inuse_address_entry.0, new_inuse_address_entry.1);
 
@@ -380,7 +384,7 @@ where
         decrypted_note_data,
         witness_data,
         new_transparent_inuse_addresses,
-        updated_transparent_gap_addresses: transparent_gap_addresses,
+        new_transparent_gap_addresses,
     })
 }
 
@@ -1090,7 +1094,7 @@ mod tests {
     }
 
     /// Funding a gap address moves it, and every gap address below it, to in-use, and derives new gap addresses
-    /// so the gap limit is kept past the highest address in use. The updated gap addresses are then used to scan
+    /// so the gap limit is kept past the highest address in use. The new gap addresses are then used to scan
     /// the next block, so an address just past the gap is not found and the last address in the gap is.
     #[test]
     fn gap_addresses_move_to_inuse_and_are_replaced() {
@@ -1106,18 +1110,18 @@ mod tests {
             external_addresses(&ufvk, 1..=3)
         );
         assert_eq!(
-            scan_data.updated_transparent_gap_addresses,
+            scan_data.new_transparent_gap_addresses,
             external_addresses(&ufvk, 4..=6)
         );
         assert_eq!(scan_data.decrypted_scan_targets.len(), 1);
         inuse_addresses.extend(scan_data.new_transparent_inuse_addresses);
-        gap_addresses = scan_data.updated_transparent_gap_addresses;
+        gap_addresses = scan_data.new_transparent_gap_addresses;
 
         // fund index 7, one past the gap: nothing is found and the gap is unchanged
         let block_b = block_funding_external_address(&ufvk, 101, 7);
         let scan_data = scan_block(&ufvk, block_b, &inuse_addresses, &gap_addresses);
         assert!(scan_data.new_transparent_inuse_addresses.is_empty());
-        assert_eq!(scan_data.updated_transparent_gap_addresses, gap_addresses);
+        assert!(scan_data.new_transparent_gap_addresses.is_empty());
         assert!(scan_data.decrypted_scan_targets.is_empty());
 
         // fund index 6, the last address in the gap: 4 to 6 move to in-use
@@ -1128,12 +1132,54 @@ mod tests {
             external_addresses(&ufvk, 4..=6)
         );
         assert_eq!(
-            scan_data.updated_transparent_gap_addresses,
+            scan_data.new_transparent_gap_addresses,
             external_addresses(&ufvk, 7..=9)
         );
         assert_eq!(scan_data.decrypted_scan_targets.len(), 1);
         inuse_addresses.extend(scan_data.new_transparent_inuse_addresses);
         assert_eq!(inuse_addresses, external_addresses(&ufvk, 0..=6));
+    }
+
+    /// Only the gap addresses derived by the scan are returned. The gap addresses above the highest address found
+    /// in use are already held by the scanner.
+    #[test]
+    fn new_gap_addresses_are_the_derived_addresses() {
+        let ufvk = transparent_test_ufvk();
+        let inuse_addresses = external_addresses(&ufvk, [0]);
+        let gap_addresses = external_addresses(&ufvk, 1..=3);
+
+        let block = block_funding_external_address(&ufvk, 100, 1);
+        let scan_data = scan_block(&ufvk, block, &inuse_addresses, &gap_addresses);
+        assert_eq!(
+            scan_data.new_transparent_inuse_addresses,
+            external_addresses(&ufvk, [1])
+        );
+        assert_eq!(
+            scan_data.new_transparent_gap_addresses,
+            external_addresses(&ufvk, [4])
+        );
+    }
+
+    /// A gap address derived by the scan and then found in use by the same scan is returned as in-use only.
+    #[test]
+    fn derived_gap_addresses_found_in_use_are_new_inuse_addresses() {
+        let ufvk = transparent_test_ufvk();
+        let inuse_addresses = external_addresses(&ufvk, [0]);
+        let gap_addresses = external_addresses(&ufvk, 1..=3);
+
+        // index 5 is only a gap address once funding index 3 has derived 4 to 6
+        let mut block = block_funding_external_address(&ufvk, 100, 3);
+        let funding_past_gap = block_funding_external_address(&ufvk, 100, 5).vtx.remove(0);
+        block.vtx[0].vout.extend(funding_past_gap.vout);
+        let scan_data = scan_block(&ufvk, block, &inuse_addresses, &gap_addresses);
+        assert_eq!(
+            scan_data.new_transparent_inuse_addresses,
+            external_addresses(&ufvk, 1..=5)
+        );
+        assert_eq!(
+            scan_data.new_transparent_gap_addresses,
+            external_addresses(&ufvk, 6..=8)
+        );
     }
 
     /// Only the transparent inputs of blocks above the transparent scan floor are collected, as transparent address
@@ -1203,7 +1249,7 @@ mod tests {
             );
             assert!(scan_data.decrypted_scan_targets.is_empty());
             assert!(scan_data.new_transparent_inuse_addresses.is_empty());
-            assert_eq!(scan_data.updated_transparent_gap_addresses, gap_addresses);
+            assert!(scan_data.new_transparent_gap_addresses.is_empty());
 
             let scan_data = scan_block_above_floor(
                 &ufvk,

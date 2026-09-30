@@ -156,6 +156,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   data scanned nor transparent address discovery performed. Transparent
   transactions mined in them were left in `Failed` status and transparent
   spends were left undetected.
+- Transparent funds received by a gap address in a block mined during the sync
+  session are detected after nullifiers have been re-fetched. Every scan
+  returned the full set of gap addresses, which replaced the scanner's, and
+  re-fetching the nullifiers of a `ScannedWithoutMapping` range returned an
+  empty set. Compact block transparent data was then scanned with no gap
+  addresses for the rest of the session. Scans now return only the gap
+  addresses found in use and the gap addresses derived to replace them, and
+  these changes are applied to the scanner's gap addresses.
+- A transaction mined during the sync session that spends the wallet's
+  transparent coins and pays everything to external recipients is fetched and
+  confirmed when the spend is detected (#2798). Compact block scanning mapped
+  its transparent inputs and marked the coins spent, but only a transaction
+  with an output to the wallet was targeted for a full scan. The spending
+  transaction was left in `Mempool` status until it passed its expiry height
+  and was marked failed, which also reset the spent coins to unspent.
 
 ### Removed
 

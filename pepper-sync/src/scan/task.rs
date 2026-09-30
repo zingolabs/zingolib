@@ -102,6 +102,19 @@ where
         }
     }
 
+    /// Applies the changes to the transparent gap addresses found by a scan.
+    ///
+    /// The gap addresses found in use are removed and the gap addresses derived to replace them are added.
+    pub(crate) fn update_transparent_gap_addresses(
+        &mut self,
+        new_inuse_addresses: &HashMap<String, TransparentAddressId>,
+        new_gap_addresses: HashMap<String, TransparentAddressId>,
+    ) {
+        self.transparent_gap_addresses
+            .retain(|address, _| !new_inuse_addresses.contains_key(address));
+        self.transparent_gap_addresses.extend(new_gap_addresses);
+    }
+
     pub(crate) fn launch(&mut self, performance_level: PerformanceLevel) {
         let max_outputs = match performance_level {
             PerformanceLevel::Low => 2usize.pow(11),
@@ -909,7 +922,74 @@ impl ScanTask {
 
 #[cfg(test)]
 mod tests {
+    use zcash_protocol::consensus::{MAIN_NETWORK, MainNetwork};
+    use zcash_transparent::keys::NonHardenedChildIndex;
+
+    use crate::keys::transparent::TransparentScope;
+
     use super::*;
+
+    const GAP_LIMIT: u32 = 3;
+
+    /// An address map as held by the scanner, for the given external indexes.
+    fn external_addresses(
+        indexes: impl IntoIterator<Item = u32>,
+    ) -> HashMap<String, TransparentAddressId> {
+        indexes
+            .into_iter()
+            .map(|index| {
+                (
+                    format!("external address {index}"),
+                    TransparentAddressId::new(
+                        AccountId::ZERO,
+                        TransparentScope::External,
+                        NonHardenedChildIndex::from_index(index).unwrap(),
+                    ),
+                )
+            })
+            .collect()
+    }
+
+    fn scanner_with_gap_addresses(
+        gap_addresses: HashMap<String, TransparentAddressId>,
+    ) -> Scanner<MainNetwork> {
+        let (scan_results_sender, _) = mpsc::unbounded_channel();
+        let (fetch_request_sender, _) = mpsc::unbounded_channel();
+        let mut scanner = Scanner::new(
+            MAIN_NETWORK,
+            scan_results_sender,
+            fetch_request_sender,
+            HashMap::new(),
+            GAP_LIMIT,
+        );
+        scanner.transparent_gap_addresses = gap_addresses;
+        scanner
+    }
+
+    /// Scan results without compact block transparent data, such as re-fetched nullifiers, carry no changes to the
+    /// gap addresses. The scanner keeps the gap addresses it holds.
+    #[test]
+    fn gap_addresses_are_kept_when_scan_results_carry_no_changes() {
+        let mut scanner = scanner_with_gap_addresses(external_addresses(1..=3));
+
+        scanner.update_transparent_gap_addresses(&HashMap::new(), HashMap::new());
+
+        assert_eq!(scanner.transparent_gap_addresses, external_addresses(1..=3));
+    }
+
+    /// The gap addresses found in use are removed and the gap addresses derived to replace them are added. The gap
+    /// addresses above the highest address found in use are kept.
+    #[test]
+    fn gap_addresses_found_in_use_are_replaced() {
+        let mut scanner = scanner_with_gap_addresses(external_addresses(1..=3));
+
+        scanner.update_transparent_gap_addresses(
+            &external_addresses(1..=2),
+            external_addresses(4..=5),
+        );
+
+        assert_eq!(scanner.transparent_gap_addresses, external_addresses(3..=5));
+    }
 
     #[test]
     fn transparent_data_is_only_requested_for_ranges_above_transparent_scan_floor() {
