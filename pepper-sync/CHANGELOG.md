@@ -99,6 +99,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     set to failed in cases other than re-org truncation.
 
 ### Fixed
+- A `ServerError::RequestFailed` caused by network weather is now recommended
+  `SyncRecoveryObservables::MaybeRecoverableServer` and
+  `recommend_same_server`, rather than `ServerUnavailable`. Network weather is
+  a failure raised by the transport (a tonic transport error, client-side
+  timeout or I/O error in the status's source chain) or a status code gRPC
+  names as transient (`Unavailable`, `DeadlineExceeded`, `Cancelled`,
+  `ResourceExhausted`, `Aborted`). Any other status code is an answer from a
+  server that cannot serve the request and is still recommended
+  `ServerUnavailable`. `MaybeRecoverableServer` now documents that callers
+  should retry a bounded number of times before treating the server as
+  unavailable. (#2799)
 - The mempool monitor counts a mempool transaction as unprocessed before
   sending it to the sync engine rather than after. The count was incremented
   only once the send completed, so the mempool drain could observe a zero
@@ -132,6 +143,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   addresses for the rest of the session. Scans now return only the gap
   addresses found in use and the gap addresses derived to replace them, and
   these changes are applied to the scanner's gap addresses.
+- A transaction mined during the sync session that spends the wallet's
+  transparent coins and pays everything to external recipients is fetched and
+  confirmed when the spend is detected (#2798). Compact block scanning mapped
+  its transparent inputs and marked the coins spent, but only a transaction
+  with an output to the wallet was targeted for a full scan. The spending
+  transaction was left in `Mempool` status until it passed its expiry height
+  and was marked failed, which also reset the spent coins to unspent.
 
 ### Removed
 

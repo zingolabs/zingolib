@@ -1,0 +1,60 @@
+[workspace]
+members = [
+    "lib",
+    "uniffi-bindgen",
+]
+resolver = "2"
+
+[workspace.dependencies]
+zingolib = { path = "../zingolib", features = [
+    "nym",
+    "perspective",
+] }
+pepper-sync = { path = "../pepper-sync" }
+
+zcash_address = "0.13.0"
+zcash_client_backend = { version = "0.24.0-rc.1", features = [
+    "lightwalletd-tonic",
+    "orchard",
+    "transparent-inputs",
+] }
+zcash_keys = { version = "0.16.1", features = [
+    "transparent-inputs",
+    "sapling",
+    "orchard",
+] }
+zcash_protocol = "0.10.0"
+
+zingo_common_components = "0.4.0"
+zip32 = "0.2.0"
+uniffi = "0.29"
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+serde_json = "1"
+android_logger = "0.11"
+http = "1"
+hex = "0.4"
+json = "0.12"
+lazy_static = "1.4.0"
+log = "0.4"
+uniffi_build = "0.29"
+thiserror = "1"
+once_cell = "1"
+
+[profile.release]
+debug = 1
+lto = "thin"
+codegen-units = 1
+overflow-checks = true
+panic = "abort"
+opt-level = "z"
+
+[profile.test]
+opt-level = 3
+debug = 1
+
+[patch.crates-io]
+# Ironwood (NU6.3) proto fields (CompactTx.ironwoodActions, TreeState.ironwoodTree,
+# ShieldedProtocol.ironwood, ChainMetadata.ironwoodCommitmentTreeSize). Must match
+# the patch in zingolib (feat/ironwood) so the dependency graph resolves to a single
+# ironwood-aware lightwallet-protocol.
+lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust", rev = "9bdfdc77eb283f2a3d26c27100cc2ac90148cd93" }
