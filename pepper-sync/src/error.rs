@@ -122,18 +122,44 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
 }
 
 impl ServerError {
+    /// Returns `true` if this is a gRPC request that timed out.
+    ///
+    /// A deadline the server reports arrives as `DeadlineExceeded`. A
+    /// client-side bound arrives as `Cancelled` with tonic's
+    /// [`tonic::TimeoutExpired`] somewhere in the status's source chain.
+    fn request_timed_out(&self) -> bool {
+        let ServerError::RequestFailed(status) = self else {
+            return false;
+        };
+        if status.code() == tonic::Code::DeadlineExceeded {
+            return true;
+        }
+        let mut link = std::error::Error::source(status);
+        while let Some(cause) = link {
+            if cause.is::<tonic::TimeoutExpired>() {
+                return true;
+            }
+            link = cause.source();
+        }
+        false
+    }
+
     /// Returns `true` if this server error is likely transient.
     ///
-    /// gRPC request failures (timeouts, connection drops) are recommend_same_server.
-    /// Invalid data from the server suggests a bad server that should be
-    /// avoided rather than retried.
+    /// Timed-out gRPC requests are recommend_same_server. Other request
+    /// failures and invalid data from the server suggest a bad server that
+    /// should be avoided rather than retried.
     pub fn recommend_same_server(&self) -> bool {
         match self {
             // Internal channel issue. Retrying may help after restart.
             ServerError::FetcherDropped => true,
 
-            // gRPC request failure. The server may be down or overloaded.
-            // Switch to a different server rather than retrying the same one.
+            // A timed-out request is transient. The next request may be
+            // served by a fresh connection to the same server.
+            ServerError::RequestFailed(_) if self.request_timed_out() => true,
+            // Any other gRPC request failure. The server may be down or
+            // overloaded. Switch to a different server rather than retrying
+            // the same one.
             ServerError::RequestFailed(_) => false,
 
             // Bad data from server. Retrying the same server won't help.
@@ -209,6 +235,11 @@ impl ServerError {
         match self {
             // Internal channel issue. The same server may work after restart.
             ServerError::FetcherDropped => SyncRecoveryObservables::MaybeRecoverableServer,
+            // A timed-out request is transient. The same server may answer
+            // the next request on a fresh connection.
+            ServerError::RequestFailed(_) if self.request_timed_out() => {
+                SyncRecoveryObservables::MaybeRecoverableServer
+            }
             // gRPC request failure or bad data. Try a different server.
             ServerError::RequestFailed(_)
             | ServerError::InvalidFrontier(_)
@@ -550,6 +581,31 @@ mod tests {
         );
     }
 
+    /// Stands in for `tonic::transport::Error`, which cannot be built
+    /// outside tonic, wrapping the client-side timeout as its cause.
+    #[derive(Debug)]
+    struct TransportError(tonic::TimeoutExpired);
+
+    impl std::fmt::Display for TransportError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "transport error")
+        }
+    }
+
+    impl std::error::Error for TransportError {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.0)
+        }
+    }
+
+    /// A request cut off by the client-side timeout, as tonic reports it:
+    /// `Cancelled` with the transport timeout in the source chain.
+    fn client_timeout() -> ServerError {
+        let status = tonic::Status::from_error(Box::new(TransportError(tonic::TimeoutExpired(()))));
+        assert_eq!(status.code(), tonic::Code::Cancelled);
+        ServerError::RequestFailed(status)
+    }
+
     mod recommend_same_server {
         use super::*;
 
@@ -559,6 +615,17 @@ mod tests {
             #[test]
             fn fetcher_dropped() {
                 assert!(ServerError::FetcherDropped.recommend_same_server());
+            }
+
+            #[test]
+            fn request_deadline_exceeded() {
+                let e = ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout"));
+                assert!(e.recommend_same_server());
+            }
+
+            #[test]
+            fn request_client_timeout() {
+                assert!(client_timeout().recommend_same_server());
             }
         }
 
@@ -597,7 +664,7 @@ mod tests {
 
             #[test]
             fn request_failed() {
-                let e = ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout"));
+                let e = ServerError::RequestFailed(tonic::Status::unavailable("down"));
                 assert!(!e.recommend_same_server());
             }
 
@@ -635,7 +702,7 @@ mod tests {
             #[test]
             fn server_request_failed() {
                 let e: TestSyncError =
-                    ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout")).into();
+                    ServerError::RequestFailed(tonic::Status::unavailable("down")).into();
                 assert!(!e.recommend_same_server());
             }
 
@@ -680,6 +747,26 @@ mod tests {
             }
 
             #[test]
+            fn request_deadline_exceeded() {
+                let e = ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout"));
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::MaybeRecoverableServer
+                );
+            }
+
+            /// A connection left idle until the client-side timeout expires
+            /// is replaced by the next request, so the same server is kept.
+            #[test]
+            fn sync_error_from_client_timeout() {
+                let e: TestSyncError = client_timeout().into();
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::MaybeRecoverableServer
+                );
+            }
+
+            #[test]
             fn mempool_error() {
                 let e: TestSyncError = MempoolError::ShutdownWithoutStream.into();
                 assert_eq!(
@@ -711,7 +798,18 @@ mod tests {
 
             #[test]
             fn request_failed() {
-                let e = ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout"));
+                let e = ServerError::RequestFailed(tonic::Status::unavailable("down"));
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
+
+            /// A cancelled request that did not time out is not treated as
+            /// transient.
+            #[test]
+            fn request_cancelled_without_timeout() {
+                let e = ServerError::RequestFailed(tonic::Status::cancelled("cancelled"));
                 assert_eq!(
                     e.recovery_recommendation(),
                     SyncRecoveryObservables::ServerUnavailable

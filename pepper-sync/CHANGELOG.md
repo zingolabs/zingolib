@@ -99,6 +99,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     set to failed in cases other than re-org truncation.
 
 ### Fixed
+- A `ServerError::RequestFailed` that timed out (a `DeadlineExceeded` status,
+  or a client-side transport timeout) is now recommended
+  `SyncRecoveryObservables::MaybeRecoverableServer` and
+  `recommend_same_server`, rather than `ServerUnavailable`. Other request
+  failures are still recommended `ServerUnavailable`. (#2799)
 - The mempool monitor counts a mempool transaction as unprocessed before
   sending it to the sync engine rather than after. The count was incremented
   only once the send completed, so the mempool drain could observe a zero
