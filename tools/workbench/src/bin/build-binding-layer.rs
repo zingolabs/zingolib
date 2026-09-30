@@ -202,6 +202,7 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
             )]
         })?;
     let root = workbench::repo_root()?;
+    require_wallet_crate(&root)?;
     let relative_out = out
         .strip_prefix(&root)
         .map_err(|_| {
@@ -255,6 +256,18 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
         }
     }
     .map(|()| out)
+}
+
+/// Fail with a diagnostic that names the root unless the root holds the wallet crate's manifest.
+fn require_wallet_crate(root: &path::Path) -> Result<(), Vec<String>> {
+    if root.join(WALLET_CRATE_DIR).join(MANIFEST).is_file() {
+        Ok(())
+    } else {
+        Err(vec![format!(
+            "{} is the wrong zingolib root: {WALLET_CRATE_DIR}/{MANIFEST} is absent from it",
+            root.display()
+        )])
+    }
 }
 
 /// Parse the platform, the absolute output directory, and the selected Android ABIs.
@@ -899,7 +912,12 @@ fn run_command(
         .current_dir(&started.workdir)
         .envs(started.env)
         .status()
-        .map_err(|e| vec![format!("cannot run {}: {e}", started.program)])?;
+        .map_err(|e| {
+            vec![format!(
+                "cannot run {} in {}: {e}",
+                started.program, started.workdir
+            )]
+        })?;
     if status.success() {
         Ok(())
     } else {
@@ -992,6 +1010,18 @@ mod tests {
             copies,
             binding_layer::ANDROID_ABIS.len() * binding_layer::GENERATIONS.len()
         );
+    }
+
+    #[test]
+    fn a_root_without_the_wallet_crate_is_refused_by_name() {
+        let consumer_root = workbench::repo_root().unwrap().join(WALLET_CRATE_DIR);
+        let diagnostic = require_wallet_crate(&consumer_root).unwrap_err().concat();
+        assert!(diagnostic.contains(workbench::utf8(&consumer_root).unwrap()));
+    }
+
+    #[test]
+    fn the_zingolib_root_holds_the_wallet_crate() {
+        assert!(require_wallet_crate(&workbench::repo_root().unwrap()).is_ok());
     }
 
     #[test]

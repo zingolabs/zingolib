@@ -130,10 +130,24 @@ pub fn git(args: &[&str]) -> Result<String, Vec<String>> {
     stdout_of("git", args)
 }
 
-/// Repository root via `git rev-parse --show-toplevel`.
+/// The workbench crate's directory, which cargo records when it compiles the crate.
+const WORKBENCH_DIR: &str = env!("CARGO_MANIFEST_DIR");
+
+/// The zingolib root, which is the git top level of the workbench crate's own checkout.
 pub fn repo_root() -> Result<PathBuf, Vec<String>> {
+    repo_root_from(Path::new(CURRENT_DIR))
+}
+
+/// The zingolib root, looked up by a `git` process that starts in the given directory.
+fn repo_root_from(start: &Path) -> Result<PathBuf, Vec<String>> {
     Ok(PathBuf::from(
-        git(&["rev-parse", "--show-toplevel"])?.trim(),
+        stdout_in(
+            start,
+            "git",
+            &["-C", WORKBENCH_DIR, "rev-parse", "--show-toplevel"],
+            &[],
+        )?
+        .trim(),
     ))
 }
 
@@ -219,6 +233,23 @@ fn is_concrete_numeric(channel: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The workbench crate's directory, relative to the zingolib root.
+    const WORKBENCH_RELATIVE_DIR: &str = "tools/workbench";
+
+    #[test]
+    fn root_lookup_from_outside_zingolib_gets_the_zingolib_root() {
+        let workbench_dir = Path::new(WORKBENCH_DIR).canonicalize().unwrap();
+        let zingolib_root = workbench_dir
+            .ancestors()
+            .find(|ancestor| ancestor.join(WORKBENCH_RELATIVE_DIR) == workbench_dir)
+            .unwrap();
+        let outside = zingolib_root.parent().unwrap();
+        assert_eq!(
+            repo_root_from(outside).unwrap().canonicalize().unwrap(),
+            zingolib_root
+        );
+    }
 
     #[test]
     fn channel_value_recognises_only_quoted_assignments() {
