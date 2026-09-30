@@ -150,8 +150,9 @@ pub struct SyncState {
     /// against the wallet's in-use and gap addresses and mapping transparent inputs to the wallet's outpoint map.
     ///
     /// Set to the chain height when transparent address discovery completes at the start of a sync session, as it has
-    /// located all relevant transactions at or below this height. Lowered if a re-org truncates the wallet below this
-    /// height during the sync session as the re-orged blocks are not covered by transparent address discovery.
+    /// located all relevant transactions at or below this height. Lowered if the wallet is truncated below this
+    /// height, by a re-org or a chain height below the wallet's, as transparent address discovery does not cover the
+    /// blocks scanned in place of the truncated blocks.
     ///
     /// Blocks mined during a sync session are above the floor and may still be unscanned when the session ends, so
     /// the transparent address discovery of the next sync session searches from the block above the floor.

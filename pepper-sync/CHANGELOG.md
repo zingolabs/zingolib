@@ -148,6 +148,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transactions in older unscanned blocks were never found. The transparent
   scan floor is now stored in the wallet's sync state, and transparent address
   discovery searches from the floor of the previous session.
+- Transparent transactions are found again when the server reports a chain
+  height below the wallet's during a sync session and the chain then extends.
+  The wallet was truncated to the chain height without lowering the
+  transparent scan floor, so the blocks scanned in place of the truncated
+  blocks at or below the floor had neither their compact block transparent
+  data scanned nor transparent address discovery performed. Transparent
+  transactions mined in them were left in `Failed` status and transparent
+  spends were left undetected.
 
 ### Removed
 

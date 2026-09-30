@@ -903,12 +903,14 @@ where
             // The wallet reported height is above the current proxy height
             // reset to the proxy height.
             truncate_wallet_data(wallet, chain_height)?;
-            state::truncate_scan_ranges(
-                chain_height,
-                wallet
-                    .get_sync_state_mut()
-                    .map_err(SyncError::WalletError)?,
-            );
+            let sync_state = wallet
+                .get_sync_state_mut()
+                .map_err(SyncError::WalletError)?;
+            state::truncate_scan_ranges(chain_height, sync_state);
+            // the truncated blocks are scanned again when the chain extends. transparent address discovery is only
+            // performed at the start of the sync session so the compact block transparent data of these blocks must
+            // be scanned.
+            state::lower_transparent_scan_floor(sync_state, chain_height);
             wallet.set_save_flag().map_err(SyncError::WalletError)?;
             return Ok(chain_height);
         }
@@ -3777,7 +3779,7 @@ mod test {
         mod last_known_chain_height {
             use crate::{
                 sync::{MAX_REORG_ALLOWANCE, ScanRange},
-                wallet::SyncState,
+                wallet::{SyncState, traits::SyncWallet as _},
             };
             const DEFAULT_START_HEIGHT: BlockHeight = BlockHeight::from_u32(1);
             const _DEFAULT_LAST_KNOWN_HEIGHT: BlockHeight = BlockHeight::from_u32(102);
@@ -3835,6 +3837,47 @@ mod test {
                 // match
                 let res = checked_wallet_height(&mut test_wallet, chain_height, &LOCAL_NETWORK);
                 assert_eq!(res.unwrap(), BlockHeight::from_u32(4));
+            }
+            /// Blocks above the chain height are truncated and scanned again when the chain extends. Transparent
+            /// address discovery only covers the blocks at or below the transparent scan floor, and is not performed
+            /// again during the sync session, so a floor above the chain height is lowered to it for the compact block
+            /// transparent data of the truncated blocks to be scanned. A floor at or below the chain height still
+            /// covers every block the wallet keeps.
+            #[tokio::test]
+            async fn above_chain_height_lowers_transparent_scan_floor() {
+                const LAST_KNOWN_HEIGHT: BlockHeight = BlockHeight::from_u32(110);
+                const CHAIN_HEIGHT: BlockHeight = BlockHeight::from_u32(105);
+                const FLOOR_ABOVE_CHAIN_HEIGHT: BlockHeight = BlockHeight::from_u32(108);
+                const FLOOR_BELOW_CHAIN_HEIGHT: BlockHeight = BlockHeight::from_u32(100);
+
+                for (floor, expected_floor) in [
+                    (FLOOR_ABOVE_CHAIN_HEIGHT, CHAIN_HEIGHT),
+                    (CHAIN_HEIGHT, CHAIN_HEIGHT),
+                    (FLOOR_BELOW_CHAIN_HEIGHT, FLOOR_BELOW_CHAIN_HEIGHT),
+                ] {
+                    let state = SyncState {
+                        scan_ranges: vec![ScanRange::from_parts(
+                            DEFAULT_START_HEIGHT..LAST_KNOWN_HEIGHT + 1,
+                            crate::sync::ScanPriority::Scanned,
+                        )],
+                        transparent_scan_floor: Some(floor),
+                        ..Default::default()
+                    };
+                    let mut test_wallet = crate::mocks::MockWalletBuilder::new()
+                        .sync_state(state)
+                        .create_mock_wallet();
+
+                    let last_known_chain_height =
+                        checked_wallet_height(&mut test_wallet, CHAIN_HEIGHT, &LOCAL_NETWORK)
+                            .unwrap();
+
+                    assert_eq!(last_known_chain_height, CHAIN_HEIGHT);
+                    assert_eq!(
+                        test_wallet.get_sync_state().unwrap().transparent_scan_floor,
+                        Some(expected_floor),
+                        "floor {floor}"
+                    );
+                }
             }
             #[ignore = "in progress"]
             #[tokio::test]

@@ -1366,6 +1366,88 @@ async fn transparent_funds_in_blocks_unscanned_by_previous_sync_session_are_dete
     check_client_balances!(client, i: 0 o: 0 s: 0 t: 50_000);
 }
 
+/// How a continuous sync session learns that the block at its chain tip was re-orged away.
+enum ReorgDetection {
+    /// The chain is extended past the wallet's height before the session next checks for new blocks. The continuity
+    /// check of the new blocks detects the re-org.
+    Continuity,
+    /// The session checks for new blocks while the chain is shorter than the wallet's height and truncates the wallet
+    /// to the chain height.
+    LowerChainHeight,
+}
+
+/// Transparent funds are mined in the block at the chain height when a continuous sync session starts, so they are
+/// found by transparent address discovery and their block sits at the transparent scan floor. The block is re-orged
+/// away and the funding transaction is mined again at the same height.
+///
+/// Transparent address discovery is not performed again during the session, so the funds are only detected again if
+/// the transparent scan floor is lowered for the compact block transparent data of the new block to be scanned.
+///
+/// Returns the client with the session stopped after scanning the new chain.
+async fn transparent_funds_remined_at_transparent_scan_floor(
+    reorg_detection: ReorgDetection,
+) -> crate::lightclient::LightClient {
+    const FUNDING_HEIGHT: u32 = 20;
+
+    let mut net = MockNet::launch().await;
+    net.chain
+        .write()
+        .await
+        .mine_empty_blocks(FUNDING_HEIGHT - 1);
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    let taddr = get_base_address(&client, PoolType::Transparent).await;
+    let funding = faucet_funding_transaction(vec![(&taddr, 50_000, None)]).await;
+    net.chain.write().await.mine_block(vec![funding.clone()]);
+    assert_eq!(net.chain.read().await.tip(), FUNDING_HEIGHT);
+
+    client.sync().await.expect("continuous sync launches");
+    wait_until_scanned_to(&client, FUNDING_HEIGHT).await;
+    check_client_balances!(client, i: 0 o: 0 s: 0 t: 50_000);
+
+    match reorg_detection {
+        ReorgDetection::Continuity => {
+            let mut chain = net.chain.write().await;
+            chain.reorg_to(FUNDING_HEIGHT - 1);
+            chain.mine_block(vec![funding]);
+            chain.mine_empty_blocks(1);
+        }
+        ReorgDetection::LowerChainHeight => {
+            net.chain.write().await.reorg_to(FUNDING_HEIGHT - 1);
+            wait_until_scanned_to(&client, FUNDING_HEIGHT - 1).await;
+            let mut chain = net.chain.write().await;
+            chain.mine_block(vec![funding]);
+            chain.mine_empty_blocks(1);
+        }
+    }
+    wait_until_scanned_to(&client, FUNDING_HEIGHT + 1).await;
+    client.stop_sync().unwrap();
+    client.await_sync().await.unwrap();
+
+    client
+}
+
+#[tokio::test]
+async fn transparent_funds_remined_at_transparent_scan_floor_are_detected_after_continuity_reorg() {
+    let client =
+        transparent_funds_remined_at_transparent_scan_floor(ReorgDetection::Continuity).await;
+
+    check_client_balances!(client, i: 0 o: 0 s: 0 t: 50_000);
+}
+
+#[tokio::test]
+async fn transparent_funds_remined_at_transparent_scan_floor_are_detected_after_lower_chain_height()
+{
+    let client =
+        transparent_funds_remined_at_transparent_scan_floor(ReorgDetection::LowerChainHeight).await;
+
+    check_client_balances!(client, i: 0 o: 0 s: 0 t: 50_000);
+}
+
 /// Sync is rejected when the server's lightwallet protocol version is below v0.5.0, or not reported, as the server does
 /// not serve the transparent and ironwood data sync requires. The error recommends switching servers.
 #[tokio::test]
