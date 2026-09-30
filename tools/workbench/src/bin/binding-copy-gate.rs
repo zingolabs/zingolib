@@ -732,11 +732,9 @@ fn generate_bindings(side: &Side, scratch: &path::Path) -> Result<(), Vec<String
     let side_dir = scratch.join(side.name);
     let target_dir = side_dir.join(CARGO_TARGET_SUBDIR);
     let proxy_library = build_proxy_library(side, &target_dir)?;
-    let wallet_crate = side.file(side.layout.wallet_crate);
     let udl = side.file(side.layout.udl);
     let wallet_workspace = side.file(side.layout.manifest(Workspace::Wallet));
     let inputs = binding_layer::BindgenInputs {
-        wallet_crate: workbench::utf8(&wallet_crate)?,
         udl: workbench::utf8(&udl)?,
         wallet_workspace: workbench::utf8(&wallet_workspace)?,
         proxy_library: workbench::utf8(&proxy_library)?,
