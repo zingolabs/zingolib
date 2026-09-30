@@ -130,9 +130,6 @@ pub fn git(args: &[&str]) -> Result<String, Vec<String>> {
     stdout_of("git", args)
 }
 
-/// The variable that names the workbench crate's directory when cargo runs a workbench binary.
-const MANIFEST_DIR_VARIABLE: &str = "CARGO_MANIFEST_DIR";
-
 /// The workbench crate's directory at the time cargo compiled the crate.
 const BUILT_WORKBENCH_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
@@ -140,23 +137,19 @@ const BUILT_WORKBENCH_DIR: &str = env!("CARGO_MANIFEST_DIR");
 const WORKBENCH_RELATIVE_DIR: &str = "tools/workbench";
 
 /// The manifest file name that every crate directory holds.
-const MANIFEST: &str = "Cargo.toml";
+pub const MANIFEST: &str = "Cargo.toml";
 
 /// The zingolib root, which is the directory that holds the workbench crate at `tools/workbench`.
 pub fn repo_root() -> Result<PathBuf, Vec<String>> {
-    let workbench_dir = std::env::var_os(MANIFEST_DIR_VARIABLE)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(BUILT_WORKBENCH_DIR));
-    root_above(&workbench_dir)
+    root_above(Path::new(BUILT_WORKBENCH_DIR))
 }
 
 /// The zingolib root above a workbench crate directory, or a diagnostic that names the directory.
 fn root_above(workbench_dir: &Path) -> Result<PathBuf, Vec<String>> {
     let depth = Path::new(WORKBENCH_RELATIVE_DIR).components().count();
     Some(workbench_dir)
-        .filter(|dir| dir.ends_with(WORKBENCH_RELATIVE_DIR))
+        .filter(|dir| dir.ends_with(WORKBENCH_RELATIVE_DIR) && dir.join(MANIFEST).is_file())
         .and_then(|dir| dir.ancestors().nth(depth))
-        .filter(|root| root.join(WORKBENCH_RELATIVE_DIR).join(MANIFEST).is_file())
         .map(Path::to_path_buf)
         .ok_or_else(|| {
             vec![format!(
@@ -259,6 +252,28 @@ mod tests {
             root_above(workbench_dir).unwrap(),
             workbench_dir.parent().unwrap().parent().unwrap()
         );
+    }
+
+    #[test]
+    fn repo_root_is_the_root_above_the_built_crate_directory() {
+        assert_eq!(
+            repo_root().unwrap(),
+            root_above(Path::new(BUILT_WORKBENCH_DIR)).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_foreign_manifest_directory_in_the_environment_does_not_move_the_root() {
+        let inner = Command::new(std::env::current_exe().unwrap())
+            .env("CARGO_MANIFEST_DIR", ABSENT_WORKBENCH_DIR)
+            .args([
+                "--exact",
+                "tests::repo_root_is_the_root_above_the_built_crate_directory",
+            ])
+            .stdout(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(inner.success());
     }
 
     #[test]

@@ -23,7 +23,9 @@
 - **Every commit MUST be A/B benchmarked against its parent** with the online
   sync benchmark (`makers sync-bench`), which drives a real `run-cli --online`
   session so the mixnet boot load is present. Report both numbers with the
-  commit. Ruled 2026-08-18.
+  commit. Ruled 2026-08-18. A commit confined to build scripts and tooling
+  (`build.rs` files, `tools/workbench`, `Makefile.toml`, CI workflows) is
+  exempt, because it changes no code the benchmark runs. Ruled 2026-09-30.
 
 ## Writing & Code Style
 

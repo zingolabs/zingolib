@@ -7,6 +7,7 @@ use std::path;
 use std::process;
 
 use workbench::binding_layer;
+use workbench::MANIFEST;
 
 /// The program name that prefixes every diagnostic.
 const PROGRAM: &str = "build-binding-layer";
@@ -59,9 +60,6 @@ const WALLET_WORKSPACE_DIR: &str = "zingo-ffi";
 
 /// The proxy crate's directory, relative to the zingolib root.
 const PROXY_CRATE_DIR: &str = "zingo-netutils/nym-proxy-ffi";
-
-/// The manifest file name that every crate directory holds.
-const MANIFEST: &str = "Cargo.toml";
 
 /// The wallet crate's UDL file, relative to the wallet crate's directory.
 const UDL: &str = "src/zingo.udl";
@@ -176,6 +174,7 @@ struct Roots {
 impl Roots {
     /// The roots of a plan whose `Run` steps execute on the host, where any output directory serves.
     fn on_host(root: path::PathBuf, out: path::PathBuf) -> Result<Self, Vec<String>> {
+        refuse_an_output_directory_holding_the_root(&root, &out)?;
         Ok(Self {
             run: workbench::utf8(&root)?.to_string(),
             host: root,
@@ -186,6 +185,7 @@ impl Roots {
 
     /// The roots of a plan whose `Run` steps execute in the container, which mounts only the zingolib root.
     fn in_container(root: path::PathBuf, out: path::PathBuf) -> Result<Self, Vec<String>> {
+        refuse_an_output_directory_holding_the_root(&root, &out)?;
         let relative_out = out
             .strip_prefix(&root)
             .map_err(|_| {
@@ -224,6 +224,30 @@ impl Roots {
     /// A path under the output directory as the host sees it.
     fn out_host_path(&self, relative: &str) -> path::PathBuf {
         self.out_host.join(relative)
+    }
+}
+
+/// Fail when the output directory, whose first step clears it, is the zingolib root or one of its ancestors.
+fn refuse_an_output_directory_holding_the_root(
+    root: &path::Path,
+    out: &path::Path,
+) -> Result<(), Vec<String>> {
+    if !out.exists() {
+        return Ok(());
+    }
+    let canonical = |directory: &path::Path| {
+        directory
+            .canonicalize()
+            .map_err(|e| vec![format!("cannot resolve {}: {e}", directory.display())])
+    };
+    if canonical(root)?.starts_with(canonical(out)?) {
+        Err(vec![format!(
+            "{} holds the zingolib root {}, and the build clears the output directory first",
+            out.display(),
+            root.display()
+        )])
+    } else {
+        Ok(())
     }
 }
 
@@ -902,22 +926,23 @@ fn run_command(
     command: &[String],
 ) -> Result<(), Vec<String>> {
     let started = invocation(runner, workdir, env, command);
+    if matches!(runner, Runner::Host) && !path::Path::new(&started.workdir).is_dir() {
+        return Err(vec![format!(
+            "the step's working directory {} is absent",
+            started.workdir
+        )]);
+    }
     let status = process::Command::new(&started.program)
         .args(&started.args)
         .current_dir(&started.workdir)
         .envs(started.env)
         .status()
-        .map_err(|e| vec![start_failure(&started.program, workdir, &e)])?;
+        .map_err(|e| vec![format!("cannot run {}: {e}", started.program)])?;
     if status.success() {
         Ok(())
     } else {
         Err(vec![format!("`{}` failed ({status})", command.join(" "))])
     }
-}
-
-/// The diagnostic for a host process that did not start, naming the step's working directory.
-fn start_failure(program: &str, step_workdir: &str, error: &std::io::Error) -> String {
-    format!("cannot run {program} for the step in {step_workdir}: {error}")
 }
 
 #[cfg(test)]
@@ -949,6 +974,9 @@ mod tests {
 
     /// An output directory inside the zingolib root.
     const INSIDE_OUT: &str = "/host/zingolib/bindings/android/build/binding-layer";
+
+    /// The output directory that zingo-mobile's Android workflows name, relative to the root.
+    const RELATIVE_OUT: &str = "bindings/android/build/binding-layer";
 
     fn roots() -> Roots {
         Roots::in_container(
@@ -1051,17 +1079,40 @@ mod tests {
             .any(|command| command.contains(&format!("{OUTSIDE_OUT}/{GENERATED_DIR}/wallet"))));
     }
 
+    /// A container engine that no host has installed.
+    const ABSENT_ENGINE: &str = "absent-container-engine";
+
     #[test]
-    fn a_container_engine_that_does_not_start_is_reported_with_the_step_directory() {
+    fn a_container_engine_that_does_not_start_is_reported_by_name_alone() {
         let runner = Runner::Container {
-            engine: "absent-container-engine",
+            engine: ABSENT_ENGINE,
             id: "container".to_string(),
         };
         let step_workdir = format!("{CONTAINER_ROOT}/{WALLET_CRATE_DIR}");
         let diagnostic = run_command(&runner, &step_workdir, &[], &["cargo".to_string()])
             .unwrap_err()
             .concat();
-        assert!(diagnostic.contains(&step_workdir));
+        assert!(diagnostic.contains(ABSENT_ENGINE) && !diagnostic.contains(&step_workdir));
+    }
+
+    #[test]
+    fn an_absent_host_working_directory_is_reported_before_the_program() {
+        let step_workdir = format!("{HOST_ROOT}/{WALLET_CRATE_DIR}");
+        let diagnostic = run_command(&Runner::Host, &step_workdir, &[], &["cargo".to_string()])
+            .unwrap_err()
+            .concat();
+        assert!(diagnostic.contains(&step_workdir) && !diagnostic.contains("cargo"));
+    }
+
+    #[test]
+    fn an_output_directory_holding_the_root_is_refused_on_both_runners() {
+        let root = workbench::repo_root().unwrap();
+        let parent = root.parent().unwrap().to_path_buf();
+        assert!(Roots::on_host(root.clone(), root.clone()).is_err());
+        assert!(Roots::on_host(root.clone(), parent.clone()).is_err());
+        assert!(Roots::in_container(root.clone(), root.clone()).is_err());
+        assert!(Roots::in_container(root.clone(), parent).is_err());
+        assert!(Roots::on_host(root.clone(), root.join(RELATIVE_OUT)).is_ok());
     }
 
     #[test]
