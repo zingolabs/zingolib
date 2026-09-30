@@ -154,11 +154,15 @@ impl LightWallet {
     /// `SyncConfig` serialized version 2, which appends the
     /// `shutdown_on_completion` bool.
     ///
+    /// Changes in version 45:
+    /// `SyncState` serialized version 5, which appends the transparent scan
+    /// floor.
+    ///
     /// Landing in dev ships a format: every layout that has landed in dev
     /// must remain readable, and the wallet writable, forever after.
     #[must_use]
     pub const fn serialized_version() -> u64 {
-        44
+        45
     }
 
     /// Upper bound on the version word [`Self::read_recovery_info`] accepts:
@@ -259,7 +263,7 @@ impl LightWallet {
             ..32 => Self::read_v0(reader, chain_type, version),
             // 43 is a burned version number with the final 42 layout; see
             // the `serialized_version` docs and ADR 0015.
-            32..=44 => Self::read_v32(reader, chain_type, version),
+            32..=45 => Self::read_v32(reader, chain_type, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
