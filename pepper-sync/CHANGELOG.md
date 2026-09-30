@@ -135,6 +135,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once it is the first unscanned range. It could also be selected as the
   highest priority range while a lower range was still scanning, so the
   re-fetched nullifiers were discarded and fetched again.
+- A transaction mined during the sync session that spends the wallet's
+  transparent coins and pays everything to external recipients is fetched and
+  confirmed when the spend is detected (#2798). Compact block scanning mapped
+  its transparent inputs and marked the coins spent, but only a transaction
+  with an output to the wallet was targeted for a full scan. The spending
+  transaction was left in `Mempool` status until it passed its expiry height
+  and was marked failed, which also reset the spent coins to unspent.
 
 ### Removed
 
