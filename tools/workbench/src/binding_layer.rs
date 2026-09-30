@@ -25,8 +25,8 @@ pub const PROXY_LIB_NAME: &str = "zingo_nym_proxy_ffi";
 /// The proxy crate's package name, which cargo selects in its own workspace.
 pub const PROXY_PACKAGE: &str = "zingo-nym-proxy-ffi";
 
-/// The variable that carries zingo-mobile's `git describe` into the wallet's build script.
-pub const DESCRIBE_VARIABLE: &str = "ZINGO_MOBILE_GIT_DESCRIBE";
+/// The variable that carries zingo-mobile's finished `zm_` descriptor into the wallet's build script.
+pub const DESCRIBE_VARIABLE: &str = "ZINGO_MOBILE_DESCRIPTOR";
 
 /// The variable that makes rustup ignore zingolib's toolchain pin, as zingo-mobile's builders do.
 pub const TOOLCHAIN_VARIABLE: &str = "RUSTUP_TOOLCHAIN";
