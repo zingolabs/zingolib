@@ -1661,7 +1661,14 @@ where
                     new_transparent_inuse_addresses,
                 )
                 .await?;
-                spend::update_transparent_spends(wallet).map_err(SyncError::WalletError)?;
+                spend::update_transparent_spends(
+                    consensus_parameters,
+                    wallet,
+                    fetch_request_sender.clone(),
+                    ufvks,
+                    &scanned_blocks,
+                )
+                .await?;
                 spend::update_shielded_spends(
                     consensus_parameters,
                     wallet,
@@ -3732,6 +3739,205 @@ mod test {
                     .status(),
                 ConfirmationStatus::Confirmed(SPEND_HEIGHT)
             );
+        }
+    }
+
+    /// Transparent spend detection must leave the spending transaction confirmed in the wallet.
+    ///
+    /// Compact block scanning maps the transparent inputs of every transaction above the transparent scan floor but
+    /// only targets a transaction for a full scan when one of its outputs pays the wallet. A transaction that spends
+    /// a coin in full to an external recipient is therefore known to the wallet only as the pending record created
+    /// when it was sent.
+    mod transparent_spend_without_change {
+        use std::collections::{BTreeMap, HashMap};
+
+        use tokio::sync::mpsc;
+        use zcash_primitives::{block::BlockHash, transaction::TxId};
+        use zcash_protocol::{
+            consensus::BlockHeight, local_consensus::LocalNetwork, value::Zatoshis,
+        };
+        use zcash_transparent::{address::Script, keys::NonHardenedChildIndex};
+        use zingo_netutils::lightwallet_protocol::RawTransaction;
+        use zingo_status::confirmation_status::ConfirmationStatus;
+
+        use crate::{
+            client::FetchRequest,
+            keys::transparent::{TransparentAddressId, TransparentScope},
+            mocks::{MockWallet, MockWalletBuilder},
+            sync::spend,
+            wallet::{
+                OutputId, ScanTarget, TransparentCoin, TreeBounds, WalletBlock, WalletTransaction,
+                traits::{SyncOutPoints, SyncTransactions},
+            },
+        };
+
+        const NETWORK: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+            nu6_2: Some(BlockHeight::from_u32(1)),
+            nu6_3: Some(BlockHeight::from_u32(1)),
+        };
+        const FUNDING_HEIGHT: BlockHeight = BlockHeight::from_u32(10);
+        const SPEND_HEIGHT: BlockHeight = BlockHeight::from_u32(100);
+        const FUNDING_TXID: TxId = TxId::from_bytes([1; 32]);
+
+        /// The spending transaction's wallet record in the given lifecycle state, keyed by the txid the server
+        /// returns it under.
+        fn spending_record(status: ConfirmationStatus) -> WalletTransaction {
+            let txid = WalletTransaction::new_for_test(TxId::from_bytes([0; 32]), status)
+                .transaction()
+                .txid();
+            WalletTransaction::new_for_test(txid, status)
+        }
+
+        /// A wallet holding a confirmed coin, the given record of the transaction that spends it, and the spend's
+        /// outpoint as mapped from the compact block at `SPEND_HEIGHT`.
+        fn wallet_with_mapped_spend(spending_record: WalletTransaction) -> MockWallet {
+            let coin_id = OutputId::new(FUNDING_TXID, 0);
+            let coin = TransparentCoin {
+                output_id: coin_id,
+                key_id: TransparentAddressId::new(
+                    zip32::AccountId::ZERO,
+                    TransparentScope::External,
+                    NonHardenedChildIndex::ZERO,
+                ),
+                address: String::new(),
+                script: Script::default(),
+                value: Zatoshis::const_from_u64(100_000),
+                spending_transaction: None,
+            };
+            let funding_transaction = WalletTransaction::new_for_test(
+                FUNDING_TXID,
+                ConfirmationStatus::Confirmed(FUNDING_HEIGHT),
+            )
+            .with_transparent_coins_for_test(vec![coin]);
+            let spend_scan_target = ScanTarget {
+                block_height: SPEND_HEIGHT,
+                txid: spending_record.txid(),
+                narrow_scan_area: true,
+            };
+
+            MockWalletBuilder::new()
+                .wallet_transactions(HashMap::from([
+                    (FUNDING_TXID, funding_transaction),
+                    (spending_record.txid(), spending_record),
+                ]))
+                .outpoint_map(BTreeMap::from([(coin_id, spend_scan_target)]))
+                .create_mock_wallet()
+        }
+
+        fn scanned_blocks() -> BTreeMap<BlockHeight, WalletBlock> {
+            BTreeMap::from([(
+                SPEND_HEIGHT,
+                WalletBlock {
+                    block_height: SPEND_HEIGHT,
+                    block_hash: BlockHash([0; 32]),
+                    prev_hash: BlockHash([0; 32]),
+                    time: 0,
+                    txids: Vec::new(),
+                    tree_bounds: TreeBounds {
+                        sapling_initial_tree_size: 0,
+                        sapling_final_tree_size: 0,
+                        orchard_initial_tree_size: 0,
+                        orchard_final_tree_size: 0,
+                        ironwood_initial_tree_size: 0,
+                        ironwood_final_tree_size: 0,
+                    },
+                },
+            )])
+        }
+
+        /// Answers transaction requests with `transaction` mined at `SPEND_HEIGHT`.
+        fn spawn_fetcher(transaction: &WalletTransaction) -> mpsc::UnboundedSender<FetchRequest> {
+            let mut data = Vec::new();
+            transaction.transaction().write(&mut data).unwrap();
+            let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                    match fetch_request {
+                        FetchRequest::Transaction(reply_sender, _txid) => {
+                            let _ignore_error = reply_sender.send(Ok(RawTransaction {
+                                data: data.clone(),
+                                height: u64::from(SPEND_HEIGHT),
+                            }));
+                        }
+                        _ => panic!("unexpected fetch request"),
+                    }
+                }
+            });
+
+            fetch_request_sender
+        }
+
+        fn get_coin_spending_txid(wallet: &MockWallet) -> Option<TxId> {
+            wallet
+                .get_wallet_transactions()
+                .unwrap()
+                .get(&FUNDING_TXID)
+                .unwrap()
+                .transparent_coins()
+                .first()
+                .unwrap()
+                .spending_transaction
+        }
+
+        #[tokio::test]
+        async fn pending_spending_transaction_is_fetched_and_confirmed() {
+            let spending_record = spending_record(ConfirmationStatus::Mempool(SPEND_HEIGHT));
+            let spending_txid = spending_record.txid();
+            let fetch_request_sender = spawn_fetcher(&spending_record);
+            let mut wallet = wallet_with_mapped_spend(spending_record);
+
+            spend::update_transparent_spends(
+                &NETWORK,
+                &mut wallet,
+                fetch_request_sender,
+                &HashMap::new(),
+                &scanned_blocks(),
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(
+                wallet
+                    .get_wallet_transactions()
+                    .unwrap()
+                    .get(&spending_txid)
+                    .unwrap()
+                    .status(),
+                ConfirmationStatus::Confirmed(SPEND_HEIGHT)
+            );
+            assert_eq!(get_coin_spending_txid(&wallet), Some(spending_txid));
+            assert!(wallet.get_outpoints_mut().unwrap().is_empty());
+        }
+
+        /// A spending transaction the scanner already confirmed is marked on the coin without the server fetching the transaction again.
+        #[tokio::test]
+        async fn confirmed_spending_transaction_is_not_fetched() {
+            let spending_record = spending_record(ConfirmationStatus::Confirmed(SPEND_HEIGHT));
+            let spending_txid = spending_record.txid();
+            let mut wallet = wallet_with_mapped_spend(spending_record);
+            let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
+            // drop receiver so the test fails if the wallet attempts to fetch the transaction again unecessarily
+            drop(fetch_request_receiver);
+
+            spend::update_transparent_spends(
+                &NETWORK,
+                &mut wallet,
+                fetch_request_sender,
+                &HashMap::new(),
+                &scanned_blocks(),
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(get_coin_spending_txid(&wallet), Some(spending_txid));
         }
     }
 
