@@ -98,74 +98,21 @@ jobs:
             sudo apt-get install -y protobuf-compiler
           fi
 
+      # The workspace holds the proxy crate and the verifier shim beside
+      # zingo-netutils, so every step names the whole workspace.
       - name: Format
-        run: cargo fmt --manifest-path zingo-netutils/Cargo.toml --check
+        run: cargo fmt --manifest-path zingo-netutils/Cargo.toml --all --check
 
       - name: Clippy
-        run: cargo clippy --manifest-path zingo-netutils/Cargo.toml --all-targets --all-features -- -D warnings
+        run: cargo clippy --manifest-path zingo-netutils/Cargo.toml --workspace --all-targets --all-features -- -D warnings
 
       # The proxy crate's live-mixnet feature builds a test that reaches the
-      # real Nym network, which no pull request runs.
+      # real Nym network, so the proxy crate's tests run with it off.
       - name: Test
         run: cargo test --manifest-path zingo-netutils/Cargo.toml --all-features --workspace --exclude zingo-nym-proxy-ffi
 
       - name: Test the proxy crate
         run: cargo test --manifest-path zingo-netutils/Cargo.toml --package zingo-nym-proxy-ffi
-
-      # Membership in the root workspace used to gate rustdoc through
-      # checkmate's doc phase; clippy does not run rustdoc lints, so the
-      # standalone workspace needs its own doc gate.
-      - name: Doc
-        run: cargo doc --manifest-path zingo-netutils/Cargo.toml --all-features --no-deps
-        env:
-          RUSTDOCFLAGS: -D warnings
-
-  # The Binding Layer's two workspaces, zingo-ffi and the proxy crate, stand
-  # outside the root and zingo-netutils workspaces (zingolib/0054), so the
-  # jobs above skip them. This job lints and tests both. A zingolib change
-  # that breaks the Binding Layer's surface fails here, in its own PR.
-  binding-layer:
-    name: Binding Layer (zingo-ffi, proxy)
-    runs-on: ubuntu-24.04
-    env:
-      RUSTFLAGS: -D warnings
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            zingo-ffi
-            zingo-netutils/nym-proxy-ffi
-
-      - name: Install protoc
-        run: |
-          if ! command -v protoc; then
-            sudo apt-get update
-            sudo apt-get install -y protobuf-compiler
-          fi
-
-      - name: Format
-        run: |
-          cargo fmt --manifest-path zingo-ffi/Cargo.toml --all --check
-          cargo fmt --manifest-path zingo-netutils/nym-proxy-ffi/Cargo.toml --check
-
-      - name: Clippy
-        run: |
-          cargo clippy --manifest-path zingo-ffi/Cargo.toml --all-targets -- -D warnings
-          cargo clippy --manifest-path zingo-netutils/nym-proxy-ffi/Cargo.toml --all-targets -- -D warnings
-
-      # The live-mixnet test stays behind its feature, which this step
-      # leaves off, so no test here reaches the Nym network.
-      - name: Test
-        run: |
-          cargo test --manifest-path zingo-ffi/Cargo.toml
-          cargo test --manifest-path zingo-netutils/nym-proxy-ffi/Cargo.toml
 
       # The live test reaches the real Nym network, so it may fail on the
       # network without failing the check (zingolib/0054). One thread keeps
@@ -176,8 +123,17 @@ jobs:
         continue-on-error: true
         timeout-minutes: 25
         run: |
-          cargo test --manifest-path zingo-netutils/nym-proxy-ffi/Cargo.toml \
+          cargo test --manifest-path zingo-netutils/Cargo.toml \
+            --package zingo-nym-proxy-ffi \
             --features live-mixnet --test live_mixnet -- --test-threads=1
+
+      # Membership in the root workspace used to gate rustdoc through
+      # checkmate's doc phase; clippy does not run rustdoc lints, so the
+      # standalone workspace needs its own doc gate.
+      - name: Doc
+        run: cargo doc --manifest-path zingo-netutils/Cargo.toml --workspace --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
 
   # The per-PR tier of zingolib/0054: the x86_64 libraries, the Kotlin
   # bindings, and the AAR. zingo-mobile's android-build.yaml runs the
