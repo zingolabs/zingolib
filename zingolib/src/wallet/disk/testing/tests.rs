@@ -816,6 +816,51 @@ mod validation {
         }
     }
 
+    /// A build refuses a file stamped with a Wallet Version above the one it
+    /// writes. The file is a readable current-version wallet in every other
+    /// byte, so the version word alone is what the build refuses.
+    #[tokio::test]
+    async fn read_refuses_versions_above_the_current_write_version() {
+        let expected = current_version_wallet_bytes().await;
+        LightWallet::validate(expected.bytes.as_slice(), expected.chain_type)
+            .expect("the file reads at the current version");
+
+        for future_version in [
+            LightWallet::serialized_version() + 1,
+            LightWallet::serialized_version() + 2,
+        ] {
+            let mut bytes = expected.bytes.clone();
+            bytes[..8].copy_from_slice(&future_version.to_le_bytes());
+
+            let error = LightWallet::validate(bytes.as_slice(), expected.chain_type)
+                .expect_err("a version above the current write version must be refused");
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+            assert!(
+                error.to_string().contains(&future_version.to_string()),
+                "the error must name the refused version: {error}"
+            );
+        }
+    }
+
+    /// A build refuses a current-version file in which an embedded type
+    /// carries a serialized version above the one the build writes. The
+    /// price list opens the file tail, so its version is the byte at the
+    /// tail offset.
+    #[tokio::test]
+    async fn read_refuses_an_embedded_version_above_the_current_write_version() {
+        let expected = current_version_wallet_bytes().await;
+        let mut bytes = expected.bytes.clone();
+        bytes[expected.tail_offset()] += 1;
+
+        let error = LightWallet::validate(bytes.as_slice(), expected.chain_type)
+            .expect_err("an embedded version above the current write version must be refused");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(
+            error.to_string().contains("PriceList"),
+            "the error must name the refused type: {error}"
+        );
+    }
+
     /// Regression case: invalid seed phrase bytes must not recover to a seed phrase.
     #[test]
     fn recovery_info_rejects_forty_seven_space_bytes() {
@@ -961,7 +1006,7 @@ mod validation {
         ) {
             let version = u64::from_le_bytes(bytes[..8].try_into().unwrap());
 
-            if version > 43 {
+            if version > LightWallet::serialized_version() {
                 prop_assert!(
                     LightWallet::validate(bytes.as_slice(), ChainType::Mainnet).is_err()
                 );

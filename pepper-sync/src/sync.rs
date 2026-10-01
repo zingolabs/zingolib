@@ -486,7 +486,6 @@ where
             .map_err(SyncError::WalletError)?,
     );
 
-    let mut initial_chain_height: Option<BlockHeight> = None;
     let mut check_for_new_blocks = false;
     let mut first_verification_complete = false;
     let mut mempool_shutdown_timer = None;
@@ -504,12 +503,6 @@ where
         if chain_height == 0.into() {
             return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
         }
-        let initial_chain_height = *initial_chain_height.get_or_insert(chain_height);
-        // transparent address discovery on the first continuous sync loop locates all relevant transactions up to
-        // the initial chain height. only the compact block transparent data of blocks mined after this is scanned.
-        scanner
-            .transparent_scan_floor
-            .get_or_insert(initial_chain_height);
 
         // hold wallet guard until initial sync state is set to avoid inconsistencies and potential subtraction overflows
         // when calculating sync status.
@@ -631,8 +624,8 @@ where
             // or requiring rescanning multiple times.
             // this is performed even if no new blocks have been mined since the last sync session as blocks mined during
             // the previous sync session were not covered by transparent address discovery and may not have been
-            // scanned. these blocks are now below the transparent scan floor so their compact block transparent data
-            // will not be scanned.
+            // scanned. these blocks are above the transparent scan floor of the previous sync session, which
+            // address discovery searches from.
             scanner.transparent_gap_addresses.extend(
                 transparent::address_discovery(
                     consensus_parameters,
@@ -645,6 +638,18 @@ where
                 )
                 .await?,
             );
+
+            // transparent address discovery has located all relevant transactions up to the chain height. only the
+            // compact block transparent data of blocks mined after this is scanned.
+            let mut wallet_guard = wallet.write().await;
+            wallet_guard
+                .get_sync_state_mut()
+                .map_err(SyncError::WalletError)?
+                .transparent_scan_floor = Some(chain_height);
+            wallet_guard
+                .set_save_flag()
+                .map_err(SyncError::WalletError)?;
+            drop(wallet_guard);
         }
 
         if new_blocks_mined || reorg_occured || !first_verification_complete {
@@ -697,7 +702,6 @@ where
                     let ProcessedScanResults {
                         new_transparent_inuse_addresses,
                         new_transparent_gap_addresses,
-                        reorg_truncate_height,
                     } = process_scan_results(
                         consensus_parameters,
                         &mut *wallet_guard,
@@ -722,11 +726,6 @@ where
                         &new_transparent_inuse_addresses,
                         new_transparent_gap_addresses,
                     );
-                    if let Some(reorg_truncate_height) = reorg_truncate_height {
-                        // transparent address discovery is not performed again during this sync session so the
-                        // compact block transparent data of the re-orged blocks must be scanned.
-                        scanner.lower_transparent_scan_floor(reorg_truncate_height);
-                    }
                     expire_transactions(&mut *wallet_guard)?;
                     publish_sync_status(&*wallet_guard, &progress).await?;
                     wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
@@ -909,12 +908,14 @@ where
             // The wallet reported height is above the current proxy height
             // reset to the proxy height.
             truncate_wallet_data(wallet, chain_height)?;
-            state::truncate_scan_ranges(
-                chain_height,
-                wallet
-                    .get_sync_state_mut()
-                    .map_err(SyncError::WalletError)?,
-            );
+            let sync_state = wallet
+                .get_sync_state_mut()
+                .map_err(SyncError::WalletError)?;
+            state::truncate_scan_ranges(chain_height, sync_state);
+            // the truncated blocks are scanned again when the chain extends. transparent address discovery is only
+            // performed at the start of the sync session so the compact block transparent data of these blocks must
+            // be scanned.
+            state::lower_transparent_scan_floor(sync_state, chain_height);
             wallet.set_save_flag().map_err(SyncError::WalletError)?;
             return Ok(chain_height);
         }
@@ -1447,14 +1448,12 @@ struct ProcessedScanResults {
     new_transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
     /// Transparent gap addresses derived to replace the gap addresses found in use.
     new_transparent_gap_addresses: HashMap<String, TransparentAddressId>,
-    /// Height the wallet was truncated to if a re-org was detected.
-    reorg_truncate_height: Option<BlockHeight>,
 }
 
 /// Scan post-processing.
 ///
-/// Returns the changes to the transparent gap addresses, or the truncation height in the case of a recovered error i.e.
-/// re-org.
+/// Returns any new transparent addresses. A recovered error i.e. re-org truncates the wallet and lowers the
+/// transparent scan floor to the truncation height.
 #[allow(clippy::too_many_arguments)]
 async fn process_scan_results<W>(
     consensus_parameters: &(impl consensus::Parameters + Sync),
@@ -1577,7 +1576,6 @@ where
                     return Ok(ProcessedScanResults {
                         new_transparent_inuse_addresses,
                         new_transparent_gap_addresses,
-                        reorg_truncate_height: None,
                     });
                 }
 
@@ -1720,7 +1718,6 @@ where
             Ok(ProcessedScanResults {
                 new_transparent_inuse_addresses,
                 new_transparent_gap_addresses,
-                reorg_truncate_height: None,
             })
         }
         Err(ScanError::ContinuityError(ContinuityError::HashDiscontinuity { height, .. })) => {
@@ -1765,6 +1762,14 @@ where
 
                 let reorg_truncate_height = current_reorg_detection_start_height - 1;
                 truncate_wallet_data(wallet, reorg_truncate_height)?;
+                // transparent address discovery is not performed again during this sync session so the compact block
+                // transparent data of the re-orged blocks must be scanned.
+                state::lower_transparent_scan_floor(
+                    wallet
+                        .get_sync_state_mut()
+                        .map_err(SyncError::WalletError)?,
+                    reorg_truncate_height,
+                );
 
                 state::set_initial_state(
                     consensus_parameters,
@@ -1777,7 +1782,6 @@ where
                 Ok(ProcessedScanResults {
                     new_transparent_inuse_addresses: HashMap::new(),
                     new_transparent_gap_addresses: HashMap::new(),
-                    reorg_truncate_height: Some(reorg_truncate_height),
                 })
             } else {
                 Err(scan_results
@@ -3992,7 +3996,7 @@ mod test {
         mod last_known_chain_height {
             use crate::{
                 sync::{MAX_REORG_ALLOWANCE, ScanRange},
-                wallet::SyncState,
+                wallet::{SyncState, traits::SyncWallet as _},
             };
             const DEFAULT_START_HEIGHT: BlockHeight = BlockHeight::from_u32(1);
             const _DEFAULT_LAST_KNOWN_HEIGHT: BlockHeight = BlockHeight::from_u32(102);
@@ -4050,6 +4054,47 @@ mod test {
                 // match
                 let res = checked_wallet_height(&mut test_wallet, chain_height, &LOCAL_NETWORK);
                 assert_eq!(res.unwrap(), BlockHeight::from_u32(4));
+            }
+            /// Blocks above the chain height are truncated and scanned again when the chain extends. Transparent
+            /// address discovery only covers the blocks at or below the transparent scan floor, and is not performed
+            /// again during the sync session, so a floor above the chain height is lowered to it for the compact block
+            /// transparent data of the truncated blocks to be scanned. A floor at or below the chain height still
+            /// covers every block the wallet keeps.
+            #[tokio::test]
+            async fn above_chain_height_lowers_transparent_scan_floor() {
+                const LAST_KNOWN_HEIGHT: BlockHeight = BlockHeight::from_u32(110);
+                const CHAIN_HEIGHT: BlockHeight = BlockHeight::from_u32(105);
+                const FLOOR_ABOVE_CHAIN_HEIGHT: BlockHeight = BlockHeight::from_u32(108);
+                const FLOOR_BELOW_CHAIN_HEIGHT: BlockHeight = BlockHeight::from_u32(100);
+
+                for (floor, expected_floor) in [
+                    (FLOOR_ABOVE_CHAIN_HEIGHT, CHAIN_HEIGHT),
+                    (CHAIN_HEIGHT, CHAIN_HEIGHT),
+                    (FLOOR_BELOW_CHAIN_HEIGHT, FLOOR_BELOW_CHAIN_HEIGHT),
+                ] {
+                    let state = SyncState {
+                        scan_ranges: vec![ScanRange::from_parts(
+                            DEFAULT_START_HEIGHT..LAST_KNOWN_HEIGHT + 1,
+                            crate::sync::ScanPriority::Scanned,
+                        )],
+                        transparent_scan_floor: Some(floor),
+                        ..Default::default()
+                    };
+                    let mut test_wallet = crate::mocks::MockWalletBuilder::new()
+                        .sync_state(state)
+                        .create_mock_wallet();
+
+                    let last_known_chain_height =
+                        checked_wallet_height(&mut test_wallet, CHAIN_HEIGHT, &LOCAL_NETWORK)
+                            .unwrap();
+
+                    assert_eq!(last_known_chain_height, CHAIN_HEIGHT);
+                    assert_eq!(
+                        test_wallet.get_sync_state().unwrap().transparent_scan_floor,
+                        Some(expected_floor),
+                        "floor {floor}"
+                    );
+                }
             }
             #[ignore = "in progress"]
             #[tokio::test]

@@ -97,6 +97,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recovers the full failure story by walking the `source()` chain.
 - `wallet::WalletTransaction::update_status`: added `fail_confirmed` bool for protecting against confirmed txs being
     set to failed in cases other than re-org truncation.
+- The readers of `config::SyncConfig`, `config::PerformanceLevel` and the
+  `wallet` types (`ScanTarget`, `SyncState`, `TreeBounds`, `NullifierMap`,
+  `WalletBlock`, `WalletTransaction`, `TransparentCoin`, `WalletNote`,
+  `OutgoingNote`, `ShardTrees`) return an `InvalidData` error for a serialized
+  version above the one this build writes. They read on at any version before,
+  so an older build read a newer layout as the layout it knew. A consumer's
+  wallet file no longer needs a new version of its own for a change to the
+  serialized version of one of these types.
+- `wallet::SyncState` serialization version bumped to 5 to persist the
+  transparent scan floor. Earlier versions read it as unset, and the next sync
+  session's transparent address discovery then searches the blocks within the
+  re-org allowance of the last known chain height, as before.
 
 ### Fixed
 - A `ServerError::RequestFailed` caused by network weather is now recommended
@@ -135,6 +147,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once it is the first unscanned range. It could also be selected as the
   highest priority range while a lower range was still scanning, so the
   re-fetched nullifiers were discarded and fetched again.
+- Transparent transactions in blocks mined during a sync session that ended
+  before scanning them are found by the next session. Blocks mined during a
+  session are above its transparent scan floor and are only covered by
+  scanning their compact block transparent data. The next session set its
+  floor above them, and its transparent address discovery only searched the
+  blocks within the re-org allowance of the last known chain height, so
+  transactions in older unscanned blocks were never found. The transparent
+  scan floor is now stored in the wallet's sync state, and transparent address
+  discovery searches from the floor of the previous session.
+- Transparent transactions are found again when the server reports a chain
+  height below the wallet's during a sync session and the chain then extends.
+  The wallet was truncated to the chain height without lowering the
+  transparent scan floor, so the blocks scanned in place of the truncated
+  blocks at or below the floor had neither their compact block transparent
+  data scanned nor transparent address discovery performed. Transparent
+  transactions mined in them were left in `Failed` status and transparent
+  spends were left undetected.
 - Transparent funds received by a gap address in a block mined during the sync
   session are detected after nullifiers have been re-fetched. Every scan
   returned the full set of gap addresses, which replaced the scanner's, and
