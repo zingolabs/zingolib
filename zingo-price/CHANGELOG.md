@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   amendment 2026-08-26). It was previously a test-only helper.
 
 ### Changed
+- `PriceList::read` returns an `InvalidData` error for a serialized version
+  above the one this build writes. It read on at any version before.
 - BREAKING: `PriceError::RequestFailed` carries a
   `zingo_netutils::socks5_fetch::Socks5FetchError` where it carried a
   `reqwest::Error`. The HTTP leg the price fetch rides moved below the seam

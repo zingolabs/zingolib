@@ -97,6 +97,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recovers the full failure story by walking the `source()` chain.
 - `wallet::WalletTransaction::update_status`: added `fail_confirmed` bool for protecting against confirmed txs being
     set to failed in cases other than re-org truncation.
+- The readers of `config::SyncConfig`, `config::PerformanceLevel` and the
+  `wallet` types (`ScanTarget`, `SyncState`, `TreeBounds`, `NullifierMap`,
+  `WalletBlock`, `WalletTransaction`, `TransparentCoin`, `WalletNote`,
+  `OutgoingNote`, `ShardTrees`) return an `InvalidData` error for a serialized
+  version above the one this build writes. They read on at any version before,
+  so an older build read a newer layout as the layout it knew. A consumer's
+  wallet file no longer needs a new version of its own for a change to the
+  serialized version of one of these types.
 - `wallet::SyncState` serialization version bumped to 5 to persist the
   transparent scan floor. Earlier versions read it as unset, and the next sync
   session's transparent address discovery then searches the blocks within the

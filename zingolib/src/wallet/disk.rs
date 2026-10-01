@@ -157,6 +157,12 @@ impl LightWallet {
     /// Changes in version 45:
     /// `SyncState` serialized version 5, which appends the transparent scan
     /// floor.
+    /// The readers of the pepper-sync, zingo-status and zingo-price types
+    /// embedded in the wallet file refuse a serialized version above the one
+    /// they write. Builds before version 45 read those types at any version,
+    /// so 44 and 45 were each minted for a change to one of them. A build that
+    /// reads version 45 refuses a newer embedded layout by itself, so a change
+    /// to an embedded type's serialized version takes no new Wallet Version.
     ///
     /// Landing in dev ships a format: every layout that has landed in dev
     /// must remain readable, and the wallet writable, forever after.

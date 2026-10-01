@@ -184,7 +184,19 @@ impl PriceList {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        let version = reader.read_u8()?;
+        // a version above the one this build writes was written by a newer build in a layout this build cannot
+        // read. it is refused so the newer layout is never read as an older one.
+        if version > Self::serialized_version() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "PriceList serialized version {version} was written by a newer build. this build reads up to \
+                     version {}.",
+                    Self::serialized_version()
+                ),
+            ));
+        }
 
         let time_last_updated = Optional::read(
             &mut reader,
@@ -796,6 +808,22 @@ pub async fn get_source_price_untunneled(
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// The reader is given a serialized version above the one the type writes, followed by a price list the current
+    /// layout reads.
+    #[test]
+    fn price_list_read_refuses_a_serialized_version_above_its_own() {
+        let mut bytes = Vec::new();
+        PriceList::new().write(&mut bytes).unwrap();
+        PriceList::read(bytes.as_slice()).expect("the current version is read");
+
+        bytes[0] = PriceList::serialized_version() + 1;
+
+        let error = PriceList::read(bytes.as_slice())
+            .map(drop)
+            .expect_err("a version above the current version is refused");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
     use tokio::net::TcpListener;
     use zingo_net_diag::NetOpStage;
 
