@@ -104,8 +104,13 @@ jobs:
       - name: Clippy
         run: cargo clippy --manifest-path zingo-netutils/Cargo.toml --all-targets --all-features -- -D warnings
 
+      # The proxy crate's live-mixnet feature builds a test that reaches the
+      # real Nym network, which no pull request runs.
       - name: Test
-        run: cargo test --manifest-path zingo-netutils/Cargo.toml --all-features
+        run: cargo test --manifest-path zingo-netutils/Cargo.toml --all-features --workspace --exclude zingo-nym-proxy-ffi
+
+      - name: Test the proxy crate
+        run: cargo test --manifest-path zingo-netutils/Cargo.toml --package zingo-nym-proxy-ffi
 
       # Membership in the root workspace used to gate rustdoc through
       # checkmate's doc phase; clippy does not run rustdoc lints, so the
