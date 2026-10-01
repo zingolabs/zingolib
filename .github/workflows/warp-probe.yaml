@@ -1,0 +1,15 @@
+name: WarpBuild access probe
+
+# A throwaway probe: does a WarpBuild runner pick up a zingolib job?
+on:
+  push:
+    branches: [probe/warpbuild-access]
+
+jobs:
+  probe:
+    name: Probe the WarpBuild label
+    runs-on: warp-macos-15-arm64-12x
+    timeout-minutes: 3
+    steps:
+      - name: Report the runner
+        run: echo "runner=$RUNNER_NAME"
