@@ -166,7 +166,7 @@ jobs:
     uses: zingolabs/zingo-mobile/.github/workflows/ios-build.yaml@dev
     needs: create-cache-key
     with:
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
+      cache-key: ${{ needs.create-cache-key.outputs.ios-cache-key }}
 
   ios-integration-test:
     strategy:
@@ -174,7 +174,7 @@ jobs:
     uses: zingolabs/zingo-mobile/.github/workflows/ios-integration-test.yaml@dev
     needs: [ create-cache-key, ios-build ]
     with:
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
+      cache-key: ${{ needs.create-cache-key.outputs.ios-cache-key }}
 
   test:
     uses: ./.github/workflows/test.yaml

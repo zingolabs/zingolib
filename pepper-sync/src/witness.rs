@@ -271,8 +271,7 @@ impl Frontiers {
     }
 
     /// Returns the frontier of the Ironwood note commitment tree as of the end of the block at
-    /// [`Self::block_height`]. Empty pre-activation, and also when the server
-    /// does not serve the ironwood tree state yet.
+    /// [`Self::block_height`]. Empty pre-activation.
     pub(crate) fn final_ironwood_tree(
         &self,
     ) -> &Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>
@@ -351,9 +350,9 @@ pub(crate) fn get_orchard_tree(
 }
 
 /// Deserializes and returns the Ironwood note commitment tree field of the
-/// tree state. An empty field means the tree is empty, which covers both
-/// pre-activation heights and servers that do not serve the ironwood tree
-/// state yet.
+/// tree state. Servers omit the field below the ironwood activation height,
+/// so an empty field means the tree is empty. See [`crate::client::get_frontiers`]
+/// for the rejection of an omitted field at or above the activation height.
 pub(crate) fn get_ironwood_tree(
     tree_state: &TreeState,
 ) -> std::io::Result<CommitmentTree<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>>

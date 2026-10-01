@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- `sync::CHECK_NEW_BLOCKS_INTERVAL`, the interval in seconds at which
+  continuous sync checks for newly mined blocks.
 - Continuous sync (ADR 0051). BREAKING: `config::SyncConfig` gains a
   `shutdown_on_completion` field. When `false`, `sync` keeps running once the
   wallet reaches the chain tip, checking for newly mined blocks (on mempool
@@ -37,8 +39,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returned when the sync progress receiver has been dropped.
 - BREAKING: `error::ScanError` variants `TransparentOutputInvalidValue`,
   `AllAddressesInUse`, and `TransparentAddressDerivationError`.
+- BREAKING: `error::ServerError::TreeStateNotServed` variant, returned when the
+  server omits a shielded pool's tree state at or above the pool's activation
+  height. The server does not serve that pool, so retrying the same server
+  will not succeed: the error recommends
+  `SyncRecoveryObservables::ServerUnavailable`, and the consumer should switch
+  to a different server and sync again.
+- BREAKING: `error::ScanError::TreeSizeNotReported` variant, returned when
+  block metadata reports a tree size of zero where the wallet has calculated a
+  non-zero tree size.
+- BREAKING: `error::ServerError::UnsupportedProtocolVersion` variant, returned
+  at the start of sync when the server's `GetLightdInfo`
+  `lightwalletProtocolVersion` is missing or below v0.5.0. Such servers do not
+  serve the transparent and Ironwood data in compact blocks that sync requires.
+  The error recommends `SyncRecoveryObservables::ServerUnavailable`, and the
+  consumer should switch to a different server and sync again.
 
 ### Changed
+- BREAKING: `client::FetchRequest::CompactBlockRange` has an added `bool`
+  field. When true, compact blocks are requested with the `TRANSPARENT`,
+  `SAPLING`, `ORCHARD` and `IRONWOOD` pool types, otherwise with the default
+  (shielded only). Transparent data is only requested for blocks above the
+  transparent scan floor. Previously, no pool types were ever requested, so
+  compact blocks never contained the transparent data that is scanned for
+  blocks mined during the sync session.
+- BREAKING: `wallet::traits::SyncShardTrees::update_shard_trees` takes the
+  consensus parameters as its first argument.
+- A server that does not serve Ironwood is an error. Failing to fetch Ironwood
+  subtree roots fails sync instead of being tolerated, an omitted Sapling,
+  Orchard or Ironwood tree state at or above the pool's activation height
+  returns `ServerError::TreeStateNotServed`, and a zero tree size in block
+  metadata where the wallet has calculated a non-zero tree size returns
+  `ScanError::TreeSizeNotReported` instead of being logged as a warning. Both
+  errors recommend `SyncRecoveryObservables::ServerUnavailable`.
 - `wallet::traits::SyncWallet::get_transparent_addresses` and
   `get_transparent_addresses_mut` document that the returned addresses must be
   in use and must not include gap addresses.
@@ -64,6 +97,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recovers the full failure story by walking the `source()` chain.
 - `wallet::WalletTransaction::update_status`: added `fail_confirmed` bool for protecting against confirmed txs being
     set to failed in cases other than re-org truncation.
+
+### Fixed
+- A `ServerError::RequestFailed` caused by network weather is now recommended
+  `SyncRecoveryObservables::MaybeRecoverableServer` and
+  `recommend_same_server`, rather than `ServerUnavailable`. Network weather is
+  a failure raised by the transport (a tonic transport error, client-side
+  timeout or I/O error in the status's source chain) or a status code gRPC
+  names as transient (`Unavailable`, `DeadlineExceeded`, `Cancelled`,
+  `ResourceExhausted`, `Aborted`). Any other status code is an answer from a
+  server that cannot serve the request and is still recommended
+  `ServerUnavailable`. `MaybeRecoverableServer` now documents that callers
+  should retry a bounded number of times before treating the server as
+  unavailable. (#2799)
+- The mempool monitor counts a mempool transaction as unprocessed before
+  sending it to the sync engine rather than after. The count was incremented
+  only once the send completed, so the mempool drain could observe a zero
+  count while a transaction was queued and end the sync session without
+  processing it, leaving the transaction's wallet record in `Transmitted`
+  status until the next session.
+- Subtree roots are fetched, and the initial frontier added, at the start of
+  every sync session before scanning begins, even if no blocks were mined
+  since the last session (#2782). Continuous sync had moved this behind a new
+  block check, so a session restarted after a pool rescan could insert note
+  commitments before fetching the pool's subtree roots. The shard store then
+  hides the lower shards' missing roots from subtree root fetching, leaving
+  the wallet unable to compute the pool's tree root.
+- A pool rescan (`SyncError::PoolHistoryReopened`) clears the rescanned pool's
+  shard ranges along with its shard tree, so they are rebuilt from the subtree
+  roots fetched in the next session.
+- A pool rescan clears the shard trees of the rescanned pool and any pool
+  activated after it, and truncates the pools activated before it, as
+  documented. The condition was inverted, so an Ironwood rescan cleared the
+  Sapling and Orchard shard trees, losing their note commitments below the
+  Ironwood activation height.
+- A `ScannedWithoutMapping` range is only selected to re-fetch its nullifiers
+  once it is the first unscanned range. It could also be selected as the
+  highest priority range while a lower range was still scanning, so the
+  re-fetched nullifiers were discarded and fetched again.
+- Transparent funds received by a gap address in a block mined during the sync
+  session are detected after nullifiers have been re-fetched. Every scan
+  returned the full set of gap addresses, which replaced the scanner's, and
+  re-fetching the nullifiers of a `ScannedWithoutMapping` range returned an
+  empty set. Compact block transparent data was then scanned with no gap
+  addresses for the rest of the session. Scans now return only the gap
+  addresses found in use and the gap addresses derived to replace them, and
+  these changes are applied to the scanner's gap addresses.
+- A transaction mined during the sync session that spends the wallet's
+  transparent coins and pays everything to external recipients is fetched and
+  confirmed when the spend is detected (#2798). Compact block scanning mapped
+  its transparent inputs and marked the coins spent, but only a transaction
+  with an output to the wallet was targeted for a full scan. The spending
+  transaction was left in `Mempool` status until it passed its expiry height
+  and was marked failed, which also reset the spent coins to unspent.
 
 ### Removed
 

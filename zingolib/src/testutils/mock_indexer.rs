@@ -38,8 +38,9 @@ use zingo_netutils::lightwallet_protocol::{
     CompactOrchardAction, CompactSaplingOutput, CompactSaplingSpend, CompactTx, CompactTxIn,
     CompactTxStreamer, CompactTxStreamerServer, Duration as ProtoDuration, Empty,
     GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, GetMempoolTxRequest,
-    GetSubtreeRootsArg, LightdInfo, PingResponse, RawTransaction, SendResponse, SubtreeRoot,
-    TransparentAddressBlockFilter, TreeState, TxFilter, TxOut as CompactTxOut,
+    GetSubtreeRootsArg, LightdInfo, PingResponse, PoolType as ProtoPoolType, RawTransaction,
+    SendResponse, SubtreeRoot, TransparentAddressBlockFilter, TreeState, TxFilter,
+    TxOut as CompactTxOut,
 };
 
 use incrementalmerkletree::frontier::CommitmentTree;
@@ -517,11 +518,108 @@ pub struct MockChain {
     /// requested range, and how many transactions were streamed back.
     /// Diagnostic surface for transparent-detection failures.
     taddr_request_log: Vec<String>,
+    /// The `lightwalletProtocolVersion` reported by `GetLightdInfo`. Defaults to v0.5.0, the minimum version sync
+    /// accepts. Set it lower, or empty for a server pre-dating the field, to exercise the rejection of old servers.
+    pub lightwallet_protocol_version: String,
     /// Bumped by [`MockChain::reorg_to`]. Folded into the hashes of
     /// blocks mined afterwards so a re-mined branch is distinguishable
     /// from the branch it replaced. A wallet detects the reorg by hash
     /// mismatch, exactly as against a real chain.
     branch_seed: u32,
+}
+
+/// The pools a `BlockRange` requests data for.
+#[derive(Clone, Copy)]
+struct RequestedPools {
+    transparent: bool,
+    sapling: bool,
+    orchard: bool,
+    ironwood: bool,
+}
+
+impl RequestedPools {
+    /// Parses the request's pool types. An empty pool type list requests the shielded pools only.
+    fn from_range(range: &BlockRange) -> Result<Self, Status> {
+        if range.pool_types.is_empty() {
+            return Ok(Self {
+                transparent: false,
+                sapling: true,
+                orchard: true,
+                ironwood: true,
+            });
+        }
+        let mut pools = Self {
+            transparent: false,
+            sapling: false,
+            orchard: false,
+            ironwood: false,
+        };
+        for pool_type in &range.pool_types {
+            match ProtoPoolType::try_from(*pool_type) {
+                Ok(ProtoPoolType::Transparent) => pools.transparent = true,
+                Ok(ProtoPoolType::Sapling) => pools.sapling = true,
+                Ok(ProtoPoolType::Orchard) => pools.orchard = true,
+                Ok(ProtoPoolType::Ironwood) => pools.ironwood = true,
+                Ok(ProtoPoolType::Invalid) | Err(_) => {
+                    return Err(Status::invalid_argument(format!(
+                        "invalid pool type {pool_type}"
+                    )));
+                }
+            }
+        }
+        Ok(pools)
+    }
+
+    /// Prunes `block` to the data of the requested pools, as a server does. Transactions left with no data are
+    /// omitted.
+    fn prune(self, block: &mut CompactBlock) {
+        for tx in &mut block.vtx {
+            if !self.transparent {
+                tx.vin.clear();
+                tx.vout.clear();
+            }
+            if !self.sapling {
+                tx.spends.clear();
+                tx.outputs.clear();
+            }
+            if !self.orchard {
+                tx.actions.clear();
+            }
+            if !self.ironwood {
+                tx.ironwood_actions.clear();
+            }
+        }
+        block.vtx.retain(|tx| {
+            !(tx.vin.is_empty()
+                && tx.vout.is_empty()
+                && tx.spends.is_empty()
+                && tx.outputs.is_empty()
+                && tx.actions.is_empty()
+                && tx.ironwood_actions.is_empty())
+        });
+    }
+}
+
+/// Reduces `block` to the shielded nullifiers, as a server does for `GetBlockNullifiers` and
+/// `GetBlockRangeNullifiers`: Sapling spend nullifiers and Orchard and Ironwood action nullifiers only. Transparent
+/// data, Sapling outputs, the rest of the action data and the commitment tree sizes are removed. Transactions left
+/// with no nullifiers are omitted.
+fn reduce_to_nullifiers(block: &mut CompactBlock) {
+    block.chain_metadata = None;
+    for tx in &mut block.vtx {
+        tx.vin.clear();
+        tx.vout.clear();
+        tx.outputs.clear();
+        for action in tx.actions.iter_mut().chain(tx.ironwood_actions.iter_mut()) {
+            *action = CompactOrchardAction {
+                nullifier: std::mem::take(&mut action.nullifier),
+                ..Default::default()
+            };
+        }
+    }
+    block.vtx.retain(|tx| {
+        !(tx.spends.is_empty() && tx.actions.is_empty() && tx.ironwood_actions.is_empty())
+    });
 }
 
 fn fabricated_block_hash(height: u32) -> Vec<u8> {
@@ -783,6 +881,7 @@ impl MockChain {
             answer_sends_with_error_code: None,
             rejected_sends: 0,
             taddr_request_log: Vec::new(),
+            lightwallet_protocol_version: "v0.5.0".to_string(),
             branch_seed: 0,
         }
     }
@@ -1394,6 +1493,36 @@ impl MockIndexerService {
         }
     }
 
+    /// Serves the blocks of `range` for `GetBlockRange`, or reduced to the shielded nullifiers for
+    /// `GetBlockRangeNullifiers` if `nullifiers_only` is true.
+    async fn block_range(
+        &self,
+        range: BlockRange,
+        nullifiers_only: bool,
+    ) -> Result<Response<ResponseStream<CompactBlock>>, Status> {
+        let fault = self.fault_for(Rpc::BlockRange).await?;
+        let start = range.start.as_ref().map_or(0, |id| id.height) as usize;
+        let end = range.end.as_ref().map_or(0, |id| id.height) as usize;
+        if start == 0 || end < start {
+            return Err(Status::invalid_argument(
+                "the mock serves ascending ranges starting at height 1",
+            ));
+        }
+        let chain = self.chain.read().await;
+        if end > chain.blocks.len() {
+            return Err(Status::not_found(format!("no block at height {end}")));
+        }
+        let pools = RequestedPools::from_range(&range)?;
+        let mut blocks: Vec<_> = chain.blocks[start - 1..end].to_vec();
+        for block in &mut blocks {
+            pools.prune(block);
+            if nullifiers_only {
+                reduce_to_nullifiers(block);
+            }
+        }
+        Ok(Response::new(stream_with_fault(blocks, fault)))
+    }
+
     async fn address_utxos(
         &self,
         arg: GetAddressUtxosArg,
@@ -1447,7 +1576,10 @@ impl CompactTxStreamer for MockIndexerService {
         &self,
         request: Request<BlockId>,
     ) -> Result<Response<CompactBlock>, Status> {
-        self.get_block(request).await
+        let mut block = self.get_block(request).await?.into_inner();
+        reduce_to_nullifiers(&mut block);
+
+        Ok(Response::new(block))
     }
 
     type GetBlockRangeStream = ResponseStream<CompactBlock>;
@@ -1455,21 +1587,7 @@ impl CompactTxStreamer for MockIndexerService {
         &self,
         request: Request<BlockRange>,
     ) -> Result<Response<Self::GetBlockRangeStream>, Status> {
-        let fault = self.fault_for(Rpc::BlockRange).await?;
-        let range = request.into_inner();
-        let start = range.start.map_or(0, |id| id.height) as usize;
-        let end = range.end.map_or(0, |id| id.height) as usize;
-        if start == 0 || end < start {
-            return Err(Status::invalid_argument(
-                "the mock serves ascending ranges starting at height 1",
-            ));
-        }
-        let chain = self.chain.read().await;
-        if end > chain.blocks.len() {
-            return Err(Status::not_found(format!("no block at height {end}")));
-        }
-        let blocks: Vec<_> = chain.blocks[start - 1..end].to_vec();
-        Ok(Response::new(stream_with_fault(blocks, fault)))
+        self.block_range(request.into_inner(), false).await
     }
 
     type GetBlockRangeNullifiersStream = ResponseStream<CompactBlock>;
@@ -1477,7 +1595,7 @@ impl CompactTxStreamer for MockIndexerService {
         &self,
         request: Request<BlockRange>,
     ) -> Result<Response<Self::GetBlockRangeNullifiersStream>, Status> {
-        self.get_block_range(request).await
+        self.block_range(request.into_inner(), true).await
     }
 
     async fn get_tree_state(
@@ -1761,6 +1879,7 @@ impl CompactTxStreamer for MockIndexerService {
             consensus_branch_id: format!("{branch_id:08x}"),
             block_height: u64::from(tip),
             estimated_height: u64::from(tip),
+            lightwallet_protocol_version: chain.lightwallet_protocol_version.clone(),
             ..Default::default()
         }))
     }

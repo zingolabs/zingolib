@@ -122,18 +122,55 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
 }
 
 impl ServerError {
+    /// Returns `true` if this is a gRPC request that failed to network
+    /// weather: a timeout, a dropped or refused connection, or a server
+    /// too busy to answer.
+    ///
+    /// A failure raised by the transport carries a tonic transport error (or
+    /// its client-side [`tonic::TimeoutExpired`] or I/O error) in the status's
+    /// source chain. Otherwise the status code decides: the codes gRPC names
+    /// as transient are network weather, and every other code is an answer
+    /// from a server that cannot serve the request.
+    fn request_hit_network_weather(&self) -> bool {
+        let ServerError::RequestFailed(status) = self else {
+            return false;
+        };
+        let mut link = std::error::Error::source(status);
+        while let Some(cause) = link {
+            if cause.is::<tonic::transport::Error>()
+                || cause.is::<tonic::TimeoutExpired>()
+                || cause.is::<std::io::Error>()
+            {
+                return true;
+            }
+            link = cause.source();
+        }
+        matches!(
+            status.code(),
+            tonic::Code::Unavailable
+                | tonic::Code::DeadlineExceeded
+                | tonic::Code::Cancelled
+                | tonic::Code::ResourceExhausted
+                | tonic::Code::Aborted
+        )
+    }
+
     /// Returns `true` if this server error is likely transient.
     ///
-    /// gRPC request failures (timeouts, connection drops) are recommend_same_server.
-    /// Invalid data from the server suggests a bad server that should be
-    /// avoided rather than retried.
+    /// gRPC requests that failed to network weather (timeouts, connection
+    /// drops) are recommend_same_server. Other request failures and invalid
+    /// data from the server suggest a bad server that should be avoided
+    /// rather than retried.
     pub fn recommend_same_server(&self) -> bool {
         match self {
             // Internal channel issue. Retrying may help after restart.
             ServerError::FetcherDropped => true,
 
-            // gRPC request failure. The server may be down or overloaded.
-            // Switch to a different server rather than retrying the same one.
+            // Network weather is transient. The next request may be served
+            // by a fresh connection to the same server.
+            ServerError::RequestFailed(_) if self.request_hit_network_weather() => true,
+            // The server answered but cannot serve the request. Switch to a
+            // different server rather than retrying the same one.
             ServerError::RequestFailed(_) => false,
 
             // Bad data from server. Retrying the same server won't help.
@@ -141,7 +178,9 @@ impl ServerError {
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError
-            | ServerError::GenesisBlockOnly => false,
+            | ServerError::GenesisBlockOnly
+            | ServerError::TreeStateNotServed { .. }
+            | ServerError::UnsupportedProtocolVersion { .. } => false,
         }
     }
 }
@@ -155,8 +194,15 @@ impl ServerError {
 pub enum SyncRecoveryObservables {
     /// The error is transient (e.g. timeout, connection drop).
     /// Retrying sync with the same server may succeed.
+    ///
+    /// Callers should retry a bounded number of times, then treat the
+    /// server as [`Self::ServerUnavailable`]. A single error cannot tell
+    /// passing network weather from a failure the server repeats on every
+    /// attempt, such as a proxy that always cuts a long stream at the same
+    /// point, so only repeated failures reveal the latter.
     MaybeRecoverableServer,
-    /// The server returned invalid or unverifiable data.
+    /// The server returned invalid or unverifiable data, or answered that
+    /// it cannot serve the request.
     /// A different server should be tried if available.
     ServerUnavailable,
     /// The error is not recoverable by retrying or switching servers.
@@ -175,6 +221,11 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
             SyncError::MempoolError(_) => SyncRecoveryObservables::MaybeRecoverableServer,
 
             SyncError::ScanError(ScanError::ServerError(e)) => e.recovery_recommendation(),
+            // The server does not report the tree size of a pool, so a
+            // different server is required.
+            SyncError::ScanError(ScanError::TreeSizeNotReported { .. }) => {
+                SyncRecoveryObservables::ServerUnavailable
+            }
             SyncError::ScanError(_) => SyncRecoveryObservables::Abort,
 
             // The wallet has already reopened the pool it could not account
@@ -202,12 +253,22 @@ impl ServerError {
         match self {
             // Internal channel issue. The same server may work after restart.
             ServerError::FetcherDropped => SyncRecoveryObservables::MaybeRecoverableServer,
-            // gRPC request failure or bad data. Try a different server.
+            // Network weather is transient. The same server may answer the
+            // next request on a fresh connection.
+            ServerError::RequestFailed(_) if self.request_hit_network_weather() => {
+                SyncRecoveryObservables::MaybeRecoverableServer
+            }
+            // The server answered but cannot serve the request, or returned
+            // bad data. Try a different server.
             ServerError::RequestFailed(_)
             | ServerError::InvalidFrontier(_)
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
-            | ServerError::ChainVerificationError => SyncRecoveryObservables::ServerUnavailable,
+            | ServerError::ChainVerificationError
+            | ServerError::TreeStateNotServed { .. }
+            | ServerError::UnsupportedProtocolVersion { .. } => {
+                SyncRecoveryObservables::ServerUnavailable
+            }
             // Empty chain. No point retrying anywhere.
             ServerError::GenesisBlockOnly => SyncRecoveryObservables::Abort,
         }
@@ -284,6 +345,18 @@ pub enum ScanError {
         height: BlockHeight,
         /// Block metadata size
         block_metadata_size: u32,
+        /// Calculated size
+        calculated_size: u32,
+    },
+    /// Block metadata reports a tree size of zero where the wallet has calculated a non-zero tree size.
+    #[error(
+        "tree size not reported. at height {height}, {shielded_protocol} tree size recorded in block metadata is zero where the calculated size is {calculated_size}. connect to a server that serves {shielded_protocol}."
+    )]
+    TreeSizeNotReported {
+        /// Shielded protocol
+        shielded_protocol: PoolType,
+        /// The block height whose sizes disagreed.
+        height: BlockHeight,
         /// Calculated size
         calculated_size: u32,
     },
@@ -406,6 +479,26 @@ pub enum ServerError {
     /// Server reports only the genesis block exists.
     #[error("server reports only the genesis block exists.")]
     GenesisBlockOnly,
+    /// Server did not return a shielded pool's note commitment tree state for a height at or above the pool's
+    /// activation height.
+    #[error(
+        "server does not serve the {pool} note commitment tree state at height {height}. connect to a server that serves {pool}."
+    )]
+    TreeStateNotServed {
+        /// The pool whose tree state was omitted.
+        pool: PoolType,
+        /// The requested block height.
+        height: BlockHeight,
+    },
+    /// Server's lightwallet protocol version is too old to serve the transparent and Ironwood data in compact blocks
+    /// required for sync.
+    #[error(
+        "server lightwallet protocol version '{version}' does not serve transparent and ironwood data in compact blocks. v0.5.0 or later is required. change to a server that supports lightwallet protocol v0.5.0 or later and sync again."
+    )]
+    UnsupportedProtocolVersion {
+        /// The lightwallet protocol version reported by the server. Empty if the server does not report one.
+        version: String,
+    },
 }
 
 /// Sync mode error.
@@ -507,6 +600,64 @@ mod tests {
         );
     }
 
+    /// Stands in for `tonic::transport::Error`, which cannot be built
+    /// outside tonic, wrapping the client-side timeout as its cause.
+    #[derive(Debug)]
+    struct TransportError(tonic::TimeoutExpired);
+
+    impl std::fmt::Display for TransportError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "transport error")
+        }
+    }
+
+    impl std::error::Error for TransportError {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.0)
+        }
+    }
+
+    /// A request cut off by the client-side timeout, as tonic reports it:
+    /// `Cancelled` with the transport timeout in the source chain.
+    fn client_timeout() -> ServerError {
+        let status = tonic::Status::from_error(Box::new(TransportError(tonic::TimeoutExpired(()))));
+        assert_eq!(status.code(), tonic::Code::Cancelled);
+        ServerError::RequestFailed(status)
+    }
+
+    /// A connection the peer reset. tonic finds no code in the cause chain
+    /// and reports `Unknown`, keeping the I/O error as the source.
+    fn connection_reset() -> ServerError {
+        let status = tonic::Status::from_error(Box::new(std::io::Error::from(
+            std::io::ErrorKind::ConnectionReset,
+        )));
+        assert_eq!(status.code(), tonic::Code::Unknown);
+        ServerError::RequestFailed(status)
+    }
+
+    /// The codes gRPC names as transient, as a server or the transport
+    /// reports them.
+    fn network_weather_statuses() -> [tonic::Status; 5] {
+        [
+            tonic::Status::unavailable("down"),
+            tonic::Status::deadline_exceeded("timeout"),
+            tonic::Status::cancelled("cancelled"),
+            tonic::Status::resource_exhausted("overloaded"),
+            tonic::Status::aborted("aborted"),
+        ]
+    }
+
+    /// Codes a server answers with when it cannot serve the request.
+    fn server_refusal_statuses() -> [tonic::Status; 5] {
+        [
+            tonic::Status::unimplemented("no such method"),
+            tonic::Status::invalid_argument("bad request"),
+            tonic::Status::not_found("no such block"),
+            tonic::Status::internal("indexer bug"),
+            tonic::Status::unknown("unknown"),
+        ]
+    }
+
     mod recommend_same_server {
         use super::*;
 
@@ -516,6 +667,25 @@ mod tests {
             #[test]
             fn fetcher_dropped() {
                 assert!(ServerError::FetcherDropped.recommend_same_server());
+            }
+
+            #[test]
+            fn request_network_weather() {
+                for status in network_weather_statuses() {
+                    let code = status.code();
+                    let e = ServerError::RequestFailed(status);
+                    assert!(e.recommend_same_server(), "{code:?}");
+                }
+            }
+
+            #[test]
+            fn request_client_timeout() {
+                assert!(client_timeout().recommend_same_server());
+            }
+
+            #[test]
+            fn request_connection_reset() {
+                assert!(connection_reset().recommend_same_server());
             }
         }
 
@@ -553,9 +723,12 @@ mod tests {
             use super::*;
 
             #[test]
-            fn request_failed() {
-                let e = ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout"));
-                assert!(!e.recommend_same_server());
+            fn request_refused_by_server() {
+                for status in server_refusal_statuses() {
+                    let code = status.code();
+                    let e = ServerError::RequestFailed(status);
+                    assert!(!e.recommend_same_server(), "{code:?}");
+                }
             }
 
             #[test]
@@ -590,9 +763,10 @@ mod tests {
             use super::*;
 
             #[test]
-            fn server_request_failed() {
+            fn server_request_refused() {
                 let e: TestSyncError =
-                    ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout")).into();
+                    ServerError::RequestFailed(tonic::Status::unimplemented("no such method"))
+                        .into();
                 assert!(!e.recommend_same_server());
             }
 
@@ -637,6 +811,50 @@ mod tests {
             }
 
             #[test]
+            fn request_network_weather() {
+                for status in network_weather_statuses() {
+                    let code = status.code();
+                    let e = ServerError::RequestFailed(status);
+                    assert_eq!(
+                        e.recovery_recommendation(),
+                        SyncRecoveryObservables::MaybeRecoverableServer,
+                        "{code:?}"
+                    );
+                }
+            }
+
+            #[test]
+            fn sync_error_from_unavailable() {
+                let e: TestSyncError =
+                    ServerError::RequestFailed(tonic::Status::unavailable("down")).into();
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::MaybeRecoverableServer
+                );
+            }
+
+            /// A reset connection carries no transient code, only the I/O
+            /// error behind it, and is still network weather.
+            #[test]
+            fn request_connection_reset() {
+                assert_eq!(
+                    connection_reset().recovery_recommendation(),
+                    SyncRecoveryObservables::MaybeRecoverableServer
+                );
+            }
+
+            /// A connection left idle until the client-side timeout expires
+            /// is replaced by the next request, so the same server is kept.
+            #[test]
+            fn sync_error_from_client_timeout() {
+                let e: TestSyncError = client_timeout().into();
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::MaybeRecoverableServer
+                );
+            }
+
+            #[test]
             fn mempool_error() {
                 let e: TestSyncError = MempoolError::ShutdownWithoutStream.into();
                 assert_eq!(
@@ -667,18 +885,23 @@ mod tests {
             use super::*;
 
             #[test]
-            fn request_failed() {
-                let e = ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout"));
-                assert_eq!(
-                    e.recovery_recommendation(),
-                    SyncRecoveryObservables::ServerUnavailable
-                );
+            fn request_refused_by_server() {
+                for status in server_refusal_statuses() {
+                    let code = status.code();
+                    let e = ServerError::RequestFailed(status);
+                    assert_eq!(
+                        e.recovery_recommendation(),
+                        SyncRecoveryObservables::ServerUnavailable,
+                        "{code:?}"
+                    );
+                }
             }
 
             #[test]
-            fn sync_error_from_request_failed() {
+            fn sync_error_from_request_refused() {
                 let e: TestSyncError =
-                    ServerError::RequestFailed(tonic::Status::unavailable("down")).into();
+                    ServerError::RequestFailed(tonic::Status::unimplemented("no such method"))
+                        .into();
                 assert_eq!(
                     e.recovery_recommendation(),
                     SyncRecoveryObservables::ServerUnavailable

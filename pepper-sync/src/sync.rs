@@ -77,7 +77,9 @@ pub const MAX_SHARDTREE_CHECKPOINTS: u32 =
 
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
-const CHECK_NEW_BLOCKS_INTERVAL: u64 = 10;
+/// Interval in seconds at which continuous sync checks for newly mined blocks if the mempool stream has not signalled
+/// one.
+pub const CHECK_NEW_BLOCKS_INTERVAL: u64 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 ///
@@ -429,9 +431,13 @@ where
 
     tracing::info!("Starting sync...");
 
+    // transparent and ironwood data is required in compact blocks so the server must be checked before any tasks are
+    // launched.
+    let mut client_clone = client.clone();
+    client::check_lightwallet_protocol_version(&mut client_clone).await?;
+
     // create channel for sending fetch requests and launch fetcher task
     let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
-    let client_clone = client.clone();
     let fetcher_handle =
         tokio::spawn(
             async move { client::fetch::fetch(fetch_request_receiver, client_clone).await },
@@ -641,7 +647,13 @@ where
             );
         }
 
-        if new_blocks_mined || reorg_occured {
+        if new_blocks_mined || reorg_occured || !first_verification_complete {
+            // subtree roots are always updated on the first continuous sync loop, even if no new blocks have been mined,
+            // so they are added before any note commitments are inserted into the shard trees by scanning.
+            // the shard store fills every shard below an inserted shard with an empty shard, and subtree roots are
+            // fetched from the number of stored shards, so the subtree roots of these empty shards would never be
+            // fetched. for example, a pool rescan (see `truncate_to_pool_activation_height`) clears the pool's shard
+            // tree and ends the sync session, relying on the next sync session to fetch the pool's subtree roots.
             update_subtree_roots(
                 consensus_parameters,
                 fetch_request_sender.clone(),
@@ -659,19 +671,20 @@ where
                 .await?;
             }
 
-            expire_transactions(&mut *wallet.write().await)?;
-
-            repin_anchor_checkpoints(consensus_parameters, &mut *wallet.write().await)?;
-        }
-
-        if new_blocks_mined || reorg_occured || !first_verification_complete {
-            // now transparent scan targets and subtree roots have been added, set ranges to be prioritized for scanning.
+            // now any new transparent scan targets and subtree roots have been added, set ranges to be prioritized
+            // for scanning.
             state::prioritize_scan_ranges(
                 consensus_parameters,
                 chain_height,
                 &mut *wallet.write().await,
             )
             .map_err(SyncError::WalletError)?;
+        }
+
+        if new_blocks_mined || reorg_occured {
+            expire_transactions(&mut *wallet.write().await)?;
+
+            repin_anchor_checkpoints(consensus_parameters, &mut *wallet.write().await)?;
         }
 
         // publish sync status prior to scanning
@@ -682,7 +695,8 @@ where
                 Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
                     let mut wallet_guard = wallet.write().await;
                     let ProcessedScanResults {
-                        updated_transparent_gap_addresses,
+                        new_transparent_inuse_addresses,
+                        new_transparent_gap_addresses,
                         reorg_truncate_height,
                     } = process_scan_results(
                         consensus_parameters,
@@ -696,14 +710,18 @@ where
                         &mut nullifier_map_limit_exceeded,
                     )
                     .await?;
-                    if let Some(updated_transparent_gap_addresses) = updated_transparent_gap_addresses {
-                        // NOTE: this is safe in the current architecture as the correct set of gap addressses will be
-                        // determined before scanning begins and this update will only apply to the latest newly mined
-                        // block(s). If the sync engine is modified so there are cases where compact blocks may be scanned
-                        // for transparent data out-of-order, more checks must be applied here to ensure gap addresses are
-                        // not lost and correctly follow on from the wallets current in-use address list.
-                        scanner.transparent_gap_addresses = updated_transparent_gap_addresses;
-                    }
+                    // only the changes to the gap addresses are applied. scan results without compact block
+                    // transparent data, such as re-fetched nullifiers, carry no changes and leave the gap addresses
+                    // as they are.
+                    // NOTE: this is safe in the current architecture as the correct set of gap addressses will be
+                    // determined before scanning begins and these changes will only come from the latest newly mined
+                    // block(s). If the sync engine is modified so there are cases where compact blocks may be scanned
+                    // for transparent data out-of-order, more checks must be applied here to ensure gap addresses are
+                    // not lost and correctly follow on from the wallets current in-use address list.
+                    scanner.update_transparent_gap_addresses(
+                        &new_transparent_inuse_addresses,
+                        new_transparent_gap_addresses,
+                    );
                     if let Some(reorg_truncate_height) = reorg_truncate_height {
                         // transparent address discovery is not performed again during this sync session so the
                         // compact block transparent data of the re-orged blocks must be scanned.
@@ -1425,19 +1443,21 @@ async fn mempool_drain_verdict(
 
 /// Wallet updates from [`process_scan_results`] that must also be applied to the [`Scanner`].
 struct ProcessedScanResults {
-    /// Transparent gap addresses after scanning, `None` if the scan results were discarded due to a re-org.
-    updated_transparent_gap_addresses: Option<HashMap<String, TransparentAddressId>>,
+    /// Transparent gap addresses found in use by scanning.
+    new_transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
+    /// Transparent gap addresses derived to replace the gap addresses found in use.
+    new_transparent_gap_addresses: HashMap<String, TransparentAddressId>,
     /// Height the wallet was truncated to if a re-org was detected.
     reorg_truncate_height: Option<BlockHeight>,
 }
 
 /// Scan post-processing.
 ///
-/// Returns the updated transparent gap addresses, or the truncation height in the case of a recovered error i.e.
+/// Returns the changes to the transparent gap addresses, or the truncation height in the case of a recovered error i.e.
 /// re-org.
 #[allow(clippy::too_many_arguments)]
 async fn process_scan_results<W>(
-    consensus_parameters: &impl consensus::Parameters,
+    consensus_parameters: &(impl consensus::Parameters + Sync),
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
@@ -1467,7 +1487,7 @@ where
                 orchard_located_trees,
                 ironwood_located_trees,
                 new_transparent_inuse_addresses,
-                updated_transparent_gap_addresses,
+                new_transparent_gap_addresses,
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
@@ -1555,7 +1575,8 @@ where
                     );
 
                     return Ok(ProcessedScanResults {
-                        updated_transparent_gap_addresses: Some(updated_transparent_gap_addresses),
+                        new_transparent_inuse_addresses,
+                        new_transparent_gap_addresses,
                         reorg_truncate_height: None,
                     });
                 }
@@ -1645,10 +1666,17 @@ where
                     sapling_located_trees,
                     orchard_located_trees,
                     ironwood_located_trees,
-                    new_transparent_inuse_addresses,
+                    &new_transparent_inuse_addresses,
                 )
                 .await?;
-                spend::update_transparent_spends(wallet).map_err(SyncError::WalletError)?;
+                spend::update_transparent_spends(
+                    consensus_parameters,
+                    wallet,
+                    fetch_request_sender.clone(),
+                    ufvks,
+                    &scanned_blocks,
+                )
+                .await?;
                 spend::update_shielded_spends(
                     consensus_parameters,
                     wallet,
@@ -1690,7 +1718,8 @@ where
             tracing::debug!("Scan results processed.");
 
             Ok(ProcessedScanResults {
-                updated_transparent_gap_addresses: Some(updated_transparent_gap_addresses),
+                new_transparent_inuse_addresses,
+                new_transparent_gap_addresses,
                 reorg_truncate_height: None,
             })
         }
@@ -1746,7 +1775,8 @@ where
                 .await?;
 
                 Ok(ProcessedScanResults {
-                    updated_transparent_gap_addresses: None,
+                    new_transparent_inuse_addresses: HashMap::new(),
+                    new_transparent_gap_addresses: HashMap::new(),
                     reorg_truncate_height: Some(reorg_truncate_height),
                 })
             } else {
@@ -1825,7 +1855,24 @@ where
 
     truncate_stores(wallet, rescan_from - 1, false)?;
 
-    let frontiers = client::get_frontiers(fetch_request_sender.clone(), birthday).await?;
+    // the shard trees of the cleared pools are rebuilt from the frontier at the wallet birthday and the subtree roots
+    // fetched in the next sync session, so the shard ranges of these pools must also be rebuilt from those subtree
+    // roots.
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
+    for pool in [
+        ShieldedPool::Sapling,
+        ShieldedPool::Orchard,
+        ShieldedPool::Ironwood,
+    ] {
+        if pool >= target_pool {
+            state::clear_shard_ranges(sync_state, pool);
+        }
+    }
+
+    let frontiers =
+        client::get_frontiers(fetch_request_sender.clone(), consensus_parameters, birthday).await?;
     let retention = Retention::Checkpoint {
         id: birthday,
         marking: Marking::None,
@@ -1838,7 +1885,7 @@ where
         ShieldedPool::Orchard,
         ShieldedPool::Ironwood,
     ] {
-        if target_pool >= pool {
+        if pool >= target_pool {
             shard_trees.clear_pool(pool);
             match pool {
                 ShieldedPool::Sapling => shard_trees
@@ -2112,7 +2159,7 @@ where
 /// Updates the wallet with data from `scan_results`
 #[allow(clippy::too_many_arguments)]
 async fn update_wallet_data<W>(
-    consensus_parameters: &impl consensus::Parameters,
+    consensus_parameters: &(impl consensus::Parameters + Sync),
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
@@ -2123,7 +2170,7 @@ async fn update_wallet_data<W>(
     sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
     ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
-    new_transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
+    new_transparent_inuse_addresses: &HashMap<String, TransparentAddressId>,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet
@@ -2210,6 +2257,7 @@ where
         .map_err(SyncError::WalletError)?;
     wallet
         .update_shard_trees(
+            consensus_parameters,
             fetch_request_sender,
             scan_range,
             highest_scanned_height,
@@ -2223,7 +2271,7 @@ where
         .get_transparent_addresses_mut()
         .map_err(SyncError::WalletError)?;
     for (address, id) in new_transparent_inuse_addresses {
-        wallet_transparent_addresses.insert(id, address);
+        wallet_transparent_addresses.insert(*id, address.clone());
     }
 
     Ok(())
@@ -2428,17 +2476,14 @@ where
 
     let sapling_subtree_roots = sapling_subtree_roots?;
     let orchard_subtree_roots = orchard_subtree_roots?;
-    // Ironwood subtree roots are requested only where NU6.3 exists, and a
-    // server that cannot serve them is tolerated: the shard ranges remain
-    // empty and scan prioritisation falls back to the whole-pool range.
+    // Ironwood subtree roots are only required where NU6.3 exists. A server
+    // that does not serve them is an error, as the ironwood subtree roots of
+    // any shards below the shards inserted by scanning would never be fetched.
     let ironwood_subtree_roots = if consensus_parameters
         .activation_height(consensus::NetworkUpgrade::Nu6_3)
         .is_some()
     {
-        ironwood_subtree_roots.unwrap_or_else(|e| {
-            tracing::debug!("server does not serve ironwood subtree roots: {e}");
-            Vec::new()
-        })
+        ironwood_subtree_roots?
     } else {
         Vec::new()
     };
@@ -2558,7 +2603,8 @@ where
         .expect("infallible")
         == 1
     {
-        let frontiers = client::get_frontiers(fetch_request_sender, birthday).await?;
+        let frontiers =
+            client::get_frontiers(fetch_request_sender, consensus_parameters, birthday).await?;
         shard_trees
             .sapling
             .insert_frontier(
@@ -2631,12 +2677,13 @@ where
                         mempool_stream_message = mempool_stream.message() => {
                             match mempool_stream_message {
                                 Ok(Some(raw_transaction)) => {
+                                     // counted before sending so the drain verdict never observes a zero count
+                                     // while a transaction is queued in the channel.
+                                     unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
                                      match mempool_transaction_sender
                                         .send(MempoolMessage::Transaction(raw_transaction))
                                         .await {
-                                            Ok(_) => {
-                                                unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
-                                            }
+                                            Ok(_) => (),
                                             Err(_) => {
                                                 unprocessed_transactions_count.store(0, atomic::Ordering::Release);
                                                 shutdown_mempool.store(true, atomic::Ordering::Release);
@@ -3380,6 +3427,8 @@ mod test {
             time::Duration,
         };
 
+        use zingo_netutils::time::MEMPOOL_DRAIN_CEILING;
+
         use crate::sync::{MempoolDrainVerdict, mempool_drain_verdict};
 
         /// One row of the drain-policy table:
@@ -3440,10 +3489,13 @@ mod test {
                 // Ceiling with a stream that never connected: the
                 // pre-c90f8d309 semantics. A dead stream must not
                 // hold the session open.
+                // Written as the ceiling itself: a literal chosen against
+                // one value of it stops testing the ceiling the moment the
+                // constant moves.
                 (
                     Arc::new(AtomicBool::new(false)),
                     Arc::new(AtomicU32::new(0)),
-                    Duration::from_millis(1_000),
+                    MEMPOOL_DRAIN_CEILING,
                     None,
                     MempoolDrainVerdict::ShutdownAndDrainComplete,
                     "ceiling without stream",
@@ -3697,6 +3749,206 @@ mod test {
                     .status(),
                 ConfirmationStatus::Confirmed(SPEND_HEIGHT)
             );
+        }
+    }
+
+    /// Transparent spend detection must leave the spending transaction confirmed in the wallet.
+    ///
+    /// Compact block scanning maps the transparent inputs of every transaction above the transparent scan floor but
+    /// only targets a transaction for a full scan when one of its outputs pays the wallet. A transaction that spends
+    /// a coin in full to an external recipient is therefore known to the wallet only as the pending record created
+    /// when it was sent.
+    mod transparent_spend_without_change {
+        use std::collections::{BTreeMap, HashMap};
+
+        use tokio::sync::mpsc;
+        use zcash_primitives::{block::BlockHash, transaction::TxId};
+        use zcash_protocol::{
+            consensus::BlockHeight, local_consensus::LocalNetwork, value::Zatoshis,
+        };
+        use zcash_transparent::{address::Script, keys::NonHardenedChildIndex};
+        use zingo_netutils::lightwallet_protocol::RawTransaction;
+        use zingo_status::confirmation_status::ConfirmationStatus;
+
+        use crate::{
+            client::FetchRequest,
+            keys::transparent::{TransparentAddressId, TransparentScope},
+            mocks::{MockWallet, MockWalletBuilder},
+            sync::spend,
+            wallet::{
+                OutputId, ScanTarget, TransparentCoin, TreeBounds, WalletBlock, WalletTransaction,
+                traits::{SyncOutPoints, SyncTransactions},
+            },
+        };
+
+        const NETWORK: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+            nu6_2: Some(BlockHeight::from_u32(1)),
+            nu6_3: Some(BlockHeight::from_u32(1)),
+        };
+        const FUNDING_HEIGHT: BlockHeight = BlockHeight::from_u32(10);
+        const SPEND_HEIGHT: BlockHeight = BlockHeight::from_u32(100);
+        const FUNDING_TXID: TxId = TxId::from_bytes([1; 32]);
+
+        /// The spending transaction's wallet record in the given lifecycle state, keyed by the txid the server
+        /// returns it under.
+        fn spending_record(status: ConfirmationStatus) -> WalletTransaction {
+            let txid = WalletTransaction::new_for_test(TxId::from_bytes([0; 32]), status)
+                .transaction()
+                .txid();
+            WalletTransaction::new_for_test(txid, status)
+        }
+
+        /// A wallet holding a confirmed coin, the given record of the transaction that spends it, and the spend's
+        /// outpoint as mapped from the compact block at `SPEND_HEIGHT`.
+        fn wallet_with_mapped_spend(spending_record: WalletTransaction) -> MockWallet {
+            let coin_id = OutputId::new(FUNDING_TXID, 0);
+            let coin = TransparentCoin {
+                output_id: coin_id,
+                key_id: TransparentAddressId::new(
+                    zip32::AccountId::ZERO,
+                    TransparentScope::External,
+                    NonHardenedChildIndex::ZERO,
+                ),
+                address: String::new(),
+                script: Script::default(),
+                value: Zatoshis::const_from_u64(100_000),
+                spending_transaction: None,
+            };
+            let funding_transaction = WalletTransaction::new_for_test(
+                FUNDING_TXID,
+                ConfirmationStatus::Confirmed(FUNDING_HEIGHT),
+            )
+            .with_transparent_coins_for_test(vec![coin]);
+            let spend_scan_target = ScanTarget {
+                block_height: SPEND_HEIGHT,
+                txid: spending_record.txid(),
+                narrow_scan_area: true,
+            };
+
+            MockWalletBuilder::new()
+                .wallet_transactions(HashMap::from([
+                    (FUNDING_TXID, funding_transaction),
+                    (spending_record.txid(), spending_record),
+                ]))
+                .outpoint_map(BTreeMap::from([(coin_id, spend_scan_target)]))
+                .create_mock_wallet()
+        }
+
+        fn scanned_blocks() -> BTreeMap<BlockHeight, WalletBlock> {
+            BTreeMap::from([(
+                SPEND_HEIGHT,
+                WalletBlock {
+                    block_height: SPEND_HEIGHT,
+                    block_hash: BlockHash([0; 32]),
+                    prev_hash: BlockHash([0; 32]),
+                    time: 0,
+                    txids: Vec::new(),
+                    tree_bounds: TreeBounds {
+                        sapling_initial_tree_size: 0,
+                        sapling_final_tree_size: 0,
+                        orchard_initial_tree_size: 0,
+                        orchard_final_tree_size: 0,
+                        ironwood_initial_tree_size: 0,
+                        ironwood_final_tree_size: 0,
+                    },
+                },
+            )])
+        }
+
+        /// Answers transaction requests with `transaction` mined at `SPEND_HEIGHT`.
+        fn spawn_fetcher(transaction: &WalletTransaction) -> mpsc::UnboundedSender<FetchRequest> {
+            let mut data = Vec::new();
+            transaction.transaction().write(&mut data).unwrap();
+            let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                    match fetch_request {
+                        FetchRequest::Transaction(reply_sender, _txid) => {
+                            let _ignore_error = reply_sender.send(Ok(RawTransaction {
+                                data: data.clone(),
+                                height: u64::from(SPEND_HEIGHT),
+                            }));
+                        }
+                        _ => panic!("unexpected fetch request"),
+                    }
+                }
+            });
+
+            fetch_request_sender
+        }
+
+        fn get_coin_spending_txid(wallet: &MockWallet) -> Option<TxId> {
+            wallet
+                .get_wallet_transactions()
+                .unwrap()
+                .get(&FUNDING_TXID)
+                .unwrap()
+                .transparent_coins()
+                .first()
+                .unwrap()
+                .spending_transaction
+        }
+
+        #[tokio::test]
+        async fn pending_spending_transaction_is_fetched_and_confirmed() {
+            let spending_record = spending_record(ConfirmationStatus::Mempool(SPEND_HEIGHT));
+            let spending_txid = spending_record.txid();
+            let fetch_request_sender = spawn_fetcher(&spending_record);
+            let mut wallet = wallet_with_mapped_spend(spending_record);
+
+            spend::update_transparent_spends(
+                &NETWORK,
+                &mut wallet,
+                fetch_request_sender,
+                &HashMap::new(),
+                &scanned_blocks(),
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(
+                wallet
+                    .get_wallet_transactions()
+                    .unwrap()
+                    .get(&spending_txid)
+                    .unwrap()
+                    .status(),
+                ConfirmationStatus::Confirmed(SPEND_HEIGHT)
+            );
+            assert_eq!(get_coin_spending_txid(&wallet), Some(spending_txid));
+            assert!(wallet.get_outpoints_mut().unwrap().is_empty());
+        }
+
+        /// A spending transaction the scanner already confirmed is marked on the coin without fetching the transaction
+        /// from the server again.
+        #[tokio::test]
+        async fn confirmed_spending_transaction_is_not_fetched() {
+            let spending_record = spending_record(ConfirmationStatus::Confirmed(SPEND_HEIGHT));
+            let spending_txid = spending_record.txid();
+            let mut wallet = wallet_with_mapped_spend(spending_record);
+            let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
+            // drop receiver so the test fails if the wallet attempts to fetch the transaction again unnecessarily
+            drop(fetch_request_receiver);
+
+            spend::update_transparent_spends(
+                &NETWORK,
+                &mut wallet,
+                fetch_request_sender,
+                &HashMap::new(),
+                &scanned_blocks(),
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(get_coin_spending_txid(&wallet), Some(spending_txid));
         }
     }
 
@@ -4123,6 +4375,183 @@ mod test {
                 transaction_status(&wallet, txid),
                 ConfirmationStatus::Confirmed(_)
             ));
+        }
+    }
+
+    mod pool_rescan {
+        use std::collections::BTreeMap;
+
+        use incrementalmerkletree::{Hashable as _, Marking, Position, Retention};
+        use orchard::tree::MerkleHashOrchard;
+        use tokio::sync::mpsc;
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::consensus::{self, BlockHeight, Parameters as _};
+        use zcash_protocol::local_consensus::LocalNetwork;
+        use zcash_protocol::{PoolType, ShieldedPool};
+        use zingo_netutils::lightwallet_protocol::{SubtreeRoot, TreeState};
+
+        use crate::client::FetchRequest;
+        use crate::error::SyncError;
+        use crate::mocks::MockWalletBuilder;
+        use crate::sync::{ScanPriority, ScanRange, state, truncate_to_pool_activation_height};
+        use crate::wallet::{
+            ShardTrees, SyncState, TreeBounds, WalletBlock,
+            traits::{SyncShardTrees, SyncWallet},
+        };
+
+        const NETWORK: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+            nu6_2: Some(BlockHeight::from_u32(1)),
+            nu6_3: Some(BlockHeight::from_u32(100)),
+        };
+
+        fn block(height: u32) -> WalletBlock {
+            WalletBlock {
+                block_height: BlockHeight::from_u32(height),
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds: TreeBounds {
+                    sapling_initial_tree_size: 0,
+                    sapling_final_tree_size: 0,
+                    orchard_initial_tree_size: 0,
+                    orchard_final_tree_size: 0,
+                    ironwood_initial_tree_size: 0,
+                    ironwood_final_tree_size: 0,
+                },
+            }
+        }
+
+        fn subtree_root(completing_block_height: u64) -> SubtreeRoot {
+            SubtreeRoot {
+                completing_block_height,
+                ..Default::default()
+            }
+        }
+
+        /// Answers tree state requests with empty note commitment trees, omitting the ironwood tree state below the
+        /// ironwood activation height.
+        fn spawn_fetcher() -> mpsc::UnboundedSender<FetchRequest> {
+            const EMPTY_TREE: &str = "000000";
+            let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                    match fetch_request {
+                        FetchRequest::TreeState(reply_sender, block_height) => {
+                            let ironwood_tree = if NETWORK
+                                .is_nu_active(consensus::NetworkUpgrade::Nu6_3, block_height)
+                            {
+                                EMPTY_TREE.to_string()
+                            } else {
+                                String::new()
+                            };
+                            let _ignore_error = reply_sender.send(Ok(TreeState {
+                                height: u64::from(block_height),
+                                hash: "00".repeat(32),
+                                sapling_tree: EMPTY_TREE.to_string(),
+                                orchard_tree: EMPTY_TREE.to_string(),
+                                ironwood_tree,
+                                ..Default::default()
+                            }));
+                        }
+                        _ => panic!("unexpected fetch request"),
+                    }
+                }
+            });
+
+            fetch_request_sender
+        }
+
+        /// A pool rescan clears the pool's shard tree, so the pool's shard ranges must also be cleared. Otherwise, the
+        /// subtree roots fetched from index 0 in the next sync session are rejected by `add_shard_ranges` for being
+        /// lower than the stale shard ranges, and the shard ranges are never rebuilt. The shard trees and shard ranges
+        /// of pools activated before the rescanned pool are kept, as their data below the rescanned pool's activation
+        /// height is not rescanned.
+        #[tokio::test]
+        async fn rescan_clears_pool_shard_ranges() {
+            let mut sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
+                BlockHeight::from_u32(1)..BlockHeight::from_u32(301),
+                ScanPriority::Scanned,
+            )]);
+            let orchard_shard_ranges = vec![BlockHeight::from_u32(1)..BlockHeight::from_u32(51)];
+            sync_state.orchard_shard_ranges = orchard_shard_ranges.clone();
+            sync_state.ironwood_shard_ranges = vec![
+                BlockHeight::from_u32(100)..BlockHeight::from_u32(251),
+                BlockHeight::from_u32(250)..BlockHeight::from_u32(281),
+            ];
+            let mut shard_trees = ShardTrees::new();
+            shard_trees
+                .orchard
+                .append(
+                    MerkleHashOrchard::empty_leaf(),
+                    Retention::Checkpoint {
+                        id: BlockHeight::from_u32(50),
+                        marking: Marking::Marked,
+                    },
+                )
+                .unwrap();
+            let mut wallet = MockWalletBuilder::new()
+                .birthday(BlockHeight::from_u32(1))
+                .sync_state(sync_state)
+                .wallet_blocks(BTreeMap::from([(BlockHeight::from_u32(99), block(99))]))
+                .shard_trees(shard_trees)
+                .create_mock_wallet();
+
+            let result = truncate_to_pool_activation_height(
+                &NETWORK,
+                spawn_fetcher(),
+                &mut wallet,
+                ShieldedPool::Ironwood,
+                BlockHeight::from_u32(200),
+                10,
+                5,
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Ok(SyncError::PoolHistoryReopened {
+                    pool: PoolType::Shielded(ShieldedPool::Ironwood),
+                    ..
+                })
+            ));
+
+            assert_eq!(
+                wallet
+                    .get_shard_trees_mut()
+                    .unwrap()
+                    .orchard
+                    .max_leaf_position(None)
+                    .unwrap(),
+                Some(Position::from(0)),
+                "orchard note commitments below the ironwood activation height must be kept"
+            );
+
+            let sync_state = wallet.get_sync_state_mut().unwrap();
+            assert!(sync_state.ironwood_shard_ranges.is_empty());
+            assert_eq!(sync_state.orchard_shard_ranges, orchard_shard_ranges);
+
+            // the subtree roots fetched from index 0 in the next sync session rebuild the shard ranges
+            state::add_shard_ranges(
+                &NETWORK,
+                ShieldedPool::Ironwood,
+                sync_state,
+                &[subtree_root(150), subtree_root(250)],
+            );
+            assert_eq!(
+                sync_state.ironwood_shard_ranges,
+                vec![
+                    BlockHeight::from_u32(100)..BlockHeight::from_u32(151),
+                    BlockHeight::from_u32(150)..BlockHeight::from_u32(251),
+                ]
+            );
         }
     }
 }

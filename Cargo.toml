@@ -16,9 +16,9 @@ members = [
 # with this workspace's `crypto-common =0.2.0-rc.1` pin (via zcash_primitives
 # 0.30, which pins the same release candidate 0.29 did). Members still consume
 # netutils through the `zingo-netutils` path dependency below, resolved in
-# THIS lockfile with `nym` off. See docs/adr/zingolib/0011-nym-mixnet-transmission.md.
+# THIS lockfile with `nym` off. See zingo-adrs zingolib/0011.
 # zingo-ffi stays a standalone workspace with its own lockfile until
-# zingo-mobile repoints. See docs/adr/zingolib/0054.
+# zingo-mobile repoints. See zingo-adrs zingolib/0054.
 exclude = ["zingo-netutils", "zingo-ffi"]
 resolver = "2"
 
