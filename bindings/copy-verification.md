@@ -20,7 +20,9 @@ This document tells a reviewer how to verify zingolib's copy of the Binding Laye
 
 ## The gates
 
-The workbench tool `binding-copy-gate` runs gates 1 to 3. Every invocation takes the same flags:
+The copy merged and zingo-mobile repointed, so this section is a record. The join of the copied crates to the workspaces beside them (zingolib#2815) removed the standalone manifests that the gates compare, and it removed the tool with them. To run a gate again, check out the commit before the join.
+
+The workbench tool `binding-copy-gate` ran gates 1 to 3. Every invocation took the same flags:
 
 ```sh
 cargo run \

@@ -178,7 +178,7 @@ pub const GENERATIONS: [Generation; 2] = [Generation::Wallet, Generation::Proxy]
 pub enum Profile {
     /// Cargo's default profile, which writes to the `debug` directory.
     Debug,
-    /// The `--release` profile, which the copy gate builds with.
+    /// Cargo's `--release` profile, which writes to the `release` directory.
     Release,
     /// The `mobile` profile of the root workspace, which zingo-mobile's builders ship.
     Mobile,
