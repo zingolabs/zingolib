@@ -32,31 +32,33 @@ jobs:
           path: zingolib
 
       # One restore per ABI. The ABIs share one output directory, and the
-      # action points Gradle at it.
+      # action points Gradle at it. The action is pinned to the commit that
+      # ci-pr.yaml pins zingo-mobile's workflows to, and the two move
+      # together.
       - name: Restore x86_64
         if: ${{ contains(fromJSON(inputs.abis), 'x86_64') }}
-        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@dev
+        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@85e16d5a8828a2c531e3fc1dc2f61cd78a6244f4
         with:
           abi: x86_64
           cache-key: ${{ inputs.cache-key }}
 
       - name: Restore x86
         if: ${{ contains(fromJSON(inputs.abis), 'x86') }}
-        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@dev
+        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@85e16d5a8828a2c531e3fc1dc2f61cd78a6244f4
         with:
           abi: x86
           cache-key: ${{ inputs.cache-key }}
 
       - name: Restore arm64-v8a
         if: ${{ contains(fromJSON(inputs.abis), 'arm64-v8a') }}
-        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@dev
+        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@85e16d5a8828a2c531e3fc1dc2f61cd78a6244f4
         with:
           abi: arm64-v8a
           cache-key: ${{ inputs.cache-key }}
 
       - name: Restore armeabi-v7a
         if: ${{ contains(fromJSON(inputs.abis), 'armeabi-v7a') }}
-        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@dev
+        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@85e16d5a8828a2c531e3fc1dc2f61cd78a6244f4
         with:
           abi: armeabi-v7a
           cache-key: ${{ inputs.cache-key }}
