@@ -408,11 +408,7 @@ pub(super) fn reset_refetching_nullifiers_scan_range(
 /// hold blocks that have left the chain. The parts of the wallet scan ranges of that priority that overlap with
 /// `scan_range` are set back to the priority `scan_range` was selected with, to be scanned again.
 pub(super) fn reset_stale_scan_range(sync_state: &mut SyncState, scan_range: &ScanRange) -> bool {
-    let in_flight_priority = if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
-        ScanPriority::RefetchingNullifiers
-    } else {
-        ScanPriority::Scanning
-    };
+    let in_flight_priority = in_flight_priority(scan_range);
     let block_range = scan_range.block_range();
 
     if sync_state.scan_ranges().iter().any(|wallet_scan_range| {
@@ -427,6 +423,29 @@ pub(super) fn reset_stale_scan_range(sync_state: &mut SyncState, scan_range: &Sc
 
     // no wallet scan range of this priority holds the whole of `scan_range` past the check above, so each one that
     // overlaps it holds only a part of it.
+    reset_in_flight_scan_range(sync_state, scan_range);
+
+    true
+}
+
+/// Returns the priority a wallet scan range has while `scan_range` is being scanned from it.
+fn in_flight_priority(scan_range: &ScanRange) -> ScanPriority {
+    if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
+        ScanPriority::RefetchingNullifiers
+    } else {
+        ScanPriority::Scanning
+    }
+}
+
+/// Sets the parts of the wallet's scan ranges that are being scanned for `scan_range` back to the priority
+/// `scan_range` was selected with, to be scanned again.
+///
+/// The parts of those wallet scan ranges outside of `scan_range` belong to the other scan ranges the loader split
+/// from the same wallet scan range, which are still being scanned.
+pub(super) fn reset_in_flight_scan_range(sync_state: &mut SyncState, scan_range: &ScanRange) {
+    let in_flight_priority = in_flight_priority(scan_range);
+    let block_range = scan_range.block_range();
+
     let overlapping_scan_ranges = sync_state
         .scan_ranges()
         .iter()
@@ -448,8 +467,6 @@ pub(super) fn reset_stale_scan_range(sync_state: &mut SyncState, scan_range: &Sc
         );
         sync_state.scan_ranges.splice(index..=index, split_ranges);
     }
-
-    true
 }
 
 /// Sets the scan range in `sync_state` with `block_range` to the given `scan_priority`.
@@ -1217,7 +1234,7 @@ where
     Ok(())
 }
 
-fn reopen_scan_ranges_inner(sync_state: &mut SyncState, from_height: BlockHeight) {
+pub(super) fn reopen_scan_ranges_inner(sync_state: &mut SyncState, from_height: BlockHeight) {
     if let Some((index, range_to_split)) = sync_state
         .scan_ranges()
         .iter()

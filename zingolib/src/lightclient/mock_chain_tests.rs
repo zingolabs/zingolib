@@ -1540,6 +1540,82 @@ async fn scan_results_in_flight_when_chain_height_drops_are_discarded_and_rescan
     check_client_balances!(client, i: 200_000 o: 0 s: 0 t: 0);
 }
 
+/// A re-org lowers the chain height below a newly mined block after a continuous sync session has selected it for
+/// scanning and before its fetch is served. The server has no block to serve, so the session ends with an error
+/// that reports the lowered chain height and recommends syncing again with the same server. The next session
+/// truncates the wallet to the server's chain height and syncs to it.
+#[tokio::test]
+async fn fetch_under_a_lowered_chain_height_recommends_syncing_again() {
+    use pepper_sync::error::{ServerError, SyncError, SyncRecoveryObservables};
+
+    use crate::lightclient::error::LightClientError;
+    use crate::testutils::mock_indexer::{Fault, Rpc};
+
+    const CHAIN_HEIGHT: u32 = 10;
+    const FETCH_HOLD: std::time::Duration = std::time::Duration::from_secs(3);
+
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(CHAIN_HEIGHT);
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    client.sync().await.expect("continuous sync launches");
+    wait_until_scanned_to(&client, CHAIN_HEIGHT).await;
+
+    // holds the fetch of the new block until the re-org has removed it.
+    {
+        let mut chain = net.chain.write().await;
+        chain
+            .faults
+            .inject(Rpc::BlockRange, Fault::Delay(FETCH_HOLD));
+        chain.mine_empty_blocks(1);
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        while client.latest_sync_status().is_none_or(|status| {
+            status.scan_ranges.last().is_none_or(|range| {
+                range.block_range().end != BlockHeight::from_u32(CHAIN_HEIGHT + 2)
+            })
+        }) {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the sync session creates the scan range of the new block");
+    net.chain.write().await.reorg_to(CHAIN_HEIGHT);
+
+    let LightClientError::SyncError(error) = client
+        .await_sync()
+        .await
+        .expect_err("the fetch of the removed block fails")
+    else {
+        panic!("the sync session ends with a sync error");
+    };
+    assert!(
+        matches!(
+            error,
+            SyncError::ServerError(ServerError::ChainHeightBelowScanRange {
+                chain_height,
+                scan_range_end,
+            }) if chain_height == BlockHeight::from_u32(CHAIN_HEIGHT)
+                && scan_range_end == BlockHeight::from_u32(CHAIN_HEIGHT + 1)
+        ),
+        "{error:?}"
+    );
+    assert_eq!(
+        error.recovery_recommendation(),
+        SyncRecoveryObservables::MaybeRecoverableServer
+    );
+
+    let sync_result = client.sync_to_tip_and_await().await.unwrap();
+    assert_eq!(
+        sync_result.sync_end_height,
+        BlockHeight::from_u32(CHAIN_HEIGHT)
+    );
+}
+
 /// Sync is rejected when the server's lightwallet protocol version is below v0.5.0, or not reported, as the server does
 /// not serve the transparent and ironwood data sync requires. The error recommends switching servers.
 #[tokio::test]
