@@ -4,6 +4,15 @@
 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
 - Never define by absence, not in documentation nor doc-comments.
+- **A doc-comment holds ONLY a terse bulleted list of side effects, doc-tests,
+  or both.** This covers every `///` and every `//!`. Ruled 2026-10-02.
+  - Each bullet names one side effect of the item: a write to disk, a network
+    call, a lock it takes, a mutation of shared state, a spawned task, a panic.
+  - A doc-test is an example the toolchain compiles and runs. Never mark one
+    `ignore` or `no_run`.
+  - A doc-comment holds no summary line, no prose sentence, no parameter or
+    return description, and no restatement of the signature.
+  - An item with no side effect and no doc-test carries no doc-comment.
 - **Trait objects are STRICTLY FORBIDDEN.** Every spelling: `dyn Trait`,
   `Box<dyn Trait>`, `&dyn Trait`, `Arc<dyn Trait>`, and any trait object behind
   a type alias. Use a generic parameter, an `impl Trait` position, or an enum
@@ -97,7 +106,7 @@ Goal: produce prose and code that reads as if written by a specific, competent h
 
 - Comment why, not what. No line-by-line narration of obvious operations.
 - No tutorial narration ("Now we...", "Step 1:", "First, let's...") and no banner comments (`// ===== HELPERS =====`).
-- No docstrings that just restate the signature.
+- Doc-comments follow the rule under MUST DO ALWAYS: side effects and doc-tests only.
 - Names: concise and domain-specific. Avoid generic placeholders (`data`, `result`, `output`, `item`, `value`, `temp`, `handleData`, a helper named `helper`) and avoid over-long descriptive names where a short one is idiomatic.
 - No completeness theater: no unrequested demo/usage blocks, no logs narrating execution ("Starting...", "Done!"), no emoji in output, no unprompted complexity analysis in comments.
 - Never use magic numbers, anywhere. Every bare literal gets a name: prefer the most private binding the context allows, and a named constant where privacy can't confine it. Derive new constants from existing named constants rather than repeating a number.
