@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+### Fixed
+- The mempool monitor stops when `sync` returns an error or its future is
+  dropped (#2828). Only a completed sync told the monitor to stop, so after
+  any other exit it reopened its `GetMempoolStream` on every block until a
+  mempool transaction arrived, and retried a refused stream request every
+  three seconds for the life of the process. A completed sync also waited on
+  those retries, so `sync` hung while the server refused the stream.
+
 ### Removed
 
 ## [0.5.0] - 2026-06-10
