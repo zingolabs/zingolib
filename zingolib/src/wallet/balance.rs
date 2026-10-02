@@ -293,12 +293,12 @@ impl LightWallet {
     /// - the balance summation exceeds the valid range of zatoshis
     pub fn get_filtered_balance<Op, F>(
         &self,
-        mut filter_function: F,
+        filter_function: F,
         account_id: zip32::AccountId,
     ) -> Result<Zatoshis, BalanceError>
     where
         Op: OutputInterface,
-        F: FnMut(&Op, &WalletTransaction) -> bool,
+        F: Fn(&Op, &WalletTransaction) -> bool,
     {
         match &self
             .unified_key_store
