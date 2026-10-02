@@ -179,6 +179,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with an output to the wallet was targeted for a full scan. The spending
   transaction was left in `Mempool` status until it passed its expiry height
   and was marked failed, which also reset the spent coins to unspent.
+- The mempool monitor stops when `sync` returns an error or its future is
+  dropped (#2828). Only a clean shutdown told the monitor to stop, so after
+  any other exit it held its `GetMempoolStream` open until the next block or
+  mempool transaction, and retried a refused stream request every three
+  seconds for the life of the process. A clean shutdown also waited on those
+  retries, so `sync` hung while the server refused the stream.
 
 ### Removed
 

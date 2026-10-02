@@ -390,6 +390,16 @@ enum MempoolMessage {
     NewBlockMined,
 }
 
+/// Sets `shutdown_mempool` when dropped, so the mempool monitor stops on every exit from [`sync`]: a return, an error
+/// or a cancelled future.
+struct MempoolShutdownGuard(Arc<AtomicBool>);
+
+impl Drop for MempoolShutdownGuard {
+    fn drop(&mut self) {
+        self.0.store(true, atomic::Ordering::Release);
+    }
+}
+
 /// Syncs a wallet to the latest state of the blockchain.
 ///
 /// `sync_mode` is intended to be stored in a struct that owns the wallet(s) (i.e. lightclient) and has a non-atomic
@@ -446,6 +456,7 @@ where
     // create channel for receiving mempool transactions and launch mempool monitor
     let (mempool_transaction_sender, mut mempool_transaction_receiver) = mpsc::channel(100);
     let shutdown_mempool = Arc::new(AtomicBool::new(false));
+    let _mempool_shutdown_guard = MempoolShutdownGuard(shutdown_mempool.clone());
     let shutdown_mempool_clone = shutdown_mempool.clone();
     let unprocessed_mempool_transactions_count = Arc::new(AtomicU32::new(0));
     let unprocessed_mempool_transactions_count_clone =
@@ -2649,6 +2660,7 @@ where
 ///
 /// If there is some raw transaction, send to be scanned.
 /// If the mempool stream message is `None` (a block was mined) or the request failed, setup a new mempool stream.
+/// Returns once `shutdown_mempool` is set.
 async fn mempool_monitor<C>(
     mut client: C,
     mempool_transaction_sender: mpsc::Sender<MempoolMessage>,
@@ -2665,6 +2677,11 @@ where
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     'main: loop {
+        // checked before every stream request so a refused request is only retried while the sync session is running.
+        if shutdown_mempool.load(atomic::Ordering::Acquire) {
+            break 'main;
+        }
+
         let response =
             client::get_mempool_transaction_stream(&mut client, shutdown_mempool.clone()).await;
 
