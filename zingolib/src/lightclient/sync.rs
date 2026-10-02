@@ -243,6 +243,16 @@ impl LightClient {
     /// Awaits until sync has successfully completed or failed.
     /// Returns [`pepper_sync::sync::SyncResult`] if successful.
     /// Returns [`crate::lightclient::error::LightClientError`] on failure.
+    ///
+    /// A continuous Sync Session, one with `shutdown_on_completion` unset,
+    /// completes once it is stopped with [`Self::stop_sync`], so this waits
+    /// until then.
+    /// [`Self::sync_to_tip_and_await`] syncs to the chain tip and returns
+    /// whatever that setting is.
+    ///
+    /// A successful session's return is also when the migration part
+    /// witnesses are captured. See [`Self::capture_migration_witnesses`] for
+    /// capturing them while a continuous Sync Session runs.
     pub async fn await_sync(&mut self) -> Result<SyncResult, LightClientError> {
         // Completion-detection quantum: at 500ms this added up to half a
         // second of pure quantization to every sync_and_await; the sync

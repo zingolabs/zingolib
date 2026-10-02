@@ -3,11 +3,28 @@
 //! The scheduled flow a mobile client drives:
 //! [`LightClient::plan_ironwood_migration`] →
 //! [`LightClient::start_ironwood_migration`] (consent) →
-//! [`LightClient::continue_note_splitting`] after each sync until the parts
-//! are scheduled → [`LightClient::reschedule_parts`] when the user picks the
+//! [`LightClient::continue_note_splitting`] each time the wallet is synced to
+//! the chain tip, until the parts are scheduled →
+//! [`LightClient::reschedule_parts`] when the user picks the
 //! Phase 2 cadence → [`LightClient::reconcile_migration`] on every launch →
 //! [`LightClient::transmit_due_parts`] from background wakes →
 //! [`LightClient::catch_up_migration`] when windows were missed.
+//!
+//! Several of these calls are made once the wallet is synced to the chain
+//! tip. A Sync Session with `shutdown_on_completion` set returns at that
+//! point, so the call follows [`LightClient::await_sync`] or a ready
+//! [`LightClient::poll_sync`]. A continuous Sync Session keeps running and
+//! scans each newly mined block, so the call follows a sync status for which
+//! [`pepper_sync::sync::SyncStatus::is_complete`] returns true, read from
+//! [`LightClient::subscribe_sync_status`] or
+//! [`LightClient::latest_sync_status`]. A status is published after every
+//! scan, so each newly mined block is followed by one.
+//!
+//! [`LightClient::sync_to_tip_and_await`] reaches the same point in one call
+//! whatever `shutdown_on_completion` is set to: it stops a running Sync
+//! Session, syncs to the chain tip and returns. It leaves sync stopped, so
+//! it suits a caller that makes one migration call and relaunches sync
+//! itself, as the CLI's migration commands do.
 //!
 //! [`LightClient::migrate_to_ironwood`] composes the same pieces into an
 //! interactive one-call for CLI use, testing, and the user who prefers the
@@ -708,7 +725,8 @@ impl LightClient {
     /// shows every note part-ready, binds the parts to their notes and
     /// schedules them.
     ///
-    /// Call it after a sync whenever [`Self::reconcile_migration`] reports
+    /// Call it once the wallet is synced to the chain tip, as the module docs
+    /// describe, whenever [`Self::reconcile_migration`] reports
     /// [`RecommendedAction::ContinueNoteSplitting`] or
     /// [`RecommendedAction::RetrySplit`], and keep the loop going until it
     /// returns [`SplitStep::SplittingComplete`]. Failed or expired split
@@ -1483,17 +1501,26 @@ impl LightClient {
     }
 
     /// Captures any still-missing migration boundary witnesses from the
-    /// wallet's current tree state. [`Self::await_sync`] does this
-    /// automatically after every successful sync. A consumer driving sync
-    /// through [`Self::poll_sync`] calls it on completion instead, while
-    /// the boundary checkpoint is still retained.
+    /// wallet's current tree state, while the boundary checkpoint is still
+    /// retained. [`Self::await_sync`] does this when a Sync Session returns
+    /// successfully. A consumer collecting the session's result through
+    /// [`Self::poll_sync`] calls it then instead.
+    ///
+    /// A continuous Sync Session returns only once it is stopped, so a
+    /// consumer running one calls this each time
+    /// [`pepper_sync::sync::SyncStatus::is_complete`] returns true for a new
+    /// sync status. A status is published after every scan, so each newly
+    /// mined block is followed by one.
     pub async fn capture_migration_witnesses(&mut self) -> Result<(), LightClientError> {
         Ok(self.wallet().write().await.refresh_part_witnesses()?)
     }
 
     /// Transmits any parts whose bucket window and random target height are
-    /// both reached, without synchronizing. Call this after each sync to drive
-    /// the scheduled migration automatically.
+    /// both reached, without synchronizing. Call this each time the wallet is
+    /// synced to the chain tip to drive the scheduled migration
+    /// automatically: after a Sync Session returns, or under continuous sync
+    /// each time [`pepper_sync::sync::SyncStatus::is_complete`] returns true
+    /// for a new sync status.
     ///
     /// No-op when no migration is active or no parts are due.
     pub async fn auto_transmit_if_due(
