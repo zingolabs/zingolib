@@ -532,8 +532,10 @@ where
                             + load_orchard_nullifier_count
                             + load_ironwood_nullifier_count
                             > MAX_LOAD_NULLIFIERS)
-                        && scan_task.scan_range.block_range().start
-                            != block::get_compact_height(&compact_block)
+                        && splittable_at(
+                            &scan_task.scan_range,
+                            block::get_compact_height(&compact_block),
+                        )
                     {
                         let (full_load, new_load) = scan_task
                             .clone()
@@ -642,6 +644,17 @@ where
 
         Ok(())
     }
+}
+
+/// Returns true if the loader may split the scan task of `scan_range` at `block_height` when a load budget is
+/// reached.
+///
+/// A split at the first block of the scan range would leave the lower scan task empty.
+/// A scan task with `Verify` priority is scanned whole. When its continuity check fails, re-org handling resets and
+/// extends the wallet scan range it was selected from, which would be rewritten under any other scan task split from
+/// it.
+fn splittable_at(scan_range: &ScanRange, block_height: BlockHeight) -> bool {
+    scan_range.priority() != ScanPriority::Verify && scan_range.block_range().start != block_height
 }
 
 /// Opens a stream of compact blocks for `block_range` (end exclusive), or of nullifiers only if `fetch_nullifiers_only`
@@ -989,6 +1002,31 @@ mod tests {
         );
 
         assert_eq!(scanner.transparent_gap_addresses, external_addresses(3..=5));
+    }
+
+    /// A scan task is split above its first block when a load budget is reached, as a split at the first block
+    /// would leave the lower scan task empty. A scan task with `Verify` priority is never split.
+    #[test]
+    fn scan_tasks_are_split_above_their_first_block_unless_verifying() {
+        const START: u32 = 10;
+        let block_range = BlockHeight::from_u32(START)..BlockHeight::from_u32(START * 2);
+
+        for (priority, block_height, splittable) in [
+            (ScanPriority::ChainTip, START, false),
+            (ScanPriority::ChainTip, START + 1, true),
+            (ScanPriority::ScannedWithoutMapping, START + 1, true),
+            (ScanPriority::Verify, START, false),
+            (ScanPriority::Verify, START + 1, false),
+        ] {
+            assert_eq!(
+                splittable_at(
+                    &ScanRange::from_parts(block_range.clone(), priority),
+                    BlockHeight::from_u32(block_height)
+                ),
+                splittable,
+                "{priority:?} at {block_height}"
+            );
+        }
     }
 
     #[test]

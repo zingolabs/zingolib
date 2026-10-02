@@ -1455,6 +1455,91 @@ async fn transparent_funds_remined_at_transparent_scan_floor_are_detected_after_
     check_client_balances!(client, i: 0 o: 0 s: 0 t: 50_000);
 }
 
+/// The chain height drops by one block during a continuous sync session while the scan of the range up to the old
+/// chain tip is in flight. The wallet truncates its scan ranges to the lower chain height, so the scan results hold
+/// a block the wallet has no scan range for. They are discarded and the truncated range is scanned again.
+///
+/// The scan fetches the two funding transactions, and each fetch is held for longer than half the interval between
+/// new block checks, so a new block check runs while the scan is in flight.
+#[tokio::test]
+async fn scan_results_in_flight_when_chain_height_drops_are_discarded_and_rescanned() {
+    use crate::testutils::mock_indexer::{Fault, Rpc};
+
+    const BLOCKS_BELOW_FUNDS: u32 = 10;
+    const BLOCKS_ABOVE_FUNDS: u32 = 9;
+    const CHAIN_HEIGHT: u32 = BLOCKS_BELOW_FUNDS + 1 + BLOCKS_ABOVE_FUNDS;
+    const FUNDING_TRANSACTIONS: usize = 2;
+    const FETCH_HOLD: std::time::Duration =
+        std::time::Duration::from_secs(pepper_sync::sync::CHECK_NEW_BLOCKS_INTERVAL / 2 + 1);
+
+    let mut net = MockNet::launch().await;
+    net.chain
+        .write()
+        .await
+        .mine_empty_blocks(BLOCKS_BELOW_FUNDS);
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    let ua = get_base_address(&client, PoolType::Shielded(ShieldedPool::Orchard)).await;
+    let mut funding = Vec::new();
+    for _ in 0..FUNDING_TRANSACTIONS {
+        funding.push(faucet_funding_transaction(vec![(&ua, 100_000, None)]).await);
+        net.chain
+            .write()
+            .await
+            .faults
+            .inject(Rpc::Transaction, Fault::Delay(FETCH_HOLD));
+    }
+    {
+        let mut chain = net.chain.write().await;
+        chain.mine_block(funding);
+        chain.mine_empty_blocks(BLOCKS_ABOVE_FUNDS);
+    }
+    assert_eq!(net.chain.read().await.tip(), CHAIN_HEIGHT);
+
+    client.sync().await.expect("continuous sync launches");
+    // the scan has fetched its blocks once it fetches the funding transactions.
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        while net.chain.read().await.faults.pending(Rpc::Transaction) != 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the scan fetches the funding transactions");
+    net.chain.write().await.reorg_to(CHAIN_HEIGHT - 1);
+
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        loop {
+            if let crate::data::PollReport::Ready(result) = client.poll_sync() {
+                panic!("sync returned before the lower chain was scanned: {result:?}");
+            }
+            {
+                let wallet = client.wallet();
+                let wallet = wallet.read().await;
+                let scan_ranges = wallet.sync_state.scan_ranges();
+                if scan_ranges.last().is_some_and(|range| {
+                    range.block_range().end == BlockHeight::from_u32(CHAIN_HEIGHT)
+                }) && scan_ranges
+                    .iter()
+                    .all(|range| range.priority() == pepper_sync::sync::ScanPriority::Scanned)
+                {
+                    break;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the wallet scans to the lower chain height");
+    client.stop_sync().unwrap();
+    client.await_sync().await.unwrap();
+
+    check_client_balances!(client, i: 200_000 o: 0 s: 0 t: 0);
+}
+
 /// Sync is rejected when the server's lightwallet protocol version is below v0.5.0, or not reported, as the server does
 /// not serve the transparent and ironwood data sync requires. The error recommends switching servers.
 #[tokio::test]

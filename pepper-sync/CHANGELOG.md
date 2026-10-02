@@ -194,6 +194,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   paused. Completion now applies `SyncMode::on_completion` in one atomic
   exchange, which sets `Shutdown` over `Running` alone, and a paused sync
   shuts down once the consumer resumes it and it completes again.
+- Scan results of a scan range that a re-org truncated or re-prioritised while
+  it was being scanned are discarded, and the part of the range the wallet
+  still holds is scanned again. When the server reported a chain height below
+  the wallet's during a sync session with a scan of the chain tip range in
+  flight, the wallet truncated the range and then panicked while processing
+  the scan results. An error returned by such a scan is discarded in the same
+  way, where it ended the sync session before.
+- A scan task with `Verify` priority is scanned as one load. When its
+  continuity check fails, re-org handling resets the scan range of the failed
+  scan, which panicked when the loader had split the range into several
+  loads.
 
 ### Removed
 
