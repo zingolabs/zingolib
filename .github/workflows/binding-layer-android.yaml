@@ -1,0 +1,164 @@
+name: Binding Layer for Android
+
+# Builds the Binding Layer's Android libraries and Kotlin bindings on this
+# commit, and packages them into the AAR. The build runs the builder of
+# tools/workbench in the builder's own image. The package job compiles no
+# Rust. The Gradle library takes the prebuilt output, compiles the Kotlin
+# bindings, and bundles the AAR.
+
+on:
+  workflow_call:
+    inputs:
+      # A JSON list of the ABIs to build and package.
+      abis:
+        required: true
+        type: string
+      runner:
+        required: false
+        type: string
+        default: ubuntu-24.04
+
+jobs:
+  # The job already runs in android_builder:018, the image that the builder
+  # uses, so the builder runs its plan here with --in-image instead of
+  # starting a container. The output holds the ABI's two libraries and the
+  # Kotlin bindings.
+  build:
+    name: Build ${{ matrix.abi }}
+    runs-on: ${{ inputs.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: ${{ fromJSON(inputs.abis) }}
+    container:
+      image: zingodevops/android_builder:018
+    env:
+      ABI: ${{ matrix.abi }}
+      RUSTUP_HOME: ${{ github.workspace }}/.rustup
+      CARGO_HOME: ${{ github.workspace }}/.cargo
+    steps:
+      # The tools that bindings/android/docker/Dockerfile adds to the image,
+      # plus protoc for the wallet crate.
+      - name: Install libraries
+        run: |
+          apt update \
+            && apt upgrade -y \
+            && apt install -y --no-install-recommends --no-install-suggests \
+            build-essential \
+            cmake \
+            golang \
+            clang-18 \
+            libclang-18-dev \
+            protobuf-compiler \
+            gcc \
+            g++
+
+      # The zl_ descriptor names the release tag that points at HEAD.
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-tags: true
+
+      # A container job's workspace belongs to another user, and git refuses
+      # to read a repository it does not own.
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Cargo default stable
+        run: |
+          rustup update
+          rustup upgrade
+          rustup toolchain install stable --profile minimal --component rust-src
+          rustup default stable
+
+      - name: Install bindgen-cli and cargo-ndk
+        run: |
+          cargo install --force --locked bindgen-cli
+          cargo install --version 4.0.1 cargo-ndk
+
+      - name: Add the ABI's Rust target
+        run: |
+          case "$ABI" in
+            x86_64)      rustup target add x86_64-linux-android ;;
+            x86)         rustup target add i686-linux-android ;;
+            arm64-v8a)   rustup target add aarch64-linux-android ;;
+            armeabi-v7a) rustup target add armv7-linux-androideabi ;;
+            *)           echo "unknown ABI $ABI"; exit 1 ;;
+          esac
+
+      # No consumer describes this build, and the wallet reports the unknown
+      # descriptor.
+      - name: Build the Binding Layer
+        env:
+          RUSTUP_TOOLCHAIN: stable
+          ZINGO_MOBILE_DESCRIPTOR: zm_unknown
+        run: |
+          cargo run \
+            --manifest-path tools/workbench/Cargo.toml \
+            --bin build-binding-layer -- \
+            android --in-image --abi "$ABI" \
+            --out bindings/android/build/binding-layer
+
+      - name: Upload the Binding Layer
+        uses: actions/upload-artifact@v4
+        with:
+          name: binding-layer-android-${{ matrix.abi }}-${{ github.sha }}
+          path: bindings/android/build/binding-layer
+          retention-days: 3
+          overwrite: true
+
+  package:
+    name: Package the AAR
+    needs: build
+    runs-on: ubuntu-24.04
+    env:
+      ABIS: ${{ join(fromJSON(inputs.abis), ' ') }}
+      OUTPUT: bindings/android/build/binding-layer
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # The ABIs share one output directory.
+      - name: Download the Binding Layer
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binding-layer-android-*-${{ github.sha }}
+          path: bindings/android/build/binding-layer
+          merge-multiple: true
+
+      - name: Verify the Binding Layer is present
+        run: |
+          set -eu
+          for abi in $ABIS; do
+            test -f "$OUTPUT/jniLibs/$abi/libuniffi_zingo.so"
+            test -f "$OUTPUT/jniLibs/$abi/libzingo_nym_proxy_ffi.so"
+          done
+          test -f "$OUTPUT/kotlin/uniffi/zingo/zingo.kt"
+          test -f "$OUTPUT/kotlin/uniffi/zingo_nym_proxy_ffi/zingo_nym_proxy_ffi.kt"
+
+      # Gradle reads ORG_GRADLE_PROJECT_<name> as the project property <name>,
+      # and the Binding Layer build then skips its own build.
+      - name: Point Gradle at the prebuilt Binding Layer
+        run: echo "ORG_GRADLE_PROJECT_bindingLayerPrebuilt=$GITHUB_WORKSPACE/$OUTPUT" >> "$GITHUB_ENV"
+
+      - name: Install the NDK that the AAR declares
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Bundle the AAR
+        run: gradle --project-dir bindings/android bundleReleaseAar
+
+      - name: Verify the AAR carries both libraries for every ABI
+        run: |
+          set -eu
+          aar="$(ls bindings/android/build/outputs/aar/*-release.aar)"
+          entries="$(unzip -Z1 "$aar")"
+          for abi in $ABIS; do
+            for library in libuniffi_zingo.so libzingo_nym_proxy_ffi.so; do
+              echo "$entries" | grep --quiet --line-regexp "jni/$abi/$library"
+            done
+          done
