@@ -70,11 +70,7 @@ jobs:
             "CXXFLAGS_aarch64_apple_ios_sim = \"$flags\"" \
             > .cargo/config.toml
 
-      # No consumer describes this build, and the wallet reports the unknown
-      # descriptor.
       - name: Build the Binding Layer
-        env:
-          ZINGO_MOBILE_DESCRIPTOR: zm_unknown
         run: |
           cargo run \
             --manifest-path tools/workbench/Cargo.toml \
