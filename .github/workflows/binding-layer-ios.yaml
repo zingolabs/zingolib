@@ -38,12 +38,15 @@ jobs:
       # its key, and RUSTUP_HOME holds no default toolchain until that step
       # installs one. The builder puts each crate's iOS target directory
       # under target/binding-layer, so the list names those directories.
+      # The wallet crate resolves in the root workspace and the proxy crate
+      # in the zingo-netutils workspace, so each entry names the workspace
+      # whose lockfile keys the cache.
       - name: Cargo cache (registry, git, iOS targets)
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            zingo-ffi -> ../target/binding-layer/ios/wallet
-            zingo-netutils/nym-proxy-ffi -> ../../target/binding-layer/ios/proxy
+            . -> target/binding-layer/ios/wallet
+            zingo-netutils -> ../target/binding-layer/ios/proxy
             tools/workbench
 
       - name: Install bindgen-cli

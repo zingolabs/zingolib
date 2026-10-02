@@ -1179,7 +1179,7 @@ mod tests {
     /// any nextest invocation, local or CI, runs one mixnet client at a time.
     #[test]
     fn the_shim_workspace_serializes_its_live_suite_itself() {
-        let config = include_str!("../.config/nextest.toml");
+        let config = include_str!("../../.config/nextest.toml");
         assert!(
             config.contains("binary(live_mixnet)") && config.contains("max-threads = 1"),
             "the live tests must not start two mixnet clients at once: {config}"

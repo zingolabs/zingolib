@@ -175,8 +175,10 @@ pub const GENERATIONS: [Generation; 2] = [Generation::Wallet, Generation::Proxy]
 pub enum Profile {
     /// Cargo's default profile, which writes to the `debug` directory.
     Debug,
-    /// The `--release` profile.
+    /// Cargo's `--release` profile, which writes to the `release` directory.
     Release,
+    /// The `mobile` profile of the root workspace, which the builder ships.
+    Mobile,
 }
 
 impl Profile {
@@ -185,6 +187,7 @@ impl Profile {
         match self {
             Profile::Debug => &[],
             Profile::Release => &["--release"],
+            Profile::Mobile => &["--profile", "mobile"],
         }
     }
 
@@ -193,6 +196,7 @@ impl Profile {
         match self {
             Profile::Debug => "debug",
             Profile::Release => "release",
+            Profile::Mobile => "mobile",
         }
     }
 }
