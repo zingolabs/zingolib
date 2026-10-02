@@ -54,6 +54,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   serve the transparent and Ironwood data in compact blocks that sync requires.
   The error recommends `SyncRecoveryObservables::ServerUnavailable`, and the
   consumer should switch to a different server and sync again.
+- BREAKING: `error::ServerError::ChainHeightBelowScanRange` variant, returned
+  when fetching a scan range fails and the server's chain height is below the
+  last block of the scan range. A re-org lowered the chain height after the
+  scan range was selected, or the server is behind the chain tip. The fetch
+  error was returned before, which recommended
+  `SyncRecoveryObservables::ServerUnavailable` where the server answered that
+  it had no such block. The new error recommends
+  `SyncRecoveryObservables::MaybeRecoverableServer`, and syncing again
+  truncates the wallet to the server's chain height and verifies it against
+  the server's chain.
 
 ### Changed
 - BREAKING: `client::FetchRequest::CompactBlockRange` has an added `bool`
@@ -190,6 +200,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   continuity check fails, re-org handling resets the scan range of the failed
   scan, which panicked when the loader had split the range into several
   loads.
+- A scan range whose first block does not follow the block below it is
+  verified again within the sync session, whatever priority it was selected
+  with. Only a scan range selected with `Verify` priority was handled before,
+  and any other ended the sync session with a continuity error. The block
+  below is held by the wallet, or was kept by the loader from an earlier scan,
+  and a re-org has replaced it since. The scan range is set back to the
+  priority it was selected with, its first blocks are set to `Verify` and the
+  scanner returns to verifying, so the continuity check failing again is
+  handled as a re-org.
+- A re-org reopens the scanned ranges above the verification range to be
+  scanned again. Truncating the wallet removes the wallet data of every block
+  above the truncation height, and a scanned range above the verification
+  range kept its `Scanned` priority with its wallet data removed.
 
 ### Removed
 
