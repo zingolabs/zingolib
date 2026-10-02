@@ -169,7 +169,7 @@ impl LightClient {
 
     /// Returns the lightclient's sync mode in non-atomic (enum) form.
     pub fn sync_mode(&self) -> SyncMode {
-        SyncMode::from_atomic_u8(self.sync_mode.clone())
+        SyncMode::from_atomic_u8(&self.sync_mode)
             .expect("this library does not allow setting of non-valid sync mode variants")
     }
 
@@ -177,39 +177,34 @@ impl LightClient {
     ///
     /// Returns an error if sync is not running or paused.
     pub fn pause_sync(&self) -> Result<(), SyncModeError> {
-        if self.sync_mode() != SyncMode::Running {
-            return Err(SyncModeError::SyncNotRunning);
+        match SyncMode::transition(&self.sync_mode, SyncMode::Running, SyncMode::Paused)? {
+            SyncMode::Running => Ok(()),
+            _ => Err(SyncModeError::SyncNotRunning),
         }
-        self.sync_mode
-            .store(SyncMode::Paused as u8, atomic::Ordering::Release);
-
-        Ok(())
     }
 
     /// Stop the sync engine after the next batch is scanned.
     ///
     /// Returns an error if sync is not running.
     pub fn stop_sync(&self) -> Result<(), SyncModeError> {
-        if self.sync_mode() == SyncMode::NotRunning {
-            return Err(SyncModeError::SyncNotRunning);
+        let stop_unless_idle = |mode| match mode {
+            SyncMode::NotRunning => SyncMode::NotRunning,
+            _ => SyncMode::Shutdown,
+        };
+        match SyncMode::apply(&self.sync_mode, stop_unless_idle)? {
+            SyncMode::NotRunning => Err(SyncModeError::SyncNotRunning),
+            _ => Ok(()),
         }
-        self.sync_mode
-            .store(SyncMode::Shutdown as u8, atomic::Ordering::Release);
-
-        Ok(())
     }
 
     /// Resume scanning after [`crate::lightclient::LightClient::pause_sync`] has been called.
     ///
     /// Returns an error if sync is not paused.
     pub fn resume_sync(&self) -> Result<(), SyncModeError> {
-        if self.sync_mode() != SyncMode::Paused {
-            return Err(SyncModeError::SyncNotPaused);
+        match SyncMode::transition(&self.sync_mode, SyncMode::Paused, SyncMode::Running)? {
+            SyncMode::Paused => Ok(()),
+            _ => Err(SyncModeError::SyncNotPaused),
         }
-        self.sync_mode
-            .store(SyncMode::Running as u8, atomic::Ordering::Release);
-
-        Ok(())
     }
 
     /// Polls the sync task, returning [`self::PollReport`].
@@ -330,15 +325,8 @@ impl LightClient {
         loop {
             let resume_on_drop = match self.sync_mode() {
                 SyncMode::Running => {
-                    if self
-                        .sync_mode
-                        .compare_exchange(
-                            SyncMode::Running as u8,
-                            SyncMode::Paused as u8,
-                            atomic::Ordering::AcqRel,
-                            atomic::Ordering::Acquire,
-                        )
-                        .is_err()
+                    if SyncMode::transition(&self.sync_mode, SyncMode::Running, SyncMode::Paused)?
+                        != SyncMode::Running
                     {
                         // The engine changed state between the read and the
                         // exchange; reclassify from the fresh mode.
@@ -442,12 +430,8 @@ impl Drop for SyncPauseGuard {
         if self.resume_on_drop {
             // Resume only if the engine is still paused: a stop_sync issued
             // while the guard was held must win over the resume.
-            let _ignore_raced_transition = self.sync_mode.compare_exchange(
-                SyncMode::Paused as u8,
-                SyncMode::Running as u8,
-                atomic::Ordering::AcqRel,
-                atomic::Ordering::Acquire,
-            );
+            let _ignore_raced_transition =
+                SyncMode::transition(&self.sync_mode, SyncMode::Paused, SyncMode::Running);
         }
     }
 }

@@ -19,10 +19,10 @@ const USAGE: &str = "usage: build-binding-layer <android|ios|kotlin> --out <dire
 /// The flag that runs the Android plan directly, inside a job that already runs in the builder image.
 const IN_IMAGE_FLAG: &str = "--in-image";
 
-/// The directory, in zingo-mobile's builder image, that holds libclang.
+/// The directory, in the builder image, that holds libclang.
 const LIBCLANG_PATH: &str = "/usr/lib/llvm-18/lib";
 
-/// The C flags that zingo-mobile's builder sets for the aarch64 target.
+/// The C flags that the builder sets for the aarch64 target.
 const AARCH64_C_FLAGS: &str = "-mno-outline-atomics";
 
 /// The number of leading command-line arguments that name the program itself.
@@ -46,7 +46,7 @@ const ANDROID_CONTEXT: &str = "bindings/android/docker";
 /// The directory at which the container sees the zingolib root.
 const CONTAINER_ROOT: &str = "/opt/zingolib";
 
-/// The iOS deployment target that zingo-mobile's builder sets.
+/// The iOS deployment target that the builder sets.
 const IOS_DEPLOYMENT_TARGET: &str = "16.0";
 
 /// The directory under the zingolib root that holds the builder's cargo output.
@@ -55,8 +55,8 @@ const BUILD_ROOT: &str = "target/binding-layer";
 /// The wallet crate's directory, relative to the zingolib root.
 const WALLET_CRATE_DIR: &str = "zingo-ffi/lib";
 
-/// The wallet-side workspace directory, relative to the zingolib root.
-const WALLET_WORKSPACE_DIR: &str = "zingo-ffi";
+/// The directory of the workspace that holds the wallet crate and the bindgen package, which is the zingolib root.
+const WALLET_WORKSPACE_DIR: &str = ".";
 
 /// The proxy crate's directory, relative to the zingolib root.
 const PROXY_CRATE_DIR: &str = "zingo-netutils/nym-proxy-ffi";
@@ -64,8 +64,8 @@ const PROXY_CRATE_DIR: &str = "zingo-netutils/nym-proxy-ffi";
 /// The wallet crate's UDL file, relative to the wallet crate's directory.
 const UDL: &str = "src/zingo.udl";
 
-/// The profile that zingo-mobile's builders build every library with.
-const BUILDER_PROFILE: binding_layer::Profile = binding_layer::Profile::Release;
+/// The profile that the builder builds every library with.
+const BUILDER_PROFILE: binding_layer::Profile = binding_layer::Profile::Mobile;
 
 /// The directory under a target directory that the builder profile writes to.
 const PROFILE_DIR: &str = BUILDER_PROFILE.directory();
@@ -274,11 +274,10 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
     let roots = match platform {
         Platform::Android { in_image: true } => {
             let roots = Roots::on_host(root, out)?;
-            execute(&Runner::Host, &android_plan(&roots, &abis, &descriptor()?))?;
+            execute(&Runner::Host, &android_plan(&roots, &abis))?;
             roots
         }
         Platform::Android { in_image: false } => {
-            let describe = descriptor()?;
             let roots = Roots::in_container(root, out)?;
             let engine = binding_layer::container_engine()?;
             build_android_image(engine, &roots.host)?;
@@ -288,7 +287,7 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
                     engine,
                     id: id.clone(),
                 },
-                &android_plan(&roots, &abis, &describe),
+                &android_plan(&roots, &abis),
             );
             workbench::stdout_of(engine, &["rm", "--force", &id])?;
             outcome?;
@@ -299,7 +298,7 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
                 return Err(vec!["iOS packaging requires macOS with Xcode".to_string()]);
             }
             let roots = Roots::on_host(root, out)?;
-            execute(&Runner::Host, &ios_plan(&roots, &descriptor()?))?;
+            execute(&Runner::Host, &ios_plan(&roots))?;
             roots
         }
         Platform::Kotlin => {
@@ -309,19 +308,6 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
         }
     };
     Ok(roots.out_host)
-}
-
-/// zingo-mobile's `zm_` descriptor from the environment, which the wallet's build script embeds.
-fn descriptor() -> Result<String, Vec<String>> {
-    env::var(binding_layer::DESCRIBE_VARIABLE)
-        .ok()
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            vec![format!(
-                "{} must carry zingo-mobile's zm_ descriptor",
-                binding_layer::DESCRIBE_VARIABLE
-            )]
-        })
 }
 
 /// Parse the platform, the absolute output directory, and the selected Android ABIs.
@@ -409,7 +395,7 @@ fn start_container(engine: &str, root: &path::Path) -> Result<String, Vec<String
     .map(|id| id.trim().to_string())
 }
 
-/// The environment that selects zingo-mobile's toolchain for a step.
+/// The environment that selects the builder's toolchain for a step.
 fn toolchain_env() -> Vec<(String, String)> {
     vec![(
         binding_layer::TOOLCHAIN_VARIABLE.to_string(),
@@ -417,19 +403,7 @@ fn toolchain_env() -> Vec<(String, String)> {
     )]
 }
 
-/// The environment that selects zingo-mobile's toolchain and carries its descriptor into a step.
-fn builder_env(describe: &str) -> Vec<(String, String)> {
-    [
-        toolchain_env(),
-        vec![(
-            binding_layer::DESCRIBE_VARIABLE.to_string(),
-            describe.to_string(),
-        )],
-    ]
-    .concat()
-}
-
-/// A `Run` step that generates one binding set into a directory, from the directory zingo-mobile's builders use.
+/// A `Run` step that generates one binding set into a directory, from the directory that the generation names.
 fn bindgen_step(
     roots: &Roots,
     generation: binding_layer::Generation,
@@ -471,8 +445,8 @@ fn cargo_step(
     }
 }
 
-/// The environment that every Android step runs with, as zingo-mobile's Dockerfile and builder set it.
-fn android_base_env(describe: &str) -> Vec<(String, String)> {
+/// The environment that every Android step runs with.
+fn android_base_env() -> Vec<(String, String)> {
     let cross = [
         ("LIBCLANG_PATH", LIBCLANG_PATH),
         ("CARGO_NDK_PLATFORM", binding_layer::ANDROID_API_LEVEL),
@@ -487,7 +461,7 @@ fn android_base_env(describe: &str) -> Vec<(String, String)> {
         ("CXXFLAGS_aarch64_linux_android", AARCH64_C_FLAGS),
     ]
     .map(|(key, value)| (key.to_string(), value.to_string()));
-    [builder_env(describe), cross.to_vec()].concat()
+    [toolchain_env(), cross.to_vec()].concat()
 }
 
 /// A plan whose every `Run` step starts from a base environment that the step's own entries override.
@@ -508,9 +482,9 @@ fn with_base_env(plan: Vec<Step>, base: &[(String, String)]) -> Vec<Step> {
         .collect()
 }
 
-/// The Android build plan: bindings, per-ABI libraries stripped as zingo-mobile strips them, then copies.
-fn android_plan(roots: &Roots, abis: &[&binding_layer::AndroidAbi], describe: &str) -> Vec<Step> {
-    with_base_env(android_steps(roots, abis), &android_base_env(describe))
+/// The Android build plan: bindings, per-ABI libraries, stripping, then copies.
+fn android_plan(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step> {
+    with_base_env(android_steps(roots, abis), &android_base_env())
 }
 
 /// The Android steps before the base environment: bindings, per-ABI libraries, stripping, and copies.
@@ -710,14 +684,14 @@ fn host_of(roots: &Roots, run_path: &str) -> path::PathBuf {
     roots.host_path(relative)
 }
 
-/// The iOS build plan, which writes the outputs of zingo-mobile's `build_ios.mjs` and generates the wallet bindings from the standalone package.
-fn ios_plan(roots: &Roots, describe: &str) -> Vec<Step> {
+/// The iOS build plan, which writes both XCFrameworks and generates the wallet bindings from the standalone package.
+fn ios_plan(roots: &Roots) -> Vec<Step> {
     let env = [
         vec![(
             "IPHONEOS_DEPLOYMENT_TARGET".to_string(),
             IOS_DEPLOYMENT_TARGET.to_string(),
         )],
-        builder_env(describe),
+        toolchain_env(),
     ]
     .concat();
     let wallet_target = roots.run_path(&format!("{BUILD_ROOT}/ios/wallet"));
@@ -789,7 +763,7 @@ fn ios_plan(roots: &Roots, describe: &str) -> Vec<Step> {
         [
             Step::FreshDir(host_of(
                 roots,
-                &format!("{target_dir}/{UNIVERSAL_SIMULATOR_DIR}/release"),
+                &format!("{target_dir}/{UNIVERSAL_SIMULATOR_DIR}/{PROFILE_DIR}"),
             )),
             Step::Run {
                 workdir: roots.run.clone(),
@@ -898,7 +872,7 @@ fn ios_plan(roots: &Roots, describe: &str) -> Vec<Step> {
     steps.into_iter().flatten().collect()
 }
 
-/// The device target followed by the simulator targets, in zingo-mobile's order.
+/// The device target followed by the simulator targets.
 fn iter_targets() -> impl Iterator<Item = &'static str> {
     [IOS_DEVICE_TARGET].into_iter().chain(IOS_SIMULATOR_TARGETS)
 }
@@ -1039,14 +1013,11 @@ mod tests {
     /// The number of times one build generates the proxy bindings.
     const PROXY_GENERATIONS_PER_BUILD: usize = 1;
 
-    /// A descriptor for plans built in tests.
-    const TEST_DESCRIBE: &str = "zingo-2.0.24-0-gabcdef0";
-
     #[test]
     fn every_android_run_step_carries_the_base_environment() {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
-        let plan = android_plan(&roots(), &abis, TEST_DESCRIBE);
-        let base = android_base_env(TEST_DESCRIBE);
+        let plan = android_plan(&roots(), &abis);
+        let base = android_base_env();
         assert!(plan.iter().all(|step| match step {
             Step::Run { env, .. } => base.iter().all(|entry| env.contains(entry)),
             _ => true,
@@ -1062,7 +1033,7 @@ mod tests {
     /// An output directory inside the zingolib root.
     const INSIDE_OUT: &str = "/host/zingolib/bindings/android/build/binding-layer";
 
-    /// The output directory that zingo-mobile's Android workflows name, relative to the root.
+    /// The output directory that the Android workflow names, relative to the root.
     const RELATIVE_OUT: &str = "bindings/android/build/binding-layer";
 
     fn roots() -> Roots {
@@ -1085,7 +1056,7 @@ mod tests {
     #[test]
     fn android_plan_generates_the_proxy_bindings_once_after_the_first_abi() {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
-        let plan = android_plan(&roots(), &abis, TEST_DESCRIBE);
+        let plan = android_plan(&roots(), &abis);
         let generations = commands(&plan)
             .into_iter()
             .filter(|command| command.contains("--library"))
@@ -1099,7 +1070,7 @@ mod tests {
             .iter()
             .filter(|abi| abi.jni_dir == "x86")
             .collect();
-        let plan = android_plan(&roots(), &x86, TEST_DESCRIBE);
+        let plan = android_plan(&roots(), &x86);
         let expected_cc = binding_layer::ANDROID_ABIS[FIRST_POSITION].cc();
         let bindgen_env = plan.iter().find_map(|step| match step {
             Step::Run { env, command, .. } if command.iter().any(|arg| arg == "--library") => {
@@ -1230,7 +1201,7 @@ mod tests {
     #[test]
     fn android_plan_copies_both_libraries_for_every_abi() {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
-        let plan = android_plan(&roots(), &abis, TEST_DESCRIBE);
+        let plan = android_plan(&roots(), &abis);
         let copies = plan
             .iter()
             .filter(|step| matches!(step, Step::Copy { .. }))
@@ -1284,7 +1255,7 @@ mod tests {
             path::PathBuf::from(OUTSIDE_OUT),
         )
         .unwrap();
-        let plan = ios_plan(&roots, TEST_DESCRIBE);
+        let plan = ios_plan(&roots);
         assert!(matches!(
             plan.first(),
             Some(Step::FreshDir(directory)) if directory == path::Path::new(OUTSIDE_OUT)
