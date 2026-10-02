@@ -1049,4 +1049,17 @@ mod tests {
             );
         }
     }
+
+    /// A load budget splits a scan task of any priority, since the re-org handler resets the wallet range that
+    /// encloses the failed load instead of the load's exact range.
+    #[test]
+    fn a_verify_task_splits_at_a_load_budget_like_any_other() {
+        let verify = ScanRange::from_parts(
+            BlockHeight::from_u32(21)..BlockHeight::from_u32(41),
+            ScanPriority::Verify,
+        );
+
+        assert!(splittable_at(&verify, BlockHeight::from_u32(31)));
+        assert!(!splittable_at(&verify, BlockHeight::from_u32(21)));
+    }
 }

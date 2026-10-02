@@ -4819,4 +4819,73 @@ mod test {
             );
         }
     }
+
+    /// The geometry of a scan range against a block range, which the engine asks at six sites.
+    mod scan_range_geometry {
+        use zcash_protocol::consensus::BlockHeight;
+
+        use crate::sync::{ScanPriority, ScanRange};
+
+        fn blocks(start: u32, end: u32) -> std::ops::Range<BlockHeight> {
+            BlockHeight::from_u32(start)..BlockHeight::from_u32(end)
+        }
+
+        #[test]
+        fn encloses_a_block_range_within_its_bounds() {
+            let scan_range = ScanRange::from_parts(blocks(21, 41), ScanPriority::Scanning);
+
+            assert!(scan_range.encloses(&blocks(21, 41)));
+            assert!(scan_range.encloses(&blocks(21, 31)));
+            assert!(scan_range.encloses(&blocks(31, 41)));
+            assert!(!scan_range.encloses(&blocks(20, 31)));
+            assert!(!scan_range.encloses(&blocks(31, 42)));
+            assert!(!scan_range.encloses(&blocks(1, 21)));
+        }
+
+        #[test]
+        fn overlaps_a_block_range_that_shares_a_block() {
+            let scan_range = ScanRange::from_parts(blocks(21, 41), ScanPriority::Scanning);
+
+            assert!(scan_range.overlaps(&blocks(31, 51)));
+            assert!(scan_range.overlaps(&blocks(1, 22)));
+            assert!(scan_range.overlaps(&blocks(1, 51)));
+            assert!(!scan_range.overlaps(&blocks(41, 51)));
+            assert!(!scan_range.overlaps(&blocks(1, 21)));
+        }
+    }
+
+    /// The priority a selected scan range is held at while its task is in flight.
+    mod in_flight_priority {
+        use crate::sync::ScanPriority;
+
+        #[test]
+        fn refetching_nullifiers_for_scanned_without_mapping_and_scanning_for_every_other_selection() {
+            assert_eq!(
+                ScanPriority::ScannedWithoutMapping.in_flight(),
+                ScanPriority::RefetchingNullifiers
+            );
+            for selected in [
+                ScanPriority::Historic,
+                ScanPriority::OpenAdjacent,
+                ScanPriority::FoundNote,
+                ScanPriority::ChainTip,
+                ScanPriority::Verify,
+            ] {
+                assert_eq!(selected.in_flight(), ScanPriority::Scanning);
+            }
+        }
+    }
+
+    /// The empty result of a discarded or re-org-handled load.
+    mod processed_scan_results {
+        use crate::sync::ProcessedScanResults;
+
+        #[test]
+        fn default_carries_no_addresses() {
+            let processed = ProcessedScanResults::default();
+
+            assert!(processed.new_transparent_inuse_addresses.is_empty());
+            assert!(processed.new_transparent_gap_addresses.is_empty());
+        }
+    }
 }
