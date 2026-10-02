@@ -74,7 +74,7 @@ jobs:
       - name: Install bindgen-cli and cargo-ndk
         run: |
           cargo install --force --locked bindgen-cli
-          cargo install --version 4.0.1 cargo-ndk
+          cargo install --locked --version 4.0.1 cargo-ndk
 
       - name: Add the ABI's Rust target
         run: |
