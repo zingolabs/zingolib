@@ -53,7 +53,7 @@ jobs:
         run: brew install protobuf
 
       - name: Install the iOS Rust targets
-        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+        run: rustup target add --toolchain stable aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
       # A dependency uses bindgen 0.69, which needs the simulator target and
       # SDK stated for the aarch64 simulator.

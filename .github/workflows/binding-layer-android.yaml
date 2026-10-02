@@ -79,10 +79,10 @@ jobs:
       - name: Add the ABI's Rust target
         run: |
           case "$ABI" in
-            x86_64)      rustup target add x86_64-linux-android ;;
-            x86)         rustup target add i686-linux-android ;;
-            arm64-v8a)   rustup target add aarch64-linux-android ;;
-            armeabi-v7a) rustup target add armv7-linux-androideabi ;;
+            x86_64)      rustup target add --toolchain stable x86_64-linux-android ;;
+            x86)         rustup target add --toolchain stable i686-linux-android ;;
+            arm64-v8a)   rustup target add --toolchain stable aarch64-linux-android ;;
+            armeabi-v7a) rustup target add --toolchain stable armv7-linux-androideabi ;;
             *)           echo "unknown ABI $ABI"; exit 1 ;;
           esac
 
