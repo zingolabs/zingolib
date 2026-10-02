@@ -188,6 +188,8 @@ impl Roots {
     /// The roots of a plan whose `Run` steps execute in the container, which mounts only the zingolib root.
     fn in_container(root: path::PathBuf, out: path::PathBuf) -> Result<Self, Vec<String>> {
         refuse_an_output_directory_holding_the_root(&root, &out)?;
+        // The container runs Linux, so the path under its root joins with `/`
+        // whatever separator the host uses.
         let relative_out = out
             .strip_prefix(&root)
             .map_err(|_| {
@@ -197,8 +199,11 @@ impl Roots {
                     root.display()
                 )]
             })?
-            .to_str()
-            .ok_or_else(|| vec![format!("{} is not valid UTF-8", out.display())])?;
+            .components()
+            .map(|component| component.as_os_str().to_str().map(str::to_string))
+            .collect::<Option<Vec<String>>>()
+            .ok_or_else(|| vec![format!("{} is not valid UTF-8", out.display())])?
+            .join("/");
         let out_run = format!("{CONTAINER_ROOT}/{relative_out}");
         Ok(Self {
             host: root,
@@ -1255,6 +1260,20 @@ mod tests {
                 "{CONTAINER_ROOT}/bindings/android/build/binding-layer/{}",
                 binding_layer::KOTLIN_OUT_DIR
             )
+        );
+    }
+
+    #[test]
+    fn the_container_sees_the_output_directory_with_slashes_whatever_the_host_separator() {
+        let root = path::PathBuf::from(HOST_ROOT);
+        let out = root
+            .join("bindings")
+            .join("android")
+            .join("build")
+            .join("binding-layer");
+        assert_eq!(
+            Roots::in_container(root, out).unwrap().out_run,
+            format!("{CONTAINER_ROOT}/{RELATIVE_OUT}")
         );
     }
 

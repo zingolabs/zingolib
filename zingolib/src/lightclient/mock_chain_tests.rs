@@ -1257,6 +1257,9 @@ async fn transparent_funds_mined_during_sync_session_are_detected() {
         )
         .await;
     let taddr = get_base_address(&client, PoolType::Transparent).await;
+    // built before the sync session launches, as proving blocks the test runtime's only thread and would starve the
+    // session's requests past their timeouts.
+    let funding = faucet_funding_transaction(vec![(&taddr, 50_000, None)]).await;
 
     client.sync().await.expect("continuous sync launches");
 
@@ -1270,7 +1273,11 @@ async fn transparent_funds_mined_during_sync_session_are_detected() {
     .expect("sync status channel open");
 
     // mined directly into a block, bypassing the mempool, so the funds can only be detected from the compact block.
-    fund(&net, vec![(&taddr, 50_000, None)], 1).await;
+    {
+        let mut chain = net.chain.write().await;
+        chain.mine_block(vec![funding]);
+        chain.mine_empty_blocks(1);
+    }
 
     tokio::time::timeout(std::time::Duration::from_secs(60), async {
         loop {
