@@ -41,8 +41,8 @@ jobs:
   cargo-checkmate:
     uses: ./.github/workflows/cargo-checkmate.yaml
 
-  # zingolib is upstream of its consumers. No workflow or action here calls
-  # or checks out the repository of a consumer.
+  # zingolib is upstream of its consumers. No file under .github names the
+  # repository of a consumer, in a call, a checkout, a command, or a comment.
   ci-independent-of-consumers:
     name: CI independent of consumers
     runs-on: ubuntu-24.04
@@ -50,11 +50,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Reject a call or a checkout of a consumer
+      - name: Reject the name of a consumer
         run: |
-          if grep --recursive --line-number --extended-regexp \
-            '(uses|repository):.*zingo-(mobile|pc|delegator)' .github; then
-            echo "::error::a workflow or an action depends on a consumer of zingolib"
+          if grep --recursive --line-number --ignore-case --extended-regexp \
+            'zingo[-_](mobile|pc|delegator)' .github; then
+            echo "::error::a file under .github names a consumer of zingolib"
             exit 1
           fi
 

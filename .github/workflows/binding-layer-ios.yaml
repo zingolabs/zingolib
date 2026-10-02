@@ -59,19 +59,18 @@ jobs:
         run: rustup target add --toolchain stable aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
       # A dependency uses bindgen 0.69, which needs the simulator target and
-      # SDK stated for the aarch64 simulator.
-      - name: Cargo env for the iOS simulator
+      # SDK stated for the aarch64 simulator. The job environment carries
+      # them, and the repository's .cargo/config.toml keeps its contents.
+      - name: Environment for the iOS simulator
         shell: bash
         run: |
-          mkdir -p .cargo
           sdkroot="$(xcrun --sdk iphonesimulator --show-sdk-path)"
           flags="--target=arm64-apple-ios-simulator -isysroot $sdkroot"
           printf '%s\n' \
-            '[env]' \
-            "BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios_sim = \"$flags\"" \
-            "CFLAGS_aarch64_apple_ios_sim = \"$flags\"" \
-            "CXXFLAGS_aarch64_apple_ios_sim = \"$flags\"" \
-            > .cargo/config.toml
+            "BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios_sim=$flags" \
+            "CFLAGS_aarch64_apple_ios_sim=$flags" \
+            "CXXFLAGS_aarch64_apple_ios_sim=$flags" \
+            >> "$GITHUB_ENV"
 
       - name: Build the Binding Layer
         run: |
