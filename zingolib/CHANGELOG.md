@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
 
 ### Changed
+- `LightWallet::get_filtered_balance` bounds its filter by `FnMut` in place of `Fn`. Every `Fn` closure satisfies the new bound, so existing calls compile unchanged.
 - `LightClient::pause_sync`, `stop_sync`, `resume_sync`, `pause_sync_scoped` and the pause guard's drop move the sync mode through `SyncMode::transition` and `SyncMode::apply`, one atomic exchange each, so a `Shutdown` the engine sets at completion between the read and the write is kept instead of overwritten.
 - The Zcash stack moves to its latest releases: `zcash_client_backend` 0.24.0,
   `zcash_primitives` 0.30.1, `zcash_protocol` 0.10.6, `zip321` 0.9.0, and
@@ -34,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `testutils::mock_indexer::MockNet::client` takes an `Option<WalletSettings>`; `None` uses `default_test_wallet_settings`, which now sets `shutdown_on_completion` to `true`.
 
 ### Removed
+- **Breaking:** remove `LightWallet::get_filtered_balance_mut`. `LightWallet::get_filtered_balance` now takes an `FnMut` filter and replaces it.
 - **Breaking:** remove the `zennies_for_zingo` parameter from `LightClient::propose_send_all` and `LightClient::max_send_value`, since upstream send-max cannot carry a second payment.
 - **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
 - **Breaking:** remove the `sync::sync_status` re-export of `pepper_sync::sync_status`. Use `LightClient::latest_sync_status` or `pepper_sync::sync_status` directly.

@@ -504,7 +504,7 @@ async fn mine_to_transparent() {
         .wallet()
         .read()
         .await
-        .get_filtered_balance_mut::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
+        .get_filtered_balance::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
         .unwrap();
 
     assert_eq!(
@@ -521,7 +521,7 @@ async fn mine_to_transparent() {
             .wallet()
             .read()
             .await
-            .get_filtered_balance_mut::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
+            .get_filtered_balance::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
             .unwrap(),
         Zatoshis::const_from_u64(scenarios::mined_block_rewards_total(4))
     );
