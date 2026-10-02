@@ -143,6 +143,12 @@ x509-parser.workspace = true
 resolver = "2"
 members = ["webpki-verifier-shim", "nym-proxy-ffi"]
 
+# The Binding Layer builder builds both of its crates with one profile
+# name. The proxy crate always shipped under the plain release profile, so
+# this profile inherits release and overrides nothing.
+[profile.mobile]
+inherits = "release"
+
 # Mirrors the parent workspace's entries for the dependencies netutils
 # inherits, so `workspace = true` resolves against this workspace. Keep the
 # versions and features in sync with the parent's [workspace.dependencies].

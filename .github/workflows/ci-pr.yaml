@@ -81,10 +81,14 @@ jobs:
             sudo apt-get install -y protobuf-compiler
           fi
 
+      # The flags are the action's defaults plus one exclusion:
+      # zingo-uniffi-bindgen is a binary with no library target and no
+      # features, and `--lib` fails on a package without one.
       - name: Run cargo-hack
         uses: zingolabs/infrastructure/.github/actions/cargo-hack@20485fed7a080e381130ed8120419dc81acae641
         with:
           hack-subcommand: check
+          hack-flags: "--workspace --exclude zingo-uniffi-bindgen --feature-powerset --lib --bins --tests --target-dir target/hack"
 
   # zingo-netutils is excluded from the root workspace and owns its own
   # Cargo.lock (so a future `nym` build resolves independently of the

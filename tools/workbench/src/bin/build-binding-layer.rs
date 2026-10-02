@@ -763,7 +763,7 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
         [
             Step::FreshDir(host_of(
                 roots,
-                &format!("{target_dir}/{UNIVERSAL_SIMULATOR_DIR}/release"),
+                &format!("{target_dir}/{UNIVERSAL_SIMULATOR_DIR}/{PROFILE_DIR}"),
             )),
             Step::Run {
                 workdir: roots.run.clone(),
