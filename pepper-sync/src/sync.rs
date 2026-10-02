@@ -400,6 +400,8 @@ enum MempoolMessage {
 /// times in quick sucession without the sync engine interrupting.
 /// Set `sync_mode` back to `Running` to resume scanning.
 /// Set `sync_mode` to `Shutdown` to stop the sync process.
+/// With `shutdown_on_completion` set, a scan that reaches the chain tip moves a `Running` engine to `Shutdown` and
+/// leaves a `Paused` engine paused, which then shuts down once it is resumed and completes again.
 /// Wallet keys must not change while sync is running. Sync must be stoppped and run again after the key material has
 /// been updated.
 pub async fn sync<C, P, W>(
@@ -421,7 +423,7 @@ where
         + SyncShardTrees
         + Send,
 {
-    let mut sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
+    let mut sync_mode_enum = SyncMode::from_atomic_u8(&sync_mode)?;
     if sync_mode_enum == SyncMode::NotRunning {
         sync_mode_enum = SyncMode::Running;
         sync_mode.store(sync_mode_enum as u8, atomic::Ordering::Release);
@@ -766,14 +768,14 @@ where
                 }
 
                 _update_scanner = interval.tick() => {
-                    sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
+                    sync_mode_enum = SyncMode::from_atomic_u8(&sync_mode)?;
                     match sync_mode_enum {
                         SyncMode::Paused => {
                             let mut pause_interval = tokio::time::interval(Duration::from_secs(1));
                             pause_interval.tick().await;
                             while sync_mode_enum == SyncMode::Paused {
                                 pause_interval.tick().await;
-                                sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
+                                sync_mode_enum = SyncMode::from_atomic_u8(&sync_mode)?;
                             }
                         },
                         SyncMode::Shutdown => {
@@ -805,9 +807,7 @@ where
                     scanner.update(&mut *wallet.write().await, nullifier_map_limit_exceeded).await?;
 
                     if matches!(scanner.state, ScannerState::Complete) && config.shutdown_on_completion {
-                        sync_mode_enum = SyncMode::Shutdown;
-                        sync_mode.store(sync_mode_enum as u8, atomic::Ordering::Release);
-
+                        let _ignore_mode_before_completion = SyncMode::apply(&sync_mode, SyncMode::on_completion)?;
                     }
                 }
 
@@ -3474,6 +3474,60 @@ mod test {
                 "session output percentage {} disagrees with the total progress {}",
                 status.percentage_session_outputs_scanned,
                 expected_total,
+            );
+        }
+    }
+
+    /// The mode a completed scan leaves behind, exercised as a table on the pure step and once through the atomic.
+    mod on_completion {
+        use std::sync::atomic::AtomicU8;
+
+        use crate::wallet::SyncMode;
+
+        #[test]
+        fn running_sync_is_shutdown() {
+            assert_eq!(SyncMode::Running.on_completion(), SyncMode::Shutdown);
+        }
+
+        #[test]
+        fn paused_sync_stays_paused() {
+            assert_eq!(SyncMode::Paused.on_completion(), SyncMode::Paused);
+        }
+
+        #[test]
+        fn shutdown_requested_by_the_consumer_is_kept() {
+            assert_eq!(SyncMode::Shutdown.on_completion(), SyncMode::Shutdown);
+        }
+
+        #[test]
+        fn sync_that_is_not_running_is_left_alone() {
+            assert_eq!(SyncMode::NotRunning.on_completion(), SyncMode::NotRunning);
+        }
+
+        #[test]
+        fn apply_stores_the_step_and_returns_the_mode_it_replaced() {
+            let sync_mode = AtomicU8::new(SyncMode::Running as u8);
+
+            let before = SyncMode::apply(&sync_mode, SyncMode::on_completion).unwrap();
+
+            assert_eq!(before, SyncMode::Running);
+            assert_eq!(
+                SyncMode::from_atomic_u8(&sync_mode).unwrap(),
+                SyncMode::Shutdown
+            );
+        }
+
+        #[test]
+        fn transition_leaves_another_mode_in_place_and_reports_it() {
+            let sync_mode = AtomicU8::new(SyncMode::Paused as u8);
+
+            let before =
+                SyncMode::transition(&sync_mode, SyncMode::Running, SyncMode::Shutdown).unwrap();
+
+            assert_eq!(before, SyncMode::Paused);
+            assert_eq!(
+                SyncMode::from_atomic_u8(&sync_mode).unwrap(),
+                SyncMode::Paused
             );
         }
     }

@@ -9,10 +9,7 @@ use std::{
     fmt::Debug,
     marker::PhantomData,
     ops::Range,
-    sync::{
-        Arc,
-        atomic::{self, AtomicU8},
-    },
+    sync::atomic::{self, AtomicU8},
 };
 
 use incrementalmerkletree::Position;
@@ -289,15 +286,44 @@ impl SyncMode {
         }
     }
 
-    /// Creates [`crate::wallet::SyncMode`] from an atomic u8.
-    ///
-    /// # Panic
-    ///
-    /// Panics if `atomic_sync_mode` corresponds to an invalid enum variant.
-    /// It is the consumers responsibility to ensure the library restricts the user API to only set valid values via
-    /// [`crate::wallet::SyncMode`].
-    pub fn from_atomic_u8(atomic_sync_mode: Arc<AtomicU8>) -> Result<SyncMode, SyncModeError> {
+    /// Reads the mode held in `atomic_sync_mode`, failing when the byte is no variant of this enum.
+    pub fn from_atomic_u8(atomic_sync_mode: &AtomicU8) -> Result<SyncMode, SyncModeError> {
         SyncMode::from_u8(atomic_sync_mode.load(atomic::Ordering::Acquire))
+    }
+
+    /// Returns the mode a completed scan leaves behind, which is `Shutdown` for a running engine and the same mode for every other.
+    pub fn on_completion(self) -> Self {
+        match self {
+            Self::Running => Self::Shutdown,
+            other => other,
+        }
+    }
+
+    /// Replaces the mode held in `atomic_sync_mode` with `step` of it in one atomic exchange and returns the mode it replaced.
+    pub fn apply(
+        atomic_sync_mode: &AtomicU8,
+        step: impl Fn(Self) -> Self,
+    ) -> Result<Self, SyncModeError> {
+        atomic_sync_mode
+            .fetch_update(
+                atomic::Ordering::AcqRel,
+                atomic::Ordering::Acquire,
+                |mode| Self::from_u8(mode).ok().map(|mode| step(mode) as u8),
+            )
+            .map_err(SyncModeError::InvalidSyncMode)
+            .and_then(Self::from_u8)
+    }
+
+    /// Moves `atomic_sync_mode` from `from` to `to` when it holds `from` and returns the mode it held before.
+    pub fn transition(
+        atomic_sync_mode: &AtomicU8,
+        from: Self,
+        to: Self,
+    ) -> Result<Self, SyncModeError> {
+        Self::apply(
+            atomic_sync_mode,
+            |mode| if mode == from { to } else { mode },
+        )
     }
 }
 

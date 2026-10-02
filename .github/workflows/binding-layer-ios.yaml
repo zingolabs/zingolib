@@ -1,0 +1,88 @@
+name: Binding Layer for iOS
+
+# Builds the Binding Layer's two XCFrameworks and the Swift sources of the
+# ZingoBindings package on this commit, with the builder of tools/workbench.
+
+on:
+  workflow_call:
+    inputs:
+      # The CI_IOS_RUNNER repository variable sets the runner label. The
+      # fallback warp-macos-15-arm64-12x is WarpBuild's 12-vCPU M4 Pro
+      # machine. The stock macos-15 label has three cores.
+      runner:
+        required: false
+        type: string
+        default: ${{ vars.CI_IOS_RUNNER || 'warp-macos-15-arm64-12x' }}
+
+jobs:
+  build:
+    name: Build the XCFrameworks and the Swift sources
+    runs-on: ${{ inputs.runner }}
+    env:
+      RUSTUP_HOME: ${{ github.workspace }}/.rustup
+      CARGO_HOME: ${{ github.workspace }}/.cargo
+    steps:
+      # The zl_ descriptor names the release tag that points at HEAD.
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-tags: true
+
+      - name: Cargo default stable
+        run: |
+          rustup update
+          rustup upgrade
+          rustup default stable
+
+      # Placed after the toolchain step: rust-cache reads `rustc -vV` into
+      # its key, and RUSTUP_HOME holds no default toolchain until that step
+      # installs one. The builder puts each crate's iOS target directory
+      # under target/binding-layer, so the list names those directories.
+      # The wallet crate resolves in the root workspace and the proxy crate
+      # in the zingo-netutils workspace, so each entry names the workspace
+      # whose lockfile keys the cache.
+      - name: Cargo cache (registry, git, iOS targets)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target/binding-layer/ios/wallet
+            zingo-netutils -> ../target/binding-layer/ios/proxy
+            tools/workbench
+
+      - name: Install bindgen-cli
+        run: cargo install --locked bindgen-cli
+
+      - name: Install protoc
+        run: brew install protobuf
+
+      - name: Install the iOS Rust targets
+        run: rustup target add --toolchain stable aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+
+      # A dependency uses bindgen 0.69, which needs the simulator target and
+      # SDK stated for the aarch64 simulator. The job environment carries
+      # them, and the repository's .cargo/config.toml keeps its contents.
+      - name: Environment for the iOS simulator
+        shell: bash
+        run: |
+          sdkroot="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          flags="--target=arm64-apple-ios-simulator -isysroot $sdkroot"
+          printf '%s\n' \
+            "BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios_sim=$flags" \
+            "CFLAGS_aarch64_apple_ios_sim=$flags" \
+            "CXXFLAGS_aarch64_apple_ios_sim=$flags" \
+            >> "$GITHUB_ENV"
+
+      - name: Build the Binding Layer
+        run: |
+          cargo run \
+            --manifest-path tools/workbench/Cargo.toml \
+            --bin build-binding-layer -- \
+            ios --out bindings/swift/build
+
+      - name: Upload the Binding Layer
+        uses: actions/upload-artifact@v4
+        with:
+          name: binding-layer-ios-${{ github.sha }}
+          path: bindings/swift/build
+          retention-days: 3
+          overwrite: true
