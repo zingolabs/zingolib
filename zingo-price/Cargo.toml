@@ -40,6 +40,4 @@ zingo-netutils = { version = "5.0.1", path = "../zingo-netutils", optional = tru
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }
-# `testutils` exposes the untunneled fetch leg, which the crate's own
-# tests use where production always dials through a conduit.
-zingo-netutils = { path = "../zingo-netutils", features = ["socks5-fetch", "testutils"] }
+zingo-netutils = { path = "../zingo-netutils", features = ["socks5-fetch"] }

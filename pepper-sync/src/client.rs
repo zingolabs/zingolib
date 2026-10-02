@@ -12,7 +12,10 @@ use std::{
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::{
+    PoolType, ShieldedPool,
+    consensus::{self, BlockHeight},
+};
 
 use zingo_netutils::{
     Indexer, TransparentIndexer,
@@ -59,9 +62,12 @@ pub enum FetchRequest {
         BlockHeight,
     ),
     /// Gets the specified range of compact blocks from the server (end exclusive).
+    ///
+    /// Compact blocks include transparent data if the `bool` is true, otherwise only shielded data.
     CompactBlockRange(
         oneshot::Sender<Result<tonic::Streaming<CompactBlock>, tonic::Status>>,
         Range<BlockHeight>,
+        bool,
     ),
     /// Gets the specified range of nullifiers from the server (end exclusive).
     NullifierRange(
@@ -93,6 +99,47 @@ pub enum FetchRequest {
         i32,
         u32,
     ),
+}
+
+/// Minimum lightwallet protocol version the server must serve. v0.4.0 added transparent data to compact blocks and
+/// v0.5.0 added the Ironwood pool.
+const MIN_LIGHTWALLET_PROTOCOL_VERSION: (u64, u64, u64) = (0, 5, 0);
+
+/// Checks the server's lightwallet protocol version is at least [`MIN_LIGHTWALLET_PROTOCOL_VERSION`] so that it serves
+/// the transparent and Ironwood data in compact blocks required for sync.
+///
+/// Servers that pre-date the protocol version field do not set it and are rejected.
+pub(crate) async fn check_lightwallet_protocol_version<C>(client: &mut C) -> Result<(), ServerError>
+where
+    C: Indexer,
+{
+    let version = fetch::get_lightd_info(client)
+        .await?
+        .lightwallet_protocol_version;
+
+    if parse_protocol_version(&version)
+        .is_some_and(|version| version >= MIN_LIGHTWALLET_PROTOCOL_VERSION)
+    {
+        Ok(())
+    } else {
+        Err(ServerError::UnsupportedProtocolVersion { version })
+    }
+}
+
+/// Parses a `major.minor.patch` version with an optional `v` prefix. Any pre-release or build suffix on the patch
+/// version is ignored.
+fn parse_protocol_version(version: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = version.trim().trim_start_matches('v').splitn(3, '.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?;
+    let patch = patch[..patch
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(patch.len())]
+        .parse()
+        .ok()?;
+
+    Some((major, minor, patch))
 }
 
 /// Gets the height of the blockchain from the server.
@@ -140,10 +187,15 @@ pub(crate) async fn get_compact_block(
 pub(crate) async fn get_compact_block_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
+    include_transparent: bool,
 ) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
-        .send(FetchRequest::CompactBlockRange(reply_sender, block_range))
+        .send(FetchRequest::CompactBlockRange(
+            reply_sender,
+            block_range,
+            include_transparent,
+        ))
         .map_err(|_| ServerError::FetcherDropped)?;
 
     let block_stream = reply_receiver
@@ -246,6 +298,7 @@ pub(crate) async fn get_subtree_roots(
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub(crate) async fn get_frontiers(
     fetch_request_sender: UnboundedSender<FetchRequest>,
+    consensus_parameters: &impl consensus::Parameters,
     block_height: BlockHeight,
 ) -> Result<Frontiers, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
@@ -257,6 +310,34 @@ pub(crate) async fn get_frontiers(
         .await
         .map_err(|_| ServerError::FetcherDropped)?
         .map_err(ServerError::RequestFailed)?;
+
+    // servers omit a pool's tree state below the pool's activation height. at and above the activation height, an
+    // empty tree is served as a serialized empty tree, so an omitted tree state means the server does not serve the
+    // pool.
+    for (pool, tree, network_upgrade) in [
+        (
+            ShieldedPool::Sapling,
+            &tree_state.sapling_tree,
+            consensus::NetworkUpgrade::Sapling,
+        ),
+        (
+            ShieldedPool::Orchard,
+            &tree_state.orchard_tree,
+            consensus::NetworkUpgrade::Nu5,
+        ),
+        (
+            ShieldedPool::Ironwood,
+            &tree_state.ironwood_tree,
+            consensus::NetworkUpgrade::Nu6_3,
+        ),
+    ] {
+        if tree.is_empty() && consensus_parameters.is_nu_active(network_upgrade, block_height) {
+            return Err(ServerError::TreeStateNotServed {
+                pool: PoolType::Shielded(pool),
+                height: block_height,
+            });
+        }
+    }
 
     tree_state.try_into().map_err(ServerError::InvalidFrontier)
 }
@@ -411,6 +492,123 @@ where
                     return Err(MempoolError::ShutdownWithoutStream);
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::mpsc;
+    use zcash_protocol::local_consensus::LocalNetwork;
+    use zingo_netutils::lightwallet_protocol::TreeState;
+
+    use super::*;
+
+    const SAPLING_ACTIVATION: u32 = 100;
+    const ORCHARD_ACTIVATION: u32 = 200;
+    const IRONWOOD_ACTIVATION: u32 = 300;
+
+    const NETWORK: LocalNetwork = LocalNetwork {
+        overwinter: Some(BlockHeight::from_u32(1)),
+        sapling: Some(BlockHeight::from_u32(SAPLING_ACTIVATION)),
+        blossom: Some(BlockHeight::from_u32(SAPLING_ACTIVATION)),
+        heartwood: Some(BlockHeight::from_u32(SAPLING_ACTIVATION)),
+        canopy: Some(BlockHeight::from_u32(SAPLING_ACTIVATION)),
+        nu5: Some(BlockHeight::from_u32(ORCHARD_ACTIVATION)),
+        nu6: Some(BlockHeight::from_u32(ORCHARD_ACTIVATION)),
+        nu6_1: Some(BlockHeight::from_u32(ORCHARD_ACTIVATION)),
+        nu6_2: Some(BlockHeight::from_u32(ORCHARD_ACTIVATION)),
+        nu6_3: Some(BlockHeight::from_u32(IRONWOOD_ACTIVATION)),
+    };
+
+    /// Serialized empty commitment tree, as served at and above a pool's activation height.
+    const EMPTY_TREE: &str = "000000";
+
+    /// Answers tree state requests with an empty tree for every pool except `omitted_pool`, whose tree state field
+    /// is left empty.
+    fn spawn_fetcher(omitted_pool: ShieldedPool) -> mpsc::UnboundedSender<FetchRequest> {
+        let tree = |pool: ShieldedPool| {
+            if pool == omitted_pool {
+                String::new()
+            } else {
+                EMPTY_TREE.to_string()
+            }
+        };
+        let (sapling_tree, orchard_tree, ironwood_tree) = (
+            tree(ShieldedPool::Sapling),
+            tree(ShieldedPool::Orchard),
+            tree(ShieldedPool::Ironwood),
+        );
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::TreeState(reply_sender, block_height) => {
+                        let _ignore_error = reply_sender.send(Ok(TreeState {
+                            height: u64::from(block_height),
+                            hash: "00".repeat(32),
+                            sapling_tree: sapling_tree.clone(),
+                            orchard_tree: orchard_tree.clone(),
+                            ironwood_tree: ironwood_tree.clone(),
+                            ..Default::default()
+                        }));
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+        });
+
+        fetch_request_sender
+    }
+
+    /// Servers omit a pool's tree state below the pool's activation height and serve an empty tree as `000000` at
+    /// the activation height, so an omitted tree state at or above the activation height means the server does not
+    /// serve the pool.
+    #[tokio::test]
+    async fn omitted_tree_state_is_rejected_at_or_above_activation() {
+        for (pool, activation_height) in [
+            (ShieldedPool::Sapling, SAPLING_ACTIVATION),
+            (ShieldedPool::Orchard, ORCHARD_ACTIVATION),
+            (ShieldedPool::Ironwood, IRONWOOD_ACTIVATION),
+        ] {
+            get_frontiers(
+                spawn_fetcher(pool),
+                &NETWORK,
+                (activation_height - 1).into(),
+            )
+            .await
+            .unwrap();
+
+            for height in [activation_height, activation_height + 1] {
+                assert!(matches!(
+                    get_frontiers(spawn_fetcher(pool), &NETWORK, height.into()).await,
+                    Err(ServerError::TreeStateNotServed { pool: PoolType::Shielded(p), height: h })
+                        if p == pool && h == height.into()
+                ));
+            }
+        }
+    }
+
+    /// Zaino reports the protocol version with a `v` prefix. Servers that pre-date the field report an empty string.
+    #[test]
+    fn protocol_version_is_parsed_and_compared() {
+        for (version, supported) in [
+            ("v0.5.0", true),
+            ("0.5.0", true),
+            ("v0.5.1-rc.1", true),
+            ("v1.0.0", true),
+            ("v0.4.1", false),
+            ("v0.4.0", false),
+            ("", false),
+            ("v0.5", false),
+            ("unknown", false),
+        ] {
+            assert_eq!(
+                parse_protocol_version(version)
+                    .is_some_and(|version| version >= MIN_LIGHTWALLET_PROTOCOL_VERSION),
+                supported,
+                "{version}"
+            );
         }
     }
 }

@@ -11,7 +11,7 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{BlockHeight, Parameters};
 use zcash_transparent::keys::NonHardenedChildIndex;
 
-use pepper_sync::keys::transparent::{self, TransparentScope};
+use pepper_sync::keys::transparent::{TransparentScope, encode_address};
 use pepper_sync::wallet::{KeyIdInterface, ScanTarget, ShardTrees};
 use pepper_sync::{
     keys::transparent::TransparentAddressId,
@@ -41,6 +41,7 @@ pub mod send;
 pub mod summary;
 pub mod sync;
 pub mod transaction;
+pub mod transparent;
 mod zcb_traits;
 
 pub use pepper_sync::config::{
@@ -223,7 +224,7 @@ impl LightWallet {
             Ok(first_transparent_address) => {
                 transparent_addresses.insert(
                     transparent_address_id,
-                    transparent::encode_address(&chain_type, first_transparent_address),
+                    encode_address(&chain_type, first_transparent_address),
                 );
             }
             Err(KeyError::NoViewCapability) => (),
@@ -439,6 +440,9 @@ impl LightWallet {
     ///
     /// Adds scan targets to the new sync state to prioritise scanning relevant parts of the chain on rescan.
     /// Addresses are not cleared.
+    ///
+    /// Calling this function while the wallet is syncing will cause sync errors and require an additional clear while
+    /// sync is stopped to recover.
     pub fn clear_all(&mut self) {
         let chain_height_opt = self.sync_state.last_known_chain_height();
         self.sync_state = SyncState::new();

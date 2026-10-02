@@ -174,7 +174,7 @@ mod progress_heartbeat {
             "confirm",
             PROGRESS_HEARTBEAT_INTERVAL,
             "working",
-            || Some("correspondent zec.rocks: submitting".to_string()),
+            || Some("destination zec.rocks: submitting".to_string()),
             move |line| sink.lock().expect("line sink poisoned").push(line),
             tokio::time::sleep(PROGRESS_HEARTBEAT_INTERVAL * 3 + Duration::from_millis(500)),
         )
@@ -183,7 +183,7 @@ mod progress_heartbeat {
         let expected: Vec<String> = (1..=3)
             .map(|tick| {
                 format!(
-                    "confirm: correspondent zec.rocks: submitting ({}s elapsed)",
+                    "confirm: destination zec.rocks: submitting ({}s elapsed)",
                     PROGRESS_HEARTBEAT_INTERVAL.as_secs() * tick
                 )
             })
@@ -668,7 +668,7 @@ mod network_command_parsing {
         use zingolib::mixnet::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
 
         let live = MixnetProbe {
-            host: zingolib::correspondent::Host::of_host_str("zec.rocks"),
+            host: zingolib::destination::Host::of_host_str("zec.rocks"),
             leg: ProbeLeg {
                 outcome: Ok(ProbeSuccess {
                     chain: "main".to_string(),
@@ -683,7 +683,7 @@ mod network_command_parsing {
         );
 
         let dead = MixnetProbe {
-            host: zingolib::correspondent::Host::of_host_str("carover0.xyz"),
+            host: zingolib::destination::Host::of_host_str("carover0.xyz"),
             leg: ProbeLeg {
                 outcome: Err(NetOpFailure {
                     stage: NetOpStage::SocksHandshake,
@@ -714,12 +714,12 @@ mod network_command_parsing {
 
         let attempt = |host: &str, route, unix_secs, outcome| IndexerAttempt {
             unix_secs,
-            host: zingolib::correspondent::Host::of_host_str(host),
+            host: zingolib::destination::Host::of_host_str(host),
             route,
             kind: AttemptKind::Send,
             millis: 10,
             outcome,
-            phase: None,
+            fault_domain: None,
         };
         let tunnel = Err(FailureKind::Unreachable);
         let attempts = vec![
@@ -746,14 +746,14 @@ mod network_command_parsing {
 
         assert_eq!(
             render_status(Indicator::Unattached, None, None),
-            "Mixnet Mode: unattached. The mixnet has not been enabled, and no consent to \
-             clearnet has been given: send and price-fetch refuse. Run `network on` to enable \
-             the mixnet, or `network off` to use clearnet.",
+            "Mixnet Mode: unattached. The mixnet has not been enabled: price-fetch refuses, \
+             and send refuses under the mixnet transmit policy. Run `network on` to enable \
+             the mixnet.",
             "absence is not consent: unattached names refusal, never clearnet"
         );
         assert_eq!(
             render_status(Indicator::SwitchedOff, None, None),
-            "Mixnet Mode: switched off (send and price-fetch use clearnet)"
+            "Mixnet Mode: switched off (price-fetch refuses; send follows the transmit policy)"
         );
         assert_eq!(
             render_status(Indicator::Bootstrapping, None, None),

@@ -101,7 +101,7 @@ impl SubmitFailure for zingo_netutils::Socks5TransmitError {
 
 /// A single transmission endpoint: submits a serialized transaction and can
 /// ask the server whether it already knows a txid. Implemented for the
-/// configured clearnet indexer and for a Nym Correspondent reached
+/// configured clearnet indexer and for a Nym Destination reached
 /// through the SOCKS5 proxy.
 pub(crate) trait TransmitTarget {
     /// The target's typed failure, preserved whole through the policy.

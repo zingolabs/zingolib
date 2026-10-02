@@ -104,8 +104,8 @@ pub const ANNOUNCEMENT_DEVIATIONS: u32 = 4;
 pub const EXIT_ANNOUNCEMENT_GRACE: Duration = Duration::from_millis(7_000);
 
 /// The silence interval before a send's escalation launches a further
-/// Correspondent arm: the sum of a connect attempt's bound and one mixnet
-/// round trip, so a responsive Correspondent's confirmed delivery beats the
+/// Destination arm: the sum of a connect attempt's bound and one mixnet
+/// round trip, so a responsive Destination's confirmed delivery beats the
 /// first hedge by construction, and the interval retunes when either bound
 /// retunes.
 ///
@@ -163,6 +163,19 @@ mod tests {
 /// patience for a single gRPC call on the send and query paths.
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Bound on establishing a connection to an indexer: TCP, TLS and the HTTP/2
+/// handshake together.
+///
+/// A request's own deadline (`Request::set_timeout`, which tonic enforces on
+/// the client) only starts once the channel has a connection to send it on.
+/// Without this bound, a channel that has to reconnect over a path that has
+/// gone silent — a dropped network, a machine that slept, a NAT that forgot
+/// the mapping — waits for that connection forever, and so does every request
+/// queued behind it, none of them reaching the point where their deadline
+/// would fire. Nothing fails, so nothing reports: a sync in that state stays
+/// "running" with no progress and no error until the process is restarted.
+pub const INDEXER_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Bound on waiting for the next message on a gRPC stream, so a stalled
 /// server ends the wait as a typed timeout rather than hanging the consumer.
 /// Shared by pepper-sync's client and scanner, which formerly each carried
@@ -184,11 +197,14 @@ pub const SCANNER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 /// The mempool drain's worst-case wait: the pre-c90f8d309 unconditional
 /// sleep, demoted to a ceiling so a stream that never connects cannot hold
 /// the session open.
-pub const MEMPOOL_DRAIN_CEILING: Duration = Duration::from_secs(1);
+pub const MEMPOOL_DRAIN_CEILING: Duration = Duration::from_millis(1500);
 
 /// One settle window after the mempool subscription, inside
-/// [`MEMPOOL_DRAIN_CEILING`].
-pub const MEMPOOL_DRAIN_SETTLE: Duration = Duration::from_millis(200);
+/// [`MEMPOOL_DRAIN_CEILING`]. Sized to one indexer mempool poll (zaino's
+/// default poll interval is 500 ms) plus margin for delivery, so a
+/// transaction accepted by the validator just before the session ends is
+/// still streamed to the wallet.
+pub const MEMPOOL_DRAIN_SETTLE: Duration = Duration::from_millis(750);
 
 /// Bound on waiting for the sync engine to acknowledge a start request.
 pub const SYNC_START_TIMEOUT: Duration = Duration::from_secs(3);

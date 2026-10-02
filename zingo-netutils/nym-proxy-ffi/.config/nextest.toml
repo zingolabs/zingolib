@@ -1,0 +1,9 @@
+# The live suite reaches the real mixnet; two concurrent clients contend for
+# one machine's resources and one gateway registration window, so the whole
+# binary runs one test at a time. The lib tests keep full parallelism.
+[test-groups]
+live-mixnet = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'binary(live_mixnet)'
+test-group = 'live-mixnet'

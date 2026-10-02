@@ -137,8 +137,8 @@ where
 
 /// For each scan target, fetch the spending transaction and then scan and append to the wallet transactions.
 ///
-/// This is only intended to be used for transactions that do not contain any incoming notes and therefore evaded
-/// trial decryption.
+/// This is only intended to be used for transactions that pay everything to external recipients and therefore evaded
+/// trial decryption and transparent output scanning.
 /// For targetted scanning of transactions, scan targets should be added to the wallet using [`crate::add_scan_targets`] and
 /// the `FoundNote` priorities will be automatically set for scan prioritisation. Transactions with incoming notes
 /// are required to be scanned in the context of a scan task to correctly derive the nullifiers and positions for
@@ -154,7 +154,7 @@ async fn scan_spending_transactions<L, P, W>(
 where
     L: Iterator<Item = ScanTarget>,
     P: consensus::Parameters,
-    W: SyncBlocks + SyncTransactions + SyncNullifiers,
+    W: SyncBlocks + SyncTransactions,
 {
     let wallet_transactions = wallet
         .get_wallet_transactions()
@@ -374,26 +374,47 @@ fn update_spent_notes_by_protocol<D, const DEPTH: u8, const SHARD_HEIGHT: u8>(
 ///
 /// Locates any output ids of coins in the wallet's transactions which match an output id in the wallet's outpoint map.
 /// If a spend is detected, the output id is removed from the outpoint map and added to the map of spend scan targets.
+/// The spend scan targets are used to fetch and scan the transactions with detected spends in the case that they
+/// evaded transparent output scanning.
 /// Finally, all coins that were detected as spent are updated with the located spending transaction.
-pub(super) fn update_transparent_spends<W>(
+pub(super) async fn update_transparent_spends<P, W>(
+    consensus_parameters: &P,
     wallet: &mut W,
-    additional_outpoint_map: Option<&mut BTreeMap<OutputId, ScanTarget>>,
-) -> Result<(), W::Error>
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
+    scanned_blocks: &BTreeMap<BlockHeight, WalletBlock>,
+) -> Result<(), SyncError<W::Error>>
 where
+    P: consensus::Parameters,
     W: SyncBlocks + SyncTransactions + SyncOutPoints,
 {
-    let transparent_output_ids = collect_transparent_output_ids(wallet.get_wallet_transactions()?);
+    let transparent_output_ids = collect_transparent_output_ids(
+        wallet
+            .get_wallet_transactions()
+            .map_err(SyncError::WalletError)?,
+    );
 
-    let mut transparent_spend_scan_targets =
-        detect_transparent_spends(wallet.get_outpoints_mut()?, transparent_output_ids.clone());
-    if let Some(outpoint_map) = additional_outpoint_map {
-        let mut additional_transparent_spend_scan_targets =
-            detect_transparent_spends(outpoint_map, transparent_output_ids);
-        transparent_spend_scan_targets.append(&mut additional_transparent_spend_scan_targets);
-    }
+    let transparent_spend_scan_targets = detect_transparent_spends(
+        wallet.get_outpoints_mut().map_err(SyncError::WalletError)?,
+        transparent_output_ids,
+    );
+
+    // in the edge case where a spending transaction received no change, scan the transactions that evaded transparent
+    // output scanning
+    scan_spending_transactions(
+        fetch_request_sender,
+        consensus_parameters,
+        wallet,
+        ufvks,
+        transparent_spend_scan_targets.values().copied(),
+        scanned_blocks,
+    )
+    .await?;
 
     update_spent_coins(
-        wallet.get_wallet_transactions_mut()?,
+        wallet
+            .get_wallet_transactions_mut()
+            .map_err(SyncError::WalletError)?,
         transparent_spend_scan_targets,
     );
 

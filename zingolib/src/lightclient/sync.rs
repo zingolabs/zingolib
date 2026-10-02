@@ -6,6 +6,7 @@ use std::sync::atomic;
 use std::time::Duration;
 
 use futures::FutureExt;
+use pepper_sync::config::SyncConfig;
 use pepper_sync::error::{SyncError, SyncModeError, SyncRecoveryObservables};
 use pepper_sync::wallet::SyncMode;
 use tokio::time::MissedTickBehavior;
@@ -32,6 +33,19 @@ impl LightClient {
     /// `sync_handle` field.
     // TODO: add realtime sync updates to zingo-cli when it can handle printing during user input
     pub async fn sync(&mut self) -> Result<(), LightClientError> {
+        let sync_config = self
+            .wallet()
+            .read()
+            .await
+            .wallet_settings
+            .sync_config
+            .clone();
+        self.sync_with_config(sync_config).await
+    }
+
+    /// Launches sync as [`Self::sync`] does, with `sync_config` in place of the wallet's
+    /// stored sync config. The stored config is not modified.
+    async fn sync_with_config(&mut self, sync_config: SyncConfig) -> Result<(), LightClientError> {
         if self.sync_mode() != SyncMode::NotRunning {
             return Err(LightClientError::SyncModeError(
                 SyncModeError::SyncAlreadyRunning,
@@ -40,13 +54,6 @@ impl LightClient {
 
         let client = self.require_indexer()?.clone();
         let chain_type = self.chain_type();
-        let sync_config = self
-            .wallet()
-            .read()
-            .await
-            .wallet_settings
-            .sync_config
-            .clone();
         let wallet = self.wallet().clone();
         let sync_mode = self.sync_mode.clone();
         let (progress_sender, progress_receiver) = tokio::sync::watch::channel(None);
@@ -143,13 +150,26 @@ impl LightClient {
     }
 
     /// Returns the sync engine's most recently published status without touching the wallet lock.
+    // TODO: should hold a result with either a sync status or the error returned when calling sync status.
+    // when the lightclient is created it should call sync status to update the channel with the stored
+    // sync status. this will be from the sync state stored in the wallet, either new or restored from file.
     pub fn latest_sync_status(&self) -> Option<pepper_sync::sync::SyncStatus> {
         self.sync_progress.borrow().clone()
     }
 
+    /// Subscribes to the status updates the sync engine pushes during the Sync Session the
+    /// latest [`Self::sync`] launched.
+    ///
+    /// The receiver covers that one session. Subscribe again after each [`Self::sync`].
+    pub fn subscribe_sync_status(
+        &self,
+    ) -> tokio::sync::watch::Receiver<Option<pepper_sync::sync::SyncStatus>> {
+        self.sync_progress.clone()
+    }
+
     /// Returns the lightclient's sync mode in non-atomic (enum) form.
     pub fn sync_mode(&self) -> SyncMode {
-        SyncMode::from_atomic_u8(self.sync_mode.clone())
+        SyncMode::from_atomic_u8(&self.sync_mode)
             .expect("this library does not allow setting of non-valid sync mode variants")
     }
 
@@ -157,39 +177,34 @@ impl LightClient {
     ///
     /// Returns an error if sync is not running or paused.
     pub fn pause_sync(&self) -> Result<(), SyncModeError> {
-        if self.sync_mode() != SyncMode::Running {
-            return Err(SyncModeError::SyncNotRunning);
+        match SyncMode::transition(&self.sync_mode, SyncMode::Running, SyncMode::Paused)? {
+            SyncMode::Running => Ok(()),
+            _ => Err(SyncModeError::SyncNotRunning),
         }
-        self.sync_mode
-            .store(SyncMode::Paused as u8, atomic::Ordering::Release);
-
-        Ok(())
     }
 
     /// Stop the sync engine after the next batch is scanned.
     ///
     /// Returns an error if sync is not running.
     pub fn stop_sync(&self) -> Result<(), SyncModeError> {
-        if self.sync_mode() == SyncMode::NotRunning {
-            return Err(SyncModeError::SyncNotRunning);
+        let stop_unless_idle = |mode| match mode {
+            SyncMode::NotRunning => SyncMode::NotRunning,
+            _ => SyncMode::Shutdown,
+        };
+        match SyncMode::apply(&self.sync_mode, stop_unless_idle)? {
+            SyncMode::NotRunning => Err(SyncModeError::SyncNotRunning),
+            _ => Ok(()),
         }
-        self.sync_mode
-            .store(SyncMode::Shutdown as u8, atomic::Ordering::Release);
-
-        Ok(())
     }
 
     /// Resume scanning after [`crate::lightclient::LightClient::pause_sync`] has been called.
     ///
     /// Returns an error if sync is not paused.
     pub fn resume_sync(&self) -> Result<(), SyncModeError> {
-        if self.sync_mode() != SyncMode::Paused {
-            return Err(SyncModeError::SyncNotPaused);
+        match SyncMode::transition(&self.sync_mode, SyncMode::Paused, SyncMode::Running)? {
+            SyncMode::Paused => Ok(()),
+            _ => Err(SyncModeError::SyncNotPaused),
         }
-        self.sync_mode
-            .store(SyncMode::Running as u8, atomic::Ordering::Release);
-
-        Ok(())
     }
 
     /// Polls the sync task, returning [`self::PollReport`].
@@ -208,6 +223,16 @@ impl LightClient {
                 .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
             PollReport::NoHandle
         }
+    }
+
+    /// Waits until the engine of the Sync Session the latest [`Self::sync`] launched has
+    /// returned, and resolves at once when no engine runs.
+    ///
+    /// The session's result remains with the client for [`Self::await_sync`], which collects
+    /// it and refreshes the migration part witnesses.
+    pub async fn wait_for_sync(&self) {
+        let mut status = self.subscribe_sync_status();
+        while status.changed().await.is_ok() {}
     }
 
     /// Awaits until sync has successfully completed or failed.
@@ -245,6 +270,32 @@ impl LightClient {
         self.await_sync().await
     }
 
+    /// Syncs to the chain tip and awaits completion, regardless of the wallet's stored
+    /// `shutdown_on_completion` setting.
+    ///
+    /// For callers that need sync to return, such as the migration flows, when the wallet may
+    /// be configured for continuous sync. `shutdown_on_completion` is overridden for this sync
+    /// session only; the stored sync config is not modified.
+    ///
+    /// A running or paused sync is stopped and awaited first, and its result is discarded.
+    /// The stopped sync is not relaunched: a consumer that keeps sync running relaunches it
+    /// with [`Self::sync`] when this returns.
+    pub async fn sync_to_tip_and_await(&mut self) -> Result<SyncResult, LightClientError> {
+        if self.stop_sync().is_ok() {
+            let _stopped_session_result = self.await_sync().await;
+        }
+        let mut sync_config = self
+            .wallet()
+            .read()
+            .await
+            .wallet_settings
+            .sync_config
+            .clone();
+        sync_config.shutdown_on_completion = true;
+        self.sync_with_config(sync_config).await?;
+        self.await_sync().await
+    }
+
     /// Calls [`crate::lightclient::LightClient::rescan`] and then [`crate::lightclient::LightClient::await_sync`].
     pub async fn rescan_and_await(&mut self) -> Result<SyncResult, LightClientError> {
         self.rescan().await?;
@@ -264,15 +315,8 @@ impl LightClient {
         loop {
             let resume_on_drop = match self.sync_mode() {
                 SyncMode::Running => {
-                    if self
-                        .sync_mode
-                        .compare_exchange(
-                            SyncMode::Running as u8,
-                            SyncMode::Paused as u8,
-                            atomic::Ordering::AcqRel,
-                            atomic::Ordering::Acquire,
-                        )
-                        .is_err()
+                    if SyncMode::transition(&self.sync_mode, SyncMode::Running, SyncMode::Paused)?
+                        != SyncMode::Running
                     {
                         // The engine changed state between the read and the
                         // exchange; reclassify from the fresh mode.
@@ -376,18 +420,15 @@ impl Drop for SyncPauseGuard {
         if self.resume_on_drop {
             // Resume only if the engine is still paused: a stop_sync issued
             // while the guard was held must win over the resume.
-            let _ignore_raced_transition = self.sync_mode.compare_exchange(
-                SyncMode::Paused as u8,
-                SyncMode::Running as u8,
-                atomic::Ordering::AcqRel,
-                atomic::Ordering::Acquire,
-            );
+            let _ignore_raced_transition =
+                SyncMode::transition(&self.sync_mode, SyncMode::Paused, SyncMode::Running);
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use futures::FutureExt as _;
     use pepper_sync::wallet::SyncMode;
 
     use super::atomic;
@@ -457,6 +498,43 @@ mod tests {
             client.sync_mode(),
             SyncMode::Shutdown,
             "the drop must not overwrite a shutdown request"
+        );
+    }
+
+    #[tokio::test]
+    async fn wait_for_sync_resolves_at_once_without_an_engine() {
+        let client = offline_client(SyncMode::NotRunning).await;
+        assert!(
+            client.wait_for_sync().now_or_never().is_some(),
+            "no engine holds the status channel open"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_wait_and_the_subscription_end_with_the_engine() {
+        let mut client = offline_client(SyncMode::Running).await;
+        let (engine, status) = tokio::sync::watch::channel(None);
+        client.sync_progress = status;
+        let mut subscriber = client.subscribe_sync_status();
+
+        engine.send_replace(None);
+        assert!(
+            client.wait_for_sync().now_or_never().is_none(),
+            "a running engine holds the wait open"
+        );
+        assert!(
+            subscriber.changed().await.is_ok(),
+            "the push reaches the subscriber"
+        );
+
+        drop(engine);
+        assert!(
+            client.wait_for_sync().now_or_never().is_some(),
+            "the engine returning releases the wait"
+        );
+        assert!(
+            subscriber.changed().await.is_err(),
+            "the subscription closes with the session"
         );
     }
 }

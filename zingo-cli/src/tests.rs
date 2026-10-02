@@ -1242,8 +1242,9 @@ mod config_template {
                     birthday: 1,
                     wallet_settings: zingolib::wallet::WalletSettings {
                         sync_config: SyncConfig {
-                            transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                            transparent_address_discovery: TransparentAddressDiscovery::default(),
                             performance_level: PerformanceLevel::High,
+                            shutdown_on_completion: false,
                         },
                         min_confirmations: NonZeroU32::try_from(3).unwrap(),
                     },

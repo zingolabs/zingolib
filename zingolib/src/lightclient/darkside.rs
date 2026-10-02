@@ -57,7 +57,7 @@ async fn fund_at_height_three(net: &MockNet, address: &str) -> Vec<u8> {
 async fn reorg_removes_receipt() {
     let mut net = MockNet::launch().await;
     let mut wallet = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     let address = get_base_address(&wallet, PoolType::Shielded(ShieldedPool::Orchard)).await;
     fund_at_height_three(&net, &address).await;
@@ -83,7 +83,7 @@ async fn reorg_removes_receipt() {
 async fn reorg_moves_receipt_to_new_height() {
     let mut net = MockNet::launch().await;
     let mut wallet = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     let address = get_base_address(&wallet, PoolType::Shielded(ShieldedPool::Orchard)).await;
     fund_at_height_three(&net, &address).await;
@@ -131,12 +131,14 @@ async fn reorg_moves_receipt_to_new_height() {
 async fn reorg_expires_outgoing_transaction() {
     let mut net = MockNet::launch().await;
     let mut sender = net
-        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
         .await;
     // Not ABANDON_ART: that is the synthetic funding faucet's own seed,
     // so its change output would land in this wallet and pollute the
     // recipient's balance assertions.
-    let mut recipient = net.client(zingo_test_vectors::seeds::DARKSIDE_SEED).await;
+    let mut recipient = net
+        .client(zingo_test_vectors::seeds::DARKSIDE_SEED, None)
+        .await;
     let sender_address = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
     let recipient_address =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;

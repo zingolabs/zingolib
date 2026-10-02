@@ -1189,7 +1189,7 @@ mod tests {
         }
 
         /// The `zcash_pool_migration` release this workspace has adjudicated.
-        const ADJUDICATED_UPSTREAM_VERSION: &str = "0.1.0-rc.7";
+        const ADJUDICATED_UPSTREAM_VERSION: &str = "0.1.0";
 
         /// Fails when the migration dependency moves (ADR 0020's movement
         /// tripwire). Reads the workspace lockfile rather than any crate

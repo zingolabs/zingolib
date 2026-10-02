@@ -21,4 +21,6 @@ chain caches, and observability instruments.
 
 ## Architecture decision records
 
-System-wide decisions live in [`docs/adr/`](docs/adr/).
+Decisions sit under `docs/adr/zingolib/`. The
+[zingo-adrs README](https://github.com/zingolabs/zingo-adrs#pointing-a-code-repository-at-zingo-adrs) explains how to read them and propose a
+record.

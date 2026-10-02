@@ -483,6 +483,33 @@ pub struct BatchReport {
     pub halted: Option<String>,
 }
 
+/// What one pass of the due-part transmission loop achieved.
+#[must_use]
+enum Transmission {
+    /// Every submission the pass attempted was accepted, in submission order.
+    Complete(Vec<TxId>),
+    /// A submission failed and the pass stopped there.
+    Halted {
+        /// The parts accepted before the failure, in submission order.
+        sent: Vec<TxId>,
+        /// The part whose submission failed. It stays signed (its
+        /// transaction already recorded in the wallet) and due, so a later
+        /// attempt resubmits it.
+        part: PartId,
+        /// Why the endpoint did not take it.
+        error: crate::wallet::migration::PartTransmissionError,
+    },
+}
+
+impl Transmission {
+    /// The accepted txids, for callers that carry on past a failed part.
+    fn into_sent(self) -> Vec<TxId> {
+        match self {
+            Transmission::Complete(sent) | Transmission::Halted { sent, .. } => sent,
+        }
+    }
+}
+
 /// The transactions of a completed migration.
 #[derive(Debug, Clone)]
 pub struct MigrationSummary {
@@ -903,52 +930,51 @@ impl LightClient {
     }
 
     /// The transmit-only client parts are submitted through, resolved by the
-    /// Mixnet Mode policy (ADR 0011, amendment 2026-07-23) like every other
-    /// transmitting surface.
-    ///
-    /// While the mode is on, parts travel ONLY over the mixnet (failing
-    /// closed with [`MixnetNotReady`](crate::mixnet::MixnetNotReady) while the
-    /// proxy bootstraps or after it dies) to one Correspondent drawn at
-    /// random per submission, with the synchronization endpoint's operator
-    /// forbidden as a target (ADR 0022: a `migration_transmission_uri` on the
-    /// sync operator's domain is refused, and the draw excludes that
-    /// operator). Clearnet carries parts only when the user deliberately
-    /// toggled the mode off, or in a build without the `nym` feature: then
-    /// the dedicated `migration_transmission_uri` when configured, else the
-    /// synchronization endpoint with a logged correlation warning, else
-    /// [`LightClientError::Offline`] with no traffic emitted.
+    /// session's transmit policy (ADR 0011, amendments 2026-07-23 and
+    /// 2026-09-11) like every other transmitting surface.
     fn migration_transmission_client(
         &self,
     ) -> Result<transmission_route::RoutedTransmissionClient, LightClientError> {
+        use transmission_route::MigrationWire;
+
+        let sync_indexer = self.indexer_uri();
         #[cfg(feature = "nym")]
-        if let crate::mixnet::MixnetRoute::Mixnet(conduit) = self.mixnet_route()? {
+        let wire = match self.send_route()? {
             // The guard travels into the client, which dials on every
             // submission long after this function returns.
-            let dial = conduit.dial();
-            let sync_indexer = self.indexer_uri();
-            let candidates = transmission_route::eligible_candidates(
-                self.migration_transmission_uri.clone(),
-                sync_indexer.as_ref(),
-            )?;
-            return Ok(transmission_route::RoutedTransmissionClient::Mixnet(
-                transmission_route::MixnetTransmissionClient::new(dial, candidates),
-            ));
-        }
-
-        let clearnet = match &self.migration_transmission_uri {
-            Some(uri) => transmission_grpc::GrpcTransmissionClient::new(uri.clone()),
-            None => {
-                let indexer_uri = self.indexer_uri().ok_or(LightClientError::Offline)?;
-                log::warn!(
-                    "no dedicated migration transmission endpoint configured; parts will be \
-                     transmitted to the synchronization endpoint, which lets that server \
-                     correlate synchronization with migration activity"
-                );
-                transmission_grpc::GrpcTransmissionClient::new(indexer_uri)
-            }
+            crate::mixnet::MixnetRoute::Mixnet(conduit) => MigrationWire::Mixnet(conduit.dial()),
+            crate::mixnet::MixnetRoute::Clearnet => MigrationWire::Clearnet,
         };
-        Ok(transmission_route::RoutedTransmissionClient::Clearnet(
-            clearnet,
+        #[cfg(not(feature = "nym"))]
+        let wire = MigrationWire::Clearnet;
+        if matches!(wire, MigrationWire::Clearnet)
+            && sync_indexer.is_none()
+            && self.migration_transmission_uri.is_none()
+        {
+            return Err(LightClientError::Offline);
+        }
+        let candidates = transmission_route::candidates(
+            self.migration_transmission_uri.clone(),
+            sync_indexer.as_ref(),
+            &self.destination_servers,
+            wire.transport(),
+            &self.indexer_history.health().lock().expect("health mutex"),
+        )?;
+        let reaches_untrusted_sync = matches!(wire, MigrationWire::Clearnet)
+            && sync_indexer.as_ref().is_some_and(|sync| {
+                candidates.contains(sync)
+                    && self.destination_servers.trust_of(sync)
+                        == crate::destination::servers::Trust::Untrusted
+            });
+        if reaches_untrusted_sync {
+            log::warn!(
+                "no dedicated migration transmission endpoint configured; parts will be \
+                 transmitted to the synchronization endpoint, which lets that server \
+                 correlate synchronization with migration activity"
+            );
+        }
+        Ok(transmission_route::RoutedTransmissionClient::new(
+            wire, candidates,
         ))
     }
 
@@ -971,7 +997,10 @@ impl LightClient {
         &mut self,
         client: &impl TransmissionClient,
     ) -> Result<Vec<TxId>, LightClientError> {
-        self.transmit_due_parts_selected(client, None).await
+        Ok(self
+            .transmit_due_parts_selected(client, None)
+            .await?
+            .into_sent())
     }
 
     /// The due-part transmission loop, optionally narrowed to a single part so
@@ -986,7 +1015,7 @@ impl LightClient {
         &mut self,
         client: &impl TransmissionClient,
         only: Option<PartId>,
-    ) -> Result<Vec<TxId>, LightClientError> {
+    ) -> Result<Transmission, LightClientError> {
         type ProveHandle = tokio::task::JoinHandle<
             Result<(usize, TxId, Vec<u8>), crate::wallet::error::WalletError>,
         >;
@@ -1137,13 +1166,19 @@ impl LightClient {
                         .ok_or(MigrationError::NoMigration)??;
                     sent.push(txid);
                 }
-                Err(e) => {
-                    log::warn!("part submission failed, leaving the part signed: {e}");
-                    break;
+                Err(error) => {
+                    log::warn!("part submission failed, leaving the part signed: {error}");
+                    let part = wallet
+                        .migration
+                        .as_ref()
+                        .ok_or(MigrationError::NoMigration)?
+                        .parts[index]
+                        .id;
+                    return Ok(Transmission::Halted { sent, part, error });
                 }
             }
         }
-        Ok(sent)
+        Ok(Transmission::Complete(sent))
     }
 
     /// Abandons the migration. Parts already confirmed naturally stand.
@@ -1247,7 +1282,8 @@ impl LightClient {
         for part_id in overdue {
             let txids = self
                 .transmit_due_parts_selected(&client, Some(part_id))
-                .await?;
+                .await?
+                .into_sent();
             if !txids.is_empty() {
                 sent.extend(txids);
                 tokio::time::sleep(spacing).await;
@@ -1384,7 +1420,28 @@ impl LightClient {
         let mut sent = 0u32;
         for (index, (part, denomination)) in owed.iter().enumerate() {
             match self.transmit_due_parts_selected(client, Some(*part)).await {
-                Ok(txids) if !txids.is_empty() => {
+                // The part was built and signed (it is already in the wallet,
+                // pending) but the endpoint did not take it. It stays signed
+                // and due, so a retry resubmits it. Reporting it as `Slid`
+                // would tell the caller it was not sendable and nothing was
+                // attempted, when the transaction exists and never left.
+                Ok(Transmission::Halted {
+                    part: failed_part,
+                    error,
+                    ..
+                }) => {
+                    let error = error.to_string();
+                    report.outcomes.push(PartOutcome {
+                        part: failed_part,
+                        denomination: *denomination,
+                        result: PartSendResult::Failed {
+                            error: error.clone(),
+                        },
+                    });
+                    report.halted = Some(error);
+                    break;
+                }
+                Ok(Transmission::Complete(txids)) if !txids.is_empty() => {
                     sent += 1;
                     report.outcomes.push(PartOutcome {
                         part: *part,
@@ -1614,8 +1671,11 @@ impl LightClient {
     /// of every unsent transaction spendable. Calling it again re-plans and
     /// sends the remainder.
     ///
-    /// Syncs the wallet before migrating. Consumers that own the sync
-    /// lifecycle and keep a background sync running should call
+    /// Syncs the wallet to the chain tip before migrating, via
+    /// [`Self::sync_to_tip_and_await`], whatever the wallet's
+    /// `shutdown_on_completion` setting. A running sync is stopped first and
+    /// is not relaunched. Consumers that own the sync lifecycle and keep sync
+    /// running should call
     /// [`Self::quick_immediate_migration`] instead, which migrates
     /// against current wallet state without launching its own sync.
     pub async fn migrate_immediately(
@@ -1629,7 +1689,7 @@ impl LightClient {
             return Err(MigrationError::AlreadyInProgress.into());
         }
 
-        self.sync_and_await().await?;
+        self.sync_to_tip_and_await().await?;
         let sync = self.pause_sync_scoped()?;
         self.migrate_immediately_presynced(account, &sync).await
     }
@@ -1638,10 +1698,9 @@ impl LightClient {
     /// *current* state, without syncing first.
     ///
     /// This is [`Self::migrate_immediately`] minus the leading
-    /// `sync_and_await`, for consumers that own the sync lifecycle and keep a
-    /// background sync running continuously (e.g. zingo-mobile). Calling the
-    /// syncing variant from such a consumer collides with the running sync
-    /// and fails with [`pepper_sync::error::SyncModeError::SyncAlreadyRunning`].
+    /// `sync_to_tip_and_await`, for consumers that own the sync lifecycle and keep
+    /// sync running continuously (e.g. zingo-mobile). The syncing
+    /// variant stops such a consumer's running sync and leaves it stopped.
     /// This entry point lets the caller drive sync itself.
     ///
     /// The caller is responsible for keeping the wallet synced before
@@ -1716,8 +1775,8 @@ impl LightClient {
     ///
     /// This is the send-family entry point for the immediate migration, and
     /// the only immediate-migration entry point that crosses the UniFFI boundary:
-    /// [`Self::migrate_immediately`] self-syncs and so collides with a
-    /// consumer's continuous background sync, and the internal
+    /// [`Self::migrate_immediately`] self-syncs and so stops a consumer's
+    /// continuous sync, and the internal
     /// `migrate_immediately_presynced` takes a
     /// [`SyncPauseGuard`] that cannot cross FFI. The caller keeps the wallet
     /// synced, exactly as it must before any send.
@@ -1726,8 +1785,7 @@ impl LightClient {
     /// transaction count, fee, and residual value), and observe live progress
     /// through [`Self::immediate_migration_progress_handle`]. Like every immediate path it
     /// puts the wallet's real amounts on-chain, correlated with each other and
-    /// the caller's activity. The caller must disclose this (ZIP 318). See
-    /// `docs/adr/0019-immediate-migration-is-send-shaped.md`.
+    /// the caller's activity. The caller must disclose this (ZIP 318).
     pub async fn quick_immediate_migration(
         &mut self,
         account: zip32::AccountId,
@@ -1756,8 +1814,7 @@ impl LightClient {
     /// nothing needs splitting.
     ///
     /// It is the same projection as [`Self::plan_ironwood_migration`], named
-    /// for the Phase 1 mental model of the fused, stateless splitting flow
-    /// (`docs/adr/0016-note-splitting-is-a-stateless-fused-call.md`).
+    /// for the Phase 1 mental model of the fused, stateless splitting flow.
     pub async fn plan_note_split(
         &self,
         account: zip32::AccountId,
@@ -1768,7 +1825,7 @@ impl LightClient {
     /// Executes one round of Phase 1 note splitting as a send-shaped call,
     /// the mobile-facing entry point for the *private* migration path's
     /// splitting, the counterpart to [`Self::quick_immediate_migration`] for the immediate
-    /// path. See `docs/adr/0016-note-splitting-is-a-stateless-fused-call.md`.
+    /// path.
     ///
     /// Like [`Self::quick_send`] it pauses sync internally, plans against the
     /// wallet's *current* confirmed notes without synchronizing, and restores
@@ -1967,6 +2024,13 @@ impl LightClient {
     /// Replans from wallet state before every round, so a migration
     /// interrupted by external spends, expiry or restart picks up where the
     /// notes actually are.
+    ///
+    /// Syncs to the chain tip before each round and while awaiting
+    /// confirmations, via [`Self::sync_to_tip_and_await`], so it returns even
+    /// when the wallet is configured for continuous sync
+    /// (`shutdown_on_completion == false`). A running sync is
+    /// stopped first and is not relaunched; the caller relaunches it with
+    /// [`Self::sync`] when this returns.
     pub async fn migrate_to_ironwood(
         &mut self,
         account: zip32::AccountId,
@@ -1983,7 +2047,7 @@ impl LightClient {
         let mut part_txids = Vec::new();
 
         for _ in 0..MAX_ROUNDS {
-            self.sync_and_await().await?;
+            self.sync_to_tip_and_await().await?;
             // Plan and (when the plan is split) bind under one write guard,
             // the same single-borrow bracket as `start_ironwood_migration`:
             // the notes hashed into the recorded consent are the notes
@@ -2159,7 +2223,7 @@ impl LightClient {
         txids: &[TxId],
     ) -> Result<(), LightClientError> {
         for _ in 0..MAX_CONFIRMATION_POLLS {
-            self.sync_and_await().await?;
+            self.sync_to_tip_and_await().await?;
             let (all_confirmed, failed) = {
                 let wallet = self.wallet().read().await;
                 let statuses: Vec<_> = txids
@@ -2309,12 +2373,12 @@ fn record_part_route(
     use crate::wallet::migration::TransmissionRoute;
 
     let (host, attempt_route) = match route {
-        TransmissionRoute::Mixnet { correspondent, .. } => (
-            crate::correspondent::Host::of_host_str(correspondent),
+        TransmissionRoute::Mixnet { destination, .. } => (
+            crate::destination::Host::of_host_str(destination),
             AttemptRoute::Mixnet,
         ),
         TransmissionRoute::Clearnet { endpoint } => (
-            crate::correspondent::Host::of_host_str(endpoint),
+            crate::destination::Host::of_host_str(endpoint),
             AttemptRoute::Clearnet,
         ),
     };
@@ -2324,7 +2388,7 @@ fn record_part_route(
         route: attempt_route,
         kind: AttemptKind::Send,
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
-        phase: None,
+        fault_domain: None,
         outcome,
     });
 }
@@ -3517,6 +3581,428 @@ mod tests {
             );
         }
 
+        /// HYPOTHESIS: a part whose submission the endpoint refuses is
+        /// reported `Failed` and halts the batch, rather than `Slid`: its
+        /// transaction was built and recorded, it just never left, and it
+        /// stays signed so the next batch resubmits it. Falsified if the
+        /// report reads `Slid` with no halt, or the part leaves `Signed`.
+        #[tokio::test]
+        async fn a_refused_submission_is_reported_failed_not_slid() {
+            const TIP: u32 = 300;
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let own_txid = TxId::from_bytes([7; 32]);
+            let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            part.assign(current_bucket).expect("fresh parts are bound");
+            part.mark_signed(own_txid, window_end, Some(vec![0xAB; 64]))
+                .expect("assigned parts sign");
+            wallet.migration = Some(scheduled_state(params, vec![part]));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let transmission_client = MockTransmissionClient::default();
+            transmission_client
+                .fail
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            let report = client
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
+                .await
+                .unwrap();
+
+            let halted = report
+                .halted
+                .as_deref()
+                .expect("a refused submission halts the batch");
+            assert!(
+                halted.contains("mock transport failure"),
+                "the halt carries the submission error, got {halted:?}"
+            );
+            assert_eq!(
+                report.outcomes,
+                vec![PartOutcome {
+                    part: PartId(0),
+                    denomination: NOTE_VALUE,
+                    result: PartSendResult::Failed {
+                        error: halted.to_string(),
+                    },
+                }]
+            );
+            assert_eq!(
+                client
+                    .wallet()
+                    .read()
+                    .await
+                    .migration
+                    .as_ref()
+                    .unwrap()
+                    .parts[0]
+                    .state,
+                PartState::Signed,
+                "the refused part stays signed, due for a resubmission"
+            );
+
+            // The endpoint recovers: the next batch resubmits the same part.
+            transmission_client
+                .fail
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+            let retry = client
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
+                .await
+                .unwrap();
+            assert_eq!(
+                retry.outcomes,
+                vec![PartOutcome {
+                    part: PartId(0),
+                    denomination: NOTE_VALUE,
+                    result: PartSendResult::Sent(own_txid),
+                }]
+            );
+            assert!(retry.halted.is_none());
+        }
+
+        /// HYPOTHESIS: on the automatic path, a refusal in the middle of a
+        /// pass returns the txids accepted before it and leaves the refused
+        /// part signed, so the next pass resubmits only that part. Falsified
+        /// if the accepted txid is dropped, the refused part leaves `Signed`,
+        /// or the accepted part is submitted twice.
+        #[tokio::test]
+        async fn a_mid_pass_refusal_keeps_the_accepted_txids_and_resubmits_the_rest() {
+            const TIP: u32 = 300;
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let first_txid = TxId::from_bytes([1; 32]);
+            let second_txid = TxId::from_bytes([2; 32]);
+            let mut first = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            first.assign(current_bucket).expect("fresh parts are bound");
+            first
+                .mark_signed(first_txid, window_end, Some(vec![0x01; 64]))
+                .expect("assigned parts sign");
+            let mut second = PartRecord::new(PartId(1), NOTE_VALUE, bound_note);
+            second
+                .assign(current_bucket)
+                .expect("fresh parts are bound");
+            second
+                .mark_signed(second_txid, window_end, Some(vec![0x02; 64]))
+                .expect("assigned parts sign");
+            wallet.migration = Some(scheduled_state(params, vec![first, second]));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let transmission_client = MockTransmissionClient::default();
+            // The endpoint takes one submission, then refuses.
+            transmission_client
+                .fail_from
+                .store(1, std::sync::atomic::Ordering::Relaxed);
+            let sent = client
+                .transmit_due_parts_with(&transmission_client)
+                .await
+                .unwrap();
+            assert_eq!(sent, vec![first_txid], "the accepted txid is kept");
+
+            {
+                let wallet = client.wallet().read().await;
+                let parts = &wallet.migration.as_ref().unwrap().parts;
+                assert_eq!(parts[0].state, PartState::Broadcast);
+                assert_eq!(
+                    parts[1].state,
+                    PartState::Signed,
+                    "the refused part stays signed"
+                );
+                assert_eq!(parts[1].attempts, 1, "the refusal counts as an attempt");
+            }
+
+            // The endpoint recovers: only the refused part is resubmitted.
+            transmission_client
+                .fail_from
+                .store(usize::MAX, std::sync::atomic::Ordering::Relaxed);
+            let retry = client
+                .transmit_due_parts_with(&transmission_client)
+                .await
+                .unwrap();
+            assert_eq!(retry, vec![second_txid]);
+            assert_eq!(
+                transmission_client.submissions.lock().unwrap().len(),
+                2,
+                "each part is accepted exactly once"
+            );
+            let wallet = client.wallet().read().await;
+            let parts = &wallet.migration.as_ref().unwrap().parts;
+            assert_eq!(parts[0].state, PartState::Broadcast);
+            assert_eq!(parts[1].state, PartState::Broadcast);
+        }
+
+        /// HYPOTHESIS: in a batch, a refusal reports the parts accepted
+        /// before it as `Sent`, the refused part as `Failed` under its own
+        /// id, and stops: the parts after it get no outcome and no attempt.
+        /// Falsified if a later part is attempted, the failed outcome names
+        /// the wrong part, or the halt is missing.
+        #[tokio::test]
+        async fn a_refusal_stops_the_batch_after_the_accepted_parts() {
+            const TIP: u32 = 300;
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let txids = [
+                TxId::from_bytes([1; 32]),
+                TxId::from_bytes([2; 32]),
+                TxId::from_bytes([3; 32]),
+            ];
+            let parts = txids
+                .iter()
+                .enumerate()
+                .map(|(i, txid)| {
+                    let mut part = PartRecord::new(PartId(i as u32), NOTE_VALUE, bound_note);
+                    part.assign(current_bucket).expect("fresh parts are bound");
+                    part.mark_signed(*txid, window_end, Some(vec![i as u8; 64]))
+                        .expect("assigned parts sign");
+                    part
+                })
+                .collect();
+            wallet.migration = Some(scheduled_state(params, parts));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let transmission_client = MockTransmissionClient::default();
+            // The endpoint takes one submission, then refuses.
+            transmission_client
+                .fail_from
+                .store(1, std::sync::atomic::Ordering::Relaxed);
+            let report = client
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
+                .await
+                .unwrap();
+
+            let halted = report
+                .halted
+                .as_deref()
+                .expect("the refusal halts the batch");
+            assert_eq!(
+                report.outcomes,
+                vec![
+                    PartOutcome {
+                        part: PartId(0),
+                        denomination: NOTE_VALUE,
+                        result: PartSendResult::Sent(txids[0]),
+                    },
+                    PartOutcome {
+                        part: PartId(1),
+                        denomination: NOTE_VALUE,
+                        result: PartSendResult::Failed {
+                            error: halted.to_string(),
+                        },
+                    },
+                ],
+                "the accepted part is Sent, the refused part is Failed, the rest has no outcome"
+            );
+
+            let wallet = client.wallet().read().await;
+            let parts = &wallet.migration.as_ref().unwrap().parts;
+            assert_eq!(parts[0].state, PartState::Broadcast);
+            assert_eq!(
+                parts[1].state,
+                PartState::Signed,
+                "the refused part stays signed"
+            );
+            assert_eq!(parts[1].attempts, 1);
+            assert_eq!(
+                parts[2].state,
+                PartState::Signed,
+                "the part after the halt is untouched"
+            );
+            assert_eq!(
+                parts[2].attempts, 0,
+                "the part after the halt is not attempted"
+            );
+            assert_eq!(transmission_client.submissions.lock().unwrap().len(), 1);
+        }
+
+        /// HYPOTHESIS: once the window of a refused part has passed, the
+        /// part is not catch-up material: reconciliation classes it
+        /// `AwaitingExpiry`, status does not advertise it, and the batch
+        /// leaves it signed in its old bucket. The part the halt blocked,
+        /// still assigned, is `Overdue`, advertised, and folds into the
+        /// batch. Falsified if the refused part is folded or resubmitted,
+        /// or the blocked part is left behind.
+        #[tokio::test]
+        async fn a_refused_part_past_its_window_awaits_expiry_while_the_blocked_part_folds_in() {
+            use crate::wallet::migration::{PartClass, RecommendedAction};
+            use zcash_protocol::consensus::BlockHeight;
+
+            // Tip 360 sits beyond bucket 0's slip tolerance, as in
+            // `overdue_part_folds_into_the_batch`.
+            let (mut wallet, bound_note) = wallet_with_migration_note(360);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let tip = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let current_bucket = schedule::bucket_index(tip, params.bucket_modulus);
+            assert!(current_bucket > 0, "bucket 0 must be in the past");
+            let expiry = BlockHeight::from_u32(1_000);
+            assert!(expiry > tip, "the refused transaction is still valid");
+
+            // The refused part: signed in bucket 0, attempted once, its
+            // transaction still valid.
+            let refused_txid = TxId::from_bytes([1; 32]);
+            let mut refused = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            refused.assign(0).expect("fresh parts are bound");
+            refused
+                .mark_signed(refused_txid, expiry, Some(vec![0x01; 64]))
+                .expect("assigned parts sign");
+            refused.record_attempt();
+            // The part the halt blocked: still assigned in bucket 0.
+            let mut blocked = PartRecord::new(PartId(1), NOTE_VALUE, bound_note);
+            blocked.assign(0).expect("fresh parts are bound");
+            wallet.migration = Some(scheduled_state(params, vec![refused, blocked]));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+
+            let report = client.reconcile_migration().await.unwrap();
+            let class_of = |id: PartId| {
+                report
+                    .assessments
+                    .iter()
+                    .find(|assessment| assessment.id == id)
+                    .map(|assessment| assessment.class)
+            };
+            assert_eq!(
+                class_of(PartId(0)),
+                Some(PartClass::AwaitingExpiry { expiry }),
+                "the refused part waits out its expiry"
+            );
+            assert_eq!(class_of(PartId(1)), Some(PartClass::Overdue));
+            assert!(
+                report.actions.iter().any(|action| matches!(
+                    action,
+                    RecommendedAction::PromptCatchUp { parts, .. } if parts == &vec![PartId(1)]
+                )),
+                "only the blocked part is catch-up material: {:?}",
+                report.actions
+            );
+            assert!(
+                !report
+                    .actions
+                    .iter()
+                    .any(|action| matches!(action, RecommendedAction::Rebuild { .. })),
+                "a still-valid transaction is not rebuilt"
+            );
+
+            let status = client.migration_status().await.unwrap();
+            let due = status.due_now.expect("the blocked part is due");
+            assert_eq!(
+                due.part_ids,
+                vec![PartId(1)],
+                "status advertises the blocked part only"
+            );
+
+            let transmission_client = MockTransmissionClient::default();
+            let batch = client
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
+                .await
+                .unwrap();
+            // The blocked part folds in and is attempted; the synthetic wallet
+            // cannot witness the boundary, so it slides rather than sends.
+            assert!(
+                matches!(
+                    batch.outcomes[..],
+                    [PartOutcome {
+                        part: PartId(1),
+                        result: PartSendResult::Slid,
+                        ..
+                    }]
+                ),
+                "only the blocked part is in the batch: {:?}",
+                batch.outcomes
+            );
+            assert!(batch.halted.is_none());
+            assert!(
+                transmission_client.submissions.lock().unwrap().is_empty(),
+                "the refused part is not resubmitted late"
+            );
+
+            let wallet = client.wallet().read().await;
+            let parts = &wallet.migration.as_ref().unwrap().parts;
+            assert_eq!(parts[0].state, PartState::Signed);
+            assert_eq!(parts[0].attempts, 1);
+            assert_eq!(
+                parts[0].bucket_index,
+                Some(0),
+                "the refused part is not shifted"
+            );
+            assert_eq!(parts[0].txid, Some(refused_txid));
+            assert_eq!(
+                parts[1].bucket_index,
+                Some(current_bucket),
+                "the blocked part folded into the current window"
+            );
+        }
+
+        /// HYPOTHESIS: once the refused part's transaction expires,
+        /// reconciliation rebuilds it: the part returns to `Assigned` with
+        /// no transaction, placed in a coming window, never the current one.
+        /// Falsified if the part stays signed, keeps its txid, or lands in
+        /// the current or a past bucket.
+        #[tokio::test]
+        async fn a_refused_part_is_rebuilt_once_its_transaction_expires() {
+            use crate::wallet::migration::{PartClass, RecommendedAction};
+            use zcash_protocol::consensus::BlockHeight;
+
+            let (mut wallet, bound_note) = wallet_with_migration_note(360);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let tip = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let current_bucket = schedule::bucket_index(tip, params.bucket_modulus);
+            let expiry = BlockHeight::from_u32(300);
+            assert!(expiry <= tip, "the refused transaction has expired");
+
+            let mut refused = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            refused.assign(0).expect("fresh parts are bound");
+            refused
+                .mark_signed(TxId::from_bytes([1; 32]), expiry, Some(vec![0x01; 64]))
+                .expect("assigned parts sign");
+            refused.record_attempt();
+            wallet.migration = Some(scheduled_state(params, vec![refused]));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let report = client.reconcile_migration().await.unwrap();
+            assert_eq!(report.assessments[0].class, PartClass::Expired);
+            assert!(
+                report
+                    .actions
+                    .contains(&RecommendedAction::Rebuild { part: PartId(0) }),
+                "the expired part is rebuilt: {:?}",
+                report.actions
+            );
+
+            let wallet = client.wallet().read().await;
+            let part = &wallet.migration.as_ref().unwrap().parts[0];
+            assert_eq!(part.state, PartState::Assigned, "rebuilt fresh");
+            assert_eq!(part.txid, None, "the dead transaction is dropped");
+            assert!(part.signed_blob.is_none());
+            assert!(
+                part.bucket_index
+                    .is_some_and(|bucket| bucket > current_bucket),
+                "placed in a coming window, got {:?} with current {current_bucket}",
+                part.bucket_index
+            );
+        }
+
         /// HYPOTHESIS: a failed part's report carries every layer of the
         /// failure's cause chain, so the reader learns which transaction the
         /// wallet could not find rather than the bare category alone.
@@ -4444,12 +4930,15 @@ mod tests {
         use crate::wallet::migration::TransmissionRoute;
         use zcash_primitives::transaction::TxId;
 
-        /// A client whose Mixnet Mode is Ready at the mock tunnel endpoint,
-        /// the posture every connected session holds.
+        /// A client whose Mixnet Mode is Ready at the mock tunnel endpoint, with a
+        /// remote sync indexer that is never dialed.
         #[cfg(feature = "nym")]
         async fn ready_client(tip: u32) -> (LightClient, BoundNote) {
             let (wallet, bound_note) = wallet_with_migration_note(tip);
             let mut client = LightClient::new_for_test(wallet).await;
+            client
+                .set_indexer_uri_lazy("https://indexer.example:443".parse().expect("a static uri"))
+                .expect("a lazy indexer needs no connection");
             client
                 .switch_on_mixnet_for_tests(crate::mocks::transmission::MOCK_SOCKS5_ADDR)
                 .await;
@@ -4468,10 +4957,7 @@ mod tests {
                 .migration_transmission_client()
                 .expect("a ready session resolves a wire");
             assert!(
-                matches!(
-                    resolved,
-                    crate::lightclient::migrate::transmission_route::RoutedTransmissionClient::Mixnet(_)
-                ),
+                resolved.is_mixnet(),
                 "a ready session must resolve the mixnet wire"
             );
         }
@@ -4540,7 +5026,7 @@ mod tests {
         #[test]
         fn the_detector_can_see_a_clearnet_leak() {
             let mixnet = TransmissionRoute::Mixnet {
-                correspondent: "correspondent.example".to_string(),
+                destination: "destination.example".to_string(),
                 via_socks5: "127.0.0.1:1".to_string(),
             };
             let clearnet = TransmissionRoute::Clearnet {

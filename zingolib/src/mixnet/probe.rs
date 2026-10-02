@@ -67,7 +67,7 @@ pub struct ProbeLeg {
 #[derive(Clone, Debug)]
 pub struct MixnetProbe {
     /// The probed indexer's host.
-    pub host: crate::correspondent::Host,
+    pub host: crate::destination::Host,
     /// The probe's outcome through the session's SOCKS5 proxy.
     pub leg: ProbeLeg,
 }
@@ -91,7 +91,7 @@ async fn mixnet_leg(
     indexer: &Uri,
     timeout: Duration,
     history: &IndexerHistoryHandle,
-    host: &crate::correspondent::Host,
+    host: &crate::destination::Host,
 ) -> ProbeLeg {
     let started = Instant::now();
     let outcome = zingo_netutils::Socks5Indexer::new(socks5_addr, indexer.clone(), timeout)
@@ -109,7 +109,7 @@ async fn mixnet_leg(
 
 fn record_probe(
     history: &IndexerHistoryHandle,
-    host: &crate::correspondent::Host,
+    host: &crate::destination::Host,
     route: AttemptRoute,
     leg: &ProbeLeg,
 ) {
@@ -119,11 +119,11 @@ fn record_probe(
         route,
         kind: AttemptKind::Probe,
         millis: leg.millis,
-        phase: leg
+        fault_domain: leg
             .outcome
             .as_ref()
             .err()
-            .map(|failure| crate::mixnet::charge_phase(&failure.stage)),
+            .map(|failure| crate::mixnet::fault_domain(&failure.stage)),
         outcome: match &leg.outcome {
             Ok(_) => Ok(()),
             // The history store is a pre-existing rendered-text seam
@@ -147,7 +147,7 @@ pub(crate) async fn probe_indexer(
     timeout: Duration,
     history: &IndexerHistoryHandle,
 ) -> MixnetProbe {
-    let host = crate::correspondent::Host::of_uri(indexer);
+    let host = crate::destination::Host::of_uri(indexer);
     let leg = mixnet_leg(socks5_addr, indexer, timeout, history, &host).await;
     MixnetProbe { host, leg }
 }

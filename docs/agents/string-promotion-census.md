@@ -1,6 +1,6 @@
 # String-promotion census for the mixnet seam (ADR 0041 arc)
 
-This census records every String in the nym/correspondent stack that the
+This census records every String in the nym/destination stack that the
 2026-08-10 audit walked, with the structured type each should become and a
 verdict on feasibility and benefit. It implements the ADR 0041 ruling that
 the seam's vocabulary is typed, with strings surviving only at true wire
@@ -48,9 +48,9 @@ deliberately not a variant: the wallet judges a host's reports itself.
 **Operator identity → `Operator` newtype.** *Implemented 2026-08-10;
 name ratified 2026-08-10.* Sites:
 `sweep::operator_domain(&str) -> String` and its acknowledged mirror
-`correspondent::operator_domain`; the census-level `Indexer::operator` is
+`destination::operator_domain`; the census-level `Indexer::operator` is
 the declared eventual owner. One newtype ends the duplicated derivation,
-and the concurrent-Transmission correspondent ledger (open design) keys
+and the concurrent-Transmission destination ledger (open design) keys
 by it.
 
 **Indexer endpoint records → one host type.** *Implemented 2026-08-10

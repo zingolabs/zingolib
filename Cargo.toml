@@ -16,8 +16,10 @@ members = [
 # with this workspace's `crypto-common =0.2.0-rc.1` pin (via zcash_primitives
 # 0.30, which pins the same release candidate 0.29 did). Members still consume
 # netutils through the `zingo-netutils` path dependency below, resolved in
-# THIS lockfile with `nym` off. See docs/adr/0011-nym-mixnet-transmission.md.
-exclude = ["zingo-netutils"]
+# THIS lockfile with `nym` off. See zingo-adrs zingolib/0011.
+# zingo-ffi stays a standalone workspace with its own lockfile until
+# zingo-mobile repoints. See zingo-adrs zingolib/0054.
+exclude = ["zingo-netutils", "zingo-ffi"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -65,7 +67,7 @@ orchard = "0.15.0"
 sapling-crypto = "0.7.0"
 shardtree = "0.7.0"
 zcash_address = "0.13.0"
-zcash_client_backend = { version = "0.24.0-rc.7", features = [
+zcash_client_backend = { version = "0.24.0", features = [
     "orchard",
     "transparent-inputs",
 ] }
@@ -78,10 +80,11 @@ zcash_keys = { version = "0.16.1", features = [
 zcash_note_encryption = "0.4.2"
 # non-standard-fees: exposes `fees::fixed`, used to pin the exact planned fee
 # on Ironwood migration transactions.
-zcash_primitives = { version = "0.30.0", features = ["non-standard-fees"] }
+zcash_primitives = { version = "0.30.1", features = ["non-standard-fees"] }
 zcash_proofs = "0.30.0"
-zcash_protocol = "0.10.4" # public API (TODO: remove from public API)
+zcash_protocol = "0.10.6" # public API (TODO: remove from public API)
 zcash_transparent = "0.10.0"
+zcash_script = "0.4.5"
 
 ### Blockchain Protocol
 bip0039 = { version = "0.14", features = ["rand"] }

@@ -25,6 +25,7 @@ test(mempool_spend_balance_and_note_status_accounting)
 | test(send_shield_cycle)
 | test(generate_a_range_of_value_transfers)
 | test(drain_chunks_a_fragmented_wallet)
+| test(immediate_migration_chunks_a_fragmented_wallet)
 | test(from_t_z_o_tz_to_zo_tzo_to_orchard)
 '''
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
@@ -57,6 +58,7 @@ test(mempool_spend_balance_and_note_status_accounting)
 | test(send_shield_cycle)
 | test(generate_a_range_of_value_transfers)
 | test(drain_chunks_a_fragmented_wallet)
+| test(immediate_migration_chunks_a_fragmented_wallet)
 | test(from_t_z_o_tz_to_zo_tzo_to_orchard)
 '''
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }

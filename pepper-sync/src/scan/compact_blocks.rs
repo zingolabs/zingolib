@@ -10,7 +10,11 @@ use tokio::sync::mpsc;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 use zcash_primitives::block::BlockHash;
-use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::{
+    consensus::{self, BlockHeight},
+    value::Zatoshis,
+};
+use zcash_transparent::address::Script;
 use zingo_netutils::lightwallet_protocol::{
     CompactBlock, CompactOrchardAction, CompactSaplingOutput,
 };
@@ -19,9 +23,13 @@ use zip32::AccountId;
 use crate::{
     client::{self, FetchRequest},
     error::{ContinuityError, ScanError, ServerError},
-    keys::{KeyId, ScanningKeyOps, ScanningKeys},
+    keys::{
+        self, KeyId, ScanningKeyOps, ScanningKeys,
+        transparent::{TransparentAddressId, TransparentScope},
+    },
+    scan::collect_outpoints_compact,
     utils::{block, get_compact_action, get_compact_output_description, transaction},
-    wallet::{NullifierMap, OutputId, ScanTarget, TreeBounds, WalletBlock},
+    wallet::{KeyIdInterface as _, NullifierMap, OutputId, ScanTarget, TreeBounds, WalletBlock},
     witness::WitnessData,
 };
 
@@ -29,16 +37,21 @@ use zcash_protocol::{PoolType, ShieldedPool};
 
 use self::runners::{DecryptedOutput, DecryptionBatchRunners};
 
-use super::{DecryptedNoteData, InitialScanData, ScanData, collect_nullifiers};
+use super::{DecryptedNoteData, InitialScanData, ScanData, collect_nullifiers_compact};
 
 mod runners;
 
+#[allow(clippy::complexity)]
 pub(super) fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,
     consensus_parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     initial_scan_data: InitialScanData,
     output_decryptions_in_batch: usize,
+    transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
+    mut transparent_gap_addresses: HashMap<String, TransparentAddressId>,
+    transparent_gap_limit: u32,
+    transparent_scan_floor: BlockHeight,
 ) -> Result<ScanData, ScanError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -78,21 +91,15 @@ where
         ironwood_initial_tree_size = ironwood_final_tree_size;
 
         let block_height = block::get_compact_height(block);
+        let block_hash = block::get_compact_hash(block);
 
         for transaction in &block.vtx {
+            let txid = transaction::get_compact_txid(transaction);
+
             // collect trial decryption results by transaction
-            let incoming_sapling_outputs = runners.sapling.collect_results(
-                block::get_compact_hash(block),
-                transaction::get_compact_txid(transaction),
-            );
-            let incoming_orchard_outputs = runners.orchard.collect_results(
-                block::get_compact_hash(block),
-                transaction::get_compact_txid(transaction),
-            );
-            let incoming_ironwood_outputs = runners.ironwood.collect_results(
-                block::get_compact_hash(block),
-                transaction::get_compact_txid(transaction),
-            );
+            let incoming_sapling_outputs = runners.sapling.collect_results(block_hash, txid);
+            let incoming_orchard_outputs = runners.orchard.collect_results(block_hash, txid);
+            let incoming_ironwood_outputs = runners.ironwood.collect_results(block_hash, txid);
 
             // gather the txids of all transactions relevant to the wallet
             // the edge case of transactions that this capability created but did not receive change
@@ -119,11 +126,7 @@ where
                 });
             }
 
-            collect_nullifiers(
-                &mut nullifiers,
-                block::get_compact_height(block),
-                transaction,
-            )?;
+            collect_nullifiers_compact(&mut nullifiers, block_height, transaction)?;
 
             witness_data.sapling_leaves_and_retentions.extend(
                 calculate_sapling_leaves_and_retentions(
@@ -185,8 +188,8 @@ where
         );
 
         let wallet_block = WalletBlock {
-            block_height: block::get_compact_height(block),
-            block_hash: block::get_compact_hash(block),
+            block_height,
+            block_hash,
             prev_hash: block::get_compact_prev_hash(block),
             time: block.time,
             txids: block
@@ -209,12 +212,179 @@ where
         wallet_blocks.insert(wallet_block.block_height(), wallet_block);
     }
 
+    // transparent address discovery has already located all relevant transactions at or below the transparent scan
+    // floor so only the transparent data of blocks above the floor is scanned.
+    // compact blocks are in height order, verified by the continuity check.
+    let transparent_scan_blocks = &compact_blocks[compact_blocks
+        .partition_point(|block| block::get_compact_height(block) <= transparent_scan_floor)..];
+
+    // collect the transparent inputs for spend detection
+    let mut outpoints = BTreeMap::new();
+    for block in transparent_scan_blocks {
+        let block_height = block::get_compact_height(block);
+        for transaction in &block.vtx {
+            collect_outpoints_compact(&mut outpoints, block_height, transaction);
+        }
+    }
+
+    // retry transparent compact block scanning until the gap limit has been satisfied
+    let mut new_transparent_inuse_addresses = HashMap::new();
+    let mut new_transparent_gap_addresses = HashMap::new();
+    'gap: loop {
+        let mut gap_addresses_in_use = BTreeSet::new();
+
+        for block in transparent_scan_blocks {
+            let block_height = block::get_compact_height(block);
+
+            for transaction in &block.vtx {
+                let txid = transaction::get_compact_txid(transaction);
+
+                // check transparent outputs against inuse and gap addresses
+                for output in transaction.vout.iter() {
+                    let output = zcash_transparent::bundle::TxOut::new(
+                        Zatoshis::from_u64(output.value)
+                            .map_err(|_| ScanError::TransparentOutputInvalidValue(output.value))?,
+                        Script(zcash_script::script::Code(output.script_pub_key.clone())),
+                    );
+                    if let Some(address) = output.recipient_address() {
+                        let encoded_address =
+                            keys::transparent::encode_address(consensus_parameters, address);
+                        if let Some((_address, _key_id)) =
+                            transparent_inuse_addresses.get_key_value(&encoded_address)
+                        {
+                            decrypted_scan_targets.insert(ScanTarget {
+                                block_height,
+                                txid,
+                                narrow_scan_area: true,
+                            });
+                        }
+                        if let Some((_address, key_id)) =
+                            transparent_gap_addresses.get_key_value(&encoded_address)
+                        {
+                            // NOTE: the new transparent in-use addresses do not need to be appended to the transparent
+                            // in-use addresses in this loop as the scan target has already been added here
+                            gap_addresses_in_use.insert(*key_id);
+                            decrypted_scan_targets.insert(ScanTarget {
+                                block_height,
+                                txid,
+                                narrow_scan_area: true,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        if gap_addresses_in_use.is_empty() {
+            break 'gap;
+        }
+
+        for (account_id, ufvk) in ufvks.iter() {
+            let Some(account_pubkey) = ufvk.transparent() else {
+                continue;
+            };
+
+            for scope in [
+                TransparentScope::External,
+                TransparentScope::Internal,
+                TransparentScope::Refund,
+            ] {
+                // TODO: collect as nonempty?
+                let gap_addresses_in_use_scoped = gap_addresses_in_use
+                    .iter()
+                    .filter(|id| id.account_id() == *account_id && id.scope() == scope)
+                    .collect::<Vec<_>>();
+
+                if gap_addresses_in_use_scoped.is_empty() {
+                    continue;
+                }
+
+                // NOTE: the `gap_addresses_in_use` cannot be used to determine the first gap address index as there is no
+                // guarantee the first gap address is in use
+                let lowest_gap_address_index = transparent_gap_addresses
+                .values()
+                .filter(|id| id.account_id() == *account_id && id.scope() == scope)
+                .map(TransparentAddressId::address_index)
+                .min()
+                .expect(
+                    "gap addresses must exist as some are guaranteed to be in use in this scope",
+                );
+                let highest_gap_address_index_in_use = gap_addresses_in_use_scoped
+                    .last()
+                    .expect("non-empty in this scope")
+                    .address_index();
+                let no_of_gap_addresses_in_use = highest_gap_address_index_in_use
+                    .saturating_sub(lowest_gap_address_index.index())
+                    .index()
+                    + 1;
+                // NOTE: if we saturating add `gap_limit` to directly find the first index to derive we will not error if
+                // all addresses are already in use
+                let mut address_index_for_derivation = lowest_gap_address_index
+                    .saturating_add(transparent_gap_limit - 1)
+                    .next()
+                    .ok_or_else(|| ScanError::AllAddressesInUse)?;
+                let highest_address_index_for_derivation = address_index_for_derivation
+                    .index()
+                    .saturating_add(no_of_gap_addresses_in_use - 1);
+                loop {
+                    // derive new gap address for each gap address in use
+                    let new_gap_address_id =
+                        TransparentAddressId::new(*account_id, scope, address_index_for_derivation);
+                    let new_gap_address = keys::transparent::derive_address(
+                        consensus_parameters,
+                        account_pubkey,
+                        new_gap_address_id,
+                    )
+                    .map_err(ScanError::TransparentAddressDerivationError)?;
+                    transparent_gap_addresses.insert(new_gap_address.clone(), new_gap_address_id);
+                    new_transparent_gap_addresses.insert(new_gap_address, new_gap_address_id);
+
+                    // move the used gap address into inuse addresses
+                    let new_inuse_address = transparent_gap_addresses
+                        .iter()
+                        .find(|(_address, id)| {
+                            id.account_id() == *account_id
+                                && id.scope() == scope
+                                && id.address_index().index()
+                                    == new_gap_address_id
+                                        .address_index()
+                                        .index()
+                                        .checked_sub(transparent_gap_limit)
+                                        .expect("new gap address index was derived directly from transparent gap addresses. should never underflow!")
+                        })
+                        .expect("new gap address index was derived directly from transparent gap addresses. should always exist!")
+                        .0
+                        .clone();
+                    let new_inuse_address_entry = transparent_gap_addresses
+                        .remove_entry(&new_inuse_address)
+                        .expect("must exist in this scope!");
+                    // a gap address derived during this scan is also moved if it is found in use
+                    new_transparent_gap_addresses.remove(&new_inuse_address_entry.0);
+                    new_transparent_inuse_addresses
+                        .insert(new_inuse_address_entry.0, new_inuse_address_entry.1);
+
+                    // increment the address index until we have derived all the new gap addresses
+                    if address_index_for_derivation.index() < highest_address_index_for_derivation {
+                        address_index_for_derivation = address_index_for_derivation
+                            .next()
+                            .ok_or_else(|| ScanError::AllAddressesInUse)?;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     Ok(ScanData {
         nullifiers,
+        outpoints,
         wallet_blocks,
         decrypted_scan_targets,
         decrypted_note_data,
         witness_data,
+        new_transparent_inuse_addresses,
+        new_transparent_gap_addresses,
     })
 }
 
@@ -334,15 +504,14 @@ fn check_tree_size(
             continue;
         }
 
+        // block metadata omits a tree size of zero, so a zero tree size where the wallet has calculated a non-zero
+        // tree size means the server does not report the tree size of this pool. rescanning would not resolve this.
         if metadata_size == 0 {
-            tracing::warn!(
-                "{pool:?} chain metadata reports no tree size at block {} against a wallet size \
-                 of {calculated_size}: either this server does not report the {pool:?} tree size, \
-                 or the wallet's record overstates a pool the chain holds nothing of. The next \
-                 block with a reported size decides.",
-                wallet_block.block_height(),
-            );
-            continue;
+            return Err(ScanError::TreeSizeNotReported {
+                shielded_protocol: PoolType::Shielded(pool),
+                height: wallet_block.block_height(),
+                calculated_size,
+            });
         }
 
         return Err(ScanError::IncorrectTreeSize {
@@ -484,6 +653,7 @@ pub(crate) async fn calculate_block_tree_bounds(
                 cmp::Ordering::Greater => {
                     let frontiers = client::get_frontiers(
                         fetch_request_sender.clone(),
+                        consensus_parameters,
                         block::get_compact_height(compact_block),
                     )
                     .await?;
@@ -550,6 +720,7 @@ fn set_checkpoint_retentions<L>(
 
 #[cfg(test)]
 mod tests {
+    use zcash_primitives::transaction::TxId;
     use zingo_netutils::lightwallet_protocol::{ChainMetadata, CompactTx};
 
     use super::*;
@@ -669,6 +840,10 @@ mod tests {
             &HashMap::new(),
             initial_scan_data(100),
             100,
+            HashMap::new(),
+            HashMap::new(),
+            10,
+            BlockHeight::from_u32(0),
         )
         .unwrap();
 
@@ -694,6 +869,10 @@ mod tests {
             &HashMap::new(),
             initial_scan_data(0),
             100,
+            HashMap::new(),
+            HashMap::new(),
+            10,
+            BlockHeight::from_u32(0),
         );
 
         assert!(matches!(
@@ -764,25 +943,326 @@ mod tests {
     }
 
     /// A server that does not report a pool's tree size leaves it at zero
-    /// while the block still carries that pool's outputs. Failing sync there
-    /// would strand every wallet using such a server, and the wallet's own
-    /// record is not what is at fault, so this is tolerated.
+    /// while the block still carries that pool's outputs. The wallet's own
+    /// record is not at fault, so rather than reopening the pool's history
+    /// for a rescan that would never resolve it, the scan fails with an error
+    /// naming the unreported pool.
     #[test]
-    fn an_unreported_tree_size_does_not_fail_the_scan() {
+    fn an_unreported_tree_size_fails_the_scan() {
         let compact_block = block_with_served_ironwood_actions(5, 0);
         let wallet_block = wallet_block_with_ironwood_size(5);
+
+        assert!(matches!(
+            check_tree_size(&compact_block, &wallet_block),
+            Err(ScanError::TreeSizeNotReported {
+                shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
+                calculated_size: 5,
+                ..
+            })
+        ));
+    }
+
+    /// The wallet's count is cumulative, so against a non-reporting server
+    /// the mismatch persists onto blocks that serve no outputs of their own.
+    #[test]
+    fn an_unreported_tree_size_fails_the_scan_on_blocks_without_outputs() {
+        let compact_block = block_with_served_ironwood_actions(0, 0);
+        let wallet_block = wallet_block_with_ironwood_size(7);
+
+        assert!(matches!(
+            check_tree_size(&compact_block, &wallet_block),
+            Err(ScanError::TreeSizeNotReported {
+                shielded_protocol: PoolType::Shielded(ShieldedPool::Ironwood),
+                calculated_size: 7,
+                ..
+            })
+        ));
+    }
+
+    /// Block metadata omits a tree size of zero, as at the ironwood activation
+    /// block where the tree is still empty. A zero where the wallet also
+    /// calculates zero is an empty tree, not an unreported one.
+    #[test]
+    fn an_empty_tree_is_not_an_unreported_tree_size() {
+        let compact_block = block_with_served_ironwood_actions(0, 0);
+        let wallet_block = wallet_block_with_ironwood_size(0);
 
         assert!(check_tree_size(&compact_block, &wallet_block).is_ok());
     }
 
-    /// The wallet's count is cumulative, so against a non-reporting server
-    /// the mismatch persists onto blocks that serve no outputs of their
-    /// own; rejecting those would loop reopen-and-rescan forever.
-    #[test]
-    fn an_unreported_tree_size_is_tolerated_on_blocks_without_outputs() {
-        let compact_block = block_with_served_ironwood_actions(0, 0);
-        let wallet_block = wallet_block_with_ironwood_size(7);
+    const GAP_LIMIT: u32 = 3;
 
-        assert!(check_tree_size(&compact_block, &wallet_block).is_ok());
+    fn transparent_test_ufvk() -> UnifiedFullViewingKey {
+        zcash_keys::keys::UnifiedSpendingKey::from_seed(
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &[7; 32],
+            AccountId::ZERO,
+        )
+        .expect("a 32 byte seed derives a spending key")
+        .to_unified_full_viewing_key()
+    }
+
+    fn external_address(
+        ufvk: &UnifiedFullViewingKey,
+        index: u32,
+    ) -> zcash_transparent::address::TransparentAddress {
+        use zcash_transparent::keys::IncomingViewingKey as _;
+
+        ufvk.transparent()
+            .expect("the test key has a transparent component")
+            .derive_external_ivk()
+            .unwrap()
+            .derive_address(
+                zcash_transparent::keys::NonHardenedChildIndex::from_index(index).unwrap(),
+            )
+            .unwrap()
+    }
+
+    /// The address map the scanner expects, keyed by encoded address, for the given external indexes.
+    fn external_addresses(
+        ufvk: &UnifiedFullViewingKey,
+        indexes: impl IntoIterator<Item = u32>,
+    ) -> HashMap<String, TransparentAddressId> {
+        indexes
+            .into_iter()
+            .map(|index| {
+                (
+                    keys::transparent::encode_address(
+                        &zcash_protocol::consensus::MAIN_NETWORK,
+                        external_address(ufvk, index),
+                    ),
+                    TransparentAddressId::new(
+                        AccountId::ZERO,
+                        TransparentScope::External,
+                        zcash_transparent::keys::NonHardenedChildIndex::from_index(index).unwrap(),
+                    ),
+                )
+            })
+            .collect()
+    }
+
+    /// A block with one transaction paying the external address at `index`.
+    fn block_funding_external_address(
+        ufvk: &UnifiedFullViewingKey,
+        height: u64,
+        index: u32,
+    ) -> CompactBlock {
+        let script = Script::from(external_address(ufvk, index).script());
+        let mut compact_block = block_with_served_ironwood_actions(0, 10);
+        compact_block.height = height;
+        compact_block.vtx[0].vout = vec![zingo_netutils::lightwallet_protocol::TxOut {
+            value: 100_000,
+            script_pub_key: script.0.0,
+        }];
+        compact_block
+    }
+
+    fn scan_block(
+        ufvk: &UnifiedFullViewingKey,
+        compact_block: CompactBlock,
+        inuse_addresses: &HashMap<String, TransparentAddressId>,
+        gap_addresses: &HashMap<String, TransparentAddressId>,
+    ) -> ScanData {
+        scan_block_above_floor(
+            ufvk,
+            compact_block,
+            inuse_addresses,
+            gap_addresses,
+            BlockHeight::from_u32(0),
+        )
+    }
+
+    fn scan_block_above_floor(
+        ufvk: &UnifiedFullViewingKey,
+        compact_block: CompactBlock,
+        inuse_addresses: &HashMap<String, TransparentAddressId>,
+        gap_addresses: &HashMap<String, TransparentAddressId>,
+        transparent_scan_floor: BlockHeight,
+    ) -> ScanData {
+        scan_compact_blocks(
+            vec![compact_block],
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &HashMap::from([(AccountId::ZERO, ufvk.clone())]),
+            initial_scan_data(10),
+            100,
+            inuse_addresses.clone(),
+            gap_addresses.clone(),
+            GAP_LIMIT,
+            transparent_scan_floor,
+        )
+        .unwrap()
+    }
+
+    /// Funding a gap address moves it, and every gap address below it, to in-use, and derives new gap addresses
+    /// so the gap limit is kept past the highest address in use. The new gap addresses are then used to scan
+    /// the next block, so an address just past the gap is not found and the last address in the gap is.
+    #[test]
+    fn gap_addresses_move_to_inuse_and_are_replaced() {
+        let ufvk = transparent_test_ufvk();
+        let mut inuse_addresses = external_addresses(&ufvk, [0]);
+        let mut gap_addresses = external_addresses(&ufvk, 1..=3);
+
+        // fund index 3 only: the unfunded 1 and 2 move to in-use with it
+        let block_a = block_funding_external_address(&ufvk, 100, 3);
+        let scan_data = scan_block(&ufvk, block_a, &inuse_addresses, &gap_addresses);
+        assert_eq!(
+            scan_data.new_transparent_inuse_addresses,
+            external_addresses(&ufvk, 1..=3)
+        );
+        assert_eq!(
+            scan_data.new_transparent_gap_addresses,
+            external_addresses(&ufvk, 4..=6)
+        );
+        assert_eq!(scan_data.decrypted_scan_targets.len(), 1);
+        inuse_addresses.extend(scan_data.new_transparent_inuse_addresses);
+        gap_addresses = scan_data.new_transparent_gap_addresses;
+
+        // fund index 7, one past the gap: nothing is found and the gap is unchanged
+        let block_b = block_funding_external_address(&ufvk, 101, 7);
+        let scan_data = scan_block(&ufvk, block_b, &inuse_addresses, &gap_addresses);
+        assert!(scan_data.new_transparent_inuse_addresses.is_empty());
+        assert!(scan_data.new_transparent_gap_addresses.is_empty());
+        assert!(scan_data.decrypted_scan_targets.is_empty());
+
+        // fund index 6, the last address in the gap: 4 to 6 move to in-use
+        let block_c = block_funding_external_address(&ufvk, 102, 6);
+        let scan_data = scan_block(&ufvk, block_c, &inuse_addresses, &gap_addresses);
+        assert_eq!(
+            scan_data.new_transparent_inuse_addresses,
+            external_addresses(&ufvk, 4..=6)
+        );
+        assert_eq!(
+            scan_data.new_transparent_gap_addresses,
+            external_addresses(&ufvk, 7..=9)
+        );
+        assert_eq!(scan_data.decrypted_scan_targets.len(), 1);
+        inuse_addresses.extend(scan_data.new_transparent_inuse_addresses);
+        assert_eq!(inuse_addresses, external_addresses(&ufvk, 0..=6));
+    }
+
+    /// Only the gap addresses derived by the scan are returned. The gap addresses above the highest address found
+    /// in use are already held by the scanner.
+    #[test]
+    fn new_gap_addresses_are_the_derived_addresses() {
+        let ufvk = transparent_test_ufvk();
+        let inuse_addresses = external_addresses(&ufvk, [0]);
+        let gap_addresses = external_addresses(&ufvk, 1..=3);
+
+        let block = block_funding_external_address(&ufvk, 100, 1);
+        let scan_data = scan_block(&ufvk, block, &inuse_addresses, &gap_addresses);
+        assert_eq!(
+            scan_data.new_transparent_inuse_addresses,
+            external_addresses(&ufvk, [1])
+        );
+        assert_eq!(
+            scan_data.new_transparent_gap_addresses,
+            external_addresses(&ufvk, [4])
+        );
+    }
+
+    /// A gap address derived by the scan and then found in use by the same scan is returned as in-use only.
+    #[test]
+    fn derived_gap_addresses_found_in_use_are_new_inuse_addresses() {
+        let ufvk = transparent_test_ufvk();
+        let inuse_addresses = external_addresses(&ufvk, [0]);
+        let gap_addresses = external_addresses(&ufvk, 1..=3);
+
+        // index 5 is only a gap address once funding index 3 has derived 4 to 6
+        let mut block = block_funding_external_address(&ufvk, 100, 3);
+        let funding_past_gap = block_funding_external_address(&ufvk, 100, 5).vtx.remove(0);
+        block.vtx[0].vout.extend(funding_past_gap.vout);
+        let scan_data = scan_block(&ufvk, block, &inuse_addresses, &gap_addresses);
+        assert_eq!(
+            scan_data.new_transparent_inuse_addresses,
+            external_addresses(&ufvk, 1..=5)
+        );
+        assert_eq!(
+            scan_data.new_transparent_gap_addresses,
+            external_addresses(&ufvk, 6..=8)
+        );
+    }
+
+    /// Only the transparent inputs of blocks above the transparent scan floor are collected, as transparent address
+    /// discovery has already located all relevant transactions at or below the floor.
+    #[test]
+    fn outpoints_only_collected_above_transparent_scan_floor() {
+        fn block_spending_outpoint(height: u64, hash: u8, prevout_txid: [u8; 32]) -> CompactBlock {
+            let mut compact_block = block_with_served_ironwood_actions(0, 10);
+            compact_block.height = height;
+            compact_block.hash = vec![hash; 32];
+            compact_block.prev_hash = vec![hash - 1; 32];
+            compact_block.vtx[0].txid = vec![hash + 10; 32];
+            compact_block.vtx[0].vin = vec![zingo_netutils::lightwallet_protocol::CompactTxIn {
+                prevout_txid: prevout_txid.to_vec(),
+                prevout_index: 0,
+            }];
+            compact_block
+        }
+
+        let scan_data = scan_compact_blocks(
+            vec![
+                block_spending_outpoint(100, 1, [20; 32]),
+                block_spending_outpoint(101, 2, [21; 32]),
+            ],
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &HashMap::new(),
+            initial_scan_data(10),
+            100,
+            HashMap::new(),
+            HashMap::new(),
+            GAP_LIMIT,
+            BlockHeight::from_u32(100),
+        )
+        .unwrap();
+
+        assert_eq!(
+            scan_data.outpoints.into_iter().collect::<Vec<_>>(),
+            vec![(
+                OutputId::new(TxId::from_bytes([21; 32]), 0),
+                ScanTarget {
+                    block_height: BlockHeight::from_u32(101),
+                    txid: TxId::from_bytes([12; 32]),
+                    narrow_scan_area: true,
+                },
+            )]
+        );
+    }
+
+    /// Transparent outputs of blocks at or below the transparent scan floor are not checked against the in-use and
+    /// gap addresses, as transparent address discovery has already located all relevant transactions at or below the
+    /// floor. The same blocks are scanned above the floor to show the outputs would otherwise be found.
+    #[test]
+    fn transparent_outputs_only_scanned_above_transparent_scan_floor() {
+        let ufvk = transparent_test_ufvk();
+        let inuse_addresses = external_addresses(&ufvk, [0]);
+        let gap_addresses = external_addresses(&ufvk, 1..=3);
+
+        for (index, expected_new_inuse_addresses) in
+            [(0, HashMap::new()), (2, external_addresses(&ufvk, 1..=2))]
+        {
+            let scan_data = scan_block_above_floor(
+                &ufvk,
+                block_funding_external_address(&ufvk, 100, index),
+                &inuse_addresses,
+                &gap_addresses,
+                BlockHeight::from_u32(100),
+            );
+            assert!(scan_data.decrypted_scan_targets.is_empty());
+            assert!(scan_data.new_transparent_inuse_addresses.is_empty());
+            assert!(scan_data.new_transparent_gap_addresses.is_empty());
+
+            let scan_data = scan_block_above_floor(
+                &ufvk,
+                block_funding_external_address(&ufvk, 100, index),
+                &inuse_addresses,
+                &gap_addresses,
+                BlockHeight::from_u32(99),
+            );
+            assert_eq!(scan_data.decrypted_scan_targets.len(), 1);
+            assert_eq!(
+                scan_data.new_transparent_inuse_addresses,
+                expected_new_inuse_addresses
+            );
+        }
     }
 }

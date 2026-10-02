@@ -304,13 +304,17 @@ async fn confirm(lightclient: &mut LightClient) -> Result<String, CommandError> 
 #[cfg(feature = "nym")]
 async fn current_price(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.update_current_price().await {
-        Ok(fetch) => Ok(format!(
-            "current price: {} USD (source: {}, rtt: {} ms, fetched over the mixnet via {})",
-            fetch.usd,
-            fetch.source.name(),
-            fetch.round_trip.as_millis(),
-            fetch.via_socks5
-        )),
+        Ok(fetch) => {
+            let zingolib::lightclient::PriceFetchRoute::Mixnet { via_socks5 } = &fetch.route;
+            let route = format!("over the mixnet via {via_socks5}");
+            Ok(format!(
+                "current price: {} USD (source: {}, rtt: {} ms, fetched {})",
+                fetch.usd,
+                fetch.source.name(),
+                fetch.round_trip.as_millis(),
+                route
+            ))
+        }
         Err(e) => Err(not_yet_typed(e)),
     }
 }
@@ -393,10 +397,9 @@ async fn max_send_value(
     args: &[String],
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    let (address, zennies_for_zingo) =
-        utils::parse_max_send_value_args(&as_strs(args)).map_err(|e| usage(name, e))?;
+    let address = utils::parse_max_send_value_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     match lightclient
-        .max_send_value(address, zennies_for_zingo, zip32::AccountId::ZERO)
+        .max_send_value(address, zip32::AccountId::ZERO)
         .await
     {
         Ok(bal) => Ok(object! { "max_send_value" => bal.into_u64() }.pretty(JSON_INDENT)),
@@ -422,14 +425,41 @@ async fn messages(
 }
 
 async fn migrate(lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(run_migrate(lightclient).await?)
+    let sync_was_running = lightclient.sync_mode() != SyncMode::NotRunning;
+    let result = run_migrate(lightclient).await;
+    if sync_was_running {
+        relaunch_sync(lightclient).await;
+    }
+    Ok(result?)
 }
 
 async fn migration(
     sub: MigrationSubCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    Ok(run_migration(sub, lightclient).await?)
+    let sync_was_running = matches!(
+        sub,
+        MigrationSubCommand::Continue
+            | MigrationSubCommand::Execute { .. }
+            | MigrationSubCommand::Auto
+    ) && lightclient.sync_mode() != SyncMode::NotRunning;
+    let result = run_migration(sub, lightclient).await;
+    if sync_was_running {
+        relaunch_sync(lightclient).await;
+    }
+    Ok(result?)
+}
+
+/// Relaunches the sync that a migration command's sync to the chain tip
+/// stopped.
+async fn relaunch_sync(lightclient: &mut LightClient) {
+    match lightclient.sync().await {
+        Ok(())
+        | Err(zingolib::lightclient::error::LightClientError::SyncModeError(
+            pepper_sync::error::SyncModeError::SyncAlreadyRunning,
+        )) => (),
+        Err(e) => eprintln!("Error: failed to relaunch sync. {}", render_error_chain(&e)),
+    }
 }
 
 /// The `new_address` argument: `o`, `z`, or both, naming the receivers the
@@ -470,11 +500,11 @@ async fn new_address(
 
 async fn taddress(
     lightclient: &mut LightClient,
-    enforce_gap: bool,
+    enforce_no_gap: bool,
 ) -> Result<String, CommandError> {
     let chain_type = lightclient.chain_type();
     let mut wallet = lightclient.wallet().write().await;
-    match wallet.generate_transparent_address(zip32::AccountId::ZERO, enforce_gap) {
+    match wallet.generate_transparent_address(zip32::AccountId::ZERO, enforce_no_gap) {
         Ok((id, transparent_address)) => Ok(json::object! {
             "account" => u32::from(id.account_id()),
             "address_index" => id.address_index().index(),
@@ -654,10 +684,9 @@ async fn send_all(
     args: &[String],
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    let (address, zennies_for_zingo, memo) =
-        utils::parse_send_all_args(&as_strs(args)).map_err(|e| usage(name, e))?;
+    let (address, memo) = utils::parse_send_all_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     match lightclient
-        .propose_send_all(address, zennies_for_zingo, memo, zip32::AccountId::ZERO)
+        .propose_send_all(address, memo, zip32::AccountId::ZERO)
         .await
     {
         Ok(proposal) => {
@@ -1335,12 +1364,13 @@ fn render_status(
     use zingolib::mixnet::Indicator;
 
     match mode {
-        Indicator::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled, \
-             and no consent to clearnet has been given: send and price-fetch refuse. Run \
-             `network on` to enable the mixnet, or `network off` to use clearnet."
+        Indicator::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled: \
+             price-fetch refuses, and send refuses under the mixnet transmit policy. Run \
+             `network on` to enable the mixnet."
             .to_string(),
         Indicator::SwitchedOff => {
-            "Mixnet Mode: switched off (send and price-fetch use clearnet)".to_string()
+            "Mixnet Mode: switched off (price-fetch refuses; send follows the transmit policy)"
+                .to_string()
         }
         Indicator::Bootstrapping => match bootstrap_detail {
             Some(detail) => format!(
@@ -1564,7 +1594,7 @@ async fn network_command(
             // Probing runs only over the mixnet route; the typed refusal
             // below names the transport state and its remedy.
             let probes = lightclient
-                .probe_correspondents(target, PROBE_LEG_TIMEOUT)
+                .probe_destinations(target, PROBE_LEG_TIMEOUT)
                 .await?;
             Ok(probes
                 .iter()
@@ -1582,19 +1612,19 @@ fn render_transmit_report(report: &zingolib::lightclient::send::TransmitReport) 
     use zingolib::lightclient::send::TransmitRoute;
     let rtt_ms = u64::try_from(report.round_trip.as_millis()).unwrap_or(u64::MAX);
     match &report.route {
-        TransmitRoute::Clearnet { indexer } => object! {
+        TransmitRoute::Clearnet { destination } => object! {
             "txid" => report.txid.to_string(),
             "over_mixnet" => false,
-            "indexer" => indexer.clone(),
+            "destination" => destination.clone(),
             "rtt_ms" => rtt_ms,
         },
         TransmitRoute::Mixnet {
-            correspondent,
+            destination,
             via_socks5,
         } => object! {
             "txid" => report.txid.to_string(),
             "over_mixnet" => true,
-            "correspondent" => correspondent.clone(),
+            "destination" => destination.clone(),
             "via_socks5" => via_socks5.clone(),
             "rtt_ms" => rtt_ms,
         },
@@ -1739,7 +1769,7 @@ async fn run_migration(
         }
         MigrationSubCommand::Continue => {
             lightclient
-                .sync_and_await()
+                .sync_to_tip_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
             match lightclient.continue_note_splitting().await? {
@@ -1768,7 +1798,7 @@ async fn run_migration(
         }
         MigrationSubCommand::Execute { spacing } => {
             lightclient
-                .sync_and_await()
+                .sync_to_tip_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
             let report = lightclient.execute_due_parts(spacing).await?;
@@ -1797,7 +1827,7 @@ async fn run_migration(
         }
         MigrationSubCommand::Auto => {
             lightclient
-                .sync_and_await()
+                .sync_to_tip_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
             let txids = lightclient.auto_transmit_if_due().await?;
@@ -2211,12 +2241,10 @@ pub(crate) enum CliCommand {
         long_about = indoc! {r"
             Print the most the wallet can send to an address: shielded spendable
             balance less the fee. Mid-sync this can trail the confirmed balance.
-            `zennies_for_zingo` also budgets 1_000_000 ZAT to the ZingoLabs developer
-            address.
         "},
         override_usage = concat!(
             "max_send_value <address>\n",
-            "       max_send_value { \"address\": \"<address>\", \"zennies_for_zingo\": <true|false> }",
+            "       max_send_value { \"address\": \"<address>\" }",
         )
     )]
     MaxSendValue { args: Vec<String> },
@@ -2231,7 +2259,7 @@ pub(crate) enum CliCommand {
         about = "List memos for this wallet.",
         long_about = indoc! {r"
             List the wallet's memo-bearing value transfers. An address filters to that
-            correspondent, any other string filters to memos containing it, and no
+            destination, any other string filters to memos containing it, and no
             argument shows every memo. Received messages are matched on the memo's
             reply-to address.
         "}
@@ -2495,8 +2523,7 @@ pub(crate) enum CliCommand {
         about = "Propose a transfer of all shielded ZEC to one address, for 'confirm' to transmit.",
         long_about = concat!(
             "Propose a transfer of every shielded ZEC to one address. Shows the fee,\n",
-            "then 'confirm' transmits it. `zennies_for_zingo` adds 1_000_000 ZAT to the\n",
-            "zingolabs developer address per transaction.\n",
+            "then 'confirm' transmits it.\n",
             "\n",
             "Skips transparent funds: shield those first, see `help shield`.\n",
             "\n",
@@ -2510,7 +2537,7 @@ pub(crate) enum CliCommand {
         ),
         override_usage = concat!(
             "send_all <address> \"<optional memo>\"\n",
-            "       send_all '{ \"address\": \"<address>\", \"memo\": \"<optional memo>\", \"zennies_for_zingo\": <true|false> }'",
+            "       send_all '{ \"address\": \"<address>\", \"memo\": \"<optional memo>\" }'",
         )
     )]
     SendAll { args: Vec<String> },
