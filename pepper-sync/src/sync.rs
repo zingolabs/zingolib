@@ -410,6 +410,8 @@ impl Drop for MempoolShutdownGuard {
 /// times in quick sucession without the sync engine interrupting.
 /// Set `sync_mode` back to `Running` to resume scanning.
 /// Set `sync_mode` to `Shutdown` to stop the sync process.
+/// With `shutdown_on_completion` set, a scan that reaches the chain tip moves a `Running` engine to `Shutdown` and
+/// leaves a `Paused` engine paused, which then shuts down once it is resumed and completes again.
 /// Wallet keys must not change while sync is running. Sync must be stoppped and run again after the key material has
 /// been updated.
 pub async fn sync<C, P, W>(
@@ -431,7 +433,7 @@ where
         + SyncShardTrees
         + Send,
 {
-    let mut sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
+    let mut sync_mode_enum = SyncMode::from_atomic_u8(&sync_mode)?;
     if sync_mode_enum == SyncMode::NotRunning {
         sync_mode_enum = SyncMode::Running;
         sync_mode.store(sync_mode_enum as u8, atomic::Ordering::Release);
@@ -765,14 +767,14 @@ where
                 }
 
                 _update_scanner = interval.tick() => {
-                    sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
+                    sync_mode_enum = SyncMode::from_atomic_u8(&sync_mode)?;
                     match sync_mode_enum {
                         SyncMode::Paused => {
                             let mut pause_interval = tokio::time::interval(Duration::from_secs(1));
                             pause_interval.tick().await;
                             while sync_mode_enum == SyncMode::Paused {
                                 pause_interval.tick().await;
-                                sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
+                                sync_mode_enum = SyncMode::from_atomic_u8(&sync_mode)?;
                             }
                         },
                         SyncMode::Shutdown => {
@@ -804,9 +806,7 @@ where
                     scanner.update(&mut *wallet.write().await, nullifier_map_limit_exceeded).await?;
 
                     if matches!(scanner.state, ScannerState::Complete) && config.shutdown_on_completion {
-                        sync_mode_enum = SyncMode::Shutdown;
-                        sync_mode.store(sync_mode_enum as u8, atomic::Ordering::Release);
-
+                        let _ignore_mode_before_completion = SyncMode::apply(&sync_mode, SyncMode::on_completion)?;
                     }
                 }
 
@@ -1465,6 +1465,7 @@ struct ProcessedScanResults {
 ///
 /// Returns any new transparent addresses. A recovered error i.e. re-org truncates the wallet and lowers the
 /// transparent scan floor to the truncation height.
+/// Stale scan results are discarded, see [`state::reset_stale_scan_range`].
 #[allow(clippy::too_many_arguments)]
 async fn process_scan_results<W>(
     consensus_parameters: &(impl consensus::Parameters + Sync),
@@ -1486,6 +1487,23 @@ where
         + SyncShardTrees
         + Send,
 {
+    // a re-org may have truncated or re-prioritised the scan range while it was being scanned. the scan results,
+    // or the error, may then come from blocks that have left the chain so they are discarded and the scan range is
+    // scanned again.
+    if state::reset_stale_scan_range(
+        wallet
+            .get_sync_state_mut()
+            .map_err(SyncError::WalletError)?,
+        &scan_range,
+    ) {
+        tracing::info!("Stale scan results of {scan_range} discarded.");
+
+        return Ok(ProcessedScanResults {
+            new_transparent_inuse_addresses: HashMap::new(),
+            new_transparent_gap_addresses: HashMap::new(),
+        });
+    }
+
     match scan_results {
         Ok(results) => {
             let ScanResults {
@@ -1744,7 +1762,8 @@ where
                     .last_known_chain_height()
                     .expect("scan ranges should be non-empty in this scope");
 
-                // reset scan range from `Scanning` to `Verify`
+                // reset scan range from `Scanning` to `Verify`.
+                // the loader never splits a scan task with `Verify` priority so the scan range is the wallet's.
                 state::set_scan_priority(
                     sync_state,
                     scan_range.block_range(),
@@ -3437,6 +3456,60 @@ mod test {
         }
     }
 
+    /// The mode a completed scan leaves behind, exercised as a table on the pure step and once through the atomic.
+    mod on_completion {
+        use std::sync::atomic::AtomicU8;
+
+        use crate::wallet::SyncMode;
+
+        #[test]
+        fn running_sync_is_shutdown() {
+            assert_eq!(SyncMode::Running.on_completion(), SyncMode::Shutdown);
+        }
+
+        #[test]
+        fn paused_sync_stays_paused() {
+            assert_eq!(SyncMode::Paused.on_completion(), SyncMode::Paused);
+        }
+
+        #[test]
+        fn shutdown_requested_by_the_consumer_is_kept() {
+            assert_eq!(SyncMode::Shutdown.on_completion(), SyncMode::Shutdown);
+        }
+
+        #[test]
+        fn sync_that_is_not_running_is_left_alone() {
+            assert_eq!(SyncMode::NotRunning.on_completion(), SyncMode::NotRunning);
+        }
+
+        #[test]
+        fn apply_stores_the_step_and_returns_the_mode_it_replaced() {
+            let sync_mode = AtomicU8::new(SyncMode::Running as u8);
+
+            let before = SyncMode::apply(&sync_mode, SyncMode::on_completion).unwrap();
+
+            assert_eq!(before, SyncMode::Running);
+            assert_eq!(
+                SyncMode::from_atomic_u8(&sync_mode).unwrap(),
+                SyncMode::Shutdown
+            );
+        }
+
+        #[test]
+        fn transition_leaves_another_mode_in_place_and_reports_it() {
+            let sync_mode = AtomicU8::new(SyncMode::Paused as u8);
+
+            let before =
+                SyncMode::transition(&sync_mode, SyncMode::Running, SyncMode::Shutdown).unwrap();
+
+            assert_eq!(before, SyncMode::Paused);
+            assert_eq!(
+                SyncMode::from_atomic_u8(&sync_mode).unwrap(),
+                SyncMode::Paused
+            );
+        }
+    }
+
     /// The drain policy for scanner shutdown, exercised as a table:
     /// pure inputs, no runtime, no clocks.
     mod drain_verdict {
@@ -4437,6 +4510,153 @@ mod test {
                 transaction_status(&wallet, txid),
                 ConfirmationStatus::Confirmed(_)
             ));
+        }
+    }
+
+    /// Scan results are stale when a re-org truncated or re-prioritised their scan range while it was being scanned.
+    /// They are discarded before they are processed, whether the scan succeeded or failed.
+    mod stale_scan_results {
+        use std::collections::{BTreeMap, HashMap};
+
+        use tokio::sync::mpsc;
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::{consensus::BlockHeight, local_consensus::LocalNetwork};
+        use zcash_transparent::keys::NonHardenedChildIndex;
+
+        use crate::{
+            config::PerformanceLevel,
+            error::{ContinuityError, ScanError},
+            keys::transparent::{TransparentAddressId, TransparentScope},
+            mocks::{MockWallet, MockWalletBuilder},
+            scan::ScanResults,
+            sync::{ProcessedScanResults, ScanPriority, ScanRange, process_scan_results},
+            wallet::{NullifierMap, SyncState, traits::SyncWallet as _},
+        };
+
+        const NETWORK: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+            nu6_2: Some(BlockHeight::from_u32(1)),
+            nu6_3: Some(BlockHeight::from_u32(1)),
+        };
+        const BIRTHDAY: u32 = 1;
+        /// The chain height the server reported when the scan range was selected.
+        const CHAIN_HEIGHT: u32 = 40;
+
+        fn wallet_with_scan_ranges(scan_ranges: Vec<ScanRange>) -> MockWallet {
+            MockWalletBuilder::new()
+                .sync_state(SyncState {
+                    scan_ranges,
+                    ..Default::default()
+                })
+                .create_mock_wallet()
+        }
+
+        async fn process(
+            wallet: &mut MockWallet,
+            scan_range: ScanRange,
+            scan_results: Result<ScanResults, ScanError>,
+        ) -> ProcessedScanResults {
+            let (fetch_request_sender, _) = mpsc::unbounded_channel();
+
+            process_scan_results(
+                &NETWORK,
+                wallet,
+                fetch_request_sender,
+                &HashMap::new(),
+                scan_range,
+                scan_results,
+                None,
+                PerformanceLevel::High,
+                &mut false,
+            )
+            .await
+            .expect("stale scan results are discarded")
+        }
+
+        /// The chain height dropped by one block while the wallet's whole range was being scanned. The scan results
+        /// hold a block that has left the chain, so they are discarded with the transparent gap addresses derived
+        /// from them, and the range the wallet still holds is set back to the priority it was selected with.
+        #[tokio::test]
+        async fn truncated_scan_range_is_reset_and_its_scan_results_discarded() {
+            let mut wallet = wallet_with_scan_ranges(vec![ScanRange::from_parts(
+                BlockHeight::from_u32(BIRTHDAY)..BlockHeight::from_u32(CHAIN_HEIGHT),
+                ScanPriority::Scanning,
+            )]);
+            let gap_address = (
+                "gap address".to_string(),
+                TransparentAddressId::new(
+                    zip32::AccountId::ZERO,
+                    TransparentScope::External,
+                    NonHardenedChildIndex::ZERO,
+                ),
+            );
+
+            let processed = process(
+                &mut wallet,
+                ScanRange::from_parts(
+                    BlockHeight::from_u32(BIRTHDAY)..BlockHeight::from_u32(CHAIN_HEIGHT + 1),
+                    ScanPriority::ChainTip,
+                ),
+                Ok(ScanResults {
+                    nullifiers: NullifierMap::new(),
+                    outpoints: BTreeMap::new(),
+                    scanned_blocks: BTreeMap::new(),
+                    wallet_transactions: HashMap::new(),
+                    sapling_located_trees: Vec::new(),
+                    orchard_located_trees: Vec::new(),
+                    ironwood_located_trees: Vec::new(),
+                    new_transparent_inuse_addresses: HashMap::from([gap_address.clone()]),
+                    new_transparent_gap_addresses: HashMap::from([gap_address]),
+                }),
+            )
+            .await;
+
+            assert!(processed.new_transparent_inuse_addresses.is_empty());
+            assert!(processed.new_transparent_gap_addresses.is_empty());
+            assert_eq!(
+                wallet.get_sync_state().unwrap().scan_ranges(),
+                [ScanRange::from_parts(
+                    BlockHeight::from_u32(BIRTHDAY)..BlockHeight::from_u32(CHAIN_HEIGHT),
+                    ScanPriority::ChainTip,
+                )]
+            );
+        }
+
+        /// The chain height dropped below a newly mined block while it was being verified, so the wallet holds none
+        /// of its scan range. Its scan failed the continuity check, which is handled as a re-org of the scan range.
+        /// The error is discarded as the scan range it would reset has left the wallet.
+        #[tokio::test]
+        async fn error_of_a_removed_scan_range_is_discarded() {
+            let scan_ranges = vec![ScanRange::from_parts(
+                BlockHeight::from_u32(BIRTHDAY)..BlockHeight::from_u32(CHAIN_HEIGHT),
+                ScanPriority::Scanned,
+            )];
+            let mut wallet = wallet_with_scan_ranges(scan_ranges.clone());
+
+            process(
+                &mut wallet,
+                ScanRange::from_parts(
+                    BlockHeight::from_u32(CHAIN_HEIGHT)..BlockHeight::from_u32(CHAIN_HEIGHT + 1),
+                    ScanPriority::Verify,
+                ),
+                Err(ScanError::ContinuityError(
+                    ContinuityError::HashDiscontinuity {
+                        height: BlockHeight::from_u32(CHAIN_HEIGHT),
+                        prev_hash: BlockHash([1; 32]),
+                        previous_block_hash: BlockHash([2; 32]),
+                    },
+                )),
+            )
+            .await;
+
+            assert_eq!(wallet.get_sync_state().unwrap().scan_ranges(), scan_ranges);
         }
     }
 
