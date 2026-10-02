@@ -41,6 +41,23 @@ jobs:
   cargo-checkmate:
     uses: ./.github/workflows/cargo-checkmate.yaml
 
+  # zingolib is upstream of its consumers. No workflow or action here calls
+  # or checks out the repository of a consumer.
+  ci-independent-of-consumers:
+    name: CI independent of consumers
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Reject a call or a checkout of a consumer
+        run: |
+          if grep --recursive --line-number --extended-regexp \
+            '(uses|repository):.*zingo-(mobile|pc|delegator)' .github; then
+            echo "::error::a workflow or an action depends on a consumer of zingolib"
+            exit 1
+          fi
+
   cargo-hack-check:
     name: Cargo Hack Check
     runs-on: ubuntu-24.04
@@ -136,37 +153,14 @@ jobs:
           RUSTDOCFLAGS: -D warnings
 
   # The per-PR tier of zingolib/0054: the x86_64 libraries, the Kotlin
-  # bindings, and the AAR. zingo-mobile's android-build.yaml runs the
-  # builder on this commit, as it does in zingo-mobile's CI and in the
-  # nightly, so one definition builds an ABI everywhere. The three jobs
-  # below share the key that names this commit's build. On a pull request
-  # that commit is the merge commit, so every push builds once, cold, and
-  # the saved entry serves re-runs.
-  #
-  # The zingo-mobile workflows are pinned to one commit, here and in
-  # binding-layer-aar.yaml, so a change to their definitions reaches this
-  # tier only through a bump of the pin. Their steps still check out
-  # zingo-mobile's dev for its submodule action and its descriptor tool.
-  # The nightly calls the workflows at dev.
-  binding-layer-cache-key:
+  # bindings, and the AAR. binding-layer-android.yaml runs the builder on
+  # this commit, here and in the nightly, so one definition builds an ABI
+  # in both tiers. On a pull request that commit is the merge commit, and
+  # every push builds once, cold.
+  binding-layer-android:
     if: ${{ inputs.skip-binding-layer-build != true }}
-    uses: zingolabs/zingo-mobile/.github/workflows/create-cache-key.yaml@85e16d5a8828a2c531e3fc1dc2f61cd78a6244f4
-
-  # The standard runner keeps this build off the zingo-android-native-16
-  # pool, whose cap is sized to one zingo-mobile run.
-  binding-layer-x86_64:
-    needs: binding-layer-cache-key
-    uses: zingolabs/zingo-mobile/.github/workflows/android-build.yaml@85e16d5a8828a2c531e3fc1dc2f61cd78a6244f4
+    uses: ./.github/workflows/binding-layer-android.yaml
     with:
-      cache-key: ${{ needs.binding-layer-cache-key.outputs.cache-key }}
-      arch: x86_64
-      runner: ubuntu-24.04
-
-  binding-layer-aar:
-    needs: [binding-layer-cache-key, binding-layer-x86_64]
-    uses: ./.github/workflows/binding-layer-aar.yaml
-    with:
-      cache-key: ${{ needs.binding-layer-cache-key.outputs.cache-key }}
       abis: '["x86_64"]'
 
   # The `nym` feature gates the mixnet transmission and price-fetch surfaces
