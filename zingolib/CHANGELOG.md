@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
 
 ### Changed
+- `LightClient::pause_sync`, `stop_sync`, `resume_sync`, `pause_sync_scoped` and the pause guard's drop move the sync mode through `SyncMode::transition` and `SyncMode::apply`, one atomic exchange each, so a `Shutdown` the engine sets at completion between the read and the write is kept instead of overwritten.
 - `migrate_to_ironwood` and `migrate_immediately` sync with `sync_to_tip_and_await`, so they return when the wallet is configured for continuous sync. A running sync is stopped first and is not relaunched; the caller relaunches it with `LightClient::sync`.
 - `max_send_value` is for display only. To send the whole balance, call `propose_send_all` and then `send_stored_proposal`. A `propose_send` request for the reported amount can be refused by the input selector.
 - **Breaking:** `update_current_price` is mixnet-only again. `Indicator::SwitchedOff` refuses it as `MixnetNotReady::Unattached` and the transmit policy has no effect on it.
