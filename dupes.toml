@@ -1,3 +1,22 @@
 # cargo-dupes configuration. CI runs `cargo dupes check --max-exact 0 --max-near 0`.
 # `.dupes-ignore.toml` holds the groups that existed when the gate was added.
+
+# Skips `#[test]` functions and inline `#[cfg(test)]` modules.
 exclude_tests = true
+
+# Each pattern is a substring of a path. The first group is test code that
+# `exclude_tests` misses: test crates, test directories, test modules in
+# their own files, and mocks. The second group is machine-generated output.
+exclude = [
+    "libtonode-tests/",
+    "zingolib_testutils/",
+    "/tests/",
+    "/testutils/",
+    "/testing/",
+    "tests.rs",
+    "testutils.rs",
+    "testing.rs",
+    "mocks.rs",
+    "target/",
+    "/Generated/",
+]
