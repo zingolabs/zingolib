@@ -1,0 +1,988 @@
+[[ignore]]
+fingerprint = "031bb593bc1bd8f3"
+reason = "baseline at 639986655: exact group of 2, first member libtonode-tests/tests/observability.rs:51"
+
+[[ignore]]
+fingerprint = "04ccd537783aba4a"
+reason = "baseline at 639986655: exact group of 7, first member zingolib/src/wallet/keys/legacy.rs:231"
+
+[[ignore]]
+fingerprint = "053efa20c6993878"
+reason = "baseline at 639986655: exact group of 3, first member zingo-cli/src/lib.rs:1548"
+
+[[ignore]]
+fingerprint = "067cd6416b122b33"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/config.rs:418"
+
+[[ignore]]
+fingerprint = "0705c033a0e1418f"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/testutils/chain_generics/with_assertions.rs:209"
+
+[[ignore]]
+fingerprint = "07c488acb074d2b7"
+reason = "baseline at 639986655: exact group of 3, first member zingo-ffi/lib/src/lib.rs:2774"
+
+[[ignore]]
+fingerprint = "091894c21bf110c2"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/output/query.rs:78"
+
+[[ignore]]
+fingerprint = "0925f8bb5566196f"
+reason = "baseline at 639986655: exact group of 4, first member zingo-netutils/src/lib.rs:487"
+
+[[ignore]]
+fingerprint = "0a6428a3529d3611"
+reason = "baseline at 639986655: exact group of 4, first member zingo-status/src/confirmation_status.rs:47"
+
+[[ignore]]
+fingerprint = "0aa5c386305b8937"
+reason = "baseline at 639986655: near group of 2, first member zingo-ffi/lib/src/lib.rs:456"
+
+[[ignore]]
+fingerprint = "0c51f12ec61c5ac5"
+reason = "baseline at 639986655: near group of 2, first member zingolib/src/lightclient.rs:83"
+
+[[ignore]]
+fingerprint = "0d5d42338cddb6e2"
+reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/build-binding-layer.rs:222"
+
+[[ignore]]
+fingerprint = "0dbbb2ab4e7c93ea"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/migration/split.rs:517"
+
+[[ignore]]
+fingerprint = "0df789c7a8d20ac0"
+reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/wallet.rs:1588"
+
+[[ignore]]
+fingerprint = "1027450685dce8eb"
+reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/binding_layer.rs:162"
+
+[[ignore]]
+fingerprint = "11252e9d93eb7b0e"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/mixnet/supervisor.rs:628"
+
+[[ignore]]
+fingerprint = "13202addd62f3769"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet/zcb_traits.rs:750"
+
+[[ignore]]
+fingerprint = "144266425fb0c492"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/mixnet/pools.rs:44"
+
+[[ignore]]
+fingerprint = "1520ca8cb5fa2bba"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:1022"
+
+[[ignore]]
+fingerprint = "15454e94f5e4376a"
+reason = "baseline at 639986655: exact group of 30, first member zingolib/src/destination/servers.rs:154"
+
+[[ignore]]
+fingerprint = "15669334277636c4"
+reason = "baseline at 639986655: near group of 3, first member zingolib/src/mixnet/pools.rs:34"
+
+[[ignore]]
+fingerprint = "166354c92b9bfd68"
+reason = "baseline at 639986655: exact group of 10, first member zingolib/src/wallet/legacy.rs:1059"
+
+[[ignore]]
+fingerprint = "171a8a4f8a349fd3"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/mixnet/supervisor.rs:318"
+
+[[ignore]]
+fingerprint = "186f3f184d9f81a1"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/sync/transparent.rs:122"
+
+[[ignore]]
+fingerprint = "188b60c293172fff"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet/migration/store.rs:281"
+
+[[ignore]]
+fingerprint = "18fe8abe270fabc9"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/lightclient.rs:734"
+
+[[ignore]]
+fingerprint = "1bbca816b2ec1c40"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:2956"
+
+[[ignore]]
+fingerprint = "1c39211b8970cfa4"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/sync.rs:179"
+
+[[ignore]]
+fingerprint = "1c8b8aed1e00a656"
+reason = "baseline at 639986655: near group of 2, first member pepper-sync/src/shardtree_ext.rs:75"
+
+[[ignore]]
+fingerprint = "1d3e910a75e571b6"
+reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/client/fetch.rs:170"
+
+[[ignore]]
+fingerprint = "1eee3061850146e7"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/utils/block.rs:59"
+
+[[ignore]]
+fingerprint = "1f512edfb655ceac"
+reason = "baseline at 639986655: near group of 2, first member zingolib/src/config.rs:59"
+
+[[ignore]]
+fingerprint = "1fd36445ad0fd9b7"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/scan/compact_blocks.rs:295"
+
+[[ignore]]
+fingerprint = "203297359627d7fa"
+reason = "baseline at 639986655: exact group of 4, first member zingolib/src/lightclient/select.rs:241"
+
+[[ignore]]
+fingerprint = "20baea512be6d939"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/utils/block.rs:63"
+
+[[ignore]]
+fingerprint = "216bd8e69fe9d0a4"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands/tests.rs:919"
+
+[[ignore]]
+fingerprint = "216e94f16edc52f6"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/migrate.rs:609"
+
+[[ignore]]
+fingerprint = "2239f3057e351d56"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/perspective/value_transfer.rs:273"
+
+[[ignore]]
+fingerprint = "23040ba4608bed95"
+reason = "baseline at 639986655: near group of 2, first member zingolib/src/lightclient.rs:503"
+
+[[ignore]]
+fingerprint = "2607fa7eb44bd4e9"
+reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/sync-bench.rs:613"
+
+[[ignore]]
+fingerprint = "2768e2c157577256"
+reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/sync-bench.rs:568"
+
+[[ignore]]
+fingerprint = "2772c6ff6cc95c03"
+reason = "baseline at 639986655: exact group of 2, first member zingo-netutils/src/socks5_transmit.rs:299"
+
+[[ignore]]
+fingerprint = "29c6bbb40196ca9b"
+reason = "baseline at 639986655: exact group of 22, first member zingolib/src/destination/servers.rs:237"
+
+[[ignore]]
+fingerprint = "2aecb9e203d267c9"
+reason = "baseline at 639986655: exact group of 2, first member zingo-netutils/src/live_indexer_discovery.rs:141"
+
+[[ignore]]
+fingerprint = "2df2b10dcb0eb304"
+reason = "baseline at 639986655: exact group of 7, first member zingo-ffi/lib/src/lib.rs:1664"
+
+[[ignore]]
+fingerprint = "304d6697576925b5"
+reason = "baseline at 639986655: exact group of 4, first member pepper-sync/src/wallet.rs:1144"
+
+[[ignore]]
+fingerprint = "3116c114198dab7b"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet/propose.rs:267"
+
+[[ignore]]
+fingerprint = "356a7f62002d5c3d"
+reason = "baseline at 639986655: near group of 2, first member zingolib/src/wallet/utils.rs:42"
+
+[[ignore]]
+fingerprint = "369b3cd62cd00084"
+reason = "baseline at 639986655: exact group of 5, first member zingolib/src/destination/servers.rs:133"
+
+[[ignore]]
+fingerprint = "3782a89834d85ad8"
+reason = "baseline at 639986655: exact group of 2, first member zingo-ffi/lib/src/lib.rs:166"
+
+[[ignore]]
+fingerprint = "37edd506e77e9ac1"
+reason = "baseline at 639986655: exact group of 5, first member zingolib/src/lightclient/migrate.rs:136"
+
+[[ignore]]
+fingerprint = "38d2e15cc9ef3335"
+reason = "baseline at 639986655: near group of 2, first member zingolib_testutils/src/scenarios.rs:667"
+
+[[ignore]]
+fingerprint = "38e72174f2977654"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/propose.rs:378"
+
+[[ignore]]
+fingerprint = "393f9d75e89fcb39"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/server_select_clearnet/tests.rs:32"
+
+[[ignore]]
+fingerprint = "3b60de86e19be2e6"
+reason = "baseline at 639986655: exact group of 3, first member zingo-ffi/lib/src/lib.rs:2947"
+
+[[ignore]]
+fingerprint = "3bbfb700abee883b"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/keys.rs:457"
+
+[[ignore]]
+fingerprint = "3ebb41d4a3a1e708"
+reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/scan/task.rs:52"
+
+[[ignore]]
+fingerprint = "3f94a555b694cd97"
+reason = "baseline at 639986655: exact group of 2, first member zingolib_testutils/src/chain_cache.rs:163"
+
+[[ignore]]
+fingerprint = "4062d60357e0f982"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/migrate.rs:1789"
+
+[[ignore]]
+fingerprint = "40cae9468f333294"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/server_select_clearnet.rs:62"
+
+[[ignore]]
+fingerprint = "41f590364d21bf92"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet/migration/store.rs:224"
+
+[[ignore]]
+fingerprint = "43d930c7ce4981df"
+reason = "baseline at 639986655: exact group of 2, first member zingo-netutils/src/exit.rs:257"
+
+[[ignore]]
+fingerprint = "4569961eeeff56d4"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/zcb_traits.rs:655"
+
+[[ignore]]
+fingerprint = "4594d3b5fc9dd486"
+reason = "baseline at 639986655: near group of 2, first member zingo-ffi/lib/src/lib.rs:452"
+
+[[ignore]]
+fingerprint = "46e4b4868dba26f9"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/sync/state.rs:349"
+
+[[ignore]]
+fingerprint = "47000db2742e9bc8"
+reason = "baseline at 639986655: exact group of 7, first member zingolib/src/wallet/output/query.rs:18"
+
+[[ignore]]
+fingerprint = "4986fb6fe0d6eec4"
+reason = "baseline at 639986655: near group of 2, first member pepper-sync/src/wallet.rs:1082"
+
+[[ignore]]
+fingerprint = "4c1332b021d8669a"
+reason = "baseline at 639986655: near group of 2, first member zingolib/src/destination.rs:133"
+
+[[ignore]]
+fingerprint = "4c488a71ad31cf3f"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/scan/transactions.rs:310"
+
+[[ignore]]
+fingerprint = "4c5cbce858d6a433"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/migrate.rs:148"
+
+[[ignore]]
+fingerprint = "4cc83588e81cbdd7"
+reason = "baseline at 639986655: near group of 2, first member zingo-netutils/src/lib.rs:331"
+
+[[ignore]]
+fingerprint = "4ce06e1dcb8539e0"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/mixnet/sweep.rs:203"
+
+[[ignore]]
+fingerprint = "4d02a8f27798edf7"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/transmit.rs:83"
+
+[[ignore]]
+fingerprint = "4eb880ca525129f2"
+reason = "baseline at 639986655: exact group of 7, first member zingolib/src/lightclient/sync.rs:156"
+
+[[ignore]]
+fingerprint = "4f459bb409f4ed9c"
+reason = "baseline at 639986655: exact group of 7, first member libtonode-tests/tests/tip_spend_rejection.rs:206"
+
+[[ignore]]
+fingerprint = "502764feed6be028"
+reason = "baseline at 639986655: exact group of 3, first member zingo-ffi/lib/src/lib.rs:2992"
+
+[[ignore]]
+fingerprint = "529223fe14c665a1"
+reason = "baseline at 639986655: exact group of 5, first member zingolib/src/config.rs:431"
+
+[[ignore]]
+fingerprint = "537f75d83f9aa526"
+reason = "baseline at 639986655: exact group of 2, first member zingo-netutils/webpki-verifier-shim/src/lib.rs:92"
+
+[[ignore]]
+fingerprint = "54fb2482c311ac3c"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/balance.rs:294"
+
+[[ignore]]
+fingerprint = "5534ff612ccdf4e1"
+reason = "baseline at 639986655: near group of 2, first member zingo-cli/src/commands.rs:1551"
+
+[[ignore]]
+fingerprint = "580362527144835b"
+reason = "baseline at 639986655: exact group of 4, first member zingolib/src/wallet/keys/legacy/extended_transparent.rs:171"
+
+[[ignore]]
+fingerprint = "58ea7972ed09146b"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/testutils/mock_indexer.rs:1586"
+
+[[ignore]]
+fingerprint = "5ace608d9c3fb51c"
+reason = "baseline at 639986655: exact group of 4, first member zingolib/src/wallet/zcb_traits.rs:88"
+
+[[ignore]]
+fingerprint = "5b2f404762aec4ca"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/mixnet.rs:49"
+
+[[ignore]]
+fingerprint = "5b5b8795028cdc2a"
+reason = "baseline at 639986655: exact group of 4, first member zingolib_testutils/src/observability.rs:270"
+
+[[ignore]]
+fingerprint = "5b73616495457736"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:172"
+
+[[ignore]]
+fingerprint = "5c0fc9da34bf64f0"
+reason = "baseline at 639986655: exact group of 12, first member zingolib/src/wallet/disk/testing/tests.rs:44"
+
+[[ignore]]
+fingerprint = "5d78f14769140494"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/mocks.rs:116"
+
+[[ignore]]
+fingerprint = "5e05ef4adb26709e"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/perspective/finsight.rs:68"
+
+[[ignore]]
+fingerprint = "5e7bb5c1a2d48aad"
+reason = "baseline at 639986655: exact group of 9, first member zingolib/src/lightclient.rs:478"
+
+[[ignore]]
+fingerprint = "5e96c843c293ab15"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/keys/legacy.rs:370"
+
+[[ignore]]
+fingerprint = "5f0f36bdba897816"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/testutils/mock_indexer.rs:1480"
+
+[[ignore]]
+fingerprint = "602f7fc300381149"
+reason = "baseline at 639986655: exact group of 5, first member zingolib/src/testutils/mock_indexer.rs:693"
+
+[[ignore]]
+fingerprint = "60e8f11b01e63615"
+reason = "baseline at 639986655: near group of 2, first member zingolib/src/wallet/keys/legacy/extended_transparent.rs:61"
+
+[[ignore]]
+fingerprint = "610d5754eafd4d4f"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/mock_chain_tests.rs:1527"
+
+[[ignore]]
+fingerprint = "627b6219bdbb3c09"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/mocks.rs:249"
+
+[[ignore]]
+fingerprint = "629aa7616e9d1abd"
+reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/scan.rs:310"
+
+[[ignore]]
+fingerprint = "62c194186215cf1c"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/zcb_traits.rs:770"
+
+[[ignore]]
+fingerprint = "633602436f5b96fb"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/tests/derivation.rs:187"
+
+[[ignore]]
+fingerprint = "636911837a289854"
+reason = "baseline at 639986655: near group of 2, first member zingo-cli/src/commands.rs:1714"
+
+[[ignore]]
+fingerprint = "636ffb32a09b2fa2"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/keys/unified.rs:337"
+
+[[ignore]]
+fingerprint = "64b35ea43aee9c6f"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/perspective/value_transfer.rs:250"
+
+[[ignore]]
+fingerprint = "653aa3f546ff1bda"
+reason = "baseline at 639986655: near group of 13, first member zingolib/src/wallet/zcb_traits.rs:102"
+
+[[ignore]]
+fingerprint = "66229d808c4cfe00"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/perspective.rs:376"
+
+[[ignore]]
+fingerprint = "6860e615603cee98"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/testutils/mock_indexer.rs:153"
+
+[[ignore]]
+fingerprint = "689d0a112c271dc8"
+reason = "baseline at 639986655: exact group of 3, first member tools/workbench/src/bin/sweep-teardown.rs:44"
+
+[[ignore]]
+fingerprint = "68b63c2129bec1ea"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/mock_chain_tests.rs:3522"
+
+[[ignore]]
+fingerprint = "69032dd949156927"
+reason = "baseline at 639986655: near group of 2, first member zingolib/src/mixnet/pools.rs:89"
+
+[[ignore]]
+fingerprint = "6a8a90541ac721a8"
+reason = "baseline at 639986655: near group of 2, first member zingolib/src/wallet/migration/parts.rs:280"
+
+[[ignore]]
+fingerprint = "6abacea72812f061"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/disk/testing/tests.rs:78"
+
+[[ignore]]
+fingerprint = "6b31fa28e613abd8"
+reason = "baseline at 639986655: exact group of 7, first member zingolib/src/perspective/value_transfer.rs:264"
+
+[[ignore]]
+fingerprint = "6b75d50da9f534ad"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:907"
+
+[[ignore]]
+fingerprint = "6bc66deaaa267325"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/migration/reconcile.rs:445"
+
+[[ignore]]
+fingerprint = "6ded5fbcdf9e4aa2"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/mixnet.rs:1013"
+
+[[ignore]]
+fingerprint = "6e31df9a62740825"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/mock_chain_tests.rs:1442"
+
+[[ignore]]
+fingerprint = "6e5032ef2bd8c4d0"
+reason = "baseline at 639986655: exact group of 13, first member zingo-netutils/src/lib.rs:525"
+
+[[ignore]]
+fingerprint = "6eafc82959da93a6"
+reason = "baseline at 639986655: exact group of 2, first member zingo-netutils/src/exit.rs:202"
+
+[[ignore]]
+fingerprint = "6efc0da5dd21b3f3"
+reason = "baseline at 639986655: exact group of 4, first member zingolib/src/perspective.rs:411"
+
+[[ignore]]
+fingerprint = "70a3a8dd94bda489"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/data.rs:77"
+
+[[ignore]]
+fingerprint = "74873d6bb0dae68a"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/keys/legacy.rs:374"
+
+[[ignore]]
+fingerprint = "75ab971b4a707cff"
+reason = "baseline at 639986655: exact group of 5, first member zingolib/src/data/proposal.rs:159"
+
+[[ignore]]
+fingerprint = "7663bf784706fd59"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/destination.rs:93"
+
+[[ignore]]
+fingerprint = "7a35caa5975ccdc5"
+reason = "baseline at 639986655: exact group of 4, first member zingo-cli/src/commands.rs:382"
+
+[[ignore]]
+fingerprint = "7c1ed758e8b02b91"
+reason = "baseline at 639986655: near group of 2, first member zingolib/src/lightclient/mixnet.rs:160"
+
+[[ignore]]
+fingerprint = "7d7a28e36cdceee9"
+reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/scan/transactions.rs:663"
+
+[[ignore]]
+fingerprint = "7d7bae7431fdd11a"
+reason = "baseline at 639986655: exact group of 4, first member pepper-sync/src/sync.rs:1304"
+
+[[ignore]]
+fingerprint = "7da511a685a5c3d6"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet/serialization.rs:1153"
+
+[[ignore]]
+fingerprint = "7dc9f4bc20c867f7"
+reason = "baseline at 639986655: near group of 2, first member zingo-ffi/lib/src/lib.rs:1894"
+
+[[ignore]]
+fingerprint = "7f3b3a448209f0ca"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet.rs:927"
+
+[[ignore]]
+fingerprint = "7f700af6269d73f1"
+reason = "baseline at 639986655: near group of 10, first member zingolib/src/wallet/keys/legacy.rs:211"
+
+[[ignore]]
+fingerprint = "7f8dff5db74d24a6"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/zcb_traits.rs:581"
+
+[[ignore]]
+fingerprint = "80bd6d3023a391b4"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/output.rs:70"
+
+[[ignore]]
+fingerprint = "80fbca1efee903b1"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/sync.rs:268"
+
+[[ignore]]
+fingerprint = "8119909ebf73188a"
+reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/build-binding-layer.rs:895"
+
+[[ignore]]
+fingerprint = "8176c4f198b79910"
+reason = "baseline at 639986655: exact group of 2, first member libtonode-tests/tests/sync.rs:75"
+
+[[ignore]]
+fingerprint = "818d2225b1331e6b"
+reason = "baseline at 639986655: exact group of 2, first member zingo-ffi/lib/src/lib.rs:2440"
+
+[[ignore]]
+fingerprint = "82adb0bf22f46525"
+reason = "baseline at 639986655: exact group of 13, first member zingolib/src/wallet/sync.rs:35"
+
+[[ignore]]
+fingerprint = "83a5c5dafd67bb84"
+reason = "baseline at 639986655: exact group of 3, first member zingo-ffi/lib/src/lib.rs:2993"
+
+[[ignore]]
+fingerprint = "84a084491f518672"
+reason = "baseline at 639986655: near group of 3, first member zingolib/src/destination/servers/draw_exhaustive.rs:49"
+
+[[ignore]]
+fingerprint = "84ae0955384dbeda"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/lib.rs:394"
+
+[[ignore]]
+fingerprint = "854086fc3dc0ba6b"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/select.rs:263"
+
+[[ignore]]
+fingerprint = "8866f7dd0b2bcb39"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/scan/transactions.rs:55"
+
+[[ignore]]
+fingerprint = "8898e80ddd94716d"
+reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/feature-census.rs:400"
+
+[[ignore]]
+fingerprint = "8a840004aff68030"
+reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/keys.rs:117"
+
+[[ignore]]
+fingerprint = "8bbfddf326acd08d"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/scan/task.rs:579"
+
+[[ignore]]
+fingerprint = "8cdd64394c3b1751"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/lightclient/mixnet.rs:1047"
+
+[[ignore]]
+fingerprint = "8e50a1eed2fa1481"
+reason = "baseline at 639986655: exact group of 5, first member zingolib/src/lightclient/transmit.rs:54"
+
+[[ignore]]
+fingerprint = "92d452d6560102c0"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:1961"
+
+[[ignore]]
+fingerprint = "9301625cdf47d79d"
+reason = "baseline at 639986655: exact group of 4, first member zingolib/src/testutils/mock_indexer.rs:2152"
+
+[[ignore]]
+fingerprint = "9430da2777f203af"
+reason = "baseline at 639986655: near group of 2, first member zingolib/src/wallet/keys/unified.rs:176"
+
+[[ignore]]
+fingerprint = "965c88216e517bc5"
+reason = "baseline at 639986655: near group of 2, first member zingo-net-diag/src/lib.rs:214"
+
+[[ignore]]
+fingerprint = "967f1103253f0d85"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/scan.rs:325"
+
+[[ignore]]
+fingerprint = "972c59ab2359ef72"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/sync.rs:1206"
+
+[[ignore]]
+fingerprint = "9755ff9cb034efa6"
+reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/witness.rs:314"
+
+[[ignore]]
+fingerprint = "9a51c97c519be6ce"
+reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/sync-bench.rs:308"
+
+[[ignore]]
+fingerprint = "9b653f0d6dfc9d82"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/perspective/value_transfer.rs:242"
+
+[[ignore]]
+fingerprint = "9cc08286a1028dc3"
+reason = "baseline at 639986655: exact group of 4, first member pepper-sync/src/wallet.rs:1132"
+
+[[ignore]]
+fingerprint = "9cc650069bc0f3e0"
+reason = "baseline at 639986655: near group of 2, first member zingo-price/src/lib.rs:653"
+
+[[ignore]]
+fingerprint = "9d63899e2bb6d8c5"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/client.rs:167"
+
+[[ignore]]
+fingerprint = "9d7c914d445cfeed"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:223"
+
+[[ignore]]
+fingerprint = "9f794861ba63cbe7"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet.rs:302"
+
+[[ignore]]
+fingerprint = "9fa3757d9b50e0d2"
+reason = "baseline at 639986655: near group of 2, first member zingo-netutils/nym-proxy-ffi/tests/golden_wire.rs:98"
+
+[[ignore]]
+fingerprint = "a207d50e6e490a41"
+reason = "baseline at 639986655: exact group of 2, first member zingo-ffi/lib/src/lib.rs:2946"
+
+[[ignore]]
+fingerprint = "a235506bd292c63b"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/transaction.rs:30"
+
+[[ignore]]
+fingerprint = "a3e6b57792d9a896"
+reason = "baseline at 639986655: near group of 2, first member pepper-sync/src/sync/state.rs:221"
+
+[[ignore]]
+fingerprint = "a591e9909eeadbc9"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet/keys/unified.rs:362"
+
+[[ignore]]
+fingerprint = "a8c5abc0076bff4c"
+reason = "baseline at 639986655: exact group of 9, first member zingolib/src/lightclient/transmit.rs:41"
+
+[[ignore]]
+fingerprint = "a8eb42bed399f616"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/testutils/lightclient.rs:75"
+
+[[ignore]]
+fingerprint = "ac103d44d0e73431"
+reason = "baseline at 639986655: exact group of 23, first member zingo-ffi/lib/src/lib.rs:961"
+
+[[ignore]]
+fingerprint = "ae17a92530f69ca1"
+reason = "baseline at 639986655: near group of 2, first member zingolib/src/lightclient/mock_chain_tests.rs:1349"
+
+[[ignore]]
+fingerprint = "ae890ccd1b72bf4f"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet.rs:621"
+
+[[ignore]]
+fingerprint = "af61350530a15bb6"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet/serialization.rs:898"
+
+[[ignore]]
+fingerprint = "b1d8b2401a22407a"
+reason = "baseline at 639986655: near group of 2, first member zingolib/src/wallet/summary/data.rs:619"
+
+[[ignore]]
+fingerprint = "b2876b9031ed4f65"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/sync/state.rs:183"
+
+[[ignore]]
+fingerprint = "b3c6cb32ddf2f3dc"
+reason = "baseline at 639986655: exact group of 4, first member pepper-sync/src/lib.rs:136"
+
+[[ignore]]
+fingerprint = "b4a7e6a0f8996d3b"
+reason = "baseline at 639986655: near group of 2, first member zingolib_testutils/src/scenarios.rs:98"
+
+[[ignore]]
+fingerprint = "b58897e7f9bc3d81"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet.rs:81"
+
+[[ignore]]
+fingerprint = "b71eda4df3009ffb"
+reason = "baseline at 639986655: exact group of 11, first member zingolib/src/lightclient/indexer_history.rs:152"
+
+[[ignore]]
+fingerprint = "b8db8e63c0c999cf"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/keys.rs:129"
+
+[[ignore]]
+fingerprint = "b979aab4b40a487d"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/lib.rs:330"
+
+[[ignore]]
+fingerprint = "b984056ac42bc9f5"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/keys/unified.rs:101"
+
+[[ignore]]
+fingerprint = "bad298d4651c2b6c"
+reason = "baseline at 639986655: exact group of 7, first member zingolib/src/lightclient/transmit.rs:64"
+
+[[ignore]]
+fingerprint = "bc1c399af51c0eda"
+reason = "baseline at 639986655: exact group of 2, first member zingo-price/src/lib.rs:682"
+
+[[ignore]]
+fingerprint = "bc38f6c3f30a56e8"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/utils/transaction.rs:16"
+
+[[ignore]]
+fingerprint = "bc8a96c2f8c533a2"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet.rs:419"
+
+[[ignore]]
+fingerprint = "bc97950bdb628945"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet.rs:795"
+
+[[ignore]]
+fingerprint = "bd033dd6c36cc422"
+reason = "baseline at 639986655: near group of 3, first member pepper-sync/src/keys.rs:79"
+
+[[ignore]]
+fingerprint = "bd1a91191c26fae0"
+reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/build-binding-layer.rs:495"
+
+[[ignore]]
+fingerprint = "bed8b4d09031ea2f"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/migrate.rs:335"
+
+[[ignore]]
+fingerprint = "bfac13e2d248150d"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/scan/compact_blocks/runners.rs:286"
+
+[[ignore]]
+fingerprint = "c12497acc24751a7"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:1135"
+
+[[ignore]]
+fingerprint = "c1b8ec3d746a55da"
+reason = "baseline at 639986655: exact group of 9, first member zingolib/src/lightclient.rs:494"
+
+[[ignore]]
+fingerprint = "c2d127781f4c4891"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/tests/price_harness.rs:111"
+
+[[ignore]]
+fingerprint = "c34dd676b8a85852"
+reason = "baseline at 639986655: exact group of 7, first member pepper-sync/src/wallet.rs:1148"
+
+[[ignore]]
+fingerprint = "c38a16ca07430723"
+reason = "baseline at 639986655: near group of 3, first member zingolib/src/lightclient.rs:710"
+
+[[ignore]]
+fingerprint = "c6b5a4700bb318a0"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/scan.rs:323"
+
+[[ignore]]
+fingerprint = "c9240b4040782900"
+reason = "baseline at 639986655: exact group of 3, first member zingolib_testutils/src/observability.rs:113"
+
+[[ignore]]
+fingerprint = "cc515ede6837b405"
+reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/build-binding-layer.rs:217"
+
+[[ignore]]
+fingerprint = "ce572481e79539cc"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/migrate/transmission_route.rs:58"
+
+[[ignore]]
+fingerprint = "ce91a4c6b5bc9c12"
+reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/config.rs:180"
+
+[[ignore]]
+fingerprint = "ceeced670f4532a7"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/testutils/chain_generics/with_assertions.rs:267"
+
+[[ignore]]
+fingerprint = "ceef0b9adb78cfd4"
+reason = "baseline at 639986655: near group of 2, first member pepper-sync/src/sync/state.rs:720"
+
+[[ignore]]
+fingerprint = "cf6b7b8c4963c095"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet/serialization.rs:903"
+
+[[ignore]]
+fingerprint = "cfcd4d4317acc64b"
+reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/wallet.rs:1900"
+
+[[ignore]]
+fingerprint = "d0f576cb647a2aff"
+reason = "baseline at 639986655: exact group of 31, first member zingolib/src/wallet.rs:284"
+
+[[ignore]]
+fingerprint = "d0ff42c2f80a58f3"
+reason = "baseline at 639986655: near group of 3, first member zingolib/src/mixnet/pools.rs:39"
+
+[[ignore]]
+fingerprint = "d285e36c4172f283"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/mixnet/probe.rs:126"
+
+[[ignore]]
+fingerprint = "d2fe1ec93f03e5de"
+reason = "baseline at 639986655: near group of 2, first member tools/workbench/src/bin/sync-bench.rs:177"
+
+[[ignore]]
+fingerprint = "d31e82c99ac43416"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet.rs:410"
+
+[[ignore]]
+fingerprint = "d4942cf32cb7ae12"
+reason = "baseline at 639986655: exact group of 4, first member zingo-memo/src/lib.rs:161"
+
+[[ignore]]
+fingerprint = "d519519496c992a4"
+reason = "baseline at 639986655: exact group of 4, first member pepper-sync/src/wallet.rs:550"
+
+[[ignore]]
+fingerprint = "d60dcdc86075134e"
+reason = "baseline at 639986655: exact group of 4, first member zingo-status/src/confirmation_status.rs:72"
+
+[[ignore]]
+fingerprint = "d6ebfaed898d50a2"
+reason = "baseline at 639986655: exact group of 2, first member zingo-price/src/lib.rs:781"
+
+[[ignore]]
+fingerprint = "d7df78df7a80a1fe"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/mocks.rs:98"
+
+[[ignore]]
+fingerprint = "dd90c94728b5d786"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/lightclient.rs:752"
+
+[[ignore]]
+fingerprint = "de61ebbd2c24c242"
+reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/keys.rs:113"
+
+[[ignore]]
+fingerprint = "decb9fe1cb4aa9ec"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/lib.rs:155"
+
+[[ignore]]
+fingerprint = "ded031ee1e74ed39"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/sync.rs:164"
+
+[[ignore]]
+fingerprint = "df498cccc0fe573d"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet/serialization.rs:1165"
+
+[[ignore]]
+fingerprint = "df7a68096148d3b3"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/testutils/chain_generics/with_assertions.rs:221"
+
+[[ignore]]
+fingerprint = "e042a9e3fc53920a"
+reason = "baseline at 639986655: near group of 2, first member zingolib/src/lightclient/indexer_history.rs:66"
+
+[[ignore]]
+fingerprint = "e2e506c290a71a78"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/lib.rs:1309"
+
+[[ignore]]
+fingerprint = "e381f52e7e930b08"
+reason = "baseline at 639986655: exact group of 2, first member zingolib_testutils/src/chain_cache.rs:78"
+
+[[ignore]]
+fingerprint = "e4b6f92a36da2f76"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/testutils/mock_indexer.rs:1406"
+
+[[ignore]]
+fingerprint = "e6b1f46d4049629b"
+reason = "baseline at 639986655: exact group of 5, first member zingolib/src/lightclient/migrate/transmission_route.rs:53"
+
+[[ignore]]
+fingerprint = "e86393f09476650c"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet/zcb_traits.rs:736"
+
+[[ignore]]
+fingerprint = "e87b59e6510b8732"
+reason = "baseline at 639986655: near group of 2, first member pepper-sync/src/witness.rs:183"
+
+[[ignore]]
+fingerprint = "e8d649a582a313f0"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/destination/servers.rs:55"
+
+[[ignore]]
+fingerprint = "e99d8291efafcfd9"
+reason = "baseline at 639986655: exact group of 6, first member zingo-ffi/lib/src/lib.rs:2313"
+
+[[ignore]]
+fingerprint = "ea602e11bf4800ab"
+reason = "baseline at 639986655: near group of 2, first member zingolib/src/wallet/keys/legacy/extended_transparent.rs:164"
+
+[[ignore]]
+fingerprint = "eaa51de626b588b7"
+reason = "baseline at 639986655: exact group of 2, first member zingo-memo/src/lib.rs:155"
+
+[[ignore]]
+fingerprint = "ec90e619d80df75d"
+reason = "baseline at 639986655: exact group of 2, first member zingo-ffi/lib/src/lib.rs:2441"
+
+[[ignore]]
+fingerprint = "ec94a0ecdc792b75"
+reason = "baseline at 639986655: exact group of 2, first member zingo-netutils/src/exit.rs:197"
+
+[[ignore]]
+fingerprint = "edd476f140e540fc"
+reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/scan/transactions.rs:59"
+
+[[ignore]]
+fingerprint = "ee525bcf794e2d1c"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet.rs:1640"
+
+[[ignore]]
+fingerprint = "ee98fd7a2d40d669"
+reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/mocks.rs:158"
+
+[[ignore]]
+fingerprint = "efc866f9a72b6488"
+reason = "baseline at 639986655: exact group of 4, first member zingolib/src/data/proposal.rs:109"
+
+[[ignore]]
+fingerprint = "f1f496cb19e7a753"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/lightclient/migrate.rs:122"
+
+[[ignore]]
+fingerprint = "f2c9d666dea70234"
+reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/keys/transparent.rs:126"
+
+[[ignore]]
+fingerprint = "f378d9b9fe7b334d"
+reason = "baseline at 639986655: exact group of 9, first member zingolib/src/wallet/sync.rs:31"
+
+[[ignore]]
+fingerprint = "f4a309b32b0ff1c0"
+reason = "baseline at 639986655: exact group of 2, first member zingo-ffi/lib/src/lib.rs:1638"
+
+[[ignore]]
+fingerprint = "f614ad1b2d85e89d"
+reason = "baseline at 639986655: near group of 2, first member pepper-sync/src/wallet.rs:1209"
+
+[[ignore]]
+fingerprint = "f8c511c898dbbb62"
+reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/sync.rs:2314"
+
+[[ignore]]
+fingerprint = "f9634fe019dcad24"
+reason = "baseline at 639986655: exact group of 13, first member zingolib/src/config.rs:443"
+
+[[ignore]]
+fingerprint = "fa0e37ea9673bc95"
+reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet/keys/unified.rs:396"
+
+[[ignore]]
+fingerprint = "fce7a1fa03b85649"
+reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands/tests.rs:861"
+
+[[ignore]]
+fingerprint = "fd4f05e86db5c1b7"
+reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/keys.rs:105"
+

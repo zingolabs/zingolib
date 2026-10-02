@@ -21,6 +21,8 @@ on:
       - "bindings/**"
       - "**/*.udl"
       - "**/uniffi.toml"
+      - "dupes.toml"
+      - ".dupes-ignore.toml"
       - ".github/workflows/**"
   push:
     branches: [stable, dev]
@@ -55,6 +57,35 @@ jobs:
           if grep --recursive --line-number --ignore-case --extended-regexp \
             'zingo[-_](mobile|pc|delegator)' .github; then
             echo "::error::a file under .github names a consumer of zingolib"
+            exit 1
+          fi
+
+  # cargo-dupes compares the normalized syntax trees of every function in
+  # the repository. .dupes-ignore.toml holds the groups that predate this
+  # job. A group outside that list fails the first step, and an entry whose
+  # group is gone fails the second, so the list only shrinks.
+  no-duplicated-code:
+    name: No duplicated code
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Install cargo-dupes
+        run: cargo install cargo-dupes --version 0.2.1 --locked
+
+      - name: Reject a duplicate group outside the baseline
+        run: cargo dupes check --max-exact 0 --max-near 0
+
+      - name: Reject a baseline entry whose group is gone
+        run: |
+          cargo dupes cleanup --dry-run | tee cleanup.txt
+          if ! grep --quiet 'No stale entries found' cleanup.txt; then
+            echo "::error::.dupes-ignore.toml holds a stale entry. Run 'cargo dupes cleanup' and commit the result."
             exit 1
           fi
 

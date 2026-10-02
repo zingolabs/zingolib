@@ -1,0 +1,3 @@
+# cargo-dupes configuration. CI runs `cargo dupes check --max-exact 0 --max-near 0`.
+# `.dupes-ignore.toml` holds the groups that existed when the gate was added.
+exclude_tests = true
