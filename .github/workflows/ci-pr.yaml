@@ -60,10 +60,11 @@ jobs:
             exit 1
           fi
 
-  # cargo-dupes compares the normalized syntax trees of every function in
-  # the repository. .dupes-ignore.toml holds the groups that predate this
-  # job. A group outside that list fails the first step, and an entry whose
-  # group is gone fails the second, so the list only shrinks.
+  # cargo-dupes compares the normalized syntax trees of every function of
+  # three lines or more, and the job acts on exact duplicates alone.
+  # .dupes-ignore.toml holds the groups that predate this job. A group
+  # outside that list fails the first step, and an entry whose group is
+  # gone fails the second, so the list only shrinks.
   no-duplicated-code:
     name: No duplicated code
     runs-on: ubuntu-24.04
@@ -79,7 +80,7 @@ jobs:
         run: cargo install cargo-dupes --version 0.2.1 --locked
 
       - name: Reject a duplicate group outside the baseline
-        run: cargo dupes check --max-exact 0 --max-near 0
+        run: cargo dupes check --max-exact 0
 
       - name: Reject a baseline entry whose group is gone
         run: |

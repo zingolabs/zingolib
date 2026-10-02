@@ -41,7 +41,8 @@
   duplication you find in code you are already changing. A second copy of a
   helper, a branch, or a constant is a defect, in review and in
   implementation alike. Ruled 2026-10-02. CI enforces it with
-  `cargo dupes check --max-exact 0 --max-near 0` (cargo-dupes 0.2.1).
+  `cargo dupes check --max-exact 0` (cargo-dupes 0.2.1), which rejects an
+  exact duplicate of three lines or more outside test code.
   `.dupes-ignore.toml` lists the groups that predate the gate. Never add an
   entry to it. Remove the duplication, then run `cargo dupes cleanup`.
 

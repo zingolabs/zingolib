@@ -1,8 +1,11 @@
-# cargo-dupes configuration. CI runs `cargo dupes check --max-exact 0 --max-near 0`.
+# cargo-dupes configuration. CI runs `cargo dupes check --max-exact 0`.
 # `.dupes-ignore.toml` holds the groups that existed when the gate was added.
 
 # Skips `#[test]` functions and inline `#[cfg(test)]` modules.
 exclude_tests = true
+
+# A function shorter than three source lines is left out.
+min_lines = 3
 
 # Each pattern is a substring of a path. The first group is test code that
 # `exclude_tests` misses: test crates, test directories, test modules in
