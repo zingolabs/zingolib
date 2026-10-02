@@ -985,4 +985,3 @@ reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/co
 [[ignore]]
 fingerprint = "fd4f05e86db5c1b7"
 reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/keys.rs:105"
-
