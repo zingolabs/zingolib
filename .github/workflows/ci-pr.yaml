@@ -189,13 +189,13 @@ jobs:
   # The nightly calls the workflows at dev.
   binding-layer-cache-key:
     if: ${{ inputs.skip-binding-layer-build != true }}
-    uses: zingolabs/zingo-mobile/.github/workflows/create-cache-key.yaml@85e16d5a8828a2c531e3fc1dc2f61cd78a6244f4
+    uses: zingolabs/zingo-mobile/.github/workflows/create-cache-key.yaml@3e0cb504bd82a23230a6616b02289d242ffede74
 
   # The standard runner keeps this build off the zingo-android-native-16
   # pool, whose cap is sized to one zingo-mobile run.
   binding-layer-x86_64:
     needs: binding-layer-cache-key
-    uses: zingolabs/zingo-mobile/.github/workflows/android-build.yaml@85e16d5a8828a2c531e3fc1dc2f61cd78a6244f4
+    uses: zingolabs/zingo-mobile/.github/workflows/android-build.yaml@3e0cb504bd82a23230a6616b02289d242ffede74
     with:
       cache-key: ${{ needs.binding-layer-cache-key.outputs.cache-key }}
       arch: x86_64

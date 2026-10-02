@@ -37,28 +37,28 @@ jobs:
       # together.
       - name: Restore x86_64
         if: ${{ contains(fromJSON(inputs.abis), 'x86_64') }}
-        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@85e16d5a8828a2c531e3fc1dc2f61cd78a6244f4
+        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@3e0cb504bd82a23230a6616b02289d242ffede74
         with:
           abi: x86_64
           cache-key: ${{ inputs.cache-key }}
 
       - name: Restore x86
         if: ${{ contains(fromJSON(inputs.abis), 'x86') }}
-        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@85e16d5a8828a2c531e3fc1dc2f61cd78a6244f4
+        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@3e0cb504bd82a23230a6616b02289d242ffede74
         with:
           abi: x86
           cache-key: ${{ inputs.cache-key }}
 
       - name: Restore arm64-v8a
         if: ${{ contains(fromJSON(inputs.abis), 'arm64-v8a') }}
-        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@85e16d5a8828a2c531e3fc1dc2f61cd78a6244f4
+        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@3e0cb504bd82a23230a6616b02289d242ffede74
         with:
           abi: arm64-v8a
           cache-key: ${{ inputs.cache-key }}
 
       - name: Restore armeabi-v7a
         if: ${{ contains(fromJSON(inputs.abis), 'armeabi-v7a') }}
-        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@85e16d5a8828a2c531e3fc1dc2f61cd78a6244f4
+        uses: zingolabs/zingo-mobile/.github/actions/binding-layer-android@3e0cb504bd82a23230a6616b02289d242ffede74
         with:
           abi: armeabi-v7a
           cache-key: ${{ inputs.cache-key }}
