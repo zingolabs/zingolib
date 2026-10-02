@@ -179,6 +179,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with an output to the wallet was targeted for a full scan. The spending
   transaction was left in `Mempool` status until it passed its expiry height
   and was marked failed, which also reset the spent coins to unspent.
+- Sync with `shutdown_on_completion` set keeps a pause set by the consumer. On
+  completion the sync mode was set to `SyncMode::Shutdown` whatever it held, so
+  a `SyncMode::Paused` set by the consumer since the sync mode was last read
+  was replaced, and sync ran its shutdown sequence while the consumer held it
+  paused. `Shutdown` is now only set over `SyncMode::Running`, which happens
+  once the consumer resumes sync.
 
 ### Removed
 

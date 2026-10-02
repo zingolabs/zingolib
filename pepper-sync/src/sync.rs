@@ -793,9 +793,7 @@ where
                     scanner.update(&mut *wallet.write().await, nullifier_map_limit_exceeded).await?;
 
                     if matches!(scanner.state, ScannerState::Complete) && config.shutdown_on_completion {
-                        sync_mode_enum = SyncMode::Shutdown;
-                        sync_mode.store(sync_mode_enum as u8, atomic::Ordering::Release);
-
+                        shutdown_if_running(&sync_mode);
                     }
                 }
 
@@ -1398,6 +1396,19 @@ pub(crate) fn set_transactions_failed_unchecked(
         }
     }
     reset_spends(wallet_transactions, failed_txids);
+}
+
+/// Sets `sync_mode` to `Shutdown` if sync is running.
+///
+/// The consumer may have paused sync, or requested shutdown, since the sync mode was last read. The sync mode they
+/// set is kept, so a paused sync stays paused until the consumer resumes it.
+fn shutdown_if_running(sync_mode: &AtomicU8) {
+    let _ignore_sync_mode_set_by_consumer = sync_mode.compare_exchange(
+        SyncMode::Running as u8,
+        SyncMode::Shutdown as u8,
+        atomic::Ordering::AcqRel,
+        atomic::Ordering::Acquire,
+    );
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3416,6 +3427,46 @@ mod test {
                 "session output percentage {} disagrees with the total progress {}",
                 status.percentage_session_outputs_scanned,
                 expected_total,
+            );
+        }
+    }
+
+    /// Sync shuts itself down on completion when `shutdown_on_completion` is set.
+    mod shutdown_on_completion {
+        use std::sync::atomic::{self, AtomicU8};
+
+        use crate::{sync::shutdown_if_running, wallet::SyncMode};
+
+        fn sync_mode_after_shutdown_if_running(sync_mode: SyncMode) -> SyncMode {
+            let sync_mode = AtomicU8::new(sync_mode as u8);
+            shutdown_if_running(&sync_mode);
+
+            SyncMode::from_u8(sync_mode.load(atomic::Ordering::Acquire)).unwrap()
+        }
+
+        #[test]
+        fn running_sync_is_shutdown() {
+            assert_eq!(
+                sync_mode_after_shutdown_if_running(SyncMode::Running),
+                SyncMode::Shutdown
+            );
+        }
+
+        /// The consumer pauses sync to hold the wallet state still. Shutting down would run the shutdown sequence,
+        /// which writes to the wallet, while the consumer believes sync is paused.
+        #[test]
+        fn paused_sync_stays_paused() {
+            assert_eq!(
+                sync_mode_after_shutdown_if_running(SyncMode::Paused),
+                SyncMode::Paused
+            );
+        }
+
+        #[test]
+        fn shutdown_requested_by_the_consumer_is_kept() {
+            assert_eq!(
+                sync_mode_after_shutdown_if_running(SyncMode::Shutdown),
+                SyncMode::Shutdown
             );
         }
     }
