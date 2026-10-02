@@ -9,7 +9,6 @@ use zcash_protocol::value::Zatoshis;
 
 use crate::{lightclient::LightClient, wallet::LightWallet};
 
-#[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
 pub enum ProposalToTransactionRecordComparisonError {
     #[error("{0:?}")]
@@ -61,7 +60,6 @@ pub async fn lookup_fees_with_proposal_check<N>(
     .collect()
 }
 
-#[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
 pub enum LookupRecordsPairStepsError {
     #[error("TxId missing from transmission.")]

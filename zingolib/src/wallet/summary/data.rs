@@ -332,7 +332,6 @@ impl From<TransactionSummaries> for JsonValue {
 /// Note summary.
 ///
 /// Intended for returning a standalone summary of all notes to the user / consumer outside the context of transactions.
-#[allow(missing_docs)]
 #[derive(Debug)]
 pub struct NoteSummary {
     pub value: u64,
@@ -539,7 +538,6 @@ impl std::fmt::Display for BasicNoteSummaries {
 ///
 /// Intended for returning a standalone summary of all transparent coins to the user / consumer outside the context of
 /// transactions.
-#[allow(missing_docs)]
 pub struct CoinSummary {
     pub value: u64,
     pub status: ConfirmationStatus,

@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-#![warn(missing_docs)]
 
 //! The shared network-failure taxonomy (`docs/agents/net-diag-design.md`).
 //!

@@ -66,7 +66,6 @@ impl std::fmt::Display for ValueTransferKind {
 
 /// A value transfer is a note group abstraction.
 /// A group of all notes sent to a specific address in a transaction.
-#[allow(missing_docs)]
 #[derive(Clone, PartialEq)]
 pub struct ValueTransfer {
     pub txid: TxId,

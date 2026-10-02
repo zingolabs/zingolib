@@ -329,7 +329,6 @@ impl SyncMode {
 
 /// Initial and final tree sizes.
 #[derive(Debug, Clone, Copy)]
-#[allow(missing_docs)]
 pub struct TreeBounds {
     pub sapling_initial_tree_size: u32,
     pub sapling_final_tree_size: u32,

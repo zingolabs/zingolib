@@ -30,7 +30,6 @@ pub enum NetworkSeedVersion {
     Mainnet(MainnetSeedVersion),
 }
 
-#[allow(missing_docs)] // described in parent enum
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum MainnetSeedVersion {
@@ -39,14 +38,12 @@ pub enum MainnetSeedVersion {
     /// empty mainnet wallet
     HotelHumor(HotelHumorVersion),
 }
-#[allow(missing_docs)] // described in parent enum
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum VillageTargetVersion {
     /// wallet was last saved in this serialization version
     V28,
 }
-#[allow(missing_docs)] // described in parent enum
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum HotelHumorVersion {
@@ -56,7 +53,6 @@ pub enum HotelHumorVersion {
     /// latest version of the wallet, with most up-to-date witness tree. git can tell more about when it was saved.
     Latest,
 }
-#[allow(missing_docs)] // described in parent enum
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum TestnetSeedVersion {
@@ -70,7 +66,6 @@ pub enum TestnetSeedVersion {
     /// todo
     GloryGoddess,
 }
-#[allow(missing_docs)] // described in parent enum
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum ChimneyBetterVersion {
@@ -83,7 +78,6 @@ pub enum ChimneyBetterVersion {
     /// wallet was last saved at this commit
     Latest,
 }
-#[allow(missing_docs)] // described in parent enum
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum MobileShuffleVersion {
@@ -94,7 +88,6 @@ pub enum MobileShuffleVersion {
     /// most recent chain state added to the wallet
     Latest,
 }
-#[allow(missing_docs)] // described in parent enum
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum RegtestSeedVersion {
@@ -105,21 +98,18 @@ pub enum RegtestSeedVersion {
     /// another regtest wallet
     AbsurdAmount(AbsurdAmountVersion),
 }
-#[allow(missing_docs)] // described in parent enum
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum HospitalMuseumVersion {
     /// wallet was last saved in this serialization version
     V27,
 }
-#[allow(missing_docs)] // described in parent enum
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum AbandonAbandonVersion {
     /// wallet was last saved in this serialization version
     V26,
 }
-#[allow(missing_docs)] // described in parent enum
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum AbsurdAmountVersion {

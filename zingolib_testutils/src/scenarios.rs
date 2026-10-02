@@ -52,7 +52,6 @@ use zingolib::wallet::keys::unified::ReceiverSelection;
 
 /// Default regtest network processes for testing and zingo-cli regtest mode:
 /// the Core stack, zainod in front of zebrad.
-#[allow(missing_docs)]
 pub mod network_combo {
     pub type DefaultIndexer = zcash_local_net::indexer::zainod::Zainod;
     pub type DefaultValidator = zcash_local_net::validator::zebrad::Zebrad;

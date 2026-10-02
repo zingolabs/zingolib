@@ -11,7 +11,6 @@
 //! that come back.
 
 #![forbid(unsafe_code)]
-#![warn(missing_docs)]
 
 mod commands;
 mod examples;

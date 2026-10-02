@@ -86,7 +86,6 @@ pub const CHECK_NEW_BLOCKS_INTERVAL: u64 = 10;
 /// `percentage_outputs_scanned` is a much more accurate indicator of sync completion than `percentage_blocks_scanned`.
 /// `percentage_total_outputs_scanned` is the percentage of outputs scanned from birthday to chain height.
 #[derive(Debug, Clone)]
-#[allow(missing_docs)]
 pub struct SyncStatus {
     pub scan_ranges: Vec<ScanRange>,
     pub sync_start_height: BlockHeight,
@@ -179,7 +178,6 @@ impl From<SyncStatus> for json::JsonValue {
 
 /// Returned when [`crate::sync::sync`] successfully completes.
 #[derive(Debug, Clone)]
-#[allow(missing_docs)]
 pub struct SyncResult {
     pub sync_start_height: BlockHeight,
     pub sync_end_height: BlockHeight,

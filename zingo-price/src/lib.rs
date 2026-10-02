@@ -1,5 +1,3 @@
-#![warn(missing_docs)]
-
 //! Crate for ZEC price types, storage, and fetching.
 //!
 //! Currently only supports USD. The routing policy lives in the caller:

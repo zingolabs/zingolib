@@ -306,7 +306,6 @@ impl From<bip32::Error> for KeyError {
     }
 }
 
-#[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
 pub enum CalculateTransactionError<NoteRef> {
     #[error("No unified spending key found for this account. {0}")]
