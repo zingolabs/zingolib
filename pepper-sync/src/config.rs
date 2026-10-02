@@ -97,7 +97,8 @@ pub struct SyncConfig {
     /// of the latest chain.
     ///
     /// If set, sync will still check for any newly mined blocks during scanning. But when the wallet is completely
-    /// up-to-date with the latest chain, sync will shutdown.
+    /// up-to-date with the latest chain, a running sync will shutdown. A sync the consumer has paused stays paused,
+    /// and shuts down once it is resumed and completes again.
     pub shutdown_on_completion: bool,
 }
 

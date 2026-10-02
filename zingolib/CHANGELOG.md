@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
 
 ### Changed
+- `LightClient::pause_sync`, `stop_sync`, `resume_sync`, `pause_sync_scoped` and the pause guard's drop move the sync mode through `SyncMode::transition` and `SyncMode::apply`, one atomic exchange each, so a `Shutdown` the engine sets at completion between the read and the write is kept instead of overwritten.
 - The Zcash stack moves to its latest releases: `zcash_client_backend` 0.24.0,
   `zcash_primitives` 0.30.1, `zcash_protocol` 0.10.6, `zip321` 0.9.0, and
   `zcash_pool_migration` 0.1.0, which the ZIP 318 movement tripwire now adjudicates.
