@@ -15,8 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
 
 ### Changed
-- The Zcash stack moves to the releases the Binding Layer ships: `zcash_client_backend`
-  0.24.0, `zcash_primitives` 0.30.1, `zcash_protocol` 0.10.5, `zip321` 0.9.0, and
+- The Zcash stack moves to its latest releases: `zcash_client_backend` 0.24.0,
+  `zcash_primitives` 0.30.1, `zcash_protocol` 0.10.6, `zip321` 0.9.0, and
   `zcash_pool_migration` 0.1.0, which the ZIP 318 movement tripwire now adjudicates.
   Every move stays inside the semver range the manifests already allowed, so a
   consumer need not change.

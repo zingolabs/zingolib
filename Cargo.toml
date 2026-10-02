@@ -82,7 +82,7 @@ zcash_note_encryption = "0.4.2"
 # on Ironwood migration transactions.
 zcash_primitives = { version = "0.30.1", features = ["non-standard-fees"] }
 zcash_proofs = "0.30.0"
-zcash_protocol = "0.10.5" # public API (TODO: remove from public API)
+zcash_protocol = "0.10.6" # public API (TODO: remove from public API)
 zcash_transparent = "0.10.0"
 zcash_script = "0.4.5"
 
