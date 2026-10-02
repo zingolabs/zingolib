@@ -1726,6 +1726,86 @@ async fn gap_address_funds_are_detected_after_nullifiers_are_refetched() {
     check_client_balances!(client, i: 70_000 o: 0 s: 0 t: 50_000);
 }
 
+/// Waits until the mock indexer serves `expected` open mempool streams.
+async fn wait_until_open_mempool_streams(net: &MockNet, expected: usize) {
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        while net.chain.read().await.open_mempool_streams() != expected {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("the indexer never served {expected} open mempool streams"));
+}
+
+/// A sync session that returns an error stops its mempool monitor, which closes the monitor's mempool stream.
+///
+/// The session idles at the chain tip with its mempool stream open. No block is mined and no transaction enters the
+/// mempool, so the monitor has nothing to send and only the shutdown flag can stop it.
+#[tokio::test]
+async fn mempool_stream_closes_when_sync_returns_an_error() {
+    use zaino_proto::tonic::Code;
+
+    use crate::testutils::mock_indexer::{Fault, Rpc};
+
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(2);
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    client.sync().await.expect("continuous sync launches");
+    wait_until_open_mempool_streams(&net, 1).await;
+
+    // the chain tip request of the session's next new block check fails.
+    net.chain.write().await.faults.inject(
+        Rpc::LatestBlock,
+        Fault::Fail(Code::Unavailable, "mock outage".to_string()),
+    );
+    client
+        .await_sync()
+        .await
+        .expect_err("the failed chain tip request ends the session");
+
+    wait_until_open_mempool_streams(&net, 0).await;
+}
+
+/// A sync session shuts down while the indexer refuses every mempool stream request. The mempool monitor is retrying
+/// the request when the session ends, and sync returns once the monitor has stopped.
+#[tokio::test]
+async fn sync_returns_while_the_indexer_refuses_the_mempool_stream() {
+    use zaino_proto::tonic::Code;
+
+    use crate::testutils::mock_indexer::{Fault, Rpc};
+
+    const QUEUED_REFUSALS: usize = 100;
+
+    let mut net = MockNet::launch().await;
+    let mut client = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+        .await;
+    {
+        let mut chain = net.chain.write().await;
+        chain.mine_empty_blocks(2);
+        for _ in 0..QUEUED_REFUSALS {
+            chain.faults.inject(
+                Rpc::MempoolStream,
+                Fault::Fail(Code::ResourceExhausted, "mock refusal".to_string()),
+            );
+        }
+    }
+
+    tokio::time::timeout(std::time::Duration::from_secs(30), client.sync_and_await())
+        .await
+        .expect("sync returns while the mempool stream is refused")
+        .unwrap();
+    assert!(
+        net.chain.read().await.faults.pending(Rpc::MempoolStream) > 0,
+        "the indexer was still refusing the mempool stream when sync returned"
+    );
+}
+
 /// `migrate_to_ironwood` syncs before each round. Under continuous sync, with
 /// a sync already running, that sync must still return, or the
 /// migration never reaches its round. The setup mirrors `failed_split_round_transmit_strands_calculated_transactions`:
