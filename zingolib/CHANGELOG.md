@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
 
 ### Changed
+- The Zcash stack moves to the releases the Binding Layer ships: `zcash_client_backend`
+  0.24.0, `zcash_primitives` 0.30.1, `zcash_protocol` 0.10.5, `zip321` 0.9.0, and
+  `zcash_pool_migration` 0.1.0, which the ZIP 318 movement tripwire now adjudicates.
+  Every move stays inside the semver range the manifests already allowed, so a
+  consumer need not change.
 - `migrate_to_ironwood` and `migrate_immediately` sync with `sync_to_tip_and_await`, so they return when the wallet is configured for continuous sync. A running sync is stopped first and is not relaunched; the caller relaunches it with `LightClient::sync`.
 - `max_send_value` is for display only. To send the whole balance, call `propose_send_all` and then `send_stored_proposal`. A `propose_send` request for the reported amount can be refused by the input selector.
 - **Breaking:** `update_current_price` is mixnet-only again. `Indicator::SwitchedOff` refuses it as `MixnetNotReady::Unattached` and the transmit policy has no effect on it.
