@@ -65,7 +65,7 @@ val buildBindingLayer by tasks.registering(Exec::class) {
     )
     inputs.files(
         fileTree(zingolibRoot) {
-            exclude("**/target/**", "**/build/**", ".git/**", "bindings/swift/**")
+            exclude("**/target/**", "**/build/**", "**/.gradle/**", "**/.kotlin/**", ".git/**", "bindings/swift/**")
         }
     )
     inputs.property("zingoMobileDescriptor", zingoMobileDescriptor.orElse(""))
