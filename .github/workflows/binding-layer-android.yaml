@@ -86,12 +86,9 @@ jobs:
             *)           echo "unknown ABI $ABI"; exit 1 ;;
           esac
 
-      # No consumer describes this build, and the wallet reports the unknown
-      # descriptor.
       - name: Build the Binding Layer
         env:
           RUSTUP_TOOLCHAIN: stable
-          ZINGO_MOBILE_DESCRIPTOR: zm_unknown
         run: |
           cargo run \
             --manifest-path tools/workbench/Cargo.toml \

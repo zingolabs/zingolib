@@ -50,11 +50,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Reject a call or a checkout of zingo-mobile
+      - name: Reject a call or a checkout of a consumer
         run: |
           if grep --recursive --line-number --extended-regexp \
-            '(uses|repository):.*zingo-mobile' .github; then
-            echo "::error::a workflow or an action depends on zingo-mobile"
+            '(uses|repository):.*zingo-(mobile|pc|delegator)' .github; then
+            echo "::error::a workflow or an action depends on a consumer of zingolib"
             exit 1
           fi
 
