@@ -179,11 +179,10 @@ tokio = "1"
 http-body-util = "0.1.3"
 x509-parser = "0.18"
 
-# The same patches the parent workspace applies, needed for netutils's own
+# The same patch the parent workspace applies, needed for netutils's own
 # standalone resolution: the Ironwood proto rev of lightwallet-protocol
-# (paired with the `rebuild-proto` feature above) and the time v0.3.47 pin.
+# (paired with the `rebuild-proto` feature above).
 [patch.crates-io]
-time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
 # ADR 0021 (zingolib#2531, amended 2026-08-10): this workspace's nym-stack
 # TLS verifies against the compiled-in Mozilla bundle instead of
 # rustls-platform-verifier's OS-trust-store integration, keeping
