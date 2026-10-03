@@ -93,7 +93,7 @@ pub mod provider;
 #[cfg(feature = "nym")]
 mod nym_proxy;
 #[cfg(feature = "nym")]
-pub use nym_proxy::NymProxy;
+pub use nym_proxy::{BootstrapEvent, NymProxy};
 
 #[cfg(feature = "nym")]
 pub mod live_indexer_discovery;
