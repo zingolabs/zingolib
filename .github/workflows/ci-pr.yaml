@@ -41,6 +41,23 @@ jobs:
   cargo-checkmate:
     uses: ./.github/workflows/cargo-checkmate.yaml
 
+  # zingolib is upstream of its consumers. No file under .github names the
+  # repository of a consumer, in a call, a checkout, a command, or a comment.
+  ci-independent-of-consumers:
+    name: CI independent of consumers
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Reject the name of a consumer
+        run: |
+          if grep --recursive --line-number --ignore-case --extended-regexp \
+            'zingo[-_](mobile|pc|delegator)' .github; then
+            echo "::error::a file under .github names a consumer of zingolib"
+            exit 1
+          fi
+
   cargo-hack-check:
     name: Cargo Hack Check
     runs-on: ubuntu-24.04
@@ -64,10 +81,14 @@ jobs:
             sudo apt-get install -y protobuf-compiler
           fi
 
+      # The flags are the action's defaults plus one exclusion:
+      # zingo-uniffi-bindgen is a binary with no library target and no
+      # features, and `--lib` fails on a package without one.
       - name: Run cargo-hack
         uses: zingolabs/infrastructure/.github/actions/cargo-hack@20485fed7a080e381130ed8120419dc81acae641
         with:
           hack-subcommand: check
+          hack-flags: "--workspace --exclude zingo-uniffi-bindgen --feature-powerset --lib --bins --tests --target-dir target/hack"
 
   # zingo-netutils is excluded from the root workspace and owns its own
   # Cargo.lock (so a future `nym` build resolves independently of the
@@ -98,69 +119,21 @@ jobs:
             sudo apt-get install -y protobuf-compiler
           fi
 
+      # The workspace holds the proxy crate and the verifier shim beside
+      # zingo-netutils, so every step names the whole workspace.
       - name: Format
-        run: cargo fmt --manifest-path zingo-netutils/Cargo.toml --check
+        run: cargo fmt --manifest-path zingo-netutils/Cargo.toml --all --check
 
       - name: Clippy
-        run: cargo clippy --manifest-path zingo-netutils/Cargo.toml --all-targets --all-features -- -D warnings
+        run: cargo clippy --manifest-path zingo-netutils/Cargo.toml --workspace --all-targets --all-features -- -D warnings
 
+      # The proxy crate's live-mixnet feature builds a test that reaches the
+      # real Nym network, so the proxy crate's tests run with it off.
       - name: Test
-        run: cargo test --manifest-path zingo-netutils/Cargo.toml --all-features
+        run: cargo test --manifest-path zingo-netutils/Cargo.toml --all-features --workspace --exclude zingo-nym-proxy-ffi
 
-      # Membership in the root workspace used to gate rustdoc through
-      # checkmate's doc phase; clippy does not run rustdoc lints, so the
-      # standalone workspace needs its own doc gate.
-      - name: Doc
-        run: cargo doc --manifest-path zingo-netutils/Cargo.toml --all-features --no-deps
-        env:
-          RUSTDOCFLAGS: -D warnings
-
-  # The Binding Layer's two workspaces, zingo-ffi and the proxy crate, stand
-  # outside the root and zingo-netutils workspaces (zingolib/0054), so the
-  # jobs above skip them. This job lints and tests both. A zingolib change
-  # that breaks the Binding Layer's surface fails here, in its own PR.
-  binding-layer:
-    name: Binding Layer (zingo-ffi, proxy)
-    runs-on: ubuntu-24.04
-    env:
-      RUSTFLAGS: -D warnings
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            zingo-ffi
-            zingo-netutils/nym-proxy-ffi
-
-      - name: Install protoc
-        run: |
-          if ! command -v protoc; then
-            sudo apt-get update
-            sudo apt-get install -y protobuf-compiler
-          fi
-
-      - name: Format
-        run: |
-          cargo fmt --manifest-path zingo-ffi/Cargo.toml --all --check
-          cargo fmt --manifest-path zingo-netutils/nym-proxy-ffi/Cargo.toml --check
-
-      - name: Clippy
-        run: |
-          cargo clippy --manifest-path zingo-ffi/Cargo.toml --all-targets -- -D warnings
-          cargo clippy --manifest-path zingo-netutils/nym-proxy-ffi/Cargo.toml --all-targets -- -D warnings
-
-      # The live-mixnet test stays behind its feature, which this step
-      # leaves off, so no test here reaches the Nym network.
-      - name: Test
-        run: |
-          cargo test --manifest-path zingo-ffi/Cargo.toml
-          cargo test --manifest-path zingo-netutils/nym-proxy-ffi/Cargo.toml
+      - name: Test the proxy crate
+        run: cargo test --manifest-path zingo-netutils/Cargo.toml --package zingo-nym-proxy-ffi
 
       # The live test reaches the real Nym network, so it may fail on the
       # network without failing the check (zingolib/0054). One thread keeps
@@ -171,41 +144,27 @@ jobs:
         continue-on-error: true
         timeout-minutes: 25
         run: |
-          cargo test --manifest-path zingo-netutils/nym-proxy-ffi/Cargo.toml \
+          cargo test --manifest-path zingo-netutils/Cargo.toml \
+            --package zingo-nym-proxy-ffi \
             --features live-mixnet --test live_mixnet -- --test-threads=1
 
+      # Membership in the root workspace used to gate rustdoc through
+      # checkmate's doc phase; clippy does not run rustdoc lints, so the
+      # standalone workspace needs its own doc gate.
+      - name: Doc
+        run: cargo doc --manifest-path zingo-netutils/Cargo.toml --workspace --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
   # The per-PR tier of zingolib/0054: the x86_64 libraries, the Kotlin
-  # bindings, and the AAR. zingo-mobile's android-build.yaml runs the
-  # builder on this commit, as it does in zingo-mobile's CI and in the
-  # nightly, so one definition builds an ABI everywhere. The three jobs
-  # below share the key that names this commit's build. On a pull request
-  # that commit is the merge commit, so every push builds once, cold, and
-  # the saved entry serves re-runs.
-  #
-  # The zingo-mobile workflows are pinned to one commit, here and in
-  # binding-layer-aar.yaml, so a change to their definitions reaches this
-  # tier only through a bump of the pin. Their steps still check out
-  # zingo-mobile's dev for its submodule action and its descriptor tool.
-  # The nightly calls the workflows at dev.
-  binding-layer-cache-key:
+  # bindings, and the AAR. binding-layer-android.yaml runs the builder on
+  # this commit, here and in the nightly, so one definition builds an ABI
+  # in both tiers. On a pull request that commit is the merge commit, and
+  # every push builds once, cold.
+  binding-layer-android:
     if: ${{ inputs.skip-binding-layer-build != true }}
-    uses: zingolabs/zingo-mobile/.github/workflows/create-cache-key.yaml@85e16d5a8828a2c531e3fc1dc2f61cd78a6244f4
-
-  # The standard runner keeps this build off the zingo-android-native-16
-  # pool, whose cap is sized to one zingo-mobile run.
-  binding-layer-x86_64:
-    needs: binding-layer-cache-key
-    uses: zingolabs/zingo-mobile/.github/workflows/android-build.yaml@85e16d5a8828a2c531e3fc1dc2f61cd78a6244f4
+    uses: ./.github/workflows/binding-layer-android.yaml
     with:
-      cache-key: ${{ needs.binding-layer-cache-key.outputs.cache-key }}
-      arch: x86_64
-      runner: ubuntu-24.04
-
-  binding-layer-aar:
-    needs: [binding-layer-cache-key, binding-layer-x86_64]
-    uses: ./.github/workflows/binding-layer-aar.yaml
-    with:
-      cache-key: ${{ needs.binding-layer-cache-key.outputs.cache-key }}
       abis: '["x86_64"]'
 
   # The `nym` feature gates the mixnet transmission and price-fetch surfaces

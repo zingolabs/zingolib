@@ -4,7 +4,7 @@ pub const KOTLIN: &str = "kotlin";
 /// The language of the iOS bindings.
 pub const SWIFT: &str = "swift";
 
-/// The binding languages that zingo-mobile generates.
+/// The binding languages that the builder generates.
 pub const LANGUAGES: [&str; 2] = [KOTLIN, SWIFT];
 
 /// The package that holds both bindgen binaries, whose only dependency is `uniffi`.
@@ -25,13 +25,10 @@ pub const PROXY_LIB_NAME: &str = "zingo_nym_proxy_ffi";
 /// The proxy crate's package name, which cargo selects in its own workspace.
 pub const PROXY_PACKAGE: &str = "zingo-nym-proxy-ffi";
 
-/// The variable that carries zingo-mobile's finished `zm_` descriptor into the wallet's build script.
-pub const DESCRIBE_VARIABLE: &str = "ZINGO_MOBILE_DESCRIPTOR";
-
-/// The variable that makes rustup ignore zingolib's toolchain pin, as zingo-mobile's builders do.
+/// The variable that makes rustup ignore zingolib's toolchain pin.
 pub const TOOLCHAIN_VARIABLE: &str = "RUSTUP_TOOLCHAIN";
 
-/// The toolchain that zingo-mobile's builders select.
+/// The toolchain that the builder selects.
 pub const BUILDER_TOOLCHAIN: &str = "stable";
 
 /// The variable that tells cargo where to write build output.
@@ -40,7 +37,7 @@ pub const TARGET_DIR_VARIABLE: &str = "CARGO_TARGET_DIR";
 /// The container engines to try, in order.
 pub const ENGINES: [&str; 2] = ["podman", "docker"];
 
-/// The Android API level that zingo-mobile's builder compiles against.
+/// The Android API level that the builder compiles against.
 pub const ANDROID_API_LEVEL: &str = "26";
 
 /// The Android output subdirectory that holds the Kotlin sources the AAR compiles.
@@ -49,7 +46,7 @@ pub const KOTLIN_OUT_DIR: &str = "kotlin";
 /// The Android output subdirectory that holds the per-ABI libraries the AAR packages.
 pub const JNI_LIBS_DIR: &str = "jniLibs";
 
-/// The name under which zingo-mobile ships the wallet's Android library.
+/// The name of the wallet's Android library.
 pub const ANDROID_WALLET_LIBRARY: &str = "libuniffi_zingo.so";
 
 /// The prefix of a Unix library file name.
@@ -64,13 +61,13 @@ pub const STATIC_SUFFIX: &str = ".a";
 /// The operating system name that Rust reports on macOS.
 pub const MACOS: &str = "macos";
 
-/// The wallet XCFramework that zingo-mobile ships.
+/// The wallet XCFramework.
 pub const WALLET_XCFRAMEWORK: &str = "Zingolib.xcframework";
 
-/// The proxy XCFramework that zingo-mobile ships.
+/// The proxy XCFramework.
 pub const PROXY_XCFRAMEWORK: &str = "ZingoNymProxyFFI.xcframework";
 
-/// Both XCFrameworks, in the order that zingo-mobile's builder creates them.
+/// Both XCFrameworks, in the order that the builder creates them.
 pub const XCFRAMEWORKS: [&str; 2] = [WALLET_XCFRAMEWORK, PROXY_XCFRAMEWORK];
 
 /// The Swift source directory that the SwiftPM package compiles, relative to the builder's output.
@@ -85,7 +82,7 @@ pub const PROXY_SWIFT: &str = "zingo_nym_proxy_ffi.swift";
 /// Both generated Swift sources.
 pub const SWIFT_SOURCES: [&str; 2] = [WALLET_SWIFT, PROXY_SWIFT];
 
-/// One Android ABI, with the environment that zingo-mobile's builder sets for it.
+/// One Android ABI, with the environment that the builder sets for it.
 pub struct AndroidAbi {
     /// The Rust target triple.
     pub triple: &'static str,
@@ -93,17 +90,17 @@ pub struct AndroidAbi {
     pub jni_dir: &'static str,
     /// The prefix of the NDK clang wrapper, before the API level.
     pub clang_prefix: &'static str,
-    /// The value of `CARGO_FEATURE_STD` that zingo-mobile's builder sets.
+    /// The value of `CARGO_FEATURE_STD` that the builder sets.
     pub std_feature: &'static str,
 }
 
 impl AndroidAbi {
-    /// The NDK clang wrapper for this ABI at zingo-mobile's API level.
+    /// The NDK clang wrapper for this ABI at the builder's API level.
     pub fn cc(&self) -> String {
         format!("{}{ANDROID_API_LEVEL}-clang", self.clang_prefix)
     }
 
-    /// The environment that zingo-mobile's builder sets while it builds this ABI.
+    /// The environment that the builder sets while it builds this ABI.
     pub fn env(&self, target_dir: &str) -> Vec<(String, String)> {
         [
             ("CARGO_FEATURE_STD", self.std_feature.to_string()),
@@ -115,7 +112,7 @@ impl AndroidAbi {
     }
 }
 
-/// Every Android ABI, in the order that zingo-mobile's builder builds them.
+/// Every Android ABI, in the order that the builder builds them.
 pub const ANDROID_ABIS: [AndroidAbi; 4] = [
     AndroidAbi {
         triple: "aarch64-linux-android",
@@ -178,8 +175,10 @@ pub const GENERATIONS: [Generation; 2] = [Generation::Wallet, Generation::Proxy]
 pub enum Profile {
     /// Cargo's default profile, which writes to the `debug` directory.
     Debug,
-    /// The `--release` profile, which zingo-mobile's builders use.
+    /// Cargo's `--release` profile, which writes to the `release` directory.
     Release,
+    /// The `mobile` profile of the root workspace, which the builder ships.
+    Mobile,
 }
 
 impl Profile {
@@ -188,6 +187,7 @@ impl Profile {
         match self {
             Profile::Debug => &[],
             Profile::Release => &["--release"],
+            Profile::Mobile => &["--profile", "mobile"],
         }
     }
 
@@ -196,6 +196,7 @@ impl Profile {
         match self {
             Profile::Debug => "debug",
             Profile::Release => "release",
+            Profile::Mobile => "mobile",
         }
     }
 }
@@ -230,7 +231,7 @@ pub enum Workdir {
     ProxyCrate,
 }
 
-/// The directory that zingo-mobile's builders generate one binding set in one language from.
+/// The directory that the builder generates one binding set in one language from.
 pub fn bindgen_workdir(generation: Generation, language: &str) -> Workdir {
     match (generation, language) {
         (Generation::Wallet, _) => Workdir::WalletCrate,

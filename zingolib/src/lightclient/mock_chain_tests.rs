@@ -1455,6 +1455,167 @@ async fn transparent_funds_remined_at_transparent_scan_floor_are_detected_after_
     check_client_balances!(client, i: 0 o: 0 s: 0 t: 50_000);
 }
 
+/// The chain height drops by one block during a continuous sync session while the scan of the range up to the old
+/// chain tip is in flight. The wallet truncates its scan ranges to the lower chain height, so the scan results hold
+/// a block the wallet has no scan range for. They are discarded and the truncated range is scanned again.
+///
+/// The scan fetches the two funding transactions, and each fetch is held for longer than half the interval between
+/// new block checks, so a new block check runs while the scan is in flight.
+#[tokio::test]
+async fn scan_results_in_flight_when_chain_height_drops_are_discarded_and_rescanned() {
+    use crate::testutils::mock_indexer::{Fault, Rpc};
+
+    const BLOCKS_BELOW_FUNDS: u32 = 10;
+    const BLOCKS_ABOVE_FUNDS: u32 = 9;
+    const CHAIN_HEIGHT: u32 = BLOCKS_BELOW_FUNDS + 1 + BLOCKS_ABOVE_FUNDS;
+    const FUNDING_TRANSACTIONS: usize = 2;
+    const FETCH_HOLD: std::time::Duration =
+        std::time::Duration::from_secs(pepper_sync::sync::CHECK_NEW_BLOCKS_INTERVAL / 2 + 1);
+
+    let mut net = MockNet::launch().await;
+    net.chain
+        .write()
+        .await
+        .mine_empty_blocks(BLOCKS_BELOW_FUNDS);
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    let ua = get_base_address(&client, PoolType::Shielded(ShieldedPool::Orchard)).await;
+    let mut funding = Vec::new();
+    for _ in 0..FUNDING_TRANSACTIONS {
+        funding.push(faucet_funding_transaction(vec![(&ua, 100_000, None)]).await);
+        net.chain
+            .write()
+            .await
+            .faults
+            .inject(Rpc::Transaction, Fault::Delay(FETCH_HOLD));
+    }
+    {
+        let mut chain = net.chain.write().await;
+        chain.mine_block(funding);
+        chain.mine_empty_blocks(BLOCKS_ABOVE_FUNDS);
+    }
+    assert_eq!(net.chain.read().await.tip(), CHAIN_HEIGHT);
+
+    client.sync().await.expect("continuous sync launches");
+    // the scan has fetched its blocks once it fetches the funding transactions.
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        while net.chain.read().await.faults.pending(Rpc::Transaction) != 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the scan fetches the funding transactions");
+    net.chain.write().await.reorg_to(CHAIN_HEIGHT - 1);
+
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        loop {
+            if let crate::data::PollReport::Ready(result) = client.poll_sync() {
+                panic!("sync returned before the lower chain was scanned: {result:?}");
+            }
+            {
+                let wallet = client.wallet();
+                let wallet = wallet.read().await;
+                let scan_ranges = wallet.sync_state.scan_ranges();
+                if scan_ranges.last().is_some_and(|range| {
+                    range.block_range().end == BlockHeight::from_u32(CHAIN_HEIGHT)
+                }) && scan_ranges
+                    .iter()
+                    .all(|range| range.priority() == pepper_sync::sync::ScanPriority::Scanned)
+                {
+                    break;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the wallet scans to the lower chain height");
+    client.stop_sync().unwrap();
+    client.await_sync().await.unwrap();
+
+    check_client_balances!(client, i: 200_000 o: 0 s: 0 t: 0);
+}
+
+/// A re-org lowers the chain height below a newly mined block after a continuous sync session has selected it for
+/// scanning and before its fetch is served. The server has no block to serve, so the session ends with an error
+/// that reports the lowered chain height and recommends syncing again with the same server. The next session
+/// truncates the wallet to the server's chain height and syncs to it.
+#[tokio::test]
+async fn fetch_under_a_lowered_chain_height_recommends_syncing_again() {
+    use pepper_sync::error::{ServerError, SyncError, SyncRecoveryObservables};
+
+    use crate::lightclient::error::LightClientError;
+    use crate::testutils::mock_indexer::{Fault, Rpc};
+
+    const CHAIN_HEIGHT: u32 = 10;
+    const FETCH_HOLD: std::time::Duration = std::time::Duration::from_secs(3);
+
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(CHAIN_HEIGHT);
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    client.sync().await.expect("continuous sync launches");
+    wait_until_scanned_to(&client, CHAIN_HEIGHT).await;
+
+    // holds the fetch of the new block until the re-org has removed it.
+    {
+        let mut chain = net.chain.write().await;
+        chain
+            .faults
+            .inject(Rpc::BlockRange, Fault::Delay(FETCH_HOLD));
+        chain.mine_empty_blocks(1);
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        while client.latest_sync_status().is_none_or(|status| {
+            status.scan_ranges.last().is_none_or(|range| {
+                range.block_range().end != BlockHeight::from_u32(CHAIN_HEIGHT + 2)
+            })
+        }) {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the sync session creates the scan range of the new block");
+    net.chain.write().await.reorg_to(CHAIN_HEIGHT);
+
+    let LightClientError::SyncError(error) = client
+        .await_sync()
+        .await
+        .expect_err("the fetch of the removed block fails")
+    else {
+        panic!("the sync session ends with a sync error");
+    };
+    assert!(
+        matches!(
+            error,
+            SyncError::ServerError(ServerError::ChainHeightBelowScanRange {
+                chain_height,
+                scan_range_end,
+            }) if chain_height == BlockHeight::from_u32(CHAIN_HEIGHT)
+                && scan_range_end == BlockHeight::from_u32(CHAIN_HEIGHT + 1)
+        ),
+        "{error:?}"
+    );
+    assert_eq!(
+        error.recovery_recommendation(),
+        SyncRecoveryObservables::MaybeRecoverableServer
+    );
+
+    let sync_result = client.sync_to_tip_and_await().await.unwrap();
+    assert_eq!(
+        sync_result.sync_end_height,
+        BlockHeight::from_u32(CHAIN_HEIGHT)
+    );
+}
+
 /// Sync is rejected when the server's lightwallet protocol version is below v0.5.0, or not reported, as the server does
 /// not serve the transparent and ironwood data sync requires. The error recommends switching servers.
 #[tokio::test]
@@ -1639,6 +1800,86 @@ async fn gap_address_funds_are_detected_after_nullifiers_are_refetched() {
     client.await_sync().await.unwrap();
 
     check_client_balances!(client, i: 70_000 o: 0 s: 0 t: 50_000);
+}
+
+/// Waits until the mock indexer serves `expected` open mempool streams.
+async fn wait_until_open_mempool_streams(net: &MockNet, expected: usize) {
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        while net.chain.read().await.open_mempool_streams() != expected {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("the indexer never served {expected} open mempool streams"));
+}
+
+/// A sync session that returns an error stops its mempool monitor, which closes the monitor's mempool stream.
+///
+/// The session idles at the chain tip with its mempool stream open. No block is mined and no transaction enters the
+/// mempool, so the monitor has nothing to send and only the shutdown flag can stop it.
+#[tokio::test]
+async fn mempool_stream_closes_when_sync_returns_an_error() {
+    use zaino_proto::tonic::Code;
+
+    use crate::testutils::mock_indexer::{Fault, Rpc};
+
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(2);
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    client.sync().await.expect("continuous sync launches");
+    wait_until_open_mempool_streams(&net, 1).await;
+
+    // the chain tip request of the session's next new block check fails.
+    net.chain.write().await.faults.inject(
+        Rpc::LatestBlock,
+        Fault::Fail(Code::Unavailable, "mock outage".to_string()),
+    );
+    client
+        .await_sync()
+        .await
+        .expect_err("the failed chain tip request ends the session");
+
+    wait_until_open_mempool_streams(&net, 0).await;
+}
+
+/// A sync session shuts down while the indexer refuses every mempool stream request. The mempool monitor is retrying
+/// the request when the session ends, and sync returns once the monitor has stopped.
+#[tokio::test]
+async fn sync_returns_while_the_indexer_refuses_the_mempool_stream() {
+    use zaino_proto::tonic::Code;
+
+    use crate::testutils::mock_indexer::{Fault, Rpc};
+
+    const QUEUED_REFUSALS: usize = 100;
+
+    let mut net = MockNet::launch().await;
+    let mut client = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+        .await;
+    {
+        let mut chain = net.chain.write().await;
+        chain.mine_empty_blocks(2);
+        for _ in 0..QUEUED_REFUSALS {
+            chain.faults.inject(
+                Rpc::MempoolStream,
+                Fault::Fail(Code::ResourceExhausted, "mock refusal".to_string()),
+            );
+        }
+    }
+
+    tokio::time::timeout(std::time::Duration::from_secs(30), client.sync_and_await())
+        .await
+        .expect("sync returns while the mempool stream is refused")
+        .unwrap();
+    assert!(
+        net.chain.read().await.faults.pending(Rpc::MempoolStream) > 0,
+        "the indexer was still refusing the mempool stream when sync returned"
+    );
 }
 
 /// `migrate_to_ironwood` syncs before each round. Under continuous sync, with

@@ -1924,7 +1924,7 @@ mod sync_pause_contract {
         tokio::task::yield_now().await;
 
         assert_ne!(
-            SyncMode::from_atomic_u8(sync_mode).unwrap(),
+            SyncMode::from_atomic_u8(&sync_mode).unwrap(),
             SyncMode::Running,
             "quick_shield began its wallet reads while the engine ran"
         );
@@ -1959,7 +1959,7 @@ mod sync_pause_contract {
         tokio::task::yield_now().await;
 
         assert_ne!(
-            SyncMode::from_atomic_u8(sync_mode).unwrap(),
+            SyncMode::from_atomic_u8(&sync_mode).unwrap(),
             SyncMode::Running,
             "the send-all sizing began while the engine ran"
         );

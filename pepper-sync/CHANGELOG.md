@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- `wallet::SyncMode::on_completion`, the pure step a completed scan applies to
+  the sync mode: `Running` becomes `Shutdown`, and every other mode is kept.
+- `wallet::SyncMode::apply` and `wallet::SyncMode::transition`, which move the
+  atomic sync mode in one exchange, by a pure step or from one mode to another,
+  and return the mode they replaced. The sync engine and its consumers share
+  them in place of hand-written compare-and-swap calls.
 - `sync::CHECK_NEW_BLOCKS_INTERVAL`, the interval in seconds at which
   continuous sync checks for newly mined blocks.
 - Continuous sync (ADR 0051). BREAKING: `config::SyncConfig` gains a
@@ -54,8 +60,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   serve the transparent and Ironwood data in compact blocks that sync requires.
   The error recommends `SyncRecoveryObservables::ServerUnavailable`, and the
   consumer should switch to a different server and sync again.
+- BREAKING: `error::ServerError::ChainHeightBelowScanRange` variant, returned
+  when fetching a scan range fails and the server's chain height is below the
+  last block of the scan range. A re-org lowered the chain height after the
+  scan range was selected, or the server is behind the chain tip. The fetch
+  error was returned before, which recommended
+  `SyncRecoveryObservables::ServerUnavailable` where the server answered that
+  it had no such block. The new error recommends
+  `SyncRecoveryObservables::MaybeRecoverableServer`, and syncing again
+  truncates the wallet to the server's chain height and verifies it against
+  the server's chain.
 
 ### Changed
+- BREAKING: `wallet::SyncMode::from_atomic_u8` borrows the atomic as
+  `&AtomicU8` in place of taking an `Arc<AtomicU8>` by value.
 - BREAKING: `client::FetchRequest::CompactBlockRange` has an added `bool`
   field. When true, compact blocks are requested with the `TRANSPARENT`,
   `SAPLING`, `ORCHARD` and `IRONWOOD` pool types, otherwise with the default
@@ -179,6 +197,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with an output to the wallet was targeted for a full scan. The spending
   transaction was left in `Mempool` status until it passed its expiry height
   and was marked failed, which also reset the spent coins to unspent.
+- The mempool monitor stops when `sync` returns an error or its future is
+  dropped (#2828). Only a clean shutdown told the monitor to stop, so after
+  any other exit it held its `GetMempoolStream` open until the next block or
+  mempool transaction, and retried a refused stream request every three
+  seconds for the life of the process. A clean shutdown also waited on those
+  retries, so `sync` hung while the server refused the stream.
+- Sync with `shutdown_on_completion` set keeps a pause set by the consumer. On
+  completion the sync mode was set to `SyncMode::Shutdown` whatever it held, so
+  a `SyncMode::Paused` set by the consumer since the sync mode was last read
+  was replaced, and sync ran its shutdown sequence while the consumer held it
+  paused. Completion now applies `SyncMode::on_completion` in one atomic
+  exchange, which sets `Shutdown` over `Running` alone, and a paused sync
+  shuts down once the consumer resumes it and it completes again.
+- Scan results of a scan range that a re-org truncated or re-prioritised while
+  it was being scanned are discarded, and the part of the range the wallet
+  still holds is scanned again. When the server reported a chain height below
+  the wallet's during a sync session with a scan of the chain tip range in
+  flight, the wallet truncated the range and then panicked while processing
+  the scan results. An error returned by such a scan is discarded in the same
+  way, where it ended the sync session before.
+- A scan task with `Verify` priority is scanned as one load. When its
+  continuity check fails, re-org handling resets the scan range of the failed
+  scan, which panicked when the loader had split the range into several
+  loads.
+- A scan range whose first block does not follow the block below it is
+  verified again within the sync session, whatever priority it was selected
+  with. Only a scan range selected with `Verify` priority was handled before,
+  and any other ended the sync session with a continuity error. The block
+  below is held by the wallet, or was kept by the loader from an earlier scan,
+  and a re-org has replaced it since. The scan range is set back to the
+  priority it was selected with, its first blocks are set to `Verify` and the
+  scanner returns to verifying, so the continuity check failing again is
+  handled as a re-org.
+- A re-org reopens the scanned ranges above the verification range to be
+  scanned again. Truncating the wallet removes the wallet data of every block
+  above the truncation height, and a scanned range above the verification
+  range kept its `Scanned` priority with its wallet data removed.
 
 ### Removed
 

@@ -395,6 +395,80 @@ pub(super) fn reset_refetching_nullifiers_scan_range(
     sync_state.scan_ranges.splice(index..=index, split_ranges);
 }
 
+/// Returns true if the scan results of `scan_range` are stale, resetting the parts of the wallet's scan ranges still
+/// held by them.
+///
+/// `scan_range` is the scan range of the scan results, with the priority it was selected with. While it is being
+/// scanned, the wallet scan range it was selected from has `RefetchingNullifiers` priority if it was selected with
+/// `ScannedWithoutMapping` priority and `Scanning` priority otherwise, and the loader may split it into several
+/// scan ranges within that wallet scan range.
+///
+/// The scan results are stale if `scan_range` is no longer within a single wallet scan range of that priority. A
+/// re-org truncated or re-prioritised the wallet scan range while it was being scanned, so the scan results may
+/// hold blocks that have left the chain. The parts of the wallet scan ranges of that priority that overlap with
+/// `scan_range` are set back to the priority `scan_range` was selected with, to be scanned again.
+pub(super) fn reset_stale_scan_range(sync_state: &mut SyncState, scan_range: &ScanRange) -> bool {
+    let in_flight_priority = in_flight_priority(scan_range);
+    let block_range = scan_range.block_range();
+
+    if sync_state.scan_ranges().iter().any(|wallet_scan_range| {
+        wallet_scan_range.priority() == in_flight_priority
+            && wallet_scan_range.block_range().contains(&block_range.start)
+            && wallet_scan_range
+                .block_range()
+                .contains(&(block_range.end - 1))
+    }) {
+        return false;
+    }
+
+    // no wallet scan range of this priority holds the whole of `scan_range` past the check above, so each one that
+    // overlaps it holds only a part of it.
+    reset_in_flight_scan_range(sync_state, scan_range);
+
+    true
+}
+
+/// Returns the priority a wallet scan range has while `scan_range` is being scanned from it.
+fn in_flight_priority(scan_range: &ScanRange) -> ScanPriority {
+    if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
+        ScanPriority::RefetchingNullifiers
+    } else {
+        ScanPriority::Scanning
+    }
+}
+
+/// Sets the parts of the wallet's scan ranges that are being scanned for `scan_range` back to the priority
+/// `scan_range` was selected with, to be scanned again.
+///
+/// The parts of those wallet scan ranges outside of `scan_range` belong to the other scan ranges the loader split
+/// from the same wallet scan range, which are still being scanned.
+pub(super) fn reset_in_flight_scan_range(sync_state: &mut SyncState, scan_range: &ScanRange) {
+    let in_flight_priority = in_flight_priority(scan_range);
+    let block_range = scan_range.block_range();
+
+    let overlapping_scan_ranges = sync_state
+        .scan_ranges()
+        .iter()
+        .cloned()
+        .enumerate()
+        .filter(|(_, wallet_scan_range)| {
+            wallet_scan_range.priority() == in_flight_priority
+                && wallet_scan_range.block_range().start < block_range.end
+                && block_range.start < wallet_scan_range.block_range().end
+        })
+        .collect::<Vec<_>>();
+
+    // split out the scan ranges in reverse order to maintain the correct index for lower scan ranges
+    for (index, wallet_scan_range) in overlapping_scan_ranges.into_iter().rev() {
+        let split_ranges = split_out_scan_range(
+            wallet_scan_range,
+            block_range.clone(),
+            scan_range.priority(),
+        );
+        sync_state.scan_ranges.splice(index..=index, split_ranges);
+    }
+}
+
 /// Sets the scan range in `sync_state` with `block_range` to the given `scan_priority`.
 ///
 /// Panics if no scan range is found in `sync_state` with a block range of exactly `block_range`.
@@ -1160,7 +1234,7 @@ where
     Ok(())
 }
 
-fn reopen_scan_ranges_inner(sync_state: &mut SyncState, from_height: BlockHeight) {
+pub(super) fn reopen_scan_ranges_inner(sync_state: &mut SyncState, from_height: BlockHeight) {
     if let Some((index, range_to_split)) = sync_state
         .scan_ranges()
         .iter()
@@ -1544,6 +1618,136 @@ mod tests {
         assert_eq!(
             sync_state.scan_ranges[2].priority(),
             ScanPriority::RefetchingNullifiers
+        );
+    }
+
+    /// Scan results within a wallet scan range that is still being scanned are current, including those of the scan
+    /// ranges the loader split it into. Nothing is reset.
+    #[test]
+    fn scan_results_within_a_scanning_range_are_current() {
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(1.into()..21.into(), ScanPriority::Scanned),
+            ScanRange::from_parts(21.into()..41.into(), ScanPriority::Scanning),
+        ];
+        let scan_ranges = sync_state.scan_ranges.clone();
+
+        for block_range in [
+            21.into()..41.into(),
+            21.into()..31.into(),
+            31.into()..41.into(),
+        ] {
+            assert!(!super::reset_stale_scan_range(
+                &mut sync_state,
+                &ScanRange::from_parts(block_range, ScanPriority::ChainTip)
+            ));
+            assert_eq!(sync_state.scan_ranges, scan_ranges);
+        }
+    }
+
+    /// The chain height dropped by one block while the range from 21 to 40 was being scanned in two loads, so the
+    /// wallet scan range now ends at 39. The upper load holds block 40, which has left the chain. The part of the
+    /// wallet scan range it covers is reset to be scanned again, and the lower load is still current.
+    #[test]
+    fn stale_scan_results_reset_the_truncated_scan_range_they_overlap() {
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(1.into()..21.into(), ScanPriority::Scanned),
+            ScanRange::from_parts(21.into()..40.into(), ScanPriority::Scanning),
+        ];
+
+        assert!(super::reset_stale_scan_range(
+            &mut sync_state,
+            &ScanRange::from_parts(31.into()..41.into(), ScanPriority::ChainTip)
+        ));
+        assert_eq!(
+            sync_state.scan_ranges,
+            vec![
+                ScanRange::from_parts(1.into()..21.into(), ScanPriority::Scanned),
+                ScanRange::from_parts(21.into()..31.into(), ScanPriority::Scanning),
+                ScanRange::from_parts(31.into()..40.into(), ScanPriority::ChainTip),
+            ]
+        );
+
+        assert!(!super::reset_stale_scan_range(
+            &mut sync_state,
+            &ScanRange::from_parts(21.into()..31.into(), ScanPriority::ChainTip)
+        ));
+    }
+
+    /// The chain height dropped below the whole scan range being scanned, so the wallet holds none of it.
+    #[test]
+    fn scan_results_of_a_removed_scan_range_are_stale() {
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![ScanRange::from_parts(
+            1.into()..21.into(),
+            ScanPriority::Scanned,
+        )];
+        let scan_ranges = sync_state.scan_ranges.clone();
+
+        assert!(super::reset_stale_scan_range(
+            &mut sync_state,
+            &ScanRange::from_parts(21.into()..22.into(), ScanPriority::Verify)
+        ));
+        assert_eq!(sync_state.scan_ranges, scan_ranges);
+    }
+
+    /// A re-org set the scan range being scanned to `Verify`. It is scanned again from that priority, so it is left
+    /// as it is.
+    #[test]
+    fn scan_results_of_a_reprioritised_scan_range_are_stale() {
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(1.into()..11.into(), ScanPriority::Scanned),
+            ScanRange::from_parts(11.into()..22.into(), ScanPriority::Verify),
+        ];
+        let scan_ranges = sync_state.scan_ranges.clone();
+
+        assert!(super::reset_stale_scan_range(
+            &mut sync_state,
+            &ScanRange::from_parts(11.into()..21.into(), ScanPriority::ChainTip)
+        ));
+        assert_eq!(sync_state.scan_ranges, scan_ranges);
+    }
+
+    /// Re-fetched nullifiers are held by `RefetchingNullifiers` ranges and scan results by `Scanning` ranges. Stale
+    /// results of one kind leave the ranges of the other kind, which belong to another scan task, as they are.
+    #[test]
+    fn stale_scan_results_only_reset_scan_ranges_of_their_own_kind() {
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(1.into()..11.into(), ScanPriority::RefetchingNullifiers),
+            ScanRange::from_parts(11.into()..22.into(), ScanPriority::Scanning),
+        ];
+
+        // the top of the range being re-fetched was set to `Verify` by a re-org and is being scanned again
+        assert!(super::reset_stale_scan_range(
+            &mut sync_state,
+            &ScanRange::from_parts(1.into()..21.into(), ScanPriority::ScannedWithoutMapping)
+        ));
+        assert_eq!(
+            sync_state.scan_ranges,
+            vec![
+                ScanRange::from_parts(1.into()..11.into(), ScanPriority::ScannedWithoutMapping),
+                ScanRange::from_parts(11.into()..22.into(), ScanPriority::Scanning),
+            ]
+        );
+
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(1.into()..11.into(), ScanPriority::RefetchingNullifiers),
+            ScanRange::from_parts(11.into()..20.into(), ScanPriority::Scanning),
+        ];
+
+        assert!(super::reset_stale_scan_range(
+            &mut sync_state,
+            &ScanRange::from_parts(5.into()..21.into(), ScanPriority::FoundNote)
+        ));
+        assert_eq!(
+            sync_state.scan_ranges,
+            vec![
+                ScanRange::from_parts(1.into()..11.into(), ScanPriority::RefetchingNullifiers),
+                ScanRange::from_parts(11.into()..20.into(), ScanPriority::FoundNote),
+            ]
         );
     }
 

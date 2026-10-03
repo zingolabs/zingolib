@@ -40,18 +40,3 @@ zingo-netutils = { path = "..", features = [
 android_logger = "0.15.1"
 log = "0.4.33"
 tracing-subscriber = "0.3.23"
-
-# This crate resolves in its own lockfile, never the parent workspace's:
-# nym-sdk's transitive graph needs `crypto-common ^0.2`, irreconcilable
-# with the main workspace's pins (see the root manifest's exclude).
-[workspace]
-members = []
-
-# Cargo honours `[patch]` only from the workspace being built, so zingolib's
-# own stanza never reaches this workspace and the nym stack would otherwise
-# resolve the real `rustls-platform-verifier`. On Android that verifier
-# rejects `validator.nymtech.net` for carrying no OCSP responder, and the
-# mixnet never starts. This restates zingolib/0021 here: verification is
-# the compiled-in Mozilla bundle, identically on every platform.
-[patch.crates-io]
-rustls-platform-verifier = { path = "../webpki-verifier-shim" }

@@ -1,5 +1,4 @@
-# The tool installs of zingo-mobile's rust/android/docker/Dockerfile at the
-# Freeze Commit, without its sources or its environment. The workbench
+# The tools of the Android build, with no sources and no environment. The workbench
 # builder mounts this repository, runs the per-ABI steps in a container of
 # this image, and sets their environment itself.
 FROM docker.io/zingodevops/android_builder:018
