@@ -41,6 +41,30 @@ jobs:
   cargo-checkmate:
     uses: ./.github/workflows/cargo-checkmate.yaml
 
+  # The draft state of the pull request when this job runs. The event
+  # payload holds the state at the time of the event. A push and a "ready
+  # for review" seconds apart start two runs, and the run that survives
+  # the concurrency group can carry a payload that says draft. A run with
+  # no pull request reports false.
+  draft-state:
+    name: Draft state
+    runs-on: ubuntu-24.04
+    outputs:
+      draft: ${{ steps.read.outputs.draft }}
+    steps:
+      - name: Read the draft state of the pull request
+        id: read
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+        run: |
+          draft=false
+          if [ -n "$PULL_REQUEST" ]; then
+            draft="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PULL_REQUEST" --jq '.draft')"
+          fi
+          echo "draft state: $draft"
+          echo "draft=$draft" >> "$GITHUB_OUTPUT"
+
   # zingolib is upstream of its consumers. No file under .github names the
   # repository of a consumer, in a call, a checkout, a command, or a comment.
   ci-independent-of-consumers:
@@ -221,7 +245,8 @@ jobs:
     name: Run doc tests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    if: github.event.pull_request.draft == false
+    needs: draft-state
+    if: ${{ needs.draft-state.outputs.draft != 'true' }}
     env:
       RUSTFLAGS: -D warnings
     steps:
@@ -244,6 +269,8 @@ jobs:
         run: cargo test --doc
 
   test:
+    needs: draft-state
+    if: ${{ needs.draft-state.outputs.draft != 'true' }}
     uses: ./.github/workflows/test.yaml
     with:
       nextest-flags: "-E 'not test(slow)'"
