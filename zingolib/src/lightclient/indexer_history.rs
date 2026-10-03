@@ -28,8 +28,8 @@ pub const MAX_HISTORY_ATTEMPTS: usize = 1024;
 /// The network route an attempt used.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AttemptRoute {
-    /// A direct clearnet connection.
-    Clearnet,
+    /// A direct nakednet connection.
+    Nakednet,
     /// Through the mixnet's SOCKS5 proxy.
     Mixnet,
 }
@@ -311,7 +311,7 @@ mod tests {
             FailureKind::Queued
         );
         assert_eq!(
-            FailureKind::classify("clearnet connect timed out after 30s"),
+            FailureKind::classify("nakednet connect timed out after 30s"),
             FailureKind::Timeout
         );
         assert_eq!(

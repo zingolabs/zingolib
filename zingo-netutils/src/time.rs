@@ -349,7 +349,7 @@ pub mod test {
     pub const SETTLE_POLL_INTERVAL: Duration = Duration::from_secs(5);
 
     /// Per-stage bound for the hand-run live staged probe against a public
-    /// indexer over clearnet.
+    /// indexer over nakednet.
     pub const LIVE_STAGE_BOUND: Duration = Duration::from_secs(15);
 
     /// Bound on the indexer ingesting a submitted transaction into its

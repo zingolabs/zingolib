@@ -21,7 +21,7 @@
 //! mixnet cleanly. The stdin watchdog is what guarantees no orphaned proxy
 //! outlives its parent, even a parent killed with `SIGKILL`. Startup failures
 //! are reported on stderr with a non-zero exit so the parent can surface a
-//! Mixnet Mode error rather than silently falling back to clearnet.
+//! Mixnet Mode error rather than silently falling back to nakednet.
 //!
 //! This binary builds only with the `nym` feature and only in this crate's
 //! own lockfile, where the nym-sdk stack resolves independently of the

@@ -72,7 +72,7 @@ To run interactively with a custom server:
 with wallet file, which are created if they don't already exist:
 a `wallets` dir in location where executable is run, containing the wallet
 (`zingo-wallet.dat`) file. Other defaults inlcude setting the chain to mainnet,
-using a default lightwallet server, using clearnet for price fetching, and not
+using a default lightwallet server, using nakednet for price fetching, and not
 executing commands prior to a complete chain sync.
 
 Any `docker run` will initialize a wallet if there was none in the container, and

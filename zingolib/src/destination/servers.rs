@@ -16,7 +16,7 @@ const HTTP_DEFAULT_PORT: u16 = 80;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Transport {
     /// A direct connection.
-    Clearnet,
+    Nakednet,
     /// The mixnet's SOCKS5 tunnel.
     Mixnet,
 }
@@ -200,7 +200,7 @@ struct Classified {
 impl Classified {
     fn reachable_over(&self, transport: Transport) -> bool {
         match transport {
-            Transport::Clearnet => true,
+            Transport::Nakednet => true,
             Transport::Mixnet => {
                 self.location == Location::Remote
                     && self.uri.scheme_str() == Some("https")
@@ -380,7 +380,7 @@ impl DestinationServerSet {
         self.registry
             .iter()
             .filter(|(uri, _)| {
-                transport == Transport::Clearnet
+                transport == Transport::Nakednet
                     || uri.scheme_str() == Some("https")
                         && uri.port_u16().unwrap_or(MIXNET_PORT) == MIXNET_PORT
             })
@@ -668,7 +668,7 @@ mod tests {
         ] {
             let set = DestinationServerSet::for_chain(&chain, None, Vec::new());
             let held: Vec<String> = set
-                .registry_reachable(Transport::Clearnet)
+                .registry_reachable(Transport::Nakednet)
                 .iter()
                 .map(|entry| entry.to_string().trim_end_matches('/').to_string())
                 .collect();
@@ -687,7 +687,7 @@ mod tests {
             }
         }
         let regtest = DestinationServerSet::for_chain(&regtest(), None, Vec::new());
-        assert!(regtest.registry_reachable(Transport::Clearnet).is_empty());
+        assert!(regtest.registry_reachable(Transport::Nakednet).is_empty());
     }
 
     #[test]
@@ -751,15 +751,15 @@ mod tests {
     }
 
     #[test]
-    fn a_clearnet_draw_never_rotates_across_the_registry() {
+    fn a_nakednet_draw_never_rotates_across_the_registry() {
         let sync = uri("https://zec.rocks:443");
         assert_eq!(
-            drawn(&mainnet_set(), Transport::Clearnet, Some(&sync)),
+            drawn(&mainnet_set(), Transport::Nakednet, Some(&sync)),
             vec![sync]
         );
         assert_eq!(
-            mainnet_set().draw(Transport::Clearnet, None, &Health::default()),
-            Err(NoEligibleDestinations::Empty(Transport::Clearnet))
+            mainnet_set().draw(Transport::Nakednet, None, &Health::default()),
+            Err(NoEligibleDestinations::Empty(Transport::Nakednet))
         );
     }
 
@@ -784,10 +784,10 @@ mod tests {
     }
 
     #[test]
-    fn a_local_sync_indexer_takes_clearnet_and_yields_the_mixnet() {
+    fn a_local_sync_indexer_takes_nakednet_and_yields_the_mixnet() {
         let local = uri("http://192.168.1.10:9067");
         assert_eq!(
-            drawn(&mainnet_set(), Transport::Clearnet, Some(&local)),
+            drawn(&mainnet_set(), Transport::Nakednet, Some(&local)),
             vec![local.clone()]
         );
         let over_mixnet = drawn(&mainnet_set(), Transport::Mixnet, Some(&local));
@@ -813,7 +813,7 @@ mod tests {
     fn a_trusted_remote_sync_indexer_is_drawn_alone() {
         let own = uri("https://node.mine.example:443");
         let set = mainnet_set().with_indexer(IndexerConfig::new(own.clone()).trust(Trust::Trusted));
-        for transport in [Transport::Mixnet, Transport::Clearnet] {
+        for transport in [Transport::Mixnet, Transport::Nakednet] {
             assert_eq!(drawn(&set, transport, Some(&own)), vec![own.clone()]);
         }
     }
@@ -827,7 +827,7 @@ mod tests {
                 .role(Role::Broadcast)
                 .trust(Trust::Trusted),
         );
-        for transport in [Transport::Mixnet, Transport::Clearnet] {
+        for transport in [Transport::Mixnet, Transport::Nakednet] {
             assert_eq!(drawn(&set, transport, Some(&sync)), vec![vps.clone()]);
         }
     }
@@ -837,11 +837,11 @@ mod tests {
         let own = uri("https://relay.example:443");
         let sync = uri("https://zec.rocks:443");
         let set = mainnet_set().with_indexer(IndexerConfig::new(own.clone()).role(Role::Broadcast));
-        let clearnet = set
-            .draw(Transport::Clearnet, Some(&sync), &Health::default())
+        let nakednet = set
+            .draw(Transport::Nakednet, Some(&sync), &Health::default())
             .expect("two candidates");
-        assert_eq!(clearnet.destinations(), &[own.clone(), sync.clone()]);
-        assert_eq!(clearnet.preferred(), 1);
+        assert_eq!(nakednet.destinations(), &[own.clone(), sync.clone()]);
+        assert_eq!(nakednet.preferred(), 1);
         let mixnet = set
             .draw(Transport::Mixnet, Some(&sync), &Health::default())
             .expect("the relay and the registry");
@@ -855,8 +855,8 @@ mod tests {
         let sync = uri("https://zec.rocks:443");
         let set = mainnet_set().with_indexer(IndexerConfig::new(sync.clone()).role(Role::Sync));
         assert_eq!(
-            set.draw(Transport::Clearnet, Some(&sync), &Health::default()),
-            Err(NoEligibleDestinations::Empty(Transport::Clearnet))
+            set.draw(Transport::Nakednet, Some(&sync), &Health::default()),
+            Err(NoEligibleDestinations::Empty(Transport::Nakednet))
         );
     }
 
@@ -864,17 +864,17 @@ mod tests {
     fn a_testnet_remote_sync_indexer_is_trusted_by_default() {
         let set = DestinationServerSet::for_chain(&ChainType::Testnet, None, Vec::new());
         let sync = uri("https://testnet.zec.rocks:443");
-        for transport in [Transport::Mixnet, Transport::Clearnet] {
+        for transport in [Transport::Mixnet, Transport::Nakednet] {
             assert!(drawn(&set, transport, Some(&sync)).contains(&sync));
         }
     }
 
     #[test]
-    fn a_regtest_draw_reaches_its_local_sync_indexer_over_clearnet_only() {
+    fn a_regtest_draw_reaches_its_local_sync_indexer_over_nakednet_only() {
         let set = DestinationServerSet::for_chain(&regtest(), None, Vec::new());
         let sync = uri("http://127.0.0.1:9067");
         assert_eq!(
-            drawn(&set, Transport::Clearnet, Some(&sync)),
+            drawn(&set, Transport::Nakednet, Some(&sync)),
             vec![sync.clone()]
         );
         assert_eq!(

@@ -1,6 +1,6 @@
 //! Build and launch `zingo-cli`, by default mixnet-capable.
 //!
-//! Usage: `run-cli [--clearnet] [--debug] [--features <list>]
+//! Usage: `run-cli [--nakednet] [--debug] [--features <list>]
 //! [--target-dir <dir>] [--build-only] [<zingo-cli args...>]`. Those flags
 //! are consumed wherever they appear (as are the retired `--nym` and
 //! `--release`, no-ops now that they name the defaults); every other
@@ -17,7 +17,7 @@
 //! tool never launches the proxy: the CLI owns that lifecycle, spawning
 //! the proxy at its go-online moment for an Online session (Mixnet Mode
 //! forced on, ADR 0024) and never for an offline one — an offline session
-//! boots no proxy at all (ADR 0025). `--clearnet` opts out of both the
+//! boots no proxy at all (ADR 0025). `--nakednet` opts out of both the
 //! default features and the bundling: a plain build with no mixnet
 //! capability.
 //!
@@ -50,7 +50,7 @@ const VALUE_FLAGS: [&str; 2] = [FEATURES_FLAG, TARGET_DIR_FLAG];
 const BARE_FLAGS: [&str; 5] = [
     "--nym",
     "--release",
-    "--clearnet",
+    "--nakednet",
     "--build-only",
     "--debug",
 ];
@@ -80,14 +80,14 @@ fn main() {
     }
 }
 
-/// Build the CLI (and, unless `--clearnet` opts out, bundle the proxy
+/// Build the CLI (and, unless `--nakednet` opts out, bundle the proxy
 /// binary beside it), run the CLI to completion, and return its exit code.
 fn launch(args: &[String]) -> Result<i32, Vec<String>> {
-    let clearnet = args.iter().any(|arg| arg == "--clearnet");
+    let nakednet = args.iter().any(|arg| arg == "--nakednet");
     let nym_flag = args.iter().any(|arg| arg == "--nym");
-    if clearnet && nym_flag {
+    if nakednet && nym_flag {
         return Err(vec![
-            "--clearnet and --nym contradict each other; pass --clearnet for a \
+            "--nakednet and --nym contradict each other; pass --nakednet for a \
          plain build, or nothing for the mixnet default"
                 .to_string(),
         ]);
@@ -107,7 +107,7 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
     if release_flag {
         eprintln!("{PROG}: note: --release is now the default and the flag is ignored");
     }
-    let nym = !clearnet;
+    let nym = !nakednet;
     let release = !debug;
     let build_only = args.iter().any(|arg| arg == "--build-only");
     let features = value_of(args, FEATURES_FLAG)?;
@@ -147,7 +147,7 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
     }
     if !nym {
         // The mixnet transport rides zingo-cli's default features (ADR 0026);
-        // a clearnet build is the explicit opt-out.
+        // a nakednet build is the explicit opt-out.
         build.arg("--no-default-features");
     }
     // Named by the caller, never chosen here: a feature that suspends a

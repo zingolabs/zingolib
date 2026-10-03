@@ -674,7 +674,7 @@ async fn test_scanning_in_watch_only_mode() {
             })
             .build()
             .unwrap();
-        let mut watch_client = LightClient::new_clearnet_consented(zingo_config, false)
+        let mut watch_client = LightClient::new_nakednet_consented(zingo_config, false)
             .await
             .unwrap();
         // assert empty wallet before rescan

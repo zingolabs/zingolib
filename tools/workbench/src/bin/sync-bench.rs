@@ -39,20 +39,20 @@ const LOG_FILTER: &str = "info";
 /// The indexer every run pins, so arms compare like with like.
 const PINNED_INDEXER: &str = "https://zec.rocks:443";
 
-/// The zingo-cli feature a clearnet arm needs to go online at all, since a
+/// The zingo-cli feature a nakednet arm needs to go online at all, since a
 /// build without the mixnet otherwise refuses every online consent act.
-const CLEARNET_ONLINE_FEATURE: &str = "clearnet-test-mode";
+const NAKEDNET_ONLINE_FEATURE: &str = "nakednet-test-mode";
 
 /// The processes whose CPU is attributed across a session's windows.
 ///
 /// Sync never travels the mixnet — `LightClient` holds a plain
-/// `GrpcIndexer` and ADR 0027 keeps clearnet serving sync — so a mixnet
+/// `GrpcIndexer` and ADR 0027 keeps nakednet serving sync — so a mixnet
 /// session cannot slow the scan by routing it. What it can do is compete
 /// for cores, and these are the two competitors: the wallet doing the scan
 /// and the proxy doing Sphinx crypto and cover traffic.
 const WALLET_PROCESS: &str = "zingo-cli";
 
-/// The proxy child, absent entirely from a clearnet arm.
+/// The proxy child, absent entirely from a nakednet arm.
 const PROXY_PROCESS: &str = "nym-proxy";
 
 /// Kernel clock ticks per second, the unit `/proc/<pid>/stat` counts CPU in.
@@ -250,7 +250,7 @@ enum Arm {
     Mixnet,
     /// A build without the mixnet, which is what attributes the mixnet's
     /// cost to the mixnet rather than leaving it inside one number.
-    Clearnet,
+    Nakednet,
 }
 
 impl Arm {
@@ -258,13 +258,13 @@ impl Arm {
     fn name(self) -> &'static str {
         match self {
             Arm::Mixnet => "mixnet",
-            Arm::Clearnet => "clearnet",
+            Arm::Nakednet => "nakednet",
         }
     }
 
     /// Whether this arm's build leaves the mixnet out.
-    fn is_clearnet(self) -> bool {
-        matches!(self, Arm::Clearnet)
+    fn is_nakednet(self) -> bool {
+        matches!(self, Arm::Nakednet)
     }
 }
 
@@ -302,7 +302,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
     let mut birthday = None;
     let mut label = String::from("unlabelled");
     let mut runs = DEFAULT_RUNS;
-    let mut clearnet = false;
+    let mut nakednet = false;
     let mut compare = false;
     while let Some(argument) = args.next() {
         let mut value = |name: &str| {
@@ -317,7 +317,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
                         .map_err(|e| vec![format!("--birthday {raw}: {e}")])?,
                 );
             }
-            "--clearnet" => clearnet = true,
+            "--nakednet" => nakednet = true,
             "--compare" => compare = true,
             "--label" => label = value("--label")?,
             "--runs" => {
@@ -329,10 +329,10 @@ fn parse_request() -> Result<Request, Vec<String>> {
             other => return Err(vec![format!("unknown argument: {other}")]),
         }
     }
-    if clearnet && compare {
+    if nakednet && compare {
         return Err(vec![
-            "--clearnet and --compare contradict each other; --clearnet runs \
-             the clearnet arm alone, --compare alternates both"
+            "--nakednet and --compare contradict each other; --nakednet runs \
+             the nakednet arm alone, --compare alternates both"
                 .to_string(),
         ]);
     }
@@ -343,9 +343,9 @@ fn parse_request() -> Result<Request, Vec<String>> {
                 .to_string(),
         ]
     })?;
-    let arms = match (compare, clearnet) {
-        (true, _) => vec![Arm::Mixnet, Arm::Clearnet],
-        (false, true) => vec![Arm::Clearnet],
+    let arms = match (compare, nakednet) {
+        (true, _) => vec![Arm::Mixnet, Arm::Nakednet],
+        (false, true) => vec![Arm::Nakednet],
         (false, false) => vec![Arm::Mixnet],
     };
     Ok(Request {
@@ -437,16 +437,16 @@ fn run_cli(root: &Path, arm: Arm) -> Command {
         .arg("--release")
         .arg("--target-dir")
         .arg(build_dir(root, arm));
-    if arm.is_clearnet() {
+    if arm.is_nakednet() {
         // Naming the feature here rather than letting `run-cli` assume it:
         // a build without the mixnet refuses every online consent act (ADR
-        // 0024), and `clearnet-test-mode` is what suspends that refusal.
+        // 0024), and `nakednet-test-mode` is what suspends that refusal.
         // Suspending a ratified refusal is a deliberate act, so the tool
         // that wants it says so.
         command
-            .arg("--clearnet")
+            .arg("--nakednet")
             .arg("--features")
-            .arg(CLEARNET_ONLINE_FEATURE);
+            .arg(NAKEDNET_ONLINE_FEATURE);
     }
     command
 }
