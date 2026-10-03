@@ -943,11 +943,11 @@ impl LightClient {
             // The guard travels into the client, which dials on every
             // submission long after this function returns.
             crate::mixnet::MixnetRoute::Mixnet(conduit) => MigrationWire::Mixnet(conduit.dial()),
-            crate::mixnet::MixnetRoute::Clearnet => MigrationWire::Clearnet,
+            crate::mixnet::MixnetRoute::Nakednet => MigrationWire::Nakednet,
         };
         #[cfg(not(feature = "nym"))]
-        let wire = MigrationWire::Clearnet;
-        if matches!(wire, MigrationWire::Clearnet)
+        let wire = MigrationWire::Nakednet;
+        if matches!(wire, MigrationWire::Nakednet)
             && sync_indexer.is_none()
             && self.migration_transmission_uri.is_none()
         {
@@ -960,7 +960,7 @@ impl LightClient {
             wire.transport(),
             &self.indexer_history.health().lock().expect("health mutex"),
         )?;
-        let reaches_untrusted_sync = matches!(wire, MigrationWire::Clearnet)
+        let reaches_untrusted_sync = matches!(wire, MigrationWire::Nakednet)
             && sync_indexer.as_ref().is_some_and(|sync| {
                 candidates.contains(sync)
                     && self.destination_servers.trust_of(sync)
@@ -2377,9 +2377,9 @@ fn record_part_route(
             crate::destination::Host::of_host_str(destination),
             AttemptRoute::Mixnet,
         ),
-        TransmissionRoute::Clearnet { endpoint } => (
+        TransmissionRoute::Nakednet { endpoint } => (
             crate::destination::Host::of_host_str(endpoint),
-            AttemptRoute::Clearnet,
+            AttemptRoute::Nakednet,
         ),
     };
     history.record(&IndexerAttempt {
@@ -2427,7 +2427,7 @@ mod tests {
         let history = IndexerHistoryHandle::default();
         super::record_part_route(
             &history,
-            &TransmissionRoute::Clearnet {
+            &TransmissionRoute::Nakednet {
                 endpoint: "indexer.example".to_string(),
             },
             std::time::Instant::now(),
@@ -4947,7 +4947,7 @@ mod tests {
 
         /// HYPOTHESIS: the resolved transmission client is the mixnet
         /// variant whenever Mixnet Mode is ready, so no migration part can
-        /// reach a clearnet wire without the deliberate opt-out. Falsified
+        /// reach a nakednet wire without the deliberate opt-out. Falsified
         /// if a ready session resolves anything else.
         #[cfg(feature = "nym")]
         #[tokio::test]
@@ -4963,25 +4963,25 @@ mod tests {
         }
 
         /// HYPOTHESIS: while the mixnet is unavailable and the user has not
-        /// consented to clearnet, the seam refuses instead of resolving any
+        /// consented to nakednet, the seam refuses instead of resolving any
         /// wire, so no part is emitted. Falsified if an unattached session
         /// resolves a client at all.
         #[cfg(feature = "nym")]
         #[tokio::test]
-        async fn an_unattached_session_refuses_rather_than_resolving_clearnet() {
+        async fn an_unattached_session_refuses_rather_than_resolving_nakednet() {
             let (wallet, _) = wallet_with_migration_note(400);
             let client = LightClient::new_for_test(wallet).await;
             assert!(
                 client.migration_transmission_client().is_err(),
-                "absence of a mixnet is never consent to clearnet"
+                "absence of a mixnet is never consent to nakednet"
             );
         }
 
         /// HYPOTHESIS: every part the lifecycle transmits carries a mixnet
         /// route receipt, and the count of receipts equals the count of
         /// parts the schedule sent — no part reaches a wire outside the
-        /// seam, and none travels clearnet. Falsified if any receipt names
-        /// a clearnet route, or if the wire saw a different number of
+        /// seam, and none travels nakednet. Falsified if any receipt names
+        /// a nakednet route, or if the wire saw a different number of
         /// submissions than the schedule reports sent.
         #[tokio::test]
         async fn every_transmitted_part_carries_a_mixnet_receipt() {
@@ -5019,23 +5019,23 @@ mod tests {
             );
         }
 
-        /// HYPOTHESIS: the validation is not vacuous — a clearnet receipt is
-        /// visibly clearnet, so a future path that leaks would be caught
-        /// rather than silently passing. Falsified if the clearnet route
+        /// HYPOTHESIS: the validation is not vacuous — a nakednet receipt is
+        /// visibly nakednet, so a future path that leaks would be caught
+        /// rather than silently passing. Falsified if the nakednet route
         /// reports itself as mixnet.
         #[test]
-        fn the_detector_can_see_a_clearnet_leak() {
+        fn the_detector_can_see_a_nakednet_leak() {
             let mixnet = TransmissionRoute::Mixnet {
                 destination: "destination.example".to_string(),
                 via_socks5: "127.0.0.1:1".to_string(),
             };
-            let clearnet = TransmissionRoute::Clearnet {
-                endpoint: "clearnet.example".to_string(),
+            let nakednet = TransmissionRoute::Nakednet {
+                endpoint: "nakednet.example".to_string(),
             };
             assert!(mixnet.is_mixnet());
             assert!(
-                !clearnet.is_mixnet(),
-                "a clearnet route must never read as mixnet"
+                !nakednet.is_mixnet(),
+                "a nakednet route must never read as mixnet"
             );
         }
     }

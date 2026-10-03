@@ -127,12 +127,12 @@ makers run-cli --data-dir ~/my-wallet --online
 makers run-cli --debug
 
 # Opt out of the mixnet default: a plain build, nothing bundled
-makers run-cli --clearnet
+makers run-cli --nakednet
 ```
 
 Notes:
 
-- `--clearnet` and `--debug` are consumed by the launcher; **every other
+- `--nakednet` and `--debug` are consumed by the launcher; **every other
   argument is forwarded to `zingo-cli` unchanged.**
 - This task never launches the proxy itself. The CLI owns that lifecycle: it
   spawns the proxy only at an online session's go-online moment, and an offline
@@ -436,14 +436,14 @@ you the corrected invocation.)
 
 | Feature | Default | Effect on launch |
 | --- | --- | --- |
-| `nym` | **on** | Compiles in the mixnet transport, so a session can go online. Opting out (`--no-default-features`, or `makers run-cli --clearnet`) makes **Offline Mode the only mode**: the online consent acts refuse loudly and a stored standing consent is reported as inert. |
+| `nym` | **on** | Compiles in the mixnet transport, so a session can go online. Opting out (`--no-default-features`, or `makers run-cli --nakednet`) makes **Offline Mode the only mode**: the online consent acts refuse loudly and a stored standing consent is reported as inert. |
 | `nym-diary` | off | Enables the on-disk indexer diary so `--indexer-diary` records and `network history` displays it. Without it, `--indexer-diary` warns and records nothing. |
-| `clearnet-test-mode` | off | Re-enables the quarantined clearnet server-selection sweep. A deliberate, review-gated test build — never for ordinary use. |
+| `nakednet-test-mode` | off | Re-enables the quarantined nakednet server-selection sweep. A deliberate, review-gated test build — never for ordinary use. |
 
 Build with features explicitly, for example:
 
 ```bash
-# Clearnet-only build (no mixnet capability)
+# Nakednet-only build (no mixnet capability)
 cargo build --release -p zingo-cli --no-default-features
 
 # Enable the indexer diary
@@ -470,7 +470,7 @@ and `Ctrl-D` also end the session.
 - **`--indexer-diary` "has no effect"** — the binary was built without the
   `nym-diary` feature. Rebuild with `--features nym-diary`.
 - **Going online refused with "no mixnet capability"** — the binary was built
-  with `--no-default-features` (clearnet-only). Rebuild with default features
+  with `--no-default-features` (nakednet-only). Rebuild with default features
   (plain `cargo build`, or `makers run-cli`) to go online.
 - **A session option after the command is rejected** — session options must come
   before the command; the CLI prints the corrected invocation.

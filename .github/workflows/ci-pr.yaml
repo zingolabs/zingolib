@@ -253,7 +253,7 @@ jobs:
       - name: Doc-test zingolib under the nym features
         run: cargo test -p zingolib --features nym --doc
 
-      # The opt-out shape (`--no-default-features`, run-cli's `--clearnet`)
+      # The opt-out shape (`--no-default-features`, run-cli's `--nakednet`)
       # must keep building, and its typed refusals must keep rendering.
       - name: Test zingo-cli without the default nym feature
         run: cargo test -p zingo-cli --no-default-features --lib

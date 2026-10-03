@@ -2130,11 +2130,11 @@ impl MockNet {
 
 // Mock-net clients run with Mixnet Mode switched on, so every
 // chain-mock send walks the fail-closed route resolver and the
-// escalation orchestration instead of quietly consenting to clearnet.
+// escalation orchestration instead of quietly consenting to nakednet.
 // The address is never dialed: the transmit path pairs this slot
 // state with arms that submit over the mock indexer's channel.
 // Without the nym feature there is no mixnet and sends stay
-// clearnet, so the same tests cover both routes across the
+// nakednet, so the same tests cover both routes across the
 // feature matrix.
 #[allow(unused_variables)]
 async fn attach_mock_mixnet(lightclient: &mut LightClient) {

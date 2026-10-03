@@ -3678,7 +3678,7 @@ fn mixnet_indicator_string(indicator: zingolib::mixnet::Indicator) -> &'static s
         // string and reads as a resting mode rather than as trouble.
         zingolib::mixnet::Indicator::SwitchedOff => "off",
         // A never-attached or unconsented-loss transport is not consent to
-        // clearnet; report it as `died` so the app fails closed and reconnects
+        // nakednet; report it as `died` so the app fails closed and reconnects
         // rather than opening the mixnet-only surfaces.
         zingolib::mixnet::Indicator::Died | zingolib::mixnet::Indicator::Unattached => "died",
     }

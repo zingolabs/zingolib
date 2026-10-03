@@ -710,7 +710,7 @@ pub(crate) mod transmission {
     ///
     /// Each submission is answered with a route record, mixnet by default,
     /// so a validation pass can assert over the wire every part traveled.
-    /// [`Self::clearnet`] builds one that answers clearnet instead, the
+    /// [`Self::nakednet`] builds one that answers nakednet instead, the
     /// leak a mixnet-only migration must never produce.
     pub struct MockTransmissionClient {
         /// Raw transactions received, with their expiry heights.
@@ -738,12 +738,12 @@ pub(crate) mod transmission {
     }
 
     impl MockTransmissionClient {
-        /// A client whose receipts name a clearnet route, for the falsifier
+        /// A client whose receipts name a nakednet route, for the falsifier
         /// half of a mixnet-only assertion.
-        pub fn clearnet() -> Self {
+        pub fn nakednet() -> Self {
             MockTransmissionClient {
-                route: TransmissionRoute::Clearnet {
-                    endpoint: "mock.clearnet.indexer".to_string(),
+                route: TransmissionRoute::Nakednet {
+                    endpoint: "mock.nakednet.indexer".to_string(),
                 },
                 ..MockTransmissionClient::default()
             }

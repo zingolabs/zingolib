@@ -2061,8 +2061,8 @@ async fn a_mock_chain_send_reports_the_mixnet_route() {
                     "a regtest draw names the sync indexer alone"
                 );
             }
-            TransmitRoute::Clearnet { destination } => {
-                panic!("a mixnet-on session leaked the transmission to clearnet at {destination}")
+            TransmitRoute::Nakednet { destination } => {
+                panic!("a mixnet-on session leaked the transmission to nakednet at {destination}")
             }
         }
     }
@@ -2076,12 +2076,12 @@ async fn a_mock_chain_send_reports_the_mixnet_route() {
 }
 
 /// The falsifier for [`a_mock_chain_send_reports_the_mixnet_route`]: the
-/// clearnet transmit policy routes a transmission over clearnet even while
+/// nakednet transmit policy routes a transmission over nakednet even while
 /// the mixnet stands ready, and its receipt names the sync indexer rather
 /// than a Destination.
 #[cfg(feature = "nym")]
 #[tokio::test]
-async fn the_clearnet_policy_reports_the_clearnet_route_over_a_ready_mixnet() {
+async fn the_nakednet_policy_reports_the_nakednet_route_over_a_ready_mixnet() {
     use crate::lightclient::send::TransmitRoute;
 
     let mut net = MockNet::launch().await;
@@ -2096,7 +2096,7 @@ async fn the_clearnet_policy_reports_the_clearnet_route_over_a_ready_mixnet() {
     recipient.sync_and_await().await.unwrap();
 
     assert!(recipient.read_mixnet_indicator().is_ready());
-    recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
+    recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
 
     let reports = from_inputs::quick_send_reported(
         &mut recipient,
@@ -2107,8 +2107,8 @@ async fn the_clearnet_policy_reports_the_clearnet_route_over_a_ready_mixnet() {
 
     for report in &reports {
         assert!(
-            matches!(report.route, TransmitRoute::Clearnet { .. }),
-            "a clearnet-policy session reported {:?} instead of clearnet",
+            matches!(report.route, TransmitRoute::Nakednet { .. }),
+            "a nakednet-policy session reported {:?} instead of nakednet",
             report.route
         );
     }
@@ -3445,10 +3445,10 @@ mod mainnet_broadcast_offline {
     }
 
     #[tokio::test]
-    async fn a_clearnet_send_goes_to_the_untrusted_sync_indexer_alone() {
+    async fn a_nakednet_send_goes_to_the_untrusted_sync_indexer_alone() {
         let (stage, mut recipient) = stage().await;
         #[cfg(feature = "nym")]
-        recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
+        recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
         recipient.set_destination_servers_for_tests(stage.set_over(&[
             (&stage.suppressing, SUPPRESSOR),
             (&stage.accepting, ACCEPTOR),
@@ -3459,7 +3459,7 @@ mod mainnet_broadcast_offline {
         assert!(
             reports
                 .iter()
-                .all(|report| matches!(report.route, TransmitRoute::Clearnet { .. }))
+                .all(|report| matches!(report.route, TransmitRoute::Nakednet { .. }))
         );
         assert_eq!(stage.received().await, (reports.len(), 0, 0));
     }
@@ -3468,7 +3468,7 @@ mod mainnet_broadcast_offline {
     async fn a_trusted_broadcast_indexer_receives_the_send_alone() {
         let (stage, mut recipient) = stage().await;
         #[cfg(feature = "nym")]
-        recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
+        recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
         recipient.set_destination_servers_for_tests(
             stage
                 .set_over(&[(&stage.suppressing, SUPPRESSOR)])

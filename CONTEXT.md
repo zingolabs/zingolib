@@ -21,10 +21,10 @@ _Avoid_: "nym" for the wallet-side domain; "mixnet" for the vendor stack
 
 **Transmit policy** (ratified 2026-09-11):
 The client's per-session choice of where a transaction travels,
-`Mixnet` or `Clearnet`, held beside the transport slot and never in it.
+`Mixnet` or `Nakednet`, held beside the transport slot and never in it.
 Read by the send route alone: the price fetch and the probe are
 mixnet-only and never consult it.
-_Avoid_: "switched off" for the clearnet choice; that names a transport
+_Avoid_: "switched off" for the nakednet choice; that names a transport
 state, which both routes read as a missing transport
 
 **Mobile platform** (ratified 2026-08-11):
@@ -98,7 +98,7 @@ _Avoid_: "relay origin" for location.
 The indexers one session may broadcast to: the ones the consumer
 classified and the indexer registry for the wallet's chain, drawn by one
 rule on every transport. Over the mixnet it excludes an untrusted sync
-indexer's operator; over clearnet it never draws the registry; a trusted
+indexer's operator; over nakednet it never draws the registry; a trusted
 candidate is drawn alone. Derived at session open, never serialized.
 Distinct from the Exit Pool, which holds mixnet exits.
 _Avoid_: "Destination pool", "curated Destination list".
