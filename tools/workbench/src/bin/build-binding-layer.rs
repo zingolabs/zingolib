@@ -55,8 +55,8 @@ const BUILD_ROOT: &str = "target/binding-layer";
 /// The wallet crate's directory, relative to the zingolib root.
 const WALLET_CRATE_DIR: &str = "zingo-ffi/lib";
 
-/// The wallet-side workspace directory, relative to the zingolib root.
-const WALLET_WORKSPACE_DIR: &str = "zingo-ffi";
+/// The directory of the workspace that holds the wallet crate and the bindgen package, which is the zingolib root.
+const WALLET_WORKSPACE_DIR: &str = ".";
 
 /// The proxy crate's directory, relative to the zingolib root.
 const PROXY_CRATE_DIR: &str = "zingo-netutils/nym-proxy-ffi";
@@ -65,7 +65,7 @@ const PROXY_CRATE_DIR: &str = "zingo-netutils/nym-proxy-ffi";
 const UDL: &str = "src/zingo.udl";
 
 /// The profile that the builder builds every library with.
-const BUILDER_PROFILE: binding_layer::Profile = binding_layer::Profile::Release;
+const BUILDER_PROFILE: binding_layer::Profile = binding_layer::Profile::Mobile;
 
 /// The directory under a target directory that the builder profile writes to.
 const PROFILE_DIR: &str = BUILDER_PROFILE.directory();
@@ -763,7 +763,7 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
         [
             Step::FreshDir(host_of(
                 roots,
-                &format!("{target_dir}/{UNIVERSAL_SIMULATOR_DIR}/release"),
+                &format!("{target_dir}/{UNIVERSAL_SIMULATOR_DIR}/{PROFILE_DIR}"),
             )),
             Step::Run {
                 workdir: roots.run.clone(),

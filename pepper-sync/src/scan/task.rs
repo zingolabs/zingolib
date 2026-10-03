@@ -399,13 +399,24 @@ where
                 let mut current_block_ironwood_nullifier_count = 0;
                 let mut awaiting_first_block = true;
 
-                let mut block_stream = open_block_stream(
+                let mut block_stream = match open_block_stream(
                     fetch_request_sender.clone(),
                     scan_task.scan_range.block_range().clone(),
                     fetch_nullifiers_only,
                     scan_task.transparent_scan_floor,
                 )
-                .await?;
+                .await
+                {
+                    Ok(block_stream) => block_stream,
+                    Err(e) => {
+                        return Err(fetch_failure(
+                            fetch_request_sender.clone(),
+                            scan_task.scan_range.block_range(),
+                            e,
+                        )
+                        .await);
+                    }
+                };
 
                 loop {
                     let msg_res: Result<Option<CompactBlock>, tonic::Status> =
@@ -425,13 +436,24 @@ where
                         {
                             tokio::time::sleep(Duration::from_secs(3)).await;
 
-                            block_stream = open_block_stream(
+                            block_stream = match open_block_stream(
                                 fetch_request_sender.clone(),
                                 retry_height..scan_task.scan_range.block_range().end,
                                 fetch_nullifiers_only,
                                 scan_task.transparent_scan_floor,
                             )
-                            .await?;
+                            .await
+                            {
+                                Ok(block_stream) => block_stream,
+                                Err(e) => {
+                                    return Err(fetch_failure(
+                                        fetch_request_sender.clone(),
+                                        scan_task.scan_range.block_range(),
+                                        e,
+                                    )
+                                    .await);
+                                }
+                            };
 
                             let first_msg_res: Result<Option<CompactBlock>, tonic::Status> =
                                 match tokio::time::timeout(
@@ -448,11 +470,23 @@ where
 
                             match first_msg_res {
                                 Ok(b) => b,
-                                Err(e) => return Err(e.into()),
+                                Err(e) => {
+                                    return Err(fetch_failure(
+                                        fetch_request_sender.clone(),
+                                        scan_task.scan_range.block_range(),
+                                        e.into(),
+                                    )
+                                    .await);
+                                }
                             }
                         }
                         Err(e) => {
-                            return Err(e.into());
+                            return Err(fetch_failure(
+                                fetch_request_sender.clone(),
+                                scan_task.scan_range.block_range(),
+                                e.into(),
+                            )
+                            .await);
                         }
                     };
 
@@ -532,8 +566,10 @@ where
                             + load_orchard_nullifier_count
                             + load_ironwood_nullifier_count
                             > MAX_LOAD_NULLIFIERS)
-                        && scan_task.scan_range.block_range().start
-                            != block::get_compact_height(&compact_block)
+                        && splittable_at(
+                            &scan_task.scan_range,
+                            block::get_compact_height(&compact_block),
+                        )
                     {
                         let (full_load, new_load) = scan_task
                             .clone()
@@ -642,6 +678,42 @@ where
 
         Ok(())
     }
+}
+
+/// Returns the error the loader ends with after fetching the scan range of `block_range` (end exclusive) failed with
+/// `error`.
+///
+/// A re-org can lower the server's chain height below a scan range after it was selected, and a server behind the
+/// chain tip may hold only part of it. The server then has no block to serve for the top of the scan range. The
+/// chain height is fetched to tell this apart from any other failure. If it is below the last block of the scan
+/// range, [`ServerError::ChainHeightBelowScanRange`] is returned, which recommends syncing again to verify the
+/// wallet against the server's chain. Otherwise `error` is returned.
+async fn fetch_failure(
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    block_range: &Range<BlockHeight>,
+    error: ServerError,
+) -> ServerError {
+    let scan_range_end = block_range.end - 1;
+    match client::get_chain_height(fetch_request_sender).await {
+        Ok(chain_height) if chain_height < scan_range_end => {
+            ServerError::ChainHeightBelowScanRange {
+                chain_height,
+                scan_range_end,
+            }
+        }
+        _ => error,
+    }
+}
+
+/// Returns true if the loader may split the scan task of `scan_range` at `block_height` when a load budget is
+/// reached.
+///
+/// A split at the first block of the scan range would leave the lower scan task empty.
+/// A scan task with `Verify` priority is scanned whole. When its continuity check fails, re-org handling resets and
+/// extends the wallet scan range it was selected from, which would be rewritten under any other scan task split from
+/// it.
+fn splittable_at(scan_range: &ScanRange, block_height: BlockHeight) -> bool {
+    scan_range.priority() != ScanPriority::Verify && scan_range.block_range().start != block_height
 }
 
 /// Opens a stream of compact blocks for `block_range` (end exclusive), or of nullifiers only if `fetch_nullifiers_only`
@@ -989,6 +1061,109 @@ mod tests {
         );
 
         assert_eq!(scanner.transparent_gap_addresses, external_addresses(3..=5));
+    }
+
+    const SCAN_RANGE_END: u32 = 20;
+
+    fn block_range() -> Range<BlockHeight> {
+        BlockHeight::from_u32(10)..BlockHeight::from_u32(SCAN_RANGE_END + 1)
+    }
+
+    fn no_block_error() -> ServerError {
+        ServerError::RequestFailed(tonic::Status::not_found("no block"))
+    }
+
+    /// Answers chain height requests with `chain_height`.
+    fn spawn_chain_height_fetcher(chain_height: u32) -> mpsc::UnboundedSender<FetchRequest> {
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::ChainTip(reply_sender) => {
+                        let _ignore_error =
+                            reply_sender.send(Ok(zingo_netutils::lightwallet_protocol::BlockId {
+                                height: u64::from(chain_height),
+                                hash: Vec::new(),
+                            }));
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+        });
+
+        fetch_request_sender
+    }
+
+    /// The server's chain height is below the last block of the scan range, so it has no block to serve for the top
+    /// of the scan range.
+    #[tokio::test]
+    async fn fetch_failure_under_a_lowered_chain_height_reports_the_chain_height() {
+        let error = fetch_failure(
+            spawn_chain_height_fetcher(SCAN_RANGE_END - 1),
+            &block_range(),
+            no_block_error(),
+        )
+        .await;
+
+        assert!(matches!(
+            error,
+            ServerError::ChainHeightBelowScanRange { chain_height, scan_range_end }
+                if chain_height == BlockHeight::from_u32(SCAN_RANGE_END - 1)
+                    && scan_range_end == BlockHeight::from_u32(SCAN_RANGE_END)
+        ));
+    }
+
+    /// The server's chain holds the whole scan range, so the fetch failed for another reason.
+    #[tokio::test]
+    async fn fetch_failure_with_the_scan_range_on_chain_returns_the_fetch_error() {
+        for chain_height in [SCAN_RANGE_END, SCAN_RANGE_END + 1] {
+            let error = fetch_failure(
+                spawn_chain_height_fetcher(chain_height),
+                &block_range(),
+                no_block_error(),
+            )
+            .await;
+
+            assert!(
+                matches!(error, ServerError::RequestFailed(_)),
+                "chain height {chain_height}"
+            );
+        }
+    }
+
+    /// The chain height request fails with the fetcher gone, leaving the fetch error as the only known cause.
+    #[tokio::test]
+    async fn fetch_failure_with_no_chain_height_returns_the_fetch_error() {
+        let (fetch_request_sender, _) = mpsc::unbounded_channel();
+
+        let error = fetch_failure(fetch_request_sender, &block_range(), no_block_error()).await;
+
+        assert!(matches!(error, ServerError::RequestFailed(_)));
+    }
+
+    /// A scan task is split above its first block when a load budget is reached, as a split at the first block
+    /// would leave the lower scan task empty. A scan task with `Verify` priority is never split.
+    #[test]
+    fn scan_tasks_are_split_above_their_first_block_unless_verifying() {
+        const START: u32 = 10;
+        let block_range = BlockHeight::from_u32(START)..BlockHeight::from_u32(START * 2);
+
+        for (priority, block_height, splittable) in [
+            (ScanPriority::ChainTip, START, false),
+            (ScanPriority::ChainTip, START + 1, true),
+            (ScanPriority::ScannedWithoutMapping, START + 1, true),
+            (ScanPriority::Verify, START, false),
+            (ScanPriority::Verify, START + 1, false),
+        ] {
+            assert_eq!(
+                splittable_at(
+                    &ScanRange::from_parts(block_range.clone(), priority),
+                    BlockHeight::from_u32(block_height)
+                ),
+                splittable,
+                "{priority:?} at {block_height}"
+            );
+        }
     }
 
     #[test]

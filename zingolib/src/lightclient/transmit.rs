@@ -1,6 +1,6 @@
 //! The resilient transmission policy: retry, duplicate-in-mempool, and
 //! queued-probe handling, defined once and generic over the transmission
-//! target so the clearnet indexer path and the Nym transmission path share a
+//! target so the nakednet indexer path and the Nym transmission path share a
 //! single implementation.
 //!
 //! [`resilient_transmit`] performs no wallet-state mutation: it interprets a
@@ -76,7 +76,7 @@ pub(crate) trait SubmitFailure: std::fmt::Display {
     fn rejection_text(&self) -> Option<&str>;
 }
 
-/// The clearnet path's failure type: a gRPC status, carried whole. The
+/// The nakednet path's failure type: a gRPC status, carried whole. The
 /// server's verdict is the status message (rejections are folded into a
 /// status by `GrpcIndexer::send_transaction`).
 impl SubmitFailure for zingo_netutils::Status {
@@ -101,7 +101,7 @@ impl SubmitFailure for zingo_netutils::Socks5TransmitError {
 
 /// A single transmission endpoint: submits a serialized transaction and can
 /// ask the server whether it already knows a txid. Implemented for the
-/// configured clearnet indexer and for a Nym Destination reached
+/// configured nakednet indexer and for a Nym Destination reached
 /// through the SOCKS5 proxy.
 pub(crate) trait TransmitTarget {
     /// The target's typed failure, preserved whole through the policy.

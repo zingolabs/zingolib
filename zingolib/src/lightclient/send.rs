@@ -86,7 +86,7 @@ pub struct TransmitReport {
 }
 
 /// Resolves whether a transmission runs over the mixnet tunnel (`Some`
-/// SOCKS5 address) or clearnet through the configured sync indexer
+/// SOCKS5 address) or nakednet through the configured sync indexer
 /// (`None`), from the session's connectivity and its send route.
 ///
 /// An Indexerless session transmits only over a ready mixnet (ruling
@@ -105,8 +105,8 @@ fn resolve_transmit_route(
     match (has_indexer, route) {
         // The guard rides out to the caller, which holds it for the send.
         (_, Ok(MixnetRoute::Mixnet(conduit))) => Ok(Some(conduit.dial())),
-        (true, Ok(MixnetRoute::Clearnet)) => Ok(None),
-        (false, Ok(MixnetRoute::Clearnet)) => Err(LightClientError::Offline),
+        (true, Ok(MixnetRoute::Nakednet)) => Ok(None),
+        (false, Ok(MixnetRoute::Nakednet)) => Err(LightClientError::Offline),
         (false, Err(MixnetNotReady::Unattached)) => Err(LightClientError::Offline),
         (_, Err(e)) => Err(LightClientError::MixnetNotReady(e)),
     }
@@ -116,7 +116,7 @@ fn resolve_transmit_route(
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TransmitRoute {
     /// Direct submission to a drawn Destination.
-    Clearnet {
+    Nakednet {
         /// The accepting Destination's host.
         destination: String,
     },
@@ -171,14 +171,14 @@ fn retarget_for_offline_signing<NoteRef: Clone>(
 }
 
 /// A gRPC indexer as a [`TransmitTarget`].
-struct ClearnetTarget(zingo_netutils::GrpcIndexer);
+struct NakednetTarget(zingo_netutils::GrpcIndexer);
 
-impl ClearnetTarget {
+impl NakednetTarget {
     /// A target for `destination`, connecting on first use.
     fn lazy(destination: http::Uri) -> Result<Self, zingo_net_diag::NetOpFailure> {
         let host = crate::destination::Host::of_uri(&destination);
         zingo_netutils::GrpcIndexer::new_lazy(destination)
-            .map(ClearnetTarget)
+            .map(NakednetTarget)
             .map_err(|error| {
                 zingo_net_diag::NetOpFailure::from_error(
                     zingo_net_diag::NetOpStage::RouteResolution,
@@ -200,7 +200,7 @@ impl ClearnetTarget {
     }
 }
 
-impl TransmitTarget for ClearnetTarget {
+impl TransmitTarget for NakednetTarget {
     type Failure = zingo_netutils::Status;
 
     fn submit(
@@ -238,7 +238,7 @@ impl TransmitTarget for ClearnetTarget {
 
 /// A [`zingo_netutils::Socks5Indexer`] is the mixnet [`TransmitTarget`]:
 /// one Destination that submits and delivery-checks over its own tunnel,
-/// running the same [`resilient_transmit`] policy as the clearnet wire.
+/// running the same [`resilient_transmit`] policy as the nakednet wire.
 #[cfg(feature = "nym")]
 impl TransmitTarget for zingo_netutils::Socks5Indexer {
     type Failure = zingo_netutils::Socks5TransmitError;
@@ -261,7 +261,7 @@ impl TransmitTarget for zingo_netutils::Socks5Indexer {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Wire {
     /// Direct connections.
-    Clearnet,
+    Nakednet,
     /// The session's standing mixnet client.
     #[cfg(feature = "nym")]
     Mixnet { shared_socks5: std::net::SocketAddr },
@@ -274,7 +274,7 @@ impl Wire {
     fn transport(self) -> crate::destination::servers::Transport {
         use crate::destination::servers::Transport;
         match self {
-            Wire::Clearnet => Transport::Clearnet,
+            Wire::Nakednet => Transport::Nakednet,
             #[cfg(feature = "nym")]
             Wire::Mixnet { .. } => Transport::Mixnet,
             #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
@@ -285,14 +285,14 @@ impl Wire {
     fn reach(self) -> crate::destination::servers::Transport {
         match self {
             #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
-            Wire::MixnetOverMock { .. } => crate::destination::servers::Transport::Clearnet,
+            Wire::MixnetOverMock { .. } => crate::destination::servers::Transport::Nakednet,
             other => other.transport(),
         }
     }
 
     fn attempt_route(self) -> AttemptRoute {
         match self {
-            Wire::Clearnet => AttemptRoute::Clearnet,
+            Wire::Nakednet => AttemptRoute::Nakednet,
             #[cfg(feature = "nym")]
             Wire::Mixnet { .. } => AttemptRoute::Mixnet,
             #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
@@ -301,12 +301,12 @@ impl Wire {
     }
 
     fn is_mixnet(self) -> bool {
-        !matches!(self, Wire::Clearnet)
+        !matches!(self, Wire::Nakednet)
     }
 
     fn route_to(self, destination: &crate::destination::Host) -> TransmitRoute {
         match self {
-            Wire::Clearnet => TransmitRoute::Clearnet {
+            Wire::Nakednet => TransmitRoute::Nakednet {
                 destination: destination.to_string(),
             },
             #[cfg(feature = "nym")]
@@ -347,12 +347,12 @@ async fn transmit_one_transaction(
         &context.history.health().lock().expect("health mutex"),
     )?;
     match wire {
-        Wire::Clearnet => {
+        Wire::Nakednet => {
             rotate_transmit(
                 wire,
                 &draw,
-                ClearnetTarget::lazy,
-                ClearnetTarget::failure,
+                NakednetTarget::lazy,
+                NakednetTarget::failure,
                 tx_bytes,
                 height,
                 txid,
@@ -385,8 +385,8 @@ async fn transmit_one_transaction(
             rotate_transmit(
                 wire,
                 &draw,
-                ClearnetTarget::lazy,
-                ClearnetTarget::failure,
+                NakednetTarget::lazy,
+                NakednetTarget::failure,
                 tx_bytes,
                 height,
                 txid,
@@ -632,7 +632,7 @@ impl LightClient {
     /// Pre-flights the transmission route without transmitting, so a route
     /// that would refuse is caught before any transaction is built and no
     /// freshly Calculated transaction is stranded. The same resolution
-    /// [`Self::transmit_transactions`] performs for real: clearnet demands
+    /// [`Self::transmit_transactions`] performs for real: nakednet demands
     /// the configured indexer, and an Indexerless session passes only with
     /// a ready mixnet (ruling 2026-07-29).
     fn preflight_transmit(&self) -> Result<(), LightClientError> {
@@ -917,8 +917,8 @@ impl LightClient {
         let transmit_dial = resolve_transmit_route(indexer.is_some(), self.send_route())?;
         // A test-attached slot pairs its mixnet route with arms that submit
         // over the mock indexer's channel; a live Ready session keeps the
-        // SOCKS5 escalation, and a clearnet-policy send over a test slot
-        // takes the clearnet arm as it would in production. Production
+        // SOCKS5 escalation, and a nakednet-policy send over a test slot
+        // takes the nakednet arm as it would in production. Production
         // builds carry no test slot state, so this distinction does not
         // exist there.
         #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
@@ -931,13 +931,13 @@ impl LightClient {
         );
         #[cfg(feature = "nym")]
         let wire = match transmit_dial.as_ref().map(|dial| dial.socks5()) {
-            None => Wire::Clearnet,
+            None => Wire::Nakednet,
             #[cfg(any(test, feature = "testutils"))]
             Some(shared_socks5) if mock_arms => Wire::MixnetOverMock { shared_socks5 },
             Some(shared_socks5) => Wire::Mixnet { shared_socks5 },
         };
         #[cfg(not(feature = "nym"))]
-        let wire = Wire::Clearnet;
+        let wire = Wire::Nakednet;
         if !wire.is_mixnet() && indexer.is_none() {
             return Err(LightClientError::Offline);
         }
@@ -1092,11 +1092,11 @@ mod transmit_error_seam {
             assert_eq!(dial.socks5(), socks5);
         }
         assert!(matches!(
-            resolve_transmit_route(true, Ok(MixnetRoute::Clearnet)),
+            resolve_transmit_route(true, Ok(MixnetRoute::Nakednet)),
             Ok(None)
         ));
         assert!(matches!(
-            resolve_transmit_route(false, Ok(MixnetRoute::Clearnet)),
+            resolve_transmit_route(false, Ok(MixnetRoute::Nakednet)),
             Err(LightClientError::Offline)
         ));
         assert!(matches!(
@@ -1125,13 +1125,13 @@ mod transmit_error_seam {
         use crate::destination::servers::Transport;
 
         let host = crate::destination::Host::of_host_str("node.example");
-        assert_eq!(Wire::Clearnet.transport(), Transport::Clearnet);
-        assert_eq!(Wire::Clearnet.reach(), Transport::Clearnet);
-        assert_eq!(Wire::Clearnet.attempt_route(), AttemptRoute::Clearnet);
-        assert!(!Wire::Clearnet.is_mixnet());
+        assert_eq!(Wire::Nakednet.transport(), Transport::Nakednet);
+        assert_eq!(Wire::Nakednet.reach(), Transport::Nakednet);
+        assert_eq!(Wire::Nakednet.attempt_route(), AttemptRoute::Nakednet);
+        assert!(!Wire::Nakednet.is_mixnet());
         assert_eq!(
-            Wire::Clearnet.route_to(&host),
-            TransmitRoute::Clearnet {
+            Wire::Nakednet.route_to(&host),
+            TransmitRoute::Nakednet {
                 destination: "node.example".to_string()
             }
         );
@@ -1145,7 +1145,7 @@ mod transmit_error_seam {
             assert!(mixnet.is_mixnet());
             let mock = Wire::MixnetOverMock { shared_socks5 };
             assert_eq!(mock.transport(), Transport::Mixnet);
-            assert_eq!(mock.reach(), Transport::Clearnet);
+            assert_eq!(mock.reach(), Transport::Nakednet);
             assert_eq!(mock.attempt_route(), AttemptRoute::Mixnet);
             for wire in [mixnet, mock] {
                 assert_eq!(
@@ -1177,7 +1177,7 @@ mod transmit_error_seam {
         record_send_attempt(
             &history,
             &crate::destination::Host::of_host_str("indexer.example"),
-            AttemptRoute::Clearnet,
+            AttemptRoute::Nakednet,
             std::time::Instant::now(),
             &Err(failure),
             None,
@@ -1201,7 +1201,7 @@ mod transmit_error_seam {
             Vec::new(),
         );
         let refusal = transmit_one_transaction(
-            Wire::Clearnet,
+            Wire::Nakednet,
             &servers,
             None,
             &[],
@@ -1218,7 +1218,7 @@ mod transmit_error_seam {
         assert!(matches!(
             refusal,
             TransmitError::Draw(crate::destination::servers::NoEligibleDestinations::Empty(
-                crate::destination::servers::Transport::Clearnet
+                crate::destination::servers::Transport::Nakednet
             ))
         ));
     }

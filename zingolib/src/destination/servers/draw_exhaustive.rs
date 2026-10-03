@@ -119,7 +119,7 @@ fn shapes() -> Vec<Shape> {
 
 fn cases() -> Vec<Case> {
     let mut cases = Vec::new();
-    for transport in [Transport::Clearnet, Transport::Mixnet] {
+    for transport in [Transport::Nakednet, Transport::Mixnet] {
         for remote_trust in [Trust::Trusted, Trust::Untrusted] {
             for registry in registry_variants(remote_trust) {
                 let mut syncs: Vec<Option<(Shape, Endpoint)>> = vec![None];
@@ -205,7 +205,7 @@ fn build(case: &Case) -> DestinationServerSet {
 
 fn reachable(endpoint: &Endpoint, transport: Transport) -> bool {
     match transport {
-        Transport::Clearnet => true,
+        Transport::Nakednet => true,
         Transport::Mixnet => {
             endpoint.location == Location::Remote
                 && endpoint.uri.scheme_str() == Some("https")
@@ -341,11 +341,11 @@ fn assert_safe(case: &Case, set: &DestinationServerSet) {
             Role::Sync,
             "a sync-only indexer received a broadcast: {case:?}"
         );
-        if case.transport == Transport::Clearnet {
+        if case.transport == Transport::Nakednet {
             assert_ne!(
                 endpoint.source,
                 Source::Registry,
-                "a clearnet draw named a registry entry: {case:?}"
+                "a nakednet draw named a registry entry: {case:?}"
             );
         }
         if case.transport == Transport::Mixnet {
@@ -409,7 +409,7 @@ fn the_enumeration_reaches_every_outcome() {
     let mut preferred = false;
     let mut untrusted_rest = false;
     let mut excluded_refusal = false;
-    let mut empty_clearnet = false;
+    let mut empty_nakednet = false;
     let mut empty_mixnet = false;
     for case in cases() {
         match oracle(&case) {
@@ -424,8 +424,8 @@ fn the_enumeration_reaches_every_outcome() {
             Expected::Refused(NoEligibleDestinations::AllBelongToSyncOperator(_)) => {
                 excluded_refusal = true;
             }
-            Expected::Refused(NoEligibleDestinations::Empty(Transport::Clearnet)) => {
-                empty_clearnet = true;
+            Expected::Refused(NoEligibleDestinations::Empty(Transport::Nakednet)) => {
+                empty_nakednet = true;
             }
             Expected::Refused(NoEligibleDestinations::Empty(Transport::Mixnet)) => {
                 empty_mixnet = true;
@@ -433,7 +433,7 @@ fn the_enumeration_reaches_every_outcome() {
         }
     }
     assert!(trusted && preferred && untrusted_rest);
-    assert!(excluded_refusal && empty_clearnet && empty_mixnet);
+    assert!(excluded_refusal && empty_nakednet && empty_mixnet);
 }
 
 #[test]
@@ -448,7 +448,7 @@ fn configured_broadcast_indexers_lead_in_the_order_given() {
         .with_indexer(broadcast(&same_operator))
         .with_indexer(broadcast(&second));
     let draw = set
-        .draw(Transport::Clearnet, Some(&sync), &Health::default())
+        .draw(Transport::Nakednet, Some(&sync), &Health::default())
         .expect("three candidates");
     assert_eq!(
         draw.destinations(),
@@ -458,7 +458,7 @@ fn configured_broadcast_indexers_lead_in_the_order_given() {
 
     set.add_indexer(broadcast(&first).trust(Trust::Untrusted));
     let redrawn = set
-        .draw(Transport::Clearnet, Some(&sync), &Health::default())
+        .draw(Transport::Nakednet, Some(&sync), &Health::default())
         .expect("three candidates");
     assert_eq!(
         redrawn.destinations()[0],
@@ -474,7 +474,7 @@ fn an_untrusted_endpoint_never_hides_a_trusted_one_on_its_operator() {
     let set = DestinationServerSet::from_uris(Trust::Untrusted, [])
         .with_indexer(IndexerConfig::new(sync.clone()).trust(Trust::Trusted))
         .with_indexer(IndexerConfig::new(relay).role(Role::Broadcast));
-    for transport in [Transport::Clearnet, Transport::Mixnet] {
+    for transport in [Transport::Nakednet, Transport::Mixnet] {
         let draw = set
             .draw(transport, Some(&sync), &Health::default())
             .expect("the trusted sync indexer");
@@ -548,7 +548,7 @@ fn relaxed_reach_keeps_the_mixnet_rule() {
     let draw = set
         .draw_reaching(
             Transport::Mixnet,
-            Transport::Clearnet,
+            Transport::Nakednet,
             Some(&sync),
             &Health::default(),
         )

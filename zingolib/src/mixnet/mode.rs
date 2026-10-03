@@ -101,7 +101,7 @@ impl std::str::FromStr for Indicator {
 /// handle on disable would erase the very bit that separates
 /// [`Indicator::SwitchedOff`] (a deliberate disable) from
 /// [`Indicator::Unattached`] (absence of a transport) — the flattening the
-/// 2026-07-28 amendment of ADR 0011 retires. Neither consents to clearnet:
+/// 2026-07-28 amendment of ADR 0011 retires. Neither consents to nakednet:
 /// since the 2026-09-11 amendment that is the transmit policy's answer,
 /// held on the client beside this slot.
 // One slot lives per client and never in a collection, so the size skew

@@ -141,10 +141,13 @@ x509-parser.workspace = true
 # no zcash dependency, so its standalone graph carries no such pin.
 [workspace]
 resolver = "2"
-members = ["webpki-verifier-shim"]
-# nym-proxy-ffi stays a standalone workspace with its own lockfile until
-# zingo-mobile repoints. See docs/adr/zingolib/0054.
-exclude = ["nym-proxy-ffi"]
+members = ["webpki-verifier-shim", "nym-proxy-ffi"]
+
+# The Binding Layer builder builds both of its crates with one profile
+# name. The proxy crate always shipped under the plain release profile, so
+# this profile inherits release and overrides nothing.
+[profile.mobile]
+inherits = "release"
 
 # Mirrors the parent workspace's entries for the dependencies netutils
 # inherits, so `workspace = true` resolves against this workspace. Keep the

@@ -3,11 +3,28 @@
 //! The scheduled flow a mobile client drives:
 //! [`LightClient::plan_ironwood_migration`] →
 //! [`LightClient::start_ironwood_migration`] (consent) →
-//! [`LightClient::continue_note_splitting`] after each sync until the parts
-//! are scheduled → [`LightClient::reschedule_parts`] when the user picks the
+//! [`LightClient::continue_note_splitting`] each time the wallet is synced to
+//! the chain tip, until the parts are scheduled →
+//! [`LightClient::reschedule_parts`] when the user picks the
 //! Phase 2 cadence → [`LightClient::reconcile_migration`] on every launch →
 //! [`LightClient::transmit_due_parts`] from background wakes →
 //! [`LightClient::catch_up_migration`] when windows were missed.
+//!
+//! Several of these calls are made once the wallet is synced to the chain
+//! tip. A Sync Session with `shutdown_on_completion` set returns at that
+//! point, so the call follows [`LightClient::await_sync`] or a ready
+//! [`LightClient::poll_sync`]. A continuous Sync Session keeps running and
+//! scans each newly mined block, so the call follows a sync status for which
+//! [`pepper_sync::sync::SyncStatus::is_complete`] returns true, read from
+//! [`LightClient::subscribe_sync_status`] or
+//! [`LightClient::latest_sync_status`]. A status is published after every
+//! scan, so each newly mined block is followed by one.
+//!
+//! [`LightClient::sync_to_tip_and_await`] reaches the same point in one call
+//! whatever `shutdown_on_completion` is set to: it stops a running Sync
+//! Session, syncs to the chain tip and returns. It leaves sync stopped, so
+//! it suits a caller that makes one migration call and relaunches sync
+//! itself, as the CLI's migration commands do.
 //!
 //! [`LightClient::migrate_to_ironwood`] composes the same pieces into an
 //! interactive one-call for CLI use, testing, and the user who prefers the
@@ -708,7 +725,8 @@ impl LightClient {
     /// shows every note part-ready, binds the parts to their notes and
     /// schedules them.
     ///
-    /// Call it after a sync whenever [`Self::reconcile_migration`] reports
+    /// Call it once the wallet is synced to the chain tip, as the module docs
+    /// describe, whenever [`Self::reconcile_migration`] reports
     /// [`RecommendedAction::ContinueNoteSplitting`] or
     /// [`RecommendedAction::RetrySplit`], and keep the loop going until it
     /// returns [`SplitStep::SplittingComplete`]. Failed or expired split
@@ -943,11 +961,11 @@ impl LightClient {
             // The guard travels into the client, which dials on every
             // submission long after this function returns.
             crate::mixnet::MixnetRoute::Mixnet(conduit) => MigrationWire::Mixnet(conduit.dial()),
-            crate::mixnet::MixnetRoute::Clearnet => MigrationWire::Clearnet,
+            crate::mixnet::MixnetRoute::Nakednet => MigrationWire::Nakednet,
         };
         #[cfg(not(feature = "nym"))]
-        let wire = MigrationWire::Clearnet;
-        if matches!(wire, MigrationWire::Clearnet)
+        let wire = MigrationWire::Nakednet;
+        if matches!(wire, MigrationWire::Nakednet)
             && sync_indexer.is_none()
             && self.migration_transmission_uri.is_none()
         {
@@ -960,7 +978,7 @@ impl LightClient {
             wire.transport(),
             &self.indexer_history.health().lock().expect("health mutex"),
         )?;
-        let reaches_untrusted_sync = matches!(wire, MigrationWire::Clearnet)
+        let reaches_untrusted_sync = matches!(wire, MigrationWire::Nakednet)
             && sync_indexer.as_ref().is_some_and(|sync| {
                 candidates.contains(sync)
                     && self.destination_servers.trust_of(sync)
@@ -1483,17 +1501,26 @@ impl LightClient {
     }
 
     /// Captures any still-missing migration boundary witnesses from the
-    /// wallet's current tree state. [`Self::await_sync`] does this
-    /// automatically after every successful sync. A consumer driving sync
-    /// through [`Self::poll_sync`] calls it on completion instead, while
-    /// the boundary checkpoint is still retained.
+    /// wallet's current tree state, while the boundary checkpoint is still
+    /// retained. [`Self::await_sync`] does this when a Sync Session returns
+    /// successfully. A consumer collecting the session's result through
+    /// [`Self::poll_sync`] calls it then instead.
+    ///
+    /// A continuous Sync Session returns only once it is stopped, so a
+    /// consumer running one calls this each time
+    /// [`pepper_sync::sync::SyncStatus::is_complete`] returns true for a new
+    /// sync status. A status is published after every scan, so each newly
+    /// mined block is followed by one.
     pub async fn capture_migration_witnesses(&mut self) -> Result<(), LightClientError> {
         Ok(self.wallet().write().await.refresh_part_witnesses()?)
     }
 
     /// Transmits any parts whose bucket window and random target height are
-    /// both reached, without synchronizing. Call this after each sync to drive
-    /// the scheduled migration automatically.
+    /// both reached, without synchronizing. Call this each time the wallet is
+    /// synced to the chain tip to drive the scheduled migration
+    /// automatically: after a Sync Session returns, or under continuous sync
+    /// each time [`pepper_sync::sync::SyncStatus::is_complete`] returns true
+    /// for a new sync status.
     ///
     /// No-op when no migration is active or no parts are due.
     pub async fn auto_transmit_if_due(
@@ -2377,9 +2404,9 @@ fn record_part_route(
             crate::destination::Host::of_host_str(destination),
             AttemptRoute::Mixnet,
         ),
-        TransmissionRoute::Clearnet { endpoint } => (
+        TransmissionRoute::Nakednet { endpoint } => (
             crate::destination::Host::of_host_str(endpoint),
-            AttemptRoute::Clearnet,
+            AttemptRoute::Nakednet,
         ),
     };
     history.record(&IndexerAttempt {
@@ -2427,7 +2454,7 @@ mod tests {
         let history = IndexerHistoryHandle::default();
         super::record_part_route(
             &history,
-            &TransmissionRoute::Clearnet {
+            &TransmissionRoute::Nakednet {
                 endpoint: "indexer.example".to_string(),
             },
             std::time::Instant::now(),
@@ -4947,7 +4974,7 @@ mod tests {
 
         /// HYPOTHESIS: the resolved transmission client is the mixnet
         /// variant whenever Mixnet Mode is ready, so no migration part can
-        /// reach a clearnet wire without the deliberate opt-out. Falsified
+        /// reach a nakednet wire without the deliberate opt-out. Falsified
         /// if a ready session resolves anything else.
         #[cfg(feature = "nym")]
         #[tokio::test]
@@ -4963,25 +4990,25 @@ mod tests {
         }
 
         /// HYPOTHESIS: while the mixnet is unavailable and the user has not
-        /// consented to clearnet, the seam refuses instead of resolving any
+        /// consented to nakednet, the seam refuses instead of resolving any
         /// wire, so no part is emitted. Falsified if an unattached session
         /// resolves a client at all.
         #[cfg(feature = "nym")]
         #[tokio::test]
-        async fn an_unattached_session_refuses_rather_than_resolving_clearnet() {
+        async fn an_unattached_session_refuses_rather_than_resolving_nakednet() {
             let (wallet, _) = wallet_with_migration_note(400);
             let client = LightClient::new_for_test(wallet).await;
             assert!(
                 client.migration_transmission_client().is_err(),
-                "absence of a mixnet is never consent to clearnet"
+                "absence of a mixnet is never consent to nakednet"
             );
         }
 
         /// HYPOTHESIS: every part the lifecycle transmits carries a mixnet
         /// route receipt, and the count of receipts equals the count of
         /// parts the schedule sent — no part reaches a wire outside the
-        /// seam, and none travels clearnet. Falsified if any receipt names
-        /// a clearnet route, or if the wire saw a different number of
+        /// seam, and none travels nakednet. Falsified if any receipt names
+        /// a nakednet route, or if the wire saw a different number of
         /// submissions than the schedule reports sent.
         #[tokio::test]
         async fn every_transmitted_part_carries_a_mixnet_receipt() {
@@ -5019,23 +5046,23 @@ mod tests {
             );
         }
 
-        /// HYPOTHESIS: the validation is not vacuous — a clearnet receipt is
-        /// visibly clearnet, so a future path that leaks would be caught
-        /// rather than silently passing. Falsified if the clearnet route
+        /// HYPOTHESIS: the validation is not vacuous — a nakednet receipt is
+        /// visibly nakednet, so a future path that leaks would be caught
+        /// rather than silently passing. Falsified if the nakednet route
         /// reports itself as mixnet.
         #[test]
-        fn the_detector_can_see_a_clearnet_leak() {
+        fn the_detector_can_see_a_nakednet_leak() {
             let mixnet = TransmissionRoute::Mixnet {
                 destination: "destination.example".to_string(),
                 via_socks5: "127.0.0.1:1".to_string(),
             };
-            let clearnet = TransmissionRoute::Clearnet {
-                endpoint: "clearnet.example".to_string(),
+            let nakednet = TransmissionRoute::Nakednet {
+                endpoint: "nakednet.example".to_string(),
             };
             assert!(mixnet.is_mixnet());
             assert!(
-                !clearnet.is_mixnet(),
-                "a clearnet route must never read as mixnet"
+                !nakednet.is_mixnet(),
+                "a nakednet route must never read as mixnet"
             );
         }
     }

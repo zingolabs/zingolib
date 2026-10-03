@@ -390,6 +390,16 @@ enum MempoolMessage {
     NewBlockMined,
 }
 
+/// Sets `shutdown_mempool` when dropped, so the mempool monitor stops on every exit from [`sync`]: a return, an error
+/// or a cancelled future.
+struct MempoolShutdownGuard(Arc<AtomicBool>);
+
+impl Drop for MempoolShutdownGuard {
+    fn drop(&mut self) {
+        self.0.store(true, atomic::Ordering::Release);
+    }
+}
+
 /// Syncs a wallet to the latest state of the blockchain.
 ///
 /// `sync_mode` is intended to be stored in a struct that owns the wallet(s) (i.e. lightclient) and has a non-atomic
@@ -448,6 +458,7 @@ where
     // create channel for receiving mempool transactions and launch mempool monitor
     let (mempool_transaction_sender, mut mempool_transaction_receiver) = mpsc::channel(100);
     let shutdown_mempool = Arc::new(AtomicBool::new(false));
+    let _mempool_shutdown_guard = MempoolShutdownGuard(shutdown_mempool.clone());
     let shutdown_mempool_clone = shutdown_mempool.clone();
     let unprocessed_mempool_transactions_count = Arc::new(AtomicU32::new(0));
     let unprocessed_mempool_transactions_count_clone =
@@ -704,6 +715,7 @@ where
                     let ProcessedScanResults {
                         new_transparent_inuse_addresses,
                         new_transparent_gap_addresses,
+                        reorg_detection_start_height,
                     } = process_scan_results(
                         consensus_parameters,
                         &mut *wallet_guard,
@@ -728,6 +740,17 @@ where
                         &new_transparent_inuse_addresses,
                         new_transparent_gap_addresses,
                     );
+                    if let Some(reorg_detection_start_height) = reorg_detection_start_height {
+                        // the scanner only scans ranges with `Verify` priority while verifying, and a new continuous
+                        // sync loop waits for it to finish.
+                        scanner.state.reverify();
+                        initial_reorg_detection_start_height_opt = Some(
+                            initial_reorg_detection_start_height_opt
+                                .map_or(reorg_detection_start_height, |height| {
+                                    height.min(reorg_detection_start_height)
+                                }),
+                        );
+                    }
                     expire_transactions(&mut *wallet_guard)?;
                     publish_sync_status(&*wallet_guard, &progress).await?;
                     wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
@@ -1448,12 +1471,17 @@ struct ProcessedScanResults {
     new_transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
     /// Transparent gap addresses derived to replace the gap addresses found in use.
     new_transparent_gap_addresses: HashMap<String, TransparentAddressId>,
+    /// The height of the first block of a scan range that failed the continuity check with the block below it. The
+    /// first blocks of the scan range have been set to `Verify`, so the scanner must return to verifying, and a
+    /// re-org they detect is measured from this height.
+    reorg_detection_start_height: Option<BlockHeight>,
 }
 
 /// Scan post-processing.
 ///
 /// Returns any new transparent addresses. A recovered error i.e. re-org truncates the wallet and lowers the
 /// transparent scan floor to the truncation height.
+/// Stale scan results are discarded, see [`state::reset_stale_scan_range`].
 #[allow(clippy::too_many_arguments)]
 async fn process_scan_results<W>(
     consensus_parameters: &(impl consensus::Parameters + Sync),
@@ -1475,6 +1503,24 @@ where
         + SyncShardTrees
         + Send,
 {
+    // a re-org may have truncated or re-prioritised the scan range while it was being scanned. the scan results,
+    // or the error, may then come from blocks that have left the chain so they are discarded and the scan range is
+    // scanned again.
+    if state::reset_stale_scan_range(
+        wallet
+            .get_sync_state_mut()
+            .map_err(SyncError::WalletError)?,
+        &scan_range,
+    ) {
+        tracing::info!("Stale scan results of {scan_range} discarded.");
+
+        return Ok(ProcessedScanResults {
+            new_transparent_inuse_addresses: HashMap::new(),
+            new_transparent_gap_addresses: HashMap::new(),
+            reorg_detection_start_height: None,
+        });
+    }
+
     match scan_results {
         Ok(results) => {
             let ScanResults {
@@ -1576,6 +1622,7 @@ where
                     return Ok(ProcessedScanResults {
                         new_transparent_inuse_addresses,
                         new_transparent_gap_addresses,
+                        reorg_detection_start_height: None,
                     });
                 }
 
@@ -1718,6 +1765,7 @@ where
             Ok(ProcessedScanResults {
                 new_transparent_inuse_addresses,
                 new_transparent_gap_addresses,
+                reorg_detection_start_height: None,
             })
         }
         Err(ScanError::ContinuityError(ContinuityError::HashDiscontinuity { height, .. })) => {
@@ -1733,7 +1781,8 @@ where
                     .last_known_chain_height()
                     .expect("scan ranges should be non-empty in this scope");
 
-                // reset scan range from `Scanning` to `Verify`
+                // reset scan range from `Scanning` to `Verify`.
+                // the loader never splits a scan task with `Verify` priority so the scan range is the wallet's.
                 state::set_scan_priority(
                     sync_state,
                     scan_range.block_range(),
@@ -1762,14 +1811,15 @@ where
 
                 let reorg_truncate_height = current_reorg_detection_start_height - 1;
                 truncate_wallet_data(wallet, reorg_truncate_height)?;
+                let sync_state = wallet
+                    .get_sync_state_mut()
+                    .map_err(SyncError::WalletError)?;
+                // truncation removes the wallet data of every block above the truncation height. the verification
+                // range is scanned again, and so is any scanned range above it.
+                state::reopen_scan_ranges_inner(sync_state, current_reorg_detection_start_height);
                 // transparent address discovery is not performed again during this sync session so the compact block
                 // transparent data of the re-orged blocks must be scanned.
-                state::lower_transparent_scan_floor(
-                    wallet
-                        .get_sync_state_mut()
-                        .map_err(SyncError::WalletError)?,
-                    reorg_truncate_height,
-                );
+                state::lower_transparent_scan_floor(sync_state, reorg_truncate_height);
 
                 state::set_initial_state(
                     consensus_parameters,
@@ -1782,6 +1832,25 @@ where
                 Ok(ProcessedScanResults {
                     new_transparent_inuse_addresses: HashMap::new(),
                     new_transparent_gap_addresses: HashMap::new(),
+                    reorg_detection_start_height: None,
+                })
+            } else if height == scan_range.block_range().start {
+                // the first block of the scan range does not follow the block below it, which is held by the wallet
+                // or was kept by the loader from an earlier scan. a re-org has replaced that block since.
+                // the scan range is scanned again with its first blocks set to `Verify`. if the wallet holds the
+                // block below, the continuity check fails again and is then handled as a re-org.
+                tracing::info!("Verifying {scan_range} again.");
+                let sync_state = wallet
+                    .get_sync_state_mut()
+                    .map_err(SyncError::WalletError)?;
+                state::reset_in_flight_scan_range(sync_state, &scan_range);
+                state::set_verify_scan_range(sync_state, height, state::VerifyEnd::VerifyLowest);
+                state::merge_scan_ranges(sync_state, ScanPriority::Verify);
+
+                Ok(ProcessedScanResults {
+                    new_transparent_inuse_addresses: HashMap::new(),
+                    new_transparent_gap_addresses: HashMap::new(),
+                    reorg_detection_start_height: Some(height),
                 })
             } else {
                 Err(scan_results
@@ -2649,6 +2718,7 @@ where
 ///
 /// If there is some raw transaction, send to be scanned.
 /// If the mempool stream message is `None` (a block was mined) or the request failed, setup a new mempool stream.
+/// Returns once `shutdown_mempool` is set.
 async fn mempool_monitor<C>(
     mut client: C,
     mempool_transaction_sender: mpsc::Sender<MempoolMessage>,
@@ -2665,6 +2735,11 @@ where
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     'main: loop {
+        // checked before every stream request so a refused request is only retried while the sync session is running.
+        if shutdown_mempool.load(atomic::Ordering::Acquire) {
+            break 'main;
+        }
+
         let response =
             client::get_mempool_transaction_stream(&mut client, shutdown_mempool.clone()).await;
 
@@ -4474,6 +4549,389 @@ mod test {
                 transaction_status(&wallet, txid),
                 ConfirmationStatus::Confirmed(_)
             ));
+        }
+    }
+
+    /// Scan results are stale when a re-org truncated or re-prioritised their scan range while it was being scanned.
+    /// They are discarded before they are processed, whether the scan succeeded or failed.
+    mod stale_scan_results {
+        use std::collections::{BTreeMap, HashMap};
+
+        use tokio::sync::mpsc;
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::{consensus::BlockHeight, local_consensus::LocalNetwork};
+        use zcash_transparent::keys::NonHardenedChildIndex;
+
+        use crate::{
+            config::PerformanceLevel,
+            error::{ContinuityError, ScanError},
+            keys::transparent::{TransparentAddressId, TransparentScope},
+            mocks::{MockWallet, MockWalletBuilder},
+            scan::ScanResults,
+            sync::{ProcessedScanResults, ScanPriority, ScanRange, process_scan_results},
+            wallet::{NullifierMap, SyncState, traits::SyncWallet as _},
+        };
+
+        const NETWORK: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+            nu6_2: Some(BlockHeight::from_u32(1)),
+            nu6_3: Some(BlockHeight::from_u32(1)),
+        };
+        const BIRTHDAY: u32 = 1;
+        /// The chain height the server reported when the scan range was selected.
+        const CHAIN_HEIGHT: u32 = 40;
+
+        fn wallet_with_scan_ranges(scan_ranges: Vec<ScanRange>) -> MockWallet {
+            MockWalletBuilder::new()
+                .sync_state(SyncState {
+                    scan_ranges,
+                    ..Default::default()
+                })
+                .create_mock_wallet()
+        }
+
+        async fn process(
+            wallet: &mut MockWallet,
+            scan_range: ScanRange,
+            scan_results: Result<ScanResults, ScanError>,
+        ) -> ProcessedScanResults {
+            let (fetch_request_sender, _) = mpsc::unbounded_channel();
+
+            process_scan_results(
+                &NETWORK,
+                wallet,
+                fetch_request_sender,
+                &HashMap::new(),
+                scan_range,
+                scan_results,
+                None,
+                PerformanceLevel::High,
+                &mut false,
+            )
+            .await
+            .expect("stale scan results are discarded")
+        }
+
+        /// The chain height dropped by one block while the wallet's whole range was being scanned. The scan results
+        /// hold a block that has left the chain, so they are discarded with the transparent gap addresses derived
+        /// from them, and the range the wallet still holds is set back to the priority it was selected with.
+        #[tokio::test]
+        async fn truncated_scan_range_is_reset_and_its_scan_results_discarded() {
+            let mut wallet = wallet_with_scan_ranges(vec![ScanRange::from_parts(
+                BlockHeight::from_u32(BIRTHDAY)..BlockHeight::from_u32(CHAIN_HEIGHT),
+                ScanPriority::Scanning,
+            )]);
+            let gap_address = (
+                "gap address".to_string(),
+                TransparentAddressId::new(
+                    zip32::AccountId::ZERO,
+                    TransparentScope::External,
+                    NonHardenedChildIndex::ZERO,
+                ),
+            );
+
+            let processed = process(
+                &mut wallet,
+                ScanRange::from_parts(
+                    BlockHeight::from_u32(BIRTHDAY)..BlockHeight::from_u32(CHAIN_HEIGHT + 1),
+                    ScanPriority::ChainTip,
+                ),
+                Ok(ScanResults {
+                    nullifiers: NullifierMap::new(),
+                    outpoints: BTreeMap::new(),
+                    scanned_blocks: BTreeMap::new(),
+                    wallet_transactions: HashMap::new(),
+                    sapling_located_trees: Vec::new(),
+                    orchard_located_trees: Vec::new(),
+                    ironwood_located_trees: Vec::new(),
+                    new_transparent_inuse_addresses: HashMap::from([gap_address.clone()]),
+                    new_transparent_gap_addresses: HashMap::from([gap_address]),
+                }),
+            )
+            .await;
+
+            assert!(processed.new_transparent_inuse_addresses.is_empty());
+            assert!(processed.new_transparent_gap_addresses.is_empty());
+            assert_eq!(
+                wallet.get_sync_state().unwrap().scan_ranges(),
+                [ScanRange::from_parts(
+                    BlockHeight::from_u32(BIRTHDAY)..BlockHeight::from_u32(CHAIN_HEIGHT),
+                    ScanPriority::ChainTip,
+                )]
+            );
+        }
+
+        /// The chain height dropped below a newly mined block while it was being verified, so the wallet holds none
+        /// of its scan range. Its scan failed the continuity check, which is handled as a re-org of the scan range.
+        /// The error is discarded as the scan range it would reset has left the wallet.
+        #[tokio::test]
+        async fn error_of_a_removed_scan_range_is_discarded() {
+            let scan_ranges = vec![ScanRange::from_parts(
+                BlockHeight::from_u32(BIRTHDAY)..BlockHeight::from_u32(CHAIN_HEIGHT),
+                ScanPriority::Scanned,
+            )];
+            let mut wallet = wallet_with_scan_ranges(scan_ranges.clone());
+
+            process(
+                &mut wallet,
+                ScanRange::from_parts(
+                    BlockHeight::from_u32(CHAIN_HEIGHT)..BlockHeight::from_u32(CHAIN_HEIGHT + 1),
+                    ScanPriority::Verify,
+                ),
+                Err(ScanError::ContinuityError(
+                    ContinuityError::HashDiscontinuity {
+                        height: BlockHeight::from_u32(CHAIN_HEIGHT),
+                        prev_hash: BlockHash([1; 32]),
+                        previous_block_hash: BlockHash([2; 32]),
+                    },
+                )),
+            )
+            .await;
+
+            assert_eq!(wallet.get_sync_state().unwrap().scan_ranges(), scan_ranges);
+        }
+    }
+
+    /// A scan fails the continuity check when the first block of its scan range does not follow the block below it.
+    mod hash_discontinuity {
+        use std::collections::{BTreeMap, HashMap};
+
+        use tokio::sync::mpsc;
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::{consensus::BlockHeight, local_consensus::LocalNetwork};
+        use zingo_netutils::lightwallet_protocol::TreeState;
+
+        use crate::{
+            client::FetchRequest,
+            config::PerformanceLevel,
+            error::{ContinuityError, ScanError, SyncError},
+            mocks::{MockWallet, MockWalletBuilder, MockWalletError},
+            sync::{ProcessedScanResults, ScanPriority, ScanRange, process_scan_results},
+            wallet::{SyncState, TreeBounds, WalletBlock, traits::SyncWallet as _},
+        };
+
+        const NETWORK: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+            nu6_2: Some(BlockHeight::from_u32(1)),
+            nu6_3: Some(BlockHeight::from_u32(1)),
+        };
+        const BIRTHDAY: u32 = 1;
+        /// The first block of the scan range that fails the continuity check.
+        const SCAN_RANGE_START: u32 = 21;
+        const SCAN_RANGE_END: u32 = 41;
+        const VERIFY_BLOCK_RANGE_SIZE: u32 = crate::sync::VERIFY_BLOCK_RANGE_SIZE;
+
+        fn scan_range(start: u32, end: u32, priority: ScanPriority) -> ScanRange {
+            ScanRange::from_parts(
+                BlockHeight::from_u32(start)..BlockHeight::from_u32(end),
+                priority,
+            )
+        }
+
+        fn block(height: u32) -> (BlockHeight, WalletBlock) {
+            (
+                BlockHeight::from_u32(height),
+                WalletBlock {
+                    block_height: BlockHeight::from_u32(height),
+                    block_hash: BlockHash([0; 32]),
+                    prev_hash: BlockHash([0; 32]),
+                    time: 0,
+                    txids: Vec::new(),
+                    tree_bounds: TreeBounds {
+                        sapling_initial_tree_size: 0,
+                        sapling_final_tree_size: 0,
+                        orchard_initial_tree_size: 0,
+                        orchard_final_tree_size: 0,
+                        ironwood_initial_tree_size: 0,
+                        ironwood_final_tree_size: 0,
+                    },
+                },
+            )
+        }
+
+        /// Answers tree state requests with empty note commitment trees.
+        fn spawn_fetcher() -> mpsc::UnboundedSender<FetchRequest> {
+            const EMPTY_TREE: &str = "000000";
+            let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                    match fetch_request {
+                        FetchRequest::TreeState(reply_sender, block_height) => {
+                            let _ignore_error = reply_sender.send(Ok(TreeState {
+                                height: u64::from(block_height),
+                                hash: "00".repeat(32),
+                                sapling_tree: EMPTY_TREE.to_string(),
+                                orchard_tree: EMPTY_TREE.to_string(),
+                                ironwood_tree: EMPTY_TREE.to_string(),
+                                ..Default::default()
+                            }));
+                        }
+                        _ => panic!("unexpected fetch request"),
+                    }
+                }
+            });
+
+            fetch_request_sender
+        }
+
+        fn wallet(scan_ranges: Vec<ScanRange>, blocks: Vec<u32>) -> MockWallet {
+            MockWalletBuilder::new()
+                .birthday(BlockHeight::from_u32(BIRTHDAY))
+                .sync_state(SyncState {
+                    scan_ranges,
+                    ..Default::default()
+                })
+                .wallet_blocks(blocks.into_iter().map(block).collect::<BTreeMap<_, _>>())
+                .create_mock_wallet()
+        }
+
+        /// Processes the failed scan of `scan_range`, with the continuity check failing at `height`.
+        async fn process_hash_discontinuity(
+            wallet: &mut MockWallet,
+            scan_range: ScanRange,
+            height: u32,
+            initial_reorg_detection_start_height: Option<BlockHeight>,
+        ) -> Result<ProcessedScanResults, SyncError<MockWalletError>> {
+            process_scan_results(
+                &NETWORK,
+                wallet,
+                spawn_fetcher(),
+                &HashMap::new(),
+                scan_range,
+                Err(ScanError::ContinuityError(
+                    ContinuityError::HashDiscontinuity {
+                        height: BlockHeight::from_u32(height),
+                        prev_hash: BlockHash([1; 32]),
+                        previous_block_hash: BlockHash([2; 32]),
+                    },
+                )),
+                initial_reorg_detection_start_height,
+                PerformanceLevel::High,
+                &mut false,
+            )
+            .await
+        }
+
+        /// A scan range selected with a priority other than `Verify` is set back to that priority with its first
+        /// blocks set to `Verify`, and the height to detect a re-org from is returned for the scanner to verify them.
+        #[tokio::test]
+        async fn first_blocks_of_a_scan_range_are_verified_again() {
+            let mut wallet = wallet(
+                vec![
+                    scan_range(BIRTHDAY, SCAN_RANGE_START, ScanPriority::Scanned),
+                    scan_range(SCAN_RANGE_START, SCAN_RANGE_END, ScanPriority::Scanning),
+                ],
+                Vec::new(),
+            );
+
+            let processed = process_hash_discontinuity(
+                &mut wallet,
+                scan_range(SCAN_RANGE_START, SCAN_RANGE_END, ScanPriority::ChainTip),
+                SCAN_RANGE_START,
+                None,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(
+                processed.reorg_detection_start_height,
+                Some(BlockHeight::from_u32(SCAN_RANGE_START))
+            );
+            assert_eq!(
+                wallet.get_sync_state().unwrap().scan_ranges(),
+                [
+                    scan_range(BIRTHDAY, SCAN_RANGE_START, ScanPriority::Scanned),
+                    scan_range(
+                        SCAN_RANGE_START,
+                        SCAN_RANGE_START + VERIFY_BLOCK_RANGE_SIZE,
+                        ScanPriority::Verify
+                    ),
+                    scan_range(
+                        SCAN_RANGE_START + VERIFY_BLOCK_RANGE_SIZE,
+                        SCAN_RANGE_END,
+                        ScanPriority::ChainTip
+                    ),
+                ]
+            );
+        }
+
+        /// A hash discontinuity above the first block of the scan range is between blocks the server served together,
+        /// or with a scanned block above the scan range. It ends the sync session.
+        #[tokio::test]
+        async fn hash_discontinuity_above_the_first_block_is_an_error() {
+            let scan_ranges = vec![
+                scan_range(BIRTHDAY, SCAN_RANGE_START, ScanPriority::Scanned),
+                scan_range(SCAN_RANGE_START, SCAN_RANGE_END, ScanPriority::Scanning),
+            ];
+            let mut wallet = wallet(scan_ranges.clone(), Vec::new());
+
+            let result = process_hash_discontinuity(
+                &mut wallet,
+                scan_range(SCAN_RANGE_START, SCAN_RANGE_END, ScanPriority::ChainTip),
+                SCAN_RANGE_START + 1,
+                None,
+            )
+            .await;
+
+            assert!(matches!(
+                result,
+                Err(SyncError::ScanError(ScanError::ContinuityError(
+                    ContinuityError::HashDiscontinuity { .. }
+                )))
+            ));
+            assert_eq!(wallet.get_sync_state().unwrap().scan_ranges(), scan_ranges);
+        }
+
+        /// A re-org detected by a `Verify` scan range truncates the wallet to below the extended verification range,
+        /// which removes the wallet data of every block above it. A scanned range above the verification range is
+        /// reopened to be scanned again.
+        #[tokio::test]
+        async fn reorg_reopens_scanned_ranges_above_the_verification_range() {
+            const VERIFY_END: u32 = SCAN_RANGE_START + VERIFY_BLOCK_RANGE_SIZE;
+            const TRUNCATE_HEIGHT: u32 = SCAN_RANGE_START - VERIFY_BLOCK_RANGE_SIZE - 1;
+
+            let mut wallet = wallet(
+                vec![
+                    scan_range(BIRTHDAY, SCAN_RANGE_START, ScanPriority::Scanned),
+                    scan_range(SCAN_RANGE_START, VERIFY_END, ScanPriority::Scanning),
+                    scan_range(VERIFY_END, SCAN_RANGE_END, ScanPriority::Scanned),
+                ],
+                // the bounds of the range that is still scanned after truncation
+                vec![BIRTHDAY, TRUNCATE_HEIGHT],
+            );
+
+            let processed = process_hash_discontinuity(
+                &mut wallet,
+                scan_range(SCAN_RANGE_START, VERIFY_END, ScanPriority::Verify),
+                SCAN_RANGE_START,
+                Some(BlockHeight::from_u32(SCAN_RANGE_START)),
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(processed.reorg_detection_start_height, None);
+            assert_eq!(
+                wallet.get_sync_state().unwrap().scan_ranges(),
+                [
+                    scan_range(BIRTHDAY, TRUNCATE_HEIGHT + 1, ScanPriority::Scanned),
+                    scan_range(TRUNCATE_HEIGHT + 1, VERIFY_END, ScanPriority::Verify),
+                    scan_range(VERIFY_END, SCAN_RANGE_END, ScanPriority::Historic),
+                ]
+            );
         }
     }
 
