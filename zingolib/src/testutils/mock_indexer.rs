@@ -912,6 +912,14 @@ impl MockChain {
         self.mempool.len()
     }
 
+    /// Returns the number of mempool streams a client still holds open.
+    pub fn open_mempool_streams(&self) -> usize {
+        self.mempool_subscribers
+            .iter()
+            .filter(|subscriber| !subscriber.is_closed())
+            .count()
+    }
+
     /// Validates `bytes` under the chain's rules and enters the mempool on success.
     pub fn submit_transaction(&mut self, bytes: Vec<u8>) -> Result<TxId, Rejection> {
         let transaction = self.validate(&bytes)?;
