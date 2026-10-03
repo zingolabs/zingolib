@@ -4,7 +4,7 @@
 //! exit), then drives `grpcurl` — a gRPC client that shares no code with the
 //! wallet — through the proxy's SOCKS5 port via an `ncat` bridge, running
 //! the same `GetLatestBlock` the sweep surveys with. The layers separate:
-//! an indexer that answers `grpcurl` over clearnet but not through the
+//! an indexer that answers `grpcurl` over nakednet but not through the
 //! bridge indicts the proxy, the exit, or the tunnel, never the wallet's
 //! client code; a bridge that answers where the sweep reported silence
 //! indicts the sweep's own fan-out.

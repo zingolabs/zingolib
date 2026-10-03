@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation a second time to decide where log output goes.
 
 ### Changed
+- **Breaking:** the term clearnet is renamed nakednet. The cargo feature
+  `clearnet-test-mode` is now `nakednet-test-mode`, and `network history`
+  reports a direct route as `nakednet` where it reported `clearnet`.
 - `migrate`, `migration continue`, `migration execute` and `migration auto` sync to the chain tip and return when the wallet is configured for continuous sync. A sync already running before the command is stopped for it and relaunched after it.
 - Sync runs continuously: without `--waitsync`, the sync engine stays
   running after reaching the chain tip and scans newly mined blocks as they
@@ -41,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New wallets use the default transparent address discovery (with gap
   limit) instead of the minimal discovery.
 - `current_price` works while Mixnet Mode is switched off, fetching over
-  clearnet as the toggle-off consents to (ADR 0011, amendment
+  nakednet as the toggle-off consents to (ADR 0011, amendment
   2026-08-26), and its output names the route the fetch traveled.
 - `help` lists `info`, `change_server`, and `current_price` among the
   commands that need no wallet, where it had listed them as wallet
@@ -85,9 +88,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `transmitted`. Progress narration says `destination <host>` and
   `mixnet escalation`, and help text says transmit where it said broadcast.
 - **Breaking.** The `--no-mixnet` flag is retired. A connected session
-  runs the mixnet unconditionally and fails closed; clearnet carries
-  sync alone. The clearnet server-selection sweep now compiles only
-  under the non-default `clearnet-test-mode` feature, and a default
+  runs the mixnet unconditionally and fails closed; nakednet carries
+  sync alone. The nakednet server-selection sweep now compiles only
+  under the non-default `nakednet-test-mode` feature, and a default
   build resolves its indexer from `--server` without probing.
 - Every dispatched command now narrates its latest progress line to stderr
   every eight seconds while it runs (`PROGRESS_HEARTBEAT_INTERVAL`), so no
@@ -116,9 +119,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connection, clears the Migration Broadcast Endpoint, and aborts
   in-flight sync, returning only when teardown completes. The session
   drops to the unconsented posture, so `network on` re-consents, and the
-  stored standing consent is untouched. The clearnet-transmit act is
+  stored standing consent is untouched. The nakednet-transmit act is
   retired: no CLI command routes Transmission or price-fetch over
-  clearnet.
+  nakednet.
 - The `servers` report is a Last Known report: it renders the launch
   probe's ranking from session state and never probes.
 - **Breaking.** A failing command now renders exactly once, as `Error: …` on

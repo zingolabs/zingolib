@@ -8,14 +8,14 @@
 //! warm-up and machine load fall on both equally, and reports outputs per
 //! second, which is the rate scan cost actually tracks.
 //!
-//! An arm is a commit and a build kind, written `<commit>[:clearnet]`. The
+//! An arm is a commit and a build kind, written `<commit>[:nakednet]`. The
 //! default kind builds the CLI mixnet-capable and bundles the proxy, so an
 //! Online session spawns it, proves the quartet, and runs the
-//! Server-Selection Sweep beside the scan; `:clearnet` builds without the
-//! mixnet and bundles nothing. Sync itself rides clearnet in both kinds,
+//! Server-Selection Sweep beside the scan; `:nakednet` builds without the
+//! mixnet and bundles nothing. Sync itself rides nakednet in both kinds,
 //! since the sync engine takes a plain gRPC indexer and no SOCKS5 route, so
 //! one commit against itself in the two kinds measures what the mixnet's
-//! presence costs a clearnet sync rather than what a mixnet carrier costs.
+//! presence costs a nakednet sync rather than what a mixnet carrier costs.
 //!
 //! The reading comes from the sync engine's own clock. The tool grafts a
 //! span into each arm's checkout rather than requiring the arm to carry
@@ -62,7 +62,7 @@ use workbench::{repo_root, run};
 const CLI_SESSION: &str = "cli";
 
 /// The suffix marking an arm built without the mixnet.
-const CLEARNET_KIND: &str = ":clearnet";
+const NAKEDNET_KIND: &str = ":nakednet";
 
 /// The sync launch every era of this library shares, and the anchor the
 /// graft wraps.
@@ -146,20 +146,20 @@ fn main() {
 #[derive(Clone, PartialEq, Eq)]
 struct Spec {
     commit: String,
-    clearnet: bool,
+    nakednet: bool,
 }
 
 impl Spec {
-    /// Reads `<commit>[:clearnet]`.
+    /// Reads `<commit>[:nakednet]`.
     fn parse(raw: &str) -> Self {
-        match raw.strip_suffix(CLEARNET_KIND) {
+        match raw.strip_suffix(NAKEDNET_KIND) {
             Some(commit) => Spec {
                 commit: commit.to_string(),
-                clearnet: true,
+                nakednet: true,
             },
             None => Spec {
                 commit: raw.to_string(),
-                clearnet: false,
+                nakednet: false,
             },
         }
     }
@@ -167,8 +167,8 @@ impl Spec {
     /// The arm's label, short enough to head a row.
     fn label(&self) -> String {
         let commit: String = self.commit.chars().take(12).collect();
-        if self.clearnet {
-            format!("{commit}{CLEARNET_KIND}")
+        if self.nakednet {
+            format!("{commit}{NAKEDNET_KIND}")
         } else {
             commit
         }
@@ -278,7 +278,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
     let [left, right] = positional.as_slice() else {
         return Err(vec![
             "sync-ab takes exactly two arms, each a commit with an optional \
-             :clearnet kind; every other parameter is fixed so the comparison \
+             :nakednet kind; every other parameter is fixed so the comparison \
              means something"
                 .to_string(),
         ]);
@@ -578,8 +578,8 @@ fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
     if arm.hosted {
         let mut command = Command::new("makers");
         command.arg("run-cli").arg("--release");
-        if arm.spec.clearnet {
-            command.arg("--clearnet");
+        if arm.spec.nakednet {
+            command.arg("--nakednet");
         }
         return Ok(command);
     }
@@ -587,7 +587,7 @@ fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
     build
         .current_dir(&arm.worktree)
         .args(["build", "--release", "-p", "zingo-cli"]);
-    if arm.spec.clearnet {
+    if arm.spec.nakednet {
         build.arg("--no-default-features");
     }
     let built = build
@@ -860,17 +860,17 @@ mod tests {
     }
 
     /// HYPOTHESIS: an arm's kind is read off its suffix, and the label
-    /// keeps it. Falsified if a plain commit reads as clearnet or the
+    /// keeps it. Falsified if a plain commit reads as nakednet or the
     /// suffix survives into the commit.
     #[test]
     fn an_arm_reads_its_build_kind_off_its_suffix() {
         let plain = Spec::parse("dev");
         assert_eq!(plain.commit, "dev");
-        assert!(!plain.clearnet);
-        let bare = Spec::parse("dev:clearnet");
+        assert!(!plain.nakednet);
+        let bare = Spec::parse("dev:nakednet");
         assert_eq!(bare.commit, "dev");
-        assert!(bare.clearnet);
-        assert_eq!(bare.label(), "dev:clearnet");
+        assert!(bare.nakednet);
+        assert_eq!(bare.label(), "dev:nakednet");
     }
 
     /// HYPOTHESIS: a closing line is read only once its duration and count

@@ -113,7 +113,7 @@ async fn syncing_the_top_window_holds_this_machines_baseline() {
     }
 }
 
-/// The pinned indexer's current chain height over clearnet.
+/// The pinned indexer's current chain height over nakednet.
 async fn query_tip(indexer: http::Uri) -> u32 {
     let mut grpc = zingo_netutils::GrpcIndexer::new(indexer)
         .await

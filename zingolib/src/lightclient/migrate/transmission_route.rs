@@ -3,7 +3,7 @@
 //! Migration-part transmissions obey the Mixnet Mode policy like every other
 //! transmitting surface: while the mode is on they travel ONLY over the
 //! mixnet (failing closed while it bootstraps or after the proxy dies,
-//! never falling back to clearnet), and clearnet carries them only when the
+//! never falling back to nakednet), and nakednet carries them only when the
 //! user deliberately toggled the mode off for the session, or in a build
 //! compiled without the `nym` feature.
 
@@ -27,7 +27,7 @@ use crate::lightclient::error::LightClientError;
 /// The wire migration parts travel.
 pub enum MigrationWire {
     /// Direct submission.
-    Clearnet,
+    Nakednet,
     /// Submission through the local SOCKS5 proxy.
     #[cfg(feature = "nym")]
     Mixnet(zingo_netutils::conduit::ConduitDial),
@@ -36,7 +36,7 @@ pub enum MigrationWire {
 impl MigrationWire {
     pub(crate) fn transport(&self) -> Transport {
         match self {
-            MigrationWire::Clearnet => Transport::Clearnet,
+            MigrationWire::Nakednet => Transport::Nakednet,
             #[cfg(feature = "nym")]
             MigrationWire::Mixnet(_) => Transport::Mixnet,
         }
@@ -56,7 +56,7 @@ impl RoutedTransmissionClient {
 
     #[cfg(all(test, feature = "nym"))]
     pub(crate) fn is_mixnet(&self) -> bool {
-        !matches!(self.wire, MigrationWire::Clearnet)
+        !matches!(self.wire, MigrationWire::Nakednet)
     }
 }
 
@@ -75,7 +75,7 @@ impl TransmissionClient for RoutedTransmissionClient {
                 PartTransmissionError::Transport("no transmission candidates".to_string())
             })?;
         match &self.wire {
-            MigrationWire::Clearnet => {
+            MigrationWire::Nakednet => {
                 GrpcTransmissionClient::new(indexer.clone())
                     .submit(raw_tx, expiry_height)
                     .await
@@ -205,13 +205,13 @@ mod tests {
     }
 
     #[test]
-    fn clearnet_parts_go_to_the_sync_indexer() {
+    fn nakednet_parts_go_to_the_sync_indexer() {
         let sync = uri("https://eu.zec.rocks:443");
         let drawn = candidates(
             None,
             Some(&sync),
             &mainnet_set(),
-            Transport::Clearnet,
+            Transport::Nakednet,
             &Health::default(),
         )
         .expect("the sync indexer broadcasts");
@@ -254,15 +254,15 @@ mod tests {
     fn a_configured_target_on_the_sync_host_is_used_when_the_rule_allows() {
         let sync = uri("https://node.mine.example:443");
         let target = uri("https://node.mine.example:9067");
-        let clearnet = candidates(
+        let nakednet = candidates(
             Some(target.clone()),
             Some(&sync),
             &mainnet_set(),
-            Transport::Clearnet,
+            Transport::Nakednet,
             &Health::default(),
         )
-        .expect("clearnet keeps the target");
-        assert_eq!(clearnet, vec![target.clone()]);
+        .expect("nakednet keeps the target");
+        assert_eq!(nakednet, vec![target.clone()]);
         let trusted =
             mainnet_set().with_indexer(IndexerConfig::new(sync.clone()).trust(Trust::Trusted));
         let mixnet = candidates(
@@ -296,10 +296,10 @@ mod tests {
                 Some(lan.clone()),
                 None,
                 &mainnet_set(),
-                Transport::Clearnet,
+                Transport::Nakednet,
                 &Health::default(),
             )
-            .expect("clearnet reaches the local target"),
+            .expect("nakednet reaches the local target"),
             vec![lan]
         );
     }

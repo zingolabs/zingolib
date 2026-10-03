@@ -725,7 +725,7 @@ mod network_command_parsing {
         let attempts = vec![
             attempt("zec.rocks", AttemptRoute::Mixnet, 1_000, tunnel),
             attempt("zec.rocks", AttemptRoute::Mixnet, 2_000, Ok(())),
-            attempt("zec.rocks", AttemptRoute::Clearnet, 1_500, Ok(())),
+            attempt("zec.rocks", AttemptRoute::Nakednet, 1_500, Ok(())),
             attempt("carover0.xyz", AttemptRoute::Mixnet, 1_800, tunnel),
         ];
 
@@ -733,7 +733,7 @@ mod network_command_parsing {
             render_history(&attempts, 2_060),
             "Indexer history (all sessions):\n  \
              carover0.xyz: mixnet 0/1 ok, last failed 4m ago\n  \
-             zec.rocks: clearnet 1/1 ok, last ok 9m ago; mixnet 1/2 ok, last ok 1m ago"
+             zec.rocks: nakednet 1/1 ok, last ok 9m ago; mixnet 1/2 ok, last ok 1m ago"
         );
         assert_eq!(render_history(&[], 0), "No indexer history recorded yet.");
     }
@@ -749,7 +749,7 @@ mod network_command_parsing {
             "Mixnet Mode: unattached. The mixnet has not been enabled: price-fetch refuses, \
              and send refuses under the mixnet transmit policy. Run `network on` to enable \
              the mixnet.",
-            "absence is not consent: unattached names refusal, never clearnet"
+            "absence is not consent: unattached names refusal, never nakednet"
         );
         assert_eq!(
             render_status(Indicator::SwitchedOff, None, None),
@@ -772,7 +772,7 @@ mod network_command_parsing {
         assert_eq!(
             render_status(Indicator::Died, None, None),
             "Mixnet Mode: died. The proxy exited unexpectedly. Send and price-fetch \
-             refuse and will not fall back to clearnet. Run `network on` to restart the proxy.",
+             refuse and will not fall back to nakednet. Run `network on` to restart the proxy.",
             "a died proxy is reported distinctly from switched off, and tells the user how to \
              recover"
         );
@@ -805,7 +805,7 @@ mod network_command_parsing {
 
     /// HYPOTHESIS: `network status` always carries the IP-correlation disclaimer in
     /// every mode, so a "ready" mixnet is never mistaken for end-to-end IP
-    /// protection while synchronization stays on clearnet (ZIP-0318). The mode
+    /// protection while synchronization stays on nakednet (ZIP-0318). The mode
     /// line is preserved verbatim as the first line. Falsified if the
     /// disclaimer is dropped in any mode, no longer leads with the mode line,
     /// or omits the sync/IP/indexer/balance risk it must name.
@@ -982,7 +982,7 @@ mod offline_contract {
     //! - every connectivity-requiring command refuses offline with the one
     //!   typed refusal, [`zingolib::lightclient::error::LightClientError::Offline`],
     //!   carried through the command's `Err` channel (ADR 0031) — never a
-    //!   hang, a panic, or a silent clearnet fallback.
+    //!   hang, a panic, or a silent nakednet fallback.
     //!
     //! The `change_server` pin lives at the REPL dispatch, not here: see
     //! `offline_mode_refusal` and its tests in `crate::tests`.
@@ -1386,7 +1386,7 @@ mod offline_contract {
 
         /// `network probe` runs only over the mixnet route: a session whose
         /// mixnet is unattached refuses with the mixnet refusal, never by
-        /// falling back to a clearnet probe.
+        /// falling back to a nakednet probe.
         #[cfg(feature = "nym")]
         #[test]
         fn network_probe_refuses_without_the_mixnet() {
@@ -1816,7 +1816,7 @@ mod finding_pins {
 mod posture_surface {
     //! ADR 0032's rendered surface: `help` offers only what the live
     //! posture leaves unsuppressed, and `network off` is a zero-emission
-    //! teardown, never a clearnet fallback.
+    //! teardown, never a nakednet fallback.
     #![allow(clippy::disallowed_methods)]
 
     use crate::Communications;
@@ -1874,7 +1874,7 @@ mod posture_surface {
     }
 
     /// HYPOTHESIS: `network off` reports the minted teardown, leaves the
-    /// client Indexerless, and never mentions a clearnet fallback.
+    /// client Indexerless, and never mentions a nakednet fallback.
     #[cfg(feature = "nym")]
     #[test]
     fn network_off_tears_down_and_keeps_the_stored_consent() {
@@ -1893,7 +1893,7 @@ mod posture_surface {
             .expect("network off succeeds offline");
         assert!(report.contains("Network off"), "{report}");
         assert!(report.contains("`--forget-online` erases it"), "{report}");
-        assert!(!report.contains("clearnet"), "{report}");
+        assert!(!report.contains("nakednet"), "{report}");
         assert!(client.indexer_uri().is_none());
     }
 }

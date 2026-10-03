@@ -8,21 +8,21 @@ edition = "2024"
 # it, so `network on|off|status` never demands a rebuild (ADR 0026). Compiling it
 # starts nothing — an offline session executes no proxy and touches no network
 # (ADR 0025); only an Online session's go-online moment provisions (ADR 0024).
-# Opt out with `--no-default-features` (or run-cli's `--clearnet`); the
+# Opt out with `--no-default-features` (or run-cli's `--nakednet`); the
 # command then reports the capability was switched off at build time.
 default = ["nym"]
 nym = ["zingolib/nym"]
-# The quarantined clearnet acts, compiled back in for testing and never for
-# use. Never a default: a session that goes online engages clearnet only for
+# The quarantined nakednet acts, compiled back in for testing and never for
+# use. Never a default: a session that goes online engages nakednet only for
 # sync, so compiling these back in is a deliberate, review-gated test act
-# (2026-08-06 ruling). Two things live behind it. The clearnet
+# (2026-08-06 ruling). Two things live behind it. The nakednet
 # server-selection sweep, which ADR 0029 deletes from ordinary builds. And,
 # in a build without `nym`, the ability to go online at all: ADR 0026 makes
 # the mixnet a default capability and ADR 0024 forces Mixnet Mode on at the
 # go-online moment, so no ordinary build can run an online session with no
 # mixnet beside it, and a measurement that separates the mixnet's cost from
 # the scan's needs exactly that arm.
-clearnet-test-mode = []
+nakednet-test-mode = []
 
 [dependencies]
 pepper-sync = { workspace = true }

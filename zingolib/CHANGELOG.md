@@ -9,12 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Add `LightClient::sync_to_tip_and_await`, which syncs to the chain tip and returns whatever the stored `shutdown_on_completion` setting is. The override applies to that sync only and the stored sync config is not modified. A running or paused sync is stopped and awaited first, and is not relaunched.
-- Add `mixnet::TransmitPolicy` (`Mixnet`, `Clearnet`), the per-session send route choice, with `LightClient::transmit_policy` and `set_transmit_policy`. Every session starts under `Mixnet`; `MixnetStartPolicy::OptedOutThisSession` sets `Clearnet`, and `enable_mixnet`, `enable_mixnet_via_host`, and `attach_mixnet` set `Mixnet` before the transport exists, so sends refuse during the bootstrap. A failed enable restores the policy the session had before.
+- Add `mixnet::TransmitPolicy` (`Mixnet`, `Nakednet`), the per-session send route choice, with `LightClient::transmit_policy` and `set_transmit_policy`. Every session starts under `Mixnet`; `MixnetStartPolicy::OptedOutThisSession` sets `Nakednet`, and `enable_mixnet`, `enable_mixnet_via_host`, and `attach_mixnet` set `Mixnet` before the transport exists, so sends refuse during the bootstrap. A failed enable restores the policy the session had before.
 - Add `mixnet::resolve_mixnet_only_route` and `LightClient::mixnet_only_route`, the route of the price fetch and the liveness probe: the conduit while `Ready`, a typed refusal otherwise.
-- Add `mixnet::resolve_send_route` and `LightClient::send_route`, the route of a transmission under the transmit policy: clearnet at once under `Clearnet`, the mixnet-only outcome under `Mixnet`.
+- Add `mixnet::resolve_send_route` and `LightClient::send_route`, the route of a transmission under the transmit policy: nakednet at once under `Nakednet`, the mixnet-only outcome under `Mixnet`.
 - Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
 
 ### Changed
+- **Breaking:** the term clearnet is renamed nakednet in every public name. The `Clearnet` variant of `MixnetRoute`, `TransmitRoute`, `AttemptRoute`, `Transport`, `TransmissionRoute` and `MigrationWire` is now `Nakednet`. `LightClient::consent_to_clearnet_for_tests` and `LightClient::new_clearnet_consented` are now `consent_to_nakednet_for_tests` and `new_nakednet_consented`.
 - `LightClient::pause_sync`, `stop_sync`, `resume_sync`, `pause_sync_scoped` and the pause guard's drop move the sync mode through `SyncMode::transition` and `SyncMode::apply`, one atomic exchange each, so a `Shutdown` the engine sets at completion between the read and the write is kept instead of overwritten.
 - The Zcash stack moves to its latest releases: `zcash_client_backend` 0.24.0,
   `zcash_primitives` 0.30.1, `zcash_protocol` 0.10.6, `zip321` 0.9.0, and
@@ -24,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `migrate_to_ironwood` and `migrate_immediately` sync with `sync_to_tip_and_await`, so they return when the wallet is configured for continuous sync. A running sync is stopped first and is not relaunched; the caller relaunches it with `LightClient::sync`.
 - `max_send_value` is for display only. To send the whole balance, call `propose_send_all` and then `send_stored_proposal`. A `propose_send` request for the reported amount can be refused by the input selector.
 - **Breaking:** `update_current_price` is mixnet-only again. `Indicator::SwitchedOff` refuses it as `MixnetNotReady::Unattached` and the transmit policy has no effect on it.
-- **Breaking:** transmissions and migration parts follow the transmit policy rather than `Indicator::SwitchedOff`. `consent_to_clearnet_for_tests` sets the policy instead of switching the transport off.
+- **Breaking:** transmissions and migration parts follow the transmit policy rather than `Indicator::SwitchedOff`. `consent_to_nakednet_for_tests` sets the policy instead of switching the transport off.
 - **Breaking:** `MixnetNotReady::Unattached` no longer offers switching off as a remedy in its message.
 - Default wallet settings (`ClientConfigBuilder::default` and wallets read from files without stored settings) use `TransparentAddressDiscovery::default()` instead of `minimal()`, and set `shutdown_on_completion` to `false`, so sync runs continuously by default.
 - Wallet file serialized version bumped to 44; the stored `SyncConfig` now includes `shutdown_on_completion`. Versions up to 44 are read.
@@ -38,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** remove the `zennies_for_zingo` parameter from `LightClient::propose_send_all` and `LightClient::max_send_value`, since upstream send-max cannot carry a second payment.
 - **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
 - **Breaking:** remove the `sync::sync_status` re-export of `pepper_sync::sync_status`. Use `LightClient::latest_sync_status` or `pepper_sync::sync_status` directly.
-- **Breaking:** remove `PriceFetchRoute::Clearnet` and `LightClientError::ProbeRequiresMixnet`, both unreachable once the price fetch and the probe are mixnet-only.
+- **Breaking:** remove `PriceFetchRoute::Nakednet` and `LightClientError::ProbeRequiresMixnet`, both unreachable once the price fetch and the probe are mixnet-only.
 
 ## [6.0.0] - 2026-09-07
 
@@ -64,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `lightclient::SaveShutdown` (`ShutDown`, `NotRunning`).
 - Add `LightClientError::ProbeRequiresMixnet` and `MixnetProxyError::NoExits`.
 - Add typed `mixnet::ExitNodeId` (`parse`, `TryFrom<String>`, `BlankExitNodeId`).
-- Add `MixnetPriceFetch::route: PriceFetchRoute` (`Mixnet` or `Clearnet`).
+- Add `MixnetPriceFetch::route: PriceFetchRoute` (`Mixnet` or `Nakednet`).
 - Add `NetOpStage::ProxyLaunch` death detail for a `nym-proxy` that dies before its stdout protocol.
 - Add `zingo_netutils::Socks5Indexer::get_latest_block`.
 - Add `perspective` feature (off by default) and `zingolib::perspective` module.
@@ -77,7 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** remove the default server: `config::construct_indexer_uri` takes `String`.
 - **Breaking:** rename `mixnet::MixnetMode` to `mixnet::Indicator`, `UnknownMixnetModeToken` to `UnknownIndicatorToken`, `LightClient::mixnet_mode` to `read_mixnet_indicator`.
 - **Breaking:** rename `MAX_DIARY_ATTEMPTS` to `MAX_HISTORY_ATTEMPTS`.
-- **Breaking:** route `LightClient::update_current_price` over clearnet when Mixnet Mode is switched off, and refuse with `MixnetNotReady` in `Unattached`, `Bootstrapping` and `Died`.
+- **Breaking:** route `LightClient::update_current_price` over nakednet when Mixnet Mode is switched off, and refuse with `MixnetNotReady` in `Unattached`, `Bootstrapping` and `Died`.
 - **Breaking:** stop writing the fetched price to the wallet. The price is returned only in `MixnetPriceFetch`.
 - **Breaking:** compile the price fetch only with the `nym` feature.
 - **Breaking:** move `ProxyHosting`, `HostedTransport`, `HostRefusal` and `HostedProvider` to `zingo_netutils::provider`, re-exported from `mixnet::acquire`.

@@ -16,7 +16,7 @@
 //! indexer itself said no". The caller decides what to do with a failure.
 //! [`Socks5TransmitError::is_failover_candidate`] offers the escalation's
 //! reading without discarding anything. [`Socks5Indexer::get_lightd_info`]
-//! mirrors the clearnet probe through the same tunnel, pairing the two
+//! mirrors the nakednet probe through the same tunnel, pairing the two
 //! routes for diagnosis.
 #![forbid(unsafe_code)]
 

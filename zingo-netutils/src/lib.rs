@@ -415,7 +415,7 @@ pub struct SendRejection {
 /// Interpret a lightwalletd `SendResponse`: `error_code` 0 means the
 /// transaction was accepted and `error_message` carries the txid (sometimes
 /// quote-wrapped, which is stripped). Any other code is a rejection carrying
-/// both fields. The single definition shared by the clearnet
+/// both fields. The single definition shared by the nakednet
 /// [`GrpcIndexer::send_transaction`] and the SOCKS5 transmit path.
 pub(crate) fn parse_send_response(
     error_code: i32,
@@ -516,7 +516,7 @@ impl Indexer for GrpcIndexer {
             .send_transaction(request)
             .await?
             .into_inner();
-        // The clearnet path keeps its historical error text: the bare server
+        // The nakednet path keeps its historical error text: the bare server
         // message, without the code prefix `SendRejection` renders.
         parse_send_response(sendresponse.error_code, sendresponse.error_message)
             .map_err(|rejection| tonic::Status::new(tonic::Code::Unknown, rejection.message))

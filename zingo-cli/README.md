@@ -13,12 +13,11 @@ shape a session.
 ## Table of contents
 
 - [Building](#building)
+  - [Prerequisites](#prerequisites)
+  - [The build procedure](#the-build-procedure)
 - [Ways to launch](#ways-to-launch)
-  - [1. The compiled binary directly](#1-the-compiled-binary-directly)
-  - [2. `cargo run`](#2-cargo-run)
-  - [3. `makers run-cli` (recommended for development)](#3-makers-run-cli-recommended-for-development)
-  - [Using the mixnet without cargo-make](#using-the-mixnet-without-cargo-make)
-  - [4. Docker](#4-docker)
+  - [1. `makers run-cli`](#1-makers-run-cli)
+  - [2. The built binary directly](#2-the-built-binary-directly)
 - [Modes of operation](#modes-of-operation)
   - [Interactive mode (the REPL)](#interactive-mode-the-repl)
   - [Command mode (one-shot)](#command-mode-one-shot)
@@ -38,33 +37,87 @@ shape a session.
 
 ## Building
 
-Build the binary from the workspace root:
+One procedure builds the CLI: the workspace's
+[cargo-make](https://github.com/sagiegurari/cargo-make) task `run-cli`. The task
+compiles `zingo-cli` with the mixnet (Nym) transport, builds the `nym-proxy`
+binary, and places the proxy beside the CLI, where a session that goes online
+finds it.
+
+The proxy is the reason for the task. `nym-proxy` lives in the separate
+`zingo-netutils` workspace, which keeps its own lockfile (ADR 0011), so a bare
+`cargo build -p zingo-cli` never produces it, and a CLI that finds no proxy
+cannot go online.
+
+### Prerequisites
+
+- **Rust**, installed through [rustup](https://rustup.rs). The repository's
+  `rust-toolchain.toml` pins the toolchain, and rustup installs it on the first
+  build.
+- **Build tools** for your platform. On Ubuntu, run
+  `sudo apt install build-essential gcc libsqlite3-dev`.
+- **The protobuf compiler.** On Ubuntu, run
+  `sudo apt install protobuf-compiler`.
+- **cargo-make**, which provides the `makers` command. Run
+  `cargo install cargo-make`.
+
+### The build procedure
 
 ```bash
-# Release build (recommended for real use)
-cargo build --release -p zingo-cli
-# Binary: ./target/release/zingo-cli
+git clone https://github.com/zingolabs/zingolib.git
+cd zingolib
 
-# Debug build (faster to compile)
-cargo build -p zingo-cli
-# Binary: ./target/debug/zingo-cli
+# Build the release CLI, bundle nym-proxy beside it, and stop
+makers run-cli --build-only
+# Binaries: ./target/release/zingo-cli and ./target/release/nym-proxy
 ```
 
-By default the build compiles in the **mixnet (Nym) transport** — this is the
-`nym` default feature. See
-[Build features](#build-features-that-change-how-it-launches) for how to opt out
-and what changes when you do.
+The launcher consumes these flags itself, wherever they appear:
+
+| Launcher flag | Effect |
+| --- | --- |
+| `--build-only` | Stop after the build and the bundling; launch no session. |
+| `--debug` | Build the debug profile instead of the release profile. The binaries land in `./target/debug/`. |
+| `--features <list>` | Add cargo features to the build (see [Build features](#build-features-that-change-how-it-launches)). |
+| `--target-dir <dir>` | Build into the named directory, so two differently-featured builds stand side by side without rebuilding each other. |
+
+Without `--build-only`, the task goes on to launch the CLI, as the next section
+describes.
 
 ---
 
 ## Ways to launch
 
-There are four ways to run the CLI. They differ only in *how the binary is
-produced and invoked* — every one of them accepts the same
+There are two ways to run the CLI, and both run the binary the
+[build procedure](#the-build-procedure) produces. Each accepts the same
 [session options](#session-options-reference) and
 [commands](#command-mode-one-shot).
 
-### 1. The compiled binary directly
+### 1. `makers run-cli`
+
+The task rebuilds whatever changed, bundles the proxy, and launches the CLI in
+one step. It forwards every argument that is not a launcher flag to `zingo-cli`
+unchanged:
+
+```bash
+# Build, bundle nym-proxy, and start the interactive prompt
+makers run-cli
+
+# Forward any session option / command to zingo-cli
+makers run-cli --chain testnet
+makers run-cli addresses
+makers run-cli --data-dir ~/my-wallet --online
+```
+
+Notes:
+
+- This task never launches the proxy itself. The CLI owns that lifecycle: it
+  spawns the proxy only at an online session's go-online moment, and an offline
+  session boots no proxy at all.
+- Launching with `makers run-cli` does **not** imply consent to go online. The
+  session is offline until a consent act (see
+  [Connectivity](#connectivity-offline-first-consent-to-go-online)).
+
+### 2. The built binary directly
 
 After [building](#building), run the binary and pass options/commands directly:
 
@@ -88,124 +141,11 @@ Print the version or the full help without starting a session:
 ./target/release/zingo-cli help send     # help for one command
 ```
 
-### 2. `cargo run`
-
-Build (if needed) and run in one step. Everything after `--` is forwarded to the
-CLI verbatim:
-
-```bash
-# Interactive prompt
-cargo run -p zingo-cli
-
-# One-shot command
-cargo run -p zingo-cli -- addresses
-
-# Release profile + session options
-cargo run --release -p zingo-cli -- --chain testnet --data-dir ~/testnet-wallet
-
-# Build without the mixnet transport (see Build features)
-cargo run -p zingo-cli --no-default-features -- info
-```
-
-### 3. `makers run-cli` (recommended for development)
-
-The workspace ships a [cargo-make](https://github.com/sagiegurari/cargo-make)
-task that builds the CLI **and** bundles the `nym-proxy` binary beside it, so the
-CLI's provisioning search finds the proxy automatically when a session goes
-online. Install `cargo-make` once (`cargo install cargo-make`), then:
-
-```bash
-# Build (with the mixnet default), bundle nym-proxy, and launch
-makers run-cli
-
-# Forward any session option / command to zingo-cli
-makers run-cli --chain testnet
-makers run-cli addresses
-makers run-cli --data-dir ~/my-wallet --online
-
-# Debug build (the default is a release build)
-makers run-cli --debug
-
-# Opt out of the mixnet default: a plain build, nothing bundled
-makers run-cli --clearnet
-```
-
-Notes:
-
-- `--clearnet` and `--debug` are consumed by the launcher; **every other
-  argument is forwarded to `zingo-cli` unchanged.**
-- This task never launches the proxy itself. The CLI owns that lifecycle: it
-  spawns the proxy only at an online session's go-online moment, and an offline
-  session boots no proxy at all.
-- Launching with `makers run-cli` does **not** imply consent to go online. The
-  session is offline until a consent act (see
-  [Connectivity](#connectivity-offline-first-consent-to-go-online)).
-
-### Using the mixnet without cargo-make
-
-You do **not** need cargo-make to run with the mixnet. The mixnet transport is
-the `nym` **default feature**, so a plain `cargo build -p zingo-cli` already
-compiles it in. The only thing `makers run-cli` adds is building and placing the
-`nym-proxy` binary — and that binary is **never** produced by
-`cargo build -p zingo-cli`, because it lives in the separate `zingo-netutils`
-workspace (its own lockfile, ADR 0011). Do those two steps by hand:
-
-```bash
-# 1. Build the CLI — the mixnet transport is already on by default.
-cargo build --release -p zingo-cli
-
-# 2. Build the nym-proxy binary from the zingo-netutils workspace.
-cargo build --release \
-  --manifest-path zingo-netutils/Cargo.toml \
-  --features nym --bin nym-proxy
-# → produces zingo-netutils/target/release/nym-proxy
-```
-
-Then launch online and tell the CLI where the proxy is, using **any one** of the
-resolution methods (precedence: `--nym-proxy` → `$ZINGO_NYM_PROXY` → a
-`nym-proxy` beside the CLI binary → `nym-proxy` on `PATH`):
-
-```bash
-# a) Explicit flag
-./target/release/zingo-cli --online \
-  --nym-proxy zingo-netutils/target/release/nym-proxy
-
-# b) Environment variable
-export ZINGO_NYM_PROXY="$PWD/zingo-netutils/target/release/nym-proxy"
-./target/release/zingo-cli --online
-
-# c) Copy it beside the CLI binary — then it's found with no configuration
-cp zingo-netutils/target/release/nym-proxy target/release/
-./target/release/zingo-cli --online
-```
-
-Compiling `nym` in starts nothing on its own: the proxy is spawned only when the
-session goes online, so a consent act (`--online` above, or `--server` /
-`--remember-online` / in-session `network on`) is still required. For a debug
-build, drop `--release` from both `cargo build` commands and use
-`target/debug/…` paths throughout.
-
-### 4. Docker
-
-The repository builds a container image that carries the `zingo-cli` binary. The
-image's entrypoint prints the version, creates a wallet on first run (syncing and
-printing an address), prints server info, and then execs whatever command you
-pass:
-
-```bash
-# Interactive session against a chosen server
-docker run -it zingo-cli:latest ./zingo-cli --server https://zec.rocks:443
-
-# One-shot command inside the container
-docker run -it zingo-cli:latest ./zingo-cli --nosync info
-
-# No arguments → the entrypoint runs, then the default CMD prints --help
-docker run -it zingo-cli:latest
-```
-
-The reproducible StageX image can be built with `make` from the repository root
-and loaded into Docker with `make load`; see the top-level
-[README](../README.md) for that pipeline.
+The CLI resolves the proxy by this precedence: `--nym-proxy`, then
+`$ZINGO_NYM_PROXY`, then a `nym-proxy` beside the CLI binary, then `nym-proxy`
+on `PATH`. The build places the proxy beside the binary, so the built pair needs
+no configuration. If you move the CLI elsewhere, move `nym-proxy` with it, or
+name the proxy's location with the flag or the variable.
 
 ---
 
@@ -307,7 +247,8 @@ network (e.g. `--online addresses`) is refused as a contradiction.
 
 When online **without** a pinned `--server`, the session runs a
 Server-Selection Sweep that picks the sync indexer for you. Pin one explicitly
-with `--server` to skip the sweep's substitution.
+with `--server` to skip the sweep's substitution. To run an indexer of your own
+and pin it, see [zaino](https://github.com/zingolabs/zaino).
 
 ---
 
@@ -340,7 +281,7 @@ working directory. Override with `--data-dir`.
 
 Regtest runs against a local network you launch yourself:
 
-1. Build the `zingo-cli` binary.
+1. [Build](#building) the `zingo-cli` binary.
 2. Launch a local network — a `zebrad` validator with a `zainod` indexer in
    front of it (the Core stack). The `zcash_local_net` crate in the
    infrastructure repo launches and manages the pair:
@@ -413,7 +354,6 @@ you the corrected invocation.)
 | `--remember-online` | Consent to go online and store a standing consent for future sessions. |
 | `--forget-online` | Remove the stored standing consent before deciding connectivity. |
 | `--nym-proxy <PATH>` | Path to the `nym-proxy` binary for Mixnet Mode (`nym` builds only). |
-| `--indexer-diary` | Record per-indexer send/probe outcomes this session (needs the `nym-diary` build feature). |
 | `--data-dir <PATH>` | Data directory for wallet + logs (default: `./wallets`). |
 | `--log-file <PATH>` | Log file path for interactive mode (default: `.zingo-cli/cli.log`). |
 | `-V`, `--version` | Print the version and exit. |
@@ -436,18 +376,18 @@ you the corrected invocation.)
 
 | Feature | Default | Effect on launch |
 | --- | --- | --- |
-| `nym` | **on** | Compiles in the mixnet transport, so a session can go online. Opting out (`--no-default-features`, or `makers run-cli --clearnet`) makes **Offline Mode the only mode**: the online consent acts refuse loudly and a stored standing consent is reported as inert. |
-| `nym-diary` | off | Enables the on-disk indexer diary so `--indexer-diary` records and `network history` displays it. Without it, `--indexer-diary` warns and records nothing. |
-| `clearnet-test-mode` | off | Re-enables the quarantined clearnet server-selection sweep. A deliberate, review-gated test build — never for ordinary use. |
+| `nym` | **on** | Compiles in the mixnet transport, so a session can go online. Opting out (`makers run-cli --nakednet`) builds without the transport and bundles no proxy, which makes **Offline Mode the only mode**: the online consent acts refuse loudly and a stored standing consent is reported as inert. |
+| `nakednet-test-mode` | off | Re-enables the quarantined nakednet server-selection sweep. A deliberate, review-gated test build — never for ordinary use. |
 
-Build with features explicitly, for example:
+The [build procedure](#the-build-procedure) selects features through its
+launcher flags, for example:
 
 ```bash
-# Clearnet-only build (no mixnet capability)
-cargo build --release -p zingo-cli --no-default-features
+# Nakednet-only build (no mixnet capability, no proxy bundled)
+makers run-cli --nakednet --build-only
 
-# Enable the indexer diary
-cargo build --release -p zingo-cli --features nym-diary
+# Add cargo features to the build
+makers run-cli --features <list> --build-only
 ```
 
 ---
@@ -467,10 +407,8 @@ and `Ctrl-D` also end the session.
 - **A network command is refused as offline** — the session has no connectivity
   consent. Grant it for this session with `--online` (or `network on` at the
   prompt), or `--remember-online` to persist it.
-- **`--indexer-diary` "has no effect"** — the binary was built without the
-  `nym-diary` feature. Rebuild with `--features nym-diary`.
 - **Going online refused with "no mixnet capability"** — the binary was built
-  with `--no-default-features` (clearnet-only). Rebuild with default features
-  (plain `cargo build`, or `makers run-cli`) to go online.
+  nakednet-only (`makers run-cli --nakednet`). Rebuild with the
+  [build procedure](#the-build-procedure), without that flag, to go online.
 - **A session option after the command is rejected** — session options must come
   before the command; the CLI prints the corrected invocation.

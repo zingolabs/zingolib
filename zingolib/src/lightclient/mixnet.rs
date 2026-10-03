@@ -1,6 +1,6 @@
 //! Mixnet Mode toggle (ADR 0011, consumption model A). Enabling spawns the
 //! bundled `nym-proxy` child process. Disabling shuts it down. The mode
-//! reflects the transport slot's state, and clearnet is reachable only by a
+//! reflects the transport slot's state, and nakednet is reachable only by a
 //! deliberate disable, never as a silent fallback: a session that never
 //! enabled the mixnet, or whose enable failed, is `Unattached` and refuses.
 
@@ -602,7 +602,7 @@ impl LightClient {
     ///     // Enabling births the standing client from the binary at the
     ///     // given path; a binary that cannot run refuses typed at the
     ///     // first step (the exit-directory discovery), and the failed
-    ///     // enable leaves Unattached — a refusal, never clearnet.
+    ///     // enable leaves Unattached — a refusal, never nakednet.
     ///     let missing = std::path::Path::new("/nonexistent/nym-proxy");
     ///     let refused = client.enable_mixnet(missing).await;
     ///     assert!(matches!(
@@ -677,7 +677,7 @@ impl LightClient {
     ///
     ///     // The standing client births from the host instead of a spawned
     ///     // binary; the host's refusal surfaces typed and the failed
-    ///     // enable leaves Unattached — a refusal, never clearnet.
+    ///     // enable leaves Unattached — a refusal, never nakednet.
     ///     let refused = client
     ///         .enable_mixnet_via_host(DecliningHost)
     ///         .await;
@@ -710,9 +710,9 @@ impl LightClient {
     /// is asked for, so the transmit policy moves to
     /// [`TransmitPolicy::Mixnet`](crate::mixnet::TransmitPolicy) before the
     /// birth starts: a send during the bootstrap refuses as `Bootstrapping`
-    /// rather than travelling a clearnet route the user has just turned
+    /// rather than travelling a nakednet route the user has just turned
     /// away from. A failed enable restores the policy the user had before,
-    /// so a session that chose clearnet keeps sending there after an
+    /// so a session that chose nakednet keeps sending there after an
     /// attempt that did not take, and a session that never chose it keeps
     /// refusing.
     async fn enable_mixnet_from(
@@ -937,10 +937,10 @@ impl LightClient {
     /// [`MixnetStartPolicy::OptedOutThisSession`](crate::mixnet::MixnetStartPolicy)
     /// records the startup opt-out as the explicit act that reaches switched
     /// off and sets the transmit policy to
-    /// [`TransmitPolicy::Clearnet`](crate::mixnet::TransmitPolicy), so the
+    /// [`TransmitPolicy::Nakednet`](crate::mixnet::TransmitPolicy), so the
     /// session's sends travel over the indexer (ADR 0024, consent at start),
     /// returns any provisioning failure typed while leaving the mode
-    /// unattached — refusal, never a silent clearnet — and never respawns on
+    /// unattached — refusal, never a silent nakednet — and never respawns on
     /// its own, recovery staying explicit through
     /// [`Indicator::needs_recovery`](crate::mixnet::Indicator::needs_recovery).
     pub async fn start_mixnet_session(
@@ -951,10 +951,10 @@ impl LightClient {
         match policy {
             crate::mixnet::MixnetStartPolicy::OptedOutThisSession => {
                 self.disable_mixnet().await;
-                // The opt-out is the user's explicit clearnet consent for
+                // The opt-out is the user's explicit nakednet consent for
                 // this session, so it is the one production act that sets
                 // the policy. The price fetch stays mixnet-only regardless.
-                self.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
+                self.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
                 Ok(())
             }
             crate::mixnet::MixnetStartPolicy::ForcedOn => match strategy {
@@ -1092,8 +1092,8 @@ impl LightClient {
     }
 
     /// Resolve the route of a transmission under the session's
-    /// [`TransmitPolicy`](crate::mixnet::TransmitPolicy): clearnet at once
-    /// under the clearnet policy, and under the mixnet policy the conduit
+    /// [`TransmitPolicy`](crate::mixnet::TransmitPolicy): nakednet at once
+    /// under the nakednet policy, and under the mixnet policy the conduit
     /// or the refusal [`Self::mixnet_only_route`] would give.
     pub fn send_route(&self) -> Result<crate::mixnet::MixnetRoute, crate::mixnet::MixnetNotReady> {
         crate::mixnet::resolve_send_route(
@@ -1112,7 +1112,7 @@ impl LightClient {
         {
             crate::mixnet::TransmitPolicy::Mixnet
         } else {
-            crate::mixnet::TransmitPolicy::Clearnet
+            crate::mixnet::TransmitPolicy::Nakednet
         }
     }
 
@@ -1130,7 +1130,7 @@ impl LightClient {
     /// Runs the mixnet liveness probe — concurrent `GetLightdInfo` calls
     /// through the session's SOCKS5 proxy, each appending its outcome to the
     /// cross-session indexer history — against `target`, or against every
-    /// Destination when `target` is `None`, with no clearnet leg and a
+    /// Destination when `target` is `None`, with no nakednet leg and a
     /// refusal while the mixnet transport is not ready.
     pub async fn probe_destinations(
         &self,
@@ -1228,7 +1228,7 @@ mod tests {
 
     mod price_fetch_contract {
         //! The price-fetch error contract: every failure reaches the API
-        //! as a typed [`LightClientError`], and a clearnet leg runs only
+        //! as a typed [`LightClientError`], and a nakednet leg runs only
         //! with consent. Route refusals pair with `mixnet::route`'s tests;
         //! transport-leg failures are pinned in `zingo-price`.
         use crate::lightclient::LightClient;
@@ -1239,7 +1239,7 @@ mod tests {
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
         }
 
-        /// A never-enabled mixnet is a typed refusal, never a clearnet
+        /// A never-enabled mixnet is a typed refusal, never a nakednet
         /// fallback: the fresh client is `Unattached` (absence is not
         /// consent, ADR 0011 amendment 2026-07-28), and the route pre-flight
         /// runs before any network object is built, so no packet leaves the
@@ -1263,7 +1263,7 @@ mod tests {
 
         /// The price fetch is mixnet-only (ADR 0011, amendment 2026-09-11):
         /// a switched-off transport refuses it as the unattached one does,
-        /// with no clearnet leg.
+        /// with no nakednet leg.
         #[tokio::test]
         async fn switched_off_mode_refuses_the_price_fetch() {
             let mut client = LightClient::new_for_test(wallet()).await;
@@ -1283,18 +1283,18 @@ mod tests {
         }
 
         /// The transmit policy is a send-only input, so the
-        /// clearnet policy never opens a clearnet leg for the price fetch.
-        /// Falsified if the fetch under the clearnet policy does anything
+        /// nakednet policy never opens a nakednet leg for the price fetch.
+        /// Falsified if the fetch under the nakednet policy does anything
         /// but refuse on an unattached transport.
         #[tokio::test]
-        async fn the_clearnet_policy_never_reaches_the_price_fetch() {
+        async fn the_nakednet_policy_never_reaches_the_price_fetch() {
             let client = LightClient::new_for_test(wallet()).await;
-            client.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
+            client.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
 
             let error = client
                 .update_current_price()
                 .await
-                .expect_err("the transmit policy must not consent to a clearnet price fetch");
+                .expect_err("the transmit policy must not consent to a nakednet price fetch");
             assert!(
                 matches!(
                     error,
@@ -1355,22 +1355,22 @@ mod tests {
         #[tokio::test]
         async fn the_policy_flips_while_the_client_runs_and_reads_back() {
             let client = LightClient::new_for_test(wallet()).await;
-            client.set_transmit_policy(TransmitPolicy::Clearnet);
-            assert_eq!(client.transmit_policy(), TransmitPolicy::Clearnet);
+            client.set_transmit_policy(TransmitPolicy::Nakednet);
+            assert_eq!(client.transmit_policy(), TransmitPolicy::Nakednet);
             client.set_transmit_policy(TransmitPolicy::Mixnet);
             assert_eq!(client.transmit_policy(), TransmitPolicy::Mixnet);
         }
 
-        /// The clearnet policy routes a send at once, on a client whose
+        /// The nakednet policy routes a send at once, on a client whose
         /// transport was never enabled.
         #[tokio::test]
-        async fn the_clearnet_policy_routes_a_send_over_an_unattached_transport() {
+        async fn the_nakednet_policy_routes_a_send_over_an_unattached_transport() {
             let client = LightClient::new_for_test(wallet()).await;
             assert_eq!(client.send_route(), Err(MixnetNotReady::Unattached));
 
-            client.set_transmit_policy(TransmitPolicy::Clearnet);
+            client.set_transmit_policy(TransmitPolicy::Nakednet);
 
-            assert_eq!(client.send_route(), Ok(MixnetRoute::Clearnet));
+            assert_eq!(client.send_route(), Ok(MixnetRoute::Nakednet));
         }
 
         /// A flip back to the mixnet policy restores the refusal, so the
@@ -1378,8 +1378,8 @@ mod tests {
         #[tokio::test]
         async fn flipping_back_to_the_mixnet_policy_restores_the_refusal() {
             let client = LightClient::new_for_test(wallet()).await;
-            client.set_transmit_policy(TransmitPolicy::Clearnet);
-            assert_eq!(client.send_route(), Ok(MixnetRoute::Clearnet));
+            client.set_transmit_policy(TransmitPolicy::Nakednet);
+            assert_eq!(client.send_route(), Ok(MixnetRoute::Nakednet));
 
             client.set_transmit_policy(TransmitPolicy::Mixnet);
 
@@ -1934,16 +1934,16 @@ mod tests {
         }
 
         /// HYPOTHESIS: a failed enable hands the session back as the user
-        /// had it: from `SwitchedOff` under the clearnet policy, a failed
+        /// had it: from `SwitchedOff` under the nakednet policy, a failed
         /// `attach_mixnet` lands `Unattached` and publishes it, and the
-        /// policy is `Clearnet` again, so the user who chose clearnet keeps
+        /// policy is `Nakednet` again, so the user who chose nakednet keeps
         /// sending there after an enable that did not take. Falsified if
         /// the mode remains `SwitchedOff` or the policy ends elsewhere.
         #[tokio::test]
         async fn a_failed_attach_restores_the_policy_the_user_had() {
             let mut client = LightClient::new_for_test(wallet()).await;
             client.disable_mixnet().await;
-            client.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
+            client.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
             let subscriber = client.subscribe_mixnet_status();
 
             client
@@ -1962,30 +1962,30 @@ mod tests {
             );
             assert_eq!(
                 client.transmit_policy(),
-                crate::mixnet::TransmitPolicy::Clearnet,
+                crate::mixnet::TransmitPolicy::Nakednet,
                 "a failed enable must hand the policy back"
             );
             assert_eq!(
                 client.send_route(),
-                Ok(crate::mixnet::MixnetRoute::Clearnet),
-                "the user who chose clearnet keeps sending there"
+                Ok(crate::mixnet::MixnetRoute::Nakednet),
+                "the user who chose nakednet keeps sending there"
             );
         }
 
         /// HYPOTHESIS: the enable is the mixnet consent from the moment it
         /// is asked for, so a send during the bootstrap refuses rather than
-        /// travelling the clearnet route the user just turned away from.
-        /// Attaches to a refusing localhost port from a clearnet session:
+        /// travelling the nakednet route the user just turned away from.
+        /// Attaches to a refusing localhost port from a nakednet session:
         /// the attach is accepted, the readiness gate runs, and the send
         /// route reads `Bootstrapping` while it does. Falsified if the send
-        /// route yields clearnet at any point after the attach.
+        /// route yields nakednet at any point after the attach.
         #[tokio::test]
         async fn a_send_during_the_bootstrap_refuses_rather_than_leak() {
             let mut client = LightClient::new_for_test(wallet()).await;
-            client.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
+            client.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
             assert_eq!(
                 client.send_route(),
-                Ok(crate::mixnet::MixnetRoute::Clearnet)
+                Ok(crate::mixnet::MixnetRoute::Nakednet)
             );
 
             client
@@ -2014,11 +2014,11 @@ mod tests {
         }
 
         /// HYPOTHESIS: a failed enable on a session that never chose
-        /// clearnet keeps refusing sends: the default `Mixnet` policy
+        /// nakednet keeps refusing sends: the default `Mixnet` policy
         /// stands and the slot is `Unattached`. Falsified if the failure
-        /// opens a clearnet send.
+        /// opens a nakednet send.
         #[tokio::test]
-        async fn a_failed_attach_without_a_clearnet_choice_still_refuses() {
+        async fn a_failed_attach_without_a_nakednet_choice_still_refuses() {
             let mut client = LightClient::new_for_test(wallet()).await;
 
             client
@@ -2034,8 +2034,8 @@ mod tests {
 
         /// HYPOTHESIS: a runtime enable after the startup opt-out brings
         /// sends back to the mixnet: the policy the opt-out set to
-        /// `Clearnet` is `Mixnet` again once the enable settles. Falsified
-        /// if a ready transport is paired with a clearnet send route.
+        /// `Nakednet` is `Mixnet` again once the enable settles. Falsified
+        /// if a ready transport is paired with a nakednet send route.
         #[tokio::test]
         async fn enabling_after_the_opt_out_routes_sends_over_the_mixnet() {
             let mut client = LightClient::new_for_test(wallet()).await;
@@ -2050,7 +2050,7 @@ mod tests {
                 .expect("the opt-out provisions nothing and cannot fail");
             assert_eq!(
                 client.transmit_policy(),
-                crate::mixnet::TransmitPolicy::Clearnet
+                crate::mixnet::TransmitPolicy::Nakednet
             );
 
             let socks5_addr = crate::mocks::transmission::MOCK_SOCKS5_ADDR;
@@ -2073,7 +2073,7 @@ mod tests {
         /// The driver entry honors the startup opt-out (ADR 0024, consent
         /// at start): OptedOutThisSession lands SwitchedOff without
         /// provisioning anything — the strategy is never exercised — sets
-        /// the transmit policy to clearnet so sends still travel, and the
+        /// the transmit policy to nakednet so sends still travel, and the
         /// transition reaches subscribers through the session channel.
         #[tokio::test]
         async fn the_driver_records_the_startup_opt_out_and_publishes_it() {
@@ -2113,23 +2113,23 @@ mod tests {
             );
             assert_eq!(
                 client.transmit_policy(),
-                crate::mixnet::TransmitPolicy::Clearnet,
-                "the opt-out is the session's clearnet consent"
+                crate::mixnet::TransmitPolicy::Nakednet,
+                "the opt-out is the session's nakednet consent"
             );
             assert_eq!(
                 client.send_route(),
-                Ok(crate::mixnet::MixnetRoute::Clearnet),
+                Ok(crate::mixnet::MixnetRoute::Nakednet),
                 "an opted-out session must still transmit"
             );
             assert_eq!(
                 client.mixnet_only_route().err(),
                 Some(crate::mixnet::MixnetNotReady::Unattached),
-                "the opt-out never opens a clearnet price fetch"
+                "the opt-out never opens a nakednet price fetch"
             );
         }
 
         /// A forced-on attach to a malformed address fails typed and leaves
-        /// Unattached — refusal, never clearnet — and publishes the settled
+        /// Unattached — refusal, never nakednet — and publishes the settled
         /// state so a subscriber cannot be left staring at a stale mode.
         #[tokio::test]
         async fn a_failed_forced_on_start_publishes_unattached() {
