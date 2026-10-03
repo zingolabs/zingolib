@@ -146,7 +146,7 @@ pub(crate) async fn select_servers() -> Vec<RankedServer> {
     ranked
 }
 
-/// Why the clearnet resolution produced no server.
+/// Why the nakednet resolution produced no server.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ResolveServerError {
     /// The explicit `--server` value failed to parse as a URI.

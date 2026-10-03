@@ -6,10 +6,10 @@
 //! Mode is [`Ready`](crate::mixnet::Indicator::Ready) and refuse in every
 //! other state. Transmission reads a second input, the session's
 //! [`TransmitPolicy`]: under [`TransmitPolicy::Mixnet`] it routes exactly
-//! as the mixnet-only surfaces do, and under [`TransmitPolicy::Clearnet`]
-//! it takes clearnet at once, whatever the transport's state. The policy
+//! as the mixnet-only surfaces do, and under [`TransmitPolicy::Nakednet`]
+//! it takes nakednet at once, whatever the transport's state. The policy
 //! is the consumer's per-session choice and never reaches the mixnet-only
-//! resolver, so a price lookup cannot leak to clearnet through a send
+//! resolver, so a price lookup cannot leak to nakednet through a send
 //! setting.
 #![forbid(unsafe_code)]
 
@@ -21,24 +21,24 @@ use crate::mixnet::Indicator;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransmitPolicy {
     /// Transmit through the mixnet, refusing while the transport is not
-    /// ready. The default: absence of a choice is not consent to clearnet.
+    /// ready. The default: absence of a choice is not consent to nakednet.
     Mixnet,
-    /// Transmit over clearnet through the configured sync indexer, whatever
+    /// Transmit over nakednet through the configured sync indexer, whatever
     /// the transport's state.
-    Clearnet,
+    Nakednet,
 }
 
 /// The resolved network route for a transmission.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MixnetRoute {
-    /// Route over clearnet. Reached only under [`TransmitPolicy::Clearnet`].
-    Clearnet,
+    /// Route over nakednet. Reached only under [`TransmitPolicy::Nakednet`].
+    Nakednet,
     /// Route through the session's conduit.
     Mixnet(zingo_netutils::conduit::MixnetConduit),
 }
 
 /// A mixnet-covered surface was attempted while the mixnet was unavailable.
-/// Fail-closed: the surface refuses rather than falling back to clearnet,
+/// Fail-closed: the surface refuses rather than falling back to nakednet,
 /// and the refusal names the actual state so the user learns the right
 /// remedy: waiting out a bootstrap and restarting a dead proxy are
 /// different actions.
@@ -48,7 +48,7 @@ pub enum MixnetNotReady {
     /// after a failed enable, and the state after a disable.
     #[error(
         "the Nym mixnet is not enabled; this operation requires it and refuses rather than \
-         use clearnet without consent. Enable Mixnet Mode to proceed"
+         use nakednet without consent. Enable Mixnet Mode to proceed"
     )]
     Unattached,
     /// The mixnet is enabled but not yet reachable. Readiness is coming.
@@ -57,7 +57,7 @@ pub enum MixnetNotReady {
     /// The proxy died after being spawned. Only re-enabling recovers.
     #[error(
         "the Nym mixnet proxy died; this operation refuses rather than fall back to \
-         clearnet. Re-enable Mixnet Mode to restart the proxy"
+         nakednet. Re-enable Mixnet Mode to restart the proxy"
     )]
     Died,
 }
@@ -88,7 +88,7 @@ pub fn resolve_mixnet_only_route(
 }
 
 /// Resolve the route of a transmission under the session's policy:
-/// [`TransmitPolicy::Clearnet`] yields clearnet in every transport state,
+/// [`TransmitPolicy::Nakednet`] yields nakednet in every transport state,
 /// and [`TransmitPolicy::Mixnet`] yields the conduit or the refusal the
 /// mixnet-only resolver would.
 pub fn resolve_send_route(
@@ -97,7 +97,7 @@ pub fn resolve_send_route(
     conduit: Option<zingo_netutils::conduit::MixnetConduit>,
 ) -> Result<MixnetRoute, MixnetNotReady> {
     match policy {
-        TransmitPolicy::Clearnet => Ok(MixnetRoute::Clearnet),
+        TransmitPolicy::Nakednet => Ok(MixnetRoute::Nakednet),
         TransmitPolicy::Mixnet => resolve_mixnet_only_route(mode, conduit).map(MixnetRoute::Mixnet),
     }
 }
@@ -201,20 +201,20 @@ mod tests {
         assert_eq!(session.in_flight(), 0);
     }
 
-    /// The clearnet row of the matrix: under the clearnet policy a send
-    /// routes clearnet in every transport state, conduit or not.
+    /// The nakednet row of the matrix: under the nakednet policy a send
+    /// routes nakednet in every transport state, conduit or not.
     #[test]
-    fn the_clearnet_policy_transmits_over_clearnet_in_every_state() {
+    fn the_nakednet_policy_transmits_over_nakednet_in_every_state() {
         for mode in Indicator::ALL {
             assert_eq!(
-                resolve_send_route(TransmitPolicy::Clearnet, mode, None),
-                Ok(MixnetRoute::Clearnet),
-                "{mode} must not block a clearnet send"
+                resolve_send_route(TransmitPolicy::Nakednet, mode, None),
+                Ok(MixnetRoute::Nakednet),
+                "{mode} must not block a nakednet send"
             );
             assert_eq!(
-                resolve_send_route(TransmitPolicy::Clearnet, mode, Some(conduit())),
-                Ok(MixnetRoute::Clearnet),
-                "a ready conduit must not override the clearnet policy while {mode}"
+                resolve_send_route(TransmitPolicy::Nakednet, mode, Some(conduit())),
+                Ok(MixnetRoute::Nakednet),
+                "a ready conduit must not override the nakednet policy while {mode}"
             );
         }
     }

@@ -163,7 +163,7 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
         // blocking enable fails closed on a client that cannot prove, so
         // the stub announces the test-hosted SOCKS5 endpoint above: the
         // Sentinel's round trip gets bytes back, the standing client is
-        // born proven, and the clearnet sync — the sole clearnet
+        // born proven, and the nakednet sync — the sole nakednet
         // exception — runs against the mock to produce the ERROR.
         .arg("--nym-proxy")
         .arg(&stub_proxy)

@@ -540,8 +540,8 @@ impl ClientBuilder {
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_create_config(wallet_config);
         let mut lightclient = timed(
-            "build_client::new_clearnet_consented",
-            LightClient::new_clearnet_consented(config, overwrite),
+            "build_client::new_nakednet_consented",
+            LightClient::new_nakednet_consented(config, overwrite),
         )
         .await
         .unwrap();

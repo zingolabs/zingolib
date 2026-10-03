@@ -912,6 +912,14 @@ impl MockChain {
         self.mempool.len()
     }
 
+    /// Returns the number of mempool streams a client still holds open.
+    pub fn open_mempool_streams(&self) -> usize {
+        self.mempool_subscribers
+            .iter()
+            .filter(|subscriber| !subscriber.is_closed())
+            .count()
+    }
+
     /// Validates `bytes` under the chain's rules and enters the mempool on success.
     pub fn submit_transaction(&mut self, bytes: Vec<u8>) -> Result<TxId, Rejection> {
         let transaction = self.validate(&bytes)?;
@@ -2130,11 +2138,11 @@ impl MockNet {
 
 // Mock-net clients run with Mixnet Mode switched on, so every
 // chain-mock send walks the fail-closed route resolver and the
-// escalation orchestration instead of quietly consenting to clearnet.
+// escalation orchestration instead of quietly consenting to nakednet.
 // The address is never dialed: the transmit path pairs this slot
 // state with arms that submit over the mock indexer's channel.
 // Without the nym feature there is no mixnet and sends stay
-// clearnet, so the same tests cover both routes across the
+// nakednet, so the same tests cover both routes across the
 // feature matrix.
 #[allow(unused_variables)]
 async fn attach_mock_mixnet(lightclient: &mut LightClient) {
