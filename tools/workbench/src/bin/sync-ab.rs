@@ -602,16 +602,28 @@ fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
     Ok(Command::new(arm.worktree.join("target/release/zingo-cli")))
 }
 
-/// The engine's own duration and output count, from the closing line.
+/// The engine's own duration and output count, from the grafted closing line.
+// An arm whose committed code carries its own span closes twice: the
+// committed line bare, the grafted line with the count. Splitting the whole
+// log on the marker examined only the text between the two closes, which
+// never holds the count, so the reading is taken from the one line that
+// carries both the marker and the count.
 fn closing_span(log: &str) -> Option<(u64, u64)> {
-    let tail = log.split(SYNC_SPAN_CLOSE).nth(1)?;
+    // A truncated final line can hold the marker before its whole count,
+    // so only text up to the last newline is examined.
+    let complete = &log[..log.rfind('\n')?];
+    // A failed sync closes its span without a count, and a rate over work
+    // that never finished would be a fiction.
+    let line = complete
+        .lines()
+        .rev()
+        .find(|line| line.contains(SYNC_SPAN_CLOSE) && line.contains(SYNC_SPAN_OUTPUTS))?;
+    let tail = line.split(SYNC_SPAN_CLOSE).nth(1)?;
     let digits: String = tail
         .trim_start()
         .chars()
         .take_while(char::is_ascii_digit)
         .collect();
-    // A truncated final line can hold the marker before its whole duration,
-    // so a reading is taken only once the unit follows the digits.
     if !tail
         .trim_start()
         .get(digits.len()..)?
@@ -619,8 +631,6 @@ fn closing_span(log: &str) -> Option<(u64, u64)> {
     {
         return None;
     }
-    // A failed sync closes its span without a count, and a rate over work
-    // that never finished would be a fiction.
     let counted: String = tail
         .split(SYNC_SPAN_OUTPUTS)
         .nth(1)?
@@ -883,5 +893,16 @@ mod tests {
         );
         assert_eq!(closing_span("SYNC_SPAN=close 12"), None);
         assert_eq!(closing_span("SYNC_SPAN=close 1250ms err\n"), None);
+    }
+
+    /// HYPOTHESIS: an arm whose committed code carries its own span closes
+    /// twice, and the counted grafted line is still read. Falsified if the
+    /// doubled marker hides the count.
+    #[test]
+    fn a_doubled_closing_line_still_yields_the_counted_reading() {
+        assert_eq!(
+            closing_span("SYNC_SPAN=close 1250ms ok\nSYNC_SPAN=close 1250ms ok outputs=8192\n"),
+            Some((1250, 8192))
+        );
     }
 }
