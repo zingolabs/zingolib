@@ -1,0 +1,39 @@
+[package]
+name = "zingo"
+version = "2.0.0"
+authors = ["Zingolabs <zingo@zingolabs.com>"]
+edition = "2024"
+
+[dependencies]
+zingolib = { workspace = true, features = ["nym", "perspective"] }
+pepper-sync = { workspace = true }
+
+zcash_keys = { workspace = true }
+zcash_address = { workspace = true }
+zcash_protocol = { workspace = true }
+zcash_client_backend = { workspace = true, features = ["lightwalletd-tonic"] }
+zingo_common_components = { workspace = true }
+
+http = { workspace = true }
+json = { workspace = true }
+lazy_static = { workspace = true }
+hex = { workspace = true }
+android_logger = { workspace = true }
+log = { workspace = true }
+uniffi = { workspace = true, features = ["cli"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "time"] }
+serde_json = { workspace = true }
+zip32 = { workspace = true }
+thiserror = { workspace = true }
+once_cell = { workspace = true }
+
+[build-dependencies]
+uniffi_build = { workspace = true, features = ["builtin-bindgen"] }
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+name = "zingo"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"

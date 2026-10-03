@@ -14,7 +14,6 @@
 //! any pre-Confirmed state → Invalidated  (bound note spent outside the migration)
 //! ```
 
-use orchard::builder::BundleType;
 use pepper_sync::wallet::OutputId;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
@@ -58,7 +57,7 @@ pub struct BoundaryWitness {
 /// How Phase 2 transactions are signed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SigningStrategy {
-    /// Build and sign each part at its broadcast boundary. The only sound
+    /// Build and sign each part at its transmission boundary. The only sound
     /// strategy while ZIP 244 commits the anchor into the signature hash.
     LazyAtBoundary,
     /// Sign every part at consent time and persist the raw transactions.
@@ -73,13 +72,13 @@ pub enum SigningStrategy {
 pub enum PartState {
     /// Note bound, no bucket assigned yet.
     Bound,
-    /// Assigned to a broadcast window, with an anchor drawn below it.
+    /// Assigned to a transmission window, with an anchor drawn below it.
     Assigned,
     /// Built and signed (txid and expiry recorded). Transient under
     /// [`SigningStrategy::LazyAtBoundary`], durable under
     /// [`SigningStrategy::PreSigned`].
     Signed,
-    /// Submitted to the broadcast endpoint at least once.
+    /// Submitted to the transmission endpoint at least once.
     Broadcast,
     /// Mined and confirmed at this height. Terminal.
     Confirmed {
@@ -118,14 +117,14 @@ pub struct PartRecord {
     /// The split note this part spends. Set at binding time and kept through
     /// every rebuild (the note does not change on expiry, only the anchor).
     pub note: Option<BoundNote>,
-    /// The bucket this part broadcasts in: it is due while the chain tip is
+    /// The bucket this part transmits in: it is due while the chain tip is
     /// inside the window `[bucket_index · M, (bucket_index + 1) · M)`. The
     /// builder's target height comes from here. Distinct from
     /// `Self::anchor_bucket`, which is where the part *proves*.
     pub bucket_index: Option<u64>,
     /// The bucket whose opening boundary this part anchors its Orchard spend
     /// to, always at least one bucket below [`Self::bucket_index`] (see
-    /// [`super::schedule::draw_anchor_age`]). Drawn per part at placement
+    /// [`super::schedule::draw_anchor_bucket`]). Drawn per part at placement
     /// time, so two parts of one batch usually carry different anchors.
     ///
     /// `None` on a part read from a migration section written before anchors
@@ -145,7 +144,7 @@ pub struct PartRecord {
     /// Expiry height of the built transaction, set when signed.
     pub expiry_height: Option<BlockHeight>,
     /// The raw signed transaction under [`SigningStrategy::PreSigned`].
-    /// `None` under the lazy strategy: between signing and broadcast the
+    /// `None` under the lazy strategy: between signing and transmission the
     /// bytes are recoverable from the wallet's transaction record by txid.
     pub(crate) signed_blob: Option<Vec<u8>>,
     /// The anchor root and witness at `Self::anchor_bucket`'s boundary,
@@ -154,7 +153,7 @@ pub struct PartRecord {
     /// discarded when a pre-anchor-age schedule is read, where it proves the
     /// note under the *window's* boundary instead.
     pub anchor_witness: Option<BoundaryWitness>,
-    /// Broadcast attempts so far. Incremented (and persisted) before every
+    /// Transmission attempts so far. Incremented (and persisted) before every
     /// submit so a crash between submit and record is detectable.
     pub attempts: u8,
 }
@@ -191,7 +190,7 @@ impl PartRecord {
         Ok(())
     }
 
-    /// `Bound → Assigned`: the schedule placed this part in a broadcast
+    /// `Bound → Assigned`: the schedule placed this part in a transmission
     /// window.
     ///
     /// Clears `Self::anchor_bucket`, as every bucket transition does: the
@@ -265,7 +264,7 @@ impl PartRecord {
 
     /// `{Assigned, Signed, Broadcast, Expired} → Confirmed`: the bound note's
     /// nullifier was revealed by this part's own transaction. Reachable from
-    /// pre-broadcast states because a crash between submit and record leaves
+    /// pre-transmission states because a crash between submit and record leaves
     /// the persisted state behind the chain.
     #[allow(clippy::result_large_err)]
     pub(crate) fn mark_confirmed(&mut self, height: BlockHeight) -> Result<(), WalletError> {
@@ -312,21 +311,43 @@ impl PartRecord {
     }
 }
 
-/// A part's proving closure: builds, proves, and signs the part's
-/// transaction, returning its txid and raw bytes. Takes ownership of all
-/// needed data. No wallet reference is captured. Safe to call on any thread.
-pub(crate) type ProveOnce =
-    Box<dyn FnOnce() -> Result<(TxId, Vec<u8>), WalletError> + Send + 'static>;
+/// A part's proving work, owning everything the build needs.
+///
+/// Naming the captured set is the point: a closure hid it in a body, where
+/// nothing stated what crossed to the proving thread. Every field is owned,
+/// so no wallet reference travels with it and the work runs on any thread.
+pub struct ProveOnce {
+    /// The account's spending key, for the spend and the output keys.
+    usk: zcash_keys::keys::UnifiedSpendingKey,
+    /// The historical Orchard root the spend commits to.
+    anchor: orchard::Anchor,
+    /// The bound note the part spends.
+    note: orchard::Note,
+    /// That note's path to the anchor.
+    merkle_path: orchard::tree::MerklePath,
+    /// The chain the transaction is built for.
+    chain_type: crate::config::ChainType,
+    /// The part's value, which the Ironwood output carries.
+    denomination: u64,
+    /// The fee this part pays, as a non-standard fixed rule.
+    part_fee: u64,
+    /// The height whose consensus branch the transaction commits to.
+    target_height: BlockHeight,
+    /// The height past which the transaction is no longer valid.
+    expiry_height: BlockHeight,
+    /// The migration's parameters, for the canonical-shape verification.
+    params: super::MigrationParams,
+}
 
 /// Outcome of `crate::wallet::LightWallet::prepare_part`: either a ready
 /// proving closure or the reason the part must be skipped.
 pub enum PrepareResult {
-    /// All wallet data was extracted. The closure does the CPU-intensive
-    /// proving on a background thread.
+    /// All wallet data was extracted. The proving work does the
+    /// CPU-intensive part on a background thread.
     Ready {
-        /// Proving closure. Takes ownership of all needed data. No wallet
-        /// reference is captured. Safe to call on any thread.
-        prove: ProveOnce,
+        /// The proving work, boxed so this variant stays the size of a
+        /// pointer rather than of every field the build needs.
+        prove: Box<ProveOnce>,
         /// First block of the part's bucket window (the builder's target).
         target_height: BlockHeight,
         /// Expiry height of the built transaction.
@@ -344,7 +365,7 @@ pub enum MaterializeOutcome {
         /// The transaction's id.
         txid: TxId,
         /// The raw transaction bytes, ready for
-        /// [`super::broadcast::BroadcastClient::submit`].
+        /// [`super::transmission::TransmissionClient::submit`].
         raw_tx: Vec<u8>,
     },
     /// The part cannot be materialized right now. Never triggers a
@@ -384,7 +405,7 @@ pub enum SkipReason {
         activation: BlockHeight,
     },
     /// The part carries no anchor bucket: a schedule persisted before
-    /// anchors were drawn separately from broadcast windows (migration
+    /// anchors were drawn separately from transmission windows (migration
     /// section inner version 3 and below). Proving cannot invent one,
     /// because the age draw is what keeps the anchor out of the open window.
     /// `crate::wallet::LightWallet::refresh_part_witnesses` draws it at
@@ -392,7 +413,7 @@ pub enum SkipReason {
     /// capturable, so this reason clears itself.
     AnchorNotDrawn,
     /// The bound note is already spent (the user insistently spent it, or a
-    /// restart raced an earlier broadcast). Reconciliation invalidates the
+    /// restart raced an earlier transmission). Reconciliation invalidates the
     /// part and recommends a remainder replan.
     BoundNoteSpent {
         /// The spent note's wallet output id.
@@ -541,11 +562,13 @@ impl crate::wallet::LightWallet {
     }
 
     /// Caches the boundary anchor and witness of every part whose anchor
-    /// checkpoint is currently retained. Call after synchronization: the
-    /// retention window is finite and a captured witness is good forever.
+    /// checkpoint is currently retained. Call once the wallet is synced to
+    /// the chain tip, and under continuous sync again as each newly mined
+    /// block is scanned: the retention window is finite and a captured
+    /// witness is good forever.
     ///
     /// Because a part's anchor sits at least one full bucket below its
-    /// broadcast window, every part gets a whole window's worth of
+    /// transmission window, every part gets a whole window's worth of
     /// synchronizations in which to capture its witness before it is due.
     /// That runway is what makes it survivable that pepper-sync checkpoints
     /// wherever Orchard outputs happen to land rather than on the boundary
@@ -558,7 +581,7 @@ impl crate::wallet::LightWallet {
     ///
     /// A wallet with no witness work — no migration state at all, or no
     /// [`PartState::Assigned`] part awaiting its witness — returns without
-    /// consulting the activation schedule, so this ambient post-sync call
+    /// consulting the activation schedule, so this ambient call
     /// never blocks synchronization on a network that never activates NU6.3
     /// (where the start paths refuse loudly, so such work cannot arise).
     /// With work present, a missing NU6.3 activation is a real fault and
@@ -621,7 +644,7 @@ impl crate::wallet::LightWallet {
     /// pass (the tree state is unavailable, the boundary predates the
     /// NU6.3 activation, or the bound note is spent or has diverged from
     /// the part record), so one part's condition never aborts the whole
-    /// broadcast pass. Skipped parts fall to reconciliation.
+    /// transmission pass. Skipped parts fall to reconciliation.
     ///
     /// The returned closure does not reference the wallet, so callers can run
     /// multiple closures concurrently on background threads. Mutates
@@ -750,7 +773,7 @@ impl crate::wallet::LightWallet {
         let chain_type = self.chain_type;
         let denomination = part.denomination;
         let part_fee = params.part_fee;
-        // The target comes from the broadcast window, not the anchor. It
+        // The target comes from the transmission window, not the anchor. It
         // selects the consensus branch the transaction commits to, so it must
         // sit in the Ironwood era; the anchor is a historical Orchard root
         // and is legal at any retained boundary above the part's own note.
@@ -760,75 +783,17 @@ impl crate::wallet::LightWallet {
         let expiry_height = super::schedule::canonical_expiry_height(target_height);
         let params_clone = params.clone();
 
-        let prove: ProveOnce = Box::new(move || {
-            use zcash_primitives::transaction::builder::{BuildConfig, Builder};
-            use zcash_protocol::memo::MemoBytes;
-            use zcash_protocol::value::Zatoshis;
-
-            let orchard_fvk = orchard::keys::FullViewingKey::from(usk.orchard());
-            let recipient = orchard_fvk.address_at(0u32, zip32::Scope::Internal);
-            let internal_ovk = orchard_fvk.to_ovk(zip32::Scope::Internal);
-
-            let fee_rule = zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(
-                Zatoshis::from_u64(part_fee)?,
-            );
-            let build_config = BuildConfig::Standard {
-                sapling_anchor: None,
-                orchard_anchor: Some(anchor),
-                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
-                orchard_pool_bundle_type: BundleType::Transactional {
-                    bundle_required: false,
-                    pad_to_minimum: None,
-                },
-            };
-            let mut builder = Builder::new(chain_type, target_height, build_config)
-                .with_expiry_height(expiry_height);
-            builder
-                .add_orchard_spend::<std::convert::Infallible>(
-                    orchard_fvk.clone(),
-                    note,
-                    merkle_path,
-                )
-                .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
-            builder
-                .add_ironwood_output::<std::convert::Infallible>(
-                    Some(internal_ovk),
-                    recipient,
-                    Zatoshis::from_u64(denomination)?,
-                    MemoBytes::empty(),
-                )
-                .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
-
-            let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params()
-                .map_err(|e| WalletError::MigrationBuild(format!("sapling params: {e}")))?;
-            let sapling_prover =
-                zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-            let build_result = builder
-                .build(
-                    &zcash_transparent::builder::TransparentSigningSet::new(),
-                    &[usk.sapling().clone()],
-                    &[usk.orchard().into()],
-                    rand::rngs::OsRng,
-                    &sapling_prover,
-                    &sapling_prover,
-                    &fee_rule,
-                )
-                .map_err(|e| WalletError::MigrationBuild(format!("{e:?}")))?;
-
-            verify_canonical_part(
-                build_result.transaction(),
-                denomination,
-                expiry_height,
-                &params_clone,
-            )?;
-
-            let txid = build_result.transaction().txid();
-            let mut raw_tx = Vec::new();
-            build_result
-                .transaction()
-                .write(&mut raw_tx)
-                .map_err(WalletError::TransactionWrite)?;
-            Ok((txid, raw_tx))
+        let prove = Box::new(ProveOnce {
+            usk,
+            anchor,
+            note,
+            merkle_path,
+            chain_type,
+            denomination,
+            part_fee,
+            target_height,
+            expiry_height,
+            params: params_clone,
         });
 
         Ok(PrepareResult::Ready {
@@ -894,7 +859,7 @@ impl crate::wallet::LightWallet {
                 target_height,
                 expiry_height,
             } => {
-                let (txid, raw_tx) = prove()?;
+                let (txid, raw_tx) = prove.prove()?;
                 self.record_part_result(
                     part,
                     txid,
@@ -906,6 +871,87 @@ impl crate::wallet::LightWallet {
                 Ok(MaterializeOutcome::Materialized { txid, raw_tx })
             }
         }
+    }
+}
+
+impl ProveOnce {
+    /// Builds, proves, and signs the part's transaction, yielding its txid
+    /// and raw bytes.
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn prove(self) -> Result<(TxId, Vec<u8>), WalletError> {
+        let ProveOnce {
+            usk,
+            anchor,
+            note,
+            merkle_path,
+            chain_type,
+            denomination,
+            part_fee,
+            target_height,
+            expiry_height,
+            params: params_clone,
+        } = self;
+        use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
+        use zcash_protocol::memo::MemoBytes;
+        use zcash_protocol::value::Zatoshis;
+
+        let orchard_fvk = orchard::keys::FullViewingKey::from(usk.orchard());
+        let recipient = orchard_fvk.address_at(0u32, zip32::Scope::Internal);
+        let internal_ovk = orchard_fvk.to_ovk(zip32::Scope::Internal);
+
+        let fee_rule = zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(
+            Zatoshis::from_u64(part_fee)?,
+        );
+        let build_config = BuildConfig::Standard {
+            sapling_anchor: None,
+            orchard_anchor: Some(anchor),
+            ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
+        };
+        let mut builder =
+            Builder::new(chain_type, target_height, build_config).with_expiry_height(expiry_height);
+        builder
+            .add_orchard_spend::<std::convert::Infallible>(orchard_fvk.clone(), note, merkle_path)
+            .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
+        builder
+            .add_ironwood_output::<std::convert::Infallible>(
+                Some(internal_ovk),
+                recipient,
+                Zatoshis::from_u64(denomination)?,
+                MemoBytes::empty(),
+            )
+            .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
+
+        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
+        let sapling_prover =
+            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let build_result = builder
+            .build(
+                &zcash_transparent::builder::TransparentSigningSet::new(),
+                &[usk.sapling().clone()],
+                &[usk.orchard().into()],
+                rand::rngs::OsRng,
+                &sapling_prover,
+                &sapling_prover,
+                &fee_rule,
+            )
+            .map_err(|e| WalletError::MigrationBuild(format!("{e:?}")))?;
+
+        verify_canonical_part(
+            build_result.transaction(),
+            denomination,
+            expiry_height,
+            &params_clone,
+        )?;
+
+        let txid = build_result.transaction().txid();
+        let mut raw_tx = Vec::new();
+        build_result
+            .transaction()
+            .write(&mut raw_tx)
+            .map_err(WalletError::TransactionWrite)?;
+        Ok((txid, raw_tx))
     }
 }
 
@@ -1123,10 +1169,10 @@ mod tests {
                 "mark_signed from {from:?}"
             );
 
-            let legal_broadcast = matches!(from, PartState::Signed);
+            let legal_transmission = matches!(from, PartState::Signed);
             assert_eq!(
                 part_in(from).mark_broadcast().is_ok(),
-                legal_broadcast,
+                legal_transmission,
                 "mark_broadcast from {from:?}"
             );
 

@@ -38,11 +38,26 @@ fn socks5_endpoint_port_extremes_survive_the_wire_encoding() {
 }
 
 #[test]
-fn death_reason_survives_the_wire_encoding_including_non_ascii_detail() {
-    let reason = ProxyDeathReason::MixnetDisconnected {
-        detail: "gateway went away — упал — 途絶".to_string(),
-    };
-    assert_eq!(round_trip(reason.clone()), reason);
+fn every_death_reason_survives_the_wire_encoding_including_non_ascii_detail() {
+    let reasons = [
+        ProxyDeathReason::ListenerRefused {
+            detail: "gateway went away — упал — 途絶".to_string(),
+        },
+        ProxyDeathReason::GreetingUnwritable {
+            detail: "broken pipe".to_string(),
+        },
+        ProxyDeathReason::MethodSelectionUnreadable {
+            detail: "connection reset".to_string(),
+        },
+        ProxyDeathReason::MethodSelectionRefused {
+            version: 0x05,
+            method: 0xff,
+        },
+        ProxyDeathReason::CheckTimedOut { budget_millis: 250 },
+    ];
+    for reason in reasons {
+        assert_eq!(round_trip(reason.clone()), reason);
+    }
 }
 
 #[test]
@@ -53,9 +68,6 @@ fn every_error_variant_survives_the_wire_encoding() {
         },
         ProxyFfiError::Connect {
             reason: "gateway refused".to_string(),
-        },
-        ProxyFfiError::Address {
-            reason: "\"not-an-address\": invalid socket address syntax".to_string(),
         },
     ];
     for error in variants {

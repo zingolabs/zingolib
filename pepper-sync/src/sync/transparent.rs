@@ -1,4 +1,3 @@
-use std::cmp;
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 use std::sync::Arc;
@@ -23,7 +22,10 @@ use super::MAX_REORG_ALLOWANCE;
 /// Discovers all addresses in use by the wallet and returns `scan_targets` for any new relevant transactions to scan transparent
 /// bundles.
 /// `last_known_chain_height` should be the value before updating to latest chain height.
-pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
+/// The search starts at the height returned by [`discovery_start_height`].
+/// Returns the gap addresses.
+// TODO: improve this to not make all the calls at once
+pub(crate) async fn address_discovery<W: SyncWallet>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: Arc<RwLock<W>>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
@@ -31,28 +33,28 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
     last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     config: TransparentAddressDiscovery,
-) -> Result<(), SyncError<W::Error>> {
+) -> Result<HashMap<String, TransparentAddressId>, SyncError<W::Error>> {
     if !config.scopes.external && !config.scopes.internal && !config.scopes.refund {
-        return Ok(());
+        return Ok(HashMap::new());
     }
 
-    let wallet_addresses = wallet
-        .read()
-        .await
+    let wallet_guard = wallet.read().await;
+    let wallet_addresses = wallet_guard
         .get_transparent_addresses()
         .map_err(SyncError::WalletError)?
         .clone();
+    let transparent_scan_floor = wallet_guard
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .transparent_scan_floor;
+    drop(wallet_guard);
     let mut scan_targets: BTreeSet<ScanTarget> = BTreeSet::new();
-    let sapling_activation_height = consensus_parameters
-        .activation_height(consensus::NetworkUpgrade::Sapling)
-        .expect("sapling activation height should always return Some");
-    let block_range_start = last_known_chain_height.saturating_sub(MAX_REORG_ALLOWANCE) + 1;
-    let checked_block_range_start = match block_range_start.cmp(&sapling_activation_height) {
-        cmp::Ordering::Greater | cmp::Ordering::Equal => block_range_start,
-        cmp::Ordering::Less => sapling_activation_height,
-    };
     let block_range = Range {
-        start: checked_block_range_start,
+        start: discovery_start_height(
+            consensus_parameters,
+            last_known_chain_height,
+            transparent_scan_floor,
+        ),
         end: chain_height + 1,
     };
 
@@ -104,14 +106,14 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
     }
 
     // discover new addresses and find scan_targets for relevant transactions
+    let mut gap_addresses = HashMap::new();
     for (account_id, ufvk) in ufvks {
         if let Some(account_pubkey) = ufvk.transparent() {
             for scope in &scopes {
                 // start with the first address index previously unused by the wallet
                 let mut address_index = if let Some(id) = wallet_addresses
                     .keys()
-                    .filter(|id| id.account_id() == *account_id && id.scope() == *scope)
-                    .next_back()
+                    .rfind(|id| id.account_id() == *account_id && id.scope() == *scope)
                 {
                     id.address_index().next()
                 } else {
@@ -159,7 +161,13 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
                     })?;
                 }
 
-                addresses.truncate(addresses.len() - config.gap_limit as usize);
+                let gap_index = addresses.len().saturating_sub(config.gap_limit as usize);
+                let scope_gap_addresses: HashMap<String, TransparentAddressId> = addresses
+                    .split_off(gap_index)
+                    .into_iter()
+                    .map(|(id, address)| (address, id))
+                    .collect();
+                gap_addresses.extend(scope_gap_addresses);
 
                 let mut wallet_guard = wallet.write().await;
                 let wallet_addresses_mut = wallet_guard
@@ -182,7 +190,31 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
         .set_save_flag()
         .map_err(SyncError::WalletError)?;
 
-    Ok(())
+    Ok(gap_addresses)
+}
+
+/// Returns the height transparent address discovery searches from.
+///
+/// The search starts [`MAX_REORG_ALLOWANCE`] blocks below the `last_known_chain_height` in case of re-org.
+/// It starts from the block above the `transparent_scan_floor` of the previous sync session if that is lower, as the
+/// blocks mined during that session were only covered by compact block transparent data scanning and may still be
+/// unscanned.
+/// The sapling activation height is the lowest height searched.
+fn discovery_start_height(
+    consensus_parameters: &impl consensus::Parameters,
+    last_known_chain_height: BlockHeight,
+    transparent_scan_floor: Option<BlockHeight>,
+) -> BlockHeight {
+    let sapling_activation_height = consensus_parameters
+        .activation_height(consensus::NetworkUpgrade::Sapling)
+        .expect("sapling activation height should always return Some");
+    let reorg_start_height = last_known_chain_height.saturating_sub(MAX_REORG_ALLOWANCE) + 1;
+
+    transparent_scan_floor
+        .map_or(reorg_start_height, |floor| {
+            reorg_start_height.min(floor + 1)
+        })
+        .max(sapling_activation_height)
 }
 
 // TODO: process memo encoded address indexes.
@@ -194,3 +226,67 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
 // the wallet transaction
 // c) if the range is scanned and the tx does not exist in the wallet, fetch the compact block if its not in the wallet
 // and scan the transparent bundles
+
+#[cfg(test)]
+mod tests {
+    use zcash_protocol::consensus::{MAIN_NETWORK, Parameters as _};
+
+    use super::*;
+
+    const LAST_KNOWN_CHAIN_HEIGHT: u32 = 3_000_000;
+    const REORG_START_HEIGHT: BlockHeight =
+        BlockHeight::from_u32(LAST_KNOWN_CHAIN_HEIGHT - MAX_REORG_ALLOWANCE + 1);
+    const BLOCKS_MINED_BELOW_REORG_START: u32 = 500;
+    const BLOCKS_MINED_ABOVE_SAPLING_ACTIVATION: u32 = 10;
+
+    fn start_height(transparent_scan_floor: Option<BlockHeight>) -> BlockHeight {
+        discovery_start_height(
+            &MAIN_NETWORK,
+            BlockHeight::from_u32(LAST_KNOWN_CHAIN_HEIGHT),
+            transparent_scan_floor,
+        )
+    }
+
+    /// A wallet saved before the transparent scan floor was stored has no floor. The search covers the blocks that
+    /// may have been re-orged.
+    #[test]
+    fn discovery_starts_at_reorg_allowance_with_no_floor() {
+        assert_eq!(start_height(None), REORG_START_HEIGHT);
+    }
+
+    /// Fewer blocks were mined during the previous sync session than may have been re-orged.
+    #[test]
+    fn discovery_starts_at_reorg_allowance_with_floor_above() {
+        for floor in [
+            REORG_START_HEIGHT,
+            BlockHeight::from_u32(LAST_KNOWN_CHAIN_HEIGHT),
+        ] {
+            assert_eq!(start_height(Some(floor)), REORG_START_HEIGHT);
+        }
+    }
+
+    /// More blocks were mined during the previous sync session than may have been re-orged. Any of them may still be
+    /// unscanned, so the search starts from the first block mined during that session.
+    #[test]
+    fn discovery_starts_above_floor_below_reorg_allowance() {
+        let floor = REORG_START_HEIGHT - BLOCKS_MINED_BELOW_REORG_START;
+
+        assert_eq!(start_height(Some(floor)), floor + 1);
+    }
+
+    #[test]
+    fn discovery_starts_at_sapling_activation_at_the_lowest() {
+        let sapling_activation_height = MAIN_NETWORK
+            .activation_height(consensus::NetworkUpgrade::Sapling)
+            .unwrap();
+
+        assert_eq!(
+            discovery_start_height(
+                &MAIN_NETWORK,
+                sapling_activation_height + BLOCKS_MINED_ABOVE_SAPLING_ACTIVATION,
+                None
+            ),
+            sapling_activation_height
+        );
+    }
+}

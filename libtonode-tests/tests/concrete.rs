@@ -548,12 +548,12 @@ use zcash_local_net::validator::Validator;
 use zingolib::config::{ChainType, ClientConfig};
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::{LightClientError, SendError};
+use zingolib::perspective::value_transfer::{
+    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
+};
 use zingolib::testutils::build_fvks_from_unified_keystore;
 use zingolib::wallet::error::CalculateTransactionError;
 use zingolib::wallet::output::SpendStatus;
-use zingolib::wallet::summary::data::{
-    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
-};
 
 #[tokio::test]
 async fn test_scanning_in_watch_only_mode() {
@@ -674,7 +674,9 @@ async fn test_scanning_in_watch_only_mode() {
             })
             .build()
             .unwrap();
-        let mut watch_client = LightClient::new(zingo_config, false).await.unwrap();
+        let mut watch_client = LightClient::new_nakednet_consented(zingo_config, false)
+            .await
+            .unwrap();
         // assert empty wallet before rescan
         let balance = watch_client
             .account_balance(zip32::AccountId::ZERO)
@@ -1152,6 +1154,36 @@ async fn assert_ironwood_note_statuses(
     }
 }
 
+/// Sync until the wallet records `txid` in the mempool. The mempool
+/// monitor only runs within a sync session, and a session can end
+/// before the indexer, which polls the validator's mempool, streams a
+/// freshly sent transaction.
+async fn sync_until_in_mempool(
+    client: &mut LightClient,
+    txid: zcash_primitives::transaction::TxId,
+) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        client.sync_and_await().await.unwrap();
+        let in_mempool = client
+            .wallet()
+            .read()
+            .await
+            .wallet_transactions
+            .get(&txid)
+            .is_some_and(|transaction| {
+                matches!(transaction.status(), ConfirmationStatus::Mempool(_))
+            });
+        if in_mempool {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "transaction {txid} not observed in the mempool within 30 seconds"
+        );
+    }
+}
+
 /// Coalesced from the former `mempool_and_balance` and
 /// `mempool_spends_correctly_marked_pending_spent`
 /// (protection-dominance analysis): one funded recipient walks two
@@ -1188,7 +1220,7 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     )
     .await
     .unwrap();
-    recipient.sync_and_await().await.unwrap();
+    sync_until_in_mempool(&mut recipient, *small_txids.first()).await;
     let after_small = funded - (small + u64::from(MINIMUM_FEE));
     assert_ironwood_split(&recipient, after_small, 0, after_small).await;
     assert_ironwood_note_statuses(
@@ -1225,7 +1257,7 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     )
     .await
     .unwrap();
-    recipient.sync_and_await().await.unwrap();
+    sync_until_in_mempool(&mut recipient, *big_txids.first()).await;
     // One orchard spend, one sapling output, orchard change: the
     // ZIP-317 fee the former test pinned implicitly via its
     // 880_000 post-state.
@@ -1687,14 +1719,128 @@ async fn mine_to_transparent_coinbase_maturity() {
     assert_eq!(mature_balance, scenarios::mined_block_rewards_total(3));
 }
 
+/// `propose_send_with_op_return` reports the fee of both transactions.
+/// `send_stored_proposal` broadcasts a deshield and a transparent-only
+/// transaction from a shielded balance. After mining, both confirm. The
+/// second transaction pays the recipient, carries the payload in an
+/// OP_RETURN output, and has no change. The deshield pays exactly the
+/// amount plus the OP_RETURN fee.
+#[tokio::test]
+async fn propose_and_send_with_op_return_confirms_on_chain() {
+    use zingolib::wallet::transparent::OpReturnData;
+
+    /// A payload under the 80-byte limit.
+    const PAYLOAD: &[u8] = b"zingolib op_return payload";
+    let amount = Zatoshis::const_from_u64(100_000);
+
+    let (ref local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
+
+    scenarios::send_and_bump(
+        local_net,
+        &mut faucet,
+        vec![(
+            &get_base_address_macro!(recipient, "unified"),
+            500_000,
+            None,
+        )],
+    )
+    .await;
+    recipient.sync_and_await().await.unwrap();
+
+    let recipient_address = get_base_address_macro!(faucet, "transparent");
+    let data = OpReturnData::new(PAYLOAD.to_vec()).unwrap();
+
+    let proposal = recipient
+        .propose_send_with_op_return(&recipient_address, amount, data, zip32::AccountId::ZERO)
+        .await
+        .unwrap();
+    let op_return_fee = proposal.op_return_fee();
+    let deshield_fee = proposal.deshield_fee().unwrap();
+    assert_eq!(
+        proposal.total_fee().unwrap(),
+        (deshield_fee + op_return_fee).unwrap(),
+        "total fee is the sum of both transaction fees"
+    );
+    assert_eq!(
+        zingolib::data::proposal::total_payment_amount(proposal.deshield()).unwrap(),
+        (amount + op_return_fee).unwrap(),
+        "the deshield pays the amount plus the OP_RETURN fee"
+    );
+
+    let txids = recipient.send_stored_proposal(false).await.unwrap();
+    assert_eq!(txids.len(), 2, "a deshield and an OP_RETURN send are sent");
+    let deshield_txid = txids[0];
+    let op_return_txid = txids[1];
+
+    increase_height_and_wait_for_client(local_net, &mut recipient, 3)
+        .await
+        .unwrap();
+
+    let wallet = recipient.wallet();
+    let wallet = wallet.read().await;
+
+    let deshield = wallet
+        .wallet_transactions
+        .get(&deshield_txid)
+        .expect("deshield recorded");
+    assert!(deshield.status().is_confirmed(), "deshield confirmed");
+
+    let op_return_tx = wallet
+        .wallet_transactions
+        .get(&op_return_txid)
+        .expect("OP_RETURN send recorded");
+    assert!(
+        op_return_tx.status().is_confirmed(),
+        "OP_RETURN send confirmed"
+    );
+
+    let bundle = op_return_tx
+        .transaction()
+        .transparent_bundle()
+        .expect("OP_RETURN send is a transparent transaction");
+
+    assert_eq!(bundle.vin.len(), 1, "spends the single deshield output");
+
+    assert_eq!(
+        bundle.vout.len(),
+        2,
+        "recipient + OP_RETURN, no change output"
+    );
+
+    let op_return_out = bundle
+        .vout
+        .iter()
+        .find(|out| out.value() == Zatoshis::ZERO)
+        .expect("a zero-value OP_RETURN output");
+    let script = op_return_out.script_pubkey().0.0.clone();
+    assert_eq!(script[0], 0x6a, "null-data script starts with OP_RETURN");
+    assert!(
+        script.windows(PAYLOAD.len()).any(|w| w == PAYLOAD),
+        "the OP_RETURN carries the payload verbatim"
+    );
+
+    let recipient_out = bundle
+        .vout
+        .iter()
+        .find(|out| out.value() == amount)
+        .expect("a recipient output paying the amount");
+    assert_ne!(
+        recipient_out.value(),
+        Zatoshis::ZERO,
+        "the recipient output is the non-null-data output"
+    );
+}
+
 mod testnet_test {
-    use pepper_sync::sync_status;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::{
-        config::{ChainType, ClientConfig, DEFAULT_INDEXER_URI_TESTNET, WalletConfig},
+        config::{ChainType, ClientConfig, WalletConfig},
         lightclient::LightClient,
         testutils::{default_test_wallet_settings, tempfile::TempDir},
     };
+
+    /// The testnet indexer these wallet-load tests pin explicitly.
+    const TESTNET_INDEXER: &str = "https://testnet.zec.rocks:443";
 
     #[ignore = "testnet cannot be run offline"]
     #[tokio::test]
@@ -1708,7 +1854,7 @@ mod testnet_test {
             let wallet_dir = TempDir::new().unwrap();
             let config = ClientConfig::builder()
                 .set_chain_type(ChainType::Testnet)
-                .set_indexer_uri((DEFAULT_INDEXER_URI_TESTNET).parse::<http::Uri>().unwrap())
+                .set_indexer_uri((TESTNET_INDEXER).parse::<http::Uri>().unwrap())
                 .set_wallet_config(WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
@@ -1725,11 +1871,9 @@ mod testnet_test {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             interval.tick().await;
-            while sync_status(&*lightclient.wallet().read().await)
-                .await
-                .unwrap()
-                .percentage_total_outputs_scanned
-                > 1.0
+            while lightclient
+                .latest_sync_status()
+                .is_none_or(|status| status.percentage_total_outputs_scanned < 1.0)
             {
                 interval.tick().await;
             }
@@ -1740,7 +1884,7 @@ mod testnet_test {
             // will fail if there were any reload errors due to bad file write code i.e. no flushing or file syncing
             let config = ClientConfig::builder()
                 .set_chain_type(ChainType::Testnet)
-                .set_indexer_uri((DEFAULT_INDEXER_URI_TESTNET).parse::<http::Uri>().unwrap())
+                .set_indexer_uri((TESTNET_INDEXER).parse::<http::Uri>().unwrap())
                 .set_wallet_config(WalletConfig::Read)
                 .set_wallet_dir(wallet_dir.path().to_path_buf())
                 .build()

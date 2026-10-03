@@ -7,7 +7,7 @@
 //! and no spend. This builder fabricates exactly those invariants.
 //!
 //! Beyond proposing, the wallets can BUILD transactions offline
-//! (`LightWallet::calculate_transactions`, the build-without-broadcast
+//! (`LightWallet::calculate_transactions`, the build-without-transmit
 //! seam of the protection audit's gap remediation plan): each fabricated
 //! note is addressed to the wallet's own keys and its commitment is
 //! appended to the corresponding shard tree at the note's claimed

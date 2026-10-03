@@ -4,6 +4,43 @@
 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
 - Never define by absence, not in documentation nor doc-comments.
+- **Trait objects are STRICTLY FORBIDDEN.** Every spelling: `dyn Trait`,
+  `Box<dyn Trait>`, `&dyn Trait`, `Arc<dyn Trait>`, and any trait object behind
+  a type alias. Use a generic parameter, an `impl Trait` position, or an enum
+  over the known implementors. Never add one. Existing ones are debt to retire,
+  not precedent to follow. Ruled 2026-08-18.
+  - **One sanctioned exception:** `Arc<dyn ProxyHosting>` in
+    `zingo-netutils/src/provider.rs`. A platform host is implemented outside
+    this workspace and reached across an FFI boundary, so its concrete type is
+    unnameable here. The alternatives were weighed and both cost more than the
+    rule saves: a type parameter reaches `Acquirer`, `Pools`, and `LightClient`,
+    which every consumer names, and a request channel relocates the dynamism
+    behind a queue, invents a host-vanished failure mode, and serialises the
+    boot's concurrent acquisitions unless the host spawns per request. The
+    exception is confined to one field below the seam, and the wallet names
+    only the concrete `HostedProvider`. Do not relitigate it, and do not read
+    it as licence for a second exception. Ruled 2026-08-18.
+- **Every commit MUST be A/B benchmarked against its parent** with the online
+  sync benchmark (`makers sync-bench`), which drives a real `run-cli --online`
+  session so the mixnet boot load is present. Report both numbers with the
+  commit. Ruled 2026-08-18. A commit confined to build scripts and tooling
+  (`build.rs` files, `tools/workbench`, `Makefile.toml`, CI workflows) is
+  exempt, because it changes no code the benchmark runs. Ruled 2026-09-30.
+- **The communication model is moving to events published from zingolib.**
+  The wallet crate takes a callback interface from the consumer at startup
+  and calls it with typed events (sync status, balance, new transactions,
+  errors), so the consumer's timed polls become a subscription. Issue #2824
+  tracks the arc and issue #2820 specifies the events. Every review and every
+  implementation MUST weigh its change against that model: do not add a poll,
+  a side channel around the lightclient lock, or a string-shaped status that
+  an event will replace, and shape new state so an event can carry it. Ruled
+  2026-10-02.
+- **Code duplication is FORBIDDEN.** The convention is maximally DRY code
+  with pure functions first: extract the shared logic into one pure function
+  and call it from every site, keep effects at the edges, and collapse any
+  duplication you find in code you are already changing. A second copy of a
+  helper, a branch, or a constant is a defect, in review and in
+  implementation alike. Ruled 2026-10-02.
 
 ## Writing & Code Style
 
@@ -63,6 +100,7 @@ Goal: produce prose and code that reads as if written by a specific, competent h
 - No docstrings that just restate the signature.
 - Names: concise and domain-specific. Avoid generic placeholders (`data`, `result`, `output`, `item`, `value`, `temp`, `handleData`, a helper named `helper`) and avoid over-long descriptive names where a short one is idiomatic.
 - No completeness theater: no unrequested demo/usage blocks, no logs narrating execution ("Starting...", "Done!"), no emoji in output, no unprompted complexity analysis in comments.
+- Never use magic numbers, anywhere. Every bare literal gets a name: prefer the most private binding the context allows, and a named constant where privacy can't confine it. Derive new constants from existing named constants rather than repeating a number.
 - Don't add guards for conditions that can't occur. Don't wrap non-throwing code in try/catch. Don't swallow-and-log errors; let them propagate.
 - Match the surrounding codebase's idioms and conventions over textbook-uniform formatting.
 
@@ -75,6 +113,7 @@ Goal: produce prose and code that reads as if written by a specific, competent h
 - Prefer `if let` and combinators (`map`, `and_then`, `ok_or`, `unwrap_or_else`) over verbose `match` when clearer.
 - Prefer iterator chains over manual `for` + `push` where idiomatic.
 - Use `&str` where a borrow suffices instead of `String`.
+- Run `makers feature-sweep` before you push. An ordinary `cargo check` compiles one feature combination, so a rename or a signature change can leave code behind a `#[cfg(feature = ...)]` gate broken and still look green; the sweep checks the touched crates in every combination, as CI does.
 
 ### TypeScript / React
 
@@ -117,8 +156,8 @@ Todo → `ready-for-human`, Canceled → `wontfix`) plus two **labels**
 
 ### Domain docs
 
-**Single-context**: one `CONTEXT.md` + `docs/adr/` at the repo root. See
-`docs/agents/domain.md`.
+**Single-context**: one `CONTEXT.md` at the repo root. Decision records sit
+under `docs/adr/zingolib/`. See `docs/agents/domain.md`.
 
 ### Pending designs
 

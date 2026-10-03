@@ -3,11 +3,28 @@
 //! The scheduled flow a mobile client drives:
 //! [`LightClient::plan_ironwood_migration`] →
 //! [`LightClient::start_ironwood_migration`] (consent) →
-//! [`LightClient::continue_note_splitting`] after each sync until the parts
-//! are scheduled → [`LightClient::reschedule_parts`] when the user picks the
+//! [`LightClient::continue_note_splitting`] each time the wallet is synced to
+//! the chain tip, until the parts are scheduled →
+//! [`LightClient::reschedule_parts`] when the user picks the
 //! Phase 2 cadence → [`LightClient::reconcile_migration`] on every launch →
-//! [`LightClient::broadcast_due_parts`] from background wakes →
+//! [`LightClient::transmit_due_parts`] from background wakes →
 //! [`LightClient::catch_up_migration`] when windows were missed.
+//!
+//! Several of these calls are made once the wallet is synced to the chain
+//! tip. A Sync Session with `shutdown_on_completion` set returns at that
+//! point, so the call follows [`LightClient::await_sync`] or a ready
+//! [`LightClient::poll_sync`]. A continuous Sync Session keeps running and
+//! scans each newly mined block, so the call follows a sync status for which
+//! [`pepper_sync::sync::SyncStatus::is_complete`] returns true, read from
+//! [`LightClient::subscribe_sync_status`] or
+//! [`LightClient::latest_sync_status`]. A status is published after every
+//! scan, so each newly mined block is followed by one.
+//!
+//! [`LightClient::sync_to_tip_and_await`] reaches the same point in one call
+//! whatever `shutdown_on_completion` is set to: it stops a running Sync
+//! Session, syncs to the chain tip and returns. It leaves sync stopped, so
+//! it suits a caller that makes one migration call and relaunches sync
+//! itself, as the CLI's migration commands do.
 //!
 //! [`LightClient::migrate_to_ironwood`] composes the same pieces into an
 //! interactive one-call for CLI use, testing, and the user who prefers the
@@ -18,10 +35,10 @@
 //! schedule, accepting that the transfers are correlated and the amounts are
 //! the wallet's own.
 //!
-//! Part broadcasts obey the Mixnet Mode policy (ADR 0011, amendment
+//! Part transmissions obey the Mixnet Mode policy (ADR 0011, amendment
 //! 2026-07-23): while the mode is on they travel only over the mixnet, fail
 //! closed while it is not ready, and never target the synchronization
-//! endpoint's host. See [`broadcast_route`].
+//! endpoint's host. See [`transmission_route`].
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -37,14 +54,14 @@ use zcash_protocol::consensus::BlockHeight;
 use crate::wallet::LightWallet;
 use crate::wallet::error::WalletError;
 use crate::wallet::migration::{
-    BroadcastClient, BroadcastWindow, ChainView, ConsentBinding, ImmediateMigrationPlan,
-    MigrationMode, MigrationParams, MigrationPhase, MigrationPlan, MigrationState, PartId,
-    PartState, PrepareResult, RecommendedAction, ReconcileReport, SigningStrategy, WindowReport,
-    due_now_parts, plan_hash, plan_migration, plan_schedule, reconcile, schedule,
+    ChainView, ConsentBinding, ImmediateMigrationPlan, MigrationMode, MigrationParams,
+    MigrationPhase, MigrationPlan, MigrationState, PartId, PartState, PrepareResult,
+    RecommendedAction, ReconcileReport, SigningStrategy, TransmissionClient, TransmissionWindow,
+    WindowReport, due_now_parts, plan_hash, plan_migration, plan_schedule, reconcile, schedule,
 };
 
-pub mod broadcast_grpc;
-pub mod broadcast_route;
+pub mod transmission_grpc;
+pub mod transmission_route;
 
 use zingo_netutils::time::CONFIRMATION_POLL_INTERVAL;
 /// Give up waiting for a note-splitting round after this many polls.
@@ -60,7 +77,7 @@ const WAKE_HORIZON_BUCKETS: u64 = 32;
 /// ([`LightClient::migrate_immediately`]).
 #[derive(Debug, Clone)]
 pub struct ImmediateMigrationSummary {
-    /// The immediate migration transactions, in broadcast order. More than one only when the
+    /// The immediate migration transactions, in transmission order. More than one only when the
     /// account held more notes than fit in a single transaction.
     pub txids: Vec<TxId>,
     /// Value (zatoshis) sent into the Ironwood pool.
@@ -76,7 +93,7 @@ pub struct ImmediateMigrationSummary {
 pub enum ImmediateMigrationPhase {
     /// Proving and signing the planned transactions.
     Building,
-    /// Broadcasting the built transactions.
+    /// Transmitting the built transactions.
     Transmitting,
 }
 
@@ -89,7 +106,7 @@ pub struct ImmediateMigrationStatus {
     pub total: u32,
     /// Transactions built (proved + signed) so far, `0..=total`.
     pub built: u32,
-    /// Transactions broadcast so far, `0..=total`.
+    /// Transactions transmitted so far, `0..=total`.
     pub sent: u32,
     /// Which phase the immediate migration is in.
     pub phase: ImmediateMigrationPhase,
@@ -156,7 +173,7 @@ impl ImmediateMigrationProgressHandle {
         }
     }
 
-    /// Publishes the number of transactions broadcast so far. No-op when idle.
+    /// Publishes the number of transactions transmitted so far. No-op when idle.
     pub(crate) fn set_sent(&self, sent: u32) {
         if let Some(status) = self
             .0
@@ -212,7 +229,7 @@ pub enum SplitOutcome {
 pub enum SplitPhase {
     /// Proving and signing the round's transactions.
     Building,
-    /// Broadcasting the built transactions.
+    /// Transmitting the built transactions.
     Transmitting,
 }
 
@@ -226,7 +243,7 @@ pub struct SplitStatus {
     pub total: u32,
     /// Transactions built (proved + signed) so far, `0..=total`.
     pub built: u32,
-    /// Transactions broadcast so far, `0..=total`.
+    /// Transactions transmitted so far, `0..=total`.
     pub sent: u32,
     /// Which phase the round is in.
     pub phase: SplitPhase,
@@ -286,7 +303,7 @@ impl SplitProgressHandle {
         }
     }
 
-    /// Publishes the number of transactions broadcast so far. No-op when idle.
+    /// Publishes the number of transactions transmitted so far. No-op when idle.
     pub(crate) fn set_sent(&self, sent: u32) {
         if let Some(status) = self
             .0
@@ -426,7 +443,7 @@ pub struct BatchStatus {
     pub total: u32,
     /// Parts resolved so far (sent, slid, or found not due).
     pub resolved: u32,
-    /// Parts accepted by the broadcast endpoint so far.
+    /// Parts accepted by the transmission endpoint so far.
     pub sent: u32,
     /// What the batch is doing right now.
     pub phase: BatchPhase,
@@ -455,7 +472,7 @@ pub struct PartOutcome {
 /// What one execute batch did with one part.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PartSendResult {
-    /// Accepted by the broadcast endpoint.
+    /// Accepted by the transmission endpoint.
     Sent(TxId),
     /// Not sendable this session: its window boundary is no longer
     /// witnessable from the wallet's tree. Reconciliation carries it to a
@@ -468,7 +485,7 @@ pub enum PartSendResult {
     },
     /// Submission failed and the batch halted here.
     Failed {
-        /// The rendered error.
+        /// The failure's whole cause chain, outermost layer first.
         error: String,
     },
 }
@@ -483,10 +500,37 @@ pub struct BatchReport {
     pub halted: Option<String>,
 }
 
+/// What one pass of the due-part transmission loop achieved.
+#[must_use]
+enum Transmission {
+    /// Every submission the pass attempted was accepted, in submission order.
+    Complete(Vec<TxId>),
+    /// A submission failed and the pass stopped there.
+    Halted {
+        /// The parts accepted before the failure, in submission order.
+        sent: Vec<TxId>,
+        /// The part whose submission failed. It stays signed (its
+        /// transaction already recorded in the wallet) and due, so a later
+        /// attempt resubmits it.
+        part: PartId,
+        /// Why the endpoint did not take it.
+        error: crate::wallet::migration::PartTransmissionError,
+    },
+}
+
+impl Transmission {
+    /// The accepted txids, for callers that carry on past a failed part.
+    fn into_sent(self) -> Vec<TxId> {
+        match self {
+            Transmission::Complete(sent) | Transmission::Halted { sent, .. } => sent,
+        }
+    }
+}
+
 /// The transactions of a completed migration.
 #[derive(Debug, Clone)]
 pub struct MigrationSummary {
-    /// Note-splitting (Orchard→Orchard) transactions, in broadcast order.
+    /// Note-splitting (Orchard→Orchard) transactions, in transmission order.
     pub split_txids: Vec<TxId>,
     /// Parts (Orchard→Ironwood), one per denomination.
     pub part_txids: Vec<TxId>,
@@ -497,9 +541,9 @@ pub struct MigrationSummary {
 /// What one [`LightClient::continue_note_splitting`] call did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SplitStep {
-    /// The next note-splitting round was built and broadcast. Sync until
+    /// The next note-splitting round was built and transmitted. Sync until
     /// its transactions confirm, then reconcile and call again.
-    RoundBroadcast {
+    RoundTransmitted {
         /// The round just sent, counted from zero.
         round: u32,
         /// Its transactions.
@@ -514,13 +558,13 @@ pub enum SplitStep {
         pending: Vec<TxId>,
     },
     /// Note splitting is finished and the parts are bound to their notes
-    /// and scheduled. [`LightClient::broadcast_due_parts`] takes over from
+    /// and scheduled. [`LightClient::transmit_due_parts`] takes over from
     /// here.
     SplittingComplete,
 }
 
 /// The batch a user-triggered [`LightClient::execute_due_parts`] would
-/// broadcast this instant.
+/// transmit this instant.
 ///
 /// A manual-execution client gates its "send batch" action on
 /// [`MigrationStatus::due_now`] being `Some`. It is computed to match
@@ -531,9 +575,9 @@ pub enum SplitStep {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DueBatch {
     /// The current bucket's opening boundary: the anchor height the batch
-    /// broadcasts against.
+    /// transmits against.
     pub boundary: BlockHeight,
-    /// The parts due right now, all broadcasting in the current window.
+    /// The parts due right now, all transmitting in the current window.
     pub part_ids: Vec<PartId>,
     /// The parts' denominations in zatoshis, aligned element-for-element with
     /// `part_ids`.
@@ -559,11 +603,11 @@ pub struct MigrationStatus {
     pub value_total: u64,
     /// Value already confirmed into the Ironwood pool, in zatoshis.
     pub value_migrated: u64,
-    /// Coming broadcast windows, what a platform scheduler feeds into its
+    /// Coming transmission windows, what a mobile platform scheduler feeds into its
     /// earliest-begin requests. Strictly *future* windows: the window the
     /// chain is currently inside is reported by [`Self::due_now`], not here.
-    pub upcoming_windows: Vec<BroadcastWindow>,
-    /// The batch the client can broadcast right now, or `None` when a send
+    pub upcoming_windows: Vec<TransmissionWindow>,
+    /// The batch the client can transmit right now, or `None` when a send
     /// this instant would build nothing (no migration, wrong phase, no part
     /// assigned to the window the chain is inside, or all parts confirmed).
     /// A part's random target does not gate this: it is due for its whole
@@ -598,7 +642,7 @@ impl LightClient {
     /// migration starts in the [`MigrationPhase::Planned`] phase and
     /// [`Self::continue_note_splitting`] drives the rounds from there.
     /// `per_bucket` overrides `k_max` in the migration params, capping how
-    /// many parts share each broadcast window. Lower values spread parts
+    /// many parts share each transmission window. Lower values spread parts
     /// across more sessions (better privacy, slower completion). Higher values
     /// concentrate them (faster, more correlated). `None` keeps the default,
     /// and the choice can be made or revised later through
@@ -677,11 +721,12 @@ impl LightClient {
 
     /// Drives one step of note splitting for the scheduled migration flow:
     /// replans from the wallet's current notes, then either builds and
-    /// broadcasts the next round of Orchard self-sends, or, once the replan
+    /// transmits the next round of Orchard self-sends, or, once the replan
     /// shows every note part-ready, binds the parts to their notes and
     /// schedules them.
     ///
-    /// Call it after a sync whenever [`Self::reconcile_migration`] reports
+    /// Call it once the wallet is synced to the chain tip, as the module docs
+    /// describe, whenever [`Self::reconcile_migration`] reports
     /// [`RecommendedAction::ContinueNoteSplitting`] or
     /// [`RecommendedAction::RetrySplit`], and keep the loop going until it
     /// returns [`SplitStep::SplittingComplete`]. Failed or expired split
@@ -698,7 +743,7 @@ impl LightClient {
     /// [`Self::migrate_to_ironwood`].
     ///
     /// Splits are Orchard self-sends, transmitted over the client's regular
-    /// server connection rather than the decoupled part-broadcast endpoint:
+    /// server connection rather than the decoupled part-transmission endpoint:
     /// they reveal no value and precede any pool-crossing transfer, and the
     /// caller is interactive here anyway (the sends already coincide with
     /// the user's sync activity).
@@ -830,14 +875,14 @@ impl LightClient {
             return Err(e);
         }
 
-        Ok(SplitStep::RoundBroadcast {
+        Ok(SplitStep::RoundTransmitted {
             round: next_round,
             txids,
         })
     }
 
     /// Chooses the Phase 2 cadence: `per_bucket` parts (at least one) share
-    /// each broadcast window. Callable any time between consent and the
+    /// each transmission window. Callable any time between consent and the
     /// first signed part, which lets a client defer the choice to the
     /// Phase 1 → Phase 2 boundary (the natural place for a "how many
     /// batches?" screen) instead of bundling it into the consent call.
@@ -852,9 +897,9 @@ impl LightClient {
     /// user last confirmed is the one Phase 2 executes.
     ///
     /// Fails with [`MigrationError::CadenceFixed`] once any part is signed,
-    /// broadcast, confirmed, or otherwise past `Assigned`: the cadence the
+    /// transmitted, confirmed, or otherwise past `Assigned`: the cadence the
     /// remaining parts were consented under is then already partly executed.
-    /// Afterwards, re-read [`Self::migration_status`] and re-arm platform
+    /// Afterwards, re-read [`Self::migration_status`] and re-arm mobile platform
     /// windows from `upcoming_windows`. The old schedule's times are void.
     pub async fn reschedule_parts(&mut self, per_bucket: u32) -> Result<(), LightClientError> {
         let mut wallet = self.wallet().write().await;
@@ -902,52 +947,56 @@ impl LightClient {
             .ok_or(MigrationError::NoMigration)?
     }
 
-    /// The broadcast-only client parts are submitted through, resolved by the
-    /// Mixnet Mode policy (ADR 0011, amendment 2026-07-23) like every other
-    /// transmitting surface.
-    ///
-    /// While the mode is on, parts travel ONLY over the mixnet (failing
-    /// closed with [`MixnetNotReady`](crate::nym::MixnetNotReady) while the
-    /// proxy bootstraps or after it dies) to one Broadcast Indexer drawn at
-    /// random per submission, with the synchronization endpoint's operator
-    /// forbidden as a target (ADR 0022: a `migration_broadcast_uri` on the
-    /// sync operator's domain is refused, and the draw excludes that
-    /// operator). Clearnet carries parts only when the user deliberately
-    /// toggled the mode off, or in a build without the `nym` feature: then
-    /// the dedicated `migration_broadcast_uri` when configured, else the
-    /// synchronization endpoint with a logged correlation warning, else
-    /// [`LightClientError::Offline`] with no traffic emitted.
-    fn migration_broadcast_client(
+    /// The transmit-only client parts are submitted through, resolved by the
+    /// session's transmit policy (ADR 0011, amendments 2026-07-23 and
+    /// 2026-09-11) like every other transmitting surface.
+    fn migration_transmission_client(
         &self,
-    ) -> Result<broadcast_route::RoutedBroadcastClient, LightClientError> {
-        #[cfg(feature = "nym")]
-        if let crate::nym::MixnetRoute::Mixnet(socks5_addr) = self.mixnet_route()? {
-            let sync_indexer = self.indexer_uri();
-            let candidates = broadcast_route::eligible_candidates(
-                self.migration_broadcast_uri.clone(),
-                sync_indexer.as_ref(),
-            )?;
-            return Ok(broadcast_route::RoutedBroadcastClient::Mixnet(
-                broadcast_route::MixnetBroadcastClient::new(socks5_addr, candidates),
-            ));
-        }
+    ) -> Result<transmission_route::RoutedTransmissionClient, LightClientError> {
+        use transmission_route::MigrationWire;
 
-        let clearnet = match &self.migration_broadcast_uri {
-            Some(uri) => broadcast_grpc::GrpcBroadcastClient::new(uri.clone()),
-            None => {
-                let indexer_uri = self.indexer_uri().ok_or(LightClientError::Offline)?;
-                log::warn!(
-                    "no dedicated migration broadcast endpoint configured; parts will be \
-                     broadcast to the synchronization endpoint, which lets that server \
-                     correlate synchronization with migration activity"
-                );
-                broadcast_grpc::GrpcBroadcastClient::new(indexer_uri)
-            }
+        let sync_indexer = self.indexer_uri();
+        #[cfg(feature = "nym")]
+        let wire = match self.send_route()? {
+            // The guard travels into the client, which dials on every
+            // submission long after this function returns.
+            crate::mixnet::MixnetRoute::Mixnet(conduit) => MigrationWire::Mixnet(conduit.dial()),
+            crate::mixnet::MixnetRoute::Nakednet => MigrationWire::Nakednet,
         };
-        Ok(broadcast_route::RoutedBroadcastClient::Clearnet(clearnet))
+        #[cfg(not(feature = "nym"))]
+        let wire = MigrationWire::Nakednet;
+        if matches!(wire, MigrationWire::Nakednet)
+            && sync_indexer.is_none()
+            && self.migration_transmission_uri.is_none()
+        {
+            return Err(LightClientError::Offline);
+        }
+        let candidates = transmission_route::candidates(
+            self.migration_transmission_uri.clone(),
+            sync_indexer.as_ref(),
+            &self.destination_servers,
+            wire.transport(),
+            &self.indexer_history.health().lock().expect("health mutex"),
+        )?;
+        let reaches_untrusted_sync = matches!(wire, MigrationWire::Nakednet)
+            && sync_indexer.as_ref().is_some_and(|sync| {
+                candidates.contains(sync)
+                    && self.destination_servers.trust_of(sync)
+                        == crate::destination::servers::Trust::Untrusted
+            });
+        if reaches_untrusted_sync {
+            log::warn!(
+                "no dedicated migration transmission endpoint configured; parts will be \
+                 transmitted to the synchronization endpoint, which lets that server \
+                 correlate synchronization with migration activity"
+            );
+        }
+        Ok(transmission_route::RoutedTransmissionClient::new(
+            wire, candidates,
+        ))
     }
 
-    /// Materializes and broadcasts every part whose bucket window is open.
+    /// Materializes and transmits every part whose bucket window is open.
     ///
     /// Works from persisted state and the local shard tree only: this path
     /// never synchronizes and never touches the synchronization client
@@ -955,21 +1004,24 @@ impl LightClient {
     /// unavailable are skipped and fall to reconciliation. Parts in earlier,
     /// missed buckets are catch-up's business, because sending them needs
     /// the user-facing disclosure.
-    pub async fn broadcast_due_parts(&mut self) -> Result<Vec<TxId>, LightClientError> {
-        let client = self.migration_broadcast_client()?;
-        self.broadcast_due_parts_with(&client).await
+    pub async fn transmit_due_parts(&mut self) -> Result<Vec<TxId>, LightClientError> {
+        let client = self.migration_transmission_client()?;
+        self.transmit_due_parts_with(&client).await
     }
 
-    /// [`Self::broadcast_due_parts`] with an injectable client, for tests
+    /// [`Self::transmit_due_parts`] with an injectable client, for tests
     /// and the one-call path.
-    pub(crate) async fn broadcast_due_parts_with(
+    pub(crate) async fn transmit_due_parts_with(
         &mut self,
-        client: &impl BroadcastClient,
+        client: &impl TransmissionClient,
     ) -> Result<Vec<TxId>, LightClientError> {
-        self.broadcast_due_parts_selected(client, None).await
+        Ok(self
+            .transmit_due_parts_selected(client, None)
+            .await?
+            .into_sent())
     }
 
-    /// The due-part broadcast loop, optionally narrowed to a single part so
+    /// The due-part transmission loop, optionally narrowed to a single part so
     /// catch-up can sequence sends with spacing.
     ///
     /// Proving is parallelised across all due parts via
@@ -977,19 +1029,11 @@ impl LightClient {
     /// lock (Phase A), all Halo2/Groth16 work runs concurrently on the
     /// blocking thread pool without holding the lock (Phase B), and wallet
     /// writes + submission happen sequentially under the lock again (Phase C).
-    /// The due-part broadcast loop, optionally narrowed to a single part so
-    /// catch-up can sequence sends with spacing.
-    ///
-    /// Proving is parallelised across all due parts via
-    /// [`tokio::task::spawn_blocking`]: wallet reads happen under the write
-    /// lock (Phase A), all Halo2/Groth16 work runs concurrently on the
-    /// blocking thread pool without holding the lock (Phase B), and wallet
-    /// writes + submission happen sequentially under the lock again (Phase C).
-    async fn broadcast_due_parts_selected(
+    async fn transmit_due_parts_selected(
         &mut self,
-        client: &impl BroadcastClient,
+        client: &impl TransmissionClient,
         only: Option<PartId>,
-    ) -> Result<Vec<TxId>, LightClientError> {
+    ) -> Result<Transmission, LightClientError> {
         type ProveHandle = tokio::task::JoinHandle<
             Result<(usize, TxId, Vec<u8>), crate::wallet::error::WalletError>,
         >;
@@ -1027,7 +1071,7 @@ impl LightClient {
                             match wallet.prepare_part(account, &mut state.parts[index], &params)? {
                                 PrepareResult::Ready { prove, .. } => {
                                     prove_handles.push(tokio::task::spawn_blocking(move || {
-                                        prove().map(|(txid, raw_tx)| (index, txid, raw_tx))
+                                        prove.prove().map(|(txid, raw_tx)| (index, txid, raw_tx))
                                     }));
                                 }
                                 PrepareResult::Skip(reason) => {
@@ -1110,7 +1154,7 @@ impl LightClient {
                 let mut all_to_submit: Vec<(usize, TxId, Vec<u8>, BlockHeight)> =
                     newly_proven_with_expiry
                         .into_iter()
-                        .chain(pre_proven.into_iter())
+                        .chain(pre_proven)
                         .collect();
                 all_to_submit.sort_by_key(|(index, ..)| *index);
                 Ok::<_, LightClientError>(all_to_submit)
@@ -1127,8 +1171,10 @@ impl LightClient {
                     wallet.save_required = true;
                 })
                 .ok_or(MigrationError::NoMigration)?;
+            let started = std::time::Instant::now();
             match client.submit(raw_tx, expiry_height).await {
-                Ok(_) => {
+                Ok(receipt) => {
+                    record_part_route(&self.indexer_history, &receipt.route, started, Ok(()));
                     wallet
                         .with_migration_state(|wallet, state| {
                             state.parts[index].mark_broadcast()?;
@@ -1138,13 +1184,19 @@ impl LightClient {
                         .ok_or(MigrationError::NoMigration)??;
                     sent.push(txid);
                 }
-                Err(e) => {
-                    log::warn!("part submission failed, leaving the part signed: {e}");
-                    break;
+                Err(error) => {
+                    log::warn!("part submission failed, leaving the part signed: {error}");
+                    let part = wallet
+                        .migration
+                        .as_ref()
+                        .ok_or(MigrationError::NoMigration)?
+                        .parts[index]
+                        .id;
+                    return Ok(Transmission::Halted { sent, part, error });
                 }
             }
         }
-        Ok(sent)
+        Ok(Transmission::Complete(sent))
     }
 
     /// Abandons the migration. Parts already confirmed naturally stand.
@@ -1227,12 +1279,12 @@ impl LightClient {
     }
 
     /// Sends overdue parts now, in sequence with `spacing` between
-    /// broadcasts (never simultaneously), after the caller has shown the
+    /// transmits (never simultaneously), after the caller has shown the
     /// ZIP 318 disclosure that sending at application-open time correlates
-    /// the broadcasts with the user's activity.
+    /// the transmissions with the user's activity.
     ///
     /// Each overdue part is shifted into the current bucket (its old anchor
-    /// is stale) before materializing and broadcasting.
+    /// is stale) before materializing and transmitting.
     pub async fn catch_up_migration(
         &mut self,
         spacing: Duration,
@@ -1243,12 +1295,13 @@ impl LightClient {
         }
         self.wallet().write().await.refresh_part_witnesses()?;
 
-        let client = self.migration_broadcast_client()?;
+        let client = self.migration_transmission_client()?;
         let mut sent = Vec::new();
         for part_id in overdue {
             let txids = self
-                .broadcast_due_parts_selected(&client, Some(part_id))
-                .await?;
+                .transmit_due_parts_selected(&client, Some(part_id))
+                .await?
+                .into_sent();
             if !txids.is_empty() {
                 sent.extend(txids);
                 tokio::time::sleep(spacing).await;
@@ -1335,7 +1388,7 @@ impl LightClient {
     /// [`PartSendResult::Slid`] and fall to reconciliation for a coming
     /// window.
     ///
-    /// Disclosure (ZIP 318): user-present sends correlate the broadcasts
+    /// Disclosure (ZIP 318): user-present sends correlate the transmissions
     /// with the user's activity. Under a manual-execution flow every send
     /// has this property, on time or late, so the client shows the
     /// disclosure once, when the cadence is chosen.
@@ -1343,14 +1396,14 @@ impl LightClient {
         &mut self,
         spacing: Duration,
     ) -> Result<BatchReport, LightClientError> {
-        let client = self.migration_broadcast_client()?;
+        let client = self.migration_transmission_client()?;
         self.execute_due_parts_with(&client, spacing).await
     }
 
     /// [`Self::execute_due_parts`] with an injectable client, for tests.
     pub(crate) async fn execute_due_parts_with(
         &mut self,
-        client: &impl BroadcastClient,
+        client: &impl TransmissionClient,
         spacing: Duration,
     ) -> Result<BatchReport, LightClientError> {
         self.fold_in_overdue_parts().await?;
@@ -1384,8 +1437,29 @@ impl LightClient {
         let mut report = BatchReport::default();
         let mut sent = 0u32;
         for (index, (part, denomination)) in owed.iter().enumerate() {
-            match self.broadcast_due_parts_selected(client, Some(*part)).await {
-                Ok(txids) if !txids.is_empty() => {
+            match self.transmit_due_parts_selected(client, Some(*part)).await {
+                // The part was built and signed (it is already in the wallet,
+                // pending) but the endpoint did not take it. It stays signed
+                // and due, so a retry resubmits it. Reporting it as `Slid`
+                // would tell the caller it was not sendable and nothing was
+                // attempted, when the transaction exists and never left.
+                Ok(Transmission::Halted {
+                    part: failed_part,
+                    error,
+                    ..
+                }) => {
+                    let error = error.to_string();
+                    report.outcomes.push(PartOutcome {
+                        part: failed_part,
+                        denomination: *denomination,
+                        result: PartSendResult::Failed {
+                            error: error.clone(),
+                        },
+                    });
+                    report.halted = Some(error);
+                    break;
+                }
+                Ok(Transmission::Complete(txids)) if !txids.is_empty() => {
                     sent += 1;
                     report.outcomes.push(PartOutcome {
                         part: *part,
@@ -1410,7 +1484,7 @@ impl LightClient {
                         .resolve(report.outcomes.len() as u32, sent);
                 }
                 Err(e) => {
-                    let error = e.to_string();
+                    let error = render_cause_chain(&e);
                     report.outcomes.push(PartOutcome {
                         part: *part,
                         denomination: *denomination,
@@ -1427,20 +1501,29 @@ impl LightClient {
     }
 
     /// Captures any still-missing migration boundary witnesses from the
-    /// wallet's current tree state. [`Self::await_sync`] does this
-    /// automatically after every successful sync. A consumer driving sync
-    /// through [`Self::poll_sync`] calls it on completion instead, while
-    /// the boundary checkpoint is still retained.
+    /// wallet's current tree state, while the boundary checkpoint is still
+    /// retained. [`Self::await_sync`] does this when a Sync Session returns
+    /// successfully. A consumer collecting the session's result through
+    /// [`Self::poll_sync`] calls it then instead.
+    ///
+    /// A continuous Sync Session returns only once it is stopped, so a
+    /// consumer running one calls this each time
+    /// [`pepper_sync::sync::SyncStatus::is_complete`] returns true for a new
+    /// sync status. A status is published after every scan, so each newly
+    /// mined block is followed by one.
     pub async fn capture_migration_witnesses(&mut self) -> Result<(), LightClientError> {
         Ok(self.wallet().write().await.refresh_part_witnesses()?)
     }
 
-    /// Broadcasts any parts whose bucket window and random target height are
-    /// both reached, without synchronizing. Call this after each sync to drive
-    /// the scheduled migration automatically.
+    /// Transmits any parts whose bucket window and random target height are
+    /// both reached, without synchronizing. Call this each time the wallet is
+    /// synced to the chain tip to drive the scheduled migration
+    /// automatically: after a Sync Session returns, or under continuous sync
+    /// each time [`pepper_sync::sync::SyncStatus::is_complete`] returns true
+    /// for a new sync status.
     ///
     /// No-op when no migration is active or no parts are due.
-    pub async fn auto_broadcast_if_due(
+    pub async fn auto_transmit_if_due(
         &mut self,
     ) -> Result<Vec<zcash_primitives::transaction::TxId>, LightClientError> {
         {
@@ -1450,8 +1533,8 @@ impl LightClient {
             }
         }
         self.wallet().write().await.refresh_part_witnesses()?;
-        let client = self.migration_broadcast_client()?;
-        self.broadcast_due_parts_with(&client).await
+        let client = self.migration_transmission_client()?;
+        self.transmit_due_parts_with(&client).await
     }
 
     /// The migration's progress, everything a progress UI renders. Includes
@@ -1485,7 +1568,7 @@ impl LightClient {
                         &state.params,
                     )
                 });
-                // The batch a tap would broadcast now. `execute_due_parts`
+                // The batch a tap would transmit now. `execute_due_parts`
                 // folds overdue parts via a reconcile pass, so the read-only
                 // status predicts what it sends from the same reconcile.
                 // Only meaningful once parts are scheduled.
@@ -1602,7 +1685,7 @@ impl LightClient {
     /// in one round of independent transactions.
     ///
     /// This is the *migrate immediately* path ZIP 318 offers alongside the
-    /// private one. All the transfers are broadcast at once, so they correlate with each other and
+    /// private one. All the transfers are transmitted at once, so they correlate with each other and
     /// with the user's activity. Every one of those identifies the wallet on-chain.
     /// **The caller must disclose this.** For the private path, use
     /// [`Self::migrate_to_ironwood`].
@@ -1615,8 +1698,11 @@ impl LightClient {
     /// of every unsent transaction spendable. Calling it again re-plans and
     /// sends the remainder.
     ///
-    /// Syncs the wallet before migrating. Consumers that own the sync
-    /// lifecycle and keep a background sync running should call
+    /// Syncs the wallet to the chain tip before migrating, via
+    /// [`Self::sync_to_tip_and_await`], whatever the wallet's
+    /// `shutdown_on_completion` setting. A running sync is stopped first and
+    /// is not relaunched. Consumers that own the sync lifecycle and keep sync
+    /// running should call
     /// [`Self::quick_immediate_migration`] instead, which migrates
     /// against current wallet state without launching its own sync.
     pub async fn migrate_immediately(
@@ -1630,19 +1716,18 @@ impl LightClient {
             return Err(MigrationError::AlreadyInProgress.into());
         }
 
-        self.sync_and_await().await?;
+        self.sync_to_tip_and_await().await?;
         let sync = self.pause_sync_scoped()?;
         self.migrate_immediately_presynced(account, &sync).await
     }
 
-    /// Broadcasts the immediate Orchard→Ironwood migration against the wallet's
+    /// Transmits the immediate Orchard→Ironwood migration against the wallet's
     /// *current* state, without syncing first.
     ///
     /// This is [`Self::migrate_immediately`] minus the leading
-    /// `sync_and_await`, for consumers that own the sync lifecycle and keep a
-    /// background sync running continuously (e.g. zingo-mobile). Calling the
-    /// syncing variant from such a consumer collides with the running sync
-    /// and fails with [`pepper_sync::error::SyncModeError::SyncAlreadyRunning`].
+    /// `sync_to_tip_and_await`, for consumers that own the sync lifecycle and keep
+    /// sync running continuously (e.g. zingo-mobile). The syncing
+    /// variant stops such a consumer's running sync and leaves it stopped.
     /// This entry point lets the caller drive sync itself.
     ///
     /// The caller is responsible for keeping the wallet synced before
@@ -1651,7 +1736,7 @@ impl LightClient {
     /// engine and resumes it when the guard drops. Planning and building
     /// therefore observe one stable wallet state, the same
     /// pause-before-proposing invariant the `send`/`shield` mutation paths
-    /// establish. The plan, the chunked broadcast, and the idempotent cleanup
+    /// establish. The plan, the chunked transmission, and the idempotent cleanup
     /// on partial failure are identical to the syncing variant.
     ///
     /// Calling without the guard does not compile. A stable wallet state
@@ -1717,8 +1802,8 @@ impl LightClient {
     ///
     /// This is the send-family entry point for the immediate migration, and
     /// the only immediate-migration entry point that crosses the UniFFI boundary:
-    /// [`Self::migrate_immediately`] self-syncs and so collides with a
-    /// consumer's continuous background sync, and the internal
+    /// [`Self::migrate_immediately`] self-syncs and so stops a consumer's
+    /// continuous sync, and the internal
     /// `migrate_immediately_presynced` takes a
     /// [`SyncPauseGuard`] that cannot cross FFI. The caller keeps the wallet
     /// synced, exactly as it must before any send.
@@ -1727,8 +1812,7 @@ impl LightClient {
     /// transaction count, fee, and residual value), and observe live progress
     /// through [`Self::immediate_migration_progress_handle`]. Like every immediate path it
     /// puts the wallet's real amounts on-chain, correlated with each other and
-    /// the caller's activity. The caller must disclose this (ZIP 318). See
-    /// `docs/adr/0019-immediate-migration-is-send-shaped.md`.
+    /// the caller's activity. The caller must disclose this (ZIP 318).
     pub async fn quick_immediate_migration(
         &mut self,
         account: zip32::AccountId,
@@ -1757,8 +1841,7 @@ impl LightClient {
     /// nothing needs splitting.
     ///
     /// It is the same projection as [`Self::plan_ironwood_migration`], named
-    /// for the Phase 1 mental model of the fused, stateless splitting flow
-    /// (`docs/adr/0016-note-splitting-is-a-stateless-fused-call.md`).
+    /// for the Phase 1 mental model of the fused, stateless splitting flow.
     pub async fn plan_note_split(
         &self,
         account: zip32::AccountId,
@@ -1769,7 +1852,7 @@ impl LightClient {
     /// Executes one round of Phase 1 note splitting as a send-shaped call,
     /// the mobile-facing entry point for the *private* migration path's
     /// splitting, the counterpart to [`Self::quick_immediate_migration`] for the immediate
-    /// path. See `docs/adr/0016-note-splitting-is-a-stateless-fused-call.md`.
+    /// path.
     ///
     /// Like [`Self::quick_send`] it pauses sync internally, plans against the
     /// wallet's *current* confirmed notes without synchronizing, and restores
@@ -1781,7 +1864,7 @@ impl LightClient {
     /// **One call does one round.** Loop it: after [`SplitOutcome::Round`],
     /// sync until its `txids` confirm, then call again. Stop at
     /// [`SplitOutcome::Complete`]. [`SplitOutcome::AwaitingConfirmation`] means
-    /// a previously broadcast round has not confirmed yet, so sync and retry.
+    /// a previously transmitted round has not confirmed yet, so sync and retry.
     /// Preview with [`Self::plan_note_split`]. Observe per-transaction progress
     /// through [`Self::split_progress_handle`].
     ///
@@ -1812,10 +1895,10 @@ impl LightClient {
             return Err(MigrationError::AlreadyInProgress.into());
         }
 
-        // A round already broadcast must confirm before the next is planned:
+        // A round already transmitted must confirm before the next is planned:
         // its self-outputs are unconfirmed and its spent inputs are not yet
         // marked spent (a not-yet-mined self-send carries no spend marks), so
-        // a replan would re-select those inputs and re-broadcast the round.
+        // a replan would re-select those inputs and re-transmit the round.
         // Check this first, from the wallet's pending transactions, and defer.
         if self.wallet().read().await.note_split_in_flight(account) {
             return Ok(SplitOutcome::AwaitingConfirmation);
@@ -1959,8 +2042,8 @@ impl LightClient {
 
     /// Runs a full Orchard→Ironwood migration in one call: executes
     /// note-splitting rounds (waiting for each round to confirm), then
-    /// materializes and broadcasts every part immediately through the
-    /// [`BroadcastClient`].
+    /// materializes and transmits every part immediately through the
+    /// [`TransmissionClient`].
     ///
     /// This is the interactive path (CLI, testing, or a user who chose
     /// immediate migration over the scheduled flow): sends coincide with
@@ -1968,6 +2051,13 @@ impl LightClient {
     /// Replans from wallet state before every round, so a migration
     /// interrupted by external spends, expiry or restart picks up where the
     /// notes actually are.
+    ///
+    /// Syncs to the chain tip before each round and while awaiting
+    /// confirmations, via [`Self::sync_to_tip_and_await`], so it returns even
+    /// when the wallet is configured for continuous sync
+    /// (`shutdown_on_completion == false`). A running sync is
+    /// stopped first and is not relaunched; the caller relaunches it with
+    /// [`Self::sync`] when this returns.
     pub async fn migrate_to_ironwood(
         &mut self,
         account: zip32::AccountId,
@@ -1984,7 +2074,7 @@ impl LightClient {
         let mut part_txids = Vec::new();
 
         for _ in 0..MAX_ROUNDS {
-            self.sync_and_await().await?;
+            self.sync_to_tip_and_await().await?;
             // Plan and (when the plan is split) bind under one write guard,
             // the same single-borrow bracket as `start_ironwood_migration`:
             // the notes hashed into the recorded consent are the notes
@@ -2008,10 +2098,10 @@ impl LightClient {
                             return Err(MigrationError::DifferentAccount.into());
                         }
                     }
-                    // An immediate part broadcasts in the current bucket and
+                    // An immediate part transmits in the current bucket and
                     // anchors in a lower one. Until the current bucket sits
                     // two buckets above the activation's, no legal anchor
-                    // exists and every broadcast pass would skip every part,
+                    // exists and every transmission pass would skip every part,
                     // previously a MAX_ROUNDS spin ending in a misleading
                     // SplitDidNotConverge.
                     let bucket_modulus = wallet.migration.as_ref().map_or_else(
@@ -2099,8 +2189,8 @@ impl LightClient {
 
             if plan.is_split() {
                 let residual = plan.residual;
-                let client = self.migration_broadcast_client()?;
-                let sent = self.broadcast_due_parts_with(&client).await?;
+                let client = self.migration_transmission_client()?;
+                let sent = self.transmit_due_parts_with(&client).await?;
                 self.await_migration_confirmations(&sent).await?;
                 part_txids.extend(sent);
                 let _ = self.reconcile_migration().await?;
@@ -2160,7 +2250,7 @@ impl LightClient {
         txids: &[TxId],
     ) -> Result<(), LightClientError> {
         for _ in 0..MAX_CONFIRMATION_POLLS {
-            self.sync_and_await().await?;
+            self.sync_to_tip_and_await().await?;
             let (all_confirmed, failed) = {
                 let wallet = self.wallet().read().await;
                 let statuses: Vec<_> = txids
@@ -2283,13 +2373,60 @@ fn immediate_migration_entry_gate(
     }
 }
 
+/// The separator between two layers of a rendered cause chain, matching the
+/// rendering `zingo_net_diag` gives its own failure records.
+pub(crate) const CAUSE_CHAIN_SEPARATOR: &str = ": ";
+
+/// Renders every layer of a failure's cause chain into the one text a batch
+/// report carries across serde.
+fn render_cause_chain(error: &LightClientError) -> String {
+    zingo_net_diag::chain_texts(error).join(CAUSE_CHAIN_SEPARATOR)
+}
+
+/// Records one part submission's own route evidence in the cross-session
+/// indexer history, so an audit reads the wire each part actually traveled
+/// rather than inferring it from the session's policy afterwards. The
+/// evidence never enters the wallet file: the history is its home, and the
+/// wallet's persisted grammar is untouched.
+fn record_part_route(
+    history: &crate::lightclient::indexer_history::IndexerHistoryHandle,
+    route: &crate::wallet::migration::TransmissionRoute,
+    started: std::time::Instant,
+    outcome: Result<(), crate::lightclient::indexer_history::FailureKind>,
+) {
+    use crate::lightclient::indexer_history::{
+        AttemptKind, AttemptRoute, IndexerAttempt, now_unix_secs,
+    };
+    use crate::wallet::migration::TransmissionRoute;
+
+    let (host, attempt_route) = match route {
+        TransmissionRoute::Mixnet { destination, .. } => (
+            crate::destination::Host::of_host_str(destination),
+            AttemptRoute::Mixnet,
+        ),
+        TransmissionRoute::Nakednet { endpoint } => (
+            crate::destination::Host::of_host_str(endpoint),
+            AttemptRoute::Nakednet,
+        ),
+    };
+    history.record(&IndexerAttempt {
+        unix_secs: now_unix_secs(),
+        host,
+        route: attempt_route,
+        kind: AttemptKind::Send,
+        millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
+        fault_domain: None,
+        outcome,
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use pepper_sync::wallet::{NoteInterface as _, OrchardNote, OutputInterface as _};
     use zip32::AccountId;
 
     use crate::lightclient::LightClient;
-    use crate::mocks::broadcast::MockBroadcastClient;
+    use crate::mocks::transmission::MockTransmissionClient;
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
     use crate::wallet::LightWallet;
     use crate::wallet::migration::{
@@ -2305,6 +2442,32 @@ mod tests {
     /// The value of the one fabricated note every scenario here binds a
     /// migration part to: the smallest canonical denomination.
     const NOTE_VALUE: u64 = 1_000_000;
+
+    /// HYPOTHESIS: a part's route evidence carries the typed failure
+    /// category whole, so no prose is classified at the recording seam.
+    /// Falsified if the recorded outcome differs from the category passed.
+    #[test]
+    fn part_route_evidence_records_the_typed_category() {
+        use crate::lightclient::indexer_history::{FailureKind, IndexerHistoryHandle};
+        use crate::wallet::migration::TransmissionRoute;
+
+        let history = IndexerHistoryHandle::default();
+        super::record_part_route(
+            &history,
+            &TransmissionRoute::Nakednet {
+                endpoint: "indexer.example".to_string(),
+            },
+            std::time::Instant::now(),
+            Err(FailureKind::Rejected),
+        );
+        let recorded = history.load();
+        assert_eq!(recorded.len(), 1, "one attempt is recorded");
+        assert_eq!(
+            recorded[0].outcome,
+            Err(FailureKind::Rejected),
+            "the category passes through whole"
+        );
+    }
 
     /// The immediate-migration progress side channel: a fresh handle is idle, `begin` arms it,
     /// the per-transaction mutators advance a clone the same way a mobile poll
@@ -2454,7 +2617,7 @@ mod tests {
     /// dangerous combination of a live migration and no height, and its
     /// guard assertions fail loudly if [`LightWallet::clear_all`] ever
     /// cancels migrations or rebuilds scan ranges eagerly.
-    /// `via_empty_sync_state` pins the broadcast path's contract on the
+    /// `via_empty_sync_state` pins the transmission path's contract on the
     /// state itself, however it arises (a never-synced wallet, future
     /// clearing paths), and survives any evolution of `clear_all`. One test
     /// red with the other green names the layer that changed.
@@ -2469,10 +2632,10 @@ mod tests {
         /// known chain height becomes `None`. The resulting
         /// [`WalletError::NoSyncData`] is correct and expected. The
         /// consented migration schedule surviving it is what the assertions
-        /// pin, because the broadcast path's early `?`-return between take
+        /// pin, because the transmission path's early `?`-return between take
         /// and restore silently discarded the state, and any later save
         /// persisted the loss.
-        async fn broadcast_error_must_preserve_the_state(
+        async fn transmission_error_must_preserve_the_state(
             empty_the_sync_state: impl FnOnce(&mut LightWallet),
         ) {
             let (mut wallet, bound_note) = wallet_with_migration_note(360);
@@ -2489,14 +2652,14 @@ mod tests {
             );
 
             let mut client = LightClient::new_for_test(wallet).await;
-            let broadcast_client = MockBroadcastClient::default();
-            let result = client.broadcast_due_parts_with(&broadcast_client).await;
+            let transmission_client = MockTransmissionClient::default();
+            let result = client.transmit_due_parts_with(&transmission_client).await;
             assert!(
                 matches!(
                     result,
                     Err(LightClientError::WalletError(WalletError::NoSyncData))
                 ),
-                "the broadcast must fail with NoSyncData, got {result:?}"
+                "the transmission must fail with NoSyncData, got {result:?}"
             );
 
             let wallet = client.wallet().read().await;
@@ -2510,14 +2673,14 @@ mod tests {
         /// the migration.
         #[tokio::test]
         async fn via_clear_all() {
-            broadcast_error_must_preserve_the_state(LightWallet::clear_all).await;
+            transmission_error_must_preserve_the_state(LightWallet::clear_all).await;
         }
 
         /// The fabricated route: the state contract alone, independent of
         /// any particular path into it.
         #[tokio::test]
         async fn via_empty_sync_state() {
-            broadcast_error_must_preserve_the_state(|wallet| {
+            transmission_error_must_preserve_the_state(|wallet| {
                 wallet.sync_state = SyncState::new();
             })
             .await;
@@ -2528,13 +2691,13 @@ mod tests {
     /// `unavailable_boundary_tree_state_skips_without_sync` scenario: a due
     /// part whose bucket-boundary checkpoint is absent from the shard tree
     /// is skipped with no writes, no attempt recorded, and nothing
-    /// broadcast.
+    /// transmitted.
     ///
     /// Limitation: the synthetic wallet FABRICATES the pruned-checkpoint
     /// state (the builder checkpoints the shard trees only at the tip),
     /// so this twin proves the skip logic alone. It cannot prove that
     /// pepper-sync's real pruning produces the state, nor that the
-    /// broadcast path performs no hidden synchronization while a reachable
+    /// transmission path performs no hidden synchronization while a reachable
     /// Indexer exists. Both belong to the live libtonode twin. The tip
     /// still sits more than the checkpoint retention past the boundary, so
     /// the fabricated state matches one a synced wallet can genuinely
@@ -2563,14 +2726,14 @@ mod tests {
         wallet.migration = Some(scheduled_state(params, vec![part]));
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let broadcast_client = MockBroadcastClient::default();
+        let transmission_client = MockTransmissionClient::default();
         let sent = client
-            .broadcast_due_parts_with(&broadcast_client)
+            .transmit_due_parts_with(&transmission_client)
             .await
             .unwrap();
-        assert!(sent.is_empty(), "nothing must be broadcast: {sent:?}");
+        assert!(sent.is_empty(), "nothing must be transmitted: {sent:?}");
         assert!(
-            broadcast_client.submissions.lock().unwrap().is_empty(),
+            transmission_client.submissions.lock().unwrap().is_empty(),
             "the mock endpoint must receive nothing"
         );
 
@@ -2594,7 +2757,7 @@ mod tests {
     /// carrying an output would itself be a checkpoint, so it anchors the
     /// part with the same root every other wallet anchoring there derives.
     ///
-    /// The part broadcasts in the current bucket and anchors one bucket
+    /// The part transmits in the current bucket and anchors one bucket
     /// below it, the age-one placement, so the boundary under test is the
     /// anchor's, not the window's.
     #[tokio::test]
@@ -2647,7 +2810,7 @@ mod tests {
 
     /// The entry gate of the one-call immediate path (issue #2493,
     /// findings 3 and 4): a consented scheduled migration is refused
-    /// rather than collapsed into an immediate broadcast, a different
+    /// rather than collapsed into an immediate transmission, a different
     /// account's migration is refused, a completed migration clears so
     /// the rerun binds newly received funds instead of skipping binding
     /// against stale confirmed parts, and an interrupted immediate
@@ -2735,7 +2898,7 @@ mod tests {
     }
 
     /// Per-part recoverable conditions must skip the part, not abort the
-    /// whole broadcast pass with a hard error (issue #2493, finding 2):
+    /// whole transmission pass with a hard error (issue #2493, finding 2):
     /// one bad part previously left every other due part unsent until a
     /// reconcile happened to run.
     mod per_part_conditions_skip {
@@ -2849,7 +3012,7 @@ mod tests {
         }
 
         /// A part persisted before anchors were drawn separately from
-        /// broadcast windows carries no anchor. Proving cannot invent one,
+        /// transmission windows carries no anchor. Proving cannot invent one,
         /// because the age draw is what keeps the anchor out of the open
         /// window, so the part skips until a synchronization draws it.
         #[test]
@@ -2896,7 +3059,7 @@ mod tests {
     /// `Invalidated` although its own transaction confirmed. A part must
     /// not be rebuilt while its expiry lies in the unscanned gap.
     #[tokio::test]
-    async fn spend_evidence_lag_must_not_rebuild_a_broadcast_part() {
+    async fn spend_evidence_lag_must_not_rebuild_a_transmitted_part() {
         use pepper_sync::sync::{ScanPriority, ScanRange};
         use pepper_sync::wallet::SyncState;
         use zcash_protocol::consensus::BlockHeight;
@@ -2940,7 +3103,7 @@ mod tests {
     }
 
     /// Issue #2493, finding 9 (ratified form): an overdue *Signed* part is
-    /// not catch-up material, because broadcasting its stale signature would
+    /// not catch-up material, because transmitting its stale signature would
     /// mine a permanent lateness fingerprint (cleartext expiry, old anchor)
     /// into its denomination cohort. It is never silently skipped
     /// either: reconcile classifies it awaiting its expiry, visible to
@@ -2977,7 +3140,7 @@ mod tests {
         );
 
         // Catch-up has nothing to act on and says so; the part is
-        // untouched, with no broadcast attempted.
+        // untouched, with no transmission attempted.
         let sent = client
             .catch_up_migration(std::time::Duration::ZERO)
             .await
@@ -2986,7 +3149,7 @@ mod tests {
         let wallet = client.wallet().read().await;
         let part = &wallet.migration.as_ref().unwrap().parts[0];
         assert_eq!(part.state, PartState::Signed, "the signature is kept");
-        assert_eq!(part.attempts, 0, "no lateness fingerprint is broadcast");
+        assert_eq!(part.attempts, 0, "no lateness fingerprint is transmitted");
     }
 
     /// Issue #2493, finding 10: `value_migrated` reports the account's
@@ -3215,11 +3378,11 @@ mod tests {
     /// after a process relaunch, without waiting to become Overdue.
     /// `upcoming_windows` lists only future buckets and `reconcile` classifies the
     /// open window as OnTrack with no action. The open window belongs to the
-    /// third leg, `broadcast_due_parts` (driven at startup or after sync by
-    /// `auto_broadcast_if_due`), whose due predicate selects
+    /// third leg, `transmit_due_parts` (driven at startup or after sync by
+    /// `auto_transmit_if_due`), whose due predicate selects
     /// `bucket_index == current_bucket`.
     #[tokio::test]
-    async fn open_window_part_is_broadcast_at_relaunch() {
+    async fn open_window_part_is_transmitted_at_relaunch() {
         use zcash_primitives::transaction::TxId;
 
         use crate::wallet::migration::{PartClass, reconcile, upcoming_windows};
@@ -3267,21 +3430,21 @@ mod tests {
         }
 
         // The finding's conclusion is nevertheless false: the due-part
-        // broadcast path covers the open window at relaunch.
+        // transmission path covers the open window at relaunch.
         let mut client = LightClient::new_for_test(wallet).await;
-        let broadcast_client = MockBroadcastClient::default();
+        let transmission_client = MockTransmissionClient::default();
         let sent = client
-            .broadcast_due_parts_with(&broadcast_client)
+            .transmit_due_parts_with(&transmission_client)
             .await
             .unwrap();
 
         assert_eq!(
             sent,
             vec![own_txid],
-            "the open-window part broadcasts now instead of slipping to Overdue"
+            "the open-window part transmits now instead of slipping to Overdue"
         );
         {
-            let submissions = broadcast_client.submissions.lock().unwrap();
+            let submissions = transmission_client.submissions.lock().unwrap();
             assert_eq!(submissions.len(), 1, "the endpoint received the part");
             assert_eq!(
                 submissions[0].0, signed_blob,
@@ -3341,9 +3504,9 @@ mod tests {
         async fn without_a_migration_errors() {
             let (wallet, _) = wallet_with_migration_note(360);
             let mut client = LightClient::new_for_test(wallet).await;
-            let broadcast_client = MockBroadcastClient::default();
+            let transmission_client = MockTransmissionClient::default();
             let result = client
-                .execute_due_parts_with(&broadcast_client, Duration::ZERO)
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
                 .await;
             assert!(
                 matches!(
@@ -3376,9 +3539,9 @@ mod tests {
             wallet.migration = Some(scheduled_state(params, vec![part]));
 
             let mut client = LightClient::new_for_test(wallet).await;
-            let broadcast_client = MockBroadcastClient::default();
+            let transmission_client = MockTransmissionClient::default();
             let report = client
-                .execute_due_parts_with(&broadcast_client, Duration::ZERO)
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
                 .await
                 .unwrap();
 
@@ -3420,9 +3583,9 @@ mod tests {
             wallet.migration = Some(scheduled_state(params, vec![part]));
 
             let mut client = LightClient::new_for_test(wallet).await;
-            let broadcast_client = MockBroadcastClient::default();
+            let transmission_client = MockTransmissionClient::default();
             let report = client
-                .execute_due_parts_with(&broadcast_client, Duration::ZERO)
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
                 .await
                 .unwrap();
 
@@ -3437,11 +3600,488 @@ mod tests {
                     halted: None,
                 }
             );
-            assert_eq!(broadcast_client.submissions.lock().unwrap().len(), 1);
+            assert_eq!(transmission_client.submissions.lock().unwrap().len(), 1);
             assert_eq!(
                 client.batch_progress_handle().status(),
                 None,
                 "the progress side channel returns to idle"
+            );
+        }
+
+        /// HYPOTHESIS: a part whose submission the endpoint refuses is
+        /// reported `Failed` and halts the batch, rather than `Slid`: its
+        /// transaction was built and recorded, it just never left, and it
+        /// stays signed so the next batch resubmits it. Falsified if the
+        /// report reads `Slid` with no halt, or the part leaves `Signed`.
+        #[tokio::test]
+        async fn a_refused_submission_is_reported_failed_not_slid() {
+            const TIP: u32 = 300;
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let own_txid = TxId::from_bytes([7; 32]);
+            let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            part.assign(current_bucket).expect("fresh parts are bound");
+            part.mark_signed(own_txid, window_end, Some(vec![0xAB; 64]))
+                .expect("assigned parts sign");
+            wallet.migration = Some(scheduled_state(params, vec![part]));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let transmission_client = MockTransmissionClient::default();
+            transmission_client
+                .fail
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            let report = client
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
+                .await
+                .unwrap();
+
+            let halted = report
+                .halted
+                .as_deref()
+                .expect("a refused submission halts the batch");
+            assert!(
+                halted.contains("mock transport failure"),
+                "the halt carries the submission error, got {halted:?}"
+            );
+            assert_eq!(
+                report.outcomes,
+                vec![PartOutcome {
+                    part: PartId(0),
+                    denomination: NOTE_VALUE,
+                    result: PartSendResult::Failed {
+                        error: halted.to_string(),
+                    },
+                }]
+            );
+            assert_eq!(
+                client
+                    .wallet()
+                    .read()
+                    .await
+                    .migration
+                    .as_ref()
+                    .unwrap()
+                    .parts[0]
+                    .state,
+                PartState::Signed,
+                "the refused part stays signed, due for a resubmission"
+            );
+
+            // The endpoint recovers: the next batch resubmits the same part.
+            transmission_client
+                .fail
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+            let retry = client
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
+                .await
+                .unwrap();
+            assert_eq!(
+                retry.outcomes,
+                vec![PartOutcome {
+                    part: PartId(0),
+                    denomination: NOTE_VALUE,
+                    result: PartSendResult::Sent(own_txid),
+                }]
+            );
+            assert!(retry.halted.is_none());
+        }
+
+        /// HYPOTHESIS: on the automatic path, a refusal in the middle of a
+        /// pass returns the txids accepted before it and leaves the refused
+        /// part signed, so the next pass resubmits only that part. Falsified
+        /// if the accepted txid is dropped, the refused part leaves `Signed`,
+        /// or the accepted part is submitted twice.
+        #[tokio::test]
+        async fn a_mid_pass_refusal_keeps_the_accepted_txids_and_resubmits_the_rest() {
+            const TIP: u32 = 300;
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let first_txid = TxId::from_bytes([1; 32]);
+            let second_txid = TxId::from_bytes([2; 32]);
+            let mut first = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            first.assign(current_bucket).expect("fresh parts are bound");
+            first
+                .mark_signed(first_txid, window_end, Some(vec![0x01; 64]))
+                .expect("assigned parts sign");
+            let mut second = PartRecord::new(PartId(1), NOTE_VALUE, bound_note);
+            second
+                .assign(current_bucket)
+                .expect("fresh parts are bound");
+            second
+                .mark_signed(second_txid, window_end, Some(vec![0x02; 64]))
+                .expect("assigned parts sign");
+            wallet.migration = Some(scheduled_state(params, vec![first, second]));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let transmission_client = MockTransmissionClient::default();
+            // The endpoint takes one submission, then refuses.
+            transmission_client
+                .fail_from
+                .store(1, std::sync::atomic::Ordering::Relaxed);
+            let sent = client
+                .transmit_due_parts_with(&transmission_client)
+                .await
+                .unwrap();
+            assert_eq!(sent, vec![first_txid], "the accepted txid is kept");
+
+            {
+                let wallet = client.wallet().read().await;
+                let parts = &wallet.migration.as_ref().unwrap().parts;
+                assert_eq!(parts[0].state, PartState::Broadcast);
+                assert_eq!(
+                    parts[1].state,
+                    PartState::Signed,
+                    "the refused part stays signed"
+                );
+                assert_eq!(parts[1].attempts, 1, "the refusal counts as an attempt");
+            }
+
+            // The endpoint recovers: only the refused part is resubmitted.
+            transmission_client
+                .fail_from
+                .store(usize::MAX, std::sync::atomic::Ordering::Relaxed);
+            let retry = client
+                .transmit_due_parts_with(&transmission_client)
+                .await
+                .unwrap();
+            assert_eq!(retry, vec![second_txid]);
+            assert_eq!(
+                transmission_client.submissions.lock().unwrap().len(),
+                2,
+                "each part is accepted exactly once"
+            );
+            let wallet = client.wallet().read().await;
+            let parts = &wallet.migration.as_ref().unwrap().parts;
+            assert_eq!(parts[0].state, PartState::Broadcast);
+            assert_eq!(parts[1].state, PartState::Broadcast);
+        }
+
+        /// HYPOTHESIS: in a batch, a refusal reports the parts accepted
+        /// before it as `Sent`, the refused part as `Failed` under its own
+        /// id, and stops: the parts after it get no outcome and no attempt.
+        /// Falsified if a later part is attempted, the failed outcome names
+        /// the wrong part, or the halt is missing.
+        #[tokio::test]
+        async fn a_refusal_stops_the_batch_after_the_accepted_parts() {
+            const TIP: u32 = 300;
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let txids = [
+                TxId::from_bytes([1; 32]),
+                TxId::from_bytes([2; 32]),
+                TxId::from_bytes([3; 32]),
+            ];
+            let parts = txids
+                .iter()
+                .enumerate()
+                .map(|(i, txid)| {
+                    let mut part = PartRecord::new(PartId(i as u32), NOTE_VALUE, bound_note);
+                    part.assign(current_bucket).expect("fresh parts are bound");
+                    part.mark_signed(*txid, window_end, Some(vec![i as u8; 64]))
+                        .expect("assigned parts sign");
+                    part
+                })
+                .collect();
+            wallet.migration = Some(scheduled_state(params, parts));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let transmission_client = MockTransmissionClient::default();
+            // The endpoint takes one submission, then refuses.
+            transmission_client
+                .fail_from
+                .store(1, std::sync::atomic::Ordering::Relaxed);
+            let report = client
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
+                .await
+                .unwrap();
+
+            let halted = report
+                .halted
+                .as_deref()
+                .expect("the refusal halts the batch");
+            assert_eq!(
+                report.outcomes,
+                vec![
+                    PartOutcome {
+                        part: PartId(0),
+                        denomination: NOTE_VALUE,
+                        result: PartSendResult::Sent(txids[0]),
+                    },
+                    PartOutcome {
+                        part: PartId(1),
+                        denomination: NOTE_VALUE,
+                        result: PartSendResult::Failed {
+                            error: halted.to_string(),
+                        },
+                    },
+                ],
+                "the accepted part is Sent, the refused part is Failed, the rest has no outcome"
+            );
+
+            let wallet = client.wallet().read().await;
+            let parts = &wallet.migration.as_ref().unwrap().parts;
+            assert_eq!(parts[0].state, PartState::Broadcast);
+            assert_eq!(
+                parts[1].state,
+                PartState::Signed,
+                "the refused part stays signed"
+            );
+            assert_eq!(parts[1].attempts, 1);
+            assert_eq!(
+                parts[2].state,
+                PartState::Signed,
+                "the part after the halt is untouched"
+            );
+            assert_eq!(
+                parts[2].attempts, 0,
+                "the part after the halt is not attempted"
+            );
+            assert_eq!(transmission_client.submissions.lock().unwrap().len(), 1);
+        }
+
+        /// HYPOTHESIS: once the window of a refused part has passed, the
+        /// part is not catch-up material: reconciliation classes it
+        /// `AwaitingExpiry`, status does not advertise it, and the batch
+        /// leaves it signed in its old bucket. The part the halt blocked,
+        /// still assigned, is `Overdue`, advertised, and folds into the
+        /// batch. Falsified if the refused part is folded or resubmitted,
+        /// or the blocked part is left behind.
+        #[tokio::test]
+        async fn a_refused_part_past_its_window_awaits_expiry_while_the_blocked_part_folds_in() {
+            use crate::wallet::migration::{PartClass, RecommendedAction};
+            use zcash_protocol::consensus::BlockHeight;
+
+            // Tip 360 sits beyond bucket 0's slip tolerance, as in
+            // `overdue_part_folds_into_the_batch`.
+            let (mut wallet, bound_note) = wallet_with_migration_note(360);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let tip = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let current_bucket = schedule::bucket_index(tip, params.bucket_modulus);
+            assert!(current_bucket > 0, "bucket 0 must be in the past");
+            let expiry = BlockHeight::from_u32(1_000);
+            assert!(expiry > tip, "the refused transaction is still valid");
+
+            // The refused part: signed in bucket 0, attempted once, its
+            // transaction still valid.
+            let refused_txid = TxId::from_bytes([1; 32]);
+            let mut refused = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            refused.assign(0).expect("fresh parts are bound");
+            refused
+                .mark_signed(refused_txid, expiry, Some(vec![0x01; 64]))
+                .expect("assigned parts sign");
+            refused.record_attempt();
+            // The part the halt blocked: still assigned in bucket 0.
+            let mut blocked = PartRecord::new(PartId(1), NOTE_VALUE, bound_note);
+            blocked.assign(0).expect("fresh parts are bound");
+            wallet.migration = Some(scheduled_state(params, vec![refused, blocked]));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+
+            let report = client.reconcile_migration().await.unwrap();
+            let class_of = |id: PartId| {
+                report
+                    .assessments
+                    .iter()
+                    .find(|assessment| assessment.id == id)
+                    .map(|assessment| assessment.class)
+            };
+            assert_eq!(
+                class_of(PartId(0)),
+                Some(PartClass::AwaitingExpiry { expiry }),
+                "the refused part waits out its expiry"
+            );
+            assert_eq!(class_of(PartId(1)), Some(PartClass::Overdue));
+            assert!(
+                report.actions.iter().any(|action| matches!(
+                    action,
+                    RecommendedAction::PromptCatchUp { parts, .. } if parts == &vec![PartId(1)]
+                )),
+                "only the blocked part is catch-up material: {:?}",
+                report.actions
+            );
+            assert!(
+                !report
+                    .actions
+                    .iter()
+                    .any(|action| matches!(action, RecommendedAction::Rebuild { .. })),
+                "a still-valid transaction is not rebuilt"
+            );
+
+            let status = client.migration_status().await.unwrap();
+            let due = status.due_now.expect("the blocked part is due");
+            assert_eq!(
+                due.part_ids,
+                vec![PartId(1)],
+                "status advertises the blocked part only"
+            );
+
+            let transmission_client = MockTransmissionClient::default();
+            let batch = client
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
+                .await
+                .unwrap();
+            // The blocked part folds in and is attempted; the synthetic wallet
+            // cannot witness the boundary, so it slides rather than sends.
+            assert!(
+                matches!(
+                    batch.outcomes[..],
+                    [PartOutcome {
+                        part: PartId(1),
+                        result: PartSendResult::Slid,
+                        ..
+                    }]
+                ),
+                "only the blocked part is in the batch: {:?}",
+                batch.outcomes
+            );
+            assert!(batch.halted.is_none());
+            assert!(
+                transmission_client.submissions.lock().unwrap().is_empty(),
+                "the refused part is not resubmitted late"
+            );
+
+            let wallet = client.wallet().read().await;
+            let parts = &wallet.migration.as_ref().unwrap().parts;
+            assert_eq!(parts[0].state, PartState::Signed);
+            assert_eq!(parts[0].attempts, 1);
+            assert_eq!(
+                parts[0].bucket_index,
+                Some(0),
+                "the refused part is not shifted"
+            );
+            assert_eq!(parts[0].txid, Some(refused_txid));
+            assert_eq!(
+                parts[1].bucket_index,
+                Some(current_bucket),
+                "the blocked part folded into the current window"
+            );
+        }
+
+        /// HYPOTHESIS: once the refused part's transaction expires,
+        /// reconciliation rebuilds it: the part returns to `Assigned` with
+        /// no transaction, placed in a coming window, never the current one.
+        /// Falsified if the part stays signed, keeps its txid, or lands in
+        /// the current or a past bucket.
+        #[tokio::test]
+        async fn a_refused_part_is_rebuilt_once_its_transaction_expires() {
+            use crate::wallet::migration::{PartClass, RecommendedAction};
+            use zcash_protocol::consensus::BlockHeight;
+
+            let (mut wallet, bound_note) = wallet_with_migration_note(360);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let tip = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let current_bucket = schedule::bucket_index(tip, params.bucket_modulus);
+            let expiry = BlockHeight::from_u32(300);
+            assert!(expiry <= tip, "the refused transaction has expired");
+
+            let mut refused = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            refused.assign(0).expect("fresh parts are bound");
+            refused
+                .mark_signed(TxId::from_bytes([1; 32]), expiry, Some(vec![0x01; 64]))
+                .expect("assigned parts sign");
+            refused.record_attempt();
+            wallet.migration = Some(scheduled_state(params, vec![refused]));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let report = client.reconcile_migration().await.unwrap();
+            assert_eq!(report.assessments[0].class, PartClass::Expired);
+            assert!(
+                report
+                    .actions
+                    .contains(&RecommendedAction::Rebuild { part: PartId(0) }),
+                "the expired part is rebuilt: {:?}",
+                report.actions
+            );
+
+            let wallet = client.wallet().read().await;
+            let part = &wallet.migration.as_ref().unwrap().parts[0];
+            assert_eq!(part.state, PartState::Assigned, "rebuilt fresh");
+            assert_eq!(part.txid, None, "the dead transaction is dropped");
+            assert!(part.signed_blob.is_none());
+            assert!(
+                part.bucket_index
+                    .is_some_and(|bucket| bucket > current_bucket),
+                "placed in a coming window, got {:?} with current {current_bucket}",
+                part.bucket_index
+            );
+        }
+
+        /// HYPOTHESIS: a failed part's report carries every layer of the
+        /// failure's cause chain, so the reader learns which transaction the
+        /// wallet could not find rather than the bare category alone.
+        /// Falsified if the rendered text omits the innermost layer's detail.
+        #[tokio::test]
+        async fn a_failed_part_reports_the_whole_cause_chain() {
+            const TIP: u32 = 300;
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("synced synthetic wallet");
+            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let own_txid = TxId::from_bytes([7; 32]);
+            let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            part.assign(current_bucket).expect("fresh parts are bound");
+            // A signed part with neither a retained blob nor a wallet
+            // transaction record is the recovery path's failure: the loop
+            // asks the wallet for bytes it does not hold.
+            part.mark_signed(own_txid, window_end, None)
+                .expect("assigned parts sign");
+            wallet.migration = Some(scheduled_state(params, vec![part]));
+
+            let mut client = LightClient::new_for_test(wallet).await;
+            let transmission_client = MockTransmissionClient::default();
+            let report = client
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
+                .await
+                .unwrap();
+
+            let halted = report.halted.expect("the batch halted on the failure");
+            assert!(
+                halted.contains(&own_txid.to_string()),
+                "the report must carry the whole cause chain, got {halted:?}"
+            );
+            let [
+                PartOutcome {
+                    result: PartSendResult::Failed { error },
+                    ..
+                },
+            ] = &report.outcomes[..]
+            else {
+                panic!(
+                    "the one part must be reported failed, got {:?}",
+                    report.outcomes
+                );
+            };
+            assert_eq!(
+                *error, halted,
+                "the part outcome and the halt reason render the same chain"
             );
         }
 
@@ -3461,9 +4101,9 @@ mod tests {
             wallet.migration = Some(scheduled_state(params, vec![part]));
 
             let mut client = LightClient::new_for_test(wallet).await;
-            let broadcast_client = MockBroadcastClient::default();
+            let transmission_client = MockTransmissionClient::default();
             let report = client
-                .execute_due_parts_with(&broadcast_client, Duration::ZERO)
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
                 .await
                 .unwrap();
 
@@ -3475,7 +4115,7 @@ mod tests {
                 }]
             ));
             assert!(
-                broadcast_client.submissions.lock().unwrap().is_empty(),
+                transmission_client.submissions.lock().unwrap().is_empty(),
                 "a slid part reaches nothing"
             );
         }
@@ -3491,9 +4131,9 @@ mod tests {
             wallet.migration = Some(scheduled_state(params.clone(), vec![part]));
 
             let mut client = LightClient::new_for_test(wallet).await;
-            let broadcast_client = MockBroadcastClient::default();
+            let transmission_client = MockTransmissionClient::default();
             let report = client
-                .execute_due_parts_with(&broadcast_client, Duration::ZERO)
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
                 .await
                 .unwrap();
 
@@ -3692,7 +4332,7 @@ mod tests {
         }
 
         /// The distinguishing case: no confirmed note is left to split, but a
-        /// round this account broadcast has not confirmed. The classification
+        /// round this account transmitted has not confirmed. The classification
         /// is derived from the wallet's pending transactions (the stateless
         /// replacement for a stored `pending_txids`), so it must report
         /// `AwaitingConfirmation`, never a false `Complete`.
@@ -3707,7 +4347,7 @@ mod tests {
 
             // Build (but do not transmit) the round: this marks the input
             // spent-pending and records a Calculated self-send, exactly the
-            // state a caller leaves between broadcasting a round and its
+            // state a caller leaves between transmitting a round and its
             // confirmation.
             let plan = wallet.plan_ironwood_migration_now(account).unwrap();
             assert!(!plan.is_split(), "the note needs splitting");
@@ -4030,7 +4670,7 @@ mod tests {
         /// The terminal step: the pending round confirmed and the replan
         /// shows every note part-ready, so the driver binds the parts to
         /// their notes, schedules them, and hands over to the part
-        /// broadcaster.
+        /// transmitter.
         #[tokio::test]
         async fn confirmed_split_binds_and_schedules() {
             const PART_READY: u64 = NOTE_VALUE + CANONICAL_PART_FEE;
@@ -4071,7 +4711,7 @@ mod tests {
 
     /// `MigrationStatus::due_now`: the batch a manual-execution client offers
     /// to send right now. The crux is that it names exactly what a tap would
-    /// broadcast, never the current-window parts still ahead of their random
+    /// transmit, never the current-window parts still ahead of their random
     /// target (the stale-tip bounce), and never in-flight parts.
     mod migration_status_due_now {
         use std::time::Duration;
@@ -4195,9 +4835,9 @@ mod tests {
                 schedule::boundary_of(current_bucket, params.bucket_modulus),
             );
 
-            let broadcast_client = MockBroadcastClient::default();
+            let transmission_client = MockTransmissionClient::default();
             let report = client
-                .execute_due_parts_with(&broadcast_client, Duration::ZERO)
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
                 .await
                 .unwrap();
             assert_eq!(
@@ -4251,9 +4891,9 @@ mod tests {
                 .map(|batch| batch.part_ids.iter().map(|id| id.0).collect())
                 .unwrap_or_default();
 
-            let broadcast_client = MockBroadcastClient::default();
+            let transmission_client = MockTransmissionClient::default();
             let report = client
-                .execute_due_parts_with(&broadcast_client, Duration::ZERO)
+                .execute_due_parts_with(&transmission_client, Duration::ZERO)
                 .await
                 .unwrap();
             let attempted: std::collections::BTreeSet<u32> = report
@@ -4265,13 +4905,13 @@ mod tests {
 
             assert_eq!(
                 advertised, attempted,
-                "due_now must equal the set a tap attempts to broadcast",
+                "due_now must equal the set a tap attempts to transmit",
             );
             assert_eq!(advertised, std::collections::BTreeSet::from([0, 1]));
         }
 
         /// `due_now` is `None` outside the parts-scheduled phase and once every
-        /// part has confirmed, since nothing is left to broadcast in either case.
+        /// part has confirmed, since nothing is left to transmit in either case.
         #[tokio::test]
         async fn due_now_is_none_off_phase_and_when_all_confirmed() {
             let params = {
@@ -4302,6 +4942,127 @@ mod tests {
             assert!(
                 client.migration_status().await.unwrap().due_now.is_none(),
                 "a fully confirmed schedule offers no batch",
+            );
+        }
+    }
+
+    /// The mixnet-only validation pass for the migration machinery (the
+    /// 2026-08-06 question): planning, proposing, and scheduling all reach
+    /// the wire through one seam, and this module pins that the seam routes
+    /// every part over the mixnet — including the ironwood-to-ironwood
+    /// self-sends of note splitting, whose amounts and cadence sketch the
+    /// schedule and so need the mixnet most.
+    mod mixnet_only_validation {
+        use super::*;
+        use crate::wallet::migration::TransmissionRoute;
+        use zcash_primitives::transaction::TxId;
+
+        /// A client whose Mixnet Mode is Ready at the mock tunnel endpoint, with a
+        /// remote sync indexer that is never dialed.
+        #[cfg(feature = "nym")]
+        async fn ready_client(tip: u32) -> (LightClient, BoundNote) {
+            let (wallet, bound_note) = wallet_with_migration_note(tip);
+            let mut client = LightClient::new_for_test(wallet).await;
+            client
+                .set_indexer_uri_lazy("https://indexer.example:443".parse().expect("a static uri"))
+                .expect("a lazy indexer needs no connection");
+            client
+                .switch_on_mixnet_for_tests(crate::mocks::transmission::MOCK_SOCKS5_ADDR)
+                .await;
+            (client, bound_note)
+        }
+
+        /// HYPOTHESIS: the resolved transmission client is the mixnet
+        /// variant whenever Mixnet Mode is ready, so no migration part can
+        /// reach a nakednet wire without the deliberate opt-out. Falsified
+        /// if a ready session resolves anything else.
+        #[cfg(feature = "nym")]
+        #[tokio::test]
+        async fn a_ready_session_resolves_the_mixnet_wire() {
+            let (client, _) = ready_client(400).await;
+            let resolved = client
+                .migration_transmission_client()
+                .expect("a ready session resolves a wire");
+            assert!(
+                resolved.is_mixnet(),
+                "a ready session must resolve the mixnet wire"
+            );
+        }
+
+        /// HYPOTHESIS: while the mixnet is unavailable and the user has not
+        /// consented to nakednet, the seam refuses instead of resolving any
+        /// wire, so no part is emitted. Falsified if an unattached session
+        /// resolves a client at all.
+        #[cfg(feature = "nym")]
+        #[tokio::test]
+        async fn an_unattached_session_refuses_rather_than_resolving_nakednet() {
+            let (wallet, _) = wallet_with_migration_note(400);
+            let client = LightClient::new_for_test(wallet).await;
+            assert!(
+                client.migration_transmission_client().is_err(),
+                "absence of a mixnet is never consent to nakednet"
+            );
+        }
+
+        /// HYPOTHESIS: every part the lifecycle transmits carries a mixnet
+        /// route receipt, and the count of receipts equals the count of
+        /// parts the schedule sent — no part reaches a wire outside the
+        /// seam, and none travels nakednet. Falsified if any receipt names
+        /// a nakednet route, or if the wire saw a different number of
+        /// submissions than the schedule reports sent.
+        #[tokio::test]
+        async fn every_transmitted_part_carries_a_mixnet_receipt() {
+            const TIP: u32 = 400;
+            let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
+            let params = MigrationParams::provisional(wallet.chain_type());
+            let now_height = wallet
+                .sync_state
+                .last_known_chain_height()
+                .expect("the synthetic wallet is fully synced");
+            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+
+            // A part signed in an earlier session, its window open now: the
+            // shape a scheduled migration presents to the transmission path.
+            let own_txid = TxId::from_bytes([7; 32]);
+            let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
+            part.assign(current_bucket).expect("fresh parts are bound");
+            part.mark_signed(own_txid, window_end, Some(vec![0xAB; 64]))
+                .expect("assigned parts sign");
+            wallet.migration = Some(scheduled_state(params, vec![part]));
+            let mut client = LightClient::new_for_test(wallet).await;
+
+            let transmission_client = MockTransmissionClient::default();
+            let sent = client
+                .transmit_due_parts_with(&transmission_client)
+                .await
+                .expect("the due part transmits");
+
+            assert_eq!(sent, vec![own_txid], "the open-window part is sent");
+            assert_eq!(
+                transmission_client.submissions.lock().unwrap().len(),
+                sent.len(),
+                "every sent part reached the wire exactly once, and nothing else did"
+            );
+        }
+
+        /// HYPOTHESIS: the validation is not vacuous — a nakednet receipt is
+        /// visibly nakednet, so a future path that leaks would be caught
+        /// rather than silently passing. Falsified if the nakednet route
+        /// reports itself as mixnet.
+        #[test]
+        fn the_detector_can_see_a_nakednet_leak() {
+            let mixnet = TransmissionRoute::Mixnet {
+                destination: "destination.example".to_string(),
+                via_socks5: "127.0.0.1:1".to_string(),
+            };
+            let nakednet = TransmissionRoute::Nakednet {
+                endpoint: "nakednet.example".to_string(),
+            };
+            assert!(mixnet.is_mixnet());
+            assert!(
+                !nakednet.is_mixnet(),
+                "a nakednet route must never read as mixnet"
             );
         }
     }

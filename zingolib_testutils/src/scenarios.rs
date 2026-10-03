@@ -47,6 +47,7 @@ use zingolib::testutils::lightclient::from_inputs::{self, quick_send};
 use zingolib::testutils::lightclient::get_base_address;
 use zingolib::testutils::port_to_localhost_uri;
 use zingolib::testutils::sync_to_target_height;
+use zingolib::testutils::timed;
 use zingolib::wallet::keys::unified::ReceiverSelection;
 
 /// Default regtest network processes for testing and zingo-cli regtest mode:
@@ -272,9 +273,38 @@ pub async fn sync_client_to_validator_tip<V, I>(
     <V as Process>::Config: Send,
     LocalNet<V, I>: IndexerConvergence,
 {
-    let tip = local_net.validator().get_chain_height().await;
-    local_net.converge(tip).await;
-    sync_to_target_height(client, tip).await.unwrap();
+    let tip = timed(
+        "sync_to_validator_tip::get_chain_height",
+        local_net.validator().get_chain_height(),
+    )
+    .await;
+    timed(
+        "sync_to_validator_tip::indexer_converge",
+        local_net.converge(tip),
+    )
+    .await;
+    timed(
+        "sync_to_validator_tip::wallet_sync",
+        sync_to_target_height(client, tip),
+    )
+    .await
+    .unwrap();
+}
+
+/// Zebra's mempool rejection text for a spend of, or anchored at, the tip
+/// block; the leaf link of the send failure's cause chain carries it.
+const TIP_BLOCK_REJECTION: &str = "until the next chain tip block";
+
+/// Reports whether any link of `error`'s cause chain carries zebra's tip-block rejection text.
+fn rejects_tip_block_spend(error: &(dyn std::error::Error + 'static)) -> bool {
+    let mut link: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(current) = link {
+        if current.to_string().contains(TIP_BLOCK_REJECTION) {
+            return true;
+        }
+        link = current.source();
+    }
+    false
 }
 
 /// The single lag-safe send primitive: sends `receivers` from `sender` in
@@ -313,7 +343,7 @@ where
 {
     let txids = match from_inputs::quick_send(sender, receivers.clone()).await {
         Ok(txids) => txids,
-        Err(e) if e.to_string().contains("until the next chain tip block") => {
+        Err(e) if rejects_tip_block_spend(&e) => {
             // Tip-block spend rejected: separate from the tip and retry once.
             increase_height_and_wait_for_client(local_net, sender, 1)
                 .await
@@ -509,11 +539,21 @@ impl ClientBuilder {
         overwrite: bool,
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_create_config(wallet_config);
-        let mut lightclient = LightClient::new(config, overwrite).await.unwrap();
-        lightclient
-            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
-            .await
-            .unwrap();
+        let mut lightclient = timed(
+            "build_client::new_nakednet_consented",
+            LightClient::new_nakednet_consented(config, overwrite),
+        )
+        .await
+        .unwrap();
+        timed(
+            "build_client::generate_unified_address",
+            lightclient.generate_unified_address(
+                ReceiverSelection::sapling_only(),
+                zip32::AccountId::ZERO,
+            ),
+        )
+        .await
+        .unwrap();
 
         lightclient
     }
@@ -944,20 +984,38 @@ async fn custom_clients_raw(
     replay_from: Option<PathBuf>,
 ) -> (MeteredNet, ClientBuilder) {
     let setup_started = std::time::Instant::now();
-    let (local_net, zebrad_front, zainod_front) =
-        launch_observed(mine_to_pool, configured_activation_heights).await;
+    let (local_net, zebrad_front, zainod_front) = timed(
+        "custom_clients_raw::launch_observed",
+        launch_observed(mine_to_pool, configured_activation_heights),
+    )
+    .await;
     let mut local_net = MeteredNet::new(local_net, zebrad_front, zainod_front, setup_started);
 
     match replay_from {
         Some(blocks_file) => {
-            let tip = chain_cache::replay(&local_net, &blocks_file).await;
+            let tip = timed(
+                "custom_clients_raw::chain_cache_replay",
+                chain_cache::replay(&local_net, &blocks_file),
+            )
+            .await;
             // The replay reorgs the launch block away; the Indexer may
             // have already ingested it (it starts syncing within
             // milliseconds of launch). Barrier on convergence to the
             // replayed tip so no wallet ever syncs the orphaned branch.
-            local_net.converge(tip).await;
+            timed(
+                "custom_clients_raw::replay_converge",
+                local_net.converge(tip),
+            )
+            .await;
         }
-        None => local_net.validator().generate_blocks(2).await.unwrap(),
+        None => {
+            timed(
+                "custom_clients_raw::generate_initial_blocks",
+                local_net.validator().generate_blocks(2),
+            )
+            .await
+            .unwrap();
+        }
     }
 
     let client_builder = ClientBuilder::new(
@@ -968,7 +1026,13 @@ async fn custom_clients_raw(
         // The validator is the sole source of activation-height truth
         // (infras ADR 0003): wallets take their schedule from the running
         // validator, never from a caller-supplied vector.
-        wallet_activation_heights(&local_net.validator().get_activation_heights().await),
+        wallet_activation_heights(
+            &timed(
+                "custom_clients_raw::get_activation_heights",
+                local_net.validator().get_activation_heights(),
+            )
+            .await,
+        ),
     );
 
     local_net.mark_setup_complete("custom_clients");
@@ -1007,20 +1071,6 @@ pub async fn custom_clients_default() -> (MeteredNet, ClientBuilder) {
     (local_net, client_builder)
 }
 
-/// Records the deliberate clearnet consent a regtest scenario client needs
-/// before it may transmit. The five-state wallet refuses an unconsented
-/// send — a never-enabled client is Unattached, and absence is never
-/// consent (ADR 0011) — so a nym-feature build of these scenarios lands
-/// each sending client in SwitchedOff first, exactly as a `--no-mixnet`
-/// session would. Without the feature the wallet has no mixnet surface and
-/// nothing needs recording.
-#[cfg(feature = "nym")]
-async fn consent_to_clearnet(client: &mut zingolib::lightclient::LightClient) {
-    client.disable_mixnet().await;
-}
-#[cfg(not(feature = "nym"))]
-async fn consent_to_clearnet(_client: &mut zingolib::lightclient::LightClient) {}
-
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexer> {
     launch_test::<DefaultValidator, DefaultIndexer>(
@@ -1054,7 +1104,6 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
         wallet_activation_heights(&local_net.validator().get_activation_heights().await),
     );
     let mut faucet = client_builder.build_faucet(true).await;
-    consent_to_clearnet(&mut faucet).await;
     let recipient = client_builder
         .build_client(
             WalletConfig::MnemonicPhrase {
@@ -1103,8 +1152,6 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
             true,
         )
         .await;
-    consent_to_clearnet(&mut faucet).await;
-    consent_to_clearnet(&mut recipient).await;
     // Fund the faucet with spendable Orchard coinbase (see
     // funded_orchard_mobileclient / faucet()).
     normalize_shielded_faucet_balance(&local_net, PoolType::ORCHARD, &mut faucet).await;
@@ -1171,7 +1218,6 @@ pub async fn funded_transparent_mobileclient(
             true,
         )
         .await;
-    consent_to_clearnet(&mut faucet).await;
     // Fund the faucet with spendable Orchard coinbase (see
     // funded_orchard_mobileclient / faucet()).
     normalize_shielded_faucet_balance(&local_net, PoolType::ORCHARD, &mut faucet).await;

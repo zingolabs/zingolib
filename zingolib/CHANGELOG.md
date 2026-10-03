@@ -7,73 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Deprecated
-
 ### Added
-- `lightclient::LightClient::from_bytes` constructor — creates a `LightClient` by
-  deserializing wallet bytes from memory via `std::io::Cursor`, without reading any file.
-  Intended for mobile platforms (iOS/Android) where the native layer owns all file I/O
-  and passes the raw wallet bytes across the FFI boundary. Restores the in-memory
-  construction path that was lost when `create_from_wallet` and `WalletBase` were removed
-  in 5.0.0; the new path uses the `WalletConfig` enum and the existing
-  `LightWallet::read` deserializer, so consumers don't need a `Read` variant from a path.
-- ZIP 318 Orchard to Ironwood migration, in `lightclient::migrate`:
-  - Immediate path: `plan_immediate_migration`, `quick_immediate_migration`.
-  - Note splitting, stateless and one round per call: `plan_note_split`, `quick_split`.
-  - Scheduled path: `plan_ironwood_migration`, `start_ironwood_migration`,
-    `execute_due_parts`, `auto_broadcast_if_due`, `reconcile_migration`,
-    `catch_up_migration`, `reschedule_parts`, `cancel_ironwood_migration`.
-  - Reporting: `migration_status`, `window_timeline`, and the
-    `split_progress_handle` / `batch_progress_handle` progress handles.
-- `wallet::migration`: plans, parts, denominations, buckets, schedule, persisted state.
-  - A Part carries two independent buckets: `bucket_index`, the window it is
-    broadcast in, and `anchor_bucket`, the lower bucket whose boundary it proves
-    against. `schedule::AnchorFloor` resolves the two floors a candidate anchor
-    must clear (strictly above the NU6.3 activation bucket; at or above the
-    boundary covering the Part's own bound note), and `draw_anchor_bucket`
-    reject-samples an age from `draw_anchor_age` against them.
-  - The anchor age is drawn per Part, `Geometric(1/2)` capped at
-    `schedule::ANCHOR_AGE_CAP`, and is never zero, so a Part never proves against
-    the boundary of the window it is still inside (the ZIP 318 anchor-age draw;
-    ADR 0018). The builder's target height, and so the consensus branch the Part
-    commits to, comes from the broadcast window instead.
-  - Consequence for consumers: a wallet that schedules immediately after note
-    splitting waits one extra window (~3h at `M` = 144) before its first Batch is
-    due, because a fresh note floors the anchor at the next boundary and a legal
-    window sits a bucket above its anchor. A wallet whose notes confirmed at least
-    one bucket earlier has its first Batch due the moment it is scheduled. Read the
-    wait from `MigrationStatus::upcoming_windows`, whose `BroadcastWindow`s carry
-    `window_opens_unix_time`, rather than assuming a Batch is immediately sendable.
-  - The migration section of the wallet file carries its own version, independent
-    of the wallet format version, and ships at 4.
-- `nym` module: Nym mixnet transport, behind the new off-by-default `nym` feature.
-  Migration-part broadcasts route by Mixnet Mode and never at the sync host.
-- `nym-diary` feature: per-indexer diary, a per-session runtime opt-in, capped and sanitized.
-- Ironwood pool in summaries: `ironwood_notes`, `outgoing_ironwood_notes`,
-  `is_orchard_to_ironwood_migration`.
+- Add `LightClient::sync_to_tip_and_await`, which syncs to the chain tip and returns whatever the stored `shutdown_on_completion` setting is. The override applies to that sync only and the stored sync config is not modified. A running or paused sync is stopped and awaited first, and is not relaunched.
+- Add `mixnet::TransmitPolicy` (`Mixnet`, `Nakednet`), the per-session send route choice, with `LightClient::transmit_policy` and `set_transmit_policy`. Every session starts under `Mixnet`; `MixnetStartPolicy::OptedOutThisSession` sets `Nakednet`, and `enable_mixnet`, `enable_mixnet_via_host`, and `attach_mixnet` set `Mixnet` before the transport exists, so sends refuse during the bootstrap. A failed enable restores the policy the session had before.
+- Add `mixnet::resolve_mixnet_only_route` and `LightClient::mixnet_only_route`, the route of the price fetch and the liveness probe: the conduit while `Ready`, a typed refusal otherwise.
+- Add `mixnet::resolve_send_route` and `LightClient::send_route`, the route of a transmission under the transmit policy: nakednet at once under `Nakednet`, the mixnet-only outcome under `Mixnet`.
+- Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
 
 ### Changed
-- `config::ClientConfigBuilder`: `build` method now returns result for improved error handling.
-- `config::construct_lightwalletd_uri`: `server` parameter changed from `Option<String>` to `String`. documentation
-  updated to include options for defaults.
-- BREAKING: the price fetch has no clearnet tier and compiles only with the `nym`
-  feature. Without it `zingo-price` is types-only.
-- Wallet file format is version 42. Versions 32 to 43 are read, 43 being a burned
-  number carrying the final 42 layout (ADR 0015). An unreadable file falls back to
-  a prefix-only salvage read so `recovery_info` still works.
+- **Breaking:** the term clearnet is renamed nakednet in every public name. The `Clearnet` variant of `MixnetRoute`, `TransmitRoute`, `AttemptRoute`, `Transport`, `TransmissionRoute` and `MigrationWire` is now `Nakednet`. `LightClient::consent_to_clearnet_for_tests` and `LightClient::new_clearnet_consented` are now `consent_to_nakednet_for_tests` and `new_nakednet_consented`.
+- `LightClient::pause_sync`, `stop_sync`, `resume_sync`, `pause_sync_scoped` and the pause guard's drop move the sync mode through `SyncMode::transition` and `SyncMode::apply`, one atomic exchange each, so a `Shutdown` the engine sets at completion between the read and the write is kept instead of overwritten.
+- The Zcash stack moves to its latest releases: `zcash_client_backend` 0.24.0,
+  `zcash_primitives` 0.30.1, `zcash_protocol` 0.10.6, `zip321` 0.9.0, and
+  `zcash_pool_migration` 0.1.0, which the ZIP 318 movement tripwire now adjudicates.
+  Every move stays inside the semver range the manifests already allowed, so a
+  consumer need not change.
+- `migrate_to_ironwood` and `migrate_immediately` sync with `sync_to_tip_and_await`, so they return when the wallet is configured for continuous sync. A running sync is stopped first and is not relaunched; the caller relaunches it with `LightClient::sync`.
+- `max_send_value` is for display only. To send the whole balance, call `propose_send_all` and then `send_stored_proposal`. A `propose_send` request for the reported amount can be refused by the input selector.
+- **Breaking:** `update_current_price` is mixnet-only again. `Indicator::SwitchedOff` refuses it as `MixnetNotReady::Unattached` and the transmit policy has no effect on it.
+- **Breaking:** transmissions and migration parts follow the transmit policy rather than `Indicator::SwitchedOff`. `consent_to_nakednet_for_tests` sets the policy instead of switching the transport off.
+- **Breaking:** `MixnetNotReady::Unattached` no longer offers switching off as a remedy in its message.
+- Default wallet settings (`ClientConfigBuilder::default` and wallets read from files without stored settings) use `TransparentAddressDiscovery::default()` instead of `minimal()`, and set `shutdown_on_completion` to `false`, so sync runs continuously by default.
+- Wallet file serialized version bumped to 44; the stored `SyncConfig` now includes `shutdown_on_completion`. Versions up to 44 are read.
+- Wallet file serialized version bumped to 45; the stored `SyncState` now includes the transparent scan floor. Versions up to 45 are read.
+- Reading a wallet file fails with an `InvalidData` error when a pepper-sync, zingo-status or zingo-price type in it has a serialized version above the one this build writes. A change to one of those versions no longer takes a new wallet file version.
+- zingolib sets `shutdown_on_completion` to `false` by default. Wallet files from earlier versions, which lack the `shutdown_on_completion` byte, read it as `false`, so existing wallets also sync continuously. Consumers must set the sync config accordingly before each call to sync. Otherwise, awaiting a sync that is expected to return at the chain tip will wait indefinitely.
+- **Breaking:** `testutils::mock_indexer::MockNet::client` takes an `Option<WalletSettings>`; `None` uses `default_test_wallet_settings`, which now sets `shutdown_on_completion` to `true`.
 
 ### Removed
-- `wallet::summary::data::TransactionSummary::balance_delta` - the method had no
-  callers and misreported a Zennies-donating self-send: `transaction_kind`
-  exempts the donation address, so the `SendToSelf` arm reported only the fee
-  while the wallet also moves the donation. A future consumer should derive
-  balance deltas after the Zennies exemption moves to the viewmodel projection
-  (#2612).
-- `wallet::summary::data::TransactionSummaries::paid_fees` - its only caller was
-  the `get_fees_paid_by_client` testutils helper, which now sums the fees itself
-  (#2612).
-- `wallet::summary::data::TransactionSummaries::txids` - called only by test
-  code, which now inlines the one-line map (#2612).
+- **Breaking:** remove the `zennies_for_zingo` parameter from `LightClient::propose_send_all` and `LightClient::max_send_value`, since upstream send-max cannot carry a second payment.
+- **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
+- **Breaking:** remove the `sync::sync_status` re-export of `pepper_sync::sync_status`. Use `LightClient::latest_sync_status` or `pepper_sync::sync_status` directly.
+- **Breaking:** remove `PriceFetchRoute::Nakednet` and `LightClientError::ProbeRequiresMixnet`, both unreachable once the price fetch and the probe are mixnet-only.
+
+## [6.0.0] - 2026-09-07
+
+### Added
+- Add `LightClient::from_bytes` to build a client from in-memory wallet bytes.
+- Add ZIP 318 Orchard to Ironwood migration in `lightclient::migrate`: `plan_immediate_migration`, `quick_immediate_migration`, `plan_note_split`, `quick_split`, `plan_ironwood_migration`, `start_ironwood_migration`, `execute_due_parts`, `transmit_due_parts`, `auto_transmit_if_due`, `reconcile_migration`, `catch_up_migration`, `reschedule_parts`, `cancel_ironwood_migration`, `migration_status`, `window_timeline`, `split_progress_handle`, `batch_progress_handle`.
+- Add `wallet::migration` (plans, parts, denominations, buckets, schedule, persisted state). The wallet file's migration section carries its own version, 4.
+- Add `ironwood_notes`, `outgoing_ironwood_notes` and `is_orchard_to_ironwood_migration` to summaries.
+- Add `mixnet` module and the off-by-default `nym` feature for Nym mixnet transport.
+- Add `LightClient::enable_mixnet`, `enable_mixnet_via_host` (via `mixnet::acquire::ProxyHosting`) and `attach_mixnet`, all returning `mixnet::acquire::TransportError`.
+- Add `mixnet::Indicator` with six states, including `PreviouslyProvenThisEpoch`, and `LightClient::read_mixnet_indicator`.
+- Add `mixnet::MixnetConduit`, `LightClient::mixnet_conduit`, `mixnet::resolve_route` and `MixnetRoute`.
+- Add Proven Client acquisition: every client must complete a Sentinel check before first use. When all attempts fail, acquisition returns `TransportError::NoProvenExit`.
+- Add `NodeHealthIndex` of per-exit `Proven` / `Failed` observations to order Clutch draws.
+- Add Standing Client failover and a rotation watchdog on `[CLIENT_ROTATION_MIN, CLIENT_ROTATION_MAX]`, driven by `rotation_verdict` on `ProxyHosting` and `TransportAcquirable`.
+- Add `client_rotation_min` and `client_rotation_max` to `MixnetTiming`.
+- Add `mixnet::speed` (`SpeedPrioritized`, `run_speed_prioritized`, `MAX_SPEED_EXIT_DRAWS`) and `lightclient::select::SURVEY_WAVE_WIDTH`.
+- Add the Server-Selection Sweep: an unpinned online session selects its sync indexer from the indexers that responded as healthy. `go_offline` aborts it.
+- Add `SurveyResult::refusal` and `SweepError::EmptyCohort::causes`.
+- Add `zingolib::destination` module: `Correspondable`, `Host`, `Operator`, `NoEligibleDestinations`, and the session Exit Pool.
+- Add hedged send escalation: `TRANSMISSION_HEDGE_INTERVAL`, at most `RESERVATION_CLUTCH_SIZE` pulls in flight, six Destinations at most.
+- Add `OutputLockStore` implementation for `LightWallet`.
+- Add `lightclient::SaveShutdown` (`ShutDown`, `NotRunning`).
+- Add `LightClientError::ProbeRequiresMixnet` and `MixnetProxyError::NoExits`.
+- Add typed `mixnet::ExitNodeId` (`parse`, `TryFrom<String>`, `BlankExitNodeId`).
+- Add `MixnetPriceFetch::route: PriceFetchRoute` (`Mixnet` or `Nakednet`).
+- Add `NetOpStage::ProxyLaunch` death detail for a `nym-proxy` that dies before its stdout protocol.
+- Add `zingo_netutils::Socks5Indexer::get_latest_block`.
+- Add `perspective` feature (off by default) and `zingolib::perspective` module.
+
+### Changed
+- **Breaking:** bump `zcash_primitives` and `zcash_proofs` to 0.30, `zcash_transparent` to 0.10, `zcash_keys` to 0.16, `zcash_client_backend` to 0.24.0-rc.7, and `zcash_pool_migration` to the published 0.1.0-rc.7.
+- **Breaking:** source ZIP 318 constants from `zcash_protocol::zip318`, set `ANCHOR_AGE_CAP` to 4, and set the transfer-delay mean to 66 blocks.
+- **Breaking:** rename `MIGRATION_MAX_DENOMINATION_ZEC` to `DENOM_CAP` and `RESIDUAL_MIGRATION_MIN` to `MAX_RESIDUAL_VALUE`, both `Zatoshis`.
+- **Breaking:** rename "broadcast" / "witness" to "transmission" / "destination": `migration_broadcast_uri` to `migration_transmission_uri`, `BroadcastClient` to `TransmissionClient`, `BroadcastError` to `PartTransmissionError`, `BroadcastWindow` to `TransmissionWindow`, `SplitStep::RoundBroadcast` to `RoundTransmitted`, `MigrationBroadcastTargetIsSyncEndpoint` to `MigrationTransmissionTargetIsSyncEndpoint`, `NoEligibleBroadcastIndexer` to `NoEligibleDestination`, `probe_broadcast_indexers` to `probe_destinations`, `broadcast_due_parts` to `transmit_due_parts`, `auto_broadcast_if_due` to `auto_transmit_if_due`, `TransmitRoute::Mixnet::witness` to `destination`, `mixnet::broadcast` to `mixnet::destination_rotation`, `lightclient::migrate::{broadcast_grpc, broadcast_route}` to `{transmission_grpc, transmission_route}`.
+- **Breaking:** remove the default server: `config::construct_indexer_uri` takes `String`.
+- **Breaking:** rename `mixnet::MixnetMode` to `mixnet::Indicator`, `UnknownMixnetModeToken` to `UnknownIndicatorToken`, `LightClient::mixnet_mode` to `read_mixnet_indicator`.
+- **Breaking:** rename `MAX_DIARY_ATTEMPTS` to `MAX_HISTORY_ATTEMPTS`.
+- **Breaking:** route `LightClient::update_current_price` over nakednet when Mixnet Mode is switched off, and refuse with `MixnetNotReady` in `Unattached`, `Bootstrapping` and `Died`.
+- **Breaking:** stop writing the fetched price to the wallet. The price is returned only in `MixnetPriceFetch`.
+- **Breaking:** compile the price fetch only with the `nym` feature.
+- **Breaking:** move `ProxyHosting`, `HostedTransport`, `HostRefusal` and `HostedProvider` to `zingo_netutils::provider`, re-exported from `mixnet::acquire`.
+- **Breaking:** make `wallet::migration::parts::ProveOnce` a struct, held as `Box<ProveOnce>` in `PrepareResult::Ready::prove`.
+- **Breaking:** type the SOCKS5 endpoint as `std::net::SocketAddr` throughout, including `switch_on_mixnet_for_tests`, and indexer endpoints as `destination::Host`.
+- **Breaking:** carry error sources as `source()` links instead of embedded text in `LightClientError`, `SendError`, `PriceError` and `TransportError`.
+- **Breaking:** reduce `lightclient::select::ServerSelectionError` to `Speed` and `Selection`.
+- **Breaking:** add `PriceError::Speed`.
+- **Breaking:** move `ValueTransfer`, the finsight rollups and the `value_transfers` / `messages_containing` / `finsight` / `do_total_*` methods to `zingolib::perspective`. The `testutils` feature enables `perspective`.
+- **Breaking:** keep Health always on, in memory and session-scoped. `IndexerAttempt` gains `phase`.
+- **Breaking:** bind one exclusive exit per Transmission pull on a spawned session.
+- Change `config::ClientConfigBuilder::build` to return a `Result`.
+- Change the wallet file format to version 42. Versions 32 to 43 are read.
+- Classify a transport failure whose text says its deadline elapsed as a timeout.
+
+### Removed
+- **Breaking:** remove the on-disk indexer diary, the `nym-diary` feature, `LightClient::set_indexer_diary`, `IndexerHistoryHandle::{beside_wallet, is_recording}` and `IndexerAttempt::exit`.
+- **Breaking:** remove responsiveness classes: the type parameter on `enable_mixnet`, and the `mixnet` re-export of `PrioritisePrivacy`, `PrioritiseSpeed`, `Responsiveness`.
+- **Breaking:** remove Destination Pool member-keeping and go-online background refills.
+- **Breaking:** remove `DEFAULT_INDEXER_URI` and `DEFAULT_INDEXER_URI_TESTNET`.
+- Remove `LightClientError::PriceFetchRequiresMixnet`.
+- Remove `MixnetRoute::socks5_proxy`.
+- Remove `mixnet::IP_CORRELATION_DISCLAIMER`.
+- Remove `mixnet::sweep::{indexer_lanes, opening_wave_timed_out}`.
+- Remove `wallet::LightWallet::update_current_price`.
+- Remove `TransactionSummary::balance_delta`, `TransactionSummaries::paid_fees` and `TransactionSummaries::txids` (#2612).
 
 ## [5.0.0] - 2026-06-10
 

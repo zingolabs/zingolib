@@ -40,3 +40,17 @@ jobs:
           TAG=$(cargo make compute-image-tag | grep -E '^[0-9a-f]{14}$')
           echo "Computed tag: ${TAG}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the image to be published
+        run: |
+          # A change to the image inputs publishes the new tag from
+          # build-n-push-ci-image.yaml, which races this workflow. Wait
+          # for the tag rather than failing the consumers' image pull.
+          IMAGE="zingodevops/ci-build:${{ steps.taggen.outputs.tag }}"
+          for _ in $(seq 60); do
+            docker manifest inspect "${IMAGE}" >/dev/null 2>&1 && exit 0
+            echo "Waiting for ${IMAGE} to be published..."
+            sleep 10
+          done
+          echo "${IMAGE} was not published within 10 minutes" >&2
+          exit 1

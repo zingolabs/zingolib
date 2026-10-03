@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- `confirmation_status::ConfirmationStatus::read` returns an `InvalidData`
+  error for a serialized version above the one this build writes. It read any
+  version above 0 as version 1 before.
 
 ### Removed
 

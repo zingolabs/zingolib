@@ -78,23 +78,34 @@ final class GoldenWireContractTests: XCTestCase {
         try assertEndpointPin("socks5_endpoint_port_max", port: 65535)
     }
 
-    func testDeathReasonWireEncodingMatchesThePin() throws {
-        let name = "proxy_death_reason_mixnet_disconnected"
-        let value = ProxyDeathReason.mixnetDisconnected(detail: "gateway went away — упал — 途絶")
-        var writer = [UInt8]()
-        FfiConverterTypeProxyDeathReason.write(value, into: &writer)
-        XCTAssertEqual(toHex(writer), toHex(try golden(name)), "\(name): lowering drifted")
-        let lifted = try readAll(try golden(name)) {
-            try FfiConverterTypeProxyDeathReason.read(from: &$0)
+    func testEveryDeathReasonWireEncodingMatchesItsPin() throws {
+        let cases: [(String, ProxyDeathReason)] = [
+            ("proxy_death_reason_listener_refused",
+             .listenerRefused(detail: "gateway went away — упал — 途絶")),
+            ("proxy_death_reason_greeting_unwritable",
+             .greetingUnwritable(detail: "broken pipe")),
+            ("proxy_death_reason_method_selection_unreadable",
+             .methodSelectionUnreadable(detail: "connection reset")),
+            ("proxy_death_reason_method_selection_refused",
+             .methodSelectionRefused(version: 0x05, method: 0xff)),
+            ("proxy_death_reason_check_timed_out",
+             .checkTimedOut(budgetMillis: 250)),
+        ]
+        for (name, value) in cases {
+            var writer = [UInt8]()
+            FfiConverterTypeProxyDeathReason.write(value, into: &writer)
+            XCTAssertEqual(toHex(writer), toHex(try golden(name)), "\(name): lowering drifted")
+            let lifted = try readAll(try golden(name)) {
+                try FfiConverterTypeProxyDeathReason.read(from: &$0)
+            }
+            XCTAssertEqual(lifted, value, "\(name): lifting the pin changed the value")
         }
-        XCTAssertEqual(lifted, value, "\(name): lifting the pin changed the value")
     }
 
     func testEveryErrorVariantWireEncodingMatchesItsPin() throws {
         let cases: [(String, ProxyFfiError)] = [
             ("proxy_ffi_error_runtime", .Runtime(reason: "no threads")),
             ("proxy_ffi_error_connect", .Connect(reason: "gateway refused")),
-            ("proxy_ffi_error_address", .Address(reason: "\"not-an-address\": invalid socket address syntax")),
         ]
         for (name, value) in cases {
             var writer = [UInt8]()

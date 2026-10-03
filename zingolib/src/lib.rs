@@ -8,14 +8,16 @@ use crate::config::ChainType;
 pub mod config;
 pub mod connectivity;
 pub mod data;
+pub mod destination;
 pub mod lightclient;
 pub mod netutils;
+#[cfg(feature = "perspective")]
+pub mod perspective;
 pub mod sync;
 pub mod utils;
 pub mod wallet;
 
-#[cfg(feature = "nym")]
-pub mod nym;
+pub mod mixnet;
 
 #[cfg(any(test, feature = "testutils"))]
 pub mod mocks;

@@ -6,7 +6,6 @@
 //! exactly `denomination + part_fee`, and the denominations of the parts the
 //! wallet will send once splitting completes.
 
-use orchard::builder::BundleType;
 use zcash_protocol::value::Zatoshis;
 
 use super::params::MigrationParams;
@@ -653,7 +652,7 @@ impl crate::wallet::LightWallet {
     }
 
     /// Builds, proves, signs and records one planned note-splitting
-    /// transaction (Orchard→Orchard self-send). Returns its txid. Broadcast
+    /// transaction (Orchard→Orchard self-send). Returns its txid. Transmission
     /// is the caller's step.
     #[allow(clippy::result_large_err)]
     pub(crate) fn build_note_split_transaction(
@@ -692,7 +691,7 @@ impl crate::wallet::LightWallet {
         outputs: MigrationOutputs<'_>,
     ) -> Result<zcash_primitives::transaction::TxId, crate::wallet::error::WalletError> {
         use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
-        use zcash_primitives::transaction::builder::{BuildConfig, Builder};
+        use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
         use zcash_protocol::memo::MemoBytes;
 
         use crate::wallet::error::WalletError;
@@ -787,10 +786,8 @@ impl crate::wallet::LightWallet {
                 MigrationOutputs::Orchard(_) => None,
                 MigrationOutputs::Ironwood(_) => Some(orchard::Anchor::empty_tree()),
             },
-            orchard_pool_bundle_type: BundleType::Transactional {
-                bundle_required: false,
-                pad_to_minimum: None,
-            },
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
         };
         let mut builder = Builder::new(self.chain_type, target_height, build_config);
         for (note, merkle_path) in notes.into_iter().zip(merkle_paths) {
@@ -835,8 +832,7 @@ impl crate::wallet::LightWallet {
             }
         }
 
-        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params()
-            .map_err(|e| WalletError::MigrationBuild(format!("sapling params: {e}")))?;
+        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
         let build_result = builder

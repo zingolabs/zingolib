@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 //! Build-time inputs: the Sapling proving parameters (fetched once,
-//! copied beside the crate for mobile packaging) and the `git describe`
-//! string compiled into [`zingolib::git_description`].
+//! copied beside the crate for mobile packaging) and the build descriptor
+//! compiled into [`zingolib::git_description`].
 //!
 //! The script registers its watch set explicitly. Without any
 //! `cargo:rerun-if-changed` directive cargo falls back to watching the
@@ -23,7 +23,7 @@ fn register_rerun_watches() {
     // restores it. While both exist the fetch is skipped entirely.
     println!("cargo:rerun-if-changed=zcash-params/sapling-spend.params");
     println!("cargo:rerun-if-changed=zcash-params/sapling-output.params");
-    // The git state behind `git describe`: HEAD moves live in the
+    // The git state behind the descriptor: HEAD moves live in the
     // worktree's own git dir; tags and packed refs live in the common
     // dir (they differ in linked worktrees). The `--dirty` suffix is
     // deliberately NOT kept live — that would require watching the
@@ -65,28 +65,51 @@ fn git_path_query(flag: &str) -> Option<PathBuf> {
     Some(PathBuf::from(path))
 }
 
-fn descriptor(raw: &str, tag_prefix: &str, part: &str) -> String {
-    let (body, dirty) = match raw.strip_suffix("-dirty") {
-        Some(stripped) => (stripped, true),
-        None => (raw, false),
-    };
-    let fields: Vec<&str> = body.rsplitn(3, '-').collect();
-    let formatted = match fields.as_slice() {
-        [hash, count, tag]
-            if hash.starts_with('g') && count.chars().all(|c| c.is_ascii_digit()) =>
-        {
-            let ver = tag.strip_prefix(tag_prefix).unwrap_or(tag);
-            let hash5: String = hash[1..].chars().take(5).collect();
-            if *count == "0" {
-                format!("{part}_{ver}")
-            } else {
-                format!("{part}_{ver}_{count}_{hash5}")
-            }
-        }
-        _ => {
-            let hash5: String = body.chars().take(5).collect();
-            format!("{part}_{hash5}")
-        }
+/// The trimmed stdout of a git command that succeeded with output, or `None`.
+fn git_stdout(args: &[&str]) -> Option<String> {
+    Command::new("git")
+        .args(args)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|stdout| stdout.trim_end().to_string())
+        .filter(|stdout| !stdout.is_empty())
+}
+
+/// The highest `zingolib_v*` tag that points at HEAD, which a depth-one fetch with tags carries.
+fn tag_at_head() -> Option<String> {
+    git_stdout(&[
+        "tag",
+        "--points-at",
+        "HEAD",
+        "--list",
+        "zingolib_v*",
+        "--sort=-version:refname",
+    ])
+    .and_then(|tags| tags.lines().next().map(str::to_string))
+}
+
+/// Whether a tracked file differs from HEAD, as `git describe --dirty` judges it.
+fn dirty() -> bool {
+    Command::new("git")
+        .args(["diff-index", "--quiet", "HEAD", "--"])
+        .status()
+        .map(|status| !status.success())
+        .unwrap_or(false)
+}
+
+/// The five-character abbreviation of HEAD.
+fn hash5() -> Option<String> {
+    git_stdout(&["rev-parse", "HEAD"]).map(|hash| hash.chars().take(5).collect())
+}
+
+/// `zl_<tag ver>` on a release tag, else `zl_<crate ver>_<hash5>`, with `_dirty` for a modified tree.
+fn descriptor(tag: Option<&str>, crate_version: &str, hash5: Option<&str>, dirty: bool) -> String {
+    let formatted = match (tag, hash5) {
+        (Some(tag), _) => format!("zl_{}", tag.strip_prefix("zingolib_v").unwrap_or(tag)),
+        (None, Some(hash5)) => format!("zl_{crate_version}_{hash5}"),
+        (None, None) => format!("zl_{crate_version}"),
     };
     if dirty {
         format!("{formatted}_dirty")
@@ -96,29 +119,17 @@ fn descriptor(raw: &str, tag_prefix: &str, part: &str) -> String {
 }
 
 fn git_description() {
-    // No network here: a build must describe the state it builds from,
-    // and the tags already fetched are part of that state. (The
-    // previous `git fetch --tags` on every rerun was both a per-build
-    // network round-trip and a source of description drift.)
-    let description = Command::new("git")
-        .args([
-            "describe",
-            "--dirty",
-            "--always",
-            "--long",
-            "--match=zingolib_v*",
-        ])
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .map(|stdout| stdout.trim_end().to_string())
-        .filter(|description| !description.is_empty())
-        .map(|raw| descriptor(&raw, "zingolib_v", "zl"))
-        // Outside a usable git checkout (published crate, bind-mounted
-        // container workspace with unresolved ownership), fall back to
-        // the crate version rather than embedding an empty string.
-        .unwrap_or_else(|| format!("zl_{}", env::var("CARGO_PKG_VERSION").unwrap_or_default()));
+    // No network here: a build describes the state it builds from, and
+    // the tags already fetched are part of that state. A tag that points
+    // at HEAD needs no history, so a depth-one checkout with tags gives
+    // the release form.
+    let crate_version = env::var("CARGO_PKG_VERSION").unwrap_or_default();
+    let description = descriptor(
+        tag_at_head().as_deref(),
+        &crate_version,
+        hash5().as_deref(),
+        dirty(),
+    );
 
     // Write the git description to a file which will be included in the crate
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -126,10 +137,10 @@ fn git_description() {
     let mut f = File::create(dest_path).unwrap();
     writeln!(
         f,
-        "/// The build descriptor derived from 'git describe' at compile time:\n\
-        /// `zl_<ver>[_<numcommit>_<hash5>][_dirty]`, where the bracketed\n\
-        /// fields are elided when the build sits exactly on its\n\
-        /// `zingolib_v<ver>` release tag\n\
+        "/// The build descriptor derived from the git state at compile time:\n\
+        /// `zl_<ver>[_<hash5>][_dirty]`, where `<ver>` is the release tag's\n\
+        /// version when the build sits exactly on a `zingolib_v<ver>` tag,\n\
+        /// and otherwise the crate version followed by the abbreviated hash\n\
         pub fn git_description() -> &'static str {{\"{description}\"}}"
     )
     .unwrap();

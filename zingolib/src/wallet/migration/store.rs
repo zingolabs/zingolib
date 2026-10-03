@@ -22,7 +22,7 @@ use super::{ConsentBinding, MigrationMode, MigrationPhase, MigrationState};
 /// Version 3 drops the params `expiry_delta` field: the canonical expiry is
 /// the fixed ZIP 318 formula, not a parameter. Version 4 appends each part's
 /// `anchor_bucket` after its `bucket_index`, the anchor having become a
-/// bucket of its own rather than the broadcast window's (ADR 0018).
+/// bucket of its own rather than the transmission window's (ADR 0018).
 const INNER_VERSION: u8 = 4;
 
 /// Serializes the migration section.
@@ -325,7 +325,7 @@ fn read_part<R: Read>(mut reader: R, inner_version: u8) -> io::Result<PartRecord
     })?;
     let attempts = reader.read_u8()?;
 
-    // Before version 4 the anchor *was* the broadcast window's boundary, an
+    // Before version 4 the anchor *was* the transmission window's boundary, an
     // age of zero. A part that already carries a transaction committed to
     // that anchor keeps it: the signature cannot be re-aimed, so recording
     // anything else would misdescribe what is on the wire. An unsigned part
@@ -612,7 +612,7 @@ mod tests {
         assert_eq!(recovered, state);
     }
 
-    /// Before version 4 a part's anchor was its broadcast window's boundary,
+    /// Before version 4 a part's anchor was its transmission window's boundary,
     /// an age of zero. Reading such a part must sort it by whether a
     /// transaction already commits to that anchor: a `Signed` part keeps it,
     /// because its signature cannot be re-aimed, while an unsigned one is left

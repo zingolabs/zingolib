@@ -123,7 +123,7 @@ impl TxMap {
         let map = TransactionRecordsById::from_map(txs);
 
         if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
-            old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+            old_sap_wits.sort_by_key(|(_witness, height)| *height);
             let sap_tree = &mut witness_trees.as_mut().unwrap().witness_tree_sapling;
             for (sap_wit, height) in old_sap_wits {
                 sap_tree
@@ -136,7 +136,7 @@ impl TxMap {
                 // hide in a boolean again.
                 let _ = sap_tree.append_checkpoint(height).expect("infallible");
             }
-            old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+            old_orch_wits.sort_by_key(|(_witness, height)| *height);
             let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
             for (orch_wit, height) in old_orch_wits {
                 orch_tree
@@ -195,7 +195,7 @@ impl TxMap {
         if version >= 22 {
             witness_trees = Optional::read(reader, |r| WitnessTrees::read(r))?;
         } else if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
-            old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+            old_sap_wits.sort_by_key(|(_witness, height)| *height);
             let sap_tree = &mut witness_trees.as_mut().unwrap().witness_tree_sapling;
             for (sap_wit, height) in old_sap_wits {
                 sap_tree
@@ -208,7 +208,7 @@ impl TxMap {
                 // hide in a boolean again.
                 let _ = sap_tree.append_checkpoint(height).expect("infallible");
             }
-            old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+            old_orch_wits.sort_by_key(|(_witness, height)| *height);
             let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
             for (orch_wit, height) in old_orch_wits {
                 orch_tree

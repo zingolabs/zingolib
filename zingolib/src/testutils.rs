@@ -30,6 +30,7 @@ pub mod lightclient;
 pub mod macros;
 pub mod mock_indexer;
 pub mod paths;
+pub mod socks5_relay;
 pub mod synthetic_wallet;
 
 // Re-export test dependencies for convenience
@@ -42,6 +43,7 @@ pub fn default_test_wallet_settings() -> WalletSettings {
         sync_config: SyncConfig {
             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             performance_level: PerformanceLevel::High,
+            shutdown_on_completion: true,
         },
         min_confirmations: NonZeroU32::try_from(1).expect("hard-coded non-zero integer"),
     }
@@ -546,6 +548,36 @@ pub fn int_to_pooltype(int: i32) -> PoolType {
 /// if someone figures out how to improve this code it can be done in one place right here.
 pub fn timestamped_test_log(text: &str) {
     tracing::info!("{}: {}", crate::utils::now(), text);
+}
+
+/// Builds and caches the post-NU6.3 Orchard proving key ahead of the first send, so a fixture that awaits this during environment setup hides the multi-second build.
+pub async fn warm_orchard_proving_key() {
+    use orchard::circuit::OrchardCircuitVersion;
+    use zcash_primitives::transaction::builder;
+    tokio::task::spawn_blocking(|| {
+        builder::cached_orchard_proving_key(OrchardCircuitVersion::PostNu6_3);
+    })
+    .await
+    .expect("proving-key warmup task must not panic");
+}
+
+/// Decimal places phase timers use when they report elapsed seconds.
+const PHASE_SECONDS_PRECISION: usize = 3;
+
+/// Awaits `fut` while logging the phase's start and its elapsed wall-clock seconds under `label`.
+pub async fn timed<T>(label: &str, fut: impl std::future::Future<Output = T>) -> T {
+    let start = std::time::Instant::now();
+    timestamped_test_log(format!("[phase] {label} started.").as_str());
+    let output = fut.await;
+    timestamped_test_log(
+        format!(
+            "[phase] {label} finished in {:.precision$}s.",
+            start.elapsed().as_secs_f64(),
+            precision = PHASE_SECONDS_PRECISION
+        )
+        .as_str(),
+    );
+    output
 }
 
 #[allow(unused_macros)]

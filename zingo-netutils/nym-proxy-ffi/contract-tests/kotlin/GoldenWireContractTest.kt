@@ -77,19 +77,33 @@ class GoldenWireContractTest {
     }
 
     @Test
-    fun deathReasonWireEncodingMatchesThePin() {
-        val expected = ProxyDeathReason.MixnetDisconnected("gateway went away — упал — 途絶")
-        val name = "proxy_death_reason_mixnet_disconnected"
-        val buf = ByteBuffer.allocate(FfiConverterTypeProxyDeathReason.allocationSize(expected).toInt())
-        FfiConverterTypeProxyDeathReason.write(expected, buf)
-        buf.flip()
-        val wire = ByteArray(buf.remaining()).also { buf.get(it) }
-        assertEquals("$name: lowering drifted", toHex(golden(name)), toHex(wire))
-        assertEquals(
-            "$name: lifting the pin changed the value",
-            expected,
-            readAll(golden(name)) { FfiConverterTypeProxyDeathReason.read(it) },
+    fun everyDeathReasonWireEncodingMatchesItsPin() {
+        val cases: List<Pair<String, ProxyDeathReason>> = listOf(
+            "proxy_death_reason_listener_refused" to
+                ProxyDeathReason.ListenerRefused("gateway went away — упал — 途絶"),
+            "proxy_death_reason_greeting_unwritable" to
+                ProxyDeathReason.GreetingUnwritable("broken pipe"),
+            "proxy_death_reason_method_selection_unreadable" to
+                ProxyDeathReason.MethodSelectionUnreadable("connection reset"),
+            "proxy_death_reason_method_selection_refused" to
+                ProxyDeathReason.MethodSelectionRefused(0x05.toUByte(), 0xff.toUByte()),
+            "proxy_death_reason_check_timed_out" to
+                ProxyDeathReason.CheckTimedOut(250.toULong()),
         )
+        for ((name, expected) in cases) {
+            val buf = ByteBuffer.allocate(
+                FfiConverterTypeProxyDeathReason.allocationSize(expected).toInt(),
+            )
+            FfiConverterTypeProxyDeathReason.write(expected, buf)
+            buf.flip()
+            val wire = ByteArray(buf.remaining()).also { buf.get(it) }
+            assertEquals("$name: lowering drifted", toHex(golden(name)), toHex(wire))
+            assertEquals(
+                "$name: lifting the pin changed the value",
+                expected,
+                readAll(golden(name)) { FfiConverterTypeProxyDeathReason.read(it) },
+            )
+        }
     }
 
     @Test
@@ -99,11 +113,6 @@ class GoldenWireContractTest {
         val cases: List<Triple<String, Class<out ProxyFfiException>, String>> = listOf(
             Triple("proxy_ffi_error_runtime", ProxyFfiException.Runtime::class.java, "no threads"),
             Triple("proxy_ffi_error_connect", ProxyFfiException.Connect::class.java, "gateway refused"),
-            Triple(
-                "proxy_ffi_error_address",
-                ProxyFfiException.Address::class.java,
-                "\"not-an-address\": invalid socket address syntax",
-            ),
         )
         for ((name, variantClass, reason) in cases) {
             val lifted = readAll(golden(name)) { FfiConverterTypeProxyFfiError.read(it) }
@@ -111,7 +120,6 @@ class GoldenWireContractTest {
             val liftedReason = when (lifted) {
                 is ProxyFfiException.Runtime -> lifted.reason
                 is ProxyFfiException.Connect -> lifted.reason
-                is ProxyFfiException.Address -> lifted.reason
                 else -> error("unreachable: variant class already asserted")
             }
             assertEquals("$name: reason payload drifted", reason, liftedReason)

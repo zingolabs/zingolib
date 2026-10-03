@@ -8,9 +8,12 @@ on:
 
 jobs:
 
+  # The binding-layer-android job below builds x86_64 with the other ABIs,
+  # so the per-PR workflow skips its own x86_64 build here.
   pr-checks:
-    needs: [ create-cache-key ]
     uses: ./.github/workflows/ci-pr.yaml
+    with:
+      skip-binding-layer-build: true
 
   cargo-hack-build:
     name: Cargo Hack Build
@@ -40,54 +43,45 @@ jobs:
         with:
           hack-subcommand: build
 
-  create-timestamp:
-    uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
+  feature-census:
+    name: Feature Census
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-  create-cache-key:
-    uses: zingolabs/zingo-mobile/.github/workflows/create-cache-key.yaml@dev
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ inputs.toolchain }}
 
-  android-build:
-    strategy:
-      matrix:
-        arch: [ x86_64, x86, arm64-v8a, armeabi-v7a ]
-      fail-fast: false
-    uses: zingolabs/zingo-mobile/.github/workflows/android-build.yaml@dev
-    needs: create-cache-key
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install protoc
+        run: |
+          if ! command -v protoc; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+          fi
+
+      # Removes each declared dependency feature in turn and checks without it.
+      # One `cargo check` per feature, so this runs nightly rather than per PR.
+      - name: Run feature-census
+        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin feature-census -- --all
+
+  # The nightly tier of zingolib/0054: the four Android ABIs in one AAR,
+  # and both XCFrameworks with the Swift sources on macOS. Each job runs
+  # the builder on this commit.
+  binding-layer-android:
+    uses: ./.github/workflows/binding-layer-android.yaml
     with:
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
-      arch: ${{ matrix.arch }}
+      abis: '["x86_64", "x86", "arm64-v8a", "armeabi-v7a"]'
 
-  android-ubuntu-integration-test-ci:
-    strategy:
-      matrix:
-        config:
-          - { abi: x86_64, api-level: 34, target: default }
-          - { abi: x86, api-level: 29, target: default }
-      fail-fast: false
-    uses: zingolabs/zingo-mobile/.github/workflows/android-ubuntu-integration-test-ci.yaml@dev
-    needs: [create-timestamp, create-cache-key, android-build]
-    with:
-      timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
-      abi: ${{ matrix.config.abi }}
-      api-level: ${{ matrix.config['api-level'] }}
-      target: ${{ matrix.config.target }}
-
-  ios-build:
-    strategy:
-      fail-fast: false
-    uses: zingolabs/zingo-mobile/.github/workflows/ios-build.yaml@dev
-    needs: create-cache-key
-    with:
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
-
-  ios-integration-test:
-    strategy:
-      fail-fast: false
-    uses: zingolabs/zingo-mobile/.github/workflows/ios-integration-test.yaml@dev
-    needs: [ create-cache-key, ios-build ]
-    with:
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
+  binding-layer-ios:
+    uses: ./.github/workflows/binding-layer-ios.yaml
 
   test:
     uses: ./.github/workflows/test.yaml

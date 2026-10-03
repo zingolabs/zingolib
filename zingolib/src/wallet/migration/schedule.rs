@@ -2,11 +2,11 @@
 //!
 //! Buckets are delimited by *boundaries*: block heights ≡ 0 (mod `M`).
 //! Bucket `i` spans heights `[i·M, (i+1)·M)`. A part assigned to bucket `i`
-//! broadcasts while the chain is inside it.
+//! transmits while the chain is inside it.
 //!
-//! A part's *anchor* is a separate bucket from its broadcast window. The
+//! A part's *anchor* is a separate bucket from its transmission window. The
 //! anchor sits a canonically drawn age below the window, never zero
-//! ([`ANCHOR_AGE_CAP`] bounds how far), so a part always proves against a
+//! (`ANCHOR_AGE_CAP` bounds how far), so a part always proves against a
 //! boundary the chain has already left. Because that boundary is identical
 //! for every wallet anchoring there, it carries no per-wallet timing
 //! information, and because its window has closed, its ZIP 318 *cohort* (the
@@ -23,7 +23,7 @@ use crate::wallet::error::WalletError;
 use super::params::MigrationParams;
 use super::parts::{PartId, PartRecord, PartState};
 
-/// Draws the advisory broadcast target for one part from the canonical
+/// Draws the advisory transmission target for one part from the canonical
 /// transfer-delay law: the ZIP 318 exponential inter-arrival distribution
 /// (mean 144 blocks, capped at 576), offset from the part's window boundary
 /// (<https://zips.z.cash/zip-0318#transferscheduling>). The draw can land
@@ -52,7 +52,7 @@ const TARGET_BLOCK_SPACING_SECONDS: u64 = 75;
 // blocks, 30 days) and `EXPIRY_WINDOW` (2x, about 60 days) are
 // standardized at
 // <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>;
-// `ANCHOR_AGE_CAP` (16 boundaries, about two days) at
+// `ANCHOR_AGE_CAP` (4 boundaries, about twelve hours) at
 // <https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>.
 // ANCHOR_AGE_CAP is deliberately not a `MigrationParams` field: it does
 // not feed the consent hash, so adopting it costs no existing consent.
@@ -64,18 +64,14 @@ use std::num::NonZeroU32;
 use rand::CryptoRng;
 use zcash_pool_migration::scheduling::{AnchorBucketInterval, SchedulingParams};
 
-/// The canonical ZIP 318 expiry for a transfer scheduled to broadcast at
-/// `broadcast_height`: the most recent multiple of [`EXPIRY_MODULUS`] at or
-/// below it, plus [`EXPIRY_WINDOW`]. Identical for every transfer scheduled
+/// The canonical ZIP 318 expiry for a transfer scheduled to transmit at
+/// `transmission_height`: the most recent multiple of `EXPIRY_MODULUS` at or
+/// below it, plus `EXPIRY_WINDOW`. Identical for every transfer scheduled
 /// in the same 30-day period, so the committed expiry reveals only that
 /// coarse period. See
 /// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>.
-pub fn canonical_expiry_height(broadcast_height: BlockHeight) -> BlockHeight {
-    // Delegates to the canonical implementation; heights cross the git
-    // dependency's type divide as u32, the workspace's standard insulation.
-    BlockHeight::from_u32(u32::from(zcash_pool_migration::scheduling::expiry_height(
-        u32::from(broadcast_height).into(),
-    )))
+pub fn canonical_expiry_height(transmission_height: BlockHeight) -> BlockHeight {
+    zcash_pool_migration::scheduling::expiry_height(transmission_height)
 }
 
 /// The bucket containing `height`.
@@ -85,7 +81,7 @@ pub fn bucket_index(height: BlockHeight, bucket_modulus: u32) -> u64 {
 
 /// The boundary that opens `bucket_index`. It is the anchor height of every
 /// part whose *anchor bucket* this is, which is never the same bucket the
-/// part broadcasts in.
+/// part transmits in.
 pub fn boundary_of(bucket_index: u64, bucket_modulus: u32) -> BlockHeight {
     BlockHeight::from_u32(
         u32::try_from(bucket_index * u64::from(bucket_modulus))
@@ -138,7 +134,7 @@ impl AnchorFloor {
         era.max(anchorability)
     }
 
-    /// The earliest broadcast window this part may be scheduled into: one
+    /// The earliest transmission window this part may be scheduled into: one
     /// bucket above its lowest legal anchor, because an anchor always sits
     /// at least one bucket below its window.
     ///
@@ -152,9 +148,9 @@ impl AnchorFloor {
     }
 }
 
-/// The anchor bucket for a part broadcasting in `window`: `window − a` for a
+/// The anchor bucket for a part transmitting in `window`: `window − a` for a
 /// canonically drawn age (`Geometric(1/2)`, never zero, capped at
-/// [`ANCHOR_AGE_CAP`]), redrawn until it clears `floor`.
+/// `ANCHOR_AGE_CAP`), redrawn until it clears `floor`.
 ///
 /// Delegates to the canonical
 /// [`zcash_pool_migration::scheduling::draw_anchor_boundary`]
@@ -175,13 +171,13 @@ pub fn draw_anchor_bucket(
     let interval = AnchorBucketInterval::custom(
         NonZeroU32::new(bucket_modulus).expect("bucket modulus is nonzero by params invariant"),
     );
-    let window_boundary = u32::from(boundary_of(window, bucket_modulus));
-    let funding = floor.note_confirmed_at.map_or(0, u32::from);
     let anchor = zcash_pool_migration::scheduling::draw_anchor_boundary(
         interval,
-        u32::from(floor.activation.height()).into(),
-        funding.into(),
-        window_boundary.into(),
+        floor.activation.height(),
+        floor
+            .note_confirmed_at
+            .unwrap_or_else(|| BlockHeight::from_u32(0)),
+        boundary_of(window, bucket_modulus),
         rng,
     )?;
     Some(u64::from(u32::from(anchor)) / u64::from(bucket_modulus))
@@ -203,7 +199,7 @@ pub fn first_permitted_bucket(
         .max(floor.earliest_window(params.bucket_modulus))
 }
 
-/// The first broadcast window boundary that can hold an Ironwood part at
+/// The first transmission window boundary that can hold an Ironwood part at
 /// all: two buckets above the Pool Activation's bucket, since the lowest
 /// legal anchor is the bucket above the activation's and a window sits a
 /// further bucket above its anchor.
@@ -242,7 +238,7 @@ fn bucket_at_or_after(height: BlockHeight, bucket_modulus: u32) -> u64 {
 ///
 /// Re-drawing the anchor here is what keeps the age honest. A part shifted
 /// into a later window while keeping an old anchor would silently age past
-/// [`ANCHOR_AGE_CAP`]; because every move lands here, none can.
+/// `ANCHOR_AGE_CAP`; because every move lands here, none can.
 #[allow(clippy::result_large_err)]
 pub fn place(
     part: &mut PartRecord,
@@ -310,8 +306,8 @@ fn transition_to_bucket(part: &mut PartRecord, bucket: u64) -> Result<(), Wallet
     }
 }
 
-/// Assigns every [`PartState::Bound`] part to a broadcast window, draws its
-/// anchor below that window, and picks a random broadcast target inside it.
+/// Assigns every [`PartState::Bound`] part to a transmission window, draws its
+/// anchor below that window, and picks a random transmission target inside it.
 ///
 /// Multiplicity `k = clamp(ceil(parts / target_sessions), 1, k_max)` parts
 /// share each *batch*. Batches fill consecutive buckets, largest
@@ -389,10 +385,10 @@ pub fn plan_schedule(
     Ok(())
 }
 
-/// One future broadcast window: what a platform scheduler (for example
+/// One future transmission window: what a mobile platform scheduler (for example
 /// `BGTaskScheduler` or `WorkManager`) feeds into its earliest-begin request.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BroadcastWindow {
+pub struct TransmissionWindow {
     /// The bucket the parts are assigned to.
     pub bucket_index: u64,
     /// The bucket's opening boundary, also the parts' anchor height.
@@ -417,15 +413,15 @@ fn estimated_unix_at(height: BlockHeight, now_height: BlockHeight, now_unix: u64
     now_unix + blocks_until * TARGET_BLOCK_SPACING_SECONDS
 }
 
-/// Whether a part is due to broadcast right now: it still awaits broadcast
+/// Whether a part is due to transmit right now: it still awaits transmission
 /// ([`PartState::Assigned`] or [`PartState::Signed`]) and its window is open,
 /// meaning it is assigned to `current_bucket`, whose boundary is at or below the tip
 /// by definition. The part's random `target_height` no longer gates
 /// sendability. It is advisory, exposed only as the reminder hint
-/// [`BroadcastWindow::latest_target_unix_time`], so a part is due for the whole
+/// [`TransmissionWindow::latest_target_unix_time`], so a part is due for the whole
 /// open window rather than only from its target onward.
 ///
-/// The single-part rule shared by the broadcast loop and the "due now" status
+/// The single-part rule shared by the transmission loop and the "due now" status
 /// read, so a status can never advertise a part a send would decline. It does
 /// *not* fold in earlier, missed windows: an overdue part sits in a bucket
 /// below `current_bucket` and is catch-up's business.
@@ -434,7 +430,7 @@ pub fn part_in_current_bucket(part: &PartRecord, current_bucket: u64) -> bool {
         && part.bucket_index == Some(current_bucket)
 }
 
-/// The broadcast windows within the next `horizon` buckets, soonest first.
+/// The transmission windows within the next `horizon` buckets, soonest first.
 ///
 /// Pure: reads only the given parts and clock inputs. Parts whose bucket has
 /// already passed are reconciliation's business and are not listed here.
@@ -444,7 +440,7 @@ pub fn upcoming_windows(
     now_unix: u64,
     horizon: u64,
     params: &MigrationParams,
-) -> Vec<BroadcastWindow> {
+) -> Vec<TransmissionWindow> {
     let current_bucket = bucket_index(now_height, params.bucket_modulus);
     let mut buckets: std::collections::BTreeMap<u64, (Vec<PartId>, Option<BlockHeight>)> =
         std::collections::BTreeMap::new();
@@ -469,7 +465,7 @@ pub fn upcoming_windows(
             // A part without a target (a catch-up shift) is due at the
             // window opening, which every in-window target is at or past.
             let latest_target = latest_target.unwrap_or(boundary + 1);
-            BroadcastWindow {
+            TransmissionWindow {
                 bucket_index: bucket,
                 boundary,
                 part_ids,
@@ -482,7 +478,7 @@ pub fn upcoming_windows(
 
 /// One window of the schedule's timeline: the bucket, its block range, and
 /// how far its parts have come. The rendering counterpart to
-/// [`BroadcastWindow`], which feeds platform schedulers strictly future
+/// [`TransmissionWindow`], which feeds mobile platform schedulers strictly future
 /// windows. This reports every window the schedule touches, finished ones
 /// included.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -613,7 +609,7 @@ mod tests {
     /// must not schedule any part whose *anchor* predates the activation.
     /// The window such an anchor belongs to would commit to a pre-NU6.3
     /// consensus branch, in which no Ironwood bundle exists, so every
-    /// broadcast attempt skips and the whole consented batch slides into the
+    /// transmission attempt skips and the whole consented batch slides into the
     /// correlation-disclosed catch-up path. Note splitting is explicitly
     /// permitted before activation (module doc), so a fully split wallet at a
     /// pre-activation consent height is a supported state.
@@ -647,7 +643,7 @@ mod tests {
             // activation without the floor being restated on it.
             assert!(
                 part.bucket_index.unwrap() > part.anchor_bucket.unwrap(),
-                "part {:?} must broadcast above the bucket it anchors in",
+                "part {:?} must transmit above the bucket it anchors in",
                 part.id,
             );
         }
@@ -656,7 +652,7 @@ mod tests {
     /// Every accepted anchor sits inside the candidate set: at least one
     /// bucket below the window, at or above both floors, and within the age
     /// cap. The first bound is the age-never-zero rule: a part must never
-    /// prove against the boundary of the window it is broadcasting in,
+    /// prove against the boundary of the window it is transmitting in,
     /// because that boundary is the newest tree state there is and its
     /// cohort has not accumulated yet. The delegated `draw_anchor_boundary`
     /// enforces every one of these bounds now that the local rejection loop
@@ -794,7 +790,7 @@ mod tests {
             let bucket = part.bucket_index.unwrap();
             assert!(bucket >= first_bucket, "current or future bucket");
             // Target is drawn from the part's boundary under the canonical
-            // delay law (mean 144, capped at 576; it may pass the window,
+            // delay law (mean 66, capped at 576; it may pass the window,
             // and the target is advisory per ADR 0017).
             let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
             let target = u32::from(part.target_height.unwrap());
@@ -880,9 +876,9 @@ mod tests {
     }
 
     /// The random target no longer gates sendability: a current-bucket part
-    /// awaiting broadcast is due for the whole open window, the exact case the
+    /// awaiting transmission is due for the whole open window, the exact case the
     /// old target-gated predicate rejected. Bucket membership plus
-    /// awaiting-broadcast state is the whole rule.
+    /// awaiting-transmission state is the whole rule.
     #[test]
     fn part_in_current_bucket_ignores_the_target_height() {
         let params = params();
@@ -1147,7 +1143,7 @@ mod tests {
         /// <https://zips.z.cash/zip-0318#anchor-heightbucketingandcohorts>
         #[test]
         fn anchor_age_cap_matches_the_zip() {
-            assert_eq!(ANCHOR_AGE_CAP, 16);
+            assert_eq!(ANCHOR_AGE_CAP, 4);
         }
 
         /// Strict behavioral equivalence across the anchor-draw delegation
@@ -1192,19 +1188,14 @@ mod tests {
             }
         }
 
-        /// The `zcash_pool_migration` revision this workspace has adjudicated.
-        /// The dependency floats on zcash/librustzcash's default branch (ADR
-        /// 0020), so an ordinary `cargo update` can move it. This tripwire
-        /// makes every move loud: when the resolved revision changes, this
-        /// test fails, and the adopting commit re-runs the value tripwires
-        /// above and bumps this literal deliberately.
-        const ADJUDICATED_UPSTREAM_REV: &str = "e12f1d0ff7be5e5bfd2e4bcbb8d9a863a405f031";
+        /// The `zcash_pool_migration` release this workspace has adjudicated.
+        const ADJUDICATED_UPSTREAM_VERSION: &str = "0.1.0";
 
-        /// Fails when the floating librustzcash dependency moves (ADR 0020's
-        /// branch-move tripwire). Reads the workspace lockfile rather than any
-        /// crate metadata, because the lockfile is where a float lands first.
+        /// Fails when the migration dependency moves (ADR 0020's movement
+        /// tripwire). Reads the workspace lockfile rather than any crate
+        /// metadata, because the lockfile is where a resolution lands first.
         #[test]
-        fn upstream_revision_is_the_adjudicated_one() {
+        fn upstream_version_is_the_adjudicated_one() {
             let lockfile = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .parent()
                 .expect("zingolib sits directly under the workspace root")
@@ -1215,10 +1206,10 @@ mod tests {
                 .find(|block| block.contains("name = \"zcash_pool_migration\""))
                 .expect("the lockfile resolves zcash_pool_migration");
             assert!(
-                package_block.contains(&format!("#{ADJUDICATED_UPSTREAM_REV}\"")),
-                "zcash_pool_migration moved off the adjudicated revision \
-                 {ADJUDICATED_UPSTREAM_REV}. Re-run the zip318 tripwires against \
-                 the new revision and bump ADJUDICATED_UPSTREAM_REV in the same \
+                package_block.contains(&format!("version = \"{ADJUDICATED_UPSTREAM_VERSION}\"")),
+                "zcash_pool_migration moved off the adjudicated release \
+                 {ADJUDICATED_UPSTREAM_VERSION}. Re-run the zip318 tripwires against \
+                 the new release and bump ADJUDICATED_UPSTREAM_VERSION in the same \
                  commit that adopts it."
             );
         }
@@ -1265,7 +1256,7 @@ mod tests {
         #[test]
         fn transfer_delay_matches_the_zip() {
             let delay = SchedulingParams::ZIP_318.transfer_delay();
-            assert_eq!(delay.mean().get(), 144);
+            assert_eq!(delay.mean().get(), 66);
             assert_eq!(delay.cap().get(), 576);
         }
 

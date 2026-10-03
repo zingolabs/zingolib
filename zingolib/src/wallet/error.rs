@@ -98,7 +98,7 @@ pub enum WalletError {
     /// Persisted migration state failed an integrity check.
     #[error("Migration state corrupt: {0}")]
     MigrationStateCorrupt(String),
-    /// A placement asked for a broadcast window whose candidate anchor set is
+    /// A placement asked for a transmission window whose candidate anchor set is
     /// empty: every bucket below it is ruled out by the Ironwood era floor or
     /// by the part's own bound note, leaving no boundary at age one or more to
     /// prove against. A caller that derives its window from
@@ -109,7 +109,7 @@ pub enum WalletError {
          at or above {lowest_anchor} sits below it."
     )]
     MigrationNoLegalAnchor {
-        /// The broadcast window the part was being placed in.
+        /// The transmission window the part was being placed in.
         window: u64,
         /// The lowest bucket the part's floors permit as an anchor.
         lowest_anchor: u64,
@@ -139,24 +139,39 @@ pub enum WalletError {
         "Cannot create a new wallet: a wallet file already exists at this path. Use WalletConfig::Read to load the existing wallet."
     )]
     WalletAlreadyCreated,
+    /// The OP_RETURN send recipient is not a P2PKH, P2SH, or TEX address.
+    #[error("OP_RETURN send recipient must be a P2PKH, P2SH, or TEX address.")]
+    OpReturnRecipientNotTransparent,
+    /// The deshield transaction has no transparent output paying the
+    /// reserved source address. This is an internal invariant failure.
+    #[error("Deshield output not found in the deshield transaction.")]
+    DeshieldOutputNotFound,
+    /// Building a transparent-only transaction failed.
+    #[error("Transparent transaction build failed: {0}")]
+    TransparentBuild(String),
 }
 
-/// Price error. Exists only in nym builds: the mixnet-only price rule
-/// (ADR 0011, amendment 2026-07-28) leaves other builds with no fetch and
-/// therefore no fetch failures.
+/// Price error. Exists only in nym builds: the fetch compiles only with
+/// the mixnet stack, so other builds have no fetch and therefore no
+/// fetch failures.
 #[cfg(feature = "nym")]
 #[derive(Debug, thiserror::Error)]
 pub enum PriceError {
     /// Price error
-    #[error("price error. {0}")]
+    #[error("price error.")]
     PriceError(#[from] zingo_price::PriceError),
     /// Every source in the three-source race failed; the report names each
     /// source's typed failure with its cause chain.
-    #[error("price race failed. {0}")]
+    #[error("price race failed.")]
     RaceFailed(#[from] zingo_price::PriceRaceFailure),
     /// Price list not initialised
     #[error("price list not initialised. please wait for sync to obtain time of wallet birthday")]
     NotInitialised,
+    /// The run reached no source at all: it acquired no transport, or every
+    /// exit it drew carried nothing. Shared with every speed-priority
+    /// operation, because neither failure is about prices.
+    #[error("the price run reached no source.")]
+    Speed(#[source] crate::mixnet::speed::SpeedError),
 }
 
 /// Summary error
@@ -331,12 +346,6 @@ pub enum ProposeSendError {
     /// failed to construct a transaction request
     #[error("{0}")]
     TransactionRequestFailed(#[from] zcash_client_backend::zip321::Zip321Error),
-    /// send all is transferring no value
-    #[error("send all is transferring no value. only enough funds to pay the fees!")]
-    ZeroValueSendAll,
-    /// failed to calculate balance.
-    #[error("failed to calculated balance. {0}")]
-    BalanceError(#[from] crate::wallet::error::BalanceError),
 }
 
 /// Errors that can result from constructing shield proposals.
