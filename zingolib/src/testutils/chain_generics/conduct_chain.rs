@@ -35,8 +35,8 @@ pub trait ConductChain {
         let config = timed("create_client::zingo_config", self.zingo_config()).await;
         assert!(!matches!(config.wallet_config(), WalletConfig::Read));
         let mut lightclient = timed(
-            "create_client::new_clearnet_consented",
-            LightClient::new_clearnet_consented(config, false),
+            "create_client::new_nakednet_consented",
+            LightClient::new_nakednet_consented(config, false),
         )
         .await
         .unwrap();
@@ -56,7 +56,7 @@ pub trait ConductChain {
     /// loads a client from bytes
     async fn load_client(&mut self, config: ClientConfig) -> LightClient {
         assert!(matches!(config.wallet_config(), WalletConfig::Read));
-        LightClient::new_clearnet_consented(config, false)
+        LightClient::new_nakednet_consented(config, false)
             .await
             .unwrap()
     }

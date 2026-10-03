@@ -2,17 +2,16 @@
 
 //! Crate for ZEC price types, storage, and fetching.
 //!
-//! Currently only supports USD. The fetch defaults to clearnet; a caller that
-//! wants to hide the client IP from the price source passes a local SOCKS5
-//! proxy address (the Nym mixnet transport, ADR 0011) and the request is
-//! routed through it instead.
+//! Currently only supports USD. The routing policy lives in the caller:
+//! `get_source_price` dials through a local SOCKS5 tunnel endpoint (the
+//! Nym mixnet transport), and `get_source_price_untunneled` takes the
+//! nakednet leg a switched-off Mixnet Mode consents to.
 //!
 //! The whole fetch surface — and every dependency it needs — sits behind
 //! the `socks5-fetch` feature (on by default for this crate alone).
 //! Without it the crate is the storage-only data model: [`Price`] and
-//! [`PriceList`] with their wallet-file serialization. This is the
-//! dependency half of the mixnet-only price rule (ADR 0011, amendment
-//! 2026-07-28): a wallet build without the mixnet compiles no fetch.
+//! [`PriceList`] with their wallet-file serialization. A wallet build
+//! without the mixnet stack compiles no fetch.
 
 #[cfg(feature = "socks5-fetch")]
 use std::time::Duration;
@@ -185,7 +184,19 @@ impl PriceList {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        let version = reader.read_u8()?;
+        // a version above the one this build writes was written by a newer build in a layout this build cannot
+        // read. it is refused so the newer layout is never read as an older one.
+        if version > Self::serialized_version() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "PriceList serialized version {version} was written by a newer build. this build reads up to \
+                     version {}.",
+                    Self::serialized_version()
+                ),
+            ));
+        }
 
         let time_last_updated = Optional::read(
             &mut reader,
@@ -774,35 +785,50 @@ pub async fn get_source_price(
     source.parse(&body)
 }
 
+/// One source's price over an untunneled nakednet leg, which discloses
+/// the client IP: the route a switched-off Mixnet Mode consents to.
+#[cfg(feature = "socks5-fetch")]
+pub async fn get_source_price_untunneled(
+    source: PriceSource,
+    url: &str,
+    request_timeout: Duration,
+    connect_timeout: Duration,
+) -> Result<Price, PriceError> {
+    let body =
+        zingo_netutils::socks5_fetch::fetch_text_untunneled(url, request_timeout, connect_timeout)
+            .await
+            .map_err(|error| PriceError::RequestFailed {
+                failure: error.net_op_failure(),
+                source: Box::new(error),
+            })?;
+    source.parse(&body)
+}
+
 #[cfg(all(test, feature = "socks5-fetch"))]
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// The reader is given a serialized version above the one the type writes, followed by a price list the current
+    /// layout reads.
+    #[test]
+    fn price_list_read_refuses_a_serialized_version_above_its_own() {
+        let mut bytes = Vec::new();
+        PriceList::new().write(&mut bytes).unwrap();
+        PriceList::read(bytes.as_slice()).expect("the current version is read");
+
+        bytes[0] = PriceList::serialized_version() + 1;
+
+        let error = PriceList::read(bytes.as_slice())
+            .map(drop)
+            .expect_err("a version above the current version is refused");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
     use tokio::net::TcpListener;
     use zingo_net_diag::NetOpStage;
 
     /// Generous bounds for tests whose subject is not the timeout.
     const TEST_TIMEOUT: Duration = Duration::from_secs(10);
-
-    /// One source's price off an untunneled leg, which tests alone may take.
-    async fn fetch_untunneled(
-        source: PriceSource,
-        url: &str,
-        request_timeout: Duration,
-        connect_timeout: Duration,
-    ) -> Result<Price, PriceError> {
-        let body = zingo_netutils::socks5_fetch::fetch_text_untunneled(
-            url,
-            request_timeout,
-            connect_timeout,
-        )
-        .await
-        .map_err(|error| PriceError::RequestFailed {
-            failure: error.net_op_failure(),
-            source: Box::new(error),
-        })?;
-        source.parse(&body)
-    }
 
     /// One source's price through a conduit over `socks5`, for the tests
     /// whose subject is the proxy leg itself.
@@ -867,12 +893,12 @@ mod tests {
         format!("http://{addr}/v1/trades/zecusd")
     }
 
-    /// The clearnet fetch (`socks5_proxy = None`) performs the real HTTP round
+    /// The nakednet fetch (`socks5_proxy = None`) performs the real HTTP round
     /// trip, deserializes the Gemini trades payload, and returns the median of
     /// the eleven trades (index 5 of the sorted list). Eleven deliberately
     /// out-of-order prices 100..=110 make the median 105 and prove the sort.
     #[tokio::test]
-    async fn clearnet_fetch_returns_median_price() {
+    async fn nakednet_fetch_returns_median_price() {
         let body = r#"[
             {"price":"110","timestamp":1},
             {"price":"100","timestamp":2},
@@ -888,9 +914,10 @@ mod tests {
         ]"#;
         let url = spawn_trades_server(body).await;
 
-        let price = fetch_untunneled(PriceSource::Gemini, &url, TEST_TIMEOUT, TEST_TIMEOUT)
-            .await
-            .expect("the clearnet fetch parses a valid trades response");
+        let price =
+            get_source_price_untunneled(PriceSource::Gemini, &url, TEST_TIMEOUT, TEST_TIMEOUT)
+                .await
+                .expect("the nakednet fetch parses a valid trades response");
 
         assert_eq!(
             price.price_usd, 105.0,
@@ -898,18 +925,19 @@ mod tests {
         );
     }
 
-    /// Smoke test against a real price source over clearnet. Ignored by
+    /// Smoke test against a real price source over nakednet. Ignored by
     /// default (needs network and a live third party); run with
     /// `cargo test -p zingo-price -- --ignored`. The race that once lived
     /// here is the wallet's speed-priority wave, so this proves the fetch
     /// this crate still owns.
     #[tokio::test]
-    #[ignore = "hits a live price-source API over clearnet"]
-    async fn live_clearnet_price_fetch_smoke() {
+    #[ignore = "hits a live price-source API over nakednet"]
+    async fn live_nakednet_price_fetch_smoke() {
         let source = PriceSource::Kraken;
-        let price = fetch_untunneled(source, source.url(), REQUEST_TIMEOUT, CONNECT_TIMEOUT)
-            .await
-            .expect("the live price fetch succeeds");
+        let price =
+            get_source_price_untunneled(source, source.url(), REQUEST_TIMEOUT, CONNECT_TIMEOUT)
+                .await
+                .expect("the live price fetch succeeds");
         assert!(
             price.price_usd > 0.0 && price.price_usd.is_finite(),
             "a live ZEC/USD price is positive and finite, got {}",
@@ -928,7 +956,7 @@ mod tests {
         });
 
         let short = Duration::from_millis(300);
-        let error = fetch_untunneled(PriceSource::Gemini, &url, short, short)
+        let error = get_source_price_untunneled(PriceSource::Gemini, &url, short, short)
             .await
             .expect_err("a silent server cannot serve a price");
         match &error {
@@ -1005,9 +1033,10 @@ mod tests {
         ]"#;
         let url = spawn_trades_server(body).await;
 
-        let error = fetch_untunneled(PriceSource::Gemini, &url, TEST_TIMEOUT, TEST_TIMEOUT)
-            .await
-            .expect_err("two trades cannot yield the median of eleven");
+        let error =
+            get_source_price_untunneled(PriceSource::Gemini, &url, TEST_TIMEOUT, TEST_TIMEOUT)
+                .await
+                .expect_err("two trades cannot yield the median of eleven");
         assert!(
             matches!(error, PriceError::InsufficientTrades { received: 2 }),
             "the refusal must be typed with the received count: {error}"
@@ -1123,8 +1152,10 @@ mod tests {
         let kraken = spawn_answering_server(KRAKEN_ELEVEN_TRADES).await;
         let short = Duration::from_millis(500);
 
-        let refused = fetch_untunneled(PriceSource::Gemini, &garbage, short, short).await;
-        let answered = fetch_untunneled(PriceSource::Kraken, &kraken, short, short).await;
+        let refused =
+            get_source_price_untunneled(PriceSource::Gemini, &garbage, short, short).await;
+        let answered =
+            get_source_price_untunneled(PriceSource::Kraken, &kraken, short, short).await;
         let won = first_quote(vec![
             (PriceSource::Gemini, refused),
             (PriceSource::Kraken, answered),
@@ -1151,7 +1182,10 @@ mod tests {
             (PriceSource::Kraken, garbage_two),
             (PriceSource::CoinGecko, silent),
         ] {
-            outcomes.push((source, fetch_untunneled(source, &url, short, short).await));
+            outcomes.push((
+                source,
+                get_source_price_untunneled(source, &url, short, short).await,
+            ));
         }
         let failure = first_quote(outcomes).expect_err("no source answered with a price");
         let named: Vec<&str> = failure

@@ -5,7 +5,7 @@
 //! server-reported txid. This path is deliberately light: it needs only a
 //! SOCKS5 client and the tonic machinery already present, no nym-sdk, so it
 //! resolves and builds in the main workspace's lockfile. See
-//! `docs/adr/0011-nym-mixnet-transmission.md`.
+//! `zingo-adrs zingolib/0011`.
 //!
 //! Failures are typed by the connection phase that produced them (proxy-dial,
 //! tunnel establishment, post-tunnel transport, the RPC's own status, server
@@ -16,7 +16,7 @@
 //! indexer itself said no". The caller decides what to do with a failure.
 //! [`Socks5TransmitError::is_failover_candidate`] offers the escalation's
 //! reading without discarding anything. [`Socks5Indexer::get_lightd_info`]
-//! mirrors the clearnet probe through the same tunnel, pairing the two
+//! mirrors the nakednet probe through the same tunnel, pairing the two
 //! routes for diagnosis.
 #![forbid(unsafe_code)]
 
@@ -239,6 +239,16 @@ async fn bounded_rpc<T>(
     }
 }
 
+/// Webpki roots, plus the committed localhost certificate in test builds.
+fn tunnel_tls_config() -> ClientTlsConfig {
+    let config = ClientTlsConfig::new().with_webpki_roots();
+    #[cfg(any(test, feature = "testutils"))]
+    let config = config.ca_certificate(tonic::transport::Certificate::from_pem(
+        crate::test_tls::LOCALHOST_CERT_PEM,
+    ));
+    config
+}
+
 /// One indexer reached through the local SOCKS5 proxy, every operation
 /// opening its own https tunnel under one round-trip bound.
 pub struct Socks5Indexer {
@@ -405,7 +415,7 @@ impl Socks5Indexer {
             // `tokio::time::timeout` and classifies the elapse as
             // [`Socks5TransmitError::TimedOut`] (issue #2564).
             .connect_timeout(timeout)
-            .tls_config(ClientTlsConfig::new().with_webpki_roots())
+            .tls_config(tunnel_tls_config())
             .map_err(|e| Socks5TransmitError::TunnelTransport {
                 destination: destination.clone(),
                 detail: error_chain(&e),

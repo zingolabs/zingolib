@@ -16,11 +16,11 @@
 mod commands;
 mod examples;
 
-// The retired clearnet server-selection sweep. Never compiled by default:
+// The retired nakednet server-selection sweep. Never compiled by default:
 // the feature is the explicit review act (2026-08-06 ruling) that
 // re-incorporates any of it.
-#[cfg(feature = "clearnet-test-mode")]
-mod server_select_clearnet;
+#[cfg(feature = "nakednet-test-mode")]
+mod server_select_nakednet;
 
 use std::num::NonZeroU32;
 use std::path::PathBuf;
@@ -410,7 +410,7 @@ fn synced_indicator(progress: Option<ScanProgress>) -> String {
 
 /// Formats the configured indexer for the `servers` command; the session
 /// probes nothing to answer it.
-#[cfg(not(feature = "clearnet-test-mode"))]
+#[cfg(not(feature = "nakednet-test-mode"))]
 fn format_ranked_servers(cli_config: &CliConfigTemplate) -> String {
     match &cli_config.server {
         Some(server) => format!("Configured indexer: {server}. Nothing was probed."),
@@ -419,7 +419,7 @@ fn format_ranked_servers(cli_config: &CliConfigTemplate) -> String {
 }
 
 /// Formats the ranked server list for display by the `servers` command.
-#[cfg(feature = "clearnet-test-mode")]
+#[cfg(feature = "nakednet-test-mode")]
 fn format_ranked_servers(cli_config: &CliConfigTemplate) -> String {
     let Some(server) = &cli_config.server else {
         return "Last Known servers: none. This session is offline and probes nothing.".to_string();
@@ -847,12 +847,12 @@ pub(crate) enum Communications {
     UnconsentedOffline,
 }
 
-/// The minted launch notice for a `clearnet-test-mode` session that went
+/// The minted launch notice for a `nakednet-test-mode` session that went
 /// online, naming what the build suspended and what it costs its user.
-#[cfg(all(not(feature = "nym"), feature = "clearnet-test-mode"))]
-const CLEARNET_TEST_MODE_NOTICE: &str = "WARNING: this build carries `clearnet-test-mode`, so it went online with NO \
+#[cfg(all(not(feature = "nym"), feature = "nakednet-test-mode"))]
+const NAKEDNET_TEST_MODE_NOTICE: &str = "WARNING: this build carries `nakednet-test-mode`, so it went online with NO \
      mixnet. Every request — sync, and anything else this session makes — \
-     travels clearnet, and the indexer sees this machine's IP address. This \
+     travels nakednet, and the indexer sees this machine's IP address. This \
      feature exists to measure the mixnet's cost against its absence and is \
      never a default; a build for use rather than measurement must not carry \
      it.";
@@ -1031,18 +1031,18 @@ fn get_communications(matches: &clap::ArgMatches) -> std::io::Result<Communicati
     let explicit_server =
         matches.value_source("server") == Some(clap::parser::ValueSource::CommandLine);
     if matches.get_flag("online") || matches.get_flag("remember-online") || explicit_server {
-        // `clearnet-test-mode` suspends the refusal so a measurement can run
+        // `nakednet-test-mode` suspends the refusal so a measurement can run
         // the arm the product does not otherwise offer: an Online session
         // with no mixnet beside it. Without it there is no way to separate
         // the mixnet's cost from the scan's, because ADR 0026 makes the
         // mixnet a default capability and ADR 0024 forces Mixnet Mode on at
         // the go-online moment, leaving every online session carrying both.
-        #[cfg(feature = "clearnet-test-mode")]
+        #[cfg(feature = "nakednet-test-mode")]
         {
-            eprintln!("{CLEARNET_TEST_MODE_NOTICE}");
+            eprintln!("{NAKEDNET_TEST_MODE_NOTICE}");
             return Ok(Communications::Online);
         }
-        #[cfg(not(feature = "clearnet-test-mode"))]
+        #[cfg(not(feature = "nakednet-test-mode"))]
         return Err(std::io::Error::other(
             "this build has no mixnet capability, so Offline Mode is its only mode; \
              going online is not possible. Rebuild with default features (plain \
@@ -1086,9 +1086,9 @@ pub(crate) struct CliConfigTemplate {
     /// All servers that responded to `get_info()` during dynamic selection,
     /// sorted fastest to slowest. Empty if `--server` was specified explicitly.
     /// Will be used for automatic failover when sync fails.
-    #[cfg(feature = "clearnet-test-mode")]
+    #[cfg(feature = "nakednet-test-mode")]
     #[allow(dead_code)]
-    ranked_servers: Vec<server_select_clearnet::RankedServer>,
+    ranked_servers: Vec<server_select_nakednet::RankedServer>,
     seed: Option<String>,
     ufvk: Option<String>,
     birthday: u64,
@@ -1126,12 +1126,12 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         /// The offline-capable command that was launched with `--online`.
         command: String,
     },
-    /// The clearnet sweep resolved no server.
-    #[cfg(feature = "clearnet-test-mode")]
+    /// The nakednet sweep resolved no server.
+    #[cfg(feature = "nakednet-test-mode")]
     #[error(transparent)]
-    ResolveServer(#[from] server_select_clearnet::ResolveServerError),
+    ResolveServer(#[from] server_select_nakednet::ResolveServerError),
     /// The pinned `--server` is not a valid indexer URI.
-    #[cfg(not(feature = "clearnet-test-mode"))]
+    #[cfg(not(feature = "nakednet-test-mode"))]
     #[error("invalid --server URI.")]
     IndexerUri(#[from] http::uri::InvalidUri),
     /// The pinned server misses its scheme, host, or port.
@@ -1196,19 +1196,19 @@ impl CliConfigTemplate {
         log::info!("data_dir: {}", data_dir.to_str().unwrap());
         // Offline mode never resolves a server: the session's contract is
         // that no Indexer is ever configured.
-        #[cfg(feature = "clearnet-test-mode")]
+        #[cfg(feature = "nakednet-test-mode")]
         let (server, ranked_servers) = match communications {
             Communications::DeliberateOffline | Communications::UnconsentedOffline => {
                 (None, vec![])
             }
             Communications::Online => {
-                let (server, ranked_servers) = server_select_clearnet::resolve_server(&matches)?;
+                let (server, ranked_servers) = server_select_nakednet::resolve_server(&matches)?;
                 (Some(server), ranked_servers)
             }
         };
         // Without the quarantined sweep, resolution is pure: the typed
         // `--server` pin or nothing, never a probe and never a default.
-        #[cfg(not(feature = "clearnet-test-mode"))]
+        #[cfg(not(feature = "nakednet-test-mode"))]
         let server = match communications {
             Communications::DeliberateOffline | Communications::UnconsentedOffline => None,
             Communications::Online => matches
@@ -1243,7 +1243,7 @@ impl CliConfigTemplate {
             communications,
             server,
             server_pinned,
-            #[cfg(feature = "clearnet-test-mode")]
+            #[cfg(feature = "nakednet-test-mode")]
             ranked_servers,
             seed,
             ufvk,
@@ -1267,8 +1267,9 @@ async fn build_zingo_config(filled_template: &CliConfigTemplate) -> std::io::Res
     let no_of_accounts = NonZeroU32::try_from(1).expect("hard-coded integer");
     let wallet_settings = WalletSettings {
         sync_config: SyncConfig {
-            transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            transparent_address_discovery: TransparentAddressDiscovery::default(),
             performance_level: PerformanceLevel::High,
+            shutdown_on_completion: filled_template.waitsync,
         },
         min_confirmations: NonZeroU32::try_from(3).unwrap(),
     };
@@ -1383,10 +1384,10 @@ async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<L
     // The session driver call at the go-online moment (ADR 0024, decision
     // 2): zingolib owns the forced-on policy and the provisioning
     // precedence; this consumer supplies only its platform hints. The
-    // mixnet is unconditional for a connected session — clearnet carries
+    // mixnet is unconditional for a connected session — nakednet carries
     // sync alone (2026-08-06 ruling) — so a provisioning failure fails
     // closed: the session aborts rather than quietly transmitting over
-    // clearnet. Offline sessions never transmit and skip the driver
+    // nakednet. Offline sessions never transmit and skip the driver
     // entirely.
     #[cfg(feature = "nym")]
     if filled_template.communications == Communications::Online {

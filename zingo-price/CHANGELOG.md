@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `get_source_price_untunneled`, the untunneled counterpart of
+  `get_source_price`, so the wallet can race the same sources over
+  nakednet when a switched-off Mixnet Mode consents to it (ADR 0011,
+  amendment 2026-08-26). It was previously a test-only helper.
+
 ### Changed
+- `PriceList::read` returns an `InvalidData` error for a serialized version
+  above the one this build writes. It read on at any version before.
 - BREAKING: `PriceError::RequestFailed` carries a
   `zingo_netutils::socks5_fetch::Socks5FetchError` where it carried a
   `reqwest::Error`. The HTTP leg the price fetch rides moved below the seam
@@ -26,8 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - BREAKING: `get_source_price` takes a `zingo_netutils::conduit::ConduitDial`
   where it took `Option<&str>`. A price fetch is mixnet-only (ADR 0011), and
-  the option let a caller passing `None` route it over clearnet instead. The
-  clearnet leg survives crate-privately for this crate's own tests, where no
+  the option let a caller passing `None` route it over nakednet instead. The
+  nakednet leg survives crate-privately for this crate's own tests, where no
   caller outside can reach it, so the public API can no longer express the
   fetch the ADR forbids. The `socks5-fetch` feature gains a `zingo-netutils`
   dependency to carry the guard type.

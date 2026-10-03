@@ -6,11 +6,11 @@
 //! mixnet, the precondition every sync attach requires (the 2026-08-06
 //! ruling), and its outcomes are appended to the cross-session indexer
 //! history like send attempts, so reliability accumulates. The probe has
-//! no clearnet leg: a session's only clearnet communication is sync
+//! no nakednet leg: a session's only nakednet communication is sync
 //! itself.
 //!
 //! The staged sync-path probe ([`probe_sync_server`]) serves connectivity
-//! triage for the ordinary synchronization path — the sole clearnet
+//! triage for the ordinary synchronization path — the sole nakednet
 //! exception (the Connection Doctor, zingo-mobile's diagnostics plan): it
 //! walks one server through TCP connect, secure-channel establishment,
 //! and a `GetLightdInfo` round trip, timing each stage and reporting each
@@ -119,11 +119,11 @@ fn record_probe(
         route,
         kind: AttemptKind::Probe,
         millis: leg.millis,
-        phase: leg
+        fault_domain: leg
             .outcome
             .as_ref()
             .err()
-            .map(|failure| crate::mixnet::charge_phase(&failure.stage)),
+            .map(|failure| crate::mixnet::fault_domain(&failure.stage)),
         outcome: match &leg.outcome {
             Ok(_) => Ok(()),
             // The history store is a pre-existing rendered-text seam
@@ -384,7 +384,7 @@ mod tests {
 
     /// Live staged probe against a public indexer; run by hand.
     #[tokio::test]
-    #[ignore = "contacts a live public indexer over clearnet"]
+    #[ignore = "contacts a live public indexer over nakednet"]
     async fn live_staged_probe_smoke() {
         let probe = probe_sync_server(
             &uri("https://zec.rocks:443"),

@@ -9,10 +9,7 @@ use std::{
     fmt::Debug,
     marker::PhantomData,
     ops::Range,
-    sync::{
-        Arc,
-        atomic::{self, AtomicU8},
-    },
+    sync::atomic::{self, AtomicU8},
 };
 
 use incrementalmerkletree::Position;
@@ -40,7 +37,7 @@ use crate::{
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
     shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt as _},
-    sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
+    sync::{SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE, ScanPriority, ScanRange},
     utils::{block, transaction},
     witness,
 };
@@ -146,6 +143,17 @@ pub struct SyncState {
     pub(crate) scan_targets: BTreeSet<ScanTarget>,
     /// Initial sync state.
     pub(crate) initial_sync_state: InitialSyncState,
+    /// Compact block transparent data is only scanned above this height. This includes checking transparent outputs
+    /// against the wallet's in-use and gap addresses and mapping transparent inputs to the wallet's outpoint map.
+    ///
+    /// Set to the chain height when transparent address discovery completes at the start of a sync session, as it has
+    /// located all relevant transactions at or below this height. Lowered if the wallet is truncated below this
+    /// height, by a re-org or a chain height below the wallet's, as transparent address discovery does not cover the
+    /// blocks scanned in place of the truncated blocks.
+    ///
+    /// Blocks mined during a sync session are above the floor and may still be unscanned when the session ends, so
+    /// the transparent address discovery of the next sync session searches from the block above the floor.
+    pub(crate) transparent_scan_floor: Option<BlockHeight>,
 }
 
 impl SyncState {
@@ -159,6 +167,7 @@ impl SyncState {
             ironwood_shard_ranges: Vec::new(),
             scan_targets: BTreeSet::new(),
             initial_sync_state: InitialSyncState::new(),
+            transparent_scan_floor: None,
         }
     }
 
@@ -277,15 +286,44 @@ impl SyncMode {
         }
     }
 
-    /// Creates [`crate::wallet::SyncMode`] from an atomic u8.
-    ///
-    /// # Panic
-    ///
-    /// Panics if `atomic_sync_mode` corresponds to an invalid enum variant.
-    /// It is the consumers responsibility to ensure the library restricts the user API to only set valid values via
-    /// [`crate::wallet::SyncMode`].
-    pub fn from_atomic_u8(atomic_sync_mode: Arc<AtomicU8>) -> Result<SyncMode, SyncModeError> {
+    /// Reads the mode held in `atomic_sync_mode`, failing when the byte is no variant of this enum.
+    pub fn from_atomic_u8(atomic_sync_mode: &AtomicU8) -> Result<SyncMode, SyncModeError> {
         SyncMode::from_u8(atomic_sync_mode.load(atomic::Ordering::Acquire))
+    }
+
+    /// Returns the mode a completed scan leaves behind, which is `Shutdown` for a running engine and the same mode for every other.
+    pub fn on_completion(self) -> Self {
+        match self {
+            Self::Running => Self::Shutdown,
+            other => other,
+        }
+    }
+
+    /// Replaces the mode held in `atomic_sync_mode` with `step` of it in one atomic exchange and returns the mode it replaced.
+    pub fn apply(
+        atomic_sync_mode: &AtomicU8,
+        step: impl Fn(Self) -> Self,
+    ) -> Result<Self, SyncModeError> {
+        atomic_sync_mode
+            .fetch_update(
+                atomic::Ordering::AcqRel,
+                atomic::Ordering::Acquire,
+                |mode| Self::from_u8(mode).ok().map(|mode| step(mode) as u8),
+            )
+            .map_err(SyncModeError::InvalidSyncMode)
+            .and_then(Self::from_u8)
+    }
+
+    /// Moves `atomic_sync_mode` from `from` to `to` when it holds `from` and returns the mode it held before.
+    pub fn transition(
+        atomic_sync_mode: &AtomicU8,
+        from: Self,
+        to: Self,
+    ) -> Result<Self, SyncModeError> {
+        Self::apply(
+            atomic_sync_mode,
+            |mode| if mode == from { to } else { mode },
+        )
     }
 }
 
@@ -1114,9 +1152,8 @@ impl OutputInterface for TransparentCoin {
 
 /// The network upgrade at which a shielded pool begins to exist.
 ///
-/// This is the workspace's single pool-to-upgrade mapping (ADR 0014,
-/// `docs/adr/0014-pool-activation-derived-in-pepper-sync.md` in the
-/// workspace root): upstream `zcash_protocol` deliberately ships
+/// This is the workspace's single pool-to-upgrade mapping: upstream
+/// `zcash_protocol` deliberately ships
 /// `ShieldedPool` and `NetworkUpgrade` as unrelated enums, so the mapping
 /// is defined exactly once, here. Every height clamp involving a pool's
 /// existence derives from it. A second mapping anywhere in the workspace
@@ -1828,7 +1865,10 @@ pub(crate) fn empty_shard_tree<H, const DEPTH: u8, const SHARD_HEIGHT: u8>()
 where
     H: incrementalmerkletree::Hashable + Clone + PartialEq,
 {
-    let mut tree = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+    let mut tree = ShardTree::new(
+        MemoryShardStore::empty(),
+        SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE as usize,
+    );
 
     // `NotAboveNewest` is impossible on an empty checkpoint store.
     assert_eq!(

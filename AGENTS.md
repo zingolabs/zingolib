@@ -23,7 +23,24 @@
 - **Every commit MUST be A/B benchmarked against its parent** with the online
   sync benchmark (`makers sync-bench`), which drives a real `run-cli --online`
   session so the mixnet boot load is present. Report both numbers with the
-  commit. Ruled 2026-08-18.
+  commit. Ruled 2026-08-18. A commit confined to build scripts and tooling
+  (`build.rs` files, `tools/workbench`, `Makefile.toml`, CI workflows) is
+  exempt, because it changes no code the benchmark runs. Ruled 2026-09-30.
+- **The communication model is moving to events published from zingolib.**
+  The wallet crate takes a callback interface from the consumer at startup
+  and calls it with typed events (sync status, balance, new transactions,
+  errors), so the consumer's timed polls become a subscription. Issue #2824
+  tracks the arc and issue #2820 specifies the events. Every review and every
+  implementation MUST weigh its change against that model: do not add a poll,
+  a side channel around the lightclient lock, or a string-shaped status that
+  an event will replace, and shape new state so an event can carry it. Ruled
+  2026-10-02.
+- **Code duplication is FORBIDDEN.** The convention is maximally DRY code
+  with pure functions first: extract the shared logic into one pure function
+  and call it from every site, keep effects at the edges, and collapse any
+  duplication you find in code you are already changing. A second copy of a
+  helper, a branch, or a constant is a defect, in review and in
+  implementation alike. Ruled 2026-10-02.
 
 ## Writing & Code Style
 
@@ -139,8 +156,8 @@ Todo → `ready-for-human`, Canceled → `wontfix`) plus two **labels**
 
 ### Domain docs
 
-**Single-context**: one `CONTEXT.md` + `docs/adr/` at the repo root. See
-`docs/agents/domain.md`.
+**Single-context**: one `CONTEXT.md` at the repo root. Decision records sit
+under `docs/adr/zingolib/`. See `docs/agents/domain.md`.
 
 ### Pending designs
 

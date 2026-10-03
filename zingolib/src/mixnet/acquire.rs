@@ -5,8 +5,8 @@ use std::collections::HashSet;
 use std::future::Future;
 use std::path::PathBuf;
 
-use crate::destination::pool::exit_pool::ExitPoolError;
 use crate::mixnet::driver::StatusPublisher;
+use crate::mixnet::pools::exit_pool::ExitPoolError;
 use crate::mixnet::supervisor::{MixnetProxy, MixnetProxyError};
 
 /// Why the session could acquire no ready transport.

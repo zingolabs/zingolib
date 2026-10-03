@@ -139,11 +139,21 @@ pub enum WalletError {
         "Cannot create a new wallet: a wallet file already exists at this path. Use WalletConfig::Read to load the existing wallet."
     )]
     WalletAlreadyCreated,
+    /// The OP_RETURN send recipient is not a P2PKH, P2SH, or TEX address.
+    #[error("OP_RETURN send recipient must be a P2PKH, P2SH, or TEX address.")]
+    OpReturnRecipientNotTransparent,
+    /// The deshield transaction has no transparent output paying the
+    /// reserved source address. This is an internal invariant failure.
+    #[error("Deshield output not found in the deshield transaction.")]
+    DeshieldOutputNotFound,
+    /// Building a transparent-only transaction failed.
+    #[error("Transparent transaction build failed: {0}")]
+    TransparentBuild(String),
 }
 
-/// Price error. Exists only in nym builds: the mixnet-only price rule
-/// (ADR 0011, amendment 2026-07-28) leaves other builds with no fetch and
-/// therefore no fetch failures.
+/// Price error. Exists only in nym builds: the fetch compiles only with
+/// the mixnet stack, so other builds have no fetch and therefore no
+/// fetch failures.
 #[cfg(feature = "nym")]
 #[derive(Debug, thiserror::Error)]
 pub enum PriceError {
@@ -336,12 +346,6 @@ pub enum ProposeSendError {
     /// failed to construct a transaction request
     #[error("{0}")]
     TransactionRequestFailed(#[from] zcash_client_backend::zip321::Zip321Error),
-    /// send all is transferring no value
-    #[error("send all is transferring no value. only enough funds to pay the fees!")]
-    ZeroValueSendAll,
-    /// failed to calculate balance.
-    #[error("failed to calculated balance. {0}")]
-    BalanceError(#[from] crate::wallet::error::BalanceError),
 }
 
 /// Errors that can result from constructing shield proposals.

@@ -2,6 +2,13 @@ name: CI
 
 on:
   workflow_call:
+    inputs:
+      # The nightly builds every ABI and packages one AAR from them, so it
+      # skips this workflow's x86_64 build.
+      skip-binding-layer-build:
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -11,6 +18,9 @@ on:
       - "**/Cargo.lock"
       - ".cargo/**"
       - "rust-toolchain.toml"
+      - "bindings/**"
+      - "**/*.udl"
+      - "**/uniffi.toml"
       - ".github/workflows/**"
   push:
     branches: [stable, dev]
@@ -30,6 +40,23 @@ jobs:
 
   cargo-checkmate:
     uses: ./.github/workflows/cargo-checkmate.yaml
+
+  # zingolib is upstream of its consumers. No file under .github names the
+  # repository of a consumer, in a call, a checkout, a command, or a comment.
+  ci-independent-of-consumers:
+    name: CI independent of consumers
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Reject the name of a consumer
+        run: |
+          if grep --recursive --line-number --ignore-case --extended-regexp \
+            'zingo[-_](mobile|pc|delegator)' .github; then
+            echo "::error::a file under .github names a consumer of zingolib"
+            exit 1
+          fi
 
   cargo-hack-check:
     name: Cargo Hack Check
@@ -54,10 +81,14 @@ jobs:
             sudo apt-get install -y protobuf-compiler
           fi
 
+      # The flags are the action's defaults plus one exclusion:
+      # zingo-uniffi-bindgen is a binary with no library target and no
+      # features, and `--lib` fails on a package without one.
       - name: Run cargo-hack
         uses: zingolabs/infrastructure/.github/actions/cargo-hack@20485fed7a080e381130ed8120419dc81acae641
         with:
           hack-subcommand: check
+          hack-flags: "--workspace --exclude zingo-uniffi-bindgen --feature-powerset --lib --bins --tests --target-dir target/hack"
 
   # zingo-netutils is excluded from the root workspace and owns its own
   # Cargo.lock (so a future `nym` build resolves independently of the
@@ -88,22 +119,53 @@ jobs:
             sudo apt-get install -y protobuf-compiler
           fi
 
+      # The workspace holds the proxy crate and the verifier shim beside
+      # zingo-netutils, so every step names the whole workspace.
       - name: Format
-        run: cargo fmt --manifest-path zingo-netutils/Cargo.toml --check
+        run: cargo fmt --manifest-path zingo-netutils/Cargo.toml --all --check
 
       - name: Clippy
-        run: cargo clippy --manifest-path zingo-netutils/Cargo.toml --all-targets --all-features -- -D warnings
+        run: cargo clippy --manifest-path zingo-netutils/Cargo.toml --workspace --all-targets --all-features -- -D warnings
 
+      # The proxy crate's live-mixnet feature builds a test that reaches the
+      # real Nym network, so the proxy crate's tests run with it off.
       - name: Test
-        run: cargo test --manifest-path zingo-netutils/Cargo.toml --all-features
+        run: cargo test --manifest-path zingo-netutils/Cargo.toml --all-features --workspace --exclude zingo-nym-proxy-ffi
+
+      - name: Test the proxy crate
+        run: cargo test --manifest-path zingo-netutils/Cargo.toml --package zingo-nym-proxy-ffi
+
+      # The live test reaches the real Nym network, so it may fail on the
+      # network without failing the check (zingolib/0054). One thread keeps
+      # its cases from sharing the proxy. The timeout bounds a stuck
+      # network: the test's four cases each allow 180 seconds to start and
+      # 90 seconds to stop, which is 18 minutes, and the rest is the build.
+      - name: Live mixnet start (may fail on the network)
+        continue-on-error: true
+        timeout-minutes: 25
+        run: |
+          cargo test --manifest-path zingo-netutils/Cargo.toml \
+            --package zingo-nym-proxy-ffi \
+            --features live-mixnet --test live_mixnet -- --test-threads=1
 
       # Membership in the root workspace used to gate rustdoc through
       # checkmate's doc phase; clippy does not run rustdoc lints, so the
       # standalone workspace needs its own doc gate.
       - name: Doc
-        run: cargo doc --manifest-path zingo-netutils/Cargo.toml --all-features --no-deps
+        run: cargo doc --manifest-path zingo-netutils/Cargo.toml --workspace --all-features --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
+
+  # The per-PR tier of zingolib/0054: the x86_64 libraries, the Kotlin
+  # bindings, and the AAR. binding-layer-android.yaml runs the builder on
+  # this commit, here and in the nightly, so one definition builds an ABI
+  # in both tiers. On a pull request that commit is the merge commit, and
+  # every push builds once, cold.
+  binding-layer-android:
+    if: ${{ inputs.skip-binding-layer-build != true }}
+    uses: ./.github/workflows/binding-layer-android.yaml
+    with:
+      abis: '["x86_64"]'
 
   # The `nym` feature gates the mixnet transmission and price-fetch surfaces
   # (ADR 0011) in zingolib and zingo-cli. zingo-cli carries it as a default
@@ -150,7 +212,7 @@ jobs:
       - name: Doc-test zingolib under the nym features
         run: cargo test -p zingolib --features nym --doc
 
-      # The opt-out shape (`--no-default-features`, run-cli's `--clearnet`)
+      # The opt-out shape (`--no-default-features`, run-cli's `--nakednet`)
       # must keep building, and its typed refusals must keep rendering.
       - name: Test zingo-cli without the default nym feature
         run: cargo test -p zingo-cli --no-default-features --lib

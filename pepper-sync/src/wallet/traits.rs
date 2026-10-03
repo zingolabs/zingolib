@@ -10,9 +10,10 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::ShardTree;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::store::{Checkpoint, ShardStore, TreeState};
+use zcash_client_backend::data_api::anchor_retention::AnchorRetention;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
@@ -21,7 +22,7 @@ use crate::keys::transparent::TransparentAddressId;
 use crate::reset_spends;
 use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
 use crate::sync::truncate::{PoolTruncation, plan_pool_truncation, tree_facts};
-use crate::sync::{MAX_REORG_ALLOWANCE, ScanRange};
+use crate::sync::{MAX_SHARDTREE_CHECKPOINTS, ScanRange};
 use crate::wallet::{
     Ironwood, NullifierMap, Orchard, OutputId, Sapling, ShardTrees, SyncState, WalletBlock,
     WalletTransaction, empty_shard_tree,
@@ -67,11 +68,15 @@ pub trait SyncWallet {
     ) -> Result<(), Self::Error>;
 
     /// Returns a reference to all transparent addresses known to this wallet.
+    ///
+    /// These addresses must be in-use, they do not include gap addresses.
     fn get_transparent_addresses(
         &self,
     ) -> Result<&BTreeMap<TransparentAddressId, String>, Self::Error>;
 
     /// Returns a mutable reference to all transparent addresses known to this wallet.
+    ///
+    /// These addresses must be in-use, they do not include gap addresses.
     fn get_transparent_addresses_mut(
         &mut self,
     ) -> Result<&mut BTreeMap<TransparentAddressId, String>, Self::Error>;
@@ -252,11 +257,14 @@ pub trait SyncShardTrees: SyncWallet {
     /// Update wallet shard trees with new shard tree data.
     ///
     /// `highest_scanned_height` is the height of the highest scanned block in the wallet not including the `scan_range` we are updating.
+    #[allow(clippy::too_many_arguments)]
     fn update_shard_trees(
         &mut self,
+        consensus_parameters: &(impl consensus::Parameters + Sync),
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         scan_range: &ScanRange,
         highest_scanned_height: BlockHeight,
+        anchor_retention: Option<AnchorRetention>,
         sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
         orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
         ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
@@ -267,22 +275,22 @@ pub trait SyncShardTrees: SyncWallet {
         async move {
             let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
 
-            // limit the range that checkpoints are manually added to the top MAX_REORG_ALLOWANCE scanned blocks for efficiency.
+            // limit the range that checkpoints are manually added to the top MAX_SHARDTREE_CHECKPOINTS scanned blocks for efficiency.
             // As we sync the chain tip first and have spend-before-sync, we will always choose anchors very close to chain
             // height and we will also never need to truncate to checkpoints lower than this height.
             let checkpoint_range = if scan_range.block_range().start > highest_scanned_height {
                 let verification_window_start = scan_range
                     .block_range()
                     .end
-                    .saturating_sub(MAX_REORG_ALLOWANCE);
+                    .saturating_sub(MAX_SHARDTREE_CHECKPOINTS);
 
                 std::cmp::max(scan_range.block_range().start, verification_window_start)
                     ..scan_range.block_range().end
             } else if scan_range.block_range().end
-                > highest_scanned_height.saturating_sub(MAX_REORG_ALLOWANCE) + 1
+                > highest_scanned_height.saturating_sub(MAX_SHARDTREE_CHECKPOINTS) + 1
             {
                 let verification_window_start =
-                    highest_scanned_height.saturating_sub(MAX_REORG_ALLOWANCE) + 1;
+                    highest_scanned_height.saturating_sub(MAX_SHARDTREE_CHECKPOINTS) + 1;
 
                 std::cmp::max(scan_range.block_range().start, verification_window_start)
                     ..scan_range.block_range().end
@@ -304,6 +312,7 @@ pub trait SyncShardTrees: SyncWallet {
                     { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
                     { witness::SHARD_HEIGHT },
                 >(
+                    consensus_parameters,
                     fetch_request_sender.clone(),
                     checkpoint_height,
                     &sapling_located_trees,
@@ -316,6 +325,7 @@ pub trait SyncShardTrees: SyncWallet {
                     { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
                     { witness::SHARD_HEIGHT },
                 >(
+                    consensus_parameters,
                     fetch_request_sender.clone(),
                     checkpoint_height,
                     &orchard_located_trees,
@@ -328,6 +338,7 @@ pub trait SyncShardTrees: SyncWallet {
                     { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
                     { witness::SHARD_HEIGHT },
                 >(
+                    consensus_parameters,
                     fetch_request_sender.clone(),
                     checkpoint_height,
                     &ironwood_located_trees,
@@ -336,6 +347,74 @@ pub trait SyncShardTrees: SyncWallet {
                 .await?;
             }
 
+            if let Some(retention) = &anchor_retention {
+                let as_of = std::cmp::max(highest_scanned_height, scan_range.block_range().end - 1);
+                let window = witness::anchor_retention_window(retention, as_of);
+                witness::repin_anchor_checkpoints(
+                    retention,
+                    &window,
+                    shard_trees.sapling.store_mut(),
+                );
+                witness::repin_anchor_checkpoints(
+                    retention,
+                    &window,
+                    shard_trees.orchard.store_mut(),
+                );
+                witness::repin_anchor_checkpoints(
+                    retention,
+                    &window,
+                    shard_trees.ironwood.store_mut(),
+                );
+
+                let start = std::cmp::max(*window.start(), scan_range.block_range().start);
+                let end = std::cmp::min(*window.end(), scan_range.block_range().end - 1);
+                for boundary in retention.retained_in_range(start..=end) {
+                    if checkpoint_range.contains(&boundary) {
+                        continue;
+                    }
+                    add_checkpoint::<
+                        Sapling,
+                        sapling_crypto::Node,
+                        { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
+                        { witness::SHARD_HEIGHT },
+                    >(
+                        consensus_parameters,
+                        fetch_request_sender.clone(),
+                        boundary,
+                        &sapling_located_trees,
+                        &mut shard_trees.sapling,
+                    )
+                    .await?;
+                    add_checkpoint::<
+                        Orchard,
+                        MerkleHashOrchard,
+                        { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+                        { witness::SHARD_HEIGHT },
+                    >(
+                        consensus_parameters,
+                        fetch_request_sender.clone(),
+                        boundary,
+                        &orchard_located_trees,
+                        &mut shard_trees.orchard,
+                    )
+                    .await?;
+                    add_checkpoint::<
+                        Ironwood,
+                        MerkleHashOrchard,
+                        { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+                        { witness::SHARD_HEIGHT },
+                    >(
+                        consensus_parameters,
+                        fetch_request_sender.clone(),
+                        boundary,
+                        &ironwood_located_trees,
+                        &mut shard_trees.ironwood,
+                    )
+                    .await?;
+                }
+            }
+
+            // TODO: use `batch_insert_trees`
             for tree in sapling_located_trees {
                 shard_trees
                     .sapling
@@ -438,6 +517,7 @@ where
 
 // TODO: move into `update_shard_trees` trait method
 async fn add_checkpoint<D, L, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     checkpoint_height: BlockHeight,
     located_trees: &[LocatedTreeData<L>],
@@ -461,19 +541,26 @@ where
         let mut previous_checkpoint = None;
         shard_tree
             .store()
-            .for_each_checkpoint(1_000, |height, checkpoint| {
-                if *height == checkpoint_height - 1 {
-                    previous_checkpoint = Some(checkpoint.clone());
-                }
-                Ok(())
-            })
+            .for_each_checkpoint(
+                MAX_SHARDTREE_CHECKPOINTS as usize + 100,
+                |height, checkpoint| {
+                    if *height == checkpoint_height - 1 {
+                        previous_checkpoint = Some(checkpoint.clone());
+                    }
+                    Ok(())
+                },
+            )
             .expect("infallible");
 
         let tree_state = if let Some(checkpoint) = previous_checkpoint {
             checkpoint.tree_state()
         } else {
-            let frontiers =
-                client::get_frontiers(fetch_request_sender.clone(), checkpoint_height).await?;
+            let frontiers = client::get_frontiers(
+                fetch_request_sender.clone(),
+                consensus_parameters,
+                checkpoint_height,
+            )
+            .await?;
             let tree_size = match D::SHIELDED_PROTOCOL {
                 ShieldedPool::Sapling => frontiers.final_sapling_tree().tree_size(),
                 ShieldedPool::Orchard => frontiers.final_orchard_tree().tree_size(),

@@ -1,6 +1,7 @@
 use std::{
     borrow::BorrowMut,
     collections::{BTreeSet, HashMap},
+    ops::Range,
     sync::{
         Arc,
         atomic::{self, AtomicBool},
@@ -30,7 +31,7 @@ use crate::{
     utils::block,
     wallet::{
         ScanTarget, WalletBlock,
-        traits::{SyncBlocks, SyncNullifiers, SyncWallet},
+        traits::{SyncBlocks, SyncNullifiers, SyncTransactions, SyncWallet},
     },
 };
 
@@ -44,28 +45,34 @@ use zingo_netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
 pub(crate) enum ScannerState {
     Verification,
     Scan,
-    Shutdown,
+    Complete,
 }
 
 impl ScannerState {
-    fn verified(&mut self) {
+    pub(crate) fn verified(&mut self) {
         *self = ScannerState::Scan;
     }
 
-    fn shutdown(&mut self) {
-        *self = ScannerState::Shutdown;
+    fn completed(&mut self) {
+        *self = ScannerState::Complete;
+    }
+
+    pub(crate) fn reverify(&mut self) {
+        *self = ScannerState::Verification;
     }
 }
 
 pub(crate) struct Scanner<P> {
     pub(crate) state: ScannerState,
     loader: Option<Loader<P>>,
-    workers: Vec<ScanWorker<P>>,
+    pub(crate) workers: Vec<ScanWorker<P>>,
     unique_id: usize,
     scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: P,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
+    transparent_gap_limit: u32,
+    pub(crate) transparent_gap_addresses: HashMap<String, TransparentAddressId>,
 }
 
 impl<P> Scanner<P>
@@ -77,6 +84,7 @@ where
         scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
+        transparent_gap_limit: u32,
     ) -> Self {
         let workers: Vec<ScanWorker<P>> = Vec::with_capacity(MAX_WORKER_POOLSIZE);
 
@@ -89,7 +97,22 @@ where
             fetch_request_sender,
             consensus_parameters,
             ufvks,
+            transparent_gap_limit,
+            transparent_gap_addresses: HashMap::new(),
         }
+    }
+
+    /// Applies the changes to the transparent gap addresses found by a scan.
+    ///
+    /// The gap addresses found in use are removed and the gap addresses derived to replace them are added.
+    pub(crate) fn update_transparent_gap_addresses(
+        &mut self,
+        new_inuse_addresses: &HashMap<String, TransparentAddressId>,
+        new_gap_addresses: HashMap<String, TransparentAddressId>,
+    ) {
+        self.transparent_gap_addresses
+            .retain(|address, _| !new_inuse_addresses.contains_key(address));
+        self.transparent_gap_addresses.extend(new_gap_addresses);
     }
 
     pub(crate) fn launch(&mut self, performance_level: PerformanceLevel) {
@@ -131,7 +154,7 @@ where
         Ok(())
     }
 
-    async fn shutdown_loader(&mut self) -> Result<(), ServerError> {
+    pub(crate) async fn shutdown_loader(&mut self) -> Result<(), ServerError> {
         let loader = self.loader.take();
         if let Some(mut loader) = loader {
             loader.shutdown().await
@@ -151,6 +174,7 @@ where
             self.scan_results_sender.clone(),
             self.fetch_request_sender.clone(),
             self.ufvks.clone(),
+            self.transparent_gap_limit,
         );
         worker.run(max_outputs);
         self.workers.push(worker);
@@ -166,7 +190,7 @@ where
         }
     }
 
-    fn idle_worker(&self) -> Option<&ScanWorker<P>> {
+    pub(crate) fn idle_worker(&self) -> Option<&ScanWorker<P>> {
         if let Some(idle_worker) = self.workers.iter().find(|worker| !worker.is_scanning()) {
             Some(idle_worker)
         } else {
@@ -177,7 +201,7 @@ where
     /// Shutdown worker by `worker_id`.
     ///
     /// Panics if worker with given `worker_id` is not found.
-    async fn shutdown_worker(&mut self, worker_id: usize) {
+    pub(crate) async fn shutdown_worker(&mut self, worker_id: usize) {
         let worker_index = self
             .workers
             .iter()
@@ -199,11 +223,10 @@ where
     pub(crate) async fn update<W>(
         &mut self,
         wallet: &mut W,
-        shutdown_mempool: Arc<AtomicBool>,
         nullifier_map_limit_exceeded: bool,
     ) -> Result<(), SyncError<W::Error>>
     where
-        W: SyncWallet + SyncBlocks + SyncNullifiers,
+        W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
     {
         self.check_loader_error()?;
 
@@ -247,13 +270,7 @@ where
                 self.update_loader(wallet, nullifier_map_limit_exceeded)
                     .map_err(SyncError::WalletError)?;
             }
-            ScannerState::Shutdown => {
-                shutdown_mempool.store(true, atomic::Ordering::Release);
-                while let Some(worker) = self.idle_worker() {
-                    self.shutdown_worker(worker.id).await;
-                }
-                self.shutdown_loader().await?;
-            }
+            ScannerState::Complete => {}
         }
 
         Ok(())
@@ -279,7 +296,7 @@ where
         nullifier_map_limit_exceeded: bool,
     ) -> Result<(), W::Error>
     where
-        W: SyncWallet + SyncBlocks + SyncNullifiers,
+        W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
     {
         let loader = self.loader.as_ref().expect("loader should be running");
         if !loader.is_loading() {
@@ -287,14 +304,31 @@ where
                 &self.consensus_parameters,
                 wallet,
                 nullifier_map_limit_exceeded,
+                self.transparent_gap_addresses.clone(),
             )? {
                 loader.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
-                self.state.shutdown();
+                // if sync is complete, all nullifiers will have been re-fetched so this note metadata can be discarded.
+                for transaction in wallet.get_wallet_transactions_mut()?.values_mut() {
+                    for note in transaction.sapling_notes.as_mut_slice() {
+                        note.refetch_nullifier_ranges = Vec::new();
+                    }
+                    for note in transaction.orchard_notes.as_mut_slice() {
+                        note.refetch_nullifier_ranges = Vec::new();
+                    }
+                    for note in transaction.ironwood_notes.as_mut_slice() {
+                        note.refetch_nullifier_ranges = Vec::new();
+                    }
+                }
+                self.state.completed();
             }
         }
 
         Ok(())
+    }
+
+    pub(crate) fn is_verified(&self) -> bool {
+        !matches!(self.state, ScannerState::Verification)
     }
 }
 
@@ -365,18 +399,23 @@ where
                 let mut current_block_ironwood_nullifier_count = 0;
                 let mut awaiting_first_block = true;
 
-                let mut block_stream = if fetch_nullifiers_only {
-                    client::get_nullifier_range(
-                        fetch_request_sender.clone(),
-                        scan_task.scan_range.block_range().clone(),
-                    )
-                    .await?
-                } else {
-                    client::get_compact_block_range(
-                        fetch_request_sender.clone(),
-                        scan_task.scan_range.block_range().clone(),
-                    )
-                    .await?
+                let mut block_stream = match open_block_stream(
+                    fetch_request_sender.clone(),
+                    scan_task.scan_range.block_range().clone(),
+                    fetch_nullifiers_only,
+                    scan_task.transparent_scan_floor,
+                )
+                .await
+                {
+                    Ok(block_stream) => block_stream,
+                    Err(e) => {
+                        return Err(fetch_failure(
+                            fetch_request_sender.clone(),
+                            scan_task.scan_range.block_range(),
+                            e,
+                        )
+                        .await);
+                    }
                 };
 
                 loop {
@@ -397,20 +436,23 @@ where
                         {
                             tokio::time::sleep(Duration::from_secs(3)).await;
 
-                            let retry_range = retry_height..scan_task.scan_range.block_range().end;
-
-                            block_stream = if fetch_nullifiers_only {
-                                client::get_nullifier_range(
-                                    fetch_request_sender.clone(),
-                                    retry_range,
-                                )
-                                .await?
-                            } else {
-                                client::get_compact_block_range(
-                                    fetch_request_sender.clone(),
-                                    retry_range,
-                                )
-                                .await?
+                            block_stream = match open_block_stream(
+                                fetch_request_sender.clone(),
+                                retry_height..scan_task.scan_range.block_range().end,
+                                fetch_nullifiers_only,
+                                scan_task.transparent_scan_floor,
+                            )
+                            .await
+                            {
+                                Ok(block_stream) => block_stream,
+                                Err(e) => {
+                                    return Err(fetch_failure(
+                                        fetch_request_sender.clone(),
+                                        scan_task.scan_range.block_range(),
+                                        e,
+                                    )
+                                    .await);
+                                }
                             };
 
                             let first_msg_res: Result<Option<CompactBlock>, tonic::Status> =
@@ -428,11 +470,23 @@ where
 
                             match first_msg_res {
                                 Ok(b) => b,
-                                Err(e) => return Err(e.into()),
+                                Err(e) => {
+                                    return Err(fetch_failure(
+                                        fetch_request_sender.clone(),
+                                        scan_task.scan_range.block_range(),
+                                        e.into(),
+                                    )
+                                    .await);
+                                }
                             }
                         }
                         Err(e) => {
-                            return Err(e.into());
+                            return Err(fetch_failure(
+                                fetch_request_sender.clone(),
+                                scan_task.scan_range.block_range(),
+                                e.into(),
+                            )
+                            .await);
                         }
                     };
 
@@ -512,8 +566,10 @@ where
                             + load_orchard_nullifier_count
                             + load_ironwood_nullifier_count
                             > MAX_LOAD_NULLIFIERS)
-                        && scan_task.scan_range.block_range().start
-                            != block::get_compact_height(&compact_block)
+                        && splittable_at(
+                            &scan_task.scan_range,
+                            block::get_compact_height(&compact_block),
+                        )
                     {
                         let (full_load, new_load) = scan_task
                             .clone()
@@ -612,16 +668,86 @@ where
             .expect("loader should always have a handle to take!");
 
         match tokio::time::timeout(SCANNER_SHUTDOWN_TIMEOUT, &mut handle).await {
-            Ok(join_res) => join_res.expect("task panicked")?,
+            Ok(res) => res.expect("task panicked")?,
             Err(_) => {
+                tracing::warn!("Loader shutdown timed out!");
                 handle.abort();
                 let _ = handle.await;
-                return Err(tonic::Status::deadline_exceeded("loader shutdown timeout").into());
             }
         }
 
         Ok(())
     }
+}
+
+/// Returns the error the loader ends with after fetching the scan range of `block_range` (end exclusive) failed with
+/// `error`.
+///
+/// A re-org can lower the server's chain height below a scan range after it was selected, and a server behind the
+/// chain tip may hold only part of it. The server then has no block to serve for the top of the scan range. The
+/// chain height is fetched to tell this apart from any other failure. If it is below the last block of the scan
+/// range, [`ServerError::ChainHeightBelowScanRange`] is returned, which recommends syncing again to verify the
+/// wallet against the server's chain. Otherwise `error` is returned.
+async fn fetch_failure(
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    block_range: &Range<BlockHeight>,
+    error: ServerError,
+) -> ServerError {
+    let scan_range_end = block_range.end - 1;
+    match client::get_chain_height(fetch_request_sender).await {
+        Ok(chain_height) if chain_height < scan_range_end => {
+            ServerError::ChainHeightBelowScanRange {
+                chain_height,
+                scan_range_end,
+            }
+        }
+        _ => error,
+    }
+}
+
+/// Returns true if the loader may split the scan task of `scan_range` at `block_height` when a load budget is
+/// reached.
+///
+/// A split at the first block of the scan range would leave the lower scan task empty.
+/// A scan task with `Verify` priority is scanned whole. When its continuity check fails, re-org handling resets and
+/// extends the wallet scan range it was selected from, which would be rewritten under any other scan task split from
+/// it.
+fn splittable_at(scan_range: &ScanRange, block_height: BlockHeight) -> bool {
+    scan_range.priority() != ScanPriority::Verify && scan_range.block_range().start != block_height
+}
+
+/// Opens a stream of compact blocks for `block_range` (end exclusive), or of nullifiers only if `fetch_nullifiers_only`
+/// is true.
+///
+/// Compact block transparent data is only fetched if `block_range` contains blocks above the `transparent_scan_floor`.
+async fn open_block_stream(
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    block_range: Range<BlockHeight>,
+    fetch_nullifiers_only: bool,
+    transparent_scan_floor: BlockHeight,
+) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
+    if fetch_nullifiers_only {
+        client::get_nullifier_range(fetch_request_sender, block_range).await
+    } else {
+        let include_transparent = includes_blocks_above_floor(&block_range, transparent_scan_floor);
+        client::get_compact_block_range(fetch_request_sender, block_range, include_transparent)
+            .await
+    }
+}
+
+/// Returns true if `block_range` (end exclusive) contains blocks above the `transparent_scan_floor`, so their
+/// compact block transparent data must be fetched. Transparent data is not scanned at or below the floor, so fetching
+/// it for ranges at or below the floor wastes bandwidth.
+///
+/// Scan ranges do not span the floor: the floor is set to the chain height at the start of the sync session, and newly
+/// mined blocks form new scan ranges above it. If a re-org lowers the floor, it is lowered to one below the start of the
+/// verification range. If a range did span the floor, transparent data is fetched for the whole range so the transparent
+/// data of the blocks above the floor is not missed.
+fn includes_blocks_above_floor(
+    block_range: &Range<BlockHeight>,
+    transparent_scan_floor: BlockHeight,
+) -> bool {
+    block_range.end > transparent_scan_floor + 1
 }
 
 pub(crate) struct ScanWorker<P> {
@@ -633,6 +759,7 @@ pub(crate) struct ScanWorker<P> {
     scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
+    transparent_gap_limit: u32,
 }
 
 impl<P> ScanWorker<P>
@@ -645,6 +772,7 @@ where
         scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
+        transparent_gap_limit: u32,
     ) -> Self {
         Self {
             id,
@@ -655,12 +783,18 @@ where
             scan_results_sender,
             fetch_request_sender,
             ufvks,
+            transparent_gap_limit,
         }
+    }
+
+    pub(crate) fn id(&self) -> usize {
+        self.id
     }
 
     /// Runs the worker in a new tokio task.
     ///
     /// Waits for a scan task and then calls [`crate::scan::scan`] on the given range.
+    // TODO: max_outputs can be moved to scan worker field
     fn run(&mut self, max_outputs: usize) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
 
@@ -669,6 +803,7 @@ where
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
         let ufvks = self.ufvks.clone();
+        let transparent_gap_limit = self.transparent_gap_limit;
 
         let handle = tokio::spawn(async move {
             while let Some(scan_task) = scan_task_receiver.recv().await {
@@ -679,6 +814,7 @@ where
                     &ufvks,
                     scan_task,
                     max_outputs,
+                    transparent_gap_limit,
                 )
                 .await;
                 let _ignore_error = scan_results_sender.send((scan_range, scan_results));
@@ -709,7 +845,8 @@ where
 
     /// Shuts down worker by dropping the sender to the worker task and awaiting the handle.
     ///
-    /// This should always be called in the context of the scanner as it must be also be removed from the worker pool.
+    /// This should always be called in the context of the scanner as it must be also be removed from the worker pool
+    /// (See `Scanner::shutdown_worker`).
     async fn shutdown(&mut self) -> Result<(), JoinError> {
         tracing::debug!("Shutting down worker {}", self.id);
         if let Some(sender) = self.scan_task_sender.take() {
@@ -724,6 +861,7 @@ where
         match tokio::time::timeout(SCANNER_SHUTDOWN_TIMEOUT, &mut handle).await {
             Ok(res) => res,
             Err(_) => {
+                tracing::warn!("Worker shutdown timed out!");
                 handle.abort();
                 let _ = handle.await; // ignore join error after abort
                 Ok(())
@@ -739,7 +877,9 @@ pub(crate) struct ScanTask {
     pub(crate) start_seam_block: Option<WalletBlock>,
     pub(crate) end_seam_block: Option<WalletBlock>,
     pub(crate) scan_targets: BTreeSet<ScanTarget>,
-    pub(crate) transparent_addresses: HashMap<String, TransparentAddressId>,
+    pub(crate) transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
+    pub(crate) transparent_gap_addresses: HashMap<String, TransparentAddressId>,
+    pub(crate) transparent_scan_floor: BlockHeight,
 }
 
 impl ScanTask {
@@ -748,7 +888,9 @@ impl ScanTask {
         start_seam_block: Option<WalletBlock>,
         end_seam_block: Option<WalletBlock>,
         scan_targets: BTreeSet<ScanTarget>,
-        transparent_addresses: HashMap<String, TransparentAddressId>,
+        transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
+        transparent_gap_addresses: HashMap<String, TransparentAddressId>,
+        transparent_scan_floor: BlockHeight,
     ) -> Self {
         Self {
             compact_blocks: Vec::new(),
@@ -756,7 +898,9 @@ impl ScanTask {
             start_seam_block,
             end_seam_block,
             scan_targets,
-            transparent_addresses,
+            transparent_inuse_addresses,
+            transparent_gap_addresses,
+            transparent_scan_floor,
         }
     }
 
@@ -827,7 +971,9 @@ impl ScanTask {
                 start_seam_block: self.start_seam_block,
                 end_seam_block: upper_task_first_block,
                 scan_targets: lower_task_scan_targets,
-                transparent_addresses: self.transparent_addresses.clone(),
+                transparent_inuse_addresses: self.transparent_inuse_addresses.clone(),
+                transparent_gap_addresses: self.transparent_gap_addresses.clone(),
+                transparent_scan_floor: self.transparent_scan_floor,
             },
             ScanTask {
                 compact_blocks: upper_compact_blocks,
@@ -838,8 +984,206 @@ impl ScanTask {
                 start_seam_block: lower_task_last_block,
                 end_seam_block: self.end_seam_block,
                 scan_targets: upper_task_scan_targets,
-                transparent_addresses: self.transparent_addresses,
+                transparent_inuse_addresses: self.transparent_inuse_addresses,
+                transparent_gap_addresses: self.transparent_gap_addresses,
+                transparent_scan_floor: self.transparent_scan_floor,
             },
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use zcash_protocol::consensus::{MAIN_NETWORK, MainNetwork};
+    use zcash_transparent::keys::NonHardenedChildIndex;
+
+    use crate::keys::transparent::TransparentScope;
+
+    use super::*;
+
+    const GAP_LIMIT: u32 = 3;
+
+    /// An address map as held by the scanner, for the given external indexes.
+    fn external_addresses(
+        indexes: impl IntoIterator<Item = u32>,
+    ) -> HashMap<String, TransparentAddressId> {
+        indexes
+            .into_iter()
+            .map(|index| {
+                (
+                    format!("external address {index}"),
+                    TransparentAddressId::new(
+                        AccountId::ZERO,
+                        TransparentScope::External,
+                        NonHardenedChildIndex::from_index(index).unwrap(),
+                    ),
+                )
+            })
+            .collect()
+    }
+
+    fn scanner_with_gap_addresses(
+        gap_addresses: HashMap<String, TransparentAddressId>,
+    ) -> Scanner<MainNetwork> {
+        let (scan_results_sender, _) = mpsc::unbounded_channel();
+        let (fetch_request_sender, _) = mpsc::unbounded_channel();
+        let mut scanner = Scanner::new(
+            MAIN_NETWORK,
+            scan_results_sender,
+            fetch_request_sender,
+            HashMap::new(),
+            GAP_LIMIT,
+        );
+        scanner.transparent_gap_addresses = gap_addresses;
+        scanner
+    }
+
+    /// Scan results without compact block transparent data, such as re-fetched nullifiers, carry no changes to the
+    /// gap addresses. The scanner keeps the gap addresses it holds.
+    #[test]
+    fn gap_addresses_are_kept_when_scan_results_carry_no_changes() {
+        let mut scanner = scanner_with_gap_addresses(external_addresses(1..=3));
+
+        scanner.update_transparent_gap_addresses(&HashMap::new(), HashMap::new());
+
+        assert_eq!(scanner.transparent_gap_addresses, external_addresses(1..=3));
+    }
+
+    /// The gap addresses found in use are removed and the gap addresses derived to replace them are added. The gap
+    /// addresses above the highest address found in use are kept.
+    #[test]
+    fn gap_addresses_found_in_use_are_replaced() {
+        let mut scanner = scanner_with_gap_addresses(external_addresses(1..=3));
+
+        scanner.update_transparent_gap_addresses(
+            &external_addresses(1..=2),
+            external_addresses(4..=5),
+        );
+
+        assert_eq!(scanner.transparent_gap_addresses, external_addresses(3..=5));
+    }
+
+    const SCAN_RANGE_END: u32 = 20;
+
+    fn block_range() -> Range<BlockHeight> {
+        BlockHeight::from_u32(10)..BlockHeight::from_u32(SCAN_RANGE_END + 1)
+    }
+
+    fn no_block_error() -> ServerError {
+        ServerError::RequestFailed(tonic::Status::not_found("no block"))
+    }
+
+    /// Answers chain height requests with `chain_height`.
+    fn spawn_chain_height_fetcher(chain_height: u32) -> mpsc::UnboundedSender<FetchRequest> {
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::ChainTip(reply_sender) => {
+                        let _ignore_error =
+                            reply_sender.send(Ok(zingo_netutils::lightwallet_protocol::BlockId {
+                                height: u64::from(chain_height),
+                                hash: Vec::new(),
+                            }));
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+        });
+
+        fetch_request_sender
+    }
+
+    /// The server's chain height is below the last block of the scan range, so it has no block to serve for the top
+    /// of the scan range.
+    #[tokio::test]
+    async fn fetch_failure_under_a_lowered_chain_height_reports_the_chain_height() {
+        let error = fetch_failure(
+            spawn_chain_height_fetcher(SCAN_RANGE_END - 1),
+            &block_range(),
+            no_block_error(),
+        )
+        .await;
+
+        assert!(matches!(
+            error,
+            ServerError::ChainHeightBelowScanRange { chain_height, scan_range_end }
+                if chain_height == BlockHeight::from_u32(SCAN_RANGE_END - 1)
+                    && scan_range_end == BlockHeight::from_u32(SCAN_RANGE_END)
+        ));
+    }
+
+    /// The server's chain holds the whole scan range, so the fetch failed for another reason.
+    #[tokio::test]
+    async fn fetch_failure_with_the_scan_range_on_chain_returns_the_fetch_error() {
+        for chain_height in [SCAN_RANGE_END, SCAN_RANGE_END + 1] {
+            let error = fetch_failure(
+                spawn_chain_height_fetcher(chain_height),
+                &block_range(),
+                no_block_error(),
+            )
+            .await;
+
+            assert!(
+                matches!(error, ServerError::RequestFailed(_)),
+                "chain height {chain_height}"
+            );
+        }
+    }
+
+    /// The chain height request fails with the fetcher gone, leaving the fetch error as the only known cause.
+    #[tokio::test]
+    async fn fetch_failure_with_no_chain_height_returns_the_fetch_error() {
+        let (fetch_request_sender, _) = mpsc::unbounded_channel();
+
+        let error = fetch_failure(fetch_request_sender, &block_range(), no_block_error()).await;
+
+        assert!(matches!(error, ServerError::RequestFailed(_)));
+    }
+
+    /// A scan task is split above its first block when a load budget is reached, as a split at the first block
+    /// would leave the lower scan task empty. A scan task with `Verify` priority is never split.
+    #[test]
+    fn scan_tasks_are_split_above_their_first_block_unless_verifying() {
+        const START: u32 = 10;
+        let block_range = BlockHeight::from_u32(START)..BlockHeight::from_u32(START * 2);
+
+        for (priority, block_height, splittable) in [
+            (ScanPriority::ChainTip, START, false),
+            (ScanPriority::ChainTip, START + 1, true),
+            (ScanPriority::ScannedWithoutMapping, START + 1, true),
+            (ScanPriority::Verify, START, false),
+            (ScanPriority::Verify, START + 1, false),
+        ] {
+            assert_eq!(
+                splittable_at(
+                    &ScanRange::from_parts(block_range.clone(), priority),
+                    BlockHeight::from_u32(block_height)
+                ),
+                splittable,
+                "{priority:?} at {block_height}"
+            );
+        }
+    }
+
+    #[test]
+    fn transparent_data_is_only_requested_for_ranges_above_transparent_scan_floor() {
+        let floor = BlockHeight::from_u32(1_000);
+        for (block_range, include_transparent) in [
+            // below the floor
+            (floor - 10..floor - 5, false),
+            // ends at the floor
+            (floor - 5..floor + 1, false),
+            // spans the floor
+            (floor - 5..floor + 5, true),
+            // starts above the floor
+            (floor + 1..floor + 5, true),
+        ] {
+            assert_eq!(
+                includes_blocks_above_floor(&block_range, floor),
+                include_transparent,
+                "{block_range:?}"
+            );
+        }
     }
 }

@@ -49,32 +49,15 @@ pub enum LightClientError {
     /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
     #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
     Offline,
-    /// Price fetch error. Exists only in nym builds: the mixnet-only price
-    /// rule leaves other builds with no fetch to fail.
+    /// Price fetch error. Exists only in nym builds: the fetch compiles
+    /// only with the mixnet stack, so other builds have no fetch to fail.
     #[cfg(feature = "nym")]
     #[error("Price fetch error.")]
     PriceError(#[from] PriceError),
-    /// The mixnet-routed price fetch was requested while Mixnet Mode is toggled
-    /// off. The opt-in route fails closed rather than falling back to clearnet
-    /// (ADR 0011); use the clearnet default `update_current_price` instead, or
-    /// enable Mixnet Mode (`network on`).
-    #[cfg(feature = "nym")]
-    #[error(
-        "the mixnet-routed price fetch requires Mixnet Mode, which is off; \
-         enable Mixnet Mode, or use the clearnet price fetch"
-    )]
-    PriceFetchRequiresMixnet,
-    /// A mixnet-only surface was attempted while the mixnet was bootstrapping.
+    /// A mixnet-covered surface was attempted while the mixnet was unavailable.
     #[cfg(feature = "nym")]
     #[error(transparent)]
     MixnetNotReady(#[from] crate::mixnet::MixnetNotReady),
-    /// The mixnet liveness probe was requested while Mixnet Mode is toggled off.
-    #[cfg(feature = "nym")]
-    #[error(
-        "the mixnet liveness probe requires Mixnet Mode, which is off; \
-         enable Mixnet Mode to probe Destinations"
-    )]
-    ProbeRequiresMixnet,
     /// A probe target outside the one endpoint shape the mixnet exit
     /// policy carries.
     #[cfg(feature = "nym")]
@@ -84,7 +67,6 @@ pub enum LightClientError {
     /// synchronization endpoint's host, which would let that server correlate
     /// the wallet's sync stream with its migration cohort (ADR 0011,
     /// 2026-07-23).
-    #[cfg(feature = "nym")]
     #[error(
         "the migration transmission target '{host}' is the synchronization endpoint; migration \
          parts never go to the sync server. Configure a different migration_transmission_uri or \
@@ -94,12 +76,9 @@ pub enum LightClientError {
         /// The host both endpoints share.
         host: String,
     },
-    /// No Destination remains to carry migration parts over the mixnet,
-    /// with the typed refusal saying whether exclusion or an empty pool
-    /// emptied the draw.
-    #[cfg(feature = "nym")]
+    /// No Destination remains to carry migration parts.
     #[error(transparent)]
-    NoEligibleDestination(#[from] crate::destination::NoEligibleDestinations),
+    NoEligibleDestination(#[from] crate::destination::servers::NoEligibleDestinations),
 }
 
 /// Errors from the Orchard→Ironwood migration entry points
@@ -192,6 +171,34 @@ pub enum SendError {
     /// Transmission error.
     #[error("Transmission error.")]
     TransmissionError(#[from] TransmissionError),
+    /// OP_RETURN send error.
+    #[error("OP_RETURN send error. {0}")]
+    OpReturn(crate::wallet::error::WalletError),
+    /// An OP_RETURN proposal cannot be calculated without transmitting.
+    /// Its second transaction spends an output of the first.
+    #[error("An OP_RETURN proposal cannot be calculated without transmitting.")]
+    OpReturnNotCalculable,
+    /// The OP_RETURN proposal's source address was reserved by another send
+    /// after the proposal was made. Propose again.
+    #[error(
+        "The OP_RETURN proposal is stale: its source address is no longer next. Propose again."
+    )]
+    OpReturnSourceAddressStale,
+    /// The deshield was transmitted and a later step failed. If
+    /// `op_return_txid` is `None`, the proposal is stored again with the
+    /// deshield txid and `send_stored_proposal` resumes from the OP_RETURN
+    /// step. If it is `Some`, the OP_RETURN transaction is in the wallet
+    /// with `Calculated` status and `transmit_calculated` resends it.
+    #[error("OP_RETURN send failed after the deshield {deshield_txid} was transmitted. {source}")]
+    OpReturnAfterDeshield {
+        /// The transmitted deshield.
+        deshield_txid: TxId,
+        /// The calculated OP_RETURN transaction, if it was built.
+        op_return_txid: Option<TxId>,
+        /// The failure.
+        #[source]
+        source: Box<LightClientError>,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]

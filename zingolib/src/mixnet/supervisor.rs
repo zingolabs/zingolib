@@ -8,7 +8,7 @@
 //! mode is `Bootstrapping`. It becomes `Ready` once the address arrives. If
 //! the child's stdout later closes (during bootstrap or after ready) the
 //! mode becomes `Died`, an unconsented loss of the transport that makes
-//! mixnet-only surfaces fail closed rather than fall back to clearnet. Only a
+//! mixnet-only surfaces fail closed rather than fall back to nakednet. Only a
 //! deliberate `MixnetProxy::stop` tears down to `Unattached`; the consented
 //! `SwitchedOff` is the wallet slot's to record, never this transport's.
 //!
@@ -551,7 +551,7 @@ async fn drive_state<R: AsyncRead + Unpin>(
         }
     }
     // Stdout closed. The child exited without a deliberate stop(), so the
-    // transport is lost: refuse, never leak to clearnet. A stale address is
+    // transport is lost: refuse, never leak to nakednet. A stale address is
     // cleared so no surface can dial a dead proxy.
     let detail = if spoke_protocol {
         // A closed pipe after protocol speech has no cause to hold.
@@ -665,7 +665,7 @@ impl MixnetProxy {
     }
 }
 
-impl crate::destination::pool::PoolTransport for MixnetProxy {
+impl crate::mixnet::pools::PoolTransport for MixnetProxy {
     fn socks5_addr(&self) -> Option<std::net::SocketAddr> {
         MixnetProxy::socks5_addr(self)
     }
@@ -1097,7 +1097,7 @@ mod tests {
         assert_eq!(
             s.mode,
             Indicator::Died,
-            "a proxy that closes without an address died; it is never consented clearnet"
+            "a proxy that closes without an address died; it is never consented nakednet"
         );
         assert!(s.socks5_addr.is_none());
     }
@@ -1362,7 +1362,7 @@ mod tests {
         }
     }
 
-    /// HYPOTHESIS: stop() on an attached transport is a deliberate teardown
+    /// stop() on an attached transport is a deliberate teardown
     /// to Unattached — never Died, and never the wallet's SwitchedOff.
     /// Falsified if a live attachment reports anything but the transport
     /// lifecycle states. Address validation lives at the consumer seam,
@@ -1387,15 +1387,15 @@ mod tests {
         proxy.stop().await;
     }
 
-    /// HYPOTHESIS: an attached endpoint that dies refuses the route — the
+    /// Asserts that an attached endpoint that dies refuses the route — the
     /// fail-closed invariant holds for the attached transport end to end.
     /// Attaches to a refusing localhost port, waits for the real readiness
     /// gate to land Died, and resolves the route. Falsified if the route
-    /// ever yields clearnet or the mixnet for the dead endpoint.
+    /// ever yields nakednet or the mixnet for the dead endpoint.
     #[tokio::test]
     async fn an_attached_endpoint_that_dies_refuses_the_route() {
         use crate::mixnet::route::MixnetNotReady;
-        use crate::mixnet::route::resolve_route;
+        use crate::mixnet::route::resolve_mixnet_only_route;
 
         // Port 9 (discard) on localhost refuses; the readiness round trip
         // fails fast and the driver lands Died.
@@ -1414,7 +1414,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         assert_eq!(
-            resolve_route(
+            resolve_mixnet_only_route(
                 proxy.mode(),
                 proxy
                     .socks5_addr()

@@ -14,6 +14,8 @@ use zcash_protocol::consensus::{BlockHeight, Parameters};
 use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
 use zingo_common_components::protocol::ActivationHeights;
 
+pub use crate::destination::servers::{IndexerConfig, Location, Role, Trust};
+
 use crate::wallet::{
     WalletBase, WalletSettings,
     error::{KeyError, WalletError},
@@ -37,7 +39,7 @@ pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 /// tip. The invariant is that the block has been mined, not merely named: a
 /// scheduled-but-future network-upgrade activation height does not qualify.
 /// Bumping this constant to a recently observed height is a release-checklist
-/// step. See `docs/adr/0007-library-birthday.md`.
+/// step.
 pub const LIB_BIRTHDAY_MAINNET: u32 = 3_411_499;
 
 /// The testnet Library Birthday. See [`LIB_BIRTHDAY_MAINNET`].
@@ -53,8 +55,7 @@ pub const LIB_BIRTHDAY_TESTNET: u32 = 4_134_000;
 /// Indexerless.
 ///
 /// Restores must not use this, since a restored seed or viewing key may predate
-/// the library and always requires a caller-supplied birthday. See
-/// `docs/adr/0007-library-birthday.md`.
+/// the library and always requires a caller-supplied birthday.
 pub fn lib_birthday(chain: ChainType) -> u32 {
     match chain {
         ChainType::Mainnet => LIB_BIRTHDAY_MAINNET,
@@ -304,13 +305,16 @@ pub struct ClientConfig {
     /// different server than the one used for synchronization reduces the
     /// correlation between the two (ZIP 318). While Mixnet Mode is on (the
     /// `nym` feature, ADR 0011), this URI is dialed through the mixnet and
-    /// must be https on a host distinct from the synchronization endpoint's
-    /// (a shared host is refused). Unset, parts go to one Destination
-    /// drawn at random per submission. On the clearnet opt-out path it falls
-    /// back to `indexer_uri` with a logged warning when unset. When both are
+    /// must be https on a host distinct from an untrusted synchronization
+    /// endpoint's (a shared host is refused). Unset, parts go to one
+    /// drawn Destination per submission. When both are
     /// `None` the client emits no network traffic and transmission fails
     /// with [`crate::lightclient::error::LightClientError::Offline`].
     migration_transmission_uri: Option<http::Uri>,
+    /// The consumer's indexer classifications.
+    indexers: Vec<IndexerConfig>,
+    /// Overrides the chain's trust for an unclassified remote indexer.
+    remote_indexer_trust: Option<Trust>,
     /// Chain type of the blockchain the lightclient is connected to.
     chain_type: ChainType,
     /// Directory where the wallet file will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
@@ -338,6 +342,18 @@ impl ClientConfig {
     #[must_use]
     pub fn migration_transmission_uri(&self) -> Option<http::Uri> {
         self.migration_transmission_uri.clone()
+    }
+
+    /// Returns the indexer classifications.
+    #[must_use]
+    pub fn indexers(&self) -> &[IndexerConfig] {
+        &self.indexers
+    }
+
+    /// Returns the remote trust override, if any.
+    #[must_use]
+    pub fn remote_indexer_trust(&self) -> Option<Trust> {
+        self.remote_indexer_trust
     }
 
     /// Returns wallet directory.
@@ -379,6 +395,8 @@ impl ClientConfig {
 pub struct ClientConfigBuilder {
     indexer_uri: Option<http::Uri>,
     migration_transmission_uri: Option<http::Uri>,
+    indexers: Vec<IndexerConfig>,
+    remote_indexer_trust: Option<Trust>,
     chain_type: ChainType,
     wallet_dir: Option<PathBuf>,
     wallet_name: Option<String>,
@@ -406,6 +424,18 @@ impl ClientConfigBuilder {
     /// distinct from the synchronization endpoint.
     pub fn set_migration_transmission_uri(mut self, migration_transmission_uri: http::Uri) -> Self {
         self.migration_transmission_uri = Some(migration_transmission_uri);
+        self
+    }
+
+    /// Classify one indexer.
+    pub fn add_indexer(mut self, indexer: IndexerConfig) -> Self {
+        self.indexers.push(indexer);
+        self
+    }
+
+    /// Override the chain's trust for an unclassified remote indexer.
+    pub fn set_remote_indexer_trust(mut self, trust: Trust) -> Self {
+        self.remote_indexer_trust = Some(trust);
         self
     }
 
@@ -448,6 +478,8 @@ impl ClientConfigBuilder {
         Ok(ClientConfig {
             indexer_uri: self.indexer_uri,
             migration_transmission_uri: self.migration_transmission_uri,
+            indexers: self.indexers,
+            remote_indexer_trust: self.remote_indexer_trust,
             chain_type: self.chain_type,
             wallet_dir,
             wallet_name,
@@ -461,6 +493,8 @@ impl Default for ClientConfigBuilder {
         Self {
             indexer_uri: None,
             migration_transmission_uri: None,
+            indexers: Vec::new(),
+            remote_indexer_trust: None,
             wallet_dir: None,
             wallet_name: None,
             chain_type: ChainType::Mainnet,
@@ -469,8 +503,9 @@ impl Default for ClientConfigBuilder {
                 chain_height: 1,
                 wallet_settings: WalletSettings {
                     sync_config: SyncConfig {
-                        transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                        transparent_address_discovery: TransparentAddressDiscovery::default(),
                         performance_level: pepper_sync::config::PerformanceLevel::High,
+                        shutdown_on_completion: false,
                     },
                     min_confirmations: NonZeroU32::try_from(3)
                         .expect("hard coded non-zero integer"),

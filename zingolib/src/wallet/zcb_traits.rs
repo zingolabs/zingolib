@@ -205,13 +205,15 @@ impl WalletRead for LightWallet {
             return Ok(None);
         };
 
-        let max_checkpoint_height = self
+        let Some(max_checkpoint_height) = self
             .shard_trees
             .sapling
             .store()
             .max_checkpoint_id()
             .expect("infallible")
-            .expect("should be at least 1 checkpoint");
+        else {
+            return Ok(None);
+        };
 
         let anchor_height = std::cmp::min(
             max_checkpoint_height,
@@ -1426,6 +1428,63 @@ mod tests {
             &[],
             LockFilter::Unfiltered,
         )
+    }
+
+    /// A funded wallet whose sapling shard tree holds no checkpoint.
+    fn wallet_without_sapling_checkpoint() -> LightWallet {
+        use pepper_sync::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
+        use shardtree::store::memory::MemoryShardStore;
+
+        let mut wallet = funded_wallet();
+        wallet.shard_trees.sapling = ShardTree::new(
+            MemoryShardStore::empty(),
+            SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE as usize,
+        );
+        assert!(wallet.sync_state.last_known_chain_height().is_some());
+        wallet
+    }
+
+    #[test]
+    fn missing_sapling_checkpoint_means_no_anchor_and_zero_balance() {
+        let wallet = wallet_without_sapling_checkpoint();
+
+        assert_eq!(
+            wallet
+                .get_target_and_anchor_heights(wallet.wallet_settings.min_confirmations)
+                .expect("infallible"),
+            None
+        );
+        assert_eq!(
+            wallet
+                .shielded_spendable_balance(zip32::AccountId::ZERO, false)
+                .expect("a missing anchor is a zero balance, not an error"),
+            Zatoshis::ZERO
+        );
+    }
+
+    #[test]
+    fn reload_restores_missing_sapling_checkpoint() {
+        let mut wallet = wallet_without_sapling_checkpoint();
+
+        wallet.save_required = true;
+        let bytes = wallet.save().unwrap().expect("save required");
+        let reloaded = LightWallet::read(bytes.as_slice(), wallet.chain_type()).unwrap();
+
+        assert_eq!(
+            reloaded
+                .shard_trees
+                .sapling
+                .store()
+                .max_checkpoint_id()
+                .expect("infallible"),
+            Some(BlockHeight::from_u32(0))
+        );
+        assert!(
+            reloaded
+                .get_target_and_anchor_heights(wallet.wallet_settings.min_confirmations)
+                .expect("infallible")
+                .is_some()
+        );
     }
 
     #[test]

@@ -67,6 +67,7 @@ fn main() {
                                 Some("low") => PerformanceLevel::Low,
                                 _ => PerformanceLevel::High,
                             },
+                            shutdown_on_completion: true,
                         },
                         min_confirmations: NonZeroU32::new(3).unwrap(),
                     },

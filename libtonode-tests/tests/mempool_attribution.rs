@@ -61,6 +61,16 @@
 //! its poll replacement now exits immediately after the helper's own
 //! sync, consistent with the observed drop in per-case time.
 //!
+//! Update (2026-09-28, zainod 0.10.1, zebrad 6.3.0): zainod now polls the
+//! validator's mempool every 500 ms by default, and the indexer lag rose
+//! to 89-451 ms across three runs. That outgrew the sync session's 200 ms
+//! mempool drain settle window, so a session could end before the
+//! transaction was streamed and the record stayed Transmitted: this cell
+//! failed with no post-sync path to Mempool status. With the settle window
+//! raised to 750 ms (`zingo_netutils::time::MEMPOOL_DRAIN_SETTLE`) the
+//! record again reaches Mempool status inside the first sync session, at
+//! 802-852 ms with sync_and_await returning at the same instant.
+//!
 //! # Designed cells: one remaining
 //!
 //! Of the rejection-side attribution cells for the boundary-adjacent

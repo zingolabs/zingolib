@@ -9,6 +9,8 @@ members = [
     "zingo-status",
     "zingolib",
     "zingolib_testutils",
+    "zingo-ffi/lib",
+    "zingo-ffi/uniffi-bindgen",
 ]
 # zingo-netutils is intentionally NOT a member: it carries its own [workspace]
 # and Cargo.lock so it can be built standalone with the `nym` feature, whose
@@ -16,7 +18,7 @@ members = [
 # with this workspace's `crypto-common =0.2.0-rc.1` pin (via zcash_primitives
 # 0.30, which pins the same release candidate 0.29 did). Members still consume
 # netutils through the `zingo-netutils` path dependency below, resolved in
-# THIS lockfile with `nym` off. See docs/adr/0011-nym-mixnet-transmission.md.
+# THIS lockfile with `nym` off. See zingo-adrs zingolib/0011.
 exclude = ["zingo-netutils"]
 resolver = "2"
 
@@ -65,7 +67,7 @@ orchard = "0.15.0"
 sapling-crypto = "0.7.0"
 shardtree = "0.7.0"
 zcash_address = "0.13.0"
-zcash_client_backend = { version = "0.24.0-rc.7", features = [
+zcash_client_backend = { version = "0.24.0", features = [
     "orchard",
     "transparent-inputs",
 ] }
@@ -78,10 +80,11 @@ zcash_keys = { version = "0.16.1", features = [
 zcash_note_encryption = "0.4.2"
 # non-standard-fees: exposes `fees::fixed`, used to pin the exact planned fee
 # on Ironwood migration transactions.
-zcash_primitives = { version = "0.30.0", features = ["non-standard-fees"] }
+zcash_primitives = { version = "0.30.1", features = ["non-standard-fees"] }
 zcash_proofs = "0.30.0"
-zcash_protocol = "0.10.4" # public API (TODO: remove from public API)
+zcash_protocol = "0.10.6" # public API (TODO: remove from public API)
 zcash_transparent = "0.10.0"
+zcash_script = "0.4.5"
 
 ### Blockchain Protocol
 bip0039 = { version = "0.14", features = ["rand"] }
@@ -128,6 +131,13 @@ tokio = "1"
 ### Error interface
 thiserror = "2"
 
+### Binding Layer (zingo-adrs zingolib/0054)
+uniffi = "0.29"
+uniffi_build = "0.29"
+android_logger = "0.11"
+lazy_static = "1.4.0"
+once_cell = "1"
+
 ### Internal data
 append-only-vec = "0.1.7"
 itertools = "0.14"
@@ -147,6 +157,17 @@ rust-embed = "8"
 
 [profile.test]
 opt-level = 3
+
+# The profile that the Binding Layer builder uses for the mobile libraries,
+# carried unchanged from the zingo-ffi workspace that the crates came from.
+[profile.mobile]
+inherits = "release"
+debug = 1
+lto = "thin"
+codegen-units = 1
+overflow-checks = true
+panic = "abort"
+opt-level = "z"
 
 [patch.crates-io]
 # Ironwood (NU6.3) proto fields (CompactTx.ironwoodActions, TreeState.ironwoodTree,

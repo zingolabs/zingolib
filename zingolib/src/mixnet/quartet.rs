@@ -3,8 +3,8 @@
 
 use futures::StreamExt as _;
 
-use crate::destination::pool::{Pools, ProvenBirth};
 use crate::mixnet::acquire::{TransportAcquirable, TransportError};
+use crate::mixnet::pools::{Pools, ProvenBirth};
 
 /// How many exits a boot proves before it opens a prompt: one for each
 /// role, plus the spare that lets a failing role cost no birth.

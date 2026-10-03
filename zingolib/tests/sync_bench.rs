@@ -2,7 +2,7 @@
 //!
 //! The test creates a fresh unfunded wallet whose birthday sits one sync
 //! window below the mainnet tip of the authoring day, syncs it against a
-//! public indexer over clearnet (the one network class clearnet serves),
+//! public indexer over nakednet (the one network class nakednet serves),
 //! and fails if the sync exceeds its time budget. Because the window is
 //! fixed, the same test run at two commits measures the same work, which
 //! makes it a `git bisect` probe for sync-throughput regressions.
@@ -61,6 +61,7 @@ async fn sync_20k_mainnet_blocks_within_budget() {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::default(),
                     performance_level: PerformanceLevel::High,
+                    shutdown_on_completion: true,
                 },
                 min_confirmations: NonZeroU32::new(3).unwrap(),
             },
