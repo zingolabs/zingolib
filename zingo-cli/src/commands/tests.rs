@@ -723,8 +723,8 @@ mod network_command_parsing {
         };
         let tunnel = Err(FailureKind::Unreachable);
         let attempts = vec![
-            attempt("zec.rocks", AttemptRoute::Mixnet, 1_000, tunnel),
             attempt("zec.rocks", AttemptRoute::Mixnet, 2_000, Ok(())),
+            attempt("zec.rocks", AttemptRoute::Mixnet, 1_000, tunnel),
             attempt("zec.rocks", AttemptRoute::Nakednet, 1_500, Ok(())),
             attempt("carover0.xyz", AttemptRoute::Mixnet, 1_800, tunnel),
         ];
@@ -733,7 +733,7 @@ mod network_command_parsing {
             render_history(&attempts, 2_060),
             "Indexer history (all sessions):\n  \
              carover0.xyz: mixnet 0/1 ok, last failed 4m ago\n  \
-             zec.rocks: nakednet 1/1 ok, last ok 9m ago; mixnet 1/2 ok, last ok 1m ago"
+             zec.rocks: mixnet 1/2 ok, last ok 1m ago; nakednet 1/1 ok, last ok 9m ago"
         );
         assert_eq!(render_history(&[], 0), "No indexer history recorded yet.");
     }
