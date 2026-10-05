@@ -1928,11 +1928,13 @@ impl SyncDomain for Ironwood {
 
 #[cfg(test)]
 mod test {
+    use std::collections::BTreeSet;
+
     use zcash_protocol::TxId;
     use zcash_protocol::consensus::BlockHeight;
     use zingo_status::confirmation_status::ConfirmationStatus;
 
-    use super::WalletTransaction;
+    use super::{ScanTarget, WalletTransaction};
 
     fn transaction_with_status(status: ConfirmationStatus) -> WalletTransaction {
         WalletTransaction::new_for_test(TxId::from_bytes([0; 32]), status)
@@ -2048,5 +2050,30 @@ mod test {
             transaction.status(),
             ConfirmationStatus::Failed(_)
         ));
+    }
+
+    #[test]
+    fn scan_target_set_holds_one_target_per_transaction() {
+        const HEIGHT: u32 = 10;
+        const TXID_BYTES: [u8; 32] = [1; 32];
+        const TRANSACTIONS_TARGETED: usize = 1;
+
+        let block_height = BlockHeight::from_u32(HEIGHT);
+        let txid = TxId::from_bytes(TXID_BYTES);
+
+        let scan_targets = BTreeSet::from([
+            ScanTarget {
+                block_height,
+                txid,
+                narrow_scan_area: false,
+            },
+            ScanTarget {
+                block_height,
+                txid,
+                narrow_scan_area: true,
+            },
+        ]);
+
+        assert_eq!(scan_targets.len(), TRANSACTIONS_TARGETED);
     }
 }
