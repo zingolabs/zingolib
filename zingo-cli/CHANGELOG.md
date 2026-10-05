@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** the term clearnet is renamed nakednet. The cargo feature
   `clearnet-test-mode` is now `nakednet-test-mode`, and `network history`
   reports a direct route as `nakednet` where it reported `clearnet`.
+- `network off` stops an in-flight sync between batches and waits for it, where it used to abort the sync task.
 - `migrate`, `migration continue`, `migration execute` and `migration auto` sync to the chain tip and return when the wallet is configured for continuous sync. A sync already running before the command is stopped for it and relaunched after it.
 - Sync runs continuously: without `--waitsync`, the sync engine stays
   running after reaching the chain tip and scans newly mined blocks as they
