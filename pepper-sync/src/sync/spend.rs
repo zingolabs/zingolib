@@ -30,11 +30,34 @@ use crate::{
 use super::state;
 
 /// The spend scan targets of each shielded pool, keyed by the nullifier of the spent note.
-pub(super) type ShieldedSpendScanTargets = (
-    BTreeMap<sapling_crypto::Nullifier, ScanTarget>,
-    BTreeMap<orchard::note::Nullifier, ScanTarget>,
-    BTreeMap<orchard::note::Nullifier, ScanTarget>,
-);
+pub(super) struct ShieldedSpendScanTargets {
+    pub(super) sapling: BTreeMap<sapling_crypto::Nullifier, ScanTarget>,
+    pub(super) orchard: BTreeMap<orchard::note::Nullifier, ScanTarget>,
+    pub(super) ironwood: BTreeMap<orchard::note::Nullifier, ScanTarget>,
+}
+
+impl ShieldedSpendScanTargets {
+    /// Whether every pool is without a spend.
+    pub(super) fn is_empty(&self) -> bool {
+        self.sapling.is_empty() && self.orchard.is_empty() && self.ironwood.is_empty()
+    }
+
+    /// Moves the spend scan targets of each pool in `other` into the same pool here.
+    fn append(&mut self, other: &mut Self) {
+        self.sapling.append(&mut other.sapling);
+        self.orchard.append(&mut other.orchard);
+        self.ironwood.append(&mut other.ironwood);
+    }
+
+    /// The scan targets of every pool.
+    fn scan_targets(&self) -> impl Iterator<Item = ScanTarget> {
+        self.sapling
+            .values()
+            .chain(self.orchard.values())
+            .chain(self.ironwood.values())
+            .copied()
+    }
+}
 
 /// The transactions the wallet holds once `scanned_transactions` are added to it. A scanned transaction replaces the
 /// wallet's record of the same transaction.
@@ -79,51 +102,32 @@ where
             scanned_transactions,
         ));
 
-    let (
-        mut sapling_spend_scan_targets,
-        mut orchard_spend_scan_targets,
-        mut ironwood_spend_scan_targets,
-    ) = detect_shielded_spends(
+    let mut spend_scan_targets = detect_shielded_spends(
         wallet.get_nullifiers().map_err(SyncError::WalletError)?,
         &sapling_derived_nullifiers,
         &orchard_derived_nullifiers,
         &ironwood_derived_nullifiers,
     );
-    let (
-        mut scanned_sapling_spend_scan_targets,
-        mut scanned_orchard_spend_scan_targets,
-        mut scanned_ironwood_spend_scan_targets,
-    ) = detect_shielded_spends(
+    spend_scan_targets.append(&mut detect_shielded_spends(
         scanned_nullifiers,
         &sapling_derived_nullifiers,
         &orchard_derived_nullifiers,
         &ironwood_derived_nullifiers,
-    );
-    sapling_spend_scan_targets.append(&mut scanned_sapling_spend_scan_targets);
-    orchard_spend_scan_targets.append(&mut scanned_orchard_spend_scan_targets);
-    ironwood_spend_scan_targets.append(&mut scanned_ironwood_spend_scan_targets);
+    ));
 
     let spending_transactions = scan_spending_transactions(
         fetch_request_sender,
         consensus_parameters,
         wallet,
         ufvks,
-        sapling_spend_scan_targets
-            .values()
-            .chain(orchard_spend_scan_targets.values())
-            .chain(ironwood_spend_scan_targets.values())
-            .copied(),
+        spend_scan_targets.scan_targets(),
         scanned_blocks,
         scanned_transactions,
     )
     .await?;
     scanned_transactions.extend(spending_transactions);
 
-    Ok((
-        sapling_spend_scan_targets,
-        orchard_spend_scan_targets,
-        ironwood_spend_scan_targets,
-    ))
+    Ok(spend_scan_targets)
 }
 
 /// Records the spends located by [`locate_shielded_spends`] in the wallet, once the wallet holds the scanned
@@ -134,62 +138,49 @@ where
 pub(super) fn apply_shielded_spends<P, W>(
     consensus_parameters: &P,
     wallet: &mut W,
-    (sapling_spend_scan_targets, orchard_spend_scan_targets, ironwood_spend_scan_targets): ShieldedSpendScanTargets,
+    spend_scan_targets: ShieldedSpendScanTargets,
 ) -> Result<(), W::Error>
 where
     P: consensus::Parameters,
     W: SyncTransactions + SyncNullifiers + SyncShardTrees,
 {
-    remove_spent_nullifiers(
-        wallet.get_nullifiers_mut()?,
-        &sapling_spend_scan_targets,
-        &orchard_spend_scan_targets,
-        &ironwood_spend_scan_targets,
-    );
+    remove_spent_nullifiers(wallet.get_nullifiers_mut()?, &spend_scan_targets);
 
     let sync_state = wallet.get_sync_state_mut()?;
     state::set_found_note_scan_ranges(
         consensus_parameters,
         sync_state,
         ShieldedPool::Sapling,
-        sapling_spend_scan_targets.values().copied(),
+        spend_scan_targets.sapling.values().copied(),
     );
     state::set_found_note_scan_ranges(
         consensus_parameters,
         sync_state,
         ShieldedPool::Orchard,
-        orchard_spend_scan_targets.values().copied(),
+        spend_scan_targets.orchard.values().copied(),
     );
     state::set_found_note_scan_ranges(
         consensus_parameters,
         sync_state,
         ShieldedPool::Ironwood,
-        ironwood_spend_scan_targets.values().copied(),
+        spend_scan_targets.ironwood.values().copied(),
     );
 
-    update_spent_notes(
-        wallet,
-        sapling_spend_scan_targets,
-        orchard_spend_scan_targets,
-        ironwood_spend_scan_targets,
-        true,
-    )
+    update_spent_notes(wallet, spend_scan_targets, true)
 }
 
 /// Removes the nullifiers of detected spends from `nullifier_map`. The spent notes hold the spend from here on.
 pub(super) fn remove_spent_nullifiers(
     nullifier_map: &mut NullifierMap,
-    sapling_spend_scan_targets: &BTreeMap<sapling_crypto::Nullifier, ScanTarget>,
-    orchard_spend_scan_targets: &BTreeMap<orchard::note::Nullifier, ScanTarget>,
-    ironwood_spend_scan_targets: &BTreeMap<orchard::note::Nullifier, ScanTarget>,
+    spend_scan_targets: &ShieldedSpendScanTargets,
 ) {
-    for nullifier in sapling_spend_scan_targets.keys() {
+    for nullifier in spend_scan_targets.sapling.keys() {
         nullifier_map.sapling.remove(nullifier);
     }
-    for nullifier in orchard_spend_scan_targets.keys() {
+    for nullifier in spend_scan_targets.orchard.keys() {
         nullifier_map.orchard.remove(nullifier);
     }
-    for nullifier in ironwood_spend_scan_targets.keys() {
+    for nullifier in spend_scan_targets.ironwood.keys() {
         nullifier_map.ironwood.remove(nullifier);
     }
 }
@@ -311,24 +302,20 @@ pub(super) fn detect_shielded_spends(
     orchard_derived_nullifiers: &[orchard::note::Nullifier],
     ironwood_derived_nullifiers: &[orchard::note::Nullifier],
 ) -> ShieldedSpendScanTargets {
-    let sapling_spend_scan_targets = sapling_derived_nullifiers
-        .iter()
-        .filter_map(|nf| Some((*nf, *nullifier_map.sapling.get(nf)?)))
-        .collect();
-    let orchard_spend_scan_targets = orchard_derived_nullifiers
-        .iter()
-        .filter_map(|nf| Some((*nf, *nullifier_map.orchard.get(nf)?)))
-        .collect();
-    let ironwood_spend_scan_targets = ironwood_derived_nullifiers
-        .iter()
-        .filter_map(|nf| Some((*nf, *nullifier_map.ironwood.get(nf)?)))
-        .collect();
-
-    (
-        sapling_spend_scan_targets,
-        orchard_spend_scan_targets,
-        ironwood_spend_scan_targets,
-    )
+    ShieldedSpendScanTargets {
+        sapling: sapling_derived_nullifiers
+            .iter()
+            .filter_map(|nf| Some((*nf, *nullifier_map.sapling.get(nf)?)))
+            .collect(),
+        orchard: orchard_derived_nullifiers
+            .iter()
+            .filter_map(|nf| Some((*nf, *nullifier_map.orchard.get(nf)?)))
+            .collect(),
+        ironwood: ironwood_derived_nullifiers
+            .iter()
+            .filter_map(|nf| Some((*nf, *nullifier_map.ironwood.get(nf)?)))
+            .collect(),
+    }
 }
 
 /// Update the `spending_transaction` field of all notes where the derived nullifier matches the nullifier in the spend
@@ -337,9 +324,7 @@ pub(super) fn detect_shielded_spends(
 /// to construct a witness for it's note commitment.
 pub(super) fn update_spent_notes<W>(
     wallet: &mut W,
-    sapling_spend_scan_targets: BTreeMap<sapling_crypto::Nullifier, ScanTarget>,
-    orchard_spend_scan_targets: BTreeMap<orchard::note::Nullifier, ScanTarget>,
-    ironwood_spend_scan_targets: BTreeMap<orchard::note::Nullifier, ScanTarget>,
+    spend_scan_targets: ShieldedSpendScanTargets,
     remove_marks: bool,
 ) -> Result<(), W::Error>
 where
@@ -354,7 +339,7 @@ where
     >(
         wallet_transactions,
         &mut shard_trees.sapling,
-        sapling_spend_scan_targets,
+        spend_scan_targets.sapling,
         remove_marks,
     );
     update_spent_notes_by_protocol::<
@@ -364,7 +349,7 @@ where
     >(
         wallet_transactions,
         &mut shard_trees.orchard,
-        orchard_spend_scan_targets,
+        spend_scan_targets.orchard,
         remove_marks,
     );
     update_spent_notes_by_protocol::<
@@ -374,7 +359,7 @@ where
     >(
         wallet_transactions,
         &mut shard_trees.ironwood,
-        ironwood_spend_scan_targets,
+        spend_scan_targets.ironwood,
         remove_marks,
     );
     *wallet.get_shard_trees_mut()? = shard_trees;

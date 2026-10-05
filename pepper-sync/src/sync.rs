@@ -1251,13 +1251,12 @@ where
         spend::detect_transparent_spends(&pending_transaction_outpoints, &transparent_output_ids);
     let (sapling_derived_nullifiers, orchard_derived_nullifiers, ironwood_derived_nullifiers) =
         spend::collect_derived_nullifiers(wallet_transactions.values());
-    let (sapling_spend_scan_targets, orchard_spend_scan_targets, ironwood_spend_scan_targets) =
-        spend::detect_shielded_spends(
-            &pending_transaction_nullifiers,
-            &sapling_derived_nullifiers,
-            &orchard_derived_nullifiers,
-            &ironwood_derived_nullifiers,
-        );
+    let shielded_spend_scan_targets = spend::detect_shielded_spends(
+        &pending_transaction_nullifiers,
+        &sapling_derived_nullifiers,
+        &orchard_derived_nullifiers,
+        &ironwood_derived_nullifiers,
+    );
 
     // return if transaction is not relevant to the wallet
     if pending_transaction.transparent_coins().is_empty()
@@ -1268,9 +1267,7 @@ where
         && pending_transaction.outgoing_orchard_notes().is_empty()
         && pending_transaction.outgoing_ironwood_notes().is_empty()
         && transparent_spend_scan_targets.is_empty()
-        && sapling_spend_scan_targets.is_empty()
-        && orchard_spend_scan_targets.is_empty()
-        && ironwood_spend_scan_targets.is_empty()
+        && shielded_spend_scan_targets.is_empty()
     {
         return Ok(());
     }
@@ -1284,14 +1281,8 @@ where
             .map_err(SyncError::WalletError)?,
         transparent_spend_scan_targets,
     );
-    spend::update_spent_notes(
-        wallet,
-        sapling_spend_scan_targets,
-        orchard_spend_scan_targets,
-        ironwood_spend_scan_targets,
-        false,
-    )
-    .map_err(SyncError::WalletError)?;
+    spend::update_spent_notes(wallet, shielded_spend_scan_targets, false)
+        .map_err(SyncError::WalletError)?;
 
     Ok(())
 }
@@ -4049,27 +4040,17 @@ mod test {
                 spend::collect_derived_nullifiers(
                     wallet.get_wallet_transactions().unwrap().values(),
                 );
-            let (sapling_targets, orchard_targets, ironwood_targets) =
-                spend::detect_shielded_spends(
-                    wallet.get_nullifiers().unwrap(),
-                    &sapling_nullifiers,
-                    &orchard_nullifiers,
-                    &ironwood_nullifiers,
-                );
+            let spend_scan_targets = spend::detect_shielded_spends(
+                wallet.get_nullifiers().unwrap(),
+                &sapling_nullifiers,
+                &orchard_nullifiers,
+                &ironwood_nullifiers,
+            );
             spend::remove_spent_nullifiers(
                 wallet.get_nullifiers_mut().unwrap(),
-                &sapling_targets,
-                &orchard_targets,
-                &ironwood_targets,
+                &spend_scan_targets,
             );
-            spend::update_spent_notes(
-                wallet,
-                sapling_targets,
-                orchard_targets,
-                ironwood_targets,
-                true,
-            )
-            .unwrap();
+            spend::update_spent_notes(wallet, spend_scan_targets, true).unwrap();
         }
 
         /// A spend reset *before* the spending transaction's block is scanned heals.
