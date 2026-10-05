@@ -139,11 +139,15 @@ impl LightClient {
         self.sync().await
     }
 
-    /// Aborts any in-flight sync task and awaits its cancellation.
-    pub(crate) async fn abort_sync(&mut self) {
+    /// Stops any in-flight Sync Session with [`Self::stop_sync`] and waits for the engine to
+    /// return, so the session ends between batches with the wallet as the last batch left it.
+    /// The session's result is discarded.
+    pub(crate) async fn shutdown_sync(&mut self) {
+        if self.sync_mode() != SyncMode::NotRunning {
+            self.stop_sync().expect("infallible in this scope");
+        }
         if let Some(sync_handle) = self.sync_handle.take() {
-            sync_handle.abort();
-            let _cancelled = sync_handle.await;
+            let _session_outcome = sync_handle.await;
         }
         self.sync_mode
             .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
@@ -440,9 +444,11 @@ impl Drop for SyncPauseGuard {
 mod tests {
     use futures::FutureExt as _;
     use pepper_sync::wallet::SyncMode;
+    use zcash_protocol::consensus::H0;
 
     use super::atomic;
-    use crate::lightclient::LightClient;
+    use crate::data::PollReport;
+    use crate::lightclient::{LightClient, SyncResult};
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
     /// An offline client whose sync-mode atomic the tests drive directly.
@@ -546,6 +552,53 @@ mod tests {
             subscriber.changed().await.is_err(),
             "the subscription closes with the session"
         );
+    }
+
+    /// HYPOTHESIS: going offline asks the engine to shut down and waits
+    /// for it to return, so the engine ends its session between batches.
+    /// Falsified if the engine is cancelled before it acts on the request.
+    #[tokio::test]
+    async fn going_offline_waits_for_the_engine_to_shut_down() {
+        let mut client = offline_client(SyncMode::Running).await;
+        let sync_mode = client.sync_mode.clone();
+        let (shut_down, engine_shut_down) = tokio::sync::oneshot::channel();
+        client.sync_handle = Some(tokio::spawn(async move {
+            while SyncMode::from_atomic_u8(&sync_mode)? != SyncMode::Shutdown {
+                tokio::task::yield_now().await;
+            }
+            let _receiver_outlives_the_engine = shut_down.send(());
+            Ok(session_without_scanning())
+        }));
+
+        client.go_offline().await;
+
+        assert!(
+            engine_shut_down.await.is_ok(),
+            "the engine saw the shutdown request and returned"
+        );
+        assert_eq!(
+            client.sync_mode(),
+            SyncMode::NotRunning,
+            "the next session can launch"
+        );
+        assert!(
+            matches!(client.poll_sync(), PollReport::NoHandle),
+            "going offline collected the session"
+        );
+    }
+
+    /// The result of a session that was stopped before it scanned a block.
+    fn session_without_scanning() -> SyncResult {
+        const NOTHING_SCANNED: u32 = 0;
+        SyncResult {
+            sync_start_height: H0,
+            sync_end_height: H0,
+            blocks_scanned: NOTHING_SCANNED,
+            sapling_outputs_scanned: NOTHING_SCANNED,
+            orchard_outputs_scanned: NOTHING_SCANNED,
+            ironwood_outputs_scanned: NOTHING_SCANNED,
+            percentage_total_outputs_scanned: 0.0,
+        }
     }
 }
 
