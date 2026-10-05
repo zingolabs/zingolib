@@ -1583,7 +1583,7 @@ async fn network_command(
             lightclient.go_offline().await;
             Ok(
                 "Network off: the nym proxy is stopped, the Indexer connection is dropped, \
-                 and in-flight sync is aborted. Nothing network-visible is emitted until \
+                 and in-flight sync is stopped. Nothing network-visible is emitted until \
                  `network on` re-consents for this session. The stored Connectivity \
                  Consent record is untouched: a standing consent, if recorded, attaches \
                  the next launch again (`--forget-online` erases it)."
