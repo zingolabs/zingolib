@@ -129,6 +129,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-org allowance of the last known chain height, as before.
 
 ### Fixed
+- `sync` rolls each shard tree back to the wallet's highest scanned height
+  when it starts, where the tree holds a checkpoint above that height. A sync
+  session that ended partway through a wallet update left note commitments in
+  the trees for blocks that were still to be scanned. When a re-org then
+  replaced those blocks, every later session failed with
+  `shard tree error ← Inserted root conflicts with existing root` and only a
+  rescan from the birthday recovered the wallet. (#2834)
 - A `ServerError::RequestFailed` caused by network weather is now recommended
   `SyncRecoveryObservables::MaybeRecoverableServer` and
   `recommend_same_server`, rather than `ServerUnavailable`. Network weather is
