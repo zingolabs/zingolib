@@ -1199,23 +1199,40 @@ pub(super) fn clear_shard_ranges(sync_state: &mut SyncState, shielded_protocol: 
 ///
 /// Ranges being scanned right now are left alone, since their results are
 /// already in flight against the bounds they were dispatched with.
-pub(super) async fn reopen_scan_ranges_from<W>(
-    consensus_parameters: &impl consensus::Parameters,
-    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+///
+/// `missing_block_bound` is the block [`fetch_reopened_block_bound`]
+/// fetched, which bounds the scanned range below `from_height`.
+pub(super) fn reopen_scan_ranges_from<W>(
     wallet: &mut W,
     from_height: BlockHeight,
-) -> Result<(), SyncError<W::Error>>
+    missing_block_bound: BTreeMap<BlockHeight, WalletBlock>,
+) -> Result<(), W::Error>
 where
     W: SyncWallet + SyncBlocks,
 {
-    let sync_state = wallet
-        .get_sync_state_mut()
-        .map_err(SyncError::WalletError)?;
-    reopen_scan_ranges_inner(sync_state, from_height);
+    reopen_scan_ranges_inner(wallet.get_sync_state_mut()?, from_height);
+    if !missing_block_bound.is_empty() {
+        wallet.append_wallet_blocks(missing_block_bound)?;
+    }
 
+    Ok(())
+}
+
+/// Fetches the block below `from_height` where the wallet is missing it,
+/// for [`reopen_scan_ranges_from`] to add to the wallet. The wallet is only
+/// read, so a failed server request leaves it as it is.
+pub(super) async fn fetch_reopened_block_bound<W>(
+    consensus_parameters: &impl consensus::Parameters,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    wallet: &W,
+    from_height: BlockHeight,
+) -> Result<BTreeMap<BlockHeight, WalletBlock>, SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks,
+{
+    let mut missing_block_bound = BTreeMap::new();
     let upper_block_bound_height = from_height - 1;
     if wallet.get_wallet_block(upper_block_bound_height).is_err() {
-        let mut missing_block_bound = BTreeMap::new();
         missing_block_bound.insert(
             upper_block_bound_height,
             WalletBlock::from_compact_block(
@@ -1226,12 +1243,9 @@ where
             )
             .await?,
         );
-        wallet
-            .append_wallet_blocks(missing_block_bound)
-            .map_err(SyncError::WalletError)?;
     }
 
-    Ok(())
+    Ok(missing_block_bound)
 }
 
 pub(super) fn reopen_scan_ranges_inner(sync_state: &mut SyncState, from_height: BlockHeight) {

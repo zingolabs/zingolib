@@ -250,7 +250,7 @@ impl SyncOutPoints for MockWallet {
         &std::collections::BTreeMap<crate::wallet::OutputId, crate::wallet::ScanTarget>,
         Self::Error,
     > {
-        todo!()
+        Ok(&self.outpoint_map)
     }
 
     fn get_outpoints_mut(

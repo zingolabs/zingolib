@@ -1245,19 +1245,18 @@ where
     let wallet_transactions = wallet
         .get_wallet_transactions()
         .map_err(SyncError::WalletError)?;
-    let transparent_output_ids = spend::collect_transparent_output_ids(wallet_transactions);
-    let transparent_spend_scan_targets = spend::detect_transparent_spends(
-        &mut pending_transaction_outpoints,
-        transparent_output_ids,
-    );
+    let transparent_output_ids =
+        spend::collect_transparent_output_ids(wallet_transactions.values());
+    let transparent_spend_scan_targets =
+        spend::detect_transparent_spends(&pending_transaction_outpoints, &transparent_output_ids);
     let (sapling_derived_nullifiers, orchard_derived_nullifiers, ironwood_derived_nullifiers) =
-        spend::collect_derived_nullifiers(wallet_transactions);
+        spend::collect_derived_nullifiers(wallet_transactions.values());
     let (sapling_spend_scan_targets, orchard_spend_scan_targets, ironwood_spend_scan_targets) =
         spend::detect_shielded_spends(
-            &mut pending_transaction_nullifiers,
-            sapling_derived_nullifiers,
-            orchard_derived_nullifiers,
-            ironwood_derived_nullifiers,
+            &pending_transaction_nullifiers,
+            &sapling_derived_nullifiers,
+            &orchard_derived_nullifiers,
+            &ironwood_derived_nullifiers,
         );
 
     // return if transaction is not relevant to the wallet
@@ -1528,7 +1527,7 @@ where
                 mut nullifiers,
                 mut outpoints,
                 scanned_blocks,
-                wallet_transactions,
+                mut wallet_transactions,
                 sapling_located_trees,
                 orchard_located_trees,
                 ironwood_located_trees,
@@ -1537,62 +1536,6 @@ where
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
-                // add missing block bounds in the case that the load's nullifier budget was reached and the fetch nullifier
-                // scan range was split.
-                let full_refetching_nullifiers_range = wallet
-                    .get_sync_state()
-                    .map_err(SyncError::WalletError)?
-                    .scan_ranges
-                    .iter()
-                    .find(|&wallet_scan_range| {
-                        wallet_scan_range
-                            .block_range()
-                            .contains(&scan_range.block_range().start)
-                            && wallet_scan_range
-                                .block_range()
-                                .contains(&(scan_range.block_range().end - 1))
-                    })
-                    .expect("wallet scan range containing scan range should exist!");
-                if scan_range.block_range().start
-                    != full_refetching_nullifiers_range.block_range().start
-                    || scan_range.block_range().end
-                        != full_refetching_nullifiers_range.block_range().end
-                {
-                    let mut missing_block_bounds = BTreeMap::new();
-                    for block_bound in [
-                        scan_range.block_range().start - 1,
-                        scan_range.block_range().start,
-                        scan_range.block_range().end - 1,
-                        scan_range.block_range().end,
-                    ] {
-                        if block_bound < full_refetching_nullifiers_range.block_range().start
-                            || block_bound >= full_refetching_nullifiers_range.block_range().end
-                        {
-                            continue;
-                        }
-                        if wallet.get_wallet_block(block_bound).is_err() {
-                            missing_block_bounds.insert(
-                                block_bound,
-                                WalletBlock::from_compact_block(
-                                    consensus_parameters,
-                                    fetch_request_sender.clone(),
-                                    &client::get_compact_block(
-                                        fetch_request_sender.clone(),
-                                        block_bound,
-                                    )
-                                    .await?,
-                                )
-                                .await?,
-                            );
-                        }
-                    }
-                    if !missing_block_bounds.is_empty() {
-                        wallet
-                            .append_wallet_blocks(missing_block_bounds)
-                            .map_err(SyncError::WalletError)?;
-                    }
-                }
-
                 let first_unscanned_range = wallet
                     .get_sync_state()
                     .map_err(SyncError::WalletError)?
@@ -1627,22 +1570,91 @@ where
                     });
                 }
 
-                spend::update_shielded_spends(
+                // the server requests are made before the wallet is updated, so a failed request leaves the wallet
+                // as it was before the scan results were processed.
+                //
+                // fetch missing block bounds in the case that the load's nullifier budget was reached and the fetch nullifier
+                // scan range was split.
+                let mut missing_block_bounds = BTreeMap::new();
+                let full_refetching_nullifiers_range = wallet
+                    .get_sync_state()
+                    .map_err(SyncError::WalletError)?
+                    .scan_ranges
+                    .iter()
+                    .find(|&wallet_scan_range| {
+                        wallet_scan_range
+                            .block_range()
+                            .contains(&scan_range.block_range().start)
+                            && wallet_scan_range
+                                .block_range()
+                                .contains(&(scan_range.block_range().end - 1))
+                    })
+                    .expect("wallet scan range containing scan range should exist!");
+                if scan_range.block_range().start
+                    != full_refetching_nullifiers_range.block_range().start
+                    || scan_range.block_range().end
+                        != full_refetching_nullifiers_range.block_range().end
+                {
+                    for block_bound in [
+                        scan_range.block_range().start - 1,
+                        scan_range.block_range().start,
+                        scan_range.block_range().end - 1,
+                        scan_range.block_range().end,
+                    ] {
+                        if block_bound < full_refetching_nullifiers_range.block_range().start
+                            || block_bound >= full_refetching_nullifiers_range.block_range().end
+                        {
+                            continue;
+                        }
+                        if wallet.get_wallet_block(block_bound).is_err() {
+                            missing_block_bounds.insert(
+                                block_bound,
+                                WalletBlock::from_compact_block(
+                                    consensus_parameters,
+                                    fetch_request_sender.clone(),
+                                    &client::get_compact_block(
+                                        fetch_request_sender.clone(),
+                                        block_bound,
+                                    )
+                                    .await?,
+                                )
+                                .await?,
+                            );
+                        }
+                    }
+                }
+                let shielded_spend_scan_targets = spend::locate_shielded_spends(
                     consensus_parameters,
-                    wallet,
+                    &*wallet,
                     fetch_request_sender.clone(),
                     ufvks,
-                    &scanned_blocks,
-                    Some(&mut nullifiers),
+                    &missing_block_bounds,
+                    &mut wallet_transactions,
+                    &nullifiers,
                 )
                 .await?;
+
+                if !missing_block_bounds.is_empty() {
+                    wallet
+                        .append_wallet_blocks(missing_block_bounds)
+                        .map_err(SyncError::WalletError)?;
+                }
+                wallet
+                    .extend_wallet_transactions(wallet_transactions)
+                    .map_err(SyncError::WalletError)?;
+                spend::apply_shielded_spends(
+                    consensus_parameters,
+                    wallet,
+                    shielded_spend_scan_targets,
+                )
+                .map_err(SyncError::WalletError)?;
 
                 state::set_scanned_scan_range(
                     wallet
                         .get_sync_state_mut()
                         .map_err(SyncError::WalletError)?,
                     scan_range.block_range().clone(),
-                    true, // NOTE: although nullifiers are not actually added to the wallet's nullifier map for efficiency, there is effectively no difference as spends are still updated using the `additional_nullifier_map` and would be removed on the following cleanup (`remove_irrelevant_data`) due to `ScannedWithoutMapping` ranges always being the first non-scanned range and therefore always raise the wallet's fully scanned height after processing.
+                    true, // NOTE: although nullifiers are not actually added to the wallet's nullifier map for efficiency, there is effectively no difference as spends are still updated using the re-fetched nullifiers and would be removed on the following cleanup (`remove_irrelevant_data`) due to `ScannedWithoutMapping` ranges always being the first non-scanned range and therefore always raise the wallet's fully scanned height after processing.
                 );
             } else {
                 // nullifiers are not mapped if nullifier map size limit will be exceeded
@@ -1694,10 +1706,35 @@ where
                     }
                 }
 
+                // the server requests that spend detection depends on are made before the wallet is updated, so a
+                // failed request leaves the wallet as it was before the scan results were processed. the spends are
+                // located with the wallet only read and the scanned data passed in beside it, and the spending
+                // transactions that are fetched join the scanned transactions.
+                let transparent_spend_scan_targets = spend::locate_transparent_spends(
+                    consensus_parameters,
+                    &*wallet,
+                    fetch_request_sender.clone(),
+                    ufvks,
+                    &scanned_blocks,
+                    &mut wallet_transactions,
+                    &outpoints,
+                )
+                .await?;
+                let shielded_spend_scan_targets = spend::locate_shielded_spends(
+                    consensus_parameters,
+                    &*wallet,
+                    fetch_request_sender.clone(),
+                    ufvks,
+                    &scanned_blocks,
+                    &mut wallet_transactions,
+                    &nullifiers,
+                )
+                .await?;
+
                 update_wallet_data(
                     consensus_parameters,
                     wallet,
-                    fetch_request_sender.clone(),
+                    fetch_request_sender,
                     ufvks,
                     &scan_range,
                     if map_nullifiers {
@@ -1715,27 +1752,14 @@ where
                     &new_transparent_inuse_addresses,
                 )
                 .await?;
-                spend::update_transparent_spends(
+                spend::apply_transparent_spends(wallet, transparent_spend_scan_targets)
+                    .map_err(SyncError::WalletError)?;
+                spend::apply_shielded_spends(
                     consensus_parameters,
                     wallet,
-                    fetch_request_sender.clone(),
-                    ufvks,
-                    &scanned_blocks,
+                    shielded_spend_scan_targets,
                 )
-                .await?;
-                spend::update_shielded_spends(
-                    consensus_parameters,
-                    wallet,
-                    fetch_request_sender,
-                    ufvks,
-                    &scanned_blocks,
-                    if map_nullifiers {
-                        None
-                    } else {
-                        Some(&mut nullifiers)
-                    },
-                )
-                .await?;
+                .map_err(SyncError::WalletError)?;
                 add_scanned_blocks(wallet, scanned_blocks, &scan_range)
                     .map_err(SyncError::WalletError)?;
 
@@ -1927,6 +1951,18 @@ where
         })
         .collect::<Vec<_>>();
 
+    // the server requests are made before the wallet is updated, so a failed request leaves the wallet as it was
+    // and the next sync session finds the same disagreement.
+    let frontiers =
+        client::get_frontiers(fetch_request_sender.clone(), consensus_parameters, birthday).await?;
+    let missing_block_bound = state::fetch_reopened_block_bound(
+        consensus_parameters,
+        fetch_request_sender,
+        &*wallet,
+        rescan_from,
+    )
+    .await?;
+
     truncate_stores(wallet, rescan_from - 1, false)?;
 
     // the shard trees of the cleared pools are rebuilt from the frontier at the wallet birthday and the subtree roots
@@ -1945,8 +1981,6 @@ where
         }
     }
 
-    let frontiers =
-        client::get_frontiers(fetch_request_sender.clone(), consensus_parameters, birthday).await?;
     let retention = Retention::Checkpoint {
         id: birthday,
         marking: Marking::None,
@@ -1988,13 +2022,8 @@ where
         }
     }
 
-    state::reopen_scan_ranges_from(
-        consensus_parameters,
-        fetch_request_sender,
-        wallet,
-        rescan_from,
-    )
-    .await?;
+    state::reopen_scan_ranges_from(wallet, rescan_from, missing_block_bound)
+        .map_err(SyncError::WalletError)?;
     add_scan_targets(
         wallet
             .get_sync_state_mut()
@@ -2343,12 +2372,34 @@ where
         + SyncShardTrees
         + Send,
 {
+    let highest_scanned_height = wallet
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .highest_scanned_height()
+        .expect("scan ranges should not be empty in this scope");
+
+    // the updates that may fail are applied before any other, so a failure leaves the wallet without the rest of
+    // the scan results. address discovery only adds addresses of the wallet's own keys, and the shard trees fetch
+    // every checkpoint they are missing before they are updated.
+    for transaction in transactions.values() {
+        discover_unified_addresses(wallet, ufvks, transaction).map_err(SyncError::WalletError)?;
+    }
+    wallet
+        .update_shard_trees(
+            consensus_parameters,
+            fetch_request_sender,
+            scan_range,
+            highest_scanned_height,
+            witness::anchor_retention_policy(consensus_parameters),
+            sapling_located_trees,
+            orchard_located_trees,
+            ironwood_located_trees,
+        )
+        .await?;
+
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
-    let highest_scanned_height = sync_state
-        .highest_scanned_height()
-        .expect("scan ranges should not be empty in this scope");
     for transaction in transactions.values() {
         state::update_found_note_shard_priority(
             consensus_parameters,
@@ -2402,9 +2453,6 @@ where
             note.refetch_nullifier_ranges = refetch_nullifier_ranges.clone();
         }
     }
-    for transaction in transactions.values() {
-        discover_unified_addresses(wallet, ufvks, transaction).map_err(SyncError::WalletError)?;
-    }
 
     wallet
         .extend_wallet_transactions(transactions)
@@ -2417,18 +2465,6 @@ where
     wallet
         .append_outpoints(outpoints)
         .map_err(SyncError::WalletError)?;
-    wallet
-        .update_shard_trees(
-            consensus_parameters,
-            fetch_request_sender,
-            scan_range,
-            highest_scanned_height,
-            witness::anchor_retention_policy(consensus_parameters),
-            sapling_located_trees,
-            orchard_located_trees,
-            ironwood_located_trees,
-        )
-        .await?;
     let wallet_transparent_addresses = wallet
         .get_transparent_addresses_mut()
         .map_err(SyncError::WalletError)?;
@@ -3927,7 +3963,7 @@ mod test {
     ///
     /// The wallet remembers an on-chain spend observation in exactly one durable place: the
     /// note's `spending_transaction` field. The nullifier map is a transient rendezvous
-    /// buffer: entries are consumed on detection (`detect_shielded_spends`) and pruned
+    /// buffer: entries are consumed on detection (`remove_spent_nullifiers`) and pruned
     /// behind the fully-scanned frontier (`remove_irrelevant_data`). These tests pin the
     /// consequences for `set_transactions_failed`, whose `reset_spends` call erases that
     /// one durable place.
@@ -3949,10 +3985,11 @@ mod test {
         };
 
         const FUNDING_HEIGHT: BlockHeight = BlockHeight::from_u32(10);
-        const SPEND_HEIGHT: BlockHeight = BlockHeight::from_u32(100);
-        const FUNDING_TXID: TxId = TxId::from_bytes([1; 32]);
-        const SPENDING_TXID: TxId = TxId::from_bytes([2; 32]);
-        const NOTE_NULLIFIER: sapling_crypto::Nullifier = sapling_crypto::Nullifier([42; 32]);
+        pub(super) const SPEND_HEIGHT: BlockHeight = BlockHeight::from_u32(100);
+        pub(super) const FUNDING_TXID: TxId = TxId::from_bytes([1; 32]);
+        pub(super) const SPENDING_TXID: TxId = TxId::from_bytes([2; 32]);
+        pub(super) const NOTE_NULLIFIER: sapling_crypto::Nullifier =
+            sapling_crypto::Nullifier([42; 32]);
 
         /// The spending transaction's wallet record in the given lifecycle state.
         fn spending_record(status: ConfirmationStatus) -> WalletTransaction {
@@ -3965,7 +4002,7 @@ mod test {
         /// The crypto-note construction duplicates `zingolib::mocks::SaplingCryptoNoteBuilder`,
         /// which cannot be used here (zingolib depends on this crate). Relocating the note
         /// builders down into this crate is a deferred follow-up.
-        fn funding_transaction(spending_transaction: Option<TxId>) -> WalletTransaction {
+        pub(super) fn funding_transaction(spending_transaction: Option<TxId>) -> WalletTransaction {
             let extsk = sapling_crypto::zip32::ExtendedSpendingKey::master(&[0; 32]);
             let (_, recipient) = extsk.default_address();
             let crypto_note = sapling_crypto::Note::from_parts(
@@ -4003,19 +4040,28 @@ mod test {
                 .spending_transaction
         }
 
-        /// The detection pass `update_shielded_spends` performs, minus the network round
-        /// trips: match derived note nullifiers against the wallet's nullifier map and
-        /// mark the matches spent.
+        /// The detection pass `locate_shielded_spends` and `apply_shielded_spends` perform,
+        /// minus the network round trips and the scan prioritisation: match derived note
+        /// nullifiers against the wallet's nullifier map, remove the matches from the map
+        /// and mark them spent.
         fn run_spend_detection(wallet: &mut MockWallet) {
             let (sapling_nullifiers, orchard_nullifiers, ironwood_nullifiers) =
-                spend::collect_derived_nullifiers(wallet.get_wallet_transactions().unwrap());
+                spend::collect_derived_nullifiers(
+                    wallet.get_wallet_transactions().unwrap().values(),
+                );
             let (sapling_targets, orchard_targets, ironwood_targets) =
                 spend::detect_shielded_spends(
-                    wallet.get_nullifiers_mut().unwrap(),
-                    sapling_nullifiers,
-                    orchard_nullifiers,
-                    ironwood_nullifiers,
+                    wallet.get_nullifiers().unwrap(),
+                    &sapling_nullifiers,
+                    &orchard_nullifiers,
+                    &ironwood_nullifiers,
                 );
+            spend::remove_spent_nullifiers(
+                wallet.get_nullifiers_mut().unwrap(),
+                &sapling_targets,
+                &orchard_targets,
+                &ironwood_targets,
+            );
             spend::update_spent_notes(
                 wallet,
                 sapling_targets,
@@ -4176,8 +4222,9 @@ mod test {
 
         use crate::{
             client::FetchRequest,
+            error::SyncError,
             keys::transparent::{TransparentAddressId, TransparentScope},
-            mocks::{MockWallet, MockWalletBuilder},
+            mocks::{MockWallet, MockWalletBuilder, MockWalletError},
             sync::spend,
             wallet::{
                 OutputId, ScanTarget, TransparentCoin, TreeBounds, WalletBlock, WalletTransaction,
@@ -4301,6 +4348,31 @@ mod test {
                 .spending_transaction
         }
 
+        /// Locates the transparent spends of the wallet's coins and records them in the wallet, as scan results with
+        /// no transactions or outpoints of their own are processed.
+        async fn update_transparent_spends(
+            wallet: &mut MockWallet,
+            fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+        ) -> Result<(), SyncError<MockWalletError>> {
+            let mut scanned_transactions = HashMap::new();
+            let transparent_spend_scan_targets = spend::locate_transparent_spends(
+                &NETWORK,
+                &*wallet,
+                fetch_request_sender,
+                &HashMap::new(),
+                &scanned_blocks(),
+                &mut scanned_transactions,
+                &BTreeMap::new(),
+            )
+            .await?;
+            wallet
+                .extend_wallet_transactions(scanned_transactions)
+                .unwrap();
+            spend::apply_transparent_spends(wallet, transparent_spend_scan_targets).unwrap();
+
+            Ok(())
+        }
+
         #[tokio::test]
         async fn pending_spending_transaction_is_fetched_and_confirmed() {
             let spending_record = spending_record(ConfirmationStatus::Mempool(SPEND_HEIGHT));
@@ -4308,15 +4380,9 @@ mod test {
             let fetch_request_sender = spawn_fetcher(&spending_record);
             let mut wallet = wallet_with_mapped_spend(spending_record);
 
-            spend::update_transparent_spends(
-                &NETWORK,
-                &mut wallet,
-                fetch_request_sender,
-                &HashMap::new(),
-                &scanned_blocks(),
-            )
-            .await
-            .unwrap();
+            update_transparent_spends(&mut wallet, fetch_request_sender)
+                .await
+                .unwrap();
 
             assert_eq!(
                 wallet
@@ -4342,17 +4408,33 @@ mod test {
             // drop receiver so the test fails if the wallet attempts to fetch the transaction again unnecessarily
             drop(fetch_request_receiver);
 
-            spend::update_transparent_spends(
-                &NETWORK,
-                &mut wallet,
-                fetch_request_sender,
-                &HashMap::new(),
-                &scanned_blocks(),
-            )
-            .await
-            .unwrap();
+            update_transparent_spends(&mut wallet, fetch_request_sender)
+                .await
+                .unwrap();
 
             assert_eq!(get_coin_spending_txid(&wallet), Some(spending_txid));
+        }
+
+        /// The request for the spending transaction fails. The wallet's outpoint map keeps the spend, so the next
+        /// sync session detects it again, and the coin is not yet marked as spent.
+        #[tokio::test]
+        async fn failed_fetch_keeps_the_mapped_spend() {
+            let spending_record = spending_record(ConfirmationStatus::Mempool(SPEND_HEIGHT));
+            let mut wallet = wallet_with_mapped_spend(spending_record);
+            let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
+            drop(fetch_request_receiver);
+
+            let result = update_transparent_spends(&mut wallet, fetch_request_sender).await;
+
+            assert!(result.is_err());
+            assert!(
+                wallet
+                    .get_outpoints_mut()
+                    .unwrap()
+                    .contains_key(&OutputId::new(FUNDING_TXID, 0)),
+                "the spend must stay mapped until it is recorded on the coin"
+            );
+            assert_eq!(get_coin_spending_txid(&wallet), None);
         }
     }
 
@@ -4970,6 +5052,174 @@ mod test {
         }
     }
 
+    /// Scan results are added to the wallet together, once every server request the update depends on is answered.
+    mod scan_results_wallet_update {
+        use std::collections::{BTreeMap, HashMap};
+
+        use incrementalmerkletree::{Hashable as _, Marking, Position, Retention};
+        use orchard::tree::MerkleHashOrchard;
+        use tokio::sync::mpsc;
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::{consensus::BlockHeight, local_consensus::LocalNetwork};
+        use zingo_netutils::lightwallet_protocol::TreeState;
+
+        use super::spend_reset_lifecycle::{
+            FUNDING_TXID, NOTE_NULLIFIER, SPEND_HEIGHT, SPENDING_TXID, funding_transaction,
+        };
+        use crate::{
+            client::FetchRequest,
+            config::PerformanceLevel,
+            mocks::MockWalletBuilder,
+            scan::ScanResults,
+            sync::{ScanPriority, ScanRange, process_scan_results},
+            wallet::{
+                NullifierMap, OutputId, ScanTarget, SyncState, TreeBounds, WalletBlock,
+                traits::{
+                    SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions,
+                    SyncWallet,
+                },
+            },
+            witness,
+        };
+
+        const NETWORK: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+            nu6_2: Some(BlockHeight::from_u32(1)),
+            nu6_3: Some(BlockHeight::from_u32(1)),
+        };
+        const BIRTHDAY: u32 = 1;
+
+        /// Answers tree state requests with empty note commitment trees and fails every other request.
+        fn spawn_fetcher_of_tree_states() -> mpsc::UnboundedSender<FetchRequest> {
+            const EMPTY_TREE: &str = "000000";
+            let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                    if let FetchRequest::TreeState(reply_sender, block_height) = fetch_request {
+                        let _ignore_error = reply_sender.send(Ok(TreeState {
+                            height: u64::from(block_height),
+                            hash: "00".repeat(32),
+                            sapling_tree: EMPTY_TREE.to_string(),
+                            orchard_tree: EMPTY_TREE.to_string(),
+                            ironwood_tree: EMPTY_TREE.to_string(),
+                            ..Default::default()
+                        }));
+                    }
+                }
+            });
+
+            fetch_request_sender
+        }
+
+        /// The scan of the block at `SPEND_HEIGHT` maps the nullifier of the wallet's note, which a transaction with
+        /// no change spent. The request for this spending transaction fails, so the wallet is left as it was before
+        /// the scan results were processed. The scan range is scanned again in the next sync session, where the
+        /// spend is detected again.
+        #[tokio::test]
+        async fn failed_spending_transaction_request_leaves_the_wallet_as_it_was() {
+            let scan_ranges = vec![
+                ScanRange::from_parts(
+                    BlockHeight::from_u32(BIRTHDAY)..SPEND_HEIGHT,
+                    ScanPriority::Scanned,
+                ),
+                ScanRange::from_parts(SPEND_HEIGHT..SPEND_HEIGHT + 1, ScanPriority::Scanning),
+            ];
+            let mut wallet = MockWalletBuilder::new()
+                .birthday(BlockHeight::from_u32(BIRTHDAY))
+                .sync_state(SyncState::new_for_test(scan_ranges.clone()))
+                .wallet_transactions(HashMap::from([(FUNDING_TXID, funding_transaction(None))]))
+                .create_mock_wallet();
+
+            let spend_scan_target = ScanTarget {
+                block_height: SPEND_HEIGHT,
+                txid: SPENDING_TXID,
+                narrow_scan_area: false,
+            };
+            let mut nullifiers = NullifierMap::new();
+            nullifiers.sapling.insert(NOTE_NULLIFIER, spend_scan_target);
+            const LOCATED_TREE_SIZE: usize = 1;
+            let scan_results = ScanResults {
+                nullifiers,
+                outpoints: BTreeMap::from([(OutputId::new(SPENDING_TXID, 0), spend_scan_target)]),
+                scanned_blocks: BTreeMap::from([(
+                    SPEND_HEIGHT,
+                    WalletBlock {
+                        block_height: SPEND_HEIGHT,
+                        block_hash: BlockHash([0; 32]),
+                        prev_hash: BlockHash([0; 32]),
+                        time: 0,
+                        txids: Vec::new(),
+                        tree_bounds: TreeBounds {
+                            sapling_initial_tree_size: 0,
+                            sapling_final_tree_size: 0,
+                            orchard_initial_tree_size: 0,
+                            orchard_final_tree_size: 1,
+                            ironwood_initial_tree_size: 0,
+                            ironwood_final_tree_size: 0,
+                        },
+                    },
+                )]),
+                wallet_transactions: HashMap::new(),
+                sapling_located_trees: Vec::new(),
+                orchard_located_trees: witness::build_located_trees(
+                    Position::from(0),
+                    vec![(
+                        MerkleHashOrchard::empty_leaf(),
+                        Retention::Checkpoint {
+                            id: SPEND_HEIGHT,
+                            marking: Marking::None,
+                        },
+                    )],
+                    LOCATED_TREE_SIZE,
+                ),
+                ironwood_located_trees: Vec::new(),
+                new_transparent_inuse_addresses: HashMap::new(),
+                new_transparent_gap_addresses: HashMap::new(),
+            };
+
+            let result = process_scan_results(
+                &NETWORK,
+                &mut wallet,
+                spawn_fetcher_of_tree_states(),
+                &HashMap::new(),
+                ScanRange::from_parts(SPEND_HEIGHT..SPEND_HEIGHT + 1, ScanPriority::ChainTip),
+                Ok(scan_results),
+                None,
+                PerformanceLevel::High,
+                &mut false,
+            )
+            .await;
+
+            assert!(result.is_err());
+            assert!(wallet.get_nullifiers().unwrap().sapling.is_empty());
+            assert!(wallet.get_outpoints().unwrap().is_empty());
+            assert_eq!(
+                wallet
+                    .get_shard_trees_mut()
+                    .unwrap()
+                    .orchard
+                    .max_leaf_position(None)
+                    .unwrap(),
+                None
+            );
+            assert!(wallet.get_wallet_block(SPEND_HEIGHT).is_err());
+            let wallet_transactions = wallet.get_wallet_transactions().unwrap();
+            assert_eq!(wallet_transactions.len(), 1);
+            assert_eq!(
+                wallet_transactions[&FUNDING_TXID].sapling_notes()[0].spending_transaction,
+                None
+            );
+            assert_eq!(wallet.get_sync_state().unwrap().scan_ranges(), scan_ranges);
+        }
+    }
+
     /// A scan fails the continuity check when the first block of its scan range does not follow the block below it.
     mod hash_discontinuity {
         use std::collections::{BTreeMap, HashMap};
@@ -5207,24 +5457,26 @@ mod test {
     }
 
     mod pool_rescan {
-        use std::collections::BTreeMap;
+        use std::collections::{BTreeMap, HashMap};
 
         use incrementalmerkletree::{Hashable as _, Marking, Position, Retention};
         use orchard::tree::MerkleHashOrchard;
         use tokio::sync::mpsc;
         use zcash_primitives::block::BlockHash;
+        use zcash_primitives::transaction::TxId;
         use zcash_protocol::consensus::{self, BlockHeight, Parameters as _};
         use zcash_protocol::local_consensus::LocalNetwork;
         use zcash_protocol::{PoolType, ShieldedPool};
         use zingo_netutils::lightwallet_protocol::{SubtreeRoot, TreeState};
+        use zingo_status::confirmation_status::ConfirmationStatus;
 
         use crate::client::FetchRequest;
         use crate::error::SyncError;
         use crate::mocks::MockWalletBuilder;
         use crate::sync::{ScanPriority, ScanRange, state, truncate_to_pool_activation_height};
         use crate::wallet::{
-            ShardTrees, SyncState, TreeBounds, WalletBlock,
-            traits::{SyncShardTrees, SyncWallet},
+            ShardTrees, SyncState, TreeBounds, WalletBlock, WalletTransaction,
+            traits::{SyncShardTrees, SyncTransactions, SyncWallet},
         };
 
         const NETWORK: LocalNetwork = LocalNetwork {
@@ -5380,6 +5632,59 @@ mod test {
                     BlockHeight::from_u32(150)..BlockHeight::from_u32(251),
                 ]
             );
+        }
+
+        /// The request for the frontier the cleared pool is rebuilt from fails. The wallet keeps the transactions,
+        /// shard ranges and scan ranges of the pool's history, so the next sync session finds the same disagreement
+        /// and rescans the pool.
+        #[tokio::test]
+        async fn failed_frontier_request_leaves_the_wallet_as_it_was() {
+            const TRANSACTION_HEIGHT: u32 = 200;
+            let txid = TxId::from_bytes([1; 32]);
+            let scan_ranges = vec![ScanRange::from_parts(
+                BlockHeight::from_u32(1)..BlockHeight::from_u32(301),
+                ScanPriority::Scanned,
+            )];
+            let mut sync_state = SyncState::new_for_test(scan_ranges.clone());
+            let ironwood_shard_ranges =
+                vec![BlockHeight::from_u32(100)..BlockHeight::from_u32(251)];
+            sync_state.ironwood_shard_ranges = ironwood_shard_ranges.clone();
+            let mut wallet = MockWalletBuilder::new()
+                .birthday(BlockHeight::from_u32(1))
+                .sync_state(sync_state)
+                .wallet_transactions(HashMap::from([(
+                    txid,
+                    WalletTransaction::new_for_test(
+                        txid,
+                        ConfirmationStatus::Confirmed(BlockHeight::from_u32(TRANSACTION_HEIGHT)),
+                    ),
+                )]))
+                .create_mock_wallet();
+            let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
+            drop(fetch_request_receiver);
+
+            let result = truncate_to_pool_activation_height(
+                &NETWORK,
+                fetch_request_sender,
+                &mut wallet,
+                ShieldedPool::Ironwood,
+                BlockHeight::from_u32(TRANSACTION_HEIGHT),
+                10,
+                5,
+            )
+            .await;
+
+            assert!(result.is_err());
+            assert!(
+                wallet
+                    .get_wallet_transactions()
+                    .unwrap()
+                    .contains_key(&txid),
+                "the transaction must be kept while its scan range is still recorded as scanned"
+            );
+            let sync_state = wallet.get_sync_state().unwrap();
+            assert_eq!(sync_state.ironwood_shard_ranges, ironwood_shard_ranges);
+            assert_eq!(sync_state.scan_ranges(), scan_ranges);
         }
     }
 }
