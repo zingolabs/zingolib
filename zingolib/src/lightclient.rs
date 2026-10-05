@@ -650,8 +650,12 @@ impl LightClient {
 
     /// Disconnects every network capability of the client, returning only
     /// when teardown is complete.
+    ///
+    /// An in-flight Sync Session is stopped as [`Self::stop_sync`] stops it
+    /// and awaited, so this returns after the engine has processed its
+    /// current batch.
     pub async fn go_offline(&mut self) {
-        self.abort_sync().await;
+        self.shutdown_sync().await;
         #[cfg(feature = "nym")]
         {
             self.abort_health_sweep().await;
