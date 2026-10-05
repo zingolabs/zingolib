@@ -1205,14 +1205,14 @@ pub(super) fn clear_shard_ranges(sync_state: &mut SyncState, shielded_protocol: 
 pub(super) fn reopen_scan_ranges_from<W>(
     wallet: &mut W,
     from_height: BlockHeight,
-    missing_block_bound: BTreeMap<BlockHeight, WalletBlock>,
+    missing_block_bound: Option<WalletBlock>,
 ) -> Result<(), W::Error>
 where
     W: SyncWallet + SyncBlocks,
 {
     reopen_scan_ranges_inner(wallet.get_sync_state_mut()?, from_height);
-    if !missing_block_bound.is_empty() {
-        wallet.append_wallet_blocks(missing_block_bound)?;
+    if let Some(block_bound) = missing_block_bound {
+        wallet.append_wallet_blocks(BTreeMap::from([(block_bound.block_height(), block_bound)]))?;
     }
 
     Ok(())
@@ -1226,26 +1226,24 @@ pub(super) async fn fetch_reopened_block_bound<W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &W,
     from_height: BlockHeight,
-) -> Result<BTreeMap<BlockHeight, WalletBlock>, SyncError<W::Error>>
+) -> Result<Option<WalletBlock>, SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks,
 {
-    let mut missing_block_bound = BTreeMap::new();
     let upper_block_bound_height = from_height - 1;
-    if wallet.get_wallet_block(upper_block_bound_height).is_err() {
-        missing_block_bound.insert(
-            upper_block_bound_height,
-            WalletBlock::from_compact_block(
-                consensus_parameters,
-                fetch_request_sender.clone(),
-                &client::get_compact_block(fetch_request_sender.clone(), upper_block_bound_height)
-                    .await?,
-            )
-            .await?,
-        );
+    if wallet.get_wallet_block(upper_block_bound_height).is_ok() {
+        return Ok(None);
     }
 
-    Ok(missing_block_bound)
+    Ok(Some(
+        WalletBlock::from_compact_block(
+            consensus_parameters,
+            fetch_request_sender.clone(),
+            &client::get_compact_block(fetch_request_sender.clone(), upper_block_bound_height)
+                .await?,
+        )
+        .await?,
+    ))
 }
 
 pub(super) fn reopen_scan_ranges_inner(sync_state: &mut SyncState, from_height: BlockHeight) {
