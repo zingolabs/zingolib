@@ -28,6 +28,7 @@ pub(super) struct MockWallet {
     nullifier_map: NullifierMap,
     outpoint_map: BTreeMap<OutputId, ScanTarget>,
     shard_trees: ShardTrees,
+    transparent_addresses: BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
 }
 impl MockWalletError {}
 
@@ -106,6 +107,7 @@ impl MockWalletBuilder {
             nullifier_map: self.nullifier_map,
             outpoint_map: self.outpoint_map,
             shard_trees: self.shard_trees,
+            transparent_addresses: BTreeMap::new(),
         }
     }
 }
@@ -179,7 +181,7 @@ impl SyncWallet for MockWallet {
         &std::collections::BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
         Self::Error,
     > {
-        todo!()
+        Ok(&self.transparent_addresses)
     }
 
     fn get_transparent_addresses_mut(
@@ -188,7 +190,7 @@ impl SyncWallet for MockWallet {
         &mut std::collections::BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
         Self::Error,
     > {
-        todo!()
+        Ok(&mut self.transparent_addresses)
     }
 
     fn set_save_flag(&mut self) -> Result<(), Self::Error> {

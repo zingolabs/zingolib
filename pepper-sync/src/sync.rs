@@ -5033,28 +5033,276 @@ mod test {
         }
     }
 
+    /// The checkpoints [`crate::wallet::traits::SyncShardTrees::update_shard_trees`] adds for the blocks of a scan
+    /// range in a pool that has no note commitments in these blocks. The pool's commitment tree is unchanged as of
+    /// such a block, so its checkpoint copies the tree state of the checkpoint of the block below, which is
+    /// fetched from the server where the shard tree is missing it.
+    mod shard_tree_checkpoints {
+        use std::sync::Arc;
+        use std::sync::atomic::{self, AtomicUsize};
+
+        use incrementalmerkletree::frontier::CommitmentTree;
+        use incrementalmerkletree::{Hashable as _, Marking, Position, Retention};
+        use orchard::tree::MerkleHashOrchard;
+        use shardtree::store::{self, ShardStore as _};
+        use tokio::sync::mpsc;
+        use zcash_primitives::merkle_tree::write_commitment_tree;
+        use zcash_protocol::{consensus::BlockHeight, local_consensus::LocalNetwork};
+        use zingo_netutils::lightwallet_protocol::TreeState;
+
+        use crate::{
+            client::FetchRequest,
+            error::SyncError,
+            mocks::{MockWallet, MockWalletBuilder, MockWalletError},
+            shardtree_ext::ShardTreeExt,
+            sync::{ScanPriority, ScanRange},
+            wallet::{ShardTrees, traits::SyncShardTrees},
+        };
+
+        const NETWORK: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+            nu6_2: Some(BlockHeight::from_u32(1)),
+            nu6_3: Some(BlockHeight::from_u32(1)),
+        };
+        const HIGHEST_SCANNED: u32 = 10;
+        const FIRST_SCANNED_BLOCK: u32 = HIGHEST_SCANNED + 1;
+        const SECOND_SCANNED_BLOCK: u32 = FIRST_SCANNED_BLOCK + 1;
+        const SHIELDED_POOLS: usize = 3;
+        /// The orchard note commitments the chain holds as of the scanned blocks.
+        const ORCHARD_TREE_SIZE: u64 = 3;
+
+        /// Updates the wallet's shard trees with the scan of the two blocks above the highest scanned height, which
+        /// hold no note commitments of any pool.
+        async fn update_shard_trees(
+            wallet: &mut MockWallet,
+            fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+        ) -> Result<(), SyncError<MockWalletError>> {
+            wallet
+                .update_shard_trees(
+                    &NETWORK,
+                    fetch_request_sender,
+                    &ScanRange::from_parts(
+                        BlockHeight::from_u32(FIRST_SCANNED_BLOCK)
+                            ..BlockHeight::from_u32(SECOND_SCANNED_BLOCK + 1),
+                        ScanPriority::ChainTip,
+                    ),
+                    BlockHeight::from_u32(HIGHEST_SCANNED),
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                )
+                .await
+        }
+
+        fn wallet(shard_trees: ShardTrees) -> MockWallet {
+            MockWalletBuilder::new()
+                .shard_trees(shard_trees)
+                .create_mock_wallet()
+        }
+
+        /// A fetcher whose every request fails.
+        fn failing_fetcher() -> mpsc::UnboundedSender<FetchRequest> {
+            let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
+            drop(fetch_request_receiver);
+
+            fetch_request_sender
+        }
+
+        /// Answers tree state requests with an orchard commitment tree of `ORCHARD_TREE_SIZE` note commitments and
+        /// empty sapling and ironwood commitment trees, counting the requests.
+        fn spawn_counting_fetcher() -> (mpsc::UnboundedSender<FetchRequest>, Arc<AtomicUsize>) {
+            const EMPTY_TREE: &str = "000000";
+            let mut orchard_tree = CommitmentTree::<
+                MerkleHashOrchard,
+                { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+            >::empty();
+            for _ in 0..ORCHARD_TREE_SIZE {
+                orchard_tree
+                    .append(MerkleHashOrchard::empty_leaf())
+                    .unwrap();
+            }
+            let mut orchard_tree_bytes = Vec::new();
+            write_commitment_tree(&orchard_tree, &mut orchard_tree_bytes).unwrap();
+            let orchard_tree = hex::encode(orchard_tree_bytes);
+
+            let request_count = Arc::new(AtomicUsize::new(0));
+            let counted_requests = request_count.clone();
+            let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                    match fetch_request {
+                        FetchRequest::TreeState(reply_sender, block_height) => {
+                            counted_requests.fetch_add(1, atomic::Ordering::Release);
+                            let _ignore_error = reply_sender.send(Ok(TreeState {
+                                height: u64::from(block_height),
+                                hash: "00".repeat(32),
+                                sapling_tree: EMPTY_TREE.to_string(),
+                                orchard_tree: orchard_tree.clone(),
+                                ironwood_tree: EMPTY_TREE.to_string(),
+                                ..Default::default()
+                            }));
+                        }
+                        _ => panic!("unexpected fetch request"),
+                    }
+                }
+            });
+
+            (fetch_request_sender, request_count)
+        }
+
+        /// The tree states of the sapling, orchard and ironwood checkpoints at `height`.
+        fn checkpoint_tree_states(
+            wallet: &mut MockWallet,
+            height: u32,
+        ) -> [Option<store::TreeState>; SHIELDED_POOLS] {
+            let height = BlockHeight::from_u32(height);
+            let shard_trees = wallet.get_shard_trees_mut().unwrap();
+            [
+                shard_trees.sapling.store().get_checkpoint(&height).unwrap(),
+                shard_trees.orchard.store().get_checkpoint(&height).unwrap(),
+                shard_trees
+                    .ironwood
+                    .store()
+                    .get_checkpoint(&height)
+                    .unwrap(),
+            ]
+            .map(|checkpoint| checkpoint.map(|checkpoint| checkpoint.tree_state()))
+        }
+
+        /// Every shard tree holds the checkpoint of the highest scanned block, so the checkpoints of the scanned
+        /// blocks copy its tree state with no request to the server.
+        #[tokio::test]
+        async fn checkpoints_copy_the_block_below() {
+            let mut shard_trees = ShardTrees::new();
+            let highest_scanned_height = BlockHeight::from_u32(HIGHEST_SCANNED);
+            shard_trees
+                .sapling
+                .append_checkpoint(highest_scanned_height)
+                .unwrap();
+            shard_trees
+                .orchard
+                .append(
+                    MerkleHashOrchard::empty_leaf(),
+                    Retention::Checkpoint {
+                        id: highest_scanned_height,
+                        marking: Marking::None,
+                    },
+                )
+                .unwrap();
+            shard_trees
+                .ironwood
+                .append_checkpoint(highest_scanned_height)
+                .unwrap();
+            let mut wallet = wallet(shard_trees);
+
+            update_shard_trees(&mut wallet, failing_fetcher())
+                .await
+                .unwrap();
+
+            let highest_scanned_tree_states = [
+                Some(store::TreeState::Empty),
+                Some(store::TreeState::AtPosition(Position::from(0))),
+                Some(store::TreeState::Empty),
+            ];
+            assert_eq!(
+                checkpoint_tree_states(&mut wallet, FIRST_SCANNED_BLOCK),
+                highest_scanned_tree_states
+            );
+            assert_eq!(
+                checkpoint_tree_states(&mut wallet, SECOND_SCANNED_BLOCK),
+                highest_scanned_tree_states
+            );
+        }
+
+        /// The shard trees are missing the checkpoint of the highest scanned block, so the tree state of the first
+        /// scanned block is fetched for each pool. The checkpoint of the second scanned block copies it with no
+        /// further request.
+        #[tokio::test]
+        async fn missing_checkpoint_below_is_fetched_once_for_each_pool() {
+            let mut wallet = wallet(ShardTrees::new());
+            let (fetch_request_sender, request_count) = spawn_counting_fetcher();
+
+            update_shard_trees(&mut wallet, fetch_request_sender)
+                .await
+                .unwrap();
+
+            let fetched_tree_states = [
+                Some(store::TreeState::Empty),
+                Some(store::TreeState::AtPosition(Position::from(
+                    ORCHARD_TREE_SIZE - 1,
+                ))),
+                Some(store::TreeState::Empty),
+            ];
+            assert_eq!(
+                checkpoint_tree_states(&mut wallet, FIRST_SCANNED_BLOCK),
+                fetched_tree_states
+            );
+            assert_eq!(
+                checkpoint_tree_states(&mut wallet, SECOND_SCANNED_BLOCK),
+                fetched_tree_states
+            );
+            assert_eq!(
+                request_count.load(atomic::Ordering::Acquire),
+                SHIELDED_POOLS
+            );
+        }
+
+        /// The sapling tree holds the checkpoint of the highest scanned block and the orchard tree is missing it.
+        /// The request for the orchard tree state fails, so the sapling checkpoint that was determined before the
+        /// request is left out of the sapling tree.
+        #[tokio::test]
+        async fn failed_request_leaves_the_shard_trees_as_they_were() {
+            let mut shard_trees = ShardTrees::new();
+            shard_trees
+                .sapling
+                .append_checkpoint(BlockHeight::from_u32(HIGHEST_SCANNED))
+                .unwrap();
+            let mut wallet = wallet(shard_trees);
+
+            let result = update_shard_trees(&mut wallet, failing_fetcher()).await;
+
+            assert!(result.is_err());
+            assert_eq!(
+                checkpoint_tree_states(&mut wallet, FIRST_SCANNED_BLOCK),
+                [None; SHIELDED_POOLS]
+            );
+        }
+    }
+
     /// Scan results are added to the wallet together, once every server request the update depends on is answered.
     mod scan_results_wallet_update {
         use std::collections::{BTreeMap, HashMap};
 
         use incrementalmerkletree::{Hashable as _, Marking, Position, Retention};
         use orchard::tree::MerkleHashOrchard;
+        use shardtree::store::ShardStore as _;
         use tokio::sync::mpsc;
-        use zcash_primitives::block::BlockHash;
+        use zcash_primitives::{block::BlockHash, transaction::TxId};
         use zcash_protocol::{consensus::BlockHeight, local_consensus::LocalNetwork};
-        use zingo_netutils::lightwallet_protocol::TreeState;
+        use zingo_netutils::lightwallet_protocol::{RawTransaction, TreeState};
+        use zingo_status::confirmation_status::ConfirmationStatus;
 
         use super::spend_reset_lifecycle::{
-            FUNDING_TXID, NOTE_NULLIFIER, SPEND_HEIGHT, SPENDING_TXID, funding_transaction,
+            FUNDING_TXID, NOTE_NULLIFIER, SPEND_HEIGHT, funding_transaction,
         };
         use crate::{
             client::FetchRequest,
             config::PerformanceLevel,
-            mocks::MockWalletBuilder,
+            error::SyncError,
+            mocks::{MockWallet, MockWalletBuilder, MockWalletError},
             scan::ScanResults,
-            sync::{ScanPriority, ScanRange, process_scan_results},
+            sync::{ProcessedScanResults, ScanPriority, ScanRange, process_scan_results},
             wallet::{
                 NullifierMap, OutputId, ScanTarget, SyncState, TreeBounds, WalletBlock,
+                WalletTransaction,
                 traits::{
                     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions,
                     SyncWallet,
@@ -5076,22 +5324,53 @@ mod test {
             nu6_3: Some(BlockHeight::from_u32(1)),
         };
         const BIRTHDAY: u32 = 1;
+        /// A transaction of the wallet that the scan of the block at `SPEND_HEIGHT` found by trial decryption.
+        const SCANNED_TXID: TxId = TxId::from_bytes([3; 32]);
 
-        /// Answers tree state requests with empty note commitment trees and fails every other request.
-        fn spawn_fetcher_of_tree_states() -> mpsc::UnboundedSender<FetchRequest> {
+        /// The transaction that spends the wallet's note with no change, under the txid the server returns it with.
+        fn spending_transaction() -> WalletTransaction {
+            let status = ConfirmationStatus::Confirmed(SPEND_HEIGHT);
+            let txid = WalletTransaction::new_for_test(TxId::from_bytes([0; 32]), status)
+                .transaction()
+                .txid();
+            WalletTransaction::new_for_test(txid, status)
+        }
+
+        /// Answers tree state requests with empty note commitment trees, and transaction requests with
+        /// `spending_transaction` mined at `SPEND_HEIGHT`. With no spending transaction, transaction requests fail.
+        fn spawn_fetcher(
+            spending_transaction: Option<&WalletTransaction>,
+        ) -> mpsc::UnboundedSender<FetchRequest> {
             const EMPTY_TREE: &str = "000000";
+            let spending_transaction_data = spending_transaction.map(|spending_transaction| {
+                let mut data = Vec::new();
+                spending_transaction.transaction().write(&mut data).unwrap();
+                data
+            });
             let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
             tokio::spawn(async move {
                 while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                    if let FetchRequest::TreeState(reply_sender, block_height) = fetch_request {
-                        let _ignore_error = reply_sender.send(Ok(TreeState {
-                            height: u64::from(block_height),
-                            hash: "00".repeat(32),
-                            sapling_tree: EMPTY_TREE.to_string(),
-                            orchard_tree: EMPTY_TREE.to_string(),
-                            ironwood_tree: EMPTY_TREE.to_string(),
-                            ..Default::default()
-                        }));
+                    match fetch_request {
+                        FetchRequest::TreeState(reply_sender, block_height) => {
+                            let _ignore_error = reply_sender.send(Ok(TreeState {
+                                height: u64::from(block_height),
+                                hash: "00".repeat(32),
+                                sapling_tree: EMPTY_TREE.to_string(),
+                                orchard_tree: EMPTY_TREE.to_string(),
+                                ironwood_tree: EMPTY_TREE.to_string(),
+                                ..Default::default()
+                            }));
+                        }
+                        FetchRequest::Transaction(reply_sender, _txid) => {
+                            // the request fails when the reply sender is dropped.
+                            if let Some(data) = &spending_transaction_data {
+                                let _ignore_error = reply_sender.send(Ok(RawTransaction {
+                                    data: data.clone(),
+                                    height: u64::from(SPEND_HEIGHT),
+                                }));
+                            }
+                        }
+                        _ => panic!("unexpected fetch request"),
                     }
                 }
             });
@@ -5099,55 +5378,92 @@ mod test {
             fetch_request_sender
         }
 
-        /// The scan of the block at `SPEND_HEIGHT` maps the nullifier of the wallet's note, which a transaction with
-        /// no change spent. The request for this spending transaction fails, so the wallet is left as it was before
-        /// the scan results were processed. The scan range is scanned again in the next sync session, where the
-        /// spend is detected again.
-        #[tokio::test]
-        async fn failed_spending_transaction_request_leaves_the_wallet_as_it_was() {
-            let scan_ranges = vec![
+        /// The block at `SPEND_HEIGHT`, which holds the first orchard note commitment of the chain.
+        fn block_at_spend_height() -> WalletBlock {
+            WalletBlock {
+                block_height: SPEND_HEIGHT,
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds: TreeBounds {
+                    sapling_initial_tree_size: 0,
+                    sapling_final_tree_size: 0,
+                    orchard_initial_tree_size: 0,
+                    orchard_final_tree_size: 1,
+                    ironwood_initial_tree_size: 0,
+                    ironwood_final_tree_size: 0,
+                },
+            }
+        }
+
+        /// The scan ranges of a wallet scanned up to `SPEND_HEIGHT`, with the block at `SPEND_HEIGHT` in the given
+        /// priority.
+        fn scan_ranges(spend_height_priority: ScanPriority) -> Vec<ScanRange> {
+            vec![
                 ScanRange::from_parts(
                     BlockHeight::from_u32(BIRTHDAY)..SPEND_HEIGHT,
                     ScanPriority::Scanned,
                 ),
-                ScanRange::from_parts(SPEND_HEIGHT..SPEND_HEIGHT + 1, ScanPriority::Scanning),
-            ];
-            let mut wallet = MockWalletBuilder::new()
-                .birthday(BlockHeight::from_u32(BIRTHDAY))
-                .sync_state(SyncState::new_for_test(scan_ranges.clone()))
-                .wallet_transactions(HashMap::from([(FUNDING_TXID, funding_transaction(None))]))
-                .create_mock_wallet();
+                ScanRange::from_parts(SPEND_HEIGHT..SPEND_HEIGHT + 1, spend_height_priority),
+            ]
+        }
 
-            let spend_scan_target = ScanTarget {
-                block_height: SPEND_HEIGHT,
-                txid: SPENDING_TXID,
-                narrow_scan_area: false,
-            };
+        /// The scan ranges once the block at `SPEND_HEIGHT` is scanned.
+        fn scanned_scan_ranges() -> Vec<ScanRange> {
+            vec![ScanRange::from_parts(
+                BlockHeight::from_u32(BIRTHDAY)..SPEND_HEIGHT + 1,
+                ScanPriority::Scanned,
+            )]
+        }
+
+        /// A wallet holding one unspent sapling note, with the block at `SPEND_HEIGHT` in the given priority.
+        fn wallet_builder(spend_height_priority: ScanPriority) -> MockWalletBuilder {
+            MockWalletBuilder::new()
+                .birthday(BlockHeight::from_u32(BIRTHDAY))
+                .sync_state(SyncState::new_for_test(scan_ranges(spend_height_priority)))
+                .wallet_transactions(HashMap::from([(FUNDING_TXID, funding_transaction(None))]))
+        }
+
+        /// The nullifier of the wallet's note as mapped from the block at `SPEND_HEIGHT`, where `spending_txid`
+        /// spends the note.
+        fn mapped_spend(spending_txid: TxId) -> NullifierMap {
             let mut nullifiers = NullifierMap::new();
-            nullifiers.sapling.insert(NOTE_NULLIFIER, spend_scan_target);
+            nullifiers.sapling.insert(
+                NOTE_NULLIFIER,
+                ScanTarget {
+                    block_height: SPEND_HEIGHT,
+                    txid: spending_txid,
+                    narrow_scan_area: false,
+                },
+            );
+
+            nullifiers
+        }
+
+        /// The scan results of the block at `SPEND_HEIGHT`. The block holds a transaction of the wallet, one
+        /// orchard note commitment, a transparent input and the spend of the wallet's note by `spending_txid`,
+        /// which paid no change and so is missing from the scanned transactions.
+        fn scan_results(spending_txid: TxId) -> ScanResults {
             const LOCATED_TREE_SIZE: usize = 1;
-            let scan_results = ScanResults {
-                nullifiers,
-                outpoints: BTreeMap::from([(OutputId::new(SPENDING_TXID, 0), spend_scan_target)]),
-                scanned_blocks: BTreeMap::from([(
-                    SPEND_HEIGHT,
-                    WalletBlock {
+            ScanResults {
+                nullifiers: mapped_spend(spending_txid),
+                outpoints: BTreeMap::from([(
+                    OutputId::new(SCANNED_TXID, 0),
+                    ScanTarget {
                         block_height: SPEND_HEIGHT,
-                        block_hash: BlockHash([0; 32]),
-                        prev_hash: BlockHash([0; 32]),
-                        time: 0,
-                        txids: Vec::new(),
-                        tree_bounds: TreeBounds {
-                            sapling_initial_tree_size: 0,
-                            sapling_final_tree_size: 0,
-                            orchard_initial_tree_size: 0,
-                            orchard_final_tree_size: 1,
-                            ironwood_initial_tree_size: 0,
-                            ironwood_final_tree_size: 0,
-                        },
+                        txid: spending_txid,
+                        narrow_scan_area: true,
                     },
                 )]),
-                wallet_transactions: HashMap::new(),
+                scanned_blocks: BTreeMap::from([(SPEND_HEIGHT, block_at_spend_height())]),
+                wallet_transactions: HashMap::from([(
+                    SCANNED_TXID,
+                    WalletTransaction::new_for_test(
+                        SCANNED_TXID,
+                        ConfirmationStatus::Confirmed(SPEND_HEIGHT),
+                    ),
+                )]),
                 sapling_located_trees: Vec::new(),
                 orchard_located_trees: witness::build_located_trees(
                     Position::from(0),
@@ -5163,41 +5479,210 @@ mod test {
                 ironwood_located_trees: Vec::new(),
                 new_transparent_inuse_addresses: HashMap::new(),
                 new_transparent_gap_addresses: HashMap::new(),
-            };
+            }
+        }
 
-            let result = process_scan_results(
+        /// Processes the scan results of the block at `SPEND_HEIGHT`, selected for scanning with
+        /// `selected_priority`.
+        async fn process(
+            wallet: &mut MockWallet,
+            fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+            selected_priority: ScanPriority,
+            scan_results: ScanResults,
+        ) -> Result<ProcessedScanResults, SyncError<MockWalletError>> {
+            process_scan_results(
                 &NETWORK,
-                &mut wallet,
-                spawn_fetcher_of_tree_states(),
+                wallet,
+                fetch_request_sender,
                 &HashMap::new(),
-                ScanRange::from_parts(SPEND_HEIGHT..SPEND_HEIGHT + 1, ScanPriority::ChainTip),
+                ScanRange::from_parts(SPEND_HEIGHT..SPEND_HEIGHT + 1, selected_priority),
                 Ok(scan_results),
                 None,
                 PerformanceLevel::High,
                 &mut false,
+            )
+            .await
+        }
+
+        fn note_spending_txid(wallet: &MockWallet) -> Option<TxId> {
+            wallet.get_wallet_transactions().unwrap()[&FUNDING_TXID].sapling_notes()[0]
+                .spending_transaction
+        }
+
+        fn orchard_tree_size(wallet: &mut MockWallet) -> Option<Position> {
+            wallet
+                .get_shard_trees_mut()
+                .unwrap()
+                .orchard
+                .max_leaf_position(None)
+                .unwrap()
+        }
+
+        /// The scan of the block at `SPEND_HEIGHT` maps the nullifier of the wallet's note, which a transaction with
+        /// no change spent. Every part of the scan results is added to the wallet: the scanned transaction, the
+        /// note commitment with a checkpoint in each shard tree, the spend with its fetched spending transaction,
+        /// the block and the scanned scan range.
+        #[tokio::test]
+        async fn scan_results_are_added_to_the_wallet() {
+            let spending_transaction = spending_transaction();
+            let spending_txid = spending_transaction.txid();
+            let mut wallet = wallet_builder(ScanPriority::Scanning).create_mock_wallet();
+
+            let result = process(
+                &mut wallet,
+                spawn_fetcher(Some(&spending_transaction)),
+                ScanPriority::ChainTip,
+                scan_results(spending_txid),
+            )
+            .await;
+
+            assert!(result.is_ok());
+            assert_eq!(note_spending_txid(&wallet), Some(spending_txid));
+            let wallet_transactions = wallet.get_wallet_transactions().unwrap();
+            assert!(wallet_transactions.contains_key(&SCANNED_TXID));
+            assert_eq!(
+                wallet_transactions[&spending_txid].status(),
+                ConfirmationStatus::Confirmed(SPEND_HEIGHT)
+            );
+            assert_eq!(orchard_tree_size(&mut wallet), Some(Position::from(0)));
+            let shard_trees = wallet.get_shard_trees_mut().unwrap();
+            let sapling_checkpoint = shard_trees
+                .sapling
+                .store()
+                .get_checkpoint(&SPEND_HEIGHT)
+                .unwrap();
+            let orchard_checkpoint = shard_trees
+                .orchard
+                .store()
+                .get_checkpoint(&SPEND_HEIGHT)
+                .unwrap();
+            let ironwood_checkpoint = shard_trees
+                .ironwood
+                .store()
+                .get_checkpoint(&SPEND_HEIGHT)
+                .unwrap();
+            assert!(
+                sapling_checkpoint.is_some()
+                    && orchard_checkpoint.is_some()
+                    && ironwood_checkpoint.is_some(),
+                "every shard tree must hold a checkpoint at the scanned block"
+            );
+            assert!(wallet.get_wallet_block(SPEND_HEIGHT).is_ok());
+            assert_eq!(
+                wallet.get_sync_state().unwrap().scan_ranges(),
+                scanned_scan_ranges()
+            );
+            // the wallet is fully scanned, so the mapped nullifiers and outpoints are all removed.
+            assert!(wallet.get_nullifiers().unwrap().sapling.is_empty());
+            assert!(wallet.get_outpoints().unwrap().is_empty());
+        }
+
+        /// The request for the spending transaction fails, so the wallet is left as it was before the scan results
+        /// were processed. The scan range is scanned again in the next sync session, where the spend is detected
+        /// again.
+        #[tokio::test]
+        async fn failed_spending_transaction_request_leaves_the_wallet_as_it_was() {
+            let mut wallet = wallet_builder(ScanPriority::Scanning).create_mock_wallet();
+
+            let result = process(
+                &mut wallet,
+                spawn_fetcher(None),
+                ScanPriority::ChainTip,
+                scan_results(spending_transaction().txid()),
             )
             .await;
 
             assert!(result.is_err());
             assert!(wallet.get_nullifiers().unwrap().sapling.is_empty());
             assert!(wallet.get_outpoints().unwrap().is_empty());
-            assert_eq!(
-                wallet
-                    .get_shard_trees_mut()
-                    .unwrap()
-                    .orchard
-                    .max_leaf_position(None)
-                    .unwrap(),
-                None
-            );
+            assert_eq!(orchard_tree_size(&mut wallet), None);
             assert!(wallet.get_wallet_block(SPEND_HEIGHT).is_err());
-            let wallet_transactions = wallet.get_wallet_transactions().unwrap();
-            assert_eq!(wallet_transactions.len(), 1);
+            assert_eq!(wallet.get_wallet_transactions().unwrap().len(), 1);
+            assert_eq!(note_spending_txid(&wallet), None);
             assert_eq!(
-                wallet_transactions[&FUNDING_TXID].sapling_notes()[0].spending_transaction,
-                None
+                wallet.get_sync_state().unwrap().scan_ranges(),
+                scan_ranges(ScanPriority::Scanning)
             );
-            assert_eq!(wallet.get_sync_state().unwrap().scan_ranges(), scan_ranges);
+        }
+
+        /// The block at `SPEND_HEIGHT` was scanned with its nullifiers discarded, and the nullifiers were then
+        /// fetched again. The spend they map is recorded on the wallet's note with its fetched spending
+        /// transaction, and the scan range is scanned. The shard trees already hold the block and are left as they
+        /// are.
+        #[tokio::test]
+        async fn refetched_nullifiers_record_the_spend() {
+            let spending_transaction = spending_transaction();
+            let spending_txid = spending_transaction.txid();
+            let mut wallet = wallet_builder(ScanPriority::RefetchingNullifiers)
+                .wallet_blocks(BTreeMap::from([(SPEND_HEIGHT, block_at_spend_height())]))
+                .create_mock_wallet();
+            let scan_results = ScanResults {
+                nullifiers: mapped_spend(spending_txid),
+                outpoints: BTreeMap::new(),
+                scanned_blocks: BTreeMap::new(),
+                wallet_transactions: HashMap::new(),
+                sapling_located_trees: Vec::new(),
+                orchard_located_trees: Vec::new(),
+                ironwood_located_trees: Vec::new(),
+                new_transparent_inuse_addresses: HashMap::new(),
+                new_transparent_gap_addresses: HashMap::new(),
+            };
+
+            let result = process(
+                &mut wallet,
+                spawn_fetcher(Some(&spending_transaction)),
+                ScanPriority::ScannedWithoutMapping,
+                scan_results,
+            )
+            .await;
+
+            assert!(result.is_ok());
+            assert_eq!(note_spending_txid(&wallet), Some(spending_txid));
+            assert_eq!(
+                wallet.get_wallet_transactions().unwrap()[&spending_txid].status(),
+                ConfirmationStatus::Confirmed(SPEND_HEIGHT)
+            );
+            assert_eq!(orchard_tree_size(&mut wallet), None);
+            assert_eq!(
+                wallet.get_sync_state().unwrap().scan_ranges(),
+                scanned_scan_ranges()
+            );
+        }
+
+        /// The request for the spending transaction fails while the re-fetched nullifiers are processed, so the
+        /// wallet is left as it was and the nullifiers are fetched again in the next sync session.
+        #[tokio::test]
+        async fn failed_request_for_refetched_nullifiers_leaves_the_wallet_as_it_was() {
+            let mut wallet = wallet_builder(ScanPriority::RefetchingNullifiers)
+                .wallet_blocks(BTreeMap::from([(SPEND_HEIGHT, block_at_spend_height())]))
+                .create_mock_wallet();
+            let scan_results = ScanResults {
+                nullifiers: mapped_spend(spending_transaction().txid()),
+                outpoints: BTreeMap::new(),
+                scanned_blocks: BTreeMap::new(),
+                wallet_transactions: HashMap::new(),
+                sapling_located_trees: Vec::new(),
+                orchard_located_trees: Vec::new(),
+                ironwood_located_trees: Vec::new(),
+                new_transparent_inuse_addresses: HashMap::new(),
+                new_transparent_gap_addresses: HashMap::new(),
+            };
+
+            let result = process(
+                &mut wallet,
+                spawn_fetcher(None),
+                ScanPriority::ScannedWithoutMapping,
+                scan_results,
+            )
+            .await;
+
+            assert!(result.is_err());
+            assert_eq!(wallet.get_wallet_transactions().unwrap().len(), 1);
+            assert_eq!(note_spending_txid(&wallet), None);
+            assert_eq!(
+                wallet.get_sync_state().unwrap().scan_ranges(),
+                scan_ranges(ScanPriority::RefetchingNullifiers)
+            );
         }
     }
 
