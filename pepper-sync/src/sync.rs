@@ -1248,7 +1248,7 @@ where
     let transparent_output_ids =
         spend::collect_transparent_output_ids(wallet_transactions.values());
     let transparent_spend_scan_targets =
-        spend::detect_transparent_spends(&pending_transaction_outpoints, &transparent_output_ids);
+        spend::detect_spends(&pending_transaction_outpoints, &transparent_output_ids);
     let (sapling_derived_nullifiers, orchard_derived_nullifiers, ironwood_derived_nullifiers) =
         spend::collect_derived_nullifiers(wallet_transactions.values());
     let shielded_spend_scan_targets = spend::detect_shielded_spends(
