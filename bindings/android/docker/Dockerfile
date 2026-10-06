@@ -14,7 +14,19 @@ RUN apt update \
     gcc \
     g++
 
-RUN rustup default stable
+# The builder passes rust-toolchain.toml verbatim and every Android target, so
+# the image holds the toolchain that file selects, with its components and
+# those targets, and the install step a run issues inside the mounted checkout
+# finds nothing to add. The tools below build on that same toolchain, because
+# the override file in this directory selects it.
+ARG RUST_TOOLCHAIN_TOML
+ARG RUST_TARGETS
+WORKDIR /opt/toolchain
+RUN test -n "$RUST_TOOLCHAIN_TOML" && test -n "$RUST_TARGETS" \
+    || { echo 'build args RUST_TOOLCHAIN_TOML and RUST_TARGETS are required' >&2; exit 1; }
+RUN printf '%s\n' "$RUST_TOOLCHAIN_TOML" > rust-toolchain.toml \
+    && rustup toolchain install \
+    && rustup target add $RUST_TARGETS
 
 RUN cargo install --force --locked bindgen-cli
 
