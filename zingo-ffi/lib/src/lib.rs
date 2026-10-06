@@ -659,7 +659,9 @@ fn build_client_config(
         Some(uri) => builder.set_migration_transmission_uri(uri),
         None => builder,
     };
-    builder.build().map_err(ZingolibError::init)
+    builder
+        .build()
+        .map_err(|e| ZingolibError::init(chain_text(&e)))
 }
 
 /// Set an optional dedicated migration-transmission endpoint for the next
@@ -706,7 +708,7 @@ fn init_lightclient(
         let config = build_client_config(&params, wallet_config)?;
         let lightclient = RT
             .block_on(LightClient::new(config, false))
-            .map_err(ZingolibError::init)?;
+            .map_err(|e| ZingolibError::init(chain_text(&e)))?;
         let _ = store_client(lightclient);
 
         finish()
@@ -1012,6 +1014,27 @@ mod ffi_error_routing_tests {
 #[cfg(test)]
 mod cause_chain_tests {
     use super::*;
+
+    #[test]
+    fn a_seed_that_fails_its_checksum_names_the_mnemonic_error_at_init() {
+        let bad_checksum = vec!["abandon"; 24].join(" ");
+        let error = init_from_seed(
+            bad_checksum,
+            1,
+            String::new(),
+            "main".to_string(),
+            "Low".to_string(),
+            1,
+        )
+        .expect_err("a seed with a bad checksum does not build a wallet");
+        let text = error.to_string();
+        // `LightClientError::WalletError` prints only "Wallet error."; the
+        // mnemonic cause under it is what the user has to read.
+        assert!(
+            text.contains("Mnemonic error"),
+            "the cause must survive the crossing: {text}"
+        );
+    }
 
     #[test]
     fn a_wrapper_that_prints_nothing_of_its_cause_gains_the_whole_chain() {
