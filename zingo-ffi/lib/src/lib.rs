@@ -513,16 +513,12 @@ macro_rules! wallet_access {
             })
         }
 
-        /// - Takes the lightclient lock.
-        /// - Blocks the calling thread on the runtime until it holds the wallet lock.
         fn $reported<State: Report>(
             state: impl FnOnce($($borrow)+ wallet::LightWallet) -> State + UnwindSafe,
         ) -> Result<String, ZingolibError> {
             $name(state)?.report()
         }
 
-        /// - Takes the lightclient lock.
-        /// - Blocks the calling thread on the runtime until it holds the wallet lock.
         fn $reported_with<State: Report>(
             input: String,
             state: impl FnOnce($($borrow)+ wallet::LightWallet, &str) -> State + UnwindSafe,
