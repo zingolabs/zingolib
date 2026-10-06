@@ -604,7 +604,7 @@ fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
 
 /// The engine's own duration and output count, from the closing line.
 fn closing_span(log: &str) -> Option<(u64, u64)> {
-    let tail = log.split(SYNC_SPAN_CLOSE).nth(1)?;
+    let (_, tail) = log.rsplit_once(SYNC_SPAN_CLOSE)?;
     let digits: String = tail
         .trim_start()
         .chars()
@@ -883,5 +883,17 @@ mod tests {
         );
         assert_eq!(closing_span("SYNC_SPAN=close 12"), None);
         assert_eq!(closing_span("SYNC_SPAN=close 1250ms err\n"), None);
+    }
+
+    #[test]
+    fn the_grafted_closing_line_is_read_after_the_engines_own() {
+        let log = "INFO zingolib::lightclient::sync: SYNC_SPAN=close 180261ms ok\n\
+                   INFO zingolib::lightclient::sync: SYNC_SPAN=close 180261ms ok outputs=80490\n";
+
+        assert_eq!(closing_span(log), Some((180261, 80490)));
+        assert_eq!(
+            closing_span("INFO zingolib::lightclient::sync: SYNC_SPAN=close 180261ms ok\n"),
+            None
+        );
     }
 }
