@@ -1680,7 +1680,24 @@ async fn wait_until_scanned_to(client: &crate::lightclient::LightClient, height:
     .unwrap_or_else(|_| panic!("blocks up to {height} were not scanned"));
 }
 
-/// When nullifiers are not mapped (a low performance level limits the nullifier map to zero), a range scanned before a
+async fn fill_nullifier_map(client: &crate::lightclient::LightClient) {
+    const UNMINED_HEIGHT: u32 = 1_000_000;
+
+    let unmined_target = pepper_sync::wallet::ScanTarget {
+        block_height: BlockHeight::from_u32(UNMINED_HEIGHT),
+        txid: zcash_protocol::TxId::from_bytes([0; 32]),
+        narrow_scan_area: false,
+    };
+    client.wallet().write().await.nullifier_map.sapling.extend(
+        (0..pepper_sync::sync::MAX_NULLIFIER_MAP_SIZE).map(|index| {
+            let mut nullifier = [0; 32];
+            nullifier[..size_of::<usize>()].copy_from_slice(&index.to_le_bytes());
+            (sapling_crypto::Nullifier(nullifier), unmined_target)
+        }),
+    );
+}
+
+/// When nullifiers are not mapped (the nullifier map is filled to its maximum size), a range scanned before a
 /// lower unscanned range is set `ScannedWithoutMapping` and its nullifiers are discarded. Once all lower ranges are
 /// scanned, its nullifiers are re-fetched with `GetBlockRangeNullifiers` to detect spends of notes found in the lower
 /// ranges.
@@ -1700,15 +1717,14 @@ async fn continuous_sync_with_refetched_nullifiers() -> (
 
     let mut net = MockNet::launch().await;
     net.chain.write().await.mine_empty_blocks(10);
-    let mut settings = continuous_sync_wallet_settings();
-    settings.sync_config.performance_level = pepper_sync::config::PerformanceLevel::Low;
     let mut client = net
         .client(
             zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
-            Some(settings),
+            Some(continuous_sync_wallet_settings()),
         )
         .await;
     client.sync_to_tip_and_await().await.unwrap();
+    fill_nullifier_map(&client).await;
 
     // a second client with the same seed builds the spend of the note.
     let mut spender = net
@@ -1955,8 +1971,7 @@ mod perspective {
     use std::time::{Duration, Instant};
 
     use pepper_sync::config::{
-        PerformanceLevel, SyncConfig, TransparentAddressDiscovery,
-        TransparentAddressDiscoveryScopes,
+        SyncConfig, TransparentAddressDiscovery, TransparentAddressDiscoveryScopes,
     };
     use tracing_subscriber::EnvFilter;
     use zcash_keys::encoding::AddressCodec;
@@ -2155,7 +2170,6 @@ mod perspective {
                             gap_limit: 3,
                             scopes: TransparentAddressDiscoveryScopes::default(),
                         },
-                        performance_level: PerformanceLevel::High,
                         shutdown_on_completion: false,
                     },
                     min_confirmations: NonZeroU32::try_from(1)
@@ -2185,7 +2199,6 @@ mod perspective {
                             gap_limit: 3,
                             scopes: TransparentAddressDiscoveryScopes::default(),
                         },
-                        performance_level: PerformanceLevel::High,
                         shutdown_on_completion: false,
                     },
                     min_confirmations: NonZeroU32::try_from(1)

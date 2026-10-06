@@ -7,7 +7,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use zingo_netutils::Indexer as _;
 use zingolib::config::{ClientConfig, WalletConfig};
 use zingolib::lightclient::LightClient;
-use zingolib::wallet::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery, WalletSettings};
+use zingolib::wallet::{SyncConfig, TransparentAddressDiscovery, WalletSettings};
 
 /// The number of blocks below the live tip the guarded sync scans.
 const GUARD_WINDOW: u32 = 5_000;
@@ -64,7 +64,6 @@ async fn syncing_the_top_window_holds_this_machines_baseline() {
             wallet_settings: WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::default(),
-                    performance_level: PerformanceLevel::High,
                     shutdown_on_completion: true,
                 },
                 min_confirmations: NonZeroU32::new(3).unwrap(),

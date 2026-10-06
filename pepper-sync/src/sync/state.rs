@@ -727,7 +727,7 @@ fn select_scan_range(
             // if nullifiers are not being mapped to the wallet's main nullifier map due to performance constraints
             // (`nullifier_map_limit_exceeded` is set `true`) then the range with the highest priority and lowest starting block
             // height is selected to allow notes to be spendable quickly on rescan, otherwise spends would not be detected as nullifiers will be temporarily discarded.
-            // TODO: add this documentation of performance levels and order of scanning to pepper-sync doc comments
+            // TODO: add this documentation of the order of scanning to pepper-sync doc comments
             // `ScannedWithoutMapping` ranges are only selected above, when they are the first unscanned range.
             let mut scan_ranges_priority_sorted: Vec<(usize, ScanRange)> = sync_state
                 .scan_ranges

@@ -37,7 +37,6 @@ namespace zingo {
       string serveruri,
       u32 birthday,
       string chainhint,
-      string performancelevel,
       u32 minconfirmations
   );
 
@@ -47,7 +46,6 @@ namespace zingo {
       u32 birthday,
       string serveruri,
       string chainhint,
-      string performancelevel,
       u32 minconfirmations
   );
 
@@ -57,7 +55,6 @@ namespace zingo {
       u32 birthday,
       string serveruri,
       string chainhint,
-      string performancelevel,
       u32 minconfirmations
   );
 
@@ -66,7 +63,6 @@ namespace zingo {
       bytes wallet_bytes,
       string serveruri,
       string chainhint,
-      string performancelevel,
       u32 minconfirmations
   );
 
@@ -207,12 +203,8 @@ namespace zingo {
 
   [Throws=ZingolibError]
   string set_config_wallet_to_prod(
-      string performancelevel,
       u32 minconfirmations
   );
-
-  [Throws=ZingolibError]
-  string get_config_wallet_performance();
 
   [Throws=ZingolibError]
   string get_wallet_version();

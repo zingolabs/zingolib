@@ -12,7 +12,6 @@ use std::sync::LazyLock;
 
 use indoc::indoc;
 use json::object;
-use pepper_sync::config::PerformanceLevel;
 use pepper_sync::keys::transparent;
 use tokio::runtime::Runtime;
 
@@ -714,11 +713,6 @@ async fn sends_to_address(lightclient: &mut LightClient) -> Result<String, Comma
 #[derive(clap::Subcommand, Clone, Debug, PartialEq, Eq)]
 #[command(rename_all = "snake_case")]
 pub(crate) enum SettingsSubCommand {
-    #[command(about = "Set the sync performance level")]
-    Performance {
-        #[arg(value_enum)]
-        level: PerformanceLevelArg,
-    },
     #[command(about = "Set how many confirmations a note needs to be spendable")]
     MinConfirmations {
         #[arg(value_name = "count")]
@@ -731,27 +725,6 @@ pub(crate) enum SettingsSubCommand {
     },
 }
 
-/// The sync performance levels as a clap grammar, minting CLI value names
-/// for pepper-sync's [`PerformanceLevel`] and converting.
-#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PerformanceLevelArg {
-    Low,
-    Medium,
-    High,
-    Maximum,
-}
-
-impl From<PerformanceLevelArg> for PerformanceLevel {
-    fn from(level: PerformanceLevelArg) -> Self {
-        match level {
-            PerformanceLevelArg::Low => PerformanceLevel::Low,
-            PerformanceLevelArg::Medium => PerformanceLevel::Medium,
-            PerformanceLevelArg::High => PerformanceLevel::High,
-            PerformanceLevelArg::Maximum => PerformanceLevel::Maximum,
-        }
-    }
-}
-
 async fn settings(
     sub: Option<SettingsSubCommand>,
     lightclient: &mut LightClient,
@@ -761,11 +734,9 @@ async fn settings(
     let Some(sub) = sub else {
         return Ok(format!(
             r"
-performance: {}
 min confirmations: {}
 transparent gap limit: {}
             ",
-            wallet.wallet_settings.sync_config.performance_level,
             wallet.wallet_settings.min_confirmations,
             wallet
                 .wallet_settings
@@ -776,9 +747,6 @@ transparent gap limit: {}
     };
 
     match sub {
-        SettingsSubCommand::Performance { level } => {
-            wallet.wallet_settings.sync_config.performance_level = level.into();
-        }
         SettingsSubCommand::MinConfirmations { count } => {
             wallet.wallet_settings.min_confirmations = count;
         }
@@ -2559,7 +2527,6 @@ pub(crate) enum CliCommand {
             Show or set wallet settings. With no argument, prints them all. To set one,
             name it and give a value.
 
-            performance            low | medium | high | maximum
             min_confirmations      1 or greater
             transparent_gap_limit  0-255
         "}

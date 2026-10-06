@@ -23,14 +23,8 @@ pub(crate) fn serialized() -> std::sync::MutexGuard<'static, ()> {
 /// Builds a fresh Indexerless mainnet wallet (the offline `init_new` path)
 /// and stores it as the global client.
 pub(crate) fn init_offline_wallet() {
-    init_new(
-        String::new(),
-        0,
-        "main".to_string(),
-        "Medium".to_string(),
-        1,
-    )
-    .expect("the offline Indexerless wallet must initialize");
+    init_new(String::new(), 0, "main".to_string(), 1)
+        .expect("the offline Indexerless wallet must initialize");
 }
 
 /// Runs `endpoint` on another thread while the caller's thread holds a read
@@ -344,19 +338,6 @@ fn wallet_save_required_answers_beside_a_held_read_guard() {
         answer["save_required"].as_bool(),
         Some(true),
         "the fresh fixture wallet requires a save: {answer}"
-    );
-}
-
-#[test]
-fn config_wallet_performance_answers_beside_a_held_read_guard() {
-    let _serial = serialized();
-    init_offline_wallet();
-    let answer = answer_under_held_read_lock(get_config_wallet_performance);
-    // The fixture initializes with the Medium performance level.
-    assert_eq!(
-        answer["performance_level"].as_str(),
-        Some("Medium"),
-        "the fixture wallet's configured level: {answer}"
     );
 }
 

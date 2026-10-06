@@ -504,7 +504,6 @@ impl Default for ClientConfigBuilder {
                 wallet_settings: WalletSettings {
                     sync_config: SyncConfig {
                         transparent_address_discovery: TransparentAddressDiscovery::default(),
-                        performance_level: pepper_sync::config::PerformanceLevel::High,
                         shutdown_on_completion: false,
                     },
                     min_confirmations: NonZeroU32::try_from(3)

@@ -35,7 +35,7 @@ use log::{error, info};
 #[cfg(feature = "nym")]
 use log::{debug, warn};
 
-use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
 #[cfg(feature = "nym")]
 use pepper_sync::error::{SyncError, SyncRecoveryObservables};
 use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
@@ -1268,7 +1268,6 @@ async fn build_zingo_config(filled_template: &CliConfigTemplate) -> std::io::Res
     let wallet_settings = WalletSettings {
         sync_config: SyncConfig {
             transparent_address_discovery: TransparentAddressDiscovery::default(),
-            performance_level: PerformanceLevel::High,
             shutdown_on_completion: filled_template.waitsync,
         },
         min_confirmations: NonZeroU32::try_from(3).unwrap(),

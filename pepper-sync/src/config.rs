@@ -6,90 +6,11 @@ use std::io::{Read, Write};
 #[cfg(feature = "wallet_essentials")]
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
-/// Performance level.
-///
-/// The higher the performance level the higher the memory usage and storage.
-// TODO: revisit after implementing nullifier refetching
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PerformanceLevel {
-    /// - output budget per scan load is quartered
-    /// - nullifier map only contains chain tip
-    Low,
-    /// - nullifier map has a small maximum size
-    /// - nullifier map only contains chain tip
-    Medium,
-    /// - nullifier map has a large maximum size
-    #[default]
-    High,
-    /// - output budget per scan load is quadrupled
-    /// - nullifier map has no maximum size
-    ///
-    /// WARNING: this may cause the wallet to become less responsive on slower systems and may use a lot of memory for
-    /// wallets with a lot of transactions.
-    Maximum,
-}
-
-#[cfg(feature = "wallet_essentials")]
-impl PerformanceLevel {
-    fn serialized_version() -> u8 {
-        0
-    }
-
-    /// Deserialize into `reader`
-    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        crate::wallet::serialization::read_version(
-            &mut reader,
-            "PerformanceLevel",
-            Self::serialized_version(),
-        )?;
-
-        Ok(match reader.read_u8()? {
-            0 => Self::Low,
-            1 => Self::Medium,
-            2 => Self::High,
-            3 => Self::Maximum,
-            _ => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "failed to read valid performance level",
-                ));
-            }
-        })
-    }
-
-    /// Serialize into `writer`
-    pub fn write<W: Write>(&mut self, mut writer: W) -> std::io::Result<()> {
-        writer.write_u8(Self::serialized_version())?;
-
-        writer.write_u8(match self {
-            Self::Low => 0,
-            Self::Medium => 1,
-            Self::High => 2,
-            Self::Maximum => 3,
-        })?;
-
-        Ok(())
-    }
-}
-
-impl std::fmt::Display for PerformanceLevel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Low => write!(f, "low"),
-            Self::Medium => write!(f, "medium"),
-            Self::High => write!(f, "high"),
-            Self::Maximum => write!(f, "maximum"),
-        }
-    }
-}
-
 /// Sync configuration.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct SyncConfig {
     /// Transparent address discovery configuration.
     pub transparent_address_discovery: TransparentAddressDiscovery,
-    /// Performance level
-    pub performance_level: PerformanceLevel,
     /// Shutdown on completion
     ///
     /// If not set, sync will not shutdown until the consumer sets the `SyncMode` to `Shutdown` variant.
@@ -105,11 +26,14 @@ pub struct SyncConfig {
 #[cfg(feature = "wallet_essentials")]
 impl SyncConfig {
     fn serialized_version() -> u8 {
-        2
+        3
     }
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        const RETIRED_FIELD_VERSIONS: std::ops::RangeInclusive<u8> = 1..=2;
+        const RETIRED_FIELD_LEN: usize = 2;
+
         let version = crate::wallet::serialization::read_version(
             &mut reader,
             "SyncConfig",
@@ -118,11 +42,9 @@ impl SyncConfig {
 
         let gap_limit = reader.read_u8()?;
         let scopes = reader.read_u8()?;
-        let performance_level = if version >= 1 {
-            PerformanceLevel::read(&mut reader)?
-        } else {
-            PerformanceLevel::High
-        };
+        if RETIRED_FIELD_VERSIONS.contains(&version) {
+            reader.read_exact(&mut [0; RETIRED_FIELD_LEN])?;
+        }
         let shutdown_on_completion = if version >= 2 {
             reader.read_u8()? != 0
         } else {
@@ -138,7 +60,6 @@ impl SyncConfig {
                     refund: scopes & 0b100 != 0,
                 },
             },
-            performance_level,
             shutdown_on_completion,
         })
     }
@@ -158,7 +79,6 @@ impl SyncConfig {
             scopes |= 0b100;
         }
         writer.write_u8(scopes)?;
-        self.performance_level.write(&mut writer)?;
         writer.write_u8(self.shutdown_on_completion as u8)?;
 
         Ok(())
@@ -256,28 +176,64 @@ impl TransparentAddressDiscoveryScopes {
 mod tests {
     use super::*;
 
-    /// Each reader is given only a serialized version above the one its type writes. A reader that refuses the
+    /// The reader is given only a serialized version above the one `SyncConfig` writes. A reader that refuses the
     /// version returns invalid data. A reader that read on would report the end of the input.
     #[test]
-    fn readers_refuse_serialized_versions_above_their_own() {
+    fn reader_refuses_a_serialized_version_above_its_own() {
         let newer_sync_config = [SyncConfig::serialized_version() + 1];
-        let newer_performance_level = [PerformanceLevel::serialized_version() + 1];
 
-        for (type_name, read) in [
-            (
-                "SyncConfig",
-                SyncConfig::read(newer_sync_config.as_slice()).map(drop),
-            ),
-            (
-                "PerformanceLevel",
-                PerformanceLevel::read(newer_performance_level.as_slice()).map(drop),
-            ),
-        ] {
-            assert_eq!(
-                read.expect_err(type_name).kind(),
-                std::io::ErrorKind::InvalidData,
-                "{type_name}"
-            );
-        }
+        assert_eq!(
+            SyncConfig::read(newer_sync_config.as_slice())
+                .expect_err("SyncConfig")
+                .kind(),
+            std::io::ErrorKind::InvalidData,
+        );
+    }
+
+    #[test]
+    fn reader_passes_the_retired_field_of_a_version_two_config() {
+        const VERSION: u8 = 2;
+        const GAP_LIMIT: u8 = 7;
+        const EXTERNAL_AND_REFUND_SCOPES: u8 = 0b101;
+        const RETIRED_FIELD: [u8; 2] = [0, 1];
+        const SHUTDOWN_ON_COMPLETION: u8 = 1;
+
+        let [retired_version, retired_setting] = RETIRED_FIELD;
+        let version_two_config = [
+            VERSION,
+            GAP_LIMIT,
+            EXTERNAL_AND_REFUND_SCOPES,
+            retired_version,
+            retired_setting,
+            SHUTDOWN_ON_COMPLETION,
+        ];
+        let mut reader = version_two_config.as_slice();
+
+        assert_eq!(
+            SyncConfig::read(&mut reader).expect("a version two config reads"),
+            SyncConfig {
+                transparent_address_discovery: TransparentAddressDiscovery {
+                    gap_limit: GAP_LIMIT,
+                    scopes: TransparentAddressDiscoveryScopes::default(),
+                },
+                shutdown_on_completion: true,
+            }
+        );
+        assert!(reader.is_empty());
+    }
+
+    #[test]
+    fn written_config_reads_back() {
+        let mut config = SyncConfig {
+            transparent_address_discovery: TransparentAddressDiscovery::recovery(),
+            shutdown_on_completion: true,
+        };
+        let mut serialized = Vec::new();
+        config.write(&mut serialized).expect("a config writes");
+
+        assert_eq!(
+            SyncConfig::read(serialized.as_slice()).expect("a written config reads"),
+            config
+        );
     }
 }

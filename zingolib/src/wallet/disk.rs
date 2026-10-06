@@ -34,7 +34,7 @@ use crate::{
     },
 };
 use pepper_sync::{
-    config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery},
+    config::{SyncConfig, TransparentAddressDiscovery},
     keys::transparent::{self, TransparentAddressId, TransparentScope},
     wallet::{
         KeyIdInterface, NullifierMap, OutputId, ScanTarget, ShardTrees, SyncState, WalletBlock,
@@ -510,7 +510,6 @@ impl LightWallet {
             wallet_settings: WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::default(),
-                    performance_level: PerformanceLevel::High,
                     shutdown_on_completion: false,
                 },
                 min_confirmations: NonZeroU32::try_from(3).unwrap(),
@@ -737,7 +736,6 @@ impl LightWallet {
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::default(),
-                    performance_level: PerformanceLevel::High,
                     shutdown_on_completion: false,
                 },
                 min_confirmations: NonZeroU32::try_from(3).unwrap(),

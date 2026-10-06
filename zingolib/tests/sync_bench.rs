@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use zingolib::config::{ClientConfig, WalletConfig};
 use zingolib::lightclient::LightClient;
-use zingolib::wallet::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery, WalletSettings};
+use zingolib::wallet::{SyncConfig, TransparentAddressDiscovery, WalletSettings};
 
 /// The number of mainnet blocks the benchmark syncs.
 const SYNC_WINDOW: u32 = 20_000;
@@ -60,7 +60,6 @@ async fn sync_20k_mainnet_blocks_within_budget() {
             wallet_settings: WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::default(),
-                    performance_level: PerformanceLevel::High,
                     shutdown_on_completion: true,
                 },
                 min_confirmations: NonZeroU32::new(3).unwrap(),
