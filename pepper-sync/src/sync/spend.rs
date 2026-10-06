@@ -39,7 +39,7 @@ pub(super) struct ShieldedSpendScanTargets {
 impl ShieldedSpendScanTargets {
     /// Whether every pool is without a spend.
     pub(super) fn is_empty(&self) -> bool {
-        self.sapling.is_empty() && self.orchard.is_empty() && self.ironwood.is_empty()
+        self.scan_targets().next().is_none()
     }
 
     /// Moves the spend scan targets of each pool in `other` into the same pool here.
@@ -303,18 +303,9 @@ pub(super) fn detect_shielded_spends(
     ironwood_derived_nullifiers: &[orchard::note::Nullifier],
 ) -> ShieldedSpendScanTargets {
     ShieldedSpendScanTargets {
-        sapling: sapling_derived_nullifiers
-            .iter()
-            .filter_map(|nf| Some((*nf, *nullifier_map.sapling.get(nf)?)))
-            .collect(),
-        orchard: orchard_derived_nullifiers
-            .iter()
-            .filter_map(|nf| Some((*nf, *nullifier_map.orchard.get(nf)?)))
-            .collect(),
-        ironwood: ironwood_derived_nullifiers
-            .iter()
-            .filter_map(|nf| Some((*nf, *nullifier_map.ironwood.get(nf)?)))
-            .collect(),
+        sapling: detect_spends(&nullifier_map.sapling, sapling_derived_nullifiers),
+        orchard: detect_spends(&nullifier_map.orchard, orchard_derived_nullifiers),
+        ironwood: detect_spends(&nullifier_map.ironwood, ironwood_derived_nullifiers),
     }
 }
 
@@ -442,11 +433,11 @@ where
         scanned_transactions,
     ));
 
-    let mut transparent_spend_scan_targets = detect_transparent_spends(
+    let mut transparent_spend_scan_targets = detect_spends(
         wallet.get_outpoints().map_err(SyncError::WalletError)?,
         &transparent_output_ids,
     );
-    transparent_spend_scan_targets.append(&mut detect_transparent_spends(
+    transparent_spend_scan_targets.append(&mut detect_spends(
         scanned_outpoints,
         &transparent_output_ids,
     ));
@@ -500,17 +491,13 @@ pub(super) fn collect_transparent_output_ids<'a>(
         .collect()
 }
 
-/// Check if any wallet coin's output id match an outpoint in the `outpoint_map`.
-///
-/// The `outpoint_map` is only read, so the wallet's outpoint map keeps the output ids of the detected spends until
-/// the spends are recorded in the wallet.
-pub(super) fn detect_transparent_spends(
-    outpoint_map: &BTreeMap<OutputId, ScanTarget>,
-    transparent_output_ids: &[OutputId],
-) -> BTreeMap<OutputId, ScanTarget> {
-    transparent_output_ids
+pub(super) fn detect_spends<K: Ord + Copy>(
+    spend_map: &BTreeMap<K, ScanTarget>,
+    wallet_keys: &[K],
+) -> BTreeMap<K, ScanTarget> {
+    wallet_keys
         .iter()
-        .filter_map(|output_id| Some((*output_id, *outpoint_map.get(output_id)?)))
+        .filter_map(|key| Some((*key, *spend_map.get(key)?)))
         .collect()
 }
 
