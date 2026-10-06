@@ -447,10 +447,6 @@ fingerprint = "9d63899e2bb6d8c5"
 reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/client.rs:167"
 
 [[ignore]]
-fingerprint = "9d7c914d445cfeed"
-reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:223"
-
-[[ignore]]
 fingerprint = "9f794861ba63cbe7"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet.rs:302"
 
