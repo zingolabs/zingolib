@@ -4,13 +4,21 @@
 use std::io::{Read, Write};
 
 #[cfg(feature = "wallet_essentials")]
-use byteorder::{ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+
+#[allow(missing_docs)]
+pub const DEFAULT_MAX_NULLIFIER_MAP_SIZE: usize = 2_000_000;
+
+#[allow(missing_docs)]
+pub const LOW_MEMORY_MAX_NULLIFIER_MAP_SIZE: usize = 125_000;
 
 /// Sync configuration.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncConfig {
     /// Transparent address discovery configuration.
     pub transparent_address_discovery: TransparentAddressDiscovery,
+    #[allow(missing_docs)]
+    pub max_nullifier_map_size: usize,
     /// Shutdown on completion
     ///
     /// If not set, sync will not shutdown until the consumer sets the `SyncMode` to `Shutdown` variant.
@@ -23,6 +31,16 @@ pub struct SyncConfig {
     pub shutdown_on_completion: bool,
 }
 
+impl Default for SyncConfig {
+    fn default() -> Self {
+        Self {
+            transparent_address_discovery: TransparentAddressDiscovery::default(),
+            max_nullifier_map_size: DEFAULT_MAX_NULLIFIER_MAP_SIZE,
+            shutdown_on_completion: false,
+        }
+    }
+}
+
 #[cfg(feature = "wallet_essentials")]
 impl SyncConfig {
     fn serialized_version() -> u8 {
@@ -31,8 +49,14 @@ impl SyncConfig {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        const RETIRED_FIELD_VERSIONS: std::ops::RangeInclusive<u8> = 1..=2;
-        const RETIRED_FIELD_LEN: usize = 2;
+        const RETIRED_SETTING_VERSION: u8 = 1;
+        const SIZE_VERSION: u8 = 3;
+        const RETIRED_SETTING_SIZES: [usize; 4] = [
+            0,
+            LOW_MEMORY_MAX_NULLIFIER_MAP_SIZE,
+            DEFAULT_MAX_NULLIFIER_MAP_SIZE,
+            usize::MAX,
+        ];
 
         let version = crate::wallet::serialization::read_version(
             &mut reader,
@@ -42,9 +66,23 @@ impl SyncConfig {
 
         let gap_limit = reader.read_u8()?;
         let scopes = reader.read_u8()?;
-        if RETIRED_FIELD_VERSIONS.contains(&version) {
-            reader.read_exact(&mut [0; RETIRED_FIELD_LEN])?;
-        }
+        let max_nullifier_map_size = if version >= SIZE_VERSION {
+            usize::try_from(reader.read_u64::<LittleEndian>()?).unwrap_or(usize::MAX)
+        } else if version >= RETIRED_SETTING_VERSION {
+            let _retired_setting_version = reader.read_u8()?;
+            let retired_setting = usize::from(reader.read_u8()?);
+            RETIRED_SETTING_SIZES
+                .get(retired_setting)
+                .copied()
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "failed to read valid maximum nullifier map size",
+                    )
+                })?
+        } else {
+            DEFAULT_MAX_NULLIFIER_MAP_SIZE
+        };
         let shutdown_on_completion = if version >= 2 {
             reader.read_u8()? != 0
         } else {
@@ -60,6 +98,7 @@ impl SyncConfig {
                     refund: scopes & 0b100 != 0,
                 },
             },
+            max_nullifier_map_size,
             shutdown_on_completion,
         })
     }
@@ -79,6 +118,9 @@ impl SyncConfig {
             scopes |= 0b100;
         }
         writer.write_u8(scopes)?;
+        writer.write_u64::<LittleEndian>(
+            u64::try_from(self.max_nullifier_map_size).unwrap_or(u64::MAX),
+        )?;
         writer.write_u8(self.shutdown_on_completion as u8)?;
 
         Ok(())
@@ -190,50 +232,77 @@ mod tests {
         );
     }
 
-    #[test]
-    fn reader_passes_the_retired_field_of_a_version_two_config() {
-        const VERSION: u8 = 2;
-        const GAP_LIMIT: u8 = 7;
-        const EXTERNAL_AND_REFUND_SCOPES: u8 = 0b101;
-        const RETIRED_FIELD: [u8; 2] = [0, 1];
-        const SHUTDOWN_ON_COMPLETION: u8 = 1;
+    const VERSION_TWO: u8 = 2;
+    const GAP_LIMIT: u8 = 7;
+    const EXTERNAL_AND_REFUND_SCOPES: u8 = 0b101;
+    const RETIRED_SETTING_VERSION: u8 = 0;
+    const SHUTDOWN_ON_COMPLETION: u8 = 1;
 
-        let [retired_version, retired_setting] = RETIRED_FIELD;
-        let version_two_config = [
-            VERSION,
+    fn version_two_config(retired_setting: u8) -> [u8; 6] {
+        [
+            VERSION_TWO,
             GAP_LIMIT,
             EXTERNAL_AND_REFUND_SCOPES,
-            retired_version,
+            RETIRED_SETTING_VERSION,
             retired_setting,
             SHUTDOWN_ON_COMPLETION,
-        ];
-        let mut reader = version_two_config.as_slice();
+        ]
+    }
+
+    #[test]
+    fn reader_keeps_the_nullifier_map_size_of_a_version_two_config() {
+        for (retired_setting, max_nullifier_map_size) in [
+            (0, 0),
+            (1, LOW_MEMORY_MAX_NULLIFIER_MAP_SIZE),
+            (2, DEFAULT_MAX_NULLIFIER_MAP_SIZE),
+            (3, usize::MAX),
+        ] {
+            let serialized = version_two_config(retired_setting);
+            let mut reader = serialized.as_slice();
+
+            assert_eq!(
+                SyncConfig::read(&mut reader).expect("a version two config reads"),
+                SyncConfig {
+                    transparent_address_discovery: TransparentAddressDiscovery {
+                        gap_limit: GAP_LIMIT,
+                        scopes: TransparentAddressDiscoveryScopes::default(),
+                    },
+                    max_nullifier_map_size,
+                    shutdown_on_completion: true,
+                },
+                "retired setting {retired_setting}"
+            );
+            assert!(reader.is_empty(), "retired setting {retired_setting}");
+        }
+    }
+
+    #[test]
+    fn reader_refuses_an_unknown_retired_setting() {
+        const UNKNOWN_RETIRED_SETTING: u8 = 4;
 
         assert_eq!(
-            SyncConfig::read(&mut reader).expect("a version two config reads"),
-            SyncConfig {
-                transparent_address_discovery: TransparentAddressDiscovery {
-                    gap_limit: GAP_LIMIT,
-                    scopes: TransparentAddressDiscoveryScopes::default(),
-                },
-                shutdown_on_completion: true,
-            }
+            SyncConfig::read(version_two_config(UNKNOWN_RETIRED_SETTING).as_slice())
+                .expect_err("an unknown retired setting is refused")
+                .kind(),
+            std::io::ErrorKind::InvalidData,
         );
-        assert!(reader.is_empty());
     }
 
     #[test]
     fn written_config_reads_back() {
-        let mut config = SyncConfig {
-            transparent_address_discovery: TransparentAddressDiscovery::recovery(),
-            shutdown_on_completion: true,
-        };
-        let mut serialized = Vec::new();
-        config.write(&mut serialized).expect("a config writes");
+        for max_nullifier_map_size in [0, LOW_MEMORY_MAX_NULLIFIER_MAP_SIZE, usize::MAX] {
+            let mut config = SyncConfig {
+                transparent_address_discovery: TransparentAddressDiscovery::recovery(),
+                max_nullifier_map_size,
+                shutdown_on_completion: true,
+            };
+            let mut serialized = Vec::new();
+            config.write(&mut serialized).expect("a config writes");
 
-        assert_eq!(
-            SyncConfig::read(serialized.as_slice()).expect("a written config reads"),
-            config
-        );
+            assert_eq!(
+                SyncConfig::read(serialized.as_slice()).expect("a written config reads"),
+                config
+            );
+        }
     }
 }

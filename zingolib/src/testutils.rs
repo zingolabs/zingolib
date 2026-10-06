@@ -6,7 +6,9 @@
 use std::num::NonZeroU32;
 use std::{io::Read, string::String, time::Duration};
 
-use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::config::{
+    DEFAULT_MAX_NULLIFIER_MAP_SIZE, SyncConfig, TransparentAddressDiscovery,
+};
 use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
@@ -42,6 +44,7 @@ pub fn default_test_wallet_settings() -> WalletSettings {
     WalletSettings {
         sync_config: SyncConfig {
             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            max_nullifier_map_size: DEFAULT_MAX_NULLIFIER_MAP_SIZE,
             shutdown_on_completion: true,
         },
         min_confirmations: NonZeroU32::try_from(1).expect("hard-coded non-zero integer"),

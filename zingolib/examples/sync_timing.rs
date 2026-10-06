@@ -6,7 +6,9 @@ use std::time::{Duration, Instant};
 use zingo_netutils::Indexer as _;
 use zingolib::config::{ClientConfig, WalletConfig};
 use zingolib::lightclient::LightClient;
-use zingolib::wallet::{SyncConfig, TransparentAddressDiscovery, WalletSettings};
+use zingolib::wallet::{
+    DEFAULT_MAX_NULLIFIER_MAP_SIZE, SyncConfig, TransparentAddressDiscovery, WalletSettings,
+};
 
 /// The number of blocks below the live tip the timed sync scans.
 const GUARD_WINDOW: u32 = 5_000;
@@ -61,6 +63,7 @@ fn main() {
                     wallet_settings: WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::default(),
+                            max_nullifier_map_size: DEFAULT_MAX_NULLIFIER_MAP_SIZE,
                             shutdown_on_completion: true,
                         },
                         min_confirmations: NonZeroU32::new(3).unwrap(),

@@ -45,7 +45,8 @@ pub mod transparent;
 mod zcb_traits;
 
 pub use pepper_sync::config::{
-    SyncConfig, TransparentAddressDiscovery, TransparentAddressDiscoveryScopes,
+    DEFAULT_MAX_NULLIFIER_MAP_SIZE, SyncConfig, TransparentAddressDiscovery,
+    TransparentAddressDiscoveryScopes,
 };
 
 /// Wallet settings.

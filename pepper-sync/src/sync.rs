@@ -81,9 +81,6 @@ const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 /// one.
 pub const CHECK_NEW_BLOCKS_INTERVAL: u64 = 10;
 
-#[allow(missing_docs)]
-pub const MAX_NULLIFIER_MAP_SIZE: usize = 125_000;
-
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 ///
 /// `percentage_outputs_scanned` is a much more accurate indicator of sync completion than `percentage_blocks_scanned`.
@@ -728,6 +725,7 @@ where
                         scan_range,
                         scan_results,
                         initial_reorg_detection_start_height_opt,
+                        config.max_nullifier_map_size,
                         &mut nullifier_map_limit_exceeded,
                     )
                     .await?;
@@ -1494,6 +1492,7 @@ async fn process_scan_results<W>(
     scan_range: ScanRange,
     scan_results: Result<ScanResults, ScanError>,
     initial_reorg_detection_start_height: Option<BlockHeight>,
+    max_nullifier_map_size: usize,
     nullifier_map_limit_exceeded: &mut bool,
 ) -> Result<ProcessedScanResults, SyncError<W::Error>>
 where
@@ -1655,7 +1654,7 @@ where
                         + nullifiers.orchard.len()
                         + nullifiers.sapling.len()
                         + nullifiers.ironwood.len()
-                        > MAX_NULLIFIER_MAP_SIZE
+                        > max_nullifier_map_size
                     {
                         *nullifier_map_limit_exceeded = true;
                     }
@@ -4825,6 +4824,7 @@ mod test {
         use zcash_transparent::keys::NonHardenedChildIndex;
 
         use crate::{
+            config::DEFAULT_MAX_NULLIFIER_MAP_SIZE,
             error::{ContinuityError, ScanError},
             keys::transparent::{TransparentAddressId, TransparentScope},
             mocks::{MockWallet, MockWalletBuilder},
@@ -4873,6 +4873,7 @@ mod test {
                 scan_range,
                 scan_results,
                 None,
+                DEFAULT_MAX_NULLIFIER_MAP_SIZE,
                 &mut false,
             )
             .await
@@ -4970,6 +4971,7 @@ mod test {
 
         use crate::{
             client::FetchRequest,
+            config::DEFAULT_MAX_NULLIFIER_MAP_SIZE,
             error::{ContinuityError, ScanError, SyncError},
             mocks::{MockWallet, MockWalletBuilder, MockWalletError},
             sync::{ProcessedScanResults, ScanPriority, ScanRange, process_scan_results},
@@ -5079,6 +5081,7 @@ mod test {
                     },
                 )),
                 initial_reorg_detection_start_height,
+                DEFAULT_MAX_NULLIFIER_MAP_SIZE,
                 &mut false,
             )
             .await

@@ -172,7 +172,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - **Breaking.** The `settings performance` sub-command and the `performance`
   line of the `settings` output are gone, because pepper-sync removed the
-  setting. Every session syncs with the one behavior pepper-sync keeps.
+  setting. A new wallet keeps the limit of 2,000,000 mapped nullifiers that
+  the `high` level gave it, and an existing wallet keeps the limit of the
+  level it stored.
 - **Breaking.** The `nym-diary` feature and the `--indexer-diary` flag are
   gone, because the indexer diary no longer touches disk. `network history`
   needs neither: it now shows the attempts this session recorded, and nothing

@@ -28,7 +28,9 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::{NetworkType, NetworkUpgrade, Parameters};
 use zip32::AccountId;
 
-use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::config::{
+    LOW_MEMORY_MAX_NULLIFIER_MAP_SIZE, SyncConfig, TransparentAddressDiscovery,
+};
 use pepper_sync::error::SyncModeError;
 use pepper_sync::keys::transparent;
 use pepper_sync::wallet::{KeyIdInterface, SyncMode};
@@ -625,6 +627,7 @@ fn build_connection_params(
     let wallet_settings = WalletSettings {
         sync_config: SyncConfig {
             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            max_nullifier_map_size: LOW_MEMORY_MAX_NULLIFIER_MAP_SIZE,
             shutdown_on_completion: true,
         },
         min_confirmations: NonZeroU32::try_from(min_confirmations)
@@ -2601,6 +2604,8 @@ pub fn set_config_wallet_to_test() -> Result<String, ZingolibError> {
             Ok(RT.block_on(async move {
                 let mut wallet = lightclient.wallet().write().await;
                 wallet.wallet_settings.min_confirmations = NonZeroU32::try_from(1).unwrap();
+                wallet.wallet_settings.sync_config.max_nullifier_map_size =
+                    LOW_MEMORY_MAX_NULLIFIER_MAP_SIZE;
                 wallet.mark_dirty();
                 "Successfully set config wallet to test. (1)".to_string()
             }))
