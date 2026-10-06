@@ -10,6 +10,7 @@ pub mod connectivity;
 pub mod data;
 pub mod lightclient;
 pub mod netutils;
+pub mod sync;
 pub mod utils;
 pub mod wallet;
 

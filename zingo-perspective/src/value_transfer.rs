@@ -268,7 +268,7 @@ impl std::ops::Index<usize> for ValueTransfers {
 }
 
 impl ValueTransfers {
-    /// Creates a new `ValueTransfer`
+    /// Creates a new `ValueTransfers`
     #[must_use]
     pub fn new(value_transfers: Vec<ValueTransfer>) -> Self {
         ValueTransfers(value_transfers)

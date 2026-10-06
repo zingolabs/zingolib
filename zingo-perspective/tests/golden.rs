@@ -213,11 +213,11 @@ async fn editorial_surface_matches_goldens() {
     let bob = bob_encoded();
 
     let value_transfers = wallet.value_transfers(true).await.unwrap();
+    check_golden("value_transfers.txt", &value_transfers.to_string());
     check_golden(
         "value_transfers.json",
-        &json::JsonValue::from(wallet.value_transfers(true).await.unwrap()).pretty(2),
+        &json::JsonValue::from(value_transfers).pretty(2),
     );
-    check_golden("value_transfers.txt", &value_transfers.to_string());
     check_golden(
         "value_transfers_ascending.json",
         &json::JsonValue::from(wallet.value_transfers(false).await.unwrap()).pretty(2),
