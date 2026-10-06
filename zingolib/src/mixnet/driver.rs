@@ -155,7 +155,7 @@ pub enum MixnetStartPolicy {
     /// the mixnet-only surfaces are protected from the session's start.
     ForcedOn,
     /// The user's startup opt-out — the explicit act that reaches
-    /// switched off and sets the session's transmit policy to clearnet, so
+    /// switched off and sets the session's transmit policy to nakednet, so
     /// sends travel over the indexer while the mixnet-only surfaces refuse.
     /// Never persisted.
     OptedOutThisSession,

@@ -562,8 +562,10 @@ impl crate::wallet::LightWallet {
     }
 
     /// Caches the boundary anchor and witness of every part whose anchor
-    /// checkpoint is currently retained. Call after synchronization: the
-    /// retention window is finite and a captured witness is good forever.
+    /// checkpoint is currently retained. Call once the wallet is synced to
+    /// the chain tip, and under continuous sync again as each newly mined
+    /// block is scanned: the retention window is finite and a captured
+    /// witness is good forever.
     ///
     /// Because a part's anchor sits at least one full bucket below its
     /// transmission window, every part gets a whole window's worth of
@@ -579,7 +581,7 @@ impl crate::wallet::LightWallet {
     ///
     /// A wallet with no witness work — no migration state at all, or no
     /// [`PartState::Assigned`] part awaiting its witness — returns without
-    /// consulting the activation schedule, so this ambient post-sync call
+    /// consulting the activation schedule, so this ambient call
     /// never blocks synchronization on a network that never activates NU6.3
     /// (where the start paths refuse loudly, so such work cannot arise).
     /// With work present, a missing NU6.3 activation is a real fault and

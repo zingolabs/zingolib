@@ -165,6 +165,9 @@ impl ServerError {
         match self {
             // Internal channel issue. Retrying may help after restart.
             ServerError::FetcherDropped => true,
+            // A re-org lowered the chain height or the server is behind the
+            // chain tip. The next sync starts from the server's chain height.
+            ServerError::ChainHeightBelowScanRange { .. } => true,
 
             // Network weather is transient. The next request may be served
             // by a fresh connection to the same server.
@@ -253,6 +256,12 @@ impl ServerError {
         match self {
             // Internal channel issue. The same server may work after restart.
             ServerError::FetcherDropped => SyncRecoveryObservables::MaybeRecoverableServer,
+            // A re-org lowered the chain height or the server is behind the
+            // chain tip. Syncing again starts from the server's chain height
+            // and verifies the wallet against its chain.
+            ServerError::ChainHeightBelowScanRange { .. } => {
+                SyncRecoveryObservables::MaybeRecoverableServer
+            }
             // Network weather is transient. The same server may answer the
             // next request on a fresh connection.
             ServerError::RequestFailed(_) if self.request_hit_network_weather() => {
@@ -499,6 +508,17 @@ pub enum ServerError {
         /// The lightwallet protocol version reported by the server. Empty if the server does not report one.
         version: String,
     },
+    /// Fetching a scan range failed and the server's chain height is below the last block of the scan range. A
+    /// re-org lowered the chain height after the scan range was selected, or the server is behind the chain tip.
+    #[error(
+        "server chain height {chain_height} is below block {scan_range_end}, the end of the scan range being fetched. sync again to verify the wallet against the server's chain."
+    )]
+    ChainHeightBelowScanRange {
+        /// The chain height reported by the server.
+        chain_height: BlockHeight,
+        /// The height of the last block in the scan range.
+        scan_range_end: BlockHeight,
+    },
 }
 
 /// Sync mode error.
@@ -667,6 +687,17 @@ mod tests {
             #[test]
             fn fetcher_dropped() {
                 assert!(ServerError::FetcherDropped.recommend_same_server());
+            }
+
+            #[test]
+            fn chain_height_below_scan_range() {
+                assert!(
+                    ServerError::ChainHeightBelowScanRange {
+                        chain_height: BlockHeight::from_u32(99),
+                        scan_range_end: BlockHeight::from_u32(100),
+                    }
+                    .recommend_same_server()
+                );
             }
 
             #[test]
@@ -863,6 +894,19 @@ mod tests {
                 );
             }
 
+            #[test]
+            fn chain_height_below_scan_range() {
+                let e: TestSyncError = ServerError::ChainHeightBelowScanRange {
+                    chain_height: BlockHeight::from_u32(99),
+                    scan_range_end: BlockHeight::from_u32(100),
+                }
+                .into();
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::MaybeRecoverableServer
+                );
+            }
+
             /// Syncing again is the recovery, so this must never be reported
             /// as needing the user to intervene.
             #[test]
@@ -965,6 +1009,28 @@ mod tests {
 
         mod abort {
             use super::*;
+
+            /// A hash discontinuity at the first block of a scan range is
+            /// handled within the sync session. One that ends the session is
+            /// between blocks the server served together, or with a scanned
+            /// block above the scan range, which syncing again repeats.
+            #[test]
+            fn continuity_error() {
+                for continuity_error in [
+                    ContinuityError::HashDiscontinuity {
+                        height: BlockHeight::from_u32(100),
+                        prev_hash: BlockHash([1; 32]),
+                        previous_block_hash: BlockHash([2; 32]),
+                    },
+                    ContinuityError::HeightDiscontinuity {
+                        height: BlockHeight::from_u32(102),
+                        previous_block_height: BlockHeight::from_u32(100),
+                    },
+                ] {
+                    let e: TestSyncError = ScanError::ContinuityError(continuity_error).into();
+                    assert_eq!(e.recovery_recommendation(), SyncRecoveryObservables::Abort);
+                }
+            }
 
             #[test]
             fn genesis_block_only() {

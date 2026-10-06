@@ -8,9 +8,10 @@
 #![forbid(unsafe_code)]
 
 pub mod binding_layer;
+pub mod dupes_gate;
 
 use std::path::{Path, PathBuf};
-use std::process::{exit, Command, Stdio};
+use std::process::{exit, Command, ExitStatus, Stdio};
 
 /// Run a tool `body`, reporting diagnostics as `"{prog}: {line}"` to stderr and
 /// exiting `1` on error. On success runs `on_ok` (e.g. to print a result) and
@@ -58,6 +59,25 @@ pub fn stdout_in(
     args: &[&str],
     env: &[(&str, &str)],
 ) -> Result<String, Vec<String>> {
+    let finished = finished_in(directory, program, args, env)?;
+    if !finished.status.success() {
+        return Err(vec![format!("`{program} {}` failed", args.join(" "))]);
+    }
+    Ok(finished.stdout)
+}
+
+pub struct Finished {
+    pub status: ExitStatus,
+    pub stdout: String,
+}
+
+/// - Runs `<program> <args>` as a child process in `directory`, with stderr inherited, and waits for it.
+pub fn finished_in(
+    directory: &Path,
+    program: &str,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> Result<Finished, Vec<String>> {
     let output = Command::new(program)
         .args(args)
         .current_dir(directory)
@@ -65,10 +85,27 @@ pub fn stdout_in(
         .stderr(Stdio::inherit())
         .output()
         .map_err(|e| vec![format!("failed to run {program}: {e}")])?;
-    if !output.status.success() {
-        return Err(vec![format!("`{program} {}` failed", args.join(" "))]);
-    }
-    String::from_utf8(output.stdout).map_err(|e| vec![format!("{program} output not utf-8: {e}")])
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|e| vec![format!("{program} output not utf-8: {e}")])?;
+    Ok(Finished {
+        status: output.status,
+        stdout,
+    })
+}
+
+pub const CARGO: &str = "cargo";
+const VERSION_FLAG: &str = "--version";
+
+/// - Runs `cargo <name> --version` as a child process, with stderr inherited, and waits for it.
+pub fn cargo_subcommand_version(name: &str, install_command: &str) -> Result<String, Vec<String>> {
+    stdout_of(CARGO, &[name, VERSION_FLAG])
+        .map(|version| version.trim().to_string())
+        .map_err(|_| {
+            vec![
+                format!("cargo-{name} is not installed"),
+                format!("install it with `{install_command}`"),
+            ]
+        })
 }
 
 /// Run `<program> <args>` with extra environment and all output streamed, and fail if it fails.
@@ -193,12 +230,14 @@ pub fn parse_dest(args: &[String]) -> Result<Option<PathBuf>, Vec<String>> {
     Ok(flag_value(args, "--dest")?.map(PathBuf::from))
 }
 
+pub const TOOLCHAIN_FILE: &str = "rust-toolchain.toml";
+
 /// The pinned, validated rustc channel from `<root>/rust-toolchain.toml`.
 ///
 /// Single source of truth for `RUST_VERSION`. Rejects any non-numeric channel
 /// (`stable` / `nightly` / dated pins) so the CI image tag stays reproducible.
 pub fn toolchain_channel(root: &Path) -> Result<String, Vec<String>> {
-    let path = root.join("rust-toolchain.toml");
+    let path = root.join(TOOLCHAIN_FILE);
     let contents = read(&path)?;
 
     let Some(channel) = contents.lines().find_map(channel_value) else {

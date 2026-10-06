@@ -35,9 +35,9 @@ reads the milestone lines below).
   `NetOpFailure` records, closing issue #2562; the netutils workspace
   now takes the optional path dependency anticipated below, and the
   race planner's `failure_summary` is gone with its last caller).
-- **Clearnet test gate**: SUPERSEDED. PR #2548 restored the clearnet
+- **Nakednet test gate**: SUPERSEDED. PR #2548 restored the nakednet
   price tier before this design was implemented, so tests fetch over
-  clearnet directly and no `cfg` gate is needed; the section below
+  nakednet directly and no `cfg` gate is needed; the section below
   stands as history.
 
 ## Problem
@@ -230,17 +230,17 @@ The wallet's endpoint round-trip validation reports its failure as a
 `NetOpFailure` with the appropriate early stage, so a `died` verdict
 carries why. The mode enum itself does not change.
 
-## Clearnet price fetch, test-gated
+## Nakednet price fetch, test-gated
 
-The production price fetch has no clearnet tier and must keep none (ADR
+The production price fetch has no nakednet tier and must keep none (ADR
 0011 amendment). Tests are exempt: exercising the Gemini payload
 parsing, the insufficient-trades panic, and the classifier against the
 live endpoint currently requires a live mixnet tunnel, which makes those
 tests slow, flaky, and entangled with Nym weather.
 
-Add a clearnet fetch path gated so it cannot ship: either
-`#[cfg(any(test, feature = "clearnet-price-fetch"))]` on a separate
-`get_current_price_clearnet()` in `zingo-price`, or the same gate on an
+Add a nakednet fetch path gated so it cannot ship: either
+`#[cfg(any(test, feature = "nakednet-price-fetch"))]` on a separate
+`get_current_price_nakednet()` in `zingo-price`, or the same gate on an
 internal route parameter. The mobile workspaces must never enable the
 feature. The function is for this repository's tests and diagnostics
 probes only, and its doc comment says so. The always-on mobile flavors
@@ -251,7 +251,7 @@ While in `zingo-price`: the current-price extraction indexes into the
 sorted trades vector at a fixed position. A response with fewer trades
 than expected panics. Replace the indexing with a typed
 insufficient-data failure (a `PayloadDecode` stage fits), and cover it
-with a fabricated short response in the tests the clearnet gate makes
+with a fabricated short response in the tests the nakednet gate makes
 cheap.
 
 ## The polling blackout
@@ -365,7 +365,7 @@ all.
 
 Third, failure values travel whole below every seam: the transmit policy
 (`resilient_transmit`) is generic over each target's typed failure
-(`tonic::Status` for clearnet, `Socks5TransmitError` for the mixnet) and
+(`tonic::Status` for nakednet, `Socks5TransmitError` for the mixnet) and
 classifies only the server's own verdict text; the fan-out collects
 per-destination typed attempts and renders prose only in `Display`; the
 existing rendered-text seams (the indexer history's `FailureKind`, the
@@ -381,6 +381,6 @@ session, one stage because the transport establishes them as one connect
 phase; with TCP already proven, a failure here is the secure channel),
 and `grpc-info` (a `GetLightdInfo` round trip) — stopping at the first
 failure. Success carries `ProbeSuccess { chain, height }` as fields;
-every failure is a `NetOpFailure`. The paired clearnet/mixnet probe's
+every failure is a `NetOpFailure`. The paired nakednet/mixnet probe's
 `ProbeLeg` outcome took the same typed shape. No wallet lock is held
 anywhere in either probe path, per the polling-blackout rules.

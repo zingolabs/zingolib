@@ -650,8 +650,12 @@ impl LightClient {
 
     /// Disconnects every network capability of the client, returning only
     /// when teardown is complete.
+    ///
+    /// An in-flight Sync Session is stopped as [`Self::stop_sync`] stops it
+    /// and awaited, so this returns after the engine has processed its
+    /// current batch.
     pub async fn go_offline(&mut self) {
-        self.abort_sync().await;
+        self.shutdown_sync().await;
         #[cfg(feature = "nym")]
         {
             self.abort_health_sweep().await;
@@ -812,10 +816,10 @@ impl LightClient {
         Ok(())
     }
 
-    /// Record the deliberate clearnet consent for a test client: with the
+    /// Record the deliberate nakednet consent for a test client: with the
     /// mixnet compiled in, the transmit policy moves to
-    /// [`TransmitPolicy::Clearnet`](crate::mixnet::TransmitPolicy), so
-    /// scenario sends transmit over clearnet instead of refusing
+    /// [`TransmitPolicy::Nakednet`](crate::mixnet::TransmitPolicy), so
+    /// scenario sends transmit over nakednet instead of refusing
     /// `MixnetNotReady`. Without the `nym` feature the wallet has no mixnet
     /// surface and this is a no-op.
     ///
@@ -823,18 +827,18 @@ impl LightClient {
     /// its own feature set desyncs from zingolib's and compiles the consent
     /// out exactly when the refusal is compiled in.
     #[cfg(any(test, feature = "testutils"))]
-    pub async fn consent_to_clearnet_for_tests(&mut self) {
+    pub async fn consent_to_nakednet_for_tests(&mut self) {
         #[cfg(feature = "nym")]
-        self.set_transmit_policy(crate::mixnet::TransmitPolicy::Clearnet);
+        self.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
     }
 
     #[cfg(any(test, feature = "testutils"))]
-    pub async fn new_clearnet_consented(
+    pub async fn new_nakednet_consented(
         config: ClientConfig,
         overwrite: bool,
     ) -> Result<Self, LightClientError> {
         let mut client = Self::new(config, overwrite).await?;
-        client.consent_to_clearnet_for_tests().await;
+        client.consent_to_nakednet_for_tests().await;
         Ok(client)
     }
 }

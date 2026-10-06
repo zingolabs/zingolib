@@ -152,7 +152,7 @@ impl ConduitDial {
 }
 
 /// The body at `url`, fetched untunneled, disclosing the client IP: the
-/// clearnet leg of the price fetch a switched-off Mixnet Mode consents
+/// nakednet leg of the price fetch a switched-off Mixnet Mode consents
 /// to.
 pub async fn fetch_text_untunneled(
     url: &str,

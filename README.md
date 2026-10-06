@@ -9,7 +9,12 @@ If you believe you have discovered a security issue, please contact us at:
 zingodisclosure@proton.me
 
 ## Zingo CLI
-`zingo-cli` is a command line indexer client. To use it, see "compiling from source" below. Releases are currently only provisional, we will update the README as releases come out.
+`zingo-cli` is a command line indexer client. Its own README,
+[zingo-cli/README.md](zingo-cli/README.md), holds everything specific to it:
+the one procedure that builds it, which bundles the `nym-proxy` binary beside
+it, and how to launch it, take it online, choose a network (regtest included),
+create or restore a wallet, and set its session options. Releases are currently
+only provisional, we will update the README as releases come out.
 
 ## Privacy
 * While all the keys and transaction detection happens on the client, the server can learn what blocks contain your shielded transactions.
@@ -32,78 +37,6 @@ Architecture decision records live in
 records sit under `docs/adr/zingolib/` once the submodule is initialised. The
 [zingo-adrs README](https://github.com/zingolabs/zingo-adrs#pointing-a-code-repository-at-zingo-adrs) explains how to read them, advance the pointer,
 and propose a record.
-
-## Compiling from source
-
-#### Pre-requisites
-* Rust v1.90 or higher.
-    * Run `rustup update` to get the latest version of Rust if you already have it installed
-* Rustfmt
-    * Run `rustup component add rustfmt` to add rustfmt
-* Build Tools
-    * Please install the build tools for your platform. On Ubuntu `sudo apt install build-essential gcc libsqlite3-dev`
-* Protobuf Compiler
-    * Please install the protobuf compiler for your platform. On Ubuntu `sudo apt install protobuf-compiler`
-* cargo-make and cargo-nextest for reproducible local test runs
-    * Run `cargo install cargo-make cargo-nextest`
-```
-git clone https://github.com/zingolabs/zingolib.git
-cd zingolib
-cargo build --release --package zingo-cli
-./target/release/zingo-cli --data-dir /path/to/data_directory/
-```
-
-This will launch the interactive prompt. Type `help` to get a list of commands.
-
-## Reproducible builds via StageX
-
-A bootstrapped and reproducible build pipeline using StageX is included in this repo.
-If you meet all the compatibility requirements, to create `zingo-cli`, you can run
-`make` in the root directory. The resulting binary will be found in the `/build/`
-directory, along with an OCI image in the form of a tar ball.
-
-This image can be loaded into docker with the `make load` convenience script, and
-contains the `zingo-cli` binary.
-
-To run interactively with a custom server:
-`docker run -it zingo-cli:latest ./zingo-cli --server https://zzz.stripest.online:443`
-
-`zingo-cli` runs with several defaults. Importantly, these include a data-dir
-with wallet file, which are created if they don't already exist:
-a `wallets` dir in location where executable is run, containing the wallet
-(`zingo-wallet.dat`) file. Other defaults inlcude setting the chain to mainnet,
-using a default lightwallet server, using clearnet for price fetching, and not
-executing commands prior to a complete chain sync.
-
-Any `docker run` will initialize a wallet if there was none in the container, and
-by default prints info and then help if no arguments are passed.
-
-## Notes:
-* If you want to run your own server, please see [zaino](https://github.com/zingolabs/zaino), and then run `./zingo-cli --server <your server's URI>`
-* The default log file is in `~/.zcash/zingo-wallet.debug.log`. A default wallet is stored in `~/.zcash/zingo-wallet.dat`
-* If a server is not specified, the default indexer/lightwallet server is "https://zec.rocks:443".
-
-## Running in non-interactive mode:
-You can also run `zingo-cli` in non-interactive mode by passing the command you want to run as an argument. For example, `zingo-cli addresses` will list all wallet addresses and exit.
-If you need to sync the wallet first before running the command, use --waitsync argument. This is useful for example for `zingo-cli balance`.
-Run `zingo-cli help` to see a list of all commands.
-
-## Options
-Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli --help` for the full list.
-
-* `--data-dir`: uses the specified path as data directory. This is required when not using the `--regtest` option.
-    * Example: `./zingo-cli --data-dir /path/to/data_directory/` will use the provided directory to store `zingo-wallet.dat` and logs. If the provided directory does not exist, it will create it.
-* `--waitsync`: Wait for sync before running a command in non-interactive mode or entering the command prompt in interactive mode.
-    * Example: `./zingo-cli --data-dir /path/to/data_directory/ --waitsync balance`
-* `--server`: Connect to a custom Zcash indexer server.
-    * Example: `./zingo-cli --data-dir /path/to/data_directory/ --server 127.0.0.1:9067`
-* `--seed`: Restore a wallet from a seed phrase. Note that this will fail if there is an existing wallet. Delete (or move) any existing wallet to restore from the 24-word seed phrase
-* `--birthday`: Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction.
-    * Example: `./zingo-cli --data-dir /path/to/data_directory/ --seed "twenty four words seed phrase" --birthday 1234567`
-* `--recover`: Attempt to recover the seed phrase from a corrupted wallet
-
-## Regtest
-Please see `zingo-cli/README.md` for details of running zingo-cli in regtest mode with a local network.
 
 ## Testing
 `run_workspace_tests.sh` script may be used as a helper to run all tests in one invocation.

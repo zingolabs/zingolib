@@ -63,6 +63,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   serve the transparent and Ironwood data in compact blocks that sync requires.
   The error recommends `SyncRecoveryObservables::ServerUnavailable`, and the
   consumer should switch to a different server and sync again.
+- BREAKING: `error::ServerError::ChainHeightBelowScanRange` variant, returned
+  when fetching a scan range fails and the server's chain height is below the
+  last block of the scan range. A re-org lowered the chain height after the
+  scan range was selected, or the server is behind the chain tip. The fetch
+  error was returned before, which recommended
+  `SyncRecoveryObservables::ServerUnavailable` where the server answered that
+  it had no such block. The new error recommends
+  `SyncRecoveryObservables::MaybeRecoverableServer`, and syncing again
+  truncates the wallet to the server's chain height and verifies it against
+  the server's chain.
 
 ### Changed
 - BREAKING: `wallet::SyncMode::from_atomic_u8` borrows the atomic as
@@ -122,6 +132,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-org allowance of the last known chain height, as before.
 
 ### Fixed
+- `sync` rolls each shard tree back to the wallet's highest scanned height
+  when it starts, where the tree holds a checkpoint above that height. A sync
+  session that ended partway through a wallet update left note commitments in
+  the trees for blocks that were still to be scanned. When a re-org then
+  replaced those blocks, every later session failed with
+  `shard tree error ← Inserted root conflicts with existing root` and only a
+  rescan from the birthday recovered the wallet. (#2834)
 - A `ServerError::RequestFailed` caused by network weather is now recommended
   `SyncRecoveryObservables::MaybeRecoverableServer` and
   `recommend_same_server`, rather than `ServerUnavailable`. Network weather is
@@ -190,6 +207,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with an output to the wallet was targeted for a full scan. The spending
   transaction was left in `Mempool` status until it passed its expiry height
   and was marked failed, which also reset the spent coins to unspent.
+- The mempool monitor stops when `sync` returns an error or its future is
+  dropped (#2828). Only a clean shutdown told the monitor to stop, so after
+  any other exit it held its `GetMempoolStream` open until the next block or
+  mempool transaction, and retried a refused stream request every three
+  seconds for the life of the process. A clean shutdown also waited on those
+  retries, so `sync` hung while the server refused the stream.
 - Sync with `shutdown_on_completion` set keeps a pause set by the consumer. On
   completion the sync mode was set to `SyncMode::Shutdown` whatever it held, so
   a `SyncMode::Paused` set by the consumer since the sync mode was last read
@@ -211,6 +234,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at a load budget like any other. Before, the reset panicked when the loader
   had split the range, and a `Verify` task scanned as one load bypassed the
   output and nullifier budgets.
+- A scan range whose first block does not follow the block below it is
+  verified again within the sync session, whatever priority it was selected
+  with. Only a scan range selected with `Verify` priority was handled before,
+  and any other ended the sync session with a continuity error. The block
+  below is held by the wallet, or was kept by the loader from an earlier scan,
+  and a re-org has replaced it since. The scan range is set back to the
+  priority it was selected with, its first blocks are set to `Verify` and the
+  scanner returns to verifying, so the continuity check failing again is
+  handled as a re-org.
+- A re-org reopens the scanned ranges above the verification range to be
+  scanned again. Truncating the wallet removes the wallet data of every block
+  above the truncation height, and a scanned range above the verification
+  range kept its `Scanned` priority with its wallet data removed.
 
 ### Removed
 

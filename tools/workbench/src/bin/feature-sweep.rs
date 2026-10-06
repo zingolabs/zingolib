@@ -4,11 +4,14 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use workbench::{git, read, repo_root, run};
+use workbench::{cargo_subcommand_version, git, read, repo_root, run};
+
+const HACK: &str = "hack";
+const INSTALL_HACK: &str = "cargo install cargo-hack";
 
 /// The subcommand and flags that mirror CI's Cargo Hack Check job.
 const HACK_ARGS: [&str; 6] = [
-    "hack",
+    HACK,
     "check",
     "--feature-powerset",
     "--lib",
@@ -46,7 +49,7 @@ fn sweep(args: &[String]) -> Result<(), Vec<String>> {
     }
 
     let root = repo_root()?;
-    require_cargo_hack()?;
+    cargo_subcommand_version(HACK, INSTALL_HACK)?;
 
     match scope(&root, args)? {
         Scope::Workspace => {
@@ -198,22 +201,6 @@ fn nearest_manifest(file: &Path, has_manifest: impl Fn(&Path) -> bool) -> Option
         dir = candidate.parent();
     }
     None
-}
-
-/// Refuses early when cargo-hack is absent, naming the one command that installs it.
-fn require_cargo_hack() -> Result<(), Vec<String>> {
-    let found = Command::new("cargo")
-        .args(["hack", "--version"])
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false);
-    if found {
-        return Ok(());
-    }
-    Err(vec![
-        "cargo-hack is not installed".to_string(),
-        "install it with `cargo install cargo-hack`".to_string(),
-    ])
 }
 
 /// Runs one cargo-hack check, reporting the command a reader can repeat by hand.

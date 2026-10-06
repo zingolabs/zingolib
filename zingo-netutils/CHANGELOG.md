@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   had just accepted was streamed to the wallet, leaving it in `Transmitted`
   status until the next session.
 - `socks5_fetch::fetch_text_untunneled` no longer sits behind the
-  `testutils` feature. It carries the clearnet price fetch a switched-off
+  `testutils` feature. It carries the nakednet price fetch a switched-off
   Mixnet Mode consents to (ADR 0011, amendment 2026-08-26), where it used
   to serve tests alone.
 - The `socks5-fetch` feature enables neither reqwest's `cookies` nor its

@@ -1189,14 +1189,14 @@ pub enum NetworkCommandError {
     Probe(#[from] zingolib::lightclient::error::LightClientError),
     /// The `network on` consent act could not resolve any indexer URI while
     /// switching the session to Online Mode; the session stays offline.
-    /// Reachable only from the quarantined clearnet resolution.
-    #[cfg(feature = "clearnet-test-mode")]
+    /// Reachable only from the quarantined nakednet resolution.
+    #[cfg(feature = "nakednet-test-mode")]
     #[error("no indexer could be resolved for going online")]
-    ServerResolution(#[from] crate::server_select_clearnet::ResolveServerError),
+    ServerResolution(#[from] crate::server_select_nakednet::ResolveServerError),
     /// The `network on` consent act selected an indexer, but the connection
     /// failed; the session stays offline. Reachable only from the
-    /// quarantined clearnet resolution.
-    #[cfg(feature = "clearnet-test-mode")]
+    /// quarantined nakednet resolution.
+    #[cfg(feature = "nakednet-test-mode")]
     #[error("failed to connect to '{uri}' while switching to Online Mode")]
     GoOnline {
         uri: String,
@@ -1301,7 +1301,7 @@ fn render_history(
     let mut hosts: BTreeMap<String, BTreeMap<&'static str, RouteStats>> = BTreeMap::new();
     for attempt in attempts {
         let route = match attempt.route {
-            AttemptRoute::Clearnet => "clearnet",
+            AttemptRoute::Nakednet => "nakednet",
             AttemptRoute::Mixnet => "mixnet",
         };
         let stats = hosts
@@ -1392,7 +1392,7 @@ fn render_status(
             None => "Mixnet Mode: previously proven this epoch".to_string(),
         },
         Indicator::Died => "Mixnet Mode: died. The proxy exited unexpectedly. Send and \
-             price-fetch refuse and will not fall back to clearnet. Run `network on` to \
+             price-fetch refuse and will not fall back to nakednet. Run `network on` to \
              restart the proxy."
             .to_string(),
     }
@@ -1523,12 +1523,12 @@ async fn network_command(
             // Connectivity Consent act (ADR 0026, amending ADR 0025's
             // act list): the session switches to Online Mode for this
             // session only by bootstrapping the mixnet. It engages no
-            // clearnet indexer link; the quarantined clearnet resolution
-            // survives only under `clearnet-test-mode`.
-            #[cfg(feature = "clearnet-test-mode")]
+            // nakednet indexer link; the quarantined nakednet resolution
+            // survives only under `nakednet-test-mode`.
+            #[cfg(feature = "nakednet-test-mode")]
             let went_online = if lightclient.indexer_uri().is_none() {
                 let (server, _ranked) =
-                    crate::server_select_clearnet::resolve_ranked_server().await?;
+                    crate::server_select_nakednet::resolve_ranked_server().await?;
                 lightclient
                     .set_indexer_uri(server.clone())
                     .await
@@ -1540,7 +1540,7 @@ async fn network_command(
             } else {
                 None
             };
-            #[cfg(not(feature = "clearnet-test-mode"))]
+            #[cfg(not(feature = "nakednet-test-mode"))]
             let went_online: Option<http::Uri> = None;
             let path = resolve_proxy_path(path.as_deref());
             // `network on` waits out the standing client's proven birth: the
@@ -1578,12 +1578,12 @@ async fn network_command(
         }
         NetworkSubCommand::Off => {
             // Zero-emission teardown: the session drops to the unconsented
-            // posture, never to clearnet transmit, and the stored standing
+            // posture, never to nakednet transmit, and the stored standing
             // consent is untouched (`--forget-online` is the erasure act).
             lightclient.go_offline().await;
             Ok(
                 "Network off: the nym proxy is stopped, the Indexer connection is dropped, \
-                 and in-flight sync is aborted. Nothing network-visible is emitted until \
+                 and in-flight sync is stopped. Nothing network-visible is emitted until \
                  `network on` re-consents for this session. The stored Connectivity \
                  Consent record is untouched: a standing consent, if recorded, attaches \
                  the next launch again (`--forget-online` erases it)."
@@ -1612,7 +1612,7 @@ fn render_transmit_report(report: &zingolib::lightclient::send::TransmitReport) 
     use zingolib::lightclient::send::TransmitRoute;
     let rtt_ms = u64::try_from(report.round_trip.as_millis()).unwrap_or(u64::MAX);
     match &report.route {
-        TransmitRoute::Clearnet { destination } => object! {
+        TransmitRoute::Nakednet { destination } => object! {
             "txid" => report.txid.to_string(),
             "over_mixnet" => false,
             "destination" => destination.clone(),
@@ -2172,7 +2172,7 @@ pub(crate) enum CliCommand {
 
             Price travels only over the mixnet (ADR 0011): the fetch runs while
             Mixnet Mode is ready and refuses in every other state, including
-            switched off — the clearnet consent covers sends, never price,
+            switched off — the nakednet consent covers sends, never price,
             because the price source is a third party outside the Zcash
             ecosystem. A build without the `nym` feature has no price fetch.
         "}
@@ -2333,7 +2333,7 @@ pub(crate) enum CliCommand {
             (the mixnet is Nym; the name is implicit).
 
             With Mixnet Mode on, send and price-fetch route over the mixnet and
-            fail closed while it bootstraps, never falling back to clearnet.
+            fail closed while it bootstraps, never falling back to nakednet.
 
             WARNING: in an unconsented offline session, `network on` is itself
             the consent act: it switches the session to ONLINE MODE, for this
@@ -2349,7 +2349,7 @@ pub(crate) enum CliCommand {
             any stored standing consent; `network on` re-consents (ADR 0032).
             `probe` runs GetLatestBlock over the mixnet route to establish an
             indexer's liveness; it requires the mixnet and touches no
-            clearnet endpoint. `history` shows the indexer attempts this
+            nakednet endpoint. `history` shows the indexer attempts this
             session recorded; nothing survives the session that made it.
         "}
     )]

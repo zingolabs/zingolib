@@ -1241,7 +1241,7 @@ where
     Ok(())
 }
 
-fn reopen_scan_ranges_inner(sync_state: &mut SyncState, from_height: BlockHeight) {
+pub(super) fn reopen_scan_ranges_inner(sync_state: &mut SyncState, from_height: BlockHeight) {
     if let Some((index, range_to_split)) = sync_state
         .scan_ranges()
         .iter()

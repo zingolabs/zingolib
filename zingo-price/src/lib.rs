@@ -5,7 +5,7 @@
 //! Currently only supports USD. The routing policy lives in the caller:
 //! `get_source_price` dials through a local SOCKS5 tunnel endpoint (the
 //! Nym mixnet transport), and `get_source_price_untunneled` takes the
-//! clearnet leg a switched-off Mixnet Mode consents to.
+//! nakednet leg a switched-off Mixnet Mode consents to.
 //!
 //! The whole fetch surface — and every dependency it needs — sits behind
 //! the `socks5-fetch` feature (on by default for this crate alone).
@@ -785,7 +785,7 @@ pub async fn get_source_price(
     source.parse(&body)
 }
 
-/// One source's price over an untunneled clearnet leg, which discloses
+/// One source's price over an untunneled nakednet leg, which discloses
 /// the client IP: the route a switched-off Mixnet Mode consents to.
 #[cfg(feature = "socks5-fetch")]
 pub async fn get_source_price_untunneled(
@@ -893,12 +893,12 @@ mod tests {
         format!("http://{addr}/v1/trades/zecusd")
     }
 
-    /// The clearnet fetch (`socks5_proxy = None`) performs the real HTTP round
+    /// The nakednet fetch (`socks5_proxy = None`) performs the real HTTP round
     /// trip, deserializes the Gemini trades payload, and returns the median of
     /// the eleven trades (index 5 of the sorted list). Eleven deliberately
     /// out-of-order prices 100..=110 make the median 105 and prove the sort.
     #[tokio::test]
-    async fn clearnet_fetch_returns_median_price() {
+    async fn nakednet_fetch_returns_median_price() {
         let body = r#"[
             {"price":"110","timestamp":1},
             {"price":"100","timestamp":2},
@@ -917,7 +917,7 @@ mod tests {
         let price =
             get_source_price_untunneled(PriceSource::Gemini, &url, TEST_TIMEOUT, TEST_TIMEOUT)
                 .await
-                .expect("the clearnet fetch parses a valid trades response");
+                .expect("the nakednet fetch parses a valid trades response");
 
         assert_eq!(
             price.price_usd, 105.0,
@@ -925,14 +925,14 @@ mod tests {
         );
     }
 
-    /// Smoke test against a real price source over clearnet. Ignored by
+    /// Smoke test against a real price source over nakednet. Ignored by
     /// default (needs network and a live third party); run with
     /// `cargo test -p zingo-price -- --ignored`. The race that once lived
     /// here is the wallet's speed-priority wave, so this proves the fetch
     /// this crate still owns.
     #[tokio::test]
-    #[ignore = "hits a live price-source API over clearnet"]
-    async fn live_clearnet_price_fetch_smoke() {
+    #[ignore = "hits a live price-source API over nakednet"]
+    async fn live_nakednet_price_fetch_smoke() {
         let source = PriceSource::Kraken;
         let price =
             get_source_price_untunneled(source, source.url(), REQUEST_TIMEOUT, CONNECT_TIMEOUT)
