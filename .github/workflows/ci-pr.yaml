@@ -156,6 +156,35 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  # The workbench is its own workspace, so the root workspace's test jobs
+  # never compile its unit tests. The builder's plan tests live there, and
+  # a plan change that breaks them must fail the pull request.
+  workbench-standalone:
+    name: workbench (standalone workspace)
+    runs-on: ubuntu-24.04
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/workbench
+
+      - name: Format
+        run: cargo fmt --manifest-path tools/workbench/Cargo.toml --all --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path tools/workbench/Cargo.toml --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --manifest-path tools/workbench/Cargo.toml
+
   # The per-PR tier of zingolib/0054: the x86_64 libraries, the Kotlin
   # bindings, and the AAR. binding-layer-android.yaml runs the builder on
   # this commit, here and in the nightly, so one definition builds an ABI
