@@ -36,6 +36,15 @@ pub fn run<T>(
     }
 }
 
+/// - Reads the process arguments, runs `dispatch` against the zingolib root, and exits through [`run`].
+pub fn dispatch_from_root(
+    binary: &str,
+    dispatch: fn(&Path, &[String]) -> Result<(), Vec<String>>,
+) -> ! {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    run(binary, || dispatch(&repo_root()?, &args), |()| ())
+}
+
 /// Run `<program> <args>` with stderr inherited and return its stdout, or a one-line diagnostic on failure.
 pub fn stdout_of(program: &str, args: &[&str]) -> Result<String, Vec<String>> {
     stdout_with_env(program, args, &[])

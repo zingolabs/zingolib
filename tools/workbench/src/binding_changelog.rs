@@ -136,10 +136,16 @@ pub fn render_section(section: &Section) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    format!(
+    block(&format!(
         "{SECTION_MARK}{}\n\n{SINCE_PREFIX}{}{SINCE_SUFFIX}\n\n{entries}",
         section.commit, section.since
-    )
+    ))
+}
+
+fn block(text: &str) -> String {
+    let mut block = text.trim_end().to_string();
+    block.push('\n');
+    block
 }
 
 pub fn split_sections(file: &str) -> (String, Vec<String>) {
@@ -154,7 +160,10 @@ pub fn split_sections(file: &str) -> (String, Vec<String>) {
             None => header.push_str(line),
         }
     }
-    (header, sections)
+    (
+        block(&header),
+        sections.iter().map(|section| block(section)).collect(),
+    )
 }
 
 pub fn section_commits(section: &str) -> Option<(String, String)> {
