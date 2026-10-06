@@ -1,8 +1,7 @@
 #![forbid(unsafe_code)]
 
-use workbench::binding_manifest::{dispatch, BINARY};
-use workbench::dispatch_from_root;
+use workbench::binding_manifest;
 
 fn main() {
-    dispatch_from_root(BINARY, dispatch)
+    binding_manifest::main()
 }

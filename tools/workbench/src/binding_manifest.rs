@@ -202,12 +202,9 @@ pub fn reference(platform: &str, commit: &str) -> String {
 pub fn entries_at(root: &Path, revision: Option<&str>) -> Result<Vec<Entry>, Vec<String>> {
     let text = match revision {
         None => crate::read(&root.join(FILE))?,
-        Some(revision) if crate::listed_at(root, revision, FILE)? => crate::stdout_in(
-            root,
-            "git",
-            &["show", &[revision, FILE].join(TAG_SEPARATOR)],
-            &[],
-        )?,
+        Some(revision) if crate::listed_at(root, revision, FILE)? => {
+            crate::git_in(root, &["show", &[revision, FILE].join(TAG_SEPARATOR)])?
+        }
         Some(_) => String::new(),
     };
     let entries = parse(&text)?;
@@ -292,6 +289,12 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     }
 }
 
+/// - Reads the process arguments.
+/// - Exits the process through [`crate::run`].
+pub fn main() -> ! {
+    crate::dispatch_from_root(BINARY, dispatch)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -373,7 +376,10 @@ mod tests {
         .concat();
         assert!(diagnostics.contains("first and names no since"));
         assert!(diagnostics.contains("names no android digest"));
-        assert_eq!(validate(&[entry(FIRST, Some(ORIGIN), &["android"])]), Ok(()));
+        assert_eq!(
+            validate(&[entry(FIRST, Some(ORIGIN), &["android"])]),
+            Ok(())
+        );
         assert!(validate(&[entry(FIRST, Some(ORIGIN), &["ios"])]).is_err());
         assert!(diagnostics.contains("only the first entry may"));
         assert!(diagnostics.contains("repeats an earlier entry"));
