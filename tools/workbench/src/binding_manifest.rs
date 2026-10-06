@@ -9,6 +9,7 @@ pub const REQUIRED_PLATFORMS: [&str; 1] = ["android"];
 pub const REVISION_ANNOTATION: &str = "org.opencontainers.image.revision";
 const PATH_SEPARATOR: &str = "/";
 const TAG_SEPARATOR: &str = ":";
+const REVISION_PATH_SEPARATOR: &str = ":";
 const ENTRY_HEADER: &str = "[[entry]]";
 const COMMIT_KEY: &str = "commit";
 const SINCE_KEY: &str = "since";
@@ -16,6 +17,7 @@ const COMMENT_MARK: char = '#';
 const ASSIGNMENT: char = '=';
 const QUOTE: char = '"';
 const COMMIT_LENGTH: usize = 40;
+const COMMIT_EXPECTATION: &str = "a full lowercase commit hash";
 const DIGEST_PREFIX: &str = "sha256:";
 const DIGEST_HEX_LENGTH: usize = 64;
 const CHECK_FLAG: &str = "--check";
@@ -36,23 +38,30 @@ fn is_hex(text: &str, length: usize) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn commit_value(key: &str, value: &str) -> Result<String, Vec<String>> {
-    if is_hex(value, COMMIT_LENGTH) {
+fn hex_value(
+    key: &str,
+    value: &str,
+    hex: &str,
+    length: usize,
+    expected: &str,
+) -> Result<String, Vec<String>> {
+    if is_hex(hex, length) {
         Ok(value.to_string())
     } else {
         Err(vec![format!(
-            "{key} = {QUOTE}{value}{QUOTE} is not a full lowercase commit hash"
+            "{key} = {QUOTE}{value}{QUOTE} is not {expected}"
         )])
     }
 }
 
+fn commit_value(key: &str, value: &str) -> Result<String, Vec<String>> {
+    hex_value(key, value, value, COMMIT_LENGTH, COMMIT_EXPECTATION)
+}
+
 fn digest_value(platform: &str, value: &str) -> Result<String, Vec<String>> {
-    match value.strip_prefix(DIGEST_PREFIX) {
-        Some(hex) if is_hex(hex, DIGEST_HEX_LENGTH) => Ok(value.to_string()),
-        _ => Err(vec![format!(
-            "{platform} = {QUOTE}{value}{QUOTE} is not a {DIGEST_PREFIX}<hex> digest"
-        )]),
-    }
+    let hex = value.strip_prefix(DIGEST_PREFIX).unwrap_or_default();
+    let expected = format!("a {DIGEST_PREFIX}<hex> digest");
+    hex_value(platform, value, hex, DIGEST_HEX_LENGTH, &expected)
 }
 
 fn assignment(line: &str) -> Option<(&str, &str)> {
@@ -145,31 +154,23 @@ pub fn validate(entries: &[Entry]) -> Result<(), Vec<String>> {
             diagnostics.push(format!("{label} repeats an earlier entry's commit"));
         }
     }
-    if diagnostics.is_empty() {
-        Ok(())
-    } else {
-        Err(diagnostics)
-    }
+    crate::verdict(diagnostics)
 }
 
 pub fn unchanged_since_base(base: &[Entry], head: &[Entry]) -> Result<(), Vec<String>> {
-    let diagnostics: Vec<String> = base
-        .iter()
-        .enumerate()
-        .filter_map(|(index, kept)| match head.get(index) {
-            Some(same) if same == kept => None,
-            _ => Some(format!(
-                "entry {} ({}) changed or moved after its merge",
-                index + 1,
-                kept.commit
-            )),
-        })
-        .collect();
-    if diagnostics.is_empty() {
-        Ok(())
-    } else {
-        Err(diagnostics)
-    }
+    crate::verdict(
+        base.iter()
+            .enumerate()
+            .filter_map(|(index, kept)| match head.get(index) {
+                Some(same) if same == kept => None,
+                _ => Some(format!(
+                    "entry {} ({}) changed or moved after its merge",
+                    index + 1,
+                    kept.commit
+                )),
+            })
+            .collect(),
+    )
 }
 
 pub fn publication_commits(entries: &[Entry]) -> Vec<(String, String)> {
@@ -202,9 +203,10 @@ pub fn reference(platform: &str, commit: &str) -> String {
 pub fn entries_at(root: &Path, revision: Option<&str>) -> Result<Vec<Entry>, Vec<String>> {
     let text = match revision {
         None => crate::read(&root.join(FILE))?,
-        Some(revision) if crate::listed_at(root, revision, FILE)? => {
-            crate::git_in(root, &["show", &[revision, FILE].join(TAG_SEPARATOR)])?
-        }
+        Some(revision) if crate::listed_at(root, revision, FILE)? => crate::git_in(
+            root,
+            &["show", &[revision, FILE].join(REVISION_PATH_SEPARATOR)],
+        )?,
         Some(_) => String::new(),
     };
     let entries = parse(&text)?;
@@ -281,12 +283,7 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     if let Some(base) = crate::flag_value(args, BASE_FLAG)? {
         unchanged_since_base(&entries_at(root, Some(base))?, &head)?;
     }
-    let diagnostics = registry_diagnostics(&head)?;
-    if diagnostics.is_empty() {
-        Ok(())
-    } else {
-        Err(diagnostics)
-    }
+    crate::verdict(registry_diagnostics(&head)?)
 }
 
 /// - Reads the process arguments.

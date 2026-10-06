@@ -279,11 +279,16 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     match args {
         [] => std::fs::write(&file, regenerated)
             .map_err(|e| vec![format!("cannot write {}: {e}", file.display())]),
-        [flag] if flag == CHECK_FLAG && crate::read(&file)? == regenerated => Ok(()),
-        [flag] if flag == CHECK_FLAG => Err(vec![format!(
-            "{FILE} differs from what {BINARY} generates from {}; run `{BINARY}` and commit the result",
-            binding_manifest::FILE
-        )]),
+        [flag] if flag == CHECK_FLAG => {
+            if crate::read(&file)? == regenerated {
+                Ok(())
+            } else {
+                Err(vec![format!(
+                    "{FILE} differs from what {BINARY} generates from {}; run `{BINARY}` and commit the result",
+                    binding_manifest::FILE
+                )])
+            }
+        }
         _ => Err(vec![USAGE.to_string()]),
     }
 }
