@@ -231,12 +231,14 @@ pub fn parse_dest(args: &[String]) -> Result<Option<PathBuf>, Vec<String>> {
     Ok(flag_value(args, "--dest")?.map(PathBuf::from))
 }
 
+pub const TOOLCHAIN_FILE: &str = "rust-toolchain.toml";
+
 /// The pinned, validated rustc channel from `<root>/rust-toolchain.toml`.
 ///
 /// Single source of truth for `RUST_VERSION`. Rejects any non-numeric channel
 /// (`stable` / `nightly` / dated pins) so the CI image tag stays reproducible.
 pub fn toolchain_channel(root: &Path) -> Result<String, Vec<String>> {
-    let path = root.join("rust-toolchain.toml");
+    let path = root.join(TOOLCHAIN_FILE);
     let contents = read(&path)?;
 
     let Some(channel) = contents.lines().find_map(channel_value) else {
