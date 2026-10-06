@@ -64,31 +64,18 @@ jobs:
       - name: Trust the workspace
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Cargo default stable
-        run: |
-          rustup update
-          rustup upgrade
-          rustup toolchain install stable --profile minimal --component rust-src
-          rustup default stable
+      # With no toolchain named, rustup installs the one rust-toolchain.toml
+      # pins, with its components. The builder repeats this step and adds
+      # the ABI's target to that toolchain itself.
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
 
       - name: Install bindgen-cli and cargo-ndk
         run: |
           cargo install --force --locked bindgen-cli
           cargo install --locked --version 4.0.1 cargo-ndk
 
-      - name: Add the ABI's Rust target
-        run: |
-          case "$ABI" in
-            x86_64)      rustup target add --toolchain stable x86_64-linux-android ;;
-            x86)         rustup target add --toolchain stable i686-linux-android ;;
-            arm64-v8a)   rustup target add --toolchain stable aarch64-linux-android ;;
-            armeabi-v7a) rustup target add --toolchain stable armv7-linux-androideabi ;;
-            *)           echo "unknown ABI $ABI"; exit 1 ;;
-          esac
-
       - name: Build the Binding Layer
-        env:
-          RUSTUP_TOOLCHAIN: stable
         run: |
           cargo run \
             --manifest-path tools/workbench/Cargo.toml \
