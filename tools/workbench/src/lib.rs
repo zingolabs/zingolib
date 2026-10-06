@@ -7,6 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod binding_changelog;
 pub mod binding_layer;
 pub mod dupes_gate;
 
