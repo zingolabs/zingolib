@@ -176,6 +176,19 @@ jobs:
         with:
           workspaces: tools/workbench
 
+      # The dupes_gate tests run the real cargo-dupes, so the job installs
+      # it the way no-duplicated-code.yaml does, under the same cache key.
+      - name: Restore cargo-dupes
+        id: cargo-dupes
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-dupes
+          key: cargo-dupes-${{ hashFiles('tools/workbench/src/dupes_gate.rs') }}-${{ runner.os }}
+
+      - name: Install cargo-dupes
+        if: steps.cargo-dupes.outputs.cache-hit != 'true'
+        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin dupes-gate -- --install
+
       - name: Format
         run: cargo fmt --manifest-path tools/workbench/Cargo.toml --all --check
 
