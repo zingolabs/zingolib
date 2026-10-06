@@ -64,11 +64,11 @@ jobs:
       - name: Trust the workspace
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      # rustup installs the toolchain that rust-toolchain.toml pins on the
-      # first cargo call inside the checkout. The builder adds the ABI's
-      # target to that toolchain itself.
+      # With no toolchain named, rustup installs the one rust-toolchain.toml
+      # pins, with its components. The builder repeats this step and adds
+      # the ABI's target to that toolchain itself.
       - name: Install the pinned toolchain
-        run: cargo --version
+        run: rustup toolchain install
 
       - name: Install bindgen-cli and cargo-ndk
         run: |
