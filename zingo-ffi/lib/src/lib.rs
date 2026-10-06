@@ -155,6 +155,19 @@ fn chain_text(error: &(dyn std::error::Error + 'static)) -> String {
     text
 }
 
+fn chained<E: std::error::Error + 'static>(
+    variant: fn(String) -> ZingolibError,
+) -> impl FnOnce(E) -> ZingolibError {
+    move |error| variant(chain_text(&error))
+}
+
+fn in_context<E: std::error::Error + 'static>(
+    variant: fn(String) -> ZingolibError,
+    context: impl std::fmt::Display,
+) -> impl FnOnce(E) -> ZingolibError {
+    move |error| variant(format!("{context}: {}", chain_text(&error)))
+}
+
 impl ZingolibError {
     fn init(e: impl ToString) -> Self {
         Self::Init(e.to_string())
@@ -606,10 +619,9 @@ fn build_connection_params(
     let lightwalletd_uri = if uri.is_empty() {
         None
     } else {
-        Some(
-            construct_indexer_uri(uri)
-                .map_err(|e| ZingolibError::init(format!("Invalid lightwalletd uri: {e}")))?,
-        )
+        Some(construct_indexer_uri(uri).map_err(|e| {
+            ZingolibError::init(format!("Invalid lightwalletd uri: {}", chain_text(&e)))
+        })?)
     };
     let performancetype = match performance_level.as_str() {
         "Maximum" => PerformanceLevel::Maximum,
@@ -659,7 +671,7 @@ fn build_client_config(
         Some(uri) => builder.set_migration_transmission_uri(uri),
         None => builder,
     };
-    builder.build().map_err(ZingolibError::init)
+    builder.build().map_err(chained(ZingolibError::Init))
 }
 
 /// Set an optional dedicated migration-transmission endpoint for the next
@@ -669,12 +681,15 @@ fn build_client_config(
 /// embedded curated Destination pool, which always excludes the
 /// synchronization operator, routes instead.
 pub fn set_broadcast_candidates(candidates_json: String) -> Result<String, ZingolibError> {
-    let parsed = json::parse(&candidates_json)
-        .map_err(|e| ZingolibError::InvalidInput(format!("invalid candidates json: {e}")))?;
+    let parsed = json::parse(&candidates_json).map_err(in_context(
+        ZingolibError::InvalidInput,
+        "invalid candidates json",
+    ))?;
     let transmission_uri = match parsed["transmissionUri"].as_str() {
-        Some(uri) => Some(construct_indexer_uri(uri.to_string()).map_err(|e| {
-            ZingolibError::InvalidInput(format!("invalid transmission uri {uri}: {e}"))
-        })?),
+        Some(uri) => Some(construct_indexer_uri(uri.to_string()).map_err(in_context(
+            ZingolibError::InvalidInput,
+            format!("invalid transmission uri {uri}"),
+        ))?),
         None => None,
     };
     let is_set = transmission_uri.is_some();
@@ -706,7 +721,7 @@ fn init_lightclient(
         let config = build_client_config(&params, wallet_config)?;
         let lightclient = RT
             .block_on(LightClient::new(config, false))
-            .map_err(ZingolibError::init)?;
+            .map_err(chained(ZingolibError::Init))?;
         let _ = store_client(lightclient);
 
         finish()
@@ -752,11 +767,12 @@ pub fn init_new(
                 Some(uri) => {
                     let uri = uri.clone();
                     RT.block_on(async move {
-                        let mut indexer = GrpcIndexer::new(uri).await.map_err(|e| e.to_string())?;
+                        let mut indexer =
+                            GrpcIndexer::new(uri).await.map_err(|e| chain_text(&e))?;
                         indexer
                             .get_latest_block(INDEXER_REQUEST_TIMEOUT)
                             .await
-                            .map_err(|e| e.to_string())
+                            .map_err(|e| chain_text(&e))
                     })
                     .map_err(ZingolibError::init)?
                     .height as u32
@@ -955,7 +971,7 @@ pub fn init_from_bytes(
 fn map_wallet_save(
     save_result: std::io::Result<Option<Vec<u8>>>,
 ) -> Result<Option<Vec<u8>>, ZingolibError> {
-    save_result.map_err(|e| ZingolibError::Save(e.to_string()))
+    save_result.map_err(chained(ZingolibError::Save))
 }
 
 pub fn save_wallet_bytes() -> Result<Option<Vec<u8>>, ZingolibError> {
@@ -1012,6 +1028,41 @@ mod ffi_error_routing_tests {
 #[cfg(test)]
 mod cause_chain_tests {
     use super::*;
+
+    #[test]
+    fn a_save_failure_keeps_the_cause_its_wrapper_does_not_print() {
+        let wrapped = std::io::Error::other(LightClientError::WalletError(
+            zingolib::wallet::error::WalletError::MnemonicNotFound,
+        ));
+        let text = map_wallet_save(Err(wrapped))
+            .expect_err("a failed save is an error")
+            .to_string();
+        assert!(
+            text.contains("Mnemonic not found"),
+            "the cause must survive the crossing: {text}"
+        );
+    }
+
+    #[test]
+    fn a_seed_that_fails_its_checksum_names_the_mnemonic_error_at_init() {
+        let bad_checksum = vec!["abandon"; 24].join(" ");
+        let error = init_from_seed(
+            bad_checksum,
+            1,
+            String::new(),
+            "main".to_string(),
+            "Low".to_string(),
+            1,
+        )
+        .expect_err("a seed with a bad checksum does not build a wallet");
+        let text = error.to_string();
+        // `LightClientError::WalletError` prints only "Wallet error."; the
+        // mnemonic cause under it is what the user has to read.
+        assert!(
+            text.contains("Mnemonic error"),
+            "the cause must survive the crossing: {text}"
+        );
+    }
 
     #[test]
     fn a_wrapper_that_prints_nothing_of_its_cause_gains_the_whole_chain() {
@@ -1647,7 +1698,7 @@ pub fn get_latest_block_server(server_uri: String) -> Result<String, ZingolibErr
     with_panic_guard(|| {
         let lightwalletd_uri: http::Uri = server_uri
             .parse()
-            .map_err(|e| ZingolibError::Read(format!("failed to parse uri. {e}")))?;
+            .map_err(|e| ZingolibError::Read(format!("failed to parse uri. {}", chain_text(&e))))?;
         RT.block_on(async move {
             let mut indexer = GrpcIndexer::new(lightwalletd_uri)
                 .await
@@ -1852,7 +1903,7 @@ pub fn run_rescan() -> Result<String, ZingolibError> {
         RT.block_on(async move {
             match lightclient.rescan().await {
                 Ok(_) => Ok("Launching rescan...".to_string()),
-                Err(e) => Err(ZingolibError::Rescan(e.to_string())),
+                Err(e) => Err(ZingolibError::Rescan(chain_text(&e))),
             }
         })
     })
@@ -1919,8 +1970,10 @@ pub fn get_seed() -> Result<String, ZingolibError> {
                     serde_json::Value::String(chain_name_short(wallet.chain_type()).to_string()),
                 );
             }
-            serde_json::to_string_pretty(&val)
-                .map_err(|_| ZingolibError::Read("get seed. failed to serialize".to_string()))
+            serde_json::to_string_pretty(&val).map_err(in_context(
+                ZingolibError::Read,
+                "get seed. failed to serialize",
+            ))
         })
     })
 }
@@ -1934,7 +1987,7 @@ pub fn get_ufvk() -> Result<String, ZingolibError> {
                 .get(&AccountId::ZERO)
                 .expect("account 0 must always exist")
                 .try_into()
-                .map_err(|e| ZingolibError::Read(format!("{e}")))?;
+                .map_err(chained(ZingolibError::Read))?;
             Ok(object! {
                 "ufvk" => ufvk.encode(&wallet.chain_type()),
                 "birthday" => u32::from(wallet.birthday()),
@@ -1949,8 +2002,8 @@ pub fn get_ufvk() -> Result<String, ZingolibError> {
 /// of a wallet file that cannot open.
 pub fn read_wallet_recovery_info(wallet_bytes: Vec<u8>) -> Result<String, ZingolibError> {
     let salvaged = zingolib::wallet::LightWallet::read_recovery_info(wallet_bytes.as_slice())
-        .map_err(|e| ZingolibError::Read(e.to_string()))?;
-    serde_json::to_string(&salvaged).map_err(|e| ZingolibError::Read(e.to_string()))
+        .map_err(chained(ZingolibError::Read))?;
+    serde_json::to_string(&salvaged).map_err(chained(ZingolibError::Read))
 }
 
 /// Confirms the bytes parse as a complete wallet under one of the supported
@@ -1969,7 +2022,7 @@ pub fn validate_wallet_bytes(wallet_bytes: Vec<u8>) -> Result<(), ZingolibError>
             Err(e) => {
                 let consumed = wallet_bytes.len() - remaining.len();
                 if consumed >= deepest.0 {
-                    deepest = (consumed, e.to_string());
+                    deepest = (consumed, chain_text(&e));
                 }
             }
         }
@@ -2107,11 +2160,15 @@ pub fn change_server(server_uri: String) -> Result<String, ZingolibError> {
                 .next()
                 .map(|indexer| indexer.uri.to_string())
                 .ok_or_else(|| ZingolibError::InvalidInput("empty indexer census".to_string()))?;
-            construct_indexer_uri(default)
-                .map_err(|_| ZingolibError::InvalidInput("invalid server uri".to_string()))?
+            construct_indexer_uri(default).map_err(in_context(
+                ZingolibError::InvalidInput,
+                "invalid server uri",
+            ))?
         } else {
-            construct_indexer_uri(server_uri)
-                .map_err(|_| ZingolibError::InvalidInput("invalid server uri".to_string()))?
+            construct_indexer_uri(server_uri).map_err(in_context(
+                ZingolibError::InvalidInput,
+                "invalid server uri",
+            ))?
         };
         RT.block_on(async move {
             lightclient
@@ -2383,13 +2440,13 @@ pub fn zec_price() -> Result<String, ZingolibError> {
 
 pub fn remove_transaction(txid: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
-        let txid = txid_from_hex_encoded_str(&txid)
-            .map_err(|e| ZingolibError::InvalidInput(e.to_string()))?;
+        let txid =
+            txid_from_hex_encoded_str(&txid).map_err(chained(ZingolibError::InvalidInput))?;
         RT.block_on(async move {
             let mut wallet = lightclient.wallet().write().await;
             wallet
                 .remove_failed_transaction(txid)
-                .map_err(|e| ZingolibError::Wallet(e.to_string()))?;
+                .map_err(chained(ZingolibError::Wallet))?;
             Ok("Successfully removed transaction.".to_string())
         })
     })
@@ -2407,8 +2464,10 @@ pub fn remove_transaction(txid: String) -> Result<String, ZingolibError> {
 /// long as the server is down or the user stays offline.
 pub fn get_spendable_balance_with_address(address: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
-        let address = address_from_str(&address)
-            .map_err(|_| ZingolibError::InvalidInput("unknown address format".to_string()))?;
+        let address = address_from_str(&address).map_err(in_context(
+            ZingolibError::InvalidInput,
+            "unknown address format",
+        ))?;
         RT.block_on(async move {
             let bal = match lightclient.max_send_value(address, AccountId::ZERO).await {
                 Ok(bal) => bal,
@@ -2468,7 +2527,7 @@ pub fn create_new_unified_address(receivers: String) -> Result<String, ZingolibE
             };
             let (id, unified_address) = wallet
                 .generate_unified_address(receivers_available, AccountId::ZERO)
-                .map_err(|e| ZingolibError::Wallet(e.to_string()))?;
+                .map_err(chained(ZingolibError::Wallet))?;
             Ok(json::object! {
                 "account" => u32::from(AccountId::ZERO),
                 "address_index" => id.address_index,
@@ -2489,7 +2548,7 @@ pub fn create_new_transparent_address() -> Result<String, ZingolibError> {
             let network = wallet.chain_type();
             let (id, transparent_address) = wallet
                 .generate_transparent_address(AccountId::ZERO, true)
-                .map_err(|e| ZingolibError::Wallet(e.to_string()))?;
+                .map_err(chained(ZingolibError::Wallet))?;
             Ok(json::object! {
                 "account" => u32::from(id.account_id()),
                 "address_index" => id.address_index().index(),
@@ -2507,7 +2566,7 @@ pub fn check_my_address(address: String) -> Result<String, ZingolibError> {
             let wallet = lightclient.wallet().read().await;
             let address_ref = wallet
                 .is_address_derived_by_keys(&address)
-                .map_err(|e| ZingolibError::Wallet(e.to_string()))?;
+                .map_err(chained(ZingolibError::Wallet))?;
             Ok(address_ref
                 .map_or(
                     json::object! { "is_wallet_address" => false },
@@ -2728,15 +2787,16 @@ fn proposal_destination_pools<FeeRuleT, NoteRef>(
 pub fn send(send_json: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
-            let json_args = json::parse(&send_json)
-                .map_err(|_| ZingolibError::InvalidInput("it is not a valid JSON".to_string()))?;
+            let json_args = json::parse(&send_json).map_err(in_context(
+                ZingolibError::InvalidInput,
+                "it is not a valid JSON",
+            ))?;
 
             let mut receivers = Receivers::new();
             for j in json_args.members() {
                 let recipient_address = match j["address"].as_str() {
-                    Some(addr) => ZcashAddress::try_from_encoded(addr).map_err(|e| {
-                        ZingolibError::InvalidInput(format!("invalid address: {e}"))
-                    })?,
+                    Some(addr) => ZcashAddress::try_from_encoded(addr)
+                        .map_err(in_context(ZingolibError::InvalidInput, "invalid address"))?,
                     None => {
                         return Err(ZingolibError::InvalidInput("missing address".to_string()));
                     }
@@ -2744,7 +2804,7 @@ pub fn send(send_json: String) -> Result<String, ZingolibError> {
 
                 let amount = match j["amount"].as_u64() {
                     Some(a) => Zatoshis::from_u64(a)
-                        .map_err(|e| ZingolibError::InvalidInput(format!("invalid amount: {e}")))?,
+                        .map_err(in_context(ZingolibError::InvalidInput, "invalid amount"))?,
                     None => {
                         return Err(ZingolibError::InvalidInput("missing amount".to_string()));
                     }
@@ -2766,13 +2826,13 @@ pub fn send(send_json: String) -> Result<String, ZingolibError> {
             }
 
             let request = transaction_request_from_receivers(receivers)
-                .map_err(|e| ZingolibError::InvalidInput(format!("request error: {e}")))?;
+                .map_err(in_context(ZingolibError::InvalidInput, "request error"))?;
 
             let proposal = lightclient
                 .propose_send(request, AccountId::ZERO)
                 .await
                 .map_err(|e| ffi_error(SendError::from(e).into()))?;
-            let fee = total_fee(&proposal).map_err(|e| ZingolibError::Send(e.to_string()))?;
+            let fee = total_fee(&proposal).map_err(chained(ZingolibError::Send))?;
             Ok(object! {
                 "fee" => fee.into_u64(),
                 "source_pools" => proposal_source_pools(&proposal),
@@ -2796,7 +2856,7 @@ pub fn send_all(address: String, memo: String) -> Result<String, ZingolibError> 
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
             let address = ZcashAddress::try_from_encoded(&address)
-                .map_err(|e| ZingolibError::InvalidInput(format!("invalid address: {e}")))?;
+                .map_err(in_context(ZingolibError::InvalidInput, "invalid address"))?;
             let memo = if memo.is_empty() {
                 None
             } else {
@@ -2810,7 +2870,7 @@ pub fn send_all(address: String, memo: String) -> Result<String, ZingolibError> 
                 .propose_send_all(address, memo, AccountId::ZERO)
                 .await
                 .map_err(|e| ffi_error(SendError::from(e).into()))?;
-            let fee = total_fee(&proposal).map_err(|e| ZingolibError::Send(e.to_string()))?;
+            let fee = total_fee(&proposal).map_err(chained(ZingolibError::Send))?;
             let amount = proposal_recipient_amount(&proposal);
             Ok(object! {
                 "amount" => amount.into_u64(),
@@ -3688,13 +3748,15 @@ fn mixnet_indicator_json(lightclient: &LightClient) -> String {
 /// `bootstrapping` -> `ready`, or `died`.
 pub fn attach_mixnet(socks5_addr: String, exit_node: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
-        let exit = zingolib::mixnet::ExitNodeId::parse(&exit_node)
-            .map_err(|_| ZingolibError::Mixnet("the shim reported no exit node".to_string()))?;
+        let exit = zingolib::mixnet::ExitNodeId::parse(&exit_node).map_err(in_context(
+            ZingolibError::Mixnet,
+            "the shim reported no exit node",
+        ))?;
         RT.block_on(async move {
             lightclient
                 .attach_mixnet(&socks5_addr, &[exit])
                 .await
-                .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
+                .map_err(chained(ZingolibError::Mixnet))?;
             Ok(mixnet_indicator_json(lightclient))
         })
     })
@@ -3709,7 +3771,7 @@ pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
             lightclient
                 .enable_mixnet(std::path::Path::new(&proxy_path))
                 .await
-                .map_err(|e| ZingolibError::Mixnet(e.to_string()))?;
+                .map_err(chained(ZingolibError::Mixnet))?;
             Ok(mixnet_indicator_json(lightclient))
         })
     })
