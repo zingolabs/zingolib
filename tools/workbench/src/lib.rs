@@ -230,6 +230,14 @@ fn root_above(workbench_dir: &Path) -> Result<PathBuf, Vec<String>> {
         })
 }
 
+pub fn verdict(diagnostics: Vec<String>) -> Result<(), Vec<String>> {
+    if diagnostics.is_empty() {
+        Ok(())
+    } else {
+        Err(diagnostics)
+    }
+}
+
 /// Read `path` to a string, or a one-line `cannot read …` diagnostic.
 pub fn read(path: &Path) -> Result<String, Vec<String>> {
     std::fs::read_to_string(path).map_err(|e| vec![format!("cannot read {}: {e}", path.display())])
