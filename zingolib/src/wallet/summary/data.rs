@@ -3,6 +3,7 @@
 use chrono::DateTime;
 use json::JsonValue;
 
+use zcash_protocol::memo::Memo;
 use zcash_protocol::{PoolType, TxId, consensus::BlockHeight};
 
 use pepper_sync::keys::transparent::TransparentScope;
@@ -85,6 +86,18 @@ fn pools_to_json(pools: &[PoolType]) -> JsonValue {
     JsonValue::from(pool_names(pools))
 }
 
+/// The rendering the pre-typed summaries carried: a text memo renders as
+/// its string; empty and non-text memos render as the absent memo did.
+/// Display and JSON bytes stay identical to the era when construction
+/// dropped non-text memos; the typed field carries them losslessly.
+fn text_memo(memo: &Memo) -> Option<String> {
+    if let Memo::Text(text) = memo {
+        Some(text.to_string())
+    } else {
+        None
+    }
+}
+
 /// The pools flagged present, in protocol order. `present` indices are
 /// (transparent, sapling, orchard, ironwood). This function is the single
 /// definition of that order for pool lists exposed by summaries.
@@ -162,15 +175,6 @@ impl TransactionSummary {
         ]
     }
 
-    /// All memos on this transaction's wallet-received shielded notes, in pool
-    /// order ironwood, orchard, sapling.
-    pub fn received_memos(&self) -> Vec<String> {
-        self.shielded_notes_by_pool()
-            .into_iter()
-            .flat_map(|(notes, _)| notes.iter().filter_map(|note| note.memo.clone()))
-            .collect()
-    }
-
     /// The sum of every output this transaction delivered to the wallet's own
     /// addresses: all wallet-received shielded notes plus transparent coins.
     pub fn self_received_value(&self) -> u64 {
@@ -178,17 +182,6 @@ impl TransactionSummary {
             .into_iter()
             .flat_map(|(notes, _)| notes.iter().map(|note| note.value))
             .chain(self.transparent_coins.iter().map(|coin| coin.value))
-            .sum()
-    }
-
-    /// The sum of the wallet-received shielded notes that carry a memo,
-    /// excluding memo-less change.
-    pub fn received_memo_value(&self) -> u64 {
-        self.shielded_notes_by_pool()
-            .into_iter()
-            .flat_map(|(notes, _)| notes.iter())
-            .filter(|note| note.memo.is_some())
-            .map(|note| note.value)
             .sum()
     }
 
@@ -410,7 +403,7 @@ pub struct NoteSummary {
     pub status: ConfirmationStatus,
     pub block_height: BlockHeight,
     pub spend_status: SpendStatus,
-    pub memo: Option<String>,
+    pub memo: Memo,
     pub time: u32,
     pub txid: TxId,
     pub output_index: u32,
@@ -420,7 +413,7 @@ pub struct NoteSummary {
 
 impl std::fmt::Display for NoteSummary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let memo = self.memo.clone().unwrap_or_default();
+        let memo = text_memo(&self.memo).unwrap_or_default();
         let time = if let Some(dt) = chrono::DateTime::from_timestamp(i64::from(self.time), 0) {
             format!("{dt}")
         } else {
@@ -460,7 +453,7 @@ impl From<NoteSummary> for json::JsonValue {
             "value" => note.value,
             "status" => format!("{} at block height {}", note.status, note.block_height),
             "spend_status" => note.spend_status.to_string(),
-            "memo" => note.memo,
+            "memo" => text_memo(&note.memo),
             "time" => note.time,
             "txid" => note.txid.to_string(),
             "output_index" => note.output_index,
@@ -545,7 +538,7 @@ pub struct BasicNoteSummary {
     pub value: u64,
     pub spend_status: SpendStatus,
     pub output_index: u32,
-    pub memo: Option<String>,
+    pub memo: Memo,
     // TODO: add key id with address index, not implemented into sync engine yet
 }
 
@@ -556,7 +549,7 @@ impl BasicNoteSummary {
         value: u64,
         spend_status: SpendStatus,
         output_index: u32,
-        memo: Option<String>,
+        memo: Memo,
     ) -> Self {
         BasicNoteSummary {
             value,
@@ -569,7 +562,7 @@ impl BasicNoteSummary {
 
 impl std::fmt::Display for BasicNoteSummary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let memo = self.memo.clone().unwrap_or_default();
+        let memo = text_memo(&self.memo).unwrap_or_default();
         write!(
             f,
             "\t{{
@@ -589,7 +582,7 @@ impl From<BasicNoteSummary> for JsonValue {
             "value" => note.value,
             "spend_status" => note.spend_status.to_string(),
             "output_index" => note.output_index,
-            "memo" => note.memo,
+            "memo" => text_memo(&note.memo),
         }
     }
 }
@@ -735,7 +728,7 @@ impl std::fmt::Display for BasicCoinSummaries {
 #[derive(Clone, PartialEq, Debug)]
 pub struct OutgoingNoteSummary {
     pub value: u64,
-    pub memo: Option<String>,
+    pub memo: Memo,
     pub recipient: String,
     pub recipient_unified_address: Option<String>,
     pub output_index: u32,
@@ -745,7 +738,7 @@ pub struct OutgoingNoteSummary {
 
 impl std::fmt::Display for OutgoingNoteSummary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let memo = self.memo.clone().unwrap_or_default();
+        let memo = text_memo(&self.memo).unwrap_or_default();
         let recipient_unified_address = self
             .recipient_unified_address
             .clone()
@@ -777,7 +770,7 @@ impl From<OutgoingNoteSummary> for JsonValue {
     fn from(note: OutgoingNoteSummary) -> Self {
         json::object! {
             "value" => note.value,
-            "memo" => note.memo,
+            "memo" => text_memo(&note.memo),
             "recipient" => note.recipient,
             "recipient_unified_address" => note.recipient_unified_address,
             "output_index" => note.output_index,
@@ -851,7 +844,7 @@ mod tests {
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     fn note(value: u64) -> BasicNoteSummary {
-        BasicNoteSummary::from_parts(value, SpendStatus::Unspent, 0, None)
+        BasicNoteSummary::from_parts(value, SpendStatus::Unspent, 0, super::Memo::Empty)
     }
 
     /// A minimal send-to-self summary with the given funding pools and received

@@ -3,8 +3,6 @@
 /// Not to be used for internal logic in the system.
 use std::cmp::Ordering;
 
-use zcash_protocol::memo::Memo;
-
 use pepper_sync::keys::transparent;
 use pepper_sync::wallet::{
     KeyIdInterface, NoteInterface, OutgoingNoteInterface, OutputInterface, TransparentCoin,
@@ -54,17 +52,11 @@ impl LightWallet {
                     .map(|output| {
                         let spend_status = self.output_spend_status(output);
 
-                        let memo = if let Memo::Text(memo_text) = output.memo() {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
-
                         BasicNoteSummary::from_parts(
                             output.value(),
                             spend_status,
                             output.output_id().output_index(),
-                            memo,
+                            output.memo().clone(),
                         )
                     })
                     .collect::<Vec<_>>();
@@ -74,17 +66,11 @@ impl LightWallet {
                     .map(|output| {
                         let spend_status = self.output_spend_status(output);
 
-                        let memo = if let Memo::Text(memo_text) = output.memo() {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
-
                         BasicNoteSummary::from_parts(
                             output.value(),
                             spend_status,
                             output.output_id().output_index(),
-                            memo,
+                            output.memo().clone(),
                         )
                     })
                     .collect::<Vec<_>>();
@@ -94,17 +80,11 @@ impl LightWallet {
                     .map(|output| {
                         let spend_status = self.output_spend_status(output);
 
-                        let memo = if let Memo::Text(memo_text) = output.memo() {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
-
                         BasicNoteSummary::from_parts(
                             output.value(),
                             spend_status,
                             output.output_id().output_index(),
-                            memo,
+                            output.memo().clone(),
                         )
                     })
                     .collect::<Vec<_>>();
@@ -126,14 +106,8 @@ impl LightWallet {
                     .outgoing_ironwood_notes()
                     .iter()
                     .map(|note| {
-                        let memo = if let Memo::Text(memo_text) = note.memo() {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
-
                         Ok(OutgoingNoteSummary {
-                            memo,
+                            memo: note.memo().clone(),
                             value: note.value(),
                             recipient: note
                                 .encoded_recipient(&self.chain_type)
@@ -150,14 +124,8 @@ impl LightWallet {
                     .outgoing_orchard_notes()
                     .iter()
                     .map(|note| {
-                        let memo = if let Memo::Text(memo_text) = note.memo() {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
-
                         Ok(OutgoingNoteSummary {
-                            memo,
+                            memo: note.memo().clone(),
                             value: note.value(),
                             recipient: note
                                 .encoded_recipient(&self.chain_type)
@@ -173,25 +141,17 @@ impl LightWallet {
                 let outgoing_sapling_notes = transaction
                     .outgoing_sapling_notes()
                     .iter()
-                    .map(|note| {
-                        let memo = if let Memo::Text(memo_text) = note.memo() {
-                            Some(memo_text.to_string())
-                        } else {
-                            None
-                        };
-
-                        OutgoingNoteSummary {
-                            output_index: note.output_id().output_index(),
-                            memo,
-                            value: note.value(),
-                            recipient: note
-                                .encoded_recipient(&self.chain_type)
-                                .expect("infallible"),
-                            recipient_unified_address: note
-                                .encoded_recipient_full_unified_address(&self.chain_type),
-                            account_id: note.key_id().account_id,
-                            scope: Scope::from(note.key_id().scope),
-                        }
+                    .map(|note| OutgoingNoteSummary {
+                        output_index: note.output_id().output_index(),
+                        memo: note.memo().clone(),
+                        value: note.value(),
+                        recipient: note
+                            .encoded_recipient(&self.chain_type)
+                            .expect("infallible"),
+                        recipient_unified_address: note
+                            .encoded_recipient_full_unified_address(&self.chain_type),
+                        account_id: note.key_id().account_id,
+                        scope: Scope::from(note.key_id().scope),
                     })
                     .collect::<Vec<_>>();
 
@@ -303,11 +263,6 @@ impl LightWallet {
                 }
             })
             .map(|note| {
-                let memo = if let Memo::Text(memo_text) = note.memo() {
-                    Some(memo_text.to_string())
-                } else {
-                    None
-                };
                 let transaction = self.output_transaction(note);
 
                 NoteSummary {
@@ -315,7 +270,7 @@ impl LightWallet {
                     status: transaction.status(),
                     block_height: transaction.status().get_height(),
                     spend_status: self.output_spend_status(note),
-                    memo,
+                    memo: note.memo().clone(),
                     time: transaction.datetime(),
                     txid: note.output_id().txid(),
                     output_index: note.output_id().output_index(),
