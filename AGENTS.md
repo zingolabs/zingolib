@@ -40,7 +40,17 @@
   and call it from every site, keep effects at the edges, and collapse any
   duplication you find in code you are already changing. A second copy of a
   helper, a branch, or a constant is a defect, in review and in
-  implementation alike. Ruled 2026-10-02.
+  implementation alike. Ruled 2026-10-02. CI enforces it through the
+  workbench binary `dupes-gate` (tools/workbench/src/dupes_gate.rs), which
+  runs cargo-dupes with the settings that module pins. The gate rejects an
+  exact group outside `.dupes-ignore.toml`, a near group count other than
+  the ceiling `MAX_NEAR` in that module, and a baseline entry whose group
+  is gone. Never add an entry for a new group. Remove the duplication,
+  then run `dupes-gate cleanup` and commit the result. When a near group
+  disappears, lower `MAX_NEAR` to the new count; the ceiling only moves
+  down. No config file holds the settings, so run cargo-dupes through the
+  binary: `cargo run --manifest-path tools/workbench/Cargo.toml --bin
+  dupes-gate -- <cargo-dupes arguments>`.
 
 ## Writing & Code Style
 
