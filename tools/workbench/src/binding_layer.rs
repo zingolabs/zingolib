@@ -25,11 +25,12 @@ pub const PROXY_LIB_NAME: &str = "zingo_nym_proxy_ffi";
 /// The proxy crate's package name, which cargo selects in its own workspace.
 pub const PROXY_PACKAGE: &str = "zingo-nym-proxy-ffi";
 
-/// The variable that makes rustup ignore zingolib's toolchain pin.
+/// The variable that makes rustup ignore zingolib's toolchain pin, which the builder clears from every step.
 pub const TOOLCHAIN_VARIABLE: &str = "RUSTUP_TOOLCHAIN";
 
-/// The toolchain that the builder selects.
-pub const BUILDER_TOOLCHAIN: &str = "stable";
+pub const IMAGE_CHANNEL_ARGUMENT: &str = "RUST_CHANNEL";
+
+pub const IMAGE_TARGETS_ARGUMENT: &str = "RUST_TARGETS";
 
 /// The variable that tells cargo where to write build output.
 pub const TARGET_DIR_VARIABLE: &str = "CARGO_TARGET_DIR";

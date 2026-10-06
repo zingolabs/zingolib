@@ -271,23 +271,24 @@ fn main() {
 fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
     let (platform, out, abis) = parse(args)?;
     let root = workbench::repo_root()?;
+    let channel = workbench::toolchain_channel(&root)?;
     let roots = match platform {
         Platform::Android { in_image: true } => {
             let roots = Roots::on_host(root, out)?;
-            execute(&Runner::Host, &android_plan(&roots, &abis))?;
+            execute(&Runner::Host, &android_plan(&roots, &channel, &abis))?;
             roots
         }
         Platform::Android { in_image: false } => {
             let roots = Roots::in_container(root, out)?;
             let engine = binding_layer::container_engine()?;
-            build_android_image(engine, &roots.host)?;
+            build_android_image(engine, &roots.host, &channel)?;
             let id = start_container(engine, &roots.host)?;
             let outcome = execute(
                 &Runner::Container {
                     engine,
                     id: id.clone(),
                 },
-                &android_plan(&roots, &abis),
+                &android_plan(&roots, &channel, &abis),
             );
             workbench::stdout_of(engine, &["rm", "--force", &id])?;
             outcome?;
@@ -298,12 +299,12 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
                 return Err(vec!["iOS packaging requires macOS with Xcode".to_string()]);
             }
             let roots = Roots::on_host(root, out)?;
-            execute(&Runner::Host, &ios_plan(&roots))?;
+            execute(&Runner::Host, &ios_plan(&roots, &channel))?;
             roots
         }
         Platform::Kotlin => {
             let roots = Roots::on_host(root, out)?;
-            execute(&Runner::Host, &kotlin_plan(&roots))?;
+            execute(&Runner::Host, &kotlin_plan(&roots, &channel))?;
             roots
         }
     };
@@ -361,20 +362,38 @@ fn parse(
     Ok((platform, absolute_out, abis))
 }
 
-/// Build the Android tool image from its Dockerfile.
-fn build_android_image(engine: &str, root: &path::Path) -> Result<(), Vec<String>> {
+/// Build the Android tool image from its Dockerfile, with the pinned channel and every Android target preinstalled.
+fn build_android_image(engine: &str, root: &path::Path, channel: &str) -> Result<(), Vec<String>> {
     workbench::stdout_of(
         engine,
         &[
             "build",
             "--tag",
             ANDROID_IMAGE,
+            "--build-arg",
+            &image_argument(binding_layer::IMAGE_CHANNEL_ARGUMENT, channel),
+            "--build-arg",
+            &image_argument(
+                binding_layer::IMAGE_TARGETS_ARGUMENT,
+                &android_targets().join(" "),
+            ),
             "--file",
             workbench::utf8(&root.join(ANDROID_DOCKERFILE))?,
             workbench::utf8(&root.join(ANDROID_CONTEXT))?,
         ],
     )
     .map(drop)
+}
+
+fn image_argument(name: &str, value: &str) -> String {
+    format!("{name}={value}")
+}
+
+fn android_targets() -> Vec<&'static str> {
+    binding_layer::ANDROID_ABIS
+        .iter()
+        .map(|abi| abi.triple)
+        .collect()
 }
 
 /// Start a long-lived container of the Android tool image with zingolib mounted, and return its id.
@@ -395,12 +414,25 @@ fn start_container(engine: &str, root: &path::Path) -> Result<String, Vec<String
     .map(|id| id.trim().to_string())
 }
 
-/// The environment that selects the builder's toolchain for a step.
-fn toolchain_env() -> Vec<(String, String)> {
-    vec![(
-        binding_layer::TOOLCHAIN_VARIABLE.to_string(),
-        binding_layer::BUILDER_TOOLCHAIN.to_string(),
-    )]
+fn toolchain_steps(roots: &Roots, channel: &str, targets: &[&str]) -> Vec<Step> {
+    let rustup = |words: &[&str]| Step::Run {
+        workdir: roots.run.clone(),
+        env: vec![],
+        command: ["rustup"]
+            .into_iter()
+            .chain(words.iter().copied())
+            .map(String::from)
+            .collect(),
+    };
+    let install = rustup(&["toolchain", "install", channel, "--profile", "minimal"]);
+    if targets.is_empty() {
+        vec![install]
+    } else {
+        vec![
+            install,
+            rustup(&[&["target", "add", "--toolchain", channel], targets].concat()),
+        ]
+    }
 }
 
 /// A `Run` step that generates one binding set into a directory, from the directory that the generation names.
@@ -461,7 +493,7 @@ fn android_base_env() -> Vec<(String, String)> {
         ("CXXFLAGS_aarch64_linux_android", AARCH64_C_FLAGS),
     ]
     .map(|(key, value)| (key.to_string(), value.to_string()));
-    [toolchain_env(), cross.to_vec()].concat()
+    cross.to_vec()
 }
 
 /// A plan whose every `Run` step starts from a base environment that the step's own entries override.
@@ -482,9 +514,19 @@ fn with_base_env(plan: Vec<Step>, base: &[(String, String)]) -> Vec<Step> {
         .collect()
 }
 
-/// The Android build plan: bindings, per-ABI libraries, stripping, then copies.
-fn android_plan(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step> {
-    with_base_env(android_steps(roots, abis), &android_base_env())
+/// The Android build plan: the toolchain, bindings, per-ABI libraries, stripping, then copies.
+fn android_plan(roots: &Roots, channel: &str, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step> {
+    let targets: Vec<&str> = abis.iter().map(|abi| abi.triple).collect();
+    with_base_env(
+        [
+            toolchain_steps(roots, channel, &targets),
+            android_steps(roots, abis),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
+        &android_base_env(),
+    )
 }
 
 /// The Android steps before the base environment: bindings, per-ABI libraries, stripping, and copies.
@@ -617,9 +659,9 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
 /// The profile of the Kotlin plan's host steps, the bindgen binaries and the proxy build, which each serve one generation.
 const HOST_PROFILE: binding_layer::Profile = binding_layer::Profile::Debug;
 
-/// The Kotlin plan: both binding sets, from the UDL and a host build of the proxy crate.
-fn kotlin_plan(roots: &Roots) -> Vec<Step> {
-    let env = toolchain_env();
+/// The Kotlin plan: the toolchain, then both binding sets, from the UDL and a host build of the proxy crate.
+fn kotlin_plan(roots: &Roots, channel: &str) -> Vec<Step> {
+    let env = vec![];
     let wallet_target = roots.run_path(&format!("{BUILD_ROOT}/host/wallet"));
     let proxy_target = roots.run_path(&format!("{BUILD_ROOT}/host/proxy"));
     let kotlin_out = roots.out_run_path(binding_layer::KOTLIN_OUT_DIR);
@@ -655,12 +697,18 @@ fn kotlin_plan(roots: &Roots) -> Vec<Step> {
         HOST_PROFILE,
         &["--package", binding_layer::PROXY_PACKAGE],
     );
-    vec![
-        Step::FreshDir(roots.out_host.clone()),
-        bindgen(binding_layer::Generation::Wallet),
-        build_proxy,
-        bindgen(binding_layer::Generation::Proxy),
+    [
+        toolchain_steps(roots, channel, &[]),
+        vec![
+            Step::FreshDir(roots.out_host.clone()),
+            bindgen(binding_layer::Generation::Wallet),
+            build_proxy,
+            bindgen(binding_layer::Generation::Proxy),
+        ],
     ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// The directory, relative to the zingolib root, that a bindgen working directory names.
@@ -684,16 +732,12 @@ fn host_of(roots: &Roots, run_path: &str) -> path::PathBuf {
     roots.host_path(relative)
 }
 
-/// The iOS build plan, which writes both XCFrameworks and generates the wallet bindings from the standalone package.
-fn ios_plan(roots: &Roots) -> Vec<Step> {
-    let env = [
-        vec![(
-            "IPHONEOS_DEPLOYMENT_TARGET".to_string(),
-            IOS_DEPLOYMENT_TARGET.to_string(),
-        )],
-        toolchain_env(),
-    ]
-    .concat();
+/// The iOS build plan, which installs the toolchain, writes both XCFrameworks, and generates the wallet bindings from the standalone package.
+fn ios_plan(roots: &Roots, channel: &str) -> Vec<Step> {
+    let env = vec![(
+        "IPHONEOS_DEPLOYMENT_TARGET".to_string(),
+        IOS_DEPLOYMENT_TARGET.to_string(),
+    )];
     let wallet_target = roots.run_path(&format!("{BUILD_ROOT}/ios/wallet"));
     let proxy_target = roots.run_path(&format!("{BUILD_ROOT}/ios/proxy"));
     let with_target = |target_dir: &str| {
@@ -804,6 +848,7 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
     };
     let host = |relative: &str| roots.out_host_path(relative);
     let steps: Vec<Vec<Step>> = vec![
+        toolchain_steps(roots, channel, &iter_targets().collect::<Vec<_>>()),
         vec![
             Step::FreshDir(roots.out_host.clone()),
             Step::FreshDir(host(&wallet_generated)),
@@ -979,6 +1024,16 @@ fn invocation(
 /// The working directory of a host process that only drives a container.
 const CURRENT_DIR: &str = ".";
 
+fn host_command(started: &Invocation) -> process::Command {
+    let mut command = process::Command::new(&started.program);
+    command
+        .args(&started.args)
+        .current_dir(&started.workdir)
+        .env_remove(binding_layer::TOOLCHAIN_VARIABLE)
+        .envs(started.env.iter().cloned());
+    command
+}
+
 /// Run one command on the runner, streaming its output, and fail if it fails.
 fn run_command(
     runner: &Runner,
@@ -993,10 +1048,7 @@ fn run_command(
             started.workdir
         )]);
     }
-    let status = process::Command::new(&started.program)
-        .args(&started.args)
-        .current_dir(&started.workdir)
-        .envs(started.env)
+    let status = host_command(&started)
         .status()
         .map_err(|e| vec![format!("cannot run {}: {e}", started.program)])?;
     if status.success() {
@@ -1013,10 +1065,115 @@ mod tests {
     /// The number of times one build generates the proxy bindings.
     const PROXY_GENERATIONS_PER_BUILD: usize = 1;
 
+    const CHANNEL: &str = "1.97.1";
+
+    const INSTALL: &str = "rustup toolchain install";
+
+    const TARGET_ADD: &str = "rustup target add --toolchain";
+
+    fn position_of(commands: &[String], leading: &str) -> Option<usize> {
+        commands
+            .iter()
+            .position(|command| command.starts_with(leading))
+    }
+
+    #[test]
+    fn every_plan_installs_the_pinned_toolchain_before_its_first_cargo_step() {
+        let host = Roots::on_host(
+            path::PathBuf::from(HOST_ROOT),
+            path::PathBuf::from(OUTSIDE_OUT),
+        )
+        .unwrap();
+        let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
+        for plan in [
+            android_plan(&roots(), CHANNEL, &abis),
+            ios_plan(&host, CHANNEL),
+            kotlin_plan(&host, CHANNEL),
+        ] {
+            let commands = commands(&plan);
+            let install = position_of(&commands, &format!("{INSTALL} {CHANNEL} ")).unwrap();
+            let cargo = position_of(&commands, "cargo ").unwrap();
+            assert!(install < cargo);
+            assert!(commands.iter().all(|command| !command.contains("stable")));
+        }
+    }
+
+    #[test]
+    fn android_plan_adds_only_the_selected_targets_to_the_pinned_toolchain() {
+        let x86: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS
+            .iter()
+            .filter(|abi| abi.jni_dir == "x86")
+            .collect();
+        let commands = commands(&android_plan(&roots(), CHANNEL, &x86));
+        let target_add = position_of(&commands, TARGET_ADD).unwrap();
+        assert_eq!(
+            commands[target_add],
+            format!("{TARGET_ADD} {CHANNEL} {}", x86[FIRST_POSITION].triple)
+        );
+    }
+
+    #[test]
+    fn ios_plan_adds_the_device_and_simulator_targets_to_the_pinned_toolchain() {
+        let roots = Roots::on_host(
+            path::PathBuf::from(HOST_ROOT),
+            path::PathBuf::from(OUTSIDE_OUT),
+        )
+        .unwrap();
+        let commands = commands(&ios_plan(&roots, CHANNEL));
+        let target_add = position_of(&commands, TARGET_ADD).unwrap();
+        let targets: Vec<&str> = iter_targets().collect();
+        assert_eq!(
+            commands[target_add],
+            format!("{TARGET_ADD} {CHANNEL} {}", targets.join(" "))
+        );
+    }
+
+    #[test]
+    fn no_plan_step_overrides_the_toolchain_pin() {
+        let host = Roots::on_host(
+            path::PathBuf::from(HOST_ROOT),
+            path::PathBuf::from(OUTSIDE_OUT),
+        )
+        .unwrap();
+        let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
+        for plan in [
+            android_plan(&roots(), CHANNEL, &abis),
+            ios_plan(&host, CHANNEL),
+            kotlin_plan(&host, CHANNEL),
+        ] {
+            assert!(plan.iter().all(|step| match step {
+                Step::Run { env, .. } => env
+                    .iter()
+                    .all(|(key, _)| key != binding_layer::TOOLCHAIN_VARIABLE),
+                _ => true,
+            }));
+        }
+    }
+
+    #[test]
+    fn the_host_command_clears_the_toolchain_override_it_inherits() {
+        let started = invocation(
+            &Runner::Host,
+            HOST_ROOT,
+            &[("CC".to_string(), "clang".to_string())],
+            &["cargo".to_string(), "build".to_string()],
+        );
+        let command = host_command(&started);
+        let envs: Vec<_> = command.get_envs().collect();
+        assert!(envs.contains(&(
+            std::ffi::OsStr::new(binding_layer::TOOLCHAIN_VARIABLE),
+            None
+        )));
+        assert!(envs.contains(&(
+            std::ffi::OsStr::new("CC"),
+            Some(std::ffi::OsStr::new("clang"))
+        )));
+    }
+
     #[test]
     fn every_android_run_step_carries_the_base_environment() {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
-        let plan = android_plan(&roots(), &abis);
+        let plan = android_plan(&roots(), CHANNEL, &abis);
         let base = android_base_env();
         assert!(plan.iter().all(|step| match step {
             Step::Run { env, .. } => base.iter().all(|entry| env.contains(entry)),
@@ -1056,7 +1213,7 @@ mod tests {
     #[test]
     fn android_plan_generates_the_proxy_bindings_once_after_the_first_abi() {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
-        let plan = android_plan(&roots(), &abis);
+        let plan = android_plan(&roots(), CHANNEL, &abis);
         let generations = commands(&plan)
             .into_iter()
             .filter(|command| command.contains("--library"))
@@ -1070,7 +1227,7 @@ mod tests {
             .iter()
             .filter(|abi| abi.jni_dir == "x86")
             .collect();
-        let plan = android_plan(&roots(), &x86);
+        let plan = android_plan(&roots(), CHANNEL, &x86);
         let expected_cc = binding_layer::ANDROID_ABIS[FIRST_POSITION].cc();
         let bindgen_env = plan.iter().find_map(|step| match step {
             Step::Run { env, command, .. } if command.iter().any(|arg| arg == "--library") => {
@@ -1092,7 +1249,7 @@ mod tests {
             path::PathBuf::from(OUTSIDE_OUT),
         )
         .unwrap();
-        let plan = kotlin_plan(&roots);
+        let plan = kotlin_plan(&roots, CHANNEL);
         let commands = commands(&plan);
         assert!(
             matches!(plan.first(), Some(Step::FreshDir(out)) if out == path::Path::new(OUTSIDE_OUT))
@@ -1128,7 +1285,7 @@ mod tests {
             path::PathBuf::from(OUTSIDE_OUT),
         )
         .unwrap();
-        let plan = kotlin_plan(&roots);
+        let plan = kotlin_plan(&roots, CHANNEL);
         let build_target = plan
             .iter()
             .find_map(|step| match step {
@@ -1173,7 +1330,7 @@ mod tests {
             path::PathBuf::from(OUTSIDE_OUT),
         )
         .unwrap();
-        let generations = commands(&kotlin_plan(&roots))
+        let generations = commands(&kotlin_plan(&roots, CHANNEL))
             .into_iter()
             .filter(|command| command.contains("--language kotlin"))
             .collect::<Vec<_>>();
@@ -1201,7 +1358,7 @@ mod tests {
     #[test]
     fn android_plan_copies_both_libraries_for_every_abi() {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
-        let plan = android_plan(&roots(), &abis);
+        let plan = android_plan(&roots(), CHANNEL, &abis);
         let copies = plan
             .iter()
             .filter(|step| matches!(step, Step::Copy { .. }))
@@ -1255,7 +1412,7 @@ mod tests {
             path::PathBuf::from(OUTSIDE_OUT),
         )
         .unwrap();
-        let plan = ios_plan(&roots);
+        let plan = ios_plan(&roots, CHANNEL);
         assert!(matches!(
             plan.first(),
             Some(Step::FreshDir(directory)) if directory == path::Path::new(OUTSIDE_OUT)

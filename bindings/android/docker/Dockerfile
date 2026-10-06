@@ -14,7 +14,15 @@ RUN apt update \
     gcc \
     g++
 
-RUN rustup default stable
+# The builder passes zingolib's pinned channel and the Android targets, so a
+# container starts with the toolchain that rust-toolchain.toml selects and
+# installs nothing on each run.
+ARG RUST_CHANNEL
+ARG RUST_TARGETS
+RUN test -n "$RUST_CHANNEL" && test -n "$RUST_TARGETS" \
+    && rustup toolchain install "$RUST_CHANNEL" --profile minimal \
+    && rustup target add --toolchain "$RUST_CHANNEL" $RUST_TARGETS \
+    && rustup default "$RUST_CHANNEL"
 
 RUN cargo install --force --locked bindgen-cli
 

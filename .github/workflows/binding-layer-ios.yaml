@@ -28,14 +28,14 @@ jobs:
         with:
           fetch-tags: true
 
-      - name: Cargo default stable
-        run: |
-          rustup update
-          rustup upgrade
-          rustup default stable
+      # rustup installs the toolchain that rust-toolchain.toml pins on the
+      # first cargo call inside the checkout. The builder adds the iOS
+      # targets to that toolchain itself.
+      - name: Install the pinned toolchain
+        run: cargo --version
 
       # Placed after the toolchain step: rust-cache reads `rustc -vV` into
-      # its key, and RUSTUP_HOME holds no default toolchain until that step
+      # its key, and RUSTUP_HOME holds no toolchain until that step
       # installs one. The builder puts each crate's iOS target directory
       # under target/binding-layer, so the list names those directories.
       # The wallet crate resolves in the root workspace and the proxy crate
@@ -54,9 +54,6 @@ jobs:
 
       - name: Install protoc
         run: brew install protobuf
-
-      - name: Install the iOS Rust targets
-        run: rustup target add --toolchain stable aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
       # A dependency uses bindgen 0.69, which needs the simulator target and
       # SDK stated for the aarch64 simulator. The job environment carries
