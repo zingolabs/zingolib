@@ -365,6 +365,7 @@ fn parse(
 /// - Runs the container engine's `build`, which writes `ANDROID_IMAGE` to its store.
 fn build_android_image(engine: &str, root: &path::Path) -> Result<(), Vec<String>> {
     let toolchain = workbench::read(&root.join(workbench::TOOLCHAIN_FILE))?;
+    let targets = triples(binding_layer::ANDROID_ABIS.iter()).join(" ");
     workbench::stdout_of(
         engine,
         &[
@@ -372,22 +373,15 @@ fn build_android_image(engine: &str, root: &path::Path) -> Result<(), Vec<String
             "--tag",
             ANDROID_IMAGE,
             "--build-arg",
-            &image_argument(binding_layer::IMAGE_TOOLCHAIN_ARGUMENT, &toolchain),
+            &format!("{}={toolchain}", binding_layer::IMAGE_TOOLCHAIN_ARGUMENT),
             "--build-arg",
-            &image_argument(
-                binding_layer::IMAGE_TARGETS_ARGUMENT,
-                &triples(binding_layer::ANDROID_ABIS.iter()).join(" "),
-            ),
+            &format!("{}={targets}", binding_layer::IMAGE_TARGETS_ARGUMENT),
             "--file",
             workbench::utf8(&root.join(ANDROID_DOCKERFILE))?,
             workbench::utf8(&root.join(ANDROID_CONTEXT))?,
         ],
     )
     .map(drop)
-}
-
-fn image_argument(name: &str, value: &str) -> String {
-    format!("{name}={value}")
 }
 
 fn triples<'a>(abis: impl IntoIterator<Item = &'a binding_layer::AndroidAbi>) -> Vec<&'a str> {
