@@ -17,6 +17,12 @@ on:
         required: false
         type: string
         default: ubuntu-24.04
+      # The commit to build. The publish workflow names a commit the
+      # manifest lists, which is rarely the commit that triggered it.
+      ref:
+        required: false
+        type: string
+        default: ${{ github.sha }}
 
 jobs:
   # The job already runs in android_builder:018, the image that the builder
@@ -57,6 +63,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.ref }}
           fetch-tags: true
 
       # A container job's workspace belongs to another user, and git refuses
@@ -86,7 +93,7 @@ jobs:
       - name: Upload the Binding Layer
         uses: actions/upload-artifact@v4
         with:
-          name: binding-layer-android-${{ matrix.abi }}-${{ github.sha }}
+          name: binding-layer-android-${{ matrix.abi }}-${{ inputs.ref }}
           path: bindings/android/build/binding-layer
           retention-days: 3
           overwrite: true
@@ -101,12 +108,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
 
       # The ABIs share one output directory.
       - name: Download the Binding Layer
         uses: actions/download-artifact@v4
         with:
-          pattern: binding-layer-android-*-${{ github.sha }}
+          pattern: binding-layer-android-*-${{ inputs.ref }}
           path: bindings/android/build/binding-layer
           merge-multiple: true
 
@@ -146,3 +155,15 @@ jobs:
               echo "$entries" | grep --quiet --line-regexp "jni/$abi/$library"
             done
           done
+
+      # The publish workflow pushes this AAR, with the descriptor the
+      # builder read from the wallet build, as the Android Prebuilt Bundle.
+      - name: Upload the AAR and the descriptor
+        uses: actions/upload-artifact@v4
+        with:
+          name: binding-layer-aar-${{ inputs.ref }}
+          path: |
+            bindings/android/build/outputs/aar/*-release.aar
+            bindings/android/build/binding-layer/descriptor.txt
+          retention-days: 3
+          overwrite: true

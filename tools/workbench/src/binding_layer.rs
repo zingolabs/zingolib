@@ -34,6 +34,27 @@ pub const IMAGE_TARGETS_ARGUMENT: &str = "RUST_TARGETS";
 /// The variable that tells cargo where to write build output.
 pub const TARGET_DIR_VARIABLE: &str = "CARGO_TARGET_DIR";
 
+/// The file, in the builder's output, that holds the `zl_` descriptor the built wallet library reports.
+pub const DESCRIPTOR_FILE: &str = "descriptor.txt";
+
+/// The directory, under a profile directory, where cargo runs build scripts.
+pub const BUILD_SCRIPTS_DIR: &str = "build";
+
+/// The prefix of zingolib's build script directory under `build`.
+pub const ZINGOLIB_BUILD_PREFIX: &str = "zingolib-";
+
+/// The file, under a build script directory, that zingolib's build script writes the descriptor to.
+pub const GENERATED_DESCRIPTOR: &str = "out/git_description.rs";
+
+const DESCRIPTOR_OPEN: &str = "-> &'static str {\"";
+const DESCRIPTOR_CLOSE: char = '"';
+
+pub fn descriptor_in(generated: &str) -> Option<String> {
+    let (_, rest) = generated.split_once(DESCRIPTOR_OPEN)?;
+    let (descriptor, _) = rest.split_once(DESCRIPTOR_CLOSE)?;
+    Some(descriptor.to_string())
+}
+
 /// The container engines to try, in order.
 pub const ENGINES: [&str; 2] = ["podman", "docker"];
 
@@ -299,6 +320,17 @@ pub fn library_file(prefix: &str, lib_name: &str, suffix: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_descriptor_is_the_literal_the_build_script_writes() {
+        let generated = "/// The build descriptor.\n\
+                         pub fn git_description() -> &'static str {\"zl_6.0.0_2691e\"}\n";
+        assert_eq!(
+            super::descriptor_in(generated).as_deref(),
+            Some("zl_6.0.0_2691e")
+        );
+        assert_eq!(super::descriptor_in("pub fn other() {}"), None);
+    }
+
     use super::*;
 
     #[test]

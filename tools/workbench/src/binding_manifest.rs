@@ -18,9 +18,18 @@ const QUOTE: char = '"';
 const COMMIT_LENGTH: usize = 40;
 const DIGEST_PREFIX: &str = "sha256:";
 const DIGEST_HEX_LENGTH: usize = 64;
+pub const DESCRIPTOR_ANNOTATION: &str = "org.zingolabs.zingolib.descriptor";
+pub const TITLE_ANNOTATION: &str = "org.opencontainers.image.title";
 const CHECK_FLAG: &str = "--check";
 const BASE_FLAG: &str = "--base";
-const USAGE: &str = "usage: binding-manifest --check [--base <ref>]";
+const NEWEST_FLAG: &str = "--newest";
+const RECORD_FLAG: &str = "--record";
+const COMMIT_FLAG: &str = "--commit";
+const PLATFORM_FLAG: &str = "--platform";
+const DIGEST_FLAG: &str = "--digest";
+const USAGE: &str = "usage: binding-manifest --check [--base <ref>] \
+    | binding-manifest --newest \
+    | binding-manifest --record --commit <commit> --platform <platform> --digest <digest>";
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Entry {
@@ -273,9 +282,15 @@ fn registry_diagnostics(_entries: &[Entry]) -> Result<Vec<String>, Vec<String>> 
 /// - Runs `git` child processes in `root`.
 /// - Fetches one manifest per entry and platform from the registry, anonymously.
 pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
-    if !args.iter().any(|arg| arg == CHECK_FLAG) {
-        return Err(vec![USAGE.to_string()]);
+    match args.first().map(String::as_str) {
+        Some(CHECK_FLAG) => check(root, args),
+        Some(NEWEST_FLAG) => newest(root),
+        Some(RECORD_FLAG) => record(root, args),
+        _ => Err(vec![USAGE.to_string()]),
     }
+}
+
+fn check(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let head = entries_at(root, None)?;
     commits_exist(root, &head)?;
     if let Some(base) = crate::flag_value(args, BASE_FLAG)? {
@@ -287,6 +302,77 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     } else {
         Err(diagnostics)
     }
+}
+
+fn newest(root: &Path) -> Result<(), Vec<String>> {
+    let entries = entries_at(root, None)?;
+    let last = entries
+        .last()
+        .ok_or_else(|| vec![format!("{FILE} holds no entry")])?;
+    println!("{}", last.commit);
+    Ok(())
+}
+
+fn record(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+    let required = |flag: &str| crate::required_flag(args, flag, USAGE);
+    let commit = required(COMMIT_FLAG)?;
+    let platform = required(PLATFORM_FLAG)?;
+    let digest = required(DIGEST_FLAG)?;
+    let file = root.join(FILE);
+    let text = recorded(&crate::read(&file)?, commit, platform, digest)?;
+    std::fs::write(&file, text).map_err(|e| vec![format!("cannot write {}: {e}", file.display())])
+}
+
+pub fn recorded(
+    text: &str,
+    commit: &str,
+    platform: &str,
+    digest: &str,
+) -> Result<String, Vec<String>> {
+    if !PLATFORMS.contains(&platform) {
+        return Err(vec![format!("unknown platform {platform}")]);
+    }
+    let line = format!(
+        "{platform} = {QUOTE}{}{QUOTE}",
+        digest_value(platform, digest)?
+    );
+    let mut lines: Vec<String> = Vec::new();
+    let mut in_target = false;
+    let mut written = false;
+    for raw in text.lines() {
+        let trimmed = raw.trim();
+        if trimmed == ENTRY_HEADER {
+            written |= in_target && !written && insert_after_text(&mut lines, &line);
+            in_target = false;
+        }
+        match assignment(trimmed) {
+            Some((COMMIT_KEY, value)) => in_target = value == commit,
+            Some((key, _)) if in_target && key == platform => {
+                lines.push(line.clone());
+                written = true;
+                continue;
+            }
+            _ => {}
+        }
+        lines.push(raw.to_string());
+    }
+    written |= in_target && !written && insert_after_text(&mut lines, &line);
+    if !written {
+        return Err(vec![format!("{FILE} holds no entry for {commit}")]);
+    }
+    let mut joined = lines.join("\n");
+    joined.push('\n');
+    validate(&parse(&joined)?)?;
+    Ok(joined)
+}
+
+fn insert_after_text(lines: &mut Vec<String>, line: &str) -> bool {
+    let at = lines
+        .iter()
+        .rposition(|existing| !existing.trim().is_empty())
+        .map_or(lines.len(), |index| index + 1);
+    lines.insert(at, line.to_string());
+    true
 }
 
 /// - Reads the process arguments.
@@ -418,6 +504,31 @@ mod tests {
             reference("android", FIRST),
             format!("ghcr.io/zingolabs/zingolib/binding-layer-android:{FIRST}")
         );
+    }
+
+    #[test]
+    fn recording_a_digest_replaces_the_platform_line_or_adds_one_to_the_named_entry() {
+        let text = manifest(&[
+            entry(FIRST, Some(ORIGIN), &["android"]),
+            entry(SECOND, None, &["android"]),
+        ]);
+        let replaced = DIGEST.replace('0', "f");
+        let with_ios = recorded(&text, SECOND, "ios", &replaced).unwrap();
+        assert_eq!(
+            parse(&with_ios).unwrap()[1].digests,
+            [
+                ("android".to_string(), DIGEST.to_string()),
+                ("ios".to_string(), replaced.clone())
+            ]
+        );
+        let re_android = recorded(&with_ios, FIRST, "android", &replaced).unwrap();
+        assert_eq!(
+            parse(&re_android).unwrap()[0].digests,
+            [("android".to_string(), replaced)]
+        );
+        assert!(recorded(&text, ORIGIN, "android", DIGEST).is_err());
+        assert!(recorded(&text, SECOND, "linux", DIGEST).is_err());
+        assert!(recorded(&text, SECOND, "android", "sha256:short").is_err());
     }
 
     #[test]

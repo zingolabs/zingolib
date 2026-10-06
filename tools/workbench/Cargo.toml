@@ -22,6 +22,10 @@ tokio = { version = "1", features = ["rt"], optional = true }
 name = "binding-manifest"
 required-features = ["registry"]
 
+[[bin]]
+name = "binding-publish"
+required-features = ["registry"]
+
 # The registry feature compiles the one binary that reaches the registry;
 # every other binary stays std-only.
 [features]

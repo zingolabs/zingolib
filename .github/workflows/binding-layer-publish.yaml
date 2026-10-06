@@ -1,0 +1,156 @@
+# A maintainer's comment `/publish` on a pull request publishes the Binding
+# Layer for the newest commit that bindings/published.toml names on that
+# pull request's branch. The workflow builds that commit through the two
+# build workflows, pushes each Prebuilt Bundle to the registry through the
+# workbench tool binding-publish, records each digest in the manifest with
+# binding-manifest, and commits the manifest to the pull request's branch.
+# The check "Binding Layer manifest" then verifies the entry against the
+# registry.
+#
+# An issue_comment run uses this file as it is on the default branch.
+name: Publish the Binding Layer
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+
+jobs:
+  request:
+    name: Read the request
+    if: >-
+      github.event.issue.pull_request
+      && github.event.comment.body == '/publish'
+      && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-24.04
+    outputs:
+      branch: ${{ steps.pull-request.outputs.branch }}
+      commit: ${{ steps.manifest.outputs.commit }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PULL_REQUEST: ${{ github.event.issue.number }}
+      COMMENT: ${{ github.event.comment.id }}
+    steps:
+      - name: Acknowledge the comment
+        run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=eyes
+
+      - name: Read the pull request's branch
+        id: pull-request
+        run: echo "branch=$(gh pr view "$PULL_REQUEST" --repo "$GITHUB_REPOSITORY" --json headRefName --jq .headRefName)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the pull request's branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pull-request.outputs.branch }}
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/workbench
+
+      - name: Read the newest manifest entry
+        id: manifest
+        run: |
+          commit="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --features registry --bin binding-manifest -- --newest)"
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+
+  android:
+    needs: request
+    uses: ./.github/workflows/binding-layer-android.yaml
+    with:
+      abis: '["x86_64", "x86", "arm64-v8a", "armeabi-v7a"]'
+      ref: ${{ needs.request.outputs.commit }}
+
+  ios:
+    needs: request
+    uses: ./.github/workflows/binding-layer-ios.yaml
+    with:
+      ref: ${{ needs.request.outputs.commit }}
+
+  # The Android bundle publishes whenever its build passed. The iOS bundle
+  # joins when its build passed too; the manifest accepts an entry without
+  # ios until zingo-mobile adopts this publication.
+  publish:
+    name: Publish and record
+    needs: [request, android, ios]
+    if: always() && needs.request.result == 'success' && needs.android.result == 'success'
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COMMIT: ${{ needs.request.outputs.commit }}
+      COMMENT: ${{ github.event.comment.id }}
+      REGISTRY_USERNAME: ${{ github.actor }}
+      REGISTRY_TOKEN: ${{ github.token }}
+      WORKBENCH: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --features registry
+    steps:
+      - name: Checkout the pull request's branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.request.outputs.branch }}
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/workbench
+
+      - name: Download the Android bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: binding-layer-aar-${{ needs.request.outputs.commit }}
+          path: publish/android
+
+      - name: Publish the Android bundle
+        run: |
+          set -eu
+          aar="$(find publish/android -name '*-release.aar')"
+          descriptor="$(find publish/android -name descriptor.txt)"
+          digest="$($WORKBENCH --bin binding-publish -- --platform android --bundle "$aar" --commit "$COMMIT" --descriptor-file "$descriptor")"
+          $WORKBENCH --bin binding-manifest -- --record --commit "$COMMIT" --platform android --digest "$digest"
+
+      - name: Download the iOS bundle
+        if: needs.ios.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: binding-layer-ios-${{ needs.request.outputs.commit }}
+          path: publish/ios/ZingoBindings/build
+
+      # The iOS Prebuilt Bundle is the Swift package: Package.swift beside
+      # the builder's output.
+      - name: Publish the iOS bundle
+        if: needs.ios.result == 'success'
+        run: |
+          set -eu
+          cp bindings/swift/Package.swift publish/ios/ZingoBindings/
+          tar --create --gzip --file publish/ZingoBindings.tar.gz --directory publish/ios ZingoBindings
+          digest="$($WORKBENCH --bin binding-publish -- --platform ios --bundle publish/ZingoBindings.tar.gz --commit "$COMMIT" --descriptor-file publish/ios/ZingoBindings/build/descriptor.txt)"
+          $WORKBENCH --bin binding-manifest -- --record --commit "$COMMIT" --platform ios --digest "$digest"
+
+      - name: Regenerate the Binding Layer changelog
+        run: $WORKBENCH --bin binding-changelog
+
+      - name: Commit the digests to the pull request's branch
+        run: |
+          set -eu
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bindings/published.toml bindings/CHANGELOG.md
+          git commit --message "chore(bindings): record the published digests of ${COMMIT}"
+          git push
+
+      - name: Report the publish
+        run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=rocket

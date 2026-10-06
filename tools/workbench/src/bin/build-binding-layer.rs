@@ -145,6 +145,48 @@ enum Step {
     FreshDir(path::PathBuf),
     /// Remove a host directory if it exists.
     Remove(path::PathBuf),
+    /// Write the `zl_` descriptor that zingolib's build script embedded under a profile directory to a host file.
+    Descriptor {
+        /// The profile directory of a wallet build, which holds `build/zingolib-*/out`.
+        profile_dir: path::PathBuf,
+        /// The destination file.
+        to: path::PathBuf,
+    },
+}
+
+fn descriptor_under(profile_dir: &path::Path) -> Result<String, Vec<String>> {
+    let build_dir = profile_dir.join(binding_layer::BUILD_SCRIPTS_DIR);
+    let entries = fs::read_dir(&build_dir)
+        .map_err(|e| vec![format!("cannot read {}: {e}", build_dir.display())])?;
+    let mut newest: Option<(std::time::SystemTime, String)> = None;
+    for entry in entries.flatten() {
+        if !entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(binding_layer::ZINGOLIB_BUILD_PREFIX)
+        {
+            continue;
+        }
+        let generated = entry.path().join(binding_layer::GENERATED_DESCRIPTOR);
+        let Ok(text) = fs::read_to_string(&generated) else {
+            continue;
+        };
+        let modified = fs::metadata(&generated)
+            .and_then(|metadata| metadata.modified())
+            .map_err(|e| vec![format!("cannot stat {}: {e}", generated.display())])?;
+        if let Some(descriptor) = binding_layer::descriptor_in(&text) {
+            if newest.as_ref().is_none_or(|(when, _)| *when < modified) {
+                newest = Some((modified, descriptor));
+            }
+        }
+    }
+    newest.map(|(_, descriptor)| descriptor).ok_or_else(|| {
+        vec![format!(
+            "no {} under {}",
+            binding_layer::GENERATED_DESCRIPTOR,
+            build_dir.display()
+        )]
+    })
 }
 
 /// Where `Run` steps execute.
@@ -633,6 +675,13 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
             },
         ]
     });
+    let descriptor = abis.first().map(|abi| Step::Descriptor {
+        profile_dir: host_of(
+            roots,
+            &format!("{wallet_target}/{}/{PROFILE_DIR}", abi.triple),
+        ),
+        to: roots.out_host_path(binding_layer::DESCRIPTOR_FILE),
+    });
     [bindgen(
         binding_layer::Generation::Wallet,
         "",
@@ -645,6 +694,7 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
     .chain(wallet_steps)
     .chain(proxy_steps)
     .chain(host_copies)
+    .chain(descriptor)
     .collect()
 }
 
@@ -893,6 +943,13 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
         })
         .into_iter()
         .collect(),
+        vec![Step::Descriptor {
+            profile_dir: host_of(
+                roots,
+                &format!("{wallet_target}/{IOS_DEVICE_TARGET}/{PROFILE_DIR}"),
+            ),
+            to: host(binding_layer::DESCRIPTOR_FILE),
+        }],
     ];
     fresh_plan(
         roots,
@@ -950,6 +1007,12 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
             } else {
                 Ok(())
             }
+        }
+        Step::Descriptor { profile_dir, to } => {
+            let descriptor = descriptor_under(profile_dir)?;
+            workbench::create_parent(to)?;
+            fs::write(to, format!("{descriptor}\n"))
+                .map_err(|e| vec![format!("cannot write {}: {e}", to.display())])
         }
     }
 }

@@ -10,6 +10,7 @@
 pub mod binding_changelog;
 pub mod binding_layer;
 pub mod binding_manifest;
+pub mod binding_publish;
 pub mod dupes_gate;
 
 use std::path::{Path, PathBuf};
@@ -256,6 +257,14 @@ fn flag_value_after<'a>(
             None => flag_value_after(rest, flag, joined_prefix),
         },
     }
+}
+
+pub fn required_flag<'a>(
+    args: &'a [String],
+    flag: &str,
+    usage: &str,
+) -> Result<&'a str, Vec<String>> {
+    flag_value(args, flag)?.ok_or_else(|| vec![format!("missing {flag}"), usage.to_string()])
 }
 
 /// The value of a `--dest <dir>` or `--dest=<dir>` argument, if present.
