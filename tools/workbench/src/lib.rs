@@ -36,7 +36,8 @@ pub fn run<T>(
     }
 }
 
-/// - Reads the process arguments, runs `dispatch` against the zingolib root, and exits through [`run`].
+/// - Reads the process arguments.
+/// - Exits the process through [`run`].
 pub fn dispatch_from_root(
     binary: &str,
     dispatch: fn(&Path, &[String]) -> Result<(), Vec<String>>,
@@ -172,9 +173,16 @@ pub fn fresh_dir(directory: &Path) -> Result<PathBuf, Vec<String>> {
     Ok(directory.to_path_buf())
 }
 
+const GIT: &str = "git";
+
 /// Run `git <args>` and return its stdout, or a one-line diagnostic on failure.
 pub fn git(args: &[&str]) -> Result<String, Vec<String>> {
-    stdout_of("git", args)
+    git_in(Path::new(CURRENT_DIR), args)
+}
+
+/// - Runs `git <args>` as a child process in `directory`, with stderr inherited, and waits for it.
+pub fn git_in(directory: &Path, args: &[&str]) -> Result<String, Vec<String>> {
+    stdout_in(directory, GIT, args, &[])
 }
 
 /// The workbench crate's directory at the time cargo compiled the crate.
