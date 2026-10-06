@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `testutils::mock_indexer::MockNet::client` takes an `Option<WalletSettings>`; `None` uses `default_test_wallet_settings`, which now sets `shutdown_on_completion` to `true`.
 
 ### Removed
+- **Breaking:** remove `LightWallet::get_filtered_balance_mut`, which no code called with a mutating filter. Use `LightWallet::get_filtered_balance`, which keeps its `Fn` bound.
 - **Breaking:** remove the `zennies_for_zingo` parameter from `LightClient::propose_send_all` and `LightClient::max_send_value`, since upstream send-max cannot carry a second payment.
 - **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
 - **Breaking:** remove the `sync::sync_status` re-export of `pepper_sync::sync_status`. Use `LightClient::latest_sync_status` or `pepper_sync::sync_status` directly.
