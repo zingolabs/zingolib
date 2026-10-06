@@ -49,16 +49,13 @@ use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::{LightClientError, SendError};
 use zingolib::lightclient::migrate::SplitStep;
 use zingolib::netutils::{GrpcIndexer, Indexer};
-use zingolib::perspective::value_transfer;
 use zingolib::utils;
 use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
 use zingolib::wallet;
 use zingolib::wallet::WalletSettings;
 use zingolib::wallet::error::ProposeSendError;
-use zingolib::wallet::keys::{
-    WalletAddressRef,
-    unified::{ReceiverSelection, UnifiedKeyStore},
-};
+use zingolib::wallet::keys;
+use zingolib::wallet::keys::{WalletAddressRef, unified::ReceiverSelection};
 use zingolib::wallet::migration::{
     MigrationParams, MigrationPhase, RecommendedAction, parts::PartState, parts::SigningStrategy,
     split::plan_hash,
@@ -503,6 +500,16 @@ trait Report {
 
 macro_rules! wallet_access {
     ($name:ident, $reported:ident, $reported_with:ident, $locked:ident, $lock:ident, $($borrow:tt)+) => {
+        wallet_access!($name, $reported, $locked, $lock, $($borrow)+);
+
+        fn $reported_with<State: Report>(
+            input: String,
+            state: impl FnOnce($($borrow)+ wallet::LightWallet, &str) -> State + UnwindSafe,
+        ) -> Result<String, ZingolibError> {
+            $reported(move |wallet| state(wallet, &input))
+        }
+    };
+    ($name:ident, $reported:ident, $locked:ident, $lock:ident, $($borrow:tt)+) => {
         /// - Takes the lightclient lock.
         /// - Blocks the calling thread on the runtime until it holds the wallet lock.
         fn $name<T>(
@@ -518,20 +525,13 @@ macro_rules! wallet_access {
         ) -> Result<String, ZingolibError> {
             $name(state)?.report()
         }
-
-        fn $reported_with<State: Report>(
-            input: String,
-            state: impl FnOnce($($borrow)+ wallet::LightWallet, &str) -> State + UnwindSafe,
-        ) -> Result<String, ZingolibError> {
-            $reported(move |wallet| state(wallet, &input))
-        }
     };
 }
 
 macro_rules! wallet_report {
-    (pub fn $export:ident($($input:ident: String)?) => $access:ident($state:ty)) => {
+    (pub fn $export:ident($($input:ident: String)?) => $access:ident($state:path)) => {
         pub fn $export($($input: String)?) -> Result<String, ZingolibError> {
-            $access($($input,)? <$state>::of)
+            $access($($input,)? $state)
         }
     };
 }
@@ -539,7 +539,6 @@ macro_rules! wallet_report {
 wallet_access!(
     with_wallet,
     report_wallet,
-    report_wallet_with,
     with_initialized_lightclient_read,
     read,
     &
@@ -1458,41 +1457,6 @@ mod read_error_channel_tests {
             "the failure must be the typed Read variant: {error}"
         );
     }
-
-    // Reproduces the exact `From<ValueTransfers>` shape (array nested under
-    // "value_transfers") to prove the migrated-amount splice targets the right
-    // field: only `migration` transfers with a mapped txid are overwritten.
-    #[test]
-    fn splice_migrated_values_overwrites_only_mapped_migrations() {
-        let mut json_vts = json::object! {
-            "value_transfers" => json::array![
-                json::object!{ "kind" => "migration", "txid" => "aaa", "value" => 0 },
-                json::object!{ "kind" => "sent", "txid" => "bbb", "value" => 100 },
-                json::object!{ "kind" => "migration", "txid" => "ccc", "value" => 0 },
-            ]
-        };
-        let mut migrated_by_txid = std::collections::HashMap::new();
-        migrated_by_txid.insert("aaa".to_string(), 500u64);
-        // "ccc" is a migration without a mapped amount -> untouched.
-
-        splice_migrated_values(&mut json_vts, &migrated_by_txid);
-
-        assert_eq!(
-            json_vts["value_transfers"][0]["value"].as_u64(),
-            Some(500),
-            "the mapped migration must carry the migrated amount"
-        );
-        assert_eq!(
-            json_vts["value_transfers"][1]["value"].as_u64(),
-            Some(100),
-            "a plain send must be left alone"
-        );
-        assert_eq!(
-            json_vts["value_transfers"][2]["value"].as_u64(),
-            Some(0),
-            "an unmapped migration must be left alone"
-        );
-    }
 }
 
 /// Pins the behavior of [`ffi_error`], the one funnel from zingolib's error
@@ -1771,89 +1735,10 @@ pub fn get_latest_block_wallet() -> Result<String, ZingolibError> {
     Ok(object! { "height" => json::JsonValue::from(height.map_or(0, u32::from)) }.pretty(2))
 }
 
-/// Overwrites the `value` of each Orchard->Ironwood migration value transfer
-/// with the amount migrated. `json_vts` is the `{ "value_transfers": [ ... ] }`
-/// object produced by `From<ValueTransfers>`; zingolib classifies these
-/// transfers with `kind: "migration"` and the migrated amount lives in
-/// `migrated_by_txid`. zingolib reports `value == 0` for self-sends (a
-/// migration is one), so without this the migrated amount is invisible.
-///
-/// Note the array is nested under `"value_transfers"` — `members_mut()` on the
-/// outer object yields an empty iterator, so we must index in first.
-fn splice_migrated_values(
-    json_vts: &mut json::JsonValue,
-    migrated_by_txid: &std::collections::HashMap<String, u64>,
-) {
-    for vt in json_vts["value_transfers"].members_mut() {
-        if vt["kind"].as_str() != Some("migration") {
-            continue;
-        }
-        let txid = vt["txid"].as_str().unwrap_or_default().to_string();
-        if let Some(&migrated) = migrated_by_txid.get(&txid) {
-            vt["value"] = json::JsonValue::from(migrated);
-        }
-    }
-}
-
-enum Transfers {
-    Listed {
-        value_transfers: value_transfer::ValueTransfers,
-        migrated_by_txid: std::collections::HashMap<String, u64>,
-    },
-    Unreadable(wallet::error::SummaryError),
-}
-
-impl Transfers {
-    async fn of(wallet: &wallet::LightWallet) -> Self {
-        // An Orchard -> Ironwood migration is a send-to-self, which zingolib
-        // reports with `value == 0` because `total_value_sent` excludes
-        // self-addressed value. To surface how much was migrated, recover it
-        // from the transaction's self-received ironwood notes and splice it
-        // into the matching value transfer's `value`. Keyed by txid, using
-        // zingolib's own migration predicate so the map stays in lockstep
-        // with the value transfers it classifies as `migration`.
-        let migrated_by_txid = match wallet.transaction_summaries(true).await {
-            Ok(summaries) => summaries
-                .0
-                .iter()
-                .filter(|s| s.is_orchard_to_ironwood_migration())
-                .map(|s| {
-                    (
-                        s.txid.to_string(),
-                        s.ironwood_notes.iter().map(|n| n.value).sum::<u64>(),
-                    )
-                })
-                .collect(),
-            Err(unreadable) => return Self::Unreadable(unreadable),
-        };
-        match wallet.value_transfers(true).await {
-            Ok(value_transfers) => Self::Listed {
-                value_transfers,
-                migrated_by_txid,
-            },
-            Err(unreadable) => Self::Unreadable(unreadable),
-        }
-    }
-}
-
-impl Report for Transfers {
-    fn report(self) -> Result<String, ZingolibError> {
-        match self {
-            Self::Listed {
-                value_transfers,
-                migrated_by_txid,
-            } => {
-                let mut json_vts = json::JsonValue::from(value_transfers);
-                splice_migrated_values(&mut json_vts, &migrated_by_txid);
-                Ok(json_vts.pretty(2))
-            }
-            Self::Unreadable(unreadable) => Err(ZingolibError::read(&unreadable)),
-        }
-    }
-}
-
 pub fn get_value_transfers() -> Result<String, ZingolibError> {
-    report_wallet(|wallet| RT.block_on(Transfers::of(wallet)))
+    let value_transfers = with_wallet(|wallet| RT.block_on(wallet.value_transfers(true)))?
+        .map_err(|e| ZingolibError::read(&e))?;
+    Ok(json::JsonValue::from(value_transfers).pretty(2))
 }
 
 pub fn poll_sync() -> Result<String, ZingolibError> {
@@ -2072,7 +1957,7 @@ impl Report for Seed {
     }
 }
 
-wallet_report!(pub fn get_seed() => report_wallet(Seed));
+wallet_report!(pub fn get_seed() => report_wallet(Seed::of));
 
 enum ViewingKey {
     Encoded {
@@ -2120,7 +2005,7 @@ impl Report for ViewingKey {
     }
 }
 
-wallet_report!(pub fn get_ufvk() => report_wallet(ViewingKey));
+wallet_report!(pub fn get_ufvk() => report_wallet(ViewingKey::of));
 
 /// Salvages seed phrase, birthday, and account count from the stable prefix
 /// of a wallet file that cannot open.
@@ -2309,40 +2194,8 @@ pub fn change_server(server_uri: String) -> Result<String, ZingolibError> {
     })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WalletKind {
-    Mnemonic,
-    SpendingKey,
-    ViewingKey {
-        transparent: bool,
-        sapling: bool,
-        orchard: bool,
-    },
-    NoKeys,
-}
-
-impl WalletKind {
-    /// - Panics when the wallet holds no account zero.
-    fn of(wallet: &wallet::LightWallet) -> Self {
-        if wallet.mnemonic_phrase().is_some() {
-            return Self::Mnemonic;
-        }
-        match wallet
-            .unified_key_store
-            .get(&AccountId::ZERO)
-            .expect("account 0 must always exist")
-        {
-            UnifiedKeyStore::Spend(_) => Self::SpendingKey,
-            UnifiedKeyStore::View(ufvk) => Self::ViewingKey {
-                transparent: ufvk.transparent().is_some(),
-                sapling: ufvk.sapling().is_some(),
-                orchard: ufvk.orchard().is_some(),
-            },
-            UnifiedKeyStore::Empty => Self::NoKeys,
-        }
-    }
-
-    fn json(self) -> json::JsonValue {
+impl Report for keys::WalletKind {
+    fn report(self) -> Result<String, ZingolibError> {
         let (kind, transparent, sapling, orchard) = match self {
             Self::Mnemonic => ("Loaded from seed or mnemonic phrase", true, true, true),
             Self::SpendingKey => ("Loaded from unified spending key", true, true, true),
@@ -2358,18 +2211,17 @@ impl WalletKind {
             ),
             Self::NoKeys => ("No keys found", false, false, false),
         };
-        object! {
+        Ok(object! {
             "kind" => kind,
             "transparent" => transparent,
             "sapling" => sapling,
             "orchard" => orchard,
         }
+        .pretty(2))
     }
 }
 
-pub fn wallet_kind() -> Result<String, ZingolibError> {
-    Ok(with_wallet(WalletKind::of)?.json().pretty(2))
-}
+wallet_report!(pub fn wallet_kind() => report_wallet(wallet::LightWallet::kind));
 
 pub fn parse_address(address: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
@@ -2610,7 +2462,7 @@ impl Report for Removal {
     }
 }
 
-wallet_report!(pub fn remove_transaction(txid: String) => report_wallet_mut_with(Removal));
+wallet_report!(pub fn remove_transaction(txid: String) => report_wallet_mut_with(Removal::of));
 
 /// The most the wallet can show as sendable to `address`. Display only:
 /// zingolib sizes it with a send-max proposal, whose amount an ordinary
@@ -2641,33 +2493,14 @@ pub fn get_spendable_balance_with_address(address: String) -> Result<String, Zin
     })
 }
 
-enum Spendable {
-    Balance(Zatoshis),
-    Unreadable(wallet::error::BalanceError),
-}
-
-impl Spendable {
-    fn of(wallet: &wallet::LightWallet) -> Self {
-        match wallet.shielded_spendable_balance(AccountId::ZERO, false) {
-            Ok(balance) => Self::Balance(balance),
-            Err(unreadable) => Self::Unreadable(unreadable),
-        }
+pub fn get_spendable_balance_total() -> Result<String, ZingolibError> {
+    let balance = with_wallet(|wallet| wallet.shielded_spendable_balance(AccountId::ZERO, false))?
+        .map_err(|e| ZingolibError::read(&e))?;
+    Ok(object! {
+        "spendable_balance" => balance.into_u64(),
     }
+    .pretty(2))
 }
-
-impl Report for Spendable {
-    fn report(self) -> Result<String, ZingolibError> {
-        match self {
-            Self::Balance(balance) => Ok(object! {
-                "spendable_balance" => balance.into_u64(),
-            }
-            .pretty(2)),
-            Self::Unreadable(unreadable) => Err(ZingolibError::read(&unreadable)),
-        }
-    }
-}
-
-wallet_report!(pub fn get_spendable_balance_total() => report_wallet(Spendable));
 
 pub fn set_option_wallet() -> Result<String, ZingolibError> {
     with_panic_guard(|| Err(ZingolibError::Wallet("unimplemented".to_string())))
@@ -2745,7 +2578,7 @@ impl Report for NewUnifiedAddress {
 }
 
 wallet_report!(
-    pub fn create_new_unified_address(receivers: String) => report_wallet_mut_with(NewUnifiedAddress)
+    pub fn create_new_unified_address(receivers: String) => report_wallet_mut_with(NewUnifiedAddress::of)
 );
 
 enum NewTransparentAddress {
@@ -2788,89 +2621,79 @@ impl Report for NewTransparentAddress {
     }
 }
 
-wallet_report!(pub fn create_new_transparent_address() => report_wallet_mut(NewTransparentAddress));
+wallet_report!(
+    pub fn create_new_transparent_address() => report_wallet_mut(NewTransparentAddress::of)
+);
 
-enum Ownership {
-    Foreign,
-    Mine(WalletAddressRef),
-    Unreadable(wallet::error::KeyError),
-}
-
-impl Ownership {
-    fn of(wallet: &wallet::LightWallet, address: &str) -> Self {
-        match wallet.is_address_derived_by_keys(address) {
-            Ok(Some(address_ref)) => Self::Mine(address_ref),
-            Ok(None) => Self::Foreign,
-            Err(unreadable) => Self::Unreadable(unreadable),
+fn ownership_report(
+    ownership: Result<Option<WalletAddressRef>, wallet::error::KeyError>,
+) -> Result<String, ZingolibError> {
+    let ownership = match ownership {
+        Err(unreadable) => {
+            return Err(ZingolibError::Wallet(chain_text(&unreadable)));
         }
-    }
+        Ok(None) => json::object! { "is_wallet_address" => false },
+        Ok(Some(WalletAddressRef::Unified {
+            account_id,
+            address_index,
+            has_orchard,
+            has_sapling,
+            has_transparent,
+            encoded_address,
+        })) => json::object! {
+            "is_wallet_address" => true,
+            "address_type" => "unified".to_string(),
+            "address_index" => address_index,
+            "account_id" => u32::from(account_id),
+            "has_orchard" => has_orchard,
+            "has_sapling" => has_sapling,
+            "has_transparent" => has_transparent,
+            "encoded_address" => encoded_address,
+        },
+        Ok(Some(WalletAddressRef::OrchardInternal {
+            account_id,
+            diversifier_index,
+            encoded_address,
+        })) => json::object! {
+            "is_wallet_address" => true,
+            "address_type" => "orchard_internal".to_string(),
+            "account_id" => u32::from(account_id),
+            "diversifier_index" => u128::from(diversifier_index).to_string(),
+            "encoded_address" => encoded_address,
+        },
+        Ok(Some(WalletAddressRef::SaplingExternal {
+            account_id,
+            diversifier_index,
+            encoded_address,
+        })) => json::object! {
+            "is_wallet_address" => true,
+            "address_type" => "sapling".to_string(),
+            "account_id" => u32::from(account_id),
+            "diversifier_index" => u128::from(diversifier_index).to_string(),
+            "encoded_address" => encoded_address,
+        },
+        Ok(Some(WalletAddressRef::Transparent {
+            account_id,
+            scope,
+            address_index,
+            encoded_address,
+        })) => json::object! {
+            "is_wallet_address" => true,
+            "address_type" => "transparent".to_string(),
+            "account_id" => u32::from(account_id),
+            "scope" => scope.to_string(),
+            "address_index" => address_index.index(),
+            "encoded_address" => encoded_address,
+        },
+    };
+    Ok(ownership.pretty(2))
 }
 
-impl Report for Ownership {
-    fn report(self) -> Result<String, ZingolibError> {
-        let ownership = match self {
-            Self::Unreadable(unreadable) => {
-                return Err(ZingolibError::Wallet(chain_text(&unreadable)));
-            }
-            Self::Foreign => json::object! { "is_wallet_address" => false },
-            Self::Mine(WalletAddressRef::Unified {
-                account_id,
-                address_index,
-                has_orchard,
-                has_sapling,
-                has_transparent,
-                encoded_address,
-            }) => json::object! {
-                "is_wallet_address" => true,
-                "address_type" => "unified".to_string(),
-                "address_index" => address_index,
-                "account_id" => u32::from(account_id),
-                "has_orchard" => has_orchard,
-                "has_sapling" => has_sapling,
-                "has_transparent" => has_transparent,
-                "encoded_address" => encoded_address,
-            },
-            Self::Mine(WalletAddressRef::OrchardInternal {
-                account_id,
-                diversifier_index,
-                encoded_address,
-            }) => json::object! {
-                "is_wallet_address" => true,
-                "address_type" => "orchard_internal".to_string(),
-                "account_id" => u32::from(account_id),
-                "diversifier_index" => u128::from(diversifier_index).to_string(),
-                "encoded_address" => encoded_address,
-            },
-            Self::Mine(WalletAddressRef::SaplingExternal {
-                account_id,
-                diversifier_index,
-                encoded_address,
-            }) => json::object! {
-                "is_wallet_address" => true,
-                "address_type" => "sapling".to_string(),
-                "account_id" => u32::from(account_id),
-                "diversifier_index" => u128::from(diversifier_index).to_string(),
-                "encoded_address" => encoded_address,
-            },
-            Self::Mine(WalletAddressRef::Transparent {
-                account_id,
-                scope,
-                address_index,
-                encoded_address,
-            }) => json::object! {
-                "is_wallet_address" => true,
-                "address_type" => "transparent".to_string(),
-                "account_id" => u32::from(account_id),
-                "scope" => scope.to_string(),
-                "address_index" => address_index.index(),
-                "encoded_address" => encoded_address,
-            },
-        };
-        Ok(ownership.pretty(2))
-    }
+pub fn check_my_address(address: String) -> Result<String, ZingolibError> {
+    ownership_report(with_wallet(|wallet| {
+        wallet.is_address_derived_by_keys(&address)
+    })?)
 }
-
-wallet_report!(pub fn check_my_address(address: String) => report_wallet_with(Ownership));
 
 pub fn get_wallet_save_required() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
