@@ -9,6 +9,7 @@
 
 pub mod binding_changelog;
 pub mod binding_layer;
+pub mod binding_manifest;
 pub mod dupes_gate;
 
 use std::path::{Path, PathBuf};
@@ -175,6 +176,30 @@ pub fn fresh_dir(directory: &Path) -> Result<PathBuf, Vec<String>> {
 /// Run `git <args>` and return its stdout, or a one-line diagnostic on failure.
 pub fn git(args: &[&str]) -> Result<String, Vec<String>> {
     stdout_of("git", args)
+}
+
+/// - Runs `git ls-tree` in `root`.
+pub fn listed_at(root: &Path, revision: &str, relative: &str) -> Result<bool, Vec<String>> {
+    stdout_in(
+        root,
+        "git",
+        &["ls-tree", "--name-only", revision, "--", relative],
+        &[],
+    )
+    .map(|listed| !listed.trim().is_empty())
+}
+
+/// - Runs `git rev-parse` in `root`.
+pub fn commit_of(root: &Path, revision: &str) -> Result<String, Vec<String>> {
+    let commit = format!("{revision}^{{commit}}");
+    stdout_in(
+        root,
+        "git",
+        &["rev-parse", "--verify", "--quiet", &commit],
+        &[],
+    )
+    .map(|sha| sha.trim().to_string())
+    .map_err(|_| vec![format!("{revision} is not a commit of this repository")])
 }
 
 /// The workbench crate's directory at the time cargo compiled the crate.

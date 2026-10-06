@@ -1,17 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use crate::MANIFEST;
+use crate::{binding_manifest, MANIFEST};
 
 pub const BINARY: &str = "binding-changelog";
 pub const FILE: &str = "bindings/CHANGELOG.md";
 const CRATE_CHANGELOG: &str = "CHANGELOG.md";
 const BINDING_CRATES: [&str; 2] = ["zingo-ffi/lib", "zingo-netutils/nym-proxy-ffi"];
-const SINCE_FLAG: &str = "--since";
-const COMMIT_FLAG: &str = "--commit";
 const CHECK_FLAG: &str = "--check";
-const HEAD: &str = "HEAD";
-const USAGE: &str =
-    "usage: binding-changelog --since <commit> [--commit <commit>] | binding-changelog --check";
+const USAGE: &str = "usage: binding-changelog [--check]";
 const TITLE: &str = "# Binding Layer changelog";
 const SECTION_MARK: &str = "## ";
 const SINCE_PREFIX: &str = "Since ";
@@ -116,12 +112,13 @@ pub fn render_header(crates: &[Crate]) -> String {
     format!(
         "{TITLE}\n\n\
          The workbench tool `{BINARY}` writes every section below, one per\n\
-         published commit, from the lines that the audited crate changelogs gained\n\
-         since the previous published commit. The audited crates are the two Binding\n\
-         Layer crates and their direct dependencies in this repository, as\n\
-         `cargo tree` reports them: {names}.\n\
+         published commit of `{}`, from the lines that the\n\
+         audited crate changelogs gained since the previous published commit. The\n\
+         audited crates are the two Binding Layer crates and their direct\n\
+         dependencies in this repository, as `cargo tree` reports them: {names}.\n\
          A change in another crate of this repository appears only where one of\n\
-         those changelogs records it.\n"
+         those changelogs records it.\n",
+        binding_manifest::FILE
     )
 }
 
@@ -148,64 +145,14 @@ fn block(text: &str) -> String {
     block
 }
 
-pub fn split_sections(file: &str) -> (String, Vec<String>) {
-    let mut header = String::new();
-    let mut sections: Vec<String> = Vec::new();
-    for line in file.split_inclusive('\n') {
-        if line.starts_with(SECTION_MARK) {
-            sections.push(String::new());
-        }
-        match sections.last_mut() {
-            Some(section) => section.push_str(line),
-            None => header.push_str(line),
-        }
-    }
-    (
-        block(&header),
-        sections.iter().map(|section| block(section)).collect(),
-    )
-}
-
-pub fn section_commits(section: &str) -> Option<(String, String)> {
-    let mut lines = section.lines();
-    let commit = lines.next()?.strip_prefix(SECTION_MARK)?.trim();
-    let since = lines
-        .find_map(|line| line.strip_prefix(SINCE_PREFIX))?
-        .strip_suffix(SINCE_SUFFIX)?;
-    Some((commit.to_string(), since.to_string()))
-}
-
-pub fn assemble(header: &str, newest: &str, older: &[String]) -> String {
-    let kept = older.iter().filter(|section| {
-        section_commits(section).map(|(commit, _)| commit)
-            != section_commits(newest).map(|(commit, _)| commit)
-    });
-    [header, "\n", newest]
-        .into_iter()
-        .chain(kept.flat_map(|section| ["\n", section.as_str()]))
+pub fn render_file(header: &str, sections_newest_first: &[String]) -> String {
+    std::iter::once(header)
+        .chain(
+            sections_newest_first
+                .iter()
+                .flat_map(|section| ["\n", section.as_str()]),
+        )
         .collect()
-}
-
-fn resolve(root: &Path, revision: &str) -> Result<String, Vec<String>> {
-    let commit = format!("{revision}^{{commit}}");
-    crate::stdout_in(
-        root,
-        "git",
-        &["rev-parse", "--verify", "--quiet", &commit],
-        &[],
-    )
-    .map(|sha| sha.trim().to_string())
-    .map_err(|_| vec![format!("{revision} is not a commit of this repository")])
-}
-
-fn changelog_exists(root: &Path, commit: &str, relative: &str) -> Result<bool, Vec<String>> {
-    crate::stdout_in(
-        root,
-        "git",
-        &["ls-tree", "--name-only", commit, "--", relative],
-        &[],
-    )
-    .map(|listed| !listed.trim().is_empty())
 }
 
 fn tree_outputs(root: &Path) -> Result<Vec<String>, Vec<String>> {
@@ -249,7 +196,7 @@ fn gather(
         .iter()
         .map(|found| {
             let relative = relative_changelog(root, found)?;
-            if !changelog_exists(root, commit, &relative)? {
+            if !crate::listed_at(root, commit, &relative)? {
                 return Err(vec![format!(
                     "audited crate {} has no {relative} at {commit}",
                     found.name
@@ -279,57 +226,32 @@ fn gather(
     })
 }
 
-fn regenerate(root: &Path, since: &str, commit: &str) -> Result<(String, String), Vec<String>> {
+fn regenerate(root: &Path) -> Result<String, Vec<String>> {
     let crates = audited_crates(&tree_outputs(root)?, root);
-    let section = gather(root, &crates, since, commit)?;
-    Ok((render_header(&crates), render_section(&section)))
-}
-
-fn write(root: &Path, since: &str, commit: &str) -> Result<(), Vec<String>> {
-    let file = root.join(FILE);
-    let existing = if file.is_file() {
-        crate::read(&file)?
-    } else {
-        String::new()
-    };
-    let (_, older) = split_sections(&existing);
-    let (header, newest) = regenerate(root, since, commit)?;
-    std::fs::write(&file, assemble(&header, &newest, &older))
-        .map_err(|e| vec![format!("cannot write {}: {e}", file.display())])
-}
-
-fn check(root: &Path) -> Result<(), Vec<String>> {
-    let file = root.join(FILE);
-    let committed = crate::read(&file)?;
-    let (_, sections) = split_sections(&committed);
-    let regenerated = match sections.split_first() {
-        None => render_header(&audited_crates(&tree_outputs(root)?, root)),
-        Some((newest, older)) => {
-            let (commit, since) = section_commits(newest)
-                .ok_or_else(|| vec![format!("{FILE}: the newest section names no commit")])?;
-            let (header, section) = regenerate(root, &since, &commit)?;
-            assemble(&header, &section, older)
-        }
-    };
-    if committed == regenerated {
-        Ok(())
-    } else {
-        Err(vec![format!(
-            "{FILE} differs from what {BINARY} generates; run `{BINARY} {SINCE_FLAG} <commit>` and commit the result"
-        )])
-    }
+    let publications =
+        binding_manifest::publication_commits(&binding_manifest::entries_at(root, None)?);
+    let sections = publications
+        .iter()
+        .rev()
+        .map(|(commit, since)| Ok(render_section(&gather(root, &crates, since, commit)?)))
+        .collect::<Result<Vec<_>, Vec<String>>>()?;
+    Ok(render_file(&render_header(&crates), &sections))
 }
 
 /// - Runs `cargo tree` and `git` child processes in `root`.
 /// - Writes `bindings/CHANGELOG.md` unless `args` holds `--check`.
 pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
-    if args.iter().any(|arg| arg == CHECK_FLAG) {
-        return check(root);
+    let file = root.join(FILE);
+    let regenerated = regenerate(root)?;
+    match args {
+        [] => std::fs::write(&file, regenerated)
+            .map_err(|e| vec![format!("cannot write {}: {e}", file.display())]),
+        [flag] if flag == CHECK_FLAG && crate::read(&file)? == regenerated => Ok(()),
+        [flag] if flag == CHECK_FLAG => Err(vec![format!(
+            "{FILE} differs from what {BINARY} generates; run `{BINARY}` and commit the result"
+        )]),
+        _ => Err(vec![USAGE.to_string()]),
     }
-    let since = crate::flag_value(args, SINCE_FLAG)?
-        .ok_or_else(|| vec![format!("missing {SINCE_FLAG}"), USAGE.to_string()])?;
-    let commit = crate::flag_value(args, COMMIT_FLAG)?.unwrap_or(HEAD);
-    write(root, &resolve(root, since)?, &resolve(root, commit)?)
 }
 
 #[cfg(test)]
@@ -339,7 +261,6 @@ mod tests {
     const ROOT: &str = "/host/zingolib";
     const COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const SINCE: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-    const OLDER: &str = "cccccccccccccccccccccccccccccccccccccccc";
     const EXPECTED_AUDITED: [&str; 5] = [
         "zingo",
         "pepper-sync",
@@ -436,36 +357,23 @@ mod tests {
     }
 
     #[test]
-    fn the_newest_section_is_readable_back_and_replaces_its_own_commit() {
+    fn the_file_is_the_header_then_the_sections_newest_first_with_one_blank_line_between() {
         let header = render_header(&[found("zingolib", "/host/zingolib/zingolib")]);
-        let older = format!("## {OLDER}\n\nSince {SINCE}.\n");
-        let stale = format!("## {COMMIT}\n\nSince {OLDER}.\n\n### zingolib\n\n- stale\n");
-        let first = assemble(&header, &stale, std::slice::from_ref(&older));
-        let (parsed_header, sections) = split_sections(&first);
-        assert_eq!(parsed_header, header);
-        assert_eq!(sections, [stale.clone(), older.clone()]);
+        let newest = format!("## {COMMIT}\n\nSince {SINCE}.\n");
+        let older = format!("## {SINCE}\n\nSince {SINCE}.\n");
+        assert_eq!(render_file(&header, &[]), header);
         assert_eq!(
-            section_commits(&sections[0]),
-            Some((COMMIT.to_string(), OLDER.to_string()))
+            render_file(&header, &[newest.clone(), older.clone()]),
+            format!("{header}\n{newest}\n{older}")
         );
-        let fresh = format!("## {COMMIT}\n\nSince {OLDER}.\n\n### zingolib\n\n- fresh\n");
-        let second = assemble(&header, &fresh, &sections);
-        assert_eq!(split_sections(&second).1, [fresh, older]);
     }
 
     #[test]
-    fn the_committed_file_is_the_header_the_tool_renders_with_no_sections() {
+    fn the_committed_file_is_what_the_tool_regenerates() {
         let root = crate::repo_root().unwrap();
-        let committed = crate::read(&root.join(FILE)).unwrap();
-        let crates = audited_crates(&tree_outputs(&root).unwrap(), &root);
-        assert_eq!(committed, render_header(&crates));
-    }
-
-    #[test]
-    fn the_flags_are_parsed_and_since_is_required_outside_check() {
-        assert!(dispatch(Path::new(ROOT), &[])
-            .unwrap_err()
-            .concat()
-            .contains(SINCE_FLAG));
+        assert_eq!(
+            crate::read(&root.join(FILE)).unwrap(),
+            regenerate(&root).unwrap()
+        );
     }
 }
