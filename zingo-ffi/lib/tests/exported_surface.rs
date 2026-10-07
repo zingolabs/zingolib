@@ -343,3 +343,120 @@ fn no_exported_trait_waits_for_a_renderer() {
         "an exported trait has no renderer here: {unrendered:?}"
     );
 }
+
+const WORKFLOW_FILE: &str = "../../.github/workflows/ci-pr.yaml";
+
+const WORKFLOW_PATHS_KEY: &str = "paths:";
+
+const WORKFLOW_PATH_ITEM: &str = "- \"";
+
+const WORKFLOW_PATHS_REQUIRED: [&str; 4] = [
+    "**/*.rs",
+    "**/Cargo.lock",
+    "**/uniffi.toml",
+    "zingo-ffi/lib/src/exported_surface.txt",
+];
+
+const RETIRED_SPELLINGS: [&str; 3] = ["chainhint", "minconfirmations", "performancetype"];
+
+const GENERIC_TYPE_NAMES: [&str; 8] = [
+    "Client",
+    "Config",
+    "Connection",
+    "Error",
+    "Result",
+    "Session",
+    "Settings",
+    "Status",
+];
+
+const UDL_LABELLED_SIGNATURES: [&str; 2] = [
+    "get_latest_block_server(serveruri: String) -> Result<String, ZingolibError>",
+    "change_server(serveruri: String) -> Result<String, ZingolibError>",
+];
+
+fn workflow_paths() -> BTreeSet<String> {
+    let workflow = read(WORKFLOW_FILE);
+    let mut paths = BTreeSet::new();
+    let mut in_paths = false;
+    for line in workflow.lines() {
+        let trimmed = line.trim();
+        if trimmed == WORKFLOW_PATHS_KEY {
+            in_paths = true;
+            continue;
+        }
+        if in_paths {
+            match trimmed
+                .strip_prefix(WORKFLOW_PATH_ITEM)
+                .and_then(|rest| rest.strip_suffix('"'))
+            {
+                Some(path) => {
+                    paths.insert(path.to_string());
+                }
+                None => in_paths = false,
+            }
+        }
+    }
+    paths
+}
+
+fn type_name(line: &str) -> Option<&str> {
+    let derived = line.contains(&format!("#[{DERIVE}({UNIFFI}::"));
+    derived.then(|| {
+        let after_markers = line.rsplit_once("] ").map_or(line, |(_, rest)| rest);
+        after_markers.split_whitespace().next().unwrap()
+    })
+}
+
+#[test]
+fn the_pull_request_filter_names_every_input_of_this_test() {
+    let paths = workflow_paths();
+    let missing: Vec<_> = WORKFLOW_PATHS_REQUIRED
+        .iter()
+        .filter(|path| !paths.contains(**path))
+        .collect();
+    assert!(missing.is_empty(), "ci-pr.yaml paths lack {missing:?}");
+}
+
+#[test]
+fn no_udl_spelling_survives_in_the_sources() {
+    let mut found = Vec::new();
+    for file in source_files(&Path::new(CRATE_DIR).join(SOURCE_DIR)) {
+        let text = fs::read_to_string(&file).unwrap();
+        for (index, line) in text.lines().enumerate() {
+            for spelling in RETIRED_SPELLINGS {
+                if line.contains(spelling) {
+                    found.push(format!("{}:{}: {spelling}", file.display(), index + 1));
+                }
+            }
+        }
+    }
+    assert!(found.is_empty(), "retired UDL spellings:\n{found:#?}");
+}
+
+#[test]
+fn every_exported_type_name_carries_a_domain() {
+    let lines = surface().lines;
+    let generic: Vec<_> = lines
+        .iter()
+        .filter_map(|line| type_name(line))
+        .filter(|name| GENERIC_TYPE_NAMES.contains(name))
+        .collect();
+    assert!(
+        generic.is_empty(),
+        "these names collide with a consumer's own types: {generic:?}"
+    );
+}
+
+#[test]
+fn the_server_argument_keeps_its_udl_label() {
+    let lines = surface().lines;
+    let missing: Vec<_> = UDL_LABELLED_SIGNATURES
+        .iter()
+        .filter(|signature| !lines.contains(**signature))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "the Swift label changed for {missing:#?}"
+    );
+}
