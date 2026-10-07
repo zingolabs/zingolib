@@ -2389,9 +2389,8 @@ where
     // the updates that may fail are applied before any other, so a failure leaves the wallet without the rest of
     // the scan results. address discovery only adds addresses of the wallet's own keys, and the shard trees fetch
     // every checkpoint they are missing before they are updated.
-    for transaction in transactions.values() {
-        discover_unified_addresses(wallet, ufvks, transaction).map_err(SyncError::WalletError)?;
-    }
+    let discovered_addresses = discover_unified_addresses(ufvks, transactions.values());
+    add_discovered_addresses(wallet, discovered_addresses).map_err(SyncError::WalletError)?;
     wallet
         .update_shard_trees(
             consensus_parameters,
@@ -2483,71 +2482,101 @@ where
     Ok(())
 }
 
-fn discover_unified_addresses<W>(
-    wallet: &mut W,
+struct DiscoveredAddresses {
+    orchard: Vec<(AccountId, orchard::Address, zip32::DiversifierIndex)>,
+    sapling: Vec<(
+        AccountId,
+        sapling_crypto::PaymentAddress,
+        zip32::DiversifierIndex,
+    )>,
+}
+
+fn discover_unified_addresses<'a>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
-    transaction: &WalletTransaction,
+    transactions: impl Iterator<Item = &'a WalletTransaction>,
+) -> DiscoveredAddresses {
+    let mut discovered = DiscoveredAddresses {
+        orchard: Vec::new(),
+        sapling: Vec::new(),
+    };
+    for transaction in transactions {
+        for note in transaction
+            .orchard_notes()
+            .iter()
+            .filter(|&note| note.key_id().scope == zip32::Scope::External)
+        {
+            let ivk = ufvks
+                .get(&note.key_id().account_id())
+                .expect("ufvk must exist to decrypt this note")
+                .orchard()
+                .expect("fvk must exist to decrypt this note")
+                .to_ivk(zip32::Scope::External);
+
+            discovered.orchard.push((
+                note.key_id().account_id(),
+                note.note().recipient(),
+                ivk.diversifier_index(&note.note().recipient())
+                    .expect("must be key used to create this address"),
+            ));
+        }
+        // Ironwood recipients are orchard receivers, discovered the same way.
+        for note in transaction
+            .ironwood_notes()
+            .iter()
+            .filter(|&note| note.key_id().scope == zip32::Scope::External)
+        {
+            let ivk = ufvks
+                .get(&note.key_id().account_id())
+                .expect("ufvk must exist to decrypt this note")
+                .orchard()
+                .expect("fvk must exist to decrypt this note")
+                .to_ivk(zip32::Scope::External);
+
+            discovered.orchard.push((
+                note.key_id().account_id(),
+                note.note().recipient(),
+                ivk.diversifier_index(&note.note().recipient())
+                    .expect("must be key used to create this address"),
+            ));
+        }
+        for note in transaction
+            .sapling_notes()
+            .iter()
+            .filter(|&note| note.key_id().scope == zip32::Scope::External)
+        {
+            let ivk = ufvks
+                .get(&note.key_id().account_id())
+                .expect("ufvk must exist to decrypt this note")
+                .sapling()
+                .expect("fvk must exist to decrypt this note")
+                .to_external_ivk();
+
+            discovered.sapling.push((
+                note.key_id().account_id(),
+                note.note().recipient(),
+                ivk.decrypt_diversifier(&note.note().recipient())
+                    .expect("must be key used to create this address"),
+            ));
+        }
+    }
+
+    discovered
+}
+
+/// - Adds each discovered orchard address to the wallet's unified address list.
+/// - Adds each discovered sapling address to the wallet's unified address list.
+fn add_discovered_addresses<W>(
+    wallet: &mut W,
+    discovered: DiscoveredAddresses,
 ) -> Result<(), W::Error>
 where
     W: SyncWallet,
 {
-    for note in transaction
-        .orchard_notes()
-        .iter()
-        .filter(|&note| note.key_id().scope == zip32::Scope::External)
-    {
-        let ivk = ufvks
-            .get(&note.key_id().account_id())
-            .expect("ufvk must exist to decrypt this note")
-            .orchard()
-            .expect("fvk must exist to decrypt this note")
-            .to_ivk(zip32::Scope::External);
-
-        wallet.add_orchard_address(
-            note.key_id().account_id(),
-            note.note().recipient(),
-            ivk.diversifier_index(&note.note().recipient())
-                .expect("must be key used to create this address"),
-        )?;
+    for (account_id, address, diversifier_index) in discovered.orchard {
+        wallet.add_orchard_address(account_id, address, diversifier_index)?;
     }
-    // Ironwood recipients are orchard receivers, discovered the same way.
-    for note in transaction
-        .ironwood_notes()
-        .iter()
-        .filter(|&note| note.key_id().scope == zip32::Scope::External)
-    {
-        let ivk = ufvks
-            .get(&note.key_id().account_id())
-            .expect("ufvk must exist to decrypt this note")
-            .orchard()
-            .expect("fvk must exist to decrypt this note")
-            .to_ivk(zip32::Scope::External);
-
-        wallet.add_orchard_address(
-            note.key_id().account_id(),
-            note.note().recipient(),
-            ivk.diversifier_index(&note.note().recipient())
-                .expect("must be key used to create this address"),
-        )?;
-    }
-    for note in transaction
-        .sapling_notes()
-        .iter()
-        .filter(|&note| note.key_id().scope == zip32::Scope::External)
-    {
-        let ivk = ufvks
-            .get(&note.key_id().account_id())
-            .expect("ufvk must exist to decrypt this note")
-            .sapling()
-            .expect("fvk must exist to decrypt this note")
-            .to_external_ivk();
-
-        wallet.add_sapling_address(
-            note.key_id().account_id(),
-            note.note().recipient(),
-            ivk.decrypt_diversifier(&note.note().recipient())
-                .expect("must be key used to create this address"),
-        )?;
+    for (account_id, address, diversifier_index) in discovered.sapling {
+        wallet.add_sapling_address(account_id, address, diversifier_index)?;
     }
 
     Ok(())
