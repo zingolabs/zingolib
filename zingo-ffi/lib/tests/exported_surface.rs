@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use quote::ToTokens;
-use syn::{Attribute, Item, ItemEnum, ItemFn, ItemMacro, ReturnType, Type};
+use syn::{Attribute, Item, ItemEnum, ItemFn, ItemMacro, ItemStruct, ReturnType, Type};
 
 const SOURCE: &str = include_str!("../src/lib.rs");
 
@@ -30,14 +30,20 @@ fn exported(attrs: &[Attribute]) -> bool {
     })
 }
 
-fn derives_uniffi_error(attrs: &[Attribute]) -> bool {
+fn derives(attrs: &[Attribute], marker: &str) -> bool {
     attrs.iter().any(|attr| {
-        attr.path().is_ident("derive")
-            && attr
-                .to_token_stream()
-                .to_string()
-                .contains("uniffi :: Error")
+        attr.path().is_ident("derive") && attr.to_token_stream().to_string().contains(marker)
     })
+}
+
+fn record_line(item: &ItemStruct) -> String {
+    let fields = item
+        .fields
+        .iter()
+        .map(|field| format!("{}: {}", field.ident.as_ref().unwrap(), tokens(&field.ty)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{} {{ {fields} }}", item.ident)
 }
 
 fn function_line(func: &ItemFn) -> String {
@@ -88,7 +94,10 @@ fn the_library_exports_the_committed_surface() {
         .iter()
         .filter_map(|item| match item {
             Item::Fn(func) if exported(&func.attrs) => Some(function_line(func)),
-            Item::Enum(item) if derives_uniffi_error(&item.attrs) => Some(enum_line(item)),
+            Item::Enum(item) if derives(&item.attrs, "uniffi :: Error") => Some(enum_line(item)),
+            Item::Struct(item) if derives(&item.attrs, "uniffi :: Record") => {
+                Some(record_line(item))
+            }
             Item::Macro(mac) => wallet_report_line(mac),
             _ => None,
         })
