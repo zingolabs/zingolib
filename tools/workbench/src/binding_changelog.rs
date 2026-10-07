@@ -275,12 +275,11 @@ fn regenerated(root: &Path) -> Result<String, Vec<String>> {
 /// - Writes `bindings/CHANGELOG.md` unless `args` holds `--check`.
 pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let file = root.join(FILE);
-    let regenerated = regenerated(root)?;
     match args {
-        [] => std::fs::write(&file, regenerated)
+        [] => std::fs::write(&file, regenerated(root)?)
             .map_err(|e| vec![format!("cannot write {}: {e}", file.display())]),
         [flag] if flag == CHECK_FLAG => {
-            if crate::read(&file)? == regenerated {
+            if crate::read(&file)? == regenerated(root)? {
                 Ok(())
             } else {
                 Err(vec![format!(

@@ -192,12 +192,18 @@ pub fn listed_at(root: &Path, revision: &str, relative: &str) -> Result<bool, Ve
         .map(|listed| !listed.trim().is_empty())
 }
 
+pub fn commit_spec(revision: &str) -> String {
+    format!("{revision}^{{commit}}")
+}
+
 /// - Runs `git rev-parse` in `root`.
 pub fn commit_of(root: &Path, revision: &str) -> Result<String, Vec<String>> {
-    let commit = format!("{revision}^{{commit}}");
-    git_in(root, &["rev-parse", "--verify", "--quiet", &commit])
-        .map(|sha| sha.trim().to_string())
-        .map_err(|_| vec![format!("{revision} is not a commit of this repository")])
+    git_in(
+        root,
+        &["rev-parse", "--verify", "--quiet", &commit_spec(revision)],
+    )
+    .map(|sha| sha.trim().to_string())
+    .map_err(|_| vec![format!("{revision} is not a commit of this repository")])
 }
 
 /// The workbench crate's directory at the time cargo compiled the crate.

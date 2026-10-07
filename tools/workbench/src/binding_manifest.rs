@@ -23,6 +23,11 @@ const DIGEST_HEX_LENGTH: usize = 64;
 const CHECK_FLAG: &str = "--check";
 const BASE_FLAG: &str = "--base";
 const USAGE: &str = "usage: binding-manifest --check [--base <ref>]";
+const FIRST_ORDINAL: usize = 1;
+
+fn ordinal(index: usize) -> usize {
+    index + FIRST_ORDINAL
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Entry {
@@ -105,7 +110,7 @@ pub fn parse(text: &str) -> Result<Vec<Entry>, Vec<String>> {
         let located = |lines: Vec<String>| {
             lines
                 .into_iter()
-                .map(|diagnostic| format!("{FILE}:{}: {diagnostic}", index + 1))
+                .map(|diagnostic| format!("{FILE}:{}: {diagnostic}", ordinal(index)))
                 .collect::<Vec<_>>()
         };
         if line.is_empty() || line.starts_with(COMMENT_MARK) {
@@ -130,9 +135,9 @@ pub fn parse(text: &str) -> Result<Vec<Entry>, Vec<String>> {
 pub fn validate(entries: &[Entry]) -> Result<(), Vec<String>> {
     let mut diagnostics = Vec::new();
     for (index, entry) in entries.iter().enumerate() {
-        let label = format!("entry {} ({})", index + 1, entry.commit);
+        let label = format!("entry {} ({})", ordinal(index), entry.commit);
         if entry.commit.is_empty() {
-            diagnostics.push(format!("entry {} names no commit", index + 1));
+            diagnostics.push(format!("entry {} names no commit", ordinal(index)));
         }
         for platform in REQUIRED_PLATFORMS {
             if !entry.digests.iter().any(|(name, _)| name == platform) {
@@ -165,7 +170,7 @@ pub fn unchanged_since_base(base: &[Entry], head: &[Entry]) -> Result<(), Vec<St
                 Some(same) if same == kept => None,
                 _ => Some(format!(
                     "entry {} ({}) changed or moved after its merge",
-                    index + 1,
+                    ordinal(index),
                     kept.commit
                 )),
             })
@@ -178,9 +183,9 @@ pub fn publication_commits(entries: &[Entry]) -> Vec<(String, String)> {
         .iter()
         .enumerate()
         .map(|(index, entry)| {
-            let since = index
-                .checked_sub(1)
-                .map(|previous| entries[previous].commit.clone())
+            let since = entries[..index]
+                .last()
+                .map(|previous| previous.commit.clone())
                 .or_else(|| entry.since.clone())
                 .unwrap_or_default();
             (entry.commit.clone(), since)
@@ -209,56 +214,103 @@ pub fn entries_at(root: &Path, revision: Option<&str>) -> Result<Vec<Entry>, Vec
         )?,
         Some(_) => String::new(),
     };
-    let entries = parse(&text)?;
-    validate(&entries)?;
+    let located = |diagnostics: Vec<String>| match revision {
+        None => diagnostics,
+        Some(revision) => diagnostics
+            .into_iter()
+            .map(|diagnostic| [revision, &diagnostic].join(REVISION_PATH_SEPARATOR))
+            .collect(),
+    };
+    let entries = parse(&text).map_err(located)?;
+    validate(&entries).map_err(located)?;
     Ok(entries)
 }
 
 fn commits_exist(root: &Path, entries: &[Entry]) -> Result<(), Vec<String>> {
-    entries
+    let commits: Vec<&String> = entries
         .iter()
         .flat_map(|entry| std::iter::once(&entry.commit).chain(entry.since.as_ref()))
+        .collect();
+    let specs: Vec<String> = commits
+        .iter()
+        .map(|commit| crate::commit_spec(commit))
+        .collect();
+    let args: Vec<&str> = std::iter::once("rev-parse")
+        .chain(specs.iter().map(String::as_str))
+        .collect();
+    if crate::git_in(root, &args).is_ok() {
+        return Ok(());
+    }
+    commits
+        .iter()
         .try_for_each(|commit| crate::commit_of(root, commit).map(drop))
 }
 
 #[cfg(feature = "registry")]
-fn registry_diagnostics(entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
+async fn manifest_diagnostics(
+    client: oci_client::Client,
+    name: String,
+    commit: String,
+    digest: String,
+) -> Vec<String> {
     use oci_client::secrets::RegistryAuth;
+    let image = match oci_client::Reference::try_from(name.as_str()) {
+        Ok(image) => image,
+        Err(e) => return vec![format!("{name}: {e}")],
+    };
+    match client
+        .pull_image_manifest(&image, &RegistryAuth::Anonymous)
+        .await
+    {
+        Err(e) => vec![format!("{name}: {e}")],
+        Ok((manifest, found)) => {
+            let mut diagnostics = Vec::new();
+            if found != digest {
+                diagnostics.push(format!(
+                    "{name} resolves to {found}, and the entry names {digest}"
+                ));
+            }
+            let revision = manifest
+                .annotations
+                .as_ref()
+                .and_then(|annotations| annotations.get(REVISION_ANNOTATION));
+            if revision != Some(&commit) {
+                diagnostics.push(format!(
+                    "{name} carries {REVISION_ANNOTATION} {revision:?}, not its commit"
+                ));
+            }
+            diagnostics
+        }
+    }
+}
+
+#[cfg(feature = "registry")]
+fn registry_diagnostics(entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|e| vec![format!("cannot start the runtime: {e}")])?;
     let client = oci_client::Client::new(oci_client::client::ClientConfig::default());
     runtime.block_on(async {
+        let pulls: Vec<_> = entries
+            .iter()
+            .flat_map(|entry| {
+                entry.digests.iter().map(|(platform, digest)| {
+                    tokio::spawn(manifest_diagnostics(
+                        client.clone(),
+                        reference(platform, &entry.commit),
+                        entry.commit.clone(),
+                        digest.clone(),
+                    ))
+                })
+            })
+            .collect();
         let mut diagnostics = Vec::new();
-        for entry in entries {
-            for (platform, digest) in &entry.digests {
-                let name = reference(platform, &entry.commit);
-                let image = oci_client::Reference::try_from(name.as_str())
-                    .map_err(|e| vec![format!("{name}: {e}")])?;
-                match client
-                    .pull_image_manifest(&image, &RegistryAuth::Anonymous)
-                    .await
-                {
-                    Err(e) => diagnostics.push(format!("{name}: {e}")),
-                    Ok((manifest, found)) => {
-                        if found != *digest {
-                            diagnostics.push(format!(
-                                "{name} resolves to {found}, and the entry names {digest}"
-                            ));
-                        }
-                        let revision = manifest
-                            .annotations
-                            .as_ref()
-                            .and_then(|annotations| annotations.get(REVISION_ANNOTATION));
-                        if revision != Some(&entry.commit) {
-                            diagnostics.push(format!(
-                                "{name} carries {REVISION_ANNOTATION} {revision:?}, not its commit"
-                            ));
-                        }
-                    }
-                }
-            }
+        for pull in pulls {
+            diagnostics.extend(
+                pull.await
+                    .map_err(|e| vec![format!("a registry pull did not finish: {e}")])?,
+            );
         }
         Ok(diagnostics)
     })
@@ -273,17 +325,23 @@ fn registry_diagnostics(_entries: &[Entry]) -> Result<Vec<String>, Vec<String>> 
 
 /// - Reads `bindings/published.toml` and, with `--base`, its copy at that git revision.
 /// - Runs `git` child processes in `root`.
-/// - Fetches one manifest per entry and platform from the registry, anonymously.
+/// - Fetches one manifest per platform from the registry, anonymously and concurrently, for every entry
+///   without `--base` and for the entries appended after the base's with it.
 pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     if !args.iter().any(|arg| arg == CHECK_FLAG) {
         return Err(vec![USAGE.to_string()]);
     }
     let head = entries_at(root, None)?;
     commits_exist(root, &head)?;
-    if let Some(base) = crate::flag_value(args, BASE_FLAG)? {
-        unchanged_since_base(&entries_at(root, Some(base))?, &head)?;
-    }
-    crate::verdict(registry_diagnostics(&head)?)
+    let unverified = match crate::flag_value(args, BASE_FLAG)? {
+        Some(base) => {
+            let base = entries_at(root, Some(base))?;
+            unchanged_since_base(&base, &head)?;
+            &head[base.len()..]
+        }
+        None => &head[..],
+    };
+    crate::verdict(registry_diagnostics(unverified)?)
 }
 
 /// - Reads the process arguments.
@@ -415,6 +473,20 @@ mod tests {
             reference("android", FIRST),
             format!("ghcr.io/zingolabs/zingolib/binding-layer-android:{FIRST}")
         );
+    }
+
+    #[test]
+    fn commits_are_resolved_in_one_pass_and_a_missing_one_is_named() {
+        let root = crate::repo_root().unwrap();
+        let head = crate::commit_of(&root, "HEAD").unwrap();
+        assert_eq!(
+            commits_exist(&root, &[entry(&head, None, &["android"])]),
+            Ok(())
+        );
+        let diagnostic = commits_exist(&root, &[entry(&head, Some(FIRST), &["android"])])
+            .unwrap_err()
+            .concat();
+        assert!(diagnostic.contains(FIRST), "{diagnostic}");
     }
 
     #[test]
