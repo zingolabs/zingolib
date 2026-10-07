@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `probe_server(server_uri)` checks an indexer without a wallet and reports
+  how far it got as JSON. The `outcome` is `unresolved`, `unreachable`,
+  `noAnswer`, `refused` or `verified`, beside the `host`, `port` and
+  `resolved` addresses the probe used. `noAnswer` names the bound that fired
+  in `after_seconds`, whether the connection or the request ran out of time.
+  `unreachable` covers a connection that failed or broke under the request,
+  and `refused` is reserved for a status the indexer itself returned. A
+  `verified` report carries the server's `details` as an object with the
+  fields `LightClient::info` reports. An address without a host is an
+  `InvalidInput` error.
+
 ### Changed
 - **Breaking:** `get_version` returns zingolib's `zl_` descriptor alone. The
   consumer's `zm_` half, the `ZINGO_MOBILE_DESCRIPTOR` variable and the

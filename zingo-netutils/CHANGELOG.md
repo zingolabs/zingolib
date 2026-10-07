@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The crate re-exports tonic's `TimeoutExpired` beside `Status`, the marker
+  tonic leaves in a status's source chain when the client's own request
+  deadline fired, so a consumer tells a timed-out request apart from a
+  verdict the indexer returned.
 - `test_tls`, behind `testutils`: the committed localhost certificate and
   key. A `Socks5Indexer` in a `testutils` build also trusts that
   certificate, so a test can serve a Destination over TLS behind a loopback

@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add `data::ServerInfo::from_lightd_info`, the mapping from an indexer's `LightdInfo` to a `ServerInfo` that `LightClient::info` carried inline, so a consumer holding a `LightdInfo` from its own request builds the same record.
+- The `netutils` funnel re-exports `TimeoutExpired`, the marker tonic leaves in a status's source chain when the client's own request deadline fired, so a consumer tells a timed-out request apart from a verdict the indexer returned.
 - Add `LightClient::sync_to_tip_and_await`, which syncs to the chain tip and returns whatever the stored `shutdown_on_completion` setting is. The override applies to that sync only and the stored sync config is not modified. A running or paused sync is stopped and awaited first, and is not relaunched.
 - Add `mixnet::TransmitPolicy` (`Mixnet`, `Nakednet`), the per-session send route choice, with `LightClient::transmit_policy` and `set_transmit_policy`. Every session starts under `Mixnet`; `MixnetStartPolicy::OptedOutThisSession` sets `Nakednet`, and `enable_mixnet`, `enable_mixnet_via_host`, and `attach_mixnet` set `Mixnet` before the transport exists, so sends refuse during the bootstrap. A failed enable restores the policy the session had before.
 - Add `mixnet::resolve_mixnet_only_route` and `LightClient::mixnet_only_route`, the route of the price fetch and the liveness probe: the conduit while `Ready`, a typed refusal otherwise.
