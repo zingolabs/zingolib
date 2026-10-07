@@ -20,6 +20,7 @@ on:
       - "rust-toolchain.toml"
       - "bindings/**"
       - "**/uniffi.toml"
+      - "zingo-ffi/lib/src/exported_surface.txt"
       - ".github/workflows/**"
   push:
     branches: [stable, dev]
