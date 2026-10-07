@@ -97,13 +97,6 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Install protoc
-        run: |
-          if ! command -v protoc; then
-            sudo apt-get update
-            sudo apt-get install -y protobuf-compiler
-          fi
-
       # The flags are the action's defaults plus one exclusion:
       # zingo-uniffi-bindgen is a binary with no library target and no
       # features, and `--lib` fails on a package without one.
@@ -121,6 +114,7 @@ jobs:
   netutils-standalone:
     name: zingo-netutils (standalone workspace)
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       RUSTFLAGS: -D warnings
     steps:
@@ -134,13 +128,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: zingo-netutils
-
-      - name: Install protoc
-        run: |
-          if ! command -v protoc; then
-            sudo apt-get update
-            sudo apt-get install -y protobuf-compiler
-          fi
 
       # The workspace holds the proxy crate and the verifier shim beside
       # zingo-netutils, so every step names the whole workspace.
@@ -199,6 +186,7 @@ jobs:
   nym-feature:
     name: nym feature (zingolib + zingo-cli)
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     env:
       RUSTFLAGS: -D warnings
     steps:
@@ -210,13 +198,6 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-
-      - name: Install protoc
-        run: |
-          if ! command -v protoc; then
-            sudo apt-get update
-            sudo apt-get install -y protobuf-compiler
-          fi
 
       - name: Clippy
         run: cargo clippy -p zingolib -p zingo-cli --features nym --all-targets -- -D warnings
@@ -253,13 +234,6 @@ jobs:
         uses: actions/checkout@v6
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Install protoc
-        run: |
-          if ! command -v protoc; then
-             sudo apt-get update
-             sudo apt-get install -y protobuf-compiler
-          fi
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
