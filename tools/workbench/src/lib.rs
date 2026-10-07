@@ -10,6 +10,7 @@
 pub mod binding_changelog;
 pub mod binding_layer;
 pub mod dupes_gate;
+pub mod session;
 
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command, ExitStatus, Stdio};

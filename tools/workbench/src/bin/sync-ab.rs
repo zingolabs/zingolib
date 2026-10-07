@@ -48,10 +48,12 @@
 #![forbid(unsafe_code)]
 
 use std::io::Write as _;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use workbench::session;
 use workbench::{repo_root, run};
 
 /// The session kind a reserved first word names, following the house idiom
@@ -324,7 +326,7 @@ fn compare() -> Result<(), Vec<String>> {
         request.birthday
     );
     for arm in &arms {
-        let _ = measure(arm, &request, WARMUP_BUDGET)?;
+        let _ = measure_again(arm, &request, WARMUP_BUDGET)?;
     }
 
     for round in 1..=request.runs {
@@ -332,7 +334,7 @@ fn compare() -> Result<(), Vec<String>> {
         // falls on each arm equally instead of on whichever went last.
         let order: [usize; 2] = if round % 2 == 1 { [0, 1] } else { [1, 0] };
         for index in order {
-            let reading = measure(&arms[index], &request, RUN_BUDGET)?;
+            let reading = measure_again(&arms[index], &request, RUN_BUDGET)?;
             eprintln!(
                 "sync-ab: {round}/{} {} boot {:.1}s, {:.0} outputs/s over {} outputs",
                 request.runs,
@@ -482,6 +484,19 @@ fn wrapped(launch: &str) -> String {
 }
 
 /// Drives one session in the arm's worktree, reading the span out of its log.
+/// - launches a second session when the first one fails
+/// - prints the first failure to stderr
+fn measure_again(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Vec<String>> {
+    measure(arm, request, budget).or_else(|first| {
+        eprintln!(
+            "sync-ab: {} session failed ({}), running it once more",
+            arm.spec.label(),
+            first.join("; ")
+        );
+        measure(arm, request, budget)
+    })
+}
+
 fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Vec<String>> {
     let scratch = arm.worktree.join("target").join("sync-ab");
     // A fresh wallet each run, so no session resumes a partial scan.
@@ -511,6 +526,7 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
+        .process_group(0)
         .spawn()
         .map_err(|e| vec![format!("cannot spawn the session: {e}")])?;
 
@@ -565,7 +581,7 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
         std::thread::sleep(LOG_POLL_INTERVAL);
     };
 
-    quit(&mut child);
+    session::quit(&mut child);
     outcome
 }
 
@@ -633,16 +649,6 @@ fn closed_segment(tail: &str) -> Option<(u64, u64)> {
         .take_while(char::is_ascii_digit)
         .collect();
     Some((digits.parse().ok()?, counted.parse().ok()?))
-}
-
-/// Ends the session the way a user does, then reaps it.
-fn quit(child: &mut Child) {
-    if let Some(stdin) = child.stdin.as_mut() {
-        let _ = writeln!(stdin, "quit");
-        let _ = stdin.flush();
-    }
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 /// Prints both arms, their spread, and whether the window held.
