@@ -603,8 +603,11 @@ fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
 }
 
 /// The engine's own duration and output count, from the closing line.
+///
+/// The graft wraps the library's own span, which closes first and carries
+/// no count, so the reading comes from the last closing marker in the log.
 fn closing_span(log: &str) -> Option<(u64, u64)> {
-    let tail = log.split(SYNC_SPAN_CLOSE).nth(1)?;
+    let (_, tail) = log.rsplit_once(SYNC_SPAN_CLOSE)?;
     let digits: String = tail
         .trim_start()
         .chars()
@@ -883,5 +886,17 @@ mod tests {
         );
         assert_eq!(closing_span("SYNC_SPAN=close 12"), None);
         assert_eq!(closing_span("SYNC_SPAN=close 1250ms err\n"), None);
+    }
+
+    /// The library closes its own span, without a count, inside the graft's.
+    #[test]
+    fn the_reading_comes_from_the_last_closing_marker() {
+        let log = "SYNC_SPAN=open\nSYNC_SPAN=open\nSYNC_SPAN=close 1250ms ok\n\
+                   SYNC_SPAN=close 1251ms ok outputs=8192\n";
+        assert_eq!(closing_span(log), Some((1251, 8192)));
+        assert_eq!(
+            closing_span("SYNC_SPAN=open\nSYNC_SPAN=open\nSYNC_SPAN=close 1250ms ok\n"),
+            None
+        );
     }
 }
