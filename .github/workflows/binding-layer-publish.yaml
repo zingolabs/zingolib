@@ -80,8 +80,8 @@ jobs:
       ref: ${{ needs.request.outputs.commit }}
 
   # The Android bundle publishes whenever its build passed. The iOS bundle
-  # joins when its build passed too; the manifest accepts an entry without
-  # ios until zingo-mobile adopts this publication.
+  # joins when its build passed too. The manifest accepts an entry without
+  # ios until the first consumer adopts this publication.
   publish:
     name: Publish and record
     needs: [request, android, ios]
