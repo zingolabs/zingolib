@@ -138,9 +138,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rescan from the birthday recovered the wallet. (#2834)
 - `sync` makes every server request that the processing of scan results
   depends on before it updates the wallet, so a failed request leaves the
-  wallet as it was. Spend detection reads the wallet's nullifier and outpoint
-  maps and removes a spend from them only once the spend is recorded on its
-  note or coin. A failed request for a spending transaction used to remove the
+  wallet as it was. Spend detection only reads the wallet's nullifier and
+  outpoint maps, and a spend stays mapped until the cleanup drops it behind the
+  fully scanned height, so recording a spend on its note or coin can be
+  repeated. A failed request for a spending transaction used to remove the
   spend from the map with the note left unspent, and a later sync session
   could miss the spend. A pool rescan fetches its frontier before it clears
   the pool's records, where a failed request used to remove the pool's

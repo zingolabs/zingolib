@@ -133,8 +133,10 @@ where
 /// Records the spends located by [`locate_shielded_spends`] in the wallet, once the wallet holds the scanned
 /// transactions, nullifiers and note commitments the spends were located with.
 ///
-/// The nullifiers of the spends are removed from the wallet's nullifier map, the shard block ranges surrounding the
-/// spends are prioritised for scanning and the spent notes are updated with their spending transactions.
+/// The shard block ranges surrounding the spends are prioritised for scanning and the spent notes are updated with
+/// their spending transactions. Both are idempotent and the wallet's nullifier map is left as it is, so a spend is
+/// located again on every scan until the fully scanned height passes it and the cleanup drops its nullifier from the
+/// map. A failure part way through therefore leaves nothing for the next scan to miss.
 pub(super) fn apply_shielded_spends<P, W>(
     consensus_parameters: &P,
     wallet: &mut W,
@@ -142,10 +144,8 @@ pub(super) fn apply_shielded_spends<P, W>(
 ) -> Result<(), W::Error>
 where
     P: consensus::Parameters,
-    W: SyncTransactions + SyncNullifiers + SyncShardTrees,
+    W: SyncTransactions + SyncShardTrees,
 {
-    remove_spent_nullifiers(wallet.get_nullifiers_mut()?, &spend_scan_targets);
-
     let sync_state = wallet.get_sync_state_mut()?;
     state::set_found_note_scan_ranges(
         consensus_parameters,
@@ -167,22 +167,6 @@ where
     );
 
     update_spent_notes(wallet, spend_scan_targets, true)
-}
-
-/// Removes the nullifiers of detected spends from `nullifier_map`. The spent notes hold the spend from here on.
-pub(super) fn remove_spent_nullifiers(
-    nullifier_map: &mut NullifierMap,
-    spend_scan_targets: &ShieldedSpendScanTargets,
-) {
-    for nullifier in spend_scan_targets.sapling.keys() {
-        nullifier_map.sapling.remove(nullifier);
-    }
-    for nullifier in spend_scan_targets.orchard.keys() {
-        nullifier_map.orchard.remove(nullifier);
-    }
-    for nullifier in spend_scan_targets.ironwood.keys() {
-        nullifier_map.ironwood.remove(nullifier);
-    }
 }
 
 /// For each scan target, fetch and scan the spending transaction. The wallet is only read.
@@ -294,8 +278,8 @@ pub(super) fn collect_derived_nullifiers<'a>(
 
 /// Check if any wallet note's derived nullifiers match a nullifier in the `nullifier_map`.
 ///
-/// The `nullifier_map` is only read, so the wallet's nullifier map keeps the nullifiers of the detected spends
-/// until the spends are recorded in the wallet. See [`remove_spent_nullifiers`].
+/// The `nullifier_map` is only read. The wallet's nullifier map keeps the nullifiers of the detected spends until
+/// the cleanup drops them behind the fully scanned height, so a spend is detected again on every scan until then.
 pub(super) fn detect_shielded_spends(
     nullifier_map: &NullifierMap,
     sapling_derived_nullifiers: &[sapling_crypto::Nullifier],
@@ -460,19 +444,16 @@ where
 /// Records the spends located by [`locate_transparent_spends`] in the wallet, once the wallet holds the scanned
 /// transactions and outpoints the spends were located with.
 ///
-/// The output ids of the spends are removed from the wallet's outpoint map and the spent coins are updated with their
-/// spending transactions.
+/// The spent coins are updated with their spending transactions. The wallet's outpoint map is left as it is, so a
+/// spend is located again on every scan until the fully scanned height passes it and the cleanup drops its output id
+/// from the map.
 pub(super) fn apply_transparent_spends<W>(
     wallet: &mut W,
     transparent_spend_scan_targets: BTreeMap<OutputId, ScanTarget>,
 ) -> Result<(), W::Error>
 where
-    W: SyncTransactions + SyncOutPoints,
+    W: SyncTransactions,
 {
-    let outpoint_map = wallet.get_outpoints_mut()?;
-    for output_id in transparent_spend_scan_targets.keys() {
-        outpoint_map.remove(output_id);
-    }
     update_spent_coins(
         wallet.get_wallet_transactions_mut()?,
         transparent_spend_scan_targets,
