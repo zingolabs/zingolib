@@ -30,3 +30,7 @@ once_cell = { workspace = true }
 [lib]
 crate-type = ["cdylib", "staticlib"]
 name = "zingo"
+
+[dev-dependencies]
+quote = "1"
+syn = { version = "2", features = ["full"] }
