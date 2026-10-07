@@ -490,6 +490,16 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
         .map_err(|e| vec![format!("cannot make {}: {e}", scratch.display())])?;
     let log_path = scratch.join("session.log");
 
+    // The previous session's proxy may still be running from the bundled
+    // path, and an arm whose bundler copies over it meets "text file busy".
+    // Unlinking the path leaves the running image alone and gives the
+    // bundler a fresh destination, whichever era of the bundler the arm has.
+    let _ = std::fs::remove_file(
+        arm.worktree
+            .join("target/release")
+            .join(format!("nym-proxy{}", std::env::consts::EXE_SUFFIX)),
+    );
+
     let mut command = launcher(arm)?;
     command
         .current_dir(&arm.worktree)
