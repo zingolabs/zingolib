@@ -4925,7 +4925,6 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.19",
  "tokio",
- "tonic",
  "uniffi",
  "zcash_address",
  "zcash_client_backend",

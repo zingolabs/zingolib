@@ -1780,6 +1780,7 @@ pub fn get_latest_block_server(server_uri: String) -> Result<String, ZingolibErr
 
 /// The bound on each network step of a server probe.
 const PROBE_STEP_TIMEOUT: Duration = Duration::from_secs(10);
+const PROBE_REQUEST_BUDGET: Duration = Duration::from_secs(20);
 
 /// Where a probe sent its requests.
 struct ProbeTarget {
@@ -1838,18 +1839,28 @@ impl Probe {
                 literal: true,
             },
             Err(_) => {
+                let lookup_host = host.clone();
                 let lookup = tokio::time::timeout(
                     PROBE_STEP_TIMEOUT,
-                    tokio::net::lookup_host((host.clone(), port)),
+                    tokio::task::spawn_blocking(move || {
+                        std::net::ToSocketAddrs::to_socket_addrs(&(lookup_host, port))
+                    }),
                 )
                 .await;
                 let addresses = match lookup {
-                    Ok(Ok(addresses)) => addresses,
-                    Ok(Err(cause)) => {
+                    Ok(Ok(Ok(addresses))) => addresses,
+                    Ok(Ok(Err(cause))) => {
                         return Self::Unresolved {
                             host,
                             port,
                             cause: chain_text(&cause),
+                        };
+                    }
+                    Ok(Err(join)) => {
+                        return Self::Unresolved {
+                            host,
+                            port,
+                            cause: chain_text(&join),
                         };
                     }
                     Err(elapsed) => {
@@ -1888,7 +1899,7 @@ impl Probe {
         let started = std::time::Instant::now();
         match tokio::time::timeout(
             PROBE_STEP_TIMEOUT,
-            indexer.get_lightd_info(PROBE_STEP_TIMEOUT),
+            indexer.get_lightd_info(PROBE_REQUEST_BUDGET),
         )
         .await
         {
@@ -1899,9 +1910,6 @@ impl Probe {
                 block_height: info.block_height,
                 details: format!("{info:#?}"),
             },
-            Ok(Err(status)) if status.code() == tonic::Code::DeadlineExceeded => {
-                Self::NoAnswer { target }
-            }
             Ok(Err(status)) => Self::Refused {
                 target,
                 cause: chain_text(&status),
