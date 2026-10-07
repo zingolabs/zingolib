@@ -20,20 +20,17 @@ lazy_static = { workspace = true }
 hex = { workspace = true }
 android_logger = { workspace = true }
 log = { workspace = true }
-uniffi = { workspace = true, features = ["cli"] }
+uniffi = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "time"] }
 serde_json = { workspace = true }
 zip32 = { workspace = true }
 thiserror = { workspace = true }
 once_cell = { workspace = true }
 
-[build-dependencies]
-uniffi_build = { workspace = true, features = ["builtin-bindgen"] }
-
 [lib]
 crate-type = ["cdylib", "staticlib"]
 name = "zingo"
 
-[[bin]]
-name = "uniffi-bindgen"
-path = "uniffi-bindgen.rs"
+[dev-dependencies]
+quote = "1"
+syn = { version = "2", features = ["full"] }
