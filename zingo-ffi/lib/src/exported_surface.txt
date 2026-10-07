@@ -11,6 +11,7 @@ save_wallet_bytes() -> Result<Option<Vec<u8>>, ZingolibError>
 read_wallet_recovery_info(wallet_bytes: Vec<u8>) -> Result<String, ZingolibError>
 validate_wallet_bytes(wallet_bytes: Vec<u8>) -> Result<(), ZingolibError>
 get_latest_block_server(server_uri: String) -> Result<String, ZingolibError>
+probe_server(server_uri: String) -> Result<String, ZingolibError>
 get_latest_block_wallet() -> Result<String, ZingolibError>
 get_developer_donation_address() -> Result<String, ZingolibError>
 get_zennies_for_zingo_donation_address() -> Result<String, ZingolibError>
