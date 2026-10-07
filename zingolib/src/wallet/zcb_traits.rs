@@ -1,4 +1,4 @@
-use std::{collections::HashMap, convert::Infallible, num::NonZeroU32};
+use std::{collections::HashMap, convert::Infallible, num::NonZeroU32, ops::Range};
 
 use secrecy::SecretVec;
 use shardtree::{ShardTree, error::ShardTreeError, store::ShardStore};
@@ -120,9 +120,8 @@ impl WalletRead for LightWallet {
     ) -> Result<Option<Self::Account>, Self::Error> {
         let Some((account_id, unified_key)) =
             self.unified_key_store.iter().find(|(_, unified_key)| {
-                UnifiedFullViewingKey::try_from(*unified_key).is_ok_and(|account_ufvk| {
-                    account_ufvk.encode(&self.chain_type) == *ufvk.encode(&self.chain_type)
-                })
+                UnifiedFullViewingKey::try_from(*unified_key)
+                    .is_ok_and(|account_ufvk| account_ufvk.is_equivalent_to(ufvk))
             })
         else {
             return Ok(None);
@@ -319,6 +318,34 @@ impl WalletRead for LightWallet {
                 );
 
                 Ok((address, address_metadata))
+            })
+            .collect()
+    }
+
+    fn get_unspent_transparent_outpoints(
+        &self,
+    ) -> Result<HashMap<OutPoint, Self::AccountId>, Self::Error> {
+        unimplemented!()
+    }
+
+    fn get_transparent_receiver_accounts(
+        &self,
+    ) -> Result<
+        HashMap<TransparentAddress, (Self::AccountId, Option<TransparentKeyScope>)>,
+        Self::Error,
+    > {
+        self.transparent_addresses
+            .iter()
+            .filter(|(address_id, _)| address_id.scope() != TransparentScope::Refund)
+            .map(|(address_id, encoded_address)| {
+                let address = ZcashAddress::try_from_encoded(encoded_address)?
+                    .convert_if_network::<TransparentAddress>(self.chain_type.network_type())
+                    .expect("incorrect network should be checked on wallet load");
+
+                Ok((
+                    address,
+                    (address_id.account_id(), Some(address_id.scope().into())),
+                ))
             })
             .collect()
     }
@@ -574,6 +601,13 @@ impl WalletWrite for LightWallet {
             Transaction,
             <Self as WalletRead>::AccountId,
         >,
+    ) -> Result<(), <Self as WalletRead>::Error> {
+        unimplemented!()
+    }
+
+    fn queue_rescan(
+        &mut self,
+        _range: Range<BlockHeight>,
     ) -> Result<(), <Self as WalletRead>::Error> {
         unimplemented!()
     }

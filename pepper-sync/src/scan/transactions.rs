@@ -17,7 +17,7 @@ use zcash_keys::{
     address::UnifiedAddress,
     keys::{OutgoingViewingKey, UnifiedFullViewingKey},
 };
-use zcash_note_encryption::{BatchDomain, Domain, ENC_CIPHERTEXT_SIZE, ShieldedOutput};
+use zcash_note_encryption::{BatchDomain, Domain, ShieldedOutput};
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::{
     ShieldedPool,
@@ -45,7 +45,7 @@ use crate::{
 
 use super::DecryptedNoteData;
 
-trait ShieldedOutputExt<D: Domain>: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE> {
+trait ShieldedOutputExt<D: Domain>: ShieldedOutput<D> {
     fn out_ciphertext(&self) -> [u8; 80];
 
     fn value_commitment(&self) -> D::ValueCommitment;
@@ -240,7 +240,7 @@ pub(crate) fn scan_transaction(
             }
         }
 
-        if let Some(tkeys) = ufvk.transparent() {
+        if let Some(tkeys) = ufvk.p2pkh() {
             add_unified_ovk(
                 &mut sapling_ovks,
                 &mut orchard_ovks,
@@ -483,7 +483,7 @@ fn scan_incoming_notes<D, Op, N, Nf, P>(
 where
     D: BatchDomain<Note = N>,
     D::Memo: AsRef<[u8]>,
-    Op: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
+    Op: ShieldedOutput<D>,
     Nf: Copy,
 {
     let (key_ids, ivks): (Vec<_>, Vec<_>) = ivks.into_iter().unzip();
@@ -562,7 +562,7 @@ where
 }
 
 #[allow(clippy::type_complexity)]
-fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>>(
+fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D>>(
     domain: &D,
     ovks: &[D::OutgoingViewingKey],
     output: &Output,

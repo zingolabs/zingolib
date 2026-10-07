@@ -454,7 +454,7 @@ where
     escalating_transmit(
         draw.destinations(),
         draw.preferred(),
-        &mut rand::rngs::OsRng,
+        &mut crate::utils::system_rng(),
         MAX_TRANSMISSION_DESTINATIONS,
         run_pull,
         |line| context.progress.set(format!("escalation: {line}")),

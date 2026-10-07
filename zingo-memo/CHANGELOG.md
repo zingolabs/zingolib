@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- BREAKING: moves to `zcash_address` 0.14.0-pre.1, `zcash_keys` 0.17.0-pre.1,
+  `zcash_encoding` 0.5, `zcash_protocol` 0.11.0-pre.0 and `rand` 0.10. The
+  memo's raw unified address encoding is unchanged: it carries data items
+  alone, read back as a ZIP 316 Revision 0 container.
 
 ### Removed
 

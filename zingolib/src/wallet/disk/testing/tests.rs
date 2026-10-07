@@ -1,4 +1,5 @@
 use bip0039::Mnemonic;
+use secrecy::ExposeSecret;
 
 use zcash_keys::keys::Era;
 use zcash_protocol::{PoolType, ShieldedPool};
@@ -267,8 +268,8 @@ async fn reload_wallet_from_file() {
     };
 
     assert_eq!(
-        usk.to_bytes(Era::Orchard),
-        expected_usk.to_bytes(Era::Orchard)
+        usk.to_bytes(Era::Orchard).expose_secret(),
+        expected_usk.to_bytes(Era::Orchard).expose_secret()
     );
     assert_eq!(usk.orchard().to_bytes(), expected_usk.orchard().to_bytes());
     assert_eq!(usk.sapling().to_bytes(), expected_usk.sapling().to_bytes());
@@ -288,7 +289,7 @@ async fn reload_wallet_from_file() {
 
     let ufvk = usk.to_unified_full_viewing_key();
     let chain_type = loaded_client.chain_type();
-    let ufvk_string = ufvk.encode(&chain_type);
+    let ufvk_string = ufvk.encode(&chain_type).unwrap();
     let wallet_config = WalletConfig::Ufvk {
         ufvk: ufvk_string.clone(),
         birthday: loaded_client.birthday(),
@@ -302,7 +303,7 @@ async fn reload_wallet_from_file() {
     else {
         panic!("should be viewing key!");
     };
-    let v_ufvk_string = v_ufvk.encode(&view_wallet.chain_type);
+    let v_ufvk_string = v_ufvk.encode(&view_wallet.chain_type).unwrap();
     assert_eq!(ufvk_string, v_ufvk_string);
 
     // NOTE: removed balance check as need to sync to restore transaction data.

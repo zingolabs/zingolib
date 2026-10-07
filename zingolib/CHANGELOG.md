@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `utils::system_rng`, the one constructor of the operating system's
+  randomness every signing and proving site draws from.
+- `wallet::keys::unified::encode_ufvk`, the string encoding of a unified full
+  viewing key for a chain.
 - Add `LightClient::sync_to_tip_and_await`, which syncs to the chain tip and returns whatever the stored `shutdown_on_completion` setting is. The override applies to that sync only and the stored sync config is not modified. A running or paused sync is stopped and awaited first, and is not relaunched.
 - Add `mixnet::TransmitPolicy` (`Mixnet`, `Nakednet`), the per-session send route choice, with `LightClient::transmit_policy` and `set_transmit_policy`. Every session starts under `Mixnet`; `MixnetStartPolicy::OptedOutThisSession` sets `Nakednet`, and `enable_mixnet`, `enable_mixnet_via_host`, and `attach_mixnet` set `Mixnet` before the transport exists, so sends refuse during the bootstrap. A failed enable restores the policy the session had before.
 - Add `mixnet::resolve_mixnet_only_route` and `LightClient::mixnet_only_route`, the route of the price fetch and the liveness probe: the conduit while `Ready`, a typed refusal otherwise.
@@ -15,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
 
 ### Changed
+- **Breaking:** the Zcash stack moves to the librustzcash NU7 pre-release
+  cohort, pinned exactly: `zcash_client_backend` 0.25.0-pre.1, `zcash_keys` 0.17.0-pre.1, `zcash_primitives` 0.31.0-pre.1, `zcash_proofs` 0.31.0-pre.1, `zcash_protocol` 0.11.0-pre.0, `zcash_address` 0.14.0-pre.1, `zcash_transparent` 0.11.0-pre.1, `zcash_encoding` 0.5, `zcash_note_encryption` 0.5, `zcash_script` 0.6, `orchard` 0.16, `sapling-crypto` 0.9, `incrementalmerkletree` 0.9, `shardtree` 0.8, `zip32` 0.3, `bip32` 0.6, `jubjub` 0.11, `secp256k1` 0.33, `rand` 0.10, and `zcash_pool_migration` 0.2.0-pre.1.
+  The cohort knows NU7 on testnet (activation height 4,465,026, consensus
+  branch id `0x77190AD9`), so a testnet transaction built above that height
+  now carries the branch id the network accepts. Mainnet has no NU7 height
+  in this cohort. Every type these crates export through zingolib's public
+  API moves with them, so a consumer pins the same cohort.
+- **Breaking:** `ChainType::activation_height` answers `NetworkUpgrade::Nu7`
+  on a regtest chain from `ActivationHeights::nu7`.
+- The wallet draws transaction randomness from `utils::system_rng`, the
+  operating system's generator unwrapped, where it passed `rand::rngs::OsRng`.
+  `rand` 0.10 removed that type and made the system generator fallible.
+- `wallet::keys::unified::UnifiedKeyStore` serializes a unified full viewing
+  key through `encode_ufvk`, which encodes at ZIP 316 Revision 0 when that
+  revision can carry the key and at Revision 2 otherwise.
 - **Breaking:** the term clearnet is renamed nakednet in every public name. The `Clearnet` variant of `MixnetRoute`, `TransmitRoute`, `AttemptRoute`, `Transport`, `TransmissionRoute` and `MigrationWire` is now `Nakednet`. `LightClient::consent_to_clearnet_for_tests` and `LightClient::new_clearnet_consented` are now `consent_to_nakednet_for_tests` and `new_nakednet_consented`.
 - `LightClient::go_offline` stops an in-flight sync as `stop_sync` does and waits for the engine to return, where it used to abort the sync task. An abort could cancel the engine partway through a batch and leave the wallet holding part of that batch's updates. `go_offline` now returns after the engine has processed its current batch.
 - `LightClient::pause_sync`, `stop_sync`, `resume_sync`, `pause_sync_scoped` and the pause guard's drop move the sync mode through `SyncMode::transition` and `SyncMode::apply`, one atomic exchange each, so a `Shutdown` the engine sets at completion between the read and the write is kept instead of overwritten.

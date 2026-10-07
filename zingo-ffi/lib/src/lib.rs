@@ -2093,7 +2093,7 @@ impl ViewingKey {
             .try_into();
         match converted {
             Ok(ufvk) => Self::Encoded {
-                ufvk: ufvk.encode(&wallet.chain_type()),
+                ufvk: wallet::keys::unified::encode_ufvk(&ufvk, &wallet.chain_type()),
                 birthday: u32::from(wallet.birthday()),
                 chain: wallet.chain_type(),
             },
@@ -2334,7 +2334,7 @@ impl WalletKind {
         {
             UnifiedKeyStore::Spend(_) => Self::SpendingKey,
             UnifiedKeyStore::View(ufvk) => Self::ViewingKey {
-                transparent: ufvk.transparent().is_some(),
+                transparent: ufvk.p2pkh().is_some(),
                 sapling: ufvk.sapling().is_some(),
                 orchard: ufvk.orchard().is_some(),
             },
@@ -2429,7 +2429,7 @@ pub fn parse_address(address: String) -> Result<String, ZingolibError> {
                                 "chain_name" => chain_name_string,
                                 "address_kind" => "unified",
                                 "receivers_available" => receivers_available,
-                                "shielded_only_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().cloned(), None, None).expect("To construct UA").encode(&chain_name),
+                                "shielded_only_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().cloned(), None, None, None, None).expect("To construct UA").encode(&chain_name),
                             }
                             .pretty(2)
                         } else {
@@ -2462,9 +2462,9 @@ pub fn parse_ufvk(ufvk: String) -> Result<String, ZingolibError> {
         } else {
             Ok(json::stringify_pretty(
                 match Ufvk::decode(&ufvk) {
-                    Ok((network, ufvk)) => {
+                    Ok((network, _revision, ufvk)) => {
                         let mut pools_available = vec![];
-                        for fvk in ufvk.items_as_parsed() {
+                        for fvk in ufvk.items() {
                             match fvk {
                                 zcash_address::unified::Fvk::Orchard(_) => {
                                     pools_available.push("orchard")
@@ -2472,7 +2472,7 @@ pub fn parse_ufvk(ufvk: String) -> Result<String, ZingolibError> {
                                 zcash_address::unified::Fvk::Sapling(_) => {
                                     pools_available.push("sapling")
                                 }
-                                zcash_address::unified::Fvk::P2pkh(_) => {
+                                zcash_address::unified::Fvk::P2pkh(_) | zcash_address::unified::Fvk::P2sh(_) => {
                                     pools_available.push("transparent")
                                 }
                                 zcash_address::unified::Fvk::Unknown { .. } => pools_available.push(

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - `test_tls`, behind `testutils`: the committed localhost certificate and
   key. A `Socks5Indexer` in a `testutils` build also trusts that
   certificate, so a test can serve a Destination over TLS behind a loopback
@@ -22,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a superseded conduit permanently short of `Retired`.
 
 ### Changed
+- BREAKING: `rand` 0.10. `provider::rotation_interval` takes a `rand` 0.10
+  generator, and the exit tiers shuffle with the thread-local generator
+  where they drew `rand::rngs::OsRng`, a type `rand` 0.10 removed.
 - `time::MEMPOOL_DRAIN_SETTLE` is raised from 200 ms to 750 ms, and
   `time::MEMPOOL_DRAIN_CEILING` from 1 s to 1.5 s to keep the settle window
   inside it. zaino polls the validator's mempool every 500 ms by default, so

@@ -1415,7 +1415,7 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
             nullifier: action.nullifier().to_bytes().to_vec(),
             cmx: action.cmx().to_bytes().to_vec(),
             ephemeral_key: action.encrypted_note().epk_bytes.to_vec(),
-            ciphertext: action.encrypted_note().enc_ciphertext[..52].to_vec(),
+            ciphertext: action.encrypted_note().enc_ciphertext.as_ref()[..52].to_vec(),
         })
         .collect();
     let ironwood_actions = transaction
@@ -1426,7 +1426,7 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
             nullifier: action.nullifier().to_bytes().to_vec(),
             cmx: action.cmx().to_bytes().to_vec(),
             ephemeral_key: action.encrypted_note().epk_bytes.to_vec(),
-            ciphertext: action.encrypted_note().enc_ciphertext[..52].to_vec(),
+            ciphertext: action.encrypted_note().enc_ciphertext.as_ref()[..52].to_vec(),
         })
         .collect();
     let vin = transaction

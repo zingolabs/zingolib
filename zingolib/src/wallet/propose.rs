@@ -289,7 +289,7 @@ impl LightWallet {
             {
                 match address {
                     zcash_keys::address::Address::Unified(unified_address) => {
-                        recipient_uas.push(unified_address);
+                        recipient_uas.push(*unified_address);
                     }
                     zcash_keys::address::Address::Tex(_) => {
                         refund_address_indexes.push(refund_address_count);

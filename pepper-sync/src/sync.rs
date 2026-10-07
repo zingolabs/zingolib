@@ -3967,7 +3967,9 @@ mod test {
         /// builders down into this crate is a deferred follow-up.
         fn funding_transaction(spending_transaction: Option<TxId>) -> WalletTransaction {
             let extsk = sapling_crypto::zip32::ExtendedSpendingKey::master(&[0; 32]);
-            let (_, recipient) = extsk.default_address();
+            let (_, recipient) = extsk
+                .expect("the zero seed derives a valid master key")
+                .default_address();
             let crypto_note = sapling_crypto::Note::from_parts(
                 recipient,
                 NoteValue::from_raw(100_000),
@@ -4196,6 +4198,7 @@ mod test {
             nu6_1: Some(BlockHeight::from_u32(1)),
             nu6_2: Some(BlockHeight::from_u32(1)),
             nu6_3: Some(BlockHeight::from_u32(1)),
+            nu7: None,
         };
         const FUNDING_HEIGHT: BlockHeight = BlockHeight::from_u32(10);
         const SPEND_HEIGHT: BlockHeight = BlockHeight::from_u32(100);
@@ -4370,6 +4373,7 @@ mod test {
             nu6_1: Some(BlockHeight::from_u32(3)),
             nu6_2: Some(BlockHeight::from_u32(3)),
             nu6_3: Some(BlockHeight::from_u32(3)),
+            nu7: None,
         };
         use crate::{error::SyncError, mocks::MockWalletError, sync::checked_wallet_height};
         // It's possible an error from an implementor's get_sync_state could bubble up to checked_wallet_height
@@ -4854,6 +4858,7 @@ mod test {
             nu6_1: Some(BlockHeight::from_u32(1)),
             nu6_2: Some(BlockHeight::from_u32(1)),
             nu6_3: Some(BlockHeight::from_u32(1)),
+            nu7: None,
         };
         const BIRTHDAY: u32 = 1;
         /// The chain height the server reported when the scan range was selected.
@@ -4999,6 +5004,7 @@ mod test {
             nu6_1: Some(BlockHeight::from_u32(1)),
             nu6_2: Some(BlockHeight::from_u32(1)),
             nu6_3: Some(BlockHeight::from_u32(1)),
+            nu7: None,
         };
         const BIRTHDAY: u32 = 1;
         /// The first block of the scan range that fails the continuity check.
@@ -5238,6 +5244,7 @@ mod test {
             nu6_1: Some(BlockHeight::from_u32(1)),
             nu6_2: Some(BlockHeight::from_u32(1)),
             nu6_3: Some(BlockHeight::from_u32(100)),
+            nu7: None,
         };
 
         fn block(height: u32) -> WalletBlock {

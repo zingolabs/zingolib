@@ -312,7 +312,7 @@ impl LightWallet {
                                         address_index,
                                     })
                                     .and_then(|unified_address| {
-                                        if *unified_address == address {
+                                        if *unified_address == *address {
                                             Some(address_index)
                                         } else {
                                             None
@@ -354,7 +354,7 @@ impl LightWallet {
                                 address_index,
                             })
                             .and_then(|unified_address| {
-                                if *unified_address == address {
+                                if *unified_address == *address {
                                     Some(address_index)
                                 } else {
                                     None

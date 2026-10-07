@@ -8,7 +8,7 @@
 #![warn(missing_docs)]
 use std::io::{self, Read, Write};
 
-use zcash_address::unified::{Address, Container, Encoding, Receiver};
+use zcash_address::unified::{Address, Container, Encoding, Receiver, Revision, Uitem};
 use zcash_encoding::{CompactSize, Vector};
 use zcash_keys::address::UnifiedAddress;
 use zcash_protocol::consensus::Parameters;
@@ -122,8 +122,8 @@ pub fn write_unified_address_to_raw_encoding<W: Write>(
     ua: &UnifiedAddress,
     writer: W,
 ) -> io::Result<()> {
-    let mainnet_encoded_ua = ua.encode(consensus_parameters);
-    let (_mainnet, address) =
+    let mainnet_encoded_ua = ua.encode_receiver_preserving(consensus_parameters);
+    let (_mainnet, _revision, address) =
         Address::decode(&mainnet_encoded_ua).expect("freshly encoded ua to decode!");
     let receivers = address.items();
     Vector::write(writer, &receivers, |mut w, receiver| {
@@ -151,8 +151,11 @@ pub fn read_unified_address_from_raw_encoding<R: Read>(reader: R) -> io::Result<
         r.read_exact(&mut receiver_bytes)?;
         decode_receiver(typecode, receiver_bytes)
     })?;
-    let address = Address::try_from_items(receivers)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let address = Address::try_from_items(
+        Revision::R0,
+        receivers.into_iter().map(Uitem::Data).collect(),
+    )
+    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     UnifiedAddress::try_from(address).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
@@ -208,13 +211,13 @@ mod test_vectors;
 mod tests {
     use super::test_vectors as zingomemo_vectors;
     use super::*;
-    use rand::{self, Rng};
+    use rand::{self, RngExt};
     use test_vectors::TestVector;
     use zcash_protocol::consensus::MAIN_NETWORK;
 
     fn get_some_number_of_ephemeral_indexes() -> Vec<u32> {
         // Generate a random number of elements between 0 and 10
-        let count = rand::thread_rng().gen_range(0..=10);
+        let count = rand::rng().random_range(0..=10);
 
         // Create a vector of increasing natural numbers
         (0..count).collect::<Vec<u32>>()
@@ -227,7 +230,7 @@ mod tests {
         };
         let mut serialized_ua = Vec::new();
         write_unified_address_to_raw_encoding(&MAIN_NETWORK, &ua, &mut serialized_ua).unwrap();
-        (ua, serialized_ua)
+        (*ua, serialized_ua)
     }
     #[test]
     fn parse_zingo_memo_version_n() {

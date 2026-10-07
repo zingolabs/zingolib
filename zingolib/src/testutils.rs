@@ -666,6 +666,8 @@ pub fn encoded_orchard_only_from_ua(
         ),
         None,
         None,
+        None,
+        None,
     )
     .unwrap()
     .encode(consensus_parameters)

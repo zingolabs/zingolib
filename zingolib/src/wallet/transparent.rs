@@ -12,7 +12,6 @@
 //! `LightWallet::build_op_return_send` builds and records the
 //! transaction.
 
-use rand::rngs::OsRng;
 use thiserror::Error;
 
 use zcash_keys::keys::UnifiedSpendingKey;
@@ -222,7 +221,7 @@ impl LightWallet {
                 &signing_set,
                 &[],
                 &[],
-                OsRng,
+                crate::utils::system_rng(),
                 &prover,
                 &prover,
                 &zip317::FeeRule::standard(),

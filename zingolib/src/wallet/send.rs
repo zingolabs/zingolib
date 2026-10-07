@@ -6,6 +6,7 @@ use nonempty::NonEmpty;
 
 use zcash_client_backend::data_api::wallet::SpendingKeys;
 use zcash_client_backend::proposal::Proposal;
+use zcash_client_backend::util::SystemClock;
 
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::NoteInterface;
@@ -75,6 +76,8 @@ impl LightWallet {
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self,
             &chain_type,
+            &SystemClock,
+            &mut crate::utils::system_rng(),
             &sapling_prover,
             &sapling_prover,
             &SpendingKeys::new(usk),
