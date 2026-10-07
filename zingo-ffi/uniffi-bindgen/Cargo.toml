@@ -2,18 +2,14 @@
 name = "zingo-uniffi-bindgen"
 version = "0.1.0"
 edition = "2024"
-description = "Project-local uniffi-bindgen binaries for the wallet and the Nym proxy shim."
+description = "Project-local uniffi-bindgen for the wallet and the Nym proxy shim."
 publish = false
 
-# Two binaries on one uniffi version: the wallet generates from its UDL, the
-# Nym proxy shim generates in library mode from its compiled cdylib.
+# One binary generates both crates' bindings in library mode from their
+# compiled libraries.
 [[bin]]
 name = "zingo-uniffi-bindgen"
 path = "src/bin/zingo-uniffi-bindgen.rs"
-
-[[bin]]
-name = "zingo-wallet-uniffi-bindgen"
-path = "src/bin/zingo-wallet-uniffi-bindgen.rs"
 
 [dependencies]
 # The workspace pin, shared by `zingo` (zingo-ffi/lib) and `zingo-nym-proxy-ffi`.

@@ -27,9 +27,6 @@ zip32 = { workspace = true }
 thiserror = { workspace = true }
 once_cell = { workspace = true }
 
-[build-dependencies]
-uniffi_build = { workspace = true, features = ["builtin-bindgen"] }
-
 [lib]
 crate-type = ["cdylib", "staticlib"]
 name = "zingo"

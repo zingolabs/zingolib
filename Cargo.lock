@@ -4021,17 +4021,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "uniffi_build"
-version = "0.32.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "925be5c36297fff0d416fa2f03585ace718b6e6c635466754128d00f0862d5f1"
-dependencies = [
- "anyhow",
- "camino",
- "uniffi_bindgen",
-]
-
-[[package]]
 name = "uniffi_core"
 version = "0.32.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4937,7 +4926,6 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio",
  "uniffi",
- "uniffi_build",
  "zcash_address",
  "zcash_client_backend",
  "zcash_keys",

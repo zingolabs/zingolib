@@ -1,13 +1,13 @@
 #![forbid(unsafe_code)]
 
-//! Project-local `uniffi-bindgen` for the Nym proxy shim, on the workspace
-//! `uniffi` pin that `zingo-nym-proxy-ffi` compiles against. Run it in library
-//! mode against a built shim library. Library mode reads the UniFFI metadata
-//! statically, so a cross-compiled Android `.so` works on the host:
+//! Project-local `uniffi-bindgen` for the wallet library and the Nym proxy
+//! shim, on the workspace `uniffi` pin that both compile against. Run it in
+//! library mode against a built library. Library mode reads the UniFFI
+//! metadata statically, so a cross-compiled Android `.so` works on the host:
 //!
 //! ```text
 //! cargo run --package zingo-uniffi-bindgen --bin zingo-uniffi-bindgen -- \
-//!     generate --library <path>/libzingo_nym_proxy_ffi.so \
+//!     generate --library <path>/libzingo.so \
 //!     --language kotlin --out-dir <out>
 //! ```
 //!

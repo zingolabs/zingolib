@@ -1,4 +1,4 @@
-uniffi::include_scaffolding!("zingo");
+uniffi::setup_scaffolding!();
 
 #[macro_use]
 extern crate lazy_static;
@@ -71,7 +71,8 @@ const INDEXER_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 // Bounds the pending-URI redial in attach_pending_indexer.
 const PENDING_INDEXER_DIAL_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+#[uniffi(flat_error)]
 pub enum ZingolibError {
     #[error("Error: Lightclient is not initialized")]
     LightclientNotInitialized,
@@ -530,6 +531,7 @@ macro_rules! wallet_access {
 
 macro_rules! wallet_report {
     (pub fn $export:ident($($input:ident: String)?) => $access:ident($state:ty)) => {
+        #[uniffi::export]
         pub fn $export($($input: String)?) -> Result<String, ZingolibError> {
             $access($($input,)? <$state>::of)
         }
@@ -739,6 +741,7 @@ fn build_client_config(
 /// `{ candidates, allowSyncEndpoint }` shape clears it so the library's
 /// embedded curated Destination pool, which always excludes the
 /// synchronization operator, routes instead.
+#[uniffi::export]
 pub fn set_broadcast_candidates(candidates_json: String) -> Result<String, ZingolibError> {
     let parsed = json::parse(&candidates_json).map_err(in_context(
         ZingolibError::InvalidInput,
@@ -787,6 +790,7 @@ fn init_lightclient(
     })
 }
 
+#[uniffi::export]
 pub fn init_logging() -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         // this is only for Android
@@ -802,6 +806,7 @@ pub fn init_logging() -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 pub fn init_new(
     server_uri: String,
     birthday: u32,
@@ -855,6 +860,7 @@ pub fn init_new(
 }
 
 // TODO: change `seed` to `seed_phrase` or `mnemonic_phrase`
+#[uniffi::export]
 pub fn init_from_seed(
     seed: String,
     birthday: u32,
@@ -880,6 +886,7 @@ pub fn init_from_seed(
     )
 }
 
+#[uniffi::export]
 pub fn init_from_ufvk(
     ufvk: String,
     birthday: u32,
@@ -904,6 +911,7 @@ pub fn init_from_ufvk(
     )
 }
 
+#[uniffi::export]
 pub fn init_from_bytes(
     wallet_bytes: Vec<u8>,
     server_uri: String,
@@ -1033,6 +1041,7 @@ fn map_wallet_save(
     save_result.map_err(chained(ZingolibError::Save))
 }
 
+#[uniffi::export]
 pub fn save_wallet_bytes() -> Result<Option<Vec<u8>>, ZingolibError> {
     map_wallet_save(with_wallet_mut(wallet::LightWallet::save)?)
 }
@@ -1740,14 +1749,17 @@ mod parse_and_stub_error_channel_tests {
     }
 }
 
+#[uniffi::export]
 pub fn get_developer_donation_address() -> Result<String, ZingolibError> {
     with_panic_guard(|| Ok(zingolib::DEVELOPER_DONATION_ADDRESS.to_string()))
 }
 
+#[uniffi::export]
 pub fn get_zennies_for_zingo_donation_address() -> Result<String, ZingolibError> {
     with_panic_guard(|| Ok(zingolib::ZENNIES_FOR_ZINGO_DONATION_ADDRESS.to_string()))
 }
 
+#[uniffi::export]
 pub fn get_latest_block_server(server_uri: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         let lightwalletd_uri: http::Uri = server_uri
@@ -1766,6 +1778,7 @@ pub fn get_latest_block_server(server_uri: String) -> Result<String, ZingolibErr
     })
 }
 
+#[uniffi::export]
 pub fn get_latest_block_wallet() -> Result<String, ZingolibError> {
     let height = with_wallet(|wallet| wallet.sync_state.last_known_chain_height())?;
     Ok(object! { "height" => json::JsonValue::from(height.map_or(0, u32::from)) }.pretty(2))
@@ -1852,10 +1865,12 @@ impl Report for Transfers {
     }
 }
 
+#[uniffi::export]
 pub fn get_value_transfers() -> Result<String, ZingolibError> {
     report_wallet(|wallet| RT.block_on(Transfers::of(wallet)))
 }
 
+#[uniffi::export]
 pub fn poll_sync() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| match lightclient.poll_sync() {
         PollReport::NoHandle => Ok("Sync task has not been launched.".to_string()),
@@ -1919,6 +1934,7 @@ fn attach_pending_indexer() {
     }
 }
 
+#[uniffi::export]
 fn run_sync() -> Result<String, ZingolibError> {
     attach_pending_indexer();
     with_initialized_lightclient(|lightclient| {
@@ -1950,6 +1966,7 @@ fn run_sync() -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 pub fn pause_sync() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| match lightclient.pause_sync() {
         Ok(_) => Ok("Pausing sync task...".to_string()),
@@ -1957,6 +1974,7 @@ pub fn pause_sync() -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 fn status_sync() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async {
@@ -1969,6 +1987,7 @@ fn status_sync() -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 pub fn run_rescan() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
@@ -1980,6 +1999,7 @@ pub fn run_rescan() -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 pub fn info_server() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
@@ -2124,6 +2144,7 @@ wallet_report!(pub fn get_ufvk() => report_wallet(ViewingKey));
 
 /// Salvages seed phrase, birthday, and account count from the stable prefix
 /// of a wallet file that cannot open.
+#[uniffi::export]
 pub fn read_wallet_recovery_info(wallet_bytes: Vec<u8>) -> Result<String, ZingolibError> {
     let salvaged = zingolib::wallet::LightWallet::read_recovery_info(wallet_bytes.as_slice())
         .map_err(chained(ZingolibError::Read))?;
@@ -2132,6 +2153,7 @@ pub fn read_wallet_recovery_info(wallet_bytes: Vec<u8>) -> Result<String, Zingol
 
 /// Confirms the bytes parse as a complete wallet under one of the supported
 /// chains, reporting the failure whose parse reached the deepest byte.
+#[uniffi::export]
 pub fn validate_wallet_bytes(wallet_bytes: Vec<u8>) -> Result<(), ZingolibError> {
     let chains = [
         ChainType::Mainnet,
@@ -2267,6 +2289,7 @@ mod wallet_validation_tests {
     }
 }
 
+#[uniffi::export]
 pub fn change_server(server_uri: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         let uri = if server_uri.is_empty() {
@@ -2367,10 +2390,12 @@ impl WalletKind {
     }
 }
 
+#[uniffi::export]
 pub fn wallet_kind() -> Result<String, ZingolibError> {
     Ok(with_wallet(WalletKind::of)?.json().pretty(2))
 }
 
+#[uniffi::export]
 pub fn parse_address(address: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         if address.is_empty() {
@@ -2455,6 +2480,7 @@ pub fn parse_address(address: String) -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 pub fn parse_ufvk(ufvk: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         if ufvk.is_empty() {
@@ -2505,10 +2531,12 @@ pub fn parse_ufvk(ufvk: String) -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 pub fn get_version() -> Result<String, ZingolibError> {
     with_panic_guard(|| Ok(zingolib::git_description().to_string()))
 }
 
+#[uniffi::export]
 pub fn get_messages(address: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
@@ -2523,6 +2551,7 @@ pub fn get_messages(address: String) -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 pub fn get_balance() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
@@ -2534,6 +2563,7 @@ pub fn get_balance() -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 pub fn get_total_memobytes_to_address() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
@@ -2545,6 +2575,7 @@ pub fn get_total_memobytes_to_address() -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 pub fn get_total_value_to_address() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
@@ -2556,6 +2587,7 @@ pub fn get_total_value_to_address() -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 pub fn get_total_spends_to_address() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
@@ -2567,6 +2599,7 @@ pub fn get_total_spends_to_address() -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 pub fn zec_price() -> Result<String, ZingolibError> {
     let usd = with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
@@ -2622,6 +2655,7 @@ wallet_report!(pub fn remove_transaction(txid: String) => report_wallet_mut_with
 /// wallet with nothing to send yet, not a failure: it reports zero, so the
 /// Send screen shows a zero rather than an error that stands there for as
 /// long as the server is down or the user stays offline.
+#[uniffi::export]
 pub fn get_spendable_balance_with_address(address: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         let address = address_from_str(&address).map_err(in_context(
@@ -2669,20 +2703,24 @@ impl Report for Spendable {
 
 wallet_report!(pub fn get_spendable_balance_total() => report_wallet(Spendable));
 
+#[uniffi::export]
 pub fn set_option_wallet() -> Result<String, ZingolibError> {
     with_panic_guard(|| Err(ZingolibError::Wallet("unimplemented".to_string())))
 }
 
+#[uniffi::export]
 pub fn get_option_wallet() -> Result<String, ZingolibError> {
     with_panic_guard(|| Err(ZingolibError::Wallet("unimplemented".to_string())))
 }
 
+#[uniffi::export]
 pub fn get_unified_addresses() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         Ok(RT.block_on(async move { lightclient.unified_addresses_json().await.pretty(2) }))
     })
 }
 
+#[uniffi::export]
 pub fn get_transparent_addresses() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         Ok(RT.block_on(async move { lightclient.transparent_addresses_json().await.pretty(2) }))
@@ -2872,6 +2910,7 @@ impl Report for Ownership {
 
 wallet_report!(pub fn check_my_address(address: String) => report_wallet_with(Ownership));
 
+#[uniffi::export]
 pub fn get_wallet_save_required() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         Ok(RT.block_on(async move {
@@ -2881,6 +2920,7 @@ pub fn get_wallet_save_required() -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 pub fn set_config_wallet_to_test() -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         let mut guard = LIGHTCLIENT
@@ -2900,6 +2940,7 @@ pub fn set_config_wallet_to_test() -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 pub fn set_config_wallet_to_prod(
     performance_level: String,
     min_confirmations: u32,
@@ -2929,6 +2970,7 @@ pub fn set_config_wallet_to_prod(
     })
 }
 
+#[uniffi::export]
 pub fn get_config_wallet_performance() -> Result<String, ZingolibError> {
     let performance_level =
         match with_wallet(|wallet| wallet.wallet_settings.sync_config.performance_level)? {
@@ -2940,6 +2982,7 @@ pub fn get_config_wallet_performance() -> Result<String, ZingolibError> {
     Ok(object! { "performance_level" => performance_level }.pretty(2))
 }
 
+#[uniffi::export]
 pub fn get_wallet_version() -> Result<String, ZingolibError> {
     let (current_version, read_version) =
         with_wallet(|wallet| (wallet.current_version(), wallet.read_version()))?;
@@ -3017,6 +3060,7 @@ fn proposal_destination_pools<FeeRuleT, NoteRef>(
     pools
 }
 
+#[uniffi::export]
 pub fn send(send_json: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
@@ -3085,6 +3129,7 @@ pub fn send(send_json: String) -> Result<String, ZingolibError> {
 /// Returns the same shape as `send`, plus `amount`: what the recipient
 /// actually receives, which the caller writes back into the amount field so
 /// the figure shown is the figure sent.
+#[uniffi::export]
 pub fn send_all(address: String, memo: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
@@ -3132,6 +3177,7 @@ fn proposal_recipient_amount<FeeRuleT, NoteRef>(
         .unwrap_or(Zatoshis::ZERO)
 }
 
+#[uniffi::export]
 pub fn shield() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
@@ -3165,6 +3211,7 @@ pub fn shield() -> Result<String, ZingolibError> {
     })
 }
 
+#[uniffi::export]
 pub fn confirm() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
@@ -3190,6 +3237,7 @@ pub fn confirm() -> Result<String, ZingolibError> {
 /// Orchard notes into a single Ironwood `output`; the fee is `sum(inputs) -
 /// output`. An empty `transactions` array means there is nothing worth
 /// migrating.
+#[uniffi::export]
 pub fn plan_orchard_drain() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
@@ -3236,6 +3284,7 @@ pub fn plan_orchard_drain() -> Result<String, ZingolibError> {
 /// Returns, on success, `{ txids: [..], migrated, fee, residual }` (values in
 /// zatoshis). Notes worth at most the sweep minimum are left behind and
 /// reported as `residual`.
+#[uniffi::export]
 pub fn drain_orchard_to_ironwood() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         // Publish this drain's progress handle to the DRAIN_PROGRESS side
@@ -3282,6 +3331,7 @@ pub fn drain_orchard_to_ironwood() -> Result<String, ZingolibError> {
 /// `{ total, built, sent, phase }` where `phase` is `"building"` or
 /// `"transmitting"` and the counts are `0..=total`. Returns JSON `null` when no
 /// drain is in flight (before it starts, or once it has finished).
+#[uniffi::export]
 pub fn drain_status() -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         // Snapshot under a brief read lock, then drop it: the drain only touches
@@ -3357,6 +3407,7 @@ fn migration_phase_json(phase: &MigrationPhase) -> json::JsonValue {
 /// parts_fee, residual, plan_hash }` (values in zatoshis, `plan_hash` in hex).
 /// Consent must disclose `residual`. Pass `plan_hash` back to
 /// `start_ironwood_migration` unchanged.
+#[uniffi::export]
 pub fn plan_ironwood_migration() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
@@ -3410,6 +3461,7 @@ pub fn plan_ironwood_migration() -> Result<String, ZingolibError> {
 /// Returns `{ started: true }`; failure throws typed — notably
 /// `MigrationConsentStale` when the wallet's notes changed since planning
 /// (replan and re-show).
+#[uniffi::export]
 pub fn start_ironwood_migration(
     plan_hash_hex: String,
     per_bucket: Option<u32>,
@@ -3447,6 +3499,7 @@ pub fn start_ironwood_migration(
 /// empty `pending` means confirmed but the anchor hasn't reached the outputs
 /// — sync and retry either way), or
 /// `{ step: "splitting_complete" }` (parts bound and scheduled).
+#[uniffi::export]
 pub fn continue_note_splitting() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
@@ -3500,6 +3553,7 @@ pub fn continue_note_splitting() -> Result<String, ZingolibError> {
 /// again), `{ outcome: "awaiting_confirmation" }` (a prior round has not
 /// confirmed yet — sync and retry, no double-broadcast), or
 /// `{ outcome: "complete" }` (every note is part-ready).
+#[uniffi::export]
 pub fn quick_split() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         // Arm the SPLIT_PROGRESS side channel before the block_on: we hold
@@ -3547,6 +3601,7 @@ pub fn quick_split() -> Result<String, ZingolibError> {
 /// Returns, while a round runs: `{ total, built, sent, phase }` where `phase` is
 /// `"building"` or `"transmitting"` and the counts are `0..=total`. Returns JSON
 /// `null` when no round is in flight.
+#[uniffi::export]
 pub fn split_status() -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         let status = {
@@ -3581,6 +3636,7 @@ pub fn split_status() -> Result<String, ZingolibError> {
 /// re-read `migration_status` and re-arm the platform scheduler.
 ///
 /// Returns `{ rescheduled: true }`; failure throws typed.
+#[uniffi::export]
 pub fn reschedule_parts(per_bucket: u32) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
@@ -3613,6 +3669,7 @@ pub fn reschedule_parts(per_bucket: u32) -> Result<String, ZingolibError> {
 /// part_ids, denominations }`) or `null` when a send would build nothing; it
 /// carries the current window, which `upcoming_windows` (future windows only)
 /// omits.
+#[uniffi::export]
 pub fn migration_status() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
@@ -3722,6 +3779,7 @@ pub fn migration_status() -> Result<String, ZingolibError> {
 /// parts_total, parts_confirmed, value_total, value_migrated }` (heights in
 /// blocks with `close` exclusive, values in zatoshis), earliest first. Returns
 /// JSON `null` when the wallet has never synced.
+#[uniffi::export]
 pub fn window_timeline() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         RT.block_on(async move {
@@ -3760,6 +3818,7 @@ pub fn window_timeline() -> Result<String, ZingolibError> {
 /// loop), `await_split_confirmation` (sync first), `prompt_catch_up { parts }`
 /// (folded into the next execute tap in manual mode), `replan_remainder`
 /// (fresh consent required). The rest report what was applied unattended.
+#[uniffi::export]
 pub fn reconcile_migration() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
@@ -3866,6 +3925,7 @@ fn batch_report_json(report: &zingolib::lightclient::migrate::BatchReport) -> js
 /// and `halted` is the error that stopped the batch early or `null`. An empty
 /// `outcomes` with `halted` null means nothing was owed. An infrastructure
 /// failure (offline, no migration in progress) throws typed.
+#[uniffi::export]
 pub fn execute_due_parts(spacing_ms: u64) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         // Publish the batch progress handle to the BATCH_PROGRESS side
@@ -3902,6 +3962,7 @@ pub fn execute_due_parts(spacing_ms: u64) -> Result<String, ZingolibError> {
 /// Returns, while a batch runs: `{ total, resolved, sent, phase }` where `phase`
 /// is `"sending"` or `"spacing"` and the counts are `0..=total`. Returns JSON
 /// `null` when no batch is in flight (before it starts, or once it finishes).
+#[uniffi::export]
 pub fn execute_due_parts_status() -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         // Snapshot under a brief read lock, then drop it: the batch only touches
@@ -3937,6 +3998,7 @@ pub fn execute_due_parts_status() -> Result<String, ZingolibError> {
 /// for whatever Orchard balance remains.
 ///
 /// Returns `{ cancelled: true }`; failure throws typed.
+#[uniffi::export]
 pub fn cancel_ironwood_migration() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
@@ -3979,6 +4041,7 @@ fn mixnet_indicator_json(lightclient: &LightClient) -> String {
 /// (the UniFFI proxy shim's address) that bound `exit_node`. Readiness is
 /// validated by a data round trip; poll [`mixnet_indicator`] for
 /// `bootstrapping` -> `ready`, or `died`.
+#[uniffi::export]
 pub fn attach_mixnet(socks5_addr: String, exit_node: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         let exit = zingolib::mixnet::ExitNodeId::parse(&exit_node).map_err(in_context(
@@ -3998,6 +4061,7 @@ pub fn attach_mixnet(socks5_addr: String, exit_node: String) -> Result<String, Z
 /// Enable Mixnet Mode by spawning the bundled nym-proxy binary at
 /// `proxy_path` (the exec fallback; Android-attached and iOS builds use
 /// [`attach_mixnet`] instead).
+#[uniffi::export]
 pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
@@ -4059,6 +4123,7 @@ mod mixnet_indicator_wire_tests {
 ///
 /// A transport act only (the transmit policy is untouched), so the
 /// mixnet-only surfaces keep refusing afterwards.
+#[uniffi::export]
 pub fn disable_mixnet() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
@@ -4072,6 +4137,7 @@ pub fn disable_mixnet() -> Result<String, ZingolibError> {
 /// address, `off` after [`disable_mixnet`], or `died`) under the read lock,
 /// which lets it run beside other readers but still waits for any writer, such
 /// as a sync, a save, or [`attach_mixnet`].
+#[uniffi::export]
 pub fn mixnet_indicator() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         let mut status = object! {
@@ -4090,6 +4156,7 @@ pub fn mixnet_indicator() -> Result<String, ZingolibError> {
 /// Read under the read lock, like [`mixnet_indicator`]: the coordinator fetches
 /// this narration on the same tick, so parking it behind a write would stall
 /// the very progress line it exists to report.
+#[uniffi::export]
 pub fn mixnet_bootstrap_detail() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         let detail = lightclient.mixnet_bootstrap_detail().unwrap_or_default();
