@@ -21,7 +21,7 @@ use crate::{
     scan::{DecryptedNoteData, transactions::scan_transactions},
     wallet::{
         Ironwood, NoteInterface, NullifierMap, Orchard, OutputId, OutputInterface, Sapling,
-        ScanTarget, WalletBlock, WalletTransaction,
+        ScanTarget, ShardTrees, WalletBlock, WalletTransaction,
         traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions},
     },
 };
@@ -293,15 +293,8 @@ pub(super) fn detect_shielded_spends(
     }
 }
 
-/// Update the `spending_transaction` field of all notes where the derived nullifier matches the nullifier in the spend
-/// scan target map. The items in the spend scan target map are taken directly from the nullifier map during spend detection.
-/// Also removes retention marks from the shard tree when a note is spent as it no longer needs the wallet to be able
-/// to construct a witness for it's note commitment.
-///
-/// The notes are updated in a first pass over the wallet's transactions and the marks are removed in a second pass
-/// over its shard trees, so nothing is taken out of the wallet to hold both at once. A wallet that fails to hand over
-/// its shard trees keeps the notes marked spent with their marks retained, and the marks are removed when the spends
-/// are located again.
+/// - Sets the spending transaction of each spent note in the wallet's transaction map.
+/// - Removes the retention marks of the spent notes from the wallet's shard trees.
 pub(super) fn update_spent_notes<W>(
     wallet: &mut W,
     spend_scan_targets: ShieldedSpendScanTargets,
@@ -310,29 +303,52 @@ pub(super) fn update_spent_notes<W>(
 where
     W: SyncTransactions + SyncShardTrees,
 {
-    let wallet_transactions = wallet.get_wallet_transactions_mut()?;
-    let sapling_mark_removals = update_spent_notes_by_protocol::<Sapling>(
-        wallet_transactions,
-        spend_scan_targets.sapling,
+    let mark_removals = mark_spent_notes(
+        wallet.get_wallet_transactions_mut()?,
+        spend_scan_targets,
         remove_marks,
     );
-    let orchard_mark_removals = update_spent_notes_by_protocol::<Orchard>(
-        wallet_transactions,
-        spend_scan_targets.orchard,
-        remove_marks,
-    );
-    let ironwood_mark_removals = update_spent_notes_by_protocol::<Ironwood>(
-        wallet_transactions,
-        spend_scan_targets.ironwood,
-        remove_marks,
-    );
-
-    let shard_trees = wallet.get_shard_trees_mut()?;
-    remove_spent_note_marks(&mut shard_trees.sapling, sapling_mark_removals);
-    remove_spent_note_marks(&mut shard_trees.orchard, orchard_mark_removals);
-    remove_spent_note_marks(&mut shard_trees.ironwood, ironwood_mark_removals);
+    remove_spent_note_marks(wallet.get_shard_trees_mut()?, mark_removals);
 
     Ok(())
+}
+
+struct MarkRemovals {
+    sapling: Vec<MarkRemoval>,
+    orchard: Vec<MarkRemoval>,
+    ironwood: Vec<MarkRemoval>,
+}
+
+/// - Sets the spending transaction of each note of `transactions` whose nullifier is in `spend_scan_targets`.
+fn mark_spent_notes(
+    transactions: &mut HashMap<TxId, WalletTransaction>,
+    spend_scan_targets: ShieldedSpendScanTargets,
+    remove_marks: bool,
+) -> MarkRemovals {
+    MarkRemovals {
+        sapling: update_spent_notes_by_protocol::<Sapling>(
+            transactions,
+            spend_scan_targets.sapling,
+            remove_marks,
+        ),
+        orchard: update_spent_notes_by_protocol::<Orchard>(
+            transactions,
+            spend_scan_targets.orchard,
+            remove_marks,
+        ),
+        ironwood: update_spent_notes_by_protocol::<Ironwood>(
+            transactions,
+            spend_scan_targets.ironwood,
+            remove_marks,
+        ),
+    }
+}
+
+/// - Removes the retention marks of `mark_removals` from each shard tree of `shard_trees`.
+fn remove_spent_note_marks(shard_trees: &mut ShardTrees, mark_removals: MarkRemovals) {
+    remove_marks_from_tree(&mut shard_trees.sapling, mark_removals.sapling);
+    remove_marks_from_tree(&mut shard_trees.orchard, mark_removals.orchard);
+    remove_marks_from_tree(&mut shard_trees.ironwood, mark_removals.ironwood);
 }
 
 /// A retention mark to remove from a shard tree: the position of a spent note and the height of its spending
@@ -394,7 +410,7 @@ where
 }
 
 /// Removes the retention marks of `mark_removals` from `shard_tree`, as of the spending heights.
-fn remove_spent_note_marks<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+fn remove_marks_from_tree<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     shard_tree: &mut ShardTree<S, DEPTH, SHARD_HEIGHT>,
     mark_removals: Vec<MarkRemoval>,
 ) where
