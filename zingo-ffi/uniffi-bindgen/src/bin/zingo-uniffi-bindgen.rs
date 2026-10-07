@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
-//! Project-local `uniffi-bindgen` for the Nym proxy shim, pinned to the
-//! `uniffi` version `zingo-nym-proxy-ffi` compiles against. Run it in library
+//! Project-local `uniffi-bindgen` for the Nym proxy shim, on the workspace
+//! `uniffi` pin that `zingo-nym-proxy-ffi` compiles against. Run it in library
 //! mode against a built shim library. Library mode reads the UniFFI metadata
 //! statically, so a cross-compiled Android `.so` works on the host:
 //!
@@ -15,5 +15,5 @@
 //! workbench crate) drive it.
 
 fn main() {
-    uniffi_shim::uniffi_bindgen_main()
+    uniffi::uniffi_bindgen_main()
 }
