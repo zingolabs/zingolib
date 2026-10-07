@@ -21,7 +21,8 @@ hex = { workspace = true }
 android_logger = { workspace = true }
 log = { workspace = true }
 uniffi = { workspace = true, features = ["cli"] }
-tokio = { workspace = true, features = ["rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "time", "net"] }
+tonic = { workspace = true }
 serde_json = { workspace = true }
 zip32 = { workspace = true }
 thiserror = { workspace = true }

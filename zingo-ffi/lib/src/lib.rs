@@ -1778,6 +1778,255 @@ pub fn get_latest_block_server(server_uri: String) -> Result<String, ZingolibErr
     })
 }
 
+/// The bound on each network step of a server probe.
+const PROBE_STEP_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Where a probe sent its requests.
+struct ProbeTarget {
+    host: String,
+    port: u16,
+    resolved: Vec<std::net::IpAddr>,
+    literal: bool,
+}
+
+/// How far a probe of an indexer got, and what it learned on the way.
+enum Probe {
+    Verified {
+        target: ProbeTarget,
+        latency_ms: u64,
+        chain_name: String,
+        block_height: u64,
+        details: String,
+    },
+    Unresolved {
+        host: String,
+        port: u16,
+        cause: String,
+    },
+    Unreachable {
+        target: ProbeTarget,
+        cause: String,
+    },
+    NoAnswer {
+        target: ProbeTarget,
+    },
+    Refused {
+        target: ProbeTarget,
+        cause: String,
+    },
+}
+
+impl Probe {
+    async fn of(uri: http::Uri) -> Self {
+        let host = uri.host().unwrap_or_default().to_string();
+        let port = uri
+            .port_u16()
+            .unwrap_or(if uri.scheme_str() == Some("https") {
+                443
+            } else {
+                80
+            });
+        let literal = host
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .parse::<std::net::IpAddr>();
+        let target = match literal {
+            Ok(ip) => ProbeTarget {
+                host,
+                port,
+                resolved: vec![ip],
+                literal: true,
+            },
+            Err(_) => {
+                let lookup = tokio::time::timeout(
+                    PROBE_STEP_TIMEOUT,
+                    tokio::net::lookup_host((host.clone(), port)),
+                )
+                .await;
+                let addresses = match lookup {
+                    Ok(Ok(addresses)) => addresses,
+                    Ok(Err(cause)) => {
+                        return Self::Unresolved {
+                            host,
+                            port,
+                            cause: chain_text(&cause),
+                        };
+                    }
+                    Err(elapsed) => {
+                        return Self::Unresolved {
+                            host,
+                            port,
+                            cause: chain_text(&elapsed),
+                        };
+                    }
+                };
+                let mut resolved: Vec<std::net::IpAddr> = Vec::new();
+                for address in addresses {
+                    if !resolved.contains(&address.ip()) {
+                        resolved.push(address.ip());
+                    }
+                }
+                ProbeTarget {
+                    host,
+                    port,
+                    resolved,
+                    literal: false,
+                }
+            }
+        };
+        let mut indexer =
+            match tokio::time::timeout(PROBE_STEP_TIMEOUT, GrpcIndexer::new(uri)).await {
+                Ok(Ok(indexer)) => indexer,
+                Ok(Err(cause)) => {
+                    return Self::Unreachable {
+                        target,
+                        cause: chain_text(&cause),
+                    };
+                }
+                Err(_) => return Self::NoAnswer { target },
+            };
+        let started = std::time::Instant::now();
+        match tokio::time::timeout(
+            PROBE_STEP_TIMEOUT,
+            indexer.get_lightd_info(PROBE_STEP_TIMEOUT),
+        )
+        .await
+        {
+            Ok(Ok(info)) => Self::Verified {
+                target,
+                latency_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                chain_name: info.chain_name.clone(),
+                block_height: info.block_height,
+                details: format!("{info:#?}"),
+            },
+            Ok(Err(status)) if status.code() == tonic::Code::DeadlineExceeded => {
+                Self::NoAnswer { target }
+            }
+            Ok(Err(status)) => Self::Refused {
+                target,
+                cause: chain_text(&status),
+            },
+            Err(_) => Self::NoAnswer { target },
+        }
+    }
+}
+
+fn probe_target_json(target: ProbeTarget) -> json::JsonValue {
+    object! {
+        "host" => target.host,
+        "port" => target.port,
+        "resolved" => target.resolved.iter().map(|ip| ip.to_string()).collect::<Vec<_>>(),
+        "literal" => target.literal,
+    }
+}
+
+impl Report for Probe {
+    fn report(self) -> Result<String, ZingolibError> {
+        let report = match self {
+            Self::Verified {
+                target,
+                latency_ms,
+                chain_name,
+                block_height,
+                details,
+            } => {
+                let mut report = probe_target_json(target);
+                report["outcome"] = "verified".into();
+                report["latency_ms"] = latency_ms.into();
+                report["chain_name"] = chain_name.into();
+                report["block_height"] = block_height.into();
+                report["details"] = details.into();
+                report
+            }
+            Self::Unresolved { host, port, cause } => object! {
+                "outcome" => "unresolved",
+                "host" => host,
+                "port" => port,
+                "cause" => cause,
+            },
+            Self::Unreachable { target, cause } => {
+                let mut report = probe_target_json(target);
+                report["outcome"] = "unreachable".into();
+                report["cause"] = cause.into();
+                report
+            }
+            Self::NoAnswer { target } => {
+                let mut report = probe_target_json(target);
+                report["outcome"] = "noAnswer".into();
+                report["after_seconds"] = PROBE_STEP_TIMEOUT.as_secs().into();
+                report
+            }
+            Self::Refused { target, cause } => {
+                let mut report = probe_target_json(target);
+                report["outcome"] = "refused".into();
+                report["cause"] = cause.into();
+                report
+            }
+        };
+        Ok(report.pretty(2))
+    }
+}
+
+/// Probes an indexer without a wallet: resolves its host, connects, and asks
+/// for its LightdInfo, reporting how far it got and why it stopped.
+#[uniffi::export]
+pub fn probe_server(server_uri: String) -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let uri = construct_indexer_uri(server_uri)
+            .map_err(|e| ZingolibError::InvalidInput(chain_text(&e)))?;
+        if uri.host().is_none_or(str::is_empty) {
+            return Err(ZingolibError::InvalidInput(
+                "the server address has no host".to_string(),
+            ));
+        }
+        RT.block_on(Probe::of(uri)).report()
+    })
+}
+
+#[cfg(test)]
+mod probe_server_tests {
+    use super::*;
+
+    fn outcome(server: &str) -> json::JsonValue {
+        json::parse(&probe_server(server.to_string()).expect("a probe reports"))
+            .expect("a probe reports json")
+    }
+
+    #[test]
+    fn an_address_without_a_host_is_invalid_input() {
+        for server in ["", "http://"] {
+            assert!(
+                matches!(
+                    probe_server(server.to_string()),
+                    Err(ZingolibError::InvalidInput(_))
+                ),
+                "{server:?} has no host"
+            );
+        }
+    }
+
+    #[test]
+    fn a_host_that_does_not_resolve_reports_unresolved() {
+        let report = outcome("https://zingo-probe.invalid:9067");
+        assert_eq!(report["outcome"], "unresolved");
+        assert_eq!(report["host"], "zingo-probe.invalid");
+        assert_eq!(report["port"], 9067);
+    }
+
+    #[test]
+    fn a_closed_port_on_a_literal_address_reports_unreachable() {
+        // Bind and drop a listener to get a port nothing listens on.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .and_then(|listener| listener.local_addr())
+            .expect("a free local port")
+            .port();
+        let report = outcome(&format!("http://127.0.0.1:{port}"));
+        assert_eq!(report["outcome"], "unreachable");
+        assert_eq!(report["literal"], true);
+        assert_eq!(report["resolved"][0], "127.0.0.1");
+    }
+}
+
 #[uniffi::export]
 pub fn get_latest_block_wallet() -> Result<String, ZingolibError> {
     let height = with_wallet(|wallet| wallet.sync_state.last_known_chain_height())?;
