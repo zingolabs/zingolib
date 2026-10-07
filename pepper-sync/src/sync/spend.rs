@@ -59,7 +59,8 @@ impl ShieldedSpendScanTargets {
 }
 
 /// The transactions the wallet holds once `scanned_transactions` are added to it. A scanned transaction replaces the
-/// wallet's record of the same transaction.
+/// wallet's record of the same transaction, which is the contract of
+/// [`SyncTransactions::extend_wallet_transactions`].
 fn transactions_with_scanned<'a>(
     wallet_transactions: &'a HashMap<TxId, WalletTransaction>,
     scanned_transactions: &'a HashMap<TxId, WalletTransaction>,

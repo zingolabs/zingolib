@@ -6205,11 +6205,13 @@ mod test {
             fetch_request_sender
         }
 
-        /// A pool rescan clears the pool's shard tree, so the pool's shard ranges must also be cleared. Otherwise, the
-        /// subtree roots fetched from index 0 in the next sync session are rejected by `add_shard_ranges` for being
-        /// lower than the stale shard ranges, and the shard ranges are never rebuilt. The shard trees and shard ranges
-        /// of pools activated before the rescanned pool are kept, as their data below the rescanned pool's activation
-        /// height is not rescanned.
+        /// A pool rescan clears the pool's shard tree, so the pool's shard ranges are cleared with it and both are
+        /// rebuilt from the subtree roots fetched from index 0 in the next sync session. The kept ranges would still
+        /// be correct, as they only depend on the chain, but `add_shard_ranges` can only append: against kept ranges
+        /// it would reject every refetched root below the newest with an error log each and push a degenerate
+        /// one-block range for the newest. Clearing keeps the ranges mirroring the roots the tree holds. The shard
+        /// trees and shard ranges of pools activated before the rescanned pool are kept, as their data below the
+        /// rescanned pool's activation height is not rescanned.
         #[tokio::test]
         async fn rescan_clears_pool_shard_ranges() {
             let mut sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
