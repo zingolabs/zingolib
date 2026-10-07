@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::fmt;
+use std::path::{Path, PathBuf};
 
 pub const BINARY: &str = "binding-manifest";
 pub const FILE: &str = "bindings/published.toml";
@@ -13,6 +14,7 @@ const REVISION_PATH_SEPARATOR: &str = ":";
 const ENTRY_HEADER: &str = "[[entry]]";
 const COMMIT_KEY: &str = "commit";
 const SINCE_KEY: &str = "since";
+const AUDITED_KEY: &str = "audited";
 const COMMENT_MARK: char = '#';
 const ASSIGNMENT: char = '=';
 const QUOTE: char = '"';
@@ -29,13 +31,65 @@ const RECORD_FLAG: &str = "--record";
 const COMMIT_FLAG: &str = "--commit";
 const PLATFORM_FLAG: &str = "--platform";
 const DIGEST_FLAG: &str = "--digest";
+const AUDITED_FROM_FLAG: &str = "--audited-from";
 const USAGE: &str = "usage: binding-manifest --check [--base <ref>] \
     | binding-manifest --newest \
-    | binding-manifest --record --commit <commit> --platform <platform> --digest <digest>";
+    | binding-manifest --record --commit <commit> --platform <platform> --digest <digest> \
+    | binding-manifest --record --commit <commit> --audited-from <checkout of the commit>";
+pub const PUBLISH_COMMAND: &str = "/publish";
+const BINDING_CRATES: [&str; 2] = ["zingo-ffi/lib", "zingo-netutils/nym-proxy-ffi"];
+const TREE_ARGS: [&str; 8] = [
+    "tree", "--locked", "--edges", "normal", "--depth", "1", "--prefix", "none",
+];
+const TREE_FORMAT: [&str; 2] = ["--format", "{p}"];
+const ARRAY_OPEN: char = '[';
+const ARRAY_CLOSE: char = ']';
+const ARRAY_SEPARATOR: &str = ", ";
+const ITEM_SEPARATOR: char = ',';
+const DIR_OPEN: &str = " (";
+const DIR_CLOSE: char = ')';
 const FIRST_ORDINAL: usize = 1;
 
 fn ordinal(index: usize) -> usize {
     index + FIRST_ORDINAL
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuditedCrate {
+    pub name: String,
+    pub dir: PathBuf,
+}
+
+impl fmt::Display for AuditedCrate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}{DIR_OPEN}{}{DIR_CLOSE}",
+            self.name,
+            self.dir.display()
+        )
+    }
+}
+
+impl AuditedCrate {
+    pub fn parse(text: &str) -> Option<Self> {
+        let (name, rest) = text.split_once(DIR_OPEN)?;
+        let dir = rest.strip_suffix(DIR_CLOSE)?;
+        (!name.is_empty() && !name.contains(' ') && !dir.is_empty()).then(|| Self {
+            name: name.to_string(),
+            dir: PathBuf::from(dir),
+        })
+    }
+
+    pub fn from_tree_line(line: &str, root: &Path) -> Option<Self> {
+        let (head, rest) = line.split_once(DIR_OPEN)?;
+        let dir = Path::new(rest.strip_suffix(DIR_CLOSE)?);
+        let name = head.split_whitespace().next()?;
+        dir.strip_prefix(root).ok().map(|relative| Self {
+            name: name.to_string(),
+            dir: relative.to_path_buf(),
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -43,6 +97,7 @@ pub struct Entry {
     pub commit: String,
     pub since: Option<String>,
     pub digests: Vec<(String, String)>,
+    pub audited: Vec<AuditedCrate>,
 }
 
 fn is_hex(text: &str, length: usize) -> bool {
@@ -78,10 +133,53 @@ fn digest_value(platform: &str, value: &str) -> Result<String, Vec<String>> {
     hex_value(platform, value, hex, DIGEST_HEX_LENGTH, &expected)
 }
 
+fn quoted(text: &str) -> Option<&str> {
+    let value = text.trim().strip_prefix(QUOTE)?.strip_suffix(QUOTE)?;
+    (!value.contains(QUOTE)).then_some(value)
+}
+
 fn assignment(line: &str) -> Option<(&str, &str)> {
     let (key, rest) = line.split_once(ASSIGNMENT)?;
-    let value = rest.trim().strip_prefix(QUOTE)?.strip_suffix(QUOTE)?;
-    (!value.contains(QUOTE)).then_some((key.trim(), value))
+    quoted(rest).map(|value| (key.trim(), value))
+}
+
+fn array_assignment(line: &str) -> Option<(&str, Vec<&str>)> {
+    let (key, rest) = line.split_once(ASSIGNMENT)?;
+    let inner = rest
+        .trim()
+        .strip_prefix(ARRAY_OPEN)?
+        .strip_suffix(ARRAY_CLOSE)?;
+    let items = inner
+        .split(ITEM_SEPARATOR)
+        .map(quoted)
+        .collect::<Option<Vec<_>>>()?;
+    Some((key.trim(), items))
+}
+
+fn audited_value(items: &[&str]) -> Result<Vec<AuditedCrate>, Vec<String>> {
+    let crates = items
+        .iter()
+        .map(|item| {
+            AuditedCrate::parse(item).ok_or_else(|| {
+                vec![format!(
+                    "{AUDITED_KEY} item {QUOTE}{item}{QUOTE} is not `<package> (<directory>)`"
+                )]
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if crates.is_empty() {
+        return Err(vec![format!("{AUDITED_KEY} names no crate")]);
+    }
+    Ok(crates)
+}
+
+fn render_audited(crates: &[AuditedCrate]) -> String {
+    let items = crates
+        .iter()
+        .map(|found| format!("{QUOTE}{found}{QUOTE}"))
+        .collect::<Vec<_>>()
+        .join(ARRAY_SEPARATOR);
+    format!("{ARRAY_OPEN}{items}{ARRAY_CLOSE}")
 }
 
 fn assign(entry: &mut Entry, key: &str, value: &str) -> Result<(), Vec<String>> {
@@ -107,9 +205,23 @@ fn assign(entry: &mut Entry, key: &str, value: &str) -> Result<(), Vec<String>> 
                 .digests
                 .push((platform.to_string(), digest_value(platform, value)?));
         }
+        AUDITED_KEY => return Err(vec![format!("{AUDITED_KEY} takes an array")]),
         other => return Err(vec![format!("unknown key {other}")]),
     }
     Ok(())
+}
+
+fn assign_array(entry: &mut Entry, key: &str, items: &[&str]) -> Result<(), Vec<String>> {
+    match key {
+        AUDITED_KEY if !entry.audited.is_empty() => {
+            Err(vec![format!("{AUDITED_KEY} is set twice in one entry")])
+        }
+        AUDITED_KEY => {
+            entry.audited = audited_value(items)?;
+            Ok(())
+        }
+        other => Err(vec![format!("{other} takes a quoted value, not an array")]),
+    }
 }
 
 pub fn parse(text: &str) -> Result<Vec<Entry>, Vec<String>> {
@@ -129,14 +241,18 @@ pub fn parse(text: &str) -> Result<Vec<Entry>, Vec<String>> {
             entries.push(Entry::default());
             continue;
         }
-        let (key, value) =
-            assignment(line).ok_or_else(|| located(vec![format!("cannot read `{line}`")]))?;
         let entry = entries.last_mut().ok_or_else(|| {
             located(vec![format!(
                 "`{line}` comes before the first {ENTRY_HEADER}"
             )])
         })?;
-        assign(entry, key, value).map_err(located)?;
+        if let Some((key, value)) = assignment(line) {
+            assign(entry, key, value).map_err(located)?;
+        } else if let Some((key, items)) = array_assignment(line) {
+            assign_array(entry, key, &items).map_err(located)?;
+        } else {
+            return Err(located(vec![format!("cannot read `{line}`")]));
+        }
     }
     Ok(entries)
 }
@@ -150,8 +266,15 @@ pub fn validate(entries: &[Entry]) -> Result<(), Vec<String>> {
         }
         for platform in REQUIRED_PLATFORMS {
             if !entry.digests.iter().any(|(name, _)| name == platform) {
-                diagnostics.push(format!("{label} names no {platform} digest"));
+                diagnostics.push(format!(
+                    "{label} names no {platform} digest; it awaits `{PUBLISH_COMMAND}`, which records one"
+                ));
             }
+        }
+        if entry.audited.is_empty() {
+            diagnostics.push(format!(
+                "{label} names no {AUDITED_KEY} crates; it awaits `{PUBLISH_COMMAND}`, which records them"
+            ));
         }
         match (index, &entry.since) {
             (0, None) => diagnostics.push(format!("{label} is first and names no since commit")),
@@ -214,7 +337,7 @@ pub fn reference(platform: &str, commit: &str) -> String {
     .concat()
 }
 
-pub fn entries_at(root: &Path, revision: Option<&str>) -> Result<Vec<Entry>, Vec<String>> {
+fn parse_at(root: &Path, revision: Option<&str>) -> Result<Vec<Entry>, Vec<String>> {
     let text = match revision {
         None => crate::read(&root.join(FILE))?,
         Some(revision) if crate::listed_at(root, revision, FILE)? => crate::git_in(
@@ -223,16 +346,57 @@ pub fn entries_at(root: &Path, revision: Option<&str>) -> Result<Vec<Entry>, Vec
         )?,
         Some(_) => String::new(),
     };
-    let located = |diagnostics: Vec<String>| match revision {
+    parse(&text).map_err(|diagnostics| located_at(revision, diagnostics))
+}
+
+fn located_at(revision: Option<&str>, diagnostics: Vec<String>) -> Vec<String> {
+    match revision {
         None => diagnostics,
         Some(revision) => diagnostics
             .into_iter()
             .map(|diagnostic| [revision, &diagnostic].join(REVISION_PATH_SEPARATOR))
             .collect(),
-    };
-    let entries = parse(&text).map_err(located)?;
-    validate(&entries).map_err(located)?;
+    }
+}
+
+pub fn entries_at(root: &Path, revision: Option<&str>) -> Result<Vec<Entry>, Vec<String>> {
+    let entries = parse_at(root, revision)?;
+    validate(&entries).map_err(|diagnostics| located_at(revision, diagnostics))?;
     Ok(entries)
+}
+
+/// - Runs `cargo tree` as a child process in `checkout`, once per Binding Layer crate.
+pub fn audited_at(checkout: &Path) -> Result<Vec<AuditedCrate>, Vec<String>> {
+    let checkout = &std::fs::canonicalize(checkout)
+        .map_err(|e| vec![format!("cannot resolve {}: {e}", checkout.display())])?;
+    let mut crates: Vec<AuditedCrate> = Vec::new();
+    for dir in BINDING_CRATES {
+        let manifest = checkout.join(dir).join(crate::MANIFEST);
+        let args = [
+            TREE_ARGS.as_slice(),
+            &["--manifest-path", crate::utf8(&manifest)?],
+            TREE_FORMAT.as_slice(),
+        ]
+        .concat();
+        let output = crate::stdout_in(checkout, crate::CARGO, &args, &[])?;
+        let found: Vec<AuditedCrate> = output
+            .lines()
+            .filter_map(|line| AuditedCrate::from_tree_line(line, checkout))
+            .collect();
+        if found.is_empty() {
+            return Err(vec![format!(
+                "no crate of the `cargo tree` output for {dir} lies under {}: {}",
+                checkout.display(),
+                output.lines().next().unwrap_or_default()
+            )]);
+        }
+        for each in found {
+            if !crates.contains(&each) {
+                crates.push(each);
+            }
+        }
+    }
+    Ok(crates)
 }
 
 fn commits_exist(root: &Path, entries: &[Entry]) -> Result<(), Vec<String>> {
@@ -360,10 +524,13 @@ fn check(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
 }
 
 fn newest(root: &Path) -> Result<(), Vec<String>> {
-    let entries = entries_at(root, None)?;
+    let entries = parse_at(root, None)?;
     let last = entries
         .last()
         .ok_or_else(|| vec![format!("{FILE} holds no entry")])?;
+    if last.commit.is_empty() {
+        return Err(vec![format!("the newest entry of {FILE} names no commit")]);
+    }
     println!("{}", last.commit);
     Ok(())
 }
@@ -371,10 +538,17 @@ fn newest(root: &Path) -> Result<(), Vec<String>> {
 fn record(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let required = |flag: &str| crate::required_flag(args, flag, USAGE);
     let commit = required(COMMIT_FLAG)?;
-    let platform = required(PLATFORM_FLAG)?;
-    let digest = required(DIGEST_FLAG)?;
     let file = root.join(FILE);
-    let text = recorded(&crate::read(&file)?, commit, platform, digest)?;
+    let before = crate::read(&file)?;
+    let text = match crate::flag_value(args, AUDITED_FROM_FLAG)? {
+        Some(checkout) => recorded_audited(&before, commit, &audited_at(Path::new(checkout))?)?,
+        None => recorded(
+            &before,
+            commit,
+            required(PLATFORM_FLAG)?,
+            required(DIGEST_FLAG)?,
+        )?,
+    };
     std::fs::write(&file, text).map_err(|e| vec![format!("cannot write {}: {e}", file.display())])
 }
 
@@ -387,10 +561,23 @@ pub fn recorded(
     if !PLATFORMS.contains(&platform) {
         return Err(vec![format!("unknown platform {platform}")]);
     }
-    let line = format!(
-        "{platform} = {QUOTE}{}{QUOTE}",
-        digest_value(platform, digest)?
-    );
+    let value = format!("{QUOTE}{}{QUOTE}", digest_value(platform, digest)?);
+    recorded_line(text, commit, platform, &value)
+}
+
+pub fn recorded_audited(
+    text: &str,
+    commit: &str,
+    crates: &[AuditedCrate],
+) -> Result<String, Vec<String>> {
+    if crates.is_empty() {
+        return Err(vec![format!("{AUDITED_KEY} names no crate")]);
+    }
+    recorded_line(text, commit, AUDITED_KEY, &render_audited(crates))
+}
+
+fn recorded_line(text: &str, commit: &str, key: &str, value: &str) -> Result<String, Vec<String>> {
+    let line = format!("{key} = {value}");
     let mut lines: Vec<String> = Vec::new();
     let mut in_target = false;
     let mut written = false;
@@ -400,9 +587,12 @@ pub fn recorded(
             written |= in_target && !written && insert_after_text(&mut lines, &line);
             in_target = false;
         }
-        match assignment(trimmed) {
-            Some((COMMIT_KEY, value)) => in_target = value == commit,
-            Some((key, _)) if in_target && key == platform => {
+        let found_key = assignment(trimmed)
+            .map(|(found, value)| (found, Some(value)))
+            .or_else(|| array_assignment(trimmed).map(|(found, _)| (found, None)));
+        match found_key {
+            Some((COMMIT_KEY, Some(value))) => in_target = value == commit,
+            Some((found, _)) if in_target && found == key => {
                 lines.push(line.clone());
                 written = true;
                 continue;
@@ -417,7 +607,7 @@ pub fn recorded(
     }
     let mut joined = lines.join("\n");
     joined.push('\n');
-    validate(&parse(&joined)?)?;
+    parse(&joined)?;
     Ok(joined)
 }
 
@@ -444,6 +634,21 @@ mod tests {
     const SECOND: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     const ORIGIN: &str = "cccccccccccccccccccccccccccccccccccccccc";
     const DIGEST: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const ROOT: &str = "/host/zingolib";
+    const EXPECTED_AUDITED: [&str; 5] = [
+        "zingo (zingo-ffi/lib)",
+        "pepper-sync (pepper-sync)",
+        "zingolib (zingolib)",
+        "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)",
+        "zingo-netutils (zingo-netutils)",
+    ];
+
+    fn audited(items: &[&str]) -> Vec<AuditedCrate> {
+        items
+            .iter()
+            .map(|item| AuditedCrate::parse(item).unwrap())
+            .collect()
+    }
 
     fn entry(commit: &str, since: Option<&str>, platforms: &[&str]) -> Entry {
         Entry {
@@ -453,7 +658,12 @@ mod tests {
                 .iter()
                 .map(|platform| (platform.to_string(), DIGEST.to_string()))
                 .collect(),
+            audited: audited(&EXPECTED_AUDITED[..2]),
         }
+    }
+
+    fn rendered(crates: &[AuditedCrate]) -> Vec<String> {
+        crates.iter().map(ToString::to_string).collect()
     }
 
     fn manifest(entries: &[Entry]) -> String {
@@ -470,8 +680,13 @@ mod tests {
                     .iter()
                     .map(|(platform, digest)| format!("{platform} = \"{digest}\"\n"))
                     .collect();
+                let audited = if entry.audited.is_empty() {
+                    String::new()
+                } else {
+                    format!("audited = {}\n", render_audited(&entry.audited))
+                };
                 format!(
-                    "# a comment\n\n[[entry]]\ncommit = \"{}\"\n{since}{digests}",
+                    "# a comment\n\n[[entry]]\ncommit = \"{}\"\n{since}{digests}{audited}",
                     entry.commit
                 )
             })
@@ -498,12 +713,85 @@ mod tests {
             "commit = \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n",
             "[[entry]]\ncommit = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
             "[[entry]]\n[entry.digests]\n",
+            "[[entry]]\naudited = \"zingo (zingo-ffi/lib)\"\n",
+            "[[entry]]\naudited = []\n",
+            "[[entry]]\naudited = [\"zingo\"]\n",
+            "[[entry]]\naudited = [\"zingo (zingo-ffi/lib)\", \"pepper-sync pepper-sync\"]\n",
+            "[[entry]]\nandroid = [\"sha256:0\"]\n",
         ];
         for text in rejected {
             let diagnostic = parse(text).unwrap_err().concat();
             assert!(diagnostic.starts_with(FILE), "{text}: {diagnostic}");
         }
         assert!(parse("[[entry]]\nandroid = \"x\"\nandroid = \"y\"\n").is_err());
+        assert!(parse(
+            "[[entry]]\naudited = [\"zingo (zingo-ffi/lib)\"]\naudited = [\"zingo (zingo-ffi/lib)\"]\n"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn an_audited_crate_round_trips_through_its_text_form_and_a_tree_line_is_made_relative() {
+        let found = AuditedCrate::parse("zingo (zingo-ffi/lib)").unwrap();
+        assert_eq!(found.to_string(), "zingo (zingo-ffi/lib)");
+        assert_eq!(found.dir, PathBuf::from("zingo-ffi/lib"));
+        assert_eq!(AuditedCrate::parse("zingo"), None);
+        assert_eq!(AuditedCrate::parse("zingo v2.0.0 (zingo-ffi/lib)"), None);
+        let root = Path::new(ROOT);
+        assert_eq!(
+            AuditedCrate::from_tree_line("zingolib v6.0.0 (/host/zingolib/zingolib)", root),
+            AuditedCrate::parse("zingolib (zingolib)")
+        );
+        assert_eq!(
+            AuditedCrate::from_tree_line("android_logger v0.11.3", root),
+            None
+        );
+        assert_eq!(
+            AuditedCrate::from_tree_line("serde_derive v1.0.0 (proc-macro)", root),
+            None
+        );
+        assert_eq!(
+            AuditedCrate::from_tree_line("other v1.0.0 (/host/elsewhere/other)", root),
+            None
+        );
+    }
+
+    #[test]
+    fn the_checked_out_commit_audits_the_five_crates_the_plan_names() {
+        let root = crate::repo_root().unwrap();
+        assert_eq!(rendered(&audited_at(&root).unwrap()), EXPECTED_AUDITED);
+    }
+
+    #[test]
+    fn an_incomplete_entry_is_named_as_awaiting_publish() {
+        let mut incomplete = entry(FIRST, Some(ORIGIN), &[]);
+        incomplete.audited.clear();
+        let diagnostics = validate(&[incomplete]).unwrap_err();
+        assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
+        assert!(diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.contains(PUBLISH_COMMAND)));
+    }
+
+    #[test]
+    fn recording_the_audited_crates_adds_the_array_line_or_replaces_it() {
+        let text = manifest(&[entry(FIRST, Some(ORIGIN), &["android"])]);
+        let mut bare = entry(SECOND, None, &[]);
+        bare.audited.clear();
+        let appended = format!("{text}{}", manifest(&[bare]));
+        let crates = audited(&EXPECTED_AUDITED);
+        let with_audited = recorded_audited(&appended, SECOND, &crates).unwrap();
+        let parsed = parse(&with_audited).unwrap();
+        assert_eq!(parsed[1].audited, crates);
+        assert_eq!(
+            validate(&parsed),
+            Err(vec![format!(
+            "entry 2 ({SECOND}) names no android digest; it awaits `/publish`, which records one"
+        )])
+        );
+        let replaced = recorded_audited(&with_audited, SECOND, &crates[..1]).unwrap();
+        assert_eq!(parse(&replaced).unwrap()[1].audited, crates[..1]);
+        assert!(recorded_audited(&text, SECOND, &[]).is_err());
     }
 
     #[test]

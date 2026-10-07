@@ -1,7 +1,7 @@
 # The workbench tool binding-manifest reads bindings/published.toml and fails
-# when an entry is malformed, names a commit this repository lacks, changed
-# after its merge, or names a digest that the registry does not serve for
-# that commit.
+# when an entry is malformed, awaits `/publish`, names a commit this
+# repository lacks, changed after its merge, or names a digest that the
+# registry does not serve for that commit.
 #
 # The check has its own workflow with no `paths` filter, for the reason
 # no-duplicated-code.yaml states: a required check must report on every pull

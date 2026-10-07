@@ -1,10 +1,15 @@
 # The published commits of the Binding Layer, oldest first. A pull request
-# appends one entry; the publish workflow writes the entry's digests; the
-# check "Binding Layer manifest" passes only when the registry holds every
-# named platform's Prebuilt Bundle at the entry's digest. An entry never
-# changes after its merge. The workbench tool binding-manifest reads this
-# file, and binding-changelog takes the commits of bindings/CHANGELOG.md
-# from it.
+# appends one entry with its commit; the publish workflow, started by a
+# maintainer's `/publish` comment, writes the entry's digests and its
+# audited crates and regenerates bindings/CHANGELOG.md in one commit. Until
+# that commit the entry is incomplete, and the checks "Binding Layer
+# manifest" and "Binding Layer changelog" fail on it by design. The
+# manifest check passes only when the registry holds every named
+# platform's Prebuilt Bundle at the entry's digest. The registry keeps
+# every published bundle, so it mirrors this file. An entry never changes
+# after its merge. The workbench tool binding-manifest reads this file, and
+# binding-changelog takes the commits and the audited crates of
+# bindings/CHANGELOG.md from it.
 #
 # Every entry names android. An entry names ios when the iOS bundle is
 # published too. Before zingo-mobile adopts this publication, ios must
@@ -16,3 +21,9 @@
 # since = "<the commit the first entry's changelog section starts after; the first entry alone>"
 # android = "sha256:<the digest of ghcr.io/zingolabs/zingolib/binding-layer-android:<commit>>"
 # ios = "sha256:<the digest of ghcr.io/zingolabs/zingolib/binding-layer-ios:<commit>>"
+# audited = ["<package> (<directory>)", ...]
+#
+# The audited crates are the two Binding Layer crates and their direct
+# dependencies in this repository at the entry's commit, as `cargo tree
+# --locked --edges normal --depth 1 --prefix none --format {p}` reports
+# them there, each as its package name and its directory.

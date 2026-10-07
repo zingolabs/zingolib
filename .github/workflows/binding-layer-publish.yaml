@@ -2,10 +2,11 @@
 # Layer for the newest commit that bindings/published.toml names on that
 # pull request's branch. The workflow builds that commit through the two
 # build workflows, pushes each Prebuilt Bundle to the registry through the
-# workbench tool binding-publish, records each digest in the manifest with
-# binding-manifest, and commits the manifest to the pull request's branch.
-# The check "Binding Layer manifest" then verifies the entry against the
-# registry.
+# workbench tool binding-publish, records each digest and the commit's
+# audited crates in the manifest with binding-manifest, regenerates
+# bindings/CHANGELOG.md, and commits both files to the pull request's
+# branch. The checks "Binding Layer manifest" and "Binding Layer changelog"
+# then verify the entry.
 #
 # An issue_comment run uses this file as it is on the default branch.
 name: Publish the Binding Layer
@@ -108,6 +109,14 @@ jobs:
         with:
           workspaces: tools/workbench
 
+      # The audited crates come from `cargo tree` at the published commit,
+      # so that commit is checked out beside the branch.
+      - name: Record the audited crates of the commit
+        run: |
+          set -eu
+          git worktree add --detach publish/source "$COMMIT"
+          $WORKBENCH --bin binding-manifest -- --record --commit "$COMMIT" --audited-from publish/source
+
       - name: Download the Android bundle
         uses: actions/download-artifact@v4
         with:
@@ -143,13 +152,13 @@ jobs:
       - name: Regenerate the Binding Layer changelog
         run: $WORKBENCH --bin binding-changelog
 
-      - name: Commit the digests to the pull request's branch
+      - name: Commit the entry to the pull request's branch
         run: |
           set -eu
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add bindings/published.toml bindings/CHANGELOG.md
-          git commit --message "chore(bindings): record the published digests of ${COMMIT}"
+          git commit --message "chore(bindings): record the publication of ${COMMIT}"
           git push
 
       - name: Report the publish
