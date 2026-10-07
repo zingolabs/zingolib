@@ -604,7 +604,12 @@ fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
 
 /// The engine's own duration and output count, from the closing line.
 fn closing_span(log: &str) -> Option<(u64, u64)> {
-    let tail = log.split(SYNC_SPAN_CLOSE).nth(1)?;
+    log.split(SYNC_SPAN_CLOSE).skip(1).find_map(closed_segment)
+}
+
+// The library logs a close of its own before the grafted one, without a
+// count, so the reading comes from the first segment that carries one.
+fn closed_segment(tail: &str) -> Option<(u64, u64)> {
     let digits: String = tail
         .trim_start()
         .chars()
@@ -883,5 +888,11 @@ mod tests {
         );
         assert_eq!(closing_span("SYNC_SPAN=close 12"), None);
         assert_eq!(closing_span("SYNC_SPAN=close 1250ms err\n"), None);
+    }
+
+    #[test]
+    fn a_bare_close_before_the_counted_one_is_skipped() {
+        let log = "INFO sync: SYNC_SPAN=close 1250ms ok\nINFO sync: SYNC_SPAN=close 1250ms ok outputs=8192\n";
+        assert_eq!(closing_span(log), Some((1250, 8192)));
     }
 }
