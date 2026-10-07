@@ -431,7 +431,6 @@ fn fresh_plan(roots: &Roots, targets: &[&str], steps: Vec<Step>) -> Vec<Step> {
     .collect()
 }
 
-/// A `Run` step that generates one binding set from a built library into a directory, from the directory that the generation names.
 fn bindgen_step(
     roots: &Roots,
     generation: binding_layer::Generation,
@@ -629,7 +628,6 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
     wallet_steps.chain(proxy_steps).chain(host_copies).collect()
 }
 
-/// The profile of the Kotlin plan's host steps, the bindgen binary and the two library builds it reads.
 const HOST_PROFILE: binding_layer::Profile = binding_layer::Profile::Debug;
 
 fn kotlin_plan(roots: &Roots) -> Vec<Step> {
@@ -1039,7 +1037,6 @@ fn run_command(
 mod tests {
     use super::*;
 
-    /// The number of bindgen runs in one build, one per binding set.
     const GENERATIONS_PER_BUILD: usize = binding_layer::GENERATIONS.len();
 
     const INSTALL: &str = "rustup toolchain install";
@@ -1244,12 +1241,6 @@ mod tests {
             .any(|(key, value)| key == "CC" && *value == expected_cc)));
     }
 
-    /// The file name of a host shared library with the given name.
-    fn host_library_file(lib_name: &str) -> String {
-        binding_layer::library_file(env::consts::DLL_PREFIX, lib_name, env::consts::DLL_SUFFIX)
-    }
-
-    /// Tests that the Kotlin plan generates each binding set after one host build of its crate, and starts no NDK build.
     #[test]
     fn kotlin_plan_generates_each_set_after_its_own_host_build() {
         let roots = Roots::on_host(
@@ -1269,13 +1260,18 @@ mod tests {
             command.starts_with("cargo build") && !command.contains(binding_layer::PROXY_PACKAGE)
         });
         let wallet_generation = position(|command| {
-            command.contains(&host_library_file(binding_layer::WALLET_LIB_NAME))
+            command.contains(&binding_layer::host_library_file(
+                binding_layer::WALLET_LIB_NAME,
+            ))
         });
         let proxy_build = position(|command| {
             command.starts_with("cargo build") && command.contains(binding_layer::PROXY_PACKAGE)
         });
-        let proxy_generation =
-            position(|command| command.contains(&host_library_file(binding_layer::PROXY_LIB_NAME)));
+        let proxy_generation = position(|command| {
+            command.contains(&binding_layer::host_library_file(
+                binding_layer::PROXY_LIB_NAME,
+            ))
+        });
         assert!(wallet_build < wallet_generation);
         assert!(wallet_generation < proxy_build);
         assert!(proxy_build < proxy_generation);
@@ -1288,7 +1284,6 @@ mod tests {
         );
     }
 
-    /// Tests that each bindgen reads the library from the target directory its crate's build writes to, under the host profile.
     #[test]
     fn kotlin_bindgens_read_the_libraries_the_host_builds_write() {
         let roots = Roots::on_host(
@@ -1332,7 +1327,7 @@ mod tests {
                 format!(
                     "{build_target}/{}/{}",
                     HOST_PROFILE.directory(),
-                    host_library_file(lib_name)
+                    binding_layer::host_library_file(lib_name)
                 )
             );
         }

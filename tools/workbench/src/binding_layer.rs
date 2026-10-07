@@ -7,10 +7,8 @@ pub const SWIFT: &str = "swift";
 /// The binding languages that the builder generates.
 pub const LANGUAGES: [&str; 2] = [KOTLIN, SWIFT];
 
-/// The package that holds the bindgen binary, whose only dependency is `uniffi`.
 const BINDGEN_PACKAGE: &str = "zingo-uniffi-bindgen";
 
-/// The binary that generates a crate's bindings from its built library.
 const BINDGEN_BIN: &str = "zingo-uniffi-bindgen";
 
 /// The wallet crate's library name, from which its library file names derive.
@@ -148,7 +146,6 @@ pub fn container_engine() -> Result<&'static str, Vec<String>> {
 /// The binding set that the bindgen generates for one crate.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Generation {
-    /// The wallet crate's bindings, generated from its built library.
     Wallet,
     /// The proxy crate's bindings, generated from its built library.
     Proxy,
@@ -198,11 +195,8 @@ impl Profile {
     }
 }
 
-/// What every bindgen run of one plan shares: its language, its profile, and the paths the process that runs it sees.
 pub struct BindgenInputs<'a> {
-    /// The binding language.
     pub language: &'a str,
-    /// The cargo profile of the bindgen build.
     pub profile: Profile,
     /// The wallet-side workspace manifest.
     pub wallet_workspace: &'a str,
@@ -220,7 +214,6 @@ pub fn binding_sets() -> impl Iterator<Item = (Generation, &'static str)> {
 /// A directory that a bindgen run starts in, which decides whose `uniffi.toml` library mode applies.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Workdir {
-    /// The wallet crate's directory, where library mode applies the wallet's configuration.
     WalletCrate,
     /// The wallet-side workspace's directory, where library mode sees no proxy configuration.
     WalletWorkspace,
@@ -242,7 +235,6 @@ pub fn output_name(generation: Generation, language: &str) -> String {
     format!("{}-{language}", generation.label())
 }
 
-/// The `cargo` arguments that generate a plan's bindings from a built library into a directory.
 pub fn bindgen_args(inputs: &BindgenInputs, library: &str, out_dir: &str) -> Vec<String> {
     [
         &["run", "--locked", "--target-dir", inputs.target_dir],
@@ -270,16 +262,19 @@ pub fn bindgen_args(inputs: &BindgenInputs, library: &str, out_dir: &str) -> Vec
     .collect()
 }
 
-/// The shared library that a host build with the given profile writes under a target directory.
 pub fn host_library(lib_name: &str, target_dir: &str, profile: Profile) -> String {
     format!(
         "{target_dir}/{}/{}",
         profile.directory(),
-        library_file(
-            std::env::consts::DLL_PREFIX,
-            lib_name,
-            std::env::consts::DLL_SUFFIX,
-        )
+        host_library_file(lib_name)
+    )
+}
+
+pub fn host_library_file(lib_name: &str) -> String {
+    library_file(
+        std::env::consts::DLL_PREFIX,
+        lib_name,
+        std::env::consts::DLL_SUFFIX,
     )
 }
 
@@ -291,6 +286,13 @@ pub fn library_file(prefix: &str, lib_name: &str, suffix: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_wallet_crate_builds_no_bindgen() {
+        let manifest = include_str!("../../../zingo-ffi/lib/Cargo.toml");
+        assert!(!manifest.contains("[[bin]]"));
+        assert!(!manifest.contains("\"cli\""));
+    }
 
     #[test]
     fn wallet_args_generate_from_the_built_library_and_place_the_profile_first() {
