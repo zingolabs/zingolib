@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use quote::ToTokens;
 use syn::punctuated::Punctuated;
 use syn::{
-    Attribute, FnArg, Item, ItemEnum, ItemFn, ItemImpl, ItemMacro, ItemStruct, ItemTrait, Meta,
+    Attribute, FnArg, Item, ItemEnum, ItemFn, ItemImpl, ItemMacro, ItemStruct, Meta,
     Path as SynPath, ReturnType, Signature, Token,
 };
 
@@ -67,6 +67,7 @@ const SPACING: [(&str, &str); 12] = [
 struct Surface {
     lines: BTreeSet<String>,
     generators: BTreeSet<String>,
+    unrendered: BTreeSet<String>,
 }
 
 fn compact<T: ToTokens>(tokens: &T) -> String {
@@ -199,20 +200,6 @@ fn impl_lines(item: &ItemImpl) -> Vec<String> {
         .collect()
 }
 
-fn trait_lines(item: &ItemTrait) -> Vec<String> {
-    let owner = format!("{}trait {}", markers(&item.attrs), item.ident);
-    item.items
-        .iter()
-        .filter_map(|member| match member {
-            syn::TraitItem::Fn(method) => Some(format!(
-                "{owner}::{}",
-                signature_line(&method.sig, &method.attrs)
-            )),
-            _ => None,
-        })
-        .collect()
-}
-
 fn wallet_report_line(mac: &ItemMacro) -> String {
     let input = mac.mac.tokens.to_string();
     let (signature, _) = input.split_once("=>").unwrap();
@@ -245,7 +232,7 @@ fn collect(items: &[Item], surface: &mut Surface) {
                 surface.lines.extend(impl_lines(item));
             }
             Item::Trait(item) if !cfg_test(&item.attrs) && exported(&item.attrs) => {
-                surface.lines.extend(trait_lines(item));
+                surface.unrendered.insert(format!("trait {}", item.ident));
             }
             Item::Enum(item) if !cfg_test(&item.attrs) && derives_uniffi(&item.attrs) => {
                 surface.lines.insert(enum_line(item));
@@ -305,6 +292,7 @@ fn surface() -> Surface {
     let mut surface = Surface {
         lines: BTreeSet::new(),
         generators: BTreeSet::new(),
+        unrendered: BTreeSet::new(),
     };
     for file in source_files(&Path::new(CRATE_DIR).join(SOURCE_DIR)) {
         let parsed = syn::parse_file(&fs::read_to_string(&file).unwrap()).unwrap();
@@ -344,5 +332,14 @@ fn every_macro_that_emits_uniffi_items_is_expanded_here() {
     assert_eq!(
         generators, expanded,
         "a macro_rules! body mentions uniffi; teach this test to expand its invocations"
+    );
+}
+
+#[test]
+fn no_exported_trait_waits_for_a_renderer() {
+    let unrendered = surface().unrendered;
+    assert!(
+        unrendered.is_empty(),
+        "an exported trait has no renderer here: {unrendered:?}"
     );
 }
