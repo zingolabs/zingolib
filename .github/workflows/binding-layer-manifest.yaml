@@ -1,0 +1,51 @@
+# The workbench tool binding-manifest reads bindings/published.toml and fails
+# when an entry is malformed, names a commit this repository lacks, changed
+# after its merge, or names a digest that the registry does not serve for
+# that commit.
+#
+# The check has its own workflow with no `paths` filter, for the reason
+# no-duplicated-code.yaml states: a required check must report on every pull
+# request.
+name: Binding Layer manifest
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [stable, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  binding-layer-manifest:
+    name: Binding Layer manifest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      # The tool resolves every listed commit, and on a pull request it
+      # reads the base branch's copy of the manifest, so the checkout needs
+      # the whole history.
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/workbench
+
+      # On a pull request the merged entries are those of the base branch;
+      # on a push there is no base to compare with.
+      - name: Check bindings/published.toml
+        env:
+          BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
+        run: |
+          cargo run --manifest-path tools/workbench/Cargo.toml \
+            --features registry --bin binding-manifest -- \
+            --check ${BASE:+--base "$BASE"}
