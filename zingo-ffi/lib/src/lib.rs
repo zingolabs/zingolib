@@ -640,6 +640,55 @@ fn parse_regtest_activation_heights(spec: &str) -> Result<ActivationHeights, Str
         .build())
 }
 
+#[derive(Clone, uniffi::Record)]
+pub struct SyncSettings {
+    pub performance_level: String,
+    pub min_confirmations: u32,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct Connection {
+    pub server_uri: String,
+    pub chain_hint: String,
+    pub sync: SyncSettings,
+}
+
+#[cfg(test)]
+pub(crate) fn test_connection(
+    server_uri: &str,
+    chain_hint: &str,
+    performance_level: &str,
+) -> Connection {
+    Connection {
+        server_uri: server_uri.to_string(),
+        chain_hint: chain_hint.to_string(),
+        sync: SyncSettings {
+            performance_level: performance_level.to_string(),
+            min_confirmations: 1,
+        },
+    }
+}
+
+fn performance_level_name(level: PerformanceLevel) -> &'static str {
+    match level {
+        PerformanceLevel::Low => "Low",
+        PerformanceLevel::Medium => "Medium",
+        PerformanceLevel::High => "High",
+        PerformanceLevel::Maximum => "Maximum",
+    }
+}
+
+fn performance_level(name: &str) -> Option<PerformanceLevel> {
+    [
+        PerformanceLevel::Low,
+        PerformanceLevel::Medium,
+        PerformanceLevel::High,
+        PerformanceLevel::Maximum,
+    ]
+    .into_iter()
+    .find(|level| performance_level_name(*level) == name)
+}
+
 struct ConnectionParams {
     chain_type: ChainType,
     wallet_settings: WalletSettings,
@@ -649,13 +698,8 @@ struct ConnectionParams {
     lightwalletd_uri: Option<http::Uri>,
 }
 
-fn build_connection_params(
-    uri: String,
-    chain_hint: String,
-    performance_level: String,
-    min_confirmations: u32,
-) -> Result<ConnectionParams, ZingolibError> {
-    let chain_type = match chain_hint.as_str() {
+fn build_connection_params(connection: Connection) -> Result<ConnectionParams, ZingolibError> {
+    let chain_type = match connection.chain_hint.as_str() {
         "main" => ChainType::Mainnet,
         "test" => ChainType::Testnet,
         "regtest" => ChainType::Regtest(ActivationHeights::default()),
@@ -677,27 +721,22 @@ fn build_connection_params(
     // Offline Mode = empty uri → no Indexer is ever configured; the client
     // stays Indexerless (zingolib/0001), and `require_indexer()` gates
     // sync/send with `Offline`. A real server yields `Some(uri)`.
-    let lightwalletd_uri = if uri.is_empty() {
+    let lightwalletd_uri = if connection.server_uri.is_empty() {
         None
     } else {
-        Some(construct_indexer_uri(uri).map_err(|e| {
+        Some(construct_indexer_uri(connection.server_uri).map_err(|e| {
             ZingolibError::init(format!("Invalid lightwalletd uri: {}", chain_text(&e)))
         })?)
     };
-    let performancetype = match performance_level.as_str() {
-        "Maximum" => PerformanceLevel::Maximum,
-        "High" => PerformanceLevel::High,
-        "Medium" => PerformanceLevel::Medium,
-        "Low" => PerformanceLevel::Low,
-        _ => return Err(ZingolibError::init("Not a valid performance level!")),
-    };
+    let performancetype = performance_level(&connection.sync.performance_level)
+        .ok_or_else(|| ZingolibError::init("Not a valid performance level!"))?;
     let wallet_settings = WalletSettings {
         sync_config: SyncConfig {
             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             performance_level: performancetype,
             shutdown_on_completion: true,
         },
-        min_confirmations: NonZeroU32::try_from(min_confirmations)
+        min_confirmations: NonZeroU32::try_from(connection.sync.min_confirmations)
             .map_err(|_| ZingolibError::init("min_confirmations must be greater than 0"))?,
     };
 
@@ -767,18 +806,14 @@ pub fn set_broadcast_candidates(candidates_json: String) -> Result<String, Zingo
 /// or the UFVK). Each `init_*` entry point supplies only its
 /// `WalletConfig` and its report.
 fn init_lightclient(
-    server_uri: String,
-    chain_hint: String,
-    performance_level: String,
-    min_confirmations: u32,
+    connection: Connection,
     make_wallet_config: impl FnOnce(&ConnectionParams) -> Result<WalletConfig, ZingolibError>
     + UnwindSafe,
     finish: fn() -> Result<String, ZingolibError>,
 ) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         reset_lightclient();
-        let params =
-            build_connection_params(server_uri, chain_hint, performance_level, min_confirmations)?;
+        let params = build_connection_params(connection)?;
         let wallet_config = make_wallet_config(&params)?;
         let config = build_client_config(&params, wallet_config)?;
         let lightclient = RT
@@ -807,18 +842,9 @@ pub fn init_logging() -> Result<String, ZingolibError> {
 }
 
 #[uniffi::export]
-pub fn init_new(
-    server_uri: String,
-    birthday: u32,
-    chain_hint: String,
-    performance_level: String,
-    min_confirmations: u32,
-) -> Result<String, ZingolibError> {
+pub fn init_new(connection: Connection, birthday: u32) -> Result<String, ZingolibError> {
     init_lightclient(
-        server_uri,
-        chain_hint,
-        performance_level,
-        min_confirmations,
+        connection,
         |params| {
             // Online: ask the Indexer for the chain tip. Offline
             // (Indexerless): there is no server to query, so fall back to
@@ -864,16 +890,10 @@ pub fn init_new(
 pub fn init_from_seed(
     seed: String,
     birthday: u32,
-    server_uri: String,
-    chain_hint: String,
-    performance_level: String,
-    min_confirmations: u32,
+    connection: Connection,
 ) -> Result<String, ZingolibError> {
     init_lightclient(
-        server_uri,
-        chain_hint,
-        performance_level,
-        min_confirmations,
+        connection,
         move |params| {
             Ok(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seed,
@@ -890,16 +910,10 @@ pub fn init_from_seed(
 pub fn init_from_ufvk(
     ufvk: String,
     birthday: u32,
-    server_uri: String,
-    chain_hint: String,
-    performance_level: String,
-    min_confirmations: u32,
+    connection: Connection,
 ) -> Result<String, ZingolibError> {
     init_lightclient(
-        server_uri,
-        chain_hint,
-        performance_level,
-        min_confirmations,
+        connection,
         move |params| {
             Ok(WalletConfig::Ufvk {
                 ufvk,
@@ -914,10 +928,7 @@ pub fn init_from_ufvk(
 #[uniffi::export]
 pub fn init_from_bytes(
     wallet_bytes: Vec<u8>,
-    server_uri: String,
-    chain_hint: String,
-    performance_level: String,
-    min_confirmations: u32,
+    connection: Connection,
 ) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         reset_lightclient();
@@ -925,20 +936,20 @@ pub fn init_from_bytes(
         let decoded_bytes = wallet_bytes;
 
         // Offline (empty server uri) has no server, so the caller-supplied
-        // `chain_hint` is meaningless — and the wallet already stores its own
+        // `chainhint` is meaningless — and the wallet already stores its own
         // chain. Try each chain and keep the one the wallet deserializes under,
         // so an Offline open works regardless of any residual chain value (a
         // mainnet wallet opened while settings still say "test", and vice
         // versa). Online we honor the hint strictly: a chain that disagrees
         // with the selected server is a genuine mismatch and must error.
-        let chain_hints: Vec<String> = if server_uri.is_empty() {
+        let chain_hints: Vec<String> = if connection.server_uri.is_empty() {
             vec![
                 "main".to_string(),
                 "test".to_string(),
                 "regtest".to_string(),
             ]
         } else {
-            vec![chain_hint]
+            vec![connection.chain_hint.clone()]
         };
 
         // `LightClient::from_bytes` deserializes the wallet straight from memory.
@@ -955,12 +966,10 @@ pub fn init_from_bytes(
         let mut built: Option<(LightClient, ConnectionParams)> = None;
         let mut last_error = ZingolibError::init("could not read the wallet with any chain");
         for hint in chain_hints {
-            let params = match build_connection_params(
-                server_uri.clone(),
-                hint,
-                performance_level.clone(),
-                min_confirmations,
-            ) {
+            let params = match build_connection_params(Connection {
+                chain_hint: hint,
+                ..connection.clone()
+            }) {
                 Ok(p) => p,
                 Err(e) => {
                     last_error = e;
@@ -1109,15 +1118,8 @@ mod cause_chain_tests {
     #[test]
     fn a_seed_that_fails_its_checksum_names_the_mnemonic_error_at_init() {
         let bad_checksum = vec!["abandon"; 24].join(" ");
-        let error = init_from_seed(
-            bad_checksum,
-            1,
-            String::new(),
-            "main".to_string(),
-            "Low".to_string(),
-            1,
-        )
-        .expect_err("a seed with a bad checksum does not build a wallet");
+        let error = init_from_seed(bad_checksum, 1, test_connection("", "main", "Low"))
+            .expect_err("a seed with a bad checksum does not build a wallet");
         let text = error.to_string();
         // `LightClientError::WalletError` prints only "Wallet error."; the
         // mnemonic cause under it is what the user has to read.
@@ -1269,12 +1271,14 @@ mod regtest_activation_heights_tests {
 
     #[test]
     fn hint_without_schedule_prefix_still_fails_init() {
-        let error = match build_connection_params(
-            String::new(),
-            "shmegtest".to_string(),
-            "Medium".to_string(),
-            1,
-        ) {
+        let error = match build_connection_params(Connection {
+            server_uri: String::new(),
+            chain_hint: "shmegtest".to_string(),
+            sync: SyncSettings {
+                performance_level: "Medium".to_string(),
+                min_confirmations: 1,
+            },
+        }) {
             Err(error) => error,
             Ok(_) => panic!("an unknown chain hint must be rejected"),
         };
@@ -1294,11 +1298,8 @@ mod init_error_channel_tests {
     fn invalid_server_uri_travels_on_the_error_channel() {
         let _serial = lock_discipline_tests::serialized();
         let error = init_new(
-            "http://an invalid uri with spaces".to_string(),
+            test_connection("http://an invalid uri with spaces", "main", "Medium"),
             0,
-            "main".to_string(),
-            "Medium".to_string(),
-            1,
         )
         .expect_err("an invalid lightwalletd uri must be typed, not prose in the data channel");
         assert!(
@@ -1312,10 +1313,7 @@ mod init_error_channel_tests {
         let error = init_from_seed(
             "unvalidated at this point".to_string(),
             1,
-            String::new(),
-            "main".to_string(),
-            "NotALevel".to_string(),
-            1,
+            test_connection("", "main", "NotALevel"),
         )
         .expect_err("an invalid performance level must be typed, not prose in the data channel");
         assert!(
@@ -1329,10 +1327,7 @@ mod init_error_channel_tests {
         let error = init_from_ufvk(
             "unvalidated at this point".to_string(),
             1,
-            String::new(),
-            "main".to_string(),
-            "NotALevel".to_string(),
-            1,
+            test_connection("", "main", "NotALevel"),
         )
         .expect_err("an invalid performance level must be typed, not prose in the data channel");
         assert!(
@@ -1359,10 +1354,7 @@ mod init_error_channel_tests {
         let _serial = lock_discipline_tests::serialized();
         let error = init_from_bytes(
             b"!!!not-a-wallet!!!".to_vec(),
-            String::new(),
-            "main".to_string(),
-            "Medium".to_string(),
-            1,
+            test_connection("", "main", "Medium"),
         )
         .expect_err("unreadable wallet bytes must be typed, not prose in the data channel");
         assert!(
@@ -2504,10 +2496,7 @@ mod wallet_validation_tests {
              crowd hospital control album rib bulb path oven civil tank"
                 .to_string(),
             2_000_000,
-            String::new(),
-            chain_hint.to_string(),
-            "Medium".to_string(),
-            1,
+            test_connection("", chain_hint, "Medium"),
         )
         .expect("offline init from seed");
         save_wallet_bytes()
@@ -3198,28 +3187,17 @@ pub fn set_config_wallet_to_test() -> Result<String, ZingolibError> {
 }
 
 #[uniffi::export]
-pub fn set_config_wallet_to_prod(
-    performance_level: String,
-    min_confirmations: u32,
-) -> Result<String, ZingolibError> {
+pub fn set_config_wallet_to_prod(settings: SyncSettings) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
-        let performancetype = match performance_level.as_str() {
-            "Maximum" => PerformanceLevel::Maximum,
-            "High" => PerformanceLevel::High,
-            "Medium" => PerformanceLevel::Medium,
-            "Low" => PerformanceLevel::Low,
-            _ => {
-                return Err(ZingolibError::InvalidInput(
-                    "not a valid performance level".to_string(),
-                ));
-            }
-        };
-        let min_confirmations = NonZeroU32::try_from(min_confirmations).map_err(|_| {
+        let performancetype = performance_level(&settings.performance_level).ok_or_else(|| {
+            ZingolibError::InvalidInput("not a valid performance level".to_string())
+        })?;
+        let minconfirmations = NonZeroU32::try_from(settings.min_confirmations).map_err(|_| {
             ZingolibError::InvalidInput("min_confirmations must be greater than 0".to_string())
         })?;
         RT.block_on(async move {
             let mut wallet = lightclient.wallet().write().await;
-            wallet.wallet_settings.min_confirmations = min_confirmations;
+            wallet.wallet_settings.min_confirmations = minconfirmations;
             wallet.wallet_settings.sync_config.performance_level = performancetype;
             wallet.mark_dirty();
             Ok("Successfully set config wallet to prod.".to_string())
@@ -3229,13 +3207,9 @@ pub fn set_config_wallet_to_prod(
 
 #[uniffi::export]
 pub fn get_config_wallet_performance() -> Result<String, ZingolibError> {
-    let performance_level =
-        match with_wallet(|wallet| wallet.wallet_settings.sync_config.performance_level)? {
-            PerformanceLevel::Low => "Low",
-            PerformanceLevel::Medium => "Medium",
-            PerformanceLevel::High => "High",
-            PerformanceLevel::Maximum => "Maximum",
-        };
+    let performance_level = performance_level_name(with_wallet(|wallet| {
+        wallet.wallet_settings.sync_config.performance_level
+    })?);
     Ok(object! { "performance_level" => performance_level }.pretty(2))
 }
 
