@@ -19,7 +19,6 @@ on:
       - ".cargo/**"
       - "rust-toolchain.toml"
       - "bindings/**"
-      - "**/*.udl"
       - "**/uniffi.toml"
       - ".github/workflows/**"
   push:
