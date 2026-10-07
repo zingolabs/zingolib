@@ -24,7 +24,6 @@ use crate::{
         ScanTarget, WalletBlock, WalletTransaction,
         traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions},
     },
-    witness::SHARD_HEIGHT,
 };
 
 use super::state;
@@ -297,6 +296,11 @@ pub(super) fn detect_shielded_spends(
 /// scan target map. The items in the spend scan target map are taken directly from the nullifier map during spend detection.
 /// Also removes retention marks from the shard tree when a note is spent as it no longer needs the wallet to be able
 /// to construct a witness for it's note commitment.
+///
+/// The notes are updated in a first pass over the wallet's transactions and the marks are removed in a second pass
+/// over its shard trees, so nothing is taken out of the wallet to hold both at once. A wallet that fails to hand over
+/// its shard trees keeps the notes marked spent with their marks retained, and the marks are removed when the spends
+/// are located again.
 pub(super) fn update_spent_notes<W>(
     wallet: &mut W,
     spend_scan_targets: ShieldedSpendScanTargets,
@@ -305,59 +309,56 @@ pub(super) fn update_spent_notes<W>(
 where
     W: SyncTransactions + SyncShardTrees,
 {
-    let mut shard_trees = std::mem::take(wallet.get_shard_trees_mut()?);
     let wallet_transactions = wallet.get_wallet_transactions_mut()?;
-    update_spent_notes_by_protocol::<
-        Sapling,
-        { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
-        { SHARD_HEIGHT },
-    >(
+    let sapling_mark_removals = update_spent_notes_by_protocol::<Sapling>(
         wallet_transactions,
-        &mut shard_trees.sapling,
         spend_scan_targets.sapling,
         remove_marks,
     );
-    update_spent_notes_by_protocol::<
-        Orchard,
-        { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
-        { SHARD_HEIGHT },
-    >(
+    let orchard_mark_removals = update_spent_notes_by_protocol::<Orchard>(
         wallet_transactions,
-        &mut shard_trees.orchard,
         spend_scan_targets.orchard,
         remove_marks,
     );
-    update_spent_notes_by_protocol::<
-        Ironwood,
-        { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
-        { SHARD_HEIGHT },
-    >(
+    let ironwood_mark_removals = update_spent_notes_by_protocol::<Ironwood>(
         wallet_transactions,
-        &mut shard_trees.ironwood,
         spend_scan_targets.ironwood,
         remove_marks,
     );
-    *wallet.get_shard_trees_mut()? = shard_trees;
+
+    let shard_trees = wallet.get_shard_trees_mut()?;
+    remove_spent_note_marks(&mut shard_trees.sapling, sapling_mark_removals);
+    remove_spent_note_marks(&mut shard_trees.orchard, orchard_mark_removals);
+    remove_spent_note_marks(&mut shard_trees.ironwood, ironwood_mark_removals);
 
     Ok(())
 }
 
-fn update_spent_notes_by_protocol<D, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+/// A retention mark to remove from a shard tree: the position of a spent note and the height of its spending
+/// transaction.
+struct MarkRemoval {
+    spent_note_position: Position,
+    spending_height: BlockHeight,
+}
+
+/// Sets the spending transaction of each note of `D` whose nullifier is in `spend_scan_targets`.
+///
+/// Returns the marks to remove from the shard tree of `D`, if `remove_marks` is set: one for each spent note that is
+/// confirmed, has a position and whose spending transaction is confirmed.
+fn update_spent_notes_by_protocol<D>(
     wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
-    shard_tree: &mut ShardTree<D::ShardStore, DEPTH, SHARD_HEIGHT>,
     spend_scan_targets: BTreeMap<<D::Note as NoteInterface>::Nullifier, ScanTarget>,
     remove_marks: bool,
-) where
+) -> Vec<MarkRemoval>
+where
     D: SyncDomain,
-    <D::ShardStore as ShardStore>::H: Clone + PartialEq + Hashable,
-    <D::ShardStore as ShardStore>::CheckpointId: Copy + std::fmt::Debug + PartialOrd + Ord,
 {
-    struct MarkRemovalData {
-        spent_note_position: Position,
+    struct SpentNote {
+        position: Position,
         spending_txid: TxId,
     }
 
-    let mut mark_removals = Vec::new();
+    let mut spent_notes = Vec::new();
     for transaction in wallet_transactions.values_mut() {
         let transaction_confirmed = transaction.status().is_confirmed();
         D::notes_mut(transaction).into_iter().for_each(|note| {
@@ -368,23 +369,44 @@ fn update_spent_notes_by_protocol<D, const DEPTH: u8, const SHARD_HEIGHT: u8>(
                     && transaction_confirmed
                     && let Some(position) = note.position()
                 {
-                    mark_removals.push(MarkRemovalData {
-                        spent_note_position: position,
+                    spent_notes.push(SpentNote {
+                        position,
                         spending_txid: scan_target.txid,
                     });
                 }
             }
         });
     }
+
+    spent_notes
+        .into_iter()
+        .filter_map(|spent_note| {
+            wallet_transactions
+                .get(&spent_note.spending_txid)
+                .and_then(|spending_tx| spending_tx.status().get_confirmed_height())
+                .map(|spending_height| MarkRemoval {
+                    spent_note_position: spent_note.position,
+                    spending_height,
+                })
+        })
+        .collect()
+}
+
+/// Removes the retention marks of `mark_removals` from `shard_tree`, as of the spending heights.
+fn remove_spent_note_marks<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    shard_tree: &mut ShardTree<S, DEPTH, SHARD_HEIGHT>,
+    mark_removals: Vec<MarkRemoval>,
+) where
+    S: ShardStore<CheckpointId = BlockHeight>,
+    S::H: Clone + PartialEq + Hashable,
+{
     for mark_removal in mark_removals {
-        if let Some(spending_height) = wallet_transactions
-            .get(&mark_removal.spending_txid)
-            .and_then(|spending_tx| spending_tx.status().get_confirmed_height())
-        {
-            shard_tree
-                .remove_mark(mark_removal.spent_note_position, Some(&spending_height))
-                .expect("infallible");
-        }
+        shard_tree
+            .remove_mark(
+                mark_removal.spent_note_position,
+                Some(&mark_removal.spending_height),
+            )
+            .expect("infallible");
     }
 }
 
