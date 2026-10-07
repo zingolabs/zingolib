@@ -1366,9 +1366,9 @@ pub fn reset_spends(
 /// cannot fail, since only a reorg can un-mine it, and reorgs are handled by truncation, which
 /// reopens the affected scan ranges. For a confirmed transaction the note's
 /// `spending_transaction` field is the wallet's only durable record of the on-chain spend
-/// (detection consumed the nullifier-map entry when the spending block was scanned), so
-/// resetting it here would create a permanent phantom unspent note that no forward sync
-/// can correct.
+/// (the nullifier-map entry is pruned once the fully scanned height passes the spending
+/// block), so resetting it here would create a permanent phantom unspent note that no
+/// forward sync can correct.
 pub fn set_transactions_failed(
     wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
     failed_txids: Vec<TxId>,
@@ -1837,6 +1837,9 @@ where
                 // transparent data of the re-orged blocks must be scanned.
                 state::lower_transparent_scan_floor(sync_state, reorg_truncate_height);
 
+                // the truncated wallet with its scan ranges reopened is complete as it is. the requests made here
+                // only feed the initial sync state, which reports the progress of this session and is calculated
+                // again at the start of the next one, so a failed request costs nothing that lasts.
                 state::set_initial_state(
                     consensus_parameters,
                     fetch_request_sender.clone(),
@@ -1954,6 +1957,32 @@ where
     )
     .await?;
 
+    // the shard trees of the pools that are kept are rolled back to the rescan height before the records are
+    // truncated, as the rollback is the only step of the wallet update that can fail. a failed rollback leaves the
+    // records as they were.
+    let shard_trees = wallet
+        .get_shard_trees_mut()
+        .map_err(SyncError::WalletError)?;
+    for pool in [
+        ShieldedPool::Sapling,
+        ShieldedPool::Orchard,
+        ShieldedPool::Ironwood,
+    ] {
+        if pool < target_pool {
+            match pool {
+                ShieldedPool::Sapling => {
+                    truncate_tree_to_next_checkpoint(rescan_from - 1, &mut shard_trees.sapling)?;
+                }
+                ShieldedPool::Orchard => {
+                    truncate_tree_to_next_checkpoint(rescan_from - 1, &mut shard_trees.orchard)?;
+                }
+                ShieldedPool::Ironwood => {
+                    truncate_tree_to_next_checkpoint(rescan_from - 1, &mut shard_trees.ironwood)?;
+                }
+            }
+        }
+    }
+
     truncate_stores(wallet, rescan_from - 1, false)?;
 
     // the shard trees of the cleared pools are rebuilt from the frontier at the wallet birthday and the subtree roots
@@ -1998,18 +2027,6 @@ where
                     .insert_frontier(frontiers.final_ironwood_tree().clone(), retention),
             }
             .expect("infallible");
-        } else {
-            match pool {
-                ShieldedPool::Sapling => {
-                    truncate_tree_to_next_checkpoint(rescan_from - 1, &mut shard_trees.sapling)?;
-                }
-                ShieldedPool::Orchard => {
-                    truncate_tree_to_next_checkpoint(rescan_from - 1, &mut shard_trees.orchard)?;
-                }
-                ShieldedPool::Ironwood => {
-                    truncate_tree_to_next_checkpoint(rescan_from - 1, &mut shard_trees.ironwood)?;
-                }
-            }
         }
     }
 
@@ -3954,16 +3971,20 @@ mod test {
     ///
     /// The wallet remembers an on-chain spend observation in exactly one durable place: the
     /// note's `spending_transaction` field. The nullifier map is a transient rendezvous
-    /// buffer: entries are consumed on detection (`remove_spent_nullifiers`) and pruned
-    /// behind the fully-scanned frontier (`remove_irrelevant_data`). These tests pin the
+    /// buffer: detection only reads it, and its entries are pruned behind the
+    /// fully-scanned frontier (`remove_irrelevant_data`). These tests pin the
     /// consequences for `set_transactions_failed`, whose `reset_spends` call erases that
     /// one durable place.
     mod spend_reset_lifecycle {
         use std::collections::HashMap;
 
         use sapling_crypto::value::NoteValue;
+        use zcash_keys::keys::UnifiedSpendingKey;
         use zcash_primitives::transaction::TxId;
-        use zcash_protocol::{consensus::BlockHeight, memo::Memo};
+        use zcash_protocol::{
+            consensus::{BlockHeight, MAIN_NETWORK},
+            memo::Memo,
+        };
         use zingo_status::confirmation_status::ConfirmationStatus;
 
         use crate::{
@@ -3975,7 +3996,7 @@ mod test {
             },
         };
 
-        const FUNDING_HEIGHT: BlockHeight = BlockHeight::from_u32(10);
+        pub(super) const FUNDING_HEIGHT: BlockHeight = BlockHeight::from_u32(10);
         pub(super) const SPEND_HEIGHT: BlockHeight = BlockHeight::from_u32(100);
         pub(super) const FUNDING_TXID: TxId = TxId::from_bytes([1; 32]);
         pub(super) const SPENDING_TXID: TxId = TxId::from_bytes([2; 32]);
@@ -3993,9 +4014,13 @@ mod test {
         /// The crypto-note construction duplicates `zingolib::mocks::SaplingCryptoNoteBuilder`,
         /// which cannot be used here (zingolib depends on this crate). Relocating the note
         /// builders down into this crate is a deferred follow-up.
+        /// The spending key of the wallet's only account, which received the funding note.
+        pub(super) fn spending_key() -> UnifiedSpendingKey {
+            UnifiedSpendingKey::from_seed(&MAIN_NETWORK, &[0; 32], zip32::AccountId::ZERO).unwrap()
+        }
+
         pub(super) fn funding_transaction(spending_transaction: Option<TxId>) -> WalletTransaction {
-            let extsk = sapling_crypto::zip32::ExtendedSpendingKey::master(&[0; 32]);
-            let (_, recipient) = extsk.default_address();
+            let (_, recipient) = spending_key().sapling().default_address();
             let crypto_note = sapling_crypto::Note::from_parts(
                 recipient,
                 NoteValue::from_raw(100_000),
@@ -4033,8 +4058,7 @@ mod test {
 
         /// The detection pass `locate_shielded_spends` and `apply_shielded_spends` perform,
         /// minus the network round trips and the scan prioritisation: match derived note
-        /// nullifiers against the wallet's nullifier map, remove the matches from the map
-        /// and mark them spent.
+        /// nullifiers against the wallet's nullifier map and mark the matches spent.
         fn run_spend_detection(wallet: &mut MockWallet) {
             let (sapling_nullifiers, orchard_nullifiers, ironwood_nullifiers) =
                 spend::collect_derived_nullifiers(
@@ -4045,10 +4069,6 @@ mod test {
                 &sapling_nullifiers,
                 &orchard_nullifiers,
                 &ironwood_nullifiers,
-            );
-            spend::remove_spent_nullifiers(
-                wallet.get_nullifiers_mut().unwrap(),
-                &spend_scan_targets,
             );
             spend::update_spent_notes(wallet, spend_scan_targets, true).unwrap();
         }
@@ -4081,28 +4101,33 @@ mod test {
             run_spend_detection(&mut wallet);
 
             assert_eq!(get_spending_txid(&wallet), Some(SPENDING_TXID));
-            // Detection is one-shot: the observation moved out of the map into the note.
-            assert!(wallet.get_nullifiers().unwrap().sapling.is_empty());
+            // Detection only reads the map: the entry stays until cleanup prunes it, so a
+            // detection pass that fails part way through is repeated on the next scan.
+            assert!(
+                wallet
+                    .get_nullifiers()
+                    .unwrap()
+                    .sapling
+                    .contains_key(&NOTE_NULLIFIER)
+            );
         }
 
         /// Failure-marking a transaction that is `Confirmed` on chain must not
         /// destroy the wallet's knowledge of the spend.
         ///
-        /// Once detection has consumed the nullifier-map entry (and cleanup has pruned the
-        /// range behind the fully-scanned frontier), the note's `spending_transaction`
-        /// field is the wallet's only durable record of the on-chain spend. If
-        /// `set_transactions_failed` erased it, the note would become a permanent phantom
-        /// unspent note: every future proposal selects it and is rejected as a
-        /// double-spend, and no forward sync can correct it.
+        /// Once cleanup has pruned the nullifier-map entry behind the fully-scanned
+        /// frontier, the note's `spending_transaction` field is the wallet's only durable
+        /// record of the on-chain spend. If `set_transactions_failed` erased it, the note
+        /// would become a permanent phantom unspent note: every future proposal selects it
+        /// and is rejected as a double-spend, and no forward sync can correct it.
         ///
-        /// The damage is permanent IFF the spending block has already been scanned:
-        /// detection consumes the nullifier-map entry at scan time, and scan time is
-        /// exactly when the record becomes `Confirmed` (scan ranges complete out of
-        /// order, so this can precede the fully-scanned frontier reaching that height).
-        /// If the reset lands before that block is scanned, the future scan re-observes
-        /// the nullifier and heals the wallet
-        /// (see [`reset_before_scan_heals_on_spend_detection`]). This equivalence is why
-        /// guarding the failure path on `Confirmed` status is coextensive with the harm.
+        /// The damage is permanent once the spending block has been scanned and the
+        /// fully-scanned frontier has passed it, and the record is `Confirmed` from scan
+        /// time on. If the reset lands while the entry is still mapped, the next detection
+        /// pass re-observes the nullifier and heals the wallet
+        /// (see [`reset_before_scan_heals_on_spend_detection`]). A `Confirmed` record is
+        /// therefore the earliest point at which the harm can occur, which is why the
+        /// failure path is guarded on `Confirmed` status.
         ///
         /// `set_transactions_failed` therefore refuses to fail a `Confirmed` transaction:
         /// the record keeps its status and the spend mark survives. Only truncation may
@@ -4116,7 +4141,7 @@ mod test {
                 SPENDING_TXID,
                 spending_record(ConfirmationStatus::Confirmed(SPEND_HEIGHT)),
             );
-            // The map entry was consumed by detection and pruned by cleanup: empty map.
+            // The map entry was pruned by cleanup behind the fully-scanned frontier: empty map.
             let mut wallet = MockWalletBuilder::new()
                 .wallet_transactions(wallet_transactions)
                 .create_mock_wallet();
@@ -4375,7 +4400,13 @@ mod test {
                 ConfirmationStatus::Confirmed(SPEND_HEIGHT)
             );
             assert_eq!(get_coin_spending_txid(&wallet), Some(spending_txid));
-            assert!(wallet.get_outpoints_mut().unwrap().is_empty());
+            // the spend stays mapped until cleanup prunes it behind the fully scanned height
+            assert!(
+                wallet
+                    .get_outpoints()
+                    .unwrap()
+                    .contains_key(&OutputId::new(FUNDING_TXID, 0))
+            );
         }
 
         /// A spending transaction the scanner already confirmed is marked on the coin without fetching the transaction
@@ -5291,7 +5322,8 @@ mod test {
         use zingo_status::confirmation_status::ConfirmationStatus;
 
         use super::spend_reset_lifecycle::{
-            FUNDING_TXID, NOTE_NULLIFIER, SPEND_HEIGHT, funding_transaction,
+            FUNDING_HEIGHT, FUNDING_TXID, NOTE_NULLIFIER, SPEND_HEIGHT, funding_transaction,
+            spending_key,
         };
         use crate::{
             client::FetchRequest,
@@ -5425,6 +5457,68 @@ mod test {
                 .wallet_transactions(HashMap::from([(FUNDING_TXID, funding_transaction(None))]))
         }
 
+        /// The block at `FUNDING_HEIGHT`, which adds no note commitments.
+        fn block_at_funding_height() -> WalletBlock {
+            WalletBlock {
+                block_height: FUNDING_HEIGHT,
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds: TreeBounds {
+                    sapling_initial_tree_size: 0,
+                    sapling_final_tree_size: 0,
+                    orchard_initial_tree_size: 0,
+                    orchard_final_tree_size: 0,
+                    ironwood_initial_tree_size: 0,
+                    ironwood_final_tree_size: 0,
+                },
+            }
+        }
+
+        /// The scan ranges of a wallet scanned up to `SPEND_HEIGHT` except for the block at `FUNDING_HEIGHT`, which
+        /// is in the given priority.
+        fn funding_scan_ranges(funding_height_priority: ScanPriority) -> Vec<ScanRange> {
+            vec![
+                ScanRange::from_parts(
+                    BlockHeight::from_u32(BIRTHDAY)..FUNDING_HEIGHT,
+                    ScanPriority::Scanned,
+                ),
+                ScanRange::from_parts(FUNDING_HEIGHT..FUNDING_HEIGHT + 1, funding_height_priority),
+                ScanRange::from_parts(FUNDING_HEIGHT + 1..SPEND_HEIGHT + 1, ScanPriority::Scanned),
+            ]
+        }
+
+        /// A wallet that scanned the block at `SPEND_HEIGHT` before the block at `FUNDING_HEIGHT`, so it holds the
+        /// nullifier of a note it has not yet received, as mapped from the block at `SPEND_HEIGHT`, where
+        /// `spending_txid` spends the note.
+        fn wallet_with_mapped_spend(spending_txid: TxId) -> MockWallet {
+            MockWalletBuilder::new()
+                .birthday(BlockHeight::from_u32(BIRTHDAY))
+                .sync_state(SyncState::new_for_test(funding_scan_ranges(
+                    ScanPriority::Scanning,
+                )))
+                .nullifier_map(mapped_spend(spending_txid))
+                .wallet_blocks(BTreeMap::from([(SPEND_HEIGHT, block_at_spend_height())]))
+                .create_mock_wallet()
+        }
+
+        /// The scan results of the block at `FUNDING_HEIGHT`, which holds the transaction funding the wallet's
+        /// note and nothing else.
+        fn funding_scan_results() -> ScanResults {
+            ScanResults {
+                nullifiers: NullifierMap::new(),
+                outpoints: BTreeMap::new(),
+                scanned_blocks: BTreeMap::from([(FUNDING_HEIGHT, block_at_funding_height())]),
+                wallet_transactions: HashMap::from([(FUNDING_TXID, funding_transaction(None))]),
+                sapling_located_trees: Vec::new(),
+                orchard_located_trees: Vec::new(),
+                ironwood_located_trees: Vec::new(),
+                new_transparent_inuse_addresses: HashMap::new(),
+                new_transparent_gap_addresses: HashMap::new(),
+            }
+        }
+
         /// The nullifier of the wallet's note as mapped from the block at `SPEND_HEIGHT`, where `spending_txid`
         /// spends the note.
         fn mapped_spend(spending_txid: TxId) -> NullifierMap {
@@ -5490,12 +5584,35 @@ mod test {
             selected_priority: ScanPriority,
             scan_results: ScanResults,
         ) -> Result<ProcessedScanResults, SyncError<MockWalletError>> {
+            process_block(
+                wallet,
+                fetch_request_sender,
+                SPEND_HEIGHT,
+                selected_priority,
+                scan_results,
+            )
+            .await
+        }
+
+        /// Processes the scan results of the block at `block_height`, selected for scanning with
+        /// `selected_priority`, for the wallet's only account.
+        async fn process_block(
+            wallet: &mut MockWallet,
+            fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+            block_height: BlockHeight,
+            selected_priority: ScanPriority,
+            scan_results: ScanResults,
+        ) -> Result<ProcessedScanResults, SyncError<MockWalletError>> {
+            let ufvks = HashMap::from([(
+                zip32::AccountId::ZERO,
+                spending_key().to_unified_full_viewing_key(),
+            )]);
             process_scan_results(
                 &NETWORK,
                 wallet,
                 fetch_request_sender,
-                &HashMap::new(),
-                ScanRange::from_parts(SPEND_HEIGHT..SPEND_HEIGHT + 1, selected_priority),
+                &ufvks,
+                ScanRange::from_parts(block_height..block_height + 1, selected_priority),
                 Ok(scan_results),
                 None,
                 PerformanceLevel::High,
@@ -5682,6 +5799,78 @@ mod test {
             assert_eq!(
                 wallet.get_sync_state().unwrap().scan_ranges(),
                 scan_ranges(ScanPriority::RefetchingNullifiers)
+            );
+        }
+
+        /// The block at `SPEND_HEIGHT` was scanned before the block at `FUNDING_HEIGHT`, so the wallet's nullifier
+        /// map holds the spend of a note the wallet has not yet received. Scanning the funding block adds the note
+        /// and locates its spend in the wallet's map. The spend is recorded on the note with its fetched spending
+        /// transaction, and the wallet is fully scanned, so the cleanup drops the spend from the map.
+        #[tokio::test]
+        async fn mapped_spend_is_recorded_when_the_funding_block_is_scanned() {
+            let spending_transaction = spending_transaction();
+            let spending_txid = spending_transaction.txid();
+            let mut wallet = wallet_with_mapped_spend(spending_txid);
+
+            let result = process_block(
+                &mut wallet,
+                spawn_fetcher(Some(&spending_transaction)),
+                FUNDING_HEIGHT,
+                ScanPriority::Historic,
+                funding_scan_results(),
+            )
+            .await;
+
+            assert!(result.is_ok());
+            assert_eq!(note_spending_txid(&wallet), Some(spending_txid));
+            assert_eq!(
+                wallet.get_wallet_transactions().unwrap()[&spending_txid].status(),
+                ConfirmationStatus::Confirmed(SPEND_HEIGHT)
+            );
+            assert!(wallet.get_wallet_block(FUNDING_HEIGHT).is_ok());
+            assert_eq!(
+                wallet.get_sync_state().unwrap().scan_ranges(),
+                scanned_scan_ranges()
+            );
+            assert!(wallet.get_nullifiers().unwrap().sapling.is_empty());
+        }
+
+        /// The shielded counterpart of `transparent_spend_without_change::failed_fetch_keeps_the_mapped_spend`.
+        ///
+        /// The wallet's nullifier map holds the spend of the note the funding block adds, and the request for the
+        /// spending transaction fails. The spend must stay in the wallet's map with the note not yet received, so
+        /// the next sync session scans the funding block and locates the spend again. Spend detection used to
+        /// remove the spend from the map before the request was made, and the note was then left unspent for good.
+        #[tokio::test]
+        async fn failed_request_keeps_the_mapped_spend() {
+            let spending_txid = spending_transaction().txid();
+            let mut wallet = wallet_with_mapped_spend(spending_txid);
+
+            let result = process_block(
+                &mut wallet,
+                spawn_fetcher(None),
+                FUNDING_HEIGHT,
+                ScanPriority::Historic,
+                funding_scan_results(),
+            )
+            .await;
+
+            assert!(result.is_err());
+            assert_eq!(
+                wallet
+                    .get_nullifiers()
+                    .unwrap()
+                    .sapling
+                    .get(&NOTE_NULLIFIER)
+                    .map(|scan_target| scan_target.txid),
+                Some(spending_txid),
+                "the spend must stay mapped until it is recorded on the note"
+            );
+            assert!(wallet.get_wallet_transactions().unwrap().is_empty());
+            assert!(wallet.get_wallet_block(FUNDING_HEIGHT).is_err());
+            assert_eq!(
+                wallet.get_sync_state().unwrap().scan_ranges(),
+                funding_scan_ranges(ScanPriority::Scanning)
             );
         }
     }
@@ -6016,11 +6205,13 @@ mod test {
             fetch_request_sender
         }
 
-        /// A pool rescan clears the pool's shard tree, so the pool's shard ranges must also be cleared. Otherwise, the
-        /// subtree roots fetched from index 0 in the next sync session are rejected by `add_shard_ranges` for being
-        /// lower than the stale shard ranges, and the shard ranges are never rebuilt. The shard trees and shard ranges
-        /// of pools activated before the rescanned pool are kept, as their data below the rescanned pool's activation
-        /// height is not rescanned.
+        /// A pool rescan clears the pool's shard tree, so the pool's shard ranges are cleared with it and both are
+        /// rebuilt from the subtree roots fetched from index 0 in the next sync session. The kept ranges would still
+        /// be correct, as they only depend on the chain, but `add_shard_ranges` can only append: against kept ranges
+        /// it would reject every refetched root below the newest with an error log each and push a degenerate
+        /// one-block range for the newest. Clearing keeps the ranges mirroring the roots the tree holds. The shard
+        /// trees and shard ranges of pools activated before the rescanned pool are kept, as their data below the
+        /// rescanned pool's activation height is not rescanned.
         #[tokio::test]
         async fn rescan_clears_pool_shard_ranges() {
             let mut sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(

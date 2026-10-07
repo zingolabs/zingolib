@@ -141,7 +141,9 @@ pub trait SyncTransactions: SyncWallet {
         Ok(())
     }
 
-    /// Extend wallet transaction map with new wallet transactions
+    /// Extend wallet transaction map with new wallet transactions.
+    ///
+    /// A transaction in `wallet_transactions` must replace the wallet's record of the transaction with the same txid.
     fn extend_wallet_transactions(
         &mut self,
         wallet_transactions: HashMap<TxId, WalletTransaction>,

@@ -157,22 +157,24 @@ impl SyncWallet for MockWallet {
         todo!()
     }
 
+    /// The mock wallet does not keep addresses, so a discovered address is accepted and dropped.
     fn add_orchard_address(
         &mut self,
-        account_id: zip32::AccountId,
-        address: orchard::Address,
-        diversifier_index: zip32::DiversifierIndex,
+        _account_id: zip32::AccountId,
+        _address: orchard::Address,
+        _diversifier_index: zip32::DiversifierIndex,
     ) -> Result<(), Self::Error> {
-        todo!()
+        Ok(())
     }
 
+    /// The mock wallet does not keep addresses, so a discovered address is accepted and dropped.
     fn add_sapling_address(
         &mut self,
-        account_id: zip32::AccountId,
-        address: sapling_crypto::PaymentAddress,
-        diversifier_index: zip32::DiversifierIndex,
+        _account_id: zip32::AccountId,
+        _address: sapling_crypto::PaymentAddress,
+        _diversifier_index: zip32::DiversifierIndex,
     ) -> Result<(), Self::Error> {
-        todo!()
+        Ok(())
     }
 
     fn get_transparent_addresses(

@@ -24,7 +24,6 @@ use crate::{
         ScanTarget, WalletBlock, WalletTransaction,
         traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions},
     },
-    witness::SHARD_HEIGHT,
 };
 
 use super::state;
@@ -60,7 +59,8 @@ impl ShieldedSpendScanTargets {
 }
 
 /// The transactions the wallet holds once `scanned_transactions` are added to it. A scanned transaction replaces the
-/// wallet's record of the same transaction.
+/// wallet's record of the same transaction, which is the contract of
+/// [`SyncTransactions::extend_wallet_transactions`].
 fn transactions_with_scanned<'a>(
     wallet_transactions: &'a HashMap<TxId, WalletTransaction>,
     scanned_transactions: &'a HashMap<TxId, WalletTransaction>,
@@ -133,8 +133,10 @@ where
 /// Records the spends located by [`locate_shielded_spends`] in the wallet, once the wallet holds the scanned
 /// transactions, nullifiers and note commitments the spends were located with.
 ///
-/// The nullifiers of the spends are removed from the wallet's nullifier map, the shard block ranges surrounding the
-/// spends are prioritised for scanning and the spent notes are updated with their spending transactions.
+/// The shard block ranges surrounding the spends are prioritised for scanning and the spent notes are updated with
+/// their spending transactions. Both are idempotent and the wallet's nullifier map is left as it is, so a spend is
+/// located again on every scan until the fully scanned height passes it and the cleanup drops its nullifier from the
+/// map. A failure part way through therefore leaves nothing for the next scan to miss.
 pub(super) fn apply_shielded_spends<P, W>(
     consensus_parameters: &P,
     wallet: &mut W,
@@ -142,10 +144,8 @@ pub(super) fn apply_shielded_spends<P, W>(
 ) -> Result<(), W::Error>
 where
     P: consensus::Parameters,
-    W: SyncTransactions + SyncNullifiers + SyncShardTrees,
+    W: SyncTransactions + SyncShardTrees,
 {
-    remove_spent_nullifiers(wallet.get_nullifiers_mut()?, &spend_scan_targets);
-
     let sync_state = wallet.get_sync_state_mut()?;
     state::set_found_note_scan_ranges(
         consensus_parameters,
@@ -167,22 +167,6 @@ where
     );
 
     update_spent_notes(wallet, spend_scan_targets, true)
-}
-
-/// Removes the nullifiers of detected spends from `nullifier_map`. The spent notes hold the spend from here on.
-pub(super) fn remove_spent_nullifiers(
-    nullifier_map: &mut NullifierMap,
-    spend_scan_targets: &ShieldedSpendScanTargets,
-) {
-    for nullifier in spend_scan_targets.sapling.keys() {
-        nullifier_map.sapling.remove(nullifier);
-    }
-    for nullifier in spend_scan_targets.orchard.keys() {
-        nullifier_map.orchard.remove(nullifier);
-    }
-    for nullifier in spend_scan_targets.ironwood.keys() {
-        nullifier_map.ironwood.remove(nullifier);
-    }
 }
 
 /// For each scan target, fetch and scan the spending transaction. The wallet is only read.
@@ -294,8 +278,8 @@ pub(super) fn collect_derived_nullifiers<'a>(
 
 /// Check if any wallet note's derived nullifiers match a nullifier in the `nullifier_map`.
 ///
-/// The `nullifier_map` is only read, so the wallet's nullifier map keeps the nullifiers of the detected spends
-/// until the spends are recorded in the wallet. See [`remove_spent_nullifiers`].
+/// The `nullifier_map` is only read. The wallet's nullifier map keeps the nullifiers of the detected spends until
+/// the cleanup drops them behind the fully scanned height, so a spend is detected again on every scan until then.
 pub(super) fn detect_shielded_spends(
     nullifier_map: &NullifierMap,
     sapling_derived_nullifiers: &[sapling_crypto::Nullifier],
@@ -313,6 +297,11 @@ pub(super) fn detect_shielded_spends(
 /// scan target map. The items in the spend scan target map are taken directly from the nullifier map during spend detection.
 /// Also removes retention marks from the shard tree when a note is spent as it no longer needs the wallet to be able
 /// to construct a witness for it's note commitment.
+///
+/// The notes are updated in a first pass over the wallet's transactions and the marks are removed in a second pass
+/// over its shard trees, so nothing is taken out of the wallet to hold both at once. A wallet that fails to hand over
+/// its shard trees keeps the notes marked spent with their marks retained, and the marks are removed when the spends
+/// are located again.
 pub(super) fn update_spent_notes<W>(
     wallet: &mut W,
     spend_scan_targets: ShieldedSpendScanTargets,
@@ -321,59 +310,56 @@ pub(super) fn update_spent_notes<W>(
 where
     W: SyncTransactions + SyncShardTrees,
 {
-    let mut shard_trees = std::mem::take(wallet.get_shard_trees_mut()?);
     let wallet_transactions = wallet.get_wallet_transactions_mut()?;
-    update_spent_notes_by_protocol::<
-        Sapling,
-        { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
-        { SHARD_HEIGHT },
-    >(
+    let sapling_mark_removals = update_spent_notes_by_protocol::<Sapling>(
         wallet_transactions,
-        &mut shard_trees.sapling,
         spend_scan_targets.sapling,
         remove_marks,
     );
-    update_spent_notes_by_protocol::<
-        Orchard,
-        { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
-        { SHARD_HEIGHT },
-    >(
+    let orchard_mark_removals = update_spent_notes_by_protocol::<Orchard>(
         wallet_transactions,
-        &mut shard_trees.orchard,
         spend_scan_targets.orchard,
         remove_marks,
     );
-    update_spent_notes_by_protocol::<
-        Ironwood,
-        { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
-        { SHARD_HEIGHT },
-    >(
+    let ironwood_mark_removals = update_spent_notes_by_protocol::<Ironwood>(
         wallet_transactions,
-        &mut shard_trees.ironwood,
         spend_scan_targets.ironwood,
         remove_marks,
     );
-    *wallet.get_shard_trees_mut()? = shard_trees;
+
+    let shard_trees = wallet.get_shard_trees_mut()?;
+    remove_spent_note_marks(&mut shard_trees.sapling, sapling_mark_removals);
+    remove_spent_note_marks(&mut shard_trees.orchard, orchard_mark_removals);
+    remove_spent_note_marks(&mut shard_trees.ironwood, ironwood_mark_removals);
 
     Ok(())
 }
 
-fn update_spent_notes_by_protocol<D, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+/// A retention mark to remove from a shard tree: the position of a spent note and the height of its spending
+/// transaction.
+struct MarkRemoval {
+    spent_note_position: Position,
+    spending_height: BlockHeight,
+}
+
+/// Sets the spending transaction of each note of `D` whose nullifier is in `spend_scan_targets`.
+///
+/// Returns the marks to remove from the shard tree of `D`, if `remove_marks` is set: one for each spent note that is
+/// confirmed, has a position and whose spending transaction is confirmed.
+fn update_spent_notes_by_protocol<D>(
     wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
-    shard_tree: &mut ShardTree<D::ShardStore, DEPTH, SHARD_HEIGHT>,
     spend_scan_targets: BTreeMap<<D::Note as NoteInterface>::Nullifier, ScanTarget>,
     remove_marks: bool,
-) where
+) -> Vec<MarkRemoval>
+where
     D: SyncDomain,
-    <D::ShardStore as ShardStore>::H: Clone + PartialEq + Hashable,
-    <D::ShardStore as ShardStore>::CheckpointId: Copy + std::fmt::Debug + PartialOrd + Ord,
 {
-    struct MarkRemovalData {
-        spent_note_position: Position,
+    struct SpentNote {
+        position: Position,
         spending_txid: TxId,
     }
 
-    let mut mark_removals = Vec::new();
+    let mut spent_notes = Vec::new();
     for transaction in wallet_transactions.values_mut() {
         let transaction_confirmed = transaction.status().is_confirmed();
         D::notes_mut(transaction).into_iter().for_each(|note| {
@@ -384,23 +370,44 @@ fn update_spent_notes_by_protocol<D, const DEPTH: u8, const SHARD_HEIGHT: u8>(
                     && transaction_confirmed
                     && let Some(position) = note.position()
                 {
-                    mark_removals.push(MarkRemovalData {
-                        spent_note_position: position,
+                    spent_notes.push(SpentNote {
+                        position,
                         spending_txid: scan_target.txid,
                     });
                 }
             }
         });
     }
+
+    spent_notes
+        .into_iter()
+        .filter_map(|spent_note| {
+            wallet_transactions
+                .get(&spent_note.spending_txid)
+                .and_then(|spending_tx| spending_tx.status().get_confirmed_height())
+                .map(|spending_height| MarkRemoval {
+                    spent_note_position: spent_note.position,
+                    spending_height,
+                })
+        })
+        .collect()
+}
+
+/// Removes the retention marks of `mark_removals` from `shard_tree`, as of the spending heights.
+fn remove_spent_note_marks<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    shard_tree: &mut ShardTree<S, DEPTH, SHARD_HEIGHT>,
+    mark_removals: Vec<MarkRemoval>,
+) where
+    S: ShardStore<CheckpointId = BlockHeight>,
+    S::H: Clone + PartialEq + Hashable,
+{
     for mark_removal in mark_removals {
-        if let Some(spending_height) = wallet_transactions
-            .get(&mark_removal.spending_txid)
-            .and_then(|spending_tx| spending_tx.status().get_confirmed_height())
-        {
-            shard_tree
-                .remove_mark(mark_removal.spent_note_position, Some(&spending_height))
-                .expect("infallible");
-        }
+        shard_tree
+            .remove_mark(
+                mark_removal.spent_note_position,
+                Some(&mark_removal.spending_height),
+            )
+            .expect("infallible");
     }
 }
 
@@ -460,19 +467,16 @@ where
 /// Records the spends located by [`locate_transparent_spends`] in the wallet, once the wallet holds the scanned
 /// transactions and outpoints the spends were located with.
 ///
-/// The output ids of the spends are removed from the wallet's outpoint map and the spent coins are updated with their
-/// spending transactions.
+/// The spent coins are updated with their spending transactions. The wallet's outpoint map is left as it is, so a
+/// spend is located again on every scan until the fully scanned height passes it and the cleanup drops its output id
+/// from the map.
 pub(super) fn apply_transparent_spends<W>(
     wallet: &mut W,
     transparent_spend_scan_targets: BTreeMap<OutputId, ScanTarget>,
 ) -> Result<(), W::Error>
 where
-    W: SyncTransactions + SyncOutPoints,
+    W: SyncTransactions,
 {
-    let outpoint_map = wallet.get_outpoints_mut()?;
-    for output_id in transparent_spend_scan_targets.keys() {
-        outpoint_map.remove(output_id);
-    }
     update_spent_coins(
         wallet.get_wallet_transactions_mut()?,
         transparent_spend_scan_targets,
