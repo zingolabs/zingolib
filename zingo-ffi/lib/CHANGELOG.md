@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The committed `src/exported_surface.txt` pins the exported surface: every
+  uniffi item in the crate's sources, the `uniffi.toml` settings, the locked
+  uniffi version and the package name. A test fails when the crate and the
+  file differ, and a second test fails when a `macro_rules!` body emits uniffi
+  items the first test does not expand.
+
 ### Changed
+- **Breaking:** the bindings come from `#[uniffi::export]` attributes and the
+  uniffi derives on uniffi 0.32.2 in place of `zingo.udl`. The UDL, the
+  `build.rs` and the crate's `uniffi-bindgen` binary target are gone, and
+  `zingo-uniffi-bindgen` generates the Kotlin and Swift bindings in library
+  mode from the compiled library. `uniffi.toml` pins the Kotlin load name
+  `uniffi_zingo`, so the Android loader does not change. A consumer regenerates
+  its bindings; the old generated files do not load the new library.
+- **Breaking:** `init_new`, `init_from_seed`, `init_from_ufvk` and
+  `init_from_bytes` take one `Connection` record (`server_uri`, `chain_hint`
+  and `sync`) in place of the four loose arguments, and
+  `set_config_wallet_to_prod` takes one `SyncSettings` record
+  (`performance_level` and `min_confirmations`). `get_latest_block_server` and
+  `change_server` name their argument `server_uri`, so the Swift label is
+  `serverUri:` in place of `serveruri:`.
 - **Breaking:** `get_version` returns zingolib's `zl_` descriptor alone. The
   consumer's `zm_` half, the `ZINGO_MOBILE_DESCRIPTOR` variable and the
   `zm_description` build script are gone; a consumer computes its own

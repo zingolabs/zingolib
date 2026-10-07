@@ -1,6 +1,6 @@
-Connection { server_uri: String, chain_hint: String, sync: SyncSettings }
-SyncSettings { performance_level: String, min_confirmations: u32 }
-ZingolibError = LightclientNotInitialized | LightclientLockPoisoned | Panic | Save | Init | Sync | Rescan | Read | Send | Shield | InvalidInput | Wallet | Indexer | Offline | SideChannelPoisoned | MigrationNotInProgress | MigrationAlreadyInProgress | MigrationConsentStale | MigrationCadenceFixed | MigrationSplit | Migration | Mixnet
+#[derive(uniffi::Record)] Connection { server_uri: String, chain_hint: String, sync: SyncSettings }
+#[derive(uniffi::Record)] SyncSettings { performance_level: String, min_confirmations: u32 }
+#[derive(uniffi::Error)] #[uniffi(flat_error)] ZingolibError = LightclientNotInitialized | LightclientLockPoisoned | Panic | Save | Init | Sync | Rescan | Read | Send | Shield | InvalidInput | Wallet | Indexer | Offline | SideChannelPoisoned | MigrationNotInProgress | MigrationAlreadyInProgress | MigrationConsentStale | MigrationCadenceFixed | MigrationSplit | Migration | Mixnet
 init_logging() -> Result<String, ZingolibError>
 set_broadcast_candidates(candidates_json: String) -> Result<String, ZingolibError>
 init_new(connection: Connection, birthday: u32) -> Result<String, ZingolibError>
@@ -74,3 +74,8 @@ enable_mixnet(proxy_path: String) -> Result<String, ZingolibError>
 disable_mixnet() -> Result<String, ZingolibError>
 mixnet_indicator() -> Result<String, ZingolibError>
 mixnet_bootstrap_detail() -> Result<String, ZingolibError>
+uniffi::setup_scaffolding!()
+uniffi.toml: [bindings.kotlin]
+uniffi.toml: cdylib_name = "uniffi_zingo"
+lockfile: uniffi "0.32.2"
+package zingo
