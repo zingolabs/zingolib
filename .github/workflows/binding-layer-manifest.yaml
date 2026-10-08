@@ -1,6 +1,7 @@
 # The workbench tool binding-manifest reads bindings/published.toml and fails
 # when an entry is malformed, awaits `/publish`, names a commit this
-# repository lacks, changed after its merge, or names a digest that the
+# repository lacks, changed after its merge, records audited crates that
+# `cargo tree` at its commit does not report, or names a digest that the
 # registry does not serve for that commit.
 #
 # The check has its own workflow with no `paths` filter, for the reason

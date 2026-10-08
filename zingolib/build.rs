@@ -10,9 +10,11 @@
 //! one: an unconditional rerun (network fetch included) plus a full
 //! recompile cascade through every dependent crate, on every run.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::{env, fs::File, process::Command};
+use std::{env, process::Command};
+
+const DESCRIPTOR_TEXT_FILE: &str = "git_description.txt";
+const DESCRIPTOR_SOURCE_FILE: &str = "git_description.rs";
 
 /// Register everything this script's output depends on. Emitting any
 /// directive disables cargo's whole-package fallback, which is the
@@ -131,17 +133,15 @@ fn git_description() {
         dirty(),
     );
 
-    // Write the git description to a file which will be included in the crate
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("git_description.rs");
-    let mut f = File::create(dest_path).unwrap();
-    writeln!(
-        f,
-        "/// The build descriptor derived from the git state at compile time:\n\
-        /// `zl_<ver>[_<hash5>][_dirty]`, where `<ver>` is the release tag's\n\
-        /// version when the build sits exactly on a `zingolib_v<ver>` tag,\n\
-        /// and otherwise the crate version followed by the abbreviated hash\n\
-        pub fn git_description() -> &'static str {{\"{description}\"}}"
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    std::fs::write(out_dir.join(DESCRIPTOR_TEXT_FILE), &description).unwrap();
+    std::fs::write(
+        out_dir.join(DESCRIPTOR_SOURCE_FILE),
+        format!(
+            "pub fn git_description() -> &'static str {{\n    \
+             include_str!(concat!(env!(\"OUT_DIR\"), \"/{DESCRIPTOR_TEXT_FILE}\"))\n\
+             }}\n"
+        ),
     )
     .unwrap();
 }

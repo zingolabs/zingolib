@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use crate::binding_manifest;
-use crate::binding_manifest::AuditedCrate;
 
 pub const BINARY: &str = "binding-changelog";
 pub const FILE: &str = "bindings/CHANGELOG.md";
@@ -161,13 +160,13 @@ pub fn render_file(header: &str, sections_newest_first: &[String]) -> String {
         .collect()
 }
 
-fn relative_changelog(found: &AuditedCrate) -> Result<String, Vec<String>> {
+fn relative_changelog(found: &binding_manifest::AuditedCrate) -> Result<String, Vec<String>> {
     Ok(crate::utf8(&found.dir.join(CRATE_CHANGELOG))?.to_string())
 }
 
 fn gather(
     root: &Path,
-    crates: &[AuditedCrate],
+    crates: &[binding_manifest::AuditedCrate],
     since: &str,
     commit: &str,
 ) -> Result<Section, Vec<String>> {
@@ -212,14 +211,20 @@ fn regenerated(root: &Path) -> Result<String, Vec<String>> {
 }
 
 /// - Runs `git` child processes in `root`.
+/// - Writes `bindings/CHANGELOG.md`.
+pub fn regenerate(root: &Path) -> Result<(), Vec<String>> {
+    let file = root.join(FILE);
+    std::fs::write(&file, regenerated(root)?)
+        .map_err(|e| vec![format!("cannot write {}: {e}", file.display())])
+}
+
+/// - Runs `git` child processes in `root`.
 /// - Writes `bindings/CHANGELOG.md` unless `args` holds `--check`.
 pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
-    let file = root.join(FILE);
     match args {
-        [] => std::fs::write(&file, regenerated(root)?)
-            .map_err(|e| vec![format!("cannot write {}: {e}", file.display())]),
+        [] => regenerate(root),
         [flag] if flag == CHECK_FLAG => {
-            if crate::read(&file)? == regenerated(root)? {
+            if crate::read(&root.join(FILE))? == regenerated(root)? {
                 Ok(())
             } else {
                 Err(vec![format!(

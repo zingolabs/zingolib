@@ -1,12 +1,16 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use crate::binding_layer;
+
 pub const BINARY: &str = "binding-manifest";
 pub const FILE: &str = "bindings/published.toml";
 pub const REGISTRY: &str = "ghcr.io";
 pub const REPOSITORY_PREFIX: &str = "zingolabs/zingolib/binding-layer-";
-pub const PLATFORMS: [&str; 2] = ["android", "ios"];
-pub const REQUIRED_PLATFORMS: [&str; 1] = ["android"];
+pub const ANDROID: &str = "android";
+pub const IOS: &str = "ios";
+pub const PLATFORMS: [&str; 2] = [ANDROID, IOS];
+pub const REQUIRED_PLATFORMS: [&str; 1] = [ANDROID];
 pub const REVISION_ANNOTATION: &str = "org.opencontainers.image.revision";
 const PATH_SEPARATOR: &str = "/";
 const TAG_SEPARATOR: &str = ":";
@@ -27,17 +31,9 @@ pub const TITLE_ANNOTATION: &str = "org.opencontainers.image.title";
 const CHECK_FLAG: &str = "--check";
 const BASE_FLAG: &str = "--base";
 const NEWEST_FLAG: &str = "--newest";
-const RECORD_FLAG: &str = "--record";
-const COMMIT_FLAG: &str = "--commit";
-const PLATFORM_FLAG: &str = "--platform";
-const DIGEST_FLAG: &str = "--digest";
-const AUDITED_FROM_FLAG: &str = "--audited-from";
-const USAGE: &str = "usage: binding-manifest --check [--base <ref>] \
-    | binding-manifest --newest \
-    | binding-manifest --record --commit <commit> --platform <platform> --digest <digest> \
-    | binding-manifest --record --commit <commit> --audited-from <checkout of the commit>";
+const USAGE: &str = "usage: binding-manifest --check [--base <ref>] | binding-manifest --newest";
 pub const PUBLISH_COMMAND: &str = "/publish";
-const BINDING_CRATES: [&str; 2] = ["zingo-ffi/lib", "zingo-netutils/nym-proxy-ffi"];
+const CHECKOUTS_DIR: &str = "target/binding-manifest";
 const TREE_ARGS: [&str; 8] = [
     "tree", "--locked", "--edges", "normal", "--depth", "1", "--prefix", "none",
 ];
@@ -52,6 +48,18 @@ const FIRST_ORDINAL: usize = 1;
 
 fn ordinal(index: usize) -> usize {
     index + FIRST_ORDINAL
+}
+
+pub fn platform(name: &str) -> Result<&'static str, Vec<String>> {
+    PLATFORMS
+        .into_iter()
+        .find(|known| *known == name)
+        .ok_or_else(|| {
+            vec![format!(
+                "unknown platform {name}; the platforms are {}",
+                PLATFORMS.join(ARRAY_SEPARATOR)
+            )]
+        })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -98,6 +106,12 @@ pub struct Entry {
     pub since: Option<String>,
     pub digests: Vec<(String, String)>,
     pub audited: Vec<AuditedCrate>,
+}
+
+struct LocatedEntry {
+    entry: Entry,
+    last_line: usize,
+    keys: Vec<(String, usize)>,
 }
 
 fn is_hex(text: &str, length: usize) -> bool {
@@ -157,7 +171,7 @@ fn array_assignment(line: &str) -> Option<(&str, Vec<&str>)> {
 }
 
 fn audited_value(items: &[&str]) -> Result<Vec<AuditedCrate>, Vec<String>> {
-    let crates = items
+    items
         .iter()
         .map(|item| {
             AuditedCrate::parse(item).ok_or_else(|| {
@@ -166,11 +180,7 @@ fn audited_value(items: &[&str]) -> Result<Vec<AuditedCrate>, Vec<String>> {
                 )]
             })
         })
-        .collect::<Result<Vec<_>, _>>()?;
-    if crates.is_empty() {
-        return Err(vec![format!("{AUDITED_KEY} names no crate")]);
-    }
-    Ok(crates)
+        .collect()
 }
 
 fn render_audited(crates: &[AuditedCrate]) -> String {
@@ -199,14 +209,14 @@ fn assign(entry: &mut Entry, key: &str, value: &str) -> Result<(), Vec<String>> 
             taken(key, entry.since.is_some())?;
             entry.since = Some(commit_value(key, value)?);
         }
-        platform if PLATFORMS.contains(&platform) => {
+        AUDITED_KEY => return Err(vec![format!("{AUDITED_KEY} takes an array")]),
+        other => {
+            let platform = platform(other).map_err(|_| vec![format!("unknown key {other}")])?;
             taken(key, entry.digests.iter().any(|(name, _)| name == platform))?;
             entry
                 .digests
                 .push((platform.to_string(), digest_value(platform, value)?));
         }
-        AUDITED_KEY => return Err(vec![format!("{AUDITED_KEY} takes an array")]),
-        other => return Err(vec![format!("unknown key {other}")]),
     }
     Ok(())
 }
@@ -224,8 +234,8 @@ fn assign_array(entry: &mut Entry, key: &str, items: &[&str]) -> Result<(), Vec<
     }
 }
 
-pub fn parse(text: &str) -> Result<Vec<Entry>, Vec<String>> {
-    let mut entries: Vec<Entry> = Vec::new();
+fn parse_located(text: &str) -> Result<Vec<LocatedEntry>, Vec<String>> {
+    let mut entries: Vec<LocatedEntry> = Vec::new();
     for (index, raw) in text.lines().enumerate() {
         let line = raw.trim();
         let located = |lines: Vec<String>| {
@@ -238,23 +248,52 @@ pub fn parse(text: &str) -> Result<Vec<Entry>, Vec<String>> {
             continue;
         }
         if line == ENTRY_HEADER {
-            entries.push(Entry::default());
+            entries.push(LocatedEntry {
+                entry: Entry::default(),
+                last_line: index,
+                keys: Vec::new(),
+            });
             continue;
         }
-        let entry = entries.last_mut().ok_or_else(|| {
+        let current = entries.last_mut().ok_or_else(|| {
             located(vec![format!(
                 "`{line}` comes before the first {ENTRY_HEADER}"
             )])
         })?;
-        if let Some((key, value)) = assignment(line) {
-            assign(entry, key, value).map_err(located)?;
+        let key = if let Some((key, value)) = assignment(line) {
+            assign(&mut current.entry, key, value).map_err(located)?;
+            key
         } else if let Some((key, items)) = array_assignment(line) {
-            assign_array(entry, key, &items).map_err(located)?;
+            assign_array(&mut current.entry, key, &items).map_err(located)?;
+            key
         } else {
             return Err(located(vec![format!("cannot read `{line}`")]));
-        }
+        };
+        current.last_line = index;
+        current.keys.push((key.to_string(), index));
     }
     Ok(entries)
+}
+
+pub fn parse(text: &str) -> Result<Vec<Entry>, Vec<String>> {
+    Ok(parse_located(text)?
+        .into_iter()
+        .map(|located| located.entry)
+        .collect())
+}
+
+pub fn awaited(entry: &Entry) -> Vec<String> {
+    REQUIRED_PLATFORMS
+        .into_iter()
+        .filter(|platform| !entry.digests.iter().any(|(name, _)| name == platform))
+        .map(|platform| format!("{platform} digest"))
+        .chain(
+            entry
+                .audited
+                .is_empty()
+                .then(|| format!("{AUDITED_KEY} crates")),
+        )
+        .collect()
 }
 
 pub fn validate(entries: &[Entry]) -> Result<(), Vec<String>> {
@@ -264,16 +303,9 @@ pub fn validate(entries: &[Entry]) -> Result<(), Vec<String>> {
         if entry.commit.is_empty() {
             diagnostics.push(format!("entry {} names no commit", ordinal(index)));
         }
-        for platform in REQUIRED_PLATFORMS {
-            if !entry.digests.iter().any(|(name, _)| name == platform) {
-                diagnostics.push(format!(
-                    "{label} names no {platform} digest; it awaits `{PUBLISH_COMMAND}`, which records one"
-                ));
-            }
-        }
-        if entry.audited.is_empty() {
+        for part in awaited(entry) {
             diagnostics.push(format!(
-                "{label} names no {AUDITED_KEY} crates; it awaits `{PUBLISH_COMMAND}`, which records them"
+                "{label} names no {part}; it awaits `{PUBLISH_COMMAND}`, which records it"
             ));
         }
         match (index, &entry.since) {
@@ -370,7 +402,7 @@ pub fn audited_at(checkout: &Path) -> Result<Vec<AuditedCrate>, Vec<String>> {
     let checkout = &std::fs::canonicalize(checkout)
         .map_err(|e| vec![format!("cannot resolve {}: {e}", checkout.display())])?;
     let mut crates: Vec<AuditedCrate> = Vec::new();
-    for dir in BINDING_CRATES {
+    for dir in binding_layer::BINDING_CRATE_DIRS {
         let manifest = checkout.join(dir).join(crate::MANIFEST);
         let args = [
             TREE_ARGS.as_slice(),
@@ -397,6 +429,47 @@ pub fn audited_at(checkout: &Path) -> Result<Vec<AuditedCrate>, Vec<String>> {
         }
     }
     Ok(crates)
+}
+
+/// - Runs `git worktree add --detach`, `git worktree remove --force`, and `git worktree prune` as child processes in `root`.
+/// - Creates and removes the directory `target/binding-manifest/<commit>` under `root`.
+pub fn with_checkout<T>(
+    root: &Path,
+    commit: &str,
+    body: impl FnOnce(&Path) -> Result<T, Vec<String>>,
+) -> Result<T, Vec<String>> {
+    let dir = root.join(CHECKOUTS_DIR).join(commit);
+    let dir_text = crate::utf8(&dir)?.to_string();
+    let remove = || crate::git_in(root, &["worktree", "remove", "--force", &dir_text]).map(drop);
+    if dir.exists() {
+        remove().or_else(|_| {
+            std::fs::remove_dir_all(&dir).map_err(|e| vec![format!("cannot clear {dir_text}: {e}")])
+        })?;
+        crate::git_in(root, &["worktree", "prune"])?;
+    }
+    crate::create_parent(&dir)?;
+    crate::git_in(root, &["worktree", "add", "--detach", &dir_text, commit])?;
+    let result = body(&dir);
+    remove()?;
+    result
+}
+
+/// - Creates and removes one detached worktree per entry through [`with_checkout`].
+/// - Runs `cargo tree` in each worktree through [`audited_at`].
+pub fn audited_diagnostics(root: &Path, entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
+    let mut diagnostics = Vec::new();
+    for entry in entries {
+        let found = with_checkout(root, &entry.commit, audited_at)?;
+        if found != entry.audited {
+            diagnostics.push(format!(
+                "entry {} records {AUDITED_KEY} {} and `cargo tree` at that commit reports {}",
+                entry.commit,
+                render_audited(&entry.audited),
+                render_audited(&found)
+            ));
+        }
+    }
+    Ok(diagnostics)
 }
 
 fn commits_exist(root: &Path, entries: &[Entry]) -> Result<(), Vec<String>> {
@@ -498,13 +571,19 @@ fn registry_diagnostics(_entries: &[Entry]) -> Result<Vec<String>, Vec<String>> 
 
 /// - Reads `bindings/published.toml` and, with `--base`, its copy at that git revision.
 /// - Runs `git` child processes in `root`.
-/// - Fetches one manifest per platform from the registry, anonymously and concurrently, for every entry
-///   without `--base` and for the entries appended after the base's with it.
+/// - With `--check`, creates and removes one detached worktree per unverified entry and runs
+///   `cargo tree` in it, through [`audited_diagnostics`].
+/// - With `--check`, fetches one manifest per platform from the registry, anonymously and
+///   concurrently, for every entry without `--base` and for the entries appended after the
+///   base's with it.
+/// - With `--newest`, prints the commit of the newest entry to stdout.
 pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     match args.first().map(String::as_str) {
         Some(CHECK_FLAG) => check(root, args),
-        Some(NEWEST_FLAG) => newest(root),
-        Some(RECORD_FLAG) => record(root, args),
+        Some(NEWEST_FLAG) => {
+            println!("{}", newest_awaiting(root)?);
+            Ok(())
+        }
         _ => Err(vec![USAGE.to_string()]),
     }
 }
@@ -520,47 +599,39 @@ fn check(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
         }
         None => &head[..],
     };
-    crate::verdict(registry_diagnostics(unverified)?)
+    let mut diagnostics = audited_diagnostics(root, unverified)?;
+    diagnostics.extend(registry_diagnostics(unverified)?);
+    crate::verdict(diagnostics)
 }
 
-fn newest(root: &Path) -> Result<(), Vec<String>> {
-    let entries = parse_at(root, None)?;
+pub fn newest_commit(entries: &[Entry]) -> Result<&str, Vec<String>> {
     let last = entries
         .last()
         .ok_or_else(|| vec![format!("{FILE} holds no entry")])?;
     if last.commit.is_empty() {
         return Err(vec![format!("the newest entry of {FILE} names no commit")]);
     }
-    println!("{}", last.commit);
-    Ok(())
+    if awaited(last).is_empty() {
+        return Err(vec![format!(
+            "the newest entry of {FILE} ({}) is published; append an entry to publish another commit",
+            last.commit
+        )]);
+    }
+    Ok(&last.commit)
 }
 
-fn record(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
-    let required = |flag: &str| crate::required_flag(args, flag, USAGE);
-    let commit = required(COMMIT_FLAG)?;
-    let file = root.join(FILE);
-    let before = crate::read(&file)?;
-    let text = match crate::flag_value(args, AUDITED_FROM_FLAG)? {
-        Some(checkout) => recorded_audited(&before, commit, &audited_at(Path::new(checkout))?)?,
-        None => recorded(
-            &before,
-            commit,
-            required(PLATFORM_FLAG)?,
-            required(DIGEST_FLAG)?,
-        )?,
-    };
-    std::fs::write(&file, text).map_err(|e| vec![format!("cannot write {}: {e}", file.display())])
+/// - Reads `bindings/published.toml` under `root`.
+pub fn newest_awaiting(root: &Path) -> Result<String, Vec<String>> {
+    newest_commit(&parse_at(root, None)?).map(str::to_string)
 }
 
 pub fn recorded(
     text: &str,
     commit: &str,
-    platform: &str,
+    platform_name: &str,
     digest: &str,
 ) -> Result<String, Vec<String>> {
-    if !PLATFORMS.contains(&platform) {
-        return Err(vec![format!("unknown platform {platform}")]);
-    }
+    let platform = platform(platform_name)?;
     let value = format!("{QUOTE}{}{QUOTE}", digest_value(platform, digest)?);
     recorded_line(text, commit, platform, &value)
 }
@@ -577,47 +648,20 @@ pub fn recorded_audited(
 }
 
 fn recorded_line(text: &str, commit: &str, key: &str, value: &str) -> Result<String, Vec<String>> {
+    let target = parse_located(text)?
+        .into_iter()
+        .find(|located| located.entry.commit == commit)
+        .ok_or_else(|| vec![format!("{FILE} holds no entry for {commit}")])?;
     let line = format!("{key} = {value}");
-    let mut lines: Vec<String> = Vec::new();
-    let mut in_target = false;
-    let mut written = false;
-    for raw in text.lines() {
-        let trimmed = raw.trim();
-        if trimmed == ENTRY_HEADER {
-            written |= in_target && !written && insert_after_text(&mut lines, &line);
-            in_target = false;
-        }
-        let found_key = assignment(trimmed)
-            .map(|(found, value)| (found, Some(value)))
-            .or_else(|| array_assignment(trimmed).map(|(found, _)| (found, None)));
-        match found_key {
-            Some((COMMIT_KEY, Some(value))) => in_target = value == commit,
-            Some((found, _)) if in_target && found == key => {
-                lines.push(line.clone());
-                written = true;
-                continue;
-            }
-            _ => {}
-        }
-        lines.push(raw.to_string());
-    }
-    written |= in_target && !written && insert_after_text(&mut lines, &line);
-    if !written {
-        return Err(vec![format!("{FILE} holds no entry for {commit}")]);
+    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    match target.keys.iter().find(|(found, _)| found == key) {
+        Some((_, index)) => lines[*index] = line,
+        None => lines.insert(target.last_line + 1, line),
     }
     let mut joined = lines.join("\n");
     joined.push('\n');
     parse(&joined)?;
     Ok(joined)
-}
-
-fn insert_after_text(lines: &mut Vec<String>, line: &str) -> bool {
-    let at = lines
-        .iter()
-        .rposition(|existing| !existing.trim().is_empty())
-        .map_or(lines.len(), |index| index + 1);
-    lines.insert(at, line.to_string());
-    true
 }
 
 /// - Reads the process arguments.
@@ -696,8 +740,8 @@ mod tests {
     #[test]
     fn the_manifest_round_trips_through_its_text_form() {
         let entries = vec![
-            entry(FIRST, Some(ORIGIN), &["android", "ios"]),
-            entry(SECOND, None, &["android"]),
+            entry(FIRST, Some(ORIGIN), &[ANDROID, IOS]),
+            entry(SECOND, None, &[ANDROID]),
         ];
         let parsed = parse(&manifest(&entries)).unwrap();
         assert_eq!(parsed, entries);
@@ -728,6 +772,14 @@ mod tests {
             "[[entry]]\naudited = [\"zingo (zingo-ffi/lib)\"]\naudited = [\"zingo (zingo-ffi/lib)\"]\n"
         )
         .is_err());
+    }
+
+    #[test]
+    fn a_platform_outside_the_set_is_refused_by_name() {
+        assert_eq!(platform(ANDROID), Ok(ANDROID));
+        assert_eq!(platform(IOS), Ok(IOS));
+        let diagnostic = platform("linux").unwrap_err().concat();
+        assert!(diagnostic.contains("linux") && diagnostic.contains(ANDROID));
     }
 
     #[test]
@@ -763,9 +815,26 @@ mod tests {
     }
 
     #[test]
+    fn the_recorded_audited_crates_are_checked_against_cargo_tree_at_the_commit() {
+        let root = crate::repo_root().unwrap();
+        let head = crate::commit_of(&root, "HEAD").unwrap();
+        let mut recorded = entry(&head, Some(ORIGIN), &[ANDROID]);
+        recorded.audited = audited(&EXPECTED_AUDITED);
+        assert_eq!(
+            audited_diagnostics(&root, std::slice::from_ref(&recorded)).unwrap(),
+            Vec::<String>::new()
+        );
+        recorded.audited.pop();
+        let diagnostic = audited_diagnostics(&root, &[recorded]).unwrap().concat();
+        assert!(diagnostic.contains(&head), "{diagnostic}");
+        assert!(!root.join(CHECKOUTS_DIR).join(&head).exists());
+    }
+
+    #[test]
     fn an_incomplete_entry_is_named_as_awaiting_publish() {
         let mut incomplete = entry(FIRST, Some(ORIGIN), &[]);
         incomplete.audited.clear();
+        assert_eq!(awaited(&incomplete).len(), 2);
         let diagnostics = validate(&[incomplete]).unwrap_err();
         assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
         assert!(diagnostics
@@ -774,8 +843,26 @@ mod tests {
     }
 
     #[test]
+    fn the_newest_commit_is_the_last_entry_only_while_it_awaits_publish() {
+        let published = entry(FIRST, Some(ORIGIN), &[ANDROID]);
+        let diagnostic = newest_commit(std::slice::from_ref(&published))
+            .unwrap_err()
+            .concat();
+        assert!(diagnostic.contains(FIRST) && diagnostic.contains("published"));
+        let awaiting = entry(SECOND, None, &[]);
+        assert_eq!(
+            newest_commit(&[published.clone(), awaiting.clone()]),
+            Ok(SECOND)
+        );
+        let mut nameless = awaiting;
+        nameless.commit.clear();
+        assert!(newest_commit(&[published, nameless]).is_err());
+        assert!(newest_commit(&[]).is_err());
+    }
+
+    #[test]
     fn recording_the_audited_crates_adds_the_array_line_or_replaces_it() {
-        let text = manifest(&[entry(FIRST, Some(ORIGIN), &["android"])]);
+        let text = manifest(&[entry(FIRST, Some(ORIGIN), &[ANDROID])]);
         let mut bare = entry(SECOND, None, &[]);
         bare.audited.clear();
         let appended = format!("{text}{}", manifest(&[bare]));
@@ -786,8 +873,8 @@ mod tests {
         assert_eq!(
             validate(&parsed),
             Err(vec![format!(
-            "entry 2 ({SECOND}) names no android digest; it awaits `/publish`, which records one"
-        )])
+                "entry 2 ({SECOND}) names no android digest; it awaits `/publish`, which records it"
+            )])
         );
         let replaced = recorded_audited(&with_audited, SECOND, &crates[..1]).unwrap();
         assert_eq!(parse(&replaced).unwrap()[1].audited, crates[..1]);
@@ -795,42 +882,51 @@ mod tests {
     }
 
     #[test]
+    fn a_recorded_line_joins_its_entry_before_a_following_comment() {
+        let text = format!(
+            "[[entry]]\ncommit = \"{FIRST}\"\nsince = \"{ORIGIN}\"\n\n# trailing\n\n[[entry]]\ncommit = \"{SECOND}\"\n"
+        );
+        let recorded = recorded(&text, FIRST, ANDROID, DIGEST).unwrap();
+        let lines: Vec<&str> = recorded.lines().collect();
+        assert_eq!(lines[3], format!("android = \"{DIGEST}\""));
+        assert_eq!(lines[5], "# trailing");
+        assert_eq!(parse(&recorded).unwrap()[1].digests, []);
+    }
+
+    #[test]
     fn validation_pins_the_since_rule_the_digest_rule_and_uniqueness() {
         let diagnostics = validate(&[
             entry(FIRST, None, &[]),
-            entry(SECOND, Some(ORIGIN), &["ios"]),
-            entry(SECOND, None, &["android"]),
+            entry(SECOND, Some(ORIGIN), &[IOS]),
+            entry(SECOND, None, &[ANDROID]),
         ])
         .unwrap_err()
         .concat();
         assert!(diagnostics.contains("first and names no since"));
         assert!(diagnostics.contains("names no android digest"));
-        assert_eq!(
-            validate(&[entry(FIRST, Some(ORIGIN), &["android"])]),
-            Ok(())
-        );
-        assert!(validate(&[entry(FIRST, Some(ORIGIN), &["ios"])]).is_err());
+        assert_eq!(validate(&[entry(FIRST, Some(ORIGIN), &[ANDROID])]), Ok(()));
+        assert!(validate(&[entry(FIRST, Some(ORIGIN), &[IOS])]).is_err());
         assert!(diagnostics.contains("only the first entry may"));
         assert!(diagnostics.contains("repeats an earlier entry"));
     }
 
     #[test]
     fn a_merged_entry_never_changes_and_the_head_may_only_append() {
-        let base = vec![entry(FIRST, Some(ORIGIN), &["android"])];
-        let appended = vec![base[0].clone(), entry(SECOND, None, &["android"])];
+        let base = vec![entry(FIRST, Some(ORIGIN), &[ANDROID])];
+        let appended = vec![base[0].clone(), entry(SECOND, None, &[ANDROID])];
         assert_eq!(unchanged_since_base(&base, &appended), Ok(()));
-        let edited = vec![entry(FIRST, Some(ORIGIN), &["android", "ios"])];
+        let edited = vec![entry(FIRST, Some(ORIGIN), &[ANDROID, IOS])];
         assert!(unchanged_since_base(&base, &edited).is_err());
         assert!(unchanged_since_base(&base, &[]).is_err());
-        let reordered = vec![entry(SECOND, Some(ORIGIN), &["android"]), base[0].clone()];
+        let reordered = vec![entry(SECOND, Some(ORIGIN), &[ANDROID]), base[0].clone()];
         assert!(unchanged_since_base(&base, &reordered).is_err());
     }
 
     #[test]
     fn each_publication_follows_the_previous_entry_and_the_first_its_since() {
         let entries = vec![
-            entry(FIRST, Some(ORIGIN), &["android"]),
-            entry(SECOND, None, &["android"]),
+            entry(FIRST, Some(ORIGIN), &[ANDROID]),
+            entry(SECOND, None, &[ANDROID]),
         ];
         assert_eq!(
             publication_commits(&entries),
@@ -844,7 +940,7 @@ mod tests {
     #[test]
     fn a_reference_names_the_platform_repository_and_the_commit_tag() {
         assert_eq!(
-            reference("android", FIRST),
+            reference(ANDROID, FIRST),
             format!("ghcr.io/zingolabs/zingolib/binding-layer-android:{FIRST}")
         );
     }
@@ -852,26 +948,26 @@ mod tests {
     #[test]
     fn recording_a_digest_replaces_the_platform_line_or_adds_one_to_the_named_entry() {
         let text = manifest(&[
-            entry(FIRST, Some(ORIGIN), &["android"]),
-            entry(SECOND, None, &["android"]),
+            entry(FIRST, Some(ORIGIN), &[ANDROID]),
+            entry(SECOND, None, &[ANDROID]),
         ]);
         let replaced = DIGEST.replace('0', "f");
-        let with_ios = recorded(&text, SECOND, "ios", &replaced).unwrap();
+        let with_ios = recorded(&text, SECOND, IOS, &replaced).unwrap();
         assert_eq!(
             parse(&with_ios).unwrap()[1].digests,
             [
-                ("android".to_string(), DIGEST.to_string()),
-                ("ios".to_string(), replaced.clone())
+                (ANDROID.to_string(), DIGEST.to_string()),
+                (IOS.to_string(), replaced.clone())
             ]
         );
-        let re_android = recorded(&with_ios, FIRST, "android", &replaced).unwrap();
+        let re_android = recorded(&with_ios, FIRST, ANDROID, &replaced).unwrap();
         assert_eq!(
             parse(&re_android).unwrap()[0].digests,
-            [("android".to_string(), replaced)]
+            [(ANDROID.to_string(), replaced)]
         );
-        assert!(recorded(&text, ORIGIN, "android", DIGEST).is_err());
+        assert!(recorded(&text, ORIGIN, ANDROID, DIGEST).is_err());
         assert!(recorded(&text, SECOND, "linux", DIGEST).is_err());
-        assert!(recorded(&text, SECOND, "android", "sha256:short").is_err());
+        assert!(recorded(&text, SECOND, ANDROID, "sha256:short").is_err());
     }
 
     #[test]
@@ -879,10 +975,10 @@ mod tests {
         let root = crate::repo_root().unwrap();
         let head = crate::commit_of(&root, "HEAD").unwrap();
         assert_eq!(
-            commits_exist(&root, &[entry(&head, None, &["android"])]),
+            commits_exist(&root, &[entry(&head, None, &[ANDROID])]),
             Ok(())
         );
-        let diagnostic = commits_exist(&root, &[entry(&head, Some(FIRST), &["android"])])
+        let diagnostic = commits_exist(&root, &[entry(&head, Some(FIRST), &[ANDROID])])
             .unwrap_err()
             .concat();
         assert!(diagnostic.contains(FIRST), "{diagnostic}");

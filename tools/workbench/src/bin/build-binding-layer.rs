@@ -52,14 +52,8 @@ const IOS_DEPLOYMENT_TARGET: &str = "16.0";
 /// The directory under the zingolib root that holds the builder's cargo output.
 const BUILD_ROOT: &str = "target/binding-layer";
 
-/// The wallet crate's directory, relative to the zingolib root.
-const WALLET_CRATE_DIR: &str = "zingo-ffi/lib";
-
 /// The directory of the workspace that holds the wallet crate and the bindgen package, which is the zingolib root.
 const WALLET_WORKSPACE_DIR: &str = ".";
-
-/// The proxy crate's directory, relative to the zingolib root.
-const PROXY_CRATE_DIR: &str = "zingo-netutils/nym-proxy-ffi";
 
 /// The profile that the builder builds every library with.
 const BUILDER_PROFILE: binding_layer::Profile = binding_layer::Profile::Mobile;
@@ -142,11 +136,8 @@ enum Step {
     FreshDir(path::PathBuf),
     /// Remove a host directory if it exists.
     Remove(path::PathBuf),
-    /// Write the `zl_` descriptor that zingolib's build script embedded under a profile directory to a host file.
     Descriptor {
-        /// The profile directory of a wallet build, which holds `build/zingolib-*/out`.
         profile_dir: path::PathBuf,
-        /// The destination file.
         to: path::PathBuf,
     },
 }
@@ -171,10 +162,9 @@ fn descriptor_under(profile_dir: &path::Path) -> Result<String, Vec<String>> {
         let modified = fs::metadata(&generated)
             .and_then(|metadata| metadata.modified())
             .map_err(|e| vec![format!("cannot stat {}: {e}", generated.display())])?;
-        if let Some(descriptor) = binding_layer::descriptor_in(&text) {
-            if newest.as_ref().is_none_or(|(when, _)| *when < modified) {
-                newest = Some((modified, descriptor));
-            }
+        let descriptor = text.trim().to_string();
+        if !descriptor.is_empty() && newest.as_ref().is_none_or(|(when, _)| *when < modified) {
+            newest = Some((modified, descriptor));
         }
     }
     newest.map(|(_, descriptor)| descriptor).ok_or_else(|| {
@@ -582,8 +572,8 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
     let proxy_library = |abi: &binding_layer::AndroidAbi| {
         format!("{proxy_target}/{}/{PROFILE_DIR}/{proxy_file}", abi.triple)
     };
-    let wallet_crate_dir = roots.run_path(WALLET_CRATE_DIR);
-    let proxy_crate_dir = roots.run_path(PROXY_CRATE_DIR);
+    let wallet_crate_dir = roots.run_path(binding_layer::WALLET_CRATE_DIR);
+    let proxy_crate_dir = roots.run_path(binding_layer::PROXY_CRATE_DIR);
     let inputs = binding_layer::BindgenInputs {
         language: binding_layer::KOTLIN,
         profile: BUILDER_PROFILE,
@@ -715,13 +705,13 @@ fn kotlin_plan(roots: &Roots) -> Vec<Step> {
         roots,
         &[],
         vec![
-            build(WALLET_CRATE_DIR, &wallet_target, &[]),
+            build(binding_layer::WALLET_CRATE_DIR, &wallet_target, &[]),
             bindgen(
                 binding_layer::Generation::Wallet,
                 &host_library(binding_layer::WALLET_LIB_NAME, &wallet_target),
             ),
             build(
-                PROXY_CRATE_DIR,
+                binding_layer::PROXY_CRATE_DIR,
                 &proxy_target,
                 &["--package", binding_layer::PROXY_PACKAGE],
             ),
@@ -736,9 +726,9 @@ fn kotlin_plan(roots: &Roots) -> Vec<Step> {
 /// The directory, relative to the zingolib root, that a bindgen working directory names.
 fn workdir_dir(workdir: binding_layer::Workdir) -> &'static str {
     match workdir {
-        binding_layer::Workdir::WalletCrate => WALLET_CRATE_DIR,
+        binding_layer::Workdir::WalletCrate => binding_layer::WALLET_CRATE_DIR,
         binding_layer::Workdir::WalletWorkspace => WALLET_WORKSPACE_DIR,
-        binding_layer::Workdir::ProxyCrate => PROXY_CRATE_DIR,
+        binding_layer::Workdir::ProxyCrate => binding_layer::PROXY_CRATE_DIR,
     }
 }
 
@@ -771,8 +761,8 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
         ]
         .concat()
     };
-    let wallet_crate_dir = roots.run_path(WALLET_CRATE_DIR);
-    let proxy_crate_dir = roots.run_path(PROXY_CRATE_DIR);
+    let wallet_crate_dir = roots.run_path(binding_layer::WALLET_CRATE_DIR);
+    let proxy_crate_dir = roots.run_path(binding_layer::PROXY_CRATE_DIR);
     let wallet_workspace_dir = roots.run_path(WALLET_WORKSPACE_DIR);
     let static_library = |lib_name| {
         binding_layer::library_file(
@@ -1420,7 +1410,8 @@ mod tests {
             .all(|command| command.contains("--package zingo-uniffi-bindgen")));
         assert!(generations
             .iter()
-            .all(|command| !command.contains(&format!("{WALLET_CRATE_DIR}/{MANIFEST}"))));
+            .all(|command| !command
+                .contains(&format!("{}/{MANIFEST}", binding_layer::WALLET_CRATE_DIR))));
     }
 
     #[test]
@@ -1511,7 +1502,7 @@ mod tests {
             engine: ABSENT_ENGINE,
             id: "container".to_string(),
         };
-        let step_workdir = format!("{CONTAINER_ROOT}/{WALLET_CRATE_DIR}");
+        let step_workdir = format!("{CONTAINER_ROOT}/{}", binding_layer::WALLET_CRATE_DIR);
         let diagnostic = run_command(&runner, &step_workdir, &[], &["cargo".to_string()])
             .unwrap_err()
             .concat();
@@ -1520,7 +1511,7 @@ mod tests {
 
     #[test]
     fn an_absent_host_working_directory_is_reported_before_the_program() {
-        let step_workdir = format!("{HOST_ROOT}/{WALLET_CRATE_DIR}");
+        let step_workdir = format!("{HOST_ROOT}/{}", binding_layer::WALLET_CRATE_DIR);
         let diagnostic = run_command(&Runner::Host, &step_workdir, &[], &["cargo".to_string()])
             .unwrap_err()
             .concat();

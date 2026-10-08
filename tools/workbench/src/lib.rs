@@ -246,7 +246,12 @@ pub fn verdict(diagnostics: Vec<String>) -> Result<(), Vec<String>> {
 
 /// Read `path` to a string, or a one-line `cannot read …` diagnostic.
 pub fn read(path: &Path) -> Result<String, Vec<String>> {
-    std::fs::read_to_string(path).map_err(|e| vec![format!("cannot read {}: {e}", path.display())])
+    String::from_utf8(read_bytes(path)?)
+        .map_err(|e| vec![format!("{} is not UTF-8: {e}", path.display())])
+}
+
+pub fn read_bytes(path: &Path) -> Result<Vec<u8>, Vec<String>> {
+    std::fs::read(path).map_err(|e| vec![format!("cannot read {}: {e}", path.display())])
 }
 
 /// The value of the first `<flag> <value>` or `<flag>=<value>` argument, if present.

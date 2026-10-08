@@ -1,12 +1,22 @@
 # A maintainer's comment `/publish` on a pull request publishes the Binding
 # Layer for the newest commit that bindings/published.toml names on that
 # pull request's branch. The workflow builds that commit through the two
-# build workflows, pushes each Prebuilt Bundle to the registry through the
-# workbench tool binding-publish, records each digest and the commit's
-# audited crates in the manifest with binding-manifest, regenerates
-# bindings/CHANGELOG.md, and commits both files to the pull request's
-# branch. The checks "Binding Layer manifest" and "Binding Layer changelog"
-# then verify the entry.
+# build workflows and hands their bundles to the workbench tool
+# binding-publish. The tool pushes each Prebuilt Bundle to the registry,
+# records each digest and the commit's audited crates in the manifest,
+# regenerates bindings/CHANGELOG.md, and commits both files to the pull
+# request's branch. The checks "Binding Layer manifest" and "Binding Layer
+# changelog" then verify the entry.
+#
+# The tool holds every fact about the Binding Layer: the platforms, the
+# ones the manifest requires, and the shape of each bundle. This file only
+# wires the jobs and passes on what the builds produced, under one
+# directory per platform whose build passed.
+#
+# The push uses the secret BINDING_PUBLISH_TOKEN, a token with write access
+# to this repository's contents. GitHub starts no workflow for a push made
+# with GITHUB_TOKEN, so that token would leave the recorded entry without
+# its checks.
 #
 # An issue_comment run uses this file as it is on the default branch.
 name: Publish the Binding Layer
@@ -39,12 +49,30 @@ jobs:
       PULL_REQUEST: ${{ github.event.issue.number }}
       COMMENT: ${{ github.event.comment.id }}
     steps:
+      - name: Require the publish token
+        env:
+          PUBLISH_TOKEN: ${{ secrets.BINDING_PUBLISH_TOKEN }}
+        run: |
+          if [ -z "$PUBLISH_TOKEN" ]; then
+            echo "::error::the secret BINDING_PUBLISH_TOKEN is not set, and GITHUB_TOKEN cannot start the checks on the recorded entry"
+            exit 1
+          fi
+
       - name: Acknowledge the comment
         run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=eyes
 
+      # A fork's branch is not in this repository, so the checkout below
+      # could not find it and the push at the end could not reach it.
       - name: Read the pull request's branch
         id: pull-request
-        run: echo "branch=$(gh pr view "$PULL_REQUEST" --repo "$GITHUB_REPOSITORY" --json headRefName --jq .headRefName)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -eu
+          pull_request="$(gh pr view "$PULL_REQUEST" --repo "$GITHUB_REPOSITORY" --json headRefName,isCrossRepository)"
+          if [ "$(jq --raw-output .isCrossRepository <<<"$pull_request")" = true ]; then
+            echo "::error::the pull request comes from a fork; /publish works only on a branch of this repository"
+            exit 1
+          fi
+          echo "branch=$(jq --raw-output .headRefName <<<"$pull_request")" >> "$GITHUB_OUTPUT"
 
       - name: Checkout the pull request's branch
         uses: actions/checkout@v6
@@ -60,6 +88,8 @@ jobs:
         with:
           workspaces: tools/workbench
 
+      # The tool refuses an entry that is already published, so a stray
+      # comment cannot rebuild and re-push a recorded commit.
       - name: Read the newest manifest entry
         id: manifest
         run: |
@@ -79,13 +109,13 @@ jobs:
     with:
       ref: ${{ needs.request.outputs.commit }}
 
-  # The Android bundle publishes whenever its build passed. The iOS bundle
-  # joins when its build passed too. The manifest accepts an entry without
-  # ios until the first consumer adopts this publication.
+  # Each build that passed hands its bundle over. The tool publishes every
+  # bundle it finds and refuses when a platform the manifest requires has
+  # none, before it pushes anything.
   publish:
     name: Publish and record
     needs: [request, android, ios]
-    if: always() && needs.request.result == 'success' && needs.android.result == 'success'
+    if: always() && needs.request.result == 'success'
     runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ github.token }}
@@ -93,13 +123,14 @@ jobs:
       COMMENT: ${{ github.event.comment.id }}
       REGISTRY_USERNAME: ${{ github.actor }}
       REGISTRY_TOKEN: ${{ github.token }}
-      WORKBENCH: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --features registry
+      BUNDLES: publish
     steps:
       - name: Checkout the pull request's branch
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.request.outputs.branch }}
           fetch-depth: 0
+          token: ${{ secrets.BINDING_PUBLISH_TOKEN }}
 
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -109,57 +140,24 @@ jobs:
         with:
           workspaces: tools/workbench
 
-      # The audited crates come from `cargo tree` at the published commit,
-      # so that commit is checked out beside the branch.
-      - name: Record the audited crates of the commit
-        run: |
-          set -eu
-          git worktree add --detach publish/source "$COMMIT"
-          $WORKBENCH --bin binding-manifest -- --record --commit "$COMMIT" --audited-from publish/source
-
       - name: Download the Android bundle
+        if: needs.android.result == 'success'
         uses: actions/download-artifact@v4
         with:
-          name: binding-layer-aar-${{ needs.request.outputs.commit }}
-          path: publish/android
-
-      - name: Publish the Android bundle
-        run: |
-          set -eu
-          aar="$(find publish/android -name '*-release.aar')"
-          descriptor="$(find publish/android -name descriptor.txt)"
-          digest="$($WORKBENCH --bin binding-publish -- --platform android --bundle "$aar" --commit "$COMMIT" --descriptor-file "$descriptor")"
-          $WORKBENCH --bin binding-manifest -- --record --commit "$COMMIT" --platform android --digest "$digest"
+          name: ${{ needs.android.outputs.bundle }}
+          path: ${{ env.BUNDLES }}/android
 
       - name: Download the iOS bundle
         if: needs.ios.result == 'success'
         uses: actions/download-artifact@v4
         with:
-          name: binding-layer-ios-${{ needs.request.outputs.commit }}
-          path: publish/ios/ZingoBindings/build
+          name: ${{ needs.ios.outputs.bundle }}
+          path: ${{ env.BUNDLES }}/ios
 
-      # The iOS Prebuilt Bundle is the Swift package: Package.swift beside
-      # the builder's output.
-      - name: Publish the iOS bundle
-        if: needs.ios.result == 'success'
+      - name: Publish the bundles and record the entry
         run: |
-          set -eu
-          cp bindings/swift/Package.swift publish/ios/ZingoBindings/
-          tar --create --gzip --file publish/ZingoBindings.tar.gz --directory publish/ios ZingoBindings
-          digest="$($WORKBENCH --bin binding-publish -- --platform ios --bundle publish/ZingoBindings.tar.gz --commit "$COMMIT" --descriptor-file publish/ios/ZingoBindings/build/descriptor.txt)"
-          $WORKBENCH --bin binding-manifest -- --record --commit "$COMMIT" --platform ios --digest "$digest"
-
-      - name: Regenerate the Binding Layer changelog
-        run: $WORKBENCH --bin binding-changelog
-
-      - name: Commit the entry to the pull request's branch
-        run: |
-          set -eu
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add bindings/published.toml bindings/CHANGELOG.md
-          git commit --message "chore(bindings): record the publication of ${COMMIT}"
-          git push
+          cargo run --quiet --manifest-path tools/workbench/Cargo.toml --features registry \
+            --bin binding-publish -- --commit "$COMMIT" --bundles "$BUNDLES"
 
       - name: Report the publish
         run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=rocket

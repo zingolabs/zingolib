@@ -24,7 +24,10 @@ jobs:
   build:
     name: Build the XCFrameworks and the Swift sources
     runs-on: ${{ inputs.runner }}
+    outputs:
+      bundle: ${{ env.BUNDLE }}
     env:
+      BUNDLE: binding-layer-ios-${{ inputs.ref }}
       RUSTUP_HOME: ${{ github.workspace }}/.rustup
       CARGO_HOME: ${{ github.workspace }}/.cargo
     steps:
@@ -86,7 +89,7 @@ jobs:
       - name: Upload the Binding Layer
         uses: actions/upload-artifact@v4
         with:
-          name: binding-layer-ios-${{ inputs.ref }}
+          name: ${{ env.BUNDLE }}
           path: bindings/swift/build
           retention-days: 3
           overwrite: true

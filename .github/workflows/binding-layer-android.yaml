@@ -23,6 +23,10 @@ on:
         required: false
         type: string
         default: ${{ github.sha }}
+    outputs:
+      # The artifact that holds the AAR and the descriptor.
+      bundle:
+        value: ${{ jobs.package.outputs.bundle }}
 
 jobs:
   # The job already runs in android_builder:018, the image that the builder
@@ -102,7 +106,10 @@ jobs:
     name: Package the AAR
     needs: build
     runs-on: ubuntu-24.04
+    outputs:
+      bundle: ${{ env.BUNDLE }}
     env:
+      BUNDLE: binding-layer-aar-${{ inputs.ref }}
       ABIS: ${{ join(fromJSON(inputs.abis), ' ') }}
       OUTPUT: bindings/android/build/binding-layer
     steps:
@@ -161,7 +168,7 @@ jobs:
       - name: Upload the AAR and the descriptor
         uses: actions/upload-artifact@v4
         with:
-          name: binding-layer-aar-${{ inputs.ref }}
+          name: ${{ env.BUNDLE }}
           path: |
             bindings/android/build/outputs/aar/*-release.aar
             bindings/android/build/binding-layer/descriptor.txt

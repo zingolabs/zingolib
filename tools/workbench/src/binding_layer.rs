@@ -20,6 +20,12 @@ pub const PROXY_LIB_NAME: &str = "zingo_nym_proxy_ffi";
 /// The proxy crate's package name, which cargo selects in its own workspace.
 pub const PROXY_PACKAGE: &str = "zingo-nym-proxy-ffi";
 
+pub const WALLET_CRATE_DIR: &str = "zingo-ffi/lib";
+
+pub const PROXY_CRATE_DIR: &str = "zingo-netutils/nym-proxy-ffi";
+
+pub const BINDING_CRATE_DIRS: [&str; 2] = [WALLET_CRATE_DIR, PROXY_CRATE_DIR];
+
 pub const TOOLCHAIN_VARIABLE: &str = "RUSTUP_TOOLCHAIN";
 
 pub const IMAGE_TOOLCHAIN_ARGUMENT: &str = "RUST_TOOLCHAIN_TOML";
@@ -29,26 +35,13 @@ pub const IMAGE_TARGETS_ARGUMENT: &str = "RUST_TARGETS";
 /// The variable that tells cargo where to write build output.
 pub const TARGET_DIR_VARIABLE: &str = "CARGO_TARGET_DIR";
 
-/// The file, in the builder's output, that holds the `zl_` descriptor the built wallet library reports.
 pub const DESCRIPTOR_FILE: &str = "descriptor.txt";
 
-/// The directory, under a profile directory, where cargo runs build scripts.
 pub const BUILD_SCRIPTS_DIR: &str = "build";
 
-/// The prefix of zingolib's build script directory under `build`.
 pub const ZINGOLIB_BUILD_PREFIX: &str = "zingolib-";
 
-/// The file, under a build script directory, that zingolib's build script writes the descriptor to.
-pub const GENERATED_DESCRIPTOR: &str = "out/git_description.rs";
-
-const DESCRIPTOR_OPEN: &str = "-> &'static str {\"";
-const DESCRIPTOR_CLOSE: char = '"';
-
-pub fn descriptor_in(generated: &str) -> Option<String> {
-    let (_, rest) = generated.split_once(DESCRIPTOR_OPEN)?;
-    let (descriptor, _) = rest.split_once(DESCRIPTOR_CLOSE)?;
-    Some(descriptor.to_string())
-}
+pub const GENERATED_DESCRIPTOR: &str = "out/git_description.txt";
 
 /// The container engines to try, in order.
 pub const ENGINES: [&str; 2] = ["podman", "docker"];
@@ -88,6 +81,12 @@ pub const XCFRAMEWORKS: [&str; 2] = [WALLET_XCFRAMEWORK, PROXY_XCFRAMEWORK];
 
 /// The Swift source directory that the SwiftPM package compiles, relative to the builder's output.
 pub const SWIFT_SOURCES_DIR: &str = "Sources/ZingoBindings";
+
+pub const SWIFT_PACKAGE: &str = "ZingoBindings";
+
+pub const SWIFT_PACKAGE_MANIFEST: &str = "bindings/swift/Package.swift";
+
+pub const SWIFT_PACKAGE_OUTPUT_DIR: &str = "build";
 
 /// The wallet's generated Swift source.
 pub const WALLET_SWIFT: &str = "zingo.swift";
@@ -306,18 +305,28 @@ pub fn library_file(prefix: &str, lib_name: &str, suffix: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn the_descriptor_is_the_literal_the_build_script_writes() {
-        let generated = "/// The build descriptor.\n\
-                         pub fn git_description() -> &'static str {\"zl_6.0.0_2691e\"}\n";
-        assert_eq!(
-            super::descriptor_in(generated).as_deref(),
-            Some("zl_6.0.0_2691e")
-        );
-        assert_eq!(super::descriptor_in("pub fn other() {}"), None);
+    fn the_descriptor_file_is_the_one_the_build_script_writes() {
+        let build_script = include_str!("../../../zingolib/build.rs");
+        let file = std::path::Path::new(GENERATED_DESCRIPTOR)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap();
+        assert!(build_script.contains(&format!("\"{file}\"")));
     }
 
-    use super::*;
+    #[test]
+    fn the_swift_package_names_match_its_manifest() {
+        let manifest = include_str!("../../../bindings/swift/Package.swift");
+        assert!(manifest.contains(&format!("name: \"{SWIFT_PACKAGE}\"")));
+        assert!(manifest.contains(&format!(
+            "let builderOutput = \"{SWIFT_PACKAGE_OUTPUT_DIR}\""
+        )));
+        assert!(SWIFT_SOURCES_DIR.ends_with(SWIFT_PACKAGE));
+        assert!(std::path::Path::new(SWIFT_PACKAGE_MANIFEST).ends_with("Package.swift"));
+    }
 
     #[test]
     fn the_wallet_crate_builds_no_bindgen() {

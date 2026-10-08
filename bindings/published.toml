@@ -11,10 +11,13 @@
 # binding-changelog takes the commits and the audited crates of
 # bindings/CHANGELOG.md from it.
 #
-# Every entry names android. An entry names ios when the iOS bundle is
-# published too. Before zingo-mobile adopts this publication, ios must
-# become required as well (zingolib#2833, decision 6), because zingo-mobile
-# ships both platforms from one commit.
+# An entry names every platform that binding-manifest requires, and any
+# other platform whose bundle was published too. The required set lives in
+# REQUIRED_PLATFORMS of tools/workbench/src/binding_manifest.rs alone; the
+# publish workflow asks the tool rather than naming a platform itself.
+# Before zingo-mobile adopts this publication, ios must join that set
+# (zingolib#2833, decision 6), because zingo-mobile ships both platforms
+# from one commit.
 #
 # [[entry]]
 # commit = "<the full zingolib commit>"
@@ -24,6 +27,7 @@
 # audited = ["<package> (<directory>)", ...]
 #
 # The audited crates are the two Binding Layer crates and their direct
-# dependencies in this repository at the entry's commit, as `cargo tree
-# --locked --edges normal --depth 1 --prefix none --format {p}` reports
-# them there, each as its package name and its directory.
+# dependencies in this repository at the entry's commit, as binding-manifest
+# reads them from `cargo tree` there, each as its package name and its
+# directory. The manifest check reads them again at the commit and rejects
+# an entry whose array differs.
