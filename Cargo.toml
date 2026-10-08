@@ -132,8 +132,7 @@ tokio = "1"
 thiserror = "2"
 
 ### Binding Layer (zingo-adrs zingolib/0054)
-uniffi = "0.29"
-uniffi_build = "0.29"
+uniffi = "0.32.2"
 android_logger = "0.11"
 lazy_static = "1.4.0"
 once_cell = "1"
