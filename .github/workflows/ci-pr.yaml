@@ -9,6 +9,13 @@ on:
         required: false
         type: boolean
         default: false
+      # The cargo-hack subcommand. A pull request checks every feature
+      # set; the nightly builds every feature set through this input, so
+      # one job holds the flags for both.
+      cargo-hack-subcommand:
+        required: false
+        type: string
+        default: check
   workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -81,10 +88,12 @@ jobs:
             exit 1
           fi
 
+  # On a pull_request event the inputs are empty, so each expression
+  # below falls back to the check.
   cargo-hack-check:
-    name: Cargo Hack Check
+    name: Cargo Hack ${{ inputs.cargo-hack-subcommand == 'build' && 'Build' || 'Check' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: ${{ inputs.cargo-hack-subcommand == 'build' && 90 || 45 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -103,7 +112,7 @@ jobs:
       - name: Run cargo-hack
         uses: zingolabs/infrastructure/.github/actions/cargo-hack@20485fed7a080e381130ed8120419dc81acae641
         with:
-          hack-subcommand: check
+          hack-subcommand: ${{ inputs.cargo-hack-subcommand || 'check' }}
           hack-flags: "--workspace --exclude zingo-uniffi-bindgen --feature-powerset --lib --bins --tests --target-dir target/hack"
 
   # zingo-netutils is excluded from the root workspace and owns its own

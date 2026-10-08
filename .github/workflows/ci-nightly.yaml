@@ -9,33 +9,14 @@ on:
 jobs:
 
   # The binding-layer-android job below builds x86_64 with the other ABIs,
-  # so the per-PR workflow skips its own x86_64 build here.
+  # so the per-PR workflow skips its own x86_64 build here. The per-PR
+  # cargo-hack job builds every feature set instead of checking it, with
+  # the flags that job alone holds.
   pr-checks:
     uses: ./.github/workflows/ci-pr.yaml
     with:
       skip-binding-layer-build: true
-
-  cargo-hack-build:
-    name: Cargo Hack Build
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: ${{ inputs.toolchain }}
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run cargo-hack
-        uses: zingolabs/infrastructure/.github/actions/cargo-hack@20485fed7a080e381130ed8120419dc81acae641
-        with:
-          hack-subcommand: build
+      cargo-hack-subcommand: build
 
   feature-census:
     name: Feature Census
