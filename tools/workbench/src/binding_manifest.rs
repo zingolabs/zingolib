@@ -1,0 +1,497 @@
+use std::path::Path;
+
+pub const BINARY: &str = "binding-manifest";
+pub const FILE: &str = "bindings/published.toml";
+pub const REGISTRY: &str = "ghcr.io";
+pub const REPOSITORY_PREFIX: &str = "zingolabs/zingolib/binding-layer-";
+pub const PLATFORMS: [&str; 2] = ["android", "ios"];
+pub const REQUIRED_PLATFORMS: [&str; 1] = ["android"];
+pub const REVISION_ANNOTATION: &str = "org.opencontainers.image.revision";
+const PATH_SEPARATOR: &str = "/";
+const TAG_SEPARATOR: &str = ":";
+const REVISION_PATH_SEPARATOR: &str = ":";
+const ENTRY_HEADER: &str = "[[entry]]";
+const COMMIT_KEY: &str = "commit";
+const SINCE_KEY: &str = "since";
+const COMMENT_MARK: char = '#';
+const ASSIGNMENT: char = '=';
+const QUOTE: char = '"';
+const COMMIT_LENGTH: usize = 40;
+const COMMIT_EXPECTATION: &str = "a full lowercase commit hash";
+const DIGEST_PREFIX: &str = "sha256:";
+const DIGEST_HEX_LENGTH: usize = 64;
+const CHECK_FLAG: &str = "--check";
+const BASE_FLAG: &str = "--base";
+const USAGE: &str = "usage: binding-manifest --check [--base <ref>]";
+const FIRST_ORDINAL: usize = 1;
+
+fn ordinal(index: usize) -> usize {
+    index + FIRST_ORDINAL
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct Entry {
+    pub commit: String,
+    pub since: Option<String>,
+    pub digests: Vec<(String, String)>,
+}
+
+fn is_hex(text: &str, length: usize) -> bool {
+    text.len() == length
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn hex_value(
+    key: &str,
+    value: &str,
+    hex: &str,
+    length: usize,
+    expected: &str,
+) -> Result<String, Vec<String>> {
+    if is_hex(hex, length) {
+        Ok(value.to_string())
+    } else {
+        Err(vec![format!(
+            "{key} = {QUOTE}{value}{QUOTE} is not {expected}"
+        )])
+    }
+}
+
+fn commit_value(key: &str, value: &str) -> Result<String, Vec<String>> {
+    hex_value(key, value, value, COMMIT_LENGTH, COMMIT_EXPECTATION)
+}
+
+fn digest_value(platform: &str, value: &str) -> Result<String, Vec<String>> {
+    let hex = value.strip_prefix(DIGEST_PREFIX).unwrap_or_default();
+    let expected = format!("a {DIGEST_PREFIX}<hex> digest");
+    hex_value(platform, value, hex, DIGEST_HEX_LENGTH, &expected)
+}
+
+fn assignment(line: &str) -> Option<(&str, &str)> {
+    let (key, rest) = line.split_once(ASSIGNMENT)?;
+    let value = rest.trim().strip_prefix(QUOTE)?.strip_suffix(QUOTE)?;
+    (!value.contains(QUOTE)).then_some((key.trim(), value))
+}
+
+fn assign(entry: &mut Entry, key: &str, value: &str) -> Result<(), Vec<String>> {
+    let taken = |name: &str, present: bool| {
+        if present {
+            Err(vec![format!("{name} is set twice in one entry")])
+        } else {
+            Ok(())
+        }
+    };
+    match key {
+        COMMIT_KEY => {
+            taken(key, !entry.commit.is_empty())?;
+            entry.commit = commit_value(key, value)?;
+        }
+        SINCE_KEY => {
+            taken(key, entry.since.is_some())?;
+            entry.since = Some(commit_value(key, value)?);
+        }
+        platform if PLATFORMS.contains(&platform) => {
+            taken(key, entry.digests.iter().any(|(name, _)| name == platform))?;
+            entry
+                .digests
+                .push((platform.to_string(), digest_value(platform, value)?));
+        }
+        other => return Err(vec![format!("unknown key {other}")]),
+    }
+    Ok(())
+}
+
+pub fn parse(text: &str) -> Result<Vec<Entry>, Vec<String>> {
+    let mut entries: Vec<Entry> = Vec::new();
+    for (index, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        let located = |lines: Vec<String>| {
+            lines
+                .into_iter()
+                .map(|diagnostic| format!("{FILE}:{}: {diagnostic}", ordinal(index)))
+                .collect::<Vec<_>>()
+        };
+        if line.is_empty() || line.starts_with(COMMENT_MARK) {
+            continue;
+        }
+        if line == ENTRY_HEADER {
+            entries.push(Entry::default());
+            continue;
+        }
+        let (key, value) =
+            assignment(line).ok_or_else(|| located(vec![format!("cannot read `{line}`")]))?;
+        let entry = entries.last_mut().ok_or_else(|| {
+            located(vec![format!(
+                "`{line}` comes before the first {ENTRY_HEADER}"
+            )])
+        })?;
+        assign(entry, key, value).map_err(located)?;
+    }
+    Ok(entries)
+}
+
+pub fn validate(entries: &[Entry]) -> Result<(), Vec<String>> {
+    let mut diagnostics = Vec::new();
+    for (index, entry) in entries.iter().enumerate() {
+        let label = format!("entry {} ({})", ordinal(index), entry.commit);
+        if entry.commit.is_empty() {
+            diagnostics.push(format!("entry {} names no commit", ordinal(index)));
+        }
+        for platform in REQUIRED_PLATFORMS {
+            if !entry.digests.iter().any(|(name, _)| name == platform) {
+                diagnostics.push(format!("{label} names no {platform} digest"));
+            }
+        }
+        match (index, &entry.since) {
+            (0, None) => diagnostics.push(format!("{label} is first and names no since commit")),
+            (0, Some(_)) => {}
+            (_, Some(_)) => diagnostics.push(format!(
+                "{label} names a since commit, which only the first entry may"
+            )),
+            (_, None) => {}
+        }
+        if entries[..index]
+            .iter()
+            .any(|earlier| earlier.commit == entry.commit)
+        {
+            diagnostics.push(format!("{label} repeats an earlier entry's commit"));
+        }
+    }
+    crate::verdict(diagnostics)
+}
+
+pub fn unchanged_since_base(base: &[Entry], head: &[Entry]) -> Result<(), Vec<String>> {
+    crate::verdict(
+        base.iter()
+            .enumerate()
+            .filter_map(|(index, kept)| match head.get(index) {
+                Some(same) if same == kept => None,
+                _ => Some(format!(
+                    "entry {} ({}) changed or moved after its merge",
+                    ordinal(index),
+                    kept.commit
+                )),
+            })
+            .collect(),
+    )
+}
+
+pub fn publication_commits(entries: &[Entry]) -> Vec<(String, String)> {
+    entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let since = entries[..index]
+                .last()
+                .map(|previous| previous.commit.clone())
+                .or_else(|| entry.since.clone())
+                .unwrap_or_default();
+            (entry.commit.clone(), since)
+        })
+        .collect()
+}
+
+pub fn reference(platform: &str, commit: &str) -> String {
+    [
+        REGISTRY,
+        PATH_SEPARATOR,
+        REPOSITORY_PREFIX,
+        platform,
+        TAG_SEPARATOR,
+        commit,
+    ]
+    .concat()
+}
+
+pub fn entries_at(root: &Path, revision: Option<&str>) -> Result<Vec<Entry>, Vec<String>> {
+    let text = match revision {
+        None => crate::read(&root.join(FILE))?,
+        Some(revision) if crate::listed_at(root, revision, FILE)? => crate::git_in(
+            root,
+            &["show", &[revision, FILE].join(REVISION_PATH_SEPARATOR)],
+        )?,
+        Some(_) => String::new(),
+    };
+    let located = |diagnostics: Vec<String>| match revision {
+        None => diagnostics,
+        Some(revision) => diagnostics
+            .into_iter()
+            .map(|diagnostic| [revision, &diagnostic].join(REVISION_PATH_SEPARATOR))
+            .collect(),
+    };
+    let entries = parse(&text).map_err(located)?;
+    validate(&entries).map_err(located)?;
+    Ok(entries)
+}
+
+fn commits_exist(root: &Path, entries: &[Entry]) -> Result<(), Vec<String>> {
+    let commits: Vec<&String> = entries
+        .iter()
+        .flat_map(|entry| std::iter::once(&entry.commit).chain(entry.since.as_ref()))
+        .collect();
+    let specs: Vec<String> = commits
+        .iter()
+        .map(|commit| crate::commit_spec(commit))
+        .collect();
+    let args: Vec<&str> = std::iter::once("rev-parse")
+        .chain(specs.iter().map(String::as_str))
+        .collect();
+    if crate::git_in(root, &args).is_ok() {
+        return Ok(());
+    }
+    commits
+        .iter()
+        .try_for_each(|commit| crate::commit_of(root, commit).map(drop))
+}
+
+#[cfg(feature = "registry")]
+async fn manifest_diagnostics(
+    client: oci_client::Client,
+    name: String,
+    commit: String,
+    digest: String,
+) -> Vec<String> {
+    use oci_client::secrets::RegistryAuth;
+    let image = match oci_client::Reference::try_from(name.as_str()) {
+        Ok(image) => image,
+        Err(e) => return vec![format!("{name}: {e}")],
+    };
+    match client
+        .pull_image_manifest(&image, &RegistryAuth::Anonymous)
+        .await
+    {
+        Err(e) => vec![format!("{name}: {e}")],
+        Ok((manifest, found)) => {
+            let mut diagnostics = Vec::new();
+            if found != digest {
+                diagnostics.push(format!(
+                    "{name} resolves to {found}, and the entry names {digest}"
+                ));
+            }
+            let revision = manifest
+                .annotations
+                .as_ref()
+                .and_then(|annotations| annotations.get(REVISION_ANNOTATION));
+            if revision != Some(&commit) {
+                diagnostics.push(format!(
+                    "{name} carries {REVISION_ANNOTATION} {revision:?}, not its commit"
+                ));
+            }
+            diagnostics
+        }
+    }
+}
+
+#[cfg(feature = "registry")]
+fn registry_diagnostics(entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| vec![format!("cannot start the runtime: {e}")])?;
+    let client = oci_client::Client::new(oci_client::client::ClientConfig::default());
+    runtime.block_on(async {
+        let pulls: Vec<_> = entries
+            .iter()
+            .flat_map(|entry| {
+                entry.digests.iter().map(|(platform, digest)| {
+                    tokio::spawn(manifest_diagnostics(
+                        client.clone(),
+                        reference(platform, &entry.commit),
+                        entry.commit.clone(),
+                        digest.clone(),
+                    ))
+                })
+            })
+            .collect();
+        let mut diagnostics = Vec::new();
+        for pull in pulls {
+            diagnostics.extend(
+                pull.await
+                    .map_err(|e| vec![format!("a registry pull did not finish: {e}")])?,
+            );
+        }
+        Ok(diagnostics)
+    })
+}
+
+#[cfg(not(feature = "registry"))]
+fn registry_diagnostics(_entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
+    Err(vec![format!(
+        "{BINARY} was built without the registry feature and cannot ask the registry"
+    )])
+}
+
+/// - Reads `bindings/published.toml` and, with `--base`, its copy at that git revision.
+/// - Runs `git` child processes in `root`.
+/// - Fetches one manifest per platform from the registry, anonymously and concurrently, for every entry
+///   without `--base` and for the entries appended after the base's with it.
+pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+    if !args.iter().any(|arg| arg == CHECK_FLAG) {
+        return Err(vec![USAGE.to_string()]);
+    }
+    let head = entries_at(root, None)?;
+    commits_exist(root, &head)?;
+    let unverified = match crate::flag_value(args, BASE_FLAG)? {
+        Some(base) => {
+            let base = entries_at(root, Some(base))?;
+            unchanged_since_base(&base, &head)?;
+            &head[base.len()..]
+        }
+        None => &head[..],
+    };
+    crate::verdict(registry_diagnostics(unverified)?)
+}
+
+/// - Reads the process arguments.
+/// - Exits the process through [`crate::run`].
+pub fn main() -> ! {
+    crate::dispatch_from_root(BINARY, dispatch)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FIRST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const SECOND: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const ORIGIN: &str = "cccccccccccccccccccccccccccccccccccccccc";
+    const DIGEST: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    fn entry(commit: &str, since: Option<&str>, platforms: &[&str]) -> Entry {
+        Entry {
+            commit: commit.to_string(),
+            since: since.map(str::to_string),
+            digests: platforms
+                .iter()
+                .map(|platform| (platform.to_string(), DIGEST.to_string()))
+                .collect(),
+        }
+    }
+
+    fn manifest(entries: &[Entry]) -> String {
+        entries
+            .iter()
+            .map(|entry| {
+                let since = entry
+                    .since
+                    .as_ref()
+                    .map(|since| format!("since = \"{since}\"\n"))
+                    .unwrap_or_default();
+                let digests: String = entry
+                    .digests
+                    .iter()
+                    .map(|(platform, digest)| format!("{platform} = \"{digest}\"\n"))
+                    .collect();
+                format!(
+                    "# a comment\n\n[[entry]]\ncommit = \"{}\"\n{since}{digests}",
+                    entry.commit
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_manifest_round_trips_through_its_text_form() {
+        let entries = vec![
+            entry(FIRST, Some(ORIGIN), &["android", "ios"]),
+            entry(SECOND, None, &["android"]),
+        ];
+        let parsed = parse(&manifest(&entries)).unwrap();
+        assert_eq!(parsed, entries);
+        assert_eq!(validate(&parsed), Ok(()));
+    }
+
+    #[test]
+    fn the_grammar_rejects_what_it_does_not_name() {
+        let rejected = [
+            "[[entry]]\ncommit = \"short\"\n",
+            "[[entry]]\nandroid = \"sha256:short\"\n",
+            "[[entry]]\ncommit = \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\ncolour = \"red\"\n",
+            "commit = \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n",
+            "[[entry]]\ncommit = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+            "[[entry]]\n[entry.digests]\n",
+        ];
+        for text in rejected {
+            let diagnostic = parse(text).unwrap_err().concat();
+            assert!(diagnostic.starts_with(FILE), "{text}: {diagnostic}");
+        }
+        assert!(parse("[[entry]]\nandroid = \"x\"\nandroid = \"y\"\n").is_err());
+    }
+
+    #[test]
+    fn validation_pins_the_since_rule_the_digest_rule_and_uniqueness() {
+        let diagnostics = validate(&[
+            entry(FIRST, None, &[]),
+            entry(SECOND, Some(ORIGIN), &["ios"]),
+            entry(SECOND, None, &["android"]),
+        ])
+        .unwrap_err()
+        .concat();
+        assert!(diagnostics.contains("first and names no since"));
+        assert!(diagnostics.contains("names no android digest"));
+        assert_eq!(
+            validate(&[entry(FIRST, Some(ORIGIN), &["android"])]),
+            Ok(())
+        );
+        assert!(validate(&[entry(FIRST, Some(ORIGIN), &["ios"])]).is_err());
+        assert!(diagnostics.contains("only the first entry may"));
+        assert!(diagnostics.contains("repeats an earlier entry"));
+    }
+
+    #[test]
+    fn a_merged_entry_never_changes_and_the_head_may_only_append() {
+        let base = vec![entry(FIRST, Some(ORIGIN), &["android"])];
+        let appended = vec![base[0].clone(), entry(SECOND, None, &["android"])];
+        assert_eq!(unchanged_since_base(&base, &appended), Ok(()));
+        let edited = vec![entry(FIRST, Some(ORIGIN), &["android", "ios"])];
+        assert!(unchanged_since_base(&base, &edited).is_err());
+        assert!(unchanged_since_base(&base, &[]).is_err());
+        let reordered = vec![entry(SECOND, Some(ORIGIN), &["android"]), base[0].clone()];
+        assert!(unchanged_since_base(&base, &reordered).is_err());
+    }
+
+    #[test]
+    fn each_publication_follows_the_previous_entry_and_the_first_its_since() {
+        let entries = vec![
+            entry(FIRST, Some(ORIGIN), &["android"]),
+            entry(SECOND, None, &["android"]),
+        ];
+        assert_eq!(
+            publication_commits(&entries),
+            [
+                (FIRST.to_string(), ORIGIN.to_string()),
+                (SECOND.to_string(), FIRST.to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn a_reference_names_the_platform_repository_and_the_commit_tag() {
+        assert_eq!(
+            reference("android", FIRST),
+            format!("ghcr.io/zingolabs/zingolib/binding-layer-android:{FIRST}")
+        );
+    }
+
+    #[test]
+    fn commits_are_resolved_in_one_pass_and_a_missing_one_is_named() {
+        let root = crate::repo_root().unwrap();
+        let head = crate::commit_of(&root, "HEAD").unwrap();
+        assert_eq!(
+            commits_exist(&root, &[entry(&head, None, &["android"])]),
+            Ok(())
+        );
+        let diagnostic = commits_exist(&root, &[entry(&head, Some(FIRST), &["android"])])
+            .unwrap_err()
+            .concat();
+        assert!(diagnostic.contains(FIRST), "{diagnostic}");
+    }
+
+    #[test]
+    fn the_committed_manifest_parses_and_validates() {
+        let root = crate::repo_root().unwrap();
+        assert!(entries_at(&root, None).is_ok());
+    }
+}

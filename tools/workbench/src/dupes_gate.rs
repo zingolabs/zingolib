@@ -238,6 +238,12 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     .map_err(Rejection::lines)
 }
 
+/// - Reads the process arguments.
+/// - Exits the process through [`crate::run`].
+pub fn main() -> ! {
+    crate::dispatch_from_root(BINARY, dispatch)
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -396,7 +402,7 @@ mod tests {
 
     fn tracked_rust_files() -> Vec<String> {
         let root = root();
-        crate::stdout_in(&root, "git", &["ls-files", "--", "*.rs"], &[])
+        crate::git_in(&root, &["ls-files", "--", "*.rs"])
             .unwrap()
             .lines()
             .map(|file| root.join(file).to_string_lossy().into_owned())

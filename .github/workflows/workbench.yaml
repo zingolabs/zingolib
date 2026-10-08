@@ -57,8 +57,10 @@ jobs:
       - name: Format
         run: cargo fmt --manifest-path tools/workbench/Cargo.toml --all --check
 
+      # The registry feature compiles the binary that reaches the registry,
+      # so the lint and the tests cover it too.
       - name: Clippy
-        run: cargo clippy --manifest-path tools/workbench/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --manifest-path tools/workbench/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Test
-        run: cargo test --manifest-path tools/workbench/Cargo.toml
+        run: cargo test --manifest-path tools/workbench/Cargo.toml --all-features
