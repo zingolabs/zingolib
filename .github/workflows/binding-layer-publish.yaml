@@ -13,10 +13,12 @@
 # wires the jobs and passes on what the builds produced, under one
 # directory per platform whose build passed.
 #
-# The push uses the secret BINDING_PUBLISH_TOKEN, a token with write access
-# to this repository's contents. GitHub starts no workflow for a push made
-# with GITHUB_TOKEN, so that token would leave the recorded entry without
-# its checks.
+# The push uses an installation token of the GitHub App that the secrets
+# BINDING_PUBLISH_APP_ID and BINDING_PUBLISH_APP_PRIVATE_KEY name, an App
+# installed on this repository with write access to its contents. GitHub
+# starts no workflow for a push made with GITHUB_TOKEN, so that token
+# would leave the recorded entry without its checks. The App's token is
+# minted in the publish job and lives one hour.
 #
 # An issue_comment run uses this file as it is on the default branch.
 name: Publish the Binding Layer
@@ -49,12 +51,13 @@ jobs:
       PULL_REQUEST: ${{ github.event.issue.number }}
       COMMENT: ${{ github.event.comment.id }}
     steps:
-      - name: Require the publish token
+      - name: Require the publish App
         env:
-          PUBLISH_TOKEN: ${{ secrets.BINDING_PUBLISH_TOKEN }}
+          APP_ID: ${{ secrets.BINDING_PUBLISH_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.BINDING_PUBLISH_APP_PRIVATE_KEY }}
         run: |
-          if [ -z "$PUBLISH_TOKEN" ]; then
-            echo "::error::the secret BINDING_PUBLISH_TOKEN is not set, and GITHUB_TOKEN cannot start the checks on the recorded entry"
+          if [ -z "$APP_ID" ] || [ -z "$APP_PRIVATE_KEY" ]; then
+            echo "::error::the secrets BINDING_PUBLISH_APP_ID and BINDING_PUBLISH_APP_PRIVATE_KEY are not both set, and GITHUB_TOKEN cannot start the checks on the recorded entry"
             exit 1
           fi
 
@@ -125,12 +128,19 @@ jobs:
       REGISTRY_TOKEN: ${{ github.token }}
       BUNDLES: publish
     steps:
+      - name: Mint the publish token
+        id: publish-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.BINDING_PUBLISH_APP_ID }}
+          private-key: ${{ secrets.BINDING_PUBLISH_APP_PRIVATE_KEY }}
+
       - name: Checkout the pull request's branch
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.request.outputs.branch }}
           fetch-depth: 0
-          token: ${{ secrets.BINDING_PUBLISH_TOKEN }}
+          token: ${{ steps.publish-token.outputs.token }}
 
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
