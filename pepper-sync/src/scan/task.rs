@@ -1,6 +1,6 @@
 use std::{
     borrow::BorrowMut,
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     ops::Range,
     sync::{
         Arc,
@@ -67,7 +67,9 @@ pub(crate) struct Scanner<P> {
     loader: Option<Loader<P>>,
     pub(crate) workers: Vec<ScanWorker<P>>,
     unique_id: usize,
-    scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
+    next_task_id: TaskId,
+    in_flight_tasks: BTreeMap<TaskId, ScanRange>,
+    scan_results_sender: mpsc::UnboundedSender<(ScanLoad, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: P,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
@@ -81,7 +83,7 @@ where
 {
     pub(crate) fn new(
         consensus_parameters: P,
-        scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
+        scan_results_sender: mpsc::UnboundedSender<(ScanLoad, Result<ScanResults, ScanError>)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
         transparent_gap_limit: u32,
@@ -93,6 +95,8 @@ where
             loader: None,
             workers,
             unique_id: 0,
+            next_task_id: TaskId::first(),
+            in_flight_tasks: BTreeMap::new(),
             scan_results_sender,
             fetch_request_sender,
             consensus_parameters,
@@ -100,6 +104,19 @@ where
             transparent_gap_limit,
             transparent_gap_addresses: HashMap::new(),
         }
+    }
+
+    /// Returns the selected range of every task in flight, keyed by task in selection order.
+    pub(crate) fn in_flight_tasks(&self) -> &BTreeMap<TaskId, ScanRange> {
+        &self.in_flight_tasks
+    }
+
+    /// Forgets every task whose selected range no longer overlaps a wallet range held at its in-flight priority.
+    pub(crate) fn retire_finished_tasks(&mut self, scan_ranges: &[ScanRange]) {
+        self.in_flight_tasks.retain(|_, task| {
+            sync::held_at(scan_ranges, task.priority().in_flight())
+                .any(|held| held.overlaps(task.block_range()))
+        });
     }
 
     /// Applies the changes to the transparent gap addresses found by a scan.
@@ -298,7 +315,11 @@ where
                 wallet,
                 nullifier_map_limit_exceeded,
                 self.transparent_gap_addresses.clone(),
+                self.next_task_id,
             )? {
+                self.in_flight_tasks
+                    .insert(scan_task.task_id, scan_task.scan_range.clone());
+                self.next_task_id = self.next_task_id.next();
                 loader.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
                 // if sync is complete, all nullifiers will have been re-fetched so this note metadata can be discarded.
@@ -698,15 +719,9 @@ async fn fetch_failure(
     }
 }
 
-/// Returns true if the loader may split the scan task of `scan_range` at `block_height` when a load budget is
-/// reached.
-///
-/// A split at the first block of the scan range would leave the lower scan task empty.
-/// A scan task with `Verify` priority is scanned whole. When its continuity check fails, re-org handling resets and
-/// extends the wallet scan range it was selected from, which would be rewritten under any other scan task split from
-/// it.
+/// Returns true when a load budget reached at `block_height` may split the scan task of `scan_range`, which holds above its first block.
 fn splittable_at(scan_range: &ScanRange, block_height: BlockHeight) -> bool {
-    scan_range.priority() != ScanPriority::Verify && scan_range.block_range().start != block_height
+    scan_range.block_range().start != block_height
 }
 
 /// Opens a stream of compact blocks for `block_range` (end exclusive), or of nullifiers only if `fetch_nullifiers_only`
@@ -749,7 +764,7 @@ pub(crate) struct ScanWorker<P> {
     is_scanning: Arc<AtomicBool>,
     consensus_parameters: P,
     scan_task_sender: Option<mpsc::Sender<ScanTask>>,
-    scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
+    scan_results_sender: mpsc::UnboundedSender<(ScanLoad, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
     transparent_gap_limit: u32,
@@ -762,7 +777,7 @@ where
     fn new(
         id: usize,
         consensus_parameters: P,
-        scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
+        scan_results_sender: mpsc::UnboundedSender<(ScanLoad, Result<ScanResults, ScanError>)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
         transparent_gap_limit: u32,
@@ -800,7 +815,10 @@ where
 
         let handle = tokio::spawn(async move {
             while let Some(scan_task) = scan_task_receiver.recv().await {
-                let scan_range = scan_task.scan_range.clone();
+                let load = ScanLoad {
+                    task_id: scan_task.task_id,
+                    scan_range: scan_task.scan_range.clone(),
+                };
                 let scan_results = scan(
                     fetch_request_sender.clone(),
                     &consensus_parameters,
@@ -810,7 +828,7 @@ where
                     transparent_gap_limit,
                 )
                 .await;
-                let _ignore_error = scan_results_sender.send((scan_range, scan_results));
+                let _ignore_error = scan_results_sender.send((load, scan_results));
 
                 is_scanning.store(false, atomic::Ordering::Release);
             }
@@ -863,8 +881,32 @@ where
     }
 }
 
+/// The identity of one scan task, in selection order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct TaskId(u64);
+
+impl TaskId {
+    /// Returns the identity of the first task a scanner selects.
+    pub(crate) fn first() -> Self {
+        TaskId(0)
+    }
+
+    /// Returns the identity of the task selected after this one.
+    pub(crate) fn next(self) -> Self {
+        TaskId(self.0 + 1)
+    }
+}
+
+/// One load of a scan task, named by its task and holding the load's blocks at the task's selected priority.
+#[derive(Debug, Clone)]
+pub(crate) struct ScanLoad {
+    pub(crate) task_id: TaskId,
+    pub(crate) scan_range: ScanRange,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ScanTask {
+    pub(crate) task_id: TaskId,
     pub(crate) compact_blocks: Vec<CompactBlock>,
     pub(crate) scan_range: ScanRange,
     pub(crate) start_seam_block: Option<WalletBlock>,
@@ -876,7 +918,9 @@ pub(crate) struct ScanTask {
 }
 
 impl ScanTask {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_parts(
+        task_id: TaskId,
         scan_range: ScanRange,
         start_seam_block: Option<WalletBlock>,
         end_seam_block: Option<WalletBlock>,
@@ -886,6 +930,7 @@ impl ScanTask {
         transparent_scan_floor: BlockHeight,
     ) -> Self {
         Self {
+            task_id,
             compact_blocks: Vec::new(),
             scan_range,
             start_seam_block,
@@ -956,6 +1001,7 @@ impl ScanTask {
 
         Ok((
             ScanTask {
+                task_id: self.task_id,
                 compact_blocks: lower_compact_blocks,
                 scan_range: self
                     .scan_range
@@ -969,6 +1015,7 @@ impl ScanTask {
                 transparent_scan_floor: self.transparent_scan_floor,
             },
             ScanTask {
+                task_id: self.task_id,
                 compact_blocks: upper_compact_blocks,
                 scan_range: self
                     .scan_range
@@ -1134,10 +1181,9 @@ mod tests {
         assert!(matches!(error, ServerError::RequestFailed(_)));
     }
 
-    /// A scan task is split above its first block when a load budget is reached, as a split at the first block
-    /// would leave the lower scan task empty. A scan task with `Verify` priority is never split.
+    /// A scan task of any priority is split above its first block when a load budget is reached.
     #[test]
-    fn scan_tasks_are_split_above_their_first_block_unless_verifying() {
+    fn scan_tasks_are_split_above_their_first_block() {
         const START: u32 = 10;
         let block_range = BlockHeight::from_u32(START)..BlockHeight::from_u32(START * 2);
 
@@ -1146,7 +1192,7 @@ mod tests {
             (ScanPriority::ChainTip, START + 1, true),
             (ScanPriority::ScannedWithoutMapping, START + 1, true),
             (ScanPriority::Verify, START, false),
-            (ScanPriority::Verify, START + 1, false),
+            (ScanPriority::Verify, START + 1, true),
         ] {
             assert_eq!(
                 splittable_at(
@@ -1178,5 +1224,18 @@ mod tests {
                 "{block_range:?}"
             );
         }
+    }
+
+    /// A load budget splits a scan task of any priority, since the re-org handler resets the wallet range that
+    /// encloses the failed load instead of the load's exact range.
+    #[test]
+    fn a_verify_task_splits_at_a_load_budget_like_any_other() {
+        let verify = ScanRange::from_parts(
+            BlockHeight::from_u32(21)..BlockHeight::from_u32(41),
+            ScanPriority::Verify,
+        );
+
+        assert!(splittable_at(&verify, BlockHeight::from_u32(31)));
+        assert!(!splittable_at(&verify, BlockHeight::from_u32(21)));
     }
 }

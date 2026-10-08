@@ -23,7 +23,7 @@ pub(crate) fn serialized() -> std::sync::MutexGuard<'static, ()> {
 /// Builds a fresh Indexerless mainnet wallet (the offline `init_new` path)
 /// and stores it as the global client.
 pub(crate) fn init_offline_wallet() {
-    init_new(String::new(), 0, "main".to_string(), 1)
+    init_new(crate::test_connection("", "main"), 0)
         .expect("the offline Indexerless wallet must initialize");
 }
 

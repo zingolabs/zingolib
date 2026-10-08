@@ -17,7 +17,7 @@ zingo-netutils = { path = "..", features = [
 ] }
 # Proc-macro scaffolding (setup_scaffolding! + #[uniffi::export]); no build.rs
 # and no UDL. Generating the Swift/Kotlin bindings is a later, separate step.
-uniffi = "0.28"
+uniffi = "0.32.2"
 # The shim owns a long-lived runtime that keeps the NymProxy client and its
 # SOCKS5 listener alive across start and stop.
 tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "time"] }
