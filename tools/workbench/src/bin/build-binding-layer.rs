@@ -61,9 +61,6 @@ const WALLET_WORKSPACE_DIR: &str = ".";
 /// The proxy crate's directory, relative to the zingolib root.
 const PROXY_CRATE_DIR: &str = "zingo-netutils/nym-proxy-ffi";
 
-/// The wallet crate's UDL file, relative to the wallet crate's directory.
-const UDL: &str = "src/zingo.udl";
-
 /// The profile that the builder builds every library with.
 const BUILDER_PROFILE: binding_layer::Profile = binding_layer::Profile::Mobile;
 
@@ -434,24 +431,23 @@ fn fresh_plan(roots: &Roots, targets: &[&str], steps: Vec<Step>) -> Vec<Step> {
     .collect()
 }
 
-/// A `Run` step that generates one binding set into a directory, from the directory that the generation names.
 fn bindgen_step(
     roots: &Roots,
     generation: binding_layer::Generation,
-    language: &str,
     inputs: &binding_layer::BindgenInputs,
+    library: &str,
     out: &str,
     env: &[(String, String)],
-    profile: binding_layer::Profile,
 ) -> Step {
     Step::Run {
         workdir: roots.run_path(workdir_dir(binding_layer::bindgen_workdir(
-            generation, language,
+            generation,
+            inputs.language,
         ))),
         env: env.to_vec(),
         command: [
             vec!["cargo".to_string()],
-            binding_layer::bindgen_args(generation, language, inputs, out, profile),
+            binding_layer::bindgen_args(inputs, library, out),
         ]
         .concat(),
     }
@@ -546,23 +542,14 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
     };
     let wallet_crate_dir = roots.run_path(WALLET_CRATE_DIR);
     let proxy_crate_dir = roots.run_path(PROXY_CRATE_DIR);
-    let udl = format!("{wallet_crate_dir}/{UDL}");
-    let wallet_workspace = roots.run_path(&format!("{WALLET_WORKSPACE_DIR}/{MANIFEST}"));
-    let bindgen = |generation, proxy_library: &str, env: &[(String, String)]| {
-        bindgen_step(
-            roots,
-            generation,
-            binding_layer::KOTLIN,
-            &binding_layer::BindgenInputs {
-                udl: &udl,
-                wallet_workspace: &wallet_workspace,
-                proxy_library,
-                target_dir: &wallet_target,
-            },
-            &kotlin_out,
-            env,
-            BUILDER_PROFILE,
-        )
+    let inputs = binding_layer::BindgenInputs {
+        language: binding_layer::KOTLIN,
+        profile: BUILDER_PROFILE,
+        wallet_workspace: &roots.run_path(&format!("{WALLET_WORKSPACE_DIR}/{MANIFEST}")),
+        target_dir: &wallet_target,
+    };
+    let bindgen = |generation, library: &str, env: &[(String, String)]| {
+        bindgen_step(roots, generation, &inputs, library, &kotlin_out, env)
     };
     let strip = |library: String, env: &[(String, String)]| {
         [
@@ -594,30 +581,35 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
                 package,
             )
         };
-    let wallet_steps = abis.iter().flat_map(|abi| {
+    let bindgen_abi = &binding_layer::ANDROID_ABIS[FIRST_POSITION];
+    let generate_once = |position, generation, library: String| {
+        (position == FIRST_POSITION)
+            .then(|| bindgen(generation, &library, &bindgen_abi.env(&wallet_target)))
+    };
+    let wallet_steps = abis.iter().enumerate().flat_map(|(position, abi)| {
         [ndk_build(abi, &wallet_crate_dir, &wallet_target, &[])]
             .into_iter()
+            .chain(generate_once(
+                position,
+                binding_layer::Generation::Wallet,
+                wallet_library(abi),
+            ))
             .chain(strip(wallet_library(abi), &abi.env(&wallet_target)))
     });
-    let bindgen_abi = &binding_layer::ANDROID_ABIS[FIRST_POSITION];
     let proxy_steps = abis.iter().enumerate().flat_map(|(position, abi)| {
-        let build = ndk_build(
+        [ndk_build(
             abi,
             &proxy_crate_dir,
             &proxy_target,
             &["--package", binding_layer::PROXY_PACKAGE],
-        );
-        let generate = (position == FIRST_POSITION).then(|| {
-            bindgen(
-                binding_layer::Generation::Proxy,
-                &proxy_library(abi),
-                &bindgen_abi.env(&wallet_target),
-            )
-        });
-        [build]
-            .into_iter()
-            .chain(generate)
-            .chain(strip(proxy_library(abi), &abi.env(&proxy_target)))
+        )]
+        .into_iter()
+        .chain(generate_once(
+            position,
+            binding_layer::Generation::Proxy,
+            proxy_library(abi),
+        ))
+        .chain(strip(proxy_library(abi), &abi.env(&proxy_target)))
     });
     let host_copies = abis.iter().flat_map(|abi| {
         let jni = format!("{}/{}", binding_layer::JNI_LIBS_DIR, abi.jni_dir);
@@ -633,63 +625,57 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
             },
         ]
     });
-    [bindgen(
-        binding_layer::Generation::Wallet,
-        "",
-        &[(
-            binding_layer::TARGET_DIR_VARIABLE.to_string(),
-            wallet_target.clone(),
-        )],
-    )]
-    .into_iter()
-    .chain(wallet_steps)
-    .chain(proxy_steps)
-    .chain(host_copies)
-    .collect()
+    wallet_steps.chain(proxy_steps).chain(host_copies).collect()
 }
 
-/// The profile of the Kotlin plan's host steps, the bindgen binaries and the proxy build, which each serve one generation.
 const HOST_PROFILE: binding_layer::Profile = binding_layer::Profile::Debug;
 
 fn kotlin_plan(roots: &Roots) -> Vec<Step> {
     let wallet_target = roots.run_path(&format!("{BUILD_ROOT}/host/wallet"));
     let proxy_target = roots.run_path(&format!("{BUILD_ROOT}/host/proxy"));
     let kotlin_out = roots.out_run_path(binding_layer::KOTLIN_OUT_DIR);
-    let proxy_library = binding_layer::host_proxy_library(&proxy_target, HOST_PROFILE);
     let inputs = binding_layer::BindgenInputs {
-        udl: &roots.run_path(&format!("{WALLET_CRATE_DIR}/{UDL}")),
+        language: binding_layer::KOTLIN,
+        profile: HOST_PROFILE,
         wallet_workspace: &roots.run_path(&format!("{WALLET_WORKSPACE_DIR}/{MANIFEST}")),
-        proxy_library: &proxy_library,
         target_dir: &wallet_target,
     };
-    let bindgen = |generation| {
-        bindgen_step(
-            roots,
-            generation,
-            binding_layer::KOTLIN,
-            &inputs,
-            &kotlin_out,
-            &[],
+    let bindgen = |generation, library: &str| {
+        bindgen_step(roots, generation, &inputs, library, &kotlin_out, &[])
+    };
+    let build = |crate_dir: &str, target_dir: &str, package: &[&str]| {
+        cargo_step(
+            &roots.run_path(crate_dir),
+            &[(
+                binding_layer::TARGET_DIR_VARIABLE.to_string(),
+                target_dir.to_string(),
+            )],
+            &["build", "--locked"],
             HOST_PROFILE,
+            package,
         )
     };
-    let build_proxy = cargo_step(
-        &roots.run_path(PROXY_CRATE_DIR),
-        &[(
-            binding_layer::TARGET_DIR_VARIABLE.to_string(),
-            proxy_target.clone(),
-        )],
-        &["build", "--locked"],
-        HOST_PROFILE,
-        &["--package", binding_layer::PROXY_PACKAGE],
-    );
+    let host_library = |lib_name, target_dir: &str| {
+        binding_layer::host_library(lib_name, target_dir, HOST_PROFILE)
+    };
     fresh_plan(
         roots,
         &[],
         vec![
-            bindgen(binding_layer::Generation::Wallet),
-            build_proxy,
-            bindgen(binding_layer::Generation::Proxy),
+            build(WALLET_CRATE_DIR, &wallet_target, &[]),
+            bindgen(
+                binding_layer::Generation::Wallet,
+                &host_library(binding_layer::WALLET_LIB_NAME, &wallet_target),
+            ),
+            build(
+                PROXY_CRATE_DIR,
+                &proxy_target,
+                &["--package", binding_layer::PROXY_PACKAGE],
+            ),
+            bindgen(
+                binding_layer::Generation::Proxy,
+                &host_library(binding_layer::PROXY_LIB_NAME, &proxy_target),
+            ),
         ],
     )
 }
@@ -752,24 +738,20 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
     let wallet_generated = format!("{GENERATED_DIR}/wallet");
     let proxy_generated = format!("{GENERATED_DIR}/proxy");
     let headers = format!("{GENERATED_DIR}/headers");
-    let udl = format!("{wallet_crate_dir}/{UDL}");
-    let wallet_workspace = format!("{wallet_workspace_dir}/{MANIFEST}");
-    let proxy_library = library(&proxy_target, IOS_DEVICE_TARGET, &proxy_static);
     let inputs = binding_layer::BindgenInputs {
-        udl: &udl,
-        wallet_workspace: &wallet_workspace,
-        proxy_library: &proxy_library,
+        language: binding_layer::SWIFT,
+        profile: BUILDER_PROFILE,
+        wallet_workspace: &format!("{wallet_workspace_dir}/{MANIFEST}"),
         target_dir: &wallet_target,
     };
-    let bindgen = |generation, out: &str| {
+    let bindgen = |generation, library: &str, out: &str| {
         bindgen_step(
             roots,
             generation,
-            binding_layer::SWIFT,
             &inputs,
+            library,
             &roots.out_run_path(out),
             &env,
-            BUILDER_PROFILE,
         )
     };
     let cargo_builds = |workdir: &str, target_dir: &str, package: &[&str]| {
@@ -834,16 +816,24 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
             Step::FreshDir(host(&wallet_generated)),
             Step::FreshDir(host(&proxy_generated)),
             Step::FreshDir(host(&headers)),
-            bindgen(binding_layer::Generation::Wallet, &wallet_generated),
         ],
         cargo_builds(&wallet_crate_dir, &wallet_target, &[]),
+        vec![bindgen(
+            binding_layer::Generation::Wallet,
+            &library(&wallet_target, IOS_DEVICE_TARGET, &wallet_static),
+            &wallet_generated,
+        )],
         lipo(&wallet_target, &wallet_static).into_iter().collect(),
         cargo_builds(
             &proxy_crate_dir,
             &proxy_target,
             &["-p", binding_layer::PROXY_PACKAGE],
         ),
-        vec![bindgen(binding_layer::Generation::Proxy, &proxy_generated)],
+        vec![bindgen(
+            binding_layer::Generation::Proxy,
+            &library(&proxy_target, IOS_DEVICE_TARGET, &proxy_static),
+            &proxy_generated,
+        )],
         lipo(&proxy_target, &proxy_static).into_iter().collect(),
         vec![
             Step::Copy {
@@ -1047,8 +1037,7 @@ fn run_command(
 mod tests {
     use super::*;
 
-    /// The number of times one build generates the proxy bindings.
-    const PROXY_GENERATIONS_PER_BUILD: usize = 1;
+    const GENERATIONS_PER_BUILD: usize = binding_layer::GENERATIONS.len();
 
     const INSTALL: &str = "rustup toolchain install";
 
@@ -1219,39 +1208,41 @@ mod tests {
     }
 
     #[test]
-    fn android_plan_generates_the_proxy_bindings_once_after_the_first_abi() {
+    fn android_plan_generates_each_binding_set_once_from_the_first_abi() {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
         let plan = android_plan(&roots(), &abis);
         let generations = commands(&plan)
             .into_iter()
             .filter(|command| command.contains("--library"))
             .count();
-        assert_eq!(generations, PROXY_GENERATIONS_PER_BUILD);
+        assert_eq!(generations, GENERATIONS_PER_BUILD);
     }
 
     #[test]
-    fn proxy_bindgen_takes_the_aarch64_environment_whatever_the_selection() {
+    fn every_bindgen_takes_the_aarch64_environment_whatever_the_selection() {
         let x86: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS
             .iter()
             .filter(|abi| abi.jni_dir == "x86")
             .collect();
         let plan = android_plan(&roots(), &x86);
         let expected_cc = binding_layer::ANDROID_ABIS[FIRST_POSITION].cc();
-        let bindgen_env = plan.iter().find_map(|step| match step {
-            Step::Run { env, command, .. } if command.iter().any(|arg| arg == "--library") => {
-                Some(env.clone())
-            }
-            _ => None,
-        });
-        assert!(bindgen_env
-            .unwrap()
+        let bindgen_envs: Vec<_> = plan
             .iter()
-            .any(|(key, value)| key == "CC" && *value == expected_cc));
+            .filter_map(|step| match step {
+                Step::Run { env, command, .. } if command.iter().any(|arg| arg == "--library") => {
+                    Some(env.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(bindgen_envs.len(), GENERATIONS_PER_BUILD);
+        assert!(bindgen_envs.iter().all(|env| env
+            .iter()
+            .any(|(key, value)| key == "CC" && *value == expected_cc)));
     }
 
-    /// Tests that the Kotlin plan generates both binding sets after one host build of the proxy crate, and starts no NDK build.
     #[test]
-    fn kotlin_plan_generates_both_sets_from_one_host_proxy_build() {
+    fn kotlin_plan_generates_each_set_after_its_own_host_build() {
         let roots = Roots::on_host(
             path::PathBuf::from(HOST_ROOT),
             path::PathBuf::from(OUTSIDE_OUT),
@@ -1263,19 +1254,27 @@ mod tests {
             matches!(plan.first(), Some(Step::FreshDir(out)) if out == path::Path::new(OUTSIDE_OUT))
         );
         assert!(commands.iter().all(|command| !command.contains(" ndk ")));
-        let wallet_generation = commands
-            .iter()
-            .position(|command| command.contains(UDL))
-            .unwrap();
-        let build = commands
-            .iter()
-            .position(|command| command.starts_with("cargo build"))
-            .unwrap();
-        let proxy_generation = commands
-            .iter()
-            .position(|command| command.contains("--library"))
-            .unwrap();
-        assert!(wallet_generation < build && build < proxy_generation);
+        let position =
+            |predicate: fn(&String) -> bool| commands.iter().position(predicate).unwrap();
+        let wallet_build = position(|command| {
+            command.starts_with("cargo build") && !command.contains(binding_layer::PROXY_PACKAGE)
+        });
+        let wallet_generation = position(|command| {
+            command.contains(&binding_layer::host_library_file(
+                binding_layer::WALLET_LIB_NAME,
+            ))
+        });
+        let proxy_build = position(|command| {
+            command.starts_with("cargo build") && command.contains(binding_layer::PROXY_PACKAGE)
+        });
+        let proxy_generation = position(|command| {
+            command.contains(&binding_layer::host_library_file(
+                binding_layer::PROXY_LIB_NAME,
+            ))
+        });
+        assert!(wallet_build < wallet_generation);
+        assert!(wallet_generation < proxy_build);
+        assert!(proxy_build < proxy_generation);
         assert_eq!(
             commands
                 .iter()
@@ -1285,18 +1284,17 @@ mod tests {
         );
     }
 
-    /// Tests that the proxy bindgen reads the library from the target directory the proxy build writes to, under the host profile.
     #[test]
-    fn kotlin_proxy_bindgen_reads_the_library_the_host_build_writes() {
+    fn kotlin_bindgens_read_the_libraries_the_host_builds_write() {
         let roots = Roots::on_host(
             path::PathBuf::from(HOST_ROOT),
             path::PathBuf::from(OUTSIDE_OUT),
         )
         .unwrap();
         let plan = kotlin_plan(&roots);
-        let build_target = plan
+        let build_targets: Vec<_> = plan
             .iter()
-            .find_map(|step| match step {
+            .filter_map(|step| match step {
                 Step::Run { env, command, .. } if command.join(" ").starts_with("cargo build") => {
                     env.iter()
                         .find(|(key, _)| key == binding_layer::TARGET_DIR_VARIABLE)
@@ -1304,27 +1302,35 @@ mod tests {
                 }
                 _ => None,
             })
-            .unwrap();
-        let library = plan
+            .collect();
+        let libraries: Vec<_> = plan
             .iter()
-            .find_map(|step| match step {
+            .filter_map(|step| match step {
                 Step::Run { command, .. } => command
                     .iter()
                     .position(|arg| arg == "--library")
                     .map(|flag| command[flag + 1].clone()),
                 _ => None,
             })
-            .unwrap();
-        assert_eq!(
-            library,
-            format!(
-                "{build_target}/{}/{}{}{}",
-                HOST_PROFILE.directory(),
-                env::consts::DLL_PREFIX,
-                binding_layer::PROXY_LIB_NAME,
-                env::consts::DLL_SUFFIX
-            )
-        );
+            .collect();
+        let lib_names = [
+            binding_layer::WALLET_LIB_NAME,
+            binding_layer::PROXY_LIB_NAME,
+        ];
+        assert_eq!(build_targets.len(), lib_names.len());
+        assert_eq!(libraries.len(), lib_names.len());
+        for ((build_target, library), lib_name) in
+            build_targets.iter().zip(&libraries).zip(lib_names)
+        {
+            assert_eq!(
+                *library,
+                format!(
+                    "{build_target}/{}/{}",
+                    HOST_PROFILE.directory(),
+                    binding_layer::host_library_file(lib_name)
+                )
+            );
+        }
         assert!(commands(&plan)
             .iter()
             .all(|command| !command.contains("--release")));

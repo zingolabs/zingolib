@@ -62,7 +62,7 @@ fn classify_stage(
             after_ms: bound.as_millis().try_into().unwrap_or(u64::MAX),
         };
     }
-    if signals.is_connect && socks5_proxy.is_some_and(&chain_mentions) {
+    if signals.is_connect && socks5_proxy.is_some_and(chain_mentions) {
         return NetOpStage::LocalProxyConnect;
     }
     if chain_mentions("socks") {

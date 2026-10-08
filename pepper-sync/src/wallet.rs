@@ -305,7 +305,7 @@ impl SyncMode {
         step: impl Fn(Self) -> Self,
     ) -> Result<Self, SyncModeError> {
         atomic_sync_mode
-            .fetch_update(
+            .try_update(
                 atomic::Ordering::AcqRel,
                 atomic::Ordering::Acquire,
                 |mode| Self::from_u8(mode).ok().map(|mode| step(mode) as u8),
