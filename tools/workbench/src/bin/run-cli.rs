@@ -209,8 +209,9 @@ fn bundle_proxy(root: &Path, release: bool, beside: &Path) -> Result<(), Vec<Str
         .map_err(|e| vec![format!("failed to run bundle-nym-proxy: {e}")])?;
     if !bundled.status.success() {
         return Err(vec![format!(
-            "bundle-nym-proxy failed ({})",
-            bundled.status
+            "bundle-nym-proxy failed ({}): {}",
+            bundled.status,
+            String::from_utf8_lossy(&bundled.stderr).trim()
         )]);
     }
     let proxy_path = String::from_utf8(bundled.stdout)
