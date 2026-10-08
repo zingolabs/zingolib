@@ -282,21 +282,27 @@ impl ScanPriority {
 
     /// Returns the priority the wallet holds a range selected at this priority while its scan task is in flight.
     pub fn in_flight(self) -> ScanPriority {
-        match self {
-            ScanPriority::ScannedWithoutMapping => ScanPriority::RefetchingNullifiers,
-            _ => ScanPriority::Scanning,
+        if self == ScanPriority::ScannedWithoutMapping {
+            ScanPriority::RefetchingNullifiers
+        } else {
+            ScanPriority::Scanning
         }
     }
-}
-
-/// Returns true when `inner` lies within `outer`.
-pub(crate) fn encloses(outer: &Range<BlockHeight>, inner: &Range<BlockHeight>) -> bool {
-    outer.start <= inner.start && inner.end <= outer.end
 }
 
 /// Returns true when the two ranges share at least one block.
 pub(crate) fn overlaps(first: &Range<BlockHeight>, second: &Range<BlockHeight>) -> bool {
     first.start < second.end && second.start < first.end
+}
+
+/// Returns the scan ranges the wallet holds at `priority`, in wallet order.
+pub(crate) fn held_at(
+    scan_ranges: &[ScanRange],
+    priority: ScanPriority,
+) -> impl Iterator<Item = &ScanRange> {
+    scan_ranges
+        .iter()
+        .filter(move |scan_range| scan_range.priority() == priority)
 }
 
 /// A range of blocks to be scanned, along with its associated priority.
@@ -351,7 +357,7 @@ impl ScanRange {
     /// Returns true when `block_range` lies within this scan range.
     #[must_use]
     pub fn encloses(&self, block_range: &Range<BlockHeight>) -> bool {
-        encloses(&self.block_range, block_range)
+        self.block_range.start <= block_range.start && block_range.end <= self.block_range.end
     }
 
     /// Returns true when this scan range and `block_range` share at least one block.

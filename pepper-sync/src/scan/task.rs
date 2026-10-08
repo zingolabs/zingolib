@@ -114,10 +114,8 @@ where
     /// Forgets every task whose selected range no longer overlaps a wallet range held at its in-flight priority.
     pub(crate) fn retire_finished_tasks(&mut self, scan_ranges: &[ScanRange]) {
         self.in_flight_tasks.retain(|_, task| {
-            scan_ranges.iter().any(|scan_range| {
-                scan_range.priority() == task.priority().in_flight()
-                    && scan_range.overlaps(task.block_range())
-            })
+            sync::held_at(scan_ranges, task.priority().in_flight())
+                .any(|held| held.overlaps(task.block_range()))
         });
     }
 

@@ -26,7 +26,7 @@ use crate::{
     },
 };
 
-use super::{ScanPriority, VERIFY_BLOCK_RANGE_SIZE, overlaps};
+use super::{ScanPriority, VERIFY_BLOCK_RANGE_SIZE, held_at, overlaps};
 
 const NARROW_SCAN_AREA: u32 = 10_000;
 
@@ -415,17 +415,14 @@ pub(super) fn scan_results_standing(
 ) -> ScanResultsStanding {
     let in_flight = task.priority().in_flight();
     let superseded = later_tasks.iter().any(|later| overlaps(later, load));
-    let held_whole = scan_ranges
-        .iter()
-        .any(|scan_range| scan_range.priority() == in_flight && scan_range.encloses(load));
+    let held_whole = held_at(scan_ranges, in_flight).any(|held| held.encloses(load));
     if held_whole && !superseded {
         return ScanResultsStanding::Current;
     }
 
-    let reset = scan_ranges
-        .iter()
-        .filter(|scan_range| scan_range.priority() == in_flight && scan_range.overlaps(load))
-        .map(|scan_range| intersection(scan_range.block_range(), load))
+    let reset = held_at(scan_ranges, in_flight)
+        .filter(|held| held.overlaps(load))
+        .map(|held| intersection(held.block_range(), load))
         .flat_map(|held| subtract(held, later_tasks))
         .collect();
     let chain_tip = scan_ranges
