@@ -14,11 +14,12 @@
 #![forbid(unsafe_code)]
 
 use std::collections::{HashMap, HashSet};
-use std::io::Write as _;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use workbench::session;
 use workbench::{repo_root, run};
 
 /// Agreeing representations of `zingolib::lightclient::sync`'s minted log
@@ -493,6 +494,7 @@ fn session(root: &Path, birthday: u32, arm: Arm) -> Result<Outcome, Vec<String>>
         .stdout(Stdio::null())
         .stderr(Stdio::inherit());
     let mut child = command
+        .process_group(0)
         .spawn()
         .map_err(|e| vec![format!("cannot spawn makers run-cli: {e}")])?;
 
@@ -543,7 +545,7 @@ fn session(root: &Path, birthday: u32, arm: Arm) -> Result<Outcome, Vec<String>>
         std::thread::sleep(LOG_POLL_INTERVAL);
     };
 
-    quit(&mut child);
+    session::quit(&mut child);
     Ok(outcome)
 }
 
@@ -562,16 +564,6 @@ fn closing_millis(log: &str) -> Option<u64> {
         .starts_with(MILLIS_SUFFIX)
         .then(|| digits.parse().ok())
         .flatten()
-}
-
-/// Ends the session the way a user does, then reaps it.
-fn quit(child: &mut Child) {
-    if let Some(stdin) = child.stdin.as_mut() {
-        let _ = writeln!(stdin, "quit");
-        let _ = stdin.flush();
-    }
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 /// Prints every measurement against the label the arm carries.

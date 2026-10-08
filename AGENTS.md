@@ -20,12 +20,15 @@
     exception is confined to one field below the seam, and the wallet names
     only the concrete `HostedProvider`. Do not relitigate it, and do not read
     it as licence for a second exception. Ruled 2026-08-18.
-- **Every commit MUST be A/B benchmarked against its parent** with the online
-  sync benchmark (`makers sync-bench`), which drives a real `run-cli --online`
-  session so the mixnet boot load is present. Report both numbers with the
-  commit. Ruled 2026-08-18. A commit confined to build scripts and tooling
-  (`build.rs` files, `tools/workbench`, `Makefile.toml`, CI workflows) is
-  exempt, because it changes no code the benchmark runs. Ruled 2026-09-30.
+- **The nightly CI run A/B benchmarks dev against the day before** with the
+  online sync benchmark (`makers sync-ab`), which drives a real `run-cli
+  --online` session so the mixnet boot load is present. The `sync-ab` job of
+  `ci-nightly.yaml` compares the dev head with the newest first-parent commit
+  older than 24 hours, uploads the report as an artifact, and skips a day
+  that added no commit. A commit carries no benchmark numbers of its own. A
+  regression in the nightly report is bisected over that day's commits with
+  the same tool, and the fix carries the two numbers. Ruled 2026-08-18 as a
+  per-commit rule, moved to the nightly run 2026-10-07.
 - **The communication model is moving to events published from zingolib.**
   The wallet crate takes a callback interface from the consumer at startup
   and calls it with typed events (sync status, balance, new transactions,

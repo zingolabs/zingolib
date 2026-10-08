@@ -1,10 +1,10 @@
 # Binding Layer changelog
 
-The workbench tool `binding-changelog` writes every section below from the lines
-that the audited crate changelogs gained after the commit the section names
-as `Since`, up to the commit the tool read; the section heading names that
-commit. The check in CI regenerates the newest section against the
-checked-out commit and fails when the committed section differs. The
+The workbench tool `binding-changelog` writes every section below, one per entry
+of `bindings/published.toml`, from the lines that the audited crate changelogs
+gained after the previous entry's commit, named as `Since`, up to the
+entry's commit, which the section heading names. The check in CI
+regenerates every section and fails when the committed file differs. The
 audited crates are the two Binding Layer crates and their direct
 dependencies in this repository, as `cargo tree` reports them: `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
 A change in another crate of this repository appears only where one of
