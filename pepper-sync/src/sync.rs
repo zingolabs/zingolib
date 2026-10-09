@@ -1,6 +1,6 @@
 //! Entrypoint for sync engine
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::Infallible;
 use std::ops::{Bound, Range};
 use std::sync::atomic::{self, AtomicBool, AtomicU8, AtomicU32};
@@ -2525,6 +2525,8 @@ fn discover_unified_addresses<'a>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     transactions: impl Iterator<Item = &'a WalletTransaction>,
 ) -> Vec<DiscoveredAddresses> {
+    let mut seen_orchard = HashSet::new();
+    let mut seen_sapling = HashSet::new();
     transactions
         .map(|transaction| {
             let mut discovered = DiscoveredAddresses {
@@ -2550,9 +2552,20 @@ fn discover_unified_addresses<'a>(
                 resolve_sapling,
                 &mut discovered.sapling,
             );
+            retain_first_seen(&mut seen_orchard, &mut discovered.orchard);
+            retain_first_seen(&mut seen_sapling, &mut discovered.sapling);
             discovered
         })
         .collect()
+}
+
+fn retain_first_seen<Address>(
+    seen: &mut HashSet<(AccountId, zip32::DiversifierIndex)>,
+    addresses: &mut Vec<(AccountId, Address, zip32::DiversifierIndex)>,
+) {
+    addresses.retain(|(account_id, _, diversifier_index)| {
+        seen.insert((*account_id, *diversifier_index))
+    });
 }
 
 fn discover_into<N, Address>(
@@ -6672,6 +6685,37 @@ mod test {
             assert_eq!(discovered[0].sapling.len(), 1);
             assert_eq!(discovered[1].orchard.len(), 1);
             assert!(discovered[1].sapling.is_empty());
+        }
+
+        #[test]
+        fn repeated_addresses_are_planned_once() {
+            let first = WalletTransaction::new_for_test_with_orchard_notes(
+                FIRST_TXID,
+                STATUS,
+                vec![orchard_note(
+                    FIRST_TXID,
+                    ORCHARD_INDEX,
+                    zip32::Scope::External,
+                )],
+                vec![],
+            );
+            let second = WalletTransaction::new_for_test_with_orchard_notes(
+                SECOND_TXID,
+                STATUS,
+                vec![orchard_note(
+                    SECOND_TXID,
+                    ORCHARD_INDEX,
+                    zip32::Scope::External,
+                )],
+                vec![],
+            );
+
+            let discovered =
+                discover_unified_addresses(&viewing_keys(), [&first, &second].into_iter());
+
+            assert_eq!(discovered.len(), 2);
+            assert_eq!(discovered[0].orchard.len(), 1);
+            assert!(discovered[1].orchard.is_empty());
         }
     }
 }
