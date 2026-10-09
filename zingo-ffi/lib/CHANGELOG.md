@@ -23,12 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `uniffi_zingo`, so the Android loader does not change. A consumer regenerates
   its bindings; the old generated files do not load the new library.
 - **Breaking:** `init_new`, `init_from_seed`, `init_from_ufvk` and
-  `init_from_bytes` take one `Connection` record (`server_uri`, `chain_hint`
-  and `sync`) in place of the four loose arguments, and
+  `init_from_bytes` take one `IndexerConnection` record (`server_uri`,
+  `chain_hint` and `sync`) in place of the four loose arguments, and
   `set_config_wallet_to_prod` takes one `SyncSettings` record
   (`performance_level` and `min_confirmations`). `get_latest_block_server` and
-  `change_server` name their argument `server_uri`, so the Swift label is
-  `serverUri:` in place of `serveruri:`.
+  `change_server` keep their UDL argument label `serveruri`, so the Swift label
+  stays `serveruri:`.
 - **Breaking:** `get_version` returns zingolib's `zl_` descriptor alone. The
   consumer's `zm_` half, the `ZINGO_MOBILE_DESCRIPTOR` variable and the
   `zm_description` build script are gone; a consumer computes its own
