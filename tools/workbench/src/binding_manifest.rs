@@ -33,7 +33,7 @@ const BASE_FLAG: &str = "--base";
 const ALL_DIGESTS_FLAG: &str = "--all-digests";
 const NEWEST_FLAG: &str = "--newest";
 const USAGE: &str =
-    "usage: binding-manifest --check [--base <ref>] [--all-digests] | binding-manifest --newest";
+    "usage: binding-manifest --check [--base <ref>] [--all-digests] | binding-manifest --newest | binding-manifest --orasust-version";
 pub const PUBLISH_COMMAND: &str = "/publish";
 const CHECKOUTS_DIR: &str = "target/binding-manifest";
 const TREE_ARGS: [&str; 8] = [
@@ -508,81 +508,48 @@ fn commits_exist(root: &Path, entries: &[Entry]) -> Result<(), Vec<String>> {
         .try_for_each(|commit| crate::commit_of(root, commit).map(drop))
 }
 
-#[cfg(feature = "registry")]
-async fn manifest_diagnostics(
-    client: oci_client::Client,
-    name: String,
-    commit: String,
-    digest: String,
-) -> Vec<String> {
-    use oci_client::secrets::RegistryAuth;
-    let image = match oci_client::Reference::try_from(name.as_str()) {
-        Ok(image) => image,
-        Err(e) => return vec![format!("{name}: {e}")],
+/// - Runs `orasust resolve` and `orasust manifest fetch` as child processes, once per recorded digest.
+fn manifest_diagnostics(name: &str, commit: &str, digest: &str) -> Vec<String> {
+    let found = match crate::orasust::resolve(name) {
+        Ok(found) => found,
+        Err(diagnostics) => return diagnostics,
     };
-    match client
-        .pull_image_manifest(&image, &RegistryAuth::Anonymous)
-        .await
-    {
-        Err(e) => vec![format!("{name}: {e}")],
-        Ok((manifest, found)) => {
-            let mut diagnostics = Vec::new();
-            if found != digest {
-                diagnostics.push(format!(
-                    "{name} resolves to {found}, and the entry names {digest}"
-                ));
-            }
-            let revision = manifest
-                .annotations
-                .as_ref()
-                .and_then(|annotations| annotations.get(REVISION_ANNOTATION));
-            if revision != Some(&commit) {
-                diagnostics.push(format!(
-                    "{name} carries {REVISION_ANNOTATION} {revision:?}, not its commit"
-                ));
-            }
-            diagnostics
-        }
+    let mut diagnostics = Vec::new();
+    if found != digest {
+        diagnostics.push(format!(
+            "{name} resolves to {found}, and the entry names {digest}"
+        ));
     }
-}
-
-#[cfg(feature = "registry")]
-fn registry_diagnostics(entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| vec![format!("cannot start the runtime: {e}")])?;
-    let client = oci_client::Client::new(oci_client::client::ClientConfig::default());
-    runtime.block_on(async {
-        let pulls: Vec<_> = entries
-            .iter()
-            .flat_map(|entry| {
-                entry.digests.iter().map(|(platform, digest)| {
-                    tokio::spawn(manifest_diagnostics(
-                        client.clone(),
-                        reference(platform, &entry.commit),
-                        entry.commit.clone(),
-                        digest.clone(),
-                    ))
-                })
-            })
-            .collect();
-        let mut diagnostics = Vec::new();
-        for pull in pulls {
-            diagnostics.extend(
-                pull.await
-                    .map_err(|e| vec![format!("a registry pull did not finish: {e}")])?,
-            );
+    let manifest = match crate::orasust::manifest(name) {
+        Ok(manifest) => manifest,
+        Err(mut failed) => {
+            diagnostics.append(&mut failed);
+            return diagnostics;
         }
-        Ok(diagnostics)
-    })
+    };
+    let revision = crate::orasust::annotation(&manifest, REVISION_ANNOTATION);
+    if revision != Some(commit) {
+        diagnostics.push(format!(
+            "{name} carries {REVISION_ANNOTATION} {revision:?}, not its commit"
+        ));
+    }
+    diagnostics
 }
 
-#[cfg(not(feature = "registry"))]
-fn registry_diagnostics(_entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
-    Err(vec![format!(
-        "{BINARY} was built without the registry feature and cannot ask the registry"
-    )])
+/// - Runs `orasust version` once, then `orasust` child processes through [`manifest_diagnostics`].
+fn registry_diagnostics(entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
+    if entries.iter().all(|entry| entry.digests.is_empty()) {
+        return Ok(Vec::new());
+    }
+    crate::orasust::pinned()?;
+    Ok(entries
+        .iter()
+        .flat_map(|entry| {
+            entry.digests.iter().flat_map(|(platform, digest)| {
+                manifest_diagnostics(&reference(platform, &entry.commit), &entry.commit, digest)
+            })
+        })
+        .collect())
 }
 
 /// - Reads `bindings/published.toml` and, with `--base`, its copy at that git revision.
@@ -595,6 +562,10 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
         Some(CHECK_FLAG) => check(root, args),
         Some(NEWEST_FLAG) => {
             println!("{}", newest_awaiting(root)?);
+            Ok(())
+        }
+        Some(crate::orasust::VERSION_FLAG) => {
+            println!("{}", crate::orasust::VERSION);
             Ok(())
         }
         _ => Err(vec![USAGE.to_string()]),

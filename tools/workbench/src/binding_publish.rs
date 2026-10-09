@@ -7,8 +7,6 @@ use crate::binding_manifest;
 pub const BINARY: &str = "binding-publish";
 pub const USERNAME_VARIABLE: &str = "REGISTRY_USERNAME";
 pub const TOKEN_VARIABLE: &str = "REGISTRY_TOKEN";
-pub const EMPTY_CONFIG_MEDIA_TYPE: &str = "application/vnd.oci.empty.v1+json";
-pub const EMPTY_CONFIG: &str = "{}";
 const ZIP_MEDIA_TYPE: &str = "application/zip";
 const GZIP_MEDIA_TYPE: &str = "application/gzip";
 const ARCHIVE_SUFFIX: &str = ".tar.gz";
@@ -56,13 +54,6 @@ pub fn manifest_annotations(commit: &str, descriptor: &str) -> Vec<(String, Stri
             descriptor.to_string(),
         ),
     ]
-}
-
-pub fn layer_annotations(file_name: &str) -> Vec<(String, String)> {
-    vec![(
-        binding_manifest::TITLE_ANNOTATION.to_string(),
-        file_name.to_string(),
-    )]
 }
 
 pub fn built_platforms(bundles: &Path, commit: &str) -> Vec<(&'static str, PathBuf)> {
@@ -115,69 +106,21 @@ fn find_file(dir: &Path, wanted: impl Fn(&str) -> bool) -> Result<PathBuf, Vec<S
     )])
 }
 
-#[cfg(feature = "registry")]
+/// - Runs `orasust push` as a child process through [`crate::orasust::push`].
 fn push(
     platform: &str,
     commit: &str,
     bundle: &Bundle,
     credentials: &Credentials,
 ) -> Result<String, Vec<String>> {
-    use oci_client::client;
-    use oci_client::manifest;
-    use oci_client::secrets;
-    let file_name = file_name_of(&bundle.file)?;
-    let data = crate::read_bytes(&bundle.file)?;
-    let name = binding_manifest::reference(platform, commit);
-    let image =
-        oci_client::Reference::try_from(name.as_str()).map_err(|e| vec![format!("{name}: {e}")])?;
-    let layers = [client::ImageLayer::new(
-        data,
-        bundle.media_type.to_string(),
-        Some(layer_annotations(file_name).into_iter().collect()),
-    )];
-    let config = client::Config::new(EMPTY_CONFIG, EMPTY_CONFIG_MEDIA_TYPE.to_string(), None);
-    let image_manifest = manifest::OciImageManifest::build(
-        &layers,
-        &config,
-        Some(
-            manifest_annotations(commit, &bundle.descriptor)
-                .into_iter()
-                .collect(),
-        ),
-    );
-    let auth =
-        secrets::RegistryAuth::Basic(credentials.username.clone(), credentials.token.clone());
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| vec![format!("cannot start the runtime: {e}")])?;
-    let registry = client::Client::new(client::ClientConfig::default());
-    runtime.block_on(async {
-        registry
-            .push(&image, &layers, config, &auth, Some(image_manifest))
-            .await
-            .map_err(|e| vec![format!("cannot push {name}: {e}")])?;
-        registry
-            .fetch_manifest_digest(&image, &auth)
-            .await
-            .map_err(|e| vec![format!("cannot read back the digest of {name}: {e}")])
-    })
-}
-
-#[cfg(not(feature = "registry"))]
-fn push(
-    platform: &str,
-    commit: &str,
-    bundle: &Bundle,
-    _credentials: &Credentials,
-) -> Result<String, Vec<String>> {
-    Err(vec![format!(
-        "{BINARY} was built without the registry feature and cannot push {} ({}, {}) as {}",
-        bundle.file.display(),
-        bundle.descriptor,
+    crate::orasust::push(
+        &binding_manifest::reference(platform, commit),
+        &bundle.file,
         bundle.media_type,
-        binding_manifest::reference(platform, commit)
-    )])
+        &manifest_annotations(commit, &bundle.descriptor),
+        &credentials.username,
+        &credentials.token,
+    )
 }
 
 fn credentials() -> Result<Credentials, Vec<String>> {
@@ -291,6 +234,7 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
         )]);
     }
     let credentials = credentials()?;
+    crate::orasust::pinned()?;
     let file = root.join(binding_manifest::FILE);
     let crates = binding_manifest::with_checkout(root, &commit, binding_manifest::audited_at)?;
     let mut text = binding_manifest::recorded_audited(&crate::read(&file)?, &commit, &crates)?;
@@ -341,13 +285,6 @@ mod tests {
                     "zl_6.0.0_2691e".to_string()
                 ),
             ]
-        );
-        assert_eq!(
-            layer_annotations("x.aar"),
-            [(
-                "org.opencontainers.image.title".to_string(),
-                "x.aar".to_string()
-            )]
         );
     }
 
@@ -409,8 +346,8 @@ mod tests {
     const ISSUES_WRITE: &str = "issues: write";
     const NEWEST_COMMAND: &str = "--bin binding-manifest -- --newest";
     const FEATURES_FLAG: &str = "--features";
-    const MANIFEST_BIN: &str = "name = \"binding-manifest\"";
     const REQUIRED_FEATURES: &str = "required-features";
+    const FEATURES_TABLE: &str = "[features]";
     const BRANCH: &str = "main";
     const PUBLISHED: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -499,11 +436,9 @@ mod tests {
     #[test]
     fn reading_the_newest_entry_needs_no_registry() {
         let manifest = repo_file(WORKBENCH_MANIFEST);
-        let bin = manifest.find(MANIFEST_BIN).unwrap();
-        let stanza = manifest[bin..].split("\n\n").next().unwrap();
         assert!(
-            !stanza.contains(REQUIRED_FEATURES),
-            "the manifest binary is gated on a feature that only --check needs:\n{stanza}"
+            !manifest.contains(REQUIRED_FEATURES) && !manifest.contains(FEATURES_TABLE),
+            "a workbench binary is gated on a feature, and the registry client is a separate binary:\n{manifest}"
         );
         let workflow = repo_file(PUBLISH_WORKFLOW);
         let newest: Vec<&str> = workflow

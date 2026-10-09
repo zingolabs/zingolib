@@ -13,19 +13,3 @@ publish = false
 # Crate-wide: forbid unsafe across the lib and every binary in one place.
 [lints.rust]
 unsafe_code = "forbid"
-
-[dependencies]
-oci-client = { version = "0.18", default-features = false, features = ["rustls-tls"], optional = true }
-tokio = { version = "1", features = ["rt"], optional = true }
-
-[[bin]]
-name = "binding-manifest"
-
-[[bin]]
-name = "binding-publish"
-required-features = ["registry"]
-
-# The registry feature compiles the one binary that reaches the registry;
-# every other binary stays std-only.
-[features]
-registry = ["dep:oci-client", "dep:tokio"]

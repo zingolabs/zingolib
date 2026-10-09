@@ -203,9 +203,17 @@ jobs:
           pattern: ${{ needs.request.outputs.bundle_pattern }}
           path: ${{ env.BUNDLES }}
 
+      # The registry client is the orasust crate, whose version the
+      # workbench pins. The cargo cache above keeps the installed binary,
+      # so the build runs once per version.
+      - name: Install orasust
+        run: |
+          version="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --orasust-version)"
+          cargo install --locked "orasust@${version}"
+
       - name: Publish the bundles and record the entry
         run: |
-          cargo run --quiet --manifest-path tools/workbench/Cargo.toml --features registry \
+          cargo run --quiet --manifest-path tools/workbench/Cargo.toml \
             --bin binding-publish -- --commit "$COMMIT" --bundles "$BUNDLES"
 
       - name: Report the publish
