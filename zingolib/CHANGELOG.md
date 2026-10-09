@@ -15,8 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `mixnet::resolve_mixnet_only_route` and `LightClient::mixnet_only_route`, the route of the price fetch and the liveness probe: the conduit while `Ready`, a typed refusal otherwise.
 - Add `mixnet::resolve_send_route` and `LightClient::send_route`, the route of a transmission under the transmit policy: nakednet at once under `Nakednet`, the mixnet-only outcome under `Mixnet`.
 - Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
+- Add `wallet::keys::WalletKind` and `LightWallet::kind`, the wallet's key material as one of `Mnemonic`, `SpendingKey`, `ViewingKey` with the receivers the key holds, or `NoKeys`, or `KeyError::NoAccountKeys` for a wallet without account zero. zingo-cli and the FFI each computed this themselves.
 
 ### Changed
+- A `migration` value transfer now carries the sum of the Ironwood notes the transaction delivered to the wallet, the amount migrated, where it carried the whole self-received sum including any Orchard change. The FFI spliced this value in after the fact; the value transfer now states it directly.
 - `lightwallet-protocol` moves to 0.4.0, the upstream rev whose committed
   bindings carry the Ironwood proto fields. No workspace enables
   `rebuild-proto` any longer, so a build of zingolib no longer needs protoc.
