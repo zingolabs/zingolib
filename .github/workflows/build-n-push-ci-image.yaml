@@ -1,0 +1,66 @@
+name: Docker Image CI/CD
+
+# Builds and publishes the reproducible test image
+# (zingodevops/ci-build) whenever any of its inputs change, tagged with
+# the content-addressed tag Makefile.toml computes. Per-content tags,
+# never rolling tags: ensure-image-exists and the test workflows key on
+# tag presence, so a rolling tag would neither rebuild nor reproduce.
+# Replicates the zaino dev method: see zingolabs/zaino
+# .github/workflows/build-n-push-ci-image.yaml, with content-addressed
+# tagging per zingolabs/zaino@d8754b72a.
+
+on:
+  workflow_dispatch:
+    inputs:
+      push:
+        description: 'Push the built image to DockerHub. Set false to verify a build on a feature branch without publishing.'
+        type: boolean
+        default: true
+  push:
+    branches:
+      - '**'
+    # Keep in lockstep with container_dir_hash in Makefile.toml: these
+    # paths are exactly the inputs the content-addressed tag hashes.
+    paths:
+      - '.env.testing-artifacts'
+      - 'rust-toolchain.toml'
+      - 'docker-ci/**'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    env:
+      # The runner ships both podman and docker; force docker so the
+      # image `makers build-image` produces is visible to `docker push`.
+      CONTAINER_RUNTIME: docker
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install cargo-make
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-make
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+
+      - name: Compute the content-addressed image tag
+        id: taggen
+        run: |
+          # The tag is the only 14-hex-char line the task prints. The
+          # install-action provides the `cargo-make` binary only, not
+          # the `makers` alias, so invoke it as a cargo subcommand.
+          TAG=$(cargo make compute-image-tag | grep -E '^[0-9a-f]{14}$')
+          echo "Computed tag: ${TAG}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the image via the makers front door
+        run: cargo make build-image
+
+      - name: Push the image
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
+        run: docker push "zingodevops/ci-build:${{ steps.taggen.outputs.tag }}"

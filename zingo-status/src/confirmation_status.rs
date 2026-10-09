@@ -185,7 +185,7 @@ impl ConfirmationStatus {
     ///
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
-    /// use zcash_primitives::consensus::BlockHeight;
+    /// use zcash_protocol::consensus::BlockHeight;
     ///
     /// assert!(ConfirmationStatus::Calculated(1.into()).is_pending());
     /// assert!(ConfirmationStatus::Transmitted(1.into()).is_pending());
@@ -206,7 +206,7 @@ impl ConfirmationStatus {
     ///
     /// ```
     /// use zingo_status::confirmation_status::ConfirmationStatus;
-    /// use zcash_primitives::consensus::BlockHeight;
+    /// use zcash_protocol::consensus::BlockHeight;
     ///
     /// assert!(!ConfirmationStatus::Calculated(1.into()).is_failed());
     /// assert!(!ConfirmationStatus::Transmitted(1.into()).is_failed());
@@ -267,6 +267,18 @@ impl ConfirmationStatus {
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         let version = reader.read_u8()?;
+        // a version above the one this build writes was written by a newer build in a layout this build cannot
+        // read. it is refused so the newer layout is never read as an older one.
+        if version > Self::serialized_version() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "ConfirmationStatus serialized version {version} was written by a newer build. this build \
+                     reads up to version {}.",
+                    Self::serialized_version()
+                ),
+            ));
+        }
         let status = reader.read_u8()?;
         let block_height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
 
@@ -375,5 +387,31 @@ fn stringify_debug() {
 impl From<ConfirmationStatus> for String {
     fn from(value: ConfirmationStatus) -> Self {
         format!("{value}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The reader is given a serialized version above the one the type writes, followed by a status and block height
+    /// the current layout reads.
+    #[test]
+    fn read_refuses_a_serialized_version_above_its_own() {
+        let mut bytes = Vec::new();
+        ConfirmationStatus::Confirmed(BlockHeight::from_u32(1))
+            .write(&mut bytes)
+            .unwrap();
+        ConfirmationStatus::read(bytes.as_slice()).expect("the current version is read");
+
+        bytes[0] = ConfirmationStatus::serialized_version() + 1;
+
+        let error = ConfirmationStatus::read(bytes.as_slice())
+            .expect_err("a version above the current version is refused");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(
+            error.to_string().contains("newer build"),
+            "the error must name the cause: {error}"
+        );
     }
 }
