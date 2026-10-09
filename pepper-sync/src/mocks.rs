@@ -28,6 +28,7 @@ pub(super) struct MockWallet {
     nullifier_map: NullifierMap,
     outpoint_map: BTreeMap<OutputId, ScanTarget>,
     shard_trees: ShardTrees,
+    transparent_addresses: BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
 }
 impl MockWalletError {}
 
@@ -106,6 +107,7 @@ impl MockWalletBuilder {
             nullifier_map: self.nullifier_map,
             outpoint_map: self.outpoint_map,
             shard_trees: self.shard_trees,
+            transparent_addresses: BTreeMap::new(),
         }
     }
 }
@@ -155,22 +157,24 @@ impl SyncWallet for MockWallet {
         todo!()
     }
 
+    /// The mock wallet does not keep shielded addresses, so a discovered address is accepted and dropped.
     fn add_orchard_address(
         &mut self,
-        account_id: zip32::AccountId,
-        address: orchard::Address,
-        diversifier_index: zip32::DiversifierIndex,
+        _account_id: zip32::AccountId,
+        _address: orchard::Address,
+        _diversifier_index: zip32::DiversifierIndex,
     ) -> Result<(), Self::Error> {
-        todo!()
+        Ok(())
     }
 
+    /// The mock wallet does not keep shielded addresses, so a discovered address is accepted and dropped.
     fn add_sapling_address(
         &mut self,
-        account_id: zip32::AccountId,
-        address: sapling_crypto::PaymentAddress,
-        diversifier_index: zip32::DiversifierIndex,
+        _account_id: zip32::AccountId,
+        _address: sapling_crypto::PaymentAddress,
+        _diversifier_index: zip32::DiversifierIndex,
     ) -> Result<(), Self::Error> {
-        todo!()
+        Ok(())
     }
 
     fn get_transparent_addresses(
@@ -179,7 +183,7 @@ impl SyncWallet for MockWallet {
         &std::collections::BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
         Self::Error,
     > {
-        todo!()
+        Ok(&self.transparent_addresses)
     }
 
     fn get_transparent_addresses_mut(
@@ -188,7 +192,7 @@ impl SyncWallet for MockWallet {
         &mut std::collections::BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
         Self::Error,
     > {
-        todo!()
+        Ok(&mut self.transparent_addresses)
     }
 
     fn set_save_flag(&mut self) -> Result<(), Self::Error> {
@@ -250,7 +254,7 @@ impl SyncOutPoints for MockWallet {
         &std::collections::BTreeMap<crate::wallet::OutputId, crate::wallet::ScanTarget>,
         Self::Error,
     > {
-        todo!()
+        Ok(&self.outpoint_map)
     }
 
     fn get_outpoints_mut(
