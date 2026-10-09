@@ -27,8 +27,11 @@ on:
   issue_comment:
     types: [created]
 
+# The reactions on the comment go through the issue-comment endpoint,
+# which the token's `issues` permission gates.
 permissions:
   contents: write
+  issues: write
   packages: write
   pull-requests: write
 
@@ -158,6 +161,24 @@ jobs:
         with:
           app-id: ${{ secrets.BINDING_PUBLISH_APP_ID }}
           private-key: ${{ secrets.BINDING_PUBLISH_APP_PRIVATE_KEY }}
+
+      # The publication commit is attributed to the App whose token pushes
+      # it. The noreply address carries the bot user's id, which the API
+      # serves for `<slug>[bot]`.
+      - name: Identify the publish App
+        env:
+          GH_TOKEN: ${{ steps.publish-token.outputs.token }}
+          APP_SLUG: ${{ steps.publish-token.outputs.app-slug }}
+        run: |
+          set -eu
+          bot="${APP_SLUG}[bot]"
+          id="$(gh api "users/${bot}" --jq .id)"
+          {
+            echo "GIT_AUTHOR_NAME=${bot}"
+            echo "GIT_COMMITTER_NAME=${bot}"
+            echo "GIT_AUTHOR_EMAIL=${id}+${bot}@users.noreply.github.com"
+            echo "GIT_COMMITTER_EMAIL=${id}+${bot}@users.noreply.github.com"
+          } >> "$GITHUB_ENV"
 
       - name: Checkout the pull request's branch
         uses: actions/checkout@v6

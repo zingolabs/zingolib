@@ -19,8 +19,7 @@ const SHAPES: [(&str, &str); 2] = [
 const TAR: &str = "tar";
 const TAR_ARGS: [&str; 3] = ["--create", "--gzip", "--file"];
 const PACKAGE_STAGING_SUFFIX: &str = "-package";
-const COMMITTER_NAME: &str = "github-actions[bot]";
-const COMMITTER_EMAIL: &str = "41898282+github-actions[bot]@users.noreply.github.com";
+const PUSH_ATTEMPTS: usize = 2;
 const COMMIT_MESSAGE_PREFIX: &str = "chore(bindings): record the publication of ";
 const COMMIT_FLAG: &str = "--commit";
 const BUNDLES_FLAG: &str = "--bundles";
@@ -242,20 +241,24 @@ fn swift_package_archive(root: &Path, dir: &Path, commit: &str) -> Result<PathBu
     Ok(staging.join(archive_name))
 }
 
-/// - Runs `git config`, `git add`, `git commit`, and `git push` as child processes in `root`.
+/// - Runs `git add` and `git commit` in `root`, then `git pull --rebase` and `git push`, the
+///   pair at most `PUSH_ATTEMPTS` times.
 fn commit_and_push(root: &Path, commit: &str) -> Result<(), Vec<String>> {
     let message = format!("{COMMIT_MESSAGE_PREFIX}{commit}");
-    let commands: [&[&str]; 5] = [
-        &["config", "user.name", COMMITTER_NAME],
-        &["config", "user.email", COMMITTER_EMAIL],
+    crate::git_in(
+        root,
         &["add", binding_manifest::FILE, binding_changelog::FILE],
-        &["commit", "--message", &message],
-        &["push"],
-    ];
-    for args in commands {
-        crate::git_in(root, args)?;
+    )?;
+    crate::git_in(root, &["commit", "--message", &message])?;
+    let mut rejected = Vec::new();
+    for _ in 0..PUSH_ATTEMPTS {
+        crate::git_in(root, &["pull", "--rebase"])?;
+        match crate::git_in(root, &["push"]) {
+            Ok(_) => return Ok(()),
+            Err(diagnostics) => rejected = diagnostics,
+        }
     }
-    Ok(())
+    Err(rejected)
 }
 
 /// - Reads `bindings/published.toml` and the credentials in the environment.
