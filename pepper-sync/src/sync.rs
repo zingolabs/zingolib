@@ -3026,20 +3026,26 @@ mod test {
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::local_consensus::LocalNetwork;
 
+    /// A local network with every upgrade active from `height`.
+    const fn activated_at(height: u32) -> LocalNetwork {
+        let activation = Some(BlockHeight::from_u32(height));
+        LocalNetwork {
+            overwinter: activation,
+            sapling: activation,
+            blossom: activation,
+            heartwood: activation,
+            canopy: activation,
+            nu5: activation,
+            nu6: activation,
+            nu6_1: activation,
+            nu6_2: activation,
+            nu6_3: activation,
+            nu7: activation,
+        }
+    }
+
     /// A local network with every upgrade active from block 1.
-    const NETWORK: LocalNetwork = LocalNetwork {
-        overwinter: Some(BlockHeight::from_u32(1)),
-        sapling: Some(BlockHeight::from_u32(1)),
-        blossom: Some(BlockHeight::from_u32(1)),
-        heartwood: Some(BlockHeight::from_u32(1)),
-        canopy: Some(BlockHeight::from_u32(1)),
-        nu5: Some(BlockHeight::from_u32(1)),
-        nu6: Some(BlockHeight::from_u32(1)),
-        nu6_1: Some(BlockHeight::from_u32(1)),
-        nu6_2: Some(BlockHeight::from_u32(1)),
-        nu6_3: Some(BlockHeight::from_u32(1)),
-        nu7: Some(BlockHeight::from_u32(1)),
-    };
+    const NETWORK: LocalNetwork = activated_at(1);
 
     /// The completion contract of [`crate::sync::SyncStatus::is_complete`]:
     /// completion is the sync task's own terminal condition (sync has
@@ -4487,18 +4493,10 @@ mod test {
     mod checked_height_validation {
         use zcash_protocol::consensus::BlockHeight;
         use zcash_protocol::local_consensus::LocalNetwork;
+        /// Sapling activates above the first block, so a birthday can fall below it.
         const LOCAL_NETWORK: LocalNetwork = LocalNetwork {
             overwinter: Some(BlockHeight::from_u32(1)),
-            sapling: Some(BlockHeight::from_u32(3)),
-            blossom: Some(BlockHeight::from_u32(3)),
-            heartwood: Some(BlockHeight::from_u32(3)),
-            canopy: Some(BlockHeight::from_u32(3)),
-            nu5: Some(BlockHeight::from_u32(3)),
-            nu6: Some(BlockHeight::from_u32(3)),
-            nu6_1: Some(BlockHeight::from_u32(3)),
-            nu6_2: Some(BlockHeight::from_u32(3)),
-            nu6_3: Some(BlockHeight::from_u32(3)),
-            nu7: Some(BlockHeight::from_u32(3)),
+            ..super::activated_at(3)
         };
         use crate::{error::SyncError, mocks::MockWalletError, sync::checked_wallet_height};
         // It's possible an error from an implementor's get_sync_state could bubble up to checked_wallet_height
@@ -5110,7 +5108,7 @@ mod test {
         use shardtree::store::{self, ShardStore as _};
         use tokio::sync::mpsc;
         use zcash_primitives::merkle_tree::write_commitment_tree;
-        use zcash_protocol::{consensus::BlockHeight, local_consensus::LocalNetwork};
+        use zcash_protocol::consensus::BlockHeight;
         use zingo_netutils::lightwallet_protocol::TreeState;
 
         use crate::{
@@ -5122,19 +5120,7 @@ mod test {
             wallet::{ShardTrees, traits::SyncShardTrees},
         };
 
-        const NETWORK: LocalNetwork = LocalNetwork {
-            overwinter: Some(BlockHeight::from_u32(1)),
-            sapling: Some(BlockHeight::from_u32(1)),
-            blossom: Some(BlockHeight::from_u32(1)),
-            heartwood: Some(BlockHeight::from_u32(1)),
-            canopy: Some(BlockHeight::from_u32(1)),
-            nu5: Some(BlockHeight::from_u32(1)),
-            nu6: Some(BlockHeight::from_u32(1)),
-            nu6_1: Some(BlockHeight::from_u32(1)),
-            nu6_2: Some(BlockHeight::from_u32(1)),
-            nu6_3: Some(BlockHeight::from_u32(1)),
-            nu7: Some(BlockHeight::from_u32(1)),
-        };
+        use super::NETWORK;
         const HIGHEST_SCANNED: u32 = 10;
         const FIRST_SCANNED_BLOCK: u32 = HIGHEST_SCANNED + 1;
         const SECOND_SCANNED_BLOCK: u32 = FIRST_SCANNED_BLOCK + 1;
@@ -5350,7 +5336,7 @@ mod test {
         use shardtree::store::ShardStore as _;
         use tokio::sync::mpsc;
         use zcash_primitives::{block::BlockHash, transaction::TxId};
-        use zcash_protocol::{consensus::BlockHeight, local_consensus::LocalNetwork};
+        use zcash_protocol::consensus::BlockHeight;
         use zingo_netutils::lightwallet_protocol::{RawTransaction, TreeState};
         use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -5379,19 +5365,7 @@ mod test {
             witness,
         };
 
-        const NETWORK: LocalNetwork = LocalNetwork {
-            overwinter: Some(BlockHeight::from_u32(1)),
-            sapling: Some(BlockHeight::from_u32(1)),
-            blossom: Some(BlockHeight::from_u32(1)),
-            heartwood: Some(BlockHeight::from_u32(1)),
-            canopy: Some(BlockHeight::from_u32(1)),
-            nu5: Some(BlockHeight::from_u32(1)),
-            nu6: Some(BlockHeight::from_u32(1)),
-            nu6_1: Some(BlockHeight::from_u32(1)),
-            nu6_2: Some(BlockHeight::from_u32(1)),
-            nu6_3: Some(BlockHeight::from_u32(1)),
-            nu7: Some(BlockHeight::from_u32(1)),
-        };
+        use super::NETWORK;
         const BIRTHDAY: u32 = 1;
         /// A transaction of the wallet that the scan of the block at `SPEND_HEIGHT` found by trial decryption.
         const SCANNED_TXID: TxId = TxId::from_bytes([3; 32]);
@@ -6177,18 +6151,10 @@ mod test {
             traits::{SyncShardTrees, SyncTransactions, SyncWallet},
         };
 
+        /// NU6.3 activates at block 100, so a rescan can straddle the Ironwood boundary.
         const NETWORK: LocalNetwork = LocalNetwork {
-            overwinter: Some(BlockHeight::from_u32(1)),
-            sapling: Some(BlockHeight::from_u32(1)),
-            blossom: Some(BlockHeight::from_u32(1)),
-            heartwood: Some(BlockHeight::from_u32(1)),
-            canopy: Some(BlockHeight::from_u32(1)),
-            nu5: Some(BlockHeight::from_u32(1)),
-            nu6: Some(BlockHeight::from_u32(1)),
-            nu6_1: Some(BlockHeight::from_u32(1)),
-            nu6_2: Some(BlockHeight::from_u32(1)),
             nu6_3: Some(BlockHeight::from_u32(100)),
-            nu7: Some(BlockHeight::from_u32(100)),
+            ..super::NETWORK
         };
 
         fn block(height: u32) -> WalletBlock {
