@@ -60,7 +60,10 @@ jobs:
         abi: ${{ fromJSON(inputs.abis) }}
     container:
       # The workbench pins this tag: binding_layer::PUBLISHED_ANDROID_IMAGE.
-      image: docker.io/zingodevops/android_builder:019
+      image: ghcr.io/zingolabs/android_builder:019
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     env:
       ABI: ${{ matrix.abi }}
     steps:

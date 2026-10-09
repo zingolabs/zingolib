@@ -58,7 +58,7 @@ const CLANG_SUFFIX: &str = "-clang";
 pub const ENGINES: [&str; 2] = ["podman", "docker"];
 pub const ENGINE_VARIABLE: &str = "CONTAINER_RUNTIME";
 
-pub const PUBLISHED_ANDROID_IMAGE: &str = "docker.io/zingodevops/android_builder:019";
+pub const PUBLISHED_ANDROID_IMAGE: &str = "ghcr.io/zingolabs/android_builder:019";
 
 /// The Android API level that the builder compiles against.
 pub const ANDROID_API_LEVEL: &str = "26";

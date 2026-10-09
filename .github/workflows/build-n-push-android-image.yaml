@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       push:
-        description: 'Push the built image to DockerHub. Set false to verify a build without publishing.'
+        description: 'Push the built image to GHCR. Set false to verify a build without publishing.'
         type: boolean
         default: true
   push:
@@ -28,6 +28,9 @@ jobs:
   build-and-push:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
     env:
       # The runner ships both podman and docker; force docker so the image
       # the workbench builds is the one `docker push` sees.
@@ -36,12 +39,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Log in to DockerHub
+      # GHCR applies no pull rate limit, and the job's own token may push
+      # the organisation's package, so no secret is needed.
+      - name: Log in to GHCR
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.push }}
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build the image
         id: image

@@ -4,7 +4,7 @@
 # publishes the same image under the tag that binding-layer-android.yaml runs
 # in, so CI installs nothing before it builds. zstd serves the job's cargo
 # cache, which compresses with it when it is present.
-FROM docker.io/zingodevops/android_builder:018
+FROM ghcr.io/zingolabs/android_builder:018
 
 RUN apt update \
     && apt upgrade -y \
