@@ -13,6 +13,7 @@ use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
 use zcash_protocol::consensus::NetworkConstants;
 use zcash_protocol::{PoolType, ShieldedPool, consensus};
+use zingo_common_components::protocol::{ActivationHeights, ActivationHeightsBuilder};
 
 use crate::lightclient::LightClient;
 use crate::lightclient::error::LightClientError;
@@ -22,6 +23,39 @@ use crate::wallet::output::SpendStatus;
 use crate::wallet::summary::data::{
     BasicCoinSummary, BasicNoteSummary, OutgoingNoteSummary, TransactionSummary,
 };
+
+/// The era the in-process tests run under: every network upgrade through
+/// NU7 active at height 1, so a mock chain validates the branch id mainnet
+/// carries from the NU7 activation. The regtest tier's era is
+/// `zingolib_testutils::scenarios::default_test_activation_heights`, which
+/// leaves NU7 off until an indexer serves it.
+#[must_use]
+pub fn mock_activation_heights() -> ActivationHeights {
+    mock_activation_heights_with(|era| era)
+}
+
+/// The in-process era with `adjust` applied to its builder, for a test that
+/// moves one activation to make a boundary or switches one off.
+pub fn mock_activation_heights_with(
+    adjust: impl FnOnce(ActivationHeightsBuilder) -> ActivationHeightsBuilder,
+) -> ActivationHeights {
+    const GENESIS_SUCCESSOR: Option<u32> = Some(1);
+    adjust(
+        ActivationHeights::builder()
+            .set_overwinter(GENESIS_SUCCESSOR)
+            .set_sapling(GENESIS_SUCCESSOR)
+            .set_blossom(GENESIS_SUCCESSOR)
+            .set_heartwood(GENESIS_SUCCESSOR)
+            .set_canopy(GENESIS_SUCCESSOR)
+            .set_nu5(GENESIS_SUCCESSOR)
+            .set_nu6(GENESIS_SUCCESSOR)
+            .set_nu6_1(GENESIS_SUCCESSOR)
+            .set_nu6_2(GENESIS_SUCCESSOR)
+            .set_nu6_3(GENESIS_SUCCESSOR)
+            .set_nu7(GENESIS_SUCCESSOR),
+    )
+    .build()
+}
 
 pub mod assertions;
 pub mod chain_generics;

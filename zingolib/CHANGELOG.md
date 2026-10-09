@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `testutils::mock_activation_heights` and `mock_activation_heights_with`, the
+  era the in-process tests run under: every network upgrade through NU7 at
+  height 1. `testutils::mock_indexer::MockChain::new` and
+  `SyntheticWalletBuilder` take it in place of `ActivationHeights::default`,
+  which leaves NU7 off.
 - `utils::system_rng`, the one constructor of the operating system's
   randomness every signing and proving site draws from.
 - `wallet::keys::unified::encode_ufvk`, the string encoding of a unified full

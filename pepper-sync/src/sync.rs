@@ -4198,7 +4198,7 @@ mod test {
             nu6_1: Some(BlockHeight::from_u32(1)),
             nu6_2: Some(BlockHeight::from_u32(1)),
             nu6_3: Some(BlockHeight::from_u32(1)),
-            nu7: None,
+            nu7: Some(BlockHeight::from_u32(1)),
         };
         const FUNDING_HEIGHT: BlockHeight = BlockHeight::from_u32(10);
         const SPEND_HEIGHT: BlockHeight = BlockHeight::from_u32(100);
@@ -4373,7 +4373,7 @@ mod test {
             nu6_1: Some(BlockHeight::from_u32(3)),
             nu6_2: Some(BlockHeight::from_u32(3)),
             nu6_3: Some(BlockHeight::from_u32(3)),
-            nu7: None,
+            nu7: Some(BlockHeight::from_u32(3)),
         };
         use crate::{error::SyncError, mocks::MockWalletError, sync::checked_wallet_height};
         // It's possible an error from an implementor's get_sync_state could bubble up to checked_wallet_height
@@ -4858,7 +4858,7 @@ mod test {
             nu6_1: Some(BlockHeight::from_u32(1)),
             nu6_2: Some(BlockHeight::from_u32(1)),
             nu6_3: Some(BlockHeight::from_u32(1)),
-            nu7: None,
+            nu7: Some(BlockHeight::from_u32(1)),
         };
         const BIRTHDAY: u32 = 1;
         /// The chain height the server reported when the scan range was selected.
@@ -5004,7 +5004,7 @@ mod test {
             nu6_1: Some(BlockHeight::from_u32(1)),
             nu6_2: Some(BlockHeight::from_u32(1)),
             nu6_3: Some(BlockHeight::from_u32(1)),
-            nu7: None,
+            nu7: Some(BlockHeight::from_u32(1)),
         };
         const BIRTHDAY: u32 = 1;
         /// The first block of the scan range that fails the continuity check.
@@ -5244,7 +5244,7 @@ mod test {
             nu6_1: Some(BlockHeight::from_u32(1)),
             nu6_2: Some(BlockHeight::from_u32(1)),
             nu6_3: Some(BlockHeight::from_u32(100)),
-            nu7: None,
+            nu7: Some(BlockHeight::from_u32(100)),
         };
 
         fn block(height: u32) -> WalletBlock {

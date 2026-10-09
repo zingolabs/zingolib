@@ -1638,30 +1638,14 @@ mod built_transaction_shape {
     /// The boundary cell the tip_spend_rejection attribution isolated:
     /// a wallet synced to activation − 1 builds a transaction targeting
     /// the activation height, so it must commit to the POST-activation
-    /// branch id. This is the permanent unit fence for the wallet-side
-    /// wrong-branch-id failure observed live at the height-5 NU6.1/6.2
-    /// co-activation.
-    #[tokio::test]
-    async fn boundary_adjacent_build_uses_post_activation_branch_id() {
-        let boundary = 10;
-        let heights = ActivationHeights::builder()
-            .set_overwinter(Some(1))
-            .set_sapling(Some(1))
-            .set_blossom(Some(1))
-            .set_heartwood(Some(1))
-            .set_canopy(Some(1))
-            .set_nu5(Some(1))
-            .set_nu6(Some(1))
-            .set_nu6_1(Some(1))
-            .set_nu6_2(Some(boundary))
-            .set_nu6_3(None)
-            .set_nu7(None)
-            .build();
-        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .orchard_note(100_000)
-            .tip(boundary - 1)
-            .activation_heights(heights)
-            .build();
+    /// branch id. `heights` must activate a branch at `boundary`, and the
+    /// wallet must hold a note spendable on both sides of it.
+    async fn assert_boundary_adjacent_build_uses_post_activation_branch_id(
+        heights: ActivationHeights,
+        boundary: u32,
+        wallet: SyntheticWalletBuilder,
+    ) {
+        let wallet = wallet.tip(boundary - 1).activation_heights(heights).build();
         let chain = wallet.chain_type();
         let pre_activation = BranchId::for_height(&chain, BlockHeight::from_u32(boundary - 1));
         let post_activation = BranchId::for_height(&chain, BlockHeight::from_u32(boundary));
@@ -1674,6 +1658,40 @@ mod built_transaction_shape {
 
         assert_eq!(target, boundary);
         assert_eq!(branch_id, post_activation);
+    }
+
+    /// The permanent unit fence for the wallet-side wrong-branch-id failure
+    /// observed live at the height-5 NU6.1/6.2 co-activation.
+    #[tokio::test]
+    async fn boundary_adjacent_build_uses_post_activation_branch_id() {
+        let boundary = 10;
+        let heights = crate::testutils::mock_activation_heights_with(|era| {
+            era.set_nu6_2(Some(boundary)).set_nu6_3(None).set_nu7(None)
+        });
+        assert_boundary_adjacent_build_uses_post_activation_branch_id(
+            heights,
+            boundary,
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(100_000),
+        )
+        .await;
+    }
+
+    /// The same fence at the NU7 boundary, which mainnet crosses on
+    /// 2026-11-05: an Ironwood note spent from NU7 − 1 commits to the NU7
+    /// branch id, the id the previous dependency cohort did not know.
+    #[tokio::test]
+    async fn nu7_boundary_adjacent_build_uses_post_activation_branch_id() {
+        let boundary = 10;
+        let heights =
+            crate::testutils::mock_activation_heights_with(|era| era.set_nu7(Some(boundary)));
+        assert_boundary_adjacent_build_uses_post_activation_branch_id(
+            heights,
+            boundary,
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .ironwood_note(100_000),
+        )
+        .await;
     }
 }
 
