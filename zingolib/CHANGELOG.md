@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `wallet::expiry`, the transaction expiry delta: `tx_expiry_delta` and
+  `tx_expiry_height` answer for a target height, and `NU7_TX_EXPIRY_DELTA` is
+  the delta from NU7 activation.
+- `testutils::mock_activation_heights` and `mock_activation_heights_with`, the
+  era the in-process tests run under: every network upgrade through NU7 at
+  height 1. `testutils::mock_indexer::MockChain::new` and
+  `SyntheticWalletBuilder` take it in place of `ActivationHeights::default`,
+  which leaves NU7 off.
+- `utils::system_rng`, the one constructor of the operating system's
+  randomness every signing and proving site draws from.
+- `wallet::keys::unified::encode_ufvk`, the string encoding of a unified full
+  viewing key for a chain.
 - Add `data::ServerInfo::from_lightd_info`, the mapping from an indexer's `LightdInfo` to a `ServerInfo` that `LightClient::info` carried inline, so a consumer holding a `LightdInfo` from its own request builds the same record.
 - The `netutils` funnel re-exports `TimeoutExpired`, the marker tonic leaves in a status's source chain when the client's own request deadline fired, so a consumer tells a timed-out request apart from a verdict the indexer returned.
 - Add `LightWallet::read_chain`, the chain a wallet file was written for, read from the header of version 32 and later files and by a full read under each chain for older ones.
@@ -20,6 +32,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `wallet::keys::WalletKind` and `LightWallet::kind`, the wallet's key material as one of `Mnemonic`, `SpendingKey`, `ViewingKey` with the receivers the key holds, or `NoKeys`, or `KeyError::NoAccountKeys` for a wallet without account zero. zingo-cli and the FFI each computed this themselves.
 
 ### Changed
+- A transaction targeting a height at or above the NU7 activation expires 120
+  blocks past its target, the delta ZIP 203 and ZIP 218 recommend for
+  25-second blocks, where it expired 40 blocks past. Below the activation,
+  and on a chain that never activates NU7, the delta stays 40. Every build
+  site passes the delta explicitly: sends, the transparent op_return send,
+  migration note splitting, and the cap of the offline-signing lift. A
+  proposal holding a step shaped like a canonical ZIP 318 crossing leaves the
+  expiry to the backend, which gives such a step the ZIP's rolling expiry and
+  refuses any other. The canonical expiry of a ZIP 318 migration part is
+  unchanged.
+- A receiver that sync discovers at an address index keeps the stored
+  address's expiry height and expiry time when it is merged into that
+  address. The merge rebuilt the address from its receivers alone and dropped
+  the metadata, which the wallet's addresses carry none of today.
+- The change memo of a send records recipient unified addresses through
+  `zingo_memo::create_wallet_internal_memo`, so a ZIP 316 Revision 2 recipient
+  is recorded with its revision and metadata in a version 2 memo, and every
+  other send keeps writing the version 1 memo earlier releases read. The memo
+  no longer records refund address indexes, which no reader consumed. When
+  the recipients outgrow the memo field, the memo records those that fit and
+  an error is logged naming how many it holds; the send proceeds either way.
+- **Breaking:** the Zcash stack moves to the librustzcash NU7 pre-release
+  cohort, pinned exactly: `zcash_client_backend` 0.25.0-pre.1, `zcash_keys` 0.17.0-pre.1, `zcash_primitives` 0.31.0-pre.1, `zcash_proofs` 0.31.0-pre.1, `zcash_protocol` 0.11.0-pre.0, `zcash_address` 0.14.0-pre.1, `zcash_transparent` 0.11.0-pre.1, `zcash_encoding` 0.5, `zcash_note_encryption` 0.5, `zcash_script` 0.6, `orchard` 0.16, `sapling-crypto` 0.9, `incrementalmerkletree` 0.9, `shardtree` 0.8, `zip32` 0.3, `bip32` 0.6, `jubjub` 0.11, `secp256k1` 0.33, `rand` 0.10, and `zcash_pool_migration` 0.2.0-pre.1.
+  The cohort knows NU7 on testnet (activation height 4,465,026, consensus
+  branch id `0x77190AD9`), so a testnet transaction built above that height
+  now carries the branch id the network accepts. Mainnet has no NU7 height
+  in this cohort. Every type these crates export through zingolib's public
+  API moves with them, so a consumer pins the same cohort.
+- **Breaking:** `ChainType::activation_height` answers `NetworkUpgrade::Nu7`
+  on a regtest chain from `ActivationHeights::nu7`.
+- The wallet draws transaction randomness from `utils::system_rng`, the
+  operating system's generator unwrapped, where it passed `rand::rngs::OsRng`.
+  `rand` 0.10 removed that type and made the system generator fallible.
+- `wallet::keys::unified::UnifiedKeyStore` serializes a unified full viewing
+  key through `encode_ufvk`, which encodes at ZIP 316 Revision 0 when that
+  revision can carry the key and at Revision 2 otherwise.
 - A `migration` value transfer now carries the sum of the Ironwood notes the transaction delivered to the wallet, the amount migrated, where it carried the whole self-received sum including any Orchard change. The FFI spliced this value in after the fact; the value transfer now states it directly.
 - `lightwallet-protocol` moves to 0.4.0, the upstream rev whose committed
   bindings carry the Ironwood proto fields. No workspace enables

@@ -614,7 +614,7 @@ impl crate::wallet::LightWallet {
                     if let Some(anchor) = super::schedule::draw_anchor_bucket(
                         bucket,
                         &floor,
-                        &mut rand::rngs::OsRng,
+                        &mut crate::utils::system_rng(),
                         state.params.bucket_modulus,
                     ) {
                         part.anchor_bucket = Some(anchor);
@@ -931,7 +931,7 @@ impl ProveOnce {
                 &zcash_transparent::builder::TransparentSigningSet::new(),
                 &[usk.sapling().clone()],
                 &[usk.orchard().into()],
-                rand::rngs::OsRng,
+                crate::utils::system_rng(),
                 &sapling_prover,
                 &sapling_prover,
                 &fee_rule,

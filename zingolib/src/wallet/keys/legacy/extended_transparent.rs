@@ -4,15 +4,12 @@ use zcash_protocol::consensus::NetworkConstants;
 
 use crate::config::ClientConfig;
 use hmac::{Hmac, Mac};
-use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
+use secp256k1::{Error, PublicKey, SecretKey};
 use sha2::Sha512;
-use std::sync::LazyLock;
 use zcash_encoding::Vector;
 
 use crate::wallet::traits::ReadableWriteable;
 
-static SECP256K1_SIGN_ONLY: LazyLock<Secp256k1<SignOnly>> = LazyLock::new(Secp256k1::signing_only);
-//static SECP256K1_VERIFY_ONLY: LazyLock<Secp256k1<VerifyOnly>> = LazyLock::new(|| Secp256k1::verification_only());
 /// Random entropy, part of extended key.
 type ChainCode = Vec<u8>;
 
@@ -94,7 +91,7 @@ impl ExtendedPrivKey {
     pub fn with_seed(seed: &[u8]) -> Result<ExtendedPrivKey, Error> {
         let signature = hmac_sha512(b"Bitcoin seed", &[seed]);
         let (key, chain_code) = get_32_byte_key_chunk_and_cc(signature);
-        let private_key = SecretKey::from_byte_array(key)?;
+        let private_key = SecretKey::from_secret_bytes(key)?;
         Ok(ExtendedPrivKey {
             private_key,
             chain_code,
@@ -132,7 +129,7 @@ impl ExtendedPrivKey {
     }
 
     fn sign_normal_key(&self, index: u32) -> [u8; 64] {
-        let public_key = PublicKey::from_secret_key(&SECP256K1_SIGN_ONLY, &self.private_key);
+        let public_key = PublicKey::from_secret_key(&self.private_key);
         hmac_sha512(
             &self.chain_code,
             &[&public_key.serialize(), &index.to_be_bytes()],
@@ -149,7 +146,7 @@ impl ExtendedPrivKey {
             KeyIndex::Normal(index) => self.sign_normal_key(index),
         };
         let (key, chain_code) = get_32_byte_key_chunk_and_cc(signature);
-        let private_key = SecretKey::from_byte_array(key)?;
+        let private_key = SecretKey::from_secret_bytes(key)?;
         let tweak = secp256k1::Scalar::from(self.private_key);
         let tweaked_private_key = private_key.add_tweak(&tweak)?;
         Ok(ExtendedPrivKey {
@@ -164,7 +161,7 @@ impl ReadableWriteable for SecretKey {
     fn read<R: std::io::Read>(mut reader: R, (): ()) -> std::io::Result<Self> {
         let mut secret_key_bytes = [0; 32];
         reader.read_exact(&mut secret_key_bytes)?;
-        SecretKey::from_byte_array(secret_key_bytes)
+        SecretKey::from_secret_bytes(secret_key_bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
     }
 
@@ -218,8 +215,8 @@ impl ExtendedPubKey {
             KeyIndex::Normal(index) => self.sign_normal_key(index),
         };
         let (key, chain_code) = get_32_byte_key_chunk_and_cc(signature);
-        let new_sk = SecretKey::from_byte_array(key)?;
-        let new_pk = PublicKey::from_secret_key(&Secp256k1::new(), &new_sk);
+        let new_sk = SecretKey::from_secret_bytes(key)?;
+        let new_pk = PublicKey::from_secret_key(&new_sk);
         Ok(Self {
             public_key: new_pk.combine(&self.public_key)?,
             chain_code,
@@ -261,9 +258,8 @@ impl ReadableWriteable for ExtendedPubKey {
 
 impl From<&ExtendedPrivKey> for ExtendedPubKey {
     fn from(sk: &ExtendedPrivKey) -> Self {
-        let secp = Secp256k1::new();
         ExtendedPubKey {
-            public_key: PublicKey::from_secret_key(&secp, &sk.private_key),
+            public_key: PublicKey::from_secret_key(&sk.private_key),
             chain_code: sk.chain_code.clone(),
         }
     }
@@ -294,8 +290,6 @@ fn test_commutativity_of_key_derivation_mechanisms() {
 #[test]
 fn test_sign_and_verify_with_derived_key() {
     // Show standard sign/verify algoritms work
-    let secp = Secp256k1::new();
-
     // derive a child key pair
     // 0xcd = 11001101: alternating bit pattern used as deterministic test seed
     let sk = ExtendedPrivKey::with_seed(&[0xcd; 64]).unwrap();
@@ -310,14 +304,14 @@ fn test_sign_and_verify_with_derived_key() {
     let mut digest = [0u8; 32];
     digest[..11].copy_from_slice(b"Hello World");
     let msg = secp256k1::Message::from_digest(digest);
-    let sig = secp.sign_ecdsa(msg, &sk_i.private_key);
+    let sig = secp256k1::ecdsa::sign(msg, &sk_i.private_key);
 
     // verify succeeds with the correct public key
-    assert!(secp.verify_ecdsa(msg, &sig, &pk_i.public_key).is_ok());
+    assert!(secp256k1::ecdsa::verify(&sig, msg, &pk_i.public_key).is_ok());
 
     // verify fails with a different key
     // 0xef = 11101111: distinct bit pattern to produce an unrelated key pair
     let other_sk = ExtendedPrivKey::with_seed(&[0xef; 64]).unwrap();
     let other_pk = ExtendedPubKey::from(&other_sk);
-    assert!(secp.verify_ecdsa(msg, &sig, &other_pk.public_key).is_err());
+    assert!(secp256k1::ecdsa::verify(&sig, msg, &other_pk.public_key).is_err());
 }
