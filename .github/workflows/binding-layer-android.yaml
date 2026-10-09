@@ -1,10 +1,12 @@
 name: Binding Layer for Android
 
-# Builds the Binding Layer's Android libraries and Kotlin bindings on this
-# commit, and packages them into the AAR. The build runs the builder of
-# tools/workbench in the builder's own image. The package job compiles no
-# Rust. The Gradle library takes the prebuilt output, compiles the Kotlin
-# bindings, and bundles the AAR.
+# Builds the Binding Layer's Android libraries and Kotlin bindings on the
+# commit the caller names, and packages them into the AAR. The build runs
+# the builder of tools/workbench in the builder's own image. The package
+# job compiles no Rust. The Gradle library takes the prebuilt output,
+# compiles the Kotlin bindings, and bundles the AAR. The caller passes every
+# artifact name from one run of `build-binding-layer artifact`, so the jobs
+# of one run agree on the names whatever commit they build.
 
 on:
   workflow_call:

@@ -107,7 +107,7 @@ jobs:
       - name: Read the newest manifest entry
         id: manifest
         run: |
-          commit="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --features registry --bin binding-manifest -- --newest)"
+          commit="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --newest)"
           echo "commit=${commit}" >> "$GITHUB_OUTPUT"
 
       # The builder is the one source of every artifact name and of the ABI
