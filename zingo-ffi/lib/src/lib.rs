@@ -118,6 +118,8 @@ pub enum ZingolibError {
     Migration(String),
     #[error("Error: mixnet: {0}")]
     Mixnet(String),
+    #[error("Error: wallet chain mismatch: {0}")]
+    WalletChainMismatch(String),
 }
 
 /// The separator between two layers of a rendered cause chain, and the one
@@ -157,6 +159,32 @@ fn chain_text(error: &(dyn std::error::Error + 'static)) -> String {
         link = cause.source();
     }
     text
+}
+
+/// Whether an `io::Error` carries a chain mismatch; its `source()` skips
+/// the error it wraps, so the wrapped error is read directly.
+fn io_chain_mismatch(io: &std::io::Error) -> bool {
+    io.get_ref()
+        .is_some_and(|inner| inner.is::<zingolib::wallet::disk::ChainMismatch>())
+}
+
+/// A failure to open wallet bytes: a chain mismatch keeps its own variant.
+/// `LightClientError::FileError` holds its `io::Error` without naming it as
+/// the source, so it is matched before the cause chain is walked.
+fn open_error(error: &LightClientError) -> ZingolibError {
+    let mut mismatch = matches!(error, LightClientError::FileError(io) if io_chain_mismatch(io));
+    let mut link: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(cause) = link {
+        mismatch |= cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(io_chain_mismatch);
+        link = cause.source();
+    }
+    if mismatch {
+        ZingolibError::WalletChainMismatch(chain_text(error))
+    } else {
+        ZingolibError::init(chain_text(error))
+    }
 }
 
 fn chained<E: std::error::Error + 'static>(
@@ -1008,13 +1036,13 @@ pub fn init_from_bytes(
                             break;
                         }
                         Err(e) => {
-                            last_error = ZingolibError::init(chain_text(&e));
+                            last_error = open_error(&e);
                             continue;
                         }
                     }
                 }
                 Err(e) => {
-                    last_error = ZingolibError::init(chain_text(&e));
+                    last_error = open_error(&e);
                     continue;
                 }
             }
@@ -1113,6 +1141,45 @@ mod cause_chain_tests {
             text.contains("Mnemonic not found"),
             "the cause must survive the crossing: {text}"
         );
+    }
+
+    #[test]
+    fn a_wallet_read_for_another_chain_opens_as_a_chain_mismatch() {
+        let mismatch = LightClientError::FileError(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            zingolib::wallet::disk::ChainMismatch {
+                saved: "mainnet".to_string(),
+                expected: "testnet".to_string(),
+            },
+        ));
+        let error = open_error(&mismatch);
+        assert!(
+            matches!(&error, ZingolibError::WalletChainMismatch(text)
+                if text.contains("wallet chain name mainnet doesn't match expected testnet")),
+            "{error:?}"
+        );
+
+        let other = LightClientError::FileError(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "invalid account id",
+        ));
+        assert!(matches!(open_error(&other), ZingolibError::Init(_)));
+    }
+
+    #[test]
+    fn read_wallet_chain_names_the_chain_of_the_header() {
+        let mut bytes = 41u64.to_le_bytes().to_vec();
+        bytes.push(0);
+        assert_eq!(read_wallet_chain(bytes).unwrap(), "main");
+
+        let mut bytes = 41u64.to_le_bytes().to_vec();
+        bytes.push(1);
+        assert_eq!(read_wallet_chain(bytes).unwrap(), "test");
+
+        assert!(matches!(
+            read_wallet_chain(vec![1, 2, 3]),
+            Err(ZingolibError::Read(_))
+        ));
     }
 
     #[test]
@@ -2390,6 +2457,19 @@ impl Report for ViewingKey {
 }
 
 wallet_report!(pub fn get_ufvk() => report_wallet(ViewingKey));
+
+/// The chain a wallet file was written for: `main`, `test` or `regtest`.
+#[uniffi::export]
+pub fn read_wallet_chain(wallet_bytes: Vec<u8>) -> Result<String, ZingolibError> {
+    let chain = zingolib::wallet::LightWallet::read_chain(&wallet_bytes)
+        .map_err(chained(ZingolibError::Read))?;
+    Ok(match chain {
+        ChainType::Mainnet => "main",
+        ChainType::Testnet => "test",
+        ChainType::Regtest(_) => "regtest",
+    }
+    .to_string())
+}
 
 /// Salvages seed phrase, birthday, and account count from the stable prefix
 /// of a wallet file that cannot open.
