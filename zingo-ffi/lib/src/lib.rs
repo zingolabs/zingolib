@@ -2490,7 +2490,12 @@ impl Report for keys::WalletKind {
     }
 }
 
-wallet_report!(pub fn wallet_kind() => report_wallet(wallet::LightWallet::kind));
+#[uniffi::export]
+pub fn wallet_kind() -> Result<String, ZingolibError> {
+    with_wallet(|wallet| wallet.kind())?
+        .map_err(|e| ZingolibError::read(&e))?
+        .report()
+}
 
 #[uniffi::export]
 pub fn parse_address(address: String) -> Result<String, ZingolibError> {

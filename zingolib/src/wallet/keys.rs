@@ -60,15 +60,14 @@ pub enum WalletKind {
 }
 
 impl LightWallet {
-    /// - Panics when the wallet holds no account zero.
-    pub fn kind(&self) -> WalletKind {
+    pub fn kind(&self) -> Result<WalletKind, KeyError> {
         if self.mnemonic_phrase().is_some() {
-            return WalletKind::Mnemonic;
+            return Ok(WalletKind::Mnemonic);
         }
-        match self
+        let kind = match self
             .unified_key_store
             .get(&zip32::AccountId::ZERO)
-            .expect("account 0 must always exist")
+            .ok_or(KeyError::NoAccountKeys)?
         {
             UnifiedKeyStore::Spend(_) => WalletKind::SpendingKey,
             UnifiedKeyStore::View(ufvk) => WalletKind::ViewingKey {
@@ -77,7 +76,8 @@ impl LightWallet {
                 orchard: ufvk.orchard().is_some(),
             },
             UnifiedKeyStore::Empty => WalletKind::NoKeys,
-        }
+        };
+        Ok(kind)
     }
 
     /// Returns a new unified address for the given `receivers` and `account_id`, adding this new unified address to
