@@ -142,10 +142,8 @@ enum Step {
     FreshDir(path::PathBuf),
     /// Remove a host directory if it exists.
     Remove(path::PathBuf),
-    Describe {
-        workdir: String,
-        env: Vec<(String, String)>,
-        command: Vec<String>,
+    Descriptor {
+        profile_dir: path::PathBuf,
         to: path::PathBuf,
     },
 }
@@ -482,33 +480,11 @@ fn cargo_step(
     Step::Run {
         workdir: workdir.to_string(),
         env: env.to_vec(),
-        command: cargo_command(words, profile, package),
-    }
-}
-
-fn cargo_command(words: &[&str], profile: binding_layer::Profile, package: &[&str]) -> Vec<String> {
-    [["cargo"].as_slice(), words, profile.cargo_args(), package]
-        .concat()
-        .into_iter()
-        .map(String::from)
-        .collect()
-}
-
-fn describe_step(
-    workdir: &str,
-    env: &[(String, String)],
-    words: &[&str],
-    profile: binding_layer::Profile,
-    package: &[&str],
-    to: path::PathBuf,
-) -> Step {
-    let mut command = cargo_command(words, profile, package);
-    command.push(binding_layer::MESSAGE_FORMAT_FLAG.to_string());
-    Step::Describe {
-        workdir: workdir.to_string(),
-        env: env.to_vec(),
-        command,
-        to,
+        command: [["cargo"].as_slice(), words, profile.cargo_args(), package]
+            .concat()
+            .into_iter()
+            .map(String::from)
+            .collect(),
     }
 }
 
@@ -543,17 +519,6 @@ fn with_base_env(plan: Vec<Step>, base: &[(String, String)]) -> Vec<Step> {
                 workdir,
                 env: [base.to_vec(), env].concat(),
                 command,
-            },
-            Step::Describe {
-                workdir,
-                env,
-                command,
-                to,
-            } => Step::Describe {
-                workdir,
-                env: [base.to_vec(), env].concat(),
-                command,
-                to,
             },
             other => other,
         })
@@ -676,15 +641,12 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
             },
         ]
     });
-    let descriptor = abis.first().map(|abi| {
-        describe_step(
-            &wallet_crate_dir,
-            &abi.env(&wallet_target),
-            &["ndk", "--target", abi.triple, "build"],
-            BUILDER_PROFILE,
-            &[],
-            roots.out_host_path(binding_layer::DESCRIPTOR_FILE),
-        )
+    let descriptor = abis.first().map(|abi| Step::Descriptor {
+        profile_dir: host_of(
+            roots,
+            &format!("{wallet_target}/{}/{PROFILE_DIR}", abi.triple),
+        ),
+        to: roots.out_host_path(binding_layer::DESCRIPTOR_FILE),
     });
     wallet_steps
         .chain(proxy_steps)
@@ -948,14 +910,13 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
         })
         .into_iter()
         .collect(),
-        vec![describe_step(
-            &wallet_crate_dir,
-            &with_target(&wallet_target),
-            &["build", "--target", IOS_DEVICE_TARGET],
-            BUILDER_PROFILE,
-            &[],
-            host(binding_layer::DESCRIPTOR_FILE),
-        )],
+        vec![Step::Descriptor {
+            profile_dir: host_of(
+                roots,
+                &format!("{wallet_target}/{IOS_DEVICE_TARGET}/{PROFILE_DIR}"),
+            ),
+            to: host(binding_layer::DESCRIPTOR_FILE),
+        }],
     ];
     fresh_plan(
         roots,
@@ -1014,20 +975,12 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
                 Ok(())
             }
         }
-        Step::Describe {
-            workdir,
-            env,
-            command,
-            to,
-        } => {
-            let messages = capture_command(runner, workdir, env, command)?;
-            let descriptor = binding_layer::descriptor_in_messages(&messages).ok_or_else(|| {
-                vec![format!(
-                    "`{}` reported no {} for zingolib",
-                    command.join(" "),
-                    binding_layer::DESCRIPTOR_ENV
-                )]
-            })?;
+        Step::Descriptor { profile_dir, to } => {
+            let file = profile_dir.join(binding_layer::PROFILE_DESCRIPTOR);
+            let descriptor = workbench::read(&file)?.trim().to_string();
+            if descriptor.is_empty() {
+                return Err(vec![format!("{} holds no descriptor", file.display())]);
+            }
             workbench::create_parent(to)?;
             fs::write(to, format!("{descriptor}\n"))
                 .map_err(|e| vec![format!("cannot write {}: {e}", to.display())])
@@ -1098,32 +1051,6 @@ fn host_command(started: &Invocation) -> process::Command {
         .env_remove(binding_layer::TOOLCHAIN_VARIABLE)
         .envs(started.env.iter().cloned());
     command
-}
-
-fn capture_command(
-    runner: &Runner,
-    workdir: &str,
-    env: &[(String, String)],
-    command: &[String],
-) -> Result<String, Vec<String>> {
-    let started = invocation(runner, workdir, env, command);
-    let output = host_command(&started)
-        .stderr(process::Stdio::inherit())
-        .output()
-        .map_err(|e| vec![format!("cannot run {}: {e}", started.program)])?;
-    if !output.status.success() {
-        return Err(vec![format!(
-            "`{}` failed ({})",
-            command.join(" "),
-            output.status
-        )]);
-    }
-    String::from_utf8(output.stdout).map_err(|e| {
-        vec![format!(
-            "`{}` wrote output that is not UTF-8: {e}",
-            command.join(" ")
-        )]
-    })
 }
 
 /// Run one command on the runner, streaming its output, and fail if it fails.
@@ -1234,7 +1161,7 @@ mod tests {
     fn no_plan_step_overrides_the_toolchain_pin() {
         for plan in every_plan() {
             assert!(plan.iter().all(|step| match step {
-                Step::Run { env, .. } | Step::Describe { env, .. } => env
+                Step::Run { env, .. } => env
                     .iter()
                     .all(|(key, _)| key != binding_layer::TOOLCHAIN_VARIABLE),
                 _ => true,
@@ -1290,38 +1217,27 @@ mod tests {
         let plan = android_plan(&roots(), &abis);
         let base = android_base_env();
         assert!(plan.iter().all(|step| match step {
-            Step::Run { env, .. } | Step::Describe { env, .. } => {
-                base.iter().all(|entry| env.contains(entry))
-            }
+            Step::Run { env, .. } => base.iter().all(|entry| env.contains(entry)),
             _ => true,
         }));
     }
 
     #[test]
-    fn the_android_and_ios_plans_describe_the_wallet_build_with_cargo_messages() {
+    fn the_android_and_ios_plans_read_the_descriptor_beside_the_wallet_profile() {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
         for plan in [android_plan(&roots(), &abis), ios_plan(&host_roots())] {
-            let describes: Vec<_> = plan
+            let descriptors: Vec<_> = plan
                 .iter()
                 .filter_map(|step| match step {
-                    Step::Describe {
-                        workdir,
-                        command,
-                        to,
-                        ..
-                    } => Some((workdir, command, to)),
+                    Step::Descriptor { profile_dir, to } => Some((profile_dir, to)),
                     _ => None,
                 })
                 .collect();
-            let [(workdir, command, to)] = describes[..] else {
-                panic!("one describe step per plan, found {}", describes.len());
+            let [(profile_dir, to)] = descriptors[..] else {
+                panic!("one descriptor step per plan, found {}", descriptors.len());
             };
-            assert!(workdir.ends_with(binding_layer::WALLET_CRATE_DIR));
-            assert_eq!(command.first().map(String::as_str), Some("cargo"));
-            assert_eq!(
-                command.last().map(String::as_str),
-                Some(binding_layer::MESSAGE_FORMAT_FLAG)
-            );
+            assert!(profile_dir.ends_with(PROFILE_DIR));
+            assert!(profile_dir.to_string_lossy().contains("/wallet/"));
             assert!(to.ends_with(binding_layer::DESCRIPTOR_FILE));
         }
     }

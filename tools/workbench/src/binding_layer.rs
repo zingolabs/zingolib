@@ -37,12 +37,7 @@ pub const TARGET_DIR_VARIABLE: &str = "CARGO_TARGET_DIR";
 
 pub const DESCRIPTOR_FILE: &str = "descriptor.txt";
 
-pub const DESCRIPTOR_ENV: &str = "ZINGOLIB_DESCRIPTOR";
-pub const MESSAGE_FORMAT_FLAG: &str = "--message-format=json-render-diagnostics";
-const BUILD_SCRIPT_MESSAGE: &str = "\"reason\":\"build-script-executed\"";
-const PACKAGE_ID_KEY: &str = "\"package_id\":\"";
-const ZINGOLIB_PACKAGE_ID_TAIL: &str = "/zingolib#";
-const JSON_STRING_END: char = '"';
+pub const PROFILE_DESCRIPTOR: &str = "git_description.txt";
 
 /// The container engines to try, in order.
 pub const ENGINES: [&str; 2] = ["podman", "docker"];
@@ -177,27 +172,6 @@ const OUTPUT_ASSIGNMENT: char = '=';
 const JSON_QUOTE: char = '"';
 const JSON_SEPARATOR: &str = ",";
 const JSON_PAIR: char = ':';
-
-fn json_string_after<'a>(text: &'a str, key: &str) -> Option<&'a str> {
-    let start = text.find(key)? + key.len();
-    let rest = &text[start..];
-    let end = rest.find(JSON_STRING_END)?;
-    Some(&rest[..end])
-}
-
-pub fn descriptor_in_messages(messages: &str) -> Option<String> {
-    let env_key = format!("[\"{DESCRIPTOR_ENV}\",\"");
-    messages
-        .lines()
-        .filter(|line| line.contains(BUILD_SCRIPT_MESSAGE))
-        .filter(|line| {
-            json_string_after(line, PACKAGE_ID_KEY)
-                .is_some_and(|id| id.contains(ZINGOLIB_PACKAGE_ID_TAIL))
-        })
-        .find_map(|line| json_string_after(line, &env_key))
-        .filter(|descriptor| !descriptor.is_empty())
-        .map(str::to_string)
-}
 
 pub fn artifact_name(kind: &str, segment: &str, commit: &str) -> String {
     [ARTIFACT_PREFIX, kind, segment, commit].join(ARTIFACT_SEPARATOR)
@@ -436,33 +410,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_descriptor_env_is_the_one_the_build_script_emits() {
+    fn the_profile_descriptor_is_the_file_the_build_script_writes_beside_its_profile() {
         let build_script = include_str!("../../../zingolib/build.rs");
         assert!(build_script.contains(&format!(
-            "const DESCRIPTOR_ENV: &str = \"{DESCRIPTOR_ENV}\";"
+            "const DESCRIPTOR_TEXT_FILE: &str = \"{PROFILE_DESCRIPTOR}\";"
         )));
-        assert!(build_script.contains("cargo:rustc-env={DESCRIPTOR_ENV}={description}"));
-    }
-
-    #[test]
-    fn the_descriptor_comes_from_zingolibs_build_script_message_alone() {
-        let messages = "\
-            {\"reason\":\"compiler-artifact\",\"package_id\":\"path+file:///x/zingolib#6.0.0\"}\n\
-            {\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x/zingolib_testutils#0.1.0\",\"env\":[[\"ZINGOLIB_DESCRIPTOR\",\"wrong\"]],\"out_dir\":\"/x/out\"}\n\
-            {\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x/zingolib#6.0.0\",\"linked_libs\":[],\"env\":[[\"OTHER\",\"1\"],[\"ZINGOLIB_DESCRIPTOR\",\"zl_6.0.0_2691e\"]],\"out_dir\":\"/x/out\"}\n\
-            {\"reason\":\"build-finished\",\"success\":true}\n";
-        assert_eq!(
-            descriptor_in_messages(messages),
-            Some("zl_6.0.0_2691e".to_string())
-        );
-        assert_eq!(
-            descriptor_in_messages("{\"reason\":\"build-finished\"}\n"),
-            None
-        );
-        assert_eq!(
-            descriptor_in_messages("{\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x/zingolib#6.0.0\",\"env\":[]}\n"),
-            None
-        );
+        assert!(build_script.contains("profile_dir.join(DESCRIPTOR_TEXT_FILE)"));
+        assert!(build_script.contains("const PROFILE_DIR_DEPTH: usize = 3;"));
     }
 
     #[test]

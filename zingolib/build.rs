@@ -14,7 +14,8 @@ use std::path::{Path, PathBuf};
 use std::{env, process::Command};
 
 const DESCRIPTOR_TEXT_FILE: &str = "git_description.txt";
-const DESCRIPTOR_ENV: &str = "ZINGOLIB_DESCRIPTOR";
+/// `OUT_DIR` is `<profile>/build/<crate>-<hash>/out`; the profile directory is this many levels up.
+const PROFILE_DIR_DEPTH: usize = 3;
 const DESCRIPTOR_SOURCE_FILE: &str = "git_description.rs";
 
 /// Register everything this script's output depends on. Emitting any
@@ -134,12 +135,15 @@ fn git_description() {
         dirty(),
     );
 
-    // The Binding Layer builder reads the descriptor from cargo's
-    // `build-script-executed` message, which carries every rustc-env line.
-    println!("cargo:rustc-env={DESCRIPTOR_ENV}={description}");
-
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     std::fs::write(out_dir.join(DESCRIPTOR_TEXT_FILE), &description).unwrap();
+    // The Binding Layer builder reads the same file from the profile
+    // directory, a path it can name without knowing this build's hash.
+    // cargo-ndk consumes cargo's JSON messages itself, so the builder
+    // cannot read the descriptor from them.
+    if let Some(profile_dir) = out_dir.ancestors().nth(PROFILE_DIR_DEPTH) {
+        std::fs::write(profile_dir.join(DESCRIPTOR_TEXT_FILE), &description).unwrap();
+    }
     std::fs::write(
         out_dir.join(DESCRIPTOR_SOURCE_FILE),
         format!(
