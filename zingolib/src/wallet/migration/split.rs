@@ -789,7 +789,10 @@ impl crate::wallet::LightWallet {
             orchard_padding: BundlePadding::DEFAULT,
             ironwood_padding: BundlePadding::DEFAULT,
         };
-        let mut builder = Builder::new(self.chain_type, target_height, build_config);
+        let mut builder =
+            Builder::new(self.chain_type, target_height, build_config).with_expiry_height(
+                crate::wallet::expiry::tx_expiry_height(&self.chain_type, target_height),
+            );
         for (note, merkle_path) in notes.into_iter().zip(merkle_paths) {
             builder
                 .add_orchard_spend::<std::convert::Infallible>(
@@ -840,7 +843,7 @@ impl crate::wallet::LightWallet {
                 &zcash_transparent::builder::TransparentSigningSet::new(),
                 &[usk.sapling().clone()],
                 &[usk.orchard().into()],
-                rand::rngs::OsRng,
+                crate::utils::system_rng(),
                 &sapling_prover,
                 &sapling_prover,
                 &fee_rule,

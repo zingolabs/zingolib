@@ -123,11 +123,11 @@ fn check_view_capability_bounds(
         assert_eq!(sapling_notes.len(), 0);
     }
     if fvks.contains(&transparent_fvk) {
-        assert!(ufvk.transparent().is_some());
+        assert!(ufvk.p2pkh().is_some());
         assert_eq!(balance.confirmed_transparent_balance, sent_t_value);
         assert_eq!(transparent_coins.len(), 1);
     } else {
-        assert!(ufvk.transparent().is_none());
+        assert!(ufvk.p2pkh().is_none());
         assert_eq!(balance.confirmed_transparent_balance, None);
         assert_eq!(transparent_coins.len(), 0);
     }
@@ -654,7 +654,12 @@ async fn test_scanning_in_watch_only_mode() {
 
         let ufvk = zcash_address::unified::Encoding::encode(
             &<zcash_address::unified::Ufvk as zcash_address::unified::Encoding>::try_from_items(
-                fvks.iter().copied().cloned().collect(),
+                zcash_address::unified::Revision::R0,
+                fvks.iter()
+                    .copied()
+                    .cloned()
+                    .map(zcash_address::unified::Uitem::Data)
+                    .collect(),
             )
             .unwrap(),
             &zcash_protocol::consensus::NetworkType::Regtest,

@@ -32,7 +32,10 @@ jobs:
       matrix:
         abi: ${{ fromJSON(inputs.abis) }}
     container:
-      image: zingodevops/android_builder:018
+      image: ghcr.io/zingolabs/android_builder:018
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     env:
       ABI: ${{ matrix.abi }}
       RUSTUP_HOME: ${{ github.workspace }}/.rustup
