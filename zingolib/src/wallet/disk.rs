@@ -155,16 +155,13 @@ fn check_saved_chain(saved_network: &str, chain_type: &ChainType) -> io::Result<
     }
 }
 
-fn chain_type_from_name(name: &str) -> io::Result<ChainType> {
-    match name {
-        "mainnet" => Ok(ChainType::Mainnet),
-        "testnet" => Ok(ChainType::Testnet),
-        "regtest" => Ok(ChainType::Regtest(ActivationHeights::default())),
-        other => Err(Error::new(
-            ErrorKind::InvalidData,
-            format!("invalid chain type stored in wallet file: {other}"),
-        )),
-    }
+/// The chain a stored chain name stands for, through the tag of that chain.
+fn chain_type_from_stored(stored: &str) -> io::Result<ChainType> {
+    chain_type_from_tag(match chain_name_from_stored(stored)? {
+        "mainnet" => 0,
+        "testnet" => 1,
+        _ => 2,
+    })
 }
 
 impl LightWallet {
@@ -348,13 +345,11 @@ impl LightWallet {
                 } else if version == 40 {
                     match read_v40_chain_field(&mut reader)? {
                         V40ChainField::Tag(tag) => chain_type_from_tag(tag),
-                        V40ChainField::Name(stored) => {
-                            chain_type_from_name(chain_name_from_stored(&stored)?)
-                        }
+                        V40ChainField::Name(stored) => chain_type_from_stored(&stored),
                     }
                 } else {
                     let stored = utils::read_string(&mut reader)?;
-                    chain_type_from_name(chain_name_from_stored(&stored)?)
+                    chain_type_from_stored(&stored)
                 }
             }
             _ => Err(Error::new(

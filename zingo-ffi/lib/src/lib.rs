@@ -161,25 +161,23 @@ fn chain_text(error: &(dyn std::error::Error + 'static)) -> String {
     text
 }
 
-/// Whether an `io::Error` carries a chain mismatch; its `source()` skips
-/// the error it wraps, so the wrapped error is read directly.
-fn io_chain_mismatch(io: &std::io::Error) -> bool {
-    io.get_ref()
-        .is_some_and(|inner| inner.is::<zingolib::wallet::disk::ChainMismatch>())
-}
-
 /// A failure to open wallet bytes: a chain mismatch keeps its own variant.
 /// `LightClientError::FileError` holds its `io::Error` without naming it as
-/// the source, so it is matched before the cause chain is walked.
+/// the source, and an `io::Error`'s `source()` skips the error it wraps, so
+/// every `io::Error` on the way is opened directly.
 fn open_error(error: &LightClientError) -> ZingolibError {
-    let mut mismatch = matches!(error, LightClientError::FileError(io) if io_chain_mismatch(io));
-    let mut link: Option<&(dyn std::error::Error + 'static)> = Some(error);
-    while let Some(cause) = link {
-        mismatch |= cause
-            .downcast_ref::<std::io::Error>()
-            .is_some_and(io_chain_mismatch);
-        link = cause.source();
-    }
+    let file_io = match error {
+        LightClientError::FileError(io) => Some(io),
+        _ => None,
+    };
+    let chain = std::iter::successors(Some(error as &(dyn std::error::Error + 'static)), |cause| {
+        cause.source()
+    });
+    let mismatch = file_io
+        .into_iter()
+        .chain(chain.filter_map(|cause| cause.downcast_ref::<std::io::Error>()))
+        .filter_map(std::io::Error::get_ref)
+        .any(|inner| inner.is::<zingolib::wallet::disk::ChainMismatch>());
     if mismatch {
         ZingolibError::WalletChainMismatch(chain_text(error))
     } else {
