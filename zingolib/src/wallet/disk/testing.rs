@@ -2,6 +2,7 @@
 //! do not compile testutils feature for production.
 
 use bip0039::Mnemonic;
+use secrecy::ExposeSecret;
 use zcash_keys::keys::{Era, UnifiedSpendingKey};
 
 use crate::wallet::keys::unified::UnifiedKeyStore;
@@ -45,10 +46,11 @@ pub async fn assert_wallet_capability_matches_seed(
         panic!("Expected Unified Spending Key");
     };
     assert_eq!(
-        usk.to_bytes(Era::Orchard),
+        usk.to_bytes(Era::Orchard).expose_secret(),
         UnifiedSpendingKey::try_from(&expected_keys)
             .unwrap()
             .to_bytes(Era::Orchard)
+            .expose_secret()
     );
 }
 
