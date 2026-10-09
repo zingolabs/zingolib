@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 pub const BINARY: &str = "orasust";
-pub const VERSION: &str = "0.1.0";
+pub const VERSION: &str = "0.1.1";
 pub const REPOSITORY: &str = "zingolabs/orasust";
 pub const ASSET: &str = "orasust-x86_64-unknown-linux-gnu";
 pub const VERSION_FLAG: &str = "--orasust-version";
