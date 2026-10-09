@@ -20,11 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   randomness every signing and proving site draws from.
 - `wallet::keys::unified::encode_ufvk`, the string encoding of a unified full
   viewing key for a chain.
+- Add `data::ServerInfo::from_lightd_info`, the mapping from an indexer's `LightdInfo` to a `ServerInfo` that `LightClient::info` carried inline, so a consumer holding a `LightdInfo` from its own request builds the same record.
+- The `netutils` funnel re-exports `TimeoutExpired`, the marker tonic leaves in a status's source chain when the client's own request deadline fired, so a consumer tells a timed-out request apart from a verdict the indexer returned.
+- Add `LightWallet::read_chain`, the chain a wallet file was written for, read from the header of version 32 and later files and by a full read under each chain for older ones.
+- Add `wallet::disk::ChainMismatch`, carried inside the `io::Error` that reading a wallet file for another chain returns, so the failure can be told apart without its message.
 - Add `LightClient::sync_to_tip_and_await`, which syncs to the chain tip and returns whatever the stored `shutdown_on_completion` setting is. The override applies to that sync only and the stored sync config is not modified. A running or paused sync is stopped and awaited first, and is not relaunched.
 - Add `mixnet::TransmitPolicy` (`Mixnet`, `Nakednet`), the per-session send route choice, with `LightClient::transmit_policy` and `set_transmit_policy`. Every session starts under `Mixnet`; `MixnetStartPolicy::OptedOutThisSession` sets `Nakednet`, and `enable_mixnet`, `enable_mixnet_via_host`, and `attach_mixnet` set `Mixnet` before the transport exists, so sends refuse during the bootstrap. A failed enable restores the policy the session had before.
 - Add `mixnet::resolve_mixnet_only_route` and `LightClient::mixnet_only_route`, the route of the price fetch and the liveness probe: the conduit while `Ready`, a typed refusal otherwise.
 - Add `mixnet::resolve_send_route` and `LightClient::send_route`, the route of a transmission under the transmit policy: nakednet at once under `Nakednet`, the mixnet-only outcome under `Mixnet`.
 - Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
+- Add `wallet::keys::WalletKind` and `LightWallet::kind`, the wallet's key material as one of `Mnemonic`, `SpendingKey`, `ViewingKey` with the receivers the key holds, or `NoKeys`, or `KeyError::NoAccountKeys` for a wallet without account zero. zingo-cli and the FFI each computed this themselves.
 
 ### Changed
 - A transaction targeting a height at or above the NU7 activation expires 120
@@ -63,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::keys::unified::UnifiedKeyStore` serializes a unified full viewing
   key through `encode_ufvk`, which encodes at ZIP 316 Revision 0 when that
   revision can carry the key and at Revision 2 otherwise.
+- A `migration` value transfer now carries the sum of the Ironwood notes the transaction delivered to the wallet, the amount migrated, where it carried the whole self-received sum including any Orchard change. The FFI spliced this value in after the fact; the value transfer now states it directly.
 - `lightwallet-protocol` moves to 0.4.0, the upstream rev whose committed
   bindings carry the Ironwood proto fields. No workspace enables
   `rebuild-proto` any longer, so a build of zingolib no longer needs protoc.
