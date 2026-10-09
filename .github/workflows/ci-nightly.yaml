@@ -9,39 +9,14 @@ on:
 jobs:
 
   # The binding-layer-android job below builds x86_64 with the other ABIs,
-  # so the per-PR workflow skips its own x86_64 build here.
+  # so the per-PR workflow skips its own x86_64 build here. The per-PR
+  # cargo-hack job builds every feature set instead of checking it, with
+  # the flags that job alone holds.
   pr-checks:
     uses: ./.github/workflows/ci-pr.yaml
     with:
       skip-binding-layer-build: true
-
-  cargo-hack-build:
-    name: Cargo Hack Build
-    runs-on: ubuntu-24.04
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: ${{ inputs.toolchain }}
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install protoc
-        run: |
-          if ! command -v protoc; then
-            sudo apt-get update
-            sudo apt-get install -y protobuf-compiler
-          fi
-
-      - name: Run cargo-hack
-        uses: zingolabs/infrastructure/.github/actions/cargo-hack@20485fed7a080e381130ed8120419dc81acae641
-        with:
-          hack-subcommand: build
+      cargo-hack-subcommand: build
 
   feature-census:
     name: Feature Census
@@ -60,17 +35,58 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Install protoc
-        run: |
-          if ! command -v protoc; then
-            sudo apt-get update
-            sudo apt-get install -y protobuf-compiler
-          fi
-
       # Removes each declared dependency feature in turn and checks without it.
       # One `cargo check` per feature, so this runs nightly rather than per PR.
       - name: Run feature-census
         run: cargo run --manifest-path tools/workbench/Cargo.toml --bin feature-census -- --all
+
+  # The online sync rate of the dev head against the newest first-parent
+  # commit older than a day, in a real run-cli --online session (AGENTS.md,
+  # the benchmark rule). Two release builds, two warm-ups and six measured
+  # sessions take about two hours, so this runs on the schedule and on a
+  # dispatch, never on a call from a pull request.
+  sync-ab:
+    name: Sync A/B (dev against the day before)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ inputs.toolchain }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-make
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-make
+
+      - name: Pick the arms
+        id: arms
+        run: |
+          echo "before=$(git rev-list -n 1 --first-parent --before='24 hours ago' HEAD)" >> "$GITHUB_OUTPUT"
+          echo "now=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Compare the arms
+        if: ${{ steps.arms.outputs.before != steps.arms.outputs.now }}
+        run: |
+          makers sync-ab "${{ steps.arms.outputs.before }}" "${{ steps.arms.outputs.now }}" \
+            --birthday 2571710 --seconds 90 2>&1 | tee sync-ab.log
+
+      - name: Keep the report
+        if: ${{ always() && steps.arms.outputs.before != steps.arms.outputs.now }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: sync-ab-${{ github.sha }}
+          path: sync-ab.log
 
   # The nightly tier of zingolib/0054: the four Android ABIs in one AAR,
   # and both XCFrameworks with the Swift sources on macOS. Each job runs

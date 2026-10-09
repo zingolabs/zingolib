@@ -142,6 +142,7 @@ where
     P: consensus::Parameters + Sync + Send + 'static,
 {
     let ScanTask {
+        task_id: _,
         compact_blocks,
         scan_range,
         start_seam_block,

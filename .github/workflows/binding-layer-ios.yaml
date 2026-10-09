@@ -18,6 +18,7 @@ jobs:
   build:
     name: Build the XCFrameworks and the Swift sources
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: 45
     env:
       RUSTUP_HOME: ${{ github.workspace }}/.rustup
       CARGO_HOME: ${{ github.workspace }}/.cargo
@@ -51,9 +52,6 @@ jobs:
 
       - name: Install bindgen-cli
         run: cargo install --locked bindgen-cli
-
-      - name: Install protoc
-        run: brew install protobuf
 
       # A dependency uses bindgen 0.69, which needs the simulator target and
       # SDK stated for the aarch64 simulator. The job environment carries
