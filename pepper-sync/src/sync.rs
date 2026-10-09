@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
-use std::ops::Range;
+use std::ops::{Bound, Range};
 use std::sync::atomic::{self, AtomicBool, AtomicU8, AtomicU32};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant, SystemTime};
@@ -32,10 +32,10 @@ use crate::error::{
 };
 use crate::keys::transparent::TransparentAddressId;
 use crate::scan::ScanResults;
-use crate::scan::task::{Scanner, ScannerState};
+use crate::scan::task::{ScanLoad, Scanner, ScannerState, TaskId};
 use crate::scan::transactions::scan_transaction;
 use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
-use crate::sync::state::VerifyEnd;
+use crate::sync::state::{ScanResultsStanding, VerifyEnd};
 use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
@@ -279,6 +279,30 @@ impl ScanPriority {
             ScanPriority::ScannedWithoutMapping | ScanPriority::RefetchingNullifiers
         )
     }
+
+    /// Returns the priority the wallet holds a range selected at this priority while its scan task is in flight.
+    pub fn in_flight(self) -> ScanPriority {
+        if self == ScanPriority::ScannedWithoutMapping {
+            ScanPriority::RefetchingNullifiers
+        } else {
+            ScanPriority::Scanning
+        }
+    }
+}
+
+/// Returns true when the two ranges share at least one block.
+pub(crate) fn overlaps(first: &Range<BlockHeight>, second: &Range<BlockHeight>) -> bool {
+    first.start < second.end && second.start < first.end
+}
+
+/// Returns the scan ranges the wallet holds at `priority`, in wallet order.
+pub(crate) fn held_at(
+    scan_ranges: &[ScanRange],
+    priority: ScanPriority,
+) -> impl Iterator<Item = &ScanRange> {
+    scan_ranges
+        .iter()
+        .filter(move |scan_range| scan_range.priority() == priority)
 }
 
 /// A range of blocks to be scanned, along with its associated priority.
@@ -328,6 +352,18 @@ impl ScanRange {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.block_range.is_empty()
+    }
+
+    /// Returns true when `block_range` lies within this scan range.
+    #[must_use]
+    pub fn encloses(&self, block_range: &Range<BlockHeight>) -> bool {
+        self.block_range.start <= block_range.start && block_range.end <= self.block_range.end
+    }
+
+    /// Returns true when this scan range and `block_range` share at least one block.
+    #[must_use]
+    pub fn overlaps(&self, block_range: &Range<BlockHeight>) -> bool {
+        overlaps(&self.block_range, block_range)
     }
 
     /// Returns the number of blocks in the scan range.
@@ -711,7 +747,7 @@ where
 
         'scan: loop {
             tokio::select! {
-                Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
+                Some((load, scan_results)) = scan_results_receiver.recv() => {
                     let mut wallet_guard = wallet.write().await;
                     let ProcessedScanResults {
                         new_transparent_inuse_addresses,
@@ -722,13 +758,20 @@ where
                         &mut *wallet_guard,
                         fetch_request_sender.clone(),
                         &ufvks,
-                        scan_range,
+                        load,
+                        scanner.in_flight_tasks(),
                         scan_results,
                         initial_reorg_detection_start_height_opt,
                         config.performance_level,
                         &mut nullifier_map_limit_exceeded,
                     )
                     .await?;
+                    scanner.retire_finished_tasks(
+                        wallet_guard
+                            .get_sync_state()
+                            .map_err(SyncError::WalletError)?
+                            .scan_ranges(),
+                    );
                     // only the changes to the gap addresses are applied. scan results without compact block
                     // transparent data, such as re-fetched nullifiers, carry no changes and leave the gap addresses
                     // as they are.
@@ -1457,6 +1500,7 @@ async fn mempool_drain_verdict(
 }
 
 /// Wallet updates from [`process_scan_results`] that must also be applied to the [`Scanner`].
+#[derive(Debug, Default)]
 struct ProcessedScanResults {
     /// Transparent gap addresses found in use by scanning.
     new_transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
@@ -1468,18 +1512,17 @@ struct ProcessedScanResults {
     reorg_detection_start_height: Option<BlockHeight>,
 }
 
-/// Scan post-processing.
-///
-/// Returns any new transparent addresses. A recovered error i.e. re-org truncates the wallet and lowers the
-/// transparent scan floor to the truncation height.
-/// Stale scan results are discarded, see [`state::reset_stale_scan_range`].
+/// Applies the scan results of one load to the wallet and returns the transparent addresses the scan found, after a
+/// re-org recovery truncates the wallet, and after stale results are discarded with their part of the scan range
+/// reset.
 #[allow(clippy::too_many_arguments)]
 async fn process_scan_results<W>(
     consensus_parameters: &(impl consensus::Parameters + Sync),
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
-    scan_range: ScanRange,
+    load: ScanLoad,
+    in_flight_tasks: &BTreeMap<TaskId, ScanRange>,
     scan_results: Result<ScanResults, ScanError>,
     initial_reorg_detection_start_height: Option<BlockHeight>,
     performance_level: PerformanceLevel,
@@ -1494,22 +1537,33 @@ where
         + SyncShardTrees
         + Send,
 {
-    // a re-org may have truncated or re-prioritised the scan range while it was being scanned. the scan results,
-    // or the error, may then come from blocks that have left the chain so they are discarded and the scan range is
-    // scanned again.
-    if state::reset_stale_scan_range(
-        wallet
-            .get_sync_state_mut()
-            .map_err(SyncError::WalletError)?,
-        &scan_range,
+    let ScanLoad {
+        task_id,
+        scan_range,
+    } = load;
+    let task = in_flight_tasks
+        .get(&task_id)
+        .expect("a task stays in flight until its last load is processed");
+    let later_tasks = in_flight_tasks
+        .range((Bound::Excluded(task_id), Bound::Unbounded))
+        .map(|(_, task)| task.block_range().clone())
+        .collect::<Vec<_>>();
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
+    match state::scan_results_standing(
+        sync_state.scan_ranges(),
+        &later_tasks,
+        task,
+        scan_range.block_range(),
     ) {
-        tracing::info!("Stale scan results of {scan_range} discarded.");
+        ScanResultsStanding::Current => {}
+        ScanResultsStanding::Stale { cause, reset } => {
+            state::reset_stale_load(sync_state, task.priority(), &reset);
+            tracing::info!("Stale scan results of {scan_range} discarded: {cause:?}.");
 
-        return Ok(ProcessedScanResults {
-            new_transparent_inuse_addresses: HashMap::new(),
-            new_transparent_gap_addresses: HashMap::new(),
-            reorg_detection_start_height: None,
-        });
+            return Ok(ProcessedScanResults::default());
+        }
     }
 
     match scan_results {
@@ -1534,13 +1588,7 @@ where
                     .iter()
                     .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
                     .expect("the scan range being processed is not yet set to scanned so at least one unscanned range must exist");
-                if !first_unscanned_range
-                    .block_range()
-                    .contains(&scan_range.block_range().start)
-                    || !first_unscanned_range
-                        .block_range()
-                        .contains(&(scan_range.block_range().end - 1))
-                {
+                if !first_unscanned_range.encloses(scan_range.block_range()) {
                     // in this rare edge case, a scanned `ScannedWithoutMapping` range was the highest priority yet it was not the first unscanned range so it must be discarded to avoid missing spends
 
                     // reset scan range from `RefetchingNullifiers` to `ScannedWithoutMapping`
@@ -1572,14 +1620,7 @@ where
                     .map_err(SyncError::WalletError)?
                     .scan_ranges
                     .iter()
-                    .find(|&wallet_scan_range| {
-                        wallet_scan_range
-                            .block_range()
-                            .contains(&scan_range.block_range().start)
-                            && wallet_scan_range
-                                .block_range()
-                                .contains(&(scan_range.block_range().end - 1))
-                    })
+                    .find(|&wallet_scan_range| wallet_scan_range.encloses(scan_range.block_range()))
                     .expect("wallet scan range containing scan range should exist!");
                 if scan_range.block_range().start
                     != full_refetching_nullifiers_range.block_range().start
@@ -1685,12 +1726,7 @@ where
                     }
 
                     if scan_priority == ScanPriority::Scanning
-                        && query_scan_range
-                            .block_range()
-                            .contains(&scan_range.block_range().start)
-                        && query_scan_range
-                            .block_range()
-                            .contains(&(scan_range.block_range().end - 1))
+                        && query_scan_range.encloses(scan_range.block_range())
                     {
                         map_nullifiers = true;
                         break;
@@ -1797,13 +1833,7 @@ where
                     .last_known_chain_height()
                     .expect("scan ranges should be non-empty in this scope");
 
-                // reset scan range from `Scanning` to `Verify`.
-                // the loader never splits a scan task with `Verify` priority so the scan range is the wallet's.
-                state::set_scan_priority(
-                    sync_state,
-                    scan_range.block_range(),
-                    ScanPriority::Verify,
-                );
+                state::reset_verify_scan_range(sync_state, scan_range.block_range());
 
                 // extend verification range to VERIFY_BLOCK_RANGE_SIZE blocks below current verification range
                 let current_reorg_detection_start_height = state::set_verify_scan_range(
@@ -1848,11 +1878,7 @@ where
                 )
                 .await?;
 
-                Ok(ProcessedScanResults {
-                    new_transparent_inuse_addresses: HashMap::new(),
-                    new_transparent_gap_addresses: HashMap::new(),
-                    reorg_detection_start_height: None,
-                })
+                Ok(ProcessedScanResults::default())
             } else if height == scan_range.block_range().start {
                 // the first block of the scan range does not follow the block below it, which is held by the wallet
                 // or was kept by the loader from an earlier scan. a re-org has replaced that block since.
@@ -1862,14 +1888,17 @@ where
                 let sync_state = wallet
                     .get_sync_state_mut()
                     .map_err(SyncError::WalletError)?;
-                state::reset_in_flight_scan_range(sync_state, &scan_range);
+                state::reset_stale_load(
+                    sync_state,
+                    task.priority(),
+                    std::slice::from_ref(scan_range.block_range()),
+                );
                 state::set_verify_scan_range(sync_state, height, state::VerifyEnd::VerifyLowest);
                 state::merge_scan_ranges(sync_state, ScanPriority::Verify);
 
                 Ok(ProcessedScanResults {
-                    new_transparent_inuse_addresses: HashMap::new(),
-                    new_transparent_gap_addresses: HashMap::new(),
                     reorg_detection_start_height: Some(height),
+                    ..Default::default()
                 })
             } else {
                 Err(scan_results
@@ -2994,6 +3023,23 @@ fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> 
 
 #[cfg(test)]
 mod test {
+    use zcash_protocol::consensus::BlockHeight;
+    use zcash_protocol::local_consensus::LocalNetwork;
+
+    /// A local network with every upgrade active from block 1.
+    const NETWORK: LocalNetwork = LocalNetwork {
+        overwinter: Some(BlockHeight::from_u32(1)),
+        sapling: Some(BlockHeight::from_u32(1)),
+        blossom: Some(BlockHeight::from_u32(1)),
+        heartwood: Some(BlockHeight::from_u32(1)),
+        canopy: Some(BlockHeight::from_u32(1)),
+        nu5: Some(BlockHeight::from_u32(1)),
+        nu6: Some(BlockHeight::from_u32(1)),
+        nu6_1: Some(BlockHeight::from_u32(1)),
+        nu6_2: Some(BlockHeight::from_u32(1)),
+        nu6_3: Some(BlockHeight::from_u32(1)),
+    };
+
     /// The completion contract of [`crate::sync::SyncStatus::is_complete`]:
     /// completion is the sync task's own terminal condition (sync has
     /// started and every scan range is `Scanned`), independent of the
@@ -4219,9 +4265,7 @@ mod test {
 
         use tokio::sync::mpsc;
         use zcash_primitives::{block::BlockHash, transaction::TxId};
-        use zcash_protocol::{
-            consensus::BlockHeight, local_consensus::LocalNetwork, value::Zatoshis,
-        };
+        use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
         use zcash_transparent::{address::Script, keys::NonHardenedChildIndex};
         use zingo_netutils::lightwallet_protocol::RawTransaction;
         use zingo_status::confirmation_status::ConfirmationStatus;
@@ -4238,18 +4282,7 @@ mod test {
             },
         };
 
-        const NETWORK: LocalNetwork = LocalNetwork {
-            overwinter: Some(BlockHeight::from_u32(1)),
-            sapling: Some(BlockHeight::from_u32(1)),
-            blossom: Some(BlockHeight::from_u32(1)),
-            heartwood: Some(BlockHeight::from_u32(1)),
-            canopy: Some(BlockHeight::from_u32(1)),
-            nu5: Some(BlockHeight::from_u32(1)),
-            nu6: Some(BlockHeight::from_u32(1)),
-            nu6_1: Some(BlockHeight::from_u32(1)),
-            nu6_2: Some(BlockHeight::from_u32(1)),
-            nu6_3: Some(BlockHeight::from_u32(1)),
-        };
+        use super::NETWORK;
         const FUNDING_HEIGHT: BlockHeight = BlockHeight::from_u32(10);
         const SPEND_HEIGHT: BlockHeight = BlockHeight::from_u32(100);
         const FUNDING_TXID: TxId = TxId::from_bytes([1; 32]);
@@ -4917,14 +4950,13 @@ mod test {
         }
     }
 
-    /// Scan results are stale when a re-org truncated or re-prioritised their scan range while it was being scanned.
-    /// They are discarded before they are processed, whether the scan succeeded or failed.
+    /// Stale scan results, whether a scan succeeded or failed, are discarded before they are processed.
     mod stale_scan_results {
         use std::collections::{BTreeMap, HashMap};
 
         use tokio::sync::mpsc;
         use zcash_primitives::block::BlockHash;
-        use zcash_protocol::{consensus::BlockHeight, local_consensus::LocalNetwork};
+        use zcash_protocol::consensus::BlockHeight;
         use zcash_transparent::keys::NonHardenedChildIndex;
 
         use crate::{
@@ -4932,23 +4964,15 @@ mod test {
             error::{ContinuityError, ScanError},
             keys::transparent::{TransparentAddressId, TransparentScope},
             mocks::{MockWallet, MockWalletBuilder},
-            scan::ScanResults,
+            scan::{
+                ScanResults,
+                task::{ScanLoad, TaskId},
+            },
             sync::{ProcessedScanResults, ScanPriority, ScanRange, process_scan_results},
             wallet::{NullifierMap, SyncState, traits::SyncWallet as _},
         };
 
-        const NETWORK: LocalNetwork = LocalNetwork {
-            overwinter: Some(BlockHeight::from_u32(1)),
-            sapling: Some(BlockHeight::from_u32(1)),
-            blossom: Some(BlockHeight::from_u32(1)),
-            heartwood: Some(BlockHeight::from_u32(1)),
-            canopy: Some(BlockHeight::from_u32(1)),
-            nu5: Some(BlockHeight::from_u32(1)),
-            nu6: Some(BlockHeight::from_u32(1)),
-            nu6_1: Some(BlockHeight::from_u32(1)),
-            nu6_2: Some(BlockHeight::from_u32(1)),
-            nu6_3: Some(BlockHeight::from_u32(1)),
-        };
+        use super::NETWORK;
         const BIRTHDAY: u32 = 1;
         /// The chain height the server reported when the scan range was selected.
         const CHAIN_HEIGHT: u32 = 40;
@@ -4968,13 +4992,19 @@ mod test {
             scan_results: Result<ScanResults, ScanError>,
         ) -> ProcessedScanResults {
             let (fetch_request_sender, _) = mpsc::unbounded_channel();
+            let task_id = TaskId::first();
+            let in_flight_tasks = BTreeMap::from([(task_id, scan_range.clone())]);
 
             process_scan_results(
                 &NETWORK,
                 wallet,
                 fetch_request_sender,
                 &HashMap::new(),
-                scan_range,
+                ScanLoad {
+                    task_id,
+                    scan_range,
+                },
+                &in_flight_tasks,
                 scan_results,
                 None,
                 PerformanceLevel::High,
@@ -5330,7 +5360,10 @@ mod test {
             config::PerformanceLevel,
             error::SyncError,
             mocks::{MockWallet, MockWalletBuilder, MockWalletError},
-            scan::ScanResults,
+            scan::{
+                ScanResults,
+                task::{ScanLoad, TaskId},
+            },
             sync::{ProcessedScanResults, ScanPriority, ScanRange, process_scan_results},
             wallet::{
                 NullifierMap, OutputId, ScanTarget, SyncState, TreeBounds, WalletBlock,
@@ -5607,12 +5640,21 @@ mod test {
                 zip32::AccountId::ZERO,
                 spending_key().to_unified_full_viewing_key(),
             )]);
+            let task_id = TaskId::first();
+            let scan_range =
+                ScanRange::from_parts(block_height..block_height + 1, selected_priority);
+            let in_flight_tasks = BTreeMap::from([(task_id, scan_range.clone())]);
+
             process_scan_results(
                 &NETWORK,
                 wallet,
                 fetch_request_sender,
                 &ufvks,
-                ScanRange::from_parts(block_height..block_height + 1, selected_priority),
+                ScanLoad {
+                    task_id,
+                    scan_range,
+                },
+                &in_flight_tasks,
                 Ok(scan_results),
                 None,
                 PerformanceLevel::High,
@@ -5881,7 +5923,7 @@ mod test {
 
         use tokio::sync::mpsc;
         use zcash_primitives::block::BlockHash;
-        use zcash_protocol::{consensus::BlockHeight, local_consensus::LocalNetwork};
+        use zcash_protocol::consensus::BlockHeight;
         use zingo_netutils::lightwallet_protocol::TreeState;
 
         use crate::{
@@ -5889,22 +5931,12 @@ mod test {
             config::PerformanceLevel,
             error::{ContinuityError, ScanError, SyncError},
             mocks::{MockWallet, MockWalletBuilder, MockWalletError},
+            scan::task::{ScanLoad, TaskId},
             sync::{ProcessedScanResults, ScanPriority, ScanRange, process_scan_results},
             wallet::{SyncState, TreeBounds, WalletBlock, traits::SyncWallet as _},
         };
 
-        const NETWORK: LocalNetwork = LocalNetwork {
-            overwinter: Some(BlockHeight::from_u32(1)),
-            sapling: Some(BlockHeight::from_u32(1)),
-            blossom: Some(BlockHeight::from_u32(1)),
-            heartwood: Some(BlockHeight::from_u32(1)),
-            canopy: Some(BlockHeight::from_u32(1)),
-            nu5: Some(BlockHeight::from_u32(1)),
-            nu6: Some(BlockHeight::from_u32(1)),
-            nu6_1: Some(BlockHeight::from_u32(1)),
-            nu6_2: Some(BlockHeight::from_u32(1)),
-            nu6_3: Some(BlockHeight::from_u32(1)),
-        };
+        use super::NETWORK;
         const BIRTHDAY: u32 = 1;
         /// The first block of the scan range that fails the continuity check.
         const SCAN_RANGE_START: u32 = 21;
@@ -5982,12 +6014,19 @@ mod test {
             height: u32,
             initial_reorg_detection_start_height: Option<BlockHeight>,
         ) -> Result<ProcessedScanResults, SyncError<MockWalletError>> {
+            let task_id = TaskId::first();
+            let in_flight_tasks = BTreeMap::from([(task_id, scan_range.clone())]);
+
             process_scan_results(
                 &NETWORK,
                 wallet,
                 spawn_fetcher(),
                 &HashMap::new(),
-                scan_range,
+                ScanLoad {
+                    task_id,
+                    scan_range,
+                },
+                &in_flight_tasks,
                 Err(ScanError::ContinuityError(
                     ContinuityError::HashDiscontinuity {
                         height: BlockHeight::from_u32(height),
@@ -6342,6 +6381,76 @@ mod test {
             let sync_state = wallet.get_sync_state().unwrap();
             assert_eq!(sync_state.ironwood_shard_ranges, ironwood_shard_ranges);
             assert_eq!(sync_state.scan_ranges(), scan_ranges);
+        }
+    }
+
+    /// The geometry of a scan range against a block range, which the engine asks at six sites.
+    mod scan_range_geometry {
+        use zcash_protocol::consensus::BlockHeight;
+
+        use crate::sync::{ScanPriority, ScanRange};
+
+        fn blocks(start: u32, end: u32) -> std::ops::Range<BlockHeight> {
+            BlockHeight::from_u32(start)..BlockHeight::from_u32(end)
+        }
+
+        #[test]
+        fn encloses_a_block_range_within_its_bounds() {
+            let scan_range = ScanRange::from_parts(blocks(21, 41), ScanPriority::Scanning);
+
+            assert!(scan_range.encloses(&blocks(21, 41)));
+            assert!(scan_range.encloses(&blocks(21, 31)));
+            assert!(scan_range.encloses(&blocks(31, 41)));
+            assert!(!scan_range.encloses(&blocks(20, 31)));
+            assert!(!scan_range.encloses(&blocks(31, 42)));
+            assert!(!scan_range.encloses(&blocks(1, 21)));
+        }
+
+        #[test]
+        fn overlaps_a_block_range_that_shares_a_block() {
+            let scan_range = ScanRange::from_parts(blocks(21, 41), ScanPriority::Scanning);
+
+            assert!(scan_range.overlaps(&blocks(31, 51)));
+            assert!(scan_range.overlaps(&blocks(1, 22)));
+            assert!(scan_range.overlaps(&blocks(1, 51)));
+            assert!(!scan_range.overlaps(&blocks(41, 51)));
+            assert!(!scan_range.overlaps(&blocks(1, 21)));
+        }
+    }
+
+    /// The priority a selected scan range is held at while its task is in flight.
+    mod in_flight_priority {
+        use crate::sync::ScanPriority;
+
+        #[test]
+        fn refetching_nullifiers_for_scanned_without_mapping_and_scanning_for_every_other_selection()
+         {
+            assert_eq!(
+                ScanPriority::ScannedWithoutMapping.in_flight(),
+                ScanPriority::RefetchingNullifiers
+            );
+            for selected in [
+                ScanPriority::Historic,
+                ScanPriority::OpenAdjacent,
+                ScanPriority::FoundNote,
+                ScanPriority::ChainTip,
+                ScanPriority::Verify,
+            ] {
+                assert_eq!(selected.in_flight(), ScanPriority::Scanning);
+            }
+        }
+    }
+
+    /// The empty result of a discarded or re-org-handled load.
+    mod processed_scan_results {
+        use crate::sync::ProcessedScanResults;
+
+        #[test]
+        fn default_carries_no_addresses() {
+            let processed = ProcessedScanResults::default();
+
+            assert!(processed.new_transparent_inuse_addresses.is_empty());
+            assert!(processed.new_transparent_gap_addresses.is_empty());
         }
     }
 }

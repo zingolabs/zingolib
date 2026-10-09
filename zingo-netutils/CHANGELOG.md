@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a superseded conduit permanently short of `Retired`.
 
 ### Changed
+- `lightwallet-protocol` moves to 0.4.0, the upstream rev whose committed
+  bindings carry the Ironwood proto fields. The workspace no longer enables
+  `rebuild-proto`, so a build of zingo-netutils no longer runs protoc.
 - `time::MEMPOOL_DRAIN_SETTLE` is raised from 200 ms to 750 ms, and
   `time::MEMPOOL_DRAIN_CEILING` from 1 s to 1.5 s to keep the settle window
   inside it. zaino polls the validator's mempool every 500 ms by default, so
