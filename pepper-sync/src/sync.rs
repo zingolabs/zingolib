@@ -2972,6 +2972,7 @@ mod test {
             nu6_1: activation,
             nu6_2: activation,
             nu6_3: activation,
+            nu7: activation,
         }
     }
 

@@ -844,12 +844,12 @@ impl Default for MockChain {
 }
 
 impl MockChain {
-    /// An empty regtest chain at height 0 with the default (everything
-    /// at height 1) activation schedule, matching
-    /// [`SyntheticWalletBuilder`]'s default and [`MockNet::client`]'s
-    /// config.
+    /// An empty regtest chain at height 0 in the in-process era
+    /// ([`crate::testutils::mock_activation_heights`]: everything through
+    /// NU7 at height 1), matching [`SyntheticWalletBuilder`]'s default and
+    /// [`MockNet::client`]'s config.
     pub fn new() -> Self {
-        Self::with_activation_heights(ActivationHeights::default())
+        Self::with_activation_heights(crate::testutils::mock_activation_heights())
     }
 
     /// Creates an empty regtest chain with the given activation schedule.
@@ -1415,7 +1415,7 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
             nullifier: action.nullifier().to_bytes().to_vec(),
             cmx: action.cmx().to_bytes().to_vec(),
             ephemeral_key: action.encrypted_note().epk_bytes.to_vec(),
-            ciphertext: action.encrypted_note().enc_ciphertext[..52].to_vec(),
+            ciphertext: action.encrypted_note().enc_ciphertext.as_ref()[..52].to_vec(),
         })
         .collect();
     let ironwood_actions = transaction
@@ -1426,7 +1426,7 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
             nullifier: action.nullifier().to_bytes().to_vec(),
             cmx: action.cmx().to_bytes().to_vec(),
             ephemeral_key: action.encrypted_note().epk_bytes.to_vec(),
-            ciphertext: action.encrypted_note().enc_ciphertext[..52].to_vec(),
+            ciphertext: action.encrypted_note().enc_ciphertext.as_ref()[..52].to_vec(),
         })
         .collect();
     let vin = transaction
@@ -2274,18 +2274,9 @@ mod tests {
     }
 
     fn pre_ironwood_activation_heights() -> ActivationHeights {
-        ActivationHeights::builder()
-            .set_overwinter(Some(1))
-            .set_sapling(Some(1))
-            .set_blossom(Some(1))
-            .set_heartwood(Some(1))
-            .set_canopy(Some(1))
-            .set_nu5(Some(1))
-            .set_nu6(Some(1))
-            .set_nu6_1(Some(1))
-            .set_nu6_2(Some(1))
-            .set_nu6_3(Some(1_000))
-            .build()
+        crate::testutils::mock_activation_heights_with(|era| {
+            era.set_nu6_3(Some(1_000)).set_nu7(None)
+        })
     }
 
     fn transparent_spend(

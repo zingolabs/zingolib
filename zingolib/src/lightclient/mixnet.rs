@@ -466,7 +466,7 @@ async fn standing_rotation_watchdog(
     loop {
         // The generator is scoped so no non-Send handle crosses the await.
         let cadence = {
-            let mut entropy = rand::thread_rng();
+            let mut entropy = rand::rng();
             crate::mixnet::acquire::rotation_interval(&mut entropy)
         };
         tokio::time::sleep(cadence).await;
