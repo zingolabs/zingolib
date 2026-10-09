@@ -156,8 +156,12 @@ fn fit_memo(framed: Vec<u8>) -> io::Result<[u8; MEMO_LEN]> {
 ///
 /// A version 1 memo carries receivers alone, so an address that only ZIP 316
 /// Revision 2 can represent (one with expiry metadata, or with no shielded
-/// receiver) is refused rather than recorded incompletely. Use
-/// [`create_wallet_internal_memo`] to choose the version by the addresses.
+/// receiver) is refused rather than recorded incompletely.
+///
+/// The memo version follows the addresses, so a caller has no version to
+/// choose: [`create_wallet_internal_memo`] writes version 1 for every list
+/// this function accepts and version 2 for the lists it refuses.
+#[deprecated(note = "the memo version follows the addresses; use create_wallet_internal_memo")]
 pub fn create_wallet_internal_memo_version_1(
     consensus_parameters: &impl Parameters,
     uas: &[UnifiedAddress],
@@ -502,23 +506,23 @@ mod tests {
         write_unified_address_to_raw_encoding(&MAIN_NETWORK, &ua, &mut serialized_ua).unwrap();
         (*ua, serialized_ua)
     }
+    /// A Revision 0 address is written as a version 1 memo, the framing every
+    /// reader knows, with an empty refund address list.
     #[test]
-    fn parse_zingo_memo_version_n() {
+    fn a_revision_0_address_round_trips_through_version_1() {
         for test_vector in zingomemo_vectors::UA_TEST_VECTORS {
-            let (ua, _serialized_ua) = get_serialiazed_ua(test_vector);
-            // version1
-            let version1_bytes =
-                create_wallet_internal_memo_version_1(&MAIN_NETWORK, std::slice::from_ref(&ua))
-                    .expect("To create version 1 bytes");
-            let success_parse = parse_zingo_memo(version1_bytes).expect("To succeed in parse.");
-            if let ParsedMemo::Version1 {
+            let (ua, _) = get_serialiazed_ua(test_vector);
+            let packed = create_wallet_internal_memo(&MAIN_NETWORK, std::slice::from_ref(&ua))
+                .expect("To create version 1 bytes");
+            let ParsedMemo::Version1 {
                 uas,
                 rejection_address_indexes,
-            } = success_parse
-            {
-                assert_eq!(uas[0], ua);
-                assert!(rejection_address_indexes.is_empty());
-            }
+            } = parse_zingo_memo(packed.bytes).expect("To succeed in parse.")
+            else {
+                panic!("a Revision 0 address is written as version 1")
+            };
+            assert_eq!(uas, [ua]);
+            assert!(rejection_address_indexes.is_empty());
         }
     }
     #[test]
@@ -570,20 +574,11 @@ mod tests {
         }
     }
 
-    /// The version is chosen by the addresses: Revision 0 addresses take the
-    /// version 1 framing every reader knows, with no refund address indexes,
-    /// and a Revision 2 address lifts the memo to version 2.
+    /// A Revision 2 address among Revision 0 ones lifts the memo to version 2.
     #[test]
-    fn the_memo_version_follows_the_addresses() {
+    fn a_revision_2_address_lifts_the_memo_to_version_2() {
         for test_vector in zingomemo_vectors::UA_TEST_VECTORS {
             let (ua, _) = get_serialiazed_ua(test_vector);
-            assert_eq!(
-                create_wallet_internal_memo(&MAIN_NETWORK, std::slice::from_ref(&ua))
-                    .unwrap()
-                    .bytes,
-                create_wallet_internal_memo_version_1(&MAIN_NETWORK, std::slice::from_ref(&ua))
-                    .unwrap()
-            );
             let expiring = with_expiry(&ua);
             let packed =
                 create_wallet_internal_memo(&MAIN_NETWORK, &[ua.clone(), expiring]).unwrap();
@@ -621,14 +616,18 @@ mod tests {
         }
     }
 
-    /// A version 1 memo refuses an address it would record incompletely
-    /// instead of dropping its metadata.
+    /// The raw encoding, which versions 0 and 1 carry, refuses an address it
+    /// would record incompletely instead of dropping its metadata.
     #[test]
-    fn version_1_refuses_a_revision_2_address() {
+    fn the_raw_encoding_refuses_a_revision_2_address() {
         for test_vector in zingomemo_vectors::UA_TEST_VECTORS {
             let (ua, _) = get_serialiazed_ua(test_vector);
-            let error = create_wallet_internal_memo_version_1(&MAIN_NETWORK, &[with_expiry(&ua)])
-                .expect_err("an expiring address has no version 1 encoding");
+            let error = write_unified_address_to_raw_encoding(
+                &MAIN_NETWORK,
+                &with_expiry(&ua),
+                &mut Vec::new(),
+            )
+            .expect_err("an expiring address has no raw encoding");
             assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         }
     }

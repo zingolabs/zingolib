@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Deprecated
+- `create_wallet_internal_memo_version_1`. The memo version follows the
+  addresses: `create_wallet_internal_memo` writes version 1 for every list the
+  deprecated function accepts and version 2 for the lists it refuses.
 
 ### Added
 - Memo version 2, which records each unified address with its ZIP 316
