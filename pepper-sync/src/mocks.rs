@@ -167,7 +167,7 @@ impl SyncWallet for MockWallet {
         Ok(())
     }
 
-    /// The mock wallet does not keep addresses, so a discovered address is accepted and dropped.
+    /// The mock wallet does not keep shielded addresses, so a discovered address is accepted and dropped.
     fn add_sapling_address(
         &mut self,
         _account_id: zip32::AccountId,
