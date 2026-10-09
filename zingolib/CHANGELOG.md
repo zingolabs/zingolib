@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add `data::ServerInfo::from_lightd_info`, the mapping from an indexer's `LightdInfo` to a `ServerInfo` that `LightClient::info` carried inline, so a consumer holding a `LightdInfo` from its own request builds the same record.
+- The `netutils` funnel re-exports `TimeoutExpired`, the marker tonic leaves in a status's source chain when the client's own request deadline fired, so a consumer tells a timed-out request apart from a verdict the indexer returned.
 - Add `LightWallet::read_chain`, the chain a wallet file was written for, read from the header of version 32 and later files and by a full read under each chain for older ones.
 - Add `wallet::disk::ChainMismatch`, carried inside the `io::Error` that reading a wallet file for another chain returns, so the failure can be told apart without its message.
 - Add `LightClient::sync_to_tip_and_await`, which syncs to the chain tip and returns whatever the stored `shutdown_on_completion` setting is. The override applies to that sync only and the stored sync config is not modified. A running or paused sync is stopped and awaited first, and is not relaunched.
