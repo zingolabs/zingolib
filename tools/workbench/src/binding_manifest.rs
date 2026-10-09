@@ -30,8 +30,10 @@ pub const DESCRIPTOR_ANNOTATION: &str = "org.zingolabs.zingolib.descriptor";
 pub const TITLE_ANNOTATION: &str = "org.opencontainers.image.title";
 const CHECK_FLAG: &str = "--check";
 const BASE_FLAG: &str = "--base";
+const ALL_DIGESTS_FLAG: &str = "--all-digests";
 const NEWEST_FLAG: &str = "--newest";
-const USAGE: &str = "usage: binding-manifest --check [--base <ref>] | binding-manifest --newest";
+const USAGE: &str =
+    "usage: binding-manifest --check [--base <ref>] [--all-digests] | binding-manifest --newest";
 pub const PUBLISH_COMMAND: &str = "/publish";
 const CHECKOUTS_DIR: &str = "target/binding-manifest";
 const TREE_ARGS: [&str; 8] = [
@@ -586,13 +588,10 @@ fn registry_diagnostics(_entries: &[Entry]) -> Result<Vec<String>, Vec<String>> 
 }
 
 /// - Reads `bindings/published.toml` and, with `--base`, its copy at that git revision.
-/// - Runs `git` child processes in `root`.
-/// - With `--check`, creates and removes one detached worktree per unverified entry and runs
-///   `cargo tree` in it, through [`audited_diagnostics`].
-/// - With `--check`, fetches one manifest per platform from the registry, anonymously and
-///   concurrently, for every entry without `--base` and for the entries appended after the
-///   base's with it.
-/// - With `--newest`, prints the commit of the newest entry to stdout.
+/// - Runs `git` child processes in `root`, and `cargo tree` in a detached worktree of each
+///   entry appended after the base's.
+/// - Fetches one manifest per platform from the registry, anonymously and concurrently, for the
+///   appended entries, or for every entry with `--all-digests`.
 pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     match args.first().map(String::as_str) {
         Some(CHECK_FLAG) => check(root, args),
@@ -607,17 +606,31 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
 fn check(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let head = entries_at(root, None)?;
     commits_exist(root, &head)?;
-    let unverified = match crate::flag_value(args, BASE_FLAG)? {
+    let merged = match crate::flag_value(args, BASE_FLAG)? {
         Some(base) => {
             let base = entries_at(root, Some(base))?;
             unchanged_since_base(&base, &head)?;
-            &head[base.len()..]
+            base.len()
         }
-        None => &head[..],
+        None => 0,
     };
-    let mut diagnostics = audited_diagnostics(root, unverified)?;
-    diagnostics.extend(registry_diagnostics(unverified)?);
+    let (appended, digests) = verification_scopes(
+        &head,
+        merged,
+        args.iter().any(|arg| arg == ALL_DIGESTS_FLAG),
+    );
+    let mut diagnostics = audited_diagnostics(root, appended)?;
+    diagnostics.extend(registry_diagnostics(digests)?);
     crate::verdict(diagnostics)
+}
+
+pub fn verification_scopes(
+    head: &[Entry],
+    merged: usize,
+    all_digests: bool,
+) -> (&[Entry], &[Entry]) {
+    let appended = &head[merged.min(head.len())..];
+    (appended, if all_digests { head } else { appended })
 }
 
 pub fn newest_commit(entries: &[Entry]) -> Result<&str, Vec<String>> {
@@ -844,6 +857,22 @@ mod tests {
         let diagnostic = audited_diagnostics(&root, &[recorded]).unwrap().concat();
         assert!(diagnostic.contains(&head), "{diagnostic}");
         assert!(!root.join(CHECKOUTS_DIR).join(&head).exists());
+    }
+
+    #[test]
+    fn a_push_re_derives_only_the_appended_audited_sets_and_may_verify_every_digest() {
+        let head = vec![
+            entry(FIRST, Some(ORIGIN), &["android"]),
+            entry(SECOND, None, &["android"]),
+        ];
+        let (appended, digests) = verification_scopes(&head, 1, true);
+        assert_eq!(appended, &head[1..]);
+        assert_eq!(digests, &head[..]);
+        let (appended, digests) = verification_scopes(&head, 1, false);
+        assert_eq!(appended, &head[1..]);
+        assert_eq!(digests, &head[1..]);
+        let (appended, _) = verification_scopes(&head, 5, false);
+        assert!(appended.is_empty());
     }
 
     #[test]

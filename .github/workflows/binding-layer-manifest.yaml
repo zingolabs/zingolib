@@ -42,11 +42,18 @@ jobs:
           workspaces: tools/workbench
 
       # On a pull request the merged entries are those of the base branch;
-      # on a push there is no base to compare with.
+      # on a push they are those of the commit before the push, and the
+      # registry is asked about every entry, because it keeps every
+      # published bundle. A branch's first push has no commit before it.
       - name: Check bindings/published.toml
         env:
-          BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
+          BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || github.event.before }}
+          ALL_DIGESTS: ${{ github.event_name == 'push' && '--all-digests' || '' }}
         run: |
+          case "$BASE" in
+            *[!0]*) ;;
+            *) BASE="" ;;
+          esac
           cargo run --manifest-path tools/workbench/Cargo.toml \
             --features registry --bin binding-manifest -- \
-            --check ${BASE:+--base "$BASE"}
+            --check ${BASE:+--base "$BASE"} $ALL_DIGESTS
