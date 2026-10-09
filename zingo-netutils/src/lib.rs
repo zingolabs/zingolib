@@ -67,7 +67,7 @@ pub const NYM_EXIT_LINE_PREFIX: &str = "NYM_EXIT=";
 pub mod time;
 pub use error::*;
 pub use lightwallet_protocol;
-pub use tonic::{Status, Streaming};
+pub use tonic::{Status, Streaming, TimeoutExpired};
 
 #[cfg(feature = "globally-public-transparent")]
 mod globally_public;
