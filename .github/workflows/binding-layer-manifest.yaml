@@ -41,25 +41,13 @@ jobs:
         with:
           workspaces: tools/workbench
 
-      # The registry client is the orasust binary, whose release the
-      # workbench pins. Its repository is private, so a token of the App
-      # installed on that repository downloads it.
-      - name: Mint the orasust token
-        id: orasust-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.BINDING_PUBLISH_APP_ID }}
-          private-key: ${{ secrets.BINDING_PUBLISH_APP_PRIVATE_KEY }}
-          owner: zingolabs
-          repositories: orasust
-
+      # The registry client is the orasust crate, whose version the
+      # workbench pins. The cargo cache above keeps the installed binary,
+      # so the build runs once per version.
       - name: Install orasust
-        env:
-          GH_TOKEN: ${{ steps.orasust-token.outputs.token }}
         run: |
-          release="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --orasust-version)"
-          gh release download --repo zingolabs/orasust "$release" --pattern orasust-x86_64-unknown-linux-gnu --output orasust
-          sudo install --mode 755 orasust /usr/local/bin/orasust
+          version="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --orasust-version)"
+          cargo install --locked "orasust@${version}"
 
       # On a pull request the merged entries are those of the base branch;
       # on a push they are those of the commit before the push, and the

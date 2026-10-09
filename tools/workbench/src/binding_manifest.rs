@@ -565,7 +565,7 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
             Ok(())
         }
         Some(crate::orasust::VERSION_FLAG) => {
-            println!("{}", crate::orasust::release_tag());
+            println!("{}", crate::orasust::VERSION);
             Ok(())
         }
         _ => Err(vec![USAGE.to_string()]),

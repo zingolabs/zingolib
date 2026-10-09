@@ -3,10 +3,10 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 pub const BINARY: &str = "orasust";
-pub const VERSION: &str = "0.1.1";
-pub const REPOSITORY: &str = "zingolabs/orasust";
-pub const ASSET: &str = "orasust-x86_64-unknown-linux-gnu";
+pub const VERSION: &str = "0.1.2";
 pub const VERSION_FLAG: &str = "--orasust-version";
+const INSTALL: &str = "cargo install --locked";
+const CRATE_VERSION_SEPARATOR: char = '@';
 const VERSION_COMMAND: &str = "version";
 const VERSION_LABEL: &str = "Version:";
 const PUSH: &str = "push";
@@ -18,19 +18,15 @@ const PASSWORD_STDIN_FLAG: &str = "--password-stdin";
 const DIGEST_LABEL: &str = "Digest:";
 const ANNOTATION_SEPARATOR: char = '=';
 const MEDIA_TYPE_SEPARATOR: char = ':';
-const RELEASE_PREFIX: char = 'v';
 const QUOTE: char = '"';
 const KEY_VALUE_SEPARATOR: char = ':';
 
-pub fn release_tag() -> String {
-    format!("{RELEASE_PREFIX}{VERSION}")
+pub fn install_command() -> String {
+    format!("{INSTALL} {BINARY}{CRATE_VERSION_SEPARATOR}{VERSION}")
 }
 
 fn install_hint() -> String {
-    format!(
-        "download {ASSET} from the {} release of {REPOSITORY} and put it on PATH as {BINARY}",
-        release_tag()
-    )
+    format!("install it with `{}`", install_command())
 }
 
 pub fn installed_version(report: &str) -> Option<&str> {
@@ -175,7 +171,10 @@ mod tests {
     }
 
     #[test]
-    fn the_release_tag_is_the_pinned_version_with_its_prefix() {
-        assert_eq!(release_tag(), format!("v{VERSION}"));
+    fn the_install_command_names_the_pinned_version() {
+        assert_eq!(
+            install_command(),
+            format!("cargo install --locked orasust@{VERSION}")
+        );
     }
 }
