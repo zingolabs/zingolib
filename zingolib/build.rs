@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::{env, process::Command};
 
 const DESCRIPTOR_TEXT_FILE: &str = "git_description.txt";
+const DESCRIPTOR_ENV: &str = "ZINGOLIB_DESCRIPTOR";
 const DESCRIPTOR_SOURCE_FILE: &str = "git_description.rs";
 
 /// Register everything this script's output depends on. Emitting any
@@ -132,6 +133,10 @@ fn git_description() {
         hash5().as_deref(),
         dirty(),
     );
+
+    // The Binding Layer builder reads the descriptor from cargo's
+    // `build-script-executed` message, which carries every rustc-env line.
+    println!("cargo:rustc-env={DESCRIPTOR_ENV}={description}");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     std::fs::write(out_dir.join(DESCRIPTOR_TEXT_FILE), &description).unwrap();
