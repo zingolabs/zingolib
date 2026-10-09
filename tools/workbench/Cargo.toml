@@ -13,3 +13,6 @@ publish = false
 # Crate-wide: forbid unsafe across the lib and every binary in one place.
 [lints.rust]
 unsafe_code = "forbid"
+
+[dependencies]
+toml_edit = "0.25.17"
