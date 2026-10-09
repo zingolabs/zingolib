@@ -629,6 +629,8 @@ mod tests {
         assert!(ChainType::try_from("mainnet ").is_err()); // trailing space
         assert!(ChainType::try_from(" mainnet").is_err()); // leading space
         assert!(ChainType::try_from("regtест").is_err()); // lookalike chars
+    }
+
     /// The Library Birthday must land at or above Sapling activation on the
     /// public chains, so a NewSeed wallet built from it starts scanning at
     /// the library floor rather than the bottom of the chain.
