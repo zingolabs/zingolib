@@ -1022,7 +1022,56 @@ mod version_forty {
     use bip0039::Mnemonic;
 
     use crate::config::ChainType;
+    use crate::wallet::disk::ChainMismatch;
     use crate::wallet::{LightWallet, utils};
+
+    #[test]
+    fn the_chain_is_read_from_each_header_layout() {
+        let mut tagged = 41u64.to_le_bytes().to_vec();
+        tagged.push(1);
+        assert_eq!(
+            LightWallet::read_chain(&tagged).unwrap(),
+            ChainType::Testnet
+        );
+
+        let mut dev_v40 = 40u64.to_le_bytes().to_vec();
+        dev_v40.push(0);
+        assert_eq!(
+            LightWallet::read_chain(&dev_v40).unwrap(),
+            ChainType::Mainnet
+        );
+
+        let mut stable_v40 = 40u64.to_le_bytes().to_vec();
+        utils::write_string(&mut stable_v40, &"test".to_string()).unwrap();
+        assert_eq!(
+            LightWallet::read_chain(&stable_v40).unwrap(),
+            ChainType::Testnet
+        );
+
+        let mut named = 35u64.to_le_bytes().to_vec();
+        utils::write_string(&mut named, &"main".to_string()).unwrap();
+        assert_eq!(LightWallet::read_chain(&named).unwrap(), ChainType::Mainnet);
+    }
+
+    #[test]
+    fn a_version_this_build_cannot_read_has_no_chain() {
+        assert!(LightWallet::read_chain(&99u64.to_le_bytes()).is_err());
+        assert!(LightWallet::read_chain(&[1, 2, 3]).is_err());
+    }
+
+    #[test]
+    fn a_chain_mismatch_is_typed() {
+        let mut bytes = 41u64.to_le_bytes().to_vec();
+        bytes.push(1);
+        let error = LightWallet::read(bytes.as_slice(), ChainType::Mainnet)
+            .expect_err("a testnet tag must refuse a mainnet load");
+        let mismatch = error
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<ChainMismatch>())
+            .expect("the mismatch travels typed");
+        assert_eq!(mismatch.saved, "testnet");
+        assert_eq!(mismatch.expected, "mainnet");
+    }
 
     fn dev_v40_prefix() -> Vec<u8> {
         let mut bytes = 40u64.to_le_bytes().to_vec();
