@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
 
 ### Changed
+- A receiver that sync discovers at an address index keeps the stored
+  address's expiry height and expiry time when it is merged into that
+  address. The merge rebuilt the address from its receivers alone and dropped
+  the metadata, which the wallet's addresses carry none of today.
 - The change memo of a send records recipient unified addresses through
   `zingo_memo::create_wallet_internal_memo`, so a ZIP 316 Revision 2 recipient
   is recorded with its revision and metadata in a version 2 memo, and every

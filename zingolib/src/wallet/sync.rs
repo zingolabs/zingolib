@@ -21,6 +21,33 @@ use super::{
     keys::unified::UnifiedAddressId,
 };
 
+/// The address stored at an index with a discovered receiver filled in, keeping
+/// its other shielded receiver and its expiry metadata. The wallet issues no
+/// address with a transparent receiver, so none is carried.
+fn with_discovered_receiver(
+    stored: Option<&UnifiedAddress>,
+    orchard: Option<orchard::Address>,
+    sapling: Option<sapling_crypto::PaymentAddress>,
+) -> UnifiedAddress {
+    let (stored_orchard, stored_sapling, expiry_height, expiry_time) = match stored {
+        Some(address) => (
+            address.orchard().copied(),
+            address.sapling().cloned(),
+            address.expiry_height(),
+            address.expiry_time(),
+        ),
+        None => (None, None, None, None),
+    };
+    UnifiedAddress::from_receivers(
+        orchard.or(stored_orchard),
+        sapling.or(stored_sapling),
+        None,
+        expiry_height,
+        expiry_time,
+    )
+    .expect("a discovered receiver is a shielded receiver")
+}
+
 impl SyncWallet for LightWallet {
     type Error = WalletError;
 
@@ -59,25 +86,14 @@ impl SyncWallet for LightWallet {
             account_id,
             address_index,
         };
-        let unified_address = if let Some(wallet_address) = self.unified_addresses.get(&address_id)
-        {
-            if wallet_address.orchard() == Some(&address) {
-                return Ok(());
-            }
-
-            UnifiedAddress::from_receivers(
-                Some(address),
-                wallet_address.sapling().copied(),
-                None,
-                None,
-                None,
-            )
-            .expect("guaranteed to have at least 1 shielded receiver")
-        } else {
-            UnifiedAddress::from_receivers(Some(address), None, None, None, None)
-                .expect("guaranteed to have at least 1 shielded receiver")
-        };
-        self.unified_addresses.insert(address_id, unified_address);
+        let stored = self.unified_addresses.get(&address_id);
+        if stored.is_some_and(|wallet_address| wallet_address.orchard() == Some(&address)) {
+            return Ok(());
+        }
+        self.unified_addresses.insert(
+            address_id,
+            with_discovered_receiver(stored, Some(address), None),
+        );
 
         Ok(())
     }
@@ -109,25 +125,14 @@ impl SyncWallet for LightWallet {
             account_id,
             address_index,
         };
-        let unified_address = if let Some(wallet_address) = self.unified_addresses.get(&address_id)
-        {
-            if wallet_address.sapling() == Some(&address) {
-                return Ok(());
-            }
-
-            UnifiedAddress::from_receivers(
-                wallet_address.orchard().copied(),
-                Some(address),
-                None,
-                None,
-                None,
-            )
-            .expect("guaranteed to have at least 1 shielded receiver")
-        } else {
-            UnifiedAddress::from_receivers(None, Some(address), None, None, None)
-                .expect("guaranteed to have at least 1 shielded receiver")
-        };
-        self.unified_addresses.insert(address_id, unified_address);
+        let stored = self.unified_addresses.get(&address_id);
+        if stored.is_some_and(|wallet_address| wallet_address.sapling() == Some(&address)) {
+            return Ok(());
+        }
+        self.unified_addresses.insert(
+            address_id,
+            with_discovered_receiver(stored, None, Some(address)),
+        );
 
         Ok(())
     }
@@ -259,6 +264,31 @@ mod tests {
             before,
             "early return must not insert an address"
         );
+    }
+
+    /// A receiver discovered at an index joins the address stored there without
+    /// displacing its other receiver or the expiry it was issued with.
+    #[test]
+    fn a_discovered_receiver_keeps_the_stored_expiry() {
+        let (_, _, sapling) = default_zaddr();
+        let spending_key = orchard::keys::SpendingKey::from_bytes([0; 32]).unwrap();
+        let orchard = orchard::keys::FullViewingKey::from(&spending_key)
+            .address_at(0u32, zip32::Scope::External);
+        let stored = UnifiedAddress::from_receivers(
+            Some(orchard),
+            None,
+            None,
+            Some(BlockHeight::from_u32(3_000_000)),
+            Some(1_900_000_000),
+        )
+        .unwrap();
+
+        let merged = with_discovered_receiver(Some(&stored), None, Some(sapling));
+
+        assert_eq!(merged.orchard(), Some(&orchard));
+        assert_eq!(merged.sapling(), Some(&sapling));
+        assert_eq!(merged.expiry_height(), stored.expiry_height());
+        assert_eq!(merged.expiry_time(), stored.expiry_time());
     }
 
     /// An index below the 16-bit limit must pass the guard and insert the sapling address into
