@@ -19,8 +19,7 @@ const SHAPES: [(&str, &str); 2] = [
 const TAR: &str = "tar";
 const TAR_ARGS: [&str; 3] = ["--create", "--gzip", "--file"];
 const PACKAGE_STAGING_SUFFIX: &str = "-package";
-const COMMITTER_NAME: &str = "github-actions[bot]";
-const COMMITTER_EMAIL: &str = "41898282+github-actions[bot]@users.noreply.github.com";
+const PUSH_ATTEMPTS: usize = 2;
 const COMMIT_MESSAGE_PREFIX: &str = "chore(bindings): record the publication of ";
 const COMMIT_FLAG: &str = "--commit";
 const BUNDLES_FLAG: &str = "--bundles";
@@ -173,9 +172,10 @@ fn push(
     _credentials: &Credentials,
 ) -> Result<String, Vec<String>> {
     Err(vec![format!(
-        "{BINARY} was built without the registry feature and cannot push {} ({}) as {}",
+        "{BINARY} was built without the registry feature and cannot push {} ({}, {}) as {}",
         bundle.file.display(),
         bundle.descriptor,
+        bundle.media_type,
         binding_manifest::reference(platform, commit)
     )])
 }
@@ -242,20 +242,24 @@ fn swift_package_archive(root: &Path, dir: &Path, commit: &str) -> Result<PathBu
     Ok(staging.join(archive_name))
 }
 
-/// - Runs `git config`, `git add`, `git commit`, and `git push` as child processes in `root`.
+/// - Runs `git add` and `git commit` in `root`, then `git pull --rebase` and `git push`, the
+///   pair at most `PUSH_ATTEMPTS` times.
 fn commit_and_push(root: &Path, commit: &str) -> Result<(), Vec<String>> {
     let message = format!("{COMMIT_MESSAGE_PREFIX}{commit}");
-    let commands: [&[&str]; 5] = [
-        &["config", "user.name", COMMITTER_NAME],
-        &["config", "user.email", COMMITTER_EMAIL],
+    crate::git_in(
+        root,
         &["add", binding_manifest::FILE, binding_changelog::FILE],
-        &["commit", "--message", &message],
-        &["push"],
-    ];
-    for args in commands {
-        crate::git_in(root, args)?;
+    )?;
+    crate::git_in(root, &["commit", "--message", &message])?;
+    let mut rejected = Vec::new();
+    for _ in 0..PUSH_ATTEMPTS {
+        crate::git_in(root, &["pull", "--rebase"])?;
+        match crate::git_in(root, &["push"]) {
+            Ok(_) => return Ok(()),
+            Err(diagnostics) => rejected = diagnostics,
+        }
     }
-    Ok(())
+    Err(rejected)
 }
 
 /// - Reads `bindings/published.toml` and the credentials in the environment.
@@ -383,5 +387,241 @@ mod tests {
             .unwrap_err()
             .concat();
         assert!(diagnostic.contains(COMMIT_FLAG));
+    }
+
+    const PUBLISH_WORKFLOW: &str = ".github/workflows/binding-layer-publish.yaml";
+    const BUILD_WORKFLOWS: [&str; 2] = [
+        ".github/workflows/binding-layer-android.yaml",
+        ".github/workflows/binding-layer-ios.yaml",
+    ];
+    const CALLERS: [&str; 3] = [
+        ".github/workflows/ci-pr.yaml",
+        ".github/workflows/ci-nightly.yaml",
+        PUBLISH_WORKFLOW,
+    ];
+    const WORKBENCH_MANIFEST: &str = "tools/workbench/Cargo.toml";
+    const PERMISSIONS_KEY: &str = "permissions:";
+    const INPUTS_KEY: &str = "inputs:";
+    const WITH_KEY: &str = "with:";
+    const USES_KEY: &str = "uses: ./";
+    const REQUIRED_INPUT: &str = "required: true";
+    const REACTIONS_PATH: &str = "/reactions";
+    const ISSUES_WRITE: &str = "issues: write";
+    const NEWEST_COMMAND: &str = "--bin binding-manifest -- --newest";
+    const FEATURES_FLAG: &str = "--features";
+    const MANIFEST_BIN: &str = "name = \"binding-manifest\"";
+    const REQUIRED_FEATURES: &str = "required-features";
+    const BRANCH: &str = "main";
+    const PUBLISHED: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    fn repo_file(relative: &str) -> String {
+        crate::read(&crate::repo_root().unwrap().join(relative)).unwrap()
+    }
+
+    fn indent_of(line: &str) -> usize {
+        line.len() - line.trim_start().len()
+    }
+
+    fn blocks_under<'a>(text: &'a str, key: &str) -> Vec<Vec<&'a str>> {
+        let lines: Vec<&str> = text.lines().collect();
+        let mut blocks = Vec::new();
+        for (index, line) in lines.iter().enumerate() {
+            if line.trim() != key {
+                continue;
+            }
+            let indent = indent_of(line);
+            let block = lines[index + 1..]
+                .iter()
+                .take_while(|next| next.trim().is_empty() || indent_of(next) > indent)
+                .filter(|next| !next.trim().is_empty())
+                .copied()
+                .collect();
+            blocks.push(block);
+        }
+        blocks
+    }
+
+    fn required_inputs(workflow: &str) -> Vec<String> {
+        let mut required = Vec::new();
+        for block in blocks_under(workflow, INPUTS_KEY) {
+            let shallowest = block.iter().map(|line| indent_of(line)).min().unwrap();
+            let mut name = "";
+            for line in block {
+                if indent_of(line) == shallowest {
+                    name = line.trim().trim_end_matches(':');
+                } else if line.trim() == REQUIRED_INPUT {
+                    required.push(name.to_string());
+                }
+            }
+        }
+        required
+    }
+
+    fn passed_inputs(caller: &str, workflow: &str) -> Vec<Vec<String>> {
+        let uses = format!("{USES_KEY}{workflow}");
+        let lines: Vec<&str> = caller.lines().collect();
+        lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.trim() == uses)
+            .map(|(index, _)| {
+                let rest = lines[index + 1..].join("\n");
+                blocks_under(&rest, WITH_KEY)
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|line| line.trim().split(':').next().unwrap().to_string())
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_publish_workflow_holds_the_permission_its_reactions_need() {
+        let workflow = repo_file(PUBLISH_WORKFLOW);
+        let reacting = workflow
+            .lines()
+            .filter(|line| line.contains(REACTIONS_PATH))
+            .count();
+        assert!(reacting > 0, "the workflow posts no reaction");
+        let grants: Vec<&str> = blocks_under(&workflow, PERMISSIONS_KEY)
+            .into_iter()
+            .flatten()
+            .map(str::trim)
+            .collect();
+        assert!(
+            grants.contains(&ISSUES_WRITE),
+            "{reacting} step(s) post a reaction, which GitHub gates on `{ISSUES_WRITE}`, but the workflow grants only {grants:?}"
+        );
+    }
+
+    #[test]
+    fn reading_the_newest_entry_needs_no_registry() {
+        let manifest = repo_file(WORKBENCH_MANIFEST);
+        let bin = manifest.find(MANIFEST_BIN).unwrap();
+        let stanza = manifest[bin..].split("\n\n").next().unwrap();
+        assert!(
+            !stanza.contains(REQUIRED_FEATURES),
+            "the manifest binary is gated on a feature that only --check needs:\n{stanza}"
+        );
+        let workflow = repo_file(PUBLISH_WORKFLOW);
+        let newest: Vec<&str> = workflow
+            .lines()
+            .filter(|line| line.contains(NEWEST_COMMAND))
+            .map(str::trim)
+            .collect();
+        assert!(
+            !newest.is_empty(),
+            "the publish workflow never reads the newest entry"
+        );
+        assert!(
+            newest.iter().all(|line| !line.contains(FEATURES_FLAG)),
+            "reading the newest entry compiles the registry client: {newest:?}"
+        );
+    }
+
+    #[test]
+    fn every_caller_passes_every_required_input_of_the_build_workflows() {
+        for workflow in BUILD_WORKFLOWS {
+            let required = required_inputs(&repo_file(workflow));
+            assert!(!required.is_empty(), "{workflow} requires no input");
+            for caller in CALLERS {
+                for passed in passed_inputs(&repo_file(caller), workflow) {
+                    let missing: Vec<&String> = required
+                        .iter()
+                        .filter(|input| !passed.contains(input))
+                        .collect();
+                    assert!(
+                        missing.is_empty(),
+                        "{caller} calls {workflow} without {missing:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    fn git(dir: &Path, args: &[&str]) -> String {
+        crate::git_in(dir, args).unwrap()
+    }
+
+    fn clone(scratch: &Path, remote: &Path, name: &str) -> PathBuf {
+        git(
+            scratch,
+            &["clone", "--quiet", remote.to_str().unwrap(), name],
+        );
+        let dir = scratch.join(name);
+        git(&dir, &["config", "user.name", name]);
+        git(
+            &dir,
+            &["config", "user.email", &format!("{name}@example.invalid")],
+        );
+        dir
+    }
+
+    fn append(dir: &Path, relative: &str, line: &str) {
+        let file = dir.join(relative);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        let mut text = std::fs::read_to_string(&file).unwrap_or_default();
+        text.push_str(line);
+        text.push('\n');
+        std::fs::write(file, text).unwrap();
+    }
+
+    #[test]
+    fn the_record_push_survives_a_push_to_the_branch_during_the_builds() {
+        let scratch =
+            std::env::temp_dir().join(format!("workbench-record-push-{}", std::process::id()));
+        crate::fresh_dir(&scratch).unwrap();
+        let remote = scratch.join("remote.git");
+        git(
+            &scratch,
+            &[
+                "init",
+                "--quiet",
+                "--bare",
+                "--initial-branch",
+                BRANCH,
+                "remote.git",
+            ],
+        );
+        let runner = clone(&scratch, &remote, "runner");
+        append(&runner, binding_manifest::FILE, "[[entry]]");
+        append(
+            &runner,
+            binding_changelog::FILE,
+            "# Binding Layer changelog",
+        );
+        git(
+            &runner,
+            &["add", binding_manifest::FILE, binding_changelog::FILE],
+        );
+        git(&runner, &["commit", "--quiet", "--message", "seed"]);
+        git(
+            &runner,
+            &["push", "--quiet", "--set-upstream", "origin", BRANCH],
+        );
+
+        let rival = clone(&scratch, &remote, "rival");
+        append(&rival, "README.md", "a fix pushed while the builds run");
+        git(&rival, &["add", "README.md"]);
+        git(&rival, &["commit", "--quiet", "--message", "concurrent"]);
+        git(&rival, &["push", "--quiet"]);
+
+        append(&runner, binding_manifest::FILE, "digest = \"sha256:feed\"");
+        append(&runner, binding_changelog::FILE, "## section");
+        assert_eq!(commit_and_push(&runner, PUBLISHED), Ok(()));
+
+        git(&rival, &["pull", "--quiet", "--rebase"]);
+        let subjects = git(&rival, &["log", "--format=%s", "-3"]);
+        assert_eq!(
+            subjects.lines().collect::<Vec<_>>(),
+            [
+                format!("{COMMIT_MESSAGE_PREFIX}{PUBLISHED}").as_str(),
+                "concurrent",
+                "seed",
+            ]
+        );
+        std::fs::remove_dir_all(&scratch).unwrap();
     }
 }
