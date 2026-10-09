@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
 
 ### Changed
+- The change memo of a send records recipient unified addresses through
+  `zingo_memo::create_wallet_internal_memo`, so a ZIP 316 Revision 2 recipient
+  is recorded with its revision and metadata in a version 2 memo, and every
+  other send keeps writing the version 1 memo earlier releases read. The memo
+  no longer records refund address indexes, which no reader consumed. When
+  the recipients outgrow the memo field, the memo records those that fit and
+  an error is logged naming how many it holds; the send proceeds either way.
 - **Breaking:** the Zcash stack moves to the librustzcash NU7 pre-release
   cohort, pinned exactly: `zcash_client_backend` 0.25.0-pre.1, `zcash_keys` 0.17.0-pre.1, `zcash_primitives` 0.31.0-pre.1, `zcash_proofs` 0.31.0-pre.1, `zcash_protocol` 0.11.0-pre.0, `zcash_address` 0.14.0-pre.1, `zcash_transparent` 0.11.0-pre.1, `zcash_encoding` 0.5, `zcash_note_encryption` 0.5, `zcash_script` 0.6, `orchard` 0.16, `sapling-crypto` 0.9, `incrementalmerkletree` 0.9, `shardtree` 0.8, `zip32` 0.3, `bip32` 0.6, `jubjub` 0.11, `secp256k1` 0.33, `rand` 0.10, and `zcash_pool_migration` 0.2.0-pre.1.
   The cohort knows NU7 on testnet (activation height 4,465,026, consensus

@@ -4809,7 +4809,6 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a241614
 name = "zingo-memo"
 version = "0.1.1"
 dependencies = [
- "rand 0.10.2",
  "zcash_address",
  "zcash_encoding",
  "zcash_keys",

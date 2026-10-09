@@ -31,10 +31,7 @@ use crate::{
         receivers::{Receiver, transaction_request_from_receivers},
     },
 };
-use pepper_sync::{
-    keys::transparent::TransparentScope,
-    sync::{ScanPriority, ScanRange},
-};
+use pepper_sync::sync::{ScanPriority, ScanRange};
 
 /// How many times [`LightWallet::create_send_all_proposal`] proposes a
 /// send-all request, the first attempt included. Each retry can surface
@@ -274,44 +271,46 @@ impl LightWallet {
     }
 
     fn change_memo_from_transaction_request(&self, request: &TransactionRequest) -> MemoBytes {
-        let mut recipient_uas = Vec::new();
-        let mut refund_address_indexes = Vec::new();
-        let mut refund_address_count = self
-            .transparent_addresses
-            .keys()
-            .filter(|&address_id| address_id.scope() == TransparentScope::Refund)
-            .count() as u32;
-        for payment in request.payments().values() {
-            if let Ok(address) = payment
-                .recipient_address()
-                .clone()
-                .convert_if_network::<zcash_keys::address::Address>(self.chain_type.network_type())
-            {
-                match address {
-                    zcash_keys::address::Address::Unified(unified_address) => {
-                        recipient_uas.push(*unified_address);
-                    }
-                    zcash_keys::address::Address::Tex(_) => {
-                        refund_address_indexes.push(refund_address_count);
-                        refund_address_count += 1;
-                    }
-                    _ => (),
-                }
-            }
-        }
-        let uas_bytes = match zingo_memo::create_wallet_internal_memo_version_1(
+        let recipient_uas = request
+            .payments()
+            .values()
+            .filter_map(|payment| {
+                payment
+                    .recipient_address()
+                    .clone()
+                    .convert_if_network::<zcash_keys::address::Address>(
+                        self.chain_type.network_type(),
+                    )
+                    .ok()
+            })
+            .filter_map(|address| match address {
+                zcash_keys::address::Address::Unified(unified_address) => Some(*unified_address),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let uas_bytes = match zingo_memo::create_wallet_internal_memo(
             &self.chain_type,
             recipient_uas.as_slice(),
-            refund_address_indexes.as_slice(),
         ) {
-            Ok(bytes) => bytes,
+            Ok(packed) => {
+                if packed.recorded < recipient_uas.len() {
+                    log::error!(
+                        "The memo field holds {} of the {} recipient addresses of this send. \
+                         After a rescan the wallet will not display the sent-to address of the \
+                         rest. This is a visual error only. The correct addresses were sent to.",
+                        packed.recorded,
+                        recipient_uas.len()
+                    );
+                }
+                packed.bytes
+            }
             Err(e) => {
                 log::error!(
                     "Could not write uas to memo field: {e}\n\
         Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
         The correct address was sent to."
                 );
-                [0; 511]
+                [0; zingo_memo::MEMO_LEN]
             }
         };
         MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))

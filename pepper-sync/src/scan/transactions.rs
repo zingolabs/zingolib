@@ -371,48 +371,21 @@ pub(crate) fn scan_transaction(
         collect_nullifiers(nullifier_map, block_height, txid, &transaction);
     }
 
-    for encoded_memo in encoded_memos {
-        match encoded_memo {
-            ParsedMemo::Version0 { uas } => {
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas.clone(),
-                    &mut outgoing_sapling_notes,
-                )?;
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas.clone(),
-                    &mut outgoing_orchard_notes,
-                )?;
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas,
-                    &mut outgoing_ironwood_notes,
-                )?;
-            }
-            ParsedMemo::Version1 {
-                uas,
-                rejection_address_indexes: _,
-            } => {
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas.clone(),
-                    &mut outgoing_sapling_notes,
-                )?;
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas.clone(),
-                    &mut outgoing_orchard_notes,
-                )?;
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas,
-                    &mut outgoing_ironwood_notes,
-                )?;
-
-                // TODO: handle rejection addresses from encoded memos
-            }
-        }
+    for uas in encoded_memos
+        .into_iter()
+        .map(ParsedMemo::into_unified_addresses)
+    {
+        add_recipient_unified_address(
+            consensus_parameters,
+            uas.clone(),
+            &mut outgoing_sapling_notes,
+        )?;
+        add_recipient_unified_address(
+            consensus_parameters,
+            uas.clone(),
+            &mut outgoing_orchard_notes,
+        )?;
+        add_recipient_unified_address(consensus_parameters, uas, &mut outgoing_ironwood_notes)?;
     }
 
     Ok(WalletTransaction {
