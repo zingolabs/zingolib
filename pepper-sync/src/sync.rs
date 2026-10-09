@@ -2512,15 +2512,19 @@ where
     Ok(())
 }
 
-struct DiscoveredAddresses {
-    orchard: Vec<(AccountId, orchard::Address, zip32::DiversifierIndex)>,
-    sapling: Vec<(
-        AccountId,
-        sapling_crypto::PaymentAddress,
-        zip32::DiversifierIndex,
-    )>,
+#[derive(Debug, PartialEq, Eq)]
+struct DiscoveredAddress<Address> {
+    account_id: AccountId,
+    address: Address,
+    diversifier_index: zip32::DiversifierIndex,
 }
 
+struct DiscoveredAddresses {
+    orchard: Vec<DiscoveredAddress<orchard::Address>>,
+    sapling: Vec<DiscoveredAddress<sapling_crypto::PaymentAddress>>,
+}
+
+#[must_use]
 fn discover_unified_addresses<'a>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     transactions: impl Iterator<Item = &'a WalletTransaction>,
@@ -2536,20 +2540,23 @@ fn discover_unified_addresses<'a>(
             discover_into(
                 ufvks,
                 transaction.orchard_notes(),
-                resolve_orchard,
+                orchard::Note::recipient,
+                orchard_diversifier_index,
                 &mut discovered.orchard,
             );
             // Ironwood recipients are orchard receivers, discovered the same way.
             discover_into(
                 ufvks,
                 transaction.ironwood_notes(),
-                resolve_orchard,
+                orchard::Note::recipient,
+                orchard_diversifier_index,
                 &mut discovered.orchard,
             );
             discover_into(
                 ufvks,
                 transaction.sapling_notes(),
-                resolve_sapling,
+                sapling_crypto::Note::recipient,
+                sapling_diversifier_index,
                 &mut discovered.sapling,
             );
             retain_first_seen(&mut seen_orchard, &mut discovered.orchard);
@@ -2561,21 +2568,18 @@ fn discover_unified_addresses<'a>(
 
 fn retain_first_seen<Address>(
     seen: &mut HashSet<(AccountId, zip32::DiversifierIndex)>,
-    addresses: &mut Vec<(AccountId, Address, zip32::DiversifierIndex)>,
+    addresses: &mut Vec<DiscoveredAddress<Address>>,
 ) {
-    addresses.retain(|(account_id, _, diversifier_index)| {
-        seen.insert((*account_id, *diversifier_index))
-    });
+    addresses
+        .retain(|discovered| seen.insert((discovered.account_id, discovered.diversifier_index)));
 }
 
 fn discover_into<N, Address>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     notes: &[N],
-    resolve: impl Fn(
-        &UnifiedFullViewingKey,
-        &N::ZcashNote,
-    ) -> Option<(Address, zip32::DiversifierIndex)>,
-    discovered: &mut Vec<(AccountId, Address, zip32::DiversifierIndex)>,
+    recipient: impl Fn(&N::ZcashNote) -> Address,
+    diversifier_index: impl Fn(&UnifiedFullViewingKey, &Address) -> zip32::DiversifierIndex,
+    discovered: &mut Vec<DiscoveredAddress<Address>>,
 ) where
     N: NoteInterface<KeyId = keys::KeyId>,
 {
@@ -2588,37 +2592,37 @@ fn discover_into<N, Address>(
                 let ufvk = ufvks
                     .get(&account_id)
                     .expect("ufvk must exist to decrypt this note");
-                let (address, index) =
-                    resolve(ufvk, note.note()).expect("must be key used to create this address");
-                (account_id, address, index)
+                let address = recipient(note.note());
+                let diversifier_index = diversifier_index(ufvk, &address);
+                DiscoveredAddress {
+                    account_id,
+                    address,
+                    diversifier_index,
+                }
             }),
     );
 }
 
-fn resolve_orchard(
+fn orchard_diversifier_index(
     ufvk: &UnifiedFullViewingKey,
-    note: &orchard::Note,
-) -> Option<(orchard::Address, zip32::DiversifierIndex)> {
-    let address = note.recipient();
-    let index = ufvk
-        .orchard()
+    address: &orchard::Address,
+) -> zip32::DiversifierIndex {
+    ufvk.orchard()
         .expect("fvk must exist to decrypt this note")
         .to_ivk(zip32::Scope::External)
-        .diversifier_index(&address)?;
-    Some((address, index))
+        .diversifier_index(address)
+        .expect("must be key used to create this address")
 }
 
-fn resolve_sapling(
+fn sapling_diversifier_index(
     ufvk: &UnifiedFullViewingKey,
-    note: &sapling_crypto::Note,
-) -> Option<(sapling_crypto::PaymentAddress, zip32::DiversifierIndex)> {
-    let address = note.recipient();
-    let index = ufvk
-        .sapling()
+    address: &sapling_crypto::PaymentAddress,
+) -> zip32::DiversifierIndex {
+    ufvk.sapling()
         .expect("fvk must exist to decrypt this note")
         .to_external_ivk()
-        .decrypt_diversifier(&address)?;
-    Some((address, index))
+        .decrypt_diversifier(address)
+        .expect("must be key used to create this address")
 }
 
 /// - Adds each discovered orchard address to the wallet's unified address list.
@@ -2631,10 +2635,20 @@ where
     W: SyncWallet,
 {
     for transaction_addresses in discovered {
-        for (account_id, address, diversifier_index) in transaction_addresses.orchard {
+        for DiscoveredAddress {
+            account_id,
+            address,
+            diversifier_index,
+        } in transaction_addresses.orchard
+        {
             wallet.add_orchard_address(account_id, address, diversifier_index)?;
         }
-        for (account_id, address, diversifier_index) in transaction_addresses.sapling {
+        for DiscoveredAddress {
+            account_id,
+            address,
+            diversifier_index,
+        } in transaction_addresses.sapling
+        {
             wallet.add_sapling_address(account_id, address, diversifier_index)?;
         }
     }
@@ -6496,7 +6510,7 @@ mod test {
         use zingo_status::confirmation_status::ConfirmationStatus;
 
         use crate::{
-            sync::discover_unified_addresses,
+            sync::{DiscoveredAddress, discover_unified_addresses},
             wallet::{
                 IronwoodNote, OrchardNote, OutputId, SaplingNote, WalletNote, WalletTransaction,
             },
@@ -6600,6 +6614,14 @@ mod test {
             )
         }
 
+        fn planned<Address>(address: Address, index: u128) -> DiscoveredAddress<Address> {
+            DiscoveredAddress {
+                account_id: zip32::AccountId::ZERO,
+                address,
+                diversifier_index: diversifier_index(index),
+            }
+        }
+
         #[test]
         fn external_notes_of_every_pool_are_discovered() {
             let mut transaction = WalletTransaction::new_for_test_with_orchard_notes(
@@ -6623,21 +6645,23 @@ mod test {
             assert_eq!(
                 discovered[0].orchard,
                 vec![
-                    (
-                        zip32::AccountId::ZERO,
+                    planned(
                         orchard_address(ORCHARD_INDEX, zip32::Scope::External),
-                        diversifier_index(ORCHARD_INDEX),
+                        ORCHARD_INDEX
                     ),
-                    (
-                        zip32::AccountId::ZERO,
+                    planned(
                         orchard_address(IRONWOOD_INDEX, zip32::Scope::External),
-                        diversifier_index(IRONWOOD_INDEX),
+                        IRONWOOD_INDEX
                     ),
                 ]
             );
             assert_eq!(
                 discovered[0].sapling,
-                vec![(zip32::AccountId::ZERO, sapling_recipient, sapling_index)]
+                vec![DiscoveredAddress {
+                    account_id: zip32::AccountId::ZERO,
+                    address: sapling_recipient,
+                    diversifier_index: sapling_index,
+                }]
             );
         }
 
