@@ -519,6 +519,7 @@ mod tests {
         nu6_1: Some(BlockHeight::from_u32(ORCHARD_ACTIVATION)),
         nu6_2: Some(BlockHeight::from_u32(ORCHARD_ACTIVATION)),
         nu6_3: Some(BlockHeight::from_u32(IRONWOOD_ACTIVATION)),
+        nu7: Some(BlockHeight::from_u32(IRONWOOD_ACTIVATION)),
     };
 
     /// Serialized empty commitment tree, as served at and above a pool's activation height.

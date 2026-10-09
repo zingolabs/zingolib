@@ -12,7 +12,6 @@
 //! `LightWallet::build_op_return_send` builds and records the
 //! transaction.
 
-use rand::rngs::OsRng;
 use thiserror::Error;
 
 use zcash_keys::keys::UnifiedSpendingKey;
@@ -203,7 +202,11 @@ impl LightWallet {
             self.chain_type,
             target_height,
             transparent_only_build_config(),
-        );
+        )
+        .with_expiry_height(crate::wallet::expiry::tx_expiry_height(
+            &self.chain_type,
+            target_height,
+        ));
         builder
             .add_transparent_p2pkh_input(pubkey, source_outpoint, source_txout)
             .map_err(|e| WalletError::TransparentBuild(format!("input: {e:?}")))?;
@@ -222,7 +225,7 @@ impl LightWallet {
                 &signing_set,
                 &[],
                 &[],
-                OsRng,
+                crate::utils::system_rng(),
                 &prover,
                 &prover,
                 &zip317::FeeRule::standard(),

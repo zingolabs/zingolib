@@ -710,7 +710,7 @@ impl LightClient {
                 activation,
                 |part| wallet.bound_note_confirmed_at(part),
                 &state.params,
-                &mut rand::rngs::OsRng,
+                &mut crate::utils::system_rng(),
             )?;
             state.phase = MigrationPhase::PartsScheduled;
         }
@@ -826,7 +826,7 @@ impl LightClient {
                         activation,
                         |part| wallet.bound_note_confirmed_at(part),
                         &state.params,
-                        &mut rand::rngs::OsRng,
+                        &mut crate::utils::system_rng(),
                     )?;
                     state.phase = MigrationPhase::PartsScheduled;
                     wallet.save_required = true;
@@ -938,7 +938,7 @@ impl LightClient {
                         activation,
                         |part| wallet.bound_note_confirmed_at(part),
                         &state.params,
-                        &mut rand::rngs::OsRng,
+                        &mut crate::utils::system_rng(),
                     )?;
                 }
                 wallet.save_required = true;
@@ -1253,7 +1253,7 @@ impl LightClient {
                                 part,
                                 schedule::first_permitted_bucket(now_height, &floor, &state.params),
                                 &floor,
-                                &mut rand::rngs::OsRng,
+                                &mut crate::utils::system_rng(),
                                 &state.params,
                             )?;
                         }
@@ -1361,7 +1361,7 @@ impl LightClient {
                             part,
                             current_bucket,
                             &floor,
-                            &mut rand::rngs::OsRng,
+                            &mut crate::utils::system_rng(),
                             &state.params,
                         )?;
                     }
@@ -2169,7 +2169,7 @@ impl LightClient {
                                         &mut state.parts[index],
                                         current_bucket,
                                         &floor,
-                                        &mut rand::rngs::OsRng,
+                                        &mut crate::utils::system_rng(),
                                         &state.params,
                                     )?;
                                 }
@@ -4778,7 +4778,7 @@ mod tests {
                 activation,
                 |part| wallet.bound_note_confirmed_at(part),
                 &params,
-                &mut rand::rngs::OsRng,
+                &mut crate::utils::system_rng(),
             )
             .expect("a bound part schedules");
             assert_eq!(

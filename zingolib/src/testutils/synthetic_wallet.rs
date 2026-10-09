@@ -64,7 +64,7 @@ impl SyntheticWalletBuilder {
         Self {
             mnemonic: mnemonic.to_string(),
             tip: 20,
-            activation_heights: ActivationHeights::default(),
+            activation_heights: crate::testutils::mock_activation_heights(),
             ironwood_note_values: Vec::new(),
             orchard_note_values: Vec::new(),
             sapling_note_values: Vec::new(),

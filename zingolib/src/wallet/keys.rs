@@ -71,7 +71,7 @@ impl LightWallet {
         {
             UnifiedKeyStore::Spend(_) => WalletKind::SpendingKey,
             UnifiedKeyStore::View(ufvk) => WalletKind::ViewingKey {
-                transparent: ufvk.transparent().is_some(),
+                transparent: ufvk.p2pkh().is_some(),
                 sapling: ufvk.sapling().is_some(),
                 orchard: ufvk.orchard().is_some(),
             },
@@ -344,7 +344,7 @@ impl LightWallet {
                                         address_index,
                                     })
                                     .and_then(|unified_address| {
-                                        if *unified_address == address {
+                                        if *unified_address == *address {
                                             Some(address_index)
                                         } else {
                                             None
@@ -386,7 +386,7 @@ impl LightWallet {
                                 address_index,
                             })
                             .and_then(|unified_address| {
-                                if *unified_address == address {
+                                if *unified_address == *address {
                                     Some(address_index)
                                 } else {
                                     None
