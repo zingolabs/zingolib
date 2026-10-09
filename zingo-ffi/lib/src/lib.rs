@@ -41,6 +41,7 @@ use zcash_protocol::{PoolType, ShieldedPool};
 use zingolib::config::{
     ChainType, ClientConfig, WalletConfig, construct_indexer_uri, lib_birthday,
 };
+use zingolib::data;
 use zingolib::data::PollReport;
 use zingolib::data::proposal::total_fee;
 use zingolib::data::receivers::Receivers;
@@ -48,17 +49,14 @@ use zingolib::data::receivers::transaction_request_from_receivers;
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::{LightClientError, SendError};
 use zingolib::lightclient::migrate::SplitStep;
-use zingolib::netutils::{GrpcIndexer, Indexer};
-use zingolib::perspective::value_transfer;
+use zingolib::netutils::{self, GrpcIndexer, Indexer, time};
 use zingolib::utils;
 use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
 use zingolib::wallet;
 use zingolib::wallet::WalletSettings;
 use zingolib::wallet::error::ProposeSendError;
-use zingolib::wallet::keys::{
-    WalletAddressRef,
-    unified::{ReceiverSelection, UnifiedKeyStore},
-};
+use zingolib::wallet::keys;
+use zingolib::wallet::keys::{WalletAddressRef, unified::ReceiverSelection};
 use zingolib::wallet::migration::{
     MigrationParams, MigrationPhase, RecommendedAction, parts::PartState, parts::SigningStrategy,
     split::plan_hash,
@@ -118,6 +116,8 @@ pub enum ZingolibError {
     Migration(String),
     #[error("Error: mixnet: {0}")]
     Mixnet(String),
+    #[error("Error: wallet chain mismatch: {0}")]
+    WalletChainMismatch(String),
 }
 
 /// The separator between two layers of a rendered cause chain, and the one
@@ -157,6 +157,30 @@ fn chain_text(error: &(dyn std::error::Error + 'static)) -> String {
         link = cause.source();
     }
     text
+}
+
+/// A failure to open wallet bytes: a chain mismatch keeps its own variant.
+/// `LightClientError::FileError` holds its `io::Error` without naming it as
+/// the source, and an `io::Error`'s `source()` skips the error it wraps, so
+/// every `io::Error` on the way is opened directly.
+fn open_error(error: &LightClientError) -> ZingolibError {
+    let file_io = match error {
+        LightClientError::FileError(io) => Some(io),
+        _ => None,
+    };
+    let chain = std::iter::successors(Some(error as &(dyn std::error::Error + 'static)), |cause| {
+        cause.source()
+    });
+    let mismatch = file_io
+        .into_iter()
+        .chain(chain.filter_map(|cause| cause.downcast_ref::<std::io::Error>()))
+        .filter_map(std::io::Error::get_ref)
+        .any(|inner| inner.is::<zingolib::wallet::disk::ChainMismatch>());
+    if mismatch {
+        ZingolibError::WalletChainMismatch(chain_text(error))
+    } else {
+        ZingolibError::init(chain_text(error))
+    }
 }
 
 fn chained<E: std::error::Error + 'static>(
@@ -504,6 +528,16 @@ trait Report {
 
 macro_rules! wallet_access {
     ($name:ident, $reported:ident, $reported_with:ident, $locked:ident, $lock:ident, $($borrow:tt)+) => {
+        wallet_access!($name, $reported, $locked, $lock, $($borrow)+);
+
+        fn $reported_with<State: Report>(
+            input: String,
+            state: impl FnOnce($($borrow)+ wallet::LightWallet, &str) -> State + UnwindSafe,
+        ) -> Result<String, ZingolibError> {
+            $reported(move |wallet| state(wallet, &input))
+        }
+    };
+    ($name:ident, $reported:ident, $locked:ident, $lock:ident, $($borrow:tt)+) => {
         /// - Takes the lightclient lock.
         /// - Blocks the calling thread on the runtime until it holds the wallet lock.
         fn $name<T>(
@@ -519,21 +553,14 @@ macro_rules! wallet_access {
         ) -> Result<String, ZingolibError> {
             $name(state)?.report()
         }
-
-        fn $reported_with<State: Report>(
-            input: String,
-            state: impl FnOnce($($borrow)+ wallet::LightWallet, &str) -> State + UnwindSafe,
-        ) -> Result<String, ZingolibError> {
-            $reported(move |wallet| state(wallet, &input))
-        }
     };
 }
 
 macro_rules! wallet_report {
-    (pub fn $export:ident($($input:ident: String)?) => $access:ident($state:ty)) => {
+    (pub fn $export:ident($($input:ident: String)?) => $access:ident($state:path)) => {
         #[uniffi::export]
         pub fn $export($($input: String)?) -> Result<String, ZingolibError> {
-            $access($($input,)? <$state>::of)
+            $access($($input,)? $state)
         }
     };
 }
@@ -541,7 +568,6 @@ macro_rules! wallet_report {
 wallet_access!(
     with_wallet,
     report_wallet,
-    report_wallet_with,
     with_initialized_lightclient_read,
     read,
     &
@@ -1030,13 +1056,13 @@ pub fn init_from_bytes(
                             break;
                         }
                         Err(e) => {
-                            last_error = ZingolibError::init(chain_text(&e));
+                            last_error = open_error(&e);
                             continue;
                         }
                     }
                 }
                 Err(e) => {
-                    last_error = ZingolibError::init(chain_text(&e));
+                    last_error = open_error(&e);
                     continue;
                 }
             }
@@ -1135,6 +1161,45 @@ mod cause_chain_tests {
             text.contains("Mnemonic not found"),
             "the cause must survive the crossing: {text}"
         );
+    }
+
+    #[test]
+    fn a_wallet_read_for_another_chain_opens_as_a_chain_mismatch() {
+        let mismatch = LightClientError::FileError(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            zingolib::wallet::disk::ChainMismatch {
+                saved: "mainnet".to_string(),
+                expected: "testnet".to_string(),
+            },
+        ));
+        let error = open_error(&mismatch);
+        assert!(
+            matches!(&error, ZingolibError::WalletChainMismatch(text)
+                if text.contains("wallet chain name mainnet doesn't match expected testnet")),
+            "{error:?}"
+        );
+
+        let other = LightClientError::FileError(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "invalid account id",
+        ));
+        assert!(matches!(open_error(&other), ZingolibError::Init(_)));
+    }
+
+    #[test]
+    fn read_wallet_chain_names_the_chain_of_the_header() {
+        let mut bytes = 41u64.to_le_bytes().to_vec();
+        bytes.push(0);
+        assert_eq!(read_wallet_chain(bytes).unwrap(), "main");
+
+        let mut bytes = 41u64.to_le_bytes().to_vec();
+        bytes.push(1);
+        assert_eq!(read_wallet_chain(bytes).unwrap(), "test");
+
+        assert!(matches!(
+            read_wallet_chain(vec![1, 2, 3]),
+            Err(ZingolibError::Read(_))
+        ));
     }
 
     #[test]
@@ -1481,41 +1546,6 @@ mod read_error_channel_tests {
             "the failure must be the typed Read variant: {error}"
         );
     }
-
-    // Reproduces the exact `From<ValueTransfers>` shape (array nested under
-    // "value_transfers") to prove the migrated-amount splice targets the right
-    // field: only `migration` transfers with a mapped txid are overwritten.
-    #[test]
-    fn splice_migrated_values_overwrites_only_mapped_migrations() {
-        let mut json_vts = json::object! {
-            "value_transfers" => json::array![
-                json::object!{ "kind" => "migration", "txid" => "aaa", "value" => 0 },
-                json::object!{ "kind" => "sent", "txid" => "bbb", "value" => 100 },
-                json::object!{ "kind" => "migration", "txid" => "ccc", "value" => 0 },
-            ]
-        };
-        let mut migrated_by_txid = std::collections::HashMap::new();
-        migrated_by_txid.insert("aaa".to_string(), 500u64);
-        // "ccc" is a migration without a mapped amount -> untouched.
-
-        splice_migrated_values(&mut json_vts, &migrated_by_txid);
-
-        assert_eq!(
-            json_vts["value_transfers"][0]["value"].as_u64(),
-            Some(500),
-            "the mapped migration must carry the migrated amount"
-        );
-        assert_eq!(
-            json_vts["value_transfers"][1]["value"].as_u64(),
-            Some(100),
-            "a plain send must be left alone"
-        );
-        assert_eq!(
-            json_vts["value_transfers"][2]["value"].as_u64(),
-            Some(0),
-            "an unmapped migration must be left alone"
-        );
-    }
 }
 
 /// Pins the behavior of [`ffi_error`], the one funnel from zingolib's error
@@ -1792,11 +1822,9 @@ pub fn get_latest_block_server(serveruri: String) -> Result<String, ZingolibErro
     })
 }
 
-/// The bound on each network step of a server probe.
-const PROBE_STEP_TIMEOUT: Duration = Duration::from_secs(10);
-const PROBE_REQUEST_BUDGET: Duration = Duration::from_secs(20);
+const PROBE_CONNECT_TIMEOUT: Duration = time::INDEXER_CONNECT_TIMEOUT;
+const PROBE_REQUEST_TIMEOUT: Duration = time::UNARY_RPC_TIMEOUT;
 
-/// Where a probe sent its requests.
 struct ProbeTarget {
     host: String,
     port: u16,
@@ -1804,14 +1832,11 @@ struct ProbeTarget {
     literal: bool,
 }
 
-/// How far a probe of an indexer got, and what it learned on the way.
 enum Probe {
     Verified {
         target: ProbeTarget,
         latency_ms: u64,
-        chain_name: String,
-        block_height: u64,
-        details: String,
+        info: Box<data::ServerInfo>,
     },
     Unresolved {
         host: String,
@@ -1824,11 +1849,43 @@ enum Probe {
     },
     NoAnswer {
         target: ProbeTarget,
+        after: Duration,
     },
     Refused {
         target: ProbeTarget,
         cause: String,
     },
+}
+
+fn timed_out(error: &impl std::error::Error) -> bool {
+    let mut link = error.source();
+    while let Some(cause) = link {
+        if cause.is::<tokio::time::error::Elapsed>()
+            || cause.is::<netutils::TimeoutExpired>()
+            || cause
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|io| io.kind() == std::io::ErrorKind::TimedOut)
+        {
+            return true;
+        }
+        link = cause.source();
+    }
+    false
+}
+
+async fn resolve(host: &str, port: u16) -> Result<Vec<std::net::IpAddr>, String> {
+    let addresses =
+        tokio::time::timeout(PROBE_CONNECT_TIMEOUT, tokio::net::lookup_host((host, port)))
+            .await
+            .map_err(|elapsed| chain_text(&elapsed))?
+            .map_err(|cause| chain_text(&cause))?;
+    let mut resolved: Vec<std::net::IpAddr> = Vec::new();
+    for address in addresses {
+        if !resolved.contains(&address.ip()) {
+            resolved.push(address.ip());
+        }
+    }
+    Ok(resolved)
 }
 
 impl Probe {
@@ -1853,44 +1910,10 @@ impl Probe {
                 literal: true,
             },
             Err(_) => {
-                let lookup_host = host.clone();
-                let lookup = tokio::time::timeout(
-                    PROBE_STEP_TIMEOUT,
-                    tokio::task::spawn_blocking(move || {
-                        std::net::ToSocketAddrs::to_socket_addrs(&(lookup_host, port))
-                    }),
-                )
-                .await;
-                let addresses = match lookup {
-                    Ok(Ok(Ok(addresses))) => addresses,
-                    Ok(Ok(Err(cause))) => {
-                        return Self::Unresolved {
-                            host,
-                            port,
-                            cause: chain_text(&cause),
-                        };
-                    }
-                    Ok(Err(join)) => {
-                        return Self::Unresolved {
-                            host,
-                            port,
-                            cause: chain_text(&join),
-                        };
-                    }
-                    Err(elapsed) => {
-                        return Self::Unresolved {
-                            host,
-                            port,
-                            cause: chain_text(&elapsed),
-                        };
-                    }
+                let resolved = match resolve(&host, port).await {
+                    Ok(resolved) => resolved,
+                    Err(cause) => return Self::Unresolved { host, port, cause },
                 };
-                let mut resolved: Vec<std::net::IpAddr> = Vec::new();
-                for address in addresses {
-                    if !resolved.contains(&address.ip()) {
-                        resolved.push(address.ip());
-                    }
-                }
                 ProbeTarget {
                     host,
                     port,
@@ -1899,36 +1922,43 @@ impl Probe {
                 }
             }
         };
-        let mut indexer =
-            match tokio::time::timeout(PROBE_STEP_TIMEOUT, GrpcIndexer::new(uri)).await {
-                Ok(Ok(indexer)) => indexer,
-                Ok(Err(cause)) => {
-                    return Self::Unreachable {
-                        target,
-                        cause: chain_text(&cause),
-                    };
-                }
-                Err(_) => return Self::NoAnswer { target },
-            };
+        let mut indexer = match GrpcIndexer::new(uri).await {
+            Ok(indexer) => indexer,
+            Err(cause) if timed_out(&cause) => {
+                return Self::NoAnswer {
+                    target,
+                    after: PROBE_CONNECT_TIMEOUT,
+                };
+            }
+            Err(cause) => {
+                return Self::Unreachable {
+                    target,
+                    cause: chain_text(&cause),
+                };
+            }
+        };
         let started = std::time::Instant::now();
-        match tokio::time::timeout(
-            PROBE_STEP_TIMEOUT,
-            indexer.get_lightd_info(PROBE_REQUEST_BUDGET),
-        )
-        .await
-        {
-            Ok(Ok(info)) => Self::Verified {
+        match indexer.get_lightd_info(PROBE_REQUEST_TIMEOUT).await {
+            Ok(info) => Self::Verified {
                 target,
                 latency_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-                chain_name: info.chain_name.clone(),
-                block_height: info.block_height,
-                details: format!("{info:#?}"),
+                info: Box::new(data::ServerInfo::from_lightd_info(
+                    info,
+                    indexer.uri().clone(),
+                )),
             },
-            Ok(Err(status)) => Self::Refused {
+            Err(status) if timed_out(&status) => Self::NoAnswer {
+                target,
+                after: PROBE_REQUEST_TIMEOUT,
+            },
+            Err(status) if std::error::Error::source(&status).is_some() => Self::Unreachable {
                 target,
                 cause: chain_text(&status),
             },
-            Err(_) => Self::NoAnswer { target },
+            Err(status) => Self::Refused {
+                target,
+                cause: chain_text(&status),
+            },
         }
     }
 }
@@ -1948,16 +1978,14 @@ impl Report for Probe {
             Self::Verified {
                 target,
                 latency_ms,
-                chain_name,
-                block_height,
-                details,
+                info,
             } => {
                 let mut report = probe_target_json(target);
                 report["outcome"] = "verified".into();
                 report["latency_ms"] = latency_ms.into();
-                report["chain_name"] = chain_name.into();
-                report["block_height"] = block_height.into();
-                report["details"] = details.into();
+                report["chain_name"] = info.chain_name.clone().into();
+                report["block_height"] = info.latest_block_height.into();
+                report["details"] = json::JsonValue::from(*info);
                 report
             }
             Self::Unresolved { host, port, cause } => object! {
@@ -1972,10 +2000,10 @@ impl Report for Probe {
                 report["cause"] = cause.into();
                 report
             }
-            Self::NoAnswer { target } => {
+            Self::NoAnswer { target, after } => {
                 let mut report = probe_target_json(target);
                 report["outcome"] = "noAnswer".into();
-                report["after_seconds"] = PROBE_STEP_TIMEOUT.as_secs().into();
+                report["after_seconds"] = after.as_secs().into();
                 report
             }
             Self::Refused { target, cause } => {
@@ -1989,8 +2017,6 @@ impl Report for Probe {
     }
 }
 
-/// Probes an indexer without a wallet: resolves its host, connects, and asks
-/// for its LightdInfo, reporting how far it got and why it stopped.
 #[uniffi::export]
 pub fn probe_server(server_uri: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
@@ -2007,11 +2033,103 @@ pub fn probe_server(server_uri: String) -> Result<String, ZingolibError> {
 
 #[cfg(test)]
 mod probe_server_tests {
+    use std::io::Read;
+    use std::net::{TcpListener, TcpStream};
+    use std::time::Instant;
+
+    use zingolib::netutils::time::INDEXER_CONNECT_TIMEOUT;
+
     use super::*;
+
+    const LOOPBACK_ANY_PORT: &str = "127.0.0.1:0";
+    const BACKLOG_FULL_SIGNAL: Duration = Duration::from_millis(250);
+    const TIMER_SLACK: Duration = Duration::from_secs(5);
+    const H2_PREFACE_LEN: usize = 24;
+    const H2_FRAME_HEADER_LEN: usize = 9;
+    const H2_HEADERS_FRAME: u8 = 0x1;
+    const READ_CHUNK: usize = 4096;
 
     fn outcome(server: &str) -> json::JsonValue {
         json::parse(&probe_server(server.to_string()).expect("a probe reports"))
             .expect("a probe reports json")
+    }
+
+    fn timed_outcome(server: &str) -> (json::JsonValue, Duration) {
+        let started = Instant::now();
+        let report = outcome(server);
+        (report, started.elapsed())
+    }
+
+    fn local_listener() -> (TcpListener, u16) {
+        let listener = TcpListener::bind(LOOPBACK_ANY_PORT).expect("a local listener");
+        let port = listener.local_addr().expect("a local address").port();
+        (listener, port)
+    }
+
+    fn free_port() -> u16 {
+        local_listener().1
+    }
+
+    fn serve(handle: fn(TcpStream)) -> u16 {
+        let (listener, port) = local_listener();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                handle(stream);
+            }
+        });
+        port
+    }
+
+    fn blackhole() -> (TcpListener, Vec<TcpStream>, u16) {
+        let (listener, port) = local_listener();
+        let address = listener.local_addr().expect("a local address");
+        let mut queued = Vec::new();
+        while let Ok(stream) = TcpStream::connect_timeout(&address, BACKLOG_FULL_SIGNAL) {
+            queued.push(stream);
+        }
+        (listener, queued, port)
+    }
+
+    fn read_until_headers_frame(stream: &mut TcpStream) {
+        let mut received = Vec::new();
+        let mut chunk = [0u8; READ_CHUNK];
+        loop {
+            let read = stream.read(&mut chunk).expect("the client keeps writing");
+            assert!(read > 0, "the client closed before sending a request");
+            received.extend_from_slice(&chunk[..read]);
+            let mut cursor = H2_PREFACE_LEN;
+            while received.len() >= cursor + H2_FRAME_HEADER_LEN {
+                if received[cursor + 3] == H2_HEADERS_FRAME {
+                    return;
+                }
+                let length = usize::from(received[cursor]) << 16
+                    | usize::from(received[cursor + 1]) << 8
+                    | usize::from(received[cursor + 2]);
+                cursor += H2_FRAME_HEADER_LEN + length;
+            }
+        }
+    }
+
+    fn close_after_the_request(mut stream: TcpStream) {
+        read_until_headers_frame(&mut stream);
+    }
+
+    fn never_answer(mut stream: TcpStream) {
+        let mut sink = [0u8; READ_CHUNK];
+        while matches!(stream.read(&mut sink), Ok(read) if read > 0) {}
+    }
+
+    fn assert_no_answer_after(report: &json::JsonValue, elapsed: Duration, bound: Duration) {
+        assert_eq!(report["outcome"], "noAnswer", "{report:#}");
+        assert_eq!(report["after_seconds"], bound.as_secs());
+        assert!(
+            elapsed >= bound,
+            "gave up after {elapsed:?}, before {bound:?}"
+        );
+        assert!(
+            elapsed < bound + TIMER_SLACK,
+            "gave up after {elapsed:?}, long past {bound:?}"
+        );
     }
 
     #[test]
@@ -2037,15 +2155,74 @@ mod probe_server_tests {
 
     #[test]
     fn a_closed_port_on_a_literal_address_reports_unreachable() {
-        // Bind and drop a listener to get a port nothing listens on.
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .and_then(|listener| listener.local_addr())
-            .expect("a free local port")
-            .port();
-        let report = outcome(&format!("http://127.0.0.1:{port}"));
+        let report = outcome(&format!("http://127.0.0.1:{}", free_port()));
         assert_eq!(report["outcome"], "unreachable");
         assert_eq!(report["literal"], true);
         assert_eq!(report["resolved"][0], "127.0.0.1");
+    }
+
+    #[test]
+    fn a_closed_port_on_a_resolved_name_reports_unreachable_with_its_addresses() {
+        let report = outcome(&format!("http://localhost:{}", free_port()));
+        assert_eq!(report["outcome"], "unreachable", "{report:#}");
+        assert_eq!(report["literal"], false);
+        assert!(
+            report["resolved"]
+                .members()
+                .any(|address| address == "127.0.0.1" || address == "::1"),
+            "{report:#}"
+        );
+    }
+
+    #[test]
+    fn a_target_that_drops_every_connection_reports_no_answer_after_the_connect_bound() {
+        let (_listener, _queued, port) = blackhole();
+        let (report, elapsed) = timed_outcome(&format!("http://127.0.0.1:{port}"));
+        assert_no_answer_after(&report, elapsed, INDEXER_CONNECT_TIMEOUT);
+    }
+
+    #[test]
+    fn a_server_that_never_answers_reports_no_answer_after_the_request_bound() {
+        let port = serve(never_answer);
+        let (report, elapsed) = timed_outcome(&format!("http://127.0.0.1:{port}"));
+        assert_no_answer_after(&report, elapsed, PROBE_REQUEST_TIMEOUT);
+    }
+
+    #[test]
+    fn a_connection_the_server_closes_mid_request_is_unreachable_not_refused() {
+        let port = serve(close_after_the_request);
+        let report = outcome(&format!("http://127.0.0.1:{port}"));
+        assert_eq!(report["outcome"], "unreachable", "{report:#}");
+    }
+
+    #[test]
+    fn a_verified_report_carries_the_server_info_as_fields() {
+        let info = data::ServerInfo {
+            version: "0.1.0".to_string(),
+            git_commit: String::new(),
+            server_uri: "http://127.0.0.1:9067".parse().expect("a server uri"),
+            vendor: "zingo-test".to_string(),
+            taddr_support: true,
+            chain_name: "regtest".to_string(),
+            sapling_activation_height: 1,
+            consensus_branch_id: String::new(),
+            latest_block_height: 7,
+        };
+        let probe = Probe::Verified {
+            target: ProbeTarget {
+                host: "127.0.0.1".to_string(),
+                port: 9067,
+                resolved: vec![std::net::Ipv4Addr::LOCALHOST.into()],
+                literal: true,
+            },
+            latency_ms: 1,
+            info: Box::new(info),
+        };
+        let report = json::parse(&probe.report().expect("a probe reports")).expect("json");
+        assert_eq!(report["details"]["vendor"], "zingo-test", "{report:#}");
+        assert_eq!(report["details"]["version"], "0.1.0");
+        assert_eq!(report["details"]["chain_name"], "regtest");
+        assert_eq!(report["details"]["latest_block_height"], 7);
     }
 }
 
@@ -2055,90 +2232,11 @@ pub fn get_latest_block_wallet() -> Result<String, ZingolibError> {
     Ok(object! { "height" => json::JsonValue::from(height.map_or(0, u32::from)) }.pretty(2))
 }
 
-/// Overwrites the `value` of each Orchard->Ironwood migration value transfer
-/// with the amount migrated. `json_vts` is the `{ "value_transfers": [ ... ] }`
-/// object produced by `From<ValueTransfers>`; zingolib classifies these
-/// transfers with `kind: "migration"` and the migrated amount lives in
-/// `migrated_by_txid`. zingolib reports `value == 0` for self-sends (a
-/// migration is one), so without this the migrated amount is invisible.
-///
-/// Note the array is nested under `"value_transfers"` — `members_mut()` on the
-/// outer object yields an empty iterator, so we must index in first.
-fn splice_migrated_values(
-    json_vts: &mut json::JsonValue,
-    migrated_by_txid: &std::collections::HashMap<String, u64>,
-) {
-    for vt in json_vts["value_transfers"].members_mut() {
-        if vt["kind"].as_str() != Some("migration") {
-            continue;
-        }
-        let txid = vt["txid"].as_str().unwrap_or_default().to_string();
-        if let Some(&migrated) = migrated_by_txid.get(&txid) {
-            vt["value"] = json::JsonValue::from(migrated);
-        }
-    }
-}
-
-enum Transfers {
-    Listed {
-        value_transfers: value_transfer::ValueTransfers,
-        migrated_by_txid: std::collections::HashMap<String, u64>,
-    },
-    Unreadable(wallet::error::SummaryError),
-}
-
-impl Transfers {
-    async fn of(wallet: &wallet::LightWallet) -> Self {
-        // An Orchard -> Ironwood migration is a send-to-self, which zingolib
-        // reports with `value == 0` because `total_value_sent` excludes
-        // self-addressed value. To surface how much was migrated, recover it
-        // from the transaction's self-received ironwood notes and splice it
-        // into the matching value transfer's `value`. Keyed by txid, using
-        // zingolib's own migration predicate so the map stays in lockstep
-        // with the value transfers it classifies as `migration`.
-        let migrated_by_txid = match wallet.transaction_summaries(true).await {
-            Ok(summaries) => summaries
-                .0
-                .iter()
-                .filter(|s| s.is_orchard_to_ironwood_migration())
-                .map(|s| {
-                    (
-                        s.txid.to_string(),
-                        s.ironwood_notes.iter().map(|n| n.value).sum::<u64>(),
-                    )
-                })
-                .collect(),
-            Err(unreadable) => return Self::Unreadable(unreadable),
-        };
-        match wallet.value_transfers(true).await {
-            Ok(value_transfers) => Self::Listed {
-                value_transfers,
-                migrated_by_txid,
-            },
-            Err(unreadable) => Self::Unreadable(unreadable),
-        }
-    }
-}
-
-impl Report for Transfers {
-    fn report(self) -> Result<String, ZingolibError> {
-        match self {
-            Self::Listed {
-                value_transfers,
-                migrated_by_txid,
-            } => {
-                let mut json_vts = json::JsonValue::from(value_transfers);
-                splice_migrated_values(&mut json_vts, &migrated_by_txid);
-                Ok(json_vts.pretty(2))
-            }
-            Self::Unreadable(unreadable) => Err(ZingolibError::read(&unreadable)),
-        }
-    }
-}
-
 #[uniffi::export]
 pub fn get_value_transfers() -> Result<String, ZingolibError> {
-    report_wallet(|wallet| RT.block_on(Transfers::of(wallet)))
+    let value_transfers = with_wallet(|wallet| RT.block_on(wallet.value_transfers(true)))?
+        .map_err(|e| ZingolibError::read(&e))?;
+    Ok(json::JsonValue::from(value_transfers).pretty(2))
 }
 
 #[uniffi::export]
@@ -2363,7 +2461,7 @@ impl Report for Seed {
     }
 }
 
-wallet_report!(pub fn get_seed() => report_wallet(Seed));
+wallet_report!(pub fn get_seed() => report_wallet(Seed::of));
 
 enum ViewingKey {
     Encoded {
@@ -2411,7 +2509,20 @@ impl Report for ViewingKey {
     }
 }
 
-wallet_report!(pub fn get_ufvk() => report_wallet(ViewingKey));
+wallet_report!(pub fn get_ufvk() => report_wallet(ViewingKey::of));
+
+/// The chain a wallet file was written for: `main`, `test` or `regtest`.
+#[uniffi::export]
+pub fn read_wallet_chain(wallet_bytes: Vec<u8>) -> Result<String, ZingolibError> {
+    let chain = zingolib::wallet::LightWallet::read_chain(&wallet_bytes)
+        .map_err(chained(ZingolibError::Read))?;
+    Ok(match chain {
+        ChainType::Mainnet => "main",
+        ChainType::Testnet => "test",
+        ChainType::Regtest(_) => "regtest",
+    }
+    .to_string())
+}
 
 /// Salvages seed phrase, birthday, and account count from the stable prefix
 /// of a wallet file that cannot open.
@@ -2600,40 +2711,8 @@ pub fn change_server(serveruri: String) -> Result<String, ZingolibError> {
     })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WalletKind {
-    Mnemonic,
-    SpendingKey,
-    ViewingKey {
-        transparent: bool,
-        sapling: bool,
-        orchard: bool,
-    },
-    NoKeys,
-}
-
-impl WalletKind {
-    /// - Panics when the wallet holds no account zero.
-    fn of(wallet: &wallet::LightWallet) -> Self {
-        if wallet.mnemonic_phrase().is_some() {
-            return Self::Mnemonic;
-        }
-        match wallet
-            .unified_key_store
-            .get(&AccountId::ZERO)
-            .expect("account 0 must always exist")
-        {
-            UnifiedKeyStore::Spend(_) => Self::SpendingKey,
-            UnifiedKeyStore::View(ufvk) => Self::ViewingKey {
-                transparent: ufvk.transparent().is_some(),
-                sapling: ufvk.sapling().is_some(),
-                orchard: ufvk.orchard().is_some(),
-            },
-            UnifiedKeyStore::Empty => Self::NoKeys,
-        }
-    }
-
-    fn json(self) -> json::JsonValue {
+impl Report for keys::WalletKind {
+    fn report(self) -> Result<String, ZingolibError> {
         let (kind, transparent, sapling, orchard) = match self {
             Self::Mnemonic => ("Loaded from seed or mnemonic phrase", true, true, true),
             Self::SpendingKey => ("Loaded from unified spending key", true, true, true),
@@ -2649,18 +2728,21 @@ impl WalletKind {
             ),
             Self::NoKeys => ("No keys found", false, false, false),
         };
-        object! {
+        Ok(object! {
             "kind" => kind,
             "transparent" => transparent,
             "sapling" => sapling,
             "orchard" => orchard,
         }
+        .pretty(2))
     }
 }
 
 #[uniffi::export]
 pub fn wallet_kind() -> Result<String, ZingolibError> {
-    Ok(with_wallet(WalletKind::of)?.json().pretty(2))
+    with_wallet(|wallet| wallet.kind())?
+        .map_err(|e| ZingolibError::read(&e))?
+        .report()
 }
 
 #[uniffi::export]
@@ -2911,7 +2993,7 @@ impl Report for Removal {
     }
 }
 
-wallet_report!(pub fn remove_transaction(txid: String) => report_wallet_mut_with(Removal));
+wallet_report!(pub fn remove_transaction(txid: String) => report_wallet_mut_with(Removal::of));
 
 /// The most the wallet can show as sendable to `address`. Display only:
 /// zingolib sizes it with a send-max proposal, whose amount an ordinary
@@ -2943,33 +3025,15 @@ pub fn get_spendable_balance_with_address(address: String) -> Result<String, Zin
     })
 }
 
-enum Spendable {
-    Balance(Zatoshis),
-    Unreadable(wallet::error::BalanceError),
-}
-
-impl Spendable {
-    fn of(wallet: &wallet::LightWallet) -> Self {
-        match wallet.shielded_spendable_balance(AccountId::ZERO, false) {
-            Ok(balance) => Self::Balance(balance),
-            Err(unreadable) => Self::Unreadable(unreadable),
-        }
+#[uniffi::export]
+pub fn get_spendable_balance_total() -> Result<String, ZingolibError> {
+    let balance = with_wallet(|wallet| wallet.shielded_spendable_balance(AccountId::ZERO, false))?
+        .map_err(|e| ZingolibError::read(&e))?;
+    Ok(object! {
+        "spendable_balance" => balance.into_u64(),
     }
+    .pretty(2))
 }
-
-impl Report for Spendable {
-    fn report(self) -> Result<String, ZingolibError> {
-        match self {
-            Self::Balance(balance) => Ok(object! {
-                "spendable_balance" => balance.into_u64(),
-            }
-            .pretty(2)),
-            Self::Unreadable(unreadable) => Err(ZingolibError::read(&unreadable)),
-        }
-    }
-}
-
-wallet_report!(pub fn get_spendable_balance_total() => report_wallet(Spendable));
 
 #[uniffi::export]
 pub fn set_option_wallet() -> Result<String, ZingolibError> {
@@ -3051,7 +3115,7 @@ impl Report for NewUnifiedAddress {
 }
 
 wallet_report!(
-    pub fn create_new_unified_address(receivers: String) => report_wallet_mut_with(NewUnifiedAddress)
+    pub fn create_new_unified_address(receivers: String) => report_wallet_mut_with(NewUnifiedAddress::of)
 );
 
 enum NewTransparentAddress {
@@ -3094,89 +3158,80 @@ impl Report for NewTransparentAddress {
     }
 }
 
-wallet_report!(pub fn create_new_transparent_address() => report_wallet_mut(NewTransparentAddress));
+wallet_report!(
+    pub fn create_new_transparent_address() => report_wallet_mut(NewTransparentAddress::of)
+);
 
-enum Ownership {
-    Foreign,
-    Mine(WalletAddressRef),
-    Unreadable(wallet::error::KeyError),
-}
-
-impl Ownership {
-    fn of(wallet: &wallet::LightWallet, address: &str) -> Self {
-        match wallet.is_address_derived_by_keys(address) {
-            Ok(Some(address_ref)) => Self::Mine(address_ref),
-            Ok(None) => Self::Foreign,
-            Err(unreadable) => Self::Unreadable(unreadable),
+fn ownership_report(
+    ownership: Result<Option<WalletAddressRef>, wallet::error::KeyError>,
+) -> Result<String, ZingolibError> {
+    let ownership = match ownership {
+        Err(unreadable) => {
+            return Err(ZingolibError::Wallet(chain_text(&unreadable)));
         }
-    }
+        Ok(None) => json::object! { "is_wallet_address" => false },
+        Ok(Some(WalletAddressRef::Unified {
+            account_id,
+            address_index,
+            has_orchard,
+            has_sapling,
+            has_transparent,
+            encoded_address,
+        })) => json::object! {
+            "is_wallet_address" => true,
+            "address_type" => "unified".to_string(),
+            "address_index" => address_index,
+            "account_id" => u32::from(account_id),
+            "has_orchard" => has_orchard,
+            "has_sapling" => has_sapling,
+            "has_transparent" => has_transparent,
+            "encoded_address" => encoded_address,
+        },
+        Ok(Some(WalletAddressRef::OrchardInternal {
+            account_id,
+            diversifier_index,
+            encoded_address,
+        })) => json::object! {
+            "is_wallet_address" => true,
+            "address_type" => "orchard_internal".to_string(),
+            "account_id" => u32::from(account_id),
+            "diversifier_index" => u128::from(diversifier_index).to_string(),
+            "encoded_address" => encoded_address,
+        },
+        Ok(Some(WalletAddressRef::SaplingExternal {
+            account_id,
+            diversifier_index,
+            encoded_address,
+        })) => json::object! {
+            "is_wallet_address" => true,
+            "address_type" => "sapling".to_string(),
+            "account_id" => u32::from(account_id),
+            "diversifier_index" => u128::from(diversifier_index).to_string(),
+            "encoded_address" => encoded_address,
+        },
+        Ok(Some(WalletAddressRef::Transparent {
+            account_id,
+            scope,
+            address_index,
+            encoded_address,
+        })) => json::object! {
+            "is_wallet_address" => true,
+            "address_type" => "transparent".to_string(),
+            "account_id" => u32::from(account_id),
+            "scope" => scope.to_string(),
+            "address_index" => address_index.index(),
+            "encoded_address" => encoded_address,
+        },
+    };
+    Ok(ownership.pretty(2))
 }
 
-impl Report for Ownership {
-    fn report(self) -> Result<String, ZingolibError> {
-        let ownership = match self {
-            Self::Unreadable(unreadable) => {
-                return Err(ZingolibError::Wallet(chain_text(&unreadable)));
-            }
-            Self::Foreign => json::object! { "is_wallet_address" => false },
-            Self::Mine(WalletAddressRef::Unified {
-                account_id,
-                address_index,
-                has_orchard,
-                has_sapling,
-                has_transparent,
-                encoded_address,
-            }) => json::object! {
-                "is_wallet_address" => true,
-                "address_type" => "unified".to_string(),
-                "address_index" => address_index,
-                "account_id" => u32::from(account_id),
-                "has_orchard" => has_orchard,
-                "has_sapling" => has_sapling,
-                "has_transparent" => has_transparent,
-                "encoded_address" => encoded_address,
-            },
-            Self::Mine(WalletAddressRef::OrchardInternal {
-                account_id,
-                diversifier_index,
-                encoded_address,
-            }) => json::object! {
-                "is_wallet_address" => true,
-                "address_type" => "orchard_internal".to_string(),
-                "account_id" => u32::from(account_id),
-                "diversifier_index" => u128::from(diversifier_index).to_string(),
-                "encoded_address" => encoded_address,
-            },
-            Self::Mine(WalletAddressRef::SaplingExternal {
-                account_id,
-                diversifier_index,
-                encoded_address,
-            }) => json::object! {
-                "is_wallet_address" => true,
-                "address_type" => "sapling".to_string(),
-                "account_id" => u32::from(account_id),
-                "diversifier_index" => u128::from(diversifier_index).to_string(),
-                "encoded_address" => encoded_address,
-            },
-            Self::Mine(WalletAddressRef::Transparent {
-                account_id,
-                scope,
-                address_index,
-                encoded_address,
-            }) => json::object! {
-                "is_wallet_address" => true,
-                "address_type" => "transparent".to_string(),
-                "account_id" => u32::from(account_id),
-                "scope" => scope.to_string(),
-                "address_index" => address_index.index(),
-                "encoded_address" => encoded_address,
-            },
-        };
-        Ok(ownership.pretty(2))
-    }
+#[uniffi::export]
+pub fn check_my_address(address: String) -> Result<String, ZingolibError> {
+    ownership_report(with_wallet(|wallet| {
+        wallet.is_address_derived_by_keys(&address)
+    })?)
 }
-
-wallet_report!(pub fn check_my_address(address: String) => report_wallet_with(Ownership));
 
 #[uniffi::export]
 pub fn get_wallet_save_required() -> Result<String, ZingolibError> {

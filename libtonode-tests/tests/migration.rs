@@ -14,7 +14,7 @@ use zcash_protocol::PoolType;
 use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
 use zingolib::perspective::value_transfer::{
-    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
+    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind, ValueTransfers,
 };
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::wallet::migration::{
@@ -62,6 +62,28 @@ fn note_by_value(notes: &[NoteRecord], value: u64) -> &NoteRecord {
         .iter()
         .find(|note| note.value == value)
         .unwrap_or_else(|| panic!("no note of {value} zatoshis in the wallet"))
+}
+
+/// - Panics when a txid of `txids` has no migration value transfer.
+fn migrated_value(value_transfers: &ValueTransfers, txids: &[TxId]) -> u64 {
+    txids
+        .iter()
+        .map(|txid| {
+            value_transfers
+                .iter()
+                .find(|vt| {
+                    vt.txid == *txid
+                        && vt.kind
+                            == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                                SelfSendValueTransfer::Migration,
+                            ))
+                })
+                .unwrap_or_else(|| {
+                    panic!("{txid:?} must be classified as a migration value transfer")
+                })
+                .value
+        })
+        .sum()
 }
 
 /// Persists a hand-built [`MigrationState`] whose parts are bound to real
@@ -444,18 +466,13 @@ async fn two_phase_migration_end_to_end() {
 
     // Every confirmed part spends Orchard into the wallet's own Ironwood pool,
     // so it must be classified as a migration value transfer, not a plain
-    // send-to-self.
+    // send-to-self, and those transfers carry the migrated value.
     let value_transfers = recipient.value_transfers(true).await.unwrap();
-    for part_txid in &summary.part_txids {
-        assert!(
-            value_transfers.iter().any(|vt| vt.txid == *part_txid
-                && vt.kind
-                    == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
-                        SelfSendValueTransfer::Migration,
-                    ))),
-            "part {part_txid:?} must be classified as a migration value transfer"
-        );
-    }
+    assert_eq!(
+        migrated_value(&value_transfers, &summary.part_txids),
+        status.value_migrated,
+        "the migration value transfers must carry the migrated value"
+    );
 }
 
 /// The deferred NU6.3 activation height for scenarios that must fund the
@@ -638,18 +655,13 @@ async fn migrate_all_orchard_to_ironwood() {
 
     // The immediate migration moves Orchard funds into the wallet's own Ironwood pool, so
     // each immediate migration transaction must be classified as a migration value transfer,
-    // not a plain send-to-self.
+    // not a plain send-to-self, and those transfers carry the migrated value.
     let value_transfers = recipient.value_transfers(true).await.unwrap();
-    for migration_txid in &summary.txids {
-        assert!(
-            value_transfers.iter().any(|vt| vt.txid == *migration_txid
-                && vt.kind
-                    == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
-                        SelfSendValueTransfer::Migration,
-                    ))),
-            "immediate migration {migration_txid:?} must be classified as a migration value transfer"
-        );
-    }
+    assert_eq!(
+        migrated_value(&value_transfers, &summary.txids),
+        summary.migrated,
+        "the migration value transfers must carry the migrated value"
+    );
 }
 
 /// An immediate migration of a fragmented wallet chunks into several independent transactions,
