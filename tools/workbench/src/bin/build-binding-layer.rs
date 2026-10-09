@@ -16,17 +16,11 @@ const PROGRAM: &str = "build-binding-layer";
 /// The invocation shape, reported when the arguments do not parse.
 const USAGE: &str = "usage: build-binding-layer <android|ios|kotlin> --out <directory> \
     [android only: --abi <android abi>] [android only: --in-image] \
-    | build-binding-layer artifact bundle --platform <platform|*> --commit <commit> \
-    | build-binding-layer artifact abi --abi <android abi|*> --commit <commit>";
+    | build-binding-layer artifact --commit <commit>";
 
-/// The subcommand that prints the name of one Actions artifact, or the pattern of a kind.
 const ARTIFACT_COMMAND: &str = "artifact";
 
-/// The flag that names the commit an artifact belongs to.
 const COMMIT_FLAG: &str = "--commit";
-
-/// The flag that names the platform of a bundle artifact.
-const PLATFORM_FLAG: &str = "--platform";
 
 /// The flag that runs the Android plan directly, inside a job that already runs in the builder image.
 const IN_IMAGE_FLAG: &str = "--in-image";
@@ -303,7 +297,7 @@ fn main() {
     let args: Vec<String> = env::args().skip(PROGRAM_NAME_ARGUMENTS).collect();
     match args.split_first() {
         Some((command, rest)) if command == ARTIFACT_COMMAND => {
-            workbench::run(PROGRAM, || artifact(rest), |name| println!("{name}"))
+            workbench::run(PROGRAM, || artifact(rest), |outputs| print!("{outputs}"))
         }
         _ => workbench::run(
             PROGRAM,
@@ -313,43 +307,11 @@ fn main() {
     }
 }
 
-/// The name of one Actions artifact of the Binding Layer, or its kind's pattern for a wildcard.
 fn artifact(args: &[String]) -> Result<String, Vec<String>> {
-    let (kind, flags) = args.split_first().ok_or_else(|| vec![USAGE.to_string()])?;
-    let required = |flag: &str| workbench::required_flag(flags, flag, USAGE);
-    let commit = required(COMMIT_FLAG)?;
-    let segment = match kind.as_str() {
-        binding_layer::BUNDLE_ARTIFACT => {
-            let platform = required(PLATFORM_FLAG)?;
-            if platform != binding_layer::ARTIFACT_WILDCARD
-                && !binding_manifest::PLATFORMS.contains(&platform)
-            {
-                return Err(vec![format!("unknown platform `{platform}`")]);
-            }
-            platform
-        }
-        binding_layer::ABI_ARTIFACT => {
-            let abi = required(ABI_FLAG)?;
-            if abi != binding_layer::ARTIFACT_WILDCARD
-                && !binding_layer::ANDROID_ABIS
-                    .iter()
-                    .any(|known| known.jni_dir == abi)
-            {
-                return Err(vec![format!("unknown Android ABI `{abi}`")]);
-            }
-            abi
-        }
-        other => {
-            return Err(vec![
-                format!(
-                    "unknown artifact kind `{other}`; the kinds are {}",
-                    binding_layer::ARTIFACT_KINDS.join(", ")
-                ),
-                USAGE.to_string(),
-            ])
-        }
-    };
-    Ok(binding_layer::artifact_name(kind, segment, commit))
+    let commit = workbench::required_flag(args, COMMIT_FLAG, USAGE)?;
+    Ok(binding_layer::render_outputs(
+        &binding_layer::artifact_outputs(&binding_manifest::PLATFORMS, commit),
+    ))
 }
 
 /// Build the selected platform's packaging and return its output directory.

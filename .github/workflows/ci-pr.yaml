@@ -175,6 +175,38 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  # The builder is the one source of every Binding Layer artifact name and
+  # of the ABI list. One run of it here feeds the build workflows below, so
+  # the names come from exactly one commit per run.
+  binding-layer-names:
+    if: ${{ inputs.skip-binding-layer-build != true }}
+    name: Name the Binding Layer artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      abis: ${{ steps.names.outputs.abis }}
+      abi_artifacts: ${{ steps.names.outputs.abi_artifacts }}
+      abi_pattern: ${{ steps.names.outputs.abi_pattern }}
+      aar_glob: ${{ steps.names.outputs.aar_glob }}
+      bundle_android: ${{ steps.names.outputs.bundle_android }}
+      bundle_ios: ${{ steps.names.outputs.bundle_ios }}
+      ios_out: ${{ steps.names.outputs.ios_out }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/workbench
+
+      - name: Name the artifacts
+        id: names
+        run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
   # The per-PR tier of zingolib/0054: the x86_64 libraries, the Kotlin
   # bindings, and the AAR. binding-layer-android.yaml runs the builder on
   # this commit, here and in the nightly, so one definition builds an ABI
@@ -182,9 +214,14 @@ jobs:
   # every push builds once, cold.
   binding-layer-android:
     if: ${{ inputs.skip-binding-layer-build != true }}
+    needs: binding-layer-names
     uses: ./.github/workflows/binding-layer-android.yaml
     with:
       abis: '["x86_64"]'
+      abi_artifacts: ${{ needs.binding-layer-names.outputs.abi_artifacts }}
+      abi_pattern: ${{ needs.binding-layer-names.outputs.abi_pattern }}
+      aar_glob: ${{ needs.binding-layer-names.outputs.aar_glob }}
+      bundle: ${{ needs.binding-layer-names.outputs.bundle_android }}
 
   # The `nym` feature gates the mixnet transmission and price-fetch surfaces
   # (ADR 0011) in zingolib and zingo-cli. zingo-cli carries it as a default

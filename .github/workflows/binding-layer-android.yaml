@@ -23,6 +23,23 @@ on:
         required: false
         type: string
         default: ${{ github.sha }}
+      # The artifact names, from one run of `build-binding-layer artifact`
+      # in the caller, so that every job of one run agrees on them whatever
+      # commit it builds: the per-ABI artifact of each ABI as a JSON object,
+      # the pattern that matches them all, the glob of the AAR that Gradle
+      # writes, and the bundle this workflow uploads.
+      abi_artifacts:
+        required: true
+        type: string
+      abi_pattern:
+        required: true
+        type: string
+      aar_glob:
+        required: true
+        type: string
+      bundle:
+        required: true
+        type: string
 
 jobs:
   # The job already runs in android_builder:018, the image that the builder
@@ -41,7 +58,6 @@ jobs:
       image: zingodevops/android_builder:018
     env:
       ABI: ${{ matrix.abi }}
-      REF: ${{ inputs.ref }}
       RUSTUP_HOME: ${{ github.workspace }}/.rustup
       CARGO_HOME: ${{ github.workspace }}/.cargo
     steps:
@@ -90,14 +106,10 @@ jobs:
             android --in-image --abi "$ABI" \
             --out bindings/android/build/binding-layer
 
-      # The builder is the one source of every artifact name.
-      - name: Name the artifact
-        run: echo "ARTIFACT=$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact abi --abi "$ABI" --commit "$REF")" >> "$GITHUB_ENV"
-
       - name: Upload the Binding Layer
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARTIFACT }}
+          name: ${{ fromJSON(inputs.abi_artifacts)[matrix.abi] }}
           path: bindings/android/build/binding-layer
           retention-days: 3
           overwrite: true
@@ -108,36 +120,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      REF: ${{ inputs.ref }}
       ABIS: ${{ join(fromJSON(inputs.abis), ' ') }}
       OUTPUT: bindings/android/build/binding-layer
+      AAR: bindings/android/build/outputs/aar/${{ inputs.aar_glob }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: tools/workbench
-
-      # The builder is the one source of every artifact name: the pattern
-      # of the ABI artifacts this job gathers, and the bundle it uploads.
-      - name: Name the artifacts
-        run: |
-          set -eu
-          echo "ABI_ARTIFACTS=$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact abi --abi '*' --commit "$REF")" >> "$GITHUB_ENV"
-          echo "BUNDLE=$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact bundle --platform android --commit "$REF")" >> "$GITHUB_ENV"
-
       # The ABIs share one output directory.
       - name: Download the Binding Layer
         uses: actions/download-artifact@v4
         with:
-          pattern: ${{ env.ABI_ARTIFACTS }}
+          pattern: ${{ inputs.abi_pattern }}
           path: bindings/android/build/binding-layer
           merge-multiple: true
 
@@ -170,7 +166,7 @@ jobs:
       - name: Verify the AAR carries both libraries for every ABI
         run: |
           set -eu
-          aar="$(ls bindings/android/build/outputs/aar/*-release.aar)"
+          aar="$(ls $AAR)"
           entries="$(unzip -Z1 "$aar")"
           for abi in $ABIS; do
             for library in libuniffi_zingo.so libzingo_nym_proxy_ffi.so; do
@@ -183,9 +179,9 @@ jobs:
       - name: Upload the AAR and the descriptor
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.BUNDLE }}
+          name: ${{ inputs.bundle }}
           path: |
-            bindings/android/build/outputs/aar/*-release.aar
-            bindings/android/build/binding-layer/descriptor.txt
+            ${{ env.AAR }}
+            ${{ env.OUTPUT }}/descriptor.txt
           retention-days: 3
           overwrite: true

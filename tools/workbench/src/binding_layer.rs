@@ -161,9 +161,88 @@ pub const ABI_ARTIFACT: &str = "abi";
 pub const ARTIFACT_KINDS: [&str; 2] = [BUNDLE_ARTIFACT, ABI_ARTIFACT];
 pub const ARTIFACT_WILDCARD: &str = "*";
 const ARTIFACT_SEPARATOR: &str = "-";
+pub const AAR_SUFFIX: &str = "-release.aar";
+pub const ABIS_OUTPUT: &str = "abis";
+pub const ABI_ARTIFACTS_OUTPUT: &str = "abi_artifacts";
+pub const ABI_PATTERN_OUTPUT: &str = "abi_pattern";
+pub const AAR_GLOB_OUTPUT: &str = "aar_glob";
+pub const BUNDLE_OUTPUT_PREFIX: &str = "bundle_";
+pub const BUNDLE_PATTERN_OUTPUT: &str = "bundle_pattern";
+pub const IOS_OUT_OUTPUT: &str = "ios_out";
+const OUTPUT_ASSIGNMENT: char = '=';
+const JSON_QUOTE: char = '"';
+const JSON_SEPARATOR: &str = ",";
+const JSON_PAIR: char = ':';
 
 pub fn artifact_name(kind: &str, segment: &str, commit: &str) -> String {
     [ARTIFACT_PREFIX, kind, segment, commit].join(ARTIFACT_SEPARATOR)
+}
+
+fn json_string(text: &str) -> String {
+    format!("{JSON_QUOTE}{text}{JSON_QUOTE}")
+}
+
+fn json_list(items: impl Iterator<Item = String>) -> String {
+    format!("[{}]", items.collect::<Vec<_>>().join(JSON_SEPARATOR))
+}
+
+fn json_object(pairs: impl Iterator<Item = (String, String)>) -> String {
+    format!(
+        "{{{}}}",
+        pairs
+            .map(|(key, value)| format!("{}{JSON_PAIR}{}", json_string(&key), json_string(&value)))
+            .collect::<Vec<_>>()
+            .join(JSON_SEPARATOR)
+    )
+}
+
+pub fn swift_package_output_dir() -> String {
+    let manifest = std::path::Path::new(SWIFT_PACKAGE_MANIFEST);
+    let dir = manifest.parent().unwrap_or(manifest);
+    format!("{}/{SWIFT_PACKAGE_OUTPUT_DIR}", dir.display())
+}
+
+pub fn artifact_outputs(platforms: &[&str], commit: &str) -> Vec<(String, String)> {
+    let abis = ANDROID_ABIS.iter().map(|abi| abi.jni_dir);
+    let mut outputs = vec![
+        (
+            ABIS_OUTPUT.to_string(),
+            json_list(abis.clone().map(json_string)),
+        ),
+        (
+            ABI_ARTIFACTS_OUTPUT.to_string(),
+            json_object(
+                abis.map(|abi| (abi.to_string(), artifact_name(ABI_ARTIFACT, abi, commit))),
+            ),
+        ),
+        (
+            ABI_PATTERN_OUTPUT.to_string(),
+            artifact_name(ABI_ARTIFACT, ARTIFACT_WILDCARD, commit),
+        ),
+        (
+            AAR_GLOB_OUTPUT.to_string(),
+            format!("{ARTIFACT_WILDCARD}{AAR_SUFFIX}"),
+        ),
+    ];
+    outputs.extend(platforms.iter().map(|platform| {
+        (
+            format!("{BUNDLE_OUTPUT_PREFIX}{platform}"),
+            artifact_name(BUNDLE_ARTIFACT, platform, commit),
+        )
+    }));
+    outputs.push((
+        BUNDLE_PATTERN_OUTPUT.to_string(),
+        artifact_name(BUNDLE_ARTIFACT, ARTIFACT_WILDCARD, commit),
+    ));
+    outputs.push((IOS_OUT_OUTPUT.to_string(), swift_package_output_dir()));
+    outputs
+}
+
+pub fn render_outputs(outputs: &[(String, String)]) -> String {
+    outputs
+        .iter()
+        .map(|(key, value)| format!("{key}{OUTPUT_ASSIGNMENT}{value}\n"))
+        .collect()
 }
 
 pub fn artifact_segment<'a>(name: &'a str, kind: &str, commit: &str) -> Option<&'a str> {
@@ -422,6 +501,28 @@ mod tests {
         assert_eq!(
             artifact_name(BUNDLE_ARTIFACT, ARTIFACT_WILDCARD, commit),
             format!("binding-layer-bundle-*-{commit}")
+        );
+    }
+
+    #[test]
+    fn the_artifact_outputs_name_every_artifact_of_a_commit_once() {
+        let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let rendered = render_outputs(&artifact_outputs(&["android", "ios"], commit));
+        assert_eq!(
+            rendered,
+            format!(
+                "abis=[\"arm64-v8a\",\"armeabi-v7a\",\"x86\",\"x86_64\"]\n\
+                 abi_artifacts={{\"arm64-v8a\":\"binding-layer-abi-arm64-v8a-{commit}\",\
+                 \"armeabi-v7a\":\"binding-layer-abi-armeabi-v7a-{commit}\",\
+                 \"x86\":\"binding-layer-abi-x86-{commit}\",\
+                 \"x86_64\":\"binding-layer-abi-x86_64-{commit}\"}}\n\
+                 abi_pattern=binding-layer-abi-*-{commit}\n\
+                 aar_glob=*-release.aar\n\
+                 bundle_android=binding-layer-bundle-android-{commit}\n\
+                 bundle_ios=binding-layer-bundle-ios-{commit}\n\
+                 bundle_pattern=binding-layer-bundle-*-{commit}\n\
+                 ios_out=bindings/swift/build\n"
+            )
         );
     }
 
