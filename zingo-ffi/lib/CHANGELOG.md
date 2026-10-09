@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   place of `Init`, when the wallet bytes were written for another chain.
 
 ### Changed
+- BREAKING: moves to the librustzcash NU7 pre-release cohort zingolib
+  pins. The viewing key parser lists a P2SH viewing key item as `transparent`
+  beside a P2PKH one.
 - **Breaking:** `get_version` returns zingolib's `zl_` descriptor alone. The
   consumer's `zm_` half, the `ZINGO_MOBILE_DESCRIPTOR` variable and the
   `zm_description` build script are gone; a consumer computes its own

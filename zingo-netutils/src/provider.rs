@@ -73,9 +73,10 @@ pub trait ProxyHosting: Send + Sync + 'static {
 /// predictable cadence an observer could align to. The generator is
 /// supplied, so a test fixes what production draws from entropy.
 pub fn rotation_interval<R: rand::Rng>(rng: &mut R) -> std::time::Duration {
+    use rand::RngExt as _;
     let min = crate::time::CLIENT_ROTATION_MIN;
     let max = crate::time::CLIENT_ROTATION_MAX;
-    min + std::time::Duration::from_secs(rng.gen_range(0..=(max - min).as_secs()))
+    min + std::time::Duration::from_secs(rng.random_range(0..=(max - min).as_secs()))
 }
 
 /// The provider a hosted platform supplies, holding the host it asks.

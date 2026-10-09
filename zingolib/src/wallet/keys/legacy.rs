@@ -295,7 +295,12 @@ pub(crate) fn legacy_fvks_to_ufvk<P: zcash_protocol::consensus::Parameters>(
         fvks.push(zcash_address::unified::Fvk::P2pkh(fvk_bytes));
     }
 
-    let ufvk = zcash_address::unified::Ufvk::try_from_items(fvks)?;
+    let ufvk = zcash_address::unified::Ufvk::try_from_items(
+        zcash_address::unified::Revision::R0,
+        fvks.into_iter()
+            .map(zcash_address::unified::Uitem::Data)
+            .collect(),
+    )?;
 
     UnifiedFullViewingKey::decode(parameters, &ufvk.encode(&parameters.network_type()))
         .map_err(|_| KeyError::KeyDecodingError)
@@ -313,7 +318,8 @@ pub(crate) fn legacy_sks_to_usk(
 
     CompactSize::write(
         &mut usk_bytes,
-        usize::try_from(Typecode::Orchard).expect("typecode to usize should not fail"),
+        usize::try_from(Typecode::ORCHARD.typecode_value())
+            .expect("typecode to usize should not fail"),
     )?;
     let orchard_key_bytes = orchard_key.to_bytes();
     CompactSize::write(&mut usk_bytes, orchard_key_bytes.len())?;
@@ -321,7 +327,8 @@ pub(crate) fn legacy_sks_to_usk(
 
     CompactSize::write(
         &mut usk_bytes,
-        usize::try_from(Typecode::Sapling).expect("typecode to usize should not fail"),
+        usize::try_from(Typecode::SAPLING.typecode_value())
+            .expect("typecode to usize should not fail"),
     )?;
     let sapling_key_bytes = sapling_key.to_bytes();
     CompactSize::write(&mut usk_bytes, sapling_key_bytes.len())?;
@@ -339,7 +346,7 @@ pub(crate) fn legacy_sks_to_usk(
     };
     // Add leading `0` byte
     let mut key_bytes = [0u8; 33];
-    key_bytes[1..].copy_from_slice(transparent_key.private_key.as_ref());
+    key_bytes[1..].copy_from_slice(transparent_key.private_key.as_secret_bytes());
 
     let extended_key = bip32::ExtendedKey {
         prefix,
@@ -356,7 +363,8 @@ pub(crate) fn legacy_sks_to_usk(
 
     CompactSize::write(
         &mut usk_bytes,
-        usize::try_from(Typecode::P2pkh).expect("typecode to usize should not fail"),
+        usize::try_from(Typecode::P2PKH.typecode_value())
+            .expect("typecode to usize should not fail"),
     )?;
     CompactSize::write(&mut usk_bytes, account_tkey_bytes.len())?;
     usk_bytes.write_all(&account_tkey_bytes)?;
