@@ -4,9 +4,12 @@ name: Android Builder Image
 # the workbench's `build-binding-layer image`, which passes the pinned
 # toolchain and every Android target exactly as a local build does, and
 # publishes it under the tag that binding-layer-android.yaml runs in
-# (binding_layer::PUBLISHED_ANDROID_IMAGE). The tag is sequential, so this
-# workflow runs only by hand: bump the tag in the workbench and the workflow
-# together, run this once, and the Android jobs pick the new image up.
+# (binding_layer::PUBLISHED_ANDROID_IMAGE). The tag is sequential, so only a
+# dispatch publishes: bump the tag in the workbench and the workflow together,
+# dispatch this once, and the Android jobs pick the new image up. A push that
+# changes the image's inputs builds it without publishing, which proves the
+# Dockerfile and registers the workflow with GitHub, since a dispatch by name
+# finds only workflows on the default branch or ones that have already run.
 
 on:
   workflow_dispatch:
@@ -15,6 +18,11 @@ on:
         description: 'Push the built image to DockerHub. Set false to verify a build without publishing.'
         type: boolean
         default: true
+  push:
+    paths:
+      - 'bindings/android/docker/**'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/build-n-push-android-image.yaml'
 
 jobs:
   build-and-push:
@@ -29,7 +37,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Log in to DockerHub
-        if: ${{ inputs.push }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.push }}
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -44,5 +52,5 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Push the image
-        if: ${{ inputs.push }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.push }}
         run: docker push "${{ steps.image.outputs.tag }}"
