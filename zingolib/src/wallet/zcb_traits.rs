@@ -334,20 +334,7 @@ impl WalletRead for LightWallet {
         HashMap<TransparentAddress, (Self::AccountId, Option<TransparentKeyScope>)>,
         Self::Error,
     > {
-        self.transparent_addresses
-            .iter()
-            .filter(|(address_id, _)| address_id.scope() != TransparentScope::Refund)
-            .map(|(address_id, encoded_address)| {
-                let address = ZcashAddress::try_from_encoded(encoded_address)?
-                    .convert_if_network::<TransparentAddress>(self.chain_type.network_type())
-                    .expect("incorrect network should be checked on wallet load");
-
-                Ok((
-                    address,
-                    (address_id.account_id(), Some(address_id.scope().into())),
-                ))
-            })
-            .collect()
+        unimplemented!()
     }
 
     fn get_transparent_balances(
