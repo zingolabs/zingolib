@@ -2524,34 +2524,35 @@ struct DiscoveredAddresses {
 fn discover_unified_addresses<'a>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     transactions: impl Iterator<Item = &'a WalletTransaction>,
-) -> DiscoveredAddresses {
-    let mut discovered = DiscoveredAddresses {
-        orchard: Vec::new(),
-        sapling: Vec::new(),
-    };
-    for transaction in transactions {
-        discover_into(
-            ufvks,
-            transaction.orchard_notes(),
-            resolve_orchard,
-            &mut discovered.orchard,
-        );
-        // Ironwood recipients are orchard receivers, discovered the same way.
-        discover_into(
-            ufvks,
-            transaction.ironwood_notes(),
-            resolve_orchard,
-            &mut discovered.orchard,
-        );
-        discover_into(
-            ufvks,
-            transaction.sapling_notes(),
-            resolve_sapling,
-            &mut discovered.sapling,
-        );
-    }
-
-    discovered
+) -> Vec<DiscoveredAddresses> {
+    transactions
+        .map(|transaction| {
+            let mut discovered = DiscoveredAddresses {
+                orchard: Vec::new(),
+                sapling: Vec::new(),
+            };
+            discover_into(
+                ufvks,
+                transaction.orchard_notes(),
+                resolve_orchard,
+                &mut discovered.orchard,
+            );
+            // Ironwood recipients are orchard receivers, discovered the same way.
+            discover_into(
+                ufvks,
+                transaction.ironwood_notes(),
+                resolve_orchard,
+                &mut discovered.orchard,
+            );
+            discover_into(
+                ufvks,
+                transaction.sapling_notes(),
+                resolve_sapling,
+                &mut discovered.sapling,
+            );
+            discovered
+        })
+        .collect()
 }
 
 fn discover_into<N, Address>(
@@ -2611,16 +2612,18 @@ fn resolve_sapling(
 /// - Adds each discovered sapling address to the wallet's unified address list.
 fn add_discovered_addresses<W>(
     wallet: &mut W,
-    discovered: DiscoveredAddresses,
+    discovered: Vec<DiscoveredAddresses>,
 ) -> Result<(), W::Error>
 where
     W: SyncWallet,
 {
-    for (account_id, address, diversifier_index) in discovered.orchard {
-        wallet.add_orchard_address(account_id, address, diversifier_index)?;
-    }
-    for (account_id, address, diversifier_index) in discovered.sapling {
-        wallet.add_sapling_address(account_id, address, diversifier_index)?;
+    for transaction_addresses in discovered {
+        for (account_id, address, diversifier_index) in transaction_addresses.orchard {
+            wallet.add_orchard_address(account_id, address, diversifier_index)?;
+        }
+        for (account_id, address, diversifier_index) in transaction_addresses.sapling {
+            wallet.add_sapling_address(account_id, address, diversifier_index)?;
+        }
     }
 
     Ok(())
