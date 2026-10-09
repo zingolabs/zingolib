@@ -203,9 +203,20 @@ jobs:
           pattern: ${{ needs.request.outputs.bundle_pattern }}
           path: ${{ env.BUNDLES }}
 
+      # The registry client is the orasust binary, whose release the
+      # workbench pins. Its repository is private, so the App token, which
+      # the App's installation on that repository scopes, downloads it.
+      - name: Install orasust
+        env:
+          GH_TOKEN: ${{ steps.publish-token.outputs.token }}
+        run: |
+          release="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --orasust-version)"
+          gh release download --repo zingolabs/orasust "$release" --pattern orasust-x86_64-unknown-linux-gnu --output orasust
+          sudo install --mode 755 orasust /usr/local/bin/orasust
+
       - name: Publish the bundles and record the entry
         run: |
-          cargo run --quiet --manifest-path tools/workbench/Cargo.toml --features registry \
+          cargo run --quiet --manifest-path tools/workbench/Cargo.toml \
             --bin binding-publish -- --commit "$COMMIT" --bundles "$BUNDLES"
 
       - name: Report the publish
