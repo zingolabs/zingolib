@@ -79,10 +79,13 @@ pub const PROXY_XCFRAMEWORK: &str = "ZingoNymProxyFFI.xcframework";
 /// Both XCFrameworks, in the order that the builder creates them.
 pub const XCFRAMEWORKS: [&str; 2] = [WALLET_XCFRAMEWORK, PROXY_XCFRAMEWORK];
 
-/// The Swift source directory that the SwiftPM package compiles, relative to the builder's output.
-pub const SWIFT_SOURCES_DIR: &str = "Sources/ZingoBindings";
+const SWIFT_SOURCES_PARENT: &str = "Sources";
 
 pub const SWIFT_PACKAGE: &str = "ZingoBindings";
+
+pub fn swift_sources_dir() -> String {
+    format!("{SWIFT_SOURCES_PARENT}/{SWIFT_PACKAGE}")
+}
 
 pub const SWIFT_PACKAGE_MANIFEST: &str = "bindings/swift/Package.swift";
 
@@ -176,6 +179,10 @@ const JSON_PAIR: char = ':';
 
 pub fn artifact_name(kind: &str, segment: &str, commit: &str) -> String {
     [ARTIFACT_PREFIX, kind, segment, commit].join(ARTIFACT_SEPARATOR)
+}
+
+pub fn artifact_name_without_commit(segment: &str) -> String {
+    [ARTIFACT_PREFIX, segment].join(ARTIFACT_SEPARATOR)
 }
 
 fn json_string(text: &str) -> String {
@@ -423,7 +430,7 @@ mod tests {
         assert!(manifest.contains(&format!(
             "let builderOutput = \"{SWIFT_PACKAGE_OUTPUT_DIR}\""
         )));
-        assert!(SWIFT_SOURCES_DIR.ends_with(SWIFT_PACKAGE));
+        assert!(manifest.contains(&format!("/{}\"", swift_sources_dir())));
         assert!(std::path::Path::new(SWIFT_PACKAGE_MANIFEST).ends_with("Package.swift"));
     }
 

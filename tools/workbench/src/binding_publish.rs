@@ -11,11 +11,11 @@ pub const EMPTY_CONFIG_MEDIA_TYPE: &str = "application/vnd.oci.empty.v1+json";
 pub const EMPTY_CONFIG: &str = "{}";
 const ZIP_MEDIA_TYPE: &str = "application/zip";
 const GZIP_MEDIA_TYPE: &str = "application/gzip";
-const BINARY_MEDIA_TYPE: &str = "application/octet-stream";
-const ZIP_SUFFIXES: [&str; 2] = [".aar", ".zip"];
-const GZIP_SUFFIXES: [&str; 2] = [".tar.gz", ".tgz"];
-const AAR_SUFFIX: &str = "-release.aar";
 const ARCHIVE_SUFFIX: &str = ".tar.gz";
+const SHAPES: [(&str, &str); 2] = [
+    (binding_manifest::ANDROID, ZIP_MEDIA_TYPE),
+    (binding_manifest::IOS, GZIP_MEDIA_TYPE),
+];
 const TAR: &str = "tar";
 const TAR_ARGS: [&str; 3] = ["--create", "--gzip", "--file"];
 const PACKAGE_STAGING_SUFFIX: &str = "-package";
@@ -35,22 +35,15 @@ pub struct Credentials {
 struct Bundle {
     file: PathBuf,
     descriptor: String,
+    media_type: &'static str,
 }
 
-pub fn media_type_of(file_name: &str) -> &'static str {
-    if ZIP_SUFFIXES
-        .iter()
-        .any(|suffix| file_name.ends_with(suffix))
-    {
-        ZIP_MEDIA_TYPE
-    } else if GZIP_SUFFIXES
-        .iter()
-        .any(|suffix| file_name.ends_with(suffix))
-    {
-        GZIP_MEDIA_TYPE
-    } else {
-        BINARY_MEDIA_TYPE
-    }
+pub fn media_type_of(platform: &str) -> Result<&'static str, Vec<String>> {
+    SHAPES
+        .into_iter()
+        .find(|(known, _)| *known == platform)
+        .map(|(_, media_type)| media_type)
+        .ok_or_else(|| vec![format!("no bundle shape is known for {platform}")])
 }
 
 pub fn manifest_annotations(commit: &str, descriptor: &str) -> Vec<(String, String)> {
@@ -85,21 +78,12 @@ pub fn built_platforms(bundles: &Path, commit: &str) -> Vec<(&'static str, PathB
             let name = path.file_name()?.to_str()?;
             let segment =
                 binding_layer::artifact_segment(name, binding_layer::BUNDLE_ARTIFACT, commit)?;
-            let platform = binding_manifest::PLATFORMS
-                .into_iter()
-                .find(|platform| *platform == segment)?;
+            let platform = binding_manifest::platform(segment).ok()?;
             Some((platform, path.clone()))
         })
         .collect();
     built.sort_by_key(|(platform, _)| *platform);
     built
-}
-
-pub fn missing_required(built: &[&str]) -> Vec<&'static str> {
-    binding_manifest::REQUIRED_PLATFORMS
-        .into_iter()
-        .filter(|platform| !built.contains(platform))
-        .collect()
 }
 
 fn file_name_of(file: &Path) -> Result<&str, Vec<String>> {
@@ -149,7 +133,7 @@ fn push(
         oci_client::Reference::try_from(name.as_str()).map_err(|e| vec![format!("{name}: {e}")])?;
     let layers = [client::ImageLayer::new(
         data,
-        media_type_of(file_name).to_string(),
+        bundle.media_type.to_string(),
         Some(layer_annotations(file_name).into_iter().collect()),
     )];
     let config = client::Config::new(EMPTY_CONFIG, EMPTY_CONFIG_MEDIA_TYPE.to_string(), None);
@@ -215,12 +199,18 @@ fn bundle_of(root: &Path, platform: &str, dir: &Path, commit: &str) -> Result<Bu
     })?)?
     .trim()
     .to_string();
+    let media_type = media_type_of(platform)?;
     let file = match platform {
-        binding_manifest::ANDROID => find_file(dir, |name| name.ends_with(AAR_SUFFIX))?,
-        binding_manifest::IOS => swift_package_archive(root, dir, commit)?,
-        other => return Err(vec![format!("no bundle shape is known for {other}")]),
+        binding_manifest::ANDROID => {
+            find_file(dir, |name| name.ends_with(binding_layer::AAR_SUFFIX))?
+        }
+        _ => swift_package_archive(root, dir, commit)?,
     };
-    Ok(Bundle { file, descriptor })
+    Ok(Bundle {
+        file,
+        descriptor,
+        media_type,
+    })
 }
 
 fn swift_package_archive(root: &Path, dir: &Path, commit: &str) -> Result<PathBuf, Vec<String>> {
@@ -287,7 +277,7 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     }
     let built = built_platforms(bundles, &commit);
     let names: Vec<&str> = built.iter().map(|(platform, _)| *platform).collect();
-    let missing = missing_required(&names);
+    let missing = binding_manifest::missing_required(&names);
     if !missing.is_empty() {
         return Err(vec![format!(
             "{} requires {} and {} holds no bundle for it, so that build did not succeed",
@@ -322,13 +312,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_media_type_follows_the_bundle_suffix() {
+    fn every_platform_has_one_bundle_shape_and_nothing_else_does() {
+        assert_eq!(media_type_of(binding_manifest::ANDROID), Ok(ZIP_MEDIA_TYPE));
+        assert_eq!(media_type_of(binding_manifest::IOS), Ok(GZIP_MEDIA_TYPE));
+        assert!(media_type_of("linux").is_err());
         assert_eq!(
-            media_type_of("zingo-binding-layer-release.aar"),
-            ZIP_MEDIA_TYPE
+            SHAPES.map(|(platform, _)| platform),
+            binding_manifest::PLATFORMS
         );
-        assert_eq!(media_type_of("ZingoBindings.tar.gz"), GZIP_MEDIA_TYPE);
-        assert_eq!(media_type_of("bundle.bin"), BINARY_MEDIA_TYPE);
     }
 
     #[test]
@@ -353,19 +344,6 @@ mod tests {
                 "org.opencontainers.image.title".to_string(),
                 "x.aar".to_string()
             )]
-        );
-    }
-
-    #[test]
-    fn the_required_platforms_come_from_the_manifest_module_alone() {
-        assert_eq!(missing_required(&[]), binding_manifest::REQUIRED_PLATFORMS);
-        assert_eq!(
-            missing_required(&binding_manifest::PLATFORMS),
-            Vec::<&str>::new()
-        );
-        assert_eq!(
-            missing_required(&[binding_manifest::IOS]),
-            [binding_manifest::ANDROID]
         );
     }
 

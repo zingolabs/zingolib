@@ -217,6 +217,8 @@ const WORKBENCH_RELATIVE_DIR: &str = "tools/workbench";
 /// The manifest file name that every crate directory holds.
 pub const MANIFEST: &str = "Cargo.toml";
 
+pub const LIST_SEPARATOR: &str = ", ";
+
 /// The zingolib root, which is the directory that holds the workbench crate at `tools/workbench`.
 pub fn repo_root() -> Result<PathBuf, Vec<String>> {
     root_above(Path::new(BUILT_WORKBENCH_DIR))

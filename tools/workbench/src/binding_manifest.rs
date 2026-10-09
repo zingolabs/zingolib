@@ -6,7 +6,7 @@ use crate::binding_layer;
 pub const BINARY: &str = "binding-manifest";
 pub const FILE: &str = "bindings/published.toml";
 pub const REGISTRY: &str = "ghcr.io";
-pub const REPOSITORY_PREFIX: &str = "zingolabs/zingolib/binding-layer-";
+pub const REPOSITORY_OWNER_PATH: &str = "zingolabs/zingolib/";
 pub const ANDROID: &str = "android";
 pub const IOS: &str = "ios";
 pub const PLATFORMS: [&str; 2] = [ANDROID, IOS];
@@ -40,7 +40,6 @@ const TREE_ARGS: [&str; 8] = [
 const TREE_FORMAT: [&str; 2] = ["--format", "{p}"];
 const ARRAY_OPEN: char = '[';
 const ARRAY_CLOSE: char = ']';
-const ARRAY_SEPARATOR: &str = ", ";
 const ITEM_SEPARATOR: char = ',';
 const DIR_OPEN: &str = " (";
 const DIR_CLOSE: char = ')';
@@ -57,7 +56,7 @@ pub fn platform(name: &str) -> Result<&'static str, Vec<String>> {
         .ok_or_else(|| {
             vec![format!(
                 "unknown platform {name}; the platforms are {}",
-                PLATFORMS.join(ARRAY_SEPARATOR)
+                PLATFORMS.join(crate::LIST_SEPARATOR)
             )]
         })
 }
@@ -188,7 +187,7 @@ fn render_audited(crates: &[AuditedCrate]) -> String {
         .iter()
         .map(|found| format!("{QUOTE}{found}{QUOTE}"))
         .collect::<Vec<_>>()
-        .join(ARRAY_SEPARATOR);
+        .join(crate::LIST_SEPARATOR);
     format!("{ARRAY_OPEN}{items}{ARRAY_CLOSE}")
 }
 
@@ -282,10 +281,21 @@ pub fn parse(text: &str) -> Result<Vec<Entry>, Vec<String>> {
         .collect())
 }
 
-pub fn awaited(entry: &Entry) -> Vec<String> {
+pub fn missing_required(present: &[&str]) -> Vec<&'static str> {
     REQUIRED_PLATFORMS
         .into_iter()
-        .filter(|platform| !entry.digests.iter().any(|(name, _)| name == platform))
+        .filter(|platform| !present.contains(platform))
+        .collect()
+}
+
+pub fn awaited(entry: &Entry) -> Vec<String> {
+    let present: Vec<&str> = entry
+        .digests
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect();
+    missing_required(&present)
+        .into_iter()
         .map(|platform| format!("{platform} digest"))
         .chain(
             entry
@@ -357,12 +367,18 @@ pub fn publication_commits(entries: &[Entry]) -> Vec<(String, String)> {
         .collect()
 }
 
+pub fn repository(platform: &str) -> String {
+    format!(
+        "{REPOSITORY_OWNER_PATH}{}",
+        binding_layer::artifact_name_without_commit(platform)
+    )
+}
+
 pub fn reference(platform: &str, commit: &str) -> String {
     [
         REGISTRY,
         PATH_SEPARATOR,
-        REPOSITORY_PREFIX,
-        platform,
+        &repository(platform),
         TAG_SEPARATOR,
         commit,
     ]
@@ -828,6 +844,17 @@ mod tests {
         let diagnostic = audited_diagnostics(&root, &[recorded]).unwrap().concat();
         assert!(diagnostic.contains(&head), "{diagnostic}");
         assert!(!root.join(CHECKOUTS_DIR).join(&head).exists());
+    }
+
+    #[test]
+    fn the_required_set_difference_has_one_home() {
+        assert_eq!(missing_required(&[]), REQUIRED_PLATFORMS);
+        assert_eq!(missing_required(&PLATFORMS), Vec::<&str>::new());
+        assert_eq!(missing_required(&[IOS]), [ANDROID]);
+        assert_eq!(
+            repository(ANDROID),
+            "zingolabs/zingolib/binding-layer-android"
+        );
     }
 
     #[test]

@@ -940,7 +940,7 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
         ]
         .map(|(generated, swift)| Step::Copy {
             from: host(&format!("{generated}/{swift}")),
-            to: host(&format!("{}/{swift}", binding_layer::SWIFT_SOURCES_DIR)),
+            to: host(&format!("{}/{swift}", binding_layer::swift_sources_dir())),
         })
         .into_iter()
         .collect(),

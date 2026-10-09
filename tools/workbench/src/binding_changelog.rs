@@ -12,7 +12,6 @@ const SECTION_MARK: &str = "## ";
 const SINCE_PREFIX: &str = "Since ";
 const SINCE_SUFFIX: char = '.';
 const AUDITED_PREFIX: &str = "Audited ";
-const AUDITED_SEPARATOR: &str = ", ";
 const CRATE_MARK: &str = "### ";
 const HEADING_MARK: char = '#';
 const DEMOTION: &str = "##";
@@ -137,7 +136,7 @@ pub fn render_section(section: &Section) -> String {
         .iter()
         .map(|(name, _)| format!("`{name}`"))
         .collect::<Vec<_>>()
-        .join(AUDITED_SEPARATOR);
+        .join(crate::LIST_SEPARATOR);
     block(&format!(
         "{SECTION_MARK}{}\n\n{SINCE_PREFIX}{}{SINCE_SUFFIX}\n\n{AUDITED_PREFIX}{audited}{SINCE_SUFFIX}\n\n{entries}",
         section.commit, section.since
