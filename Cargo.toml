@@ -14,11 +14,13 @@ members = [
 ]
 # zingo-netutils is intentionally NOT a member: it carries its own [workspace]
 # and Cargo.lock so it can be built standalone with the `nym` feature, whose
-# nym-sdk stack needs `crypto-common ^0.2` — irreconcilable in a shared lock
-# with this workspace's `crypto-common =0.2.0-rc.1` pin (via zcash_primitives
-# 0.30, which pins the same release candidate 0.29 did). Members still consume
-# netutils through the `zingo-netutils` path dependency below, resolved in
-# THIS lockfile with `nym` off. See zingo-adrs zingolib/0011.
+# nym-sdk stack needs `crypto-common ^0.2`. That was irreconcilable in a shared
+# lock while zcash_primitives 0.29 and 0.30 pinned `crypto-common
+# =0.2.0-rc.1`. The 0.31 cohort resolves to a 0.2 release, so the lock
+# conflict is gone, and readmitting the crate is a separate decision under
+# zingo-adrs zingolib/0011. Members still consume netutils through the
+# `zingo-netutils` path dependency below, resolved in THIS lockfile with
+# `nym` off.
 exclude = ["zingo-netutils"]
 resolver = "2"
 
@@ -64,40 +66,40 @@ zingo_common_components = "0.4.0"
 tokio-stream = "0.1"
 
 ### Zcash
-incrementalmerkletree = "0.8.2"
-orchard = "0.15.0"
-sapling-crypto = "0.7.0"
-shardtree = "0.7.0"
-zcash_address = "0.13.0"
-zcash_client_backend = { version = "0.24.0", features = [
+incrementalmerkletree = "0.9.0"
+orchard = "0.16.0"
+sapling-crypto = "0.9.0"
+shardtree = "0.8.0"
+zcash_address = "=0.14.0-pre.1"
+zcash_client_backend = { version = "=0.25.0-pre.1", features = [
     "orchard",
     "transparent-inputs",
 ] }
-zcash_encoding = "0.4.0"
-zcash_keys = { version = "0.16.1", features = [
+zcash_encoding = "0.5.0"
+zcash_keys = { version = "=0.17.0-pre.1", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
 ] }
-zcash_note_encryption = "0.4.2"
+zcash_note_encryption = "0.5.1"
 # non-standard-fees: exposes `fees::fixed`, used to pin the exact planned fee
 # on Ironwood migration transactions.
-zcash_primitives = { version = "0.30.1", features = ["non-standard-fees"] }
-zcash_proofs = "0.30.0"
-zcash_protocol = "0.10.6" # public API (TODO: remove from public API)
-zcash_transparent = "0.10.0"
-zcash_script = "0.4.5"
+zcash_primitives = { version = "=0.31.0-pre.1", features = ["non-standard-fees"] }
+zcash_proofs = "=0.31.0-pre.1"
+zcash_protocol = "=0.11.0-pre.0" # public API (TODO: remove from public API)
+zcash_transparent = "=0.11.0-pre.1"
+zcash_script = "0.6.0"
 
 ### Blockchain Protocol
 bip0039 = { version = "0.14", features = ["rand"] }
-bip32 = { version = "0.6.0-pre.1", default-features = false }
-zip32 = "0.2.0"
+bip32 = { version = "0.6.0", default-features = false }
+zip32 = "0.3.0"
 
 ### Cryptographic
 blake2b_simd = "1"
 hmac = "0.12"
-jubjub = "0.10.0"
-secp256k1 = "0.31.1"
+jubjub = "0.11.1"
+secp256k1 = "0.33.1"
 sha2 = "0.10"
 secrecy = "0.8"
 subtle = "2.6.1"
@@ -151,7 +153,7 @@ chrono = "0.4"
 clap = { version = "4.6.5", features = ["derive"] }
 dirs = "6"
 memuse = "0.2"
-rand = "0.8"
+rand = "0.10"
 
 ### Misc / not-yet-grouped
 rust-embed = "8"

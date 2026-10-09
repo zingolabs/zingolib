@@ -89,7 +89,7 @@ tokio-stream = { workspace = true, optional = true }
 # Registry-sourced, not git: cargo keys a package by source, so a git
 # zcash_pool_migration drags git copies of zcash_primitives, zcash_protocol and
 # zcash_transparent that no version bump can unify with the registry stack.
-zcash_pool_migration = { version = "0.1.0", default-features = false }
+zcash_pool_migration = { version = "=0.2.0-pre.1", default-features = false }
 zingo-net-diag = { workspace = true, features = ["serde"] }
 
 [build-dependencies]
@@ -118,7 +118,7 @@ zingo-netutils = { workspace = true, features = ["testutils"] }
 tokio = { workspace = true, features = ["full", "test-util"] }
 portpicker = { workspace = true }
 proptest = { workspace = true }
-rand_chacha = "0.3"
+rand_chacha = "0.10"
 tempfile = { workspace = true }
 tokio-stream.workspace = true
 tracing-subscriber = { workspace = true }
