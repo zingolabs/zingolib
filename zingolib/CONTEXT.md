@@ -153,9 +153,7 @@
 
 **SyncPauseGuard** — A guard that holds the sync engine paused — actively paused or not running — for as long as the value lives. `LightClient::pause_sync_scoped` is the sole constructor: it pauses a running engine, and dropping the guard restores the prior sync mode. The Orchard→Ironwood drain demands the guard as a parameter, so planning under a running sync is unrepresentable for that path; the Two-phase Send holds one internally beside the stored Proposal, giving the shipped propose/send protocol the same guarantee without a signature change.
 
-**SyncConfig** — Configuration for the sync engine: performance level and transparent address discovery settings.
-
-**Performance Level** — Controls batch size and nullifier map scope: `Low`, `Medium`, `High`, or `Maximum`.
+**SyncConfig** — Configuration for the sync engine: transparent address discovery settings and shutdown on completion.
 
 ---
 

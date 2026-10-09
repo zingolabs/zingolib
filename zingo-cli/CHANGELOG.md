@@ -148,8 +148,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking.** Command-line parsing is clap's now. Every command and
   sub-command is a clap derive grammar: help and usage errors are generated,
   so the hand-written parser messages and their byte-stability are gone.
-  Arguments arrive typed, with txids, server URIs, output scopes, and
-  performance levels validated at the parse. A malformed one-shot
+  Arguments arrive typed, with txids, server URIs, and output scopes
+  validated at the parse. A malformed one-shot
   invocation fails with clap's usage error and exit code 2 before any wallet
   work begins, where it previously booted the wallet first.
 - **Breaking.** Command names are case-sensitive: the grammar knows
@@ -170,6 +170,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   values, so no string is re-parsed inside the process.
 
 ### Removed
+- **Breaking.** The `settings performance` sub-command and the `performance`
+  line of the `settings` output are gone, because pepper-sync removed the
+  setting. A new wallet keeps the limit of 2,000,000 mapped nullifiers that
+  the `high` level gave it, and an existing wallet keeps the limit of the
+  level it stored.
 - **Breaking.** The `nym-diary` feature and the `--indexer-diary` flag are
   gone, because the indexer diary no longer touches disk. `network history`
   needs neither: it now shows the attempts this session recorded, and nothing

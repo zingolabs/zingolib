@@ -1,5 +1,5 @@
 Connection { server_uri: String, chain_hint: String, sync: SyncSettings }
-SyncSettings { performance_level: String, min_confirmations: u32 }
+SyncSettings { min_confirmations: u32 }
 ZingolibError = LightclientNotInitialized | LightclientLockPoisoned | Panic | Save | Init | Sync | Rescan | Read | Send | Shield | InvalidInput | Wallet | Indexer | Offline | SideChannelPoisoned | MigrationNotInProgress | MigrationAlreadyInProgress | MigrationConsentStale | MigrationCadenceFixed | MigrationSplit | Migration | Mixnet
 init_logging() -> Result<String, ZingolibError>
 set_broadcast_candidates(candidates_json: String) -> Result<String, ZingolibError>
@@ -48,7 +48,6 @@ check_my_address(address: String) -> Result<String, ZingolibError>
 get_wallet_save_required() -> Result<String, ZingolibError>
 set_config_wallet_to_test() -> Result<String, ZingolibError>
 set_config_wallet_to_prod(settings: SyncSettings) -> Result<String, ZingolibError>
-get_config_wallet_performance() -> Result<String, ZingolibError>
 get_wallet_version() -> Result<String, ZingolibError>
 send(send_json: String) -> Result<String, ZingolibError>
 send_all(address: String, memo: String) -> Result<String, ZingolibError>

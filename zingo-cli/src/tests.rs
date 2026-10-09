@@ -1121,11 +1121,10 @@ mod config_template {
 
     mod zingo_config {
         use super::*;
-        use pepper_sync::config::PerformanceLevel;
         use std::num::NonZeroU32;
         use zingolib::{
             config::WalletConfig,
-            wallet::{SyncConfig, TransparentAddressDiscovery},
+            wallet::{DEFAULT_MAX_NULLIFIER_MAP_SIZE, SyncConfig, TransparentAddressDiscovery},
         };
 
         const HOSPITAL_MUSEUM_SEED: &str = "hospital museum valve antique skate museum \
@@ -1243,7 +1242,7 @@ mod config_template {
                     wallet_settings: zingolib::wallet::WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::default(),
-                            performance_level: PerformanceLevel::High,
+                            max_nullifier_map_size: DEFAULT_MAX_NULLIFIER_MAP_SIZE,
                             shutdown_on_completion: false,
                         },
                         min_confirmations: NonZeroU32::try_from(3).unwrap(),

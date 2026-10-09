@@ -24,7 +24,6 @@ use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
-    config::PerformanceLevel,
     error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
     sync::{self, ScanPriority, ScanRange},
@@ -39,6 +38,7 @@ use super::{ScanResults, scan};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
 const MAX_LOAD_NULLIFIERS: usize = 2usize.pow(14);
+const MAX_LOAD_OUTPUTS: usize = 2usize.pow(13);
 
 use zingo_netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
 
@@ -132,16 +132,9 @@ where
         self.transparent_gap_addresses.extend(new_gap_addresses);
     }
 
-    pub(crate) fn launch(&mut self, performance_level: PerformanceLevel) {
-        let max_outputs = match performance_level {
-            PerformanceLevel::Low => 2usize.pow(11),
-            PerformanceLevel::Medium => 2usize.pow(13),
-            PerformanceLevel::High => 2usize.pow(13),
-            PerformanceLevel::Maximum => 2usize.pow(15),
-        };
-
-        self.spawn_loader(max_outputs);
-        self.spawn_workers(max_outputs);
+    pub(crate) fn launch(&mut self) {
+        self.spawn_loader(MAX_LOAD_OUTPUTS);
+        self.spawn_workers(MAX_LOAD_OUTPUTS);
     }
 
     pub(crate) fn worker_poolsize(&self) -> usize {

@@ -16,3 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   workspace carried (`nym` and `perspective` on zingolib, `lightwalletd-tonic`
   on zcash_client_backend, the runtime features on tokio), and its release
   profile is the root workspace's `[profile.mobile]`, which the builder ships.
+
+### Removed
+- **Breaking:** the `performance_level` field of `SyncSettings` and the
+  `get_config_wallet_performance` endpoint are gone, because pepper-sync
+  removed the performance level. Every wallet this crate initializes keeps a
+  limit of 125,000 mapped nullifiers, the limit the `Medium` level gave it,
+  and `set_config_wallet_to_test` sets the same limit.

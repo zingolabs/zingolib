@@ -6,7 +6,9 @@ use std::time::{Duration, Instant};
 use zingo_netutils::Indexer as _;
 use zingolib::config::{ClientConfig, WalletConfig};
 use zingolib::lightclient::LightClient;
-use zingolib::wallet::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery, WalletSettings};
+use zingolib::wallet::{
+    DEFAULT_MAX_NULLIFIER_MAP_SIZE, SyncConfig, TransparentAddressDiscovery, WalletSettings,
+};
 
 /// The number of blocks below the live tip the timed sync scans.
 const GUARD_WINDOW: u32 = 5_000;
@@ -61,12 +63,7 @@ fn main() {
                     wallet_settings: WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::default(),
-                            performance_level: match std::env::args().nth(3).as_deref() {
-                                Some("maximum") => PerformanceLevel::Maximum,
-                                Some("medium") => PerformanceLevel::Medium,
-                                Some("low") => PerformanceLevel::Low,
-                                _ => PerformanceLevel::High,
-                            },
+                            max_nullifier_map_size: DEFAULT_MAX_NULLIFIER_MAP_SIZE,
                             shutdown_on_completion: true,
                         },
                         min_confirmations: NonZeroU32::new(3).unwrap(),
@@ -99,14 +96,13 @@ fn main() {
                     println!(
                         "SYNC_PERF_TAG: {elapsed:.1}s for {} blocks from {birthday}, \
                          {outputs} outputs ({} sapling, {} orchard, {} ironwood) \
-                         = {:.0} outputs/s, {:.0} blocks/s via {indexer} at {}",
+                         = {:.0} outputs/s, {:.0} blocks/s via {indexer}",
                         result.blocks_scanned,
                         result.sapling_outputs_scanned,
                         result.orchard_outputs_scanned,
                         result.ironwood_outputs_scanned,
                         f64::from(outputs) / elapsed,
                         f64::from(result.blocks_scanned) / elapsed,
-                        std::env::args().nth(3).unwrap_or("high".to_string()),
                     );
                 }
                 Ok(Err(e)) => panic!("SYNC_PERF_TAG: sync failed after {elapsed:.1}s: {e:?}"),

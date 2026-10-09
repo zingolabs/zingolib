@@ -42,7 +42,9 @@ use std::path::PathBuf;
 
 use zingolib::config::{ClientConfig, WalletConfig};
 use zingolib::lightclient::LightClient;
-use zingolib::wallet::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery, WalletSettings};
+use zingolib::wallet::{
+    DEFAULT_MAX_NULLIFIER_MAP_SIZE, SyncConfig, TransparentAddressDiscovery, WalletSettings,
+};
 
 /// A 24-word BIP-39 mnemonic used only for this demonstration.
 const EXAMPLE_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
@@ -84,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             wallet_settings: WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::default(),
-                    performance_level: PerformanceLevel::High,
+                    max_nullifier_map_size: DEFAULT_MAX_NULLIFIER_MAP_SIZE,
                     shutdown_on_completion: true,
                 },
                 min_confirmations: NonZeroU32::new(3).unwrap(),

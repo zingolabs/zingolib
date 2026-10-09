@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- `config::DEFAULT_MAX_NULLIFIER_MAP_SIZE` (2,000,000) and
+  `config::LOW_MEMORY_MAX_NULLIFIER_MAP_SIZE` (125,000), the two values of
+  `SyncConfig::max_nullifier_map_size` that consumers ship.
 - `sync::ScanRange::encloses` and `sync::ScanRange::overlaps`, the geometry of
   a scan range against a block range, and `sync::ScanPriority::in_flight`, the
   priority the wallet holds a selected range at while its scan task runs.
@@ -75,6 +78,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the server's chain.
 
 ### Changed
+- BREAKING: `config::SyncConfig` gains a `max_nullifier_map_size` field, the
+  number of nullifiers the sync maps before it scans ranges without mapping.
+  It holds the number the removed performance level chose: 0 for `Low`,
+  125,000 for `Medium`, 2,000,000 for `High` and `usize::MAX` for `Maximum`.
+  `SyncConfig::default` holds 2,000,000, as it did.
+- Every sync scans with an output budget of 8192 per scan load, the budget of
+  the `Medium` and `High` levels. A consumer that set `Low` or `Maximum` had a
+  budget of 2048 or 32768 outputs.
+- `SyncConfig` serialization version bumped to 3, which stores
+  `max_nullifier_map_size` as a `u64`. A version 1 or version 2 config reads
+  into the number its stored level chose, and a version 0 config reads into
+  2,000,000.
 - BREAKING: `wallet::SyncMode::from_atomic_u8` borrows the atomic as
   `&AtomicU8` in place of taking an `Arc<AtomicU8>` by value.
 - BREAKING: `client::FetchRequest::CompactBlockRange` has an added `bool`
@@ -118,7 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recovers the full failure story by walking the `source()` chain.
 - `wallet::WalletTransaction::update_status`: added `fail_confirmed` bool for protecting against confirmed txs being
     set to failed in cases other than re-org truncation.
-- The readers of `config::SyncConfig`, `config::PerformanceLevel` and the
+- The readers of `config::SyncConfig` and the
   `wallet` types (`ScanTarget`, `SyncState`, `TreeBounds`, `NullifierMap`,
   `WalletBlock`, `WalletTransaction`, `TransparentCoin`, `WalletNote`,
   `OutgoingNote`, `ShardTrees`) return an `InvalidData` error for a serialized
@@ -249,6 +264,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   range kept its `Scanned` priority with its wallet data removed.
 
 ### Removed
+- BREAKING: `config::PerformanceLevel` and the `performance_level` field of
+  `config::SyncConfig`. `SyncConfig::max_nullifier_map_size` replaces them,
+  described under Changed.
 
 ## [0.5.0] - 2026-06-10
 

@@ -71,18 +71,6 @@ After the sync process is initialized, it will be in a state of verification, on
 - Gap limit - number of unused addresses for each account
 - Scopes - whether external, internal and/or refund (a.k.a ephemeral) addresses will be discovered and relevant transactions scanned.
 
-### Performance Level
-- Low
--- Output budget per scan load is quartered
--- Nullifier map only contains chain tip
-- Medium
--- Nullifier map only contains chain tip
-- High
--- Nullifier map has a large maximum size
-- Maximum
--- Output budget per scan load is quadrupled
--- Nullifier map has no maximum size
-
 ## Sync Diagram
 ## Initialization Diagram
 ## Verification Diagram

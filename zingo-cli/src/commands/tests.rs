@@ -378,21 +378,13 @@ mod typed_argument_parsing {
     }
 
     /// HYPOTHESIS: `settings` parses its whole grammar before the body
-    /// takes the wallet lock, so a malformed level or confirmation count
-    /// never reaches the wallet.
+    /// takes the wallet lock, so a malformed confirmation count never
+    /// reaches the wallet.
     #[test]
     fn settings_parses_before_it_takes_the_wallet_lock() {
         assert!(matches!(
             parse(&["settings"]).expect("a bare settings parses"),
             CliCommand::Settings { sub: None }
-        ));
-        assert!(matches!(
-            parse(&["settings", "performance", "high"]).expect("a level parses"),
-            CliCommand::Settings {
-                sub: Some(SettingsSubCommand::Performance {
-                    level: PerformanceLevelArg::High
-                })
-            }
         ));
         assert!(matches!(
             parse(&["settings", "min_confirmations", "3"]).expect("a count parses"),
@@ -408,8 +400,6 @@ mod typed_argument_parsing {
         ));
         for junk in [
             &["settings", "bogus"][..],
-            &["settings", "performance"][..],
-            &["settings", "performance", "blazing"][..],
             &["settings", "min_confirmations", "0"][..],
             &["settings", "min_confirmations", "many"][..],
         ] {

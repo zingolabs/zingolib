@@ -2,8 +2,8 @@
 //! with everything but the arm held fixed.
 //!
 //! A benchmark that varies more than one thing measures nothing. This holds
-//! the indexer, the wallet seed, the scanned window, the performance level,
-//! and the build profile constant, gives each arm its own worktree so
+//! the indexer, the wallet seed, the scanned window, and the build profile
+//! constant, gives each arm its own worktree so
 //! neither meets the other's build artifacts, runs the two alternately so
 //! warm-up and machine load fall on both equally, and reports outputs per
 //! second, which is the rate scan cost actually tracks.

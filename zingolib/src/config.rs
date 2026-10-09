@@ -504,7 +504,7 @@ impl Default for ClientConfigBuilder {
                 wallet_settings: WalletSettings {
                     sync_config: SyncConfig {
                         transparent_address_discovery: TransparentAddressDiscovery::default(),
-                        performance_level: pepper_sync::config::PerformanceLevel::High,
+                        max_nullifier_map_size: pepper_sync::config::DEFAULT_MAX_NULLIFIER_MAP_SIZE,
                         shutdown_on_completion: false,
                     },
                     min_confirmations: NonZeroU32::try_from(3)

@@ -25,7 +25,7 @@ use zip32::AccountId;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::client::{self, FetchRequest};
-use crate::config::{PerformanceLevel, SyncConfig};
+use crate::config::SyncConfig;
 use crate::error::{
     ContinuityError, MempoolError, ScanError, ServerError, SyncError, SyncModeError,
     SyncStatusError,
@@ -525,7 +525,7 @@ where
         ufvks.clone(),
         config.transparent_address_discovery.gap_limit as u32,
     );
-    scanner.launch(config.performance_level);
+    scanner.launch();
 
     let mut wallet_guard = wallet.write().await;
     state::reset_scan_ranges(
@@ -762,7 +762,7 @@ where
                         scanner.in_flight_tasks(),
                         scan_results,
                         initial_reorg_detection_start_height_opt,
-                        config.performance_level,
+                        config.max_nullifier_map_size,
                         &mut nullifier_map_limit_exceeded,
                     )
                     .await?;
@@ -1535,7 +1535,7 @@ async fn process_scan_results<W>(
     in_flight_tasks: &BTreeMap<TaskId, ScanRange>,
     scan_results: Result<ScanResults, ScanError>,
     initial_reorg_detection_start_height: Option<BlockHeight>,
-    performance_level: PerformanceLevel,
+    max_nullifier_map_size: usize,
     nullifier_map_limit_exceeded: &mut bool,
 ) -> Result<ProcessedScanResults, SyncError<W::Error>>
 where
@@ -1689,15 +1689,14 @@ where
                 // nullifiers are not mapped if nullifier map size limit will be exceeded
                 if !*nullifier_map_limit_exceeded {
                     let nullifier_map = wallet.get_nullifiers().map_err(SyncError::WalletError)?;
-                    if max_nullifier_map_size(performance_level).is_some_and(|max| {
-                        nullifier_map.orchard.len()
-                            + nullifier_map.sapling.len()
-                            + nullifier_map.ironwood.len()
-                            + nullifiers.orchard.len()
-                            + nullifiers.sapling.len()
-                            + nullifiers.ironwood.len()
-                            > max
-                    }) {
+                    if nullifier_map.orchard.len()
+                        + nullifier_map.sapling.len()
+                        + nullifier_map.ironwood.len()
+                        + nullifiers.orchard.len()
+                        + nullifiers.sapling.len()
+                        + nullifiers.ironwood.len()
+                        > max_nullifier_map_size
+                    {
                         *nullifier_map_limit_exceeded = true;
                     }
                 }
@@ -2966,15 +2965,6 @@ where
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
-}
-
-fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> {
-    match performance_level {
-        PerformanceLevel::Low => Some(0),
-        PerformanceLevel::Medium => Some(125_000),
-        PerformanceLevel::High => Some(2_000_000),
-        PerformanceLevel::Maximum => None,
-    }
 }
 
 #[cfg(test)]
@@ -4866,7 +4856,7 @@ mod test {
         use zcash_transparent::keys::NonHardenedChildIndex;
 
         use crate::{
-            config::PerformanceLevel,
+            config::DEFAULT_MAX_NULLIFIER_MAP_SIZE,
             error::{ContinuityError, ScanError},
             keys::transparent::{TransparentAddressId, TransparentScope},
             mocks::{MockWallet, MockWalletBuilder},
@@ -4913,7 +4903,7 @@ mod test {
                 &in_flight_tasks,
                 scan_results,
                 None,
-                PerformanceLevel::High,
+                DEFAULT_MAX_NULLIFIER_MAP_SIZE,
                 &mut false,
             )
             .await
@@ -5011,7 +5001,7 @@ mod test {
 
         use crate::{
             client::FetchRequest,
-            config::PerformanceLevel,
+            config::DEFAULT_MAX_NULLIFIER_MAP_SIZE,
             error::{ContinuityError, ScanError, SyncError},
             mocks::{MockWallet, MockWalletBuilder, MockWalletError},
             scan::task::{ScanLoad, TaskId},
@@ -5118,7 +5108,7 @@ mod test {
                     },
                 )),
                 initial_reorg_detection_start_height,
-                PerformanceLevel::High,
+                DEFAULT_MAX_NULLIFIER_MAP_SIZE,
                 &mut false,
             )
             .await
