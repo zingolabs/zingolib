@@ -14,6 +14,7 @@ jobs:
   # the flags that job alone holds.
   pr-checks:
     uses: ./.github/workflows/ci-pr.yaml
+    secrets: inherit
     with:
       skip-binding-layer-build: true
       cargo-hack-subcommand: build
@@ -93,6 +94,7 @@ jobs:
   # the builder on this commit.
   binding-layer-android:
     uses: ./.github/workflows/binding-layer-android.yaml
+    secrets: inherit
     with:
       abis: '["x86_64", "x86", "arm64-v8a", "armeabi-v7a"]'
 
@@ -101,3 +103,4 @@ jobs:
 
   test:
     uses: ./.github/workflows/test.yaml
+    secrets: inherit

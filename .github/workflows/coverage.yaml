@@ -21,6 +21,9 @@ jobs:
       RUSTFLAGS: -D warnings
     container:
       image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
+      credentials:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
       options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository

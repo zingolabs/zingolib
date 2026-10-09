@@ -183,6 +183,7 @@ jobs:
   binding-layer-android:
     if: ${{ inputs.skip-binding-layer-build != true }}
     uses: ./.github/workflows/binding-layer-android.yaml
+    secrets: inherit
     with:
       abis: '["x86_64"]'
 
@@ -254,5 +255,6 @@ jobs:
     needs: draft-state
     if: ${{ needs.draft-state.outputs.draft != 'true' }}
     uses: ./.github/workflows/test.yaml
+    secrets: inherit
     with:
       nextest-flags: "-E 'not test(slow)'"
