@@ -202,7 +202,11 @@ impl LightWallet {
             self.chain_type,
             target_height,
             transparent_only_build_config(),
-        );
+        )
+        .with_expiry_height(crate::wallet::expiry::tx_expiry_height(
+            &self.chain_type,
+            target_height,
+        ));
         builder
             .add_transparent_p2pkh_input(pubkey, source_outpoint, source_txout)
             .map_err(|e| WalletError::TransparentBuild(format!("input: {e:?}")))?;

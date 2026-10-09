@@ -8,9 +8,8 @@ use nonempty::NonEmpty;
 use zcash_client_backend::data_api::wallet::TargetHeight;
 use zcash_client_backend::proposal::{Proposal, ProposalError};
 use zcash_client_backend::zip321::TransactionRequest;
-use zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
 use zcash_primitives::transaction::{TxId, fees::zip317};
-use zcash_protocol::consensus::BranchId;
+use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -141,9 +140,9 @@ pub(crate) const ZIP_203_EXPIRY_HEIGHT_THRESHOLD: u32 = 500_000_000;
 /// consensus-branch epoch the wallet believes it is in, for offline signing.
 ///
 /// The transaction built from a proposal expires at its target height plus
-/// [`DEFAULT_TX_EXPIRY_DELTA`], so the lift gives it the longest expiry the
-/// epoch permits: it stays transmittable until the next scheduled network
-/// upgrade. That is the outer limit for any pre-signed Zcash transaction:
+/// the delta of [`crate::wallet::expiry::tx_expiry_delta`], so the lift gives
+/// it the longest expiry the epoch permits: it stays transmittable until the
+/// next scheduled network upgrade. That is the outer limit for any pre-signed Zcash transaction:
 /// the signature commits to the epoch's consensus branch ID, so no expiry
 /// height can carry it past the upgrade. When the params schedule no
 /// upgrade above the stored target, the cap is instead the highest target
@@ -159,7 +158,14 @@ fn retarget_for_offline_signing<NoteRef: Clone>(
     let epoch = BranchId::for_height(chain_type, stored_target.into());
     let cap = match epoch.height_bounds(chain_type) {
         Some((_, Some(next_activation))) => u32::from(next_activation) - 1,
-        _ => ZIP_203_EXPIRY_HEIGHT_THRESHOLD - 1 - DEFAULT_TX_EXPIRY_DELTA,
+        _ => {
+            let highest_encodable = ZIP_203_EXPIRY_HEIGHT_THRESHOLD - 1;
+            highest_encodable
+                - crate::wallet::expiry::tx_expiry_delta(
+                    chain_type,
+                    BlockHeight::from_u32(highest_encodable),
+                )
+        }
     };
     let lifted_target = cap.max(u32::from(stored_target));
     Proposal::multi_step(
@@ -570,8 +576,8 @@ impl LightClient {
     /// to the epoch's consensus branch ID, and a stale offline chain view
     /// cannot expire it before an Indexer is available (issue #2455). An
     /// Indexer-connected calculation keeps the proposal's ordinary expiry,
-    /// [`DEFAULT_TX_EXPIRY_DELTA`] blocks past the target: connected
-    /// callers are expected to transmit promptly.
+    /// [`crate::wallet::expiry::tx_expiry_delta`] blocks past the target:
+    /// connected callers are expected to transmit promptly.
     pub async fn calculate_stored_proposal(&mut self) -> Result<NonEmpty<TxId>, LightClientError> {
         let indexerless = self.indexer.is_none();
         let mut wallet = self.wallet().write().await;
@@ -1291,7 +1297,11 @@ mod built_transaction_shape {
         let (target, expiry, branch_id) = build_one_send(wallet).await;
 
         assert_eq!(target, tip + 1);
-        assert_eq!(expiry, target + 40, "standard tx expiry delta");
+        assert_eq!(
+            expiry,
+            target + crate::wallet::expiry::NU7_TX_EXPIRY_DELTA,
+            "the in-process era is NU7-active, so the NU7 expiry delta applies"
+        );
         assert_eq!(
             branch_id,
             BranchId::for_height(&chain, BlockHeight::from_u32(tip + 1))
@@ -1638,11 +1648,13 @@ mod built_transaction_shape {
     /// The boundary cell the tip_spend_rejection attribution isolated:
     /// a wallet synced to activation − 1 builds a transaction targeting
     /// the activation height, so it must commit to the POST-activation
-    /// branch id. `heights` must activate a branch at `boundary`, and the
-    /// wallet must hold a note spendable on both sides of it.
+    /// branch id, and to the expiry delta of that branch, `expected_delta`.
+    /// `heights` must activate a branch at `boundary`, and the wallet must
+    /// hold a note spendable on both sides of it.
     async fn assert_boundary_adjacent_build_uses_post_activation_branch_id(
         heights: ActivationHeights,
         boundary: u32,
+        expected_delta: u32,
         wallet: SyntheticWalletBuilder,
     ) {
         let wallet = wallet.tip(boundary - 1).activation_heights(heights).build();
@@ -1654,10 +1666,11 @@ mod built_transaction_shape {
             "the cell must sit on a real branch boundary"
         );
 
-        let (target, _, branch_id) = build_one_send(wallet).await;
+        let (target, expiry, branch_id) = build_one_send(wallet).await;
 
         assert_eq!(target, boundary);
         assert_eq!(branch_id, post_activation);
+        assert_eq!(expiry, target + expected_delta);
     }
 
     /// The permanent unit fence for the wallet-side wrong-branch-id failure
@@ -1671,6 +1684,7 @@ mod built_transaction_shape {
         assert_boundary_adjacent_build_uses_post_activation_branch_id(
             heights,
             boundary,
+            zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA,
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
                 .orchard_note(100_000),
         )
@@ -1688,6 +1702,7 @@ mod built_transaction_shape {
         assert_boundary_adjacent_build_uses_post_activation_branch_id(
             heights,
             boundary,
+            crate::wallet::expiry::NU7_TX_EXPIRY_DELTA,
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
                 .ironwood_note(100_000),
         )

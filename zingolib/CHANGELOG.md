@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `wallet::expiry`, the transaction expiry delta: `tx_expiry_delta` and
+  `tx_expiry_height` answer for a target height, and `NU7_TX_EXPIRY_DELTA` is
+  the delta from NU7 activation.
 - `testutils::mock_activation_heights` and `mock_activation_heights_with`, the
   era the in-process tests run under: every network upgrade through NU7 at
   height 1. `testutils::mock_indexer::MockChain::new` and
@@ -24,6 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add continuous sync (ADR 0051) via pepper-sync's `SyncConfig::shutdown_on_completion`. With it unset, sync stays running after reaching the chain tip and scans newly mined blocks until `SyncMode::Shutdown` is set.
 
 ### Changed
+- A transaction targeting a height at or above the NU7 activation expires 120
+  blocks past its target, the delta ZIP 203 and ZIP 218 recommend for
+  25-second blocks, where it expired 40 blocks past. Below the activation,
+  and on a chain that never activates NU7, the delta stays 40. Every build
+  site passes the delta explicitly: sends, the transparent op_return send,
+  migration note splitting, and the cap of the offline-signing lift. A
+  proposal holding a step shaped like a canonical ZIP 318 crossing leaves the
+  expiry to the backend, which gives such a step the ZIP's rolling expiry and
+  refuses any other. The canonical expiry of a ZIP 318 migration part is
+  unchanged.
 - A receiver that sync discovers at an address index keeps the stored
   address's expiry height and expiry time when it is merged into that
   address. The merge rebuilt the address from its receivers alone and dropped
