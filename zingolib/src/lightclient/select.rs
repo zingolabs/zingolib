@@ -94,7 +94,12 @@ impl LightClient {
         // before the drawn verdict. Acquisition, the Sentinel-ridden wave, and
         // the redraw of an exit that carries nothing are the shared
         // speed-priority loop's; this runner owns only the judgment.
-        let order = sweep::wave_order(candidates, pin, SURVEY_WAVE_WIDTH, &mut rand::rngs::OsRng);
+        let order = sweep::wave_order(
+            candidates,
+            pin,
+            SURVEY_WAVE_WIDTH,
+            &mut crate::utils::system_rng(),
+        );
         let survey = IndexerSurvey {
             pools: self.exit_pools.clone(),
             acquirer,
@@ -117,7 +122,7 @@ impl LightClient {
         });
 
         let Some(chosen) =
-            sweep::healthy_draw_verdict(&results, chain, pin, &mut rand::rngs::OsRng)
+            sweep::healthy_draw_verdict(&results, chain, pin, &mut crate::utils::system_rng())
         else {
             // Every candidate was surveyed through a proven exit and none
             // was healthy, so the refusal is about the candidates.

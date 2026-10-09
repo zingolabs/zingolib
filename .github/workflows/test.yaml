@@ -12,14 +12,17 @@ env:
   NEXTEST_VERSION: "0.9.132"
 
 jobs:
-  compute-image-tag:
-    uses: ./.github/workflows/compute-image-tag.yaml
+  ensure-image:
+    uses: ./.github/workflows/ensure-image.yaml
 
   build-test-artifacts:
     name: Build test artifacts
-    needs: compute-image-tag
+    needs: ensure-image
     container:
-      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
+      image: ghcr.io/zingolabs/ci-build:${{ needs.ensure-image.outputs.image-tag }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -60,11 +63,14 @@ jobs:
     name: Run normal tests
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    needs: [build-test-artifacts, compute-image-tag]
+    needs: [build-test-artifacts, ensure-image]
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
+      image: ghcr.io/zingolabs/ci-build:${{ needs.ensure-image.outputs.image-tag }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
       options: --security-opt seccomp=unconfined
     strategy:
       fail-fast: false

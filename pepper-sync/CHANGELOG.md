@@ -75,6 +75,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the server's chain.
 
 ### Changed
+- Scanning reads version 2 zingo memos, which carry a recipient's unified
+  address with its ZIP 316 revision and metadata, through
+  `ParsedMemo::into_unified_addresses`.
+- BREAKING: the Zcash stack moves to the librustzcash NU7 pre-release cohort:
+  `zcash_client_backend` 0.25.0-pre.1, `zcash_keys` 0.17.0-pre.1, `zcash_primitives` 0.31.0-pre.1, `zcash_proofs` 0.31.0-pre.1, `zcash_protocol` 0.11.0-pre.0, `zcash_address` 0.14.0-pre.1, `zcash_transparent` 0.11.0-pre.1, `zcash_encoding` 0.5, `zcash_note_encryption` 0.5, `zcash_script` 0.6, `orchard` 0.16, `sapling-crypto` 0.9, `incrementalmerkletree` 0.9, `shardtree` 0.8, `zip32` 0.3, `bip32` 0.6, `jubjub` 0.11, `secp256k1` 0.33, `rand` 0.10. `LocalNetwork` gains its `nu7` field, the note-size constants
+  come from `orchard::note_encryption` and `sapling_crypto::note_encryption`
+  where `zcash_note_encryption` exported them, and the `ShieldedOutput` bound
+  loses its ciphertext-size parameter.
+- A note's recipient full unified address is encoded with every receiver it
+  carries, in the wallet file and through
+  `OutputInterface::encoded_recipient_full_unified_address`. `zcash_keys`
+  0.17 made `UnifiedAddress::encode` omit the transparent receiver of a
+  shielded address, which is the sharing form and not the recorded one.
 - BREAKING: `wallet::SyncMode::from_atomic_u8` borrows the atomic as
   `&AtomicU8` in place of taking an `Arc<AtomicU8>` by value.
 - BREAKING: `client::FetchRequest::CompactBlockRange` has an added `bool`
@@ -139,6 +152,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replaced those blocks, every later session failed with
   `shard tree error ← Inserted root conflicts with existing root` and only a
   rescan from the birthday recovered the wallet. (#2834)
+- `sync` makes every server request that the processing of scan results
+  depends on before it updates the wallet, so a failed request leaves the
+  wallet as it was. Spend detection only reads the wallet's nullifier and
+  outpoint maps, and a spend stays mapped until the cleanup drops it behind the
+  fully scanned height, so recording a spend on its note or coin can be
+  repeated. A failed request for a spending transaction used to remove the
+  spend from the map with the note left unspent, and a later sync session
+  could miss the spend. A pool rescan fetches its frontier before it clears
+  the pool's records, where a failed request used to remove the pool's
+  transactions with their scan ranges still recorded as scanned. (#2834)
 - A `ServerError::RequestFailed` caused by network weather is now recommended
   `SyncRecoveryObservables::MaybeRecoverableServer` and
   `recommend_same_server`, rather than `ServerUnavailable`. Network weather is

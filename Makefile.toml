@@ -13,7 +13,7 @@ ZINGOLIB_NEXTEST_PROFILE = "ci"
 ZINGOLIB_NEXTEST_RETRIES = { value = "0", condition = { env_not_set = [
   "ZINGOLIB_NEXTEST_RETRIES",
 ] } }
-IMAGE_NAME = "zingodevops/ci-build"
+IMAGE_NAME = "ghcr.io/zingolabs/ci-build"
 # Single source of truth: rust-toolchain.toml's `channel`, extracted and
 # validated (concrete numeric versions only) by the workbench
 # `get-rust-version` binary.
