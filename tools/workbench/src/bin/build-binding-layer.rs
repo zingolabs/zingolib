@@ -16,9 +16,12 @@ const PROGRAM: &str = "build-binding-layer";
 /// The invocation shape, reported when the arguments do not parse.
 const USAGE: &str = "usage: build-binding-layer <android|ios|kotlin> --out <directory> \
     [android only: --abi <android abi>] [android only: --in-image] \
-    | build-binding-layer artifact --commit <commit>";
+    | build-binding-layer artifact --commit <commit> \
+    | build-binding-layer image";
 
 const ARTIFACT_COMMAND: &str = "artifact";
+
+const IMAGE_COMMAND: &str = "image";
 
 const COMMIT_FLAG: &str = "--commit";
 
@@ -268,6 +271,9 @@ fn main() {
         Some((command, rest)) if command == ARTIFACT_COMMAND => {
             workbench::run(PROGRAM, || artifact(rest), |outputs| print!("{outputs}"))
         }
+        Some((command, rest)) if command == IMAGE_COMMAND => {
+            workbench::run(PROGRAM, || image(rest), |tag| println!("{tag}"))
+        }
         _ => workbench::run(
             PROGRAM,
             || build(&args),
@@ -283,6 +289,23 @@ fn artifact(args: &[String]) -> Result<String, Vec<String>> {
     ))
 }
 
+/// - Runs the container engine's `build`, which writes `PUBLISHED_ANDROID_IMAGE` to its store.
+fn image(args: &[String]) -> Result<&'static str, Vec<String>> {
+    if let Some(extra) = args.first() {
+        return Err(vec![
+            format!("unexpected argument `{extra}`"),
+            USAGE.to_string(),
+        ]);
+    }
+    let engine = binding_layer::container_engine()?;
+    build_android_image(
+        engine,
+        &workbench::repo_root()?,
+        binding_layer::PUBLISHED_ANDROID_IMAGE,
+    )?;
+    Ok(binding_layer::PUBLISHED_ANDROID_IMAGE)
+}
+
 /// Build the selected platform's packaging and return its output directory.
 fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
     let (platform, out, abis) = parse(args)?;
@@ -296,7 +319,7 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
         Platform::Android { in_image: false } => {
             let roots = Roots::in_container(root, out)?;
             let engine = binding_layer::container_engine()?;
-            build_android_image(engine, &roots.host)?;
+            build_android_image(engine, &roots.host, ANDROID_IMAGE)?;
             let id = start_container(engine, &roots.host)?;
             let outcome = execute(
                 &Runner::Container {
@@ -378,8 +401,8 @@ fn parse(
 }
 
 /// - Reads `rust-toolchain.toml` under `root`.
-/// - Runs the container engine's `build`, which writes `ANDROID_IMAGE` to its store.
-fn build_android_image(engine: &str, root: &path::Path) -> Result<(), Vec<String>> {
+/// - Runs the container engine's `build`, which writes `tag` to its store.
+fn build_android_image(engine: &str, root: &path::Path, tag: &str) -> Result<(), Vec<String>> {
     let toolchain = workbench::read(&root.join(workbench::TOOLCHAIN_FILE))?;
     let targets = triples(binding_layer::ANDROID_ABIS.iter()).join(" ");
     workbench::stdout_of(
@@ -387,7 +410,7 @@ fn build_android_image(engine: &str, root: &path::Path) -> Result<(), Vec<String
         &[
             "build",
             "--tag",
-            ANDROID_IMAGE,
+            tag,
             "--build-arg",
             &format!("{}={toolchain}", binding_layer::IMAGE_TOOLCHAIN_ARGUMENT),
             "--build-arg",

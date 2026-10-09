@@ -13,6 +13,7 @@
 use std::path::{Path, PathBuf};
 use std::{env, process::Command};
 
+const BUILD_SCRIPT: &str = "build.rs";
 const DESCRIPTOR_TEXT_FILE: &str = "git_description.txt";
 const DESCRIPTOR_ENV: &str = "ZINGOLIB_DESCRIPTOR";
 const DESCRIPTOR_SOURCE_FILE: &str = "git_description.rs";
@@ -21,7 +22,7 @@ const DESCRIPTOR_SOURCE_FILE: &str = "git_description.rs";
 /// directive disables cargo's whole-package fallback, which is the
 /// point: the package tree contains this script's own outputs.
 fn register_rerun_watches() {
-    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed={BUILD_SCRIPT}");
     // The params copies: deleting either one triggers a rerun, which
     // restores it. While both exist the fetch is skipped entirely.
     println!("cargo:rerun-if-changed=zcash-params/sapling-spend.params");
@@ -180,8 +181,18 @@ fn get_zcash_params() {
 
     // Copy the params to the internal location.
     std::fs::create_dir_all(internal_params_path).unwrap();
-    std::fs::copy(params_path.spend, spend_dest).unwrap();
-    std::fs::copy(params_path.output, output_dest).unwrap();
+    std::fs::copy(params_path.spend, &spend_dest).unwrap();
+    std::fs::copy(params_path.output, &output_dest).unwrap();
+
+    let script_modified = std::fs::metadata(BUILD_SCRIPT).unwrap().modified().unwrap();
+    for copy in [spend_dest, output_dest] {
+        std::fs::File::options()
+            .write(true)
+            .open(copy)
+            .unwrap()
+            .set_modified(script_modified)
+            .unwrap();
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -1,0 +1,48 @@
+name: Android Builder Image
+
+# Builds the Android tool image of bindings/android/docker/Dockerfile through
+# the workbench's `build-binding-layer image`, which passes the pinned
+# toolchain and every Android target exactly as a local build does, and
+# publishes it under the tag that binding-layer-android.yaml runs in
+# (binding_layer::PUBLISHED_ANDROID_IMAGE). The tag is sequential, so this
+# workflow runs only by hand: bump the tag in the workbench and the workflow
+# together, run this once, and the Android jobs pick the new image up.
+
+on:
+  workflow_dispatch:
+    inputs:
+      push:
+        description: 'Push the built image to DockerHub. Set false to verify a build without publishing.'
+        type: boolean
+        default: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      # The runner ships both podman and docker; force docker so the image
+      # the workbench builds is the one `docker push` sees.
+      CONTAINER_RUNTIME: docker
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Log in to DockerHub
+        if: ${{ inputs.push }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+
+      - name: Build the image
+        id: image
+        run: |
+          # The workbench prints the tag it built, and nothing else.
+          TAG=$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- image)
+          echo "Built ${TAG}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Push the image
+        if: ${{ inputs.push }}
+        run: docker push "${{ steps.image.outputs.tag }}"

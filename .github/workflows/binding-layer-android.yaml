@@ -44,10 +44,12 @@ on:
         type: string
 
 jobs:
-  # The job already runs in android_builder:018, the image that the builder
-  # uses, so the builder runs its plan here with --in-image instead of
-  # starting a container. The output holds the ABI's two libraries and the
-  # Kotlin bindings.
+  # The job runs in the image that bindings/android/docker/Dockerfile
+  # describes and build-n-push-android-image.yaml publishes: the builder's
+  # own image, with the libraries, the pinned toolchain, every Android
+  # target, bindgen-cli, and cargo-ndk already installed. The builder runs
+  # its plan here with --in-image instead of starting a container. The
+  # output holds the ABI's two libraries and the Kotlin bindings.
   build:
     name: Build ${{ matrix.abi }}
     runs-on: ${{ inputs.runner }}
@@ -57,26 +59,11 @@ jobs:
       matrix:
         abi: ${{ fromJSON(inputs.abis) }}
     container:
-      image: zingodevops/android_builder:018
+      # The workbench pins this tag: binding_layer::PUBLISHED_ANDROID_IMAGE.
+      image: docker.io/zingodevops/android_builder:019
     env:
       ABI: ${{ matrix.abi }}
-      RUSTUP_HOME: ${{ github.workspace }}/.rustup
-      CARGO_HOME: ${{ github.workspace }}/.cargo
     steps:
-      # The tools that bindings/android/docker/Dockerfile adds to the image.
-      - name: Install libraries
-        run: |
-          apt update \
-            && apt upgrade -y \
-            && apt install -y --no-install-recommends --no-install-suggests \
-            build-essential \
-            cmake \
-            golang \
-            clang-18 \
-            libclang-18-dev \
-            gcc \
-            g++
-
       # The zl_ descriptor names the release tag that points at HEAD.
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -90,15 +77,25 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       # With no toolchain named, rustup installs the one rust-toolchain.toml
-      # pins, with its components. The builder repeats this step and adds
-      # the ABI's target to that toolchain itself.
+      # pins, with its components. The image holds that toolchain until the
+      # pin moves. The builder repeats this step and adds the ABI's target
+      # to that toolchain itself.
       - name: Install the pinned toolchain
         run: rustup toolchain install
 
-      - name: Install bindgen-cli and cargo-ndk
-        run: |
-          cargo install --force --locked bindgen-cli
-          cargo install --locked --version 4.0.1 cargo-ndk
+      # The dependencies of the wallet, the proxy, and the bindgen, built
+      # for this ABI, and the workbench's own build. The image already
+      # holds the cargo-installed tools, so the cache leaves CARGO_HOME/bin
+      # out. The builder's plan clears only its output directory, never
+      # target/binding-layer, so a restored cache stays usable.
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.abi }}
+          cache-bin: false
+          workspaces: |
+            . -> target/binding-layer
+            tools/workbench -> target
 
       - name: Build the Binding Layer
         run: |
