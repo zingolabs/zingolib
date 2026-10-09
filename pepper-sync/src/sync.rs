@@ -30,6 +30,7 @@ use crate::error::{
     ContinuityError, MempoolError, ScanError, ServerError, SyncError, SyncModeError,
     SyncStatusError,
 };
+use crate::keys;
 use crate::keys::transparent::TransparentAddressId;
 use crate::scan::ScanResults;
 use crate::scan::task::{ScanLoad, Scanner, ScannerState, TaskId};
@@ -2529,67 +2530,81 @@ fn discover_unified_addresses<'a>(
         sapling: Vec::new(),
     };
     for transaction in transactions {
-        for note in transaction
-            .orchard_notes()
-            .iter()
-            .filter(|&note| note.key_id().scope == zip32::Scope::External)
-        {
-            let ivk = ufvks
-                .get(&note.key_id().account_id())
-                .expect("ufvk must exist to decrypt this note")
-                .orchard()
-                .expect("fvk must exist to decrypt this note")
-                .to_ivk(zip32::Scope::External);
-
-            discovered.orchard.push((
-                note.key_id().account_id(),
-                note.note().recipient(),
-                ivk.diversifier_index(&note.note().recipient())
-                    .expect("must be key used to create this address"),
-            ));
-        }
+        discover_into(
+            ufvks,
+            transaction.orchard_notes(),
+            resolve_orchard,
+            &mut discovered.orchard,
+        );
         // Ironwood recipients are orchard receivers, discovered the same way.
-        for note in transaction
-            .ironwood_notes()
-            .iter()
-            .filter(|&note| note.key_id().scope == zip32::Scope::External)
-        {
-            let ivk = ufvks
-                .get(&note.key_id().account_id())
-                .expect("ufvk must exist to decrypt this note")
-                .orchard()
-                .expect("fvk must exist to decrypt this note")
-                .to_ivk(zip32::Scope::External);
-
-            discovered.orchard.push((
-                note.key_id().account_id(),
-                note.note().recipient(),
-                ivk.diversifier_index(&note.note().recipient())
-                    .expect("must be key used to create this address"),
-            ));
-        }
-        for note in transaction
-            .sapling_notes()
-            .iter()
-            .filter(|&note| note.key_id().scope == zip32::Scope::External)
-        {
-            let ivk = ufvks
-                .get(&note.key_id().account_id())
-                .expect("ufvk must exist to decrypt this note")
-                .sapling()
-                .expect("fvk must exist to decrypt this note")
-                .to_external_ivk();
-
-            discovered.sapling.push((
-                note.key_id().account_id(),
-                note.note().recipient(),
-                ivk.decrypt_diversifier(&note.note().recipient())
-                    .expect("must be key used to create this address"),
-            ));
-        }
+        discover_into(
+            ufvks,
+            transaction.ironwood_notes(),
+            resolve_orchard,
+            &mut discovered.orchard,
+        );
+        discover_into(
+            ufvks,
+            transaction.sapling_notes(),
+            resolve_sapling,
+            &mut discovered.sapling,
+        );
     }
 
     discovered
+}
+
+fn discover_into<N, Address>(
+    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
+    notes: &[N],
+    resolve: impl Fn(
+        &UnifiedFullViewingKey,
+        &N::ZcashNote,
+    ) -> Option<(Address, zip32::DiversifierIndex)>,
+    discovered: &mut Vec<(AccountId, Address, zip32::DiversifierIndex)>,
+) where
+    N: NoteInterface<KeyId = keys::KeyId>,
+{
+    discovered.extend(
+        notes
+            .iter()
+            .filter(|note| note.key_id().scope == zip32::Scope::External)
+            .map(|note| {
+                let account_id = note.key_id().account_id();
+                let ufvk = ufvks
+                    .get(&account_id)
+                    .expect("ufvk must exist to decrypt this note");
+                let (address, index) =
+                    resolve(ufvk, note.note()).expect("must be key used to create this address");
+                (account_id, address, index)
+            }),
+    );
+}
+
+fn resolve_orchard(
+    ufvk: &UnifiedFullViewingKey,
+    note: &orchard::Note,
+) -> Option<(orchard::Address, zip32::DiversifierIndex)> {
+    let address = note.recipient();
+    let index = ufvk
+        .orchard()
+        .expect("fvk must exist to decrypt this note")
+        .to_ivk(zip32::Scope::External)
+        .diversifier_index(&address)?;
+    Some((address, index))
+}
+
+fn resolve_sapling(
+    ufvk: &UnifiedFullViewingKey,
+    note: &sapling_crypto::Note,
+) -> Option<(sapling_crypto::PaymentAddress, zip32::DiversifierIndex)> {
+    let address = note.recipient();
+    let index = ufvk
+        .sapling()
+        .expect("fvk must exist to decrypt this note")
+        .to_external_ivk()
+        .decrypt_diversifier(&address)?;
+    Some((address, index))
 }
 
 /// - Adds each discovered orchard address to the wallet's unified address list.
