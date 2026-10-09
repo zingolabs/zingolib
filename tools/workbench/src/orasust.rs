@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 pub const BINARY: &str = "orasust";
-pub const VERSION: &str = "0.1.2";
+pub const VERSION: &str = "0.1.3";
 pub const VERSION_FLAG: &str = "--orasust-version";
 const INSTALL: &str = "cargo install --locked";
 const CRATE_VERSION_SEPARATOR: char = '@';
@@ -20,6 +20,7 @@ const ANNOTATION_SEPARATOR: char = '=';
 const MEDIA_TYPE_SEPARATOR: char = ':';
 const QUOTE: char = '"';
 const KEY_VALUE_SEPARATOR: char = ':';
+const CURRENT_DIR: &str = ".";
 
 pub fn install_command() -> String {
     format!("{INSTALL} {BINARY}{CRATE_VERSION_SEPARATOR}{VERSION}")
@@ -85,7 +86,11 @@ pub fn push(
         .iter()
         .map(|(key, value)| format!("{key}{ANNOTATION_SEPARATOR}{value}"))
         .collect();
-    let layer = format!("{}{MEDIA_TYPE_SEPARATOR}{media_type}", crate::utf8(file)?);
+    let name = file
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| vec![format!("{} has no file name", file.display())])?;
+    let layer = format!("{name}{MEDIA_TYPE_SEPARATOR}{media_type}");
     let mut args = vec![PUSH, USERNAME_FLAG, username, PASSWORD_STDIN_FLAG];
     for pair in &pairs {
         args.push(ANNOTATION_FLAG);
@@ -95,6 +100,7 @@ pub fn push(
     args.push(&layer);
     let mut child = Command::new(BINARY)
         .args(&args)
+        .current_dir(file.parent().unwrap_or_else(|| Path::new(CURRENT_DIR)))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
