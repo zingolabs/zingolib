@@ -23,7 +23,15 @@ const LOCKFILE: &str = "../../Cargo.lock";
 
 const WALLET_REPORT: &str = "wallet_report";
 
-const WALLET_REPORT_RETURN: &str = "Result<String, ZingolibError>";
+const MACRO_FRAGMENT: char = '$';
+
+const TEMPLATE_IDENT: &str = "template";
+
+const REPETITION_MARKERS: [char; 3] = ['?', '*', '+'];
+
+const RULE_ARROW: &str = "=>";
+
+const RULE_END: char = ';';
 
 const CONFIG_PREFIX: &str = "uniffi.toml: ";
 
@@ -68,6 +76,11 @@ struct Surface {
     lines: BTreeSet<String>,
     generators: BTreeSet<String>,
     unrendered: BTreeSet<String>,
+}
+
+struct WalletReportTemplate {
+    markers: String,
+    ret: String,
 }
 
 fn compact<T: ToTokens>(tokens: &T) -> String {
@@ -200,12 +213,123 @@ fn impl_lines(item: &ItemImpl) -> Vec<String> {
         .collect()
 }
 
-fn wallet_report_line(mac: &ItemMacro) -> String {
+fn is_wallet_report_definition(mac: &ItemMacro) -> bool {
+    mac.mac.path.is_ident(MACRO_RULES)
+        && mac
+            .ident
+            .as_ref()
+            .is_some_and(|ident| ident == WALLET_REPORT)
+}
+
+fn rule_expansion(rule: &str) -> &str {
+    let mut depth = 0;
+    let matcher_end = rule
+        .char_indices()
+        .find_map(|(index, c)| {
+            match c {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                _ => {}
+            }
+            (c == ')' && depth == 0).then_some(index + 1)
+        })
+        .unwrap();
+    let after_arrow = rule[matcher_end..]
+        .trim_start()
+        .strip_prefix(RULE_ARROW)
+        .unwrap()
+        .trim()
+        .trim_end_matches(RULE_END)
+        .trim_end();
+    after_arrow
+        .strip_prefix('{')
+        .and_then(|rest| rest.strip_suffix('}'))
+        .unwrap()
+}
+
+fn rendered_template(expansion: &str) -> String {
+    let chars: Vec<char> = expansion.chars().collect();
+    let skip_space = |mut i: usize| {
+        while i < chars.len() && chars[i].is_whitespace() {
+            i += 1;
+        }
+        i
+    };
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] != MACRO_FRAGMENT {
+            out.push(chars[i]);
+            i += 1;
+            continue;
+        }
+        i = skip_space(i + 1);
+        if chars.get(i) == Some(&'(') {
+            let mut depth = 0;
+            while i < chars.len() {
+                match chars[i] {
+                    '(' => depth += 1,
+                    ')' => depth -= 1,
+                    _ => {}
+                }
+                i += 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            let after_group = skip_space(i);
+            let is_marker = |index: usize| {
+                chars
+                    .get(index)
+                    .is_some_and(|c| REPETITION_MARKERS.contains(c))
+            };
+            if is_marker(after_group) {
+                i = after_group + 1;
+            } else {
+                let after_separator = skip_space(after_group + 1);
+                if is_marker(after_separator) {
+                    i = after_separator + 1;
+                }
+            }
+        } else {
+            while chars
+                .get(i)
+                .is_some_and(|c| c.is_alphanumeric() || *c == '_')
+            {
+                i += 1;
+            }
+            out.push_str(TEMPLATE_IDENT);
+        }
+    }
+    out
+}
+
+fn wallet_report_template(mac: &ItemMacro) -> WalletReportTemplate {
+    let rule = mac.mac.tokens.to_string();
+    let rendered = rendered_template(rule_expansion(&rule));
+    assert!(
+        !rendered.contains(MACRO_FRAGMENT),
+        "the {WALLET_REPORT} template holds a fragment this test cannot render: {rendered}"
+    );
+    let func: ItemFn = syn::parse_str(&rendered).unwrap();
+    let ret = match &func.sig.output {
+        ReturnType::Default => "()".to_string(),
+        ReturnType::Type(_, ty) => compact(ty),
+    };
+    WalletReportTemplate {
+        markers: markers(&func.attrs),
+        ret,
+    }
+}
+
+fn wallet_report_line(mac: &ItemMacro, template: Option<&WalletReportTemplate>) -> String {
+    let template = template.unwrap_or_else(|| {
+        panic!("a {WALLET_REPORT}! invocation precedes any macro_rules! {WALLET_REPORT} definition")
+    });
     let input = mac.mac.tokens.to_string();
-    let (signature, _) = input.split_once("=>").unwrap();
-    let func: ItemFn =
-        syn::parse_str(&format!("{signature} -> {WALLET_REPORT_RETURN} {{}}")).unwrap();
-    function_line(&func)
+    let (signature, _) = input.split_once(RULE_ARROW).unwrap();
+    let func: ItemFn = syn::parse_str(&format!("{signature} -> {} {{}}", template.ret)).unwrap();
+    format!("{}{}", template.markers, function_line(&func))
 }
 
 fn generator_name(mac: &ItemMacro) -> Option<String> {
@@ -214,15 +338,26 @@ fn generator_name(mac: &ItemMacro) -> Option<String> {
     (definition && emits_uniffi).then(|| mac.ident.as_ref().unwrap().to_string())
 }
 
-fn macro_line(mac: &ItemMacro) -> Option<String> {
+fn macro_line(mac: &ItemMacro, template: Option<&WalletReportTemplate>) -> Option<String> {
     let path = &mac.mac.path;
     if path.is_ident(WALLET_REPORT) {
-        return Some(wallet_report_line(mac));
+        return Some(wallet_report_line(mac, template));
     }
     is_uniffi(path).then(|| format!("{}!({})", compact(path), compact(&mac.mac.tokens)))
 }
 
-fn collect(items: &[Item], surface: &mut Surface) {
+fn find_template(items: &[Item]) -> Option<WalletReportTemplate> {
+    items.iter().find_map(|item| match item {
+        Item::Macro(mac) if is_wallet_report_definition(mac) => Some(wallet_report_template(mac)),
+        Item::Mod(module) => module
+            .content
+            .as_ref()
+            .and_then(|(_, items)| find_template(items)),
+        _ => None,
+    })
+}
+
+fn collect(items: &[Item], surface: &mut Surface, template: Option<&WalletReportTemplate>) {
     for item in items {
         match item {
             Item::Fn(func) if !cfg_test(&func.attrs) && exported(&func.attrs) => {
@@ -242,11 +377,11 @@ fn collect(items: &[Item], surface: &mut Surface) {
             }
             Item::Macro(mac) if !cfg_test(&mac.attrs) => {
                 surface.generators.extend(generator_name(mac));
-                surface.lines.extend(macro_line(mac));
+                surface.lines.extend(macro_line(mac, template));
             }
             Item::Mod(module) if !cfg_test(&module.attrs) => {
                 if let Some((_, items)) = &module.content {
-                    collect(items, surface);
+                    collect(items, surface, template);
                 }
             }
             _ => {}
@@ -288,16 +423,29 @@ fn locked_uniffi_versions() -> Vec<String> {
     versions
 }
 
-fn surface() -> Surface {
+fn surface_of(sources: &[String]) -> Surface {
+    let parsed: Vec<syn::File> = sources
+        .iter()
+        .map(|source| syn::parse_file(source).unwrap())
+        .collect();
+    let template = parsed.iter().find_map(|file| find_template(&file.items));
     let mut surface = Surface {
         lines: BTreeSet::new(),
         generators: BTreeSet::new(),
         unrendered: BTreeSet::new(),
     };
-    for file in source_files(&Path::new(CRATE_DIR).join(SOURCE_DIR)) {
-        let parsed = syn::parse_file(&fs::read_to_string(&file).unwrap()).unwrap();
-        collect(&parsed.items, &mut surface);
+    for file in &parsed {
+        collect(&file.items, &mut surface, template.as_ref());
     }
+    surface
+}
+
+fn surface() -> Surface {
+    let sources: Vec<String> = source_files(&Path::new(CRATE_DIR).join(SOURCE_DIR))
+        .iter()
+        .map(|file| fs::read_to_string(file).unwrap())
+        .collect();
+    let mut surface = surface_of(&sources);
     surface.lines.extend(
         read(BINDGEN_CONFIG_FILE)
             .lines()
@@ -323,6 +471,30 @@ fn the_library_exports_the_committed_surface() {
         missing.is_empty() && unlisted.is_empty(),
         "committed but not exported:\n{missing:#?}\nexported but not committed:\n{unlisted:#?}"
     );
+}
+
+#[test]
+fn the_wallet_report_body_governs_every_line_its_invocations_render() {
+    let source = r#"
+        macro_rules! wallet_report {
+            (pub fn $export:ident($($input:ident: String)?) => $access:ident($state:path)) => {
+                #[uniffi::export(name = "renamed")]
+                pub fn $export($($input: String)?) -> Result<Vec<u8>, ZingolibError> {
+                    $access($($input,)? $state)
+                }
+            };
+        }
+        wallet_report!(pub fn get_seed() => report_wallet(Seed::of));
+        wallet_report!(pub fn remove_transaction(txid: String) => report_wallet_mut_with(Removal::of));
+    "#;
+    let lines = surface_of(&[source.to_string()]).lines;
+    let expected: BTreeSet<String> = [
+        "#[uniffi::export(name = \"renamed\")] get_seed() -> Result<Vec<u8>, ZingolibError>",
+        "#[uniffi::export(name = \"renamed\")] remove_transaction(txid: String) -> Result<Vec<u8>, ZingolibError>",
+    ]
+    .map(ToString::to_string)
+    .into();
+    assert_eq!(lines, expected);
 }
 
 #[test]
