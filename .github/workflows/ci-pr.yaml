@@ -255,5 +255,8 @@ jobs:
     needs: draft-state
     if: ${{ needs.draft-state.outputs.draft != 'true' }}
     uses: ./.github/workflows/test.yaml
+    permissions:
+      contents: read
+      packages: write
     with:
       nextest-flags: "-E 'not test(slow)'"
