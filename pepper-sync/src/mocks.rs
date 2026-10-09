@@ -16,8 +16,8 @@ pub(super) enum MockWalletError {
     AnErrorVariant(String),
 }
 
-type SyncStatePatch = Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError>>;
-type GetBirthdayPatch = Box<dyn Fn(&BlockHeight) -> Result<BlockHeight, MockWalletError>>;
+type SyncStatePatch = Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError> + Send>;
+type GetBirthdayPatch = Box<dyn Fn(&BlockHeight) -> Result<BlockHeight, MockWalletError> + Send>;
 pub(super) struct MockWallet {
     birthday: BlockHeight,
     sync_state: SyncState,
@@ -200,7 +200,12 @@ impl SyncBlocks for MockWallet {
         &self,
         block_height: BlockHeight,
     ) -> Result<crate::wallet::WalletBlock, Self::Error> {
-        todo!()
+        self.wallet_blocks
+            .get(&block_height)
+            .cloned()
+            .ok_or_else(|| {
+                MockWalletError::AnErrorVariant(format!("no wallet block at {block_height}"))
+            })
     }
 
     fn get_wallet_blocks_mut(
@@ -231,7 +236,7 @@ impl SyncTransactions for MockWallet {
 }
 impl SyncNullifiers for MockWallet {
     fn get_nullifiers(&self) -> Result<&crate::wallet::NullifierMap, Self::Error> {
-        todo!()
+        Ok(&self.nullifier_map)
     }
 
     fn get_nullifiers_mut(&mut self) -> Result<&mut crate::wallet::NullifierMap, Self::Error> {

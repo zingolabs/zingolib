@@ -12,12 +12,14 @@ use zcash_protocol::value::Zatoshis;
 use zingo_netutils::Indexer as _;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
+use crate::lightclient::DEFAULT_REQUEST_TIMEOUT;
 use crate::lightclient::LightClient;
 use crate::testutils::assertions::compare_fee;
 use crate::testutils::assertions::for_each_proposed_transaction;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::lightclient::get_base_address;
+use crate::testutils::timed;
 use crate::testutils::timestamped_test_log;
 use crate::wallet::output::OutputRef;
 
@@ -57,22 +59,50 @@ where
     CC: ConductChain,
 {
     timestamped_test_log("started integration-test send.");
-    sender.sync_and_await().await.unwrap();
+    // Mine one block and sync the sender to the real tip before proposing.
+    // This cures zebra's "could not validate orchard proof ... until the
+    // next chain tip block" rejection, but not because tip-block notes are
+    // unspendable: tip_spend_rejection's tip_note_to_orchard proves those
+    // spend fine. The rejection hits orchard-output transactions built
+    // adjacent to the height-5 NU6.1/6.2 co-activation (a wrong consensus
+    // branch id from a stale wallet view); syncing to the true tip keeps
+    // the builder on the post-activation branch.
+    timed(
+        "assure_send::increase_chain_height",
+        environment.increase_chain_height(),
+    )
+    .await;
+    timed(
+        "assure_send::sync_sender_to_tip",
+        environment.sync_client_to_tip(sender),
+    )
+    .await;
     timestamped_test_log("syncked.");
-    let proposal = from_inputs::propose(sender, payments.clone())
-        .await
-        .unwrap();
+    let proposal = timed(
+        "assure_send::propose",
+        from_inputs::propose(sender, payments.clone()),
+    )
+    .await
+    .unwrap();
     timestamped_test_log(format!("proposed the following payments: {payments:?}").as_str());
-    let txids = sender.send_stored_proposal(true).await.unwrap();
+    let txids = timed(
+        "assure_send::send_stored_proposal",
+        sender.send_stored_proposal(true),
+    )
+    .await
+    .unwrap();
     timestamped_test_log("Transmitted send.");
 
-    follow_proposal(
-        environment,
-        sender,
-        recipients,
-        &proposal,
-        txids,
-        test_mempool,
+    timed(
+        "assure_send::follow_proposal",
+        follow_proposal(
+            environment,
+            sender,
+            recipients,
+            &proposal,
+            txids,
+            test_mempool,
+        ),
     )
     .await
 }
@@ -90,23 +120,43 @@ where
     ChainConductor: ConductChain,
 {
     timestamped_test_log("started integration-test shield.");
-    client.sync_and_await().await.unwrap();
+    // The same tip-separation as assure_propose_send_bump_sync_all_recipients.
+    timed(
+        "assure_shield::increase_chain_height",
+        environment.increase_chain_height(),
+    )
+    .await;
+    timed(
+        "assure_shield::sync_client_to_tip",
+        environment.sync_client_to_tip(client),
+    )
+    .await;
     timestamped_test_log("syncked.");
-    let proposal = client
-        .propose_shield(zip32::AccountId::ZERO)
-        .await
-        .map_err(|e| e.to_string())?;
+    let proposal = timed(
+        "assure_shield::propose_shield",
+        client.propose_shield(zip32::AccountId::ZERO),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     timestamped_test_log(format!("proposed a shield: {proposal:#?}").as_str());
 
-    let txids = client.send_stored_proposal(true).await.unwrap();
+    let txids = timed(
+        "assure_shield::send_stored_proposal",
+        client.send_stored_proposal(true),
+    )
+    .await
+    .unwrap();
     timestamped_test_log("Transmitted shield.");
 
-    let (total_fee, _, s_shielded) =
-        follow_proposal(environment, client, vec![], &proposal, txids, test_mempool).await?;
+    let (total_fee, _, s_shielded) = timed(
+        "assure_shield::follow_proposal",
+        follow_proposal(environment, client, vec![], &proposal, txids, test_mempool),
+    )
+    .await?;
     Ok((total_fee, s_shielded))
 }
 
-/// given a just-broadcast proposal, confirms that it achieves all expected checkpoints.
+/// given a just-transmitted proposal, confirms that it achieves all expected checkpoints.
 /// returns `Ok(total_fee`, `total_received`, `total_change`)
 pub async fn follow_proposal<ChainConductor, NoteRef>(
     environment: &mut ChainConductor,
@@ -123,31 +173,49 @@ where
 
     timestamped_test_log("following proposal, preparing to unwind if an assertion fails.");
 
-    let indexer = zingo_netutils::GrpcIndexer::new(environment.lightserver_uri().unwrap());
-    let server_height_at_send =
-        BlockHeight::from(indexer.get_latest_block().await.unwrap().height as u32);
-    let last_known_chain_height = sender
-        .wallet()
-        .read()
+    let mut indexer = timed(
+        "follow_proposal::grpc_indexer_connect",
+        zingo_netutils::GrpcIndexer::new(environment.lightserver_uri().unwrap()),
+    )
+    .await
+    .unwrap();
+    let server_height_at_send = BlockHeight::from(
+        timed(
+            "follow_proposal::get_latest_block",
+            indexer.get_latest_block(DEFAULT_REQUEST_TIMEOUT),
+        )
         .await
-        .sync_state
-        .last_known_chain_height()
-        .unwrap();
+        .unwrap()
+        .height as u32,
+    );
+    let last_known_chain_height = timed("follow_proposal::read_wallet_height", async {
+        sender
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .last_known_chain_height()
+            .unwrap()
+    })
+    .await;
     timestamped_test_log(format!("wallet height at send {last_known_chain_height}").as_str());
 
     // check that each record has the expected fee and status, returning the fee
     let (sender_recorded_fees, (sender_recorded_outputs, sender_recorded_statuses)): (
         Vec<Zatoshis>,
         (Vec<Zatoshis>, Vec<ConfirmationStatus>),
-    ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
-        (
-            compare_fee(wallet, transaction, step),
+    ) = timed(
+        "follow_proposal::check_recorded_records",
+        for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
             (
-                Zatoshis::from_u64(transaction.total_value_received()),
-                transaction.status(),
-            ),
-        )
-    })
+                compare_fee(wallet, transaction, step),
+                (
+                    Zatoshis::from_u64(transaction.total_value_received()),
+                    transaction.status(),
+                ),
+            )
+        }),
+    )
     .await
     .into_iter()
     .map(|stepwise_result| {
@@ -174,12 +242,38 @@ where
     let option_recipient_mempool_outputs = if test_mempool {
         timestamped_test_log("syncking transaction from mempool.");
         // mempool scan shows the same
-        sender.sync_and_await().await.unwrap();
+        timed(
+            "follow_proposal::mempool_sender_sync",
+            sender.sync_and_await(),
+        )
+        .await
+        .unwrap();
         timestamped_test_log("cross-checking mempool records.");
 
-        // let the mempool monitor get a chance
-        // to listen
-        tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+        // Wait for the mempool monitor to observe every transaction, polling
+        // for the exact condition the assertions below check instead of
+        // sleeping a fixed interval. The 6-second ceiling matches the old
+        // fixed sleep, so the worst case is unchanged while the typical
+        // wait drops to the monitor's actual latency.
+        let poll_start = std::time::Instant::now();
+        loop {
+            let all_observed = {
+                let wallet = sender.wallet();
+                let wallet = wallet.read().await;
+                txids.iter().all(|txid| {
+                    wallet
+                        .wallet_transactions
+                        .get(txid)
+                        .is_some_and(|transaction| {
+                            matches!(transaction.status(), ConfirmationStatus::Mempool(_))
+                        })
+                })
+            };
+            if all_observed || poll_start.elapsed() > std::time::Duration::from_secs(6) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
 
         // check that each record has the expected fee and status, returning the fee and outputs
         let (sender_mempool_fees, (sender_mempool_outputs, sender_mempool_statuses)): (
@@ -216,8 +310,13 @@ where
         }
 
         let mut recipients_mempool_outputs: Vec<Vec<Zatoshis>> = vec![];
-        for recipient in &mut recipients {
-            recipient.sync_and_await().await.unwrap();
+        for (recipient_index, recipient) in recipients.iter_mut().enumerate() {
+            timed(
+                format!("follow_proposal::mempool_recipient[{recipient_index}]_sync").as_str(),
+                recipient.sync_and_await(),
+            )
+            .await
+            .unwrap();
 
             // check that each record has the status, returning the output value
             let (recipient_mempool_outputs, recipient_mempool_statuses): (
@@ -255,10 +354,18 @@ where
 
     let mut attempts = 0;
     loop {
-        environment.increase_chain_height().await;
+        timed(
+            format!("follow_proposal::confirm[{attempts}]::increase_chain_height").as_str(),
+            environment.increase_chain_height(),
+        )
+        .await;
         timestamped_test_log("syncking transaction confirmation.");
         // chain scan shows the same
-        sender.sync_and_await().await.unwrap();
+        timed(
+            format!("follow_proposal::confirm[{attempts}]::sender_sync_to_tip").as_str(),
+            environment.sync_client_to_tip(sender),
+        )
+        .await;
         let last_known_chain_height = sender
             .wallet()
             .read()
@@ -273,15 +380,18 @@ where
         let (sender_confirmed_fees, (sender_confirmed_outputs, sender_confirmed_statuses)): (
             Vec<Zatoshis>,
             (Vec<Zatoshis>, Vec<ConfirmationStatus>),
-        ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
-            (
-                compare_fee(wallet, transaction, step),
+        ) = timed(
+            format!("follow_proposal::confirm[{attempts}]::check_confirmed_records").as_str(),
+            for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
                 (
-                    Zatoshis::from_u64(transaction.total_value_received()),
-                    transaction.status(),
-                ),
-            )
-        })
+                    compare_fee(wallet, transaction, step),
+                    (
+                        Zatoshis::from_u64(transaction.total_value_received()),
+                        transaction.status(),
+                    ),
+                )
+            }),
+        )
         .await
         .into_iter()
         .map(|stepwise_result| {
@@ -305,7 +415,15 @@ where
                     panic!("status regression to Calculated")
                 }
                 ConfirmationStatus::Transmitted(_block_height) => {
-                    panic!("status regression to Transmitted")
+                    // Not a regression: status updates are monotonic, so this
+                    // means the wallet has not yet observed the transaction in
+                    // the mempool or a block. With instant regtest mining a tx
+                    // is often mined before the mempool monitor sees it, and
+                    // the confirming block may not be scanned yet (the Indexer
+                    // lags the Validator by up to ~500ms after
+                    // generate_blocks). Keep polling; the patience bound turns
+                    // a persistent Transmitted into a failure.
+                    any_transaction_not_yet_confirmed = true;
                 }
                 ConfirmationStatus::Mempool(_block_height) => {
                     any_transaction_not_yet_confirmed = true;
@@ -327,8 +445,13 @@ where
     }
 
     let mut recipients_confirmed_outputs = vec![];
-    for recipient in &mut recipients {
-        recipient.sync_and_await().await.unwrap();
+    for (recipient_index, recipient) in recipients.iter_mut().enumerate() {
+        timed(
+            format!("follow_proposal::confirmed_recipient[{recipient_index}]_sync").as_str(),
+            recipient.sync_and_await(),
+        )
+        .await
+        .unwrap();
 
         // check that each record has the status, returning the output value
         let (recipient_confirmed_outputs, recipient_confirmed_statuses): (
