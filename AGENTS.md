@@ -117,6 +117,19 @@ Goal: produce prose and code that reads as if written by a specific, competent h
 - Don't add guards for conditions that can't occur. Don't wrap non-throwing code in try/catch. Don't swallow-and-log errors; let them propagate.
 - Match the surrounding codebase's idioms and conventions over textbook-uniform formatting.
 
+### Documentation in code
+
+A doc-comment holds only a succinct bulleted list of the item's side effects.
+The rule covers every doc-comment form: Rust `///` and `//!`, and file- or
+module-level blocks.
+
+- Each bullet names one side effect: a write to disk, a network call, a lock
+  taken, a mutation of shared state, a spawned task, a panic.
+- A doc-comment holds no summary sentence, no parameter or return
+  description, and no restatement of the signature.
+- A doc-comment references no ADR, issue, or other document.
+- An item with no side effect carries no doc-comment.
+
 ### Rust
 
 - Don't reach for `.clone()` to satisfy the borrow checker. Borrow or restructure first.
