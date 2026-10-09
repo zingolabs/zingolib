@@ -39,7 +39,7 @@ const CHECKOUTS_DIR: &str = "target/binding-manifest";
 const TREE_ARGS: [&str; 8] = [
     "tree", "--locked", "--edges", "normal", "--depth", "1", "--prefix", "none",
 ];
-const TREE_FORMAT: [&str; 2] = ["--format", "{p}"];
+const TREE_FORMAT: [&str; 2] = ["--format", crate::PACKAGE_ID_FORMAT];
 const ARRAY_OPEN: char = '[';
 const ARRAY_CLOSE: char = ']';
 const ITEM_SEPARATOR: char = ',';
@@ -91,9 +91,7 @@ impl AuditedCrate {
     }
 
     pub fn from_tree_line(line: &str, root: &Path) -> Option<Self> {
-        let (head, rest) = line.split_once(DIR_OPEN)?;
-        let dir = Path::new(rest.strip_suffix(DIR_CLOSE)?);
-        let name = head.split_whitespace().next()?;
+        let (name, dir) = crate::package_location(line)?;
         dir.strip_prefix(root).ok().map(|relative| Self {
             name: name.to_string(),
             dir: relative.to_path_buf(),

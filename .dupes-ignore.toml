@@ -383,10 +383,6 @@ fingerprint = "8866f7dd0b2bcb39"
 reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/scan/transactions.rs:55"
 
 [[ignore]]
-fingerprint = "8898e80ddd94716d"
-reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/feature-census.rs:400"
-
-[[ignore]]
 fingerprint = "8a840004aff68030"
 reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/keys.rs:117"
 

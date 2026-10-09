@@ -4,7 +4,10 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use workbench::{git, read, repo_root, run, MANIFEST};
+use workbench::{
+    display_relative, merge_base, read, repo_root, run, touched_manifests, workspace_manifests,
+    workspace_members, DEFAULT_BASE, MANIFEST,
+};
 
 /// The blessed entries, one per line, relative to the repository root.
 const BLESSING_PATH: &str = "tools/workbench/feature-census-blessed.txt";
@@ -17,12 +20,6 @@ const KEY_SEPARATOR: &str = "::";
 
 /// The build directory the census keeps apart from an ordinary check.
 const CENSUS_TARGET_DIR: &str = "target/census";
-
-/// The branch a census compares against when the caller names no base.
-const DEFAULT_BASE: &str = "origin/dev";
-
-/// The fallback base for a checkout whose remote branch is absent.
-const FALLBACK_BASE: &str = "dev";
 
 /// The key a dependency's feature list is spelled under.
 const FEATURES_KEY: &str = "features = [";
@@ -96,7 +93,7 @@ fn census(args: &[String]) -> Result<(), Vec<String>> {
     let root = repo_root()?;
     let request = parse(args)?;
     let manifests = match scope(&root, &request)? {
-        Scope::Everything => every_manifest(&root),
+        Scope::Everything => every_manifest(&root)?,
         Scope::Touched(paths) => paths,
     };
 
@@ -186,44 +183,21 @@ fn scope(root: &Path, request: &Request) -> Result<Scope, Vec<String>> {
         }
         return Ok(Scope::Touched(manifests));
     }
-    Ok(Scope::Touched(touched_manifests(root, &request.base)?))
+    Ok(Scope::Touched(touched_manifests(
+        root,
+        &merge_base(root, &request.base)?,
+    )?))
 }
 
-/// Every manifest the census knows how to probe, root first.
-fn every_manifest(root: &Path) -> Vec<PathBuf> {
-    let mut manifests = vec![root.join(MANIFEST)];
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return manifests;
-    };
-    let mut members: Vec<PathBuf> = entries
-        .flatten()
-        .map(|entry| entry.path().join(MANIFEST))
-        .filter(|manifest| manifest.is_file())
-        .collect();
-    members.sort();
-    manifests.extend(members);
-    manifests
-}
-
-/// The manifests of the crates this branch touches, against `base`.
-fn touched_manifests(root: &Path, base: &str) -> Result<Vec<PathBuf>, Vec<String>> {
-    let reference = if git(&["rev-parse", "--verify", "--quiet", base]).is_ok() {
-        base.to_string()
-    } else {
-        FALLBACK_BASE.to_string()
-    };
-    let changed = git(&["diff", "--name-only", &format!("{reference}...HEAD")])?;
-    let mut manifests: Vec<PathBuf> = Vec::new();
-    for line in changed.lines() {
-        let owner = match line.split_once('/') {
-            Some((directory, _)) => root.join(directory).join(MANIFEST),
-            None => root.join(MANIFEST),
-        };
-        if owner.is_file() && !manifests.contains(&owner) {
-            manifests.push(owner);
-        }
+/// - Runs `git ls-files` and `cargo tree` through the library, once per workspace.
+fn every_manifest(root: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
+    let mut manifests = Vec::new();
+    for workspace in workspace_manifests(root)? {
+        manifests.extend(workspace_members(&workspace)?);
+        manifests.push(workspace);
     }
     manifests.sort();
+    manifests.dedup();
     Ok(manifests)
 }
 
@@ -396,14 +370,6 @@ fn crate_name(root: &Path, manifest: &Path) -> String {
     }
 }
 
-/// A path as the repository sees it.
-fn display_relative(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .to_string()
-}
-
 /// The blessed keys and the reasons they carry.
 fn blessings(root: &Path) -> Result<BTreeMap<String, String>, Vec<String>> {
     let path = root.join(BLESSING_PATH);
@@ -480,6 +446,19 @@ fn bless(root: &Path, unneeded: &[Candidate]) -> Result<(), Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_manifest_reaches_the_nested_workspace_members() {
+        let root = repo_root().unwrap();
+        let manifests = every_manifest(&root).unwrap();
+        for member in ["zingo-ffi/lib", "zingo-ffi/uniffi-bindgen", "zingo-cli"] {
+            assert!(
+                manifests.contains(&root.join(member).join(MANIFEST)),
+                "{member} is a workspace member the census must probe"
+            );
+        }
+        assert!(manifests.contains(&root.join(MANIFEST)));
+    }
 
     /// A manifest's inline dependency tables yield one candidate per feature,
     /// each named by the dependency whose table encloses it.
