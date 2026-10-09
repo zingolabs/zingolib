@@ -2581,34 +2581,31 @@ fn discover_into<N, Address>(
     );
 }
 
-macro_rules! resolve_shielded {
-    (
-        $name:ident: $note:ty => $address:ty,
-        $pool:ident . $ivk:ident ( $($ivk_arg:expr),* ) . $diversifier:ident
-    ) => {
-        fn $name(
-            ufvk: &UnifiedFullViewingKey,
-            note: &$note,
-        ) -> Option<($address, zip32::DiversifierIndex)> {
-            let address = note.recipient();
-            let index = ufvk
-                .$pool()
-                .expect("fvk must exist to decrypt this note")
-                .$ivk($($ivk_arg),*)
-                .$diversifier(&address)?;
-            Some((address, index))
-        }
-    };
+fn resolve_orchard(
+    ufvk: &UnifiedFullViewingKey,
+    note: &orchard::Note,
+) -> Option<(orchard::Address, zip32::DiversifierIndex)> {
+    let address = note.recipient();
+    let index = ufvk
+        .orchard()
+        .expect("fvk must exist to decrypt this note")
+        .to_ivk(zip32::Scope::External)
+        .diversifier_index(&address)?;
+    Some((address, index))
 }
 
-resolve_shielded!(
-    resolve_orchard: orchard::Note => orchard::Address,
-    orchard.to_ivk(zip32::Scope::External).diversifier_index
-);
-resolve_shielded!(
-    resolve_sapling: sapling_crypto::Note => sapling_crypto::PaymentAddress,
-    sapling.to_external_ivk().decrypt_diversifier
-);
+fn resolve_sapling(
+    ufvk: &UnifiedFullViewingKey,
+    note: &sapling_crypto::Note,
+) -> Option<(sapling_crypto::PaymentAddress, zip32::DiversifierIndex)> {
+    let address = note.recipient();
+    let index = ufvk
+        .sapling()
+        .expect("fvk must exist to decrypt this note")
+        .to_external_ivk()
+        .decrypt_diversifier(&address)?;
+    Some((address, index))
+}
 
 /// - Adds each discovered orchard address to the wallet's unified address list.
 /// - Adds each discovered sapling address to the wallet's unified address list.
