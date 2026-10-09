@@ -23,10 +23,6 @@ on:
         required: false
         type: string
         default: ${{ github.sha }}
-    outputs:
-      # The artifact that holds the AAR and the descriptor.
-      bundle:
-        value: ${{ jobs.package.outputs.bundle }}
 
 jobs:
   # The job already runs in android_builder:018, the image that the builder
@@ -45,6 +41,7 @@ jobs:
       image: zingodevops/android_builder:018
     env:
       ABI: ${{ matrix.abi }}
+      REF: ${{ inputs.ref }}
       RUSTUP_HOME: ${{ github.workspace }}/.rustup
       CARGO_HOME: ${{ github.workspace }}/.cargo
     steps:
@@ -93,10 +90,14 @@ jobs:
             android --in-image --abi "$ABI" \
             --out bindings/android/build/binding-layer
 
+      # The builder is the one source of every artifact name.
+      - name: Name the artifact
+        run: echo "ARTIFACT=$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact abi --abi "$ABI" --commit "$REF")" >> "$GITHUB_ENV"
+
       - name: Upload the Binding Layer
         uses: actions/upload-artifact@v4
         with:
-          name: binding-layer-android-${{ matrix.abi }}-${{ inputs.ref }}
+          name: ${{ env.ARTIFACT }}
           path: bindings/android/build/binding-layer
           retention-days: 3
           overwrite: true
@@ -106,10 +107,8 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    outputs:
-      bundle: ${{ env.BUNDLE }}
     env:
-      BUNDLE: binding-layer-aar-${{ inputs.ref }}
+      REF: ${{ inputs.ref }}
       ABIS: ${{ join(fromJSON(inputs.abis), ' ') }}
       OUTPUT: bindings/android/build/binding-layer
     steps:
@@ -118,11 +117,27 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/workbench
+
+      # The builder is the one source of every artifact name: the pattern
+      # of the ABI artifacts this job gathers, and the bundle it uploads.
+      - name: Name the artifacts
+        run: |
+          set -eu
+          echo "ABI_ARTIFACTS=$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact abi --abi '*' --commit "$REF")" >> "$GITHUB_ENV"
+          echo "BUNDLE=$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact bundle --platform android --commit "$REF")" >> "$GITHUB_ENV"
+
       # The ABIs share one output directory.
       - name: Download the Binding Layer
         uses: actions/download-artifact@v4
         with:
-          pattern: binding-layer-android-*-${{ inputs.ref }}
+          pattern: ${{ env.ABI_ARTIFACTS }}
           path: bindings/android/build/binding-layer
           merge-multiple: true
 

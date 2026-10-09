@@ -155,6 +155,26 @@ pub const ANDROID_ABIS: [AndroidAbi; 4] = [
     },
 ];
 
+pub const ARTIFACT_PREFIX: &str = "binding-layer";
+pub const BUNDLE_ARTIFACT: &str = "bundle";
+pub const ABI_ARTIFACT: &str = "abi";
+pub const ARTIFACT_KINDS: [&str; 2] = [BUNDLE_ARTIFACT, ABI_ARTIFACT];
+pub const ARTIFACT_WILDCARD: &str = "*";
+const ARTIFACT_SEPARATOR: &str = "-";
+
+pub fn artifact_name(kind: &str, segment: &str, commit: &str) -> String {
+    [ARTIFACT_PREFIX, kind, segment, commit].join(ARTIFACT_SEPARATOR)
+}
+
+pub fn artifact_segment<'a>(name: &'a str, kind: &str, commit: &str) -> Option<&'a str> {
+    let head = [ARTIFACT_PREFIX, kind, ""].join(ARTIFACT_SEPARATOR);
+    let tail = ["", commit].join(ARTIFACT_SEPARATOR);
+    let segment = name
+        .strip_prefix(head.as_str())?
+        .strip_suffix(tail.as_str())?;
+    (!segment.is_empty()).then_some(segment)
+}
+
 /// The first container engine that answers `--version`.
 pub fn container_engine() -> Result<&'static str, Vec<String>> {
     ENGINES
@@ -373,6 +393,36 @@ mod tests {
     #[test]
     fn binding_sets_cover_every_generation_in_every_language() {
         assert_eq!(binding_sets().count(), GENERATIONS.len() * LANGUAGES.len());
+    }
+
+    #[test]
+    fn an_artifact_name_round_trips_and_a_wildcard_segment_is_a_pattern() {
+        let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let bundle = artifact_name(BUNDLE_ARTIFACT, "android", commit);
+        assert_eq!(bundle, format!("binding-layer-bundle-android-{commit}"));
+        assert_eq!(
+            artifact_segment(&bundle, BUNDLE_ARTIFACT, commit),
+            Some("android")
+        );
+        let abi = artifact_name(ABI_ARTIFACT, "arm64-v8a", commit);
+        assert_eq!(
+            artifact_segment(&abi, ABI_ARTIFACT, commit),
+            Some("arm64-v8a")
+        );
+        assert_eq!(artifact_segment(&abi, BUNDLE_ARTIFACT, commit), None);
+        assert_eq!(artifact_segment(&bundle, BUNDLE_ARTIFACT, "bbbb"), None);
+        assert_eq!(
+            artifact_segment(
+                &artifact_name(BUNDLE_ARTIFACT, "", commit),
+                BUNDLE_ARTIFACT,
+                commit
+            ),
+            None
+        );
+        assert_eq!(
+            artifact_name(BUNDLE_ARTIFACT, ARTIFACT_WILDCARD, commit),
+            format!("binding-layer-bundle-*-{commit}")
+        );
     }
 
     #[test]

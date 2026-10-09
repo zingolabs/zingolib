@@ -25,7 +25,7 @@ const COMMIT_MESSAGE_PREFIX: &str = "chore(bindings): record the publication of 
 const COMMIT_FLAG: &str = "--commit";
 const BUNDLES_FLAG: &str = "--bundles";
 const USAGE: &str = "usage: binding-publish --commit <commit> \
-    --bundles <directory holding one subdirectory per built platform>";
+    --bundles <directory holding each downloaded bundle artifact of the commit>";
 
 pub struct Credentials {
     pub username: String,
@@ -73,11 +73,26 @@ pub fn layer_annotations(file_name: &str) -> Vec<(String, String)> {
     )]
 }
 
-pub fn built_platforms(bundles: &Path) -> Vec<&'static str> {
-    binding_manifest::PLATFORMS
-        .into_iter()
-        .filter(|platform| bundles.join(platform).is_dir())
-        .collect()
+pub fn built_platforms(bundles: &Path, commit: &str) -> Vec<(&'static str, PathBuf)> {
+    let Ok(entries) = std::fs::read_dir(bundles) else {
+        return Vec::new();
+    };
+    let mut built: Vec<(&'static str, PathBuf)> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .filter_map(|path| {
+            let name = path.file_name()?.to_str()?;
+            let segment =
+                binding_layer::artifact_segment(name, binding_layer::BUNDLE_ARTIFACT, commit)?;
+            let platform = binding_manifest::PLATFORMS
+                .into_iter()
+                .find(|platform| *platform == segment)?;
+            Some((platform, path.clone()))
+        })
+        .collect();
+    built.sort_by_key(|(platform, _)| *platform);
+    built
 }
 
 pub fn missing_required(built: &[&str]) -> Vec<&'static str> {
@@ -270,8 +285,9 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
             binding_manifest::FILE
         )]);
     }
-    let built = built_platforms(bundles);
-    let missing = missing_required(&built);
+    let built = built_platforms(bundles, &commit);
+    let names: Vec<&str> = built.iter().map(|(platform, _)| *platform).collect();
+    let missing = missing_required(&names);
     if !missing.is_empty() {
         return Err(vec![format!(
             "{} requires {} and {} holds no bundle for it, so that build did not succeed",
@@ -284,8 +300,8 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let file = root.join(binding_manifest::FILE);
     let crates = binding_manifest::with_checkout(root, &commit, binding_manifest::audited_at)?;
     let mut text = binding_manifest::recorded_audited(&crate::read(&file)?, &commit, &crates)?;
-    for platform in built {
-        let bundle = bundle_of(root, platform, &bundles.join(platform), &commit)?;
+    for (platform, dir) in built {
+        let bundle = bundle_of(root, platform, &dir, &commit)?;
         let digest = push(platform, &commit, &bundle, &credentials)?;
         text = binding_manifest::recorded(&text, &commit, platform, &digest)?;
     }
@@ -354,9 +370,33 @@ mod tests {
     }
 
     #[test]
-    fn the_built_platforms_are_the_subdirectories_named_after_a_platform() {
-        let root = crate::repo_root().unwrap();
-        assert_eq!(built_platforms(&root), Vec::<&str>::new());
+    fn the_built_platforms_are_the_bundle_artifacts_of_the_commit_and_nothing_else() {
+        let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let bundles =
+            std::env::temp_dir().join(format!("workbench-built-platforms-{}", std::process::id()));
+        crate::fresh_dir(&bundles).unwrap();
+        let android =
+            binding_layer::artifact_name(binding_layer::BUNDLE_ARTIFACT, "android", commit);
+        let ios = binding_layer::artifact_name(binding_layer::BUNDLE_ARTIFACT, "ios", commit);
+        for name in [
+            ios.as_str(),
+            android.as_str(),
+            &binding_layer::artifact_name(binding_layer::ABI_ARTIFACT, "x86_64", commit),
+            &binding_layer::artifact_name(binding_layer::BUNDLE_ARTIFACT, "linux", commit),
+            &binding_layer::artifact_name(binding_layer::BUNDLE_ARTIFACT, "android", "bbbb"),
+            "stray",
+        ] {
+            std::fs::create_dir(bundles.join(name)).unwrap();
+        }
+        assert_eq!(
+            built_platforms(&bundles, commit),
+            [
+                (binding_manifest::ANDROID, bundles.join(&android)),
+                (binding_manifest::IOS, bundles.join(&ios)),
+            ]
+        );
+        assert_eq!(built_platforms(&bundles.join("absent"), commit), Vec::new());
+        std::fs::remove_dir_all(&bundles).unwrap();
     }
 
     #[test]
