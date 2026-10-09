@@ -43,6 +43,16 @@ const BUILD_SCRIPT_MESSAGE: &str = "\"reason\":\"build-script-executed\"";
 const PACKAGE_ID_KEY: &str = "\"package_id\":\"";
 const ZINGOLIB_PACKAGE_ID_TAIL: &str = "/zingolib#";
 const JSON_STRING_END: char = '"';
+const JSON_ESCAPE: char = '\\';
+
+pub const NDK_ENV_COMMAND: [&str; 2] = ["cargo", "ndk-env"];
+const NDK_ENV_TARGET_FLAG: &str = "--target";
+const NDK_ENV_JSON_FLAG: &str = "--json";
+pub const NDK_CLANG_PATH_VARIABLE: &str = "CLANG_PATH";
+pub const NDK_LINK_CLANG_VARIABLE: &str = "_CARGO_NDK_LINK_CLANG";
+pub const NDK_LINK_TARGET_VARIABLE: &str = "_CARGO_NDK_LINK_TARGET";
+const CLANG_TARGET_FLAG: &str = "--target=";
+const CLANG_SUFFIX: &str = "-clang";
 
 /// The container engines to try, in order.
 pub const ENGINES: [&str; 2] = ["podman", "docker"];
@@ -113,10 +123,26 @@ pub struct AndroidAbi {
     pub std_feature: &'static str,
 }
 
+pub struct NdkLink {
+    pub env_command: Vec<String>,
+    pub link_target: String,
+}
+
 impl AndroidAbi {
+    pub fn clang_target(&self) -> String {
+        format!("{}{ANDROID_API_LEVEL}", self.clang_prefix)
+    }
+
     /// The NDK clang wrapper for this ABI at the builder's API level.
     pub fn cc(&self) -> String {
-        format!("{}{ANDROID_API_LEVEL}-clang", self.clang_prefix)
+        format!("{}{CLANG_SUFFIX}", self.clang_target())
+    }
+
+    pub fn ndk_link(&self) -> NdkLink {
+        NdkLink {
+            env_command: ndk_env_command(self.triple),
+            link_target: format!("{CLANG_TARGET_FLAG}{}", self.clang_target()),
+        }
     }
 
     /// The environment that the builder sets while it builds this ABI.
@@ -197,6 +223,76 @@ pub fn descriptor_in_messages(messages: &str) -> Option<String> {
         .find_map(|line| json_string_after(line, &env_key))
         .filter(|descriptor| !descriptor.is_empty())
         .map(str::to_string)
+}
+
+pub fn ndk_env_command(triple: &str) -> Vec<String> {
+    [
+        NDK_ENV_COMMAND.as_slice(),
+        &[NDK_ENV_TARGET_FLAG, triple, NDK_ENV_JSON_FLAG],
+    ]
+    .concat()
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
+fn json_string_prefix(text: &str) -> Option<(String, &str)> {
+    let body = text.strip_prefix(JSON_QUOTE)?;
+    let mut chars = body.char_indices();
+    let mut value = String::new();
+    while let Some((at, ch)) = chars.next() {
+        match ch {
+            JSON_STRING_END => return Some((value, &body[at + JSON_STRING_END.len_utf8()..])),
+            JSON_ESCAPE => value.push(match chars.next()?.1 {
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                'u' => return None,
+                other => other,
+            }),
+            other => value.push(other),
+        }
+    }
+    None
+}
+
+pub fn env_in_json(text: &str) -> Result<Vec<(String, String)>, String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !matches!(*line, "" | "{" | "}"))
+        .map(|line| {
+            let pair = line.strip_suffix(JSON_SEPARATOR).unwrap_or(line);
+            let parsed = json_string_prefix(pair).and_then(|(key, rest)| {
+                let rest = rest.trim_start().strip_prefix(JSON_PAIR)?.trim_start();
+                let (value, rest) = json_string_prefix(rest)?;
+                rest.is_empty().then_some((key, value))
+            });
+            parsed.ok_or_else(|| format!("not a JSON string pair: {line}"))
+        })
+        .collect()
+}
+
+pub fn ndk_link_env(
+    exported: Vec<(String, String)>,
+    link_target: &str,
+) -> Result<Vec<(String, String)>, String> {
+    let clang = exported
+        .iter()
+        .find(|(key, _)| key == NDK_CLANG_PATH_VARIABLE)
+        .map(|(_, value)| value.clone())
+        .ok_or_else(|| {
+            format!(
+                "`{}` exported no {NDK_CLANG_PATH_VARIABLE}",
+                NDK_ENV_COMMAND.join(" ")
+            )
+        })?;
+    let mut env = exported;
+    env.push((NDK_LINK_CLANG_VARIABLE.to_string(), clang));
+    env.push((
+        NDK_LINK_TARGET_VARIABLE.to_string(),
+        link_target.to_string(),
+    ));
+    Ok(env)
 }
 
 pub fn artifact_name(kind: &str, segment: &str, commit: &str) -> String {
@@ -463,6 +559,88 @@ mod tests {
             descriptor_in_messages("{\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x/zingolib#6.0.0\",\"env\":[]}\n"),
             None
         );
+    }
+
+    #[test]
+    fn the_ndk_env_command_asks_cargo_ndk_for_one_targets_environment_as_json() {
+        assert_eq!(
+            ndk_env_command("x86_64-linux-android"),
+            [
+                "cargo",
+                "ndk-env",
+                "--target",
+                "x86_64-linux-android",
+                "--json"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_exported_environment_is_read_from_cargo_ndks_pretty_json() {
+        let json = "{\n  \"AR_x86_64-linux-android\": \"/ndk/llvm-ar\",\n  \
+            \"CFLAGS_x86_64-linux-android\": \"--target=x86_64-linux-android26 -O2\",\n  \
+            \"QUOTED\": \"a \\\"b\\\" c\\\\d\"\n}\n";
+        assert_eq!(
+            env_in_json(json),
+            Ok(vec![
+                ("AR_x86_64-linux-android".into(), "/ndk/llvm-ar".into()),
+                (
+                    "CFLAGS_x86_64-linux-android".into(),
+                    "--target=x86_64-linux-android26 -O2".into()
+                ),
+                ("QUOTED".into(), "a \"b\" c\\d".into()),
+            ])
+        );
+        assert_eq!(env_in_json("{\n}\n"), Ok(vec![]));
+        assert!(env_in_json("{\n  \"KEY\": 1\n}\n").is_err());
+        assert!(env_in_json("{\n  \"KEY\": \"unterminated\n}\n").is_err());
+    }
+
+    #[test]
+    fn the_link_env_adds_cargo_ndks_linker_wrapper_variables_from_its_clang_path() {
+        let exported = vec![
+            (
+                "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER".to_string(),
+                "/bin/cargo-ndk".to_string(),
+            ),
+            (
+                NDK_CLANG_PATH_VARIABLE.to_string(),
+                "/ndk/clang".to_string(),
+            ),
+        ];
+        let link = ANDROID_ABIS[3].ndk_link();
+        assert_eq!(
+            link.link_target,
+            format!("--target=x86_64-linux-android{ANDROID_API_LEVEL}")
+        );
+        let env = ndk_link_env(exported.clone(), &link.link_target).unwrap();
+        assert_eq!(&env[..2], &exported[..]);
+        assert_eq!(
+            &env[2..],
+            &[
+                (
+                    NDK_LINK_CLANG_VARIABLE.to_string(),
+                    "/ndk/clang".to_string()
+                ),
+                (
+                    NDK_LINK_TARGET_VARIABLE.to_string(),
+                    link.link_target.clone()
+                ),
+            ]
+        );
+        assert!(ndk_link_env(vec![], &link.link_target).is_err());
+    }
+
+    #[test]
+    fn every_abi_links_through_the_clang_target_its_cc_wrapper_names() {
+        for abi in &ANDROID_ABIS {
+            assert_eq!(abi.cc(), format!("{}-clang", abi.clang_target()));
+            assert_eq!(
+                abi.ndk_link().link_target,
+                format!("--target={}", abi.clang_target())
+            );
+            assert_eq!(abi.ndk_link().env_command, ndk_env_command(abi.triple));
+        }
     }
 
     #[test]

@@ -142,6 +142,7 @@ pub(crate) mod consealed {
                     NetworkUpgrade::Nu6_1 => activation_heights.nu6_1().map(BlockHeight::from_u32),
                     NetworkUpgrade::Nu6_2 => activation_heights.nu6_2().map(BlockHeight::from_u32),
                     NetworkUpgrade::Nu6_3 => activation_heights.nu6_3().map(BlockHeight::from_u32),
+                    NetworkUpgrade::Nu7 => activation_heights.nu7().map(BlockHeight::from_u32),
                 },
             }
         }

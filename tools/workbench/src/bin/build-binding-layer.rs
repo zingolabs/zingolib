@@ -145,6 +145,7 @@ enum Step {
     Describe {
         workdir: String,
         env: Vec<(String, String)>,
+        ndk: Option<binding_layer::NdkLink>,
         command: Vec<String>,
         to: path::PathBuf,
     },
@@ -497,16 +498,18 @@ fn cargo_command(words: &[&str], profile: binding_layer::Profile, package: &[&st
 fn describe_step(
     workdir: &str,
     env: &[(String, String)],
-    words: &[&str],
+    ndk: Option<binding_layer::NdkLink>,
+    target: &str,
     profile: binding_layer::Profile,
     package: &[&str],
     to: path::PathBuf,
 ) -> Step {
-    let mut command = cargo_command(words, profile, package);
+    let mut command = cargo_command(&["build", "--target", target], profile, package);
     command.push(binding_layer::MESSAGE_FORMAT_FLAG.to_string());
     Step::Describe {
         workdir: workdir.to_string(),
         env: env.to_vec(),
+        ndk,
         command,
         to,
     }
@@ -547,11 +550,13 @@ fn with_base_env(plan: Vec<Step>, base: &[(String, String)]) -> Vec<Step> {
             Step::Describe {
                 workdir,
                 env,
+                ndk,
                 command,
                 to,
             } => Step::Describe {
                 workdir,
                 env: [base.to_vec(), env].concat(),
+                ndk,
                 command,
                 to,
             },
@@ -680,7 +685,8 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
         describe_step(
             &wallet_crate_dir,
             &abi.env(&wallet_target),
-            &["ndk", "--target", abi.triple, "build"],
+            Some(abi.ndk_link()),
+            abi.triple,
             BUILDER_PROFILE,
             &[],
             roots.out_host_path(binding_layer::DESCRIPTOR_FILE),
@@ -951,7 +957,8 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
         vec![describe_step(
             &wallet_crate_dir,
             &with_target(&wallet_target),
-            &["build", "--target", IOS_DEVICE_TARGET],
+            None,
+            IOS_DEVICE_TARGET,
             BUILDER_PROFILE,
             &[],
             host(binding_layer::DESCRIPTOR_FILE),
@@ -1017,10 +1024,21 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
         Step::Describe {
             workdir,
             env,
+            ndk,
             command,
             to,
         } => {
-            let messages = capture_command(runner, workdir, env, command)?;
+            let env = match ndk {
+                Some(link) => {
+                    let exported = capture_command(runner, workdir, env, &link.env_command)?;
+                    let exported = binding_layer::env_in_json(&exported).map_err(|e| vec![e])?;
+                    let link_env = binding_layer::ndk_link_env(exported, &link.link_target)
+                        .map_err(|e| vec![e])?;
+                    [env.clone(), link_env].concat()
+                }
+                None => env.clone(),
+            };
+            let messages = capture_command(runner, workdir, &env, command)?;
             let descriptor = binding_layer::descriptor_in_messages(&messages).ok_or_else(|| {
                 vec![format!(
                     "`{}` reported no {} for zingolib",
@@ -1306,23 +1324,38 @@ mod tests {
                 .filter_map(|step| match step {
                     Step::Describe {
                         workdir,
+                        ndk,
                         command,
                         to,
                         ..
-                    } => Some((workdir, command, to)),
+                    } => Some((workdir, ndk, command, to)),
                     _ => None,
                 })
                 .collect();
-            let [(workdir, command, to)] = describes[..] else {
+            let [(workdir, ndk, command, to)] = describes[..] else {
                 panic!("one describe step per plan, found {}", describes.len());
             };
             assert!(workdir.ends_with(binding_layer::WALLET_CRATE_DIR));
-            assert_eq!(command.first().map(String::as_str), Some("cargo"));
+            assert_eq!(
+                &command[..3],
+                ["cargo", "build", "--target"].map(String::from)
+            );
+            assert!(command.iter().all(|word| word != "ndk"));
             assert_eq!(
                 command.last().map(String::as_str),
                 Some(binding_layer::MESSAGE_FORMAT_FLAG)
             );
             assert!(to.ends_with(binding_layer::DESCRIPTOR_FILE));
+            match ndk {
+                Some(link) => {
+                    assert_eq!(command[3], abis[FIRST_POSITION].triple);
+                    assert_eq!(
+                        link.env_command,
+                        binding_layer::ndk_env_command(&command[3])
+                    );
+                }
+                None => assert_eq!(command[3], IOS_DEVICE_TARGET),
+            }
         }
     }
 
