@@ -1,0 +1,18 @@
+# The published commits of the Binding Layer, oldest first. A pull request
+# appends one entry; the publish workflow writes the entry's digests; the
+# check "Binding Layer manifest" passes only when the registry holds every
+# named platform's Prebuilt Bundle at the entry's digest. An entry never
+# changes after its merge. The workbench tool binding-manifest reads this
+# file, and binding-changelog takes the commits of bindings/CHANGELOG.md
+# from it.
+#
+# Every entry names android. An entry names ios when the iOS bundle is
+# published too. Before zingo-mobile adopts this publication, ios must
+# become required as well (zingolib#2833, decision 6), because zingo-mobile
+# ships both platforms from one commit.
+#
+# [[entry]]
+# commit = "<the full zingolib commit>"
+# since = "<the commit the first entry's changelog section starts after; the first entry alone>"
+# android = "sha256:<the digest of ghcr.io/zingolabs/zingolib/binding-layer-android:<commit>>"
+# ios = "sha256:<the digest of ghcr.io/zingolabs/zingolib/binding-layer-ios:<commit>>"

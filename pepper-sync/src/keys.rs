@@ -243,8 +243,9 @@ pub(crate) fn encode_orchard_receiver(
 ) -> Result<String, ParseError> {
     Ok(zcash_address::unified::Encoding::encode(
         &<zcash_address::unified::Address as zcash_address::unified::Encoding>::try_from_items(
-            vec![zcash_address::unified::Receiver::Orchard(
-                orchard_address.to_raw_address_bytes(),
+            zcash_address::unified::Revision::R0,
+            vec![zcash_address::unified::Uitem::Data(
+                zcash_address::unified::Receiver::Orchard(orchard_address.to_raw_address_bytes()),
             )],
         )?,
         &parameters.network_type(),
@@ -260,7 +261,7 @@ pub fn decode_unified_address(
     if let zcash_keys::address::Address::Unified(unified_address) =
         decode_address(consensus_parameters, encoded_address)?
     {
-        Ok(unified_address)
+        Ok(*unified_address)
     } else {
         Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,

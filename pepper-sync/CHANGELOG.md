@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- `sync::ScanRange::encloses` and `sync::ScanRange::overlaps`, the geometry of
+  a scan range against a block range, and `sync::ScanPriority::in_flight`, the
+  priority the wallet holds a selected range at while its scan task runs.
 - `wallet::SyncMode::on_completion`, the pure step a completed scan applies to
   the sync mode: `Running` becomes `Shutdown`, and every other mode is kept.
 - `wallet::SyncMode::apply` and `wallet::SyncMode::transition`, which move the
@@ -72,6 +75,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the server's chain.
 
 ### Changed
+- Scanning reads version 2 zingo memos, which carry a recipient's unified
+  address with its ZIP 316 revision and metadata, through
+  `ParsedMemo::into_unified_addresses`.
+- BREAKING: the Zcash stack moves to the librustzcash NU7 pre-release cohort:
+  `zcash_client_backend` 0.25.0-pre.1, `zcash_keys` 0.17.0-pre.1, `zcash_primitives` 0.31.0-pre.1, `zcash_proofs` 0.31.0-pre.1, `zcash_protocol` 0.11.0-pre.0, `zcash_address` 0.14.0-pre.1, `zcash_transparent` 0.11.0-pre.1, `zcash_encoding` 0.5, `zcash_note_encryption` 0.5, `zcash_script` 0.6, `orchard` 0.16, `sapling-crypto` 0.9, `incrementalmerkletree` 0.9, `shardtree` 0.8, `zip32` 0.3, `bip32` 0.6, `jubjub` 0.11, `secp256k1` 0.33, `rand` 0.10. `LocalNetwork` gains its `nu7` field, the note-size constants
+  come from `orchard::note_encryption` and `sapling_crypto::note_encryption`
+  where `zcash_note_encryption` exported them, and the `ShieldedOutput` bound
+  loses its ciphertext-size parameter.
+- A note's recipient full unified address is encoded with every receiver it
+  carries, in the wallet file and through
+  `OutputInterface::encoded_recipient_full_unified_address`. `zcash_keys`
+  0.17 made `UnifiedAddress::encode` omit the transparent receiver of a
+  shielded address, which is the sharing form and not the recorded one.
 - BREAKING: `wallet::SyncMode::from_atomic_u8` borrows the atomic as
   `&AtomicU8` in place of taking an `Arc<AtomicU8>` by value.
 - BREAKING: `client::FetchRequest::CompactBlockRange` has an added `bool`
@@ -227,17 +243,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   paused. Completion now applies `SyncMode::on_completion` in one atomic
   exchange, which sets `Shutdown` over `Running` alone, and a paused sync
   shuts down once the consumer resumes it and it completes again.
-- Scan results of a scan range that a re-org truncated or re-prioritised while
-  it was being scanned are discarded, and the part of the range the wallet
-  still holds is scanned again. When the server reported a chain height below
-  the wallet's during a sync session with a scan of the chain tip range in
-  flight, the wallet truncated the range and then panicked while processing
-  the scan results. An error returned by such a scan is discarded in the same
-  way, where it ended the sync session before.
-- A scan task with `Verify` priority is scanned as one load. When its
-  continuity check fails, re-org handling resets the scan range of the failed
-  scan, which panicked when the loader had split the range into several
-  loads.
+- Scan results of a load whose scan range a re-org truncated or re-prioritised
+  while it was being scanned, or over which a later scan task was selected, are
+  discarded, and the blocks of the load the wallet still holds for that task
+  are scanned again. The decision is per task: a load names the task it belongs
+  to, and the engine keeps the tasks in flight in selection order. When the
+  server reported a chain height below the wallet's during a sync session with
+  a scan of the chain tip range in flight, the wallet truncated the range and
+  then panicked while processing the scan results. An error returned by such a
+  scan is discarded in the same way, where it ended the sync session before.
+- Re-org handling resets the blocks of the failed `Verify` load within
+  whichever wallet range holds them, so the loader splits a `Verify` scan task
+  at a load budget like any other. Before, the reset panicked when the loader
+  had split the range, and a `Verify` task scanned as one load bypassed the
+  output and nullifier budgets.
 - A scan range whose first block does not follow the block below it is
   verified again within the sync session, whatever priority it was selected
   with. Only a scan range selected with `Verify` priority was handled before,

@@ -55,8 +55,6 @@ cannot go online.
   build.
 - **Build tools** for your platform. On Ubuntu, run
   `sudo apt install build-essential gcc libsqlite3-dev`.
-- **The protobuf compiler.** On Ubuntu, run
-  `sudo apt install protobuf-compiler`.
 - **cargo-make**, which provides the `makers` command. Run
   `cargo install cargo-make`.
 

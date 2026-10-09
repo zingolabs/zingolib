@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The crate re-exports tonic's `TimeoutExpired` beside `Status`, the marker
+  tonic leaves in a status's source chain when the client's own request
+  deadline fired, so a consumer tells a timed-out request apart from a
+  verdict the indexer returned.
 - `test_tls`, behind `testutils`: the committed localhost certificate and
   key. A `Socks5Indexer` in a `testutils` build also trusts that
   certificate, so a test can serve a Destination over TLS behind a loopback
@@ -22,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a superseded conduit permanently short of `Retired`.
 
 ### Changed
+- BREAKING: `rand` 0.10. `provider::rotation_interval` takes a `rand` 0.10
+  generator, and the exit tiers shuffle with the thread-local generator
+  where they drew `rand::rngs::OsRng`, a type `rand` 0.10 removed.
+- `lightwallet-protocol` moves to 0.4.0, the upstream rev whose committed
+  bindings carry the Ironwood proto fields. The workspace no longer enables
+  `rebuild-proto`, so a build of zingo-netutils no longer runs protoc.
 - `time::MEMPOOL_DRAIN_SETTLE` is raised from 200 ms to 750 ms, and
   `time::MEMPOOL_DRAIN_CEILING` from 1 s to 1.5 s to keep the settle window
   inside it. zaino polls the validator's mempool every 500 ms by default, so
