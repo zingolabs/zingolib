@@ -56,6 +56,9 @@ const CLANG_SUFFIX: &str = "-clang";
 
 /// The container engines to try, in order.
 pub const ENGINES: [&str; 2] = ["podman", "docker"];
+pub const ENGINE_VARIABLE: &str = "CONTAINER_RUNTIME";
+
+pub const PUBLISHED_ANDROID_IMAGE: &str = "docker.io/zingodevops/android_builder:019";
 
 /// The Android API level that the builder compiles against.
 pub const ANDROID_API_LEVEL: &str = "26";
@@ -379,8 +382,19 @@ pub fn artifact_segment<'a>(name: &'a str, kind: &str, commit: &str) -> Option<&
     (!segment.is_empty()).then_some(segment)
 }
 
-/// The first container engine that answers `--version`.
+/// The engine `CONTAINER_RUNTIME` names, else the first container engine that answers `--version`.
 pub fn container_engine() -> Result<&'static str, Vec<String>> {
+    if let Ok(named) = std::env::var(ENGINE_VARIABLE) {
+        return ENGINES
+            .into_iter()
+            .find(|engine| *engine == named)
+            .ok_or_else(|| {
+                vec![format!(
+                    "{ENGINE_VARIABLE}={named} names none of {}",
+                    ENGINES.join(", ")
+                )]
+            });
+    }
     ENGINES
         .into_iter()
         .find(|engine| crate::stdout_of(engine, &["--version"]).is_ok())
@@ -530,6 +544,12 @@ pub fn library_file(prefix: &str, lib_name: &str, suffix: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_android_workflow_runs_in_the_published_image() {
+        let workflow = include_str!("../../../.github/workflows/binding-layer-android.yaml");
+        assert!(workflow.contains(&format!("image: {PUBLISHED_ANDROID_IMAGE}\n")));
+    }
 
     #[test]
     fn the_descriptor_env_is_the_one_the_build_script_emits() {

@@ -1,6 +1,9 @@
 # The tools of the Android build, with no sources and no environment. The workbench
 # builder mounts this repository, runs the per-ABI steps in a container of
-# this image, and sets their environment itself.
+# this image, and sets their environment itself. build-n-push-android-image.yaml
+# publishes the same image under the tag that binding-layer-android.yaml runs
+# in, so CI installs nothing before it builds. zstd serves the job's cargo
+# cache, which compresses with it when it is present.
 FROM docker.io/zingodevops/android_builder:018
 
 RUN apt update \
@@ -12,7 +15,8 @@ RUN apt update \
     clang-18 \
     libclang-18-dev \
     gcc \
-    g++
+    g++ \
+    zstd
 
 # The builder passes rust-toolchain.toml verbatim and every Android target, so
 # the image holds the toolchain that file selects, with its components and
@@ -30,4 +34,4 @@ RUN printf '%s\n' "$RUST_TOOLCHAIN_TOML" > rust-toolchain.toml \
 
 RUN cargo install --force --locked bindgen-cli
 
-RUN cargo install --version 4.0.1 cargo-ndk
+RUN cargo install --locked --version 4.0.1 cargo-ndk
