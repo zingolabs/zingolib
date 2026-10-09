@@ -35,13 +35,6 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Install protoc
-        run: |
-          if ! command -v protoc; then
-            sudo apt-get update
-            sudo apt-get install -y protobuf-compiler
-          fi
-
       # Removes each declared dependency feature in turn and checks without it.
       # One `cargo check` per feature, so this runs nightly rather than per PR.
       - name: Run feature-census
@@ -70,13 +63,6 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-
-      - name: Install protoc
-        run: |
-          if ! command -v protoc; then
-            sudo apt-get update
-            sudo apt-get install -y protobuf-compiler
-          fi
 
       - name: Install cargo-make
         uses: taiki-e/install-action@v2

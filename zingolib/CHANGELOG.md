@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - A `migration` value transfer now carries the sum of the Ironwood notes the transaction delivered to the wallet, the amount migrated, where it carried the whole self-received sum including any Orchard change. The FFI spliced this value in after the fact; the value transfer now states it directly.
+- `lightwallet-protocol` moves to 0.4.0, the upstream rev whose committed
+  bindings carry the Ironwood proto fields. No workspace enables
+  `rebuild-proto` any longer, so a build of zingolib no longer needs protoc.
 - **Breaking:** the term clearnet is renamed nakednet in every public name. The `Clearnet` variant of `MixnetRoute`, `TransmitRoute`, `AttemptRoute`, `Transport`, `TransmissionRoute` and `MigrationWire` is now `Nakednet`. `LightClient::consent_to_clearnet_for_tests` and `LightClient::new_clearnet_consented` are now `consent_to_nakednet_for_tests` and `new_nakednet_consented`.
 - `LightClient::go_offline` stops an in-flight sync as `stop_sync` does and waits for the engine to return, where it used to abort the sync task. An abort could cancel the engine partway through a batch and leave the wallet holding part of that batch's updates. `go_offline` now returns after the engine has processed its current batch.
 - `LightClient::pause_sync`, `stop_sync`, `resume_sync`, `pause_sync_scoped` and the pause guard's drop move the sync mode through `SyncMode::transition` and `SyncMode::apply`, one atomic exchange each, so a `Shutdown` the engine sets at completion between the read and the write is kept instead of overwritten.

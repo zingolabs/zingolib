@@ -102,9 +102,8 @@ two adopts it verbatim so the branches converge:
   become an import instead of a documented mirror.
 - **Surroundings**: orchard 0.15.0-pre.1, zcash_address 0.13.0-pre.0,
   `zcash_primitives` gains the `non-standard-fees` feature, and
-  `lightwallet-protocol` is patched to the fork rev carrying the
-  Ironwood proto fields with `rebuild-proto` (build environments need
-  `protoc`, a container-image requirement for the makers-tasks lane).
+  `lightwallet-protocol` is patched to the fork rev whose committed
+  bindings carry the Ironwood proto fields.
 - **Compiler cfg**: ironwood sits behind `--cfg zcash_unstable="nu6.3"`
   RUSTFLAGS via the in-repo `.cargo/config.toml`, which the container
   inherits through the bind mount.
