@@ -9,7 +9,7 @@ use pepper_sync::{
     },
     wallet::{KeyIdInterface, TransparentCoin},
 };
-use unified::{ReceiverSelection, UnifiedAddressId};
+use unified::{ReceiverSelection, UnifiedAddressId, UnifiedKeyStore};
 use zcash_keys::address::UnifiedAddress;
 use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::keys::NonHardenedChildIndex;
@@ -47,7 +47,39 @@ pub enum WalletAddressRef {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WalletKind {
+    Mnemonic,
+    SpendingKey,
+    ViewingKey {
+        transparent: bool,
+        sapling: bool,
+        orchard: bool,
+    },
+    NoKeys,
+}
+
 impl LightWallet {
+    pub fn kind(&self) -> Result<WalletKind, KeyError> {
+        if self.mnemonic_phrase().is_some() {
+            return Ok(WalletKind::Mnemonic);
+        }
+        let kind = match self
+            .unified_key_store
+            .get(&zip32::AccountId::ZERO)
+            .ok_or(KeyError::NoAccountKeys)?
+        {
+            UnifiedKeyStore::Spend(_) => WalletKind::SpendingKey,
+            UnifiedKeyStore::View(ufvk) => WalletKind::ViewingKey {
+                transparent: ufvk.transparent().is_some(),
+                sapling: ufvk.sapling().is_some(),
+                orchard: ufvk.orchard().is_some(),
+            },
+            UnifiedKeyStore::Empty => WalletKind::NoKeys,
+        };
+        Ok(kind)
+    }
+
     /// Returns a new unified address for the given `receivers` and `account_id`, adding this new unified address to
     /// the wallet.
     pub fn generate_unified_address(
