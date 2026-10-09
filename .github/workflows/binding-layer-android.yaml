@@ -36,6 +36,7 @@ jobs:
   build:
     name: Build ${{ matrix.abi }}
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -47,8 +48,7 @@ jobs:
       RUSTUP_HOME: ${{ github.workspace }}/.rustup
       CARGO_HOME: ${{ github.workspace }}/.cargo
     steps:
-      # The tools that bindings/android/docker/Dockerfile adds to the image,
-      # plus protoc for the wallet crate.
+      # The tools that bindings/android/docker/Dockerfile adds to the image.
       - name: Install libraries
         run: |
           apt update \
@@ -59,7 +59,6 @@ jobs:
             golang \
             clang-18 \
             libclang-18-dev \
-            protobuf-compiler \
             gcc \
             g++
 
@@ -106,6 +105,7 @@ jobs:
     name: Package the AAR
     needs: build
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     outputs:
       bundle: ${{ env.BUNDLE }}
     env:
