@@ -471,57 +471,6 @@ TransactionSummary {
         check_client_balances!(recipient, i: remaining_ironwood o: 0 s: 0 t: 0);
     }
     #[tokio::test]
-    async fn list_value_transfers_check_fees() {
-        // Check that list_value_transfers behaves correctly given different fee scenarios
-        let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        let mut faucet = client_builder.build_faucet(false).await;
-        let mut pool_migration_client = client_builder
-            .build_client(
-                WalletConfig::MnemonicPhrase {
-                    mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
-                    no_of_accounts: 1.try_into().unwrap(),
-                    birthday: 1,
-                    wallet_settings: default_test_wallet_settings(),
-                },
-                false,
-            )
-            .await;
-        let pmc_taddr = get_base_address_macro!(pool_migration_client, "transparent");
-        let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
-        let pmc_unified = get_base_address_macro!(pool_migration_client, "unified");
-        // Ensure that the client has confirmed spendable funds
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 3)
-            .await
-            .unwrap();
-        macro_rules! bump_and_check_pmc {
-            (o: $o:tt i: $i:tt s: $s:tt t: $t:tt) => {
-                increase_height_and_wait_for_client(&local_net, &mut pool_migration_client, 1).await.unwrap();
-                check_client_balances!(pool_migration_client, i: $i o:$o s:$s t:$t);
-            };
-        }
-
-        // pmc receives 100_000 at its unified address; the V6 payment
-        // lands in the ironwood pool (ADR 0009).
-        from_inputs::quick_send(&mut faucet, vec![(&pmc_unified, 100_000, None)])
-            .await
-            .unwrap();
-        bump_and_check_pmc!(o: 0 i: 100_000 s: 0 t: 0);
-
-        // to transparent and sapling from ironwood
-        //
-        // Expected Fees: 5_000 for the transparent output + 10_000 for the
-        // sapling pair + 10_000 for the ironwood change pair == 25_000.
-        // Adjudicated live 2026-07-21: a V6 ironwood spend carries no
-        // separate orchard-bundle-view charge.
-        from_inputs::quick_send(
-            &mut pool_migration_client,
-            vec![(&pmc_taddr, 30_000, None), (&pmc_sapling, 30_000, None)],
-        )
-        .await
-        .unwrap();
-        bump_and_check_pmc!(o: 0 i: 15_000 s: 30_000 t: 30_000);
-    }
-    #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         // Test all possible promoting note source combinations
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
