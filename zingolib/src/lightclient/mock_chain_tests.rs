@@ -4381,4 +4381,34 @@ mod moved_from_regtest {
         let remaining_ironwood = for_orchard - (FEES_SENT + 1) * fee;
         check_client_balances!(recipient, i: remaining_ironwood o: 0 s: 0 t: 0);
     }
+    #[tokio::test]
+    async fn send_and_sync_with_multiple_notes_no_panic() {
+        const NOTE: u64 = 40_000;
+        const PAYMENT: u64 = 50_000;
+        let fee = u64::from(MINIMUM_FEE);
+
+        let mut net = MockNet::launch().await;
+        let mut recipient = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let recipient_ua =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.chain.write().await.mine_empty_blocks(1);
+        fund(&net, vec![(&recipient_ua, NOTE, None)], 0).await;
+        fund(&net, vec![(&recipient_ua, NOTE, None)], 0).await;
+        recipient.sync_and_await().await.unwrap();
+        check_client_balances!(recipient, i: (2 * NOTE) o: 0 s: 0 t: 0);
+
+        from_inputs::quick_send(
+            &mut recipient,
+            vec![(&external_address(PoolType::ORCHARD), PAYMENT, None)],
+        )
+        .await
+        .unwrap();
+        net.chain.write().await.mine_mempool();
+        recipient.sync_and_await().await.unwrap();
+        // The payment plus its fee exceeds either note alone, so the send
+        // consumed both and returned the rest as change.
+        check_client_balances!(recipient, i: (2 * NOTE - PAYMENT - fee) o: 0 s: 0 t: 0);
+    }
 }

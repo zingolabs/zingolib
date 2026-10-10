@@ -383,51 +383,5 @@ mod unit_test_twins {
 
     mod basic_transactions {
         use super::*;
-
-        #[tokio::test]
-        async fn send_and_sync_with_multiple_notes_no_panic() {
-            let (local_net, mut faucet, mut recipient) =
-                scenarios::faucet_recipient_default().await;
-
-            let recipient_addr_ua = get_base_address_macro!(recipient, "unified");
-            let faucet_addr_ua = get_base_address_macro!(faucet, "unified");
-
-            increase_height_and_wait_for_client(&local_net, &mut recipient, 2)
-                .await
-                .unwrap();
-            scenarios::sync_client_to_validator_tip(&local_net, &mut faucet).await;
-
-            for _ in 0..2 {
-                from_inputs::quick_send(
-                    &mut faucet,
-                    vec![(recipient_addr_ua.as_str(), 40_000, None)],
-                )
-                .await
-                .unwrap();
-            }
-
-            increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-                .await
-                .unwrap();
-            scenarios::sync_client_to_validator_tip(&local_net, &mut faucet).await;
-
-            from_inputs::quick_send(
-                &mut recipient,
-                vec![(faucet_addr_ua.as_str(), 50_000, None)],
-            )
-            .await
-            .unwrap();
-
-            increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-                .await
-                .unwrap();
-            scenarios::sync_client_to_validator_tip(&local_net, &mut faucet).await;
-
-            // The 50_000 payment plus its 10_000 ZIP-317 fee exceeds either
-            // 40_000 note alone, so the send consumed both and returned
-            // 20_000 as change: the arithmetic survived the multi-input
-            // spend. V6 receipts and change land in the ironwood pool.
-            check_client_balances!(recipient, i: 20_000 o: 0 s: 0 t: 0);
-        }
     }
 }
