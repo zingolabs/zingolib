@@ -517,11 +517,22 @@ fn commits_exist(root: &Path, entries: &[Entry]) -> Result<(), Vec<String>> {
         .try_for_each(|commit| crate::commit_of(root, commit).map(drop))
 }
 
+pub fn private_package_hint(name: &str) -> String {
+    format!(
+        "{name} cannot be read without a token; a package that a workflow's first push creates \
+         is private, so set its visibility to public in the GitHub package settings, which \
+         decision 1 of #2833 requires, and comment `{PUBLISH_COMMAND}` again"
+    )
+}
+
 /// - Runs `orasust resolve` and `orasust manifest fetch` as child processes, once per recorded digest.
 fn manifest_diagnostics(name: &str, commit: &str, digest: &str) -> Vec<String> {
     let found = match crate::orasust::resolve(name) {
         Ok(found) => found,
-        Err(diagnostics) => return diagnostics,
+        Err(mut diagnostics) => {
+            diagnostics.push(private_package_hint(name));
+            return diagnostics;
+        }
     };
     let mut diagnostics = Vec::new();
     if found != digest {
@@ -962,6 +973,14 @@ mod tests {
         assert!(validate(&[entry(FIRST, Some(ORIGIN), &[IOS])]).is_err());
         assert!(diagnostics.contains("only the first entry may"));
         assert!(diagnostics.contains("repeats an earlier entry"));
+    }
+
+    #[test]
+    fn an_unreadable_package_is_explained_by_its_visibility() {
+        let hint = private_package_hint("ghcr.io/zingolabs/zingolib/binding-layer-android:abc");
+        assert!(hint.contains("binding-layer-android:abc"));
+        assert!(hint.contains("public"));
+        assert!(hint.contains(PUBLISH_COMMAND));
     }
 
     #[test]

@@ -82,7 +82,11 @@ fn file_name_of(file: &Path) -> Result<&str, Vec<String>> {
         .ok_or_else(|| vec![format!("{} has no file name", file.display())])
 }
 
-fn find_file(dir: &Path, wanted: impl Fn(&str) -> bool) -> Result<PathBuf, Vec<String>> {
+fn find_file(
+    dir: &Path,
+    what: &str,
+    wanted: impl Fn(&str) -> bool,
+) -> Result<PathBuf, Vec<String>> {
     let mut pending = vec![dir.to_path_buf()];
     while let Some(current) = pending.pop() {
         let entries = std::fs::read_dir(&current)
@@ -100,27 +104,33 @@ fn find_file(dir: &Path, wanted: impl Fn(&str) -> bool) -> Result<PathBuf, Vec<S
             }
         }
     }
-    Err(vec![format!(
-        "no file the bundle needs lies under {}",
-        dir.display()
-    )])
+    Err(vec![format!("no {what} lies under {}", dir.display())])
 }
 
-/// - Runs `orasust push` as a child process through [`crate::orasust::push`].
+/// - Runs `orasust push` and then an anonymous `orasust resolve` as child processes.
 fn push(
     platform: &str,
     commit: &str,
     bundle: &Bundle,
     credentials: &Credentials,
 ) -> Result<String, Vec<String>> {
-    crate::orasust::push(
-        &binding_manifest::reference(platform, commit),
+    let name = binding_manifest::reference(platform, commit);
+    let digest = crate::orasust::push(
+        &name,
         &bundle.file,
         bundle.media_type,
         &manifest_annotations(commit, &bundle.descriptor),
         &credentials.username,
         &credentials.token,
-    )
+    )?;
+    let seen = crate::orasust::resolve(&name)
+        .map_err(|_| vec![binding_manifest::private_package_hint(&name)])?;
+    if seen != digest {
+        return Err(vec![format!(
+            "{name} was pushed as {digest} and resolves anonymously to {seen}"
+        )]);
+    }
+    Ok(digest)
 }
 
 fn credentials() -> Result<Credentials, Vec<String>> {
@@ -137,7 +147,7 @@ fn credentials() -> Result<Credentials, Vec<String>> {
 /// - For iOS, moves `dir` under a sibling staging directory, writes the commit's `Package.swift`
 ///   beside it from `git show`, and runs `tar` as a child process to archive the package.
 fn bundle_of(root: &Path, platform: &str, dir: &Path, commit: &str) -> Result<Bundle, Vec<String>> {
-    let descriptor = crate::read(&find_file(dir, |name| {
+    let descriptor = crate::read(&find_file(dir, binding_layer::DESCRIPTOR_FILE, |name| {
         name == binding_layer::DESCRIPTOR_FILE
     })?)?
     .trim()
@@ -145,7 +155,9 @@ fn bundle_of(root: &Path, platform: &str, dir: &Path, commit: &str) -> Result<Bu
     let media_type = media_type_of(platform)?;
     let file = match platform {
         binding_manifest::ANDROID => {
-            find_file(dir, |name| name.ends_with(binding_layer::AAR_SUFFIX))?
+            find_file(dir, &format!("*{}", binding_layer::AAR_SUFFIX), |name| {
+                name.ends_with(binding_layer::AAR_SUFFIX)
+            })?
         }
         _ => swift_package_archive(root, dir, commit)?,
     };
@@ -261,6 +273,23 @@ pub fn main() -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_missing_file_is_named_in_the_diagnostic() {
+        let empty =
+            std::env::temp_dir().join(format!("workbench-find-file-{}", std::process::id()));
+        crate::fresh_dir(&empty).unwrap();
+        let diagnostic = find_file(&empty, binding_layer::DESCRIPTOR_FILE, |name| {
+            name == binding_layer::DESCRIPTOR_FILE
+        })
+        .unwrap_err()
+        .concat();
+        assert!(
+            diagnostic.contains(binding_layer::DESCRIPTOR_FILE),
+            "{diagnostic}"
+        );
+        std::fs::remove_dir_all(&empty).unwrap();
+    }
 
     #[test]
     fn every_platform_has_one_bundle_shape_and_nothing_else_does() {
