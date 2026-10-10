@@ -207,8 +207,8 @@ fn commit_and_push(root: &Path, commit: &str) -> Result<(), Vec<String>> {
 
 /// - Reads `bindings/published.toml` and the credentials in the environment.
 /// - Creates and removes a detached worktree of the commit and runs `cargo tree` in it.
-/// - Reads each built platform's bundle under `--bundles`, archives the iOS package through `tar`,
-///   and pushes each bundle to the registry.
+/// - Reads every built platform's bundle under `--bundles` and archives the iOS package through
+///   `tar`, then pushes each bundle to the registry.
 /// - Writes `bindings/published.toml` and `bindings/CHANGELOG.md`, then commits and pushes them.
 pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let required = |flag: &str| crate::required_flag(args, flag, USAGE);
@@ -238,9 +238,12 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let file = root.join(binding_manifest::FILE);
     let crates = binding_manifest::with_checkout(root, &commit, binding_manifest::audited_at)?;
     let mut text = binding_manifest::recorded_audited(&crate::read(&file)?, &commit, &crates)?;
-    for (platform, dir) in built {
-        let bundle = bundle_of(root, platform, &dir, &commit)?;
-        let digest = push(platform, &commit, &bundle, &credentials)?;
+    let bundles: Vec<(&str, Bundle)> = built
+        .into_iter()
+        .map(|(platform, dir)| Ok((platform, bundle_of(root, platform, &dir, &commit)?)))
+        .collect::<Result<_, Vec<String>>>()?;
+    for (platform, bundle) in &bundles {
+        let digest = push(platform, &commit, bundle, &credentials)?;
         text = binding_manifest::recorded(&text, &commit, platform, &digest)?;
     }
     std::fs::write(&file, text)
