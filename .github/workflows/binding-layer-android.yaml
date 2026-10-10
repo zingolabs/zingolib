@@ -105,7 +105,7 @@ jobs:
       # zingolib after a build that should have left it fresh.
       - name: Build the Binding Layer
         env:
-          CARGO_LOG: cargo::core::compiler::fingerprint=info
+          CARGO_LOG: cargo::compiler::fingerprint=info
         run: |
           cargo run \
             --manifest-path tools/workbench/Cargo.toml \
