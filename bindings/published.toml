@@ -32,3 +32,10 @@
 # reads them from `cargo tree` there, each as its package name and its
 # directory. The manifest check reads them again at the commit and rejects
 # an entry whose array differs.
+
+[[entry]]
+commit = "ba7336710419c9ac1e9362ac1b4e5b0073ff477e"
+since = "6d0f7dfc05779be7b32b2fc5c61e9543e18e2164"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:9c950b9c10ce62e85de894f73139d9770caa844705c01bfcde4154d2404a50de"
+ios = "sha256:045aa74c2bb591325969fcdbf6923bcd7c9b023665ea2c3cc8e2b2ffbacd1f41"
