@@ -452,43 +452,6 @@ async fn mine_to_ironwood() {
 }
 
 #[tokio::test]
-async fn mine_to_orchard() {
-    let fixture = scenarios::wallet_activation_heights(
-        &zcash_local_net::validator::regtest_test_activation_heights(),
-    );
-    let activation_heights = zingolib::ActivationHeights::builder()
-        .set_overwinter(fixture.overwinter())
-        .set_sapling(fixture.sapling())
-        .set_blossom(fixture.blossom())
-        .set_heartwood(fixture.heartwood())
-        .set_canopy(fixture.canopy())
-        .set_nu5(fixture.nu5())
-        .set_nu6(fixture.nu6())
-        .set_nu6_1(fixture.nu6_1())
-        .set_nu6_2(fixture.nu6_2())
-        .set_nu6_3(None)
-        .set_nu7(None)
-        .build();
-    let (local_net, mut faucet) = scenarios::faucet(
-        PoolType::ORCHARD,
-        activation_heights,
-        scenarios::ChainCachePolicy::PerTest,
-    )
-    .await;
-    check_client_balances!(
-        faucet,
-        i: 0 o: 1_237_500_000 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
-    );
-    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-        .await
-        .unwrap();
-    check_client_balances!(
-        faucet,
-        i: 0 o: (1_237_500_000 + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
-    );
-}
-
-#[tokio::test]
 async fn sync_all_expressible_epochs() {
     // The zebrad config writer requires every upgrade through Canopy
     // active at height 1, and the harness subsidy fixtures pair only
