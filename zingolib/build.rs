@@ -2,19 +2,24 @@
 //! - Downloads the Sapling proving parameters into the user's parameter
 //!   cache when they are absent, and hands their paths to rustc through
 //!   `SAPLING_SPEND_PARAMS` and `SAPLING_OUTPUT_PARAMS`.
-//! - Writes `git_description.rs` into `OUT_DIR`.
+//! - Writes `git_description.txt` and `git_description.rs` into `OUT_DIR`
+//!   and prints `cargo:rustc-env=ZINGOLIB_DESCRIPTOR`.
 //! - Prints `cargo:rerun-if-changed` for this script, both parameter
 //!   files, and the git state behind the descriptor; the package tree
 //!   itself is never watched and never written.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::{env, fs::File, process::Command};
+use std::{env, process::Command};
+
+const BUILD_SCRIPT: &str = "build.rs";
+const DESCRIPTOR_TEXT_FILE: &str = "git_description.txt";
+const DESCRIPTOR_ENV: &str = "ZINGOLIB_DESCRIPTOR";
+const DESCRIPTOR_SOURCE_FILE: &str = "git_description.rs";
 
 /// - Prints `cargo:rerun-if-changed` for this script and the git state
 ///   behind the descriptor.
 fn register_rerun_watches() {
-    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed={BUILD_SCRIPT}");
     // The git state behind the descriptor: HEAD moves live in the
     // worktree's own git dir; tags and packed refs live in the common
     // dir (they differ in linked worktrees). The `--dirty` suffix is
@@ -25,10 +30,10 @@ fn register_rerun_watches() {
         println!("cargo:rerun-if-changed={}", git_dir.join("HEAD").display());
     }
     if let Some(common_dir) = git_path_query("--git-common-dir") {
-        println!(
-            "cargo:rerun-if-changed={}",
-            common_dir.join("packed-refs").display()
-        );
+        let packed_refs = common_dir.join("packed-refs");
+        if packed_refs.exists() {
+            println!("cargo:rerun-if-changed={}", packed_refs.display());
+        }
         println!(
             "cargo:rerun-if-changed={}",
             common_dir.join("refs").display()
@@ -123,17 +128,17 @@ fn git_description() {
         dirty(),
     );
 
-    // Write the git description to a file which will be included in the crate
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("git_description.rs");
-    let mut f = File::create(dest_path).unwrap();
-    writeln!(
-        f,
-        "/// The build descriptor derived from the git state at compile time:\n\
-        /// `zl_<ver>[_<hash5>][_dirty]`, where `<ver>` is the release tag's\n\
-        /// version when the build sits exactly on a `zingolib_v<ver>` tag,\n\
-        /// and otherwise the crate version followed by the abbreviated hash\n\
-        pub fn git_description() -> &'static str {{\"{description}\"}}"
+    println!("cargo:rustc-env={DESCRIPTOR_ENV}={description}");
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    std::fs::write(out_dir.join(DESCRIPTOR_TEXT_FILE), &description).unwrap();
+    std::fs::write(
+        out_dir.join(DESCRIPTOR_SOURCE_FILE),
+        format!(
+            "pub fn git_description() -> &'static str {{\n    \
+             include_str!(concat!(env!(\"OUT_DIR\"), \"/{DESCRIPTOR_TEXT_FILE}\"))\n\
+             }}\n"
+        ),
     )
     .unwrap();
 }

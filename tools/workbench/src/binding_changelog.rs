@@ -1,17 +1,17 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use crate::{binding_manifest, MANIFEST};
+use crate::binding_manifest;
 
 pub const BINARY: &str = "binding-changelog";
 pub const FILE: &str = "bindings/CHANGELOG.md";
 const CRATE_CHANGELOG: &str = "CHANGELOG.md";
-const BINDING_CRATES: [&str; 2] = ["zingo-ffi/lib", "zingo-netutils/nym-proxy-ffi"];
 const CHECK_FLAG: &str = "--check";
 const USAGE: &str = "usage: binding-changelog [--check]";
 const TITLE: &str = "# Binding Layer changelog";
 const SECTION_MARK: &str = "## ";
 const SINCE_PREFIX: &str = "Since ";
 const SINCE_SUFFIX: char = '.';
+const AUDITED_PREFIX: &str = "Audited ";
 const CRATE_MARK: &str = "### ";
 const HEADING_MARK: char = '#';
 const DEMOTION: &str = "##";
@@ -19,12 +19,6 @@ const DIFF_HEADER_MARK: &str = "diff --git";
 const HUNK_MARK: &str = "@@";
 const ADDED_MARK: char = '+';
 const REMOVED_MARK: char = '-';
-const PATH_OPEN: &str = " (";
-const PATH_CLOSE: char = ')';
-const TREE_ARGS: [&str; 8] = [
-    "tree", "--locked", "--edges", "normal", "--depth", "1", "--prefix", "none",
-];
-const TREE_FORMAT: [&str; 2] = ["--format", "{p}"];
 const DIFF_ARGS: [&str; 4] = ["diff", "--no-color", "--no-ext-diff", "--no-renames"];
 const PREAMBLE_PREFIXES: [&str; 4] = [
     "# Changelog",
@@ -34,49 +28,10 @@ const PREAMBLE_PREFIXES: [&str; 4] = [
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Crate {
-    pub name: String,
-    pub dir: PathBuf,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Section {
     pub commit: String,
     pub since: String,
     pub entries: Vec<(String, Vec<String>)>,
-}
-
-pub fn parse_tree_line(line: &str, root: &Path) -> Option<Crate> {
-    let (head, rest) = line.split_once(PATH_OPEN)?;
-    let dir = Path::new(rest.strip_suffix(PATH_CLOSE)?);
-    let name = head.split_whitespace().next()?;
-    dir.starts_with(root).then(|| Crate {
-        name: name.to_string(),
-        dir: dir.to_path_buf(),
-    })
-}
-
-pub fn audited_crates(tree_outputs: &[String], root: &Path) -> Result<Vec<Crate>, Vec<String>> {
-    let mut crates: Vec<Crate> = Vec::new();
-    for output in tree_outputs {
-        let found: Vec<Crate> = output
-            .lines()
-            .filter_map(|line| parse_tree_line(line, root))
-            .collect();
-        if found.is_empty() {
-            return Err(vec![format!(
-                "no crate of this `cargo tree` output lies under {}: {}",
-                root.display(),
-                output.lines().next().unwrap_or_default()
-            )]);
-        }
-        for each in found {
-            if !crates.contains(&each) {
-                crates.push(each);
-            }
-        }
-    }
-    Ok(crates)
 }
 
 pub fn gained_lines(diff: &str) -> Vec<String> {
@@ -147,24 +102,21 @@ fn demoted(line: &str) -> String {
     }
 }
 
-pub fn render_header(crates: &[Crate]) -> String {
-    let names = crates
-        .iter()
-        .map(|found| format!("`{}`", found.name))
-        .collect::<Vec<_>>()
-        .join(", ");
+pub fn render_header() -> String {
     format!(
         "{TITLE}\n\n\
          The workbench tool `{BINARY}` writes every section below, one per entry\n\
-         of `{}`, from the lines that the audited crate changelogs\n\
+         of `{}`, from the lines that the entry's audited crate changelogs\n\
          gained after the previous entry's commit, named as `Since`, up to the\n\
          entry's commit, which the section heading names. The check in CI\n\
          regenerates every section and fails when the committed file differs. The\n\
-         audited crates are the two Binding Layer crates and their direct\n\
-         dependencies in this repository, as `cargo tree` reports them: {names}.\n\
-         A change in another crate of this repository appears only where one of\n\
-         those changelogs records it.\n",
-        binding_manifest::FILE
+         audited crates of an entry are the two Binding Layer crates and their\n\
+         direct dependencies in this repository at the entry's commit, as the\n\
+         publish workflow recorded them from `cargo tree`; each section names them\n\
+         in its `{}` line. A change in another crate of this repository appears\n\
+         only where one of those changelogs records it.\n",
+        binding_manifest::FILE,
+        AUDITED_PREFIX.trim_end()
     )
 }
 
@@ -179,8 +131,14 @@ pub fn render_section(section: &Section) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n");
+    let audited = section
+        .entries
+        .iter()
+        .map(|(name, _)| format!("`{name}`"))
+        .collect::<Vec<_>>()
+        .join(crate::LIST_SEPARATOR);
     block(&format!(
-        "{SECTION_MARK}{}\n\n{SINCE_PREFIX}{}{SINCE_SUFFIX}\n\n{entries}",
+        "{SECTION_MARK}{}\n\n{SINCE_PREFIX}{}{SINCE_SUFFIX}\n\n{AUDITED_PREFIX}{audited}{SINCE_SUFFIX}\n\n{entries}",
         section.commit, section.since
     ))
 }
@@ -201,47 +159,20 @@ pub fn render_file(header: &str, sections_newest_first: &[String]) -> String {
         .collect()
 }
 
-fn tree_outputs(root: &Path) -> Result<Vec<String>, Vec<String>> {
-    BINDING_CRATES
-        .iter()
-        .map(|dir| {
-            let manifest = root.join(dir).join(MANIFEST);
-            let args = [
-                TREE_ARGS.as_slice(),
-                &["--manifest-path", crate::utf8(&manifest)?],
-                TREE_FORMAT.as_slice(),
-            ]
-            .concat();
-            crate::stdout_in(root, crate::CARGO, &args, &[])
-        })
-        .collect()
-}
-
-fn relative_changelog(root: &Path, found: &Crate) -> Result<String, Vec<String>> {
-    let relative = found
-        .dir
-        .strip_prefix(root)
-        .map_err(|_| {
-            vec![format!(
-                "{} is outside {}",
-                found.dir.display(),
-                root.display()
-            )]
-        })?
-        .join(CRATE_CHANGELOG);
-    Ok(crate::utf8(&relative)?.to_string())
+fn relative_changelog(found: &binding_manifest::AuditedCrate) -> Result<String, Vec<String>> {
+    Ok(crate::utf8(&found.dir.join(CRATE_CHANGELOG))?.to_string())
 }
 
 fn gather(
     root: &Path,
-    crates: &[Crate],
+    crates: &[binding_manifest::AuditedCrate],
     since: &str,
     commit: &str,
 ) -> Result<Section, Vec<String>> {
     let entries = crates
         .iter()
         .map(|found| {
-            let relative = relative_changelog(root, found)?;
+            let relative = relative_changelog(found)?;
             if !crate::listed_at(root, commit, &relative)? {
                 return Err(vec![format!(
                     "audited crate {} has no {relative} at {commit}",
@@ -261,25 +192,38 @@ fn gather(
 }
 
 fn regenerated(root: &Path) -> Result<String, Vec<String>> {
-    let crates = audited_crates(&tree_outputs(root)?, root)?;
     let entries = binding_manifest::entries_at(root, None)?;
     let sections = binding_manifest::publication_commits(&entries)
         .iter()
+        .zip(&entries)
         .rev()
-        .map(|(commit, since)| Ok(render_section(&gather(root, &crates, since, commit)?)))
+        .map(|((commit, since), entry)| {
+            Ok(render_section(&gather(
+                root,
+                &entry.audited,
+                since,
+                commit,
+            )?))
+        })
         .collect::<Result<Vec<_>, Vec<String>>>()?;
-    Ok(render_file(&render_header(&crates), &sections))
+    Ok(render_file(&render_header(), &sections))
 }
 
-/// - Runs `cargo tree` and `git` child processes in `root`.
+/// - Runs `git` child processes in `root`.
+/// - Writes `bindings/CHANGELOG.md`.
+pub fn regenerate(root: &Path) -> Result<(), Vec<String>> {
+    let file = root.join(FILE);
+    std::fs::write(&file, regenerated(root)?)
+        .map_err(|e| vec![format!("cannot write {}: {e}", file.display())])
+}
+
+/// - Runs `git` child processes in `root`.
 /// - Writes `bindings/CHANGELOG.md` unless `args` holds `--check`.
 pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
-    let file = root.join(FILE);
     match args {
-        [] => std::fs::write(&file, regenerated(root)?)
-            .map_err(|e| vec![format!("cannot write {}: {e}", file.display())]),
+        [] => regenerate(root),
         [flag] if flag == CHECK_FLAG => {
-            if crate::read(&file)? == regenerated(root)? {
+            if crate::read(&root.join(FILE))? == regenerated(root)? {
                 Ok(())
             } else {
                 Err(vec![format!(
@@ -302,74 +246,8 @@ pub fn main() -> ! {
 mod tests {
     use super::*;
 
-    const ROOT: &str = "/host/zingolib";
     const COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const SINCE: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-    const EXPECTED_AUDITED: [&str; 5] = [
-        "zingo",
-        "pepper-sync",
-        "zingolib",
-        "zingo-nym-proxy-ffi",
-        "zingo-netutils",
-    ];
-
-    fn found(name: &str, dir: &str) -> Crate {
-        Crate {
-            name: name.to_string(),
-            dir: PathBuf::from(dir),
-        }
-    }
-
-    fn names(crates: Vec<Crate>) -> Vec<String> {
-        crates.into_iter().map(|found| found.name).collect()
-    }
-
-    #[test]
-    fn a_tree_line_names_an_audited_crate_only_when_its_path_is_under_the_root() {
-        let root = Path::new(ROOT);
-        assert_eq!(
-            parse_tree_line("zingolib v6.0.0 (/host/zingolib/zingolib)", root),
-            Some(found("zingolib", "/host/zingolib/zingolib"))
-        );
-        assert_eq!(parse_tree_line("android_logger v0.11.3", root), None);
-        assert_eq!(
-            parse_tree_line("serde_derive v1.0.0 (proc-macro)", root),
-            None
-        );
-        assert_eq!(
-            parse_tree_line("other v1.0.0 (/host/elsewhere/other)", root),
-            None
-        );
-    }
-
-    #[test]
-    fn audited_crates_keep_tree_order_and_drop_repeats() {
-        let outputs = [
-            "zingo v2.0.0 (/host/zingolib/zingo-ffi/lib)\npepper-sync v0.5.0 (/host/zingolib/pepper-sync)\nzingolib v6.0.0 (/host/zingolib/zingolib)\n".to_string(),
-            "zingo-nym-proxy-ffi v0.1.0 (/host/zingolib/zingo-netutils/nym-proxy-ffi)\nzingo-netutils v5.0.1 (/host/zingolib/zingo-netutils)\nzingo-netutils v5.0.1 (/host/zingolib/zingo-netutils)\n".to_string(),
-        ];
-        assert_eq!(
-            names(audited_crates(&outputs, Path::new(ROOT)).unwrap()),
-            EXPECTED_AUDITED
-        );
-    }
-
-    #[test]
-    fn a_tree_with_no_crate_under_the_root_is_refused_by_its_first_line() {
-        let outputs = ["zingo v2.0.0 (/host/elsewhere/zingo-ffi/lib)\n".to_string()];
-        let diagnostic = audited_crates(&outputs, Path::new(ROOT))
-            .unwrap_err()
-            .concat();
-        assert!(diagnostic.contains("zingo v2.0.0 (/host/elsewhere/zingo-ffi/lib)"));
-        assert!(diagnostic.contains(ROOT));
-    }
-
-    #[test]
-    fn the_repository_audits_the_five_crates_the_plan_names() {
-        let root = crate::repo_root().unwrap();
-        let crates = audited_crates(&tree_outputs(&root).unwrap(), &root).unwrap();
-        assert_eq!(names(crates), EXPECTED_AUDITED);
-    }
 
     #[test]
     fn gained_lines_are_the_added_lines_minus_moves_headers_and_preamble() {
@@ -426,14 +304,14 @@ mod tests {
         assert_eq!(
             render_section(&section),
             format!(
-                "## {COMMIT}\n\nSince {SINCE}.\n\n### zingolib\n\n##### Added\n- entry\n\nConsumers must re-run codegen.\n"
+                "## {COMMIT}\n\nSince {SINCE}.\n\nAudited `zingolib`, `pepper-sync`.\n\n### zingolib\n\n##### Added\n- entry\n\nConsumers must re-run codegen.\n"
             )
         );
     }
 
     #[test]
     fn the_file_is_the_header_then_the_sections_newest_first_with_one_blank_line_between() {
-        let header = render_header(&[found("zingolib", "/host/zingolib/zingolib")]);
+        let header = render_header();
         let newest = format!("## {COMMIT}\n\nSince {SINCE}.\n");
         let older = format!("## {SINCE}\n\nSince {SINCE}.\n");
         assert_eq!(render_file(&header, &[]), header);

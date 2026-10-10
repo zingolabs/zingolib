@@ -1,0 +1,237 @@
+# A maintainer's comment `/publish` on a pull request publishes the Binding
+# Layer for the newest commit that bindings/published.toml names on that
+# pull request's branch. The workflow builds that commit through the two
+# build workflows and hands their bundles to the workbench tool
+# binding-publish. The tool pushes each Prebuilt Bundle to the registry,
+# records each digest and the commit's audited crates in the manifest,
+# regenerates bindings/CHANGELOG.md, and commits both files to the pull
+# request's branch. The checks "Binding Layer manifest" and "Binding Layer
+# changelog" then verify the entry.
+#
+# The tool holds every fact about the Binding Layer: the platforms, the
+# ones the manifest requires, and the shape of each bundle. This file only
+# wires the jobs and passes on what the builds produced, under one
+# directory per platform whose build passed.
+#
+# The push uses an installation token of the GitHub App that the secrets
+# BINDING_PUBLISH_APP_ID and BINDING_PUBLISH_APP_PRIVATE_KEY name, an App
+# installed on this repository with write access to its contents. GitHub
+# starts no workflow for a push made with GITHUB_TOKEN, so that token
+# would leave the recorded entry without its checks. The App's token is
+# minted in the publish job and lives one hour.
+#
+# An issue_comment run uses this file as it is on the default branch.
+name: Publish the Binding Layer
+
+on:
+  issue_comment:
+    types: [created]
+
+# The reactions on the comment go through the issue-comment endpoint,
+# which the token's `issues` permission gates.
+permissions:
+  contents: write
+  issues: write
+  packages: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+
+jobs:
+  request:
+    name: Read the request
+    if: >-
+      github.event.issue.pull_request
+      && startsWith(github.event.comment.body, '/publish')
+      && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-24.04
+    outputs:
+      branch: ${{ steps.pull-request.outputs.branch }}
+      commit: ${{ steps.manifest.outputs.commit }}
+      abis: ${{ steps.names.outputs.abis }}
+      abi_artifacts: ${{ steps.names.outputs.abi_artifacts }}
+      abi_pattern: ${{ steps.names.outputs.abi_pattern }}
+      aar_glob: ${{ steps.names.outputs.aar_glob }}
+      bundle_android: ${{ steps.names.outputs.bundle_android }}
+      bundle_ios: ${{ steps.names.outputs.bundle_ios }}
+      bundle_pattern: ${{ steps.names.outputs.bundle_pattern }}
+      ios_out: ${{ steps.names.outputs.ios_out }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PULL_REQUEST: ${{ github.event.issue.number }}
+      COMMENT: ${{ github.event.comment.id }}
+    steps:
+      - name: Require the publish App
+        env:
+          APP_ID: ${{ secrets.BINDING_PUBLISH_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.BINDING_PUBLISH_APP_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APP_ID" ] || [ -z "$APP_PRIVATE_KEY" ]; then
+            echo "::error::the secrets BINDING_PUBLISH_APP_ID and BINDING_PUBLISH_APP_PRIVATE_KEY are not both set, and GITHUB_TOKEN cannot start the checks on the recorded entry"
+            exit 1
+          fi
+
+      # The trigger above fires on any comment that starts with the command,
+      # so a stray trailing space still reaches this job and gets an answer
+      # rather than silence; anything beyond the bare command is refused
+      # here, with a reaction the maintainer can see.
+      - name: Require the bare command
+        env:
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          command="$(printf '%s' "$BODY" | tr -d '\r' | sed -e 's/[[:space:]]*$//')"
+          if [ "$command" != "/publish" ]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=confused
+            echo "::error::the comment must be exactly /publish on its own; it reads: ${command}"
+            exit 1
+          fi
+
+      - name: Acknowledge the comment
+        run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=eyes
+
+      # A fork's branch is not in this repository, so the checkout below
+      # could not find it and the push at the end could not reach it.
+      - name: Read the pull request's branch
+        id: pull-request
+        run: |
+          set -eu
+          pull_request="$(gh pr view "$PULL_REQUEST" --repo "$GITHUB_REPOSITORY" --json headRefName,isCrossRepository)"
+          if [ "$(jq --raw-output .isCrossRepository <<<"$pull_request")" = true ]; then
+            echo "::error::the pull request comes from a fork; /publish works only on a branch of this repository"
+            exit 1
+          fi
+          echo "branch=$(jq --raw-output .headRefName <<<"$pull_request")" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the pull request's branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pull-request.outputs.branch }}
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/workbench
+
+      # The tool refuses an entry that is already published, so a stray
+      # comment cannot rebuild and re-push a recorded commit.
+      - name: Read the newest manifest entry
+        id: manifest
+        run: |
+          commit="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --newest)"
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+
+      # The builder is the one source of every artifact name and of the ABI
+      # list. This one run, from the pull request's branch, feeds the build
+      # jobs and the publish job, so they agree whatever commit is built.
+      - name: Name the artifacts
+        id: names
+        env:
+          COMMIT: ${{ steps.manifest.outputs.commit }}
+        run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$COMMIT" >> "$GITHUB_OUTPUT"
+
+  android:
+    needs: request
+    uses: ./.github/workflows/binding-layer-android.yaml
+    with:
+      ref: ${{ needs.request.outputs.commit }}
+      abis: ${{ needs.request.outputs.abis }}
+      abi_artifacts: ${{ needs.request.outputs.abi_artifacts }}
+      abi_pattern: ${{ needs.request.outputs.abi_pattern }}
+      aar_glob: ${{ needs.request.outputs.aar_glob }}
+      bundle: ${{ needs.request.outputs.bundle_android }}
+
+  ios:
+    needs: request
+    uses: ./.github/workflows/binding-layer-ios.yaml
+    with:
+      ref: ${{ needs.request.outputs.commit }}
+      out: ${{ needs.request.outputs.ios_out }}
+      bundle: ${{ needs.request.outputs.bundle_ios }}
+
+  # The job downloads every bundle artifact of the commit by the pattern
+  # the builder names, so a build that failed simply uploaded none. The
+  # tool publishes every bundle it finds and refuses when a platform the
+  # manifest requires has none, before it pushes anything.
+  publish:
+    name: Publish and record
+    needs: [request, android, ios]
+    if: ${{ !cancelled() && needs.request.result == 'success' }}
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COMMIT: ${{ needs.request.outputs.commit }}
+      COMMENT: ${{ github.event.comment.id }}
+      REGISTRY_USERNAME: ${{ github.actor }}
+      REGISTRY_TOKEN: ${{ github.token }}
+      BUNDLES: publish
+    steps:
+      - name: Mint the publish token
+        id: publish-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.BINDING_PUBLISH_APP_ID }}
+          private-key: ${{ secrets.BINDING_PUBLISH_APP_PRIVATE_KEY }}
+
+      # The publication commit is attributed to the App whose token pushes
+      # it. The noreply address carries the bot user's id, which the API
+      # serves for `<slug>[bot]`.
+      - name: Identify the publish App
+        env:
+          GH_TOKEN: ${{ steps.publish-token.outputs.token }}
+          APP_SLUG: ${{ steps.publish-token.outputs.app-slug }}
+        run: |
+          set -eu
+          bot="${APP_SLUG}[bot]"
+          id="$(gh api "users/${bot}" --jq .id)"
+          {
+            echo "GIT_AUTHOR_NAME=${bot}"
+            echo "GIT_COMMITTER_NAME=${bot}"
+            echo "GIT_AUTHOR_EMAIL=${id}+${bot}@users.noreply.github.com"
+            echo "GIT_COMMITTER_EMAIL=${id}+${bot}@users.noreply.github.com"
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout the pull request's branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.request.outputs.branch }}
+          fetch-depth: 0
+          token: ${{ steps.publish-token.outputs.token }}
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/workbench
+
+      # Each artifact lands in its own directory under BUNDLES, named as
+      # the artifact, and the tool reads the platform back from that name.
+      - name: Download the bundles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ needs.request.outputs.bundle_pattern }}
+          path: ${{ env.BUNDLES }}
+
+      # The registry client is the orasust crate, whose release the
+      # workbench manifest pins under [package.metadata.orasust]. The cargo
+      # cache above hashes that manifest into its key and keeps the installed
+      # binary, so a bump misses the cache once and the build runs once per
+      # release.
+      - name: Install orasust
+        run: |
+          version="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --orasust-version)"
+          cargo install --locked "orasust@${version}"
+
+      - name: Publish the bundles and record the entry
+        run: |
+          cargo run --quiet --manifest-path tools/workbench/Cargo.toml \
+            --bin binding-publish -- --commit "$COMMIT" --bundles "$BUNDLES"
+
+      - name: Report the publish
+        run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=rocket

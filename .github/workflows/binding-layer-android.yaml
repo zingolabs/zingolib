@@ -1,10 +1,12 @@
 name: Binding Layer for Android
 
-# Builds the Binding Layer's Android libraries and Kotlin bindings on this
-# commit, and packages them into the AAR. The build runs the builder of
-# tools/workbench in the builder's own image. The package job compiles no
-# Rust. The Gradle library takes the prebuilt output, compiles the Kotlin
-# bindings, and bundles the AAR.
+# Builds the Binding Layer's Android libraries and Kotlin bindings on the
+# commit the caller names, and packages them into the AAR. The build runs
+# the builder of tools/workbench in the builder's own image. The package
+# job compiles no Rust. The Gradle library takes the prebuilt output,
+# compiles the Kotlin bindings, and bundles the AAR. The caller passes every
+# artifact name from one run of `build-binding-layer artifact`, so the jobs
+# of one run agree on the names whatever commit they build.
 
 on:
   workflow_call:
@@ -17,12 +19,37 @@ on:
         required: false
         type: string
         default: ubuntu-24.04
+      # The commit to build. The publish workflow names a commit the
+      # manifest lists, which is rarely the commit that triggered it.
+      ref:
+        required: false
+        type: string
+        default: ${{ github.sha }}
+      # The artifact names, from one run of `build-binding-layer artifact`
+      # in the caller, so that every job of one run agrees on them whatever
+      # commit it builds: the per-ABI artifact of each ABI as a JSON object,
+      # the pattern that matches them all, the glob of the AAR that Gradle
+      # writes, and the bundle this workflow uploads.
+      abi_artifacts:
+        required: true
+        type: string
+      abi_pattern:
+        required: true
+        type: string
+      aar_glob:
+        required: true
+        type: string
+      bundle:
+        required: true
+        type: string
 
 jobs:
-  # The job already runs in android_builder:018, the image that the builder
-  # uses, so the builder runs its plan here with --in-image instead of
-  # starting a container. The output holds the ABI's two libraries and the
-  # Kotlin bindings.
+  # The job runs in the image that bindings/android/docker/Dockerfile
+  # describes and build-n-push-android-image.yaml publishes: the builder's
+  # own image, with the libraries, the pinned toolchain, every Android
+  # target, bindgen-cli, and cargo-ndk already installed. The builder runs
+  # its plan here with --in-image instead of starting a container. The
+  # output holds the ABI's two libraries and the Kotlin bindings.
   build:
     name: Build ${{ matrix.abi }}
     runs-on: ${{ inputs.runner }}
@@ -32,33 +59,19 @@ jobs:
       matrix:
         abi: ${{ fromJSON(inputs.abis) }}
     container:
-      image: ghcr.io/zingolabs/android_builder:018
+      # The workbench pins this tag: binding_layer::PUBLISHED_ANDROID_IMAGE.
+      image: ghcr.io/zingolabs/android_builder:019
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     env:
       ABI: ${{ matrix.abi }}
-      RUSTUP_HOME: ${{ github.workspace }}/.rustup
-      CARGO_HOME: ${{ github.workspace }}/.cargo
     steps:
-      # The tools that bindings/android/docker/Dockerfile adds to the image.
-      - name: Install libraries
-        run: |
-          apt update \
-            && apt upgrade -y \
-            && apt install -y --no-install-recommends --no-install-suggests \
-            build-essential \
-            cmake \
-            golang \
-            clang-18 \
-            libclang-18-dev \
-            gcc \
-            g++
-
       # The zl_ descriptor names the release tag that points at HEAD.
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.ref }}
           fetch-tags: true
 
       # A container job's workspace belongs to another user, and git refuses
@@ -67,15 +80,25 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       # With no toolchain named, rustup installs the one rust-toolchain.toml
-      # pins, with its components. The builder repeats this step and adds
-      # the ABI's target to that toolchain itself.
+      # pins, with its components. The image holds that toolchain until the
+      # pin moves. The builder repeats this step and adds the ABI's target
+      # to that toolchain itself.
       - name: Install the pinned toolchain
         run: rustup toolchain install
 
-      - name: Install bindgen-cli and cargo-ndk
-        run: |
-          cargo install --force --locked bindgen-cli
-          cargo install --locked --version 4.0.1 cargo-ndk
+      # The dependencies of the wallet, the proxy, and the bindgen, built
+      # for this ABI, and the workbench's own build. The image already
+      # holds the cargo-installed tools, so the cache leaves CARGO_HOME/bin
+      # out. The builder's plan clears only its output directory, never
+      # target/binding-layer, so a restored cache stays usable.
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.abi }}
+          cache-bin: false
+          workspaces: |
+            . -> target/binding-layer
+            tools/workbench -> target
 
       - name: Build the Binding Layer
         run: |
@@ -88,7 +111,7 @@ jobs:
       - name: Upload the Binding Layer
         uses: actions/upload-artifact@v4
         with:
-          name: binding-layer-android-${{ matrix.abi }}-${{ github.sha }}
+          name: ${{ fromJSON(inputs.abi_artifacts)[matrix.abi] }}
           path: bindings/android/build/binding-layer
           retention-days: 3
           overwrite: true
@@ -101,15 +124,18 @@ jobs:
     env:
       ABIS: ${{ join(fromJSON(inputs.abis), ' ') }}
       OUTPUT: bindings/android/build/binding-layer
+      AAR: bindings/android/build/outputs/aar/${{ inputs.aar_glob }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
 
       # The ABIs share one output directory.
       - name: Download the Binding Layer
         uses: actions/download-artifact@v4
         with:
-          pattern: binding-layer-android-*-${{ github.sha }}
+          pattern: ${{ inputs.abi_pattern }}
           path: bindings/android/build/binding-layer
           merge-multiple: true
 
@@ -142,10 +168,22 @@ jobs:
       - name: Verify the AAR carries both libraries for every ABI
         run: |
           set -eu
-          aar="$(ls bindings/android/build/outputs/aar/*-release.aar)"
+          aar="$(ls $AAR)"
           entries="$(unzip -Z1 "$aar")"
           for abi in $ABIS; do
             for library in libuniffi_zingo.so libzingo_nym_proxy_ffi.so; do
               echo "$entries" | grep --quiet --line-regexp "jni/$abi/$library"
             done
           done
+
+      # The publish workflow pushes this AAR, with the descriptor the
+      # builder read from the wallet build, as the Android Prebuilt Bundle.
+      - name: Upload the AAR and the descriptor
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.bundle }}
+          path: |
+            ${{ env.AAR }}
+            ${{ env.OUTPUT }}/descriptor.txt
+          retention-days: 3
+          overwrite: true
