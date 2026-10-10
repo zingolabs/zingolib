@@ -1,14 +1,12 @@
 #![forbid(unsafe_code)]
-//! Build-time inputs: the Sapling proving parameters (fetched once,
-//! copied beside the crate for mobile packaging) and the build descriptor
-//! compiled into [`zingolib::git_description`].
-//!
-//! The script registers its watch set explicitly. Without any
-//! `cargo:rerun-if-changed` directive cargo falls back to watching the
-//! whole package tree, and this script WRITES into that tree
-//! (`zcash-params/`), so the fallback made every build dirty the next
-//! one: an unconditional rerun (network fetch included) plus a full
-//! recompile cascade through every dependent crate, on every run.
+//! - Downloads the Sapling proving parameters into the user's parameter
+//!   cache when they are absent, and hands their paths to rustc through
+//!   `SAPLING_SPEND_PARAMS` and `SAPLING_OUTPUT_PARAMS`.
+//! - Writes `git_description.txt` and `git_description.rs` into `OUT_DIR`
+//!   and prints `cargo:rustc-env=ZINGOLIB_DESCRIPTOR`.
+//! - Prints `cargo:rerun-if-changed` for this script, both parameter
+//!   files, and the git state behind the descriptor; the package tree
+//!   itself is never watched and never written.
 
 use std::path::{Path, PathBuf};
 use std::{env, process::Command};
@@ -18,15 +16,10 @@ const DESCRIPTOR_TEXT_FILE: &str = "git_description.txt";
 const DESCRIPTOR_ENV: &str = "ZINGOLIB_DESCRIPTOR";
 const DESCRIPTOR_SOURCE_FILE: &str = "git_description.rs";
 
-/// Register everything this script's output depends on. Emitting any
-/// directive disables cargo's whole-package fallback, which is the
-/// point: the package tree contains this script's own outputs.
+/// - Prints `cargo:rerun-if-changed` for this script and the git state
+///   behind the descriptor.
 fn register_rerun_watches() {
     println!("cargo:rerun-if-changed={BUILD_SCRIPT}");
-    // The params copies: deleting either one triggers a rerun, which
-    // restores it. While both exist the fetch is skipped entirely.
-    println!("cargo:rerun-if-changed=zcash-params/sapling-spend.params");
-    println!("cargo:rerun-if-changed=zcash-params/sapling-output.params");
     // The git state behind the descriptor: HEAD moves live in the
     // worktree's own git dir; tags and packed refs live in the common
     // dir (they differ in linked worktrees). The `--dirty` suffix is
@@ -150,18 +143,13 @@ fn git_description() {
     .unwrap();
 }
 
-/// Checks if zcash params are available and downloads them if not.
-/// Also copies them to an internal location for use by mobile platforms.
-/// Skipped entirely while both copies exist: rewriting them
-/// unconditionally is what used to dirty the package on every build.
+/// - Downloads the Sapling parameters into the user's parameter cache
+///   when they are absent; a cached pair is reused without any network.
+/// - Prints `cargo:rustc-env` and `cargo:rerun-if-changed` for each
+///   parameter file, so `include_bytes!` in the crate reads the cache
+///   directly and a vanished file reruns this script.
+/// - Panics when the download fails.
 fn get_zcash_params() {
-    let internal_params_path = Path::new("zcash-params");
-    let spend_dest = internal_params_path.join("sapling-spend.params");
-    let output_dest = internal_params_path.join("sapling-output.params");
-    if spend_dest.exists() && output_dest.exists() {
-        return;
-    }
-
     println!("Checking if params are available...");
 
     let params_path = match zcash_proofs::download_sapling_parameters(Some(400)) {
@@ -177,20 +165,16 @@ fn get_zcash_params() {
         }
     };
 
-    // Copy the params to the internal location.
-    std::fs::create_dir_all(internal_params_path).unwrap();
-    std::fs::copy(params_path.spend, &spend_dest).unwrap();
-    std::fs::copy(params_path.output, &output_dest).unwrap();
+    publish_param_path("SAPLING_SPEND_PARAMS", &params_path.spend);
+    publish_param_path("SAPLING_OUTPUT_PARAMS", &params_path.output);
+}
 
-    let script_modified = std::fs::metadata(BUILD_SCRIPT).unwrap().modified().unwrap();
-    for copy in [spend_dest, output_dest] {
-        std::fs::File::options()
-            .write(true)
-            .open(copy)
-            .unwrap()
-            .set_modified(script_modified)
-            .unwrap();
-    }
+/// - Prints `cargo:rustc-env={variable}={path}` and
+///   `cargo:rerun-if-changed={path}`.
+fn publish_param_path(variable: &str, path: &Path) {
+    let path = path.display();
+    println!("cargo:rustc-env={variable}={path}");
+    println!("cargo:rerun-if-changed={path}");
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
