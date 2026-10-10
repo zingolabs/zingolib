@@ -4077,7 +4077,7 @@ mod shielded_coinbase {
     const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
     const DEFERRED_NU6_3: u32 = 130;
 
-    pub(super) fn deferred_schedule() -> MockChain {
+    fn deferred_schedule() -> MockChain {
         MockChain::with_activation_heights(mock_activation_heights_with(|era| {
             era.set_nu6_3(Some(DEFERRED_NU6_3)).set_nu7(None)
         }))
@@ -4116,54 +4116,82 @@ mod shielded_coinbase {
     }
 }
 
-/// The unavailable-boundary skip on a chain whose boundary checkpoint pepper-sync pruned itself.
+/// The unavailable-boundary skip on a chain whose leap left the anchor boundary without a usable checkpoint.
 mod boundary_pruning {
-    use pepper_sync::sync::MAX_REORG_ALLOWANCE;
+    use incrementalmerkletree::Position;
+    use pepper_sync::sync::MAX_SHARDTREE_CHECKPOINTS;
     use pepper_sync::wallet::{NoteInterface, OrchardNote, OutputId, OutputInterface};
+    use shardtree::store::ShardStore as _;
     use zaino_proto::tonic::Code;
+    use zcash_client_backend::data_api::anchor_retention::{
+        AnchorRetention, AnchorRetentionInterval,
+    };
     use zcash_protocol::PoolType;
     use zcash_protocol::ShieldedPool;
+    use zcash_protocol::consensus::BlockHeight;
     use zip32::AccountId;
 
-    use super::shielded_coinbase::deferred_schedule;
     use crate::check_client_balances;
     use crate::lightclient::LightClient;
     use crate::testutils::lightclient::get_base_address;
-    use crate::testutils::mock_indexer::{Fault, MockNet, Rpc, faucet_funding_transaction_on};
+    use crate::testutils::mock_activation_heights_with;
+    use crate::testutils::mock_indexer::{
+        Fault, MockChain, MockNet, Rpc, faucet_funding_transaction_on,
+    };
+    use crate::wallet::LightWallet;
+    use crate::wallet::migration::parts::SkipReason;
     use crate::wallet::migration::{
         BoundNote, ConsentBinding, MigrationMode, MigrationParams, MigrationPhase, MigrationState,
-        PartId, PartRecord, PartState, SigningStrategy, bucket_index,
+        PartId, PartRecord, PartState, PrepareResult, SigningStrategy, bucket_index,
     };
 
-    const DEFERRED_NU6_3: u32 = 130;
-    const FUNDING: u64 = 100_000;
     const HIDDEN_BLOCKS: u32 = 10;
-    const PRUNED_BUCKET_MODULUS: u32 = (MAX_REORG_ALLOWANCE + 1).next_power_of_two();
-    const TARGET_TIP: u32 = 2 * PRUNED_BUCKET_MODULUS
-        + MAX_REORG_ALLOWANCE
-        + (PRUNED_BUCKET_MODULUS - MAX_REORG_ALLOWANCE - HIDDEN_BLOCKS) / 2;
-    const _: () = assert!(2 * PRUNED_BUCKET_MODULUS >= DEFERRED_NU6_3);
+    const PRUNED_BUCKET_MODULUS: u32 = (MAX_SHARDTREE_CHECKPOINTS + 1).next_power_of_two();
+    const ANCHOR_BUCKET: u64 = 2;
+    const WINDOW_BUCKET: u64 = ANCHOR_BUCKET + 1;
+    const ANCHOR_BOUNDARY: u32 = ANCHOR_BUCKET as u32 * PRUNED_BUCKET_MODULUS;
+    const DEFERRED_NU6_3: u32 = 200;
+    const TARGET_TIP: u32 =
+        WINDOW_BUCKET as u32 * PRUNED_BUCKET_MODULUS + (PRUNED_BUCKET_MODULUS - HIDDEN_BLOCKS) / 2;
+    const _: () = assert!(
+        ANCHOR_BOUNDARY >= DEFERRED_NU6_3,
+        "the transmit path skips an anchor below the NU6.3 activation before it looks at the tree"
+    );
+    const _: () = assert!(
+        TARGET_TIP - ANCHOR_BOUNDARY > MAX_SHARDTREE_CHECKPOINTS,
+        "the leap must leave the anchor boundary below pepper-sync's rolling checkpoint window"
+    );
+    const _: () = assert!(
+        TARGET_TIP + HIDDEN_BLOCKS < (WINDOW_BUCKET as u32 + 1) * PRUNED_BUCKET_MODULUS,
+        "the hidden blocks must keep the tip inside the transmission window"
+    );
 
-    /// - Writes a hand-built scheduled migration into the client's wallet.
+    fn schedule() -> MockChain {
+        MockChain::with_activation_heights(mock_activation_heights_with(|era| {
+            era.set_nu6_3(Some(DEFERRED_NU6_3)).set_nu7(None)
+        }))
+    }
+
+    /// - Writes a hand-built scheduled migration into the client's wallet, its one part
+    ///   anchored at `ANCHOR_BUCKET` and transmitting in `WINDOW_BUCKET`.
     async fn inject_scheduled_migration(
         client: &LightClient,
+        params: MigrationParams,
         bound: (u64, OutputId, [u8; 32]),
-        bucket: u64,
     ) {
         let mut wallet = client.wallet().write().await;
-        let mut params = MigrationParams::provisional(wallet.chain_type());
-        params.bucket_modulus = PRUNED_BUCKET_MODULUS;
-        let (denomination, output_id, nullifier) = bound;
+        let (funding, output_id, nullifier) = bound;
         let mut part = PartRecord::new(
             PartId(0),
-            denomination,
+            funding - params.part_fee,
             BoundNote {
                 output_id,
                 nullifier,
                 commitment: [0; 32],
             },
         );
-        part.assign(bucket).expect("fresh parts are bound");
+        part.assign(WINDOW_BUCKET).expect("fresh parts are bound");
+        part.anchor_bucket = Some(ANCHOR_BUCKET);
         wallet.migration = Some(MigrationState {
             consent: ConsentBinding {
                 params_hash: params.params_hash(),
@@ -4179,47 +4207,85 @@ mod boundary_pruning {
         });
     }
 
-    async fn funding_note(client: &LightClient) -> (u64, OutputId, [u8; 32]) {
+    async fn funding_note(
+        client: &LightClient,
+        funding: u64,
+    ) -> ((u64, OutputId, [u8; 32]), Position) {
         let wallet = client.wallet().read().await;
         wallet
             .wallet_transactions
             .values()
             .flat_map(|transaction| OrchardNote::transaction_outputs(transaction).to_vec())
-            .find(|note| note.value() == FUNDING)
+            .find(|note| note.value() == funding)
             .map(|note| {
                 (
-                    note.value(),
-                    note.output_id(),
-                    note.nullifier()
-                        .expect("scanned wallet notes carry nullifiers")
-                        .to_bytes(),
+                    (
+                        note.value(),
+                        note.output_id(),
+                        note.nullifier()
+                            .expect("scanned wallet notes carry nullifiers")
+                            .to_bytes(),
+                    ),
+                    note.position()
+                        .expect("scanned wallet notes carry tree positions"),
                 )
             })
             .expect("the recipient holds its funding note")
     }
 
-    /// The mock twin of the live `unavailable_boundary_tree_state_skips_without_sync`
-    /// with real pruning: the recipient syncs across a leap past the second bucket
-    /// boundary by more than the checkpoint retention, so pepper-sync itself prunes
-    /// the boundary's checkpoint, and a poisoned block fetch proves the transmit
-    /// path never syncs.
+    fn orchard_checkpoints_holding(
+        wallet: &LightWallet,
+        at_or_below: BlockHeight,
+        position: Position,
+    ) -> Vec<BlockHeight> {
+        let store = wallet.shard_trees.orchard.store();
+        let count = store.checkpoint_count().expect("infallible");
+        (0..count)
+            .filter_map(|depth| store.get_checkpoint_at_depth(depth).expect("infallible"))
+            .filter(|(id, checkpoint)| {
+                *id <= at_or_below && checkpoint.position().is_some_and(|held| held >= position)
+            })
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    /// The mock twin of the live `unavailable_boundary_tree_state_skips_without_sync`:
+    /// the recipient syncs across a leap that leaves the anchor boundary below
+    /// pepper-sync's rolling checkpoint window, on a schedule whose canonical
+    /// retention grid pins nothing at or below that boundary, and a poisoned
+    /// block fetch proves the transmit path never syncs.
     #[tokio::test]
     async fn unavailable_boundary_tree_state_skips_without_sync_on_the_mock_chain() {
-        let mut net = MockNet::launch_with(deferred_schedule()).await;
+        let anchor_boundary = BlockHeight::from_u32(ANCHOR_BOUNDARY);
+        let retention = AnchorRetention::new(
+            BlockHeight::from_u32(DEFERRED_NU6_3),
+            AnchorRetentionInterval::default(),
+        );
+        assert!(
+            retention
+                .retained_in_range(BlockHeight::from_u32(0)..=anchor_boundary)
+                .is_empty(),
+            "the canonical retention grid must pin no checkpoint at or below the anchor boundary"
+        );
+
+        let mut net = MockNet::launch_with(schedule()).await;
+        let mut params = MigrationParams::provisional(net.chain_type());
+        params.bucket_modulus = PRUNED_BUCKET_MODULUS;
+        let funding = params.max_residual_value + params.part_fee;
         let mut recipient = net
             .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
             .await;
         let recipient_ua =
             get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-        let funding = faucet_funding_transaction_on(
+        let funding_transaction = faucet_funding_transaction_on(
             net.chain.read().await.activation_heights(),
-            vec![(&recipient_ua, FUNDING, None)],
+            vec![(&recipient_ua, funding, None)],
         )
         .await;
         {
             let mut chain = net.chain.write().await;
             chain.mine_empty_blocks(1);
-            chain.mine_block(vec![funding]);
+            chain.mine_block(vec![funding_transaction]);
             let funded_tip = chain.tip();
             assert!(
                 funded_tip < DEFERRED_NU6_3,
@@ -4228,7 +4294,7 @@ mod boundary_pruning {
             chain.mine_empty_blocks(TARGET_TIP - funded_tip);
         }
         recipient.sync_and_await().await.unwrap();
-        check_client_balances!(recipient, i: 0 o: FUNDING s: 0 t: 0);
+        check_client_balances!(recipient, i: 0 o: funding s: 0 t: 0);
 
         let known_height = recipient
             .wallet()
@@ -4237,13 +4303,22 @@ mod boundary_pruning {
             .sync_state
             .last_known_chain_height()
             .expect("the recipient has synced");
-        let current_bucket = bucket_index(known_height, PRUNED_BUCKET_MODULUS);
         assert_eq!(
-            current_bucket, 2,
-            "the chain must sit inside the second bucket, past its boundary"
+            bucket_index(known_height, PRUNED_BUCKET_MODULUS),
+            WINDOW_BUCKET,
+            "the chain must sit inside the transmission window"
         );
-        let bound = funding_note(&recipient).await;
-        inject_scheduled_migration(&recipient, bound, current_bucket).await;
+        let (bound, position) = funding_note(&recipient, funding).await;
+        assert_eq!(
+            orchard_checkpoints_holding(
+                &*recipient.wallet().read().await,
+                anchor_boundary,
+                position
+            ),
+            Vec::<BlockHeight>::new(),
+            "no checkpoint at or below the anchor boundary may hold the bound note"
+        );
+        inject_scheduled_migration(&recipient, params, bound).await;
 
         {
             let mut chain = net.chain.write().await;
@@ -4264,8 +4339,9 @@ mod boundary_pruning {
             1,
             "the transmit path must never fetch blocks"
         );
-        let wallet = recipient.wallet().read().await;
-        let part = &wallet.migration.as_ref().unwrap().parts[0];
+        let mut wallet = recipient.wallet().write().await;
+        let state = wallet.migration.as_ref().unwrap();
+        let part = &state.parts[0];
         assert_eq!(part.state, PartState::Assigned, "a skip writes nothing");
         assert_eq!(part.attempts, 0, "a skip records no attempt");
         assert!(part.anchor_witness.is_none());
@@ -4274,5 +4350,21 @@ mod boundary_pruning {
             Some(known_height),
             "the transmit path must never synchronize"
         );
+
+        let (account, params, mut probe) = (state.account, state.params.clone(), part.clone());
+        match wallet
+            .prepare_part(account, &mut probe, &params)
+            .expect("an unavailable boundary is a skip, not an error")
+        {
+            PrepareResult::Skip(SkipReason::MissedBoundary { boundary }) => {
+                assert_eq!(boundary, anchor_boundary);
+            }
+            PrepareResult::Skip(other) => {
+                panic!("the part skipped for the wrong reason: {other:?}")
+            }
+            PrepareResult::Ready { .. } => {
+                panic!("the anchor boundary's tree state must be unavailable")
+            }
+        }
     }
 }
