@@ -4,9 +4,13 @@ pub mod bundle_nym_proxy;
 pub mod ci_plan;
 pub mod container;
 pub mod dupes_gate;
+pub mod exclusion_audit;
 pub mod exit_census;
 pub mod image;
+pub mod run_cli;
+pub mod sweep_teardown;
 pub mod test;
+pub mod test_summary;
 pub mod workbench;
 
 use std::io::Write;
@@ -84,7 +88,7 @@ pub fn finished_in(
     finished(program, output.status, output.stdout)
 }
 
-fn command_in(directory: &Path, program: &str, args: &[&str], env: &[(&str, &str)]) -> Command {
+pub fn command_in(directory: &Path, program: &str, args: &[&str], env: &[(&str, &str)]) -> Command {
     let mut command = Command::new(program);
     command
         .args(args)

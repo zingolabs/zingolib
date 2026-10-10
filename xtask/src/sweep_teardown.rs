@@ -12,14 +12,10 @@
 //! Usage: `sweep-teardown [--rounds N] [--proxy <path>]`. Requires `grpcurl`
 //! and `ncat` on PATH, and by default the debug-profile bundled proxy.
 
-#![forbid(unsafe_code)]
-
 use std::io::BufRead;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
-
-use workbench::{repo_root, run};
 
 /// The local port the ncat bridge listens on for grpcurl.
 const BRIDGE_PORT: u16 = 19080;
@@ -41,15 +37,11 @@ const PROBE_BUDGET: Duration = Duration::from_secs(20);
 /// How many rounds ride the same exit without `--rounds`.
 const DEFAULT_ROUNDS: usize = 2;
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    run("sweep-teardown", || teardown(&args), |()| {})
-}
-
-/// Runs the whole teardown, returning its findings as printed lines.
-fn teardown(args: &[String]) -> Result<(), Vec<String>> {
+/// - Spawns nym-proxy, an ncat bridge, and grpcurl probes as child processes.
+/// - Writes the findings to stdout.
+pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let rounds = parse_rounds(args)?;
-    let proxy_path = parse_proxy(args)?;
+    let proxy_path = parse_proxy(root, args)?;
 
     println!("spawning standalone nym-proxy (draws its own exit)...");
     let mut proxy = Command::new(&proxy_path)
@@ -163,9 +155,9 @@ fn parse_rounds(args: &[String]) -> Result<usize, Vec<String>> {
 }
 
 /// Parses `--proxy <path>`, defaulting to the debug-profile bundled proxy.
-fn parse_proxy(args: &[String]) -> Result<PathBuf, Vec<String>> {
+fn parse_proxy(root: &Path, args: &[String]) -> Result<PathBuf, Vec<String>> {
     match args.iter().position(|arg| arg == "--proxy") {
-        None => Ok(repo_root()?.join("target/debug/nym-proxy")),
+        None => Ok(root.join("target/debug/nym-proxy")),
         Some(index) => args
             .get(index + 1)
             .map(PathBuf::from)

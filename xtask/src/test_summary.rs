@@ -1,42 +1,11 @@
-//! `test-summary` runs the three test phases and prints a combined summary.
-//!
-//! Invoked as `cargo xtask hierarchy-test`, which runs
-//! `cargo run --bin test-summary -- <nextest args>`, or as
-//! `cargo xtask lite-hierarchy`, which adds `--lite` to narrow the libtonode
-//! phase to the `send_shield_cycle` fixture.
-//! Runs the `packages`, `zingo-cli`, and `libtonode` phases (each in its own
-//! CI container via the `cargo xtask test` front door), streams each run's output
-//! while capturing it, parses the nextest summary line, and aggregates the
-//! totals.
-//!
-//! Phases gate: a failing phase stops the later, more expensive phases from
-//! launching (a broken unit test should never cost a libtonode run). The
-//! summary table still prints for every phase, marking the ones a failure
-//! prevented from running.
-//!
-//! Adapted from zaino's `tools/test-runner` `live-summary` binary, which
-//! instead runs all partitions unconditionally. The gating is deliberate
-//! divergence.
-
-#![forbid(unsafe_code)]
-
 use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
+use std::path::Path;
 
-/// Whether `arg` is a cargo package-selection flag. Mirrors the
-/// package-selection list in xtask/src/test.rs.
-fn is_package_selection_arg(arg: &str) -> bool {
-    matches!(
-        arg,
-        "-p" | "--package" | "--workspace" | "--all" | "--exclude" | "--manifest-path"
-    ) || arg.starts_with("--package=")
-        || arg.starts_with("--exclude=")
-        || arg.starts_with("--manifest-path=")
-}
+use crate::test;
 
 /// The phases, in order: the hermetic package tests first, then the live
 /// suites from fastest to slowest. Each entry is (display label, the
-/// `cargo xtask test` invocation that selects the phase's TESTS).
+/// `cargo xtask test` arguments that select the phase's TESTS).
 ///
 /// Phases select tests with nextest filtersets, never with cargo package
 /// selections. Every phase then shares the front door's `--workspace`
@@ -44,10 +13,10 @@ fn is_package_selection_arg(arg: &str) -> bool {
 /// hierarchy run after the first recompiles nothing. A `-p` phase scope
 /// re-unifies features per selection and compiles (then, after any source
 /// change, recompiles) a distinct variant of zingolib per phase.
-const PHASES: &[(&str, &str)] = &[
-    ("packages", "packages"),
-    ("zingo-cli", "-E 'package(zingo-cli)'"),
-    ("libtonode", "-E 'package(libtonode-tests)'"),
+const PHASES: &[(&str, &[&str])] = &[
+    ("packages", &[test::PACKAGES_WORD]),
+    ("zingo-cli", &["-E", "package(zingo-cli)"]),
+    ("libtonode", &["-E", "package(libtonode-tests)"]),
 ];
 
 /// The same phases with the libtonode one narrowed to a single fixture,
@@ -69,18 +38,21 @@ const PHASES: &[(&str, &str)] = &[
 /// cold run this saves nothing, because the packages phase precedes it
 /// under `--workspace` and has already built all ten; it saves the build
 /// wherever this phase meets a tree the earlier phases did not compile.
-const LITE_PHASES: &[(&str, &str)] = &[
-    ("packages", "packages"),
-    ("zingo-cli", "-E 'package(zingo-cli)'"),
+const LITE_PHASES: &[(&str, &[&str])] = &[
+    ("packages", &[test::PACKAGES_WORD]),
+    ("zingo-cli", &["-E", "package(zingo-cli)"]),
     (
         "libtonode",
-        "-E 'package(libtonode-tests) & test(chain_generics::send_shield_cycle)' \
-         --test chain_generics",
+        &[
+            "-E",
+            "package(libtonode-tests) & test(chain_generics::send_shield_cycle)",
+            "--test",
+            "chain_generics",
+        ],
     ),
 ];
 
-/// This binary's own flag, consumed here and never forwarded to nextest.
-const LITE_FLAG: &str = "--lite";
+pub const LITE_FLAG: &str = "--lite";
 
 /// One nextest run's tallies, zero where the summary line was absent.
 #[derive(Default)]
@@ -113,40 +85,43 @@ impl Summary {
     }
 }
 
-/// Run one phase through the `cargo xtask test` front door, streaming its combined
-/// output to our stdout while capturing it for parsing. Returns
-/// (exit_code, captured_output).
-fn run_phase(invocation: &str, forwarded_args: &[String]) -> Result<(i32, String), std::io::Error> {
-    // `bash -c '... 2>&1'` merges stderr into stdout so the single captured
-    // stream carries the nextest summary line wherever nextest emits it.
-    let mut shell_command = format!("cargo xtask test {invocation}");
-    for arg in forwarded_args {
-        shell_command.push(' ');
-        // Forwarded nextest args are simple flags and filter expressions;
-        // single-quote them so filter syntax survives the shell.
-        shell_command.push_str(&format!("'{}'", arg.replace('\'', r"'\''")));
-    }
-    shell_command.push_str(" 2>&1");
+/// - Spawns the containerized nextest run of one phase through [`test::container_command`] and waits for it.
+/// - Writes the run's merged stdout and stderr to stdout, line by line.
+fn run_phase(
+    root: &Path,
+    invocation: &[&str],
+    forwarded_args: &[String],
+) -> Result<(i32, String), Vec<String>> {
+    let args: Vec<String> = invocation
+        .iter()
+        .map(ToString::to_string)
+        .chain(forwarded_args.iter().cloned())
+        .collect();
+    let mut command = test::container_command(root, &test::front_door_args(&args))?;
 
-    let mut child = Command::new("bash")
-        .arg("-c")
-        .arg(shell_command)
-        .stdout(Stdio::piped())
-        .spawn()?;
+    let (reader, writer) = std::io::pipe().map_err(|e| vec![format!("cannot open a pipe: {e}")])?;
+    let stderr = writer
+        .try_clone()
+        .map_err(|e| vec![format!("cannot clone the pipe: {e}")])?;
+    command.stdout(writer).stderr(stderr);
+    let mut child = command
+        .spawn()
+        .map_err(|e| vec![format!("cannot spawn the test run: {e}")])?;
+    drop(command);
 
-    let stdout = child
-        .stdout
-        .take()
-        .expect("child stdout is piped: Stdio::piped() was set above");
     let mut captured = String::new();
-    for line in BufReader::new(stdout).lines() {
-        let line = line?;
+    for line in BufReader::new(reader).lines() {
+        let line = line.map_err(|e| vec![format!("cannot read the test run: {e}")])?;
         println!("{line}");
         captured.push_str(&line);
         captured.push('\n');
     }
 
-    let code = child.wait()?.code().unwrap_or(1);
+    let code = child
+        .wait()
+        .map_err(|e| vec![format!("cannot wait for the test run: {e}")])?
+        .code()
+        .unwrap_or(1);
     Ok((code, captured))
 }
 
@@ -267,8 +242,10 @@ fn print_row(label: &str, s: &Summary) {
     );
 }
 
-fn main() -> Result<(), std::io::Error> {
-    let mut forwarded_args: Vec<String> = std::env::args().skip(1).collect();
+/// - Runs each phase through [`run_phase`], stopping after a failing one.
+/// - Writes the summary table to stdout, and exits this process with 1 when a phase failed.
+pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+    let mut forwarded_args: Vec<String> = args.to_vec();
 
     // The lite flag chooses the phase set here; forwarding it would reach
     // nextest, which knows no such flag.
@@ -282,12 +259,14 @@ fn main() -> Result<(), std::io::Error> {
     // Forwarded args reach every phase's nextest invocation, where a
     // package selection would silently replace all three phase scopes
     // with the same one.
-    if let Some(arg) = forwarded_args.iter().find(|a| is_package_selection_arg(a)) {
-        eprintln!(
-            "test-summary: package-selection arg '{arg}' is not accepted; each phase selects \
-             its own scope. Use 'cargo xtask test -p <package>' to scope a single run."
-        );
-        std::process::exit(2);
+    if let Some(arg) = forwarded_args
+        .iter()
+        .find(|arg| test::is_package_selection(arg))
+    {
+        return Err(vec![format!(
+            "package-selection arg '{arg}' is not accepted; each phase selects its own scope. \
+             Use 'cargo xtask test -p <package>' to scope a single run."
+        )]);
     }
 
     let mut results = Vec::new();
@@ -298,7 +277,7 @@ fn main() -> Result<(), std::io::Error> {
             continue;
         }
         println!(">>> test-summary: running the {phase} phase");
-        let (exit_code, log) = run_phase(invocation, &forwarded_args)?;
+        let (exit_code, log) = run_phase(root, invocation, &forwarded_args)?;
         if exit_code != 0 {
             failed = true;
         }
@@ -336,12 +315,12 @@ fn main() -> Result<(), std::io::Error> {
     // Every non-passing test by name, so nobody scrolls a 20-minute log to
     // learn what actually failed.
     for (phase, outcome) in &results {
-        if let Some((_, _, failures)) = outcome {
-            if !failures.is_empty() {
-                println!("  {phase} non-passing tests:");
-                for (status, name) in failures {
-                    println!("    {status:<8} {name}");
-                }
+        if let Some((_, _, failures)) = outcome
+            && !failures.is_empty()
+        {
+            println!("  {phase} non-passing tests:");
+            for (status, name) in failures {
+                println!("    {status:<8} {name}");
             }
         }
     }
@@ -379,23 +358,6 @@ fn main() -> Result<(), std::io::Error> {
 mod package_selection_guard {
     use super::*;
 
-    #[test]
-    fn rejects_every_selection_flag_form() {
-        for arg in [
-            "-p",
-            "--package",
-            "--package=zingolib",
-            "--workspace",
-            "--all",
-            "--exclude",
-            "--exclude=zingo-cli",
-            "--manifest-path",
-            "--manifest-path=Cargo.toml",
-        ] {
-            assert!(is_package_selection_arg(arg), "should reject {arg}");
-        }
-    }
-
     /// Phases must select tests (filtersets), never packages: a package
     /// selection re-unifies features per phase and compiles a distinct
     /// zingolib variant per phase, defeating the shared --workspace
@@ -403,10 +365,9 @@ mod package_selection_guard {
     #[test]
     fn phase_invocations_select_tests_not_packages() {
         for (_, invocation) in PHASES.iter().chain(LITE_PHASES) {
-            for token in invocation.split_whitespace() {
-                let token = token.trim_matches('\'');
+            for token in *invocation {
                 assert!(
-                    !is_package_selection_arg(token),
+                    !test::is_package_selection(token),
                     "phase invocation {invocation:?} carries package-selection arg {token:?}"
                 );
             }
@@ -444,10 +405,11 @@ mod package_selection_guard {
             .iter()
             .find(|(phase, _)| *phase == "libtonode")
             .expect("the lite set has a libtonode phase");
-        assert!(lite.contains("package(libtonode-tests)"), "{lite}");
+        let filterset = lite[1];
+        assert!(filterset.contains("package(libtonode-tests)"), "{lite:?}");
         assert!(
-            lite.contains("test(chain_generics::send_shield_cycle)"),
-            "{lite}"
+            filterset.contains("test(chain_generics::send_shield_cycle)"),
+            "{lite:?}"
         );
     }
 
@@ -464,25 +426,15 @@ mod package_selection_guard {
             .iter()
             .find(|(phase, _)| *phase == "libtonode")
             .expect("the lite set has a libtonode phase");
-        assert!(lite.contains("--test chain_generics"), "{lite}");
         assert!(
-            !is_package_selection_arg("--test"),
+            lite.windows(2)
+                .any(|pair| pair == ["--test", "chain_generics"]),
+            "{lite:?}"
+        );
+        assert!(
+            !test::is_package_selection("--test"),
             "--test must stay a target selection, so the front door still appends --workspace"
         );
-    }
-
-    #[test]
-    fn passes_ordinary_nextest_args() {
-        for arg in [
-            "--no-fail-fast",
-            "--no-capture",
-            "-E",
-            "test(slow)",
-            "some_test_name",
-            "--run-ignored",
-        ] {
-            assert!(!is_package_selection_arg(arg), "should pass {arg}");
-        }
     }
 }
 

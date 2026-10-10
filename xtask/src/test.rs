@@ -4,7 +4,9 @@ use crate::ci_plan;
 use crate::container::{
     CARGO_GIT_VOLUME, CARGO_REGISTRY_VOLUME, Runtime, TARGET_VOLUME, TEST_BINARIES_DIR,
 };
-use crate::{CARGO, exec_in, image};
+use std::process::Command;
+
+use crate::{CARGO, command_in, exec_in, image};
 
 pub const LIVE_PACKAGES: [&str; 2] = ["libtonode-tests", "zingo-cli"];
 
@@ -80,19 +82,25 @@ impl Variant {
 
     /// - Runs the nextest run through [`host`] or [`container`].
     pub fn run(self, root: &Path, args: &[String]) -> Result<(), Vec<String>> {
-        let (set_args, rest) = if self == Self::Test {
-            reserved_word_args(args)
+        let args = if self == Self::Test {
+            front_door_args(args)
         } else {
-            (Vec::new(), args)
+            args.to_vec()
         };
-        let mut all = prepend(self.fixed_args(), &set_args);
-        all.extend(rest.iter().cloned());
+        let all = prepend(self.fixed_args(), &args);
         if self.on_host() {
             host(root, &all)
         } else {
             container(root, &all)
         }
     }
+}
+
+pub fn front_door_args(args: &[String]) -> Vec<String> {
+    let (set_args, rest) = reserved_word_args(args);
+    let mut all = set_args;
+    all.extend(rest.iter().cloned());
+    all
 }
 
 fn prepend(fixed: &[&str], args: &[String]) -> Vec<String> {
@@ -139,12 +147,14 @@ fn reserved_word_args(args: &[String]) -> (Vec<String>, &[String]) {
 }
 
 fn has_package_selection(args: &[String]) -> bool {
-    args.iter().any(|arg| {
-        PACKAGE_SELECTION_FLAGS.contains(&arg.as_str())
-            || PACKAGE_SELECTION_PREFIXES
-                .iter()
-                .any(|prefix| arg.starts_with(prefix))
-    })
+    args.iter().any(|arg| is_package_selection(arg))
+}
+
+pub fn is_package_selection(arg: &str) -> bool {
+    PACKAGE_SELECTION_FLAGS.contains(&arg)
+        || PACKAGE_SELECTION_PREFIXES
+            .iter()
+            .any(|prefix| arg.starts_with(prefix))
 }
 
 /// - Reads ZINGOLIB_NEXTEST_PROFILE and ZINGOLIB_NEXTEST_RETRIES from the environment.
@@ -186,10 +196,25 @@ fn host(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     )
 }
 
+/// - Builds the test image when the runtime lacks it, through [`container_command`].
+/// - Replaces this process with `<runtime> run` of the test image.
+fn container(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+    let command = container_command(root, args)?;
+    let args: Vec<&str> = command
+        .get_args()
+        .map(|arg| arg.to_str().unwrap_or_default())
+        .collect();
+    exec_in(
+        root,
+        command.get_program().to_str().unwrap_or_default(),
+        &args,
+        &[],
+    )
+}
+
 /// - Builds the test image when the runtime lacks it, through [`image::ensure`].
 /// - Reads ZINGO_REGENERATE_CHAIN_CACHE and RUST_LOG from the environment.
-/// - Replaces this process with `<runtime> run` of the test image, which mounts `root` and the three named volumes.
-fn container(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+pub fn container_command(root: &Path, args: &[String]) -> Result<Command, Vec<String>> {
     image::ensure(root)?;
     let runtime = Runtime::detect()?;
     let suffix = runtime.mount_suffix();
@@ -236,12 +261,12 @@ fn container(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
         "run".to_string(),
     ]);
     command.extend(nextest_args(args));
-    exec_in(
+    Ok(command_in(
         root,
         runtime.program(),
         &command.iter().map(String::as_str).collect::<Vec<_>>(),
         &[],
-    )
+    ))
 }
 
 #[cfg(test)]
@@ -297,6 +322,38 @@ mod tests {
         let (set_args, rest) = reserved_word_args(&args);
         assert!(set_args.is_empty());
         assert_eq!(rest, args);
+    }
+
+    #[test]
+    fn every_selection_flag_form_is_a_package_selection() {
+        for arg in [
+            "-p",
+            "--package",
+            "--package=zingolib",
+            "--workspace",
+            "--all",
+            "--exclude",
+            "--exclude=zingo-cli",
+            "--manifest-path",
+            "--manifest-path=Cargo.toml",
+        ] {
+            assert!(is_package_selection(arg), "should reject {arg}");
+        }
+    }
+
+    #[test]
+    fn ordinary_nextest_args_are_not_package_selections() {
+        for arg in [
+            "--no-fail-fast",
+            "--no-capture",
+            "-E",
+            "test(slow)",
+            "some_test_name",
+            "--run-ignored",
+            "--test",
+        ] {
+            assert!(!is_package_selection(arg), "should pass {arg}");
+        }
     }
 
     #[test]

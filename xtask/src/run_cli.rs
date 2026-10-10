@@ -28,12 +28,10 @@
 //! takes it online (ADR 0025). Neither this tool nor a bundled proxy binary
 //! implies consent.
 
-#![forbid(unsafe_code)]
-
 use std::path::{Path, PathBuf};
-use std::process::{exit, Command};
+use std::process::{Command, exit};
 
-use workbench::repo_root;
+use crate::bundle_nym_proxy;
 
 const PROG: &str = "run-cli";
 
@@ -67,22 +65,19 @@ fn value_of(args: &[String], flag: &str) -> Result<Option<String>, Vec<String>> 
         .transpose()
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match launch(&args) {
-        Ok(code) => exit(code),
-        Err(lines) => {
-            for line in lines {
-                eprintln!("{PROG}: {line}");
-            }
-            exit(1);
-        }
+/// - Exits this process with the CLI's exit code when it is not zero.
+pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+    let code = launch(root, args)?;
+    if code != 0 {
+        exit(code);
     }
+    Ok(())
 }
 
-/// Build the CLI (and, unless `--nakednet` opts out, bundle the proxy
-/// binary beside it), run the CLI to completion, and return its exit code.
-fn launch(args: &[String]) -> Result<i32, Vec<String>> {
+/// - Runs `cargo build` of zingo-cli as a child process in `root`.
+/// - Bundles nym-proxy beside the built CLI unless `--nakednet` opts out.
+/// - Runs the built CLI as a child process and waits for it, unless `--build-only` stops before.
+fn launch(root: &Path, args: &[String]) -> Result<i32, Vec<String>> {
     let nakednet = args.iter().any(|arg| arg == "--nakednet");
     let nym_flag = args.iter().any(|arg| arg == "--nym");
     if nakednet && nym_flag {
@@ -128,7 +123,6 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
         })
         .collect();
 
-    let root = repo_root()?;
     let profile = if release { "release" } else { "debug" };
     // Naming a build directory is what lets two differently-featured builds
     // stand side by side, so a caller alternating between them pays no
@@ -138,7 +132,7 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
         .map_or_else(|| root.join("target"), PathBuf::from);
 
     let mut build = Command::new("cargo");
-    build.current_dir(&root).args(["build", "-p", "zingo-cli"]);
+    build.current_dir(root).args(["build", "-p", "zingo-cli"]);
     if target_dir.is_some() {
         build.arg(TARGET_DIR_FLAG).arg(&builds);
     }
@@ -165,7 +159,7 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
 
     let beside = builds.join(profile);
     if nym {
-        bundle_proxy(&root, release, &beside)?;
+        bundle_proxy(root, release, &beside)?;
     }
 
     if build_only {
@@ -190,36 +184,11 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
 /// The CLI decides whether the proxy ever runs: it spawns it only at an
 /// Online session's go-online moment, never for an offline session.
 fn bundle_proxy(root: &Path, release: bool, beside: &Path) -> Result<(), Vec<String>> {
-    let mut bundle = Command::new("cargo");
-    bundle.current_dir(root).args([
-        "run",
-        "-q",
-        "--manifest-path",
-        "tools/workbench/Cargo.toml",
-        "--bin",
-        "bundle-nym-proxy",
-        "--",
-    ]);
-    if release {
-        bundle.arg("--release");
-    }
-    bundle.arg("--dest").arg(beside);
-    let bundled = bundle
-        .output()
-        .map_err(|e| vec![format!("failed to run bundle-nym-proxy: {e}")])?;
-    if !bundled.status.success() {
-        return Err(vec![format!(
-            "bundle-nym-proxy failed ({}): {}",
-            bundled.status,
-            String::from_utf8_lossy(&bundled.stderr).trim()
-        )]);
-    }
-    let proxy_path = String::from_utf8(bundled.stdout)
-        .map_err(|e| vec![format!("bundle-nym-proxy output not utf-8: {e}")])?;
+    let proxy_path = bundle_nym_proxy::bundle(root, release, Some(beside.to_path_buf()))?;
     eprintln!(
         "{PROG}: nym-proxy bundled at {}; the CLI spawns it only for an Online \
          session (offline sessions boot no proxy)",
-        proxy_path.trim()
+        proxy_path.display()
     );
     Ok(())
 }

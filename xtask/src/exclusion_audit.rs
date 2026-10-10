@@ -36,14 +36,11 @@
 //! Invoked as `cargo xtask exclusion-audit`, optionally with candidates:
 //! `cargo xtask exclusion-audit zingo-cli`.
 
-#![forbid(unsafe_code)]
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::process::Command;
 
-use workbench::{repo_root, run};
-use xtask::test::BUILD_EXCLUDABLE;
+use crate::test::BUILD_EXCLUDABLE;
 
 /// Run `cargo tree <args>` from `dir` and return its stdout.
 fn cargo_tree(dir: &Path, args: &[&str]) -> Result<String, Vec<String>> {
@@ -192,81 +189,84 @@ fn confirm(dir: &Path, candidate: &str, flagged: Vec<Shift>) -> Result<Vec<Shift
     Ok(confirmed)
 }
 
-fn main() -> ! {
-    let extra: Vec<String> = std::env::args().skip(1).collect();
-    run(
-        "exclusion-audit",
-        move || {
-            let root = repo_root()?;
-            let mut candidates: Vec<String> =
-                BUILD_EXCLUDABLE.iter().map(ToString::to_string).collect();
-            for name in extra {
-                if !candidates.contains(&name) {
-                    candidates.push(name);
-                }
-            }
-            // An empty array is a finding, not a fault: it says no member
-            // has passed this audit, which is the state the repo is in.
-            if candidates.is_empty() {
-                return Ok(Vec::new());
-            }
-            let full = feature_graph(&root, None)?;
-            let mut verdicts = Vec::new();
-            for candidate in &candidates {
-                if !full.contains_key(candidate) {
-                    return Err(vec![format!(
-                        "{candidate} is not in the workspace graph; `--exclude` would reject it"
-                    )]);
-                }
-                let excluded = feature_graph(&root, Some(candidate))?;
-                let mut verdict = compare(candidate, &full, &excluded);
-                verdict.shifts = confirm(&root, candidate, verdict.shifts)?;
-                verdicts.push(verdict);
-            }
-            Ok(verdicts)
-        },
-        |verdicts: Vec<Verdict>| {
-            if verdicts.is_empty() {
-                println!(
-                    "  BUILD_EXCLUDABLE is empty: no member is excluded from the packages \
+/// - Runs `cargo tree` as child processes in `root`.
+/// - Writes the verdicts to stdout, and exits this process with 1 when a candidate is unsafe.
+pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+    let verdicts = audit(root, args)?;
+    report(&verdicts);
+    Ok(())
+}
+
+/// - Runs `cargo tree` as child processes in `root`.
+fn audit(root: &Path, extra: &[String]) -> Result<Vec<Verdict>, Vec<String>> {
+    let mut candidates: Vec<String> = BUILD_EXCLUDABLE.iter().map(ToString::to_string).collect();
+    for name in extra {
+        if !candidates.contains(name) {
+            candidates.push(name.clone());
+        }
+    }
+    // An empty array is a finding, not a fault: it says no member
+    // has passed this audit, which is the state the repo is in.
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+    let full = feature_graph(root, None)?;
+    let mut verdicts = Vec::new();
+    for candidate in &candidates {
+        if !full.contains_key(candidate) {
+            return Err(vec![format!(
+                "{candidate} is not in the workspace graph; `--exclude` would reject it"
+            )]);
+        }
+        let excluded = feature_graph(root, Some(candidate))?;
+        let mut verdict = compare(candidate, &full, &excluded);
+        verdict.shifts = confirm(root, candidate, verdict.shifts)?;
+        verdicts.push(verdict);
+    }
+    Ok(verdicts)
+}
+
+/// - Writes the verdicts to stdout, and exits this process with 1 when a candidate is unsafe.
+fn report(verdicts: &[Verdict]) {
+    if verdicts.is_empty() {
+        println!(
+            "  BUILD_EXCLUDABLE is empty: no member is excluded from the packages \
                      phase's build. Name a candidate to audit one."
-                );
-                return;
-            }
-            let mut hazards = 0;
-            for verdict in &verdicts {
-                if verdict.shifts.is_empty() {
-                    println!(
-                        "  {:<20} safe: every surviving crate resolves identically, and {} crate(s) \
+        );
+        return;
+    }
+    let mut hazards = 0;
+    for verdict in verdicts {
+        if verdict.shifts.is_empty() {
+            println!(
+                "  {:<20} safe: every surviving crate resolves identically, and {} crate(s) \
                          leave the graph with it",
-                        verdict.candidate, verdict.dropped
-                    );
-                    continue;
-                }
-                hazards += 1;
-                println!("  {:<20} UNSAFE:", verdict.candidate);
-                for shift in &verdict.shifts {
-                    println!("    {}:", shift.crate_name);
-                    if !shift.lost.is_empty() {
-                        println!("      loses:  {:?}", shift.lost);
-                    }
-                    if !shift.gained.is_empty() {
-                        println!("      gains:  {:?}", shift.gained);
-                    }
-                }
+                verdict.candidate, verdict.dropped
+            );
+            continue;
+        }
+        hazards += 1;
+        println!("  {:<20} UNSAFE:", verdict.candidate);
+        for shift in &verdict.shifts {
+            println!("    {}:", shift.crate_name);
+            if !shift.lost.is_empty() {
+                println!("      loses:  {:?}", shift.lost);
             }
-            println!();
-            if hazards > 0 {
-                println!(
-                    "{hazards} candidate(s) would re-unify features, compiling a second variant of \
+            if !shift.gained.is_empty() {
+                println!("      gains:  {:?}", shift.gained);
+            }
+        }
+    }
+    println!();
+    if hazards > 0 {
+        println!(
+            "{hazards} candidate(s) would re-unify features, compiling a second variant of \
                      every crate beneath them. That costs more than the test binaries the \
                      exclusion skips."
-                );
-                std::process::exit(1);
-            }
-            println!("every audited exclusion leaves feature unification unchanged.");
-        },
-    )
+        );
+        std::process::exit(1);
+    }
+    println!("every audited exclusion leaves feature unification unchanged.");
 }
 
 #[cfg(test)]

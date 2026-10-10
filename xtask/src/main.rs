@@ -2,10 +2,16 @@
 
 use std::path::Path;
 
-use xtask::{bundle_nym_proxy, ci_plan, dupes_gate, exit_census, image, test, workbench};
+use xtask::{
+    bundle_nym_proxy, ci_plan, dupes_gate, exclusion_audit, exit_census, image, run_cli,
+    sweep_teardown, test, test_summary, workbench,
+};
+
+type Entry = fn(&Path, &[String]) -> Result<(), Vec<String>>;
 
 enum Task {
-    Run(fn(&Path, &[String]) -> Result<(), Vec<String>>),
+    Run(Entry),
+    With(Entry, &'static [&'static str]),
     Test(test::Variant),
     Workbench(workbench::Binary),
 }
@@ -14,6 +20,14 @@ impl Task {
     fn run(&self, root: &Path, args: &[String]) -> Result<(), Vec<String>> {
         match self {
             Self::Run(task) => task(root, args),
+            Self::With(task, fixed) => {
+                let all: Vec<String> = fixed
+                    .iter()
+                    .map(ToString::to_string)
+                    .chain(args.iter().cloned())
+                    .collect();
+                task(root, &all)
+            }
             Self::Test(variant) => variant.run(root, args),
             Self::Workbench(binary) => binary.run(root, args),
         }
@@ -58,25 +72,22 @@ const TASKS: &[(&str, Task, &str)] = &[
     ),
     (
         "hierarchy-test",
-        Task::Workbench(workbench::Binary::named(workbench::TEST_SUMMARY)),
+        Task::Run(test_summary::dispatch),
         "the three gated test phases (packages, zingo-cli, libtonode) with a combined summary",
     ),
     (
         "lite-hierarchy",
-        Task::Workbench(workbench::Binary {
-            name: workbench::TEST_SUMMARY,
-            fixed_args: &[workbench::LITE_FLAG],
-        }),
+        Task::With(test_summary::dispatch, &[test_summary::LITE_FLAG]),
         "the same three phases with the libtonode one narrowed to send_shield_cycle",
     ),
     (
         "exclusion-audit",
-        Task::Workbench(workbench::Binary::named("exclusion-audit")),
+        Task::Run(exclusion_audit::dispatch),
         "check that each member of BUILD_EXCLUDABLE, or a named candidate, is free to exclude",
     ),
     (
         "feature-sweep",
-        Task::Workbench(workbench::Binary::named("feature-sweep")),
+        Task::Workbench(workbench::Binary("feature-sweep")),
         "check the crates this branch touches in every feature combination",
     ),
     (
@@ -91,17 +102,22 @@ const TASKS: &[(&str, Task, &str)] = &[
     ),
     (
         "run-cli",
-        Task::Workbench(workbench::Binary::named("run-cli")),
+        Task::Run(run_cli::dispatch),
         "build and launch zingo-cli with the mixnet transport and nym-proxy bundled",
     ),
     (
+        "sweep-teardown",
+        Task::Run(sweep_teardown::dispatch),
+        "probe the sweep's indexers through a standalone proxy with grpcurl; `--rounds N`, `--proxy <path>`",
+    ),
+    (
         "sync-bench",
-        Task::Workbench(workbench::Binary::named("sync-bench")),
+        Task::Workbench(workbench::Binary("sync-bench")),
         "time sync inside a real run-cli --online session",
     ),
     (
         "sync-ab",
-        Task::Workbench(workbench::Binary::named("sync-ab")),
+        Task::Workbench(workbench::Binary("sync-ab")),
         "compare two commits' sync rate in interleaved run-cli --online sessions",
     ),
     (
