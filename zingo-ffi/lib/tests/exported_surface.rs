@@ -97,11 +97,17 @@ fn is_uniffi(path: &SynPath) -> bool {
         .is_some_and(|segment| segment.ident == UNIFFI)
 }
 
-fn exported(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|attr| {
-        let path = attr.path();
-        is_uniffi(path) && path.segments.len() == 2 && path.segments[1].ident == EXPORT
-    })
+fn is_uniffi_attribute(attr: &Attribute) -> bool {
+    let path = attr.path();
+    path.is_ident(UNIFFI) || (is_uniffi(path) && path.segments.len() == 2)
+}
+
+fn is_plain_export(attr: &Attribute) -> bool {
+    let path = attr.path();
+    is_uniffi(path)
+        && path.segments.len() == 2
+        && path.segments[1].ident == EXPORT
+        && matches!(attr.meta, Meta::Path(_))
 }
 
 fn cfg_test(attrs: &[Attribute]) -> bool {
@@ -129,10 +135,7 @@ fn markers(attrs: &[Attribute]) -> String {
         if !derives.is_empty() {
             markers.push(format!("#[{DERIVE}({})]", derives.join(", ")));
         }
-        let plain_uniffi = attr.path().is_ident(UNIFFI);
-        let export_with_arguments =
-            exported(std::slice::from_ref(attr)) && matches!(attr.meta, Meta::List(_));
-        if plain_uniffi || export_with_arguments {
+        if is_uniffi_attribute(attr) && !is_plain_export(attr) {
             markers.push(format!("#[{}]", compact(&attr.meta)));
         }
     }
@@ -360,19 +363,33 @@ fn find_template(items: &[Item]) -> Option<WalletReportTemplate> {
 fn collect(items: &[Item], surface: &mut Surface, template: Option<&WalletReportTemplate>) {
     for item in items {
         match item {
-            Item::Fn(func) if !cfg_test(&func.attrs) && exported(&func.attrs) => {
+            Item::Fn(func)
+                if !cfg_test(&func.attrs) && func.attrs.iter().any(is_uniffi_attribute) =>
+            {
                 surface.lines.insert(function_line(func));
             }
-            Item::Impl(item) if !cfg_test(&item.attrs) && exported(&item.attrs) => {
+            Item::Impl(item)
+                if !cfg_test(&item.attrs) && item.attrs.iter().any(is_uniffi_attribute) =>
+            {
                 surface.lines.extend(impl_lines(item));
             }
-            Item::Trait(item) if !cfg_test(&item.attrs) && exported(&item.attrs) => {
+            Item::Trait(item)
+                if !cfg_test(&item.attrs) && item.attrs.iter().any(is_uniffi_attribute) =>
+            {
                 surface.unrendered.insert(format!("trait {}", item.ident));
             }
-            Item::Enum(item) if !cfg_test(&item.attrs) && derives_uniffi(&item.attrs) => {
+            Item::Enum(item)
+                if !cfg_test(&item.attrs)
+                    && (derives_uniffi(&item.attrs)
+                        || item.attrs.iter().any(is_uniffi_attribute)) =>
+            {
                 surface.lines.insert(enum_line(item));
             }
-            Item::Struct(item) if !cfg_test(&item.attrs) && derives_uniffi(&item.attrs) => {
+            Item::Struct(item)
+                if !cfg_test(&item.attrs)
+                    && (derives_uniffi(&item.attrs)
+                        || item.attrs.iter().any(is_uniffi_attribute)) =>
+            {
                 surface.lines.insert(record_line(item));
             }
             Item::Macro(mac) if !cfg_test(&mac.attrs) => {
@@ -495,6 +512,47 @@ fn the_wallet_report_body_governs_every_line_its_invocations_render() {
     .map(ToString::to_string)
     .into();
     assert_eq!(lines, expected);
+}
+
+#[test]
+fn every_uniffi_attribute_but_a_plain_export_marks_its_item() {
+    let source = r#"
+        #[derive(uniffi::Object)]
+        pub struct Engine { state: u32 }
+        #[uniffi::export]
+        impl Engine {
+            #[uniffi::constructor]
+            pub fn new() -> Arc<Self> { todo!() }
+            #[uniffi::method(name = "renamed")]
+            pub fn report(&self) -> String { todo!() }
+            pub fn plain(&self) -> u32 { todo!() }
+        }
+        #[uniffi::export(callback_interface)]
+        pub trait Listener { fn on_event(&self); }
+        #[uniffi::remote(Record)]
+        pub struct Remote { pub id: u32 }
+        #[uniffi::remote(Enum)]
+        pub enum Kind { A, B }
+        #[uniffi::export]
+        pub fn free(#[uniffi(default = 1)] count: u32) -> u32 { count }
+    "#;
+    let surface = surface_of(&[source.to_string()]);
+    let expected: BTreeSet<String> = [
+        "#[derive(uniffi::Object)] Engine { state: u32 }",
+        "impl Engine::#[uniffi::constructor] new() -> Arc<Self>",
+        "impl Engine::#[uniffi::method(name = \"renamed\")] report(& self) -> String",
+        "impl Engine::plain(& self) -> u32",
+        "#[uniffi::remote(Record)] Remote { id: u32 }",
+        "#[uniffi::remote(Enum)] Kind = A | B",
+        "free(#[uniffi(default = 1)] count: u32) -> u32",
+    ]
+    .map(ToString::to_string)
+    .into();
+    assert_eq!(surface.lines, expected);
+    assert_eq!(
+        surface.unrendered,
+        BTreeSet::from(["trait Listener".to_string()])
+    );
 }
 
 #[test]
