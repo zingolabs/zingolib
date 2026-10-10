@@ -3,6 +3,7 @@
 pub mod ci_plan;
 pub mod container;
 pub mod image;
+pub mod test;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -72,14 +73,39 @@ pub fn finished_in(
     args: &[&str],
     env: &[(&str, &str)],
 ) -> Result<Finished, Vec<String>> {
-    let output = Command::new(program)
-        .args(args)
-        .current_dir(directory)
-        .envs(env.iter().copied())
+    let output = command_in(directory, program, args, env)
         .stderr(Stdio::inherit())
         .output()
         .map_err(|e| vec![format!("failed to run {program}: {e}")])?;
     finished(program, output.status, output.stdout)
+}
+
+fn command_in(directory: &Path, program: &str, args: &[&str], env: &[(&str, &str)]) -> Command {
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .current_dir(directory)
+        .envs(env.iter().copied());
+    command
+}
+
+/// - Replaces this process with `<program> <args>` run in `directory`, so the command's exit status becomes this process's.
+pub fn exec_in(
+    directory: &Path,
+    program: &str,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> Result<(), Vec<String>> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let error = command_in(directory, program, args, env).exec();
+        Err(vec![format!("failed to run {program}: {error}")])
+    }
+    #[cfg(not(unix))]
+    {
+        run_streaming_in(directory, program, args, env)
+    }
 }
 
 /// - Runs `<program> <args>` as a child process in `directory`, writes `input` to its stdin, and waits for it.
@@ -89,9 +115,7 @@ pub fn stdout_from_stdin(
     args: &[&str],
     input: &[u8],
 ) -> Result<String, Vec<String>> {
-    let mut child = Command::new(program)
-        .args(args)
-        .current_dir(directory)
+    let mut child = command_in(directory, program, args, &[])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -141,10 +165,7 @@ pub fn run_streaming_in(
     args: &[&str],
     env: &[(&str, &str)],
 ) -> Result<(), Vec<String>> {
-    let status = Command::new(program)
-        .args(args)
-        .current_dir(directory)
-        .envs(env.iter().copied())
+    let status = command_in(directory, program, args, env)
         .status()
         .map_err(|e| vec![format!("failed to run {program}: {e}")])?;
     if status.success() {

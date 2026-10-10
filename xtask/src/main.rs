@@ -2,24 +2,61 @@
 
 use std::path::Path;
 
-use xtask::{ci_plan, image};
+use xtask::{ci_plan, image, test};
 
-type Task = fn(&Path, &[String]) -> Result<(), Vec<String>>;
+enum Task {
+    Run(fn(&Path, &[String]) -> Result<(), Vec<String>>),
+    Test(test::Variant),
+}
+
+impl Task {
+    fn run(&self, root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+        match self {
+            Self::Run(task) => task(root, args),
+            Self::Test(variant) => variant.run(root, args),
+        }
+    }
+}
 
 const TASKS: &[(&str, Task, &str)] = &[
     (
         "ci-plan",
-        ci_plan::dispatch,
+        Task::Run(ci_plan::dispatch),
         "print the CI plan as JSON; `image` or `image-tag` prints that value alone",
     ),
     (
         "image",
-        image::dispatch,
+        Task::Run(image::dispatch),
         "`build` the reproducible test image, or `ensure` the runtime holds it",
     ),
     (
+        "test",
+        Task::Test(test::Variant::Test),
+        "containerized `cargo nextest run`; the first word `packages` or `live` selects that set",
+    ),
+    (
+        "rerun",
+        Task::Test(test::Variant::Rerun),
+        "containerized rerun of the tests that failed or did not finish last time",
+    ),
+    (
+        "test-extra-credit",
+        Task::Test(test::Variant::ExtraCredit),
+        "containerized run of libtonode's extra-credit suite",
+    ),
+    (
+        "local-run",
+        Task::Test(test::Variant::LocalRun),
+        "`cargo nextest run` on the host with the CI defaults",
+    ),
+    (
+        "run-ignored",
+        Task::Test(test::Variant::RunIgnored),
+        "`cargo nextest run` of the ignored tests on the host",
+    ),
+    (
         "rust-version",
-        rust_version,
+        Task::Run(rust_version),
         "print the rustc version rust-toolchain.toml pins",
     ),
 ];
@@ -37,7 +74,7 @@ fn usage() -> Vec<String> {
     lines.extend(
         TASKS
             .iter()
-            .map(|(name, _, description)| format!("  {name:<14} {description}")),
+            .map(|(name, _, description)| format!("  {name:<18} {description}")),
     );
     lines
 }
@@ -52,7 +89,7 @@ fn main() {
                 .iter()
                 .find(|(task_name, _, _)| task_name == name)
                 .ok_or_else(usage)?;
-            task(&xtask::repo_root()?, rest)
+            task.run(&xtask::repo_root()?, rest)
         },
         |()| (),
     )

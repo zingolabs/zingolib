@@ -1,8 +1,8 @@
 //! `exclusion-audit` checks that dropping a workspace member from a build
 //! costs nothing.
 //!
-//! `Makefile.toml`'s `packages` set excludes the members listed in its
-//! `build_excludable` array from the build, not merely from the run. That is
+//! `cargo xtask test packages` excludes the members of `BUILD_EXCLUDABLE`
+//! (xtask/src/test.rs) from the build, not merely from the run. That is
 //! only free when the excluded member activates no feature that no other
 //! member activates. Exclude one that does and cargo re-unifies features,
 //! compiling a second variant of every crate beneath it — which costs far
@@ -28,7 +28,7 @@
 //! a dependent's activation is always printed — so narrowing there and
 //! confirming here is sound as well as fast.
 //!
-//! Candidates come from `Makefile.toml`, so this audits what the repo
+//! Candidates come from that constant, so this audits what the repo
 //! actually declares; extra candidates named on the command line are audited
 //! too, which is how a proposed addition gets checked before it is written
 //! down.
@@ -42,11 +42,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::process::Command;
 
-use workbench::{read, repo_root, run};
-
-/// The bash array in `Makefile.toml` naming the members the `packages` set
-/// drops from the build.
-const DECLARED_ARRAY: &str = "build_excludable";
+use workbench::{repo_root, run};
+use xtask::test::BUILD_EXCLUDABLE;
 
 /// Run `cargo tree <args>` from `dir` and return its stdout.
 fn cargo_tree(dir: &Path, args: &[&str]) -> Result<String, Vec<String>> {
@@ -129,22 +126,6 @@ fn activations(
         .collect())
 }
 
-/// The members named in `Makefile.toml`'s `build_excludable` array.
-fn declared_candidates(makefile: &str) -> Result<Vec<String>, Vec<String>> {
-    let assignment = format!("{DECLARED_ARRAY}=(");
-    let opened = makefile.split_once(&assignment).ok_or_else(|| {
-        vec![format!(
-            "Makefile.toml declares no `{assignment}...)`; this tool audits that array, so a \
-             rename must reach it too"
-        )]
-    })?;
-    let body = opened
-        .1
-        .split_once(')')
-        .ok_or_else(|| vec![format!("`{assignment}` is never closed in Makefile.toml")])?;
-    Ok(body.0.split_whitespace().map(str::to_string).collect())
-}
-
 /// What one crate's features would lose and gain under an exclusion.
 struct Shift {
     crate_name: String,
@@ -217,8 +198,8 @@ fn main() -> ! {
         "exclusion-audit",
         move || {
             let root = repo_root()?;
-            let makefile = read(&root.join("Makefile.toml"))?;
-            let mut candidates = declared_candidates(&makefile)?;
+            let mut candidates: Vec<String> =
+                BUILD_EXCLUDABLE.iter().map(ToString::to_string).collect();
             for name in extra {
                 if !candidates.contains(&name) {
                     candidates.push(name);
@@ -247,7 +228,7 @@ fn main() -> ! {
         |verdicts: Vec<Verdict>| {
             if verdicts.is_empty() {
                 println!(
-                    "  {DECLARED_ARRAY} is empty: no member is excluded from the packages \
+                    "  BUILD_EXCLUDABLE is empty: no member is excluded from the packages \
                      phase's build. Name a candidate to audit one."
                 );
                 return;
@@ -286,42 +267,6 @@ fn main() -> ! {
             println!("every audited exclusion leaves feature unification unchanged.");
         },
     )
-}
-
-#[cfg(test)]
-mod declared_candidates {
-    use super::*;
-
-    /// HYPOTHESIS: the audit reads the array the Makefile actually declares,
-    /// so a member added there is audited without this tool being touched.
-    /// Falsified if the parse misses an entry or keeps the delimiters.
-    #[test]
-    fn every_declared_member_is_read() {
-        let makefile = "noise\nbuild_excludable=(alpha beta)\nmore noise\n";
-        assert_eq!(
-            declared_candidates(makefile).expect("the array parses"),
-            vec!["alpha".to_string(), "beta".to_string()]
-        );
-    }
-
-    /// HYPOTHESIS: an empty array parses as no candidates rather than as one
-    /// empty name, which `--exclude ""` would reject with a confusing error.
-    /// Falsified if the split yields a blank entry.
-    #[test]
-    fn an_empty_array_yields_no_candidates() {
-        assert!(declared_candidates("build_excludable=()\n")
-            .expect("an empty array parses")
-            .is_empty());
-    }
-
-    /// HYPOTHESIS: a renamed or deleted array is an error the reader sees,
-    /// never a silent pass. Falsified if the audit reports success against a
-    /// Makefile that declares nothing.
-    #[test]
-    fn a_missing_array_is_an_error() {
-        assert!(declared_candidates("live_packages=(a b)\n").is_err());
-        assert!(declared_candidates("build_excludable=(a b\n").is_err());
-    }
 }
 
 #[cfg(test)]

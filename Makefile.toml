@@ -1,23 +1,5 @@
-env_files = [".env.testing-artifacts"]
-
 [config]
 default_to_workspace = false
-
-[env]
-NEXTEST_EXPERIMENTAL_LIBTEST_JSON = "1"
-ZINGOLIB_NEXTEST_PROFILE = "ci"
-# Conditional so a shell override actually wins: cargo-make [env] entries
-# otherwise clobber inherited environment variables. Retries default to 0 so
-# flakes surface instead of being masked; raise per-run with
-# ZINGOLIB_NEXTEST_RETRIES=N.
-ZINGOLIB_NEXTEST_RETRIES = { value = "0", condition = { env_not_set = [
-  "ZINGOLIB_NEXTEST_RETRIES",
-] } }
-# Single source of truth: rust-toolchain.toml's `channel`, extracted and
-# validated (concrete numeric versions only) by `cargo xtask rust-version`.
-RUST_VERSION = { script = [
-  "cargo xtask rust-version",
-] }
 
 [tasks.default]
 alias = "help"
@@ -105,138 +87,10 @@ Install cargo-make if these commands are unavailable:
 HELP
 '''
 
-[tasks.base-script]
-script_runner = "bash"
-script.pre = '''
-set -euo pipefail
-
-container_runtime() {
-  if [[ -n "${CONTAINER_RUNTIME:-}" ]]; then
-    printf '%s\n' "${CONTAINER_RUNTIME}"
-  elif command -v podman >/dev/null 2>&1; then
-    printf '%s\n' "podman"
-  elif command -v docker >/dev/null 2>&1; then
-    printf '%s\n' "docker"
-  else
-    echo "Neither podman nor docker was found. Install one or set CONTAINER_RUNTIME." >&2
-    exit 1
-  fi
-}
-
-container_mount_suffix() {
-  case "$(container_runtime)" in
-    podman) printf '%s\n' ":U" ;;
-    *) printf '%s\n' "" ;;
-  esac
-}
-
-# The image name and its content-addressed tag come from `cargo xtask
-# ci-plan`, the one implementation CI consumes as well.
-container_image() {
-  cargo xtask ci-plan image
-}
-
-container_image_tag() {
-  cargo xtask ci-plan image-tag
-}
-
-has_package_selection_args() {
-  for arg in "$@"; do
-    case "${arg}" in
-      -p|--package|--package=*|--workspace|--all|--exclude|--exclude=*|--manifest-path|--manifest-path=*)
-        return 0
-        ;;
-    esac
-  done
-  return 1
-}
-
-append_workspace_default() {
-  if ! has_package_selection_args "$@"; then
-    printf '%s\n' "--workspace"
-  fi
-}
-
-nextest_args() {
-  local -a args=(
-    --profile "${ZINGOLIB_NEXTEST_PROFILE}"
-    --retries "${ZINGOLIB_NEXTEST_RETRIES}"
-  )
-
-  # `"$@"` directly, never by way of a named array: under `set -u`, bash
-  # before 4.4 — the /bin/bash macOS ships — calls an EMPTY array's
-  # expansion an unbound variable, and a bare `makers test` forwards none.
-  # The special parameter carries no such hazard.
-  args+=("$@")
-
-  local workspace_arg
-  workspace_arg="$(append_workspace_default "$@")"
-  if [[ -n "${workspace_arg}" ]]; then
-    args+=("${workspace_arg}")
-  fi
-
-  printf '%s\n' "${args[@]}"
-}
-
-container_nextest_run() {
-  local runtime mount_suffix image
-  runtime="$(container_runtime)"
-  mount_suffix="$(container_mount_suffix)"
-  image="$(container_image)"
-
-  local -a args=()
-  local line
-  while IFS= read -r line; do args+=("${line}"); done < <(nextest_args "$@")
-
-  # ZINGO_REGENERATE_CHAIN_CACHE and RUST_LOG are forwarded only when
-  # set AND non-empty. Never use -e "VAR=${VAR:-}" — that manufactures
-  # a set-but-empty variable in the container — and never forward an
-  # empty value either: an empty (or restrictive) RUST_LOG silences
-  # zainod's "Syncing block" markers, hanging the harness's
-  # log-contract convergence barrier (2026-07-20 stall forensics).
-  # Expanded below as `${array[@]+"${array[@]}"}`, because this array is
-  # empty whenever neither variable is set and bash before 4.4 calls an
-  # empty array's bare expansion an unbound variable under `set -u`.
-  local -a forwarded_env=()
-  if [[ -n "${ZINGO_REGENERATE_CHAIN_CACHE:-}" ]]; then
-    forwarded_env+=(-e ZINGO_REGENERATE_CHAIN_CACHE)
-  fi
-  if [[ -n "${RUST_LOG:-}" ]]; then
-    forwarded_env+=(-e RUST_LOG)
-  fi
-
-  "${runtime}" run --rm --init \
-    --pids-limit -1 \
-    -v "${PWD}:/workspace" \
-    -v "zingolib-container-target:/workspace/target${mount_suffix}" \
-    -v "zingolib-cargo-git:/root/.cargo/git${mount_suffix}" \
-    -v "zingolib-cargo-registry:/root/.cargo/registry${mount_suffix}" \
-    -e "NEXTEST_EXPERIMENTAL_LIBTEST_JSON=${NEXTEST_EXPERIMENTAL_LIBTEST_JSON}" \
-    -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
-    ${forwarded_env[@]+"${forwarded_env[@]}"} \
-    -w /workspace \
-    "${image}" \
-    bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/zainod /usr/bin/zebrad test_binaries/bins/ && exec "$@"' \
-    bash \
-    cargo nextest run "${args[@]}"
-}
-'''
-script.main = "true"
-
-[tasks.prepare-test-binaries-dir]
-description = "Ensure the local test binary directory exists"
-script_runner = "bash"
-script = '''
-set -euo pipefail
-mkdir -p test_binaries/bins
-'''
-
 [tasks.compute-image-tag]
 description = "Print the reproducible local test image tag"
-extend = "base-script"
-script.main = '''
-echo "$(container_image_tag)"
-'''
+command = "cargo"
+args = ["xtask", "ci-plan", "image-tag"]
 
 [tasks.build-image]
 description = "Build the reproducible local test image from .env.testing-artifacts"
@@ -251,137 +105,22 @@ args = ["xtask", "image", "ensure"]
 [tasks.local-run]
 clear = true
 description = "Run reproducible workspace tests on the host with the same defaults used by PR CI"
-dependencies = ["prepare-test-binaries-dir"]
-script_runner = "bash"
-extend = "base-script"
-script.main = '''
-args=()
-while IFS= read -r line; do args+=("${line}"); done < <(nextest_args "$@")
-cargo nextest run "${args[@]}"
-'''
+command = "cargo"
+args = ["xtask", "local-run", "${@}"]
 
 [tasks.container-test]
 clear = true
 description = "Run reproducible workspace tests inside the local test container"
-dependencies = ["ensure-image-exists"]
-script_runner = "bash"
-extend = "base-script"
-script.main = '''
-container_nextest_run "$@"
-'''
+command = "cargo"
+args = ["xtask", "test", "${@}"]
 
-# ===================================================================
-# Developer-facing test front door: `makers test "$@"` IS a containerized
-# `cargo nextest run "$@"` (standard profile and retries defaults), so
-# every nextest idiom passes through untouched:
-#
-#   makers test                     the whole workspace
-#   makers test -p zingo-memo       one package
-#   makers test some_test_name      positional test-name filter
-#
-# Two reserved first words expand to canned invocations:
-#
-#   makers test packages       every workspace package EXCEPT the live ones
-#   makers test live            ONLY the live packages
-#
-# The live-package list is defined once (live_packages, below); both reserved
-# words derive nextest FILTERSETS from it, so the partition cannot drift.
-# Filtersets rather than package selections, deliberately: every invocation
-# keeps the same `--workspace` build scope, cargo unifies features
-# identically, and every phase of `makers hierarchy-test` reuses ONE
-# compiled variant of each crate — a `-p`/`--exclude` scope re-unifies
-# features per selection and compiles a distinct zingolib variant per phase.
-# The `packages` set can carry audited exceptions: it also excludes the
-# members in build_excludable from the build, which is safe only for a
-# member that activates no feature of its own. That array is empty today,
-# because every candidate so far fails the audit. See its comment for the
-# criterion, and `makers exclusion-audit` for the check.
-# Explicit package-selection args still replace a set's scope entirely —
-# cargo silently ignores `-p` when `--workspace` is present, so merging
-# them would swallow the user's selection. Caveat: combining a reserved
-# word with your own `-E` unions the two filtersets (nextest semantics);
-# for intersection, pass one full expression to plain `makers test -E`.
-# ===================================================================
-
+# The test front door is `cargo xtask test`; this task keeps the makers
+# spelling until Makefile.toml goes.
 [tasks.test]
-# clear = true fully replaces cargo-make's built-in `test` task (which runs
-# `cargo test`); without it our `script` would merge with the builtin `command`.
 clear = true
 description = "Containerized `cargo nextest run \"$@\"`. Reserved first words packages|live expand to canned invocations."
-script_runner = "bash"
-extend = "base-script"
-script.main = '''
-# The packages that need live network infrastructure. Single source of truth
-# for the packages/live partition.
-live_packages=(libtonode-tests zingo-cli)
-
-# The live packages the `packages` set drops from the BUILD as well as from
-# the run. Nothing in that set runs their tests, and a failing packages
-# phase stops the later phases from ever running them, so compiling their
-# test binaries there buys nothing and is lost outright when the gate trips.
-#
-# A member belongs here only if it activates no feature that no other member
-# activates. Excluding one that does re-unifies features and compiles a
-# second variant of every crate beneath it, which is the cost this file's
-# filterset partition exists to avoid. Never add a member by inspection:
-# `makers exclusion-audit <candidate>` decides it, and it reads this array,
-# so what is written here is what gets checked.
-#
-# The array is empty because both candidates were audited and rejected.
-# libtonode-tests looked safe across the workspace's own crates, and is not:
-# it alone activates `zcash_address/test-dependencies`, a registry crate the
-# whole zcash stack and therefore zingolib sits above, so excluding it would
-# build that stack twice and make a hierarchy run slower rather than faster.
-# zingo-cli alone activates `zingolib/nym`. Nothing is currently excludable,
-# and the machinery stays so a future candidate is a one-word change plus an
-# audit run.
-build_excludable=()
-
-# The filterset matching every live package's tests; its negation is the
-# hermetic remainder. Space-free, so each expression rides as one argv token.
-live_filter=""
-for pkg in "${live_packages[@]}"; do
-  live_filter+="${live_filter:+|}package(${pkg})"
-done
-
-set_args=()
-if [[ "$#" -gt 0 ]]; then
-  case "$1" in
-    packages)
-      shift
-      # `--workspace` stays explicit: the `--exclude` below makes
-      # append_workspace_default treat the scope as already chosen, and a
-      # bare `--exclude` without it is a cargo error. The filterset still
-      # names the excluded package, which nextest resolves against
-      # workspace metadata rather than the build set.
-      set_args+=(--workspace -E "!(${live_filter})")
-      # `${array[@]+"${array[@]}"}` rather than a bare expansion: under
-      # `set -u`, bash before 4.4 — which is the /bin/bash macOS ships —
-      # calls an EMPTY array's expansion an unbound variable. This array is
-      # empty whenever no member has passed the exclusion audit, which is
-      # its normal state, so the bare form breaks the packages phase on a
-      # Mac and never on Linux.
-      for pkg in ${build_excludable[@]+"${build_excludable[@]}"}; do
-        set_args+=(--exclude "${pkg}")
-      done
-      ;;
-    live)
-      shift
-      set_args+=(--workspace -E "${live_filter}") ;;
-  esac
-fi
-
-# Explicit package-selection args take over the scope completely; merging
-# them with a set's args would make cargo silently ignore the user's `-p`.
-if [[ "${#set_args[@]}" -gt 0 ]] && has_package_selection_args "$@"; then
-  set_args=()
-fi
-
-# `set_args` is empty for every invocation without a reserved word — a bare
-# `makers test`, `makers test -p zingo-memo`, `makers test some_test_name` —
-# so it expands in the empty-array-safe form for the reason given above.
-exec makers container-test ${set_args[@]+"${set_args[@]}"} "$@"
-'''
+command = "cargo"
+args = ["xtask", "test", "${@}"]
 
 [tasks.hierarchy-test]
 description = "Run the three gated phases (packages, zingo-cli, libtonode): a failing phase stops the later, more expensive ones; prints a combined per-phase summary"
@@ -499,35 +238,16 @@ args = [
 [tasks.rerun]
 clear = true
 description = "Rerun tests that failed or did not complete in the latest recorded nextest run"
-dependencies = ["ensure-image-exists"]
-script_runner = "bash"
-extend = "base-script"
-script.main = '''
-container_nextest_run --rerun latest "$@"
-'''
+command = "cargo"
+args = ["xtask", "rerun", "${@}"]
 
 [tasks.run-ignored]
 clear = true
 description = "Run ignored tests with the reproducible nextest profile"
-dependencies = ["prepare-test-binaries-dir"]
-script_runner = "bash"
-extend = "base-script"
-script.main = '''
-args=()
-while IFS= read -r line; do args+=("${line}"); done < <(nextest_args --run-ignored all "$@")
-cargo nextest run "${args[@]}"
-'''
+command = "cargo"
+args = ["xtask", "run-ignored", "${@}"]
 
-# The extra-credit libtonode suite: the sentinels (environment-contract
-# checks) and unit_test_twins (pre-migration live originals of the offline
-# unit twins, docs/testing/live-offline-twins.md). Both are off by default
-# and behind the `extra-credit-tests` feature; this is their scheduled
-# entry point — a containerized nextest run so a cron or CI job can invoke
-# one canonical command. Extra nextest args pass through.
 [tasks.test-extra-credit]
 description = "Containerized run of libtonode's extra-credit suite (sentinels + unit_test_twins twins)"
-script_runner = "bash"
-extend = "base-script"
-script.main = '''
-exec makers container-test --package libtonode-tests --features extra-credit-tests "$@"
-'''
+command = "cargo"
+args = ["xtask", "test-extra-credit", "${@}"]
