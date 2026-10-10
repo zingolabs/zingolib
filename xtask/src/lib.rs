@@ -1,8 +1,10 @@
 #![forbid(unsafe_code)]
 
+pub mod bundle_nym_proxy;
 pub mod ci_plan;
 pub mod container;
 pub mod dupes_gate;
+pub mod exit_census;
 pub mod image;
 pub mod test;
 pub mod workbench;

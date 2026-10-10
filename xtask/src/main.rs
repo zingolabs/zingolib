@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use xtask::{ci_plan, dupes_gate, image, test, workbench};
+use xtask::{bundle_nym_proxy, ci_plan, dupes_gate, exit_census, image, test, workbench};
 
 enum Task {
     Run(fn(&Path, &[String]) -> Result<(), Vec<String>>),
@@ -81,8 +81,13 @@ const TASKS: &[(&str, Task, &str)] = &[
     ),
     (
         "bundle-nym-proxy",
-        Task::Workbench(workbench::Binary::named("bundle-nym-proxy")),
-        "build nym-proxy from the zingo-netutils workspace and place it beside the wallet binaries",
+        Task::Run(bundle_nym_proxy::dispatch),
+        "build nym-proxy from the zingo-netutils workspace and place it beside the wallet binaries; `--release`, `--dest <dir>`",
+    ),
+    (
+        "exit-census",
+        Task::Run(exit_census::dispatch),
+        "count the Nym exits the proxy discovers, grouped by gateway",
     ),
     (
         "run-cli",

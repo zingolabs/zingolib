@@ -1,38 +1,14 @@
-//! Census of the Exit Nodes the Nym directory advertises, reported by
-//! gateway rather than by exit.
-//!
-//! An `ExitNodeId` is a network requester's Nym address in the Recipient
-//! form `<client_id>.<client_enc>@<gateway_id>`, so the gateway a given
-//! exit egresses through is a substring of its identity. Whether two exits
-//! ever share a gateway decides whether independent draws from the Exit
-//! Pool are independent *failure domains*: exits sharing a gateway fail
-//! together when that gateway does, and a quartet drawing four exits from
-//! three gateways has only three independent chances.
-//!
-//! This asks the question with one discovery call and no births.
-#![forbid(unsafe_code)]
-
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::process::Command;
 
-use workbench::{repo_root, run};
-
-/// The stdout line prefix the proxy's discover mode announces each Exit
-/// Node under. An agreeing representation of `zingo_netutils::
-/// NYM_EXIT_LINE_PREFIX`, restated because this crate is deliberately
-/// std-only and takes no production dependency; the two must not drift.
 const NYM_EXIT_LINE_PREFIX: &str = "NYM_EXIT=";
 
-/// The separator between a network requester and the gateway it registered
-/// at, within one Recipient address.
 const GATEWAY_SEPARATOR: char = '@';
 
-fn main() {
-    run("exit-census", census, |()| {})
-}
-
-fn census() -> Result<(), Vec<String>> {
-    let root = repo_root()?;
+/// - Runs `target/debug/nym-proxy --discover` as a child process.
+/// - Writes the census to stdout.
+pub fn dispatch(root: &Path, _args: &[String]) -> Result<(), Vec<String>> {
     let proxy = root.join("target").join("debug").join("nym-proxy");
     if !proxy.exists() {
         return Err(vec![format!(
