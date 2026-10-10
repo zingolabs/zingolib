@@ -4290,8 +4290,12 @@ mod moved_from_regtest {
     use zcash_protocol::value::Zatoshis;
     use zip32::AccountId;
 
+    use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
+    use zcash_protocol::ShieldedPool;
+
+    use super::{external_address, fund};
     use crate::check_client_balances;
-    use crate::testutils::lightclient::{get_base_address, get_fees_paid_by_client};
+    use crate::testutils::lightclient::{from_inputs, get_base_address, get_fees_paid_by_client};
     use crate::testutils::mock_indexer::MockNet;
 
     const REWARD_ZATS: u64 = 625_000;
@@ -4329,5 +4333,52 @@ mod moved_from_regtest {
             Option::unwrap(MARGINAL_FEE * SHIELD_LOGICAL_ACTIONS).into_u64()
         );
         check_client_balances!(miner, i: (COINBASES * REWARD_ZATS - fee) o: 0 s: 0 t: 0);
+    }
+    #[tokio::test]
+    async fn sapling_dust_fee_collection() {
+        const FEES_FOR_ORCHARD: u64 = 10;
+        const DUST_DIVISOR: u64 = 10;
+        const FEES_SENT: u64 = 5;
+        let fee = u64::from(MINIMUM_FEE);
+        let for_orchard = fee * FEES_FOR_ORCHARD;
+        let for_sapling = fee / DUST_DIVISOR;
+
+        let mut net = MockNet::launch().await;
+        let mut recipient = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let recipient_sapling =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Sapling)).await;
+        let recipient_unified =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        check_client_balances!(recipient, i: 0 o: 0 s: 0 t: 0);
+
+        net.chain.write().await.mine_empty_blocks(1);
+        fund(
+            &net,
+            vec![
+                (&recipient_unified, for_orchard, Some("Plenty for orchard.")),
+                (&recipient_sapling, for_sapling, Some("Dust for sapling.")),
+            ],
+            0,
+        )
+        .await;
+        recipient.sync_and_await().await.unwrap();
+        check_client_balances!(recipient, i: for_orchard o: 0 s: 0 t: 0);
+
+        from_inputs::quick_send(
+            &mut recipient,
+            vec![(
+                &external_address(PoolType::ORCHARD),
+                fee * FEES_SENT,
+                Some("Five times fee."),
+            )],
+        )
+        .await
+        .unwrap();
+        net.chain.write().await.mine_mempool();
+        recipient.sync_and_await().await.unwrap();
+        let remaining_ironwood = for_orchard - (FEES_SENT + 1) * fee;
+        check_client_balances!(recipient, i: remaining_ironwood o: 0 s: 0 t: 0);
     }
 }

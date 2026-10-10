@@ -56,45 +56,6 @@ mod unit_test_twins {
     use zip32::AccountId;
 
     #[tokio::test]
-    async fn sapling_dust_fee_collection() {
-        let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
-        let recipient_sapling = get_base_address_macro!(recipient, "sapling");
-        let recipient_unified = get_base_address_macro!(recipient, "unified");
-        check_client_balances!(recipient, i: 0 o: 0 s: 0 t: 0);
-        let fee = u64::from(MINIMUM_FEE);
-        let for_orchard = dbg!(fee * 10);
-        let for_sapling = dbg!(fee / 10);
-        from_inputs::quick_send(
-            &mut faucet,
-            vec![
-                (&recipient_unified, for_orchard, Some("Plenty for orchard.")),
-                (&recipient_sapling, for_sapling, Some("Dust for sapling.")),
-            ],
-        )
-        .await
-        .unwrap();
-        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-            .await
-            .unwrap();
-        check_client_balances!(recipient, i: for_orchard o: 0 s: 0 t: 0 );
-
-        from_inputs::quick_send(
-            &mut recipient,
-            vec![(
-                &get_base_address_macro!(faucet, "unified"),
-                fee * 5,
-                Some("Five times fee."),
-            )],
-        )
-        .await
-        .unwrap();
-        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-            .await
-            .unwrap();
-        let remaining_ironwood = for_orchard - (6 * fee);
-        check_client_balances!(recipient, i: remaining_ironwood o: 0 s: 0 t: 0);
-    }
-    #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         // Test all possible promoting note source combinations
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
