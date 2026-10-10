@@ -15,6 +15,9 @@ publish = false
 unsafe_code = "forbid"
 
 [dependencies]
+# The generic helpers live in the repository's xtask crate; every binary here
+# calls them through the re-exports in src/lib.rs.
+xtask = { path = "../../xtask" }
 oci-client = { version = "0.18", default-features = false, features = ["rustls-tls"], optional = true }
 tokio = { version = "1", features = ["rt"], optional = true }
 

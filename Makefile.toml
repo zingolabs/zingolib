@@ -13,12 +13,10 @@ ZINGOLIB_NEXTEST_PROFILE = "ci"
 ZINGOLIB_NEXTEST_RETRIES = { value = "0", condition = { env_not_set = [
   "ZINGOLIB_NEXTEST_RETRIES",
 ] } }
-IMAGE_NAME = "ghcr.io/zingolabs/ci-build"
 # Single source of truth: rust-toolchain.toml's `channel`, extracted and
-# validated (concrete numeric versions only) by the workbench
-# `get-rust-version` binary.
+# validated (concrete numeric versions only) by `cargo xtask rust-version`.
 RUST_VERSION = { script = [
-  "cargo run -q --manifest-path tools/workbench/Cargo.toml --bin get-rust-version",
+  "cargo xtask rust-version",
 ] }
 
 [tasks.default]
@@ -132,26 +130,14 @@ container_mount_suffix() {
   esac
 }
 
-container_dir_hash() {
-  {
-    for path in .env.testing-artifacts rust-toolchain.toml; do
-      printf '%s %s\n' "${path}" "$(git hash-object "${path}")"
-    done
-    find docker-ci -type f | LC_ALL=C sort | while IFS= read -r path; do
-      printf '%s %s\n' "${path}" "$(git hash-object "${path}")"
-    done
-  } | git hash-object --stdin | cut -c1-14
+# The image name and its content-addressed tag come from `cargo xtask
+# ci-plan`, the one implementation CI consumes as well.
+container_image() {
+  cargo xtask ci-plan image
 }
 
 container_image_tag() {
-  printf 'RUST_%s-ZAINO_%s-ZEBRA_%s-NEXTEST_%s-CONTAINER_%s' \
-    "${RUST_VERSION}" \
-    "${ZAINO_IMAGE_TAG}" \
-    "${ZEBRA_VERSION}" \
-    "${NEXTEST_VERSION}" \
-    "$(container_dir_hash)" \
-    | git hash-object --stdin \
-    | cut -c1-14
+  cargo xtask ci-plan image-tag
 }
 
 has_package_selection_args() {
@@ -193,10 +179,10 @@ nextest_args() {
 }
 
 container_nextest_run() {
-  local runtime mount_suffix tag
+  local runtime mount_suffix image
   runtime="$(container_runtime)"
   mount_suffix="$(container_mount_suffix)"
-  tag="$(container_image_tag)"
+  image="$(container_image)"
 
   local -a args=()
   local line
@@ -229,7 +215,7 @@ container_nextest_run() {
     -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
     ${forwarded_env[@]+"${forwarded_env[@]}"} \
     -w /workspace \
-    "${IMAGE_NAME}:${tag}" \
+    "${image}" \
     bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/zainod /usr/bin/zebrad test_binaries/bins/ && exec "$@"' \
     bash \
     cargo nextest run "${args[@]}"
@@ -269,9 +255,9 @@ extend = "base-script"
 dependencies = ["init-container-volumes"]
 script.main = '''
 runtime="$(container_runtime)"
-tag="$(container_image_tag)"
+image="$(container_image)"
 
-echo "Building ${IMAGE_NAME}:${tag}"
+echo "Building ${image}"
 echo "  RUST_VERSION=${RUST_VERSION}"
 echo "  ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}"
 echo "  ZEBRA_VERSION=${ZEBRA_VERSION}"
@@ -286,7 +272,7 @@ echo "  NEXTEST_VERSION=${NEXTEST_VERSION}"
   --build-arg "ZEBRA_VERSION=${ZEBRA_VERSION}" \
   --build-arg "ZEBRA_IMAGE_DIGEST=${ZEBRA_IMAGE_DIGEST}" \
   --build-arg "NEXTEST_VERSION=${NEXTEST_VERSION}" \
-  -t "${IMAGE_NAME}:${tag}" \
+  -t "${image}" \
   docker-ci
 '''
 
@@ -296,14 +282,14 @@ extend = "base-script"
 dependencies = ["init-container-volumes"]
 script.main = '''
 runtime="$(container_runtime)"
-tag="$(container_image_tag)"
+image="$(container_image)"
 
-echo "Checking for ${IMAGE_NAME}:${tag} with ${runtime}..."
+echo "Checking for ${image} with ${runtime}..."
 
-if "${runtime}" image inspect "${IMAGE_NAME}:${tag}" >/dev/null 2>&1; then
-  echo "Image ${IMAGE_NAME}:${tag} already exists."
+if "${runtime}" image inspect "${image}" >/dev/null 2>&1; then
+  echo "Image ${image} already exists."
 else
-  echo "Image ${IMAGE_NAME}:${tag} not found; building it now."
+  echo "Image ${image} not found; building it now."
   export CONTAINER_RUNTIME="${runtime}"
   makers build-image
 fi

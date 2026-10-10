@@ -11,6 +11,7 @@ members = [
     "zingolib_testutils",
     "zingo-ffi/lib",
     "zingo-ffi/uniffi-bindgen",
+    "xtask",
 ]
 # zingo-netutils is intentionally NOT a member: it carries its own [workspace]
 # and Cargo.lock so it can be built standalone with the `nym` feature, whose

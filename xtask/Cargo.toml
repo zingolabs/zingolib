@@ -1,0 +1,13 @@
+# The repository's own tooling, in the cargo-xtask pattern: a workspace
+# member that `cargo xtask <task>` runs. Task logic lives here; the GitHub
+# workflows and the developer's shell only call tasks.
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
