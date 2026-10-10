@@ -10,18 +10,21 @@ permissions:
   packages: write
 
 jobs:
-  ensure-image:
-    uses: ./.github/workflows/ensure-image.yaml
+  plan:
+    uses: ./.github/workflows/ci-plan.yaml
 
+  # The image holds the toolchain, the system libraries, and nextest at
+  # the version .env.testing-artifacts pins; cargo-llvm-cov alone is
+  # installed here.
   coverage:
     name: Coverage
-    needs: ensure-image
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: 180
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: ghcr.io/zingolabs/ci-build:${{ needs.ensure-image.outputs.image-tag }}
+      image: ${{ fromJSON(needs.plan.outputs.plan).image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -30,8 +33,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
         with:
           components: llvm-tools-preview
 
@@ -40,27 +43,14 @@ jobs:
         with:
           tool: cargo-llvm-cov
 
-      - name: Install nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@0.9.78
-
-      - name: Install system deps
-        run: |
-          apt-get update
-          apt-get install -y libsqlite3-dev pkg-config
-
       - name: create binaries dir
         run: mkdir -p ./test_binaries/bins
 
       - name: Symlink lightwalletd and zcash binaries
         run: ln -s /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad ./test_binaries/bins/
 
-      - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
-
       - name: Run instrumented tests
-        run: cargo llvm-cov nextest --workspace --no-report
+        run: cargo llvm-cov nextest --workspace --exclude xtask --no-report
 
       - name: Generate LCOV report
         run: cargo llvm-cov report --lcov --output-path lcov.info

@@ -1,18 +1,16 @@
 name: Binding Layer for iOS
 
 # Builds the Binding Layer's two XCFrameworks and the Swift sources of the
-# ZingoBindings package on this commit, with the builder of tools/workbench.
+# ZingoBindings package on this commit, with the builder, `cargo xtask build-binding-layer`,.
 
 on:
   workflow_call:
     inputs:
-      # The CI_IOS_RUNNER repository variable sets the runner label. The
-      # fallback warp-macos-15-arm64-12x is WarpBuild's 12-vCPU M4 Pro
-      # machine. The stock macos-15 label has three cores.
+      # The caller passes the plan's ios_runner, WarpBuild's 12-vCPU M4
+      # Pro machine; the stock macos-15 label has three cores.
       runner:
-        required: false
+        required: true
         type: string
-        default: ${{ vars.CI_IOS_RUNNER || 'warp-macos-15-arm64-12x' }}
       # The commit to build. The publish workflow names a commit the
       # manifest lists, which is rarely the commit that triggered it.
       ref:
@@ -45,26 +43,19 @@ jobs:
           ref: ${{ inputs.ref }}
           fetch-tags: true
 
-      # With no toolchain named, rustup installs the one rust-toolchain.toml
-      # pins, with its components. The builder repeats this step and adds
-      # the iOS targets to that toolchain itself.
-      - name: Install the pinned toolchain
-        run: rustup toolchain install
-
-      # Placed after the toolchain step: rust-cache reads `rustc -vV` into
-      # its key, and RUSTUP_HOME holds no toolchain until that step
-      # installs one. The builder puts each crate's iOS target directory
-      # under target/binding-layer, so the list names those directories.
-      # The wallet crate resolves in the root workspace and the proxy crate
-      # in the zingo-netutils workspace, so each entry names the workspace
+      # The action installs the toolchain rust-toolchain.toml pins, with
+      # its components, and the builder adds the iOS targets to it itself.
+      # The builder puts each crate's iOS target directory under
+      # target/binding-layer, so the list names those directories. The
+      # wallet crate resolves in the root workspace and the proxy crate in
+      # the zingo-netutils workspace, so each entry names the workspace
       # whose lockfile keys the cache.
-      - name: Cargo cache (registry, git, iOS targets)
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust and the cargo cache (registry, git, iOS targets)
+        uses: ./.github/actions/rust-setup
         with:
           workspaces: |
             . -> target/binding-layer/ios/wallet
             zingo-netutils -> ../target/binding-layer/ios/proxy
-            tools/workbench
 
       - name: Install bindgen-cli
         run: cargo install --locked bindgen-cli
@@ -85,10 +76,7 @@ jobs:
 
       - name: Build the Binding Layer
         run: |
-          cargo run \
-            --manifest-path tools/workbench/Cargo.toml \
-            --bin build-binding-layer -- \
-            ios --out "${{ inputs.out }}"
+          cargo xtask build-binding-layer ios --out "${{ inputs.out }}"
 
       - name: Upload the Binding Layer
         uses: actions/upload-artifact@v4

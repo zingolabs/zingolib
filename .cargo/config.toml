@@ -1,0 +1,4 @@
+# `cargo xtask <task>` runs the repository's own tooling (xtask/), the
+# cargo-xtask pattern: no install beyond cargo, and no shell scripts.
+[alias]
+xtask = "run --quiet --package xtask --"

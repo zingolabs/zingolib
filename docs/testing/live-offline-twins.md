@@ -172,7 +172,7 @@ This twin's step-1 funding is purely transparent, and pepper-sync's
 SUBTRACTIVE `darkside_test` feature deletes transparent-address
 discovery at compile time. Cargo feature unification enables that
 feature for every crate co-built with darkside-tests, so the twin fails
-deterministically in multi-package invocations (`makers test packages`,
+deterministically in multi-package invocations (`cargo xtask test packages`,
 `--workspace`) while passing in `-p zingolib` ones. That was root-caused
 via the mock's taddr-request ledger (empty in failing builds, populated
 in passing ones) and reproduced both directions on one host. The twin

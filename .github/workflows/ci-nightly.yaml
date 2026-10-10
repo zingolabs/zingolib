@@ -7,11 +7,16 @@ on:
     - cron: '30 3 * * *'
 
 jobs:
+  plan:
+    uses: ./.github/workflows/ci-plan.yaml
+    permissions:
+      contents: read
+      packages: write
 
   # The binding-layer-android job below builds x86_64 with the other ABIs,
   # so the per-PR workflow skips its own x86_64 build here. The per-PR
   # cargo-hack job builds every feature set instead of checking it, with
-  # the flags that job alone holds.
+  # the flags that job alone holds. The called workflow runs its own plan.
   pr-checks:
     uses: ./.github/workflows/ci-pr.yaml
     permissions:
@@ -23,25 +28,21 @@ jobs:
 
   feature-census:
     name: Feature Census
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: 90
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: ${{ inputs.toolchain }}
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
       # Removes each declared dependency feature in turn and checks without it.
       # One `cargo check` per feature, so this runs nightly rather than per PR.
       - name: Run feature-census
-        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin feature-census -- --all
+        run: cargo xtask feature-census --all
 
   # The online sync rate of the dev head against the newest first-parent
   # commit older than a day, in a real run-cli --online session (AGENTS.md,
@@ -50,7 +51,8 @@ jobs:
   # dispatch, never on a call from a pull request.
   sync-ab:
     name: Sync A/B (dev against the day before)
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: 300
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     steps:
@@ -59,18 +61,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: ${{ inputs.toolchain }}
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install cargo-make
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-make
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
       - name: Pick the arms
         id: arms
@@ -81,7 +73,7 @@ jobs:
       - name: Compare the arms
         if: ${{ steps.arms.outputs.before != steps.arms.outputs.now }}
         run: |
-          makers sync-ab "${{ steps.arms.outputs.before }}" "${{ steps.arms.outputs.now }}" \
+          cargo xtask sync-ab "${{ steps.arms.outputs.before }}" "${{ steps.arms.outputs.now }}" \
             --birthday 2571710 --seconds 90 2>&1 | tee sync-ab.log
 
       - name: Keep the report
@@ -96,7 +88,8 @@ jobs:
   # the names come from exactly one commit per run.
   binding-layer-names:
     name: Name the Binding Layer artifacts
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: 10
     outputs:
       abis: ${{ steps.names.outputs.abis }}
@@ -110,40 +103,42 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: tools/workbench
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
       - name: Name the artifacts
         id: names
-        run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+        run: cargo xtask build-binding-layer artifact --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
   # The nightly tier of zingolib/0054: the four Android ABIs in one AAR,
   # and both XCFrameworks with the Swift sources on macOS. Each job runs
   # the builder on this commit.
   binding-layer-android:
-    needs: binding-layer-names
+    needs: [plan, binding-layer-names]
     uses: ./.github/workflows/binding-layer-android.yaml
     with:
+      runner: ${{ fromJSON(needs.plan.outputs.plan).runner }}
       abis: ${{ needs.binding-layer-names.outputs.abis }}
       abi_artifacts: ${{ needs.binding-layer-names.outputs.abi_artifacts }}
       abi_pattern: ${{ needs.binding-layer-names.outputs.abi_pattern }}
       aar_glob: ${{ needs.binding-layer-names.outputs.aar_glob }}
       bundle: ${{ needs.binding-layer-names.outputs.bundle_android }}
 
+  # The CI_IOS_RUNNER repository variable, when set, overrides the plan's
+  # label, so a runner outage is a settings change and not a commit.
   binding-layer-ios:
-    needs: binding-layer-names
+    needs: [plan, binding-layer-names]
     uses: ./.github/workflows/binding-layer-ios.yaml
     with:
+      runner: ${{ vars.CI_IOS_RUNNER || fromJSON(needs.plan.outputs.plan).ios_runner }}
       out: ${{ needs.binding-layer-names.outputs.ios_out }}
       bundle: ${{ needs.binding-layer-names.outputs.bundle_ios }}
 
   test:
+    needs: plan
     uses: ./.github/workflows/test.yaml
     permissions:
       contents: read
       packages: write
+    with:
+      plan: ${{ needs.plan.outputs.plan }}

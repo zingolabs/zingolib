@@ -1,0 +1,121 @@
+name: CI plan
+
+# One job computes every run-scoped value the other jobs consume, and
+# every other job reads it through `needs`: the runner labels, the test
+# partitions, the reproducible test image (ghcr.io/zingolabs/ci-build)
+# with its content-addressed tag, and the draft state of the pull
+# request. `cargo xtask ci-plan` derives the values from
+# rust-toolchain.toml and .env.testing-artifacts, so no workflow holds a
+# value of its own, and `cargo xtask image build` reads the same values,
+# so the tag CI consumes and the tag a developer builds cannot drift.
+#
+# A probe that finds the tag ends the job in seconds. An absent tag is
+# built here and pushed, inside the run that needs it, so the consumers
+# depend on this job through `needs` instead of polling a registry.
+# Replicates the zaino dev method (zingolabs/zaino compute-tag.yml,
+# content-addressed tagging per zingolabs/zaino@d8754b72a) with the
+# publish step folded in.
+#
+# The draft state is read here rather than taken from the event payload.
+# A push and a "ready for review" seconds apart start two runs, and the
+# run that survives the concurrency group can carry a payload that says
+# draft. A run with no pull request reports false.
+
+on:
+  workflow_call:
+    outputs:
+      plan:
+        description: "JSON object: runner, ios_runner, image, partitions"
+        value: ${{ jobs.plan.outputs.plan }}
+      draft:
+        description: "The draft state of the pull request; false on a push"
+        value: ${{ jobs.plan.outputs.draft }}
+
+jobs:
+  plan:
+    name: CI plan
+    # The one runner label a workflow writes by hand: the job that
+    # computes the label for every other job cannot read it first.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+      draft: ${{ steps.draft.outputs.draft }}
+    env:
+      # The runner ships both podman and docker; force docker so the
+      # image the build produces is visible to `docker push`.
+      CONTAINER_RUNTIME: docker
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+
+      - name: Compute the plan
+        id: plan
+        run: |
+          plan="$(cargo xtask ci-plan)"
+          echo "${plan}"
+          echo "plan=${plan}" >> "$GITHUB_OUTPUT"
+          echo "image=$(jq --raw-output .image <<< "${plan}")" >> "$GITHUB_OUTPUT"
+
+      - name: Read the draft state of the pull request
+        id: draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+        run: |
+          draft=false
+          if [ -n "$PULL_REQUEST" ]; then
+            draft="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PULL_REQUEST" --jq '.draft')"
+          fi
+          echo "draft state: $draft"
+          echo "draft=$draft" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Probe the registry for the image
+        id: probe
+        env:
+          IMAGE: ${{ steps.plan.outputs.image }}
+        run: |
+          # Only "manifest unknown" means the tag is absent. Any other
+          # failure is a registry or network fault and is reported as
+          # such, never mistaken for an absent tag.
+          if error=$(docker manifest inspect "${IMAGE}" 2>&1 >/dev/null); then
+            echo "${IMAGE} is present"
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "${error}" | grep -qiE 'manifest unknown|name unknown'; then
+            echo "${IMAGE} is absent"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::probe of ${IMAGE} failed: ${error}"
+            exit 1
+          fi
+
+      - name: Refuse to publish from a fork
+        if: ${{ steps.probe.outputs.present == 'false' && github.event.pull_request.head.repo.fork == true }}
+        env:
+          IMAGE: ${{ steps.plan.outputs.image }}
+        run: |
+          echo "::error::${IMAGE} is absent and a fork's token cannot publish it. A maintainer publishes it with 'cargo xtask image build' and 'docker push'."
+          exit 1
+
+      - name: Build the image
+        if: ${{ steps.probe.outputs.present == 'false' }}
+        run: cargo xtask image build
+
+      - name: Push the image
+        if: ${{ steps.probe.outputs.present == 'false' }}
+        env:
+          IMAGE: ${{ steps.plan.outputs.image }}
+        run: docker push "${IMAGE}"

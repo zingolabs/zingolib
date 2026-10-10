@@ -74,7 +74,7 @@ replicates zaino's dev method (zingolabs/zaino
 tagging per zingolabs/zaino@d8754b72a): `build-n-push-ci-image.yaml`
 publishes `ghcr.io/zingolabs/ci-build:<content-tag>` on request, and
 the test/coverage workflows resolve the same tag through the reusable
-`ensure-image.yaml`, which publishes an absent tag itself, so CI always
+`ci-plan.yaml`, which publishes an absent tag itself, so CI always
 runs the image the working tree's pins describe. The hardcoded
 `ci-build:011` reference is gone. Heights fixture untouched, so all
 caches remain valid (zainod's version is deliberately not in the

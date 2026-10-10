@@ -21,7 +21,7 @@
     only the concrete `HostedProvider`. Do not relitigate it, and do not read
     it as licence for a second exception. Ruled 2026-08-18.
 - **The nightly CI run A/B benchmarks dev against the day before** with the
-  online sync benchmark (`makers sync-ab`), which drives a real `run-cli
+  online sync benchmark (`cargo xtask sync-ab`), which drives a real `run-cli
   --online` session so the mixnet boot load is present. The `sync-ab` job of
   `ci-nightly.yaml` compares the dev head with the newest first-parent commit
   older than 24 hours, uploads the report as an artifact, and skips a day
@@ -44,16 +44,15 @@
   duplication you find in code you are already changing. A second copy of a
   helper, a branch, or a constant is a defect, in review and in
   implementation alike. Ruled 2026-10-02. CI enforces it through the
-  workbench binary `dupes-gate` (tools/workbench/src/dupes_gate.rs), which
+  xtask task `dupes-gate` (xtask/src/dupes_gate.rs), which
   runs cargo-dupes with the settings that module pins. The gate rejects an
   exact group outside `.dupes-ignore.toml`, a near group count other than
   the ceiling `MAX_NEAR` in that module, and a baseline entry whose group
   is gone. Never add an entry for a new group. Remove the duplication,
-  then run `dupes-gate cleanup` and commit the result. When a near group
+  then run `cargo xtask dupes-gate cleanup` and commit the result. When a near group
   disappears, lower `MAX_NEAR` to the new count; the ceiling only moves
   down. No config file holds the settings, so run cargo-dupes through the
-  binary: `cargo run --manifest-path tools/workbench/Cargo.toml --bin
-  dupes-gate -- <cargo-dupes arguments>`.
+  task: `cargo xtask dupes-gate <cargo-dupes arguments>`.
 
 ## Writing & Code Style
 
@@ -126,7 +125,7 @@ Goal: produce prose and code that reads as if written by a specific, competent h
 - Prefer `if let` and combinators (`map`, `and_then`, `ok_or`, `unwrap_or_else`) over verbose `match` when clearer.
 - Prefer iterator chains over manual `for` + `push` where idiomatic.
 - Use `&str` where a borrow suffices instead of `String`.
-- Run `makers feature-sweep` before you push. An ordinary `cargo check` compiles one feature combination, so a rename or a signature change can leave code behind a `#[cfg(feature = ...)]` gate broken and still look green; the sweep checks the touched crates in every combination, as CI does.
+- Run `cargo xtask feature-sweep` before you push. An ordinary `cargo check` compiles one feature combination, so a rename or a signature change can leave code behind a `#[cfg(feature = ...)]` gate broken and still look green; the sweep checks the touched crates in every combination, as CI does.
 
 ### TypeScript / React
 

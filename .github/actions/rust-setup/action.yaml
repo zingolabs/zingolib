@@ -1,0 +1,40 @@
+name: Rust setup
+description: >-
+  Installs the toolchain rust-toolchain.toml pins and restores the cargo
+  cache for the calling job. The cache saves only from dev, so the
+  repository's cache budget holds one resident set that every pull
+  request restores from. This file holds the toolchain action, the cache
+  action it embeds, and the save policy; no workflow names either action
+  directly, and the one-rust-setup job in ci-pr.yaml rejects one that does.
+inputs:
+  workspaces:
+    description: The cargo workspaces to cache, one per line, as rust-cache takes them.
+    required: false
+    default: "."
+  components:
+    description: Toolchain components beyond those rust-toolchain.toml pins, comma-separated.
+    required: false
+    default: ""
+  key:
+    description: >-
+      An extra cache key segment for jobs that share one GITHUB_JOB, such
+      as the phases of a matrix, so that each keeps its own entry.
+    required: false
+    default: ""
+  cache-bin:
+    description: Whether the cache holds CARGO_HOME/bin; off where the image already holds the tools.
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    # The toolchain action runs rust-cache itself and exposes its inputs,
+    # so a second cache step would restore and save a second entry.
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        components: ${{ inputs.components }}
+        cache-workspaces: ${{ inputs.workspaces }}
+        cache-key: ${{ inputs.key }}
+        cache-bin: ${{ inputs.cache-bin }}
+        cache-on-failure: "false"
+        cache-save-if: ${{ github.ref == 'refs/heads/dev' }}

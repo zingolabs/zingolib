@@ -1,0 +1,50 @@
+# The repository's tooling, the xtask crate. Its tests run here rather
+# than in the test shards because the dupes_gate tests run the real
+# cargo-dupes, which the test image does not hold.
+#
+# The job runs outside ci-pr.yaml because dupes_gate.rs pins the rule
+# that ci-pr.yaml never names the duplication gate: its paths filter
+# would hold a pull request forever on a required check that never
+# reports.
+name: Tooling
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "xtask/**"
+      - "rust-toolchain.toml"
+      - ".github/workflows/tooling.yaml"
+      - ".github/actions/**"
+  push:
+    branches: [stable, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  xtask:
+    name: xtask
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+
+      - name: Restore or install cargo-dupes
+        uses: ./.github/actions/cargo-dupes
+
+      - name: Format
+        run: cargo fmt --package xtask --check
+
+      - name: Clippy
+        run: cargo clippy --package xtask --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --package xtask

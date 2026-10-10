@@ -53,7 +53,7 @@ jobs:
         id: image
         run: |
           # The workbench prints the tag it built, and nothing else.
-          TAG=$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- image)
+          TAG=$(cargo xtask build-binding-layer image)
           echo "Built ${TAG}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 

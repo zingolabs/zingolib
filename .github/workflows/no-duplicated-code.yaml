@@ -1,5 +1,5 @@
-# AGENTS.md states the rule, and tools/workbench/src/dupes_gate.rs holds the
-# gate: the `dupes-gate` binary pins the cargo-dupes version and settings,
+# AGENTS.md states the rule, and xtask/src/dupes_gate.rs holds the gate:
+# the `cargo xtask dupes-gate` task pins the cargo-dupes version and settings,
 # installs that version, runs the check, and rejects a stale baseline entry.
 #
 # The gate has its own workflow with no `paths` filter. Branch protection
@@ -27,22 +27,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
-      # dupes_gate.rs holds the version pin, so its hash keys the installed
-      # binary, and a pull request compiles cargo-dupes only when that file
-      # changes.
-      - name: Restore cargo-dupes
-        id: cargo-dupes
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/cargo-dupes
-          key: cargo-dupes-${{ hashFiles('tools/workbench/src/dupes_gate.rs') }}-${{ runner.os }}
-
-      - name: Install cargo-dupes
-        if: steps.cargo-dupes.outputs.cache-hit != 'true'
-        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin dupes-gate -- --install
+      - name: Restore or install cargo-dupes
+        uses: ./.github/actions/cargo-dupes
 
       - name: Run dupes-gate
-        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin dupes-gate
+        run: cargo xtask dupes-gate

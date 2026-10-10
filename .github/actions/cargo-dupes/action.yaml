@@ -1,0 +1,21 @@
+name: cargo-dupes
+description: >-
+  Restores the pinned cargo-dupes from the cache, or installs it through
+  the gate when the cache misses; the cache's post step then saves it.
+  xtask/src/dupes_gate.rs holds the version pin, so its hash keys the
+  binary, and a pull request compiles cargo-dupes only when that file
+  changes.
+runs:
+  using: composite
+  steps:
+    - name: Restore cargo-dupes
+      id: cargo-dupes
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/bin/cargo-dupes
+        key: cargo-dupes-${{ hashFiles('xtask/src/dupes_gate.rs') }}-${{ runner.os }}
+
+    - name: Install cargo-dupes
+      if: steps.cargo-dupes.outputs.cache-hit != 'true'
+      shell: bash
+      run: cargo xtask dupes-gate --install

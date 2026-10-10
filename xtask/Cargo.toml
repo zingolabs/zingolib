@@ -1,0 +1,21 @@
+# The repository's own tooling, in the cargo-xtask pattern: a workspace
+# member that `cargo xtask <task>` runs. Task logic lives here; the GitHub
+# workflows and the developer's shell only call tasks.
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+
+# The orasust release the Binding Layer workflows install and binding-manifest
+# reports. The pin lives in this manifest rather than in source because
+# rust-cache hashes the manifest into its cache key: a bump misses the cache
+# once and the newly installed binary is saved under the new key.
+[package.metadata.orasust]
+version = "0.1.3"
+
+[dependencies]
+toml_edit = "0.25.17"

@@ -29,6 +29,7 @@ on:
       - "**/uniffi.toml"
       - "zingo-ffi/lib/src/exported_surface.txt"
       - ".github/workflows/**"
+      - ".github/actions/**"
   push:
     branches: [stable, dev]
 
@@ -42,41 +43,29 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Every other job reads its runner, image, and partitions from this
+  # job's plan, and the draft state of the pull request from its output.
+  plan:
+    uses: ./.github/workflows/ci-plan.yaml
+    permissions:
+      contents: read
+      packages: write
+
   reject-trailing-whitespace:
     uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@20485fed7a080e381130ed8120419dc81acae641
 
   cargo-checkmate:
+    needs: plan
     uses: ./.github/workflows/cargo-checkmate.yaml
-
-  # The draft state of the pull request when this job runs. The event
-  # payload holds the state at the time of the event. A push and a "ready
-  # for review" seconds apart start two runs, and the run that survives
-  # the concurrency group can carry a payload that says draft. A run with
-  # no pull request reports false.
-  draft-state:
-    name: Draft state
-    runs-on: ubuntu-24.04
-    outputs:
-      draft: ${{ steps.read.outputs.draft }}
-    steps:
-      - name: Read the draft state of the pull request
-        id: read
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PULL_REQUEST: ${{ github.event.pull_request.number }}
-        run: |
-          draft=false
-          if [ -n "$PULL_REQUEST" ]; then
-            draft="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PULL_REQUEST" --jq '.draft')"
-          fi
-          echo "draft state: $draft"
-          echo "draft=$draft" >> "$GITHUB_OUTPUT"
+    with:
+      runner: ${{ fromJSON(needs.plan.outputs.plan).runner }}
 
   # zingolib is upstream of its consumers. No file under .github names the
   # repository of a consumer, in a call, a checkout, a command, or a comment.
   ci-independent-of-consumers:
     name: CI independent of consumers
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -89,23 +78,41 @@ jobs:
             exit 1
           fi
 
+  # .github/actions/rust-setup holds the one toolchain and cache policy.
+  # No workflow names the toolchain action or the cache action directly.
+  one-rust-setup:
+    name: One Rust setup
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Reject a toolchain or cache step outside the action
+        run: |
+          if grep --recursive --line-number --extended-regexp \
+            '^ *(- )?uses: .*(setup-rust-toolchain|rust-cache)' .github/workflows; then
+            echo "::error::a workflow bypasses .github/actions/rust-setup"
+            exit 1
+          fi
+
   # On a pull_request event the inputs are empty, so each expression
   # below falls back to the check.
   cargo-hack-check:
     name: Cargo Hack ${{ inputs.cargo-hack-subcommand == 'build' && 'Build' || 'Check' }}
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: ${{ inputs.cargo-hack-subcommand == 'build' && 90 || 45 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      # The nightly's build and the pull request's check share one
+      # GITHUB_JOB, so the subcommand keys the cache.
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
         with:
-          toolchain: ${{ inputs.toolchain }}
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+          key: ${{ inputs.cargo-hack-subcommand || 'check' }}
 
       # The flags are the action's defaults plus one exclusion:
       # zingo-uniffi-bindgen is a binary with no library target and no
@@ -123,7 +130,8 @@ jobs:
   # coverage against its own manifest.
   netutils-standalone:
     name: zingo-netutils (standalone workspace)
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: 30
     env:
       RUSTFLAGS: -D warnings
@@ -131,11 +139,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
         with:
           workspaces: zingo-netutils
 
@@ -182,7 +187,8 @@ jobs:
   binding-layer-names:
     if: ${{ inputs.skip-binding-layer-build != true }}
     name: Name the Binding Layer artifacts
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: 10
     outputs:
       abis: ${{ steps.names.outputs.abis }}
@@ -196,17 +202,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: tools/workbench
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
       - name: Name the artifacts
         id: names
-        run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+        run: cargo xtask build-binding-layer artifact --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
   # The per-PR tier of zingolib/0054: the x86_64 libraries, the Kotlin
   # bindings, and the AAR. binding-layer-android.yaml runs the builder on
@@ -215,10 +216,11 @@ jobs:
   # every push builds once, on a cargo cache keyed by the ABI.
   binding-layer-android:
     if: ${{ inputs.skip-binding-layer-build != true }}
-    needs: binding-layer-names
+    needs: [plan, binding-layer-names]
     uses: ./.github/workflows/binding-layer-android.yaml
     with:
       abis: '["x86_64"]'
+      runner: ${{ fromJSON(needs.plan.outputs.plan).runner }}
       abi_artifacts: ${{ needs.binding-layer-names.outputs.abi_artifacts }}
       abi_pattern: ${{ needs.binding-layer-names.outputs.abi_pattern }}
       aar_glob: ${{ needs.binding-layer-names.outputs.aar_glob }}
@@ -232,7 +234,8 @@ jobs:
   # must keep compiling and rendering.
   nym-feature:
     name: nym feature (zingolib + zingo-cli)
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: 45
     env:
       RUSTFLAGS: -D warnings
@@ -240,11 +243,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
       - name: Clippy
         run: cargo clippy -p zingolib -p zingo-cli --features nym --all-targets -- -D warnings
@@ -270,30 +270,29 @@ jobs:
 
   run-doc-tests:
     name: Run doc tests
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: 30
-    needs: draft-state
-    if: ${{ needs.draft-state.outputs.draft != 'true' }}
+    if: ${{ needs.plan.outputs.draft != 'true' }}
     env:
       RUSTFLAGS: -D warnings
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
       - name: Run doc tests
         run: cargo test --doc
 
   test:
-    needs: draft-state
-    if: ${{ needs.draft-state.outputs.draft != 'true' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.draft != 'true' }}
     uses: ./.github/workflows/test.yaml
     permissions:
       contents: read
       packages: write
     with:
+      plan: ${{ needs.plan.outputs.plan }}
       nextest-flags: "-E 'not test(slow)'"
