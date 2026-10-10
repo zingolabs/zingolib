@@ -27,8 +27,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+        with:
+          workspaces: tools/workbench
 
       # dupes_gate.rs holds the version pin, so its hash keys the installed
       # binary, and a pull request compiles cargo-dupes only when that file
