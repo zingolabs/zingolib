@@ -43,7 +43,7 @@ jobs:
     name: Read the request
     if: >-
       github.event.issue.pull_request
-      && github.event.comment.body == '/publish'
+      && startsWith(github.event.comment.body, '/publish')
       && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-24.04
     outputs:
@@ -69,6 +69,21 @@ jobs:
         run: |
           if [ -z "$APP_ID" ] || [ -z "$APP_PRIVATE_KEY" ]; then
             echo "::error::the secrets BINDING_PUBLISH_APP_ID and BINDING_PUBLISH_APP_PRIVATE_KEY are not both set, and GITHUB_TOKEN cannot start the checks on the recorded entry"
+            exit 1
+          fi
+
+      # The trigger above fires on any comment that starts with the command,
+      # so a stray trailing space still reaches this job and gets an answer
+      # rather than silence; anything beyond the bare command is refused
+      # here, with a reaction the maintainer can see.
+      - name: Require the bare command
+        env:
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          command="$(printf '%s' "$BODY" | tr -d '\r' | sed -e 's/[[:space:]]*$//')"
+          if [ "$command" != "/publish" ]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=confused
+            echo "::error::the comment must be exactly /publish on its own; it reads: ${command}"
             exit 1
           fi
 
