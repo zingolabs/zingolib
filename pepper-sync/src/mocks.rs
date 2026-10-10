@@ -16,8 +16,8 @@ pub(super) enum MockWalletError {
     AnErrorVariant(String),
 }
 
-type SyncStatePatch = Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError>>;
-type GetBirthdayPatch = Box<dyn Fn(&BlockHeight) -> Result<BlockHeight, MockWalletError>>;
+type SyncStatePatch = Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError> + Send>;
+type GetBirthdayPatch = Box<dyn Fn(&BlockHeight) -> Result<BlockHeight, MockWalletError> + Send>;
 pub(super) struct MockWallet {
     birthday: BlockHeight,
     sync_state: SyncState,
@@ -28,6 +28,7 @@ pub(super) struct MockWallet {
     nullifier_map: NullifierMap,
     outpoint_map: BTreeMap<OutputId, ScanTarget>,
     shard_trees: ShardTrees,
+    transparent_addresses: BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
 }
 impl MockWalletError {}
 
@@ -106,6 +107,7 @@ impl MockWalletBuilder {
             nullifier_map: self.nullifier_map,
             outpoint_map: self.outpoint_map,
             shard_trees: self.shard_trees,
+            transparent_addresses: BTreeMap::new(),
         }
     }
 }
@@ -155,22 +157,24 @@ impl SyncWallet for MockWallet {
         todo!()
     }
 
+    /// The mock wallet does not keep shielded addresses, so a discovered address is accepted and dropped.
     fn add_orchard_address(
         &mut self,
-        account_id: zip32::AccountId,
-        address: orchard::Address,
-        diversifier_index: zip32::DiversifierIndex,
+        _account_id: zip32::AccountId,
+        _address: orchard::Address,
+        _diversifier_index: zip32::DiversifierIndex,
     ) -> Result<(), Self::Error> {
-        todo!()
+        Ok(())
     }
 
+    /// The mock wallet does not keep shielded addresses, so a discovered address is accepted and dropped.
     fn add_sapling_address(
         &mut self,
-        account_id: zip32::AccountId,
-        address: sapling_crypto::PaymentAddress,
-        diversifier_index: zip32::DiversifierIndex,
+        _account_id: zip32::AccountId,
+        _address: sapling_crypto::PaymentAddress,
+        _diversifier_index: zip32::DiversifierIndex,
     ) -> Result<(), Self::Error> {
-        todo!()
+        Ok(())
     }
 
     fn get_transparent_addresses(
@@ -179,7 +183,7 @@ impl SyncWallet for MockWallet {
         &std::collections::BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
         Self::Error,
     > {
-        todo!()
+        Ok(&self.transparent_addresses)
     }
 
     fn get_transparent_addresses_mut(
@@ -188,7 +192,7 @@ impl SyncWallet for MockWallet {
         &mut std::collections::BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
         Self::Error,
     > {
-        todo!()
+        Ok(&mut self.transparent_addresses)
     }
 
     fn set_save_flag(&mut self) -> Result<(), Self::Error> {
@@ -200,7 +204,12 @@ impl SyncBlocks for MockWallet {
         &self,
         block_height: BlockHeight,
     ) -> Result<crate::wallet::WalletBlock, Self::Error> {
-        todo!()
+        self.wallet_blocks
+            .get(&block_height)
+            .cloned()
+            .ok_or_else(|| {
+                MockWalletError::AnErrorVariant(format!("no wallet block at {block_height}"))
+            })
     }
 
     fn get_wallet_blocks_mut(
@@ -231,7 +240,7 @@ impl SyncTransactions for MockWallet {
 }
 impl SyncNullifiers for MockWallet {
     fn get_nullifiers(&self) -> Result<&crate::wallet::NullifierMap, Self::Error> {
-        todo!()
+        Ok(&self.nullifier_map)
     }
 
     fn get_nullifiers_mut(&mut self) -> Result<&mut crate::wallet::NullifierMap, Self::Error> {
@@ -245,7 +254,7 @@ impl SyncOutPoints for MockWallet {
         &std::collections::BTreeMap<crate::wallet::OutputId, crate::wallet::ScanTarget>,
         Self::Error,
     > {
-        todo!()
+        Ok(&self.outpoint_map)
     }
 
     fn get_outpoints_mut(

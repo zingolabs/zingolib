@@ -12,7 +12,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 // TODO: revisit after implementing nullifier refetching
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PerformanceLevel {
-    /// - number of outputs per batch is quartered
+    /// - output budget per scan load is quartered
     /// - nullifier map only contains chain tip
     Low,
     /// - nullifier map has a small maximum size
@@ -21,7 +21,7 @@ pub enum PerformanceLevel {
     /// - nullifier map has a large maximum size
     #[default]
     High,
-    /// - number of outputs per batch is quadrupled
+    /// - output budget per scan load is quadrupled
     /// - nullifier map has no maximum size
     ///
     /// WARNING: this may cause the wallet to become less responsive on slower systems and may use a lot of memory for
@@ -37,7 +37,11 @@ impl PerformanceLevel {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        crate::wallet::serialization::read_version(
+            &mut reader,
+            "PerformanceLevel",
+            Self::serialized_version(),
+        )?;
 
         Ok(match reader.read_u8()? {
             0 => Self::Low,
@@ -86,25 +90,45 @@ pub struct SyncConfig {
     pub transparent_address_discovery: TransparentAddressDiscovery,
     /// Performance level
     pub performance_level: PerformanceLevel,
+    /// Shutdown on completion
+    ///
+    /// If not set, sync will not shutdown until the consumer sets the `SyncMode` to `Shutdown` variant.
+    /// The sync engine will regularly check for new blocks mined so the wallet will always be updated to the state
+    /// of the latest chain.
+    ///
+    /// If set, sync will still check for any newly mined blocks during scanning. But when the wallet is completely
+    /// up-to-date with the latest chain, a running sync will shutdown. A sync the consumer has paused stays paused,
+    /// and shuts down once it is resumed and completes again.
+    pub shutdown_on_completion: bool,
 }
 
 #[cfg(feature = "wallet_essentials")]
 impl SyncConfig {
     fn serialized_version() -> u8 {
-        1
+        2
     }
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let version = reader.read_u8()?;
+        let version = crate::wallet::serialization::read_version(
+            &mut reader,
+            "SyncConfig",
+            Self::serialized_version(),
+        )?;
 
         let gap_limit = reader.read_u8()?;
         let scopes = reader.read_u8()?;
         let performance_level = if version >= 1 {
-            PerformanceLevel::read(reader)?
+            PerformanceLevel::read(&mut reader)?
         } else {
             PerformanceLevel::High
         };
+        let shutdown_on_completion = if version >= 2 {
+            reader.read_u8()? != 0
+        } else {
+            false
+        };
+
         Ok(Self {
             transparent_address_discovery: TransparentAddressDiscovery {
                 gap_limit,
@@ -115,6 +139,7 @@ impl SyncConfig {
                 },
             },
             performance_level,
+            shutdown_on_completion,
         })
     }
 
@@ -133,7 +158,8 @@ impl SyncConfig {
             scopes |= 0b100;
         }
         writer.write_u8(scopes)?;
-        self.performance_level.write(writer)?;
+        self.performance_level.write(&mut writer)?;
+        writer.write_u8(self.shutdown_on_completion as u8)?;
 
         Ok(())
     }
@@ -222,6 +248,36 @@ impl TransparentAddressDiscoveryScopes {
             external: true,
             internal: true,
             refund: true,
+        }
+    }
+}
+
+#[cfg(all(test, feature = "wallet_essentials"))]
+mod tests {
+    use super::*;
+
+    /// Each reader is given only a serialized version above the one its type writes. A reader that refuses the
+    /// version returns invalid data. A reader that read on would report the end of the input.
+    #[test]
+    fn readers_refuse_serialized_versions_above_their_own() {
+        let newer_sync_config = [SyncConfig::serialized_version() + 1];
+        let newer_performance_level = [PerformanceLevel::serialized_version() + 1];
+
+        for (type_name, read) in [
+            (
+                "SyncConfig",
+                SyncConfig::read(newer_sync_config.as_slice()).map(drop),
+            ),
+            (
+                "PerformanceLevel",
+                PerformanceLevel::read(newer_performance_level.as_slice()).map(drop),
+            ),
+        ] {
+            assert_eq!(
+                read.expect_err(type_name).kind(),
+                std::io::ErrorKind::InvalidData,
+                "{type_name}"
+            );
         }
     }
 }

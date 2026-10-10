@@ -8,17 +8,27 @@ on:
 
 jobs:
 
+  # The binding-layer-android job below builds x86_64 with the other ABIs,
+  # so the per-PR workflow skips its own x86_64 build here. The per-PR
+  # cargo-hack job builds every feature set instead of checking it, with
+  # the flags that job alone holds.
   pr-checks:
-    needs: [ create-cache-key ]
     uses: ./.github/workflows/ci-pr.yaml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      skip-binding-layer-build: true
+      cargo-hack-subcommand: build
 
-  cargo-hack-build:
-    name: Cargo Hack Build
+  feature-census:
+    name: Feature Census
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -28,66 +38,72 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Install protoc
-        run: |
-          if ! command -v protoc; then
-            sudo apt-get update
-            sudo apt-get install -y protobuf-compiler
-          fi
+      # Removes each declared dependency feature in turn and checks without it.
+      # One `cargo check` per feature, so this runs nightly rather than per PR.
+      - name: Run feature-census
+        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin feature-census -- --all
 
-      - name: Run cargo-hack
-        uses: zingolabs/infrastructure/.github/actions/cargo-hack@20485fed7a080e381130ed8120419dc81acae641
+  # The online sync rate of the dev head against the newest first-parent
+  # commit older than a day, in a real run-cli --online session (AGENTS.md,
+  # the benchmark rule). Two release builds, two warm-ups and six measured
+  # sessions take about two hours, so this runs on the schedule and on a
+  # dispatch, never on a call from a pull request.
+  sync-ab:
+    name: Sync A/B (dev against the day before)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
         with:
-          hack-subcommand: build
+          fetch-depth: 0
 
-  create-timestamp:
-    uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ inputs.toolchain }}
 
-  create-cache-key:
-    uses: zingolabs/zingo-mobile/.github/workflows/create-cache-key.yaml@dev
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
 
-  android-build:
-    strategy:
-      matrix:
-        arch: [ x86_64, x86, arm64-v8a, armeabi-v7a ]
-      fail-fast: false
-    uses: zingolabs/zingo-mobile/.github/workflows/android-build.yaml@dev
-    needs: create-cache-key
+      - name: Install cargo-make
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-make
+
+      - name: Pick the arms
+        id: arms
+        run: |
+          echo "before=$(git rev-list -n 1 --first-parent --before='24 hours ago' HEAD)" >> "$GITHUB_OUTPUT"
+          echo "now=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Compare the arms
+        if: ${{ steps.arms.outputs.before != steps.arms.outputs.now }}
+        run: |
+          makers sync-ab "${{ steps.arms.outputs.before }}" "${{ steps.arms.outputs.now }}" \
+            --birthday 2571710 --seconds 90 2>&1 | tee sync-ab.log
+
+      - name: Keep the report
+        if: ${{ always() && steps.arms.outputs.before != steps.arms.outputs.now }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: sync-ab-${{ github.sha }}
+          path: sync-ab.log
+
+  # The nightly tier of zingolib/0054: the four Android ABIs in one AAR,
+  # and both XCFrameworks with the Swift sources on macOS. Each job runs
+  # the builder on this commit.
+  binding-layer-android:
+    uses: ./.github/workflows/binding-layer-android.yaml
     with:
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
-      arch: ${{ matrix.arch }}
+      abis: '["x86_64", "x86", "arm64-v8a", "armeabi-v7a"]'
 
-  android-ubuntu-integration-test-ci:
-    strategy:
-      matrix:
-        config:
-          - { abi: x86_64, api-level: 34, target: default }
-          - { abi: x86, api-level: 29, target: default }
-      fail-fast: false
-    uses: zingolabs/zingo-mobile/.github/workflows/android-ubuntu-integration-test-ci.yaml@dev
-    needs: [create-timestamp, create-cache-key, android-build]
-    with:
-      timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
-      abi: ${{ matrix.config.abi }}
-      api-level: ${{ matrix.config['api-level'] }}
-      target: ${{ matrix.config.target }}
-
-  ios-build:
-    strategy:
-      fail-fast: false
-    uses: zingolabs/zingo-mobile/.github/workflows/ios-build.yaml@dev
-    needs: create-cache-key
-    with:
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
-
-  ios-integration-test:
-    strategy:
-      fail-fast: false
-    uses: zingolabs/zingo-mobile/.github/workflows/ios-integration-test.yaml@dev
-    needs: [ create-cache-key, ios-build ]
-    with:
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
+  binding-layer-ios:
+    uses: ./.github/workflows/binding-layer-ios.yaml
 
   test:
     uses: ./.github/workflows/test.yaml
+    permissions:
+      contents: read
+      packages: write

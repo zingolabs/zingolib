@@ -2,23 +2,42 @@
 name = "zingo-price"
 description = "Crate for fetching ZEC prices."
 authors = ["<zingo@zingolabs.org>"]
-version = "0.0.1"
+version = "0.1.0"
 edition = "2024"
 repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
+[features]
+# The fetch machinery: the conduit-guarded HTTP leg in zingo-netutils. On by
+# default so the standalone crate builds and tests its whole surface;
+# zingolib depends on this crate with default features off and re-enables
+# the fetch only under its `nym` feature, per the mixnet-only price rule
+# (ADR 0011, amendment 2026-07-28) — a wallet build without the mixnet
+# compiles no fetch, and no fetch dependencies either. Without this
+# feature the crate is the storage-only price data model.
+default = ["socks5-fetch"]
+socks5-fetch = [
+    "zingo-netutils/socks5-fetch",
+    "dep:zingo-netutils",
+    "dep:serde",
+    "dep:serde_json",
+
+    "dep:thiserror",
+    "dep:zingo-net-diag",
+]
+zingo-netutils = ["dep:zingo-netutils"]
+
 [dependencies]
-zcash_client_backend = { workspace = true }
 zcash_encoding = { workspace = true }
 
 byteorder = { workspace = true }
-reqwest = { workspace = true, default-features = false, features = [
-    "cookies",
-    "rustls-tls",
-    "json",
-] }
-rust_decimal = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
+serde_json = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+zingo-net-diag = { workspace = true, optional = true }
+zingo-netutils = { version = "5.0.1", path = "../zingo-netutils", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }
+zingo-netutils = { path = "../zingo-netutils", features = ["socks5-fetch"] }

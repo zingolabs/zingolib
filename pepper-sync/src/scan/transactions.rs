@@ -6,43 +6,46 @@ use incrementalmerkletree::Position;
 use orchard::{
     Action,
     keys::Scope,
-    note_encryption::OrchardDomain,
+    note_encryption::{IronwoodDomain, OrchardDomain},
     primitives::redpallas::{Signature, SpendAuth},
 };
 use sapling_crypto::{
     bundle::{GrothProofBytes, OutputDescription},
     note_encryption::SaplingDomain,
 };
-use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
-use zcash_note_encryption::{BatchDomain, Domain, ENC_CIPHERTEXT_SIZE, ShieldedOutput};
-use zcash_primitives::{
-    memo::Memo,
-    transaction::{Transaction, TxId},
-    zip32::AccountId,
+use zcash_keys::{
+    address::UnifiedAddress,
+    keys::{OutgoingViewingKey, UnifiedFullViewingKey},
 };
+use zcash_note_encryption::{BatchDomain, Domain, ShieldedOutput};
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::{
-    ShieldedProtocol,
+    ShieldedPool,
     consensus::{self, BlockHeight, NetworkConstants},
+    memo::Memo,
 };
 
-use zcash_transparent::bundle::TxIn;
+use zcash_transparent::bundle::{
+    Authorization as TransparentAuthorization, Bundle as TransparentBundle, TxIn,
+};
 use zingo_memo::ParsedMemo;
 use zingo_status::confirmation_status::ConfirmationStatus;
+use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
     error::ScanError,
     keys::{self, KeyId, transparent::TransparentAddressId},
     wallet::{
-        NullifierMap, OrchardNote, OutgoingNote, OutgoingNoteInterface, OutgoingOrchardNote,
-        OutgoingSaplingNote, OutputId, SaplingNote, ScanTarget, TransparentCoin, WalletBlock,
-        WalletNote, WalletTransaction,
+        IronwoodNote, NullifierMap, OrchardNote, OutgoingIronwoodNote, OutgoingNote,
+        OutgoingNoteInterface, OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote,
+        ScanTarget, TransparentCoin, WalletBlock, WalletNote, WalletTransaction,
     },
 };
 
 use super::DecryptedNoteData;
 
-trait ShieldedOutputExt<D: Domain>: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE> {
+trait ShieldedOutputExt<D: Domain>: ShieldedOutput<D> {
     fn out_ciphertext(&self) -> [u8; 80];
 
     fn value_commitment(&self) -> D::ValueCommitment;
@@ -54,6 +57,16 @@ impl<A> ShieldedOutputExt<OrchardDomain> for Action<A> {
     }
 
     fn value_commitment(&self) -> <OrchardDomain as Domain>::ValueCommitment {
+        self.cv_net().clone()
+    }
+}
+
+impl<A> ShieldedOutputExt<IronwoodDomain> for Action<A> {
+    fn out_ciphertext(&self) -> [u8; 80] {
+        self.encrypted_note().out_ciphertext
+    }
+
+    fn value_commitment(&self) -> <IronwoodDomain as Domain>::ValueCommitment {
         self.cv_net().clone()
     }
 }
@@ -77,31 +90,38 @@ pub(crate) async fn scan_transactions(
     decrypted_note_data: DecryptedNoteData,
     wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
-    transparent_addresses: HashMap<String, TransparentAddressId>,
+    transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<HashMap<TxId, WalletTransaction>, ScanError> {
     let mut wallet_transactions = HashMap::with_capacity(scan_targets.len());
 
     for scan_target in scan_targets {
+        // TODO: replace wth optional txid in scan targets
         if scan_target.txid == TxId::from_bytes([0u8; 32]) {
             continue;
         }
 
-        let (transaction, block_height) = client::get_transaction_and_block_height(
+        // in case of re-orgs or consumers manually adding incorrect scan target txids, skip if request fails.
+        let (transaction, block_height) = match client::get_transaction_and_block_height(
             fetch_request_sender.clone(),
             consensus_parameters,
             scan_target.txid,
         )
-        .await?;
+        .await
+        {
+            Ok((tx, height)) => (tx, height),
+            // TODO: continue if the request failed and the scan target was added externally by the consumer. there
+            // may also be a case where re-org has occured between gathering transparent scan targets pre-scan and
+            // scanning which may result in the transaction no longer existing. this would cause a repeated failure
+            // of sync if not removed.
+            // Err(ServerError::RequestFailed(e)) => {
+            //     continue;
+            // }
+            Err(e) => {
+                return Err(e.into());
+            }
+        };
 
         if transaction.txid() != scan_target.txid {
-            #[cfg(feature = "darkside_test")]
-            tracing::error!(
-                "server returned incorrect txid.\ntxid: {}\nserver reported: {}",
-                scan_target.txid,
-                transaction.txid()
-            );
-
-            #[cfg(not(feature = "darkside_test"))]
             return Err(ScanError::IncorrectTxid {
                 txid_requested: scan_target.txid,
                 txid_returned: transaction.txid(),
@@ -129,7 +149,7 @@ pub(crate) async fn scan_transactions(
             Some(&decrypted_note_data),
             &mut NullifierMap::new(),
             outpoint_map,
-            &transparent_addresses,
+            &transparent_inuse_addresses,
             wallet_block.time(),
         )?;
         wallet_transactions.insert(scan_target.txid, wallet_transaction);
@@ -158,7 +178,7 @@ pub(crate) fn scan_transaction(
     decrypted_note_data: Option<&DecryptedNoteData>,
     nullifier_map: &mut NullifierMap,
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
-    transparent_addresses: &HashMap<String, TransparentAddressId>,
+    transparent_inuse_addresses: &HashMap<String, TransparentAddressId>,
     datetime: u32,
 ) -> Result<WalletTransaction, ScanError> {
     let block_height = status.get_height();
@@ -169,14 +189,17 @@ pub(crate) fn scan_transaction(
     let mut transparent_coins: Vec<TransparentCoin> = Vec::new();
     let mut sapling_notes: Vec<SaplingNote> = Vec::new();
     let mut orchard_notes: Vec<OrchardNote> = Vec::new();
+    let mut ironwood_notes: Vec<IronwoodNote> = Vec::new();
     let mut outgoing_sapling_notes: Vec<OutgoingSaplingNote> = Vec::new();
     let mut outgoing_orchard_notes: Vec<OutgoingOrchardNote> = Vec::new();
+    let mut outgoing_ironwood_notes: Vec<OutgoingIronwoodNote> = Vec::new();
     let mut encoded_memos = Vec::new();
 
     let mut sapling_ivks = Vec::new();
     let mut sapling_ovks = Vec::new();
     let mut orchard_ivks = Vec::new();
     let mut orchard_ovks = Vec::new();
+    let mut ironwood_ivks = Vec::new();
     for (account_id, ufvk) in ufvks {
         if let Some(dfvk) = ufvk.sapling() {
             for scope in [Scope::External, Scope::Internal] {
@@ -187,7 +210,12 @@ pub(crate) fn scan_transaction(
                         &dfvk.to_ivk(scope),
                     ),
                 ));
-                sapling_ovks.push((key_id, dfvk.to_ovk(scope)));
+                add_unified_ovk(
+                    &mut sapling_ovks,
+                    &mut orchard_ovks,
+                    key_id,
+                    dfvk.to_ovk(scope).into(),
+                );
             }
         }
 
@@ -198,8 +226,33 @@ pub(crate) fn scan_transaction(
                     key_id,
                     orchard::keys::PreparedIncomingViewingKey::new(&fvk.to_ivk(scope)),
                 ));
-                orchard_ovks.push((key_id, fvk.to_ovk(scope)));
+                // Ironwood outputs decrypt with the same orchard key material.
+                ironwood_ivks.push((
+                    key_id,
+                    orchard::keys::PreparedIncomingViewingKey::new(&fvk.to_ivk(scope)),
+                ));
+                add_unified_ovk(
+                    &mut sapling_ovks,
+                    &mut orchard_ovks,
+                    key_id,
+                    fvk.to_ovk(scope).into(),
+                );
             }
+        }
+
+        if let Some(tkeys) = ufvk.p2pkh() {
+            add_unified_ovk(
+                &mut sapling_ovks,
+                &mut orchard_ovks,
+                KeyId::from_parts(*account_id, Scope::External),
+                OutgoingViewingKey::from(tkeys.external_ovk().as_bytes()),
+            );
+            add_unified_ovk(
+                &mut sapling_ovks,
+                &mut orchard_ovks,
+                KeyId::from_parts(*account_id, Scope::Internal),
+                OutgoingViewingKey::from(tkeys.internal_ovk().as_bytes()),
+            );
         }
     }
 
@@ -209,7 +262,7 @@ pub(crate) fn scan_transaction(
             consensus_parameters,
             &mut transparent_coins,
             txid,
-            transparent_addresses,
+            transparent_inuse_addresses,
             transparent_outputs,
         );
 
@@ -228,6 +281,7 @@ pub(crate) fn scan_transaction(
             OutputDescription<GrothProofBytes>,
             sapling_crypto::Note,
             sapling_crypto::Nullifier,
+            crate::wallet::Sapling,
         >(
             &mut sapling_notes,
             txid,
@@ -246,6 +300,9 @@ pub(crate) fn scan_transaction(
         encoded_memos.append(&mut parse_encoded_memos(&sapling_notes));
     }
 
+    // Ironwood outgoing notes recover with the same orchard outgoing keys.
+    let ironwood_ovks = orchard_ovks.clone();
+
     if let Some(bundle) = transaction.orchard_bundle() {
         let orchard_actions: Vec<(OrchardDomain, Action<Signature<SpendAuth>>)> = bundle
             .actions()
@@ -258,6 +315,7 @@ pub(crate) fn scan_transaction(
             Action<Signature<SpendAuth>>,
             orchard::Note,
             orchard::note::Nullifier,
+            crate::wallet::Orchard,
         >(
             &mut orchard_notes,
             txid,
@@ -276,44 +334,58 @@ pub(crate) fn scan_transaction(
         encoded_memos.append(&mut parse_encoded_memos(&orchard_notes));
     }
 
+    if let Some(bundle) = transaction.ironwood_bundle() {
+        let ironwood_actions: Vec<(IronwoodDomain, Action<Signature<SpendAuth>>)> = bundle
+            .actions()
+            .iter()
+            .map(|action| (IronwoodDomain::for_action(action), action.clone()))
+            .collect();
+
+        scan_incoming_notes::<
+            IronwoodDomain,
+            Action<Signature<SpendAuth>>,
+            orchard::Note,
+            orchard::note::Nullifier,
+            crate::wallet::Ironwood,
+        >(
+            &mut ironwood_notes,
+            txid,
+            ironwood_ivks,
+            &ironwood_actions,
+            decrypted_note_data.map(|d| &d.ironwood_nullifiers_and_positions),
+        )?;
+
+        scan_outgoing_notes(
+            &mut outgoing_ironwood_notes,
+            txid,
+            ironwood_ovks,
+            &ironwood_actions,
+        )?;
+
+        encoded_memos.append(&mut parse_encoded_memos(&ironwood_notes));
+    }
+
     // collect nullifiers for pending transactions
     // nullifiers for confirmed transactions are collected during compact block scanning
     if status.is_pending() {
         collect_nullifiers(nullifier_map, block_height, txid, &transaction);
     }
 
-    for encoded_memo in encoded_memos {
-        match encoded_memo {
-            ParsedMemo::Version0 { uas } => {
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas.clone(),
-                    &mut outgoing_sapling_notes,
-                )?;
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas,
-                    &mut outgoing_orchard_notes,
-                )?;
-            }
-            ParsedMemo::Version1 {
-                uas,
-                rejection_address_indexes: _,
-            } => {
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas.clone(),
-                    &mut outgoing_sapling_notes,
-                )?;
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas,
-                    &mut outgoing_orchard_notes,
-                )?;
-
-                // TODO: handle rejection addresses from encoded memos
-            }
-        }
+    for uas in encoded_memos
+        .into_iter()
+        .map(ParsedMemo::into_unified_addresses)
+    {
+        add_recipient_unified_address(
+            consensus_parameters,
+            uas.clone(),
+            &mut outgoing_sapling_notes,
+        )?;
+        add_recipient_unified_address(
+            consensus_parameters,
+            uas.clone(),
+            &mut outgoing_orchard_notes,
+        )?;
+        add_recipient_unified_address(consensus_parameters, uas, &mut outgoing_ironwood_notes)?;
     }
 
     Ok(WalletTransaction {
@@ -324,23 +396,42 @@ pub(crate) fn scan_transaction(
         transparent_coins,
         sapling_notes,
         orchard_notes,
+        ironwood_notes,
         outgoing_sapling_notes,
         outgoing_orchard_notes,
+        outgoing_ironwood_notes,
     })
+}
+
+fn add_unified_ovk(
+    sapling_ovks: &mut Vec<(KeyId, sapling_crypto::keys::OutgoingViewingKey)>,
+    orchard_ovks: &mut Vec<(KeyId, orchard::keys::OutgoingViewingKey)>,
+    key_id: KeyId,
+    ovk: OutgoingViewingKey,
+) {
+    sapling_ovks.push((key_id, ovk.into()));
+    orchard_ovks.push((key_id, ovk.into()));
 }
 
 fn scan_incoming_coins<P: consensus::Parameters>(
     consensus_parameters: &P,
     transparent_coins: &mut Vec<TransparentCoin>,
     txid: TxId,
-    transparent_addresses: &HashMap<String, TransparentAddressId>,
+    transparent_inuse_addresses: &HashMap<String, TransparentAddressId>,
     transparent_outputs: &[zcash_transparent::bundle::TxOut],
 ) {
     for (output_index, output) in transparent_outputs.iter().enumerate() {
         if let Some(address) = output.recipient_address() {
             let encoded_address = keys::transparent::encode_address(consensus_parameters, address);
-            if let Some((address, key_id)) = transparent_addresses.get_key_value(&encoded_address) {
-                let output_id = OutputId::new(txid, output_index as u16);
+            if let Some((address, key_id)) =
+                transparent_inuse_addresses.get_key_value(&encoded_address)
+            {
+                let output_id = OutputId::new(
+                    txid,
+                    output_index
+                        .try_into()
+                        .expect("output indexes should be valid u32"),
+                );
 
                 transparent_coins.push(TransparentCoin {
                     output_id,
@@ -355,8 +446,8 @@ fn scan_incoming_coins<P: consensus::Parameters>(
     }
 }
 
-fn scan_incoming_notes<D, Op, N, Nf>(
-    wallet_notes: &mut Vec<WalletNote<N, Nf>>,
+fn scan_incoming_notes<D, Op, N, Nf, P>(
+    wallet_notes: &mut Vec<WalletNote<N, Nf, P>>,
     txid: TxId,
     ivks: Vec<(KeyId, D::IncomingViewingKey)>,
     outputs: &[(D, Op)],
@@ -365,7 +456,7 @@ fn scan_incoming_notes<D, Op, N, Nf>(
 where
     D: BatchDomain<Note = N>,
     D::Memo: AsRef<[u8]>,
-    Op: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
+    Op: ShieldedOutput<D>,
     Nf: Copy,
 {
     let (key_ids, ivks): (Vec<_>, Vec<_>) = ivks.into_iter().unzip();
@@ -375,7 +466,12 @@ where
         .enumerate()
     {
         if let Some(((note, _, memo_bytes), key_index)) = output {
-            let output_id = OutputId::new(txid, output_index as u16);
+            let output_id = OutputId::new(
+                txid,
+                output_index
+                    .try_into()
+                    .expect("output indexes should be valid u32"),
+            );
             let (nullifier, position) = nullifiers_and_positions.map_or(Ok((None, None)), |m| {
                 m.get(&output_id)
                     .map(|(nf, pos)| (Some(*nf), Some(*pos)))
@@ -390,6 +486,7 @@ where
                 memo: Memo::from_bytes(memo_bytes.as_ref())?,
                 spending_transaction: None,
                 refetch_nullifier_ranges: Vec::new(),
+                marker: std::marker::PhantomData,
             });
         }
     }
@@ -397,8 +494,8 @@ where
     Ok(())
 }
 
-fn scan_outgoing_notes<D, Op, N>(
-    outgoing_notes: &mut Vec<OutgoingNote<N>>,
+fn scan_outgoing_notes<D, Op, N, P>(
+    outgoing_notes: &mut Vec<OutgoingNote<N, P>>,
     txid: TxId,
     ovks: Vec<(KeyId, D::OutgoingViewingKey)>,
     outputs: &[(D, Op)],
@@ -419,11 +516,17 @@ where
             &output.out_ciphertext(),
         ) {
             outgoing_notes.push(OutgoingNote {
-                output_id: OutputId::new(txid, output_index as u16),
+                output_id: OutputId::new(
+                    txid,
+                    output_index
+                        .try_into()
+                        .expect("output indexes should be valid u32"),
+                ),
                 key_id: key_ids[key_index],
                 note,
                 memo: Memo::from_bytes(memo_bytes.as_ref())?,
                 recipient_full_unified_address: None,
+                marker: std::marker::PhantomData,
             });
         }
     }
@@ -432,7 +535,7 @@ where
 }
 
 #[allow(clippy::type_complexity)]
-fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>>(
+fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D>>(
     domain: &D,
     ovks: &[D::OutgoingViewingKey],
     output: &Output,
@@ -453,7 +556,7 @@ fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D, ENC_CIPHER
     None
 }
 
-fn parse_encoded_memos<N, Nf: Copy>(wallet_notes: &[WalletNote<N, Nf>]) -> Vec<ParsedMemo> {
+fn parse_encoded_memos<N, Nf: Copy, P>(wallet_notes: &[WalletNote<N, Nf, P>]) -> Vec<ParsedMemo> {
     wallet_notes
         .iter()
         .filter_map(|note| {
@@ -472,24 +575,29 @@ fn parse_encoded_memos<N, Nf: Copy>(wallet_notes: &[WalletNote<N, Nf>]) -> Vec<P
         .collect()
 }
 
-fn add_recipient_unified_address<P, Nz>(
+fn add_recipient_unified_address<P, Nz, Pool>(
     consensus_parameters: &P,
     unified_addresses: Vec<UnifiedAddress>,
-    outgoing_notes: &mut [OutgoingNote<Nz>],
+    outgoing_notes: &mut [OutgoingNote<Nz, Pool>],
 ) -> Result<(), ScanError>
 where
     P: consensus::Parameters + NetworkConstants,
-    OutgoingNote<Nz>: OutgoingNoteInterface,
+    OutgoingNote<Nz, Pool>: OutgoingNoteInterface,
 {
     for unified_address in unified_addresses {
-        let encoded_address = match <OutgoingNote<Nz>>::SHIELDED_PROTOCOL {
-            ShieldedProtocol::Sapling => unified_address.sapling().map(|address| {
+        let encoded_address = match <OutgoingNote<Nz, Pool>>::SHIELDED_PROTOCOL {
+            ShieldedPool::Sapling => unified_address.sapling().map(|address| {
                 Ok(zcash_keys::encoding::encode_payment_address(
                     consensus_parameters.hrp_sapling_payment_address(),
                     address,
                 ))
             }),
-            ShieldedProtocol::Orchard => unified_address
+            // A unified address has no distinct ironwood receiver:
+            // receivers (and their incoming viewing keys) are scoped
+            // to the Orchard PROTOCOL, not to a pool, so the orchard
+            // receiver serves both the orchard and ironwood pools.
+            // See ZIP 326, <https://zips.z.cash/zip-0326>.
+            ShieldedPool::Orchard | ShieldedPool::Ironwood => unified_address
                 .orchard()
                 .map(|address| keys::encode_orchard_receiver(consensus_parameters, address)),
         }
@@ -552,14 +660,30 @@ fn collect_nullifiers(
                 );
             });
     }
+    if let Some(bundle) = transaction.ironwood_bundle() {
+        bundle
+            .actions()
+            .iter()
+            .map(orchard::Action::nullifier)
+            .for_each(|nullifier| {
+                nullifier_map.ironwood.insert(
+                    *nullifier,
+                    ScanTarget {
+                        block_height,
+                        txid,
+                        narrow_scan_area: false,
+                    },
+                );
+            });
+    }
 }
 
 /// Adds the outpoints from a transparent bundle to the outpoint map.
-fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::Authorization>(
+fn collect_outpoints<A: TransparentAuthorization>(
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
     txid: TxId,
     block_height: BlockHeight,
-    transparent_bundle: &zcash_primitives::transaction::components::transparent::Bundle<A>,
+    transparent_bundle: &TransparentBundle<A>,
 ) {
     transparent_bundle
         .vin

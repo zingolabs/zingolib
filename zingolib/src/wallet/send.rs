@@ -4,14 +4,16 @@ use std::ops::Range;
 
 use nonempty::NonEmpty;
 
+use zcash_client_backend::data_api::WalletRead as _;
 use zcash_client_backend::data_api::wallet::SpendingKeys;
 use zcash_client_backend::proposal::Proposal;
+use zcash_client_backend::util::SystemClock;
 
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::NoteInterface;
 use zcash_primitives::transaction::fees::zip317;
-use zcash_protocol::consensus::{BlockHeight, Parameters as _};
-use zcash_protocol::{ShieldedProtocol, TxId};
+use zcash_protocol::consensus::{BlockHeight, Parameters};
+use zcash_protocol::{ShieldedPool, TxId};
 
 use super::LightWallet;
 use super::error::{CalculateTransactionError, KeyError};
@@ -47,7 +49,6 @@ impl LightWallet {
                 self.create_proposed_transactions(proposal, sending_account)
                     .await?
             }
-
             _ => return Err(CalculateTransactionError::NonTexMultiStep),
         };
         self.save_required = true;
@@ -69,20 +70,52 @@ impl LightWallet {
 
         // TODO:  Remove fallible sapling operations from Orchard only sends.
         let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
-            crate::wallet::utils::read_sapling_params()
-                .map_err(CalculateTransactionError::SaplingParams)?;
+            crate::wallet::utils::read_sapling_params();
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+
+        let expiry_height = self.proposal_expiry_height(&proposal);
+
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self,
             &chain_type,
+            &SystemClock,
+            &mut crate::utils::system_rng(),
             &sapling_prover,
             &sapling_prover,
             &SpendingKeys::new(usk),
             zcash_client_backend::wallet::OvkPolicy::Sender,
             &proposal,
+            expiry_height,
         )
         .map_err(CalculateTransactionError::Calculation)
+    }
+
+    /// The expiry height the wallet asks the backend to give a proposal's
+    /// transactions, or `None` to leave the expiry to the backend.
+    ///
+    /// A step the backend builds as a canonical ZIP 318 crossing takes the
+    /// ZIP's rolling expiry, which every crossing in a modulus period shares,
+    /// and the backend refuses any other. A proposal holding one therefore
+    /// leaves the expiry to the backend. Every other proposal takes the
+    /// wallet's delta for its target height.
+    pub(crate) fn proposal_expiry_height<NoteRef>(
+        &self,
+        proposal: &Proposal<zip317::FeeRule, NoteRef>,
+    ) -> Option<BlockHeight> {
+        let target_height = proposal.min_target_height();
+        let holds_canonical_crossing = zcash_client_backend::fees::canonical_crossing_fee(
+            &self.chain_type,
+            target_height.into(),
+        )
+        .is_ok_and(|canonical_fee| {
+            proposal.steps().iter().any(|step| {
+                step.is_canonical_crossing(&self.pool_migration_params(), canonical_fee)
+            })
+        });
+        (!holds_canonical_crossing).then(|| {
+            crate::wallet::expiry::tx_expiry_height(&self.chain_type, target_height.into())
+        })
     }
 
     pub(crate) fn can_build_witness<N>(
@@ -93,41 +126,75 @@ impl LightWallet {
     where
         N: NoteInterface,
     {
+        self.shards_are_scanned(N::SHIELDED_PROTOCOL, Some(note_height), anchor_height)
+    }
+
+    /// Whether this wallet can materialize `protocol`'s note commitment tree root, and witnesses to it, as of `height`.
+    pub(crate) fn anchor_is_computable(&self, protocol: ShieldedPool, height: BlockHeight) -> bool {
+        self.shards_are_scanned(protocol, None, height)
+            && self.checkpoint_is_retained(protocol, height)
+    }
+
+    /// Whether `protocol`'s shard tree retains a checkpoint at `height`.
+    fn checkpoint_is_retained(&self, protocol: ShieldedPool, height: BlockHeight) -> bool {
+        use shardtree::store::ShardStore;
+
+        match protocol {
+            ShieldedPool::Sapling => self.shard_trees.sapling.store().get_checkpoint(&height),
+            ShieldedPool::Orchard => self.shard_trees.orchard.store().get_checkpoint(&height),
+            ShieldedPool::Ironwood => self.shard_trees.ironwood.store().get_checkpoint(&height),
+        }
+        .expect("memory shard store is infallible")
+        .is_some()
+    }
+
+    /// Whether every shard carrying `protocol` notes between `note_height` (the scan floor when absent) and `anchor_height` is scanned.
+    fn shards_are_scanned(
+        &self,
+        protocol: ShieldedPool,
+        note_height: Option<BlockHeight>,
+        anchor_height: BlockHeight,
+    ) -> bool {
         let Some(birthday) = self.sync_state.wallet_birthday() else {
             return false;
         };
         let scan_ranges = self.sync_state.scan_ranges();
-
-        match N::SHIELDED_PROTOCOL {
-            ShieldedProtocol::Orchard => check_note_shards_are_scanned(
-                note_height,
-                anchor_height,
-                birthday,
-                scan_ranges,
-                self.sync_state.orchard_shard_ranges(),
-            ),
-            ShieldedProtocol::Sapling => check_note_shards_are_scanned(
-                note_height,
-                anchor_height,
-                birthday,
-                scan_ranges,
-                self.sync_state.sapling_shard_ranges(),
-            ),
-        }
+        // The scan floor: the wallet's Birthday clamped to the Pool
+        // Activation (ADR 0014, never a local mapping), the earliest
+        // height that must be scanned before a note in this pool can be
+        // witnessed. Each pool's commitment tree exists only from its
+        // activation height. Sapling and Orchard implicitly rely on
+        // `birthday >= activation` (true for all current wallets);
+        // Ironwood makes the clamp explicit because wallets born before
+        // NU6.3 can hold Ironwood notes immediately after activation.
+        let scan_floor = pepper_sync::wallet::PoolActivation::of(&self.chain_type, protocol)
+            .map_or(birthday, |activation| activation.max_with(birthday));
+        let shard_ranges = match protocol {
+            ShieldedPool::Ironwood => self.sync_state.ironwood_shard_ranges(),
+            ShieldedPool::Orchard => self.sync_state.orchard_shard_ranges(),
+            ShieldedPool::Sapling => self.sync_state.sapling_shard_ranges(),
+        };
+        check_note_shards_are_scanned(
+            note_height.unwrap_or(scan_floor),
+            anchor_height,
+            scan_floor,
+            scan_ranges,
+            shard_ranges,
+        )
     }
 }
 
 fn check_note_shards_are_scanned(
     note_height: BlockHeight,
     anchor_height: BlockHeight,
-    wallet_birthday: BlockHeight,
+    scan_floor: BlockHeight,
     scan_ranges: &[ScanRange],
     shard_ranges: &[Range<BlockHeight>],
 ) -> bool {
     let incomplete_shard_range = if let Some(shard_range) = shard_ranges.last() {
         shard_range.end - 1..anchor_height + 1
     } else {
-        wallet_birthday..anchor_height + 1
+        scan_floor..anchor_height + 1
     };
     let mut shard_ranges = shard_ranges.to_vec();
     shard_ranges.push(incomplete_shard_range);
@@ -179,9 +246,106 @@ fn check_note_shards_are_scanned(
                 .any(|block_range| {
                     block_range.contains(&(note_shard_range.end - 1))
                         && (block_range.contains(&note_shard_range.start)
-                            || note_shard_range.start < wallet_birthday)
+                            || note_shard_range.start < scan_floor)
                 })
         })
+}
+
+#[cfg(test)]
+mod proposal_expiry {
+    use nonempty::NonEmpty;
+    use zcash_client_backend::proposal::ShieldedInputs;
+    use zcash_client_backend::wallet::{Note, ReceivedNote};
+    use zcash_protocol::PoolType;
+    use zcash_protocol::consensus::BlockHeight;
+    use zcash_protocol::value::{COIN, Zatoshis};
+
+    use crate::mocks::default_txid;
+    use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
+    use crate::mocks::proposal::{
+        PaymentBuilder, ProposalBuilder, StepBuilder, TransactionRequestBuilder,
+    };
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::wallet::expiry::tx_expiry_height;
+    use crate::wallet::output::OutputRef;
+    use pepper_sync::wallet::OutputId;
+
+    const TARGET: u32 = 147;
+    /// A ZIP 318 bucket boundary: a multiple of the 144-block grid.
+    const BUCKET_BOUNDARY: u32 = 144;
+
+    /// An ordinary proposal takes the wallet's delta for its target height.
+    #[test]
+    fn an_ordinary_proposal_takes_the_wallets_delta() {
+        let wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
+        let mut builder = ProposalBuilder::default();
+        builder.min_target_height(BlockHeight::from_u32(TARGET));
+        let proposal = builder.build();
+
+        assert_eq!(
+            wallet.proposal_expiry_height(&proposal),
+            Some(tx_expiry_height(
+                &wallet.chain_type(),
+                BlockHeight::from_u32(TARGET)
+            ))
+        );
+    }
+
+    /// A proposal holding a canonical ZIP 318 crossing, one Orchard note
+    /// paying exactly one denomination into Ironwood from a bucket-boundary
+    /// anchor at the canonical fee, leaves the expiry to the backend, which
+    /// gives such a step the ZIP's rolling expiry and refuses any other.
+    #[test]
+    fn a_canonical_crossing_leaves_the_expiry_to_the_backend() {
+        let wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
+        let chain = wallet.chain_type();
+        let canonical_fee = zcash_client_backend::fees::canonical_crossing_fee(
+            &chain,
+            BlockHeight::from_u32(TARGET),
+        )
+        .unwrap();
+        let denomination = Zatoshis::const_from_u64(COIN);
+        let txid = default_txid();
+        let note = OrchardCryptoNoteBuilder::default()
+            .value(orchard::value::NoteValue::from_raw(
+                COIN + u64::from(canonical_fee),
+            ))
+            .build();
+        let mut payment = PaymentBuilder::default();
+        payment.amount(denomination);
+        let mut request = TransactionRequestBuilder::new();
+        request.payments(payment.build());
+        let mut step = StepBuilder::default();
+        step.transaction_request(request.build())
+            .shielded_inputs(Some(ShieldedInputs::from_parts(NonEmpty::singleton(
+                ReceivedNote::from_parts(
+                    OutputRef::new(OutputId::new(txid, 0), PoolType::ORCHARD),
+                    txid,
+                    0,
+                    Note::Orchard {
+                        note,
+                        pool: orchard::ValuePool::Orchard,
+                    },
+                    zip32::Scope::External,
+                    incrementalmerkletree::Position::from(1),
+                    None,
+                    None,
+                ),
+            ))))
+            .anchor_height(BlockHeight::from_u32(BUCKET_BOUNDARY))
+            .balance(
+                zcash_client_backend::fees::TransactionBalance::new(vec![], canonical_fee).unwrap(),
+            );
+        let mut builder = ProposalBuilder::default();
+        builder
+            .min_target_height(BlockHeight::from_u32(TARGET))
+            .steps(NonEmpty::singleton(step.build()));
+        let proposal = builder.build();
+
+        assert_eq!(wallet.proposal_expiry_height(&proposal), None);
+    }
 }
 
 #[cfg(test)]
@@ -225,7 +389,7 @@ mod tests {
             transaction_request_from_receivers(rec).expect("rec can requestify");
 
         assert_eq!(
-            request.total().expect("total"),
+            request.total().expect("total").expect("amounts present"),
             (amount_1 + amount_2).expect("add")
         );
     }
