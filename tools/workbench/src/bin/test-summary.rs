@@ -1,11 +1,11 @@
 //! `test-summary` runs the three test phases and prints a combined summary.
 //!
-//! Invoked as `makers hierarchy-test`, which runs
+//! Invoked as `cargo xtask hierarchy-test`, which runs
 //! `cargo run --bin test-summary -- <nextest args>`, or as
-//! `makers lite-hierarchy`, which adds `--lite` to narrow the libtonode
+//! `cargo xtask lite-hierarchy`, which adds `--lite` to narrow the libtonode
 //! phase to the `send_shield_cycle` fixture.
 //! Runs the `packages`, `zingo-cli`, and `libtonode` phases (each in its own
-//! CI container via the `makers test` front door), streams each run's output
+//! CI container via the `cargo xtask test` front door), streams each run's output
 //! while capturing it, parses the nextest summary line, and aggregates the
 //! totals.
 //!
@@ -36,7 +36,7 @@ fn is_package_selection_arg(arg: &str) -> bool {
 
 /// The phases, in order: the hermetic package tests first, then the live
 /// suites from fastest to slowest. Each entry is (display label, the
-/// `makers test` invocation that selects the phase's TESTS).
+/// `cargo xtask test` invocation that selects the phase's TESTS).
 ///
 /// Phases select tests with nextest filtersets, never with cargo package
 /// selections. Every phase then shares the front door's `--workspace`
@@ -51,7 +51,7 @@ const PHASES: &[(&str, &str)] = &[
 ];
 
 /// The same phases with the libtonode one narrowed to a single fixture,
-/// selected by [`LITE_FLAG`] and run as `makers lite-hierarchy`.
+/// selected by [`LITE_FLAG`] and run as `cargo xtask lite-hierarchy`.
 ///
 /// `send_shield_cycle` is the round trip that drives a proposal through
 /// `follow_proposal` from Transmitted to Confirmed against a real LocalNet,
@@ -113,13 +113,13 @@ impl Summary {
     }
 }
 
-/// Run one phase through the `makers test` front door, streaming its combined
+/// Run one phase through the `cargo xtask test` front door, streaming its combined
 /// output to our stdout while capturing it for parsing. Returns
 /// (exit_code, captured_output).
 fn run_phase(invocation: &str, forwarded_args: &[String]) -> Result<(i32, String), std::io::Error> {
     // `bash -c '... 2>&1'` merges stderr into stdout so the single captured
     // stream carries the nextest summary line wherever nextest emits it.
-    let mut shell_command = format!("makers test {invocation}");
+    let mut shell_command = format!("cargo xtask test {invocation}");
     for arg in forwarded_args {
         shell_command.push(' ');
         // Forwarded nextest args are simple flags and filter expressions;
@@ -285,7 +285,7 @@ fn main() -> Result<(), std::io::Error> {
     if let Some(arg) = forwarded_args.iter().find(|a| is_package_selection_arg(a)) {
         eprintln!(
             "test-summary: package-selection arg '{arg}' is not accepted; each phase selects \
-             its own scope. Use 'makers test -p <package>' to scope a single run."
+             its own scope. Use 'cargo xtask test -p <package>' to scope a single run."
         );
         std::process::exit(2);
     }

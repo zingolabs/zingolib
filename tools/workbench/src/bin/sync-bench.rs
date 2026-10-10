@@ -2,7 +2,7 @@
 //!
 //! An in-process harness measures the sync engine alone, which answers
 //! nothing about a session where four proven exits bootstrap beside the
-//! scan. This drives the CLI the way a user does: `makers run-cli --online`
+//! scan. This drives the CLI the way a user does: `cargo xtask run-cli --online`
 //! spawns the proxy, proves the quartet, runs the Server-Selection Sweep,
 //! and only then launches sync.
 //!
@@ -424,16 +424,17 @@ fn build_dir(root: &Path, arm: Arm) -> PathBuf {
     bench_dir(root).join("builds").join(arm.name())
 }
 
-/// The `makers run-cli` invocation the prebuild and every session share.
+/// The `cargo xtask run-cli` invocation the prebuild and every session share.
 ///
 /// Both go through here so the two cannot drift in profile, features, or
 /// build directory, and the profile is release because an unoptimized
 /// core-second answers nothing about what the mixnet costs a user.
 fn run_cli(root: &Path, arm: Arm) -> Command {
-    let mut command = Command::new("makers");
+    let mut command = Command::new("cargo");
     command
         .current_dir(root)
         .env("RUST_LOG", LOG_FILTER)
+        .arg("xtask")
         .arg("run-cli")
         .arg("--release")
         .arg("--target-dir")
@@ -459,7 +460,11 @@ fn prebuild(root: &Path, arm: Arm) -> Result<(), Vec<String>> {
     let status = run_cli(root, arm)
         .arg("--build-only")
         .status()
-        .map_err(|e| vec![format!("cannot spawn makers run-cli --build-only: {e}")])?;
+        .map_err(|e| {
+            vec![format!(
+                "cannot spawn cargo xtask run-cli --build-only: {e}"
+            )]
+        })?;
     if status.success() {
         return Ok(());
     }
@@ -496,7 +501,7 @@ fn session(root: &Path, birthday: u32, arm: Arm) -> Result<Outcome, Vec<String>>
     let mut child = command
         .process_group(0)
         .spawn()
-        .map_err(|e| vec![format!("cannot spawn makers run-cli: {e}")])?;
+        .map_err(|e| vec![format!("cannot spawn cargo xtask run-cli: {e}")])?;
 
     let spawned = Instant::now();
     let mut launched: Option<Instant> = None;

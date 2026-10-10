@@ -2,11 +2,12 @@
 
 use std::path::Path;
 
-use xtask::{ci_plan, image, test};
+use xtask::{ci_plan, image, test, workbench};
 
 enum Task {
     Run(fn(&Path, &[String]) -> Result<(), Vec<String>>),
     Test(test::Variant),
+    Workbench(workbench::Binary),
 }
 
 impl Task {
@@ -14,6 +15,7 @@ impl Task {
         match self {
             Self::Run(task) => task(root, args),
             Self::Test(variant) => variant.run(root, args),
+            Self::Workbench(binary) => binary.run(root, args),
         }
     }
 }
@@ -53,6 +55,49 @@ const TASKS: &[(&str, Task, &str)] = &[
         "run-ignored",
         Task::Test(test::Variant::RunIgnored),
         "`cargo nextest run` of the ignored tests on the host",
+    ),
+    (
+        "hierarchy-test",
+        Task::Workbench(workbench::Binary::named(workbench::TEST_SUMMARY)),
+        "the three gated test phases (packages, zingo-cli, libtonode) with a combined summary",
+    ),
+    (
+        "lite-hierarchy",
+        Task::Workbench(workbench::Binary {
+            name: workbench::TEST_SUMMARY,
+            fixed_args: &[workbench::LITE_FLAG],
+        }),
+        "the same three phases with the libtonode one narrowed to send_shield_cycle",
+    ),
+    (
+        "exclusion-audit",
+        Task::Workbench(workbench::Binary::named("exclusion-audit")),
+        "check that each member of BUILD_EXCLUDABLE, or a named candidate, is free to exclude",
+    ),
+    (
+        "feature-sweep",
+        Task::Workbench(workbench::Binary::named("feature-sweep")),
+        "check the crates this branch touches in every feature combination",
+    ),
+    (
+        "bundle-nym-proxy",
+        Task::Workbench(workbench::Binary::named("bundle-nym-proxy")),
+        "build nym-proxy from the zingo-netutils workspace and place it beside the wallet binaries",
+    ),
+    (
+        "run-cli",
+        Task::Workbench(workbench::Binary::named("run-cli")),
+        "build and launch zingo-cli with the mixnet transport and nym-proxy bundled",
+    ),
+    (
+        "sync-bench",
+        Task::Workbench(workbench::Binary::named("sync-bench")),
+        "time sync inside a real run-cli --online session",
+    ),
+    (
+        "sync-ab",
+        Task::Workbench(workbench::Binary::named("sync-ab")),
+        "compare two commits' sync rate in interleaved run-cli --online sessions",
     ),
     (
         "rust-version",

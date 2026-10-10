@@ -152,7 +152,7 @@ fn trial() -> Result<(), Vec<String>> {
     let proxy = root.join("target").join("debug").join("nym-proxy");
     if !proxy.exists() {
         return Err(vec![format!(
-            "no nym-proxy at {}: build it with `makers bundle-nym-proxy`",
+            "no nym-proxy at {}: build it with `cargo xtask bundle-nym-proxy`",
             proxy.display()
         )]);
     }

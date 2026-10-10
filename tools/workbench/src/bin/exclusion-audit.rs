@@ -33,8 +33,8 @@
 //! too, which is how a proposed addition gets checked before it is written
 //! down.
 //!
-//! Invoked as `makers exclusion-audit`, optionally with candidates:
-//! `makers exclusion-audit zingo-cli`.
+//! Invoked as `cargo xtask exclusion-audit`, optionally with candidates:
+//! `cargo xtask exclusion-audit zingo-cli`.
 
 #![forbid(unsafe_code)]
 

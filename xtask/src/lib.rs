@@ -4,6 +4,7 @@ pub mod ci_plan;
 pub mod container;
 pub mod image;
 pub mod test;
+pub mod workbench;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};

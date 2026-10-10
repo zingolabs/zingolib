@@ -199,10 +199,7 @@ struct Request {
 struct Arm {
     spec: Spec,
     worktree: PathBuf,
-    /// Whether the arm's `Makefile.toml` carries the `run-cli` task, which
-    /// builds mixnet-capable and bundles the proxy. An arm predating it is
-    /// built and launched directly.
-    hosted: bool,
+    launch: Launch,
     /// Whether the arm's CLI knows the consent flag that takes a session
     /// online. An arm without one is driven by `sync run` instead.
     consents: bool,
@@ -395,13 +392,13 @@ fn prepare(root: &Path, spec: &Spec) -> Result<Arm, Vec<String>> {
     std::fs::write(&source, instrumented)
         .map_err(|e| vec![format!("cannot write {}: {e}", source.display())])?;
 
-    let makefile = std::fs::read_to_string(worktree.join("Makefile.toml")).unwrap_or_default();
+    let launch = Launch::of(&worktree);
     let cli_source =
         std::fs::read_to_string(worktree.join("zingo-cli/src/lib.rs")).unwrap_or_default();
 
     Ok(Arm {
         spec: spec.clone(),
-        hosted: makefile.contains("[tasks.run-cli]"),
+        launch,
         consents: cli_source.contains("Arg::new(\"online\")"),
         worktree,
         rates: Vec::new(),
@@ -597,15 +594,46 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
     outcome
 }
 
+/// How an arm's CLI is built and launched: through the run-cli task of the
+/// era the arm belongs to, so the mixnet build and the bundled proxy are
+/// exactly what that task provisions, or directly for an arm predating the
+/// task, which is the only way to reach the era this comparison looks back
+/// into.
+#[derive(Clone, Copy)]
+enum Launch {
+    Xtask,
+    Makers,
+    Direct,
+}
+
+impl Launch {
+    /// - Reads `xtask/src/main.rs` and `Makefile.toml` under `worktree` from disk.
+    fn of(worktree: &Path) -> Self {
+        let xtask = std::fs::read_to_string(worktree.join("xtask/src/main.rs")).unwrap_or_default();
+        let makefile = std::fs::read_to_string(worktree.join("Makefile.toml")).unwrap_or_default();
+        if xtask.contains("\"run-cli\"") {
+            Self::Xtask
+        } else if makefile.contains("[tasks.run-cli]") {
+            Self::Makers
+        } else {
+            Self::Direct
+        }
+    }
+
+    fn hosted_command(self) -> Option<(&'static str, &'static [&'static str])> {
+        match self {
+            Self::Xtask => Some(("cargo", &["xtask", "run-cli", "--release"])),
+            Self::Makers => Some(("makers", &["run-cli", "--release"])),
+            Self::Direct => None,
+        }
+    }
+}
+
 /// The command that builds and launches one arm's CLI.
-// An arm carrying the run-cli task is launched through it, so the mixnet
-// build and the bundled proxy are exactly what that task provisions. An arm
-// predating the task is built and run directly, which is the only way to
-// reach the era this comparison looks back into.
 fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
-    if arm.hosted {
-        let mut command = Command::new("makers");
-        command.arg("run-cli").arg("--release");
+    if let Some((program, args)) = arm.launch.hosted_command() {
+        let mut command = Command::new(program);
+        command.args(args);
         if arm.spec.nakednet {
             command.arg("--nakednet");
         }
