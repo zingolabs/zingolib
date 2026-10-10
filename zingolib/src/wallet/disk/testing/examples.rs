@@ -189,57 +189,45 @@ impl NetworkSeedVersion {
     }
 
     /// Loads light client from test wallet files.
+    /// - Reads the committed wallet file. The client starts offline: no indexer is dialed.
     pub async fn load_example_wallet(&self) -> LightClient {
-        let config = match self {
-            NetworkSeedVersion::Regtest(_) => {
-                // Probably should be undefined. For the purpose of these tests, I hope it doesnt matter.
-                let indexer_uri = MAINNET_INDEXER.parse::<Uri>().unwrap();
-                ClientConfig::builder()
-                    .set_indexer_uri(indexer_uri)
-                    .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
-                    .set_wallet_name(
-                        self.example_wallet_path()
-                            .file_name()
-                            .unwrap()
-                            .to_string_lossy()
-                            .to_string(),
-                    )
-                    .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
-                    .set_wallet_config(WalletConfig::Read)
-                    .build()
-                    .unwrap()
-            }
-            NetworkSeedVersion::Testnet(_) => ClientConfig::builder()
-                .set_indexer_uri(TESTNET_INDEXER.parse::<Uri>().unwrap())
-                .set_chain_type(ChainType::Testnet)
-                .set_wallet_name(
-                    self.example_wallet_path()
-                        .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string(),
-                )
-                .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
-                .set_wallet_config(WalletConfig::Read)
-                .build()
-                .unwrap(),
-            NetworkSeedVersion::Mainnet(_) => ClientConfig::builder()
-                .set_indexer_uri(MAINNET_INDEXER.parse::<Uri>().unwrap())
-                .set_chain_type(ChainType::Mainnet)
-                .set_wallet_name(
-                    self.example_wallet_path()
-                        .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string(),
-                )
-                .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
-                .set_wallet_config(WalletConfig::Read)
-                .build()
-                .unwrap(),
-        };
-
+        let path = self.example_wallet_path();
+        let config = ClientConfig::builder()
+            .set_chain_type(self.chain_type())
+            .set_wallet_name(path.file_name().unwrap().to_string_lossy().to_string())
+            .set_wallet_dir(path.parent().unwrap().to_path_buf())
+            .set_wallet_config(WalletConfig::Read)
+            .build()
+            .unwrap();
         LightClient::new(config, false).await.unwrap()
+    }
+
+    /// - Reads the committed wallet file and dials the network's indexer.
+    /// - Panics for a regtest example, which has no live network.
+    pub async fn load_example_wallet_online(&self) -> LightClient {
+        let uri = self
+            .indexer_uri()
+            .expect("a regtest example wallet has no live network to dial");
+        let mut client = self.load_example_wallet().await;
+        client.set_indexer_uri(uri).await.unwrap();
+        client
+    }
+
+    fn chain_type(&self) -> ChainType {
+        match self {
+            NetworkSeedVersion::Regtest(_) => ChainType::Regtest(ActivationHeights::default()),
+            NetworkSeedVersion::Testnet(_) => ChainType::Testnet,
+            NetworkSeedVersion::Mainnet(_) => ChainType::Mainnet,
+        }
+    }
+
+    fn indexer_uri(&self) -> Option<Uri> {
+        let indexer = match self {
+            NetworkSeedVersion::Regtest(_) => return None,
+            NetworkSeedVersion::Testnet(_) => TESTNET_INDEXER,
+            NetworkSeedVersion::Mainnet(_) => MAINNET_INDEXER,
+        };
+        Some(indexer.parse::<Uri>().unwrap())
     }
     /// picks the seed (or ufvk) string associated with an example wallet
     #[must_use]
