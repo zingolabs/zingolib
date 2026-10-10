@@ -6,7 +6,6 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 use pepper_sync::wallet::{IronwoodNote, TransparentCoin};
 use zcash_protocol::PoolType;
-use zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS;
 use zcash_protocol::value::Zatoshis;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::wallet::balance::AccountBalance;
@@ -1643,47 +1642,6 @@ mod basic_transactions {
     //     faucet.do_sync(true).await.unwrap();
     //     recipient.do_sync(true).await.unwrap();
     // }
-}
-
-/// Tests that transparent coinbases mature after `COINBASE_MATURITY_BLOCKS`.
-#[tokio::test]
-async fn mine_to_transparent_coinbase_maturity() {
-    let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
-        PoolType::Transparent,
-        scenarios::default_test_activation_heights(),
-        scenarios::ChainCachePolicy::PerTest,
-    )
-    .await;
-
-    // After 3 blocks...
-    check_client_balances!(faucet, i: 0 o: 0 s: 0 t: 0);
-
-    // Balance should be 0 because coinbase needs COINBASE_MATURITY_BLOCKS confirmations
-    assert_eq!(
-        faucet
-            .wallet()
-            .read()
-            .await
-            .confirmed_balance_excluding_dust::<TransparentCoin>(zip32::AccountId::ZERO)
-            .unwrap()
-            .into_u64(),
-        0
-    );
-
-    increase_height_and_wait_for_client(&local_net, &mut faucet, COINBASE_MATURITY_BLOCKS)
-        .await
-        .unwrap();
-
-    let mature_balance = faucet
-        .wallet()
-        .read()
-        .await
-        .confirmed_balance_excluding_dust::<TransparentCoin>(zip32::AccountId::ZERO)
-        .unwrap()
-        .into_u64();
-
-    // Should have 3 blocks worth of rewards
-    assert_eq!(mature_balance, scenarios::mined_block_rewards_total(3));
 }
 
 /// `propose_send_with_op_return` reports the fee of both transactions.

@@ -4447,4 +4447,41 @@ mod moved_from_regtest {
         miner.sync_and_await().await.unwrap();
         assert_eq!(unfiltered(&miner).await, (FIRST_BLOCKS + 1) * REWARD_ZATS);
     }
+    #[tokio::test]
+    async fn mine_to_transparent_coinbase_maturity() {
+        use crate::lightclient::LightClient;
+        use pepper_sync::wallet::TransparentCoin;
+
+        const FIRST_BLOCKS: u64 = 3;
+        let mut net = MockNet::launch().await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_taddr = get_base_address(&miner, PoolType::Transparent).await;
+        {
+            let mut chain = net.chain.write().await;
+            for _ in 0..FIRST_BLOCKS {
+                chain.mine_block_rewarding(&miner_taddr, REWARD, vec![]);
+            }
+        }
+        miner.sync_and_await().await.unwrap();
+        async fn mature(miner: &LightClient) -> u64 {
+            miner
+                .wallet()
+                .read()
+                .await
+                .confirmed_balance_excluding_dust::<TransparentCoin>(AccountId::ZERO)
+                .unwrap()
+                .into_u64()
+        }
+        check_client_balances!(miner, i: 0 o: 0 s: 0 t: 0);
+        assert_eq!(mature(&miner).await, 0);
+
+        net.chain
+            .write()
+            .await
+            .mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
+        miner.sync_and_await().await.unwrap();
+        assert_eq!(mature(&miner).await, FIRST_BLOCKS * REWARD_ZATS);
+    }
 }
