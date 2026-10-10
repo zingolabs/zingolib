@@ -20,6 +20,12 @@ pub const PROXY_LIB_NAME: &str = "zingo_nym_proxy_ffi";
 /// The proxy crate's package name, which cargo selects in its own workspace.
 pub const PROXY_PACKAGE: &str = "zingo-nym-proxy-ffi";
 
+pub const WALLET_CRATE_DIR: &str = "zingo-ffi/lib";
+
+pub const PROXY_CRATE_DIR: &str = "zingo-netutils/nym-proxy-ffi";
+
+pub const BINDING_CRATE_DIRS: [&str; 2] = [WALLET_CRATE_DIR, PROXY_CRATE_DIR];
+
 pub const TOOLCHAIN_VARIABLE: &str = "RUSTUP_TOOLCHAIN";
 
 pub const IMAGE_TOOLCHAIN_ARGUMENT: &str = "RUST_TOOLCHAIN_TOML";
@@ -29,8 +35,30 @@ pub const IMAGE_TARGETS_ARGUMENT: &str = "RUST_TARGETS";
 /// The variable that tells cargo where to write build output.
 pub const TARGET_DIR_VARIABLE: &str = "CARGO_TARGET_DIR";
 
+pub const DESCRIPTOR_FILE: &str = "descriptor.txt";
+
+pub const DESCRIPTOR_ENV: &str = "ZINGOLIB_DESCRIPTOR";
+pub const MESSAGE_FORMAT_FLAG: &str = "--message-format=json-render-diagnostics";
+const BUILD_SCRIPT_MESSAGE: &str = "\"reason\":\"build-script-executed\"";
+const PACKAGE_ID_KEY: &str = "\"package_id\":\"";
+const ZINGOLIB_PACKAGE_ID_TAIL: &str = "/zingolib#";
+const JSON_STRING_END: char = '"';
+const JSON_ESCAPE: char = '\\';
+
+pub const NDK_ENV_COMMAND: [&str; 2] = ["cargo", "ndk-env"];
+const NDK_ENV_TARGET_FLAG: &str = "--target";
+const NDK_ENV_JSON_FLAG: &str = "--json";
+pub const NDK_CLANG_PATH_VARIABLE: &str = "CLANG_PATH";
+pub const NDK_LINK_CLANG_VARIABLE: &str = "_CARGO_NDK_LINK_CLANG";
+pub const NDK_LINK_TARGET_VARIABLE: &str = "_CARGO_NDK_LINK_TARGET";
+const CLANG_TARGET_FLAG: &str = "--target=";
+const CLANG_SUFFIX: &str = "-clang";
+
 /// The container engines to try, in order.
 pub const ENGINES: [&str; 2] = ["podman", "docker"];
+pub const ENGINE_VARIABLE: &str = "CONTAINER_RUNTIME";
+
+pub const PUBLISHED_ANDROID_IMAGE: &str = "ghcr.io/zingolabs/android_builder:019";
 
 /// The Android API level that the builder compiles against.
 pub const ANDROID_API_LEVEL: &str = "26";
@@ -65,8 +93,17 @@ pub const PROXY_XCFRAMEWORK: &str = "ZingoNymProxyFFI.xcframework";
 /// Both XCFrameworks, in the order that the builder creates them.
 pub const XCFRAMEWORKS: [&str; 2] = [WALLET_XCFRAMEWORK, PROXY_XCFRAMEWORK];
 
-/// The Swift source directory that the SwiftPM package compiles, relative to the builder's output.
-pub const SWIFT_SOURCES_DIR: &str = "Sources/ZingoBindings";
+const SWIFT_SOURCES_PARENT: &str = "Sources";
+
+pub const SWIFT_PACKAGE: &str = "ZingoBindings";
+
+pub fn swift_sources_dir() -> String {
+    format!("{SWIFT_SOURCES_PARENT}/{SWIFT_PACKAGE}")
+}
+
+pub const SWIFT_PACKAGE_MANIFEST: &str = "bindings/swift/Package.swift";
+
+pub const SWIFT_PACKAGE_OUTPUT_DIR: &str = "build";
 
 /// The wallet's generated Swift source.
 pub const WALLET_SWIFT: &str = "zingo.swift";
@@ -89,10 +126,26 @@ pub struct AndroidAbi {
     pub std_feature: &'static str,
 }
 
+pub struct NdkLink {
+    pub env_command: Vec<String>,
+    pub link_target: String,
+}
+
 impl AndroidAbi {
+    pub fn clang_target(&self) -> String {
+        format!("{}{ANDROID_API_LEVEL}", self.clang_prefix)
+    }
+
     /// The NDK clang wrapper for this ABI at the builder's API level.
     pub fn cc(&self) -> String {
-        format!("{}{ANDROID_API_LEVEL}-clang", self.clang_prefix)
+        format!("{}{CLANG_SUFFIX}", self.clang_target())
+    }
+
+    pub fn ndk_link(&self) -> NdkLink {
+        NdkLink {
+            env_command: ndk_env_command(self.triple),
+            link_target: format!("{CLANG_TARGET_FLAG}{}", self.clang_target()),
+        }
     }
 
     /// The environment that the builder sets while it builds this ABI.
@@ -135,8 +188,214 @@ pub const ANDROID_ABIS: [AndroidAbi; 4] = [
     },
 ];
 
-/// The first container engine that answers `--version`.
+pub const ARTIFACT_PREFIX: &str = "binding-layer";
+pub const BUNDLE_ARTIFACT: &str = "bundle";
+pub const ABI_ARTIFACT: &str = "abi";
+pub const ARTIFACT_KINDS: [&str; 2] = [BUNDLE_ARTIFACT, ABI_ARTIFACT];
+pub const ARTIFACT_WILDCARD: &str = "*";
+const ARTIFACT_SEPARATOR: &str = "-";
+pub const AAR_SUFFIX: &str = "-release.aar";
+pub const ABIS_OUTPUT: &str = "abis";
+pub const ABI_ARTIFACTS_OUTPUT: &str = "abi_artifacts";
+pub const ABI_PATTERN_OUTPUT: &str = "abi_pattern";
+pub const AAR_GLOB_OUTPUT: &str = "aar_glob";
+pub const BUNDLE_OUTPUT_PREFIX: &str = "bundle_";
+pub const BUNDLE_PATTERN_OUTPUT: &str = "bundle_pattern";
+pub const IOS_OUT_OUTPUT: &str = "ios_out";
+const OUTPUT_ASSIGNMENT: char = '=';
+const JSON_QUOTE: char = '"';
+const JSON_SEPARATOR: &str = ",";
+const JSON_PAIR: char = ':';
+
+fn json_string_after<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+    let start = text.find(key)? + key.len();
+    let rest = &text[start..];
+    let end = rest.find(JSON_STRING_END)?;
+    Some(&rest[..end])
+}
+
+pub fn descriptor_in_messages(messages: &str) -> Option<String> {
+    let env_key = format!("[\"{DESCRIPTOR_ENV}\",\"");
+    messages
+        .lines()
+        .filter(|line| line.contains(BUILD_SCRIPT_MESSAGE))
+        .filter(|line| {
+            json_string_after(line, PACKAGE_ID_KEY)
+                .is_some_and(|id| id.contains(ZINGOLIB_PACKAGE_ID_TAIL))
+        })
+        .find_map(|line| json_string_after(line, &env_key))
+        .filter(|descriptor| !descriptor.is_empty())
+        .map(str::to_string)
+}
+
+pub fn ndk_env_command(triple: &str) -> Vec<String> {
+    [
+        NDK_ENV_COMMAND.as_slice(),
+        &[NDK_ENV_TARGET_FLAG, triple, NDK_ENV_JSON_FLAG],
+    ]
+    .concat()
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
+fn json_string_prefix(text: &str) -> Option<(String, &str)> {
+    let body = text.strip_prefix(JSON_QUOTE)?;
+    let mut chars = body.char_indices();
+    let mut value = String::new();
+    while let Some((at, ch)) = chars.next() {
+        match ch {
+            JSON_STRING_END => return Some((value, &body[at + JSON_STRING_END.len_utf8()..])),
+            JSON_ESCAPE => value.push(match chars.next()?.1 {
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                'u' => return None,
+                other => other,
+            }),
+            other => value.push(other),
+        }
+    }
+    None
+}
+
+pub fn env_in_json(text: &str) -> Result<Vec<(String, String)>, String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !matches!(*line, "" | "{" | "}"))
+        .map(|line| {
+            let pair = line.strip_suffix(JSON_SEPARATOR).unwrap_or(line);
+            let parsed = json_string_prefix(pair).and_then(|(key, rest)| {
+                let rest = rest.trim_start().strip_prefix(JSON_PAIR)?.trim_start();
+                let (value, rest) = json_string_prefix(rest)?;
+                rest.is_empty().then_some((key, value))
+            });
+            parsed.ok_or_else(|| format!("not a JSON string pair: {line}"))
+        })
+        .collect()
+}
+
+pub fn ndk_link_env(
+    exported: Vec<(String, String)>,
+    link_target: &str,
+) -> Result<Vec<(String, String)>, String> {
+    let clang = exported
+        .iter()
+        .find(|(key, _)| key == NDK_CLANG_PATH_VARIABLE)
+        .map(|(_, value)| value.clone())
+        .ok_or_else(|| {
+            format!(
+                "`{}` exported no {NDK_CLANG_PATH_VARIABLE}",
+                NDK_ENV_COMMAND.join(" ")
+            )
+        })?;
+    let mut env = exported;
+    env.push((NDK_LINK_CLANG_VARIABLE.to_string(), clang));
+    env.push((
+        NDK_LINK_TARGET_VARIABLE.to_string(),
+        link_target.to_string(),
+    ));
+    Ok(env)
+}
+
+pub fn artifact_name(kind: &str, segment: &str, commit: &str) -> String {
+    [ARTIFACT_PREFIX, kind, segment, commit].join(ARTIFACT_SEPARATOR)
+}
+
+pub fn artifact_name_without_commit(segment: &str) -> String {
+    [ARTIFACT_PREFIX, segment].join(ARTIFACT_SEPARATOR)
+}
+
+fn json_string(text: &str) -> String {
+    format!("{JSON_QUOTE}{text}{JSON_QUOTE}")
+}
+
+fn json_list(items: impl Iterator<Item = String>) -> String {
+    format!("[{}]", items.collect::<Vec<_>>().join(JSON_SEPARATOR))
+}
+
+fn json_object(pairs: impl Iterator<Item = (String, String)>) -> String {
+    format!(
+        "{{{}}}",
+        pairs
+            .map(|(key, value)| format!("{}{JSON_PAIR}{}", json_string(&key), json_string(&value)))
+            .collect::<Vec<_>>()
+            .join(JSON_SEPARATOR)
+    )
+}
+
+pub fn swift_package_output_dir() -> String {
+    let manifest = std::path::Path::new(SWIFT_PACKAGE_MANIFEST);
+    let dir = manifest.parent().unwrap_or(manifest);
+    format!("{}/{SWIFT_PACKAGE_OUTPUT_DIR}", dir.display())
+}
+
+pub fn artifact_outputs(platforms: &[&str], commit: &str) -> Vec<(String, String)> {
+    let abis = ANDROID_ABIS.iter().map(|abi| abi.jni_dir);
+    let mut outputs = vec![
+        (
+            ABIS_OUTPUT.to_string(),
+            json_list(abis.clone().map(json_string)),
+        ),
+        (
+            ABI_ARTIFACTS_OUTPUT.to_string(),
+            json_object(
+                abis.map(|abi| (abi.to_string(), artifact_name(ABI_ARTIFACT, abi, commit))),
+            ),
+        ),
+        (
+            ABI_PATTERN_OUTPUT.to_string(),
+            artifact_name(ABI_ARTIFACT, ARTIFACT_WILDCARD, commit),
+        ),
+        (
+            AAR_GLOB_OUTPUT.to_string(),
+            format!("{ARTIFACT_WILDCARD}{AAR_SUFFIX}"),
+        ),
+    ];
+    outputs.extend(platforms.iter().map(|platform| {
+        (
+            format!("{BUNDLE_OUTPUT_PREFIX}{platform}"),
+            artifact_name(BUNDLE_ARTIFACT, platform, commit),
+        )
+    }));
+    outputs.push((
+        BUNDLE_PATTERN_OUTPUT.to_string(),
+        artifact_name(BUNDLE_ARTIFACT, ARTIFACT_WILDCARD, commit),
+    ));
+    outputs.push((IOS_OUT_OUTPUT.to_string(), swift_package_output_dir()));
+    outputs
+}
+
+pub fn render_outputs(outputs: &[(String, String)]) -> String {
+    outputs
+        .iter()
+        .map(|(key, value)| format!("{key}{OUTPUT_ASSIGNMENT}{value}\n"))
+        .collect()
+}
+
+pub fn artifact_segment<'a>(name: &'a str, kind: &str, commit: &str) -> Option<&'a str> {
+    let head = [ARTIFACT_PREFIX, kind, ""].join(ARTIFACT_SEPARATOR);
+    let tail = ["", commit].join(ARTIFACT_SEPARATOR);
+    let segment = name
+        .strip_prefix(head.as_str())?
+        .strip_suffix(tail.as_str())?;
+    (!segment.is_empty()).then_some(segment)
+}
+
+/// - Reads `CONTAINER_RUNTIME` from the environment.
+/// - Runs `<engine> --version` as a child process for each engine in turn until one answers.
 pub fn container_engine() -> Result<&'static str, Vec<String>> {
+    if let Ok(named) = std::env::var(ENGINE_VARIABLE) {
+        return ENGINES
+            .into_iter()
+            .find(|engine| *engine == named)
+            .ok_or_else(|| {
+                vec![format!(
+                    "{ENGINE_VARIABLE}={named} names none of {}",
+                    ENGINES.join(", ")
+                )]
+            });
+    }
     ENGINES
         .into_iter()
         .find(|engine| crate::stdout_of(engine, &["--version"]).is_ok())
@@ -288,6 +547,135 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_android_workflow_runs_in_the_published_image() {
+        let workflow = include_str!("../../../.github/workflows/binding-layer-android.yaml");
+        assert!(workflow.contains(&format!("image: {PUBLISHED_ANDROID_IMAGE}\n")));
+    }
+
+    #[test]
+    fn the_descriptor_env_is_the_one_the_build_script_emits() {
+        let build_script = include_str!("../../../zingolib/build.rs");
+        assert!(build_script.contains(&format!(
+            "const DESCRIPTOR_ENV: &str = \"{DESCRIPTOR_ENV}\";"
+        )));
+        assert!(build_script.contains("cargo:rustc-env={DESCRIPTOR_ENV}={description}"));
+    }
+
+    #[test]
+    fn the_descriptor_comes_from_zingolibs_build_script_message_alone() {
+        let messages = "\
+            {\"reason\":\"compiler-artifact\",\"package_id\":\"path+file:///x/zingolib#6.0.0\"}\n\
+            {\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x/zingolib_testutils#0.1.0\",\"env\":[[\"ZINGOLIB_DESCRIPTOR\",\"wrong\"]],\"out_dir\":\"/x/out\"}\n\
+            {\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x/zingolib#6.0.0\",\"linked_libs\":[],\"env\":[[\"OTHER\",\"1\"],[\"ZINGOLIB_DESCRIPTOR\",\"zl_6.0.0_2691e\"]],\"out_dir\":\"/x/out\"}\n\
+            {\"reason\":\"build-finished\",\"success\":true}\n";
+        assert_eq!(
+            descriptor_in_messages(messages),
+            Some("zl_6.0.0_2691e".to_string())
+        );
+        assert_eq!(
+            descriptor_in_messages("{\"reason\":\"build-finished\"}\n"),
+            None
+        );
+        assert_eq!(
+            descriptor_in_messages("{\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x/zingolib#6.0.0\",\"env\":[]}\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn the_ndk_env_command_asks_cargo_ndk_for_one_targets_environment_as_json() {
+        assert_eq!(
+            ndk_env_command("x86_64-linux-android"),
+            [
+                "cargo",
+                "ndk-env",
+                "--target",
+                "x86_64-linux-android",
+                "--json"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_exported_environment_is_read_from_cargo_ndks_pretty_json() {
+        let json = "{\n  \"AR_x86_64-linux-android\": \"/ndk/llvm-ar\",\n  \
+            \"CFLAGS_x86_64-linux-android\": \"--target=x86_64-linux-android26 -O2\",\n  \
+            \"QUOTED\": \"a \\\"b\\\" c\\\\d\"\n}\n";
+        assert_eq!(
+            env_in_json(json),
+            Ok(vec![
+                ("AR_x86_64-linux-android".into(), "/ndk/llvm-ar".into()),
+                (
+                    "CFLAGS_x86_64-linux-android".into(),
+                    "--target=x86_64-linux-android26 -O2".into()
+                ),
+                ("QUOTED".into(), "a \"b\" c\\d".into()),
+            ])
+        );
+        assert_eq!(env_in_json("{\n}\n"), Ok(vec![]));
+        assert!(env_in_json("{\n  \"KEY\": 1\n}\n").is_err());
+        assert!(env_in_json("{\n  \"KEY\": \"unterminated\n}\n").is_err());
+    }
+
+    #[test]
+    fn the_link_env_adds_cargo_ndks_linker_wrapper_variables_from_its_clang_path() {
+        let exported = vec![
+            (
+                "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER".to_string(),
+                "/bin/cargo-ndk".to_string(),
+            ),
+            (
+                NDK_CLANG_PATH_VARIABLE.to_string(),
+                "/ndk/clang".to_string(),
+            ),
+        ];
+        let link = ANDROID_ABIS[3].ndk_link();
+        assert_eq!(
+            link.link_target,
+            format!("--target=x86_64-linux-android{ANDROID_API_LEVEL}")
+        );
+        let env = ndk_link_env(exported.clone(), &link.link_target).unwrap();
+        assert_eq!(&env[..2], &exported[..]);
+        assert_eq!(
+            &env[2..],
+            &[
+                (
+                    NDK_LINK_CLANG_VARIABLE.to_string(),
+                    "/ndk/clang".to_string()
+                ),
+                (
+                    NDK_LINK_TARGET_VARIABLE.to_string(),
+                    link.link_target.clone()
+                ),
+            ]
+        );
+        assert!(ndk_link_env(vec![], &link.link_target).is_err());
+    }
+
+    #[test]
+    fn every_abi_links_through_the_clang_target_its_cc_wrapper_names() {
+        for abi in &ANDROID_ABIS {
+            assert_eq!(abi.cc(), format!("{}-clang", abi.clang_target()));
+            assert_eq!(
+                abi.ndk_link().link_target,
+                format!("--target={}", abi.clang_target())
+            );
+            assert_eq!(abi.ndk_link().env_command, ndk_env_command(abi.triple));
+        }
+    }
+
+    #[test]
+    fn the_swift_package_names_match_its_manifest() {
+        let manifest = include_str!("../../../bindings/swift/Package.swift");
+        assert!(manifest.contains(&format!("name: \"{SWIFT_PACKAGE}\"")));
+        assert!(manifest.contains(&format!(
+            "let builderOutput = \"{SWIFT_PACKAGE_OUTPUT_DIR}\""
+        )));
+        assert!(manifest.contains(&format!("/{}\"", swift_sources_dir())));
+        assert!(std::path::Path::new(SWIFT_PACKAGE_MANIFEST).ends_with("Package.swift"));
+    }
+
+    #[test]
     fn the_wallet_crate_builds_no_bindgen() {
         let manifest = include_str!("../../../zingo-ffi/lib/Cargo.toml");
         assert!(!manifest.contains("[[bin]]"));
@@ -332,6 +720,58 @@ mod tests {
     #[test]
     fn binding_sets_cover_every_generation_in_every_language() {
         assert_eq!(binding_sets().count(), GENERATIONS.len() * LANGUAGES.len());
+    }
+
+    #[test]
+    fn an_artifact_name_round_trips_and_a_wildcard_segment_is_a_pattern() {
+        let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let bundle = artifact_name(BUNDLE_ARTIFACT, "android", commit);
+        assert_eq!(bundle, format!("binding-layer-bundle-android-{commit}"));
+        assert_eq!(
+            artifact_segment(&bundle, BUNDLE_ARTIFACT, commit),
+            Some("android")
+        );
+        let abi = artifact_name(ABI_ARTIFACT, "arm64-v8a", commit);
+        assert_eq!(
+            artifact_segment(&abi, ABI_ARTIFACT, commit),
+            Some("arm64-v8a")
+        );
+        assert_eq!(artifact_segment(&abi, BUNDLE_ARTIFACT, commit), None);
+        assert_eq!(artifact_segment(&bundle, BUNDLE_ARTIFACT, "bbbb"), None);
+        assert_eq!(
+            artifact_segment(
+                &artifact_name(BUNDLE_ARTIFACT, "", commit),
+                BUNDLE_ARTIFACT,
+                commit
+            ),
+            None
+        );
+        assert_eq!(
+            artifact_name(BUNDLE_ARTIFACT, ARTIFACT_WILDCARD, commit),
+            format!("binding-layer-bundle-*-{commit}")
+        );
+    }
+
+    #[test]
+    fn the_artifact_outputs_name_every_artifact_of_a_commit_once() {
+        let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let rendered = render_outputs(&artifact_outputs(&["android", "ios"], commit));
+        assert_eq!(
+            rendered,
+            format!(
+                "abis=[\"arm64-v8a\",\"armeabi-v7a\",\"x86\",\"x86_64\"]\n\
+                 abi_artifacts={{\"arm64-v8a\":\"binding-layer-abi-arm64-v8a-{commit}\",\
+                 \"armeabi-v7a\":\"binding-layer-abi-armeabi-v7a-{commit}\",\
+                 \"x86\":\"binding-layer-abi-x86-{commit}\",\
+                 \"x86_64\":\"binding-layer-abi-x86_64-{commit}\"}}\n\
+                 abi_pattern=binding-layer-abi-*-{commit}\n\
+                 aar_glob=*-release.aar\n\
+                 bundle_android=binding-layer-bundle-android-{commit}\n\
+                 bundle_ios=binding-layer-bundle-ios-{commit}\n\
+                 bundle_pattern=binding-layer-bundle-*-{commit}\n\
+                 ios_out=bindings/swift/build\n"
+            )
+        );
     }
 
     #[test]

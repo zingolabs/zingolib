@@ -13,6 +13,21 @@ on:
         required: false
         type: string
         default: ${{ vars.CI_IOS_RUNNER || 'warp-macos-15-arm64-12x' }}
+      # The commit to build. The publish workflow names a commit the
+      # manifest lists, which is rarely the commit that triggered it.
+      ref:
+        required: false
+        type: string
+        default: ${{ github.sha }}
+      # From one run of `build-binding-layer artifact` in the caller: the
+      # builder's output directory, which Package.swift expects, and the
+      # bundle this workflow uploads.
+      out:
+        required: true
+        type: string
+      bundle:
+        required: true
+        type: string
 
 jobs:
   build:
@@ -27,6 +42,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.ref }}
           fetch-tags: true
 
       # With no toolchain named, rustup installs the one rust-toolchain.toml
@@ -72,12 +88,12 @@ jobs:
           cargo run \
             --manifest-path tools/workbench/Cargo.toml \
             --bin build-binding-layer -- \
-            ios --out bindings/swift/build
+            ios --out "${{ inputs.out }}"
 
       - name: Upload the Binding Layer
         uses: actions/upload-artifact@v4
         with:
-          name: binding-layer-ios-${{ github.sha }}
-          path: bindings/swift/build
+          name: ${{ inputs.bundle }}
+          path: ${{ inputs.out }}
           retention-days: 3
           overwrite: true

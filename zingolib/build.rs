@@ -10,15 +10,19 @@
 //! one: an unconditional rerun (network fetch included) plus a full
 //! recompile cascade through every dependent crate, on every run.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::{env, fs::File, process::Command};
+use std::{env, process::Command};
+
+const BUILD_SCRIPT: &str = "build.rs";
+const DESCRIPTOR_TEXT_FILE: &str = "git_description.txt";
+const DESCRIPTOR_ENV: &str = "ZINGOLIB_DESCRIPTOR";
+const DESCRIPTOR_SOURCE_FILE: &str = "git_description.rs";
 
 /// Register everything this script's output depends on. Emitting any
 /// directive disables cargo's whole-package fallback, which is the
 /// point: the package tree contains this script's own outputs.
 fn register_rerun_watches() {
-    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed={BUILD_SCRIPT}");
     // The params copies: deleting either one triggers a rerun, which
     // restores it. While both exist the fetch is skipped entirely.
     println!("cargo:rerun-if-changed=zcash-params/sapling-spend.params");
@@ -33,10 +37,10 @@ fn register_rerun_watches() {
         println!("cargo:rerun-if-changed={}", git_dir.join("HEAD").display());
     }
     if let Some(common_dir) = git_path_query("--git-common-dir") {
-        println!(
-            "cargo:rerun-if-changed={}",
-            common_dir.join("packed-refs").display()
-        );
+        let packed_refs = common_dir.join("packed-refs");
+        if packed_refs.exists() {
+            println!("cargo:rerun-if-changed={}", packed_refs.display());
+        }
         println!(
             "cargo:rerun-if-changed={}",
             common_dir.join("refs").display()
@@ -131,17 +135,17 @@ fn git_description() {
         dirty(),
     );
 
-    // Write the git description to a file which will be included in the crate
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("git_description.rs");
-    let mut f = File::create(dest_path).unwrap();
-    writeln!(
-        f,
-        "/// The build descriptor derived from the git state at compile time:\n\
-        /// `zl_<ver>[_<hash5>][_dirty]`, where `<ver>` is the release tag's\n\
-        /// version when the build sits exactly on a `zingolib_v<ver>` tag,\n\
-        /// and otherwise the crate version followed by the abbreviated hash\n\
-        pub fn git_description() -> &'static str {{\"{description}\"}}"
+    println!("cargo:rustc-env={DESCRIPTOR_ENV}={description}");
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    std::fs::write(out_dir.join(DESCRIPTOR_TEXT_FILE), &description).unwrap();
+    std::fs::write(
+        out_dir.join(DESCRIPTOR_SOURCE_FILE),
+        format!(
+            "pub fn git_description() -> &'static str {{\n    \
+             include_str!(concat!(env!(\"OUT_DIR\"), \"/{DESCRIPTOR_TEXT_FILE}\"))\n\
+             }}\n"
+        ),
     )
     .unwrap();
 }
@@ -175,8 +179,18 @@ fn get_zcash_params() {
 
     // Copy the params to the internal location.
     std::fs::create_dir_all(internal_params_path).unwrap();
-    std::fs::copy(params_path.spend, spend_dest).unwrap();
-    std::fs::copy(params_path.output, output_dest).unwrap();
+    std::fs::copy(params_path.spend, &spend_dest).unwrap();
+    std::fs::copy(params_path.output, &output_dest).unwrap();
+
+    let script_modified = std::fs::metadata(BUILD_SCRIPT).unwrap().modified().unwrap();
+    for copy in [spend_dest, output_dest] {
+        std::fs::File::options()
+            .write(true)
+            .open(copy)
+            .unwrap()
+            .set_modified(script_modified)
+            .unwrap();
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
