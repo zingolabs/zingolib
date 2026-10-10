@@ -155,9 +155,6 @@ dirs = "6"
 memuse = "0.2"
 rand = "0.10"
 
-### Misc / not-yet-grouped
-rust-embed = "8"
-
 [profile.test]
 opt-level = 3
 
