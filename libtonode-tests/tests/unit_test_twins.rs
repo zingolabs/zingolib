@@ -56,38 +56,6 @@ mod unit_test_twins {
     use zip32::AccountId;
 
     #[tokio::test]
-    async fn mine_to_transparent_and_shield() {
-        let activation_heights = scenarios::default_test_activation_heights();
-        let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
-            PoolType::Transparent,
-            activation_heights,
-            scenarios::ChainCachePolicy::PerTest,
-        )
-        .await;
-        increase_height_and_wait_for_client(&local_net, &mut faucet, COINBASE_MATURITY_BLOCKS)
-            .await
-            .unwrap();
-        faucet.quick_shield(zip32::AccountId::ZERO).await.unwrap();
-        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-            .await
-            .unwrap();
-
-        assert_eq!(
-            faucet
-                .account_balance(zip32::AccountId::ZERO)
-                .await
-                .unwrap()
-                .confirmed_ironwood_balance
-                .unwrap()
-                .into_u64(),
-            // 4 mature coinbases shielded in one step, minus the shield
-            // fee. The shield confirms after NU6.3 activation, so the
-            // output is an Ironwood note (ADR 0009 era default).
-            scenarios::mined_block_rewards_total(4) - 30_000
-        );
-    }
-
-    #[tokio::test]
     async fn zero_value_receipts() {
         let (local_net, mut faucet, mut recipient, _txid) =
             scenarios::faucet_funded_recipient_default(100_000).await;

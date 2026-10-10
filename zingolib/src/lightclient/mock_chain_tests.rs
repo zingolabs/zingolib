@@ -4279,3 +4279,55 @@ mod boundary_pruning {
         );
     }
 }
+
+/// Twins moved from regtest under the removal directive, one commit each.
+mod moved_from_regtest {
+    use std::time::Duration;
+
+    use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+    use zcash_protocol::PoolType;
+    use zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS;
+    use zcash_protocol::value::Zatoshis;
+    use zip32::AccountId;
+
+    use crate::check_client_balances;
+    use crate::testutils::lightclient::{get_base_address, get_fees_paid_by_client};
+    use crate::testutils::mock_indexer::MockNet;
+
+    const REWARD_ZATS: u64 = 625_000;
+    const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
+    const COINBASES: u64 = 4;
+    /// Four transparent inputs and one shielded output: four transparent logical actions plus the
+    /// two-action shielded minimum.
+    const SHIELD_LOGICAL_ACTIONS: u64 = 6;
+
+    #[tokio::test]
+    async fn mine_to_transparent_and_shield() {
+        let mut net = MockNet::launch().await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        miner.set_transmit_retry_interval(Duration::ZERO);
+        let miner_taddr = get_base_address(&miner, PoolType::Transparent).await;
+        {
+            let mut chain = net.chain.write().await;
+            for _ in 0..COINBASES {
+                chain.mine_block_rewarding(&miner_taddr, REWARD, vec![]);
+            }
+            chain.mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
+        }
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: 0 o: 0 s: 0 t: (COINBASES * REWARD_ZATS));
+
+        miner.quick_shield(AccountId::ZERO).await.unwrap();
+        net.chain.write().await.mine_mempool();
+        miner.sync_and_await().await.unwrap();
+
+        let fee = get_fees_paid_by_client(&miner).await;
+        assert_eq!(
+            fee,
+            Option::unwrap(MARGINAL_FEE * SHIELD_LOGICAL_ACTIONS).into_u64()
+        );
+        check_client_balances!(miner, i: (COINBASES * REWARD_ZATS - fee) o: 0 s: 0 t: 0);
+    }
+}
