@@ -93,8 +93,8 @@ impl TryFrom<&str> for ChainType {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "mainnet" => Ok(ChainType::Mainnet),
-            "testnet" => Ok(ChainType::Testnet),
+            "mainnet" | "main" => Ok(ChainType::Mainnet),
+            "testnet" | "test" => Ok(ChainType::Testnet),
             "regtest" => Ok(ChainType::Regtest(ActivationHeights::default())),
             _ => Err(InvalidChainType(value.to_string())),
         }
@@ -583,7 +583,9 @@ pub enum ClientConfigError {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{ChainType, ClientConfig};
+    use crate::config::ChainType;
+    use crate::config::ClientConfig;
+    use zingo_common_components::protocol::ActivationHeights;
 
     #[tokio::test]
     async fn test_load_clientconfig() {
@@ -602,6 +604,32 @@ mod tests {
 
         assert_eq!(valid_config.indexer_uri(), Some(valid_uri));
         assert_eq!(valid_config.chain_type(), ChainType::Mainnet);
+    }
+
+    #[test]
+    fn test_chaintypes_from_strings() {
+        assert_eq!(ChainType::try_from("mainnet").unwrap(), ChainType::Mainnet);
+        assert_eq!(ChainType::try_from("testnet").unwrap(), ChainType::Testnet);
+        // the following 2 variants match the string from get_lightd_info, from the LightdInfo struct
+        // as referenced in librustzcash/zcash_client_backend/src/proto/service.rs 17a4830c70
+        // and provided by an indexer (previously called lightwallet)
+        assert_eq!(ChainType::try_from("main").unwrap(), ChainType::Mainnet);
+        assert_eq!(ChainType::try_from("test").unwrap(), ChainType::Testnet);
+        assert_eq!(
+            ChainType::try_from("regtest").unwrap(),
+            ChainType::Regtest(ActivationHeights::default())
+        );
+        assert!(ChainType::try_from("invalid").is_err());
+        let err = ChainType::try_from("badvalue").unwrap_err();
+        assert_eq!(err.0, "badvalue");
+        assert!(ChainType::try_from("").is_err());
+        assert!(ChainType::try_from("Mainnet").is_err());
+        assert!(ChainType::try_from("MAINNET").is_err());
+        assert!(ChainType::try_from("Testnet").is_err());
+        assert!(ChainType::try_from("Regtest").is_err());
+        assert!(ChainType::try_from("mainnet ").is_err()); // trailing space
+        assert!(ChainType::try_from(" mainnet").is_err()); // leading space
+        assert!(ChainType::try_from("regtест").is_err()); // lookalike chars
     }
 
     /// The Library Birthday must land at or above Sapling activation on the
