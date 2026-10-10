@@ -4607,4 +4607,58 @@ mod moved_from_regtest {
             funded + REWARD_ZATS
         );
     }
+    #[tokio::test]
+    async fn verify_old_wallet_uses_server_height_in_send() {
+        const FUNDING: u64 = 100_000;
+        const SYNCED_BLOCKS: u32 = 5;
+        const HIDDEN_BLOCKS: u32 = 2;
+        const PAYMENT: u64 = 10_000;
+
+        let mut net = MockNet::launch().await;
+        let mut sender = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.chain.write().await.mine_empty_blocks(1);
+        fund(&net, vec![(&sender_ua, FUNDING, None)], SYNCED_BLOCKS).await;
+        sender.sync_and_await().await.unwrap();
+        let synced_height = sender
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .fully_scanned_height()
+            .unwrap();
+        assert_eq!(u32::from(synced_height), net.chain.read().await.tip());
+
+        // Blocks the wallet has not seen: it stays at the height it last
+        // synced to, two behind the server's tip.
+        net.chain.write().await.mine_empty_blocks(HIDDEN_BLOCKS);
+        let stale_height = sender
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .fully_scanned_height()
+            .unwrap();
+        assert_eq!(stale_height, synced_height);
+        assert_eq!(
+            u32::from(stale_height) + HIDDEN_BLOCKS,
+            net.chain.read().await.tip()
+        );
+
+        // A send built from the server's height, not the wallet's, is one
+        // the chain accepts into its mempool.
+        from_inputs::quick_send(
+            &mut sender,
+            vec![(
+                &external_address(PoolType::ORCHARD),
+                PAYMENT,
+                Some("Interrupting sync!!"),
+            )],
+        )
+        .await
+        .unwrap();
+        assert_eq!(net.chain.read().await.mempool_len(), 1);
+    }
 }
