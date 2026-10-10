@@ -1,6 +1,6 @@
 #[derive(uniffi::Record)] IndexerConnection { server_uri: String, chain_hint: String, sync: SyncSettings }
 #[derive(uniffi::Record)] SyncSettings { performance_level: String, min_confirmations: u32 }
-#[derive(uniffi::Error)] #[uniffi(flat_error)] ZingolibError = LightclientNotInitialized | LightclientLockPoisoned | Panic | Save | Init | Sync | Rescan | Read | Send | Shield | InvalidInput | Wallet | Indexer | Offline | SideChannelPoisoned | MigrationNotInProgress | MigrationAlreadyInProgress | MigrationConsentStale | MigrationCadenceFixed | MigrationSplit | Migration | Mixnet | WalletChainMismatch
+#[derive(uniffi::Error)] #[uniffi(flat_error)] ZingolibError = LightclientNotInitialized | LightclientLockPoisoned | Panic(String) | Save(String) | Init(String) | Sync(String) | Rescan(String) | Read(String) | Send(String) | Shield(String) | InvalidInput(String) | Wallet(String) | Indexer(String) | Offline | SideChannelPoisoned | MigrationNotInProgress | MigrationAlreadyInProgress | MigrationConsentStale(String) | MigrationCadenceFixed(String) | MigrationSplit(String) | Migration(String) | Mixnet(String) | WalletChainMismatch(String)
 init_logging() -> Result<String, ZingolibError>
 set_broadcast_candidates(candidates_json: String) -> Result<String, ZingolibError>
 init_new(connection: IndexerConnection, birthday: u32) -> Result<String, ZingolibError>

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use quote::ToTokens;
 use syn::punctuated::Punctuated;
 use syn::{
-    Attribute, FnArg, Item, ItemEnum, ItemFn, ItemImpl, ItemMacro, ItemStruct, Meta,
+    Attribute, Field, Fields, FnArg, Item, ItemEnum, ItemFn, ItemImpl, ItemMacro, ItemStruct, Meta,
     Path as SynPath, ReturnType, Signature, Token,
 };
 
@@ -150,27 +150,44 @@ fn derives_uniffi(attrs: &[Attribute]) -> bool {
 }
 
 fn record_line(item: &ItemStruct) -> String {
-    let fields = item
-        .fields
-        .iter()
-        .map(|field| {
-            format!(
-                "{}{}: {}",
-                markers(&field.attrs),
-                field.ident.as_ref().unwrap(),
-                compact(&field.ty)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("{}{} {{ {fields} }}", markers(&item.attrs), item.ident)
+    format!(
+        "{}{}{}",
+        markers(&item.attrs),
+        item.ident,
+        fields_text(&item.fields)
+    )
+}
+
+fn field_text(field: &Field) -> String {
+    let name = field
+        .ident
+        .as_ref()
+        .map(|ident| format!("{ident}: "))
+        .unwrap_or_default();
+    format!("{}{name}{}", markers(&field.attrs), compact(&field.ty))
+}
+
+fn fields_text(fields: &Fields) -> String {
+    let inner = fields.iter().map(field_text).collect::<Vec<_>>().join(", ");
+    match fields {
+        Fields::Unit => String::new(),
+        Fields::Named(_) => format!(" {{ {inner} }}"),
+        Fields::Unnamed(_) => format!("({inner})"),
+    }
 }
 
 fn enum_line(item: &ItemEnum) -> String {
     let variants = item
         .variants
         .iter()
-        .map(|variant| format!("{}{}", markers(&variant.attrs), variant.ident))
+        .map(|variant| {
+            format!(
+                "{}{}{}",
+                markers(&variant.attrs),
+                variant.ident,
+                fields_text(&variant.fields)
+            )
+        })
         .collect::<Vec<_>>()
         .join(" | ");
     format!("{}{} = {variants}", markers(&item.attrs), item.ident)
@@ -508,6 +525,47 @@ fn the_wallet_report_body_governs_every_line_its_invocations_render() {
     let expected: BTreeSet<String> = [
         "#[uniffi::export(name = \"renamed\")] get_seed() -> Result<Vec<u8>, ZingolibError>",
         "#[uniffi::export(name = \"renamed\")] remove_transaction(txid: String) -> Result<Vec<u8>, ZingolibError>",
+    ]
+    .map(ToString::to_string)
+    .into();
+    assert_eq!(lines, expected);
+}
+
+#[test]
+fn an_enum_line_carries_every_variant_field_with_its_type() {
+    let source = r#"
+        #[derive(uniffi::Enum)]
+        pub enum Shape { Dot, Circle { radius: f64 }, Pair(u32, String) }
+        #[derive(Debug, thiserror::Error, uniffi::Error)]
+        pub enum Fault {
+            #[error("io")]
+            Io { message: String, #[uniffi(default = 0)] code: i32 },
+            #[error("other")]
+            Other(String),
+        }
+    "#;
+    let lines = surface_of(&[source.to_string()]).lines;
+    let expected: BTreeSet<String> = [
+        "#[derive(uniffi::Enum)] Shape = Dot | Circle { radius: f64 } | Pair(u32, String)",
+        "#[derive(uniffi::Error)] Fault = Io { message: String, #[uniffi(default = 0)] code: i32 } | Other(String)",
+    ]
+    .map(ToString::to_string)
+    .into();
+    assert_eq!(lines, expected);
+}
+
+#[test]
+fn a_tuple_struct_with_a_uniffi_derive_renders_its_field_types() {
+    let source = r#"
+        #[derive(uniffi::Object)]
+        pub struct Engine(Mutex<State>, u32);
+        #[derive(uniffi::Record)]
+        pub struct Unit;
+    "#;
+    let lines = surface_of(&[source.to_string()]).lines;
+    let expected: BTreeSet<String> = [
+        "#[derive(uniffi::Object)] Engine(Mutex<State>, u32)",
+        "#[derive(uniffi::Record)] Unit",
     ]
     .map(ToString::to_string)
     .into();
