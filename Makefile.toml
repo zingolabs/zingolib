@@ -238,62 +238,15 @@ script.main = '''
 echo "$(container_image_tag)"
 '''
 
-[tasks.init-container-volumes]
-description = "Initialize named volumes used by containerized tests"
-extend = "base-script"
-script.main = '''
-runtime="$(container_runtime)"
-for volume in zingolib-container-target zingolib-cargo-git zingolib-cargo-registry; do
-  "${runtime}" volume inspect "${volume}" >/dev/null 2>&1 || "${runtime}" volume create "${volume}" >/dev/null
-done
-mkdir -p target test_binaries/bins
-'''
-
 [tasks.build-image]
 description = "Build the reproducible local test image from .env.testing-artifacts"
-extend = "base-script"
-dependencies = ["init-container-volumes"]
-script.main = '''
-runtime="$(container_runtime)"
-image="$(container_image)"
-
-echo "Building ${image}"
-echo "  RUST_VERSION=${RUST_VERSION}"
-echo "  ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}"
-echo "  ZEBRA_VERSION=${ZEBRA_VERSION}"
-echo "  NEXTEST_VERSION=${NEXTEST_VERSION}"
-
-"${runtime}" build \
-  --platform=linux/amd64 \
-  -f docker-ci/Dockerfile \
-  --build-arg "RUST_VERSION=${RUST_VERSION}" \
-  --build-arg "ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}" \
-  --build-arg "ZAINO_IMAGE_DIGEST=${ZAINO_IMAGE_DIGEST}" \
-  --build-arg "ZEBRA_VERSION=${ZEBRA_VERSION}" \
-  --build-arg "ZEBRA_IMAGE_DIGEST=${ZEBRA_IMAGE_DIGEST}" \
-  --build-arg "NEXTEST_VERSION=${NEXTEST_VERSION}" \
-  -t "${image}" \
-  docker-ci
-'''
+command = "cargo"
+args = ["xtask", "image", "build"]
 
 [tasks.ensure-image-exists]
 description = "Build the reproducible test image if it is not present locally"
-extend = "base-script"
-dependencies = ["init-container-volumes"]
-script.main = '''
-runtime="$(container_runtime)"
-image="$(container_image)"
-
-echo "Checking for ${image} with ${runtime}..."
-
-if "${runtime}" image inspect "${image}" >/dev/null 2>&1; then
-  echo "Image ${image} already exists."
-else
-  echo "Image ${image} not found; building it now."
-  export CONTAINER_RUNTIME="${runtime}"
-  makers build-image
-fi
-'''
+command = "cargo"
+args = ["xtask", "image", "ensure"]
 
 [tasks.local-run]
 clear = true

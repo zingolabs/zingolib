@@ -165,7 +165,7 @@ fn parse_env(contents: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-fn env_value<'a>(env: &'a [(String, String)], key: &str) -> Result<&'a str, Vec<String>> {
+pub fn env_value<'a>(env: &'a [(String, String)], key: &str) -> Result<&'a str, Vec<String>> {
     env.iter()
         .find(|(k, _)| k == key)
         .map(|(_, v)| v.as_str())

@@ -206,9 +206,10 @@ fn gate(root: &Path) -> Result<(), Rejection> {
 }
 
 /// - Runs `cargo install` for the pinned cargo-dupes with empty `RUSTFLAGS`, which writes the binary under the cargo home.
-fn install() -> Result<(), Rejection> {
+fn install(root: &Path) -> Result<(), Rejection> {
     let package = format!("cargo-{SUBCOMMAND}");
-    crate::run_streaming(
+    crate::run_streaming_in(
+        root,
         crate::CARGO,
         &["install", &package, "--version", VERSION, "--locked"],
         &[(RUSTFLAGS, NO_FLAGS)],
@@ -232,7 +233,7 @@ fn forward(root: &Path, args: &[String]) -> Result<(), Rejection> {
 pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     match args {
         [] => gate(root),
-        [flag] if flag == INSTALL_FLAG => install(),
+        [flag] if flag == INSTALL_FLAG => install(root),
         _ => forward(root, args),
     }
     .map_err(Rejection::lines)

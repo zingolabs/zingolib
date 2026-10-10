@@ -6,8 +6,8 @@ name: CI plan
 # with its content-addressed tag, and the draft state of the pull
 # request. `cargo xtask ci-plan` derives the values from
 # rust-toolchain.toml and .env.testing-artifacts, so no workflow holds a
-# value of its own, and Makefile.toml calls the same task, so the tag CI
-# consumes and the tag `makers build-image` produces cannot drift.
+# value of its own, and `cargo xtask image build` reads the same values,
+# so the tag CI consumes and the tag a developer builds cannot drift.
 #
 # A probe that finds the tag ends the job in seconds. An absent tag is
 # built here and pushed, inside the run that needs it, so the consumers
@@ -46,7 +46,7 @@ jobs:
       draft: ${{ steps.draft.outputs.draft }}
     env:
       # The runner ships both podman and docker; force docker so the
-      # image `makers build-image` produces is visible to `docker push`.
+      # image the build produces is visible to `docker push`.
       CONTAINER_RUNTIME: docker
     steps:
       - name: Checkout repository
@@ -107,19 +107,12 @@ jobs:
         env:
           IMAGE: ${{ steps.plan.outputs.image }}
         run: |
-          echo "::error::${IMAGE} is absent and a fork's token cannot publish it. A maintainer publishes it with 'makers build-image' and 'docker push'."
+          echo "::error::${IMAGE} is absent and a fork's token cannot publish it. A maintainer publishes it with 'cargo xtask image build' and 'docker push'."
           exit 1
 
-      # The build runs through Makefile.toml until its tasks move to xtask.
-      - name: Install cargo-make
+      - name: Build the image
         if: ${{ steps.probe.outputs.present == 'false' }}
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-make
-
-      - name: Build the image via the makers front door
-        if: ${{ steps.probe.outputs.present == 'false' }}
-        run: cargo make build-image
+        run: cargo xtask image build
 
       - name: Push the image
         if: ${{ steps.probe.outputs.present == 'false' }}

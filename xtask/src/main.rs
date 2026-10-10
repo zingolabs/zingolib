@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use xtask::ci_plan;
+use xtask::{ci_plan, image};
 
 type Task = fn(&Path, &[String]) -> Result<(), Vec<String>>;
 
@@ -11,6 +11,11 @@ const TASKS: &[(&str, Task, &str)] = &[
         "ci-plan",
         ci_plan::dispatch,
         "print the CI plan as JSON; `image` or `image-tag` prints that value alone",
+    ),
+    (
+        "image",
+        image::dispatch,
+        "`build` the reproducible test image, or `ensure` the runtime holds it",
     ),
     (
         "rust-version",

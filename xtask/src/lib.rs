@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
 pub mod ci_plan;
+pub mod container;
+pub mod image;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -39,16 +41,7 @@ pub fn dispatch_from_root(
 
 /// - Runs `<program> <args>` as a child process, with stderr inherited, and waits for it.
 pub fn stdout_of(program: &str, args: &[&str]) -> Result<String, Vec<String>> {
-    stdout_with_env(program, args, &[])
-}
-
-/// - Runs `<program> <args>` as a child process, with stderr inherited, and waits for it.
-pub fn stdout_with_env(
-    program: &str,
-    args: &[&str],
-    env: &[(&str, &str)],
-) -> Result<String, Vec<String>> {
-    stdout_in(Path::new(CURRENT_DIR), program, args, env)
+    stdout_in(Path::new(CURRENT_DIR), program, args, &[])
 }
 
 const CURRENT_DIR: &str = ".";
@@ -141,14 +134,16 @@ pub fn cargo_subcommand_version(name: &str, install_command: &str) -> Result<Str
         })
 }
 
-/// - Runs `<program> <args>` as a child process with every stream inherited, and waits for it.
-pub fn run_streaming(
+/// - Runs `<program> <args>` as a child process in `directory` with every stream inherited, and waits for it.
+pub fn run_streaming_in(
+    directory: &Path,
     program: &str,
     args: &[&str],
     env: &[(&str, &str)],
 ) -> Result<(), Vec<String>> {
     let status = Command::new(program)
         .args(args)
+        .current_dir(directory)
         .envs(env.iter().copied())
         .status()
         .map_err(|e| vec![format!("failed to run {program}: {e}")])?;
