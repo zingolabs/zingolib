@@ -13,15 +13,11 @@
 //! different failures: silence to the grace is an exit that could not be
 //! reached at all, while a Sentinel that stays silent through a bound
 //! address is the exit that announced and then carried nothing.
-#![forbid(unsafe_code)]
-
 use std::io::{BufRead, BufReader, Read as _, Write as _};
 use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
-
-use workbench::{repo_root, run};
 
 /// Agreeing representations of `zingo_netutils`'s minted stdout tokens,
 /// restated because the workbench is deliberately std-only and takes no
@@ -105,10 +101,6 @@ const POLL_INTERVAL: Duration = Duration::from_millis(200);
 /// it is measured around.
 const BESSEL_CORRECTION: usize = 1;
 
-fn main() {
-    run("birth-trial", trial, |()| {})
-}
-
 /// One birth's outcome: the exit announced and carried the Sentinel round
 /// trip, announced and carried nothing, exited before announcing, or stayed
 /// silent to the grace.
@@ -127,8 +119,8 @@ enum Outcome {
 }
 
 /// The count of births to make, from `--births N` or the default.
-fn trials_requested() -> Result<usize, Vec<String>> {
-    let mut args = std::env::args().skip(1);
+fn trials_requested(args: &[String]) -> Result<usize, Vec<String>> {
+    let mut args = args.iter().cloned();
     let mut trials = DEFAULT_TRIALS;
     while let Some(argument) = args.next() {
         match argument.as_str() {
@@ -146,9 +138,10 @@ fn trials_requested() -> Result<usize, Vec<String>> {
     Ok(trials)
 }
 
-fn trial() -> Result<(), Vec<String>> {
-    let trials = trials_requested()?;
-    let root = repo_root()?;
+/// - Spawns nym-proxy births as child processes and dials their Sentinels.
+/// - Writes the trial's readings to stdout.
+pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+    let trials = trials_requested(args)?;
     let proxy = root.join("target").join("debug").join("nym-proxy");
     if !proxy.exists() {
         return Err(vec![format!(

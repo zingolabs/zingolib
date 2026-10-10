@@ -11,16 +11,13 @@
 //! elapsed milliseconds, so this reads one measurement taken inside the
 //! task that did the work. Nothing here polls a status or watches a prompt
 //! redraw, and no cross-process timestamp arithmetic enters the number.
-#![forbid(unsafe_code)]
-
 use std::collections::{HashMap, HashSet};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use workbench::session;
-use workbench::{repo_root, run};
+use crate::session;
 
 /// Agreeing representations of `zingolib::lightclient::sync`'s minted log
 /// markers, restated because the workbench is deliberately std-only and
@@ -222,10 +219,6 @@ const LOG_POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// The degree of freedom a sample standard deviation gives up to its mean.
 const BESSEL_CORRECTION: usize = 1;
 
-fn main() {
-    run("sync-bench", bench, |()| {})
-}
-
 /// One session's outcome.
 enum Outcome {
     /// Boot measured by wall clock, sync by the engine's own.
@@ -298,8 +291,8 @@ struct Request {
     arms: Vec<Arm>,
 }
 
-fn parse_request() -> Result<Request, Vec<String>> {
-    let mut args = std::env::args().skip(1);
+fn parse_request(args: &[String]) -> Result<Request, Vec<String>> {
+    let mut args = args.iter().cloned();
     let mut birthday = None;
     let mut label = String::from("unlabelled");
     let mut runs = DEFAULT_RUNS;
@@ -357,12 +350,13 @@ fn parse_request() -> Result<Request, Vec<String>> {
     })
 }
 
-fn bench() -> Result<(), Vec<String>> {
-    let request = parse_request()?;
-    let root = repo_root()?;
+/// - Runs `cargo xtask run-cli` builds and sessions as child processes.
+/// - Writes the readings to stdout.
+pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+    let request = parse_request(args)?;
 
     for arm in &request.arms {
-        prebuild(&root, *arm)?;
+        prebuild(root, *arm)?;
     }
 
     let mut samples: Vec<Samples> = request.arms.iter().map(|_| Samples::new()).collect();
@@ -370,7 +364,7 @@ fn bench() -> Result<(), Vec<String>> {
     // the second half of the hour charges both arms for it.
     for round in 0..request.runs {
         for (index, arm) in request.arms.iter().enumerate() {
-            match session(&root, request.birthday, *arm)? {
+            match session(root, request.birthday, *arm)? {
                 Outcome::Synced {
                     boot,
                     sync,

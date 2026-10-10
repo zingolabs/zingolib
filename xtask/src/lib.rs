@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod birth_trial;
 pub mod bundle_nym_proxy;
 pub mod ci_plan;
 pub mod container;
@@ -8,7 +9,10 @@ pub mod exclusion_audit;
 pub mod exit_census;
 pub mod image;
 pub mod run_cli;
+pub mod session;
 pub mod sweep_teardown;
+pub mod sync_ab;
+pub mod sync_bench;
 pub mod test;
 pub mod test_summary;
 pub mod workbench;

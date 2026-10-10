@@ -45,16 +45,13 @@
 //! [--runs <n>] [--seconds <n>] [--seed <mnemonic>]`. The reserved first word names the session
 //! kind, as `cargo xtask test packages` and `cargo xtask test live` name their
 //! scopes, and omitting it names the same kind.
-#![forbid(unsafe_code)]
-
 use std::io::Write as _;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use workbench::session;
-use workbench::{repo_root, run};
+use crate::session;
 
 /// The session kind a reserved first word names, following the house idiom
 /// that gives `cargo xtask test` its `packages` and `live` words.
@@ -139,10 +136,6 @@ const OUTPUT_DRIFT_TOLERANCE: f64 = 0.01;
 // asked for, so a bounded span overshoots by up to one batch and the
 // spread a fixed window allows would fire on that alone.
 const SPAN_DRIFT_TOLERANCE: f64 = 0.10;
-
-fn main() {
-    run("sync-ab", compare, |()| {})
-}
 
 /// A commit and the build kind it is measured in.
 #[derive(Clone, PartialEq, Eq)]
@@ -229,8 +222,8 @@ impl Reading {
 
 /// Reads the session kind, the two arms, and the pinned window off the
 /// invocation.
-fn parse_request() -> Result<Request, Vec<String>> {
-    let mut arguments = std::env::args().skip(1).peekable();
+fn parse_request(args: &[String]) -> Result<Request, Vec<String>> {
+    let mut arguments = args.iter().cloned().peekable();
     // The reserved word is optional, and omitting it names the same kind,
     // since a CLI session is the only one this repository can drive.
     if arguments.peek().is_some_and(|first| first == CLI_SESSION) {
@@ -306,13 +299,14 @@ fn parse_request() -> Result<Request, Vec<String>> {
     })
 }
 
-fn compare() -> Result<(), Vec<String>> {
-    let request = parse_request()?;
-    let root = repo_root()?;
+/// - Creates a worktree per arm and runs builds and sessions as child processes.
+/// - Writes the comparison to stdout.
+pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+    let request = parse_request(args)?;
 
     let mut arms = [
-        prepare(&root, &request.specs[0])?,
-        prepare(&root, &request.specs[1])?,
+        prepare(root, &request.specs[0])?,
+        prepare(root, &request.specs[1])?,
     ];
 
     // The warm-up pays for each arm's build and is discarded: a first run
@@ -350,7 +344,7 @@ fn compare() -> Result<(), Vec<String>> {
 
     report(&arms, request.seconds > 0);
     for arm in &arms {
-        retire(&root, &arm.worktree);
+        retire(root, &arm.worktree);
     }
     Ok(())
 }
@@ -541,11 +535,11 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
 
     // A session that cannot consent never launches sync on its own, so it
     // is told to, the way the user does.
-    if !arm.consents {
-        if let Some(stdin) = child.stdin.as_mut() {
-            let _ = writeln!(stdin, "sync run");
-            let _ = stdin.flush();
-        }
+    if !arm.consents
+        && let Some(stdin) = child.stdin.as_mut()
+    {
+        let _ = writeln!(stdin, "sync run");
+        let _ = stdin.flush();
     }
 
     let spawned = Instant::now();
@@ -560,16 +554,16 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
         // The engine answers a stop with the session's own counts, so the
         // rate a partial scan reports means what a whole one's would, and a
         // range too long to finish becomes affordable to measure.
-        if !stopped && request.seconds > 0 {
-            if let Some(at) = launched {
-                if at.elapsed() >= Duration::from_secs(request.seconds) {
-                    if let Some(stdin) = child.stdin.as_mut() {
-                        let _ = writeln!(stdin, "sync stop");
-                        let _ = stdin.flush();
-                    }
-                    stopped = true;
-                }
+        if !stopped
+            && request.seconds > 0
+            && let Some(at) = launched
+            && at.elapsed() >= Duration::from_secs(request.seconds)
+        {
+            if let Some(stdin) = child.stdin.as_mut() {
+                let _ = writeln!(stdin, "sync stop");
+                let _ = stdin.flush();
             }
+            stopped = true;
         }
         if let Some((millis, outputs)) = closing_span(&log) {
             break match launched {

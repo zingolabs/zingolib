@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use xtask::{
-    bundle_nym_proxy, ci_plan, dupes_gate, exclusion_audit, exit_census, image, run_cli,
-    sweep_teardown, test, test_summary, workbench,
+    birth_trial, bundle_nym_proxy, ci_plan, dupes_gate, exclusion_audit, exit_census, image,
+    run_cli, sweep_teardown, sync_ab, sync_bench, test, test_summary, workbench,
 };
 
 type Entry = fn(&Path, &[String]) -> Result<(), Vec<String>>;
@@ -112,13 +112,18 @@ const TASKS: &[(&str, Task, &str)] = &[
     ),
     (
         "sync-bench",
-        Task::Workbench(workbench::Binary("sync-bench")),
+        Task::Run(sync_bench::dispatch),
         "time sync inside a real run-cli --online session",
     ),
     (
         "sync-ab",
-        Task::Workbench(workbench::Binary("sync-ab")),
+        Task::Run(sync_ab::dispatch),
         "compare two commits' sync rate in interleaved run-cli --online sessions",
+    ),
+    (
+        "birth-trial",
+        Task::Run(birth_trial::dispatch),
+        "measure proxy births and their Sentinel round trips; `--births N`",
     ),
     (
         dupes_gate::BINARY,

@@ -3,7 +3,6 @@
 pub mod binding_changelog;
 pub mod binding_layer;
 pub mod binding_manifest;
-pub mod session;
 
 pub use xtask::{
     cargo_subcommand_version, commit_of, commit_spec, create_parent, dispatch_from_root,
