@@ -13,7 +13,7 @@ use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::lightwallet_protocol::{BlockId, BlockRange, GetSubtreeRootsArg};
 use zingo_netutils::{GrpcIndexer, Indexer};
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
-use zingolib::config::{ChainType, ClientConfig, WalletConfig};
+use zingolib::config::{ChainType, ClientConfig, WalletConfig, WalletDir};
 use zingolib::data::PollReport;
 use zingolib::lightclient::DEFAULT_REQUEST_TIMEOUT;
 use zingolib::lightclient::error::LightClientError;
@@ -118,7 +118,7 @@ async fn add_subtree_roots() {
     let config = ClientConfig::builder()
         .set_indexer_uri(uri.clone())
         .set_chain_type(ChainType::Mainnet)
-        .set_wallet_dir(temp_path)
+        .set_wallet_dir(WalletDir::ensure(temp_path).unwrap())
         .set_wallet_config(WalletConfig::MnemonicPhrase {
             mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
             no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
@@ -564,7 +564,7 @@ async fn diagnose_subtree_root_stream() {
     let config = ClientConfig::builder()
         .set_indexer_uri(uri)
         .set_chain_type(ChainType::Mainnet)
-        .set_wallet_dir(temp_dir.path().to_path_buf())
+        .set_wallet_dir(WalletDir::ensure(temp_dir.path().to_path_buf()).unwrap())
         .set_wallet_config(WalletConfig::MnemonicPhrase {
             mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
             no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),

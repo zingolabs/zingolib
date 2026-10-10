@@ -59,7 +59,7 @@ use zcash_transparent::bundle::{
 };
 use zingo_common_components::protocol::ActivationHeights;
 
-use crate::config::{ChainType, ClientConfig, ClientConfigBuilder, WalletConfig};
+use crate::config::{ChainType, ClientConfig, ClientConfigBuilder, WalletConfig, WalletDir};
 use crate::lightclient::LightClient;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::default_test_wallet_settings;
@@ -2076,7 +2076,7 @@ impl MockNet {
         let builder = ClientConfig::builder()
             .set_chain_type(self.chain_type)
             .set_indexer_uri(self.indexer_uri.clone())
-            .set_wallet_dir(wallet_dir.path().to_path_buf());
+            .set_wallet_dir(WalletDir::ensure(wallet_dir.path().to_path_buf()).unwrap());
         self.wallet_dirs.push(wallet_dir);
         builder
     }
@@ -2124,7 +2124,7 @@ impl MockNet {
         let config = ClientConfig::builder()
             .set_chain_type(self.chain_type)
             .set_indexer_uri(self.indexer_uri.clone())
-            .set_wallet_dir(wallet_dir.path().to_path_buf())
+            .set_wallet_dir(WalletDir::ensure(wallet_dir.path().to_path_buf()).unwrap())
             .set_wallet_config(WalletConfig::Read)
             .build()
             .unwrap();

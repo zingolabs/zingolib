@@ -577,14 +577,14 @@ impl LightClient {
     }
 
     /// ```
-    /// use zingolib::config::{ClientConfig, WalletConfig};
+    /// use zingolib::config::{ClientConfig, WalletConfig, WalletDir};
     /// use zingolib::lightclient::LightClient;
     /// use zingolib::mixnet::{Indicator, TransportError};
     ///
     /// tokio::runtime::Runtime::new().unwrap().block_on(async {
     ///     let wallet_dir = tempfile::tempdir().unwrap();
     ///     let config = ClientConfig::builder()
-    ///         .set_wallet_dir(wallet_dir.path().to_path_buf())
+    ///         .set_wallet_dir(WalletDir::ensure(wallet_dir.path().to_path_buf()).unwrap())
     ///         .set_wallet_config(WalletConfig::MnemonicPhrase {
     ///             mnemonic_phrase: "abandon abandon abandon abandon abandon \
     ///                 abandon abandon abandon abandon abandon abandon abandon \
@@ -625,7 +625,7 @@ impl LightClient {
     }
 
     /// ```
-    /// use zingolib::config::{ClientConfig, WalletConfig};
+    /// use zingolib::config::{ClientConfig, WalletConfig, WalletDir};
     /// use zingolib::lightclient::LightClient;
     /// use zingolib::mixnet::acquire::{HostRefusal, HostedTransport, ProxyHosting, RotationVerdict};
     /// use zingolib::mixnet::{ExitNodeId, Indicator, TransportError};
@@ -660,7 +660,7 @@ impl LightClient {
     /// tokio::runtime::Runtime::new().unwrap().block_on(async {
     ///     let wallet_dir = tempfile::tempdir().unwrap();
     ///     let config = ClientConfig::builder()
-    ///         .set_wallet_dir(wallet_dir.path().to_path_buf())
+    ///         .set_wallet_dir(WalletDir::ensure(wallet_dir.path().to_path_buf()).unwrap())
     ///         .set_wallet_config(WalletConfig::MnemonicPhrase {
     ///             mnemonic_phrase: "abandon abandon abandon abandon abandon \
     ///                 abandon abandon abandon abandon abandon abandon abandon \
@@ -802,14 +802,14 @@ impl LightClient {
     }
 
     /// ```
-    /// use zingolib::config::{ClientConfig, WalletConfig};
+    /// use zingolib::config::{ClientConfig, WalletConfig, WalletDir};
     /// use zingolib::lightclient::LightClient;
     /// use zingolib::mixnet::{ExitNodeId, Indicator, MixnetProxyError};
     ///
     /// tokio::runtime::Runtime::new().unwrap().block_on(async {
     ///     let wallet_dir = tempfile::tempdir().unwrap();
     ///     let config = ClientConfig::builder()
-    ///         .set_wallet_dir(wallet_dir.path().to_path_buf())
+    ///         .set_wallet_dir(WalletDir::ensure(wallet_dir.path().to_path_buf()).unwrap())
     ///         .set_wallet_config(WalletConfig::MnemonicPhrase {
     ///             mnemonic_phrase: "abandon abandon abandon abandon abandon \
     ///                 abandon abandon abandon abandon abandon abandon abandon \

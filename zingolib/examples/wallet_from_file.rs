@@ -12,7 +12,7 @@
 //!
 //! ```text
 //! 1. CREATE  : ClientConfig::builder()
-//!                .set_wallet_dir(dir)
+//!                .set_wallet_dir(WalletDir::ensure(dir)?)
 //!                .set_wallet_config(WalletConfig::MnemonicPhrase { … })
 //!                .build()
 //!              LightClient::new(config, overwrite)
@@ -22,7 +22,7 @@
 //!              client.shutdown_save_task()     ← clean shutdown
 //!
 //! 3. RELOAD  : ClientConfig::builder()
-//!                .set_wallet_dir(same_dir)
+//!                .set_wallet_dir(WalletDir::ensure(same_dir)?)
 //!                .set_wallet_config(WalletConfig::Read)
 //!                .build()
 //!              LightClient::new(config, false) ← offline, no network needed
@@ -40,7 +40,7 @@
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 
-use zingolib::config::{ClientConfig, WalletConfig};
+use zingolib::config::{ClientConfig, WalletConfig, WalletDir};
 use zingolib::lightclient::LightClient;
 use zingolib::wallet::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery, WalletSettings};
 
@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Use WalletConfig::MnemonicPhrase to restore from an existing seed, or
     // WalletConfig::NewSeed to generate a fresh wallet with a random mnemonic.
     let create_config = ClientConfig::builder()
-        .set_wallet_dir(wallet_dir.clone())
+        .set_wallet_dir(WalletDir::ensure(wallet_dir.clone())?)
         // No .set_indexer_uri() → offline mode. The wallet can be created and
         // used for offline operations without a network connection.
         .set_wallet_config(WalletConfig::MnemonicPhrase {
@@ -140,7 +140,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // local operations (balance, addresses, proposals) are available
     // immediately; call set_indexer_uri() when network access is needed.
     let load_config = ClientConfig::builder()
-        .set_wallet_dir(wallet_dir.clone())
+        .set_wallet_dir(WalletDir::ensure(wallet_dir.clone())?)
         .set_wallet_config(WalletConfig::Read)
         .build()
         .unwrap();

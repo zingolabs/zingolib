@@ -852,7 +852,7 @@ mod tests {
     use std::io::{Cursor, Read};
 
     use crate::{
-        config::{ChainType, ClientConfig, WalletConfig},
+        config::{ChainType, ClientConfig, WalletConfig, WalletDir},
         lightclient::{LightClient, error::LightClientError},
         testutils::default_test_wallet_settings,
     };
@@ -870,7 +870,7 @@ mod tests {
         let builder = || {
             ClientConfig::builder()
                 .set_chain_type(ChainType::Mainnet)
-                .set_wallet_dir(temp_dir.path().to_path_buf())
+                .set_wallet_dir(WalletDir::ensure(temp_dir.path().to_path_buf()).unwrap())
                 .add_indexer(IndexerConfig::new(own.clone()).trust(Trust::Untrusted))
                 .set_remote_indexer_trust(Trust::Trusted)
         };
@@ -939,7 +939,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = ClientConfig::builder()
             .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
-            .set_wallet_dir(temp_dir.path().to_path_buf())
+            .set_wallet_dir(WalletDir::ensure(temp_dir.path().to_path_buf()).unwrap())
             .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: CHIMNEY_BETTER_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
@@ -983,7 +983,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = ClientConfig::builder()
             .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
-            .set_wallet_dir(temp_dir.path().to_path_buf())
+            .set_wallet_dir(WalletDir::ensure(temp_dir.path().to_path_buf()).unwrap())
             .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: CHIMNEY_BETTER_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
@@ -1008,7 +1008,7 @@ mod tests {
         // confirming the constructor never touches the filesystem to load the wallet.
         let restored_config = ClientConfig::builder()
             .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
-            .set_wallet_dir(temp_dir.path().to_path_buf())
+            .set_wallet_dir(WalletDir::ensure(temp_dir.path().to_path_buf()).unwrap())
             .set_wallet_config(WalletConfig::Read)
             .build()
             .unwrap();
@@ -1042,7 +1042,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = ClientConfig::builder()
             .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
-            .set_wallet_dir(temp_dir.path().to_path_buf())
+            .set_wallet_dir(WalletDir::ensure(temp_dir.path().to_path_buf()).unwrap())
             .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: CHIMNEY_BETTER_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
@@ -1064,7 +1064,7 @@ mod tests {
         let read_config = || {
             ClientConfig::builder()
                 .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
-                .set_wallet_dir(temp_dir.path().to_path_buf())
+                .set_wallet_dir(WalletDir::ensure(temp_dir.path().to_path_buf()).unwrap())
                 .set_wallet_config(WalletConfig::Read)
                 .build()
                 .unwrap()

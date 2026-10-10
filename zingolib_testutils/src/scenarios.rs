@@ -38,7 +38,7 @@ pub use crate::chain_cache::ChainCachePolicy;
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::{block_rewards, seeds};
 use zingolib::config::WalletConfig;
-use zingolib::config::{ChainType, ClientConfig};
+use zingolib::config::{ChainType, ClientConfig, WalletDir};
 use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::LightClientError;
@@ -514,7 +514,7 @@ impl ClientBuilder {
         ClientConfig::builder()
             .set_indexer_uri(self.server_id.clone())
             .set_chain_type(ChainType::Regtest(configured_activation_heights))
-            .set_wallet_dir(conf_path)
+            .set_wallet_dir(WalletDir::ensure(conf_path).unwrap())
             .set_wallet_config(wallet_config)
             .build()
             .unwrap()

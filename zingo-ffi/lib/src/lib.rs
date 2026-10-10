@@ -39,7 +39,7 @@ use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
 use zingolib::config::{
-    ChainType, ClientConfig, WalletConfig, construct_indexer_uri, lib_birthday,
+    ChainType, ClientConfig, WalletConfig, WalletDir, construct_indexer_uri, lib_birthday,
 };
 use zingolib::data;
 use zingolib::data::PollReport;
@@ -799,9 +799,10 @@ fn build_client_config(
     params: &ConnectionParams,
     wallet_config: WalletConfig,
 ) -> Result<ClientConfig, ZingolibError> {
+    let wallet_dir = WalletDir::ensure(PathBuf::new()).map_err(chained(ZingolibError::Init))?;
     let builder = ClientConfig::builder()
         .set_chain_type(params.chain_type)
-        .set_wallet_dir(PathBuf::new())
+        .set_wallet_dir(wallet_dir)
         .set_wallet_config(wallet_config);
     // Offline (no uri) → leave the client Indexerless. Only configure the
     // Indexer when a real server was selected. Mirrors zingo-cli.

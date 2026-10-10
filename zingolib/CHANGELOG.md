@@ -32,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `wallet::keys::WalletKind` and `LightWallet::kind`, the wallet's key material as one of `Mnemonic`, `SpendingKey`, `ViewingKey` with the receivers the key holds, or `NoKeys`, or `KeyError::NoAccountKeys` for a wallet without account zero. zingo-cli and the FFI each computed this themselves.
 
 ### Changed
+- **Breaking:** `ClientConfigBuilder::set_wallet_dir` takes `config::WalletDir`,
+  a directory proven usable by `WalletDir::ensure`, in place of a bare
+  `PathBuf`. `ensure` refuses a path that exists as anything but a directory
+  with `WalletDirError::NotADirectory`, creates a missing directory, and keeps
+  the `io::Error` of a failed inspection or creation as the error's source.
+  `ClientConfigError::FileError(String)` is replaced by
+  `ClientConfigError::WalletDir(WalletDirError)`, and `ClientConfigError` no
+  longer implements `Clone`. The builder's default directory passes through the
+  same proof, and iOS and Android builds now also create a missing directory.
 - A transaction targeting a height at or above the NU7 activation expires 120
   blocks past its target, the delta ZIP 203 and ZIP 218 recommend for
   25-second blocks, where it expired 40 blocks past. Below the activation,

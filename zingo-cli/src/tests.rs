@@ -26,6 +26,68 @@ mod config_template_refusals {
              uses. Drop `--online`, or run it at the interactive prompt."
         );
     }
+
+    /// HYPOTHESIS: a `--data-dir` that names the wallet file itself is
+    /// refused with the directory that holds it, and a bare file name
+    /// points at the working directory rather than an empty path.
+    /// Falsified if either hint drifts.
+    #[test]
+    fn data_dir_naming_the_wallet_file_hints_at_its_directory() {
+        let refusal =
+            crate::ConfigTemplateError::DataDir(zingolib::config::WalletDirError::NotADirectory {
+                path: std::path::PathBuf::from("/w/zingo-wallet.dat"),
+            });
+        assert_eq!(
+            refusal.to_string(),
+            "--data-dir: '/w/zingo-wallet.dat' is a file, not a directory. Pass the \
+             directory that contains the wallet: --data-dir /w"
+        );
+        let bare =
+            crate::ConfigTemplateError::DataDir(zingolib::config::WalletDirError::NotADirectory {
+                path: std::path::PathBuf::from("zingo-wallet.dat"),
+            });
+        assert_eq!(
+            bare.to_string(),
+            "--data-dir: 'zingo-wallet.dat' is a file, not a directory. Pass the \
+             directory that contains the wallet: --data-dir ."
+        );
+    }
+
+    /// HYPOTHESIS: a `--data-dir` that names some other file is refused
+    /// without a parent-directory hint, because the launch would open
+    /// `zingo-wallet.dat` there, not the named file. Falsified if the
+    /// refusal recommends the parent.
+    #[test]
+    fn data_dir_naming_another_file_names_the_wallet_file_instead() {
+        let refusal =
+            crate::ConfigTemplateError::DataDir(zingolib::config::WalletDirError::NotADirectory {
+                path: std::path::PathBuf::from("/w/backup.dat"),
+            });
+        assert_eq!(
+            refusal.to_string(),
+            "--data-dir: '/w/backup.dat' is a file, not a directory. Pass a directory; \
+             zingo-cli opens zingo-wallet.dat inside it"
+        );
+    }
+
+    /// HYPOTHESIS: the resolution seam itself refuses a file path, so
+    /// every consumer of `data_dir_from` inherits the refusal. Falsified
+    /// if a file path resolves.
+    #[test]
+    fn data_dir_from_refuses_a_file_path() {
+        let scratch = tempfile::tempdir().unwrap();
+        let wallet_file = scratch.path().join("zingo-wallet.dat");
+        std::fs::write(&wallet_file, b"").unwrap();
+        let matches = super::parse(&[
+            crate::examples::BIN_NAME,
+            "--data-dir",
+            wallet_file.to_str().unwrap(),
+        ]);
+        assert!(matches!(
+            crate::data_dir_from(&matches),
+            Err(zingolib::config::WalletDirError::NotADirectory { path }) if path == wallet_file
+        ));
+    }
 }
 
 mod misplaced_session_option {
@@ -997,7 +1059,7 @@ mod config_template {
         #[test]
         fn defaults() {
             let config = fill(&[examples::BIN_NAME, "--server", examples::SERVER_URI]).unwrap();
-            assert_eq!(config.data_dir, PathBuf::from("wallets"));
+            assert_eq!(config.data_dir.to_path_buf(), PathBuf::from("wallets"));
             assert_eq!(config.chaintype, ChainType::Mainnet);
             assert_eq!(config.communications, Communications::Online);
             assert!(config.sync);
@@ -1032,7 +1094,10 @@ mod config_template {
         #[test]
         fn custom_data_dir() {
             let config = fill(&[examples::BIN_NAME, "--data-dir", examples::DATA_DIR]).unwrap();
-            assert_eq!(config.data_dir, PathBuf::from(examples::DATA_DIR));
+            assert_eq!(
+                config.data_dir.to_path_buf(),
+                PathBuf::from(examples::DATA_DIR)
+            );
         }
 
         #[test]

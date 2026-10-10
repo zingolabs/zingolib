@@ -23,7 +23,7 @@ mod examples;
 mod server_select_nakednet;
 
 use std::num::NonZeroU32;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -38,7 +38,9 @@ use log::{debug, warn};
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 #[cfg(feature = "nym")]
 use pepper_sync::error::{SyncError, SyncRecoveryObservables};
-use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
+use zingolib::config::{
+    ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig, WalletDir, WalletDirError,
+};
 use zingolib::data::PollReport;
 use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use zingolib::netutils::Indexer as _;
@@ -956,11 +958,43 @@ fn decide_connectivity(
 /// The session's data directory: `--data-dir`, or the `wallets` directory
 /// under the working directory. Shared by the Connectivity Consent record
 /// and the wallet path, which must agree on where "beside the wallet" is.
-fn data_dir_from(matches: &clap::ArgMatches) -> PathBuf {
+fn data_dir_path(matches: &clap::ArgMatches) -> PathBuf {
     matches
         .get_one::<String>("data-dir")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("wallets"))
+}
+
+/// - Creates the data directory when nothing exists at its path.
+fn data_dir_from(matches: &clap::ArgMatches) -> Result<WalletDir, WalletDirError> {
+    WalletDir::ensure(data_dir_path(matches))
+}
+
+fn data_dir_refusal(refusal: &WalletDirError) -> String {
+    use std::error::Error as _;
+    let cause = refusal
+        .source()
+        .map(|source| format!(": {source}"))
+        .unwrap_or_default();
+    let hint = match refusal {
+        WalletDirError::NotADirectory { path }
+            if path.file_name() == Some(std::ffi::OsStr::new(DEFAULT_WALLET_NAME)) =>
+        {
+            let parent = path
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
+            format!(
+                ". Pass the directory that contains the wallet: --data-dir {}",
+                parent.display()
+            )
+        }
+        WalletDirError::NotADirectory { .. } => {
+            format!(". Pass a directory; zingo-cli opens {DEFAULT_WALLET_NAME} inside it")
+        }
+        WalletDirError::Inspect { .. } | WalletDirError::Create { .. } => String::new(),
+    };
+    format!("--data-dir: {refusal}{cause}{hint}")
 }
 
 /// Determines the communication mode from the parsed arguments and the
@@ -969,8 +1003,8 @@ fn data_dir_from(matches: &clap::ArgMatches) -> PathBuf {
 /// `--remember-online` stores it, and a session with no consent anywhere
 /// runs offline behind a notice naming the ways online.
 #[cfg(feature = "nym")]
-fn get_communications(matches: &clap::ArgMatches) -> std::io::Result<Communications> {
-    let data_dir = data_dir_from(matches);
+fn get_communications(matches: &clap::ArgMatches) -> Result<Communications, ConfigTemplateError> {
+    let data_dir = data_dir_from(matches)?;
     if matches.get_flag("forget-online") {
         zingolib::connectivity::forget_connectivity_consent(&data_dir)?;
         eprintln!("Standing Connectivity Consent forgotten; future sessions start offline again.");
@@ -1022,8 +1056,8 @@ fn get_communications(matches: &clap::ArgMatches) -> std::io::Result<Communicati
 /// consent is reported as inert. `--forget-online` still works, so an
 /// opt-out build can retire a stored consent.
 #[cfg(not(feature = "nym"))]
-fn get_communications(matches: &clap::ArgMatches) -> std::io::Result<Communications> {
-    let data_dir = data_dir_from(matches);
+fn get_communications(matches: &clap::ArgMatches) -> Result<Communications, ConfigTemplateError> {
+    let data_dir = data_dir_from(matches)?;
     if matches.get_flag("forget-online") {
         zingolib::connectivity::forget_connectivity_consent(&data_dir)?;
         eprintln!("Standing Connectivity Consent forgotten; future sessions start offline again.");
@@ -1047,7 +1081,8 @@ fn get_communications(matches: &clap::ArgMatches) -> std::io::Result<Communicati
             "this build has no mixnet capability, so Offline Mode is its only mode; \
              going online is not possible. Rebuild with default features (plain \
              `cargo build`, or `makers run-cli`) to go online.",
-        ));
+        )
+        .into());
     }
     if matches!(
         zingolib::connectivity::load_connectivity_consent(&data_dir),
@@ -1092,7 +1127,7 @@ pub(crate) struct CliConfigTemplate {
     seed: Option<String>,
     ufvk: Option<String>,
     birthday: u64,
-    data_dir: PathBuf,
+    data_dir: WalletDir,
     sync: bool,
     waitsync: bool,
     chaintype: ChainType,
@@ -1145,6 +1180,12 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
     /// The chain name is not a known chain.
     #[error(transparent)]
     Chain(#[from] zingolib::config::InvalidChainType),
+    /// `--data-dir` names something other than a directory.
+    #[error("{}", data_dir_refusal(.0))]
+    DataDir(#[from] WalletDirError),
+    /// A Connectivity Consent act failed at the filesystem.
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
 impl CliConfigTemplate {
@@ -1192,8 +1233,8 @@ impl CliConfigTemplate {
             });
         }
 
-        let data_dir = data_dir_from(&matches);
-        log::info!("data_dir: {}", data_dir.to_str().unwrap());
+        let data_dir = data_dir_from(&matches)?;
+        log::info!("data_dir: {}", data_dir.display());
         // Offline mode never resolves a server: the session's contract is
         // that no Indexer is ever configured.
         #[cfg(feature = "nakednet-test-mode")]
@@ -2016,7 +2057,7 @@ fn posture_preview(matches: &clap::ArgMatches) -> Communications {
             matches.get_flag("online"),
             matches.get_flag("remember-online"),
             explicit_server,
-            zingolib::connectivity::load_connectivity_consent(&data_dir_from(matches)),
+            zingolib::connectivity::load_connectivity_consent(&data_dir_path(matches)),
         ) {
             ConnectivityDecision::DeliberateOffline => Communications::DeliberateOffline,
             ConnectivityDecision::Online { .. } => Communications::Online,
@@ -2063,7 +2104,7 @@ pub fn run_cli(matches: clap::ArgMatches) -> std::io::Result<ExitCode> {
         eprintln!("{refusal}");
         return Ok(ExitCode::from(2));
     }
-    let communications = get_communications(&matches)?;
+    let communications = get_communications(&matches).map_err(std::io::Error::other)?;
     let cli_config =
         CliConfigTemplate::fill(mode, communications, matches).map_err(std::io::Error::other)?;
     dispatch_command_or_start_interactive(&cli_config)

@@ -12,7 +12,7 @@
 use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
 
-use zingolib::config::{ClientConfig, WalletConfig};
+use zingolib::config::{ClientConfig, WalletConfig, WalletDir};
 use zingolib::lightclient::LightClient;
 use zingolib::wallet::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery, WalletSettings};
 
@@ -52,7 +52,10 @@ async fn sync_20k_mainnet_blocks_within_budget() {
 
     let wallet_dir = tempfile::tempdir().expect("a wallet tempdir opens");
     let config = ClientConfig::builder()
-        .set_wallet_dir(wallet_dir.path().to_path_buf())
+        .set_wallet_dir(
+            WalletDir::ensure(wallet_dir.path().to_path_buf())
+                .expect("the wallet tempdir is a directory"),
+        )
         .set_wallet_config(WalletConfig::MnemonicPhrase {
             mnemonic_phrase: BENCH_MNEMONIC.to_string(),
             no_of_accounts: NonZeroU32::new(1).unwrap(),

@@ -7,7 +7,7 @@ use zcash_protocol::{PoolType, ShieldedPool};
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
 
-use crate::config::{ChainType, ClientConfig, WalletConfig};
+use crate::config::{ChainType, ClientConfig, WalletConfig, WalletDir};
 
 /// The mainnet indexer these example wallets pin explicitly.
 const MAINNET_INDEXER: &str = "https://zec.rocks:443";
@@ -204,7 +204,12 @@ impl NetworkSeedVersion {
                             .to_string_lossy()
                             .to_string(),
                     )
-                    .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
+                    .set_wallet_dir(
+                        WalletDir::ensure(
+                            self.example_wallet_path().parent().unwrap().to_path_buf(),
+                        )
+                        .unwrap(),
+                    )
                     .set_wallet_config(WalletConfig::Read)
                     .build()
                     .unwrap()
@@ -219,7 +224,10 @@ impl NetworkSeedVersion {
                         .to_string_lossy()
                         .to_string(),
                 )
-                .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
+                .set_wallet_dir(
+                    WalletDir::ensure(self.example_wallet_path().parent().unwrap().to_path_buf())
+                        .unwrap(),
+                )
                 .set_wallet_config(WalletConfig::Read)
                 .build()
                 .unwrap(),
@@ -233,7 +241,10 @@ impl NetworkSeedVersion {
                         .to_string_lossy()
                         .to_string(),
                 )
-                .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
+                .set_wallet_dir(
+                    WalletDir::ensure(self.example_wallet_path().parent().unwrap().to_path_buf())
+                        .unwrap(),
+                )
                 .set_wallet_config(WalletConfig::Read)
                 .build()
                 .unwrap(),

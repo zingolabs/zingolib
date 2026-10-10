@@ -5,7 +5,7 @@ mod test {
     use zingo_test_vectors::seeds;
 
     use crate::{
-        config::{ClientConfig, WalletConfig},
+        config::{ClientConfig, WalletConfig, WalletDir},
         lightclient::{LightClient, error::LightClientError},
         testutils::default_test_wallet_settings,
     };
@@ -193,7 +193,7 @@ mod test {
         // Create wallet and force-save it.
         let initial_addrs = {
             let config = ClientConfig::builder()
-                .set_wallet_dir(dir.path().to_path_buf())
+                .set_wallet_dir(WalletDir::ensure(dir.path().to_path_buf()).unwrap())
                 .set_wallet_config(WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
@@ -211,7 +211,7 @@ mod test {
         // Reload from file path, offline, with no set_indexer_uri().
         let loaded_addrs = {
             let config = ClientConfig::builder()
-                .set_wallet_dir(dir.path().to_path_buf())
+                .set_wallet_dir(WalletDir::ensure(dir.path().to_path_buf()).unwrap())
                 .set_wallet_config(WalletConfig::Read)
                 .build()
                 .unwrap();
@@ -242,7 +242,7 @@ mod test {
         let dir = tempfile::tempdir().unwrap();
         // No wallet file written, so Read should fail with FileError.
         let config = ClientConfig::builder()
-            .set_wallet_dir(dir.path().to_path_buf())
+            .set_wallet_dir(WalletDir::ensure(dir.path().to_path_buf()).unwrap())
             .set_wallet_config(WalletConfig::Read)
             .build()
             .unwrap();

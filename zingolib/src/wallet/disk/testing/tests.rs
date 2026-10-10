@@ -5,7 +5,7 @@ use zcash_keys::keys::Era;
 use zcash_protocol::{PoolType, ShieldedPool};
 
 use crate::{
-    config::ClientConfig,
+    config::{ClientConfig, WalletDir},
     lightclient::LightClient,
     wallet::{
         disk::testing::{
@@ -240,7 +240,7 @@ async fn reload_wallet_from_file() {
                 .expect("test client has an indexer"),
         )
         .set_chain_type(mid_client_network)
-        .set_wallet_dir(mid_client.wallet_dir().unwrap())
+        .set_wallet_dir(WalletDir::ensure(mid_client.wallet_dir().unwrap()).unwrap())
         .set_wallet_config(WalletConfig::Read)
         .build()
         .unwrap();

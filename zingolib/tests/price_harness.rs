@@ -11,7 +11,7 @@
 
 use std::time::{Duration, Instant};
 
-use zingolib::config::{ClientConfig, WalletConfig};
+use zingolib::config::{ClientConfig, WalletConfig, WalletDir};
 use zingolib::lightclient::LightClient;
 
 /// The rounds run when `PRICE_HARNESS_ROUNDS` says nothing.
@@ -48,7 +48,10 @@ async fn price_rounds_report_their_outcomes() {
 
     let wallet_dir = tempfile::tempdir().expect("a wallet tempdir opens");
     let config = ClientConfig::builder()
-        .set_wallet_dir(wallet_dir.path().to_path_buf())
+        .set_wallet_dir(
+            WalletDir::ensure(wallet_dir.path().to_path_buf())
+                .expect("the wallet tempdir is a directory"),
+        )
         .set_wallet_config(WalletConfig::MnemonicPhrase {
             mnemonic_phrase: HARNESS_MNEMONIC.to_string(),
             no_of_accounts: std::num::NonZeroU32::new(1).unwrap(),

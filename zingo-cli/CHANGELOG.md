@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation a second time to decide where log output goes.
 
 ### Changed
+- A `--data-dir` that names a file is refused before any consent act or
+  wallet work, where it used to fail with the filesystem's "File exists"
+  error. When the file is `zingo-wallet.dat`, the refusal names the
+  directory that contains it; for any other file it says that zingo-cli
+  opens `zingo-wallet.dat` inside the directory passed. The refusal covers
+  `--remember-online` and `--forget-online` as well as a launch.
 - BREAKING: moves to the librustzcash NU7 pre-release cohort zingolib
   pins. `parse_viewkey` lists a P2SH viewing key item as `transparent`
   beside a P2PKH one.

@@ -545,7 +545,7 @@ async fn sync_all_expressible_epochs() {
 }
 use pepper_sync::wallet::{OrchardNote, SaplingNote};
 use zcash_local_net::validator::Validator;
-use zingolib::config::{ChainType, ClientConfig};
+use zingolib::config::{ChainType, ClientConfig, WalletDir};
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::{LightClientError, SendError};
 use zingolib::perspective::value_transfer::{
@@ -671,7 +671,9 @@ async fn test_scanning_in_watch_only_mode() {
                     &local_net.validator().get_activation_heights().await,
                 ),
             ))
-            .set_wallet_dir(client_builder.zingo_datadir.path().to_path_buf())
+            .set_wallet_dir(
+                WalletDir::ensure(client_builder.zingo_datadir.path().to_path_buf()).unwrap(),
+            )
             .set_wallet_config(WalletConfig::Ufvk {
                 ufvk,
                 birthday: 1,
@@ -1839,7 +1841,7 @@ async fn propose_and_send_with_op_return_confirms_on_chain() {
 mod testnet_test {
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::{
-        config::{ChainType, ClientConfig, WalletConfig},
+        config::{ChainType, ClientConfig, WalletConfig, WalletDir},
         lightclient::LightClient,
         testutils::{default_test_wallet_settings, tempfile::TempDir},
     };
@@ -1866,7 +1868,7 @@ mod testnet_test {
                     birthday: 2_000_000,
                     wallet_settings: default_test_wallet_settings(),
                 })
-                .set_wallet_dir(wallet_dir.path().to_path_buf())
+                .set_wallet_dir(WalletDir::ensure(wallet_dir.path().to_path_buf()).unwrap())
                 .build()
                 .unwrap();
 
@@ -1891,7 +1893,7 @@ mod testnet_test {
                 .set_chain_type(ChainType::Testnet)
                 .set_indexer_uri((TESTNET_INDEXER).parse::<http::Uri>().unwrap())
                 .set_wallet_config(WalletConfig::Read)
-                .set_wallet_dir(wallet_dir.path().to_path_buf())
+                .set_wallet_dir(WalletDir::ensure(wallet_dir.path().to_path_buf()).unwrap())
                 .build()
                 .unwrap();
             LightClient::new(config, true).await.unwrap();

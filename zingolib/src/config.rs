@@ -319,7 +319,7 @@ pub struct ClientConfig {
     /// Chain type of the blockchain the lightclient is connected to.
     chain_type: ChainType,
     /// Directory where the wallet file will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
-    wallet_dir: PathBuf,
+    wallet_dir: WalletDir,
     /// Wallet file name. This will be created in the `wallet_dir`.
     wallet_name: String,
     /// Wallet config.
@@ -366,7 +366,7 @@ impl ClientConfig {
     /// Returns wallet directory.
     #[must_use]
     pub fn wallet_dir(&self) -> PathBuf {
-        self.wallet_dir.clone()
+        self.wallet_dir.to_path_buf()
     }
 
     /// Returns wallet file name.
@@ -384,10 +384,7 @@ impl ClientConfig {
     /// Returns full path to wallet file.
     #[must_use]
     pub fn get_wallet_path(&self) -> Box<Path> {
-        let mut wallet_path = self.wallet_dir();
-        wallet_path.push(self.wallet_name());
-
-        wallet_path.into_boxed_path()
+        self.wallet_dir.join(self.wallet_name()).into_boxed_path()
     }
 }
 
@@ -399,7 +396,7 @@ pub struct ClientConfigBuilder {
     indexers: Vec<IndexerConfig>,
     remote_indexer_trust: Option<Trust>,
     chain_type: ChainType,
-    wallet_dir: Option<PathBuf>,
+    wallet_dir: Option<WalletDir>,
     wallet_name: Option<String>,
     wallet_config: WalletConfig,
 }
@@ -447,7 +444,7 @@ impl ClientConfigBuilder {
     }
 
     /// Set wallet directory.
-    pub fn set_wallet_dir(mut self, dir: PathBuf) -> Self {
+    pub fn set_wallet_dir(mut self, dir: WalletDir) -> Self {
         self.wallet_dir = Some(dir);
         self
     }
@@ -473,7 +470,10 @@ impl ClientConfigBuilder {
     ///
     /// To start online, call [`set_indexer_uri`](Self::set_indexer_uri) before building.
     pub fn build(self) -> Result<ClientConfig, ClientConfigError> {
-        let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type)?;
+        let wallet_dir = match self.wallet_dir {
+            Some(dir) => dir,
+            None => default_wallet_dir(self.chain_type)?,
+        };
         let wallet_name = wallet_name_or_default(self.wallet_name);
 
         Ok(ClientConfig {
@@ -525,66 +525,124 @@ fn wallet_name_or_default(opt_wallet_name: Option<String>) -> String {
     }
 }
 
-fn wallet_dir_or_default(
-    opt_wallet_dir: Option<PathBuf>,
-    chain: ChainType,
-) -> Result<PathBuf, ClientConfigError> {
-    let wallet_dir: PathBuf;
-    #[cfg(any(target_os = "ios", target_os = "android"))]
+#[cfg(any(target_os = "ios", target_os = "android"))]
+fn default_wallet_dir(_chain: ChainType) -> Result<WalletDir, ClientConfigError> {
+    Err(ClientConfigError::WalletDirNotSpecified)
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn default_wallet_dir(chain: ChainType) -> Result<WalletDir, ClientConfigError> {
+    let mut dir = dirs::data_dir().ok_or(ClientConfigError::UsersDataDirNotFound)?;
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
-        wallet_dir = opt_wallet_dir.ok_or_else(|| ClientConfigError::WalletDirNotSpecified)?;
+        dir.push("Zcash");
     }
 
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        wallet_dir = opt_wallet_dir.clone().map_or_else(
-            || {
-                let mut dir = dirs::data_dir().ok_or(ClientConfigError::UsersDataDirNotFound)?;
-
-                #[cfg(any(target_os = "macos", target_os = "windows"))]
-                {
-                    dir.push("Zcash");
-                }
-
-                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                {
-                    dir.push(".zcash");
-                }
-
-                match chain {
-                    ChainType::Mainnet => {}
-                    ChainType::Testnet => dir.push("testnet3"),
-                    ChainType::Regtest(_) => dir.push("regtest"),
-                }
-
-                Ok(dir)
-            },
-            Ok,
-        )?;
-
-        // Create directory if it doesn't exist on non-mobile platforms
-        std::fs::create_dir_all(wallet_dir.clone())
-            .map_err(|e| ClientConfigError::FileError(e.to_string()))?;
+        dir.push(".zcash");
     }
 
-    Ok(wallet_dir)
+    match chain {
+        ChainType::Mainnet => {}
+        ChainType::Testnet => dir.push("testnet3"),
+        ChainType::Regtest(_) => dir.push("regtest"),
+    }
+
+    Ok(WalletDir::ensure(dir)?)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WalletDir(PathBuf);
+
+impl WalletDir {
+    /// - Creates `path` and every missing parent when nothing exists there.
+    ///
+    /// ```
+    /// use zingolib::config::{WalletDir, WalletDirError};
+    ///
+    /// let scratch = tempfile::tempdir().unwrap();
+    /// let nested = scratch.path().join("wallets");
+    /// WalletDir::ensure(nested.clone()).unwrap();
+    /// assert!(nested.is_dir());
+    ///
+    /// let wallet_file = scratch.path().join("zingo-wallet.dat");
+    /// std::fs::write(&wallet_file, b"").unwrap();
+    /// assert!(matches!(
+    ///     WalletDir::ensure(wallet_file),
+    ///     Err(WalletDirError::NotADirectory { .. })
+    /// ));
+    /// ```
+    pub fn ensure(path: PathBuf) -> Result<Self, WalletDirError> {
+        match std::fs::metadata(&path) {
+            Ok(found) if found.is_dir() => Ok(Self(path)),
+            Ok(_) => Err(WalletDirError::NotADirectory { path }),
+            Err(absent) if absent.kind() == std::io::ErrorKind::NotFound => {
+                std::fs::create_dir_all(&path).map_err(|source| WalletDirError::Create {
+                    path: path.clone(),
+                    source,
+                })?;
+                Ok(Self(path))
+            }
+            Err(source) => Err(WalletDirError::Inspect { path, source }),
+        }
+    }
+
+    #[must_use]
+    pub fn into_path_buf(self) -> PathBuf {
+        self.0
+    }
+}
+
+impl std::ops::Deref for WalletDir {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl AsRef<Path> for WalletDir {
+    fn as_ref(&self) -> &Path {
+        &self.0
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum WalletDirError {
+    #[error("'{}' is a file, not a directory", path.display())]
+    NotADirectory { path: PathBuf },
+    #[error("could not inspect '{}'", path.display())]
+    Inspect {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("could not create '{}'", path.display())]
+    Create {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 /// Invalid client config.
-#[derive(thiserror::Error, Debug, Clone)]
+#[derive(thiserror::Error, Debug)]
 pub enum ClientConfigError {
     #[error("Wallet directory must be specified for iOS and Android platforms.")]
     WalletDirNotSpecified,
     #[error("User's default data directory not found.")]
     UsersDataDirNotFound,
-    #[error("Failed to create wallet directory. {0}")]
-    FileError(String),
+    #[error("Failed to prepare the wallet directory.")]
+    WalletDir(#[from] WalletDirError),
 }
 
 #[cfg(test)]
 mod tests {
     use crate::config::ChainType;
     use crate::config::ClientConfig;
+    use crate::config::WalletDir;
     use zingo_common_components::protocol::ActivationHeights;
 
     #[tokio::test]
@@ -598,7 +656,7 @@ mod tests {
         let valid_config = ClientConfig::builder()
             .set_indexer_uri(valid_uri.clone())
             .set_chain_type(ChainType::Mainnet)
-            .set_wallet_dir(temp_path)
+            .set_wallet_dir(WalletDir::ensure(temp_path).unwrap())
             .build()
             .unwrap();
 
