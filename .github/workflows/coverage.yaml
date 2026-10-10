@@ -50,7 +50,7 @@ jobs:
         run: ln -s /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad ./test_binaries/bins/
 
       - name: Run instrumented tests
-        run: cargo llvm-cov nextest --workspace --no-report
+        run: cargo llvm-cov nextest --workspace --exclude xtask --no-report
 
       - name: Generate LCOV report
         run: cargo llvm-cov report --lcov --output-path lcov.info

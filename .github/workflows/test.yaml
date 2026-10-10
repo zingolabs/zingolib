@@ -17,6 +17,7 @@ env:
 
 # The image holds the toolchain, the system libraries, and nextest at the
 # version .env.testing-artifacts pins, so neither job installs a tool.
+# xtask's tests run in tooling.yaml, which holds the cargo-dupes they need.
 jobs:
   build-test-artifacts:
     name: Build test artifacts
@@ -39,7 +40,7 @@ jobs:
       - name: Build and archive tests
         run: |
           cargo nextest archive --verbose \
-            --workspace \
+            --workspace --exclude xtask \
             --archive-file nextest-archive-normal.tar.zst
 
       - name: Upload archive

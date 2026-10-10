@@ -2,6 +2,7 @@
 
 pub mod ci_plan;
 pub mod container;
+pub mod dupes_gate;
 pub mod image;
 pub mod test;
 pub mod workbench;

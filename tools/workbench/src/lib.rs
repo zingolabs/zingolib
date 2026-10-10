@@ -3,10 +3,7 @@
 pub mod binding_changelog;
 pub mod binding_layer;
 pub mod binding_manifest;
-pub mod dupes_gate;
 pub mod session;
-
-pub const WORKBENCH_RELATIVE_DIR: &str = "tools/workbench";
 
 pub use xtask::{
     cargo_subcommand_version, commit_of, commit_spec, create_parent, dispatch_from_root,

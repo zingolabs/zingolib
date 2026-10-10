@@ -1,12 +1,14 @@
-# The workbench is its own workspace, so the root workspace's test jobs
-# never compile its unit tests. The builder's plan tests live there, and a
-# plan change that breaks them must fail the pull request.
+# The repository's tooling: the xtask crate, and the workbench crate that
+# dissolves into it. The workbench is its own workspace, so the root
+# workspace's test jobs never compile its unit tests, and xtask's tests
+# run here rather than in the test shards because the dupes_gate tests
+# run the real cargo-dupes, which the test image does not hold.
 #
-# The job runs outside ci-pr.yaml because the dupes_gate tests run the
-# real cargo-dupes, and dupes_gate.rs pins the rule that ci-pr.yaml never
-# names the duplication gate: its paths filter would hold a pull request
-# forever on a required check that never reports.
-name: Workbench
+# The jobs run outside ci-pr.yaml because dupes_gate.rs pins the rule
+# that ci-pr.yaml never names the duplication gate: its paths filter
+# would hold a pull request forever on a required check that never
+# reports.
+name: Tooling
 
 on:
   pull_request:
@@ -15,7 +17,7 @@ on:
       - "tools/workbench/**"
       - "xtask/**"
       - "rust-toolchain.toml"
-      - ".github/workflows/workbench.yaml"
+      - ".github/workflows/tooling.yaml"
       - ".github/actions/**"
   push:
     branches: [stable, dev]
@@ -25,6 +27,31 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  xtask:
+    name: xtask
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+
+      - name: Restore or install cargo-dupes
+        uses: ./.github/actions/cargo-dupes
+
+      - name: Format
+        run: cargo fmt --package xtask --check
+
+      - name: Clippy
+        run: cargo clippy --package xtask --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --package xtask
+
   workbench-standalone:
     name: workbench (standalone workspace)
     runs-on: ubuntu-24.04
@@ -39,19 +66,6 @@ jobs:
         uses: ./.github/actions/rust-setup
         with:
           workspaces: tools/workbench
-
-      # The gate's workflow installs cargo-dupes under this same cache key,
-      # so a pull request compiles it at most once.
-      - name: Restore cargo-dupes
-        id: cargo-dupes
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/cargo-dupes
-          key: cargo-dupes-${{ hashFiles('tools/workbench/src/dupes_gate.rs') }}-${{ runner.os }}
-
-      - name: Install cargo-dupes
-        if: steps.cargo-dupes.outputs.cache-hit != 'true'
-        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin dupes-gate -- --install
 
       - name: Format
         run: cargo fmt --manifest-path tools/workbench/Cargo.toml --all --check

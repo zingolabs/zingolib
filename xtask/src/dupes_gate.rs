@@ -92,12 +92,7 @@ impl Rejection {
 }
 
 fn gate_command(args: &str) -> String {
-    format!(
-        "{} run --manifest-path {}/{} --bin {BINARY} -- {args}",
-        crate::CARGO,
-        crate::WORKBENCH_RELATIVE_DIR,
-        crate::MANIFEST
-    )
+    format!("{} xtask {BINARY} {args}", crate::CARGO)
 }
 
 fn settings() -> Vec<&'static str> {
@@ -239,12 +234,6 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     .map_err(Rejection::lines)
 }
 
-/// - Reads the process arguments.
-/// - Exits the process through [`crate::run`].
-pub fn main() -> ! {
-    crate::dispatch_from_root(BINARY, dispatch)
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -259,7 +248,7 @@ mod tests {
     const PRUNED_DIRECTORY: &str = "target";
     const HIDDEN_MARK: char = '.';
     const DIRECTORY_MARK: char = '/';
-    const FIXTURE_ROOT: &str = "workbench-dupes-gate";
+    const FIXTURE_ROOT: &str = "xtask-dupes-gate";
     const NO_NEAR: &str = "0";
     const SLACK_CEILING: &str = "1";
     const SOURCE: &str = "src/lib.rs";
@@ -474,9 +463,11 @@ mod tests {
     #[test]
     fn a_job_in_the_gate_workflow_reports_the_required_check_name() {
         let name = format!("name: {CHECK_NAME}");
-        assert!(read_root(GATE_WORKFLOW)
-            .lines()
-            .any(|line| line.starts_with(char::is_whitespace) && line.trim() == name));
+        assert!(
+            read_root(GATE_WORKFLOW)
+                .lines()
+                .any(|line| line.starts_with(char::is_whitespace) && line.trim() == name)
+        );
     }
 
     #[test]

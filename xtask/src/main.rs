@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use xtask::{ci_plan, image, test, workbench};
+use xtask::{ci_plan, dupes_gate, image, test, workbench};
 
 enum Task {
     Run(fn(&Path, &[String]) -> Result<(), Vec<String>>),
@@ -98,6 +98,11 @@ const TASKS: &[(&str, Task, &str)] = &[
         "sync-ab",
         Task::Workbench(workbench::Binary::named("sync-ab")),
         "compare two commits' sync rate in interleaved run-cli --online sessions",
+    ),
+    (
+        dupes_gate::BINARY,
+        Task::Run(dupes_gate::dispatch),
+        "run the duplicated-code gate; `--install` installs the pinned cargo-dupes; other arguments go to cargo-dupes",
     ),
     (
         "rust-version",
