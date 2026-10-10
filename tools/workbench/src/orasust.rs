@@ -2,9 +2,12 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+use toml_edit::DocumentMut;
+
 pub const BINARY: &str = "orasust";
-pub const VERSION: &str = "0.1.3";
 pub const VERSION_FLAG: &str = "--orasust-version";
+const MANIFEST: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"));
+const PIN_PATH: [&str; 4] = ["package", "metadata", "orasust", "version"];
 const INSTALL: &str = "cargo install --locked";
 const CRATE_VERSION_SEPARATOR: char = '@';
 const VERSION_COMMAND: &str = "version";
@@ -22,12 +25,29 @@ const QUOTE: char = '"';
 const KEY_VALUE_SEPARATOR: char = ':';
 const CURRENT_DIR: &str = ".";
 
-pub fn install_command() -> String {
-    format!("{INSTALL} {BINARY}{CRATE_VERSION_SEPARATOR}{VERSION}")
+pub fn version() -> Result<String, Vec<String>> {
+    let manifest: DocumentMut = MANIFEST
+        .parse()
+        .map_err(|error| vec![format!("workbench Cargo.toml does not parse: {error}")])?;
+    let pin = PIN_PATH
+        .iter()
+        .try_fold(manifest.as_item(), |item, key| item.get(key))
+        .and_then(|item| item.as_str())
+        .ok_or_else(|| {
+            vec![format!(
+                "workbench Cargo.toml names no string at {}",
+                PIN_PATH.join(".")
+            )]
+        })?;
+    Ok(pin.to_string())
 }
 
-fn install_hint() -> String {
-    format!("install it with `{}`", install_command())
+pub fn install_command(version: &str) -> String {
+    format!("{INSTALL} {BINARY}{CRATE_VERSION_SEPARATOR}{version}")
+}
+
+fn install_hint(version: &str) -> String {
+    format!("install it with `{}`", install_command(version))
 }
 
 pub fn installed_version(report: &str) -> Option<&str> {
@@ -39,16 +59,17 @@ pub fn installed_version(report: &str) -> Option<&str> {
 
 /// - Runs `orasust version` as a child process.
 pub fn pinned() -> Result<(), Vec<String>> {
+    let pin = version()?;
     let report = crate::stdout_of(BINARY, &[VERSION_COMMAND])
-        .map_err(|_| vec![format!("{BINARY} is not installed"), install_hint()])?;
+        .map_err(|_| vec![format!("{BINARY} is not installed"), install_hint(&pin)])?;
     match installed_version(&report) {
-        Some(installed) if installed == VERSION => Ok(()),
+        Some(installed) if installed == pin => Ok(()),
         installed => Err(vec![
             format!(
-                "{BINARY} {} is installed and {VERSION} is pinned",
+                "{BINARY} {} is installed and {pin} is pinned",
                 installed.unwrap_or_default()
             ),
-            install_hint(),
+            install_hint(&pin),
         ]),
     }
 }
@@ -177,10 +198,18 @@ mod tests {
     }
 
     #[test]
+    fn the_pin_is_read_from_the_workbench_manifest() {
+        let pin = version().unwrap();
+        let components: Vec<&str> = pin.split('.').collect();
+        assert_eq!(components.len(), 3, "{pin} is not a release version");
+        assert!(components.iter().all(|c| c.parse::<u64>().is_ok()), "{pin}");
+    }
+
+    #[test]
     fn the_install_command_names_the_pinned_version() {
         assert_eq!(
-            install_command(),
-            format!("cargo install --locked orasust@{VERSION}")
+            install_command("0.1.3"),
+            "cargo install --locked orasust@0.1.3"
         );
     }
 }

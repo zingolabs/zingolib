@@ -203,9 +203,11 @@ jobs:
           pattern: ${{ needs.request.outputs.bundle_pattern }}
           path: ${{ env.BUNDLES }}
 
-      # The registry client is the orasust crate, whose version the
-      # workbench pins. The cargo cache above keeps the installed binary,
-      # so the build runs once per version.
+      # The registry client is the orasust crate, whose release the
+      # workbench manifest pins under [package.metadata.orasust]. The cargo
+      # cache above hashes that manifest into its key and keeps the installed
+      # binary, so a bump misses the cache once and the build runs once per
+      # release.
       - name: Install orasust
         run: |
           version="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --orasust-version)"
