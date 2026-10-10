@@ -32,3 +32,7 @@
 # reads them from `cargo tree` there, each as its package name and its
 # directory. The manifest check reads them again at the commit and rejects
 # an entry whose array differs.
+
+[[entry]]
+commit = "ba7336710419c9ac1e9362ac1b4e5b0073ff477e"
+since = "6d0f7dfc05779be7b32b2fc5c61e9543e18e2164"
