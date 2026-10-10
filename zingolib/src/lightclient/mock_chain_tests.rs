@@ -4411,4 +4411,40 @@ mod moved_from_regtest {
         // consumed both and returned the rest as change.
         check_client_balances!(recipient, i: (2 * NOTE - PAYMENT - fee) o: 0 s: 0 t: 0);
     }
+    #[tokio::test]
+    async fn mine_to_transparent() {
+        use crate::lightclient::LightClient;
+        use pepper_sync::wallet::TransparentCoin;
+
+        const FIRST_BLOCKS: u64 = 3;
+        let mut net = MockNet::launch().await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_taddr = get_base_address(&miner, PoolType::Transparent).await;
+        {
+            let mut chain = net.chain.write().await;
+            for _ in 0..FIRST_BLOCKS {
+                chain.mine_block_rewarding(&miner_taddr, REWARD, vec![]);
+            }
+        }
+        miner.sync_and_await().await.unwrap();
+        async fn unfiltered(miner: &LightClient) -> u64 {
+            miner
+                .wallet()
+                .read()
+                .await
+                .get_filtered_balance::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
+                .unwrap()
+                .into_u64()
+        }
+        assert_eq!(unfiltered(&miner).await, FIRST_BLOCKS * REWARD_ZATS);
+
+        net.chain
+            .write()
+            .await
+            .mine_block_rewarding(&miner_taddr, REWARD, vec![]);
+        miner.sync_and_await().await.unwrap();
+        assert_eq!(unfiltered(&miner).await, (FIRST_BLOCKS + 1) * REWARD_ZATS);
+    }
 }

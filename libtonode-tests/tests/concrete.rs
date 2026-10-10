@@ -143,7 +143,6 @@ use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedAddressId};
-use zip32::AccountId;
 
 #[tokio::test]
 async fn unified_address_discovery() {
@@ -487,43 +486,6 @@ async fn mine_to_orchard() {
     check_client_balances!(
         faucet,
         i: 0 o: (1_237_500_000 + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
-    );
-}
-
-/// Tests that the miner's address receives (immature) rewards from mining to the transparent pool.
-#[tokio::test]
-async fn mine_to_transparent() {
-    let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
-        PoolType::Transparent,
-        scenarios::default_test_activation_heights(),
-        scenarios::ChainCachePolicy::PerTest,
-    )
-    .await;
-
-    let unconfirmed_balance = faucet
-        .wallet()
-        .read()
-        .await
-        .get_filtered_balance::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
-        .unwrap();
-
-    assert_eq!(
-        unconfirmed_balance,
-        Zatoshis::const_from_u64(scenarios::mined_block_rewards_total(3))
-    );
-
-    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-        .await
-        .unwrap();
-
-    assert_eq!(
-        faucet
-            .wallet()
-            .read()
-            .await
-            .get_filtered_balance::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
-            .unwrap(),
-        Zatoshis::const_from_u64(scenarios::mined_block_rewards_total(4))
     );
 }
 
