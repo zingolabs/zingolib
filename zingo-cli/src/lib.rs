@@ -899,7 +899,7 @@ fn offline_refusal_text(_communications: Communications, name: &str) -> String {
     format!(
         "Error: `{name}` requires network access, and this build has no mixnet \
          capability, so Offline Mode is its only mode. Rebuild with default \
-         features (plain `cargo build`, or `makers run-cli`) to go online."
+         features (plain `cargo build`, or `cargo xtask run-cli`) to go online."
     )
 }
 
@@ -1046,7 +1046,7 @@ fn get_communications(matches: &clap::ArgMatches) -> std::io::Result<Communicati
         return Err(std::io::Error::other(
             "this build has no mixnet capability, so Offline Mode is its only mode; \
              going online is not possible. Rebuild with default features (plain \
-             `cargo build`, or `makers run-cli`) to go online.",
+             `cargo build`, or `cargo xtask run-cli`) to go online.",
         ));
     }
     if matches!(

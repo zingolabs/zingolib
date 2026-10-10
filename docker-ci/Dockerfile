@@ -1,7 +1,7 @@
 # No ARG defaults, deliberately: .env.testing-artifacts is the single
 # source of truth for every pinned value (and rust-toolchain.toml for
-# RUST_VERSION, which the Makefile derives). Build through
-# `makers build-image`, which sources the env file and passes each
+# RUST_VERSION, which xtask derives). Build through
+# `cargo xtask image build`, which reads the env file and passes each
 # value; a bare `docker build` without --build-args fails loudly
 # instead of assembling an image from stale duplicated defaults.
 ARG RUST_VERSION

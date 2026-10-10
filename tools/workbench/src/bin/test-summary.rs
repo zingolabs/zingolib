@@ -24,7 +24,7 @@ use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 
 /// Whether `arg` is a cargo package-selection flag. Mirrors the
-/// `has_package_selection_args` case list in Makefile.toml's base-script.
+/// package-selection list in xtask/src/test.rs.
 fn is_package_selection_arg(arg: &str) -> bool {
     matches!(
         arg,

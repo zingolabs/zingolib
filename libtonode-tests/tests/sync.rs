@@ -472,7 +472,7 @@ async fn store_all_checkpoints_in_verification_window() {
 ///
 /// Reproduction record (issue #2440): the failures occurred only in
 /// container runs (twice, the wallet at exactly 1096 both times, under
-/// `makers container-test`, podman on the originating machine) while
+/// `cargo xtask test`, podman on the originating machine) while
 /// host runs of the same commit passed. "Container-only" records where
 /// it happened, not a mechanism: in the same failing container process
 /// a parallel fresh connection to the same URI saw all 1128 roots, so
@@ -494,7 +494,7 @@ async fn store_all_checkpoints_in_verification_window() {
 /// current backend, the stream is being cut mid-flight.
 ///
 /// Run in the environment under investigation with output visible, e.g.:
-///   makers test -p libtonode-tests \
+///   cargo xtask test -p libtonode-tests \
 ///     -E 'test(diagnose_subtree_root_stream)' --run-ignored all --no-capture
 #[ignore = "diagnostic: run manually against live mainnet"]
 #[tokio::test]

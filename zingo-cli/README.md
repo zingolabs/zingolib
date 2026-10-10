@@ -16,7 +16,7 @@ shape a session.
   - [Prerequisites](#prerequisites)
   - [The build procedure](#the-build-procedure)
 - [Ways to launch](#ways-to-launch)
-  - [1. `makers run-cli`](#1-makers-run-cli)
+  - [1. `cargo xtask run-cli`](#1-cargo-xtask-run-cli)
   - [2. The built binary directly](#2-the-built-binary-directly)
 - [Modes of operation](#modes-of-operation)
   - [Interactive mode (the REPL)](#interactive-mode-the-repl)
@@ -37,8 +37,8 @@ shape a session.
 
 ## Building
 
-One procedure builds the CLI: the workspace's
-[cargo-make](https://github.com/sagiegurari/cargo-make) task `run-cli`. The task
+One procedure builds the CLI: the workspace's xtask task `run-cli`, which
+`cargo xtask run-cli` runs with no tool beyond cargo. The task
 compiles `zingo-cli` with the mixnet (Nym) transport, builds the `nym-proxy`
 binary, and places the proxy beside the CLI, where a session that goes online
 finds it.
@@ -55,8 +55,6 @@ cannot go online.
   build.
 - **Build tools** for your platform. On Ubuntu, run
   `sudo apt install build-essential gcc libsqlite3-dev`.
-- **cargo-make**, which provides the `makers` command. Run
-  `cargo install cargo-make`.
 
 ### The build procedure
 
@@ -65,7 +63,7 @@ git clone https://github.com/zingolabs/zingolib.git
 cd zingolib
 
 # Build the release CLI, bundle nym-proxy beside it, and stop
-makers run-cli --build-only
+cargo xtask run-cli --build-only
 # Binaries: ./target/release/zingo-cli and ./target/release/nym-proxy
 ```
 
@@ -90,7 +88,7 @@ There are two ways to run the CLI, and both run the binary the
 [session options](#session-options-reference) and
 [commands](#command-mode-one-shot).
 
-### 1. `makers run-cli`
+### 1. `cargo xtask run-cli`
 
 The task rebuilds whatever changed, bundles the proxy, and launches the CLI in
 one step. It forwards every argument that is not a launcher flag to `zingo-cli`
@@ -98,12 +96,12 @@ unchanged:
 
 ```bash
 # Build, bundle nym-proxy, and start the interactive prompt
-makers run-cli
+cargo xtask run-cli
 
 # Forward any session option / command to zingo-cli
-makers run-cli --chain testnet
-makers run-cli addresses
-makers run-cli --data-dir ~/my-wallet --online
+cargo xtask run-cli --chain testnet
+cargo xtask run-cli addresses
+cargo xtask run-cli --data-dir ~/my-wallet --online
 ```
 
 Notes:
@@ -111,7 +109,7 @@ Notes:
 - This task never launches the proxy itself. The CLI owns that lifecycle: it
   spawns the proxy only at an online session's go-online moment, and an offline
   session boots no proxy at all.
-- Launching with `makers run-cli` does **not** imply consent to go online. The
+- Launching with `cargo xtask run-cli` does **not** imply consent to go online. The
   session is offline until a consent act (see
   [Connectivity](#connectivity-offline-first-consent-to-go-online)).
 
@@ -374,7 +372,7 @@ you the corrected invocation.)
 
 | Feature | Default | Effect on launch |
 | --- | --- | --- |
-| `nym` | **on** | Compiles in the mixnet transport, so a session can go online. Opting out (`makers run-cli --nakednet`) builds without the transport and bundles no proxy, which makes **Offline Mode the only mode**: the online consent acts refuse loudly and a stored standing consent is reported as inert. |
+| `nym` | **on** | Compiles in the mixnet transport, so a session can go online. Opting out (`cargo xtask run-cli --nakednet`) builds without the transport and bundles no proxy, which makes **Offline Mode the only mode**: the online consent acts refuse loudly and a stored standing consent is reported as inert. |
 | `nakednet-test-mode` | off | Re-enables the quarantined nakednet server-selection sweep. A deliberate, review-gated test build — never for ordinary use. |
 
 The [build procedure](#the-build-procedure) selects features through its
@@ -382,10 +380,10 @@ launcher flags, for example:
 
 ```bash
 # Nakednet-only build (no mixnet capability, no proxy bundled)
-makers run-cli --nakednet --build-only
+cargo xtask run-cli --nakednet --build-only
 
 # Add cargo features to the build
-makers run-cli --features <list> --build-only
+cargo xtask run-cli --features <list> --build-only
 ```
 
 ---
@@ -406,7 +404,7 @@ and `Ctrl-D` also end the session.
   consent. Grant it for this session with `--online` (or `network on` at the
   prompt), or `--remember-online` to persist it.
 - **Going online refused with "no mixnet capability"** — the binary was built
-  nakednet-only (`makers run-cli --nakednet`). Rebuild with the
+  nakednet-only (`cargo xtask run-cli --nakednet`). Rebuild with the
   [build procedure](#the-build-procedure), without that flag, to go online.
 - **A session option after the command is rejected** — session options must come
   before the command; the CLI prints the corrected invocation.

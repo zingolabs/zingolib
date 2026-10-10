@@ -41,9 +41,9 @@
 //! notes where a fundless one only discards, so reproducing someone's
 //! measurement means giving the comparison their wallet.
 //!
-//! Usage: `makers sync-ab [cli] <arm> <arm> --birthday <height>
+//! Usage: `cargo xtask sync-ab [cli] <arm> <arm> --birthday <height>
 //! [--runs <n>] [--seconds <n>] [--seed <mnemonic>]`. The reserved first word names the session
-//! kind, as `makers test packages` and `makers test live` name their
+//! kind, as `cargo xtask test packages` and `cargo xtask test live` name their
 //! scopes, and omitting it names the same kind.
 #![forbid(unsafe_code)]
 
@@ -57,7 +57,7 @@ use workbench::session;
 use workbench::{repo_root, run};
 
 /// The session kind a reserved first word names, following the house idiom
-/// that gives `makers test` its `packages` and `live` words.
+/// that gives `cargo xtask test` its `packages` and `live` words.
 // One kind exists here, and the word still earns its place: an in-process
 // harness is a second kind, and naming this one now lets that one arrive as
 // another word rather than as a redesign of the grammar.

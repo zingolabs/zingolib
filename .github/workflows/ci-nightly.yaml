@@ -64,11 +64,6 @@ jobs:
       - name: Setup Rust and the cargo cache
         uses: ./.github/actions/rust-setup
 
-      - name: Install cargo-make
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-make
-
       - name: Pick the arms
         id: arms
         run: |
@@ -78,7 +73,7 @@ jobs:
       - name: Compare the arms
         if: ${{ steps.arms.outputs.before != steps.arms.outputs.now }}
         run: |
-          makers sync-ab "${{ steps.arms.outputs.before }}" "${{ steps.arms.outputs.now }}" \
+          cargo xtask sync-ab "${{ steps.arms.outputs.before }}" "${{ steps.arms.outputs.now }}" \
             --birthday 2571710 --seconds 90 2>&1 | tee sync-ab.log
 
       - name: Keep the report

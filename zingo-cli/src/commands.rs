@@ -324,7 +324,7 @@ async fn current_price(_lightclient: &mut LightClient) -> Result<String, Command
     Ok(
         "This build has no price fetch: price travels only over the Nym mixnet (ADR 0011), \
          and this build switched off the default mixnet support at build time. Rebuild with \
-         default features (plain `cargo build`, or `makers run-cli`) to compile it in."
+         default features (plain `cargo build`, or `cargo xtask run-cli`) to compile it in."
             .to_string(),
     )
 }
