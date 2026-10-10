@@ -88,11 +88,6 @@ impl std::fmt::Display for ChainType {
     }
 }
 
-/// Invalid chain type.
-#[derive(thiserror::Error, Debug)]
-#[error("Invalid chain type '{0}'. Expected one of: 'mainnet', 'testnet' or 'regtest'.")]
-pub struct InvalidChainType(String);
-
 impl TryFrom<&str> for ChainType {
     type Error = InvalidChainType;
 
@@ -153,6 +148,11 @@ pub(crate) mod consealed {
         }
     }
 }
+
+/// Invalid chain type.
+#[derive(thiserror::Error, Debug)]
+#[error("Invalid chain type '{0}'. Expected one of: 'mainnet', 'testnet' or 'regtest'.")]
+pub struct InvalidChainType(String);
 
 /// Configuration data for the construction of a [`crate::wallet::LightWallet`].
 #[derive(Clone, Debug, PartialEq, Eq)]
