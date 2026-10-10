@@ -4115,3 +4115,164 @@ mod shielded_coinbase {
         check_client_balances!(miner, i: 0 o: REWARD_ZATS s: 0 t: 0);
     }
 }
+
+/// The unavailable-boundary skip on a chain whose boundary checkpoint pepper-sync pruned itself.
+mod boundary_pruning {
+    use pepper_sync::sync::MAX_REORG_ALLOWANCE;
+    use pepper_sync::wallet::{NoteInterface, OrchardNote, OutputId, OutputInterface};
+    use zaino_proto::tonic::Code;
+    use zcash_protocol::PoolType;
+    use zcash_protocol::ShieldedPool;
+    use zip32::AccountId;
+
+    use super::shielded_coinbase::deferred_schedule;
+    use crate::check_client_balances;
+    use crate::lightclient::LightClient;
+    use crate::testutils::lightclient::get_base_address;
+    use crate::testutils::mock_indexer::{Fault, MockNet, Rpc, faucet_funding_transaction_on};
+    use crate::wallet::migration::{
+        BoundNote, ConsentBinding, MigrationMode, MigrationParams, MigrationPhase, MigrationState,
+        PartId, PartRecord, PartState, SigningStrategy, bucket_index,
+    };
+
+    const DEFERRED_NU6_3: u32 = 130;
+    const FUNDING: u64 = 100_000;
+    const HIDDEN_BLOCKS: u32 = 10;
+    const PRUNED_BUCKET_MODULUS: u32 = (MAX_REORG_ALLOWANCE + 1).next_power_of_two();
+    const TARGET_TIP: u32 = 2 * PRUNED_BUCKET_MODULUS
+        + MAX_REORG_ALLOWANCE
+        + (PRUNED_BUCKET_MODULUS - MAX_REORG_ALLOWANCE - HIDDEN_BLOCKS) / 2;
+    const _: () = assert!(2 * PRUNED_BUCKET_MODULUS >= DEFERRED_NU6_3);
+
+    /// - Writes a hand-built scheduled migration into the client's wallet.
+    async fn inject_scheduled_migration(
+        client: &LightClient,
+        bound: (u64, OutputId, [u8; 32]),
+        bucket: u64,
+    ) {
+        let mut wallet = client.wallet().write().await;
+        let mut params = MigrationParams::provisional(wallet.chain_type());
+        params.bucket_modulus = PRUNED_BUCKET_MODULUS;
+        let (denomination, output_id, nullifier) = bound;
+        let mut part = PartRecord::new(
+            PartId(0),
+            denomination,
+            BoundNote {
+                output_id,
+                nullifier,
+                commitment: [0; 32],
+            },
+        );
+        part.assign(bucket).expect("fresh parts are bound");
+        wallet.migration = Some(MigrationState {
+            consent: ConsentBinding {
+                params_hash: params.params_hash(),
+                plan_hash: [0; 32],
+                consented_at: 0,
+            },
+            params,
+            strategy: SigningStrategy::LazyAtBoundary,
+            mode: MigrationMode::Scheduled,
+            account: AccountId::ZERO,
+            phase: MigrationPhase::PartsScheduled,
+            parts: vec![part],
+        });
+    }
+
+    async fn funding_note(client: &LightClient) -> (u64, OutputId, [u8; 32]) {
+        let wallet = client.wallet().read().await;
+        wallet
+            .wallet_transactions
+            .values()
+            .flat_map(|transaction| OrchardNote::transaction_outputs(transaction).to_vec())
+            .find(|note| note.value() == FUNDING)
+            .map(|note| {
+                (
+                    note.value(),
+                    note.output_id(),
+                    note.nullifier()
+                        .expect("scanned wallet notes carry nullifiers")
+                        .to_bytes(),
+                )
+            })
+            .expect("the recipient holds its funding note")
+    }
+
+    /// The mock twin of the live `unavailable_boundary_tree_state_skips_without_sync`
+    /// with real pruning: the recipient syncs across a leap past the second bucket
+    /// boundary by more than the checkpoint retention, so pepper-sync itself prunes
+    /// the boundary's checkpoint, and a poisoned block fetch proves the transmit
+    /// path never syncs.
+    #[tokio::test]
+    async fn unavailable_boundary_tree_state_skips_without_sync_on_the_mock_chain() {
+        let mut net = MockNet::launch_with(deferred_schedule()).await;
+        let mut recipient = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let recipient_ua =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        let funding = faucet_funding_transaction_on(
+            net.chain.read().await.activation_heights(),
+            vec![(&recipient_ua, FUNDING, None)],
+        )
+        .await;
+        {
+            let mut chain = net.chain.write().await;
+            chain.mine_empty_blocks(1);
+            chain.mine_block(vec![funding]);
+            let funded_tip = chain.tip();
+            assert!(
+                funded_tip < DEFERRED_NU6_3,
+                "the funding must confirm before NU6.3 activates, but the chain is at {funded_tip}"
+            );
+            chain.mine_empty_blocks(TARGET_TIP - funded_tip);
+        }
+        recipient.sync_and_await().await.unwrap();
+        check_client_balances!(recipient, i: 0 o: FUNDING s: 0 t: 0);
+
+        let known_height = recipient
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .last_known_chain_height()
+            .expect("the recipient has synced");
+        let current_bucket = bucket_index(known_height, PRUNED_BUCKET_MODULUS);
+        assert_eq!(
+            current_bucket, 2,
+            "the chain must sit inside the second bucket, past its boundary"
+        );
+        let bound = funding_note(&recipient).await;
+        inject_scheduled_migration(&recipient, bound, current_bucket).await;
+
+        {
+            let mut chain = net.chain.write().await;
+            chain.mine_empty_blocks(HIDDEN_BLOCKS);
+            chain.faults.inject(
+                Rpc::BlockRange,
+                Fault::Fail(
+                    Code::Unavailable,
+                    "a hidden sync fetched blocks".to_string(),
+                ),
+            );
+        }
+
+        let sent = recipient.transmit_due_parts().await.unwrap();
+        assert!(sent.is_empty(), "nothing must be transmitted: {sent:?}");
+        assert_eq!(
+            net.chain.read().await.faults.pending(Rpc::BlockRange),
+            1,
+            "the transmit path must never fetch blocks"
+        );
+        let wallet = recipient.wallet().read().await;
+        let part = &wallet.migration.as_ref().unwrap().parts[0];
+        assert_eq!(part.state, PartState::Assigned, "a skip writes nothing");
+        assert_eq!(part.attempts, 0, "a skip records no attempt");
+        assert!(part.anchor_witness.is_none());
+        assert_eq!(
+            wallet.sync_state.last_known_chain_height(),
+            Some(known_height),
+            "the transmit path must never synchronize"
+        );
+    }
+}
