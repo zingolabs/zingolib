@@ -1,0 +1,17 @@
+name: Cargo cache
+description: >-
+  Restores the cargo cache for the calling job and saves it only from
+  dev, so the repository's cache budget holds one resident set that
+  every pull request restores from.
+inputs:
+  workspaces:
+    description: The cargo workspaces to cache, one per line, as rust-cache takes them.
+    required: false
+    default: "."
+runs:
+  using: composite
+  steps:
+    - uses: Swatinem/rust-cache@v2
+      with:
+        save-if: ${{ github.ref == 'refs/heads/dev' }}
+        workspaces: ${{ inputs.workspaces }}

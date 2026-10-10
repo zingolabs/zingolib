@@ -36,7 +36,7 @@ jobs:
           toolchain: ${{ inputs.toolchain }}
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: ./.github/actions/cargo-cache
 
       # Removes each declared dependency feature in turn and checks without it.
       # One `cargo check` per feature, so this runs nightly rather than per PR.
@@ -65,7 +65,7 @@ jobs:
           toolchain: ${{ inputs.toolchain }}
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: ./.github/actions/cargo-cache
 
       - name: Install cargo-make
         uses: taiki-e/install-action@v2
