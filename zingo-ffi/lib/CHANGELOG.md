@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The committed `src/exported_surface.txt` pins the exported surface: every
+  uniffi item in the crate's sources, the `uniffi.toml` settings, the locked
+  uniffi version and the package name. A test fails when the crate and the
+  file differ, and a second test fails when a `macro_rules!` body emits uniffi
+  items the first test does not expand.
 - `probe_server(server_uri)` checks an indexer without a wallet and reports
   how far it got as JSON. The `outcome` is `unresolved`, `unreachable`,
   `noAnswer`, `refused` or `verified`, beside the `host`, `port` and
@@ -25,6 +30,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   place of `Init`, when the wallet bytes were written for another chain.
 
 ### Changed
+- **Breaking:** the bindings come from `#[uniffi::export]` attributes and the
+  uniffi derives on uniffi 0.32.2 in place of `zingo.udl`. The UDL, the
+  `build.rs` and the crate's `uniffi-bindgen` binary target are gone, and
+  `zingo-uniffi-bindgen` generates the Kotlin and Swift bindings in library
+  mode from the compiled library. `uniffi.toml` pins the Kotlin load name
+  `uniffi_zingo`, so the Android loader does not change. A consumer regenerates
+  its bindings; the old generated files do not load the new library.
+- **Breaking:** `init_new`, `init_from_seed`, `init_from_ufvk` and
+  `init_from_bytes` take one `IndexerConnection` record (`server_uri`,
+  `chain_hint` and `sync`) in place of the four loose arguments, and
+  `set_config_wallet_to_prod` takes one `SyncSettings` record
+  (`performance_level` and `min_confirmations`). `get_latest_block_server` and
+  `change_server` keep their UDL argument label `serveruri`, so the Swift label
+  stays `serveruri:`.
 - BREAKING: moves to the librustzcash NU7 pre-release cohort zingolib
   pins. The viewing key parser lists a P2SH viewing key item as `transparent`
   beside a P2PKH one.
