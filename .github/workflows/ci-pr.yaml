@@ -43,41 +43,29 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Every other job reads its runner, image, and partitions from this
+  # job's plan, and the draft state of the pull request from its output.
+  plan:
+    uses: ./.github/workflows/ci-plan.yaml
+    permissions:
+      contents: read
+      packages: write
+
   reject-trailing-whitespace:
     uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@20485fed7a080e381130ed8120419dc81acae641
 
   cargo-checkmate:
+    needs: plan
     uses: ./.github/workflows/cargo-checkmate.yaml
-
-  # The draft state of the pull request when this job runs. The event
-  # payload holds the state at the time of the event. A push and a "ready
-  # for review" seconds apart start two runs, and the run that survives
-  # the concurrency group can carry a payload that says draft. A run with
-  # no pull request reports false.
-  draft-state:
-    name: Draft state
-    runs-on: ubuntu-24.04
-    outputs:
-      draft: ${{ steps.read.outputs.draft }}
-    steps:
-      - name: Read the draft state of the pull request
-        id: read
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PULL_REQUEST: ${{ github.event.pull_request.number }}
-        run: |
-          draft=false
-          if [ -n "$PULL_REQUEST" ]; then
-            draft="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PULL_REQUEST" --jq '.draft')"
-          fi
-          echo "draft state: $draft"
-          echo "draft=$draft" >> "$GITHUB_OUTPUT"
+    with:
+      runner: ${{ fromJSON(needs.plan.outputs.plan).runner }}
 
   # zingolib is upstream of its consumers. No file under .github names the
   # repository of a consumer, in a call, a checkout, a command, or a comment.
   ci-independent-of-consumers:
     name: CI independent of consumers
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -94,7 +82,8 @@ jobs:
   # No workflow names the toolchain action or the cache action directly.
   one-rust-setup:
     name: One Rust setup
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -111,7 +100,8 @@ jobs:
   # below falls back to the check.
   cargo-hack-check:
     name: Cargo Hack ${{ inputs.cargo-hack-subcommand == 'build' && 'Build' || 'Check' }}
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: ${{ inputs.cargo-hack-subcommand == 'build' && 90 || 45 }}
     steps:
       - name: Checkout repository
@@ -140,7 +130,8 @@ jobs:
   # coverage against its own manifest.
   netutils-standalone:
     name: zingo-netutils (standalone workspace)
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: 30
     env:
       RUSTFLAGS: -D warnings
@@ -197,9 +188,11 @@ jobs:
   # every push builds once, cold.
   binding-layer-android:
     if: ${{ inputs.skip-binding-layer-build != true }}
+    needs: plan
     uses: ./.github/workflows/binding-layer-android.yaml
     with:
       abis: '["x86_64"]'
+      runner: ${{ fromJSON(needs.plan.outputs.plan).runner }}
 
   # The `nym` feature gates the mixnet transmission and price-fetch surfaces
   # (ADR 0011) in zingolib and zingo-cli. zingo-cli carries it as a default
@@ -209,7 +202,8 @@ jobs:
   # must keep compiling and rendering.
   nym-feature:
     name: nym feature (zingolib + zingo-cli)
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: 45
     env:
       RUSTFLAGS: -D warnings
@@ -244,10 +238,10 @@ jobs:
 
   run-doc-tests:
     name: Run doc tests
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: 30
-    needs: draft-state
-    if: ${{ needs.draft-state.outputs.draft != 'true' }}
+    if: ${{ needs.plan.outputs.draft != 'true' }}
     env:
       RUSTFLAGS: -D warnings
     steps:
@@ -261,11 +255,12 @@ jobs:
         run: cargo test --doc
 
   test:
-    needs: draft-state
-    if: ${{ needs.draft-state.outputs.draft != 'true' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.draft != 'true' }}
     uses: ./.github/workflows/test.yaml
     permissions:
       contents: read
       packages: write
     with:
+      plan: ${{ needs.plan.outputs.plan }}
       nextest-flags: "-E 'not test(slow)'"

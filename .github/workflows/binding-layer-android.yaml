@@ -14,9 +14,8 @@ on:
         required: true
         type: string
       runner:
-        required: false
+        required: true
         type: string
-        default: ubuntu-24.04
 
 jobs:
   # The job already runs in android_builder:018, the image that the builder
@@ -96,7 +95,7 @@ jobs:
   package:
     name: Package the AAR
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 15
     env:
       ABIS: ${{ join(fromJSON(inputs.abis), ' ') }}

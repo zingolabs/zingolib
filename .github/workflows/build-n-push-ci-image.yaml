@@ -2,11 +2,11 @@ name: Docker Image CI/CD
 # Builds and publishes the reproducible test image
 # (ghcr.io/zingolabs/ci-build) on request, tagged with the
 # content-addressed tag Makefile.toml computes. Per-content tags, never
-# rolling tags: ensure-image.yaml keys on tag presence, so a rolling tag
+# rolling tags: ci-plan.yaml keys on tag presence, so a rolling tag
 # would neither rebuild nor reproduce.
 #
 # The CI workflows publish an absent tag themselves through
-# ensure-image.yaml, so this workflow is the manual path: a rebuild on
+# ci-plan.yaml, so this workflow is the manual path: a rebuild on
 # demand, or a build-only check of a feature branch.
 on:
   workflow_dispatch:
@@ -18,7 +18,7 @@ on:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write

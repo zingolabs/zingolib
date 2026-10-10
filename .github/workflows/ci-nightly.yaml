@@ -7,11 +7,16 @@ on:
     - cron: '30 3 * * *'
 
 jobs:
+  plan:
+    uses: ./.github/workflows/ci-plan.yaml
+    permissions:
+      contents: read
+      packages: write
 
   # The binding-layer-android job below builds x86_64 with the other ABIs,
   # so the per-PR workflow skips its own x86_64 build here. The per-PR
   # cargo-hack job builds every feature set instead of checking it, with
-  # the flags that job alone holds.
+  # the flags that job alone holds. The called workflow runs its own plan.
   pr-checks:
     uses: ./.github/workflows/ci-pr.yaml
     permissions:
@@ -23,7 +28,8 @@ jobs:
 
   feature-census:
     name: Feature Census
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: 90
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     steps:
@@ -45,7 +51,8 @@ jobs:
   # dispatch, never on a call from a pull request.
   sync-ab:
     name: Sync A/B (dev against the day before)
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: 300
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     steps:
@@ -85,15 +92,25 @@ jobs:
   # and both XCFrameworks with the Swift sources on macOS. Each job runs
   # the builder on this commit.
   binding-layer-android:
+    needs: plan
     uses: ./.github/workflows/binding-layer-android.yaml
     with:
       abis: '["x86_64", "x86", "arm64-v8a", "armeabi-v7a"]'
+      runner: ${{ fromJSON(needs.plan.outputs.plan).runner }}
 
+  # The CI_IOS_RUNNER repository variable, when set, overrides the plan's
+  # label, so a runner outage is a settings change and not a commit.
   binding-layer-ios:
+    needs: plan
     uses: ./.github/workflows/binding-layer-ios.yaml
+    with:
+      runner: ${{ vars.CI_IOS_RUNNER || fromJSON(needs.plan.outputs.plan).ios_runner }}
 
   test:
+    needs: plan
     uses: ./.github/workflows/test.yaml
     permissions:
       contents: read
       packages: write
+    with:
+      plan: ${{ needs.plan.outputs.plan }}

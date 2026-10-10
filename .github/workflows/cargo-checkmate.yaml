@@ -2,11 +2,15 @@ name: Cargo Checkmate
 
 on:
   workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
 
 jobs:
   cargo-checkmate:
     name: Cargo Checkmate
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 30
     strategy:
       matrix:

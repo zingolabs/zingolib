@@ -3,27 +3,29 @@ name: Test
 on:
   workflow_call:
     inputs:
+      # The JSON object ci-plan.yaml computes, passed down so this
+      # workflow runs no plan job of its own.
+      plan:
+        required: true
+        type: string
       nextest-flags:
         required: false
         type: string
 
 env:
   NEXTEST-FLAGS: ${{ inputs.nextest-flags }}
-  NEXTEST_VERSION: "0.9.132"
 
+# The image holds the toolchain, the system libraries, and nextest at the
+# version .env.testing-artifacts pins, so neither job installs a tool.
 jobs:
-  ensure-image:
-    uses: ./.github/workflows/ensure-image.yaml
-
   build-test-artifacts:
     name: Build test artifacts
-    needs: ensure-image
     container:
-      image: ghcr.io/zingolabs/ci-build:${{ needs.ensure-image.outputs.image-tag }}
+      image: ${{ fromJSON(inputs.plan).image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(inputs.plan).runner }}
     timeout-minutes: 60
     env:
       RUSTFLAGS: -D warnings
@@ -33,16 +35,6 @@ jobs:
 
       - name: Setup Rust and the cargo cache
         uses: ./.github/actions/rust-setup
-
-      - name: Install nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@${{ env.NEXTEST_VERSION }}
-
-      - name: Install system deps
-        run: |
-          apt-get update
-          apt-get install -y libsqlite3-dev pkg-config
 
       - name: Build and archive tests
         run: |
@@ -59,13 +51,13 @@ jobs:
 
   run-tests:
     name: Run normal tests
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(inputs.plan).runner }}
     timeout-minutes: 90
-    needs: [build-test-artifacts, ensure-image]
+    needs: build-test-artifacts
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: ghcr.io/zingolabs/ci-build:${{ needs.ensure-image.outputs.image-tag }}
+      image: ${{ fromJSON(inputs.plan).image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -73,7 +65,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        partition: ${{ fromJSON(inputs.plan).partitions }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -84,20 +76,17 @@ jobs:
       - name: Symlink lightwalletd and zcash binaries
         run: ln -s /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad ./test_binaries/bins/
 
-      - name: Install nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@${{ env.NEXTEST_VERSION }}
-
       - name: Download normal archive
         uses: actions/download-artifact@v8
         with:
           name: nextest-archive-normal
 
+      # The partition count is the matrix's length, so the plan's list is
+      # the one statement of the shard count.
       - name: Run normal tests
         run: |
           cargo nextest run --verbose --profile ci --retries 0 \
             --archive-file nextest-archive-normal.tar.zst \
             --workspace-remap ./ \
-            --partition count:${{ matrix.partition }}/16 \
+            --partition count:${{ matrix.partition }}/${{ strategy.job-total }} \
             ${{ env.NEXTEST-FLAGS }}

@@ -6,13 +6,11 @@ name: Binding Layer for iOS
 on:
   workflow_call:
     inputs:
-      # The CI_IOS_RUNNER repository variable sets the runner label. The
-      # fallback warp-macos-15-arm64-12x is WarpBuild's 12-vCPU M4 Pro
-      # machine. The stock macos-15 label has three cores.
+      # The caller passes the plan's ios_runner, WarpBuild's 12-vCPU M4
+      # Pro machine; the stock macos-15 label has three cores.
       runner:
-        required: false
+        required: true
         type: string
-        default: ${{ vars.CI_IOS_RUNNER || 'warp-macos-15-arm64-12x' }}
 
 jobs:
   build:

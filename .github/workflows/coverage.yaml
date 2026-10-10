@@ -10,18 +10,21 @@ permissions:
   packages: write
 
 jobs:
-  ensure-image:
-    uses: ./.github/workflows/ensure-image.yaml
+  plan:
+    uses: ./.github/workflows/ci-plan.yaml
 
+  # The image holds the toolchain, the system libraries, and nextest at
+  # the version .env.testing-artifacts pins; cargo-llvm-cov alone is
+  # installed here.
   coverage:
     name: Coverage
-    needs: ensure-image
-    runs-on: ubuntu-24.04
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
     timeout-minutes: 180
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: ghcr.io/zingolabs/ci-build:${{ needs.ensure-image.outputs.image-tag }}
+      image: ${{ fromJSON(needs.plan.outputs.plan).image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -39,16 +42,6 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
-
-      - name: Install nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@0.9.78
-
-      - name: Install system deps
-        run: |
-          apt-get update
-          apt-get install -y libsqlite3-dev pkg-config
 
       - name: create binaries dir
         run: mkdir -p ./test_binaries/bins
