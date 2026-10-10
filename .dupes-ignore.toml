@@ -275,10 +275,6 @@ fingerprint = "66229d808c4cfe00"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/perspective.rs:376"
 
 [[ignore]]
-fingerprint = "689d0a112c271dc8"
-reason = "baseline at 639986655: exact group of 3, first member tools/workbench/src/bin/sweep-teardown.rs:44"
-
-[[ignore]]
 fingerprint = "6b31fa28e613abd8"
 reason = "baseline at 639986655: exact group of 7, first member zingolib/src/perspective/value_transfer.rs:264"
 

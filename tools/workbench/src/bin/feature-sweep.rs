@@ -3,11 +3,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use workbench::{
-    cargo_subcommand_version, declares_a_package, display_relative, merge_base, repo_root, run,
-    touched_manifests, DEFAULT_BASE, MANIFEST,
-};
-
 const HACK: &str = "hack";
 const INSTALL_HACK: &str = "cargo install cargo-hack";
 
@@ -32,25 +27,23 @@ enum Scope {
     Touched(Vec<PathBuf>),
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    run("feature-sweep", || sweep(&args), |()| {})
+fn main() -> ! {
+    workbench::dispatch_from_root("feature-sweep", sweep)
 }
 
 /// Checks each selected crate in every feature combination, failing on the first refusal.
-fn sweep(args: &[String]) -> Result<(), Vec<String>> {
+fn sweep(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
         return Ok(());
     }
 
-    let root = repo_root()?;
-    cargo_subcommand_version(HACK, INSTALL_HACK)?;
+    workbench::cargo_subcommand_version(HACK, INSTALL_HACK)?;
 
-    match scope(&root, args)? {
+    match scope(root, args)? {
         Scope::Workspace => {
             println!("feature-sweep: the whole workspace, every feature combination");
-            check(&root, &["--workspace".to_string()])
+            check(root, &["--workspace".to_string()])
         }
         Scope::Touched(manifests) if manifests.is_empty() => {
             println!("feature-sweep: no crate is touched; nothing to check");
@@ -58,11 +51,14 @@ fn sweep(args: &[String]) -> Result<(), Vec<String>> {
         }
         Scope::Touched(manifests) => {
             for manifest in &manifests {
-                println!("feature-sweep: {}", display_relative(&root, manifest));
+                println!(
+                    "feature-sweep: {}",
+                    workbench::display_relative(root, manifest)
+                );
             }
             for manifest in &manifests {
                 let path = manifest.to_string_lossy().to_string();
-                check(&root, &["--manifest-path".to_string(), path])?;
+                check(root, &["--manifest-path".to_string(), path])?;
             }
             Ok(())
         }
@@ -78,7 +74,10 @@ fn print_usage() {
     println!("fails here rather than after the push.");
     println!();
     println!("  --all          check every workspace member (CI's own command)");
-    println!("  --base <ref>   compare against <ref> instead of {DEFAULT_BASE}");
+    println!(
+        "  --base <ref>   compare against <ref> instead of {}",
+        workbench::DEFAULT_BASE
+    );
     println!("  <crate-dir>    check these crates and no others");
     println!();
     println!("With no argument the sweep checks the crates this branch touches.");
@@ -94,7 +93,7 @@ fn scope(root: &Path, args: &[String]) -> Result<Scope, Vec<String>> {
     if !request.crates.is_empty() {
         let mut manifests = Vec::new();
         for name in &request.crates {
-            let manifest = root.join(name).join(MANIFEST);
+            let manifest = root.join(name).join(workbench::MANIFEST);
             if !manifest.is_file() {
                 return Err(vec![format!("no crate at {}", manifest.display())]);
             }
@@ -118,7 +117,7 @@ struct Request {
 fn parse(args: &[String]) -> Result<Request, Vec<String>> {
     let mut request = Request {
         all: false,
-        base: DEFAULT_BASE.to_string(),
+        base: workbench::DEFAULT_BASE.to_string(),
         crates: Vec::new(),
     };
     let mut iter = args.iter();
@@ -148,13 +147,7 @@ fn parse(args: &[String]) -> Result<Request, Vec<String>> {
 
 /// - Runs `git merge-base`, `git diff`, `cargo locate-project` and `cargo pkgid` through the library.
 fn touched_packages(root: &Path, base: &str) -> Result<Vec<PathBuf>, Vec<String>> {
-    let mut packages = Vec::new();
-    for manifest in touched_manifests(root, &merge_base(root, base)?)? {
-        if declares_a_package(&manifest)? {
-            packages.push(manifest);
-        }
-    }
-    Ok(packages)
+    workbench::touched_packages(root, &workbench::merge_base(root, base)?)
 }
 
 /// Runs one cargo-hack check, reporting the command a reader can repeat by hand.
@@ -196,7 +189,7 @@ mod tests {
             parse(&[]).unwrap(),
             Request {
                 all: false,
-                base: DEFAULT_BASE.to_string(),
+                base: workbench::DEFAULT_BASE.to_string(),
                 crates: Vec::new(),
             }
         );

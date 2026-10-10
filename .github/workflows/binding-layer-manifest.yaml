@@ -55,21 +55,13 @@ jobs:
       # on a push they are those of the commit before the push, and the
       # registry is asked about every entry, because it keeps every
       # published bundle. A branch's first push has no commit before it,
-      # and a force-push names one the checkout no longer holds; both
-      # check every entry.
+      # and a force-push names one the checkout no longer holds; the tool
+      # checks every entry in both cases.
       - name: Check bindings/published.toml
         env:
           BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || github.event.before }}
           ALL_DIGESTS: ${{ github.event_name == 'push' && '--all-digests' || '' }}
         run: |
-          case "$BASE" in
-            *[!0]*) ;;
-            *) BASE="" ;;
-          esac
-          if [ -n "$BASE" ] && ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
-            echo "::warning::${BASE} is not in this checkout, so every entry is checked"
-            BASE=""
-          fi
           cargo run --manifest-path tools/workbench/Cargo.toml \
             --bin binding-manifest -- \
-            --check ${BASE:+--base "$BASE"} $ALL_DIGESTS
+            --check --base "$BASE" $ALL_DIGESTS

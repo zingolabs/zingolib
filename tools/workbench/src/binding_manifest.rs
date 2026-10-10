@@ -36,6 +36,7 @@ const USAGE: &str =
     "usage: binding-manifest --check [--base <ref>] [--all-digests] | binding-manifest --newest | binding-manifest --orasust-version";
 pub const PUBLISH_COMMAND: &str = "/publish";
 const CHECKOUTS_DIR: &str = "target/binding-manifest";
+const BRANCH_TIP: &str = "HEAD";
 const TREE_ARGS: [&str; 8] = [
     "tree", "--locked", "--edges", "normal", "--depth", "1", "--prefix", "none",
 ];
@@ -43,8 +44,6 @@ const TREE_FORMAT: [&str; 2] = ["--format", crate::PACKAGE_ID_FORMAT];
 const ARRAY_OPEN: char = '[';
 const ARRAY_CLOSE: char = ']';
 const ITEM_SEPARATOR: char = ',';
-const DIR_OPEN: &str = " (";
-const DIR_CLOSE: char = ')';
 const FIRST_ORDINAL: usize = 1;
 
 fn ordinal(index: usize) -> usize {
@@ -73,17 +72,19 @@ impl fmt::Display for AuditedCrate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}{DIR_OPEN}{}{DIR_CLOSE}",
+            "{}{}{}{}",
             self.name,
-            self.dir.display()
+            crate::PACKAGE_DIR_OPEN,
+            self.dir.display(),
+            crate::PACKAGE_DIR_CLOSE
         )
     }
 }
 
 impl AuditedCrate {
     pub fn parse(text: &str) -> Option<Self> {
-        let (name, rest) = text.split_once(DIR_OPEN)?;
-        let dir = rest.strip_suffix(DIR_CLOSE)?;
+        let (name, rest) = text.split_once(crate::PACKAGE_DIR_OPEN)?;
+        let dir = rest.strip_suffix(crate::PACKAGE_DIR_CLOSE)?;
         (!name.is_empty() && !name.contains(' ') && !dir.is_empty()).then(|| Self {
             name: name.to_string(),
             dir: PathBuf::from(dir),
@@ -475,8 +476,15 @@ pub fn with_checkout<T>(
     crate::create_parent(&dir)?;
     crate::git_in(root, &["worktree", "add", "--detach", &dir_text, commit])?;
     let result = body(&dir);
-    remove()?;
-    result
+    match (result, remove()) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Ok(_), Err(removal)) => Err(removal),
+        (Err(diagnostics), Ok(())) => Err(diagnostics),
+        (Err(mut diagnostics), Err(removal)) => {
+            diagnostics.extend(removal);
+            Err(diagnostics)
+        }
+    }
 }
 
 /// - Creates and removes one detached worktree per entry through [`with_checkout`].
@@ -515,6 +523,44 @@ fn commits_exist(root: &Path, entries: &[Entry]) -> Result<(), Vec<String>> {
     commits
         .iter()
         .try_for_each(|commit| crate::commit_of(root, commit).map(drop))
+}
+
+/// - Runs `git rev-parse` once, then `git merge-base --is-ancestor` in `root` once per commit the
+///   manifest names.
+fn commits_reachable(root: &Path, entries: &[Entry]) -> Result<(), Vec<String>> {
+    commits_exist(root, entries)?;
+    let mut diagnostics = Vec::new();
+    for (index, entry) in entries.iter().enumerate() {
+        let label = format!("entry {} ({})", ordinal(index), entry.commit);
+        if !crate::is_ancestor(root, &entry.commit, BRANCH_TIP)? {
+            diagnostics.push(format!(
+                "{label} is not an ancestor of {BRANCH_TIP}, so it is not a commit of this branch"
+            ));
+        }
+        if let Some(since) = &entry.since {
+            if !crate::is_ancestor(root, since, &entry.commit)? {
+                diagnostics.push(format!(
+                    "{label} names a since commit {since} that is not an ancestor of its commit"
+                ));
+            }
+        }
+    }
+    crate::verdict(diagnostics)
+}
+
+fn merged_base<'a>(root: &Path, base: Option<&'a str>) -> Result<Option<&'a str>, Vec<String>> {
+    let Some(base) = base else {
+        return Ok(None);
+    };
+    let no_commit_before = base.len() == COMMIT_LENGTH && base.bytes().all(|byte| byte == b'0');
+    if base.is_empty() || no_commit_before {
+        return Ok(None);
+    }
+    if crate::commit_of(root, base).is_err() {
+        eprintln!("warning: {base} is not a commit of this checkout, so every entry is checked");
+        return Ok(None);
+    }
+    Ok(Some(base))
 }
 
 pub fn private_package_hint(name: &str) -> String {
@@ -575,8 +621,10 @@ fn registry_diagnostics(entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
 /// - Reads `bindings/published.toml` and, with `--base`, its copy at that git revision.
 /// - Runs `git` child processes in `root`, and `cargo tree` in a detached worktree of each
 ///   entry appended after the base's.
-/// - Fetches one manifest per platform from the registry, anonymously and concurrently, for the
-///   appended entries, or for every entry with `--all-digests`.
+/// - Runs `orasust resolve` and `orasust manifest fetch` as child processes, in series, once per
+///   recorded digest of the appended entries, or of every entry with `--all-digests`.
+/// - Writes a warning to stderr when `--base` names no commit of the checkout, and then checks
+///   every entry.
 pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     match args.first().map(String::as_str) {
         Some(CHECK_FLAG) => check(root, args),
@@ -594,8 +642,8 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
 
 fn check(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let head = entries_at(root, None)?;
-    commits_exist(root, &head)?;
-    let merged = match crate::flag_value(args, BASE_FLAG)? {
+    commits_reachable(root, &head)?;
+    let merged = match merged_base(root, crate::flag_value(args, BASE_FLAG)?)? {
         Some(base) => {
             let base = entries_at(root, Some(base))?;
             unchanged_since_base(&base, &head)?;
@@ -644,10 +692,11 @@ pub fn newest_publishable(entries: &[Entry]) -> Result<&str, Vec<String>> {
 }
 
 /// - Reads `bindings/published.toml` under `root`.
-/// - Runs `git rev-parse` in `root` over every commit the manifest names.
+/// - Runs `git rev-parse` and `git merge-base --is-ancestor` in `root` over every commit the
+///   manifest names.
 pub fn newest_awaiting(root: &Path) -> Result<String, Vec<String>> {
     let entries = parse_at(root, None)?;
-    commits_exist(root, &entries)?;
+    commits_reachable(root, &entries)?;
     newest_publishable(&entries).map(str::to_string)
 }
 
@@ -1081,6 +1130,84 @@ mod tests {
             .unwrap_err()
             .concat();
         assert!(diagnostic.contains(FIRST), "{diagnostic}");
+    }
+
+    fn git(dir: &Path, args: &[&str]) -> String {
+        let identity = [
+            "-c",
+            "user.name=workbench",
+            "-c",
+            "user.email=workbench@example.invalid",
+        ];
+        crate::git_in(dir, &[identity.as_slice(), args].concat())
+            .unwrap()
+            .trim()
+            .to_string()
+    }
+
+    fn commit_on(dir: &Path, subject: &str) -> String {
+        git(
+            dir,
+            &["commit", "--quiet", "--allow-empty", "--message", subject],
+        );
+        git(dir, &["rev-parse", BRANCH_TIP])
+    }
+
+    #[test]
+    fn a_manifest_commit_must_lie_on_the_branch_and_after_its_since() {
+        let repo = std::env::temp_dir().join(format!(
+            "workbench-commits-reachable-{}",
+            std::process::id()
+        ));
+        crate::fresh_dir(&repo).unwrap();
+        git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
+        let root_commit = commit_on(&repo, "root");
+        git(&repo, &["switch", "--quiet", "--create", "side"]);
+        let side = commit_on(&repo, "side");
+        git(&repo, &["switch", "--quiet", "main"]);
+        let tip = commit_on(&repo, "tip");
+
+        assert_eq!(
+            commits_reachable(&repo, &[entry(&tip, Some(&root_commit), &[ANDROID])]),
+            Ok(())
+        );
+        let off_branch = commits_reachable(&repo, &[entry(&side, Some(&root_commit), &[ANDROID])])
+            .unwrap_err()
+            .concat();
+        assert!(
+            off_branch.contains(&side) && off_branch.contains(BRANCH_TIP),
+            "{off_branch}"
+        );
+        let later_since = commits_reachable(&repo, &[entry(&tip, Some(&side), &[ANDROID])])
+            .unwrap_err()
+            .concat();
+        assert!(later_since.contains(&side), "{later_since}");
+        std::fs::remove_dir_all(&repo).unwrap();
+    }
+
+    #[test]
+    fn an_absent_base_checks_every_entry_and_a_present_one_is_kept() {
+        let root = crate::repo_root().unwrap();
+        let no_commit_before = "0".repeat(COMMIT_LENGTH);
+        assert_eq!(merged_base(&root, None), Ok(None));
+        assert_eq!(merged_base(&root, Some("")), Ok(None));
+        assert_eq!(merged_base(&root, Some(&no_commit_before)), Ok(None));
+        assert_eq!(merged_base(&root, Some("no-such-ref")), Ok(None));
+        assert_eq!(merged_base(&root, Some(BRANCH_TIP)), Ok(Some(BRANCH_TIP)));
+    }
+
+    #[test]
+    fn a_checkout_body_failure_survives_the_worktree_removal() {
+        let repo =
+            std::env::temp_dir().join(format!("workbench-checkout-failure-{}", std::process::id()));
+        crate::fresh_dir(&repo).unwrap();
+        git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
+        let tip = commit_on(&repo, "tip");
+        let failure = vec!["the body failed".to_string()];
+        let result: Result<(), Vec<String>> = with_checkout(&repo, &tip, |_| Err(failure.clone()));
+        assert_eq!(result, Err(failure));
+        assert!(!repo.join(CHECKOUTS_DIR).join(&tip).exists());
+        std::fs::remove_dir_all(&repo).unwrap();
     }
 
     #[test]
