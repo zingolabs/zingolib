@@ -10,7 +10,7 @@ pub const REPOSITORY_OWNER_PATH: &str = "zingolabs/zingolib/";
 pub const ANDROID: &str = "android";
 pub const IOS: &str = "ios";
 pub const PLATFORMS: [&str; 2] = [ANDROID, IOS];
-pub const REQUIRED_PLATFORMS: [&str; 1] = [ANDROID];
+pub const REQUIRED_PLATFORMS: [&str; 2] = PLATFORMS;
 pub const REVISION_ANNOTATION: &str = "org.opencontainers.image.revision";
 const PATH_SEPARATOR: &str = "/";
 const TAG_SEPARATOR: &str = ":";
@@ -846,9 +846,11 @@ mod tests {
 
     #[test]
     fn the_required_set_difference_has_one_home() {
+        assert_eq!(REQUIRED_PLATFORMS, PLATFORMS);
         assert_eq!(missing_required(&[]), REQUIRED_PLATFORMS);
         assert_eq!(missing_required(&PLATFORMS), Vec::<&str>::new());
         assert_eq!(missing_required(&[IOS]), [ANDROID]);
+        assert_eq!(missing_required(&[ANDROID]), [IOS]);
         assert_eq!(
             repository(ANDROID),
             "zingolabs/zingolib/binding-layer-android"
@@ -869,7 +871,12 @@ mod tests {
 
     #[test]
     fn the_newest_commit_is_the_last_entry_only_while_it_awaits_publish() {
-        let published = entry(FIRST, Some(ORIGIN), &[ANDROID]);
+        let published = entry(FIRST, Some(ORIGIN), &PLATFORMS);
+        let android_only = entry(FIRST, Some(ORIGIN), &[ANDROID]);
+        assert_eq!(
+            newest_commit(std::slice::from_ref(&android_only)),
+            Ok(FIRST)
+        );
         let diagnostic = newest_commit(std::slice::from_ref(&published))
             .unwrap_err()
             .concat();
@@ -887,7 +894,7 @@ mod tests {
 
     #[test]
     fn recording_the_audited_crates_adds_the_array_line_or_replaces_it() {
-        let text = manifest(&[entry(FIRST, Some(ORIGIN), &[ANDROID])]);
+        let text = manifest(&[entry(FIRST, Some(ORIGIN), &PLATFORMS)]);
         let mut bare = entry(SECOND, None, &[]);
         bare.audited.clear();
         let appended = format!("{text}{}", manifest(&[bare]));
@@ -897,9 +904,11 @@ mod tests {
         assert_eq!(parsed[1].audited, crates);
         assert_eq!(
             validate(&parsed),
-            Err(vec![format!(
-                "entry 2 ({SECOND}) names no android digest; it awaits `/publish`, which records it"
-            )])
+            Err(PLATFORMS
+                .map(|platform| format!(
+                    "entry 2 ({SECOND}) names no {platform} digest; it awaits `/publish`, which records it"
+                ))
+                .to_vec())
         );
         let replaced = recorded_audited(&with_audited, SECOND, &crates[..1]).unwrap();
         assert_eq!(parse(&replaced).unwrap()[1].audited, crates[..1]);
@@ -929,7 +938,9 @@ mod tests {
         .concat();
         assert!(diagnostics.contains("first and names no since"));
         assert!(diagnostics.contains("names no android digest"));
-        assert_eq!(validate(&[entry(FIRST, Some(ORIGIN), &[ANDROID])]), Ok(()));
+        assert!(diagnostics.contains("names no ios digest"));
+        assert_eq!(validate(&[entry(FIRST, Some(ORIGIN), &PLATFORMS)]), Ok(()));
+        assert!(validate(&[entry(FIRST, Some(ORIGIN), &[ANDROID])]).is_err());
         assert!(validate(&[entry(FIRST, Some(ORIGIN), &[IOS])]).is_err());
         assert!(diagnostics.contains("only the first entry may"));
         assert!(diagnostics.contains("repeats an earlier entry"));

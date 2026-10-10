@@ -11,13 +11,14 @@
 # binding-changelog takes the commits and the audited crates of
 # bindings/CHANGELOG.md from it.
 #
-# An entry names every platform that binding-manifest requires, and any
-# other platform whose bundle was published too. The required set lives in
-# REQUIRED_PLATFORMS of tools/workbench/src/binding_manifest.rs alone; the
-# publish workflow asks the tool rather than naming a platform itself.
-# Before zingo-mobile adopts this publication, ios must join that set
-# (zingolib#2833, decision 6), because zingo-mobile ships both platforms
-# from one commit.
+# An entry names every platform that binding-manifest requires. The
+# required set lives in REQUIRED_PLATFORMS of
+# tools/workbench/src/binding_manifest.rs alone, and it names both
+# platforms (zingolib#2833, decision 6): a consumer ships both from one
+# commit, and an entry never changes after its merge, so an entry that
+# lacked one digest could never gain it. The publish workflow asks the
+# tool rather than naming a platform itself, and the tool refuses to push
+# anything when a required platform's build produced no bundle.
 #
 # [[entry]]
 # commit = "<the full zingolib commit>"
