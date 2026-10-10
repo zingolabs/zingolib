@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `wallet::keys::WalletKind` and `LightWallet::kind`, the wallet's key material as one of `Mnemonic`, `SpendingKey`, `ViewingKey` with the receivers the key holds, or `NoKeys`, or `KeyError::NoAccountKeys` for a wallet without account zero. zingo-cli and the FFI each computed this themselves.
 
 ### Changed
+- `SaplingParams` is a plain struct whose `SPEND` and `OUTPUT` constants are
+  the embedded Sapling proving parameters, read by `include_bytes!` straight
+  from the parameter cache the build script downloads into. `SaplingParams::get`
+  and the `rust-embed` dependency are gone, the build script no longer writes
+  into the source tree, and `zingolib/zcash-params/` is no longer a tracked
+  stub; delete any stale copy there by hand.
 - A transaction targeting a height at or above the NU7 activation expires 120
   blocks past its target, the delta ZIP 203 and ZIP 218 recommend for
   25-second blocks, where it expired 40 blocks past. Below the activation,
