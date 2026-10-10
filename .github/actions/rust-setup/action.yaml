@@ -21,6 +21,10 @@ inputs:
       as the phases of a matrix, so that each keeps its own entry.
     required: false
     default: ""
+  cache-bin:
+    description: Whether the cache holds CARGO_HOME/bin; off where the image already holds the tools.
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -31,5 +35,6 @@ runs:
         components: ${{ inputs.components }}
         cache-workspaces: ${{ inputs.workspaces }}
         cache-key: ${{ inputs.key }}
+        cache-bin: ${{ inputs.cache-bin }}
         cache-on-failure: "false"
         cache-save-if: ${{ github.ref == 'refs/heads/dev' }}

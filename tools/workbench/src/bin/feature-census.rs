@@ -4,7 +4,10 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use workbench::{git, read, repo_root, run, MANIFEST};
+use workbench::{
+    display_relative, merge_base, read, repo_root, run, touched_manifests, workspace_manifests,
+    workspace_members, DEFAULT_BASE, MANIFEST,
+};
 
 /// The blessed entries, one per line, relative to the repository root.
 const BLESSING_PATH: &str = "tools/workbench/feature-census-blessed.txt";
@@ -18,14 +21,11 @@ const KEY_SEPARATOR: &str = "::";
 /// The build directory the census keeps apart from an ordinary check.
 const CENSUS_TARGET_DIR: &str = "target/census";
 
-/// The branch a census compares against when the caller names no base.
-const DEFAULT_BASE: &str = "origin/dev";
-
-/// The fallback base for a checkout whose remote branch is absent.
-const FALLBACK_BASE: &str = "dev";
-
-/// The key a dependency's feature list is spelled under.
-const FEATURES_KEY: &str = "features = [";
+const DEPENDENCIES: &str = "dependencies";
+const DEPENDENCY_TABLES: [&str; 3] = [DEPENDENCIES, "dev-dependencies", "build-dependencies"];
+const WORKSPACE_TABLE: &str = "workspace";
+const TARGET_TABLE: &str = "target";
+const FEATURES: &str = "features";
 
 /// The feature set a crate is probed under where its whole set is
 /// unaffordable, because probing once per feature would resolve and build
@@ -47,10 +47,7 @@ struct Candidate {
     dependency: String,
     /// The feature itself.
     feature: String,
-    /// Where the enclosing feature list's body starts in the manifest text.
-    body_start: usize,
-    /// Where that body ends, at its closing bracket.
-    body_end: usize,
+    path: Vec<String>,
 }
 
 impl Candidate {
@@ -96,7 +93,7 @@ fn census(args: &[String]) -> Result<(), Vec<String>> {
     let root = repo_root()?;
     let request = parse(args)?;
     let manifests = match scope(&root, &request)? {
-        Scope::Everything => every_manifest(&root),
+        Scope::Everything => every_manifest(&root)?,
         Scope::Touched(paths) => paths,
     };
 
@@ -186,44 +183,21 @@ fn scope(root: &Path, request: &Request) -> Result<Scope, Vec<String>> {
         }
         return Ok(Scope::Touched(manifests));
     }
-    Ok(Scope::Touched(touched_manifests(root, &request.base)?))
+    Ok(Scope::Touched(touched_manifests(
+        root,
+        &merge_base(root, &request.base)?,
+    )?))
 }
 
-/// Every manifest the census knows how to probe, root first.
-fn every_manifest(root: &Path) -> Vec<PathBuf> {
-    let mut manifests = vec![root.join(MANIFEST)];
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return manifests;
-    };
-    let mut members: Vec<PathBuf> = entries
-        .flatten()
-        .map(|entry| entry.path().join(MANIFEST))
-        .filter(|manifest| manifest.is_file())
-        .collect();
-    members.sort();
-    manifests.extend(members);
-    manifests
-}
-
-/// The manifests of the crates this branch touches, against `base`.
-fn touched_manifests(root: &Path, base: &str) -> Result<Vec<PathBuf>, Vec<String>> {
-    let reference = if git(&["rev-parse", "--verify", "--quiet", base]).is_ok() {
-        base.to_string()
-    } else {
-        FALLBACK_BASE.to_string()
-    };
-    let changed = git(&["diff", "--name-only", &format!("{reference}...HEAD")])?;
-    let mut manifests: Vec<PathBuf> = Vec::new();
-    for line in changed.lines() {
-        let owner = match line.split_once('/') {
-            Some((directory, _)) => root.join(directory).join(MANIFEST),
-            None => root.join(MANIFEST),
-        };
-        if owner.is_file() && !manifests.contains(&owner) {
-            manifests.push(owner);
-        }
+/// - Runs `git ls-files` and `cargo tree` through the library, once per workspace.
+fn every_manifest(root: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
+    let mut manifests = Vec::new();
+    for workspace in workspace_manifests(root)? {
+        manifests.extend(workspace_members(&workspace)?);
+        manifests.push(workspace);
     }
     manifests.sort();
+    manifests.dedup();
     Ok(manifests)
 }
 
@@ -233,7 +207,7 @@ fn probe_manifest(root: &Path, manifest: &Path) -> Result<Vec<Candidate>, Vec<St
     let original = read(manifest)?;
     let mut unneeded = Vec::new();
 
-    for candidate in declared(&crate_dir, &original) {
+    for candidate in declared(&crate_dir, &original)? {
         let Some(without) = manifest_without(&original, &candidate) else {
             continue;
         };
@@ -248,107 +222,98 @@ fn probe_manifest(root: &Path, manifest: &Path) -> Result<Vec<Candidate>, Vec<St
     Ok(unneeded)
 }
 
-/// Every dependency feature `text` declares, in declaration order.
-fn declared(crate_dir: &str, text: &str) -> Vec<Candidate> {
-    let mut declared = Vec::new();
-    let mut cursor = 0;
-    while let Some(offset) = text[cursor..].find(FEATURES_KEY) {
-        let start = cursor + offset;
-        cursor = start + FEATURES_KEY.len();
-        if !opens_a_key(text, start) {
-            continue;
-        }
-        let Some(end) = text[cursor..].find(']') else {
-            break;
-        };
-        let dependency = owner(text, start);
-        let body_start = cursor;
-        let body_end = cursor + end;
-        for feature in quoted(&text[body_start..body_end]) {
-            declared.push(Candidate {
-                crate_dir: crate_dir.to_string(),
-                dependency: dependency.clone(),
-                feature,
-                body_start,
-                body_end,
-            });
-        }
-        cursor = body_end;
-    }
-    declared
+fn parsed(text: &str) -> Result<toml_edit::DocumentMut, Vec<String>> {
+    text.parse()
+        .map_err(|e| vec![format!("the manifest is not TOML: {e}")])
 }
 
-/// Whether the `features` at `start` opens its own key rather than ending another.
-fn opens_a_key(text: &str, start: usize) -> bool {
-    match text[..start].chars().next_back() {
-        None => true,
-        Some(previous) => !previous.is_alphanumeric() && previous != '-' && previous != '_',
+fn keys_of(item: &toml_edit::Item) -> Vec<String> {
+    match item {
+        toml_edit::Item::Table(table) => table.iter().map(|(key, _)| key.to_string()).collect(),
+        toml_edit::Item::Value(toml_edit::Value::InlineTable(table)) => {
+            table.iter().map(|(key, _)| key.to_string()).collect()
+        }
+        _ => Vec::new(),
     }
 }
 
-/// The dependency whose table encloses the feature list at `start`.
-fn owner(text: &str, start: usize) -> String {
-    for line in text[..start].lines().rev() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix('[') {
-            let table = rest.trim_end_matches(']');
-            return table
-                .rsplit('.')
-                .next()
-                .unwrap_or(table)
-                .trim_matches('"')
-                .to_string();
+fn item_at<'a>(root: &'a mut toml_edit::Item, path: &[String]) -> Option<&'a mut toml_edit::Item> {
+    path.iter().try_fold(root, |item, key| item.get_mut(key))
+}
+
+fn feature_array(dependency: &mut toml_edit::Item) -> Option<&mut toml_edit::Array> {
+    match dependency {
+        toml_edit::Item::Table(table) => table.get_mut(FEATURES)?.as_array_mut(),
+        toml_edit::Item::Value(toml_edit::Value::InlineTable(table)) => {
+            table.get_mut(FEATURES)?.as_array_mut()
         }
-        if let Some((name, value)) = trimmed.split_once('=') {
-            if value.trim_start().starts_with('{') {
-                return name.trim().trim_matches('"').to_string();
+        _ => None,
+    }
+}
+
+fn dependency_tables(root: &toml_edit::Item) -> Vec<Vec<String>> {
+    let mut tables: Vec<Vec<String>> = DEPENDENCY_TABLES
+        .iter()
+        .map(|table| vec![table.to_string()])
+        .collect();
+    tables.push(vec![WORKSPACE_TABLE.to_string(), DEPENDENCIES.to_string()]);
+    if let Some(targets) = root.get(TARGET_TABLE) {
+        for target in keys_of(targets) {
+            for table in DEPENDENCY_TABLES {
+                tables.push(vec![
+                    TARGET_TABLE.to_string(),
+                    target.clone(),
+                    table.to_string(),
+                ]);
             }
         }
     }
-    String::new()
+    tables
 }
 
-/// Every double-quoted item in one array body.
-fn quoted(body: &str) -> Vec<String> {
-    let mut items = Vec::new();
-    let mut rest = body;
-    while let Some(open) = rest.find('"') {
-        let after = &rest[open + 1..];
-        let Some(close) = after.find('"') else { break };
-        items.push(after[..close].to_string());
-        rest = &after[close + 1..];
+/// Every dependency feature `text` declares, in declaration order.
+fn declared(crate_dir: &str, text: &str) -> Result<Vec<Candidate>, Vec<String>> {
+    let mut document = parsed(text)?;
+    let root = document.as_item_mut();
+    let mut declared = Vec::new();
+    for table in dependency_tables(root) {
+        let dependencies = match item_at(root, &table) {
+            Some(dependencies) => keys_of(dependencies),
+            None => continue,
+        };
+        for dependency in dependencies {
+            let mut path = table.clone();
+            path.push(dependency.clone());
+            let features: Vec<String> = match item_at(root, &path).and_then(feature_array) {
+                Some(features) => features
+                    .iter()
+                    .filter_map(toml_edit::Value::as_str)
+                    .map(str::to_string)
+                    .collect(),
+                None => continue,
+            };
+            for feature in features {
+                declared.push(Candidate {
+                    crate_dir: crate_dir.to_string(),
+                    dependency: dependency.clone(),
+                    feature,
+                    path: path.clone(),
+                });
+            }
+        }
     }
-    items
+    Ok(declared)
 }
 
 /// `text` with `candidate`'s one feature item removed, or `None` if absent.
-///
-/// The enclosing list is rewritten as one line of the surviving items, which
-/// reformats the manifest for as long as the probe holds it. Every probe reads
-/// the original text and restores it afterwards, so the reformatting never
-/// outlives the one `cargo check` it was made for.
 fn manifest_without(text: &str, candidate: &Candidate) -> Option<String> {
-    if candidate.body_end > text.len() || candidate.body_start > candidate.body_end {
-        return None;
-    }
-    let body = &text[candidate.body_start..candidate.body_end];
-    let mut kept: Vec<String> = Vec::new();
-    let mut removed = false;
-    for item in quoted(body) {
-        if !removed && item == candidate.feature {
-            removed = true;
-            continue;
-        }
-        kept.push(format!("\"{item}\""));
-    }
-    if !removed {
-        return None;
-    }
-    let mut out = String::with_capacity(text.len());
-    out.push_str(&text[..candidate.body_start]);
-    out.push_str(&kept.join(", "));
-    out.push_str(&text[candidate.body_end..]);
-    Some(out)
+    let mut document = parsed(text).ok()?;
+    let features = item_at(document.as_item_mut(), &candidate.path).and_then(feature_array)?;
+    let position = features
+        .iter()
+        .position(|value| value.as_str() == Some(candidate.feature.as_str()))?;
+    features.remove(position);
+    Some(document.to_string())
 }
 
 /// Writes `text` to `path`, or a one-line diagnostic on failure.
@@ -394,14 +359,6 @@ fn crate_name(root: &Path, manifest: &Path) -> String {
             .unwrap_or_default(),
         None => ".".to_string(),
     }
-}
-
-/// A path as the repository sees it.
-fn display_relative(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .to_string()
 }
 
 /// The blessed keys and the reasons they carry.
@@ -481,6 +438,19 @@ fn bless(root: &Path, unneeded: &[Candidate]) -> Result<(), Vec<String>> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn every_manifest_reaches_the_nested_workspace_members() {
+        let root = repo_root().unwrap();
+        let manifests = every_manifest(&root).unwrap();
+        for member in ["zingo-ffi/lib", "zingo-ffi/uniffi-bindgen", "zingo-cli"] {
+            assert!(
+                manifests.contains(&root.join(member).join(MANIFEST)),
+                "{member} is a workspace member the census must probe"
+            );
+        }
+        assert!(manifests.contains(&root.join(MANIFEST)));
+    }
+
     /// A manifest's inline dependency tables yield one candidate per feature,
     /// each named by the dependency whose table encloses it.
     #[test]
@@ -493,7 +463,7 @@ reqwest = { workspace = true, default-features = false, features = [
 ] }
 serde = { workspace = true, features = ["derive"] }
 "#;
-        let found = declared("zingo-price", manifest);
+        let found = declared("zingo-price", manifest).unwrap();
         let keys: Vec<String> = found.iter().map(Candidate::key).collect();
         assert_eq!(
             keys,
@@ -505,31 +475,70 @@ serde = { workspace = true, features = ["derive"] }
         );
     }
 
+    #[test]
+    fn a_commented_out_feature_list_declares_nothing() {
+        let manifest =
+            "[dependencies]\n# reqwest = { features = [\"json\"] }\nserde = { workspace = true }\n";
+        assert_eq!(declared("zingo-price", manifest).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn workspace_and_target_dependencies_declare_features_too() {
+        let manifest = "[workspace.dependencies]\nhttp = { version = \"1\", features = [\"std\"] }\n\n\
+                        [target.'cfg(unix)'.dependencies]\nlibc = { version = \"0.2\", features = [\"extra_traits\"] }\n\n\
+                        [dependencies.reqwest]\nversion = \"0.12\"\nfeatures = [\"json\"]\n";
+        let keys: Vec<String> = declared(".", manifest)
+            .unwrap()
+            .iter()
+            .map(Candidate::key)
+            .collect();
+        assert_eq!(
+            keys,
+            vec![".::reqwest::json", ".::http::std", ".::libc::extra_traits"]
+        );
+    }
+
+    #[test]
+    fn a_bracket_inside_a_comment_does_not_end_the_list() {
+        let manifest =
+            "[dependencies]\nreqwest = { features = [\n    \"json\", # ]\n    \"socks\",\n] }\n";
+        let features: Vec<String> = declared("zingo-price", manifest)
+            .unwrap()
+            .into_iter()
+            .map(|candidate| candidate.feature)
+            .collect();
+        assert_eq!(features, vec!["json".to_string(), "socks".to_string()]);
+    }
+
     /// `default-features` never reads as a feature list of its own, so a
     /// dependency that disables defaults contributes no phantom candidate.
     #[test]
     fn default_features_is_not_a_feature_list() {
-        let manifest = "http = { version = \"1\", default-features = false }\n";
-        assert_eq!(declared("zingolib", manifest), Vec::new());
+        let manifest = "[dependencies]\nhttp = { version = \"1\", default-features = false }\n";
+        assert_eq!(declared("zingolib", manifest).unwrap(), Vec::new());
     }
 
-    /// Removal keeps every other item whether the list was written across
-    /// lines or all on one, which is what a single-line list needs.
+    /// Removal keeps every other item and every other line of the manifest,
+    /// whether the list was written across lines or all on one.
     #[test]
     fn removal_keeps_every_other_item() {
         for manifest in [
-            "reqwest = { features = [\n    \"json\",\n    \"socks\",\n] }\n",
-            "reqwest = { features = [\"json\", \"socks\"] }\n",
+            "[dependencies]\nreqwest = { features = [\n    \"json\",\n    \"socks\",\n] }\nserde = \"1\"\n",
+            "[dependencies]\nreqwest = { features = [\"json\", \"socks\"] }\nserde = \"1\"\n",
         ] {
             let candidate = declared("zingo-price", manifest)
+                .unwrap()
                 .into_iter()
                 .find(|found| found.feature == "json")
                 .expect("json is declared");
             let without = manifest_without(manifest, &candidate).expect("the feature is present");
-            assert_eq!(
-                without, "reqwest = { features = [\"socks\"] }\n",
-                "only the named feature leaves, in {manifest:?}"
-            );
+            let remaining: Vec<String> = declared("zingo-price", &without)
+                .unwrap()
+                .into_iter()
+                .map(|found| found.feature)
+                .collect();
+            assert_eq!(remaining, vec!["socks".to_string()], "in {manifest:?}");
+            assert!(without.ends_with("serde = \"1\"\n"), "the rest of {manifest:?} stays");
         }
     }
 
@@ -540,9 +549,11 @@ serde = { workspace = true, features = ["derive"] }
             crate_dir: "zingo-price".to_string(),
             dependency: "reqwest".to_string(),
             feature: "cookies".to_string(),
-            body_start: 0,
-            body_end: 0,
+            path: vec![DEPENDENCIES.to_string(), "reqwest".to_string()],
         };
-        assert_eq!(manifest_without("reqwest = { }\n", &candidate), None);
+        assert_eq!(
+            manifest_without("[dependencies]\nreqwest = { }\n", &candidate),
+            None
+        );
     }
 }

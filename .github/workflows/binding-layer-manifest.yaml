@@ -1,7 +1,8 @@
 # The workbench tool binding-manifest reads bindings/published.toml and fails
-# when an entry is malformed, names a commit this repository lacks, changed
-# after its merge, or names a digest that the registry does not serve for
-# that commit.
+# when an entry is malformed, awaits `/publish`, names a commit this
+# repository lacks, changed after its merge, records audited crates that
+# `cargo tree` at its commit does not report, or names a digest that the
+# registry does not serve for that commit.
 #
 # The check has its own workflow with no `paths` filter, for the reason
 # no-duplicated-code.yaml states: a required check must report on every pull
@@ -37,12 +38,35 @@ jobs:
         with:
           workspaces: tools/workbench
 
+      # The registry client is the orasust crate, whose release the
+      # workbench manifest pins under [package.metadata.orasust]. The cargo
+      # cache above hashes that manifest into its key and keeps the installed
+      # binary, so a bump misses the cache once and the build runs once per
+      # release.
+      - name: Install orasust
+        run: |
+          version="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --orasust-version)"
+          cargo install --locked "orasust@${version}"
+
       # On a pull request the merged entries are those of the base branch;
-      # on a push there is no base to compare with.
+      # on a push they are those of the commit before the push, and the
+      # registry is asked about every entry, because it keeps every
+      # published bundle. A branch's first push has no commit before it,
+      # and a force-push names one the checkout no longer holds; both
+      # check every entry.
       - name: Check bindings/published.toml
         env:
-          BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
+          BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || github.event.before }}
+          ALL_DIGESTS: ${{ github.event_name == 'push' && '--all-digests' || '' }}
         run: |
+          case "$BASE" in
+            *[!0]*) ;;
+            *) BASE="" ;;
+          esac
+          if [ -n "$BASE" ] && ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            echo "::warning::${BASE} is not in this checkout, so every entry is checked"
+            BASE=""
+          fi
           cargo run --manifest-path tools/workbench/Cargo.toml \
-            --features registry --bin binding-manifest -- \
-            --check ${BASE:+--base "$BASE"}
+            --bin binding-manifest -- \
+            --check ${BASE:+--base "$BASE"} $ALL_DIGESTS

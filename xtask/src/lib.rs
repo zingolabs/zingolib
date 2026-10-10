@@ -17,6 +17,7 @@ pub mod test;
 pub mod test_summary;
 pub mod workbench;
 
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio, exit};
@@ -255,11 +256,138 @@ pub fn commit_of(root: &Path, revision: &str) -> Result<String, Vec<String>> {
     .map_err(|_| vec![format!("{revision} is not a commit of this repository")])
 }
 
+pub const DEFAULT_BASE: &str = "origin/dev";
+
+pub const FALLBACK_BASE: &str = "dev";
+
+/// - Runs `git merge-base` in `root`, again against the fallback when the default base is absent.
+pub fn merge_base(root: &Path, base: &str) -> Result<String, Vec<String>> {
+    let found = |reference: &str| {
+        git_in(root, &["merge-base", "HEAD", reference]).map(|commit| commit.trim().to_string())
+    };
+    found(base)
+        .or_else(|absent| {
+            if base == DEFAULT_BASE {
+                found(FALLBACK_BASE)
+            } else {
+                Err(absent)
+            }
+        })
+        .map_err(|_| {
+            vec![
+                format!("no merge base between HEAD and '{base}'"),
+                "name a base that exists with --base <ref>".to_string(),
+            ]
+        })
+}
+
+const LOCKFILE: &str = "Cargo.lock";
+pub const MANIFEST_PATH_FLAG: &str = "--manifest-path";
+const LOCATE_PROJECT_ARGS: [&str; 3] = ["locate-project", "--message-format", "plain"];
+const PKGID: &str = "pkgid";
+pub const PACKAGE_ID_FORMAT: &str = "{p}";
+const MEMBERS_ARGS: [&str; 8] = [
+    "tree",
+    "--workspace",
+    "--depth",
+    "0",
+    "--prefix",
+    "none",
+    "--format",
+    PACKAGE_ID_FORMAT,
+];
+const PACKAGE_DIR_OPEN: &str = " (";
+const PACKAGE_DIR_CLOSE: char = ')';
+
+/// - Runs `cargo locate-project` as a child process in `dir`.
+pub fn manifest_above(dir: &Path) -> Result<PathBuf, Vec<String>> {
+    stdout_in(dir, CARGO, &LOCATE_PROJECT_ARGS, &[]).map(|path| PathBuf::from(path.trim()))
+}
+
+/// - Runs `cargo pkgid` as a child process with both output streams discarded.
+pub fn declares_a_package(manifest: &Path) -> Result<bool, Vec<String>> {
+    Command::new(CARGO)
+        .args([PKGID, MANIFEST_PATH_FLAG])
+        .arg(manifest)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .map_err(|e| vec![format!("failed to run {CARGO}: {e}")])
+}
+
+pub fn package_location(package: &str) -> Option<(&str, &Path)> {
+    let (head, rest) = package.split_once(PACKAGE_DIR_OPEN)?;
+    let dir = rest.strip_suffix(PACKAGE_DIR_CLOSE)?;
+    let name = head.split_whitespace().next()?;
+    Some((name, Path::new(dir)))
+}
+
+/// - Runs `cargo tree` as a child process.
+pub fn workspace_members(manifest: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
+    let args = [
+        MEMBERS_ARGS.as_slice(),
+        &[MANIFEST_PATH_FLAG, utf8(manifest)?],
+    ]
+    .concat();
+    let listing = stdout_of(CARGO, &args)?;
+    Ok(listing
+        .lines()
+        .filter_map(package_location)
+        .map(|(_, dir)| dir.join(MANIFEST))
+        .collect())
+}
+
+/// - Runs `git ls-files` in `root`.
+pub fn workspace_manifests(root: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
+    let nested = format!("*/{LOCKFILE}");
+    let lockfiles = git_in(root, &["ls-files", "--", LOCKFILE, &nested])?;
+    Ok(lockfiles
+        .lines()
+        .map(|lockfile| root.join(lockfile).with_file_name(MANIFEST))
+        .collect())
+}
+
+/// - Runs `git diff` in `root`, then `cargo locate-project` and `cargo pkgid` once per changed directory.
+pub fn touched_manifests(root: &Path, merge_base: &str) -> Result<Vec<PathBuf>, Vec<String>> {
+    let changed = git_in(root, &["diff", "--name-only", merge_base])?;
+    let dirs: BTreeSet<PathBuf> = changed
+        .lines()
+        .map(|file| existing_dir_of(root, Path::new(file)))
+        .collect();
+    let mut manifests = BTreeSet::new();
+    for dir in dirs {
+        let manifest = manifest_above(&dir)?;
+        let beside = manifest.parent() == Some(dir.as_path());
+        if beside || declares_a_package(&manifest)? {
+            manifests.insert(manifest);
+        }
+    }
+    Ok(manifests.into_iter().collect())
+}
+
+fn existing_dir_of(root: &Path, file: &Path) -> PathBuf {
+    root.join(file)
+        .ancestors()
+        .skip(1)
+        .find(|dir| dir.is_dir())
+        .map_or_else(|| root.to_path_buf(), Path::to_path_buf)
+}
+
+pub fn display_relative(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .to_string()
+}
+
 const BUILT_XTASK_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 const XTASK_RELATIVE_DIR: &str = "xtask";
 
 pub const MANIFEST: &str = "Cargo.toml";
+
+pub const LIST_SEPARATOR: &str = ", ";
 
 pub fn repo_root() -> Result<PathBuf, Vec<String>> {
     root_above(Path::new(BUILT_XTASK_DIR), XTASK_RELATIVE_DIR)
@@ -290,7 +418,13 @@ pub fn verdict(diagnostics: Vec<String>) -> Result<(), Vec<String>> {
 
 /// - Reads `path` from disk.
 pub fn read(path: &Path) -> Result<String, Vec<String>> {
-    std::fs::read_to_string(path).map_err(|e| vec![format!("cannot read {}: {e}", path.display())])
+    String::from_utf8(read_bytes(path)?)
+        .map_err(|e| vec![format!("{} is not UTF-8: {e}", path.display())])
+}
+
+/// - Reads `path` from disk.
+pub fn read_bytes(path: &Path) -> Result<Vec<u8>, Vec<String>> {
+    std::fs::read(path).map_err(|e| vec![format!("cannot read {}: {e}", path.display())])
 }
 
 pub fn flag_value<'a>(args: &'a [String], flag: &str) -> Result<Option<&'a str>, Vec<String>> {
@@ -313,6 +447,14 @@ fn flag_value_after<'a>(
             None => flag_value_after(rest, flag, joined_prefix),
         },
     }
+}
+
+pub fn required_flag<'a>(
+    args: &'a [String],
+    flag: &str,
+    usage: &str,
+) -> Result<&'a str, Vec<String>> {
+    flag_value(args, flag)?.ok_or_else(|| vec![format!("missing {flag}"), usage.to_string()])
 }
 
 pub fn parse_dest(args: &[String]) -> Result<Option<PathBuf>, Vec<String>> {
@@ -447,6 +589,70 @@ mod tests {
     #[test]
     fn dest_without_value_is_an_error() {
         assert!(parse_dest(&["--dest".to_string()]).is_err());
+    }
+
+    #[test]
+    fn a_package_location_names_the_crate_and_its_directory() {
+        assert_eq!(
+            package_location("zingo v2.0.0 (/w/zingo-ffi/lib)"),
+            Some(("zingo", Path::new("/w/zingo-ffi/lib")))
+        );
+        assert_eq!(package_location("http v1.0.0"), None);
+        assert_eq!(package_location(""), None);
+    }
+
+    #[test]
+    fn the_manifest_above_a_nested_member_source_is_that_member() {
+        let root = repo_root().unwrap();
+        assert_eq!(
+            manifest_above(&root.join("zingo-ffi/lib/src")).unwrap(),
+            root.join("zingo-ffi/lib").join(MANIFEST)
+        );
+        assert_eq!(
+            manifest_above(&root.join("docs")).unwrap(),
+            root.join(MANIFEST)
+        );
+    }
+
+    #[test]
+    fn a_virtual_manifest_declares_no_package() {
+        let root = repo_root().unwrap();
+        assert!(!declares_a_package(&root.join(MANIFEST)).unwrap());
+        assert!(declares_a_package(&root.join("zingo-cli").join(MANIFEST)).unwrap());
+    }
+
+    #[test]
+    fn the_root_workspace_members_include_the_nested_ones() {
+        let root = repo_root().unwrap();
+        let members = workspace_members(&root.join(MANIFEST)).unwrap();
+        for member in ["zingo-ffi/lib", "zingo-ffi/uniffi-bindgen", "zingo-cli"] {
+            assert!(
+                members.contains(&root.join(member).join(MANIFEST)),
+                "{member}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_workspace_is_found_by_its_lockfile() {
+        let root = repo_root().unwrap();
+        let found = workspace_manifests(&root).unwrap();
+        for workspace in ["", "zingo-netutils"] {
+            assert!(
+                found.contains(&root.join(workspace).join(MANIFEST)),
+                "{workspace:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_deleted_file_resolves_through_its_nearest_existing_directory() {
+        let root = repo_root().unwrap();
+        assert_eq!(
+            existing_dir_of(&root, Path::new("zingo-cli/src/gone/file.rs")),
+            root.join("zingo-cli/src")
+        );
+        assert_eq!(existing_dir_of(&root, Path::new("README.md")), root);
     }
 
     #[test]

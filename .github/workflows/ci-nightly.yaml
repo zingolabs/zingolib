@@ -83,23 +83,58 @@ jobs:
           name: sync-ab-${{ github.sha }}
           path: sync-ab.log
 
+  # The builder is the one source of every Binding Layer artifact name and
+  # of the ABI list. One run of it here feeds the build workflows below, so
+  # the names come from exactly one commit per run.
+  binding-layer-names:
+    name: Name the Binding Layer artifacts
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.plan).runner }}
+    timeout-minutes: 10
+    outputs:
+      abis: ${{ steps.names.outputs.abis }}
+      abi_artifacts: ${{ steps.names.outputs.abi_artifacts }}
+      abi_pattern: ${{ steps.names.outputs.abi_pattern }}
+      aar_glob: ${{ steps.names.outputs.aar_glob }}
+      bundle_android: ${{ steps.names.outputs.bundle_android }}
+      bundle_ios: ${{ steps.names.outputs.bundle_ios }}
+      ios_out: ${{ steps.names.outputs.ios_out }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+        with:
+          workspaces: tools/workbench
+
+      - name: Name the artifacts
+        id: names
+        run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
   # The nightly tier of zingolib/0054: the four Android ABIs in one AAR,
   # and both XCFrameworks with the Swift sources on macOS. Each job runs
   # the builder on this commit.
   binding-layer-android:
-    needs: plan
+    needs: [plan, binding-layer-names]
     uses: ./.github/workflows/binding-layer-android.yaml
     with:
-      abis: '["x86_64", "x86", "arm64-v8a", "armeabi-v7a"]'
       runner: ${{ fromJSON(needs.plan.outputs.plan).runner }}
+      abis: ${{ needs.binding-layer-names.outputs.abis }}
+      abi_artifacts: ${{ needs.binding-layer-names.outputs.abi_artifacts }}
+      abi_pattern: ${{ needs.binding-layer-names.outputs.abi_pattern }}
+      aar_glob: ${{ needs.binding-layer-names.outputs.aar_glob }}
+      bundle: ${{ needs.binding-layer-names.outputs.bundle_android }}
 
   # The CI_IOS_RUNNER repository variable, when set, overrides the plan's
   # label, so a runner outage is a settings change and not a commit.
   binding-layer-ios:
-    needs: plan
+    needs: [plan, binding-layer-names]
     uses: ./.github/workflows/binding-layer-ios.yaml
     with:
       runner: ${{ vars.CI_IOS_RUNNER || fromJSON(needs.plan.outputs.plan).ios_runner }}
+      out: ${{ needs.binding-layer-names.outputs.ios_out }}
+      bundle: ${{ needs.binding-layer-names.outputs.bundle_ios }}
 
   test:
     needs: plan
