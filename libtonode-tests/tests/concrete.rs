@@ -812,47 +812,6 @@ async fn send_orchard_back_and_forth() {
     check_client_balances!(recipient, i: recipient_final_ironwood o: 0 s: 0 t: 0);
 }
 
-#[tokio::test]
-async fn send_mined_ironwood_to_ironwood() {
-    // This test shows a confirmation changing the state of balance by
-    // debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
-    // consistent with all the notes in the relevant block changing state.
-    // NOTE that the balance doesn't give insight into the distribution across notes.
-    let (local_net, mut faucet) = scenarios::faucet(
-        PoolType::IRONWOOD,
-        scenarios::default_test_activation_heights(),
-        scenarios::ChainCachePolicy::PerTest,
-    )
-    .await;
-
-    let amount_to_send = 10_000;
-    let faucet_ua = get_base_address_macro!(faucet, "unified");
-    from_inputs::quick_send(
-        &mut faucet,
-        vec![(&faucet_ua, amount_to_send, Some("Scenario test: engage!"))],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-        .await
-        .unwrap();
-    let balance = faucet
-        .account_balance(zip32::AccountId::ZERO)
-        .await
-        .unwrap();
-    assert_eq!(
-        balance.unconfirmed_ironwood_balance,
-        Some(0.try_into().unwrap())
-    );
-    // The send is to self, so only the fee leaves the wallet, and the
-    // faucet mines the confirming block, collecting a fresh coinbase
-    // reward plus that same fee back.
-    assert_eq!(
-        balance.confirmed_ironwood_balance.unwrap().into_u64(),
-        scenarios::funded_faucet_ironwood_balance() + scenarios::POST_STREAM_BLOCK_REWARD
-    );
-}
-
 /// This mod collects tests of `outgoing_metadata` (a `TransactionRecordField`) across rescans
 mod rescan_still_have_outgoing_notes {
     use super::*;

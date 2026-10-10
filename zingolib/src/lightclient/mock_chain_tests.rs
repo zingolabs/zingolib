@@ -4570,4 +4570,41 @@ mod moved_from_regtest {
         miner.sync_and_await().await.unwrap();
         check_client_balances!(miner, i: REWARD_ZATS o: (ORCHARD_BLOCKS * REWARD_ZATS) s: REWARD_ZATS t: 0);
     }
+    #[tokio::test]
+    async fn send_mined_ironwood_to_ironwood() {
+        const IRONWOOD_BLOCKS: u64 = 3;
+        const AMOUNT_TO_SEND: u64 = 10_000;
+        let fee = u64::from(MINIMUM_FEE);
+        let mut net = MockNet::launch().await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_ua = get_base_address(&miner, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        for _ in 0..IRONWOOD_BLOCKS {
+            net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+                .await;
+        }
+        miner.sync_and_await().await.unwrap();
+        let funded = IRONWOOD_BLOCKS * REWARD_ZATS;
+        check_client_balances!(miner, i: funded o: 0 s: 0 t: 0);
+
+        from_inputs::quick_send(
+            &mut miner,
+            vec![(&miner_ua, AMOUNT_TO_SEND, Some("Scenario test: engage!"))],
+        )
+        .await
+        .unwrap();
+        // The miner mines the confirming block itself, collecting a fresh
+        // reward plus the fee it paid.
+        let reward_with_fee = Zatoshis::from_u64(REWARD_ZATS + fee).unwrap();
+        net.mine_mempool_rewarding_shielded(&miner_ua, reward_with_fee)
+            .await;
+        miner.sync_and_await().await.unwrap();
+        let balance = miner.account_balance(AccountId::ZERO).await.unwrap();
+        assert_eq!(balance.unconfirmed_ironwood_balance, Some(Zatoshis::ZERO));
+        assert_eq!(
+            balance.confirmed_ironwood_balance.unwrap().into_u64(),
+            funded + REWARD_ZATS
+        );
+    }
 }

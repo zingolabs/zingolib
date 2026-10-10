@@ -1109,6 +1109,13 @@ impl MockChain {
         self.mine_block(pending);
     }
 
+    /// - Mines every mempool transaction into one block under `coinbase`, a transaction the caller built for the
+    ///   next height, as a miner collecting the block's fees would.
+    pub fn mine_mempool_with_coinbase(&mut self, coinbase: Vec<u8>) {
+        let pending = std::mem::take(&mut self.mempool);
+        self.mine_block_with_coinbase(coinbase, pending);
+    }
+
     /// Mines the given raw transactions (plus nothing else) into the
     /// next block.
     pub fn mine_block(&mut self, raw_transactions: Vec<Vec<u8>>) {
@@ -2058,6 +2065,22 @@ impl MockNet {
             .write()
             .await
             .mine_block_with_coinbase(coinbase.clone(), raw_transactions);
+        coinbase
+    }
+
+    /// - Builds a shielded coinbase paying `reward` to `miner` and mines the mempool under it, taking the chain's
+    ///   write lock.
+    pub async fn mine_mempool_rewarding_shielded(&self, miner: &str, reward: Zatoshis) -> Vec<u8> {
+        let (activation_heights, height) = {
+            let chain = self.chain.read().await;
+            (chain.activation_heights(), chain.next_height())
+        };
+        let coinbase =
+            shielded_coinbase_transaction(activation_heights, height, miner, reward).await;
+        self.chain
+            .write()
+            .await
+            .mine_mempool_with_coinbase(coinbase.clone());
         coinbase
     }
 
