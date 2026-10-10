@@ -30,13 +30,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: ${{ inputs.toolchain }}
-
-      - name: Cache cargo
-        uses: ./.github/actions/cargo-cache
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
       # Removes each declared dependency feature in turn and checks without it.
       # One `cargo check` per feature, so this runs nightly rather than per PR.
@@ -59,13 +54,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: ${{ inputs.toolchain }}
-
-      - name: Cache cargo
-        uses: ./.github/actions/cargo-cache
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
       - name: Install cargo-make
         uses: taiki-e/install-action@v2

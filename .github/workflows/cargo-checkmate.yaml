@@ -15,13 +15,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      # The five phases share one GITHUB_JOB, so the phase keys the cache.
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
         with:
-          toolchain: ${{ inputs.toolchain }}
-
-      - name: Cache cargo
-        uses: ./.github/actions/cargo-cache
+          key: ${{ matrix.phase }}
 
       - name: Run cargo-checkmate
         uses: zingolabs/infrastructure/.github/actions/cargo-checkmate@20485fed7a080e381130ed8120419dc81acae641
