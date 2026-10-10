@@ -15,7 +15,7 @@ pub mod dupes_gate;
 pub mod orasust;
 pub mod session;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command, ExitStatus, Stdio};
 
@@ -210,6 +210,26 @@ pub fn commit_of(root: &Path, revision: &str) -> Result<String, Vec<String>> {
     .map_err(|_| vec![format!("{revision} is not a commit of this repository")])
 }
 
+/// - Runs `git merge-base --is-ancestor` in `root`.
+pub fn is_ancestor(root: &Path, ancestor: &str, descendant: &str) -> Result<bool, Vec<String>> {
+    let args = ["merge-base", "--is-ancestor", ancestor, descendant];
+    let finished = finished_in(root, GIT, &args, &[])?;
+    match finished.status.code() {
+        Some(IS_ANCESTOR) => Ok(true),
+        Some(IS_NOT_ANCESTOR) => Ok(false),
+        _ => Err(vec![format!("`{GIT} {}` failed", args.join(" "))]),
+    }
+}
+
+const IS_ANCESTOR: i32 = 0;
+const IS_NOT_ANCESTOR: i32 = 1;
+
+pub fn file_name_of(file: &Path) -> Result<&str, Vec<String>> {
+    file.file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| vec![format!("{} has no file name", file.display())])
+}
+
 pub const DEFAULT_BASE: &str = "origin/dev";
 
 pub const FALLBACK_BASE: &str = "dev";
@@ -250,8 +270,8 @@ const MEMBERS_ARGS: [&str; 8] = [
     "--format",
     PACKAGE_ID_FORMAT,
 ];
-const PACKAGE_DIR_OPEN: &str = " (";
-const PACKAGE_DIR_CLOSE: char = ')';
+pub const PACKAGE_DIR_OPEN: &str = " (";
+pub const PACKAGE_DIR_CLOSE: char = ')';
 
 /// - Runs `cargo locate-project` as a child process in `dir`.
 pub fn manifest_above(dir: &Path) -> Result<PathBuf, Vec<String>> {
@@ -302,22 +322,39 @@ pub fn workspace_manifests(root: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
         .collect())
 }
 
-/// - Runs `git diff` in `root`, then `cargo locate-project` and `cargo pkgid` once per changed directory.
+/// - Runs `git diff` in `root`, then `cargo locate-project` once per changed directory and
+///   `cargo pkgid` once per manifest found.
 pub fn touched_manifests(root: &Path, merge_base: &str) -> Result<Vec<PathBuf>, Vec<String>> {
+    Ok(touched(root, merge_base)?.into_keys().collect())
+}
+
+/// - Runs the same child processes as [`touched_manifests`].
+pub fn touched_packages(root: &Path, merge_base: &str) -> Result<Vec<PathBuf>, Vec<String>> {
+    Ok(touched(root, merge_base)?
+        .into_iter()
+        .filter_map(|(manifest, declares_a_package)| declares_a_package.then_some(manifest))
+        .collect())
+}
+
+fn touched(root: &Path, merge_base: &str) -> Result<BTreeMap<PathBuf, bool>, Vec<String>> {
     let changed = git_in(root, &["diff", "--name-only", merge_base])?;
     let dirs: BTreeSet<PathBuf> = changed
         .lines()
         .map(|file| existing_dir_of(root, Path::new(file)))
         .collect();
-    let mut manifests = BTreeSet::new();
+    let mut manifests = BTreeMap::new();
     for dir in dirs {
         let manifest = manifest_above(&dir)?;
+        if manifests.contains_key(&manifest) {
+            continue;
+        }
         let beside = manifest.parent() == Some(dir.as_path());
-        if beside || declares_a_package(&manifest)? {
-            manifests.insert(manifest);
+        let declares = declares_a_package(&manifest)?;
+        if beside || declares {
+            manifests.insert(manifest, declares);
         }
     }
-    Ok(manifests.into_iter().collect())
+    Ok(manifests)
 }
 
 fn existing_dir_of(root: &Path, file: &Path) -> PathBuf {

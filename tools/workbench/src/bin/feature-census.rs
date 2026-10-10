@@ -4,11 +4,6 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use workbench::{
-    display_relative, merge_base, read, repo_root, run, touched_manifests, workspace_manifests,
-    workspace_members, DEFAULT_BASE, MANIFEST,
-};
-
 /// The blessed entries, one per line, relative to the repository root.
 const BLESSING_PATH: &str = "tools/workbench/feature-census-blessed.txt";
 
@@ -78,22 +73,20 @@ struct Request {
     crates: Vec<String>,
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    run("feature-census", || census(&args), |()| {})
+fn main() -> ! {
+    workbench::dispatch_from_root("feature-census", census)
 }
 
 /// Probes each declared dependency feature and reports the ones nothing needs.
-fn census(args: &[String]) -> Result<(), Vec<String>> {
+fn census(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
         return Ok(());
     }
 
-    let root = repo_root()?;
     let request = parse(args)?;
-    let manifests = match scope(&root, &request)? {
-        Scope::Everything => every_manifest(&root)?,
+    let manifests = match scope(root, &request)? {
+        Scope::Everything => every_manifest(root)?,
         Scope::Touched(paths) => paths,
     };
 
@@ -104,15 +97,18 @@ fn census(args: &[String]) -> Result<(), Vec<String>> {
 
     let mut unneeded = Vec::new();
     for manifest in &manifests {
-        println!("feature-census: {}", display_relative(&root, manifest));
-        unneeded.extend(probe_manifest(&root, manifest)?);
+        println!(
+            "feature-census: {}",
+            workbench::display_relative(root, manifest)
+        );
+        unneeded.extend(probe_manifest(root, manifest)?);
     }
     unneeded.sort();
 
     if request.bless {
-        return bless(&root, &unneeded);
+        return bless(root, &unneeded);
     }
-    judge(&root, &unneeded)
+    judge(root, &unneeded)
 }
 
 /// Prints how to call the census and what each argument selects.
@@ -128,7 +124,10 @@ fn print_usage() {
     println!("by blessing the feature with a reason, and the census stays quiet after.");
     println!();
     println!("  --all          probe every manifest in the repository");
-    println!("  --base <ref>   compare against <ref> instead of {DEFAULT_BASE}");
+    println!(
+        "  --base <ref>   compare against <ref> instead of {}",
+        workbench::DEFAULT_BASE
+    );
     println!("  --bless        rewrite the blessing file to today's report");
     println!("  <crate-dir>    probe these crates and no others");
     println!();
@@ -140,7 +139,7 @@ fn parse(args: &[String]) -> Result<Request, Vec<String>> {
     let mut request = Request {
         all: false,
         bless: false,
-        base: DEFAULT_BASE.to_string(),
+        base: workbench::DEFAULT_BASE.to_string(),
         crates: Vec::new(),
     };
     let mut iter = args.iter();
@@ -175,7 +174,7 @@ fn scope(root: &Path, request: &Request) -> Result<Scope, Vec<String>> {
     if !request.crates.is_empty() {
         let mut manifests = Vec::new();
         for name in &request.crates {
-            let manifest = root.join(name).join(MANIFEST);
+            let manifest = root.join(name).join(workbench::MANIFEST);
             if !manifest.is_file() {
                 return Err(vec![format!("no crate at {}", manifest.display())]);
             }
@@ -183,17 +182,17 @@ fn scope(root: &Path, request: &Request) -> Result<Scope, Vec<String>> {
         }
         return Ok(Scope::Touched(manifests));
     }
-    Ok(Scope::Touched(touched_manifests(
+    Ok(Scope::Touched(workbench::touched_manifests(
         root,
-        &merge_base(root, &request.base)?,
+        &workbench::merge_base(root, &request.base)?,
     )?))
 }
 
 /// - Runs `git ls-files` and `cargo tree` through the library, once per workspace.
 fn every_manifest(root: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
     let mut manifests = Vec::new();
-    for workspace in workspace_manifests(root)? {
-        manifests.extend(workspace_members(&workspace)?);
+    for workspace in workbench::workspace_manifests(root)? {
+        manifests.extend(workbench::workspace_members(&workspace)?);
         manifests.push(workspace);
     }
     manifests.sort();
@@ -204,7 +203,7 @@ fn every_manifest(root: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
 /// Every declared dependency feature in `manifest` whose removal still compiles.
 fn probe_manifest(root: &Path, manifest: &Path) -> Result<Vec<Candidate>, Vec<String>> {
     let crate_dir = crate_name(root, manifest);
-    let original = read(manifest)?;
+    let original = workbench::read(manifest)?;
     let mut unneeded = Vec::new();
 
     for candidate in declared(&crate_dir, &original)? {
@@ -330,7 +329,7 @@ fn check(root: &Path, manifest: &Path, crate_dir: &str) -> Result<bool, Vec<Stri
         .arg("check")
         .arg("--quiet")
         .arg("--all-targets");
-    if manifest == root.join(MANIFEST) {
+    if manifest == root.join(workbench::MANIFEST) {
         command.arg("--workspace");
     } else {
         command.arg("--manifest-path").arg(manifest);
@@ -368,7 +367,7 @@ fn blessings(root: &Path) -> Result<BTreeMap<String, String>, Vec<String>> {
         return Ok(BTreeMap::new());
     }
     let mut blessed = BTreeMap::new();
-    for line in read(&path)?.lines() {
+    for line in workbench::read(&path)?.lines() {
         let entry = line.trim();
         if entry.is_empty() || entry.starts_with('#') {
             continue;
@@ -440,15 +439,15 @@ mod tests {
 
     #[test]
     fn every_manifest_reaches_the_nested_workspace_members() {
-        let root = repo_root().unwrap();
+        let root = workbench::repo_root().unwrap();
         let manifests = every_manifest(&root).unwrap();
         for member in ["zingo-ffi/lib", "zingo-ffi/uniffi-bindgen", "zingo-cli"] {
             assert!(
-                manifests.contains(&root.join(member).join(MANIFEST)),
+                manifests.contains(&root.join(member).join(workbench::MANIFEST)),
                 "{member} is a workspace member the census must probe"
             );
         }
-        assert!(manifests.contains(&root.join(MANIFEST)));
+        assert!(manifests.contains(&root.join(workbench::MANIFEST)));
     }
 
     /// A manifest's inline dependency tables yield one candidate per feature,

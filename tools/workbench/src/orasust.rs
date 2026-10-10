@@ -105,10 +105,7 @@ pub fn push(
         .iter()
         .map(|(key, value)| format!("{key}{ANNOTATION_SEPARATOR}{value}"))
         .collect();
-    let name = file
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| vec![format!("{} has no file name", file.display())])?;
+    let name = crate::file_name_of(file)?;
     let layer = format!("{name}{MEDIA_TYPE_SEPARATOR}{media_type}");
     let mut args = vec![PUSH, USERNAME_FLAG, username, PASSWORD_STDIN_FLAG];
     for pair in &pairs {
