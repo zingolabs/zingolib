@@ -3,7 +3,7 @@
 //! Pre-migration originals of tests that gained offline unit twins.
 //!
 //! Each test here is the LIVE original of an offline twin in zingolib
-//! (see docs/testing/live-offline-twins.md for the per-test equivalence
+//! (see docs/testing/regtest-removal-ledger.md for the per-test equivalence
 //! record). The originals are preserved verbatim, never deleted, but
 //! gated out of the default suite: the `unit_test_twins` feature, this
 //! module, and this file all carry the same name. Run them with
@@ -13,7 +13,7 @@
 //! flattened out repository-wide (tests have one-shorter paths). Each
 //! test's historical identity, including its old module-qualified name,
 //! is recorded in the equivalence table of
-//! docs/testing/live-offline-twins.md.
+//! docs/testing/regtest-removal-ledger.md.
 //!
 //! The bump-and-check macros of `list_value_transfers_check_fees` and
 //! `from_t_z_o_tz_to_zo_tzo_to_orchard` bit-rotted during the
@@ -24,7 +24,7 @@
 //! orchard-bundle-view charge on V6 ironwood spends), and from
 //! `from_t_z_o`'s step 10 the live ledger deliberately forks from the
 //! twin's (the live proposer drains single-pool and refuses exact
-//! drains). See docs/testing/live-offline-twins.md before editing
+//! drains). See docs/testing/regtest-removal-ledger.md before editing
 //! either side.
 
 mod unit_test_twins {

@@ -1,4 +1,248 @@
-# Live/offline twins: equivalence record
+# Regtest removal ledger
+
+**Directive (2026-10-09):** every guarantee a regtest test provides moves
+to a mock-chain test where the mock chain can carry it, and to a testnet
+test where it cannot. The end state is a zingolib with no regtest at all.
+
+## What the mock chain can and cannot do
+
+`zingolib::testutils::mock_indexer::MockNet` controls the chain on cue:
+it mines on demand (`mine_block`, `mine_mempool`, `mine_empty_blocks`),
+mines a coinbase to a named miner (`mine_block_rewarding`), reorgs
+(`reorg_to`), sets activation heights (`with_activation_heights`), holds
+and promotes the mempool (`enter_mempool`, `promote_download_queue`),
+serves mempool streams, subtree roots and `chain_metadata`, and injects
+faults into named RPCs (`inject(Rpc, Fault)`: a failure status, a delay,
+or a truncated stream). On submission its `validate` enforces the
+consensus branch id, expiry, known anchors, unrevealed nullifiers,
+transparent input ownership, coinbase maturity and the ZIP-317 fee, each
+rule switchable.
+
+It does not verify proofs, spend-authorization or binding signatures, or
+the shielded value balance, and its serving behaviour is its own: an
+assertion about a real indexer's lag, encoding or contract tests the mock
+against itself. Those two residues are what only a live chain proves.
+
+Each entry below lists the live test's assertions, what a mock twin needs
+(or already has), and what cannot move to the mock.
+
+## chain_generics.rs
+
+**1. generate_a_range_of_value_transfers** and **2. send_shield_cycle.**
+One fixture drives regtest, mock and testnet, so the mock twins
+(`*_on_the_mock_chain`) are assertion-identical: value-transfer counts and
+kinds, and `follow_proposal`'s per-step fee, output and confirmation-status
+checks. Mock: nothing required. Not mockable: validator acceptance of the
+built bytes (proofs, signatures, value balance).
+
+## wallet.rs
+
+**3. verify_old_wallet_uses_server_height_in_send.** Asserts the client's
+fully scanned height equals the funded setup height plus five after a
+send, so a send syncs to the server height first. Mock: fund, mine five
+empty blocks, send, read `sync_state`; nothing new. Not mockable: nothing.
+
+## observability.rs and sentinels.rs
+
+**4. chain_mutates_only_via_owned_rpc**, **5. launch_mines_exactly_one_block**,
+**6. transparent_launch_block_is_byte_deterministic**,
+**7. suppressed_launch_generate_leaves_genesis.** These assert properties
+of the `zcash_local_net` harness and of zebrad's launch: the RPC write log
+is empty in an idle window, the tip fingerprint holds, the launch mines
+exactly one block, that block is byte-deterministic. They test the
+environment regtest removal deletes. Mock: meaningless. Testnet:
+meaningless. Retire with regtest.
+
+## mempool_attribution.rs
+
+**8. indexer_mempool_view_trails_validator_acceptance.** Asserts zebra's
+own mempool holds the txid right after `send_transaction`, the indexer's
+`GetMempoolTx` shows it within a bound, and the lag is under the bound.
+This measures a real indexer's latency behind a real validator. Mock:
+lag is zero by construction, so nothing to assert. Testnet: the indexer
+half is measurable (send, poll `GetMempoolTx`), the validator half has no
+channel. Retire the validator half; the indexer half is a testnet probe
+if the latency bound matters.
+
+**9. wallet_mempool_record_trails_validator_acceptance.** Asserts the
+sender's record reaches `Mempool` status within a bound. Mock twin:
+`transmitted_transaction_has_mempool_status_before_mining` carries the
+status; the time bound is real latency. Mock: done for the status. Not
+mockable: the bound.
+
+## migration.rs
+
+**10. bound_note_reservation_and_external_spend_invalidation.** Asserts,
+around a hand-built `MigrationState`: the reserved note stays unspent
+while a free note covers an ordinary send, an external spend of the
+reserved note marks part 0 `Invalidated`, a remainder at the sweep
+minimum prompts no replan, and the migration completes with the disclosed
+residual. Mock: two sends and `mine_mempool`; nothing new. Not mockable:
+nothing.
+
+**11. unavailable_boundary_tree_state_skips_without_sync.** With NU6.3
+deferred and the chain inside the second bucket, asserts a transmit skips
+(nothing sent, part `Assigned`, zero attempts, no witness) and never
+syncs. The unavailability is the wallet's own: pepper-sync prunes the
+boundary checkpoint once the tip is more than the retention past it.
+Mock: done, as `boundary_pruning::unavailable_boundary_tree_state_skips_without_sync_on_the_mock_chain`,
+with the same leap, real pruning, and a failure injected on the block-range
+RPC that stays unconsumed, which proves the no-sync claim more directly
+than the known-height check alone. Not mockable: nothing. The live test is
+deleted in the same commit.
+
+**12. two_phase_migration_end_to_end.** Asserts part count, `Complete`
+phase, parts confirmed, migrated value, Ironwood balance, and the
+value-transfer sum, with NU6.3 deferred past funding. Mock: activation
+heights, pre-activation funding, mining while `migrate_to_ironwood`
+awaits; the twin `migrate_to_ironwood_returns_under_continuous_sync`
+holds the scaffold. Not mockable: validator acceptance of the parts.
+
+**13. migrate_all_orchard_to_ironwood** and **14.
+immediate_migration_chunks_a_fragmented_wallet.** Assert plan accounting,
+transaction counts, migrated and residual balances, chunking into two
+transactions, and the value-transfer sum. Mock twin
+`immediate_migration_is_a_migration_value_transfer` covers the kind;
+extend it with the balances and the chunk count. Not mockable:
+acceptance.
+
+## sync.rs
+
+**15. add_subtree_roots.** Asserts the wallet's shard roots match the
+server's subtree roots in count and bytes for Sapling and Orchard, and a
+wallet stopped early holds fewer. Mock: serves subtree roots, so the
+wallet-side bookkeeping ports. Not mockable: that the real indexer's
+roots are right; that is a testnet comparison.
+
+**16. sync_test.** A send to a transparent address, a shield proposal and
+a sync with no assertion beyond success. Mock: trivial. Not mockable:
+nothing.
+
+**17. store_all_checkpoints_in_verification_window.** Asserts the three
+shard trees retain every checkpoint across a dense ~112-block chain.
+Mock twin `shardtree_roundtrip_restores_retained_checkpoints` holds the
+scaffold; build the dense chain with `mine_block` carrying sends. Not
+mockable: nothing.
+
+**18. diagnose_subtree_root_stream.** A diagnostic of a real indexer's
+stream truncation. Mock: `Fault::TruncateStream` reproduces the symptom,
+not the server. Testnet: the real question. Retire or move to testnet.
+
+**19. indexer_converges_with_validator_after_block_generation.** Asserts
+the harness's convergence barrier. Retire with regtest.
+
+**20. ironwood_notes_in_untracked_history_are_recovered** and **21.
+orchard_…** Assert a wallet whose pool history was stripped reports a
+failed sync on reopen, and recovers the note on rescan. Mock: wallet-file
+manipulation plus `mine_block`; nothing new. Not mockable: nothing.
+
+**22. served_outputs_match_chain_metadata_deltas.** Asserts the indexer's
+`chain_metadata` tree-size deltas equal the outputs it serves, and that
+Ironwood metadata first appears at the activation coinbase. Pure indexer
+contract. Mock: tests the mock. Testnet: the right host, with testnet's
+activation height. Move to testnet.
+
+## tip_spend_rejection.rs (8 cells)
+
+**23 to 30.** Every cell asserts `Verdict::Accepted` from zebra's own
+judgement of the wallet's bytes: spends of tip-block notes, aged notes,
+young and aged coinbase, to Orchard and Sapling, and near the activation
+boundary. The suite pins the absence of a zebrad rc.0 mempool bug. Mock:
+acceptance follows the mock's rules and proves nothing about zebra; the
+wallet-side half (a tip-anchored spend is built at all) is a one-line
+mock assertion. Not mockable: the verdict. Testnet: a tip-note spend is
+reproducible (fund, wait one block, spend at once). Keep one testnet
+cell as the sentinel; retire the rest.
+
+## unit_test_twins.rs (8)
+
+**31 to 38.** Ledgered in the equivalence record below; each has a mock twin
+with its own recorded verdict. Mock: done. Not mockable: acceptance of
+the bytes, which the 2026-07-21 live adjudication settled once.
+
+## concrete.rs (22)
+
+**39. unified_address_discovery.** Asserts new unified addresses are
+absent before and discovered after sends to successive indices, across a
+rescan. Mock twin `gap_address_compact_block_scanning` holds the
+scaffold. Not mockable: nothing.
+
+**40. ironwood_miner_coinbase_distribution**, **43. mine_to_ironwood**,
+**44. mine_to_orchard**, **45. mine_to_transparent**, **61.
+mine_to_transparent_coinbase_maturity.** Assert a miner wallet's per-pool
+balances from coinbase rewards: block-one Sapling coinbase, Orchard
+rewards before NU6.3 and Ironwood after, transparent rewards and their
+maturity. Mock: `mine_block_rewarding` mints a coinbase to a miner and
+`coinbase_reward_becomes_spendable_after_maturity` covers transparent
+maturity; shielded coinbase outputs per activation era need the mock's
+coinbase builder to mint to Orchard and Ironwood receivers, which is the
+one capability to add. Not mockable: zebra's actual subsidy shape.
+
+**41. received_tx_status_pending_to_confirmed_with_mempool_monitor.**
+Asserts a received transaction is `Mempool(h)` before and `Confirmed(h)`
+after mining. Mock: mempool streams and `mine_mempool`; the sender-side
+twin exists, the receiver side is the same shape. Not mockable: nothing.
+
+**42. utxos_are_not_prematurely_confirmed.** Asserts one UTXO unspent
+before a shield, confirmed spent after, same output id. Mock: nothing
+new.
+
+**46. sync_all_expressible_epochs.** Syncs across every activation
+boundary with no assertion beyond success. Mock: activation heights.
+
+**47. test_scanning_in_watch_only_mode.** Asserts watch-only wallets
+built from each viewing key see the sent values per pool, and a send
+from a watch-only wallet fails with `CalculateTransactionError`. Mock:
+nothing new.
+
+**48. sends_to_self_handle_balance_properly**, **50. self_send**, **51.
+check_list_value_transfers_across_rescan**, **49.
+send_to_ua_saves_full_ua_in_wallet.** Assert value transfers, summaries
+and outgoing-note recipient addresses are equal before and after a
+rescan. Mock: `rescan` against the mock's blocks; nothing new.
+
+**52. send_orchard_back_and_forth**, **53. send_mined_ironwood_to_ironwood**,
+**58. send_pre_ironwood**, **59. send_post_ironwood.** Assert per-pool
+balances after sends in each direction and era. Mock: activation heights
+and, for the mined-Ironwood case, the shielded coinbase capability above.
+
+**54. multi_input_sapling_send_with_orchard_change_no_panic** and **55.
+mempool_spend_balance_and_note_status_accounting.** Assert total,
+confirmed and unconfirmed balances, note spend statuses, and mempool
+observation within thirty seconds. Mock: mempool streams; the time bound
+is moot. Not mockable: nothing.
+
+**60. propose_and_send_with_op_return_confirms_on_chain.** Asserts the
+two-step proposal's fees, two txids, both confirmed, one input, two
+outputs with no change, the OP_RETURN script and payload bytes. Mock:
+transparent inputs and fees are validated; the bytes assertions read the
+wallet's own transaction. Not mockable: zebra's standardness acceptance
+of the null-data output. Keep on testnet.
+
+**62. reload_wallet_after_short_sync.** Already a testnet test, ignored by
+default.
+
+## Totals
+
+| disposition | tests |
+| --- | --- |
+| mock twin exists or is assertion-identical | 13 |
+| portable to the mock with nothing new | 24 |
+| portable once the mock mints shielded coinbase, now added | 7 |
+| the assertion is about the real validator or indexer: testnet or retire | 18 |
+
+The residue every mock test shares, validator acceptance of the wallet's
+bytes, is one testnet test per transaction shape, or the mock verifying
+bundles in `validate`.
+
+## The 2026-07 twins: equivalence record
+
+The record below is the file `live-offline-twins.md` as it stood when
+the regtest removal directive subsumed it, under headings demoted one
+level. It governs the eight tests of `unit_test_twins.rs`, entries 31
+to 38 above.
+
+## Live/offline twins: equivalence record
 
 **Directive (2026-07-08):** the eight portable libtonode tests gain
 offline twins; the live originals are never removed. After the
@@ -73,7 +317,7 @@ or zainod. Funding transactions are built (not faked) by synthetic
 faucet wallets through the build-without-broadcast seam, so their
 outputs decrypt and spend like real ones.
 
-## Systematic differences (apply to every twin)
+### Systematic differences (apply to every twin)
 
 1. **The mock validates nothing.** Proof validity, signature checks, fee
    floors, double-spend rejection, and boundary-adjacent verdicts are
@@ -93,7 +337,7 @@ outputs decrypt and spend like real ones.
    sees on a funding wave reflects the mock faucet's fresh, unfragmented
    note pool.
 
-## Per-test verdicts
+### Per-test verdicts
 
 | # | live original (libtonode concrete.rs) | offline twin (zingolib src) | verdict |
 |---|---|---|---|
@@ -183,7 +427,7 @@ whole-workspace invocation; the live originals are unaffected in the
 packages/live partition because darkside never co-builds with them
 there.
 
-## Side-by-side runs (2026-07-08, host stack, this machine)
+### Side-by-side runs (2026-07-08, host stack, this machine)
 
 Twins (one `cargo nextest run -p zingolib` invocation):
 

@@ -4,10 +4,13 @@
 //! bookkeeping) driven against a fabricated in-process chain, with no
 //! zebrad or zainod.
 //!
-//! Every port here is an OFFLINE TWIN: the live original stays in
-//! libtonode-tests as the control group (user direction, 2026-07-08:
-//! live versions are never removed. They eventually move to a gated
-//! "pre-migration" mod once side-by-side equivalence is documented).
+//! Every port here is an OFFLINE TWIN of a libtonode test. Under the
+//! regtest removal directive (2026-10-09, docs/testing/regtest-removal-ledger.md)
+//! a port replaces its live original: one commit deletes the live test
+//! and adds the twin, so a reviewer reads both sides together. The eight
+//! twins of 2026-07-08 predate that rule; their originals sit in
+//! libtonode-tests/tests/unit_test_twins.rs until their own replacement
+//! commits.
 
 use pepper_sync::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 use pepper_sync::wallet::IronwoodNote;
