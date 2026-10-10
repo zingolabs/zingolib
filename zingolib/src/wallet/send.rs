@@ -357,6 +357,58 @@ mod tests {
     use zcash_protocol::memo::{Memo, MemoBytes};
     use zcash_protocol::value::Zatoshis;
 
+    use crate::lightclient::LightClient;
+    use crate::testutils::lightclient::from_inputs;
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::wallet::keys::unified::ReceiverSelection;
+    use crate::wallet::utils;
+
+    const ORCHARD_FUNDS: u64 = 100_000;
+    const PAYMENT: u64 = 20_000;
+
+    /// An Orchard address that belongs to no wallet in this test.
+    fn external_orchard_address() -> String {
+        let mut wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let (_, unified_address) = wallet
+            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
+            .expect("the external wallet derives an Orchard-only address");
+        unified_address.encode(&wallet.chain_type())
+    }
+
+    /// HYPOTHESIS: a wallet that holds Orchard funds alone builds its
+    /// transaction without ever requesting the Sapling prover, so a device
+    /// with no Sapling notes never parses the embedded Sapling parameters.
+    /// Falsified if the build requests the prover on this thread.
+    #[tokio::test]
+    async fn orchard_only_build_requests_no_sapling_prover() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(ORCHARD_FUNDS)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+        let proposal = from_inputs::propose(
+            &mut client,
+            vec![(&external_orchard_address(), PAYMENT, None)],
+        )
+        .await
+        .expect("an Orchard-only wallet proposes an Orchard payment");
+
+        let requests_before = utils::sapling_prover_requests();
+        client
+            .wallet()
+            .write()
+            .await
+            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .await
+            .expect("the Orchard-only transaction builds");
+
+        assert_eq!(
+            utils::sapling_prover_requests(),
+            requests_before,
+            "an Orchard-only build requested the Sapling prover"
+        );
+    }
+
     use crate::data::receivers::{Receivers, transaction_request_from_receivers};
 
     #[test]

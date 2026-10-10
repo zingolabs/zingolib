@@ -70,7 +70,26 @@ pub fn txid_from_slice(txid: &[u8]) -> TxId {
     TxId::from_bytes(txid_bytes)
 }
 
+#[cfg(test)]
+thread_local! {
+    static SAPLING_PROVER_REQUESTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn sapling_prover_requests() -> usize {
+    SAPLING_PROVER_REQUESTS.with(std::cell::Cell::get)
+}
+
+/// - Increments this thread's count of Sapling prover requests.
+#[cfg(test)]
+fn note_sapling_prover_request() {
+    SAPLING_PROVER_REQUESTS.with(|requests| requests.set(requests.get() + 1));
+}
+
+/// - Copies both embedded Sapling parameter blobs onto the heap.
 pub(crate) fn read_sapling_params() -> (Vec<u8>, Vec<u8>) {
+    #[cfg(test)]
+    note_sapling_prover_request();
     (
         crate::SaplingParams::OUTPUT.to_vec(),
         crate::SaplingParams::SPEND.to_vec(),
