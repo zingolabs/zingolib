@@ -217,9 +217,7 @@ impl LightWallet {
             .add_transparent_null_data_output::<std::convert::Infallible>(data.as_bytes())
             .map_err(|e| WalletError::TransparentBuild(format!("op_return: {e:?}")))?;
 
-        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
-        let prover =
-            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let prover = crate::wallet::utils::LazySaplingProver;
         let build_result = builder
             .build(
                 &signing_set,

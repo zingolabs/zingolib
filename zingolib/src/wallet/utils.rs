@@ -1,10 +1,15 @@
 //! TODO: Add Mod Description Here!
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use sapling_crypto::{
+    bundle as sapling_bundle, circuit as sapling_circuit, keys as sapling_keys,
+    prover as sapling_prover, value as sapling_value,
+};
 use std::{
     io::{self, Read, Write},
     path::PathBuf,
 };
 use zcash_primitives::transaction::TxId;
+use zcash_proofs::prover;
 use zcash_protocol::memo::MemoBytes;
 
 pub(crate) const MAX_STRING_LENGTH: u64 = 1 << 16;
@@ -86,14 +91,94 @@ fn note_sapling_prover_request() {
     SAPLING_PROVER_REQUESTS.with(|requests| requests.set(requests.get() + 1));
 }
 
-/// - Copies both embedded Sapling parameter blobs onto the heap.
-pub(crate) fn read_sapling_params() -> (Vec<u8>, Vec<u8>) {
+static SAPLING_PROVER: std::sync::OnceLock<prover::LocalTxProver> = std::sync::OnceLock::new();
+
+/// - Parses the embedded Sapling parameters on the first call and holds the
+///   result in a process-global for the life of the process.
+fn embedded_prover() -> &'static prover::LocalTxProver {
     #[cfg(test)]
     note_sapling_prover_request();
-    (
-        crate::SaplingParams::OUTPUT.to_vec(),
-        crate::SaplingParams::SPEND.to_vec(),
-    )
+    SAPLING_PROVER.get_or_init(|| {
+        prover::LocalTxProver::from_bytes(crate::SaplingParams::SPEND, crate::SaplingParams::OUTPUT)
+    })
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct LazySaplingProver;
+
+impl sapling_prover::SpendProver for LazySaplingProver {
+    type Proof = <prover::LocalTxProver as sapling_prover::SpendProver>::Proof;
+
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_circuit(
+        proof_generation_key: sapling_crypto::ProofGenerationKey,
+        diversifier: sapling_crypto::Diversifier,
+        rseed: sapling_crypto::Rseed,
+        value: sapling_value::NoteValue,
+        alpha: jubjub::Fr,
+        rcv: sapling_value::ValueCommitTrapdoor,
+        anchor: jubjub::Fq,
+        merkle_path: sapling_crypto::MerklePath,
+    ) -> Option<sapling_circuit::Spend> {
+        <prover::LocalTxProver as sapling_prover::SpendProver>::prepare_circuit(
+            proof_generation_key,
+            diversifier,
+            rseed,
+            value,
+            alpha,
+            rcv,
+            anchor,
+            merkle_path,
+        )
+    }
+
+    /// - Parses the embedded Sapling parameters if no earlier Sapling proof
+    ///   in this process has done so.
+    fn create_proof<R: rand::Rng>(
+        &self,
+        circuit: sapling_circuit::Spend,
+        rng: &mut R,
+    ) -> Self::Proof {
+        sapling_prover::SpendProver::create_proof(embedded_prover(), circuit, rng)
+    }
+
+    fn encode_proof(proof: Self::Proof) -> sapling_bundle::GrothProofBytes {
+        <prover::LocalTxProver as sapling_prover::SpendProver>::encode_proof(proof)
+    }
+}
+
+impl sapling_prover::OutputProver for LazySaplingProver {
+    type Proof = <prover::LocalTxProver as sapling_prover::OutputProver>::Proof;
+
+    fn prepare_circuit(
+        esk: &sapling_keys::EphemeralSecretKey,
+        payment_address: sapling_crypto::PaymentAddress,
+        rcm: jubjub::Fr,
+        value: sapling_value::NoteValue,
+        rcv: sapling_value::ValueCommitTrapdoor,
+    ) -> sapling_circuit::Output {
+        <prover::LocalTxProver as sapling_prover::OutputProver>::prepare_circuit(
+            esk,
+            payment_address,
+            rcm,
+            value,
+            rcv,
+        )
+    }
+
+    /// - Parses the embedded Sapling parameters if no earlier Sapling proof
+    ///   in this process has done so.
+    fn create_proof<R: rand::Rng>(
+        &self,
+        circuit: sapling_circuit::Output,
+        rng: &mut R,
+    ) -> Self::Proof {
+        sapling_prover::OutputProver::create_proof(embedded_prover(), circuit, rng)
+    }
+
+    fn encode_proof(proof: Self::Proof) -> sapling_bundle::GrothProofBytes {
+        <prover::LocalTxProver as sapling_prover::OutputProver>::encode_proof(proof)
+    }
 }
 
 /// Returns the path to the default directory that the Zcash proving parameters are located in.
@@ -110,9 +195,28 @@ mod tests {
     /// loading them is infallible. Falsified if either blob is empty.
     #[test]
     fn embedded_sapling_params_load_whole() {
-        let (sapling_output, sapling_spend) = read_sapling_params();
-        assert!(!sapling_output.is_empty(), "output params are embedded");
-        assert!(!sapling_spend.is_empty(), "spend params are embedded");
+        assert!(
+            !crate::SaplingParams::OUTPUT.is_empty(),
+            "output params are embedded"
+        );
+        assert!(
+            !crate::SaplingParams::SPEND.is_empty(),
+            "spend params are embedded"
+        );
+    }
+
+    /// HYPOTHESIS: holding the adapter costs nothing, so binding it at a
+    /// build site cannot trigger the parse. Falsified if it carries state.
+    #[test]
+    fn lazy_sapling_prover_is_zero_sized() {
+        assert_eq!(std::mem::size_of::<LazySaplingProver>(), 0);
+    }
+
+    /// HYPOTHESIS: the Sapling prover is parsed once per process. Falsified
+    /// if two calls hand back different allocations.
+    #[test]
+    fn embedded_prover_is_parsed_once() {
+        assert!(std::ptr::eq(embedded_prover(), embedded_prover()));
     }
 
     #[test]

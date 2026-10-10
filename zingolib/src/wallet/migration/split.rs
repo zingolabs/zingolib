@@ -835,9 +835,7 @@ impl crate::wallet::LightWallet {
             }
         }
 
-        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
-        let sapling_prover =
-            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let sapling_prover = crate::wallet::utils::LazySaplingProver;
         let build_result = builder
             .build(
                 &zcash_transparent::builder::TransparentSigningSet::new(),

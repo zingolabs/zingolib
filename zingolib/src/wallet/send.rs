@@ -69,10 +69,7 @@ impl LightWallet {
             .try_into()?;
 
         // TODO:  Remove fallible sapling operations from Orchard only sends.
-        let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
-            crate::wallet::utils::read_sapling_params();
-        let sapling_prover =
-            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let sapling_prover = crate::wallet::utils::LazySaplingProver;
 
         let expiry_height = self.proposal_expiry_height(&proposal);
 
