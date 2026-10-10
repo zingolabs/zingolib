@@ -548,13 +548,13 @@ mod tests {
 
     #[test]
     fn the_android_workflow_runs_in_the_published_image() {
-        let workflow = include_str!("../../../.github/workflows/binding-layer-android.yaml");
+        let workflow = include_str!("../../.github/workflows/binding-layer-android.yaml");
         assert!(workflow.contains(&format!("image: {PUBLISHED_ANDROID_IMAGE}\n")));
     }
 
     #[test]
     fn the_descriptor_env_is_the_one_the_build_script_emits() {
-        let build_script = include_str!("../../../zingolib/build.rs");
+        let build_script = include_str!("../../zingolib/build.rs");
         assert!(build_script.contains(&format!(
             "const DESCRIPTOR_ENV: &str = \"{DESCRIPTOR_ENV}\";"
         )));
@@ -577,7 +577,9 @@ mod tests {
             None
         );
         assert_eq!(
-            descriptor_in_messages("{\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x/zingolib#6.0.0\",\"env\":[]}\n"),
+            descriptor_in_messages(
+                "{\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x/zingolib#6.0.0\",\"env\":[]}\n"
+            ),
             None
         );
     }
@@ -666,7 +668,7 @@ mod tests {
 
     #[test]
     fn the_swift_package_names_match_its_manifest() {
-        let manifest = include_str!("../../../bindings/swift/Package.swift");
+        let manifest = include_str!("../../bindings/swift/Package.swift");
         assert!(manifest.contains(&format!("name: \"{SWIFT_PACKAGE}\"")));
         assert!(manifest.contains(&format!(
             "let builderOutput = \"{SWIFT_PACKAGE_OUTPUT_DIR}\""
@@ -677,7 +679,7 @@ mod tests {
 
     #[test]
     fn the_wallet_crate_builds_no_bindgen() {
-        let manifest = include_str!("../../../zingo-ffi/lib/Cargo.toml");
+        let manifest = include_str!("../../zingo-ffi/lib/Cargo.toml");
         assert!(!manifest.contains("[[bin]]"));
         assert!(!manifest.contains("\"cli\""));
     }
@@ -776,9 +778,11 @@ mod tests {
 
     #[test]
     fn android_cc_carries_the_api_level() {
-        assert!(ANDROID_ABIS
-            .iter()
-            .all(|abi| abi.cc().contains(ANDROID_API_LEVEL)));
+        assert!(
+            ANDROID_ABIS
+                .iter()
+                .all(|abi| abi.cc().contains(ANDROID_API_LEVEL))
+        );
     }
 
     #[test]
@@ -791,8 +795,11 @@ mod tests {
             bindgen_workdir(Generation::Proxy, SWIFT),
             Workdir::WalletWorkspace
         );
-        assert!(LANGUAGES
-            .iter()
-            .all(|language| bindgen_workdir(Generation::Wallet, language) == Workdir::WalletCrate));
+        assert!(
+            LANGUAGES
+                .iter()
+                .all(|language| bindgen_workdir(Generation::Wallet, language)
+                    == Workdir::WalletCrate)
+        );
     }
 }

@@ -264,12 +264,6 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     commit_and_push(root, &commit)
 }
 
-/// - Reads the process arguments.
-/// - Exits the process through [`crate::run`].
-pub fn main() -> ! {
-    crate::dispatch_from_root(BINARY, dispatch)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,7 +362,7 @@ mod tests {
         ".github/workflows/ci-nightly.yaml",
         PUBLISH_WORKFLOW,
     ];
-    const WORKBENCH_MANIFEST: &str = "tools/workbench/Cargo.toml";
+    const WORKBENCH_MANIFEST: &str = "xtask/Cargo.toml";
     const PERMISSIONS_KEY: &str = "permissions:";
     const INPUTS_KEY: &str = "inputs:";
     const WITH_KEY: &str = "with:";

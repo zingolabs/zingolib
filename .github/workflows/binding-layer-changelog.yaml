@@ -32,8 +32,6 @@ jobs:
 
       - name: Setup Rust and the cargo cache
         uses: ./.github/actions/rust-setup
-        with:
-          workspaces: tools/workbench
 
       - name: Check bindings/CHANGELOG.md
-        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin binding-changelog -- --check
+        run: cargo xtask binding-changelog --check

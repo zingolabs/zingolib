@@ -204,12 +204,10 @@ jobs:
 
       - name: Setup Rust and the cargo cache
         uses: ./.github/actions/rust-setup
-        with:
-          workspaces: tools/workbench
 
       - name: Name the artifacts
         id: names
-        run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+        run: cargo xtask build-binding-layer artifact --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
   # The per-PR tier of zingolib/0054: the x86_64 libraries, the Kotlin
   # bindings, and the AAR. binding-layer-android.yaml runs the builder on

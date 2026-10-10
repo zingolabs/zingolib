@@ -111,15 +111,13 @@ jobs:
 
       - name: Setup Rust and the cargo cache
         uses: ./.github/actions/rust-setup
-        with:
-          workspaces: tools/workbench
 
       # The tool refuses an entry that is already published, so a stray
       # comment cannot rebuild and re-push a recorded commit.
       - name: Read the newest manifest entry
         id: manifest
         run: |
-          commit="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --newest)"
+          commit="$(cargo xtask binding-manifest --newest)"
           echo "commit=${commit}" >> "$GITHUB_OUTPUT"
 
       # The builder is the one source of every artifact name and of the ABI
@@ -129,7 +127,7 @@ jobs:
         id: names
         env:
           COMMIT: ${{ steps.manifest.outputs.commit }}
-        run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$COMMIT" >> "$GITHUB_OUTPUT"
+        run: cargo xtask build-binding-layer artifact --commit "$COMMIT" >> "$GITHUB_OUTPUT"
 
   android:
     needs: request
@@ -201,8 +199,6 @@ jobs:
 
       - name: Setup Rust and the cargo cache
         uses: ./.github/actions/rust-setup
-        with:
-          workspaces: tools/workbench
 
       # Each artifact lands in its own directory under BUNDLES, named as
       # the artifact, and the tool reads the platform back from that name.
@@ -219,13 +215,12 @@ jobs:
       # release.
       - name: Install orasust
         run: |
-          version="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --orasust-version)"
+          version="$(cargo xtask binding-manifest --orasust-version)"
           cargo install --locked "orasust@${version}"
 
       - name: Publish the bundles and record the entry
         run: |
-          cargo run --quiet --manifest-path tools/workbench/Cargo.toml \
-            --bin binding-publish -- --commit "$COMMIT" --bundles "$BUNDLES"
+          cargo xtask binding-publish --commit "$COMMIT" --bundles "$BUNDLES"
 
       - name: Report the publish
         run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=rocket

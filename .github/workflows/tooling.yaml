@@ -1,10 +1,8 @@
-# The repository's tooling: the xtask crate, and the workbench crate that
-# dissolves into it. The workbench is its own workspace, so the root
-# workspace's test jobs never compile its unit tests, and xtask's tests
-# run here rather than in the test shards because the dupes_gate tests
-# run the real cargo-dupes, which the test image does not hold.
+# The repository's tooling, the xtask crate. Its tests run here rather
+# than in the test shards because the dupes_gate tests run the real
+# cargo-dupes, which the test image does not hold.
 #
-# The jobs run outside ci-pr.yaml because dupes_gate.rs pins the rule
+# The job runs outside ci-pr.yaml because dupes_gate.rs pins the rule
 # that ci-pr.yaml never names the duplication gate: its paths filter
 # would hold a pull request forever on a required check that never
 # reports.
@@ -14,7 +12,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - "tools/workbench/**"
       - "xtask/**"
       - "rust-toolchain.toml"
       - ".github/workflows/tooling.yaml"
@@ -51,29 +48,3 @@ jobs:
 
       - name: Test
         run: cargo test --package xtask
-
-  workbench-standalone:
-    name: workbench (standalone workspace)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    env:
-      RUSTFLAGS: -D warnings
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Rust and the cargo cache
-        uses: ./.github/actions/rust-setup
-        with:
-          workspaces: tools/workbench
-
-      - name: Format
-        run: cargo fmt --manifest-path tools/workbench/Cargo.toml --all --check
-
-      # The registry feature compiles the binary that reaches the registry,
-      # so the lint and the tests cover it too.
-      - name: Clippy
-        run: cargo clippy --manifest-path tools/workbench/Cargo.toml --all-targets --all-features -- -D warnings
-
-      - name: Test
-        run: cargo test --manifest-path tools/workbench/Cargo.toml --all-features

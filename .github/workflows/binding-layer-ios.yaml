@@ -1,7 +1,7 @@
 name: Binding Layer for iOS
 
 # Builds the Binding Layer's two XCFrameworks and the Swift sources of the
-# ZingoBindings package on this commit, with the builder of tools/workbench.
+# ZingoBindings package on this commit, with the builder, `cargo xtask build-binding-layer`,.
 
 on:
   workflow_call:
@@ -56,7 +56,6 @@ jobs:
           workspaces: |
             . -> target/binding-layer/ios/wallet
             zingo-netutils -> ../target/binding-layer/ios/proxy
-            tools/workbench
 
       - name: Install bindgen-cli
         run: cargo install --locked bindgen-cli
@@ -77,10 +76,7 @@ jobs:
 
       - name: Build the Binding Layer
         run: |
-          cargo run \
-            --manifest-path tools/workbench/Cargo.toml \
-            --bin build-binding-layer -- \
-            ios --out "${{ inputs.out }}"
+          cargo xtask build-binding-layer ios --out "${{ inputs.out }}"
 
       - name: Upload the Binding Layer
         uses: actions/upload-artifact@v4

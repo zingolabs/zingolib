@@ -1,16 +1,14 @@
-#![forbid(unsafe_code)]
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use workbench::{
-    display_relative, merge_base, read, repo_root, run, touched_manifests, workspace_manifests,
-    workspace_members, DEFAULT_BASE, MANIFEST,
+use crate::{
+    DEFAULT_BASE, MANIFEST, display_relative, merge_base, read, touched_manifests,
+    workspace_manifests, workspace_members,
 };
 
 /// The blessed entries, one per line, relative to the repository root.
-const BLESSING_PATH: &str = "tools/workbench/feature-census-blessed.txt";
+const BLESSING_PATH: &str = "xtask/feature-census-blessed.txt";
 
 /// Separates a blessed entry's key from the reason it was blessed.
 const BLESSING_SEPARATOR: &str = "  ";
@@ -78,22 +76,17 @@ struct Request {
     crates: Vec<String>,
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    run("feature-census", || census(&args), |()| {})
-}
-
-/// Probes each declared dependency feature and reports the ones nothing needs.
-fn census(args: &[String]) -> Result<(), Vec<String>> {
+/// - Runs `cargo check` and `cargo tree` as child processes in `root`.
+/// - Rewrites `xtask/feature-census-blessed.txt` under `--bless`.
+pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
         return Ok(());
     }
 
-    let root = repo_root()?;
     let request = parse(args)?;
-    let manifests = match scope(&root, &request)? {
-        Scope::Everything => every_manifest(&root)?,
+    let manifests = match scope(root, &request)? {
+        Scope::Everything => every_manifest(root)?,
         Scope::Touched(paths) => paths,
     };
 
@@ -104,15 +97,15 @@ fn census(args: &[String]) -> Result<(), Vec<String>> {
 
     let mut unneeded = Vec::new();
     for manifest in &manifests {
-        println!("feature-census: {}", display_relative(&root, manifest));
-        unneeded.extend(probe_manifest(&root, manifest)?);
+        println!("feature-census: {}", display_relative(root, manifest));
+        unneeded.extend(probe_manifest(root, manifest)?);
     }
     unneeded.sort();
 
     if request.bless {
-        return bless(&root, &unneeded);
+        return bless(root, &unneeded);
     }
-    judge(&root, &unneeded)
+    judge(root, &unneeded)
 }
 
 /// Prints how to call the census and what each argument selects.
@@ -440,7 +433,7 @@ mod tests {
 
     #[test]
     fn every_manifest_reaches_the_nested_workspace_members() {
-        let root = repo_root().unwrap();
+        let root = crate::repo_root().unwrap();
         let manifests = every_manifest(&root).unwrap();
         for member in ["zingo-ffi/lib", "zingo-ffi/uniffi-bindgen", "zingo-cli"] {
             assert!(
@@ -538,7 +531,10 @@ serde = { workspace = true, features = ["derive"] }
                 .map(|found| found.feature)
                 .collect();
             assert_eq!(remaining, vec!["socks".to_string()], "in {manifest:?}");
-            assert!(without.ends_with("serde = \"1\"\n"), "the rest of {manifest:?} stays");
+            assert!(
+                without.ends_with("serde = \"1\"\n"),
+                "the rest of {manifest:?} stays"
+            );
         }
     }
 

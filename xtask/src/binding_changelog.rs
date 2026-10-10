@@ -236,12 +236,6 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     }
 }
 
-/// - Reads the process arguments.
-/// - Exits the process through [`crate::run`].
-pub fn main() -> ! {
-    crate::dispatch_from_root(BINARY, dispatch)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

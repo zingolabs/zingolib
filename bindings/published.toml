@@ -13,7 +13,7 @@
 #
 # An entry names every platform that binding-manifest requires. The
 # required set lives in REQUIRED_PLATFORMS of
-# tools/workbench/src/binding_manifest.rs alone, and it names both
+# xtask/src/binding_manifest.rs alone, and it names both
 # platforms (zingolib#2833, decision 6): a consumer ships both from one
 # commit, and an entry never changes after its merge, so an entry that
 # lacked one digest could never gain it. The publish workflow asks the

@@ -1,13 +1,21 @@
 #![forbid(unsafe_code)]
 
+pub mod binding_changelog;
+pub mod binding_layer;
+pub mod binding_manifest;
+pub mod binding_publish;
 pub mod birth_trial;
+pub mod build_binding_layer;
 pub mod bundle_nym_proxy;
 pub mod ci_plan;
 pub mod container;
 pub mod dupes_gate;
 pub mod exclusion_audit;
 pub mod exit_census;
+pub mod feature_census;
+pub mod feature_sweep;
 pub mod image;
+pub mod orasust;
 pub mod run_cli;
 pub mod session;
 pub mod sweep_teardown;
@@ -15,7 +23,6 @@ pub mod sync_ab;
 pub mod sync_bench;
 pub mod test;
 pub mod test_summary;
-pub mod workbench;
 
 use std::collections::BTreeSet;
 use std::io::Write;

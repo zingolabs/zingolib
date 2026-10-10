@@ -32,8 +32,7 @@ const CHECK_FLAG: &str = "--check";
 const BASE_FLAG: &str = "--base";
 const ALL_DIGESTS_FLAG: &str = "--all-digests";
 const NEWEST_FLAG: &str = "--newest";
-const USAGE: &str =
-    "usage: binding-manifest --check [--base <ref>] [--all-digests] | binding-manifest --newest | binding-manifest --orasust-version";
+const USAGE: &str = "usage: binding-manifest --check [--base <ref>] [--all-digests] | binding-manifest --newest | binding-manifest --orasust-version";
 pub const PUBLISH_COMMAND: &str = "/publish";
 const CHECKOUTS_DIR: &str = "target/binding-manifest";
 const TREE_ARGS: [&str; 8] = [
@@ -690,12 +689,6 @@ fn recorded_line(text: &str, commit: &str, key: &str, value: &str) -> Result<Str
     Ok(joined)
 }
 
-/// - Reads the process arguments.
-/// - Exits the process through [`crate::run`].
-pub fn main() -> ! {
-    crate::dispatch_from_root(BINARY, dispatch)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -893,9 +886,11 @@ mod tests {
         assert_eq!(awaited(&incomplete).len(), awaited_parts);
         let diagnostics = validate(&[incomplete]).unwrap_err();
         assert_eq!(diagnostics.len(), awaited_parts, "{diagnostics:?}");
-        assert!(diagnostics
-            .iter()
-            .all(|diagnostic| diagnostic.contains(PUBLISH_COMMAND)));
+        assert!(
+            diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.contains(PUBLISH_COMMAND))
+        );
     }
 
     #[test]
@@ -989,24 +984,30 @@ mod tests {
         assert_eq!(structure(&awaiting_first), Ok(()));
         assert_eq!(newest_publishable(&awaiting_first), Ok(FIRST));
         let no_since = [entry(FIRST, None, &[])];
-        assert!(structure(&no_since)
-            .unwrap_err()
-            .concat()
-            .contains("names no since"));
+        assert!(
+            structure(&no_since)
+                .unwrap_err()
+                .concat()
+                .contains("names no since")
+        );
         assert!(newest_publishable(&no_since).is_err());
         let repeated = [
             entry(FIRST, Some(ORIGIN), &PLATFORMS),
             entry(FIRST, None, &[]),
         ];
-        assert!(newest_publishable(&repeated)
-            .unwrap_err()
-            .concat()
-            .contains("repeats"));
+        assert!(
+            newest_publishable(&repeated)
+                .unwrap_err()
+                .concat()
+                .contains("repeats")
+        );
         let published = [entry(FIRST, Some(ORIGIN), &PLATFORMS)];
-        assert!(newest_publishable(&published)
-            .unwrap_err()
-            .concat()
-            .contains("is published"));
+        assert!(
+            newest_publishable(&published)
+                .unwrap_err()
+                .concat()
+                .contains("is published")
+        );
     }
 
     #[test]

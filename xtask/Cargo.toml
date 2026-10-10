@@ -10,4 +10,12 @@ publish = false
 [lints.rust]
 unsafe_code = "forbid"
 
+# The orasust release the Binding Layer workflows install and binding-manifest
+# reports. The pin lives in this manifest rather than in source because
+# rust-cache hashes the manifest into its cache key: a bump misses the cache
+# once and the newly installed binary is saved under the new key.
+[package.metadata.orasust]
+version = "0.1.3"
+
 [dependencies]
+toml_edit = "0.25.17"

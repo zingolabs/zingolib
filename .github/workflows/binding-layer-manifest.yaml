@@ -35,8 +35,6 @@ jobs:
 
       - name: Setup Rust and the cargo cache
         uses: ./.github/actions/rust-setup
-        with:
-          workspaces: tools/workbench
 
       # The registry client is the orasust crate, whose release the
       # workbench manifest pins under [package.metadata.orasust]. The cargo
@@ -45,7 +43,7 @@ jobs:
       # release.
       - name: Install orasust
         run: |
-          version="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --orasust-version)"
+          version="$(cargo xtask binding-manifest --orasust-version)"
           cargo install --locked "orasust@${version}"
 
       # On a pull request the merged entries are those of the base branch;
@@ -67,6 +65,5 @@ jobs:
             echo "::warning::${BASE} is not in this checkout, so every entry is checked"
             BASE=""
           fi
-          cargo run --manifest-path tools/workbench/Cargo.toml \
-            --bin binding-manifest -- \
+          cargo xtask binding-manifest \
             --check ${BASE:+--base "$BASE"} $ALL_DIGESTS

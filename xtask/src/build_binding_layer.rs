@@ -1,17 +1,12 @@
-#![forbid(unsafe_code)]
-
 use std::env;
 use std::fs;
 use std::iter;
 use std::path;
 use std::process;
 
-use workbench::binding_layer;
-use workbench::binding_manifest;
-use workbench::MANIFEST;
-
-/// The program name that prefixes every diagnostic.
-const PROGRAM: &str = "build-binding-layer";
+use crate::MANIFEST;
+use crate::binding_layer;
+use crate::binding_manifest;
 
 /// The invocation shape, reported when the arguments do not parse.
 const USAGE: &str = "usage: build-binding-layer <android|ios|kotlin> --out <directory> \
@@ -185,9 +180,9 @@ impl Roots {
     fn on_host(root: path::PathBuf, out: path::PathBuf) -> Result<Self, Vec<String>> {
         refuse_an_output_directory_holding_the_root(&root, &out)?;
         Ok(Self {
-            run: workbench::utf8(&root)?.to_string(),
+            run: crate::utf8(&root)?.to_string(),
             host: root,
-            out_run: workbench::utf8(&out)?.to_string(),
+            out_run: crate::utf8(&out)?.to_string(),
             out_host: out,
         })
     }
@@ -265,25 +260,18 @@ fn refuse_an_output_directory_holding_the_root(
     }
 }
 
-fn main() {
-    let args: Vec<String> = env::args().skip(PROGRAM_NAME_ARGUMENTS).collect();
+/// - Writes the artifact names, the image tag, or the output directory to stdout.
+pub fn dispatch(_root: &path::Path, args: &[String]) -> Result<(), Vec<String>> {
     match args.split_first() {
-        Some((command, rest)) if command == ARTIFACT_COMMAND => {
-            workbench::run(PROGRAM, || artifact(rest), |outputs| print!("{outputs}"))
-        }
-        Some((command, rest)) if command == IMAGE_COMMAND => {
-            workbench::run(PROGRAM, || image(rest), |tag| println!("{tag}"))
-        }
-        _ => workbench::run(
-            PROGRAM,
-            || build(&args),
-            |out| println!("{}", out.display()),
-        ),
+        Some((command, rest)) if command == ARTIFACT_COMMAND => print!("{}", artifact(rest)?),
+        Some((command, rest)) if command == IMAGE_COMMAND => println!("{}", image(rest)?),
+        _ => println!("{}", build(args)?.display()),
     }
+    Ok(())
 }
 
 fn artifact(args: &[String]) -> Result<String, Vec<String>> {
-    let commit = workbench::required_flag(args, COMMIT_FLAG, USAGE)?;
+    let commit = crate::required_flag(args, COMMIT_FLAG, USAGE)?;
     Ok(binding_layer::render_outputs(
         &binding_layer::artifact_outputs(&binding_manifest::PLATFORMS, commit),
     ))
@@ -300,7 +288,7 @@ fn image(args: &[String]) -> Result<&'static str, Vec<String>> {
     let engine = binding_layer::container_engine()?;
     build_android_image(
         engine,
-        &workbench::repo_root()?,
+        &crate::repo_root()?,
         binding_layer::PUBLISHED_ANDROID_IMAGE,
     )?;
     Ok(binding_layer::PUBLISHED_ANDROID_IMAGE)
@@ -309,7 +297,7 @@ fn image(args: &[String]) -> Result<&'static str, Vec<String>> {
 /// Build the selected platform's packaging and return its output directory.
 fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
     let (platform, out, abis) = parse(args)?;
-    let root = workbench::repo_root()?;
+    let root = crate::repo_root()?;
     let roots = match platform {
         Platform::Android { in_image: true } => {
             let roots = Roots::on_host(root, out)?;
@@ -328,7 +316,7 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
                 },
                 &android_plan(&roots, &abis),
             );
-            workbench::stdout_of(engine, &["rm", "--force", &id])?;
+            crate::stdout_of(engine, &["rm", "--force", &id])?;
             outcome?;
             roots
         }
@@ -368,7 +356,7 @@ fn parse(
             return Err(vec![
                 format!("{IN_IMAGE_FLAG} applies only to android"),
                 USAGE.to_string(),
-            ])
+            ]);
         }
         "ios" => Platform::Ios,
         "kotlin" => Platform::Kotlin,
@@ -376,26 +364,28 @@ fn parse(
             return Err(vec![
                 format!("unknown platform `{other}`"),
                 USAGE.to_string(),
-            ])
+            ]);
         }
     };
-    let out = workbench::flag_value(flags, OUT_FLAG)?
+    let out = crate::flag_value(flags, OUT_FLAG)?
         .ok_or_else(|| vec![format!("missing {OUT_FLAG}"), USAGE.to_string()])?;
     let absolute_out = env::current_dir()
         .map_err(|e| vec![format!("cannot read the current directory: {e}")])?
         .join(out);
-    let abis = match workbench::flag_value(flags, ABI_FLAG)? {
+    let abis = match crate::flag_value(flags, ABI_FLAG)? {
         None => binding_layer::ANDROID_ABIS.iter().collect(),
         Some(_) if !matches!(platform, Platform::Android { .. }) => {
             return Err(vec![
                 format!("{ABI_FLAG} applies only to android"),
                 USAGE.to_string(),
-            ])
+            ]);
         }
-        Some(name) => vec![binding_layer::ANDROID_ABIS
-            .iter()
-            .find(|abi| abi.jni_dir == name)
-            .ok_or_else(|| vec![format!("unknown Android ABI `{name}`")])?],
+        Some(name) => vec![
+            binding_layer::ANDROID_ABIS
+                .iter()
+                .find(|abi| abi.jni_dir == name)
+                .ok_or_else(|| vec![format!("unknown Android ABI `{name}`")])?,
+        ],
     };
     Ok((platform, absolute_out, abis))
 }
@@ -403,9 +393,9 @@ fn parse(
 /// - Reads `rust-toolchain.toml` under `root`.
 /// - Runs the container engine's `build`, which writes `tag` to its store.
 fn build_android_image(engine: &str, root: &path::Path, tag: &str) -> Result<(), Vec<String>> {
-    let toolchain = workbench::read(&root.join(workbench::TOOLCHAIN_FILE))?;
+    let toolchain = crate::read(&root.join(crate::TOOLCHAIN_FILE))?;
     let targets = triples(binding_layer::ANDROID_ABIS.iter()).join(" ");
-    workbench::stdout_of(
+    crate::stdout_of(
         engine,
         &[
             "build",
@@ -416,8 +406,8 @@ fn build_android_image(engine: &str, root: &path::Path, tag: &str) -> Result<(),
             "--build-arg",
             &format!("{}={targets}", binding_layer::IMAGE_TARGETS_ARGUMENT),
             "--file",
-            workbench::utf8(&root.join(ANDROID_DOCKERFILE))?,
-            workbench::utf8(&root.join(ANDROID_CONTEXT))?,
+            crate::utf8(&root.join(ANDROID_DOCKERFILE))?,
+            crate::utf8(&root.join(ANDROID_CONTEXT))?,
         ],
     )
     .map(drop)
@@ -429,8 +419,8 @@ fn triples<'a>(abis: impl IntoIterator<Item = &'a binding_layer::AndroidAbi>) ->
 
 /// Start a long-lived container of the Android tool image with zingolib mounted, and return its id.
 fn start_container(engine: &str, root: &path::Path) -> Result<String, Vec<String>> {
-    let mount = format!("{}:{CONTAINER_ROOT}", workbench::utf8(root)?);
-    workbench::stdout_of(
+    let mount = format!("{}:{CONTAINER_ROOT}", crate::utf8(root)?);
+    crate::stdout_of(
         engine,
         &[
             "run",
@@ -1013,7 +1003,7 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
             command,
         } => run_command(runner, workdir, env, command),
         Step::Copy { from, to } => {
-            workbench::create_parent(to)?;
+            crate::create_parent(to)?;
             fs::copy(from, to).map(drop).map_err(|e| {
                 vec![format!(
                     "cannot copy {} to {}: {e}",
@@ -1029,13 +1019,13 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
         } => {
             let contents = sources
                 .iter()
-                .map(|source| workbench::read(source))
+                .map(|source| crate::read(source))
                 .collect::<Result<Vec<_>, _>>()?
                 .join(separator);
-            workbench::create_parent(to)?;
+            crate::create_parent(to)?;
             fs::write(to, contents).map_err(|e| vec![format!("cannot write {}: {e}", to.display())])
         }
-        Step::FreshDir(directory) => workbench::fresh_dir(directory).map(drop),
+        Step::FreshDir(directory) => crate::fresh_dir(directory).map(drop),
         Step::Remove(directory) => {
             if directory.exists() {
                 fs::remove_dir_all(directory)
@@ -1069,7 +1059,7 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
                     binding_layer::DESCRIPTOR_ENV
                 )]
             })?;
-            workbench::create_parent(to)?;
+            crate::create_parent(to)?;
             fs::write(to, format!("{descriptor}\n"))
                 .map_err(|e| vec![format!("cannot write {}: {e}", to.display())])
         }
@@ -1274,11 +1264,13 @@ mod tests {
     #[test]
     fn no_plan_step_overrides_the_toolchain_pin() {
         for plan in every_plan() {
-            assert!(plan.iter().all(|step| match step {
-                Step::Run { env, .. } | Step::Describe { env, .. } => env
-                    .iter()
-                    .all(|(key, _)| key != binding_layer::TOOLCHAIN_VARIABLE),
-                _ => true,
+            assert!(plan.iter().all(|step| {
+                match step {
+                    Step::Run { env, .. } | Step::Describe { env, .. } => env
+                        .iter()
+                        .all(|(key, _)| key != binding_layer::TOOLCHAIN_VARIABLE),
+                    _ => true,
+                }
             }));
         }
     }
@@ -1320,9 +1312,11 @@ mod tests {
             .iter()
             .position(|arg| arg == CONTAINER_ID)
             .unwrap();
-        assert!(started.args[..id]
-            .windows(2)
-            .any(|pair| pair[0] == "--env" && pair[1] == cleared));
+        assert!(
+            started.args[..id]
+                .windows(2)
+                .any(|pair| pair[0] == "--env" && pair[1] == cleared)
+        );
     }
 
     #[test]
@@ -1440,9 +1434,10 @@ mod tests {
             })
             .collect();
         assert_eq!(bindgen_envs.len(), GENERATIONS_PER_BUILD);
-        assert!(bindgen_envs.iter().all(|env| env
-            .iter()
-            .any(|(key, value)| key == "CC" && *value == expected_cc)));
+        assert!(bindgen_envs.iter().all(|env| {
+            env.iter()
+                .any(|(key, value)| key == "CC" && *value == expected_cc)
+        }));
     }
 
     #[test]
@@ -1535,9 +1530,11 @@ mod tests {
                 )
             );
         }
-        assert!(commands(&plan)
-            .iter()
-            .all(|command| !command.contains("--release")));
+        assert!(
+            commands(&plan)
+                .iter()
+                .all(|command| !command.contains("--release"))
+        );
     }
 
     /// Tests that every Kotlin generation runs from the standalone bindgen package, whose only dependency is uniffi.
@@ -1553,13 +1550,14 @@ mod tests {
             .filter(|command| command.contains("--language kotlin"))
             .collect::<Vec<_>>();
         assert_eq!(generations.len(), binding_layer::GENERATIONS.len());
-        assert!(generations
-            .iter()
-            .all(|command| command.contains("--package zingo-uniffi-bindgen")));
-        assert!(generations
-            .iter()
-            .all(|command| !command
-                .contains(&format!("{}/{MANIFEST}", binding_layer::WALLET_CRATE_DIR))));
+        assert!(
+            generations
+                .iter()
+                .all(|command| command.contains("--package zingo-uniffi-bindgen"))
+        );
+        assert!(generations.iter().all(|command| {
+            !command.contains(&format!("{}/{MANIFEST}", binding_layer::WALLET_CRATE_DIR))
+        }));
     }
 
     #[test]
@@ -1636,9 +1634,11 @@ mod tests {
             plan.first(),
             Some(Step::FreshDir(directory)) if directory == path::Path::new(OUTSIDE_OUT)
         ));
-        assert!(commands(&plan)
-            .iter()
-            .any(|command| command.contains(&format!("{OUTSIDE_OUT}/{GENERATED_DIR}/wallet"))));
+        assert!(
+            commands(&plan)
+                .iter()
+                .any(|command| command.contains(&format!("{OUTSIDE_OUT}/{GENERATED_DIR}/wallet")))
+        );
     }
 
     /// A container engine that no host has installed.
@@ -1668,7 +1668,7 @@ mod tests {
 
     #[test]
     fn an_output_directory_holding_the_root_is_refused_on_both_runners() {
-        let root = workbench::repo_root().unwrap();
+        let root = crate::repo_root().unwrap();
         let parent = root.parent().unwrap().to_path_buf();
         assert!(Roots::on_host(root.clone(), root.clone()).is_err());
         assert!(Roots::on_host(root.clone(), parent.clone()).is_err());

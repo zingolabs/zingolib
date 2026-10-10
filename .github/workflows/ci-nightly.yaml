@@ -42,7 +42,7 @@ jobs:
       # Removes each declared dependency feature in turn and checks without it.
       # One `cargo check` per feature, so this runs nightly rather than per PR.
       - name: Run feature-census
-        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin feature-census -- --all
+        run: cargo xtask feature-census --all
 
   # The online sync rate of the dev head against the newest first-parent
   # commit older than a day, in a real run-cli --online session (AGENTS.md,
@@ -105,12 +105,10 @@ jobs:
 
       - name: Setup Rust and the cargo cache
         uses: ./.github/actions/rust-setup
-        with:
-          workspaces: tools/workbench
 
       - name: Name the artifacts
         id: names
-        run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+        run: cargo xtask build-binding-layer artifact --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
   # The nightly tier of zingolib/0054: the four Android ABIs in one AAR,
   # and both XCFrameworks with the Swift sources on macOS. Each job runs

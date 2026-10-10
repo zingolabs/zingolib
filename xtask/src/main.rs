@@ -3,8 +3,9 @@
 use std::path::Path;
 
 use xtask::{
-    birth_trial, bundle_nym_proxy, ci_plan, dupes_gate, exclusion_audit, exit_census, image,
-    run_cli, sweep_teardown, sync_ab, sync_bench, test, test_summary, workbench,
+    binding_changelog, binding_manifest, binding_publish, birth_trial, build_binding_layer,
+    bundle_nym_proxy, ci_plan, dupes_gate, exclusion_audit, exit_census, feature_census,
+    feature_sweep, image, run_cli, sweep_teardown, sync_ab, sync_bench, test, test_summary,
 };
 
 type Entry = fn(&Path, &[String]) -> Result<(), Vec<String>>;
@@ -13,7 +14,6 @@ enum Task {
     Run(Entry),
     With(Entry, &'static [&'static str]),
     Test(test::Variant),
-    Workbench(workbench::Binary),
 }
 
 impl Task {
@@ -29,7 +29,6 @@ impl Task {
                 task(root, &all)
             }
             Self::Test(variant) => variant.run(root, args),
-            Self::Workbench(binary) => binary.run(root, args),
         }
     }
 }
@@ -87,8 +86,33 @@ const TASKS: &[(&str, Task, &str)] = &[
     ),
     (
         "feature-sweep",
-        Task::Workbench(workbench::Binary("feature-sweep")),
+        Task::Run(feature_sweep::dispatch),
         "check the crates this branch touches in every feature combination",
+    ),
+    (
+        "feature-census",
+        Task::Run(feature_census::dispatch),
+        "report declared dependency features nothing needs; `--all`, `--base <ref>`, `--bless`",
+    ),
+    (
+        "build-binding-layer",
+        Task::Run(build_binding_layer::dispatch),
+        "build the Binding Layer for `android` or `ios`; `artifact` names the artifacts, `image` builds the Android image",
+    ),
+    (
+        binding_changelog::BINARY,
+        Task::Run(binding_changelog::dispatch),
+        "generate or `--check` bindings/CHANGELOG.md from the audited crates' changelogs",
+    ),
+    (
+        binding_manifest::BINARY,
+        Task::Run(binding_manifest::dispatch),
+        "`--check` bindings/published.toml, or print `--newest` or `--orasust-version`",
+    ),
+    (
+        binding_publish::BINARY,
+        Task::Run(binding_publish::dispatch),
+        "publish the Binding Layer bundles and record them in the manifest",
     ),
     (
         "bundle-nym-proxy",

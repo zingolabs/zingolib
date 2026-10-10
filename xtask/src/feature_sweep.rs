@@ -1,11 +1,9 @@
-#![forbid(unsafe_code)]
-
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use workbench::{
-    cargo_subcommand_version, declares_a_package, display_relative, merge_base, repo_root, run,
-    touched_manifests, DEFAULT_BASE, MANIFEST,
+use crate::{
+    DEFAULT_BASE, MANIFEST, cargo_subcommand_version, declares_a_package, display_relative,
+    merge_base, touched_manifests,
 };
 
 const HACK: &str = "hack";
@@ -32,25 +30,19 @@ enum Scope {
     Touched(Vec<PathBuf>),
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    run("feature-sweep", || sweep(&args), |()| {})
-}
-
-/// Checks each selected crate in every feature combination, failing on the first refusal.
-fn sweep(args: &[String]) -> Result<(), Vec<String>> {
+/// - Runs `cargo hack check` as child processes in `root`.
+pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
         return Ok(());
     }
 
-    let root = repo_root()?;
     cargo_subcommand_version(HACK, INSTALL_HACK)?;
 
-    match scope(&root, args)? {
+    match scope(root, args)? {
         Scope::Workspace => {
             println!("feature-sweep: the whole workspace, every feature combination");
-            check(&root, &["--workspace".to_string()])
+            check(root, &["--workspace".to_string()])
         }
         Scope::Touched(manifests) if manifests.is_empty() => {
             println!("feature-sweep: no crate is touched; nothing to check");
@@ -58,11 +50,11 @@ fn sweep(args: &[String]) -> Result<(), Vec<String>> {
         }
         Scope::Touched(manifests) => {
             for manifest in &manifests {
-                println!("feature-sweep: {}", display_relative(&root, manifest));
+                println!("feature-sweep: {}", display_relative(root, manifest));
             }
             for manifest in &manifests {
                 let path = manifest.to_string_lossy().to_string();
-                check(&root, &["--manifest-path".to_string(), path])?;
+                check(root, &["--manifest-path".to_string(), path])?;
             }
             Ok(())
         }

@@ -25,9 +25,7 @@ val buildBindingLayer by tasks.registering(Exec::class) {
     workingDir = zingolibRoot
     commandLine(
         listOf(
-            "cargo", "run", "--quiet",
-            "--manifest-path", "tools/workbench/Cargo.toml",
-            "--bin", "build-binding-layer", "--",
+            "cargo", "xtask", "build-binding-layer",
             "android", "--out", builderOutput.get().asFile.absolutePath,
         ) + selectedAbi.map { listOf("--abi", it) }.getOrElse(emptyList())
     )
