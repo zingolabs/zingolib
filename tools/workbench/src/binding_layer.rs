@@ -382,7 +382,8 @@ pub fn artifact_segment<'a>(name: &'a str, kind: &str, commit: &str) -> Option<&
     (!segment.is_empty()).then_some(segment)
 }
 
-/// The engine `CONTAINER_RUNTIME` names, else the first container engine that answers `--version`.
+/// - Reads `CONTAINER_RUNTIME` from the environment.
+/// - Runs `<engine> --version` as a child process for each engine in turn until one answers.
 pub fn container_engine() -> Result<&'static str, Vec<String>> {
     if let Ok(named) = std::env::var(ENGINE_VARIABLE) {
         return ENGINES

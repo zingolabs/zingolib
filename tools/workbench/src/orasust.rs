@@ -2,8 +2,6 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use toml_edit::DocumentMut;
-
 pub const BINARY: &str = "orasust";
 pub const VERSION_FLAG: &str = "--orasust-version";
 const MANIFEST: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"));
@@ -26,7 +24,7 @@ const KEY_VALUE_SEPARATOR: char = ':';
 const CURRENT_DIR: &str = ".";
 
 pub fn version() -> Result<String, Vec<String>> {
-    let manifest: DocumentMut = MANIFEST
+    let manifest: toml_edit::DocumentMut = MANIFEST
         .parse()
         .map_err(|error| vec![format!("workbench Cargo.toml does not parse: {error}")])?;
     let pin = PIN_PATH

@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use toml_edit::{Array, DocumentMut, Item, Value};
 use workbench::{
     display_relative, merge_base, read, repo_root, run, touched_manifests, workspace_manifests,
     workspace_members, DEFAULT_BASE, MANIFEST,
@@ -48,7 +47,6 @@ struct Candidate {
     dependency: String,
     /// The feature itself.
     feature: String,
-    /// The keys from the manifest's root to the dependency's table.
     path: Vec<String>,
 }
 
@@ -224,36 +222,36 @@ fn probe_manifest(root: &Path, manifest: &Path) -> Result<Vec<Candidate>, Vec<St
     Ok(unneeded)
 }
 
-fn parsed(text: &str) -> Result<DocumentMut, Vec<String>> {
+fn parsed(text: &str) -> Result<toml_edit::DocumentMut, Vec<String>> {
     text.parse()
         .map_err(|e| vec![format!("the manifest is not TOML: {e}")])
 }
 
-fn keys_of(item: &Item) -> Vec<String> {
+fn keys_of(item: &toml_edit::Item) -> Vec<String> {
     match item {
-        Item::Table(table) => table.iter().map(|(key, _)| key.to_string()).collect(),
-        Item::Value(Value::InlineTable(table)) => {
+        toml_edit::Item::Table(table) => table.iter().map(|(key, _)| key.to_string()).collect(),
+        toml_edit::Item::Value(toml_edit::Value::InlineTable(table)) => {
             table.iter().map(|(key, _)| key.to_string()).collect()
         }
         _ => Vec::new(),
     }
 }
 
-fn item_at<'a>(root: &'a mut Item, path: &[String]) -> Option<&'a mut Item> {
+fn item_at<'a>(root: &'a mut toml_edit::Item, path: &[String]) -> Option<&'a mut toml_edit::Item> {
     path.iter().try_fold(root, |item, key| item.get_mut(key))
 }
 
-fn feature_array(dependency: &mut Item) -> Option<&mut Array> {
+fn feature_array(dependency: &mut toml_edit::Item) -> Option<&mut toml_edit::Array> {
     match dependency {
-        Item::Table(table) => table.get_mut(FEATURES)?.as_array_mut(),
-        Item::Value(Value::InlineTable(table)) => table.get_mut(FEATURES)?.as_array_mut(),
+        toml_edit::Item::Table(table) => table.get_mut(FEATURES)?.as_array_mut(),
+        toml_edit::Item::Value(toml_edit::Value::InlineTable(table)) => {
+            table.get_mut(FEATURES)?.as_array_mut()
+        }
         _ => None,
     }
 }
 
-/// The key paths of every table that holds dependencies: the three kinds at the
-/// root, the workspace's, and the three kinds under each target.
-fn dependency_tables(root: &Item) -> Vec<Vec<String>> {
+fn dependency_tables(root: &toml_edit::Item) -> Vec<Vec<String>> {
     let mut tables: Vec<Vec<String>> = DEPENDENCY_TABLES
         .iter()
         .map(|table| vec![table.to_string()])
@@ -289,7 +287,7 @@ fn declared(crate_dir: &str, text: &str) -> Result<Vec<Candidate>, Vec<String>> 
             let features: Vec<String> = match item_at(root, &path).and_then(feature_array) {
                 Some(features) => features
                     .iter()
-                    .filter_map(Value::as_str)
+                    .filter_map(toml_edit::Value::as_str)
                     .map(str::to_string)
                     .collect(),
                 None => continue,

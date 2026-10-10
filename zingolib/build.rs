@@ -37,10 +37,10 @@ fn register_rerun_watches() {
         println!("cargo:rerun-if-changed={}", git_dir.join("HEAD").display());
     }
     if let Some(common_dir) = git_path_query("--git-common-dir") {
-        println!(
-            "cargo:rerun-if-changed={}",
-            common_dir.join("packed-refs").display()
-        );
+        let packed_refs = common_dir.join("packed-refs");
+        if packed_refs.exists() {
+            println!("cargo:rerun-if-changed={}", packed_refs.display());
+        }
         println!(
             "cargo:rerun-if-changed={}",
             common_dir.join("refs").display()
@@ -135,8 +135,6 @@ fn git_description() {
         dirty(),
     );
 
-    // The Binding Layer builder reads the descriptor from cargo's
-    // `build-script-executed` message, which carries every rustc-env line.
     println!("cargo:rustc-env={DESCRIPTOR_ENV}={description}");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
