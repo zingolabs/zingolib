@@ -101,16 +101,11 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 #    --mount=type=cache,target=${HOME}/.zcash-params \
 # See Github issue #2314
 # this works!
-# TODO : get rid of:
-#     --mount=type=cache,target=zingolib/zcash-params \
-# This soothes the savage beast as well!
-# see Github issue #2315
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=${CARGO_HOME}/git \
     --mount=type=cache,target=${HOME}/target \
     --mount=type=cache,target=${HOME}/.zcash-params \
-    --mount=type=cache,target=zingolib/zcash-params \
     --mount=type=bind,source=rust-toolchain.toml,target=rust-toolchain.toml,ro \
  		--mount=type=bind,source=Cargo.toml,target=Cargo.toml,ro \
 		--mount=type=bind,source=Cargo.lock,target=Cargo.lock,ro \

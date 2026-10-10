@@ -50,7 +50,6 @@ portpicker = { workspace = true, optional = true }
 prost = { workspace = true }
 hmac = { workspace = true }
 rand = { workspace = true }
-rust-embed = { workspace = true, features = ["debug-embed"] }
 sapling-crypto.workspace = true
 sha2 = { workspace = true }
 secp256k1 = { workspace = true }
