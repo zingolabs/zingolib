@@ -573,6 +573,29 @@ fn a_tuple_struct_with_a_uniffi_derive_renders_its_field_types() {
 }
 
 #[test]
+fn a_test_only_module_contributes_nothing_to_the_surface() {
+    let source = r#"
+        #[cfg(test)]
+        mod lock_discipline_tests {
+            #[uniffi::export]
+            pub fn probe() -> u32 { 0 }
+            macro_rules! emits { () => { #[uniffi::export] pub fn x() {} }; }
+        }
+        #[cfg(test)]
+        #[uniffi::export]
+        pub fn test_only() -> u32 { 0 }
+        #[uniffi::export]
+        pub fn shipped() -> u32 { 0 }
+    "#;
+    let surface = surface_of(&[source.to_string()]);
+    assert_eq!(
+        surface.lines,
+        BTreeSet::from(["shipped() -> u32".to_string()])
+    );
+    assert!(surface.generators.is_empty());
+}
+
+#[test]
 fn every_uniffi_attribute_but_a_plain_export_marks_its_item() {
     let source = r#"
         #[derive(uniffi::Object)]
