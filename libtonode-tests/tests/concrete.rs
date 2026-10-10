@@ -431,27 +431,6 @@ async fn utxos_are_not_prematurely_confirmed() {
 }
 
 #[tokio::test]
-async fn mine_to_ironwood() {
-    let (local_net, mut faucet) = scenarios::faucet(
-        PoolType::IRONWOOD,
-        scenarios::default_test_activation_heights(),
-        scenarios::ChainCachePolicy::PerTest,
-    )
-    .await;
-    check_client_balances!(
-        faucet,
-        i: (scenarios::funded_faucet_ironwood_balance()) o: 0 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
-    );
-    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-        .await
-        .unwrap();
-    check_client_balances!(
-        faucet,
-        i: (scenarios::funded_faucet_ironwood_balance() + scenarios::POST_STREAM_BLOCK_REWARD) o: 0 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
-    );
-}
-
-#[tokio::test]
 async fn sync_all_expressible_epochs() {
     // The zebrad config writer requires every upgrade through Canopy
     // active at height 1, and the harness subsidy fixtures pair only

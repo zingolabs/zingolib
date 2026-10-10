@@ -4510,4 +4510,28 @@ mod moved_from_regtest {
         miner.sync_and_await().await.unwrap();
         check_client_balances!(miner, i: 0 o: ((ORCHARD_BLOCKS + 1) * REWARD_ZATS) s: REWARD_ZATS t: 0);
     }
+    #[tokio::test]
+    async fn mine_to_ironwood() {
+        const IRONWOOD_BLOCKS: u64 = 3;
+        let mut net = MockNet::launch().await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_sapling =
+            get_base_address(&miner, PoolType::Shielded(ShieldedPool::Sapling)).await;
+        let miner_ua = get_base_address(&miner, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.mine_block_rewarding_shielded(&miner_sapling, REWARD, vec![])
+            .await;
+        for _ in 0..IRONWOOD_BLOCKS {
+            net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+                .await;
+        }
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: (IRONWOOD_BLOCKS * REWARD_ZATS) o: 0 s: REWARD_ZATS t: 0);
+
+        net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+            .await;
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: ((IRONWOOD_BLOCKS + 1) * REWARD_ZATS) o: 0 s: REWARD_ZATS t: 0);
+    }
 }
