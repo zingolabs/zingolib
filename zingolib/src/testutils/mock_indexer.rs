@@ -804,6 +804,18 @@ pub fn transparent_only_transaction(
     inputs: Vec<TxIn<TransparentAuthorized>>,
     outputs: Vec<TxOut>,
 ) -> Vec<u8> {
+    transparent_only_transaction_expiring(chain_type, height, NO_EXPIRY, inputs, outputs)
+}
+
+/// Serializes an unsigned transparent-only transaction for the branch at `height` with `expiry`, which a
+/// coinbase sets to its block height, the rule that keeps consecutive coinbases' txids distinct.
+pub fn transparent_only_transaction_expiring(
+    chain_type: &ChainType,
+    height: BlockHeight,
+    expiry: BlockHeight,
+    inputs: Vec<TxIn<TransparentAuthorized>>,
+    outputs: Vec<TxOut>,
+) -> Vec<u8> {
     let bundle = TransparentBundle {
         vin: inputs,
         vout: outputs,
@@ -814,7 +826,7 @@ pub fn transparent_only_transaction(
         TxVersion::V6 => TransactionData::<Authorized>::from_parts_v6(
             branch_id,
             0,
-            NO_EXPIRY,
+            expiry,
             Some(bundle),
             None,
             None,
@@ -824,7 +836,7 @@ pub fn transparent_only_transaction(
             version,
             branch_id,
             0,
-            NO_EXPIRY,
+            expiry,
             Some(bundle),
             None,
             None,
@@ -1126,7 +1138,13 @@ impl MockChain {
             .expect("the miner address is a transparent address of this chain");
         let input = TxIn::from_parts(OutPoint::NULL, coinbase_script_sig(height), u32::MAX);
         let output = TxOut::new(reward, script_pubkey);
-        transparent_only_transaction(&self.chain_type, height, vec![input], vec![output])
+        transparent_only_transaction_expiring(
+            &self.chain_type,
+            height,
+            height,
+            vec![input],
+            vec![output],
+        )
     }
 
     fn mine(&mut self, coinbase: Option<Vec<u8>>, raw_transactions: Vec<Vec<u8>>) {
@@ -2331,7 +2349,7 @@ pub async fn shielded_coinbase_transaction(
         TxVersion::V6 => TransactionData::<Authorized>::from_parts_v6(
             branch_id,
             0,
-            NO_EXPIRY,
+            height,
             Some(transparent),
             built.sapling_bundle().cloned(),
             built.orchard_bundle().cloned(),
@@ -2341,7 +2359,7 @@ pub async fn shielded_coinbase_transaction(
             version,
             branch_id,
             0,
-            NO_EXPIRY,
+            height,
             Some(transparent),
             None,
             built.sapling_bundle().cloned(),
