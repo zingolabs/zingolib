@@ -106,6 +106,8 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
 
       # The flags are the action's defaults plus one exclusion:
       # zingo-uniffi-bindgen is a binary with no library target and no
@@ -137,6 +139,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
           workspaces: zingo-netutils
 
       # The workspace holds the proxy crate and the verifier shim beside
@@ -208,6 +211,8 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
 
       - name: Clippy
         run: cargo clippy -p zingolib -p zingo-cli --features nym --all-targets -- -D warnings
@@ -247,6 +252,8 @@ jobs:
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
 
       - name: Run doc tests
         run: cargo test --doc

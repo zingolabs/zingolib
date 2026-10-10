@@ -22,6 +22,8 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
 
       - name: Run cargo-checkmate
         uses: zingolabs/infrastructure/.github/actions/cargo-checkmate@20485fed7a080e381130ed8120419dc81acae641
