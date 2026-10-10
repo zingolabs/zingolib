@@ -30,8 +30,12 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     steps:
+      # The manifest and changelog checks run inside the tests against the
+      # committed entries, whose commits a shallow checkout does not hold.
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1

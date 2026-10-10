@@ -18,8 +18,12 @@ const DEMOTION: &str = "##";
 const DIFF_HEADER_MARK: &str = "diff --git";
 const HUNK_MARK: &str = "@@";
 const ADDED_MARK: char = '+';
+const KEPT_MARK: char = ' ';
+const NO_NEWLINE_MARK: char = '\\';
 const REMOVED_MARK: char = '-';
 const DIFF_ARGS: [&str; 4] = ["diff", "--no-color", "--no-ext-diff", "--no-renames"];
+const CONTEXT_FLAG: &str = "--unified=";
+const WHOLE_FILE_CONTEXT: i32 = i32::MAX;
 const PREAMBLE_PREFIXES: [&str; 4] = [
     "# Changelog",
     "All notable changes to this project",
@@ -34,39 +38,113 @@ pub struct Section {
     pub entries: Vec<(String, Vec<String>)>,
 }
 
-pub fn gained_lines(diff: &str) -> Vec<String> {
+struct Heading {
+    level: usize,
+    text: String,
+    emitted: bool,
+}
+
+fn heading_level(line: &str) -> Option<usize> {
+    let level = line.chars().take_while(|c| *c == HEADING_MARK).count();
+    (level > 0 && line[level..].starts_with(' ')).then_some(level)
+}
+
+enum DiffLine<'a> {
+    Kept(&'a str),
+    Added(&'a str),
+    Removed(&'a str),
+}
+
+fn diff_lines(diff: &str) -> Vec<DiffLine<'_>> {
     let mut in_header = false;
-    let mut added = Vec::new();
-    let mut removed = Vec::new();
+    let mut lines = Vec::new();
     for line in diff.lines() {
         if line.starts_with(DIFF_HEADER_MARK) {
             in_header = true;
-        } else if line.starts_with(HUNK_MARK) {
+            continue;
+        }
+        if line.starts_with(HUNK_MARK) {
             in_header = false;
-        } else if !in_header {
-            if let Some(text) = line.strip_prefix(ADDED_MARK) {
-                added.push(text.to_string());
-            } else if let Some(text) = line.strip_prefix(REMOVED_MARK) {
-                removed.push(text.to_string());
-            }
+            continue;
+        }
+        if in_header || line.starts_with(NO_NEWLINE_MARK) {
+            continue;
+        }
+        if let Some(text) = line.strip_prefix(ADDED_MARK) {
+            lines.push(DiffLine::Added(text));
+        } else if let Some(text) = line.strip_prefix(REMOVED_MARK) {
+            lines.push(DiffLine::Removed(text));
+        } else if let Some(text) = line.strip_prefix(KEPT_MARK) {
+            lines.push(DiffLine::Kept(text));
         }
     }
-    let gained = added.into_iter().filter(|text| {
-        if is_blank(text) {
-            return true;
+    lines
+}
+
+fn cancels_a_move(removed: &mut Vec<&str>, text: &str) -> bool {
+    match removed.iter().position(|gone| *gone == text) {
+        Some(index) => {
+            removed.swap_remove(index);
+            true
         }
+        None => false,
+    }
+}
+
+pub fn gained_lines(diff: &str) -> Vec<String> {
+    let parsed = diff_lines(diff);
+    let mut removed: Vec<&str> = parsed
+        .iter()
+        .filter_map(|line| match line {
+            DiffLine::Removed(text) => Some(*text),
+            DiffLine::Kept(_) | DiffLine::Added(_) => None,
+        })
+        .collect();
+    let mut lines: Vec<String> = Vec::new();
+    let mut headings: Vec<Heading> = Vec::new();
+    for line in &parsed {
+        let (text, added) = match line {
+            DiffLine::Kept(text) => (*text, false),
+            DiffLine::Added(text) => (*text, true),
+            DiffLine::Removed(_) => continue,
+        };
         if is_preamble(text) {
-            return false;
+            continue;
         }
-        match removed.iter().position(|gone| gone == text) {
-            Some(index) => {
-                removed.swap_remove(index);
-                false
+        let gained = added && (is_blank(text) || !cancels_a_move(&mut removed, text));
+        if let Some(level) = heading_level(text) {
+            headings.retain(|heading| heading.level < level);
+            headings.push(Heading {
+                level,
+                text: text.to_string(),
+                emitted: false,
+            });
+            if gained {
+                emit_context(&mut lines, &mut headings);
             }
-            None => true,
+            continue;
         }
-    });
-    tidy(gained)
+        if !gained {
+            continue;
+        }
+        if is_blank(text) {
+            lines.push(String::new());
+            continue;
+        }
+        emit_context(&mut lines, &mut headings);
+        lines.push(text.to_string());
+    }
+    tidy(lines.into_iter())
+}
+
+fn emit_context(lines: &mut Vec<String>, headings: &mut [Heading]) {
+    for heading in headings.iter_mut().filter(|heading| !heading.emitted) {
+        if lines.last().is_some_and(|last| !is_blank(last)) {
+            lines.push(String::new());
+        }
+        lines.push(heading.text.clone());
+        heading.emitted = true;
+    }
 }
 
 fn is_blank(line: &str) -> bool {
@@ -95,7 +173,7 @@ fn tidy(lines: impl Iterator<Item = String>) -> Vec<String> {
 }
 
 fn demoted(line: &str) -> String {
-    if line.starts_with(HEADING_MARK) {
+    if heading_level(line).is_some() {
         format!("{DEMOTION}{line}")
     } else {
         line.to_string()
@@ -108,7 +186,8 @@ pub fn render_header() -> String {
          The workbench tool `{BINARY}` writes every section below, one per entry\n\
          of `{}`, from the lines that the entry's audited crate changelogs\n\
          gained after the previous entry's commit, named as `Since`, up to the\n\
-         entry's commit, which the section heading names. The check in CI\n\
+         entry's commit, which the section heading names, each under the\n\
+         headings it sits beneath in its changelog. The check in CI\n\
          regenerates every section and fails when the committed file differs. The\n\
          audited crates of an entry are the two Binding Layer crates and their\n\
          direct dependencies in this repository at the entry's commit, as the\n\
@@ -179,9 +258,10 @@ fn gather(
                     found.name
                 )]);
             }
-            let args = [DIFF_ARGS.as_slice(), &[since, commit, "--", &relative]].concat();
-            let diff = crate::git_in(root, &args)?;
-            Ok((found.name.clone(), gained_lines(&diff)))
+            Ok((
+                found.name.clone(),
+                gained_lines(&changelog_diff(root, since, commit, &relative)?),
+            ))
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Section {
@@ -189,6 +269,22 @@ fn gather(
         since: since.to_string(),
         entries,
     })
+}
+
+/// - Runs `git diff` in `root`, with context wide enough to carry the whole file after the diff.
+fn changelog_diff(
+    root: &Path,
+    since: &str,
+    commit: &str,
+    relative: &str,
+) -> Result<String, Vec<String>> {
+    let context = format!("{CONTEXT_FLAG}{WHOLE_FILE_CONTEXT}");
+    let args = [
+        DIFF_ARGS.as_slice(),
+        &[&context, since, commit, "--", relative],
+    ]
+    .concat();
+    crate::git_in(root, &args)
 }
 
 fn regenerated(root: &Path) -> Result<String, Vec<String>> {
@@ -250,11 +346,11 @@ mod tests {
     const SINCE: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     #[test]
-    fn gained_lines_are_the_added_lines_minus_moves_headers_and_preamble() {
+    fn gained_lines_are_the_added_lines_minus_moves_and_preamble() {
         let diff = "diff --git a/x/CHANGELOG.md b/x/CHANGELOG.md\n\
                     --- a/x/CHANGELOG.md\n\
                     +++ b/x/CHANGELOG.md\n\
-                    @@ -0,0 +1,8 @@\n\
+                    @@ -1,1 +1,9 @@\n\
                     +# Changelog\n\
                     +All notable changes to this project will be documented in this file.\n\
                     +The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),\n\
@@ -262,11 +358,9 @@ mod tests {
                     +## [Unreleased]\n\
                     -- moved entry\n\
                     +\n\
-                    +\n\
                     +- new entry\n\
                     +  continues here\n\
-                    +- moved entry\n\
-                    +\n";
+                    +- moved entry\n";
         assert_eq!(
             gained_lines(diff),
             ["## [Unreleased]", "", "- new entry", "  continues here"]
@@ -275,12 +369,86 @@ mod tests {
 
     #[test]
     fn a_removed_line_cancels_one_added_line_and_not_every_repeat() {
-        let diff = "@@ -1,2 +1,4 @@\n\
+        let diff = "@@ -1,1 +1,3 @@\n\
                     -### Changed\n\
                     +### Changed\n\
                     +- new bullet\n\
                     +### Changed\n";
-        assert_eq!(gained_lines(diff), ["- new bullet", "### Changed"]);
+        assert_eq!(
+            gained_lines(diff),
+            ["### Changed", "- new bullet", "", "### Changed"]
+        );
+    }
+
+    #[test]
+    fn a_gained_item_carries_the_unchanged_headings_above_it() {
+        let diff = "@@ -1,10 +1,14 @@\n\
+                    \x20# Changelog\n\
+                    \x20\n\
+                    \x20## [Unreleased]\n\
+                    \x20\n\
+                    \x20### Added\n\
+                    \x20- old entry\n\
+                    +- new entry\n\
+                    +\n\
+                    +### Changed\n\
+                    +- changed entry\n\
+                    \x20\n\
+                    \x20### Fixed\n\
+                    \x20- old fix\n";
+        assert_eq!(
+            gained_lines(diff),
+            [
+                "## [Unreleased]",
+                "",
+                "### Added",
+                "- new entry",
+                "",
+                "### Changed",
+                "- changed entry"
+            ]
+        );
+    }
+
+    fn git(dir: &Path, args: &[&str]) -> String {
+        let identity = [
+            "-c",
+            "user.name=workbench",
+            "-c",
+            "user.email=workbench@example.invalid",
+        ];
+        crate::git_in(dir, &[identity.as_slice(), args].concat())
+            .unwrap()
+            .trim()
+            .to_string()
+    }
+
+    #[test]
+    fn the_diff_carries_a_heading_far_above_the_change_as_context() {
+        let repo = std::env::temp_dir().join(format!(
+            "workbench-changelog-context-{}",
+            std::process::id()
+        ));
+        crate::fresh_dir(&repo).unwrap();
+        git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
+        let changelog = repo.join(CRATE_CHANGELOG);
+        let old = "## [Unreleased]\n\n### Added\n- a\n- b\n- c\n- d\n- e\n- f\n";
+        std::fs::write(&changelog, old).unwrap();
+        git(&repo, &["add", CRATE_CHANGELOG]);
+        git(&repo, &["commit", "--quiet", "--message", "since"]);
+        let since = git(&repo, &["rev-parse", "HEAD"]);
+        std::fs::write(&changelog, format!("{old}- new\n")).unwrap();
+        git(
+            &repo,
+            &["commit", "--quiet", "--all", "--message", "commit"],
+        );
+        let commit = git(&repo, &["rev-parse", "HEAD"]);
+        let diff = changelog_diff(&repo, &since, &commit, CRATE_CHANGELOG).unwrap();
+        assert_eq!(
+            gained_lines(&diff),
+            ["## [Unreleased]", "", "### Added", "- new"]
+        );
+        std::fs::remove_dir_all(&repo).unwrap();
     }
 
     #[test]
