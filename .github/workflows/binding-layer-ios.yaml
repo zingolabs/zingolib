@@ -43,7 +43,7 @@ jobs:
       # in the zingo-netutils workspace, so each entry names the workspace
       # whose lockfile keys the cache.
       - name: Cargo cache (registry, git, iOS targets)
-        uses: Swatinem/rust-cache@v2
+        uses: ./.github/actions/cargo-cache
         with:
           workspaces: |
             . -> target/binding-layer/ios/wallet

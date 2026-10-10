@@ -57,7 +57,7 @@ jobs:
         run: ln -s /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad ./test_binaries/bins/
 
       - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: ./.github/actions/cargo-cache
 
       - name: Run instrumented tests
         run: cargo llvm-cov nextest --workspace --no-report

@@ -44,9 +44,7 @@ jobs:
           apt-get install -y libsqlite3-dev pkg-config
 
       - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/dev' }}
+        uses: ./.github/actions/cargo-cache
 
       - name: Build and archive tests
         run: |

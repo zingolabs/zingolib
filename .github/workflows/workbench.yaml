@@ -37,9 +37,8 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: ./.github/actions/cargo-cache
         with:
-          save-if: ${{ github.ref == 'refs/heads/dev' }}
           workspaces: tools/workbench
 
       # The gate's workflow installs cargo-dupes under this same cache key,
