@@ -13,11 +13,13 @@ only where one of those changelogs records it.
 
 ## ba7336710419c9ac1e9362ac1b4e5b0073ff477e
 
-Since 6d0f7dfc05779be7b32b2fc5c61e9543e18e2164.
+Since 6d037df7a4f4f72f219fbadd8c6fe34d8c8ea97c.
 
 Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
 
 ### zingo
+
+#### [Unreleased]
 
 ##### Added
 - The committed `src/exported_surface.txt` pins the exported surface: every
@@ -41,6 +43,7 @@ Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netuti
 - `ZingolibError::WalletChainMismatch`: `init_from_bytes` returns it, in
   place of `Init`, when the wallet bytes were written for another chain.
 
+##### Changed
 - **Breaking:** the bindings come from `#[uniffi::export]` attributes and the
   uniffi derives on uniffi 0.32.2 in place of `zingo.udl`. The UDL, the
   `build.rs` and the crate's `uniffi-bindgen` binary target are gone, and
@@ -58,6 +61,14 @@ Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netuti
 - BREAKING: moves to the librustzcash NU7 pre-release cohort zingolib
   pins. The viewing key parser lists a P2SH viewing key item as `transparent`
   beside a P2PKH one.
+- **Breaking:** `get_version` returns zingolib's `zl_` descriptor alone. The
+  consumer's `zm_` half, the `ZINGO_MOBILE_DESCRIPTOR` variable and the
+  `zm_description` build script are gone; a consumer computes its own
+  descriptor and joins the two itself.
+- The crate joins the root workspace. Its manifest names the features its old
+  workspace carried (`nym` and `perspective` on zingolib, `lightwalletd-tonic`
+  on zcash_client_backend, the runtime features on tokio), and its release
+  profile is the root workspace's `[profile.mobile]`, which the builder ships.
 
 ### pepper-sync
 
@@ -164,10 +175,16 @@ Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netuti
 
 ### zingo-nym-proxy-ffi
 
+#### [Unreleased]
+
+##### Changed
 - **Breaking:** the uniffi pin moves from 0.28 to 0.32.2, the root workspace's
   pin, and `zingo-uniffi-bindgen` generates the crate's bindings in library
   mode from the compiled library. A consumer regenerates its bindings; the
   generated files of an older uniffi do not load the new library.
+- The crate joins the zingo-netutils workspace. Its own lockfile, `[patch]`
+  stanza and nextest configuration move to that workspace, whose CI job tests
+  the crate without `live-mixnet`.
 
 ### zingo-netutils
 
