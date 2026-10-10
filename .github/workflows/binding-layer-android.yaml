@@ -100,12 +100,7 @@ jobs:
             . -> target/binding-layer
             tools/workbench -> target
 
-      # Diagnostic, to be removed: cargo logs why each unit it rebuilds is
-      # dirty, which names the cause of the Describe step's rebuild of
-      # zingolib after a build that should have left it fresh.
       - name: Build the Binding Layer
-        env:
-          CARGO_LOG: cargo::compiler::fingerprint=info
         run: |
           cargo run \
             --manifest-path tools/workbench/Cargo.toml \
