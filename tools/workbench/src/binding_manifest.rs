@@ -307,16 +307,25 @@ pub fn awaited(entry: &Entry) -> Vec<String> {
 }
 
 pub fn validate(entries: &[Entry]) -> Result<(), Vec<String>> {
+    let mut diagnostics = structure(entries).err().unwrap_or_default();
+    for (index, entry) in entries.iter().enumerate() {
+        for part in awaited(entry) {
+            diagnostics.push(format!(
+                "entry {} ({}) names no {part}; it awaits `{PUBLISH_COMMAND}`, which records it",
+                ordinal(index),
+                entry.commit
+            ));
+        }
+    }
+    crate::verdict(diagnostics)
+}
+
+pub fn structure(entries: &[Entry]) -> Result<(), Vec<String>> {
     let mut diagnostics = Vec::new();
     for (index, entry) in entries.iter().enumerate() {
         let label = format!("entry {} ({})", ordinal(index), entry.commit);
         if entry.commit.is_empty() {
             diagnostics.push(format!("entry {} names no commit", ordinal(index)));
-        }
-        for part in awaited(entry) {
-            diagnostics.push(format!(
-                "{label} names no {part}; it awaits `{PUBLISH_COMMAND}`, which records it"
-            ));
         }
         match (index, &entry.since) {
             (0, None) => diagnostics.push(format!("{label} is first and names no since commit")),
@@ -618,9 +627,17 @@ pub fn newest_commit(entries: &[Entry]) -> Result<&str, Vec<String>> {
     Ok(&last.commit)
 }
 
+pub fn newest_publishable(entries: &[Entry]) -> Result<&str, Vec<String>> {
+    structure(entries)?;
+    newest_commit(entries)
+}
+
 /// - Reads `bindings/published.toml` under `root`.
+/// - Runs `git rev-parse` in `root` over every commit the manifest names.
 pub fn newest_awaiting(root: &Path) -> Result<String, Vec<String>> {
-    newest_commit(&parse_at(root, None)?).map(str::to_string)
+    let entries = parse_at(root, None)?;
+    commits_exist(root, &entries)?;
+    newest_publishable(&entries).map(str::to_string)
 }
 
 pub fn recorded(
@@ -945,6 +962,32 @@ mod tests {
         assert!(validate(&[entry(FIRST, Some(ORIGIN), &[IOS])]).is_err());
         assert!(diagnostics.contains("only the first entry may"));
         assert!(diagnostics.contains("repeats an earlier entry"));
+    }
+
+    #[test]
+    fn a_structural_defect_refuses_publication_before_any_push() {
+        let awaiting_first = [entry(FIRST, Some(ORIGIN), &[])];
+        assert_eq!(structure(&awaiting_first), Ok(()));
+        assert_eq!(newest_publishable(&awaiting_first), Ok(FIRST));
+        let no_since = [entry(FIRST, None, &[])];
+        assert!(structure(&no_since)
+            .unwrap_err()
+            .concat()
+            .contains("names no since"));
+        assert!(newest_publishable(&no_since).is_err());
+        let repeated = [
+            entry(FIRST, Some(ORIGIN), &PLATFORMS),
+            entry(FIRST, None, &[]),
+        ];
+        assert!(newest_publishable(&repeated)
+            .unwrap_err()
+            .concat()
+            .contains("repeats"));
+        let published = [entry(FIRST, Some(ORIGIN), &PLATFORMS)];
+        assert!(newest_publishable(&published)
+            .unwrap_err()
+            .concat()
+            .contains("is published"));
     }
 
     #[test]
