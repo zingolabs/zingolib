@@ -739,7 +739,7 @@ mod tests {
     fn the_manifest_round_trips_through_its_text_form() {
         let entries = vec![
             entry(FIRST, Some(ORIGIN), &[ANDROID, IOS]),
-            entry(SECOND, None, &[ANDROID]),
+            entry(SECOND, None, &PLATFORMS),
         ];
         let parsed = parse(&manifest(&entries)).unwrap();
         assert_eq!(parsed, entries);
@@ -861,9 +861,10 @@ mod tests {
     fn an_incomplete_entry_is_named_as_awaiting_publish() {
         let mut incomplete = entry(FIRST, Some(ORIGIN), &[]);
         incomplete.audited.clear();
-        assert_eq!(awaited(&incomplete).len(), 2);
+        let awaited_parts = REQUIRED_PLATFORMS.len() + 1;
+        assert_eq!(awaited(&incomplete).len(), awaited_parts);
         let diagnostics = validate(&[incomplete]).unwrap_err();
-        assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
+        assert_eq!(diagnostics.len(), awaited_parts, "{diagnostics:?}");
         assert!(diagnostics
             .iter()
             .all(|diagnostic| diagnostic.contains(PUBLISH_COMMAND)));
