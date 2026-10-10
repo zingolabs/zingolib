@@ -132,13 +132,11 @@ fn check_view_capability_bounds(
     }
 }
 
-use libtonode_tests::chain_generics::LibtonodeEnvironment;
 use pepper_sync::wallet::OutputInterface;
 use zcash_client_backend::encoding::encode_payment_address_p;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingolib::config::WalletConfig;
-use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedAddressId};
@@ -295,33 +293,6 @@ async fn unified_address_discovery() {
             .unwrap()
             .encode(&network),
         all_shielded_encoded
-    );
-}
-
-/// Diagnostic probe for the Core-stack coinbase model. Each assert tests
-/// one hypothesis, and each failure mode has a distinct quantized delta:
-/// - orchard off by one POST_STREAM_BLOCK_REWARD (618_750_000):
-///   ORCHARD_COINBASE_START_HEIGHT is wrong (flip 2 <-> 3)
-/// - sapling delta of BLOCK_ONE_SAPLING_COINBASE (625_000_000): the
-///   block-1-pays-the-sapling-receiver rule is wrong
-/// - transparent nonzero: pre-NU5 or activation-block coinbase pays a
-///   transparent output instead
-/// - balances short by whole blocks: the deterministic
-///   sync_client_to_validator_tip is not actually deterministic.
-#[tokio::test]
-async fn ironwood_miner_coinbase_distribution() {
-    let mut environment = LibtonodeEnvironment::setup().await;
-    let mut faucet = environment.create_faucet().await;
-    environment.increase_chain_height().await;
-    scenarios::sync_client_to_validator_tip(&environment.local_net, &mut faucet).await;
-
-    // Tip is height 4: launch block + 2 setup blocks + 1 above. Every
-    // coinbase block (2..=4) predates the fixture's NU6.3 activation at 5,
-    // so the orchard-receiver rewards are legacy Orchard notes and the
-    // Ironwood pool is empty.
-    check_client_balances!(
-        faucet,
-        i: 0 o: (scenarios::orchard_coinbase_total(4)) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0u64
     );
 }
 

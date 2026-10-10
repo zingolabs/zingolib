@@ -4534,4 +4534,40 @@ mod moved_from_regtest {
         miner.sync_and_await().await.unwrap();
         check_client_balances!(miner, i: ((IRONWOOD_BLOCKS + 1) * REWARD_ZATS) o: 0 s: REWARD_ZATS t: 0);
     }
+    #[tokio::test]
+    async fn ironwood_miner_coinbase_distribution() {
+        use crate::testutils::mock_activation_heights_with;
+        use crate::testutils::mock_indexer::MockChain;
+
+        const NU6_3: u32 = 5;
+        const ORCHARD_BLOCKS: u64 = (NU6_3 - 2) as u64;
+        let mut net = MockNet::launch_with(MockChain::with_activation_heights(
+            mock_activation_heights_with(|era| era.set_nu6_3(Some(NU6_3)).set_nu7(None)),
+        ))
+        .await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_sapling =
+            get_base_address(&miner, PoolType::Shielded(ShieldedPool::Sapling)).await;
+        let miner_ua = get_base_address(&miner, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.mine_block_rewarding_shielded(&miner_sapling, REWARD, vec![])
+            .await;
+        for _ in 0..ORCHARD_BLOCKS {
+            net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+                .await;
+        }
+        assert_eq!(net.chain.read().await.tip(), NU6_3 - 1);
+        miner.sync_and_await().await.unwrap();
+        // Every coinbase so far predates the activation, so the unified
+        // address's rewards are legacy Orchard notes and the Ironwood pool
+        // is empty.
+        check_client_balances!(miner, i: 0 o: (ORCHARD_BLOCKS * REWARD_ZATS) s: REWARD_ZATS t: 0);
+
+        // The activation block's coinbase lands in Ironwood.
+        net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+            .await;
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: REWARD_ZATS o: (ORCHARD_BLOCKS * REWARD_ZATS) s: REWARD_ZATS t: 0);
+    }
 }
