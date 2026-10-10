@@ -4061,3 +4061,57 @@ mod mixnet_wire_offline {
         ));
     }
 }
+
+/// A shielded coinbase, paid in the newest pool of the era the block sits in.
+mod shielded_coinbase {
+    use zcash_protocol::PoolType;
+    use zcash_protocol::ShieldedPool;
+    use zcash_protocol::value::Zatoshis;
+
+    use crate::check_client_balances;
+    use crate::testutils::lightclient::get_base_address;
+    use crate::testutils::mock_activation_heights_with;
+    use crate::testutils::mock_indexer::{MockChain, MockNet};
+
+    const REWARD_ZATS: u64 = 625_000;
+    const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
+    const DEFERRED_NU6_3: u32 = 130;
+
+    pub(super) fn deferred_schedule() -> MockChain {
+        MockChain::with_activation_heights(mock_activation_heights_with(|era| {
+            era.set_nu6_3(Some(DEFERRED_NU6_3)).set_nu7(None)
+        }))
+    }
+
+    #[tokio::test]
+    async fn a_shielded_coinbase_pays_the_miner_in_ironwood_after_the_activation() {
+        let mut net = MockNet::launch().await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_ua = get_base_address(&miner, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.chain.write().await.mine_empty_blocks(1);
+        let coinbase = net
+            .mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+            .await;
+        assert!(!coinbase.is_empty());
+        net.chain.write().await.mine_empty_blocks(1);
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: REWARD_ZATS o: 0 s: 0 t: 0);
+    }
+
+    #[tokio::test]
+    async fn a_shielded_coinbase_pays_the_miner_in_orchard_before_the_activation() {
+        let mut net = MockNet::launch_with(deferred_schedule()).await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_ua = get_base_address(&miner, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.chain.write().await.mine_empty_blocks(1);
+        net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+            .await;
+        net.chain.write().await.mine_empty_blocks(1);
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: 0 o: REWARD_ZATS s: 0 t: 0);
+    }
+}

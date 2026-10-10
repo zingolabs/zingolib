@@ -86,6 +86,8 @@ const SIGN_BIT: u8 = 0x80;
 const GENESIS_HEIGHT: BlockHeight = BlockHeight::from_u32(0);
 const NO_EXPIRY: BlockHeight = BlockHeight::from_u32(0);
 const FAUCET_FUNDING: u64 = 1_000_000_000;
+const FAUCET_DEFAULT_TIP: u32 = 20;
+const FAUCET_MIN_TIP: u32 = 3;
 const FAUCET_HEADROOM: u64 = 1_000_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -891,6 +893,13 @@ impl MockChain {
         self.chain_type
     }
 
+    pub(crate) fn activation_heights(&self) -> ActivationHeights {
+        match self.chain_type {
+            ChainType::Regtest(activation_heights) => activation_heights,
+            other => panic!("the mock chain is regtest, not {other:?}"),
+        }
+    }
+
     /// The `GetTaddressTxids` requests served so far, for diagnosing
     /// transparent-detection failures in tests.
     pub fn taddr_request_log(&self) -> &[String] {
@@ -1102,8 +1111,13 @@ impl MockChain {
         raw_transactions: Vec<Vec<u8>>,
     ) -> Vec<u8> {
         let coinbase = self.coinbase_transaction(miner, reward);
-        self.mine(Some(coinbase.clone()), raw_transactions);
+        self.mine_block_with_coinbase(coinbase.clone(), raw_transactions);
         coinbase
+    }
+
+    /// - Mines one block under `coinbase`, a transaction the caller built for the next height, with `raw_transactions`.
+    pub fn mine_block_with_coinbase(&mut self, coinbase: Vec<u8>, raw_transactions: Vec<Vec<u8>>) {
+        self.mine(Some(coinbase), raw_transactions);
     }
 
     fn coinbase_transaction(&self, miner: &str, reward: Zatoshis) -> Vec<u8> {
@@ -2008,6 +2022,27 @@ impl MockNet {
         Self::serve(chain, None).await
     }
 
+    /// - Builds a shielded coinbase paying `reward` to `miner` in the newest pool of the next height's era
+    ///   and mines it with `raw_transactions`, taking the chain's write lock.
+    pub async fn mine_block_rewarding_shielded(
+        &self,
+        miner: &str,
+        reward: Zatoshis,
+        raw_transactions: Vec<Vec<u8>>,
+    ) -> Vec<u8> {
+        let (activation_heights, height) = {
+            let chain = self.chain.read().await;
+            (chain.activation_heights(), chain.next_height())
+        };
+        let coinbase =
+            shielded_coinbase_transaction(activation_heights, height, miner, reward).await;
+        self.chain
+            .write()
+            .await
+            .mine_block_with_coinbase(coinbase.clone(), raw_transactions);
+        coinbase
+    }
+
     /// Launches the mock over TLS with the committed localhost certificate.
     pub async fn launch_tls() -> Self {
         zingo_netutils::ensure_default_crypto_provider();
@@ -2199,10 +2234,49 @@ impl ConductChain for MockNet {
 /// fabricated backing note never exists on the mock chain. Nothing
 /// validates that, and the recipient-facing outputs are real.
 pub async fn faucet_funding_transaction(receivers: Vec<(&str, u64, Option<&str>)>) -> Vec<u8> {
+    faucet_funding_transaction_on(crate::testutils::mock_activation_heights(), receivers).await
+}
+
+/// Whether the branch at `height` under `activation_heights` carries Ironwood, the V6 era.
+fn ironwood_era(activation_heights: ActivationHeights, height: BlockHeight) -> bool {
+    let branch_id = BranchId::for_height(&ChainType::Regtest(activation_heights), height);
+    matches!(TxVersion::suggested_for_branch(branch_id), TxVersion::V6)
+}
+
+/// The synthetic faucet's tip for a transaction aimed at `height`: one block below it, and never so
+/// low that the builder's own note heights overflow it.
+fn faucet_tip(height: BlockHeight) -> u32 {
+    u32::from(height).saturating_sub(1).max(FAUCET_MIN_TIP)
+}
+
+/// - Builds (without transmitting) one real transaction to `receivers` from a synthetic faucet whose
+///   fabricated backing note sits in the newest pool the schedule allows at the faucet's tip, so a
+///   pre-Ironwood schedule yields Orchard outputs and a post-Ironwood one Ironwood outputs.
+pub async fn faucet_funding_transaction_on(
+    activation_heights: ActivationHeights,
+    receivers: Vec<(&str, u64, Option<&str>)>,
+) -> Vec<u8> {
+    let height = BlockHeight::from_u32(FAUCET_DEFAULT_TIP + 1);
+    faucet_built_transaction(activation_heights, height, receivers).await
+}
+
+/// - Builds (without transmitting) one real transaction to `receivers`, aimed at the branch of `height`,
+///   from a synthetic faucet with a fabricated backing note in that height's newest pool.
+async fn faucet_built_transaction(
+    activation_heights: ActivationHeights,
+    height: BlockHeight,
+    receivers: Vec<(&str, u64, Option<&str>)>,
+) -> Vec<u8> {
     let total: u64 = receivers.iter().map(|(_, value, _)| value).sum();
-    let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED)
-        .ironwood_note(total + FAUCET_HEADROOM)
-        .build();
+    let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED)
+        .activation_heights(activation_heights)
+        .tip(faucet_tip(height));
+    let wallet = if ironwood_era(activation_heights, height) {
+        builder.ironwood_note(total + FAUCET_HEADROOM)
+    } else {
+        builder.orchard_note(total + FAUCET_HEADROOM)
+    }
+    .build();
     let mut faucet = LightClient::new_for_test(wallet).await;
     let proposal = from_inputs::propose(&mut faucet, receivers)
         .await
@@ -2223,6 +2297,60 @@ pub async fn faucet_funding_transaction(receivers: Vec<(&str, u64, Option<&str>)
         .get(&txids[0])
         .expect("the built transaction is stored")
         .transaction()
+        .write(&mut bytes)
+        .expect("in-memory serialization is infallible");
+    bytes
+}
+
+/// - Builds one real transaction paying `reward` to `miner` from a synthetic faucet, then reassembles it as
+///   the coinbase of `height`: the null-outpoint input carrying the height, no transparent output, and the
+///   built shielded bundles, whose spends of the fabricated faucet note stand in for ZIP 213's dummy spends.
+pub async fn shielded_coinbase_transaction(
+    activation_heights: ActivationHeights,
+    height: BlockHeight,
+    miner: &str,
+    reward: Zatoshis,
+) -> Vec<u8> {
+    let chain_type = ChainType::Regtest(activation_heights);
+    let branch_id = BranchId::for_height(&chain_type, height);
+    let built_bytes = faucet_built_transaction(
+        activation_heights,
+        height,
+        vec![(miner, reward.into_u64(), None)],
+    )
+    .await;
+    let built = Transaction::read(built_bytes.as_slice(), branch_id)
+        .expect("the faucet's own transaction parses on the branch it was aimed at");
+    let input = TxIn::from_parts(OutPoint::NULL, coinbase_script_sig(height), u32::MAX);
+    let transparent = TransparentBundle {
+        vin: vec![input],
+        vout: vec![],
+        authorization: TransparentAuthorized,
+    };
+    let data = match TxVersion::suggested_for_branch(branch_id) {
+        TxVersion::V6 => TransactionData::<Authorized>::from_parts_v6(
+            branch_id,
+            0,
+            NO_EXPIRY,
+            Some(transparent),
+            built.sapling_bundle().cloned(),
+            built.orchard_bundle().cloned(),
+            built.ironwood_bundle().cloned(),
+        ),
+        version => TransactionData::<Authorized>::from_parts(
+            version,
+            branch_id,
+            0,
+            NO_EXPIRY,
+            Some(transparent),
+            None,
+            built.sapling_bundle().cloned(),
+            built.orchard_bundle().cloned(),
+        ),
+    };
+    let mut bytes = vec![];
+    data.freeze()
+        .expect("a coinbase with built shielded bundles freezes")
         .write(&mut bytes)
         .expect("in-memory serialization is infallible");
     bytes
