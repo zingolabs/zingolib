@@ -208,9 +208,16 @@ const HERMETIC_GIT_CONFIG: [(&str, &str); 3] = [
 ];
 
 #[cfg(test)]
+const HERMETIC_GIT_ENV: [(&str, &str); 2] = [
+    ("GIT_CONFIG_GLOBAL", "/dev/null"),
+    ("GIT_CONFIG_NOSYSTEM", "1"),
+];
+
+#[cfg(test)]
 const CONFIG_FLAG: &str = "-c";
 
-/// - Runs `git <args>` as a child process in `directory` under [`HERMETIC_GIT_CONFIG`].
+/// - Runs `git <args>` as a child process in `directory` under [`HERMETIC_GIT_CONFIG`],
+///   with the global and system git config masked by [`HERMETIC_GIT_ENV`].
 #[cfg(test)]
 pub(crate) fn hermetic_git(directory: &Path, args: &[&str]) -> Result<String, Vec<String>> {
     let settings: Vec<String> = HERMETIC_GIT_CONFIG
@@ -222,7 +229,9 @@ pub(crate) fn hermetic_git(directory: &Path, args: &[&str]) -> Result<String, Ve
         .flat_map(|setting| [CONFIG_FLAG, setting.as_str()])
         .collect();
     full.extend_from_slice(args);
-    Ok(git_in(directory, &full)?.trim().to_string())
+    Ok(stdout_in(directory, GIT, &full, &HERMETIC_GIT_ENV)?
+        .trim()
+        .to_string())
 }
 
 /// - Runs `git config` in `directory` for each setting of [`HERMETIC_GIT_CONFIG`].
@@ -456,7 +465,6 @@ pub fn verdict(diagnostics: Vec<String>) -> Result<(), Vec<String>> {
     }
 }
 
-/// Read `path` to a string, or a one-line `cannot read …` diagnostic.
 /// - Writes `contents` to `path`.
 pub fn write(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), Vec<String>> {
     std::fs::write(path, contents)

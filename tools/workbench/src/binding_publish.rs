@@ -258,8 +258,7 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
         let digest = push(platform, &commit, bundle, &credentials)?;
         text = binding_manifest::recorded(&text, &commit, platform, &digest)?;
     }
-    std::fs::write(&file, text)
-        .map_err(|e| vec![format!("cannot write {}: {e}", file.display())])?;
+    crate::write(&file, text)?;
     binding_changelog::regenerate(root)?;
     commit_and_push(root, &commit)
 }

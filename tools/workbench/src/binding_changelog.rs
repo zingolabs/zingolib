@@ -15,7 +15,7 @@ const SINCE_SUFFIX: char = '.';
 const AUDITED_PREFIX: &str = "Audited ";
 const CRATE_MARK: &str = "### ";
 const HEADING_MARK: char = '#';
-const DEMOTION: &str = "##";
+const DEMOTION_LEVELS: usize = 2;
 const DIFF_HEADER_MARK: &str = "diff --git";
 const HUNK_MARK: &str = "@@";
 const RANGE_SEPARATOR: char = ',';
@@ -24,11 +24,24 @@ const FENCE_LENGTH_MIN: usize = 3;
 const INDENT_LIMIT: usize = 3;
 const HEADING_LEVEL_LIMIT: usize = 6;
 const LIST_MARKS: [&str; 3] = ["- ", "* ", "+ "];
+const ORDERED_MARKS: [char; 2] = ['.', ')'];
+const ORDERED_DIGITS_LIMIT: usize = 9;
+const THEMATIC_MARKS: [char; 3] = ['*', '-', '_'];
+const THEMATIC_LENGTH_MIN: usize = 3;
 const ADDED_MARK: char = '+';
 const KEPT_MARK: char = ' ';
 const NO_NEWLINE_MARK: char = '\\';
 const REMOVED_MARK: char = '-';
-const DIFF_ARGS: [&str; 4] = ["diff", "--no-color", "--no-ext-diff", "--no-renames"];
+const DIFF_ARGS: [&str; 8] = [
+    "-c",
+    "diff.suppressBlankEmpty=false",
+    "diff",
+    "--no-color",
+    "--no-ext-diff",
+    "--no-renames",
+    "--diff-algorithm=myers",
+    "--indent-heuristic",
+];
 const CONTEXT_FLAG: &str = "--unified=";
 const WHOLE_FILE_CONTEXT: i32 = i32::MAX / 2;
 const TITLE_LEVEL: usize = 1;
@@ -113,14 +126,36 @@ fn fence_opening(line: &str) -> Option<(char, usize)> {
     (length >= FENCE_LENGTH_MIN).then_some((mark, length))
 }
 
-fn is_list_item(line: &str) -> bool {
-    let rest = line.trim_start();
-    LIST_MARKS.iter().any(|mark| rest.starts_with(mark))
+fn is_thematic_break(rest: &str) -> bool {
+    let marks: String = rest.chars().filter(|c| *c != ' ' && *c != '\t').collect();
+    marks.len() >= THEMATIC_LENGTH_MIN
+        && THEMATIC_MARKS
+            .iter()
+            .any(|mark| marks.chars().all(|c| c == *mark))
 }
 
-fn heading_levels<'a>(
-    lines: impl Iterator<Item = &'a str> + 'a,
-) -> impl Iterator<Item = Option<usize>> + 'a {
+fn is_ordered_item(rest: &str) -> bool {
+    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+    let mut after = rest[digits..].chars();
+    (1..=ORDERED_DIGITS_LIMIT).contains(&digits)
+        && after.next().is_some_and(|c| ORDERED_MARKS.contains(&c))
+        && after.next().is_none_or(|c| c == ' ' || c == '\t')
+}
+
+fn is_list_item(line: &str) -> bool {
+    let rest = line.trim_start();
+    let unordered = LIST_MARKS.iter().any(|mark| rest.starts_with(mark));
+    (unordered && !is_thematic_break(rest)) || is_ordered_item(rest)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    Heading(usize),
+    Fenced,
+    Plain,
+}
+
+fn kinds<'a>(lines: impl Iterator<Item = &'a str> + 'a) -> impl Iterator<Item = Kind> + 'a {
     let mut fence: Option<(char, usize)> = None;
     lines.map(move |line| {
         let opening = fence_opening(line);
@@ -134,9 +169,9 @@ fn heading_levels<'a>(
             (None, _) => fence = opening,
         }
         if fence.is_some() || opening.is_some() {
-            None
+            Kind::Fenced
         } else {
-            heading_level(line)
+            heading_level(line).map_or(Kind::Plain, Kind::Heading)
         }
     })
 }
@@ -177,10 +212,8 @@ fn diff_lines(diff: &str) -> Result<Diff<'_>, Error> {
         if in_header || line.starts_with(NO_NEWLINE_MARK) {
             continue;
         }
-        let Some(mark) = line.chars().next() else {
-            continue;
-        };
-        let text = &line[mark.len_utf8()..];
+        let mark = line.chars().next().unwrap_or(KEPT_MARK);
+        let text = &line[mark.len_utf8().min(line.len())..];
         if overlap > 0 {
             if mark != REMOVED_MARK {
                 overlap -= 1;
@@ -218,12 +251,12 @@ pub fn gained_lines(diff: &str) -> Result<Vec<String>, Error> {
         mut removed,
         new_file,
     } = diff_lines(diff)?;
-    let levels = heading_levels(new_file.iter().map(|(text, _)| *text));
+    let kinds = kinds(new_file.iter().map(|(text, _)| *text));
     let mut lines: Vec<String> = Vec::new();
     let mut headings: Vec<(usize, &str)> = Vec::new();
     let mut emitted = 0;
-    for (&(text, added), level) in new_file.iter().zip(levels) {
-        if let Some(level) = level {
+    for (&(text, added), kind) in new_file.iter().zip(kinds) {
+        if let Kind::Heading(level) = kind {
             let above = headings
                 .iter()
                 .take_while(|(seen, _)| *seen < level)
@@ -236,7 +269,11 @@ pub fn gained_lines(diff: &str) -> Result<Vec<String>, Error> {
             continue;
         }
         if headings.is_empty() {
-            if added && is_list_item(text) {
+            if added
+                && kind == Kind::Plain
+                && is_list_item(text)
+                && !cancels_a_move(&mut removed, text)
+            {
                 return Err(Error::ItemAboveHeadings(text.to_string()));
             }
             continue;
@@ -256,12 +293,18 @@ pub fn gained_lines(diff: &str) -> Result<Vec<String>, Error> {
     Ok(tidy(lines))
 }
 
+fn demoted(level: usize, text: &str) -> String {
+    let marks = (level + DEMOTION_LEVELS).min(HEADING_LEVEL_LIMIT);
+    let body = text.trim_start().trim_start_matches(HEADING_MARK);
+    format!("{}{body}", HEADING_MARK.to_string().repeat(marks))
+}
+
 fn emit_context(lines: &mut Vec<String>, headings: &[(usize, &str)], emitted: &mut usize) {
-    for (_, text) in &headings[*emitted..] {
+    for (level, text) in &headings[*emitted..] {
         if lines.last().is_some_and(|last| !is_blank(last)) {
             lines.push(String::new());
         }
-        lines.push(format!("{DEMOTION}{}", text.trim_start()));
+        lines.push(demoted(*level, text));
     }
     *emitted = headings.len();
 }
@@ -594,6 +637,65 @@ mod tests {
             gained_lines(diff),
             Err(Error::ItemAboveHeadings("- a stray item".to_string()))
         );
+    }
+
+    #[test]
+    fn an_ordered_item_above_the_first_heading_is_refused() {
+        let diff = "@@ -1,2 +1,3 @@\n\
+                    \x20# Changelog\n\
+                    +1. a stray step\n\
+                    \x20## [Unreleased]\n";
+        assert_eq!(
+            gained_lines(diff),
+            Err(Error::ItemAboveHeadings("1. a stray step".to_string()))
+        );
+    }
+
+    #[test]
+    fn a_moved_fenced_or_ruled_line_above_the_first_heading_is_not_an_item() -> Result<(), Error> {
+        let diff = "@@ -1,7 +1,9 @@\n\
+                    \x20# Changelog\n\
+                    -- a moved note\n\
+                    +* * *\n\
+                    +```sh\n\
+                    +- not an item\n\
+                    +```\n\
+                    +- a moved note\n\
+                    \x20## [Unreleased]\n\
+                    +- new entry\n";
+        assert_eq!(gained_lines(diff)?, ["#### [Unreleased]", "- new entry"]);
+        Ok(())
+    }
+
+    #[test]
+    fn an_empty_context_line_counts_as_a_kept_blank_line() -> Result<(), Error> {
+        let diff = "@@ -1,2 +1,3 @@\n\
+                    \x20## [Unreleased]\n\
+                    \n\
+                    +- a\n";
+        assert_eq!(gained_lines(diff)?, ["#### [Unreleased]", "- a"]);
+        Ok(())
+    }
+
+    #[test]
+    fn demotion_stops_at_six_marks() {
+        assert_eq!(demoted(2, "## [Unreleased]"), "#### [Unreleased]");
+        assert_eq!(demoted(5, "##### Five"), "###### Five");
+        assert_eq!(demoted(6, "   ######\tSix"), "######\tSix");
+    }
+
+    #[test]
+    fn list_items_are_bullets_and_ordered_items_but_not_rules() {
+        assert!(is_list_item("- a"));
+        assert!(is_list_item("  + a"));
+        assert!(is_list_item("1. a"));
+        assert!(is_list_item("12) a"));
+        assert!(is_list_item("1."));
+        assert!(!is_list_item("1234567890. a"));
+        assert!(!is_list_item("1.a"));
+        assert!(!is_list_item("* * *"));
+        assert!(!is_list_item("- - -"));
+        assert!(!is_list_item("prose"));
     }
 
     #[test]
