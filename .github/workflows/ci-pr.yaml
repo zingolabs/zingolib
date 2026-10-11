@@ -295,5 +295,3 @@ jobs:
     permissions:
       contents: read
       packages: write
-    with:
-      nextest-flags: "-E 'not test(slow)'"
