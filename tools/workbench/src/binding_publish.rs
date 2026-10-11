@@ -273,9 +273,7 @@ mod tests {
 
     #[test]
     fn a_missing_file_is_named_in_the_diagnostic() {
-        let empty =
-            std::env::temp_dir().join(format!("workbench-find-file-{}", std::process::id()));
-        crate::fresh_dir(&empty).unwrap();
+        let empty = crate::scratch_dir("find-file");
         let diagnostic = find_file(&empty, binding_layer::DESCRIPTOR_FILE, |name| {
             name == binding_layer::DESCRIPTOR_FILE
         })
@@ -320,9 +318,7 @@ mod tests {
     #[test]
     fn the_built_platforms_are_the_bundle_artifacts_of_the_commit_and_nothing_else() {
         let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let bundles =
-            std::env::temp_dir().join(format!("workbench-built-platforms-{}", std::process::id()));
-        crate::fresh_dir(&bundles).unwrap();
+        let bundles = crate::scratch_dir("built-platforms");
         let android =
             binding_layer::artifact_name(binding_layer::BUNDLE_ARTIFACT, "android", commit);
         let ios = binding_layer::artifact_name(binding_layer::BUNDLE_ARTIFACT, "ios", commit);
@@ -506,7 +502,7 @@ mod tests {
     }
 
     fn git(dir: &Path, args: &[&str]) -> String {
-        crate::git_in(dir, args).unwrap()
+        crate::hermetic_git(dir, args)
     }
 
     fn clone(scratch: &Path, remote: &Path, name: &str) -> PathBuf {
@@ -514,13 +510,7 @@ mod tests {
             scratch,
             &["clone", "--quiet", remote.to_str().unwrap(), name],
         );
-        let dir = scratch.join(name);
-        git(&dir, &["config", "user.name", name]);
-        git(
-            &dir,
-            &["config", "user.email", &format!("{name}@example.invalid")],
-        );
-        dir
+        scratch.join(name)
     }
 
     fn append(dir: &Path, relative: &str, line: &str) {
@@ -534,9 +524,7 @@ mod tests {
 
     #[test]
     fn the_record_push_survives_a_push_to_the_branch_during_the_builds() {
-        let scratch =
-            std::env::temp_dir().join(format!("workbench-record-push-{}", std::process::id()));
-        crate::fresh_dir(&scratch).unwrap();
+        let scratch = crate::scratch_dir("record-push");
         let remote = scratch.join("remote.git");
         git(
             &scratch,

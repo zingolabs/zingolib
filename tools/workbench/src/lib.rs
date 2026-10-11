@@ -190,6 +190,33 @@ pub fn git_in(directory: &Path, args: &[&str]) -> Result<String, Vec<String>> {
     stdout_in(directory, GIT, args, &[])
 }
 
+#[cfg(test)]
+const HERMETIC_GIT_CONFIG: [&str; 6] = [
+    "-c",
+    "user.name=workbench",
+    "-c",
+    "user.email=workbench@example.invalid",
+    "-c",
+    "commit.gpgsign=false",
+];
+
+/// - Runs `git <args>` as a child process in `directory` under [`HERMETIC_GIT_CONFIG`].
+/// - Panics when git fails.
+#[cfg(test)]
+pub(crate) fn hermetic_git(directory: &Path, args: &[&str]) -> String {
+    git_in(directory, &[HERMETIC_GIT_CONFIG.as_slice(), args].concat())
+        .unwrap()
+        .trim()
+        .to_string()
+}
+
+/// - Removes and recreates `workbench-<name>-<pid>` under the system temp dir.
+#[cfg(test)]
+pub(crate) fn scratch_dir(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("workbench-{name}-{}", std::process::id()));
+    fresh_dir(&dir).unwrap()
+}
+
 /// - Runs `git ls-tree` in `root`.
 pub fn listed_at(root: &Path, revision: &str, relative: &str) -> Result<bool, Vec<String>> {
     git_in(root, &["ls-tree", "--name-only", revision, "--", relative])

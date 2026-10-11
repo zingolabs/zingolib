@@ -258,7 +258,7 @@ mod tests {
     const PRUNED_DIRECTORY: &str = "target";
     const HIDDEN_MARK: char = '.';
     const DIRECTORY_MARK: char = '/';
-    const FIXTURE_ROOT: &str = "workbench-dupes-gate";
+    const FIXTURE_ROOT: &str = "dupes-gate";
     const NO_NEAR: &str = "0";
     const SLACK_CEILING: &str = "1";
     const SOURCE: &str = "src/lib.rs";
@@ -281,10 +281,7 @@ mod tests {
     }
 
     fn fixture(name: &str, files: &[(&str, &str)]) -> Fixture {
-        let dir = std::env::temp_dir()
-            .join(FIXTURE_ROOT)
-            .join(format!("{name}-{}", std::process::id()));
-        crate::fresh_dir(&dir).unwrap();
+        let dir = crate::scratch_dir(&format!("{FIXTURE_ROOT}-{name}"));
         for (relative, contents) in files {
             let file = dir.join(relative);
             crate::create_parent(&file).unwrap();
