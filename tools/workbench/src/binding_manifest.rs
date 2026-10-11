@@ -15,12 +15,10 @@ pub const REVISION_ANNOTATION: &str = "org.opencontainers.image.revision";
 const PATH_SEPARATOR: &str = "/";
 const TAG_SEPARATOR: &str = ":";
 const REVISION_PATH_SEPARATOR: &str = ":";
-const ENTRY_HEADER: &str = "[[entry]]";
+const ENTRY_KEY: &str = "entry";
 const COMMIT_KEY: &str = "commit";
 const SINCE_KEY: &str = "since";
 const AUDITED_KEY: &str = "audited";
-const COMMENT_MARK: char = '#';
-const ASSIGNMENT: char = '=';
 const QUOTE: char = '"';
 const COMMIT_LENGTH: usize = 40;
 const COMMIT_EXPECTATION: &str = "a full lowercase commit hash";
@@ -41,9 +39,6 @@ const TREE_ARGS: [&str; 8] = [
     "tree", "--locked", "--edges", "normal", "--depth", "1", "--prefix", "none",
 ];
 const TREE_FORMAT: [&str; 2] = ["--format", crate::PACKAGE_ID_FORMAT];
-const ARRAY_OPEN: char = '[';
-const ARRAY_CLOSE: char = ']';
-const ITEM_SEPARATOR: char = ',';
 const FIRST_ORDINAL: usize = 1;
 
 fn ordinal(index: usize) -> usize {
@@ -108,12 +103,6 @@ pub struct Entry {
     pub audited: Vec<AuditedCrate>,
 }
 
-struct LocatedEntry {
-    entry: Entry,
-    last_line: usize,
-    keys: Vec<(String, usize)>,
-}
-
 fn is_hex(text: &str, length: usize) -> bool {
     text.len() == length
         && text
@@ -147,29 +136,6 @@ fn digest_value(platform: &str, value: &str) -> Result<String, Vec<String>> {
     hex_value(platform, value, hex, DIGEST_HEX_LENGTH, &expected)
 }
 
-fn quoted(text: &str) -> Option<&str> {
-    let value = text.trim().strip_prefix(QUOTE)?.strip_suffix(QUOTE)?;
-    (!value.contains(QUOTE)).then_some(value)
-}
-
-fn assignment(line: &str) -> Option<(&str, &str)> {
-    let (key, rest) = line.split_once(ASSIGNMENT)?;
-    quoted(rest).map(|value| (key.trim(), value))
-}
-
-fn array_assignment(line: &str) -> Option<(&str, Vec<&str>)> {
-    let (key, rest) = line.split_once(ASSIGNMENT)?;
-    let inner = rest
-        .trim()
-        .strip_prefix(ARRAY_OPEN)?
-        .strip_suffix(ARRAY_CLOSE)?;
-    let items = inner
-        .split(ITEM_SEPARATOR)
-        .map(quoted)
-        .collect::<Option<Vec<_>>>()?;
-    Some((key.trim(), items))
-}
-
 fn audited_value(items: &[&str]) -> Result<Vec<AuditedCrate>, Vec<String>> {
     items
         .iter()
@@ -183,103 +149,98 @@ fn audited_value(items: &[&str]) -> Result<Vec<AuditedCrate>, Vec<String>> {
         .collect()
 }
 
-fn render_audited(crates: &[AuditedCrate]) -> String {
-    let items = crates
+fn audited_array(crates: &[AuditedCrate]) -> toml_edit::Array {
+    let mut array = toml_edit::Array::new();
+    for found in crates {
+        array.push(found.to_string());
+    }
+    array
+}
+
+fn line_of(text: &str, span: Option<std::ops::Range<usize>>) -> usize {
+    span.map_or(FIRST_ORDINAL, |span| {
+        text[..span.start].matches('\n').count() + FIRST_ORDINAL
+    })
+}
+
+fn located(text: &str, key: Option<&toml_edit::Key>) -> impl Fn(Vec<String>) -> Vec<String> {
+    let line = line_of(text, key.and_then(toml_edit::Key::span));
+    move |diagnostics| {
+        diagnostics
+            .into_iter()
+            .map(|diagnostic| format!("{FILE}:{line}: {diagnostic}"))
+            .collect()
+    }
+}
+
+fn string_value<'a>(key: &str, item: &'a toml_edit::Item) -> Result<&'a str, Vec<String>> {
+    item.as_str().ok_or_else(|| {
+        vec![format!(
+            "{key} takes a quoted value, not {}",
+            item.type_name()
+        )]
+    })
+}
+
+fn commit_item(key: &str, item: &toml_edit::Item) -> Result<String, Vec<String>> {
+    commit_value(key, string_value(key, item)?)
+}
+
+fn audited_items(item: &toml_edit::Item) -> Result<Vec<&str>, Vec<String>> {
+    let array = item
+        .as_array()
+        .ok_or_else(|| vec![format!("{AUDITED_KEY} takes an array")])?;
+    if array.is_empty() {
+        return Err(vec![format!("{AUDITED_KEY} names no crate")]);
+    }
+    array
         .iter()
-        .map(|found| format!("{QUOTE}{found}{QUOTE}"))
-        .collect::<Vec<_>>()
-        .join(crate::LIST_SEPARATOR);
-    format!("{ARRAY_OPEN}{items}{ARRAY_CLOSE}")
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| vec![format!("{AUDITED_KEY} items are quoted")])
+        })
+        .collect()
 }
 
-fn assign(entry: &mut Entry, key: &str, value: &str) -> Result<(), Vec<String>> {
-    let taken = |name: &str, present: bool| {
-        if present {
-            Err(vec![format!("{name} is set twice in one entry")])
-        } else {
-            Ok(())
-        }
-    };
-    match key {
-        COMMIT_KEY => {
-            taken(key, !entry.commit.is_empty())?;
-            entry.commit = commit_value(key, value)?;
-        }
-        SINCE_KEY => {
-            taken(key, entry.since.is_some())?;
-            entry.since = Some(commit_value(key, value)?);
-        }
-        AUDITED_KEY => return Err(vec![format!("{AUDITED_KEY} takes an array")]),
-        other => {
-            let platform = platform(other).map_err(|_| vec![format!("unknown key {other}")])?;
-            taken(key, entry.digests.iter().any(|(name, _)| name == platform))?;
-            entry
-                .digests
-                .push((platform.to_string(), digest_value(platform, value)?));
-        }
-    }
-    Ok(())
-}
-
-fn assign_array(entry: &mut Entry, key: &str, items: &[&str]) -> Result<(), Vec<String>> {
-    match key {
-        AUDITED_KEY if !entry.audited.is_empty() => {
-            Err(vec![format!("{AUDITED_KEY} is set twice in one entry")])
-        }
-        AUDITED_KEY => {
-            entry.audited = audited_value(items)?;
-            Ok(())
-        }
-        other => Err(vec![format!("{other} takes a quoted value, not an array")]),
-    }
-}
-
-fn parse_located(text: &str) -> Result<Vec<LocatedEntry>, Vec<String>> {
-    let mut entries: Vec<LocatedEntry> = Vec::new();
-    for (index, raw) in text.lines().enumerate() {
-        let line = raw.trim();
-        let located = |lines: Vec<String>| {
-            lines
-                .into_iter()
-                .map(|diagnostic| format!("{FILE}:{}: {diagnostic}", ordinal(index)))
-                .collect::<Vec<_>>()
+fn entry_from(text: &str, table: &toml_edit::Table) -> Result<Entry, Vec<String>> {
+    let mut entry = Entry::default();
+    for (key, item) in table.iter() {
+        let assigned = match key {
+            COMMIT_KEY => commit_item(key, item).map(|commit| entry.commit = commit),
+            SINCE_KEY => commit_item(key, item).map(|since| entry.since = Some(since)),
+            AUDITED_KEY => audited_items(item)
+                .and_then(|items| audited_value(&items))
+                .map(|crates| entry.audited = crates),
+            other => platform(other)
+                .map_err(|_| vec![format!("unknown key {other}")])
+                .and_then(|platform| {
+                    string_value(platform, item)
+                        .and_then(|value| digest_value(platform, value))
+                        .map(|digest| entry.digests.push((platform.to_string(), digest)))
+                }),
         };
-        if line.is_empty() || line.starts_with(COMMENT_MARK) {
-            continue;
-        }
-        if line == ENTRY_HEADER {
-            entries.push(LocatedEntry {
-                entry: Entry::default(),
-                last_line: index,
-                keys: Vec::new(),
-            });
-            continue;
-        }
-        let current = entries.last_mut().ok_or_else(|| {
-            located(vec![format!(
-                "`{line}` comes before the first {ENTRY_HEADER}"
-            )])
-        })?;
-        let key = if let Some((key, value)) = assignment(line) {
-            assign(&mut current.entry, key, value).map_err(located)?;
-            key
-        } else if let Some((key, items)) = array_assignment(line) {
-            assign_array(&mut current.entry, key, &items).map_err(located)?;
-            key
-        } else {
-            return Err(located(vec![format!("cannot read `{line}`")]));
-        };
-        current.last_line = index;
-        current.keys.push((key.to_string(), index));
+        assigned.map_err(located(text, table.key(key)))?;
     }
-    Ok(entries)
+    Ok(entry)
 }
 
 pub fn parse(text: &str) -> Result<Vec<Entry>, Vec<String>> {
-    Ok(parse_located(text)?
-        .into_iter()
-        .map(|located| located.entry)
-        .collect())
+    let document = toml_edit::Document::parse(text).map_err(|e| vec![format!("{FILE}: {e}")])?;
+    let mut entries = Vec::new();
+    for (key, item) in document.iter() {
+        let at = located(text, document.key(key));
+        if key != ENTRY_KEY {
+            return Err(at(vec![format!("`{key}` lies outside an [[{ENTRY_KEY}]]")]));
+        }
+        let tables = item
+            .as_array_of_tables()
+            .ok_or_else(|| at(vec![format!("{ENTRY_KEY} is not an array of tables")]))?;
+        for table in tables.iter() {
+            entries.push(entry_from(text, table)?);
+        }
+    }
+    Ok(entries)
 }
 
 pub fn missing_required(present: &[&str]) -> Vec<&'static str> {
@@ -497,8 +458,8 @@ pub fn audited_diagnostics(root: &Path, entries: &[Entry]) -> Result<Vec<String>
             diagnostics.push(format!(
                 "entry {} records {AUDITED_KEY} {} and `cargo tree` at that commit reports {}",
                 entry.commit,
-                render_audited(&entry.audited),
-                render_audited(&found)
+                audited_array(&entry.audited),
+                audited_array(&found)
             ));
         }
     }
@@ -707,8 +668,8 @@ pub fn recorded(
     digest: &str,
 ) -> Result<String, Vec<String>> {
     let platform = platform(platform_name)?;
-    let value = format!("{QUOTE}{}{QUOTE}", digest_value(platform, digest)?);
-    recorded_line(text, commit, platform, &value)
+    let value = toml_edit::value(digest_value(platform, digest)?);
+    recorded_item(text, commit, platform, value)
 }
 
 pub fn recorded_audited(
@@ -719,24 +680,35 @@ pub fn recorded_audited(
     if crates.is_empty() {
         return Err(vec![format!("{AUDITED_KEY} names no crate")]);
     }
-    recorded_line(text, commit, AUDITED_KEY, &render_audited(crates))
+    recorded_item(
+        text,
+        commit,
+        AUDITED_KEY,
+        toml_edit::value(audited_array(crates)),
+    )
 }
 
-fn recorded_line(text: &str, commit: &str, key: &str, value: &str) -> Result<String, Vec<String>> {
-    let target = parse_located(text)?
-        .into_iter()
-        .find(|located| located.entry.commit == commit)
+fn recorded_item(
+    text: &str,
+    commit: &str,
+    key: &str,
+    item: toml_edit::Item,
+) -> Result<String, Vec<String>> {
+    let mut document: toml_edit::DocumentMut =
+        text.parse().map_err(|e| vec![format!("{FILE}: {e}")])?;
+    let table = document
+        .get_mut(ENTRY_KEY)
+        .and_then(toml_edit::Item::as_array_of_tables_mut)
+        .and_then(|tables| {
+            tables.iter_mut().find(|table| {
+                table.get(COMMIT_KEY).and_then(toml_edit::Item::as_str) == Some(commit)
+            })
+        })
         .ok_or_else(|| vec![format!("{FILE} holds no entry for {commit}")])?;
-    let line = format!("{key} = {value}");
-    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
-    match target.keys.iter().find(|(found, _)| found == key) {
-        Some((_, index)) => lines[*index] = line,
-        None => lines.insert(target.last_line + 1, line),
-    }
-    let mut joined = lines.join("\n");
-    joined.push('\n');
-    parse(&joined)?;
-    Ok(joined)
+    table.insert(key, item);
+    let recorded = document.to_string();
+    parse(&recorded)?;
+    Ok(recorded)
 }
 
 /// - Reads the process arguments.
@@ -802,7 +774,7 @@ mod tests {
                 let audited = if entry.audited.is_empty() {
                     String::new()
                 } else {
-                    format!("audited = {}\n", render_audited(&entry.audited))
+                    format!("audited = {}\n", audited_array(&entry.audited))
                 };
                 format!(
                     "# a comment\n\n[[entry]]\ncommit = \"{}\"\n{since}{digests}{audited}",
