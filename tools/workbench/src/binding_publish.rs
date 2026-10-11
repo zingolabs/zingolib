@@ -513,7 +513,9 @@ mod tests {
             scratch,
             &["clone", "--quiet", remote.to_str().unwrap(), name],
         );
-        scratch.join(name)
+        let dir = scratch.join(name);
+        crate::configure_hermetic_git(&dir);
+        dir
     }
 
     fn append(dir: &Path, relative: &str, line: &str) {
