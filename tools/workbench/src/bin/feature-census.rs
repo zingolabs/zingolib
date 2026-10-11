@@ -210,9 +210,9 @@ fn probe_manifest(root: &Path, manifest: &Path) -> Result<Vec<Candidate>, Vec<St
         let Some(without) = manifest_without(&original, &candidate) else {
             continue;
         };
-        write(manifest, &without)?;
+        workbench::write(manifest, &without)?;
         let compiled = check(root, manifest, &crate_dir);
-        write(manifest, &original)?;
+        workbench::write(manifest, &original)?;
         if compiled? {
             println!("  unneeded: {}", candidate.key());
             unneeded.push(candidate);
@@ -313,11 +313,6 @@ fn manifest_without(text: &str, candidate: &Candidate) -> Option<String> {
         .position(|value| value.as_str() == Some(candidate.feature.as_str()))?;
     features.remove(position);
     Some(document.to_string())
-}
-
-/// Writes `text` to `path`, or a one-line diagnostic on failure.
-fn write(path: &Path, text: &str) -> Result<(), Vec<String>> {
-    std::fs::write(path, text).map_err(|e| vec![format!("cannot write {}: {e}", path.display())])
 }
 
 /// Whether the crate still compiles, with every target and the probe's features.
@@ -425,7 +420,7 @@ fn bless(root: &Path, unneeded: &[Candidate]) -> Result<(), Vec<String>> {
         out.push_str(&reason);
         out.push('\n');
     }
-    write(&root.join(BLESSING_PATH), &out)?;
+    workbench::write(&root.join(BLESSING_PATH), &out)?;
     println!(
         "feature-census: blessed {} feature(s) into {BLESSING_PATH}",
         unneeded.len()
@@ -438,9 +433,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_manifest_reaches_the_nested_workspace_members() {
-        let root = workbench::repo_root().unwrap();
-        let manifests = every_manifest(&root).unwrap();
+    fn every_manifest_reaches_the_nested_workspace_members() -> Result<(), Vec<String>> {
+        let root = workbench::repo_root()?;
+        let manifests = every_manifest(&root)?;
         for member in ["zingo-ffi/lib", "zingo-ffi/uniffi-bindgen", "zingo-cli"] {
             assert!(
                 manifests.contains(&root.join(member).join(workbench::MANIFEST)),
@@ -448,12 +443,13 @@ mod tests {
             );
         }
         assert!(manifests.contains(&root.join(workbench::MANIFEST)));
+        Ok(())
     }
 
     /// A manifest's inline dependency tables yield one candidate per feature,
     /// each named by the dependency whose table encloses it.
     #[test]
-    fn declared_names_each_feature_by_its_dependency() {
+    fn declared_names_each_feature_by_its_dependency() -> Result<(), Vec<String>> {
         let manifest = r#"
 [dependencies]
 reqwest = { workspace = true, default-features = false, features = [
@@ -462,7 +458,7 @@ reqwest = { workspace = true, default-features = false, features = [
 ] }
 serde = { workspace = true, features = ["derive"] }
 "#;
-        let found = declared("zingo-price", manifest).unwrap();
+        let found = declared("zingo-price", manifest)?;
         let keys: Vec<String> = found.iter().map(Candidate::key).collect();
         assert_eq!(
             keys,
@@ -472,22 +468,23 @@ serde = { workspace = true, features = ["derive"] }
                 "zingo-price::serde::derive",
             ]
         );
+        Ok(())
     }
 
     #[test]
-    fn a_commented_out_feature_list_declares_nothing() {
+    fn a_commented_out_feature_list_declares_nothing() -> Result<(), Vec<String>> {
         let manifest =
             "[dependencies]\n# reqwest = { features = [\"json\"] }\nserde = { workspace = true }\n";
-        assert_eq!(declared("zingo-price", manifest).unwrap(), Vec::new());
+        assert_eq!(declared("zingo-price", manifest)?, Vec::new());
+        Ok(())
     }
 
     #[test]
-    fn workspace_and_target_dependencies_declare_features_too() {
+    fn workspace_and_target_dependencies_declare_features_too() -> Result<(), Vec<String>> {
         let manifest = "[workspace.dependencies]\nhttp = { version = \"1\", features = [\"std\"] }\n\n\
                         [target.'cfg(unix)'.dependencies]\nlibc = { version = \"0.2\", features = [\"extra_traits\"] }\n\n\
                         [dependencies.reqwest]\nversion = \"0.12\"\nfeatures = [\"json\"]\n";
-        let keys: Vec<String> = declared(".", manifest)
-            .unwrap()
+        let keys: Vec<String> = declared(".", manifest)?
             .iter()
             .map(Candidate::key)
             .collect();
@@ -495,50 +492,56 @@ serde = { workspace = true, features = ["derive"] }
             keys,
             vec![".::reqwest::json", ".::http::std", ".::libc::extra_traits"]
         );
+        Ok(())
     }
 
     #[test]
-    fn a_bracket_inside_a_comment_does_not_end_the_list() {
+    fn a_bracket_inside_a_comment_does_not_end_the_list() -> Result<(), Vec<String>> {
         let manifest =
             "[dependencies]\nreqwest = { features = [\n    \"json\", # ]\n    \"socks\",\n] }\n";
-        let features: Vec<String> = declared("zingo-price", manifest)
-            .unwrap()
+        let features: Vec<String> = declared("zingo-price", manifest)?
             .into_iter()
             .map(|candidate| candidate.feature)
             .collect();
         assert_eq!(features, vec!["json".to_string(), "socks".to_string()]);
+        Ok(())
     }
 
     /// `default-features` never reads as a feature list of its own, so a
     /// dependency that disables defaults contributes no phantom candidate.
     #[test]
-    fn default_features_is_not_a_feature_list() {
+    fn default_features_is_not_a_feature_list() -> Result<(), Vec<String>> {
         let manifest = "[dependencies]\nhttp = { version = \"1\", default-features = false }\n";
-        assert_eq!(declared("zingolib", manifest).unwrap(), Vec::new());
+        assert_eq!(declared("zingolib", manifest)?, Vec::new());
+        Ok(())
     }
 
     /// Removal keeps every other item and every other line of the manifest,
     /// whether the list was written across lines or all on one.
     #[test]
-    fn removal_keeps_every_other_item() {
+    fn removal_keeps_every_other_item() -> Result<(), Vec<String>> {
         for manifest in [
             "[dependencies]\nreqwest = { features = [\n    \"json\",\n    \"socks\",\n] }\nserde = \"1\"\n",
             "[dependencies]\nreqwest = { features = [\"json\", \"socks\"] }\nserde = \"1\"\n",
         ] {
-            let candidate = declared("zingo-price", manifest)
-                .unwrap()
-                .into_iter()
-                .find(|found| found.feature == "json")
-                .expect("json is declared");
-            let without = manifest_without(manifest, &candidate).expect("the feature is present");
-            let remaining: Vec<String> = declared("zingo-price", &without)
-                .unwrap()
+            let candidate = workbench::required(
+                declared("zingo-price", manifest)?
+                    .into_iter()
+                    .find(|found| found.feature == "json"),
+                "declared json feature",
+            )?;
+            let without = workbench::required(
+                manifest_without(manifest, &candidate),
+                "manifest without the json feature",
+            )?;
+            let remaining: Vec<String> = declared("zingo-price", &without)?
                 .into_iter()
                 .map(|found| found.feature)
                 .collect();
             assert_eq!(remaining, vec!["socks".to_string()], "in {manifest:?}");
             assert!(without.ends_with("serde = \"1\"\n"), "the rest of {manifest:?} stays");
         }
+        Ok(())
     }
 
     /// A feature the manifest does not declare cannot be removed from it.

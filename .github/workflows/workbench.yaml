@@ -30,8 +30,6 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     steps:
-      # The manifest and changelog checks run inside the tests against the
-      # committed entries, whose commits a shallow checkout does not hold.
       - name: Checkout repository
         uses: actions/checkout@v6
         with:

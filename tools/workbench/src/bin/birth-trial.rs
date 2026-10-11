@@ -256,7 +256,7 @@ fn birth(proxy: &Path, exit: &str) -> Result<Outcome, Vec<String>> {
         .map_err(|e| vec![format!("cannot spawn {}: {e}", proxy.display())])?;
 
     let started = Instant::now();
-    let stdout = child.stdout.take().expect("stdout was piped");
+    let stdout = workbench::required(child.stdout.take(), "piped stdout of the proxy")?;
     let (sender, receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {

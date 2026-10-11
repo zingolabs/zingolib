@@ -745,23 +745,28 @@ mod tests {
         "zingo-netutils (zingo-netutils)",
     ];
 
-    fn audited(items: &[&str]) -> Vec<AuditedCrate> {
+    fn audited(items: &[&str]) -> Result<Vec<AuditedCrate>, Vec<String>> {
         items
             .iter()
-            .map(|item| AuditedCrate::parse(item).unwrap())
+            .map(|item| {
+                crate::required(
+                    AuditedCrate::parse(item),
+                    &format!("audited crate in `{item}`"),
+                )
+            })
             .collect()
     }
 
-    fn entry(commit: &str, since: Option<&str>, platforms: &[&str]) -> Entry {
-        Entry {
+    fn entry(commit: &str, since: Option<&str>, platforms: &[&str]) -> Result<Entry, Vec<String>> {
+        Ok(Entry {
             commit: commit.to_string(),
             since: since.map(str::to_string),
             digests: platforms
                 .iter()
                 .map(|platform| (platform.to_string(), DIGEST.to_string()))
                 .collect(),
-            audited: audited(&EXPECTED_AUDITED[..2]),
-        }
+            audited: audited(&EXPECTED_AUDITED[..2])?,
+        })
     }
 
     fn rendered(crates: &[AuditedCrate]) -> Vec<String> {
@@ -796,18 +801,19 @@ mod tests {
     }
 
     #[test]
-    fn the_manifest_round_trips_through_its_text_form() {
+    fn the_manifest_round_trips_through_its_text_form() -> Result<(), Vec<String>> {
         let entries = vec![
-            entry(FIRST, Some(ORIGIN), &[ANDROID, IOS]),
-            entry(SECOND, None, &PLATFORMS),
+            entry(FIRST, Some(ORIGIN), &[ANDROID, IOS])?,
+            entry(SECOND, None, &PLATFORMS)?,
         ];
-        let parsed = parse(&manifest(&entries)).unwrap();
+        let parsed = parse(&manifest(&entries))?;
         assert_eq!(parsed, entries);
         assert_eq!(validate(&parsed), Ok(()));
+        Ok(())
     }
 
     #[test]
-    fn the_grammar_rejects_what_it_does_not_name() {
+    fn the_grammar_rejects_what_it_does_not_name() -> Result<(), Vec<String>> {
         let rejected = [
             "[[entry]]\ncommit = \"short\"\n",
             "[[entry]]\nandroid = \"sha256:short\"\n",
@@ -822,7 +828,7 @@ mod tests {
             "[[entry]]\nandroid = [\"sha256:0\"]\n",
         ];
         for text in rejected {
-            let diagnostic = parse(text).unwrap_err().concat();
+            let diagnostic = crate::refused(parse(text))?.concat();
             assert!(diagnostic.starts_with(FILE), "{text}: {diagnostic}");
         }
         assert!(parse("[[entry]]\nandroid = \"x\"\nandroid = \"y\"\n").is_err());
@@ -830,74 +836,89 @@ mod tests {
             "[[entry]]\naudited = [\"zingo (zingo-ffi/lib)\"]\naudited = [\"zingo (zingo-ffi/lib)\"]\n"
         )
         .is_err());
+        Ok(())
     }
 
     #[test]
-    fn a_platform_outside_the_set_is_refused_by_name() {
+    fn a_platform_outside_the_set_is_refused_by_name() -> Result<(), Vec<String>> {
         assert_eq!(platform(ANDROID), Ok(ANDROID));
         assert_eq!(platform(IOS), Ok(IOS));
-        let diagnostic = platform("linux").unwrap_err().concat();
+        let diagnostic = crate::refused(platform("linux"))?.concat();
         assert!(diagnostic.contains("linux") && diagnostic.contains(ANDROID));
+        Ok(())
     }
 
     #[test]
-    fn an_audited_crate_round_trips_through_its_text_form_and_a_tree_line_is_made_relative() {
-        let found = AuditedCrate::parse("zingo (zingo-ffi/lib)").unwrap();
+    fn an_audited_crate_round_trips_through_its_text_form_and_a_tree_line_is_made_relative(
+    ) -> Result<(), Vec<String>> {
+        let found = crate::required(
+            AuditedCrate::parse("zingo (zingo-ffi/lib)"),
+            "audited crate in the text form",
+        )?;
         assert_eq!(found.to_string(), "zingo (zingo-ffi/lib)");
         assert_eq!(found.dir, PathBuf::from("zingo-ffi/lib"));
         assert_eq!(AuditedCrate::parse("zingo"), None);
         assert_eq!(AuditedCrate::parse("zingo v2.0.0 (zingo-ffi/lib)"), None);
+        Ok(())
     }
 
     #[test]
-    fn a_package_under_the_root_is_an_audited_crate_and_one_outside_is_not() {
-        let root = crate::repo_root().unwrap();
-        let metadata = crate::metadata_of(&root.join(crate::MANIFEST), true).unwrap();
+    fn a_package_under_the_root_is_an_audited_crate_and_one_outside_is_not(
+    ) -> Result<(), Vec<String>> {
+        let root = crate::repo_root()?;
+        let metadata = crate::metadata_of(&root.join(crate::MANIFEST), true)?;
         let package = |name: &str| {
-            metadata
-                .packages
-                .iter()
-                .find(|package| package.name.as_str() == name)
-                .unwrap()
+            crate::required(
+                metadata
+                    .packages
+                    .iter()
+                    .find(|package| package.name.as_str() == name),
+                &format!("package {name} in the metadata"),
+            )
         };
         assert_eq!(
-            AuditedCrate::from_package(package("zingo"), &root),
+            AuditedCrate::from_package(package("zingo")?, &root),
             AuditedCrate::parse("zingo (zingo-ffi/lib)")
         );
-        assert_eq!(AuditedCrate::from_package(package("serde"), &root), None);
+        assert_eq!(AuditedCrate::from_package(package("serde")?, &root), None);
         assert_eq!(
-            AuditedCrate::from_package(package("zingo"), Path::new(ROOT)),
+            AuditedCrate::from_package(package("zingo")?, Path::new(ROOT)),
             None
         );
+        Ok(())
     }
 
     #[test]
-    fn the_checked_out_commit_audits_the_five_crates_the_plan_names() {
-        let root = crate::repo_root().unwrap();
-        assert_eq!(rendered(&audited_at(&root).unwrap()), EXPECTED_AUDITED);
+    fn the_checked_out_commit_audits_the_five_crates_the_plan_names() -> Result<(), Vec<String>> {
+        let root = crate::repo_root()?;
+        assert_eq!(rendered(&audited_at(&root)?), EXPECTED_AUDITED);
+        Ok(())
     }
 
     #[test]
-    fn the_recorded_audited_crates_are_checked_against_cargo_tree_at_the_commit() {
-        let root = crate::repo_root().unwrap();
-        let head = crate::commit_of(&root, "HEAD").unwrap();
-        let mut recorded = entry(&head, Some(ORIGIN), &[ANDROID]);
-        recorded.audited = audited(&EXPECTED_AUDITED);
+    fn the_recorded_audited_crates_are_checked_against_cargo_tree_at_the_commit(
+    ) -> Result<(), Vec<String>> {
+        let root = crate::repo_root()?;
+        let head = crate::commit_of(&root, "HEAD")?;
+        let mut recorded = entry(&head, Some(ORIGIN), &[ANDROID])?;
+        recorded.audited = audited(&EXPECTED_AUDITED)?;
         assert_eq!(
-            audited_diagnostics(&root, std::slice::from_ref(&recorded)).unwrap(),
+            audited_diagnostics(&root, std::slice::from_ref(&recorded))?,
             Vec::<String>::new()
         );
         recorded.audited.pop();
-        let diagnostic = audited_diagnostics(&root, &[recorded]).unwrap().concat();
+        let diagnostic = audited_diagnostics(&root, &[recorded])?.concat();
         assert!(diagnostic.contains(&head), "{diagnostic}");
         assert!(!root.join(CHECKOUTS_DIR).join(&head).exists());
+        Ok(())
     }
 
     #[test]
-    fn a_push_re_derives_only_the_appended_audited_sets_and_may_verify_every_digest() {
+    fn a_push_re_derives_only_the_appended_audited_sets_and_may_verify_every_digest(
+    ) -> Result<(), Vec<String>> {
         let head = vec![
-            entry(FIRST, Some(ORIGIN), &["android"]),
-            entry(SECOND, None, &["android"]),
+            entry(FIRST, Some(ORIGIN), &["android"])?,
+            entry(SECOND, None, &["android"])?,
         ];
         let (appended, digests) = verification_scopes(&head, 1, true);
         assert_eq!(appended, &head[1..]);
@@ -907,6 +928,7 @@ mod tests {
         assert_eq!(digests, &head[1..]);
         let (appended, _) = verification_scopes(&head, 5, false);
         assert!(appended.is_empty());
+        Ok(())
     }
 
     #[test]
@@ -923,31 +945,31 @@ mod tests {
     }
 
     #[test]
-    fn an_incomplete_entry_is_named_as_awaiting_publish() {
-        let mut incomplete = entry(FIRST, Some(ORIGIN), &[]);
+    fn an_incomplete_entry_is_named_as_awaiting_publish() -> Result<(), Vec<String>> {
+        let mut incomplete = entry(FIRST, Some(ORIGIN), &[])?;
         incomplete.audited.clear();
         let awaited_parts = REQUIRED_PLATFORMS.len() + 1;
         assert_eq!(awaited(&incomplete).len(), awaited_parts);
-        let diagnostics = validate(&[incomplete]).unwrap_err();
+        let diagnostics = crate::refused(validate(&[incomplete]))?;
         assert_eq!(diagnostics.len(), awaited_parts, "{diagnostics:?}");
         assert!(diagnostics
             .iter()
             .all(|diagnostic| diagnostic.contains(PUBLISH_COMMAND)));
+        Ok(())
     }
 
     #[test]
-    fn the_newest_commit_is_the_last_entry_only_while_it_awaits_publish() {
-        let published = entry(FIRST, Some(ORIGIN), &PLATFORMS);
-        let android_only = entry(FIRST, Some(ORIGIN), &[ANDROID]);
+    fn the_newest_commit_is_the_last_entry_only_while_it_awaits_publish() -> Result<(), Vec<String>>
+    {
+        let published = entry(FIRST, Some(ORIGIN), &PLATFORMS)?;
+        let android_only = entry(FIRST, Some(ORIGIN), &[ANDROID])?;
         assert_eq!(
             newest_commit(std::slice::from_ref(&android_only)),
             Ok(FIRST)
         );
-        let diagnostic = newest_commit(std::slice::from_ref(&published))
-            .unwrap_err()
-            .concat();
+        let diagnostic = crate::refused(newest_commit(std::slice::from_ref(&published)))?.concat();
         assert!(diagnostic.contains(FIRST) && diagnostic.contains("published"));
-        let awaiting = entry(SECOND, None, &[]);
+        let awaiting = entry(SECOND, None, &[])?;
         assert_eq!(
             newest_commit(&[published.clone(), awaiting.clone()]),
             Ok(SECOND)
@@ -956,17 +978,19 @@ mod tests {
         nameless.commit.clear();
         assert!(newest_commit(&[published, nameless]).is_err());
         assert!(newest_commit(&[]).is_err());
+        Ok(())
     }
 
     #[test]
-    fn recording_the_audited_crates_adds_the_array_line_or_replaces_it() {
-        let text = manifest(&[entry(FIRST, Some(ORIGIN), &PLATFORMS)]);
-        let mut bare = entry(SECOND, None, &[]);
+    fn recording_the_audited_crates_adds_the_array_line_or_replaces_it() -> Result<(), Vec<String>>
+    {
+        let text = manifest(&[entry(FIRST, Some(ORIGIN), &PLATFORMS)?]);
+        let mut bare = entry(SECOND, None, &[])?;
         bare.audited.clear();
         let appended = format!("{text}{}", manifest(&[bare]));
-        let crates = audited(&EXPECTED_AUDITED);
-        let with_audited = recorded_audited(&appended, SECOND, &crates).unwrap();
-        let parsed = parse(&with_audited).unwrap();
+        let crates = audited(&EXPECTED_AUDITED)?;
+        let with_audited = recorded_audited(&appended, SECOND, &crates)?;
+        let parsed = parse(&with_audited)?;
         assert_eq!(parsed[1].audited, crates);
         assert_eq!(
             validate(&parsed),
@@ -976,40 +1000,42 @@ mod tests {
                 ))
                 .to_vec())
         );
-        let replaced = recorded_audited(&with_audited, SECOND, &crates[..1]).unwrap();
-        assert_eq!(parse(&replaced).unwrap()[1].audited, crates[..1]);
+        let replaced = recorded_audited(&with_audited, SECOND, &crates[..1])?;
+        assert_eq!(parse(&replaced)?[1].audited, crates[..1]);
         assert!(recorded_audited(&text, SECOND, &[]).is_err());
+        Ok(())
     }
 
     #[test]
-    fn a_recorded_line_joins_its_entry_before_a_following_comment() {
+    fn a_recorded_line_joins_its_entry_before_a_following_comment() -> Result<(), Vec<String>> {
         let text = format!(
             "[[entry]]\ncommit = \"{FIRST}\"\nsince = \"{ORIGIN}\"\n\n# trailing\n\n[[entry]]\ncommit = \"{SECOND}\"\n"
         );
-        let recorded = recorded(&text, FIRST, ANDROID, DIGEST).unwrap();
+        let recorded = recorded(&text, FIRST, ANDROID, DIGEST)?;
         let lines: Vec<&str> = recorded.lines().collect();
         assert_eq!(lines[3], format!("android = \"{DIGEST}\""));
         assert_eq!(lines[5], "# trailing");
-        assert_eq!(parse(&recorded).unwrap()[1].digests, []);
+        assert_eq!(parse(&recorded)?[1].digests, []);
+        Ok(())
     }
 
     #[test]
-    fn validation_pins_the_since_rule_the_digest_rule_and_uniqueness() {
-        let diagnostics = validate(&[
-            entry(FIRST, None, &[]),
-            entry(SECOND, Some(ORIGIN), &[IOS]),
-            entry(SECOND, None, &[ANDROID]),
-        ])
-        .unwrap_err()
+    fn validation_pins_the_since_rule_the_digest_rule_and_uniqueness() -> Result<(), Vec<String>> {
+        let diagnostics = crate::refused(validate(&[
+            entry(FIRST, None, &[])?,
+            entry(SECOND, Some(ORIGIN), &[IOS])?,
+            entry(SECOND, None, &[ANDROID])?,
+        ]))?
         .concat();
         assert!(diagnostics.contains("first and names no since"));
         assert!(diagnostics.contains("names no android digest"));
         assert!(diagnostics.contains("names no ios digest"));
-        assert_eq!(validate(&[entry(FIRST, Some(ORIGIN), &PLATFORMS)]), Ok(()));
-        assert!(validate(&[entry(FIRST, Some(ORIGIN), &[ANDROID])]).is_err());
-        assert!(validate(&[entry(FIRST, Some(ORIGIN), &[IOS])]).is_err());
+        assert_eq!(validate(&[entry(FIRST, Some(ORIGIN), &PLATFORMS)?]), Ok(()));
+        assert!(validate(&[entry(FIRST, Some(ORIGIN), &[ANDROID])?]).is_err());
+        assert!(validate(&[entry(FIRST, Some(ORIGIN), &[IOS])?]).is_err());
         assert!(diagnostics.contains("only the first entry may"));
         assert!(diagnostics.contains("repeats an earlier entry"));
+        Ok(())
     }
 
     #[test]
@@ -1021,48 +1047,48 @@ mod tests {
     }
 
     #[test]
-    fn a_structural_defect_refuses_publication_before_any_push() {
-        let awaiting_first = [entry(FIRST, Some(ORIGIN), &[])];
+    fn a_structural_defect_refuses_publication_before_any_push() -> Result<(), Vec<String>> {
+        let awaiting_first = [entry(FIRST, Some(ORIGIN), &[])?];
         assert_eq!(structure(&awaiting_first), Ok(()));
         assert_eq!(newest_publishable(&awaiting_first), Ok(FIRST));
-        let no_since = [entry(FIRST, None, &[])];
-        assert!(structure(&no_since)
-            .unwrap_err()
+        let no_since = [entry(FIRST, None, &[])?];
+        assert!(crate::refused(structure(&no_since))?
             .concat()
             .contains("names no since"));
         assert!(newest_publishable(&no_since).is_err());
         let repeated = [
-            entry(FIRST, Some(ORIGIN), &PLATFORMS),
-            entry(FIRST, None, &[]),
+            entry(FIRST, Some(ORIGIN), &PLATFORMS)?,
+            entry(FIRST, None, &[])?,
         ];
-        assert!(newest_publishable(&repeated)
-            .unwrap_err()
+        assert!(crate::refused(newest_publishable(&repeated))?
             .concat()
             .contains("repeats"));
-        let published = [entry(FIRST, Some(ORIGIN), &PLATFORMS)];
-        assert!(newest_publishable(&published)
-            .unwrap_err()
+        let published = [entry(FIRST, Some(ORIGIN), &PLATFORMS)?];
+        assert!(crate::refused(newest_publishable(&published))?
             .concat()
             .contains("is published"));
+        Ok(())
     }
 
     #[test]
-    fn a_merged_entry_never_changes_and_the_head_may_only_append() {
-        let base = vec![entry(FIRST, Some(ORIGIN), &[ANDROID])];
-        let appended = vec![base[0].clone(), entry(SECOND, None, &[ANDROID])];
+    fn a_merged_entry_never_changes_and_the_head_may_only_append() -> Result<(), Vec<String>> {
+        let base = vec![entry(FIRST, Some(ORIGIN), &[ANDROID])?];
+        let appended = vec![base[0].clone(), entry(SECOND, None, &[ANDROID])?];
         assert_eq!(unchanged_since_base(&base, &appended), Ok(()));
-        let edited = vec![entry(FIRST, Some(ORIGIN), &[ANDROID, IOS])];
+        let edited = vec![entry(FIRST, Some(ORIGIN), &[ANDROID, IOS])?];
         assert!(unchanged_since_base(&base, &edited).is_err());
         assert!(unchanged_since_base(&base, &[]).is_err());
-        let reordered = vec![entry(SECOND, Some(ORIGIN), &[ANDROID]), base[0].clone()];
+        let reordered = vec![entry(SECOND, Some(ORIGIN), &[ANDROID])?, base[0].clone()];
         assert!(unchanged_since_base(&base, &reordered).is_err());
+        Ok(())
     }
 
     #[test]
-    fn each_publication_follows_the_previous_entry_and_the_first_its_since() {
+    fn each_publication_follows_the_previous_entry_and_the_first_its_since(
+    ) -> Result<(), Vec<String>> {
         let entries = vec![
-            entry(FIRST, Some(ORIGIN), &[ANDROID]),
-            entry(SECOND, None, &[ANDROID]),
+            entry(FIRST, Some(ORIGIN), &[ANDROID])?,
+            entry(SECOND, None, &[ANDROID])?,
         ];
         assert_eq!(
             publication_commits(&entries),
@@ -1071,6 +1097,7 @@ mod tests {
                 (SECOND.to_string(), FIRST.to_string())
             ]
         );
+        Ok(())
     }
 
     #[test]
@@ -1082,106 +1109,117 @@ mod tests {
     }
 
     #[test]
-    fn recording_a_digest_replaces_the_platform_line_or_adds_one_to_the_named_entry() {
+    fn recording_a_digest_replaces_the_platform_line_or_adds_one_to_the_named_entry(
+    ) -> Result<(), Vec<String>> {
         let text = manifest(&[
-            entry(FIRST, Some(ORIGIN), &[ANDROID]),
-            entry(SECOND, None, &[ANDROID]),
+            entry(FIRST, Some(ORIGIN), &[ANDROID])?,
+            entry(SECOND, None, &[ANDROID])?,
         ]);
         let replaced = DIGEST.replace('0', "f");
-        let with_ios = recorded(&text, SECOND, IOS, &replaced).unwrap();
+        let with_ios = recorded(&text, SECOND, IOS, &replaced)?;
         assert_eq!(
-            parse(&with_ios).unwrap()[1].digests,
+            parse(&with_ios)?[1].digests,
             [
                 (ANDROID.to_string(), DIGEST.to_string()),
                 (IOS.to_string(), replaced.clone())
             ]
         );
-        let re_android = recorded(&with_ios, FIRST, ANDROID, &replaced).unwrap();
+        let re_android = recorded(&with_ios, FIRST, ANDROID, &replaced)?;
         assert_eq!(
-            parse(&re_android).unwrap()[0].digests,
+            parse(&re_android)?[0].digests,
             [(ANDROID.to_string(), replaced)]
         );
         assert!(recorded(&text, ORIGIN, ANDROID, DIGEST).is_err());
         assert!(recorded(&text, SECOND, "linux", DIGEST).is_err());
         assert!(recorded(&text, SECOND, ANDROID, "sha256:short").is_err());
+        Ok(())
     }
 
     #[test]
-    fn commits_are_resolved_in_one_pass_and_a_missing_one_is_named() {
-        let root = crate::repo_root().unwrap();
-        let head = crate::commit_of(&root, "HEAD").unwrap();
+    fn commits_are_resolved_in_one_pass_and_a_missing_one_is_named() -> Result<(), Vec<String>> {
+        let root = crate::repo_root()?;
+        let head = crate::commit_of(&root, "HEAD")?;
         assert_eq!(
-            commits_exist(&root, &[entry(&head, None, &[ANDROID])]),
+            commits_exist(&root, &[entry(&head, None, &[ANDROID])?]),
             Ok(())
         );
-        let diagnostic = commits_exist(&root, &[entry(&head, Some(FIRST), &[ANDROID])])
-            .unwrap_err()
-            .concat();
+        let diagnostic = crate::refused(commits_exist(
+            &root,
+            &[entry(&head, Some(FIRST), &[ANDROID])?],
+        ))?
+        .concat();
         assert!(diagnostic.contains(FIRST), "{diagnostic}");
+        Ok(())
     }
 
-    fn commit_on(dir: &Path, subject: &str) -> String {
+    fn commit_on(dir: &Path, subject: &str) -> Result<String, Vec<String>> {
         crate::hermetic_git(
             dir,
             &["commit", "--quiet", "--allow-empty", "--message", subject],
-        );
+        )?;
         crate::hermetic_git(dir, &["rev-parse", BRANCH_TIP])
     }
 
     #[test]
-    fn a_manifest_commit_must_lie_on_the_branch_and_after_its_since() {
-        let repo = crate::scratch_dir("commits-reachable");
-        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
-        let root_commit = commit_on(&repo, "root");
-        crate::hermetic_git(&repo, &["switch", "--quiet", "--create", "side"]);
-        let side = commit_on(&repo, "side");
-        crate::hermetic_git(&repo, &["switch", "--quiet", "main"]);
-        let tip = commit_on(&repo, "tip");
+    fn a_manifest_commit_must_lie_on_the_branch_and_after_its_since() -> Result<(), Vec<String>> {
+        let repo = crate::scratch_dir("commits-reachable")?;
+        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"])?;
+        let root_commit = commit_on(&repo, "root")?;
+        crate::hermetic_git(&repo, &["switch", "--quiet", "--create", "side"])?;
+        let side = commit_on(&repo, "side")?;
+        crate::hermetic_git(&repo, &["switch", "--quiet", "main"])?;
+        let tip = commit_on(&repo, "tip")?;
 
         assert_eq!(
-            commits_reachable(&repo, &[entry(&tip, Some(&root_commit), &[ANDROID])]),
+            commits_reachable(&repo, &[entry(&tip, Some(&root_commit), &[ANDROID])?]),
             Ok(())
         );
-        let off_branch = commits_reachable(&repo, &[entry(&side, Some(&root_commit), &[ANDROID])])
-            .unwrap_err()
-            .concat();
+        let off_branch = crate::refused(commits_reachable(
+            &repo,
+            &[entry(&side, Some(&root_commit), &[ANDROID])?],
+        ))?
+        .concat();
         assert!(
             off_branch.contains(&side) && off_branch.contains(BRANCH_TIP),
             "{off_branch}"
         );
-        let later_since = commits_reachable(&repo, &[entry(&tip, Some(&side), &[ANDROID])])
-            .unwrap_err()
-            .concat();
+        let later_since = crate::refused(commits_reachable(
+            &repo,
+            &[entry(&tip, Some(&side), &[ANDROID])?],
+        ))?
+        .concat();
         assert!(later_since.contains(&side), "{later_since}");
-        std::fs::remove_dir_all(&repo).unwrap();
+        Ok(())
     }
 
     #[test]
-    fn an_absent_base_checks_every_entry_and_a_present_one_is_kept() {
-        let root = crate::repo_root().unwrap();
+    fn an_absent_base_checks_every_entry_and_a_present_one_is_kept() -> Result<(), Vec<String>> {
+        let root = crate::repo_root()?;
         let no_commit_before = "0".repeat(COMMIT_LENGTH);
         assert_eq!(merged_base(&root, None), Ok(None));
         assert_eq!(merged_base(&root, Some("")), Ok(None));
         assert_eq!(merged_base(&root, Some(&no_commit_before)), Ok(None));
         assert_eq!(merged_base(&root, Some("no-such-ref")), Ok(None));
         assert_eq!(merged_base(&root, Some(BRANCH_TIP)), Ok(Some(BRANCH_TIP)));
+        Ok(())
     }
 
     #[test]
-    fn a_checkout_body_failure_survives_the_worktree_removal() {
-        let repo = crate::scratch_dir("checkout-failure");
-        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
-        let tip = commit_on(&repo, "tip");
+    fn a_checkout_body_failure_survives_the_worktree_removal() -> Result<(), Vec<String>> {
+        let repo = crate::scratch_dir("checkout-failure")?;
+        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"])?;
+        let tip = commit_on(&repo, "tip")?;
         let failure = vec!["the body failed".to_string()];
         let result: Result<(), Vec<String>> = with_checkout(&repo, &tip, |_| Err(failure.clone()));
         assert_eq!(result, Err(failure));
         assert!(!repo.join(CHECKOUTS_DIR).join(&tip).exists());
-        std::fs::remove_dir_all(&repo).unwrap();
+        Ok(())
     }
 
     #[test]
-    fn the_committed_manifest_parses_and_validates() {
-        let root = crate::repo_root().unwrap();
+    fn the_committed_manifest_parses_and_validates() -> Result<(), Vec<String>> {
+        let root = crate::repo_root()?;
         assert!(entries_at(&root, None).is_ok());
+        Ok(())
     }
 }
