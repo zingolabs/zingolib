@@ -23,13 +23,8 @@ const NO_NEWLINE_MARK: char = '\\';
 const REMOVED_MARK: char = '-';
 const DIFF_ARGS: [&str; 4] = ["diff", "--no-color", "--no-ext-diff", "--no-renames"];
 const CONTEXT_FLAG: &str = "--unified=";
-const WHOLE_FILE_CONTEXT: i32 = i32::MAX;
-const PREAMBLE_PREFIXES: [&str; 4] = [
-    "# Changelog",
-    "All notable changes to this project",
-    "The format is based on [Keep a Changelog]",
-    "and this project adheres to [Semantic Versioning]",
-];
+const WHOLE_FILE_CONTEXT: i32 = i32::MAX / 2;
+const TITLE_LEVEL: usize = 1;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Section {
@@ -38,26 +33,17 @@ pub struct Section {
     pub entries: Vec<(String, Vec<String>)>,
 }
 
-struct Heading {
-    level: usize,
-    text: String,
-    emitted: bool,
-}
-
 fn heading_level(line: &str) -> Option<usize> {
     let level = line.chars().take_while(|c| *c == HEADING_MARK).count();
     (level > 0 && line[level..].starts_with(' ')).then_some(level)
 }
 
-enum DiffLine<'a> {
-    Kept(&'a str),
-    Added(&'a str),
-    Removed(&'a str),
-}
+type NewFileLines<'a> = Vec<(&'a str, bool)>;
 
-fn diff_lines(diff: &str) -> Vec<DiffLine<'_>> {
+fn diff_lines(diff: &str) -> (Vec<&str>, NewFileLines<'_>) {
     let mut in_header = false;
-    let mut lines = Vec::new();
+    let mut removed = Vec::new();
+    let mut new_file = Vec::new();
     for line in diff.lines() {
         if line.starts_with(DIFF_HEADER_MARK) {
             in_header = true;
@@ -71,14 +57,14 @@ fn diff_lines(diff: &str) -> Vec<DiffLine<'_>> {
             continue;
         }
         if let Some(text) = line.strip_prefix(ADDED_MARK) {
-            lines.push(DiffLine::Added(text));
+            new_file.push((text, true));
         } else if let Some(text) = line.strip_prefix(REMOVED_MARK) {
-            lines.push(DiffLine::Removed(text));
+            removed.push(text);
         } else if let Some(text) = line.strip_prefix(KEPT_MARK) {
-            lines.push(DiffLine::Kept(text));
+            new_file.push((text, false));
         }
     }
-    lines
+    (removed, new_file)
 }
 
 fn cancels_a_move(removed: &mut Vec<&str>, text: &str) -> bool {
@@ -92,72 +78,56 @@ fn cancels_a_move(removed: &mut Vec<&str>, text: &str) -> bool {
 }
 
 pub fn gained_lines(diff: &str) -> Vec<String> {
-    let parsed = diff_lines(diff);
-    let mut removed: Vec<&str> = parsed
-        .iter()
-        .filter_map(|line| match line {
-            DiffLine::Removed(text) => Some(*text),
-            DiffLine::Kept(_) | DiffLine::Added(_) => None,
-        })
-        .collect();
+    let (mut removed, new_file) = diff_lines(diff);
     let mut lines: Vec<String> = Vec::new();
-    let mut headings: Vec<Heading> = Vec::new();
-    for line in &parsed {
-        let (text, added) = match line {
-            DiffLine::Kept(text) => (*text, false),
-            DiffLine::Added(text) => (*text, true),
-            DiffLine::Removed(_) => continue,
-        };
-        if is_preamble(text) {
-            continue;
-        }
-        let gained = added && (is_blank(text) || !cancels_a_move(&mut removed, text));
-        if let Some(level) = heading_level(text) {
-            headings.retain(|heading| heading.level < level);
-            headings.push(Heading {
-                level,
-                text: text.to_string(),
-                emitted: false,
-            });
-            if gained {
-                emit_context(&mut lines, &mut headings);
+    let mut headings: Vec<(usize, &str)> = Vec::new();
+    let mut emitted = 0;
+    for (text, added) in new_file {
+        let level = heading_level(text);
+        if let Some(level) = level {
+            let above = headings
+                .iter()
+                .take_while(|(seen, _)| *seen < level)
+                .count();
+            headings.truncate(above);
+            emitted = emitted.min(above);
+            if level > TITLE_LEVEL {
+                headings.push((level, text));
             }
+        }
+        if headings.is_empty() {
             continue;
         }
-        if !gained {
+        if !added || (!is_blank(text) && cancels_a_move(&mut removed, text)) {
             continue;
         }
         if is_blank(text) {
             lines.push(String::new());
             continue;
         }
-        emit_context(&mut lines, &mut headings);
-        lines.push(text.to_string());
+        emit_context(&mut lines, &headings, &mut emitted);
+        if level.is_none() {
+            lines.push(text.to_string());
+        }
     }
-    tidy(lines.into_iter())
+    tidy(lines)
 }
 
-fn emit_context(lines: &mut Vec<String>, headings: &mut [Heading]) {
-    for heading in headings.iter_mut().filter(|heading| !heading.emitted) {
+fn emit_context(lines: &mut Vec<String>, headings: &[(usize, &str)], emitted: &mut usize) {
+    for (_, text) in &headings[*emitted..] {
         if lines.last().is_some_and(|last| !is_blank(last)) {
             lines.push(String::new());
         }
-        lines.push(heading.text.clone());
-        heading.emitted = true;
+        lines.push(text.to_string());
     }
+    *emitted = headings.len();
 }
 
 fn is_blank(line: &str) -> bool {
     line.trim().is_empty()
 }
 
-fn is_preamble(line: &str) -> bool {
-    PREAMBLE_PREFIXES
-        .iter()
-        .any(|prefix| line.trim().starts_with(prefix))
-}
-
-fn tidy(lines: impl Iterator<Item = String>) -> Vec<String> {
+fn tidy(lines: Vec<String>) -> Vec<String> {
     let mut tidy: Vec<String> = Vec::new();
     for line in lines {
         let blank = is_blank(&line);
@@ -271,7 +241,7 @@ fn gather(
     })
 }
 
-/// - Runs `git diff` in `root`, with context wide enough to carry the whole file after the diff.
+/// - Runs `git diff` in `root`.
 fn changelog_diff(
     root: &Path,
     since: &str,
@@ -350,10 +320,11 @@ mod tests {
         let diff = "diff --git a/x/CHANGELOG.md b/x/CHANGELOG.md\n\
                     --- a/x/CHANGELOG.md\n\
                     +++ b/x/CHANGELOG.md\n\
-                    @@ -1,1 +1,9 @@\n\
-                    +# Changelog\n\
+                    @@ -1,1 +1,10 @@\n\
+                    +# zingo-netutils changelog\n\
                     +All notable changes to this project will be documented in this file.\n\
                     +The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),\n\
+                    +Entries follow the house style.\n\
                     +\n\
                     +## [Unreleased]\n\
                     -- moved entry\n\
@@ -411,25 +382,12 @@ mod tests {
     }
 
     fn git(dir: &Path, args: &[&str]) -> String {
-        let identity = [
-            "-c",
-            "user.name=workbench",
-            "-c",
-            "user.email=workbench@example.invalid",
-        ];
-        crate::git_in(dir, &[identity.as_slice(), args].concat())
-            .unwrap()
-            .trim()
-            .to_string()
+        crate::hermetic_git(dir, args)
     }
 
     #[test]
     fn the_diff_carries_a_heading_far_above_the_change_as_context() {
-        let repo = std::env::temp_dir().join(format!(
-            "workbench-changelog-context-{}",
-            std::process::id()
-        ));
-        crate::fresh_dir(&repo).unwrap();
+        let repo = crate::scratch_dir("changelog-context");
         git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
         let changelog = repo.join(CRATE_CHANGELOG);
         let old = "## [Unreleased]\n\n### Added\n- a\n- b\n- c\n- d\n- e\n- f\n";
