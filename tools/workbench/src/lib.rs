@@ -348,6 +348,26 @@ pub fn merge_base(root: &Path, base: &str) -> Result<String, Vec<String>> {
         })
 }
 
+const ACTIONS_ENV: &str = "GITHUB_ACTIONS";
+const ACTIONS_WARNING: &str = "::warning::";
+const WARNING_PREFIX: &str = "warning: ";
+
+pub fn warning_line(message: &str, in_actions: bool) -> String {
+    let prefix = if in_actions {
+        ACTIONS_WARNING
+    } else {
+        WARNING_PREFIX
+    };
+    format!("{prefix}{message}")
+}
+
+/// - Reads `GITHUB_ACTIONS` from the environment.
+/// - Writes one line to stderr.
+pub fn warn(message: &str) {
+    let in_actions = std::env::var_os(ACTIONS_ENV).is_some();
+    eprintln!("{}", warning_line(message, in_actions));
+}
+
 const LOCKFILE: &str = "Cargo.lock";
 pub const MANIFEST_PATH_FLAG: &str = "--manifest-path";
 const LOCKED_FLAG: &str = "--locked";
@@ -634,6 +654,18 @@ fn is_concrete_numeric(channel: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_warning_is_a_workflow_command_only_under_actions() {
+        assert_eq!(
+            super::warning_line("base is gone", true),
+            "::warning::base is gone"
+        );
+        assert_eq!(
+            super::warning_line("base is gone", false),
+            "warning: base is gone"
+        );
+    }
+
     use super::*;
 
     /// A workbench crate directory under a checkout that was moved or removed after the build.

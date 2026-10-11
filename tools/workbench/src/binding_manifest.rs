@@ -530,7 +530,9 @@ fn merged_base<'a>(root: &Path, base: Option<&'a str>) -> Result<Option<&'a str>
         return Ok(None);
     }
     if crate::commit_of(root, base).is_err() {
-        eprintln!("warning: {base} is not a commit of this checkout, so every entry is checked");
+        crate::warn(&format!(
+            "{base} is not a commit of this checkout, so every entry is checked"
+        ));
         return Ok(None);
     }
     Ok(Some(base))
@@ -596,8 +598,8 @@ fn registry_diagnostics(entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
 ///   entry appended after the base's.
 /// - Runs `orasust resolve` and `orasust manifest fetch` as child processes, in series, once per
 ///   recorded digest of the appended entries, or of every entry with `--all-digests`.
-/// - Writes a warning to stderr when `--base` names no commit of the checkout, and then checks
-///   every entry.
+/// - Writes a warning to stderr, as a workflow command under `GITHUB_ACTIONS`, when `--base`
+///   names no commit of the checkout, and then checks every entry.
 pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     match args.first().map(String::as_str) {
         Some(CHECK_FLAG) => check(root, args),
