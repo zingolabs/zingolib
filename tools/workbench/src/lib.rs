@@ -369,6 +369,11 @@ pub fn metadata_of(manifest: &Path, deps: bool) -> Result<cargo_metadata::Metada
     })
 }
 
+/// - Resolves `path` through the filesystem, following symbolic links.
+pub fn canonical(path: &Path) -> Result<PathBuf, Vec<String>> {
+    at_path(path, "resolve", |path| std::fs::canonicalize(path))
+}
+
 /// - Runs `cargo metadata` as a child process in `dir`, without resolving dependencies.
 fn package_above(dir: &Path) -> Result<(PathBuf, bool), Vec<String>> {
     let metadata = cargo_metadata::MetadataCommand::new()
@@ -381,8 +386,17 @@ fn package_above(dir: &Path) -> Result<(PathBuf, bool), Vec<String>> {
                 dir.display()
             )]
         })?;
-    Ok(match metadata.root_package() {
-        Some(package) => (package.manifest_path.clone().into_std_path_buf(), true),
+    let dir = canonical(dir)?;
+    let nearest = metadata
+        .packages
+        .iter()
+        .filter_map(|package| {
+            let crate_dir = package.manifest_path.parent()?.as_std_path();
+            dir.starts_with(crate_dir).then_some((crate_dir, package))
+        })
+        .max_by_key(|(crate_dir, _)| crate_dir.components().count());
+    Ok(match nearest {
+        Some((_, package)) => (package.manifest_path.clone().into_std_path_buf(), true),
         None => (
             metadata.workspace_root.join(MANIFEST).into_std_path_buf(),
             false,
@@ -397,7 +411,11 @@ pub fn manifest_above(dir: &Path) -> Result<PathBuf, Vec<String>> {
 
 /// - Runs `cargo metadata` through [`metadata_of`].
 pub fn declares_a_package(manifest: &Path) -> Result<bool, Vec<String>> {
-    Ok(metadata_of(manifest, false)?.root_package().is_some())
+    let manifest = canonical(manifest)?;
+    Ok(metadata_of(&manifest, false)?
+        .packages
+        .iter()
+        .any(|package| package.manifest_path.as_std_path() == manifest))
 }
 
 /// - Runs `cargo metadata` through [`metadata_of`].
@@ -506,19 +524,22 @@ pub fn verdict(diagnostics: Vec<String>) -> Result<(), Vec<String>> {
     }
 }
 
+fn at_path<T>(
+    path: &Path,
+    verb: &str,
+    action: impl FnOnce(&Path) -> std::io::Result<T>,
+) -> Result<T, Vec<String>> {
+    action(path).map_err(|e| vec![format!("cannot {verb} {}: {e}", path.display())])
+}
+
 /// - Writes `contents` to `path`.
 pub fn write(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), Vec<String>> {
-    std::fs::write(path, contents)
-        .map_err(|e| vec![format!("cannot write {}: {e}", path.display())])
+    at_path(path, "write", |path| std::fs::write(path, contents))
 }
 
 pub fn read(path: &Path) -> Result<String, Vec<String>> {
-    String::from_utf8(read_bytes(path)?)
-        .map_err(|e| vec![format!("{} is not UTF-8: {e}", path.display())])
-}
-
-pub fn read_bytes(path: &Path) -> Result<Vec<u8>, Vec<String>> {
-    std::fs::read(path).map_err(|e| vec![format!("cannot read {}: {e}", path.display())])
+    let bytes = at_path(path, "read", |path| std::fs::read(path))?;
+    String::from_utf8(bytes).map_err(|e| vec![format!("{} is not UTF-8: {e}", path.display())])
 }
 
 /// The value of the first `<flag> <value>` or `<flag>=<value>` argument, if present.
