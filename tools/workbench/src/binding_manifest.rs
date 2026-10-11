@@ -1126,6 +1126,8 @@ mod tests {
             "user.name=workbench",
             "-c",
             "user.email=workbench@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
         ];
         crate::git_in(dir, &[identity.as_slice(), args].concat())
             .unwrap()
