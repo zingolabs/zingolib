@@ -348,8 +348,6 @@ pub fn merge_base(root: &Path, base: &str) -> Result<String, Vec<String>> {
 
 const LOCKFILE: &str = "Cargo.lock";
 pub const MANIFEST_PATH_FLAG: &str = "--manifest-path";
-pub const PACKAGE_DIR_OPEN: &str = " (";
-pub const PACKAGE_DIR_CLOSE: char = ')';
 const LOCKED_FLAG: &str = "--locked";
 
 /// - Runs `cargo metadata` as a child process, resolving dependencies only when `deps` is set.

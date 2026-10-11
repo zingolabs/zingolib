@@ -35,6 +35,8 @@ const USAGE: &str =
 pub const PUBLISH_COMMAND: &str = "/publish";
 const CHECKOUTS_DIR: &str = "target/binding-manifest";
 const BRANCH_TIP: &str = "HEAD";
+const PACKAGE_DIR_OPEN: &str = " (";
+const PACKAGE_DIR_CLOSE: char = ')';
 const FIRST_ORDINAL: usize = 1;
 
 fn ordinal(index: usize) -> usize {
@@ -65,17 +67,17 @@ impl fmt::Display for AuditedCrate {
             f,
             "{}{}{}{}",
             self.name,
-            crate::PACKAGE_DIR_OPEN,
+            PACKAGE_DIR_OPEN,
             self.dir.display(),
-            crate::PACKAGE_DIR_CLOSE
+            PACKAGE_DIR_CLOSE
         )
     }
 }
 
 impl AuditedCrate {
     pub fn parse(text: &str) -> Option<Self> {
-        let (name, rest) = text.split_once(crate::PACKAGE_DIR_OPEN)?;
-        let dir = rest.strip_suffix(crate::PACKAGE_DIR_CLOSE)?;
+        let (name, rest) = text.split_once(PACKAGE_DIR_OPEN)?;
+        let dir = rest.strip_suffix(PACKAGE_DIR_CLOSE)?;
         (!name.is_empty() && !name.contains(' ') && !dir.is_empty()).then(|| Self {
             name: name.to_string(),
             dir: PathBuf::from(dir),
