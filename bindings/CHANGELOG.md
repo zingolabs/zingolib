@@ -3,7 +3,8 @@
 The workbench tool `binding-changelog` writes every section below, one per entry
 of `bindings/published.toml`, from the lines that the entry's audited crate changelogs
 gained after the previous entry's commit, named as `Since`, up to the
-entry's commit, which the section heading names. The check in CI
+entry's commit, which the section heading names, each under the
+headings it sits beneath in its changelog. The check in CI
 regenerates every section and fails when the committed file differs. The
 audited crates of an entry are the two Binding Layer crates and their
 direct dependencies in this repository at the entry's commit, as the
@@ -72,9 +73,14 @@ Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netuti
 
 ### pepper-sync
 
+#### [Unreleased]
+
+##### Added
 - `sync::ScanRange::encloses` and `sync::ScanRange::overlaps`, the geometry of
   a scan range against a block range, and `sync::ScanPriority::in_flight`, the
   priority the wallet holds a selected range at while its scan task runs.
+
+##### Changed
 - Scanning reads version 2 zingo memos, which carry a recipient's unified
   address with its ZIP 316 revision and metadata, through
   `ParsedMemo::into_unified_addresses`.
@@ -88,6 +94,8 @@ Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netuti
   `OutputInterface::encoded_recipient_full_unified_address`. `zcash_keys`
   0.17 made `UnifiedAddress::encode` omit the transparent receiver of a
   shielded address, which is the sharing form and not the recorded one.
+
+##### Fixed
 - `sync` makes every server request that the processing of scan results
   depends on before it updates the wallet, so a failed request leaves the
   wallet as it was. Spend detection only reads the wallet's nullifier and
@@ -115,6 +123,9 @@ Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netuti
 
 ### zingolib
 
+#### [Unreleased]
+
+##### Added
 - `wallet::expiry`, the transaction expiry delta: `tx_expiry_delta` and
   `tx_expiry_height` answer for a target height, and `NU7_TX_EXPIRY_DELTA` is
   the delta from NU7 activation.
@@ -132,6 +143,8 @@ Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netuti
 - Add `LightWallet::read_chain`, the chain a wallet file was written for, read from the header of version 32 and later files and by a full read under each chain for older ones.
 - Add `wallet::disk::ChainMismatch`, carried inside the `io::Error` that reading a wallet file for another chain returns, so the failure can be told apart without its message.
 - Add `wallet::keys::WalletKind` and `LightWallet::kind`, the wallet's key material as one of `Mnemonic`, `SpendingKey`, `ViewingKey` with the receivers the key holds, or `NoKeys`, or `KeyError::NoAccountKeys` for a wallet without account zero. zingo-cli and the FFI each computed this themselves.
+
+##### Changed
 - A transaction targeting a height at or above the NU7 activation expires 120
   blocks past its target, the delta ZIP 203 and ZIP 218 recommend for
   25-second blocks, where it expired 40 blocks past. Below the activation,
@@ -188,10 +201,15 @@ Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netuti
 
 ### zingo-netutils
 
+#### [Unreleased]
+
+##### Added
 - The crate re-exports tonic's `TimeoutExpired` beside `Status`, the marker
   tonic leaves in a status's source chain when the client's own request
   deadline fired, so a consumer tells a timed-out request apart from a
   verdict the indexer returned.
+
+##### Changed
 - BREAKING: `rand` 0.10. `provider::rotation_interval` takes a `rand` 0.10
   generator, and the exit tiers shuffle with the thread-local generator
   where they drew `rand::rngs::OsRng`, a type `rand` 0.10 removed.

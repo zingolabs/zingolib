@@ -258,8 +258,7 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
         let digest = push(platform, &commit, bundle, &credentials)?;
         text = binding_manifest::recorded(&text, &commit, platform, &digest)?;
     }
-    std::fs::write(&file, text)
-        .map_err(|e| vec![format!("cannot write {}: {e}", file.display())])?;
+    crate::write(&file, text)?;
     binding_changelog::regenerate(root)?;
     commit_and_push(root, &commit)
 }
@@ -275,20 +274,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_missing_file_is_named_in_the_diagnostic() {
-        let empty =
-            std::env::temp_dir().join(format!("workbench-find-file-{}", std::process::id()));
-        crate::fresh_dir(&empty).unwrap();
+    fn a_missing_file_is_named_in_the_diagnostic() -> Result<(), Vec<String>> {
+        let empty = crate::scratch_dir("find-file")?;
         let diagnostic = find_file(&empty, binding_layer::DESCRIPTOR_FILE, |name| {
             name == binding_layer::DESCRIPTOR_FILE
         })
-        .unwrap_err()
+        .err()
+        .ok_or_else(|| vec!["an empty directory yielded a file".to_string()])?
         .concat();
         assert!(
             diagnostic.contains(binding_layer::DESCRIPTOR_FILE),
             "{diagnostic}"
         );
-        std::fs::remove_dir_all(&empty).unwrap();
+        Ok(())
     }
 
     #[test]
@@ -321,11 +319,10 @@ mod tests {
     }
 
     #[test]
-    fn the_built_platforms_are_the_bundle_artifacts_of_the_commit_and_nothing_else() {
+    fn the_built_platforms_are_the_bundle_artifacts_of_the_commit_and_nothing_else(
+    ) -> Result<(), Vec<String>> {
         let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let bundles =
-            std::env::temp_dir().join(format!("workbench-built-platforms-{}", std::process::id()));
-        crate::fresh_dir(&bundles).unwrap();
+        let bundles = crate::scratch_dir("built-platforms")?;
         let android =
             binding_layer::artifact_name(binding_layer::BUNDLE_ARTIFACT, "android", commit);
         let ios = binding_layer::artifact_name(binding_layer::BUNDLE_ARTIFACT, "ios", commit);
@@ -337,7 +334,7 @@ mod tests {
             &binding_layer::artifact_name(binding_layer::BUNDLE_ARTIFACT, "android", "bbbb"),
             "stray",
         ] {
-            std::fs::create_dir(bundles.join(name)).unwrap();
+            crate::fresh_dir(&bundles.join(name))?;
         }
         assert_eq!(
             built_platforms(&bundles, commit),
@@ -347,15 +344,14 @@ mod tests {
             ]
         );
         assert_eq!(built_platforms(&bundles.join("absent"), commit), Vec::new());
-        std::fs::remove_dir_all(&bundles).unwrap();
+        Ok(())
     }
 
     #[test]
-    fn a_missing_flag_is_refused_with_the_usage() {
-        let diagnostic = dispatch(Path::new("/host/zingolib"), &[])
-            .unwrap_err()
-            .concat();
+    fn a_missing_flag_is_refused_with_the_usage() -> Result<(), Vec<String>> {
+        let diagnostic = crate::refused(dispatch(Path::new("/host/zingolib"), &[]))?.concat();
         assert!(diagnostic.contains(COMMIT_FLAG));
+        Ok(())
     }
 
     const PUBLISH_WORKFLOW: &str = ".github/workflows/binding-layer-publish.yaml";
@@ -383,8 +379,8 @@ mod tests {
     const BRANCH: &str = "main";
     const PUBLISHED: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-    fn repo_file(relative: &str) -> String {
-        crate::read(&crate::repo_root().unwrap().join(relative)).unwrap()
+    fn repo_file(relative: &str) -> Result<String, Vec<String>> {
+        crate::read(&crate::repo_root()?.join(relative))
     }
 
     fn indent_of(line: &str) -> usize {
@@ -410,10 +406,13 @@ mod tests {
         blocks
     }
 
-    fn required_inputs(workflow: &str) -> Vec<String> {
+    fn required_inputs(workflow: &str) -> Result<Vec<String>, Vec<String>> {
         let mut required = Vec::new();
         for block in blocks_under(workflow, INPUTS_KEY) {
-            let shallowest = block.iter().map(|line| indent_of(line)).min().unwrap();
+            let shallowest = crate::required(
+                block.iter().map(|line| indent_of(line)).min(),
+                "line under the inputs key",
+            )?;
             let mut name = "";
             for line in block {
                 if indent_of(line) == shallowest {
@@ -423,7 +422,7 @@ mod tests {
                 }
             }
         }
-        required
+        Ok(required)
     }
 
     fn passed_inputs(caller: &str, workflow: &str) -> Vec<Vec<String>> {
@@ -440,15 +439,21 @@ mod tests {
                     .next()
                     .unwrap_or_default()
                     .into_iter()
-                    .map(|line| line.trim().split(':').next().unwrap().to_string())
+                    .map(|line| {
+                        let trimmed = line.trim();
+                        trimmed
+                            .split_once(':')
+                            .map_or(trimmed, |(name, _)| name)
+                            .to_string()
+                    })
                     .collect()
             })
             .collect()
     }
 
     #[test]
-    fn the_publish_workflow_holds_the_permission_its_reactions_need() {
-        let workflow = repo_file(PUBLISH_WORKFLOW);
+    fn the_publish_workflow_holds_the_permission_its_reactions_need() -> Result<(), Vec<String>> {
+        let workflow = repo_file(PUBLISH_WORKFLOW)?;
         let reacting = workflow
             .lines()
             .filter(|line| line.contains(REACTIONS_PATH))
@@ -463,16 +468,17 @@ mod tests {
             grants.contains(&ISSUES_WRITE),
             "{reacting} step(s) post a reaction, which GitHub gates on `{ISSUES_WRITE}`, but the workflow grants only {grants:?}"
         );
+        Ok(())
     }
 
     #[test]
-    fn reading_the_newest_entry_needs_no_registry() {
-        let manifest = repo_file(WORKBENCH_MANIFEST);
+    fn reading_the_newest_entry_needs_no_registry() -> Result<(), Vec<String>> {
+        let manifest = repo_file(WORKBENCH_MANIFEST)?;
         assert!(
             !manifest.contains(REQUIRED_FEATURES) && !manifest.contains(FEATURES_TABLE),
             "a workbench binary is gated on a feature, and the registry client is a separate binary:\n{manifest}"
         );
-        let workflow = repo_file(PUBLISH_WORKFLOW);
+        let workflow = repo_file(PUBLISH_WORKFLOW)?;
         let newest: Vec<&str> = workflow
             .lines()
             .filter(|line| line.contains(NEWEST_COMMAND))
@@ -486,15 +492,17 @@ mod tests {
             newest.iter().all(|line| !line.contains(FEATURES_FLAG)),
             "reading the newest entry compiles the registry client: {newest:?}"
         );
+        Ok(())
     }
 
     #[test]
-    fn every_caller_passes_every_required_input_of_the_build_workflows() {
+    fn every_caller_passes_every_required_input_of_the_build_workflows() -> Result<(), Vec<String>>
+    {
         for workflow in BUILD_WORKFLOWS {
-            let required = required_inputs(&repo_file(workflow));
+            let required = required_inputs(&repo_file(workflow)?)?;
             assert!(!required.is_empty(), "{workflow} requires no input");
             for caller in CALLERS {
-                for passed in passed_inputs(&repo_file(caller), workflow) {
+                for passed in passed_inputs(&repo_file(caller)?, workflow) {
                     let missing: Vec<&String> = required
                         .iter()
                         .filter(|input| !passed.contains(input))
@@ -506,42 +514,35 @@ mod tests {
                 }
             }
         }
+        Ok(())
     }
 
-    fn git(dir: &Path, args: &[&str]) -> String {
-        crate::git_in(dir, args).unwrap()
-    }
-
-    fn clone(scratch: &Path, remote: &Path, name: &str) -> PathBuf {
-        git(
-            scratch,
-            &["clone", "--quiet", remote.to_str().unwrap(), name],
-        );
+    fn clone(scratch: &Path, remote: &Path, name: &str) -> Result<PathBuf, Vec<String>> {
+        crate::hermetic_git(scratch, &["clone", "--quiet", crate::utf8(remote)?, name])?;
         let dir = scratch.join(name);
-        git(&dir, &["config", "user.name", name]);
-        git(
-            &dir,
-            &["config", "user.email", &format!("{name}@example.invalid")],
-        );
-        dir
+        crate::configure_hermetic_git(&dir)?;
+        Ok(dir)
     }
 
-    fn append(dir: &Path, relative: &str, line: &str) {
+    fn append(dir: &Path, relative: &str, line: &str) -> Result<(), Vec<String>> {
         let file = dir.join(relative);
-        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
-        let mut text = std::fs::read_to_string(&file).unwrap_or_default();
+        crate::create_parent(&file)?;
+        let mut text = if file.exists() {
+            crate::read(&file)?
+        } else {
+            String::new()
+        };
         text.push_str(line);
         text.push('\n');
-        std::fs::write(file, text).unwrap();
+        crate::write(&file, text)
     }
 
     #[test]
-    fn the_record_push_survives_a_push_to_the_branch_during_the_builds() {
-        let scratch =
-            std::env::temp_dir().join(format!("workbench-record-push-{}", std::process::id()));
-        crate::fresh_dir(&scratch).unwrap();
+    fn the_record_push_survives_a_push_to_the_branch_during_the_builds() -> Result<(), Vec<String>>
+    {
+        let scratch = crate::scratch_dir("record-push")?;
         let remote = scratch.join("remote.git");
-        git(
+        crate::hermetic_git(
             &scratch,
             &[
                 "init",
@@ -551,36 +552,36 @@ mod tests {
                 BRANCH,
                 "remote.git",
             ],
-        );
-        let runner = clone(&scratch, &remote, "runner");
-        append(&runner, binding_manifest::FILE, "[[entry]]");
+        )?;
+        let runner = clone(&scratch, &remote, "runner")?;
+        append(&runner, binding_manifest::FILE, "[[entry]]")?;
         append(
             &runner,
             binding_changelog::FILE,
             "# Binding Layer changelog",
-        );
-        git(
+        )?;
+        crate::hermetic_git(
             &runner,
             &["add", binding_manifest::FILE, binding_changelog::FILE],
-        );
-        git(&runner, &["commit", "--quiet", "--message", "seed"]);
-        git(
+        )?;
+        crate::hermetic_git(&runner, &["commit", "--quiet", "--message", "seed"])?;
+        crate::hermetic_git(
             &runner,
             &["push", "--quiet", "--set-upstream", "origin", BRANCH],
-        );
+        )?;
 
-        let rival = clone(&scratch, &remote, "rival");
-        append(&rival, "README.md", "a fix pushed while the builds run");
-        git(&rival, &["add", "README.md"]);
-        git(&rival, &["commit", "--quiet", "--message", "concurrent"]);
-        git(&rival, &["push", "--quiet"]);
+        let rival = clone(&scratch, &remote, "rival")?;
+        append(&rival, "README.md", "a fix pushed while the builds run")?;
+        crate::hermetic_git(&rival, &["add", "README.md"])?;
+        crate::hermetic_git(&rival, &["commit", "--quiet", "--message", "concurrent"])?;
+        crate::hermetic_git(&rival, &["push", "--quiet"])?;
 
-        append(&runner, binding_manifest::FILE, "digest = \"sha256:feed\"");
-        append(&runner, binding_changelog::FILE, "## section");
+        append(&runner, binding_manifest::FILE, "digest = \"sha256:feed\"")?;
+        append(&runner, binding_changelog::FILE, "## section")?;
         assert_eq!(commit_and_push(&runner, PUBLISHED), Ok(()));
 
-        git(&rival, &["pull", "--quiet", "--rebase"]);
-        let subjects = git(&rival, &["log", "--format=%s", "-3"]);
+        crate::hermetic_git(&rival, &["pull", "--quiet", "--rebase"])?;
+        let subjects = crate::hermetic_git(&rival, &["log", "--format=%s", "-3"])?;
         assert_eq!(
             subjects.lines().collect::<Vec<_>>(),
             [
@@ -589,6 +590,6 @@ mod tests {
                 "seed",
             ]
         );
-        std::fs::remove_dir_all(&scratch).unwrap();
+        Ok(())
     }
 }

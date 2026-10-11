@@ -196,11 +196,12 @@ mod tests {
     }
 
     #[test]
-    fn the_pin_is_read_from_the_workbench_manifest() {
-        let pin = version().unwrap();
+    fn the_pin_is_read_from_the_workbench_manifest() -> Result<(), Vec<String>> {
+        let pin = version()?;
         let components: Vec<&str> = pin.split('.').collect();
         assert_eq!(components.len(), 3, "{pin} is not a release version");
         assert!(components.iter().all(|c| c.parse::<u64>().is_ok()), "{pin}");
+        Ok(())
     }
 
     #[test]

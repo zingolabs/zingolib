@@ -618,7 +618,8 @@ mod tests {
     }
 
     #[test]
-    fn the_link_env_adds_cargo_ndks_linker_wrapper_variables_from_its_clang_path() {
+    fn the_link_env_adds_cargo_ndks_linker_wrapper_variables_from_its_clang_path(
+    ) -> Result<(), Vec<String>> {
         let exported = vec![
             (
                 "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER".to_string(),
@@ -634,7 +635,7 @@ mod tests {
             link.link_target,
             format!("--target=x86_64-linux-android{ANDROID_API_LEVEL}")
         );
-        let env = ndk_link_env(exported.clone(), &link.link_target).unwrap();
+        let env = ndk_link_env(exported.clone(), &link.link_target).map_err(|e| vec![e])?;
         assert_eq!(&env[..2], &exported[..]);
         assert_eq!(
             &env[2..],
@@ -650,6 +651,7 @@ mod tests {
             ]
         );
         assert!(ndk_link_env(vec![], &link.link_target).is_err());
+        Ok(())
     }
 
     #[test]
