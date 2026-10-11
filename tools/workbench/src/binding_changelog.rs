@@ -339,7 +339,7 @@ pub fn render_header() -> String {
          regenerates every section and fails when the committed file differs. The\n\
          audited crates of an entry are the two Binding Layer crates and their\n\
          direct dependencies in this repository at the entry's commit, as the\n\
-         publish workflow recorded them from `cargo tree`; each section names them\n\
+         publish workflow recorded them from `cargo metadata`; each section names them\n\
          in its `{}` line. A change in another crate of this repository appears\n\
          only where one of those changelogs records it.\n",
         binding_manifest::FILE,

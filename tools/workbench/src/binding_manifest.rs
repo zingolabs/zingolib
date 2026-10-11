@@ -459,14 +459,14 @@ pub fn with_checkout<T>(
 }
 
 /// - Creates and removes one detached worktree per entry through [`with_checkout`].
-/// - Runs `cargo tree` in each worktree through [`audited_at`].
+/// - Runs `cargo metadata` in each worktree through [`audited_at`].
 pub fn audited_diagnostics(root: &Path, entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
     let mut diagnostics = Vec::new();
     for entry in entries {
         let found = with_checkout(root, &entry.commit, audited_at)?;
         if found != entry.audited {
             diagnostics.push(format!(
-                "entry {} records {AUDITED_KEY} {} and `cargo tree` at that commit reports {}",
+                "entry {} records {AUDITED_KEY} {} and `cargo metadata` at that commit reports {}",
                 entry.commit,
                 audited_array(&entry.audited),
                 audited_array(&found)
@@ -590,7 +590,7 @@ fn registry_diagnostics(entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
 }
 
 /// - Reads `bindings/published.toml` and, with `--base`, its copy at that git revision.
-/// - Runs `git` child processes in `root`, and `cargo tree` in a detached worktree of each
+/// - Runs `git` child processes in `root`, and `cargo metadata` in a detached worktree of each
 ///   entry appended after the base's.
 /// - Runs `orasust resolve` and `orasust manifest fetch` as child processes, in series, once per
 ///   recorded digest of the appended entries, or of every entry with `--all-digests`.

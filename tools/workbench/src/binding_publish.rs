@@ -215,7 +215,7 @@ fn commit_and_push(root: &Path, commit: &str) -> Result<(), Vec<String>> {
 }
 
 /// - Reads `bindings/published.toml` and the credentials in the environment.
-/// - Creates and removes a detached worktree of the commit and runs `cargo tree` in it.
+/// - Creates and removes a detached worktree of the commit and runs `cargo metadata` in it.
 /// - Reads every built platform's bundle under `--bundles` and archives the iOS package through
 ///   `tar`, then pushes each bundle to the registry.
 /// - Writes `bindings/published.toml` and `bindings/CHANGELOG.md`, then commits and pushes them.
