@@ -1120,41 +1120,22 @@ mod tests {
         assert!(diagnostic.contains(FIRST), "{diagnostic}");
     }
 
-    fn git(dir: &Path, args: &[&str]) -> String {
-        let identity = [
-            "-c",
-            "user.name=workbench",
-            "-c",
-            "user.email=workbench@example.invalid",
-            "-c",
-            "commit.gpgsign=false",
-        ];
-        crate::git_in(dir, &[identity.as_slice(), args].concat())
-            .unwrap()
-            .trim()
-            .to_string()
-    }
-
     fn commit_on(dir: &Path, subject: &str) -> String {
-        git(
+        crate::hermetic_git(
             dir,
             &["commit", "--quiet", "--allow-empty", "--message", subject],
         );
-        git(dir, &["rev-parse", BRANCH_TIP])
+        crate::hermetic_git(dir, &["rev-parse", BRANCH_TIP])
     }
 
     #[test]
     fn a_manifest_commit_must_lie_on_the_branch_and_after_its_since() {
-        let repo = std::env::temp_dir().join(format!(
-            "workbench-commits-reachable-{}",
-            std::process::id()
-        ));
-        crate::fresh_dir(&repo).unwrap();
-        git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
+        let repo = crate::scratch_dir("commits-reachable");
+        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
         let root_commit = commit_on(&repo, "root");
-        git(&repo, &["switch", "--quiet", "--create", "side"]);
+        crate::hermetic_git(&repo, &["switch", "--quiet", "--create", "side"]);
         let side = commit_on(&repo, "side");
-        git(&repo, &["switch", "--quiet", "main"]);
+        crate::hermetic_git(&repo, &["switch", "--quiet", "main"]);
         let tip = commit_on(&repo, "tip");
 
         assert_eq!(
@@ -1188,10 +1169,8 @@ mod tests {
 
     #[test]
     fn a_checkout_body_failure_survives_the_worktree_removal() {
-        let repo =
-            std::env::temp_dir().join(format!("workbench-checkout-failure-{}", std::process::id()));
-        crate::fresh_dir(&repo).unwrap();
-        git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
+        let repo = crate::scratch_dir("checkout-failure");
+        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
         let tip = commit_on(&repo, "tip");
         let failure = vec!["the body failed".to_string()];
         let result: Result<(), Vec<String>> = with_checkout(&repo, &tip, |_| Err(failure.clone()));
