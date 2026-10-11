@@ -39,8 +39,6 @@ pub const DESCRIPTOR_FILE: &str = "descriptor.txt";
 
 pub const DESCRIPTOR_ENV: &str = "ZINGOLIB_DESCRIPTOR";
 pub const MESSAGE_FORMAT_FLAG: &str = "--message-format=json-render-diagnostics";
-const BUILD_SCRIPT_MESSAGE: &str = "\"reason\":\"build-script-executed\"";
-const PACKAGE_ID_KEY: &str = "\"package_id\":\"";
 const ZINGOLIB_PACKAGE_ID_TAIL: &str = "/zingolib#";
 const JSON_STRING_END: char = '"';
 const JSON_ESCAPE: char = '\\';
@@ -207,25 +205,22 @@ const JSON_QUOTE: char = '"';
 const JSON_SEPARATOR: &str = ",";
 const JSON_PAIR: char = ':';
 
-fn json_string_after<'a>(text: &'a str, key: &str) -> Option<&'a str> {
-    let start = text.find(key)? + key.len();
-    let rest = &text[start..];
-    let end = rest.find(JSON_STRING_END)?;
-    Some(&rest[..end])
-}
-
 pub fn descriptor_in_messages(messages: &str) -> Option<String> {
-    let env_key = format!("[\"{DESCRIPTOR_ENV}\",\"");
-    messages
-        .lines()
-        .filter(|line| line.contains(BUILD_SCRIPT_MESSAGE))
-        .filter(|line| {
-            json_string_after(line, PACKAGE_ID_KEY)
-                .is_some_and(|id| id.contains(ZINGOLIB_PACKAGE_ID_TAIL))
+    cargo_metadata::Message::parse_stream(messages.as_bytes())
+        .filter_map(Result::ok)
+        .find_map(|message| match message {
+            cargo_metadata::Message::BuildScriptExecuted(script)
+                if script.package_id.repr.contains(ZINGOLIB_PACKAGE_ID_TAIL) =>
+            {
+                script
+                    .env
+                    .into_iter()
+                    .find(|(key, _)| key == DESCRIPTOR_ENV)
+                    .map(|(_, value)| value)
+                    .filter(|descriptor| !descriptor.is_empty())
+            }
+            _ => None,
         })
-        .find_map(|line| json_string_after(line, &env_key))
-        .filter(|descriptor| !descriptor.is_empty())
-        .map(str::to_string)
 }
 
 pub fn ndk_env_command(triple: &str) -> Vec<String> {
@@ -563,21 +558,33 @@ mod tests {
 
     #[test]
     fn the_descriptor_comes_from_zingolibs_build_script_message_alone() {
-        let messages = "\
-            {\"reason\":\"compiler-artifact\",\"package_id\":\"path+file:///x/zingolib#6.0.0\"}\n\
-            {\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x/zingolib_testutils#0.1.0\",\"env\":[[\"ZINGOLIB_DESCRIPTOR\",\"wrong\"]],\"out_dir\":\"/x/out\"}\n\
-            {\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x/zingolib#6.0.0\",\"linked_libs\":[],\"env\":[[\"OTHER\",\"1\"],[\"ZINGOLIB_DESCRIPTOR\",\"zl_6.0.0_2691e\"]],\"out_dir\":\"/x/out\"}\n\
-            {\"reason\":\"build-finished\",\"success\":true}\n";
+        let script = |package: &str, env: &str| {
+            format!(
+                "{{\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x/{package}\",\
+                 \"linked_libs\":[],\"linked_paths\":[],\"cfgs\":[],\"env\":{env},\"out_dir\":\"/x/out\"}}\n"
+            )
+        };
+        let messages = format!(
+            "{{\"reason\":\"build-finished\",\"success\":true}}\n{}{}",
+            script(
+                "zingolib_testutils#0.1.0",
+                "[[\"ZINGOLIB_DESCRIPTOR\",\"wrong\"]]"
+            ),
+            script(
+                "zingolib#6.0.0",
+                "[[\"OTHER\",\"1\"],[\"ZINGOLIB_DESCRIPTOR\",\"zl_6.0.0_2691e\"]]"
+            )
+        );
         assert_eq!(
-            descriptor_in_messages(messages),
+            descriptor_in_messages(&messages),
             Some("zl_6.0.0_2691e".to_string())
         );
         assert_eq!(
-            descriptor_in_messages("{\"reason\":\"build-finished\"}\n"),
+            descriptor_in_messages("{\"reason\":\"build-finished\",\"success\":true}\n"),
             None
         );
         assert_eq!(
-            descriptor_in_messages("{\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x/zingolib#6.0.0\",\"env\":[]}\n"),
+            descriptor_in_messages(&script("zingolib#6.0.0", "[]")),
             None
         );
     }

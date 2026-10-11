@@ -35,10 +35,6 @@ const USAGE: &str =
 pub const PUBLISH_COMMAND: &str = "/publish";
 const CHECKOUTS_DIR: &str = "target/binding-manifest";
 const BRANCH_TIP: &str = "HEAD";
-const TREE_ARGS: [&str; 8] = [
-    "tree", "--locked", "--edges", "normal", "--depth", "1", "--prefix", "none",
-];
-const TREE_FORMAT: [&str; 2] = ["--format", crate::PACKAGE_ID_FORMAT];
 const FIRST_ORDINAL: usize = 1;
 
 fn ordinal(index: usize) -> usize {
@@ -86,10 +82,10 @@ impl AuditedCrate {
         })
     }
 
-    pub fn from_tree_line(line: &str, root: &Path) -> Option<Self> {
-        let (name, dir) = crate::package_location(line)?;
+    pub fn from_package(package: &cargo_metadata::Package, root: &Path) -> Option<Self> {
+        let dir = package.manifest_path.parent()?.as_std_path();
         dir.strip_prefix(root).ok().map(|relative| Self {
-            name: name.to_string(),
+            name: package.name.to_string(),
             dir: relative.to_path_buf(),
         })
     }
@@ -384,38 +380,53 @@ pub fn entries_at(root: &Path, revision: Option<&str>) -> Result<Vec<Entry>, Vec
     Ok(entries)
 }
 
-/// - Runs `cargo tree` as a child process in `checkout`, once per Binding Layer crate.
+/// - Runs `cargo metadata` as a child process in `checkout`, once per Binding Layer crate.
 pub fn audited_at(checkout: &Path) -> Result<Vec<AuditedCrate>, Vec<String>> {
     let checkout = &std::fs::canonicalize(checkout)
         .map_err(|e| vec![format!("cannot resolve {}: {e}", checkout.display())])?;
     let mut crates: Vec<AuditedCrate> = Vec::new();
     for dir in binding_layer::BINDING_CRATE_DIRS {
-        let manifest = checkout.join(dir).join(crate::MANIFEST);
-        let args = [
-            TREE_ARGS.as_slice(),
-            &["--manifest-path", crate::utf8(&manifest)?],
-            TREE_FORMAT.as_slice(),
-        ]
-        .concat();
-        let output = crate::stdout_in(checkout, crate::CARGO, &args, &[])?;
-        let found: Vec<AuditedCrate> = output
-            .lines()
-            .filter_map(|line| AuditedCrate::from_tree_line(line, checkout))
-            .collect();
-        if found.is_empty() {
-            return Err(vec![format!(
-                "no crate of the `cargo tree` output for {dir} lies under {}: {}",
-                checkout.display(),
-                output.lines().next().unwrap_or_default()
-            )]);
-        }
-        for each in found {
-            if !crates.contains(&each) {
-                crates.push(each);
+        let metadata = crate::metadata_of(&checkout.join(dir).join(crate::MANIFEST), true)?;
+        for package in direct_normal_dependencies(&metadata, dir)? {
+            if let Some(found) = AuditedCrate::from_package(package, checkout) {
+                if !crates.contains(&found) {
+                    crates.push(found);
+                }
             }
         }
     }
     Ok(crates)
+}
+
+fn direct_normal_dependencies<'a>(
+    metadata: &'a cargo_metadata::Metadata,
+    dir: &str,
+) -> Result<Vec<&'a cargo_metadata::Package>, Vec<String>> {
+    let root = metadata
+        .root_package()
+        .ok_or_else(|| vec![format!("{dir} declares no package")])?;
+    let node = metadata
+        .resolve
+        .as_ref()
+        .and_then(|resolve| resolve.nodes.iter().find(|node| node.id == root.id))
+        .ok_or_else(|| vec![format!("`cargo metadata` resolved no node for {dir}")])?;
+    let mut direct: Vec<&cargo_metadata::Package> = node
+        .deps
+        .iter()
+        .filter(|dep| {
+            dep.dep_kinds
+                .iter()
+                .any(|info| info.kind == cargo_metadata::DependencyKind::Normal)
+        })
+        .filter_map(|dep| {
+            metadata
+                .packages
+                .iter()
+                .find(|package| package.id == dep.pkg)
+        })
+        .collect();
+    direct.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(std::iter::once(root).chain(direct).collect())
 }
 
 /// - Runs `git worktree add --detach`, `git worktree remove --force`, and `git worktree prune` as child processes in `root`.
@@ -836,21 +847,26 @@ mod tests {
         assert_eq!(found.dir, PathBuf::from("zingo-ffi/lib"));
         assert_eq!(AuditedCrate::parse("zingo"), None);
         assert_eq!(AuditedCrate::parse("zingo v2.0.0 (zingo-ffi/lib)"), None);
-        let root = Path::new(ROOT);
+    }
+
+    #[test]
+    fn a_package_under_the_root_is_an_audited_crate_and_one_outside_is_not() {
+        let root = crate::repo_root().unwrap();
+        let metadata = crate::metadata_of(&root.join(crate::MANIFEST), true).unwrap();
+        let package = |name: &str| {
+            metadata
+                .packages
+                .iter()
+                .find(|package| package.name.as_str() == name)
+                .unwrap()
+        };
         assert_eq!(
-            AuditedCrate::from_tree_line("zingolib v6.0.0 (/host/zingolib/zingolib)", root),
-            AuditedCrate::parse("zingolib (zingolib)")
+            AuditedCrate::from_package(package("zingo"), &root),
+            AuditedCrate::parse("zingo (zingo-ffi/lib)")
         );
+        assert_eq!(AuditedCrate::from_package(package("serde"), &root), None);
         assert_eq!(
-            AuditedCrate::from_tree_line("android_logger v0.11.3", root),
-            None
-        );
-        assert_eq!(
-            AuditedCrate::from_tree_line("serde_derive v1.0.0 (proc-macro)", root),
-            None
-        );
-        assert_eq!(
-            AuditedCrate::from_tree_line("other v1.0.0 (/host/elsewhere/other)", root),
+            AuditedCrate::from_package(package("zingo"), Path::new(ROOT)),
             None
         );
     }

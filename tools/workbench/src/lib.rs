@@ -257,58 +257,64 @@ pub fn merge_base(root: &Path, base: &str) -> Result<String, Vec<String>> {
 
 const LOCKFILE: &str = "Cargo.lock";
 pub const MANIFEST_PATH_FLAG: &str = "--manifest-path";
-const LOCATE_PROJECT_ARGS: [&str; 3] = ["locate-project", "--message-format", "plain"];
-const PKGID: &str = "pkgid";
-pub const PACKAGE_ID_FORMAT: &str = "{p}";
-const MEMBERS_ARGS: [&str; 8] = [
-    "tree",
-    "--workspace",
-    "--depth",
-    "0",
-    "--prefix",
-    "none",
-    "--format",
-    PACKAGE_ID_FORMAT,
-];
 pub const PACKAGE_DIR_OPEN: &str = " (";
 pub const PACKAGE_DIR_CLOSE: char = ')';
+const LOCKED_FLAG: &str = "--locked";
 
-/// - Runs `cargo locate-project` as a child process in `dir`.
+/// - Runs `cargo metadata` as a child process, resolving dependencies only when `deps` is set.
+pub fn metadata_of(manifest: &Path, deps: bool) -> Result<cargo_metadata::Metadata, Vec<String>> {
+    let mut command = cargo_metadata::MetadataCommand::new();
+    command.manifest_path(manifest);
+    if deps {
+        command.other_options([LOCKED_FLAG.to_string()]);
+    } else {
+        command.no_deps();
+    }
+    command.exec().map_err(|e| {
+        vec![format!(
+            "`{CARGO} metadata` failed for {}: {e}",
+            manifest.display()
+        )]
+    })
+}
+
+/// - Runs `cargo metadata` as a child process in `dir`, without resolving dependencies.
+fn package_above(dir: &Path) -> Result<(PathBuf, bool), Vec<String>> {
+    let metadata = cargo_metadata::MetadataCommand::new()
+        .current_dir(dir)
+        .no_deps()
+        .exec()
+        .map_err(|e| {
+            vec![format!(
+                "`{CARGO} metadata` failed in {}: {e}",
+                dir.display()
+            )]
+        })?;
+    Ok(match metadata.root_package() {
+        Some(package) => (package.manifest_path.clone().into_std_path_buf(), true),
+        None => (
+            metadata.workspace_root.join(MANIFEST).into_std_path_buf(),
+            false,
+        ),
+    })
+}
+
+/// - Runs `cargo metadata` through [`package_above`].
 pub fn manifest_above(dir: &Path) -> Result<PathBuf, Vec<String>> {
-    stdout_in(dir, CARGO, &LOCATE_PROJECT_ARGS, &[]).map(|path| PathBuf::from(path.trim()))
+    package_above(dir).map(|(manifest, _)| manifest)
 }
 
-/// - Runs `cargo pkgid` as a child process with both output streams discarded.
+/// - Runs `cargo metadata` through [`metadata_of`].
 pub fn declares_a_package(manifest: &Path) -> Result<bool, Vec<String>> {
-    Command::new(CARGO)
-        .args([PKGID, MANIFEST_PATH_FLAG])
-        .arg(manifest)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .map_err(|e| vec![format!("failed to run {CARGO}: {e}")])
+    Ok(metadata_of(manifest, false)?.root_package().is_some())
 }
 
-pub fn package_location(package: &str) -> Option<(&str, &Path)> {
-    let (head, rest) = package.split_once(PACKAGE_DIR_OPEN)?;
-    let dir = rest.strip_suffix(PACKAGE_DIR_CLOSE)?;
-    let name = head.split_whitespace().next()?;
-    Some((name, Path::new(dir)))
-}
-
-/// - Runs `cargo tree` as a child process.
+/// - Runs `cargo metadata` through [`metadata_of`].
 pub fn workspace_members(manifest: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
-    let args = [
-        MEMBERS_ARGS.as_slice(),
-        &[MANIFEST_PATH_FLAG, utf8(manifest)?],
-    ]
-    .concat();
-    let listing = stdout_of(CARGO, &args)?;
-    Ok(listing
-        .lines()
-        .filter_map(package_location)
-        .map(|(_, dir)| dir.join(MANIFEST))
+    Ok(metadata_of(manifest, false)?
+        .workspace_packages()
+        .iter()
+        .map(|package| package.manifest_path.clone().into_std_path_buf())
         .collect())
 }
 
@@ -322,8 +328,7 @@ pub fn workspace_manifests(root: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
         .collect())
 }
 
-/// - Runs `git diff` in `root`, then `cargo locate-project` once per changed directory and
-///   `cargo pkgid` once per manifest found.
+/// - Runs `git diff` in `root`, then `cargo metadata` once per changed directory.
 pub fn touched_manifests(root: &Path, merge_base: &str) -> Result<Vec<PathBuf>, Vec<String>> {
     Ok(touched(root, merge_base)?.into_keys().collect())
 }
@@ -344,12 +349,11 @@ fn touched(root: &Path, merge_base: &str) -> Result<BTreeMap<PathBuf, bool>, Vec
         .collect();
     let mut manifests = BTreeMap::new();
     for dir in dirs {
-        let manifest = manifest_above(&dir)?;
+        let (manifest, declares) = package_above(&dir)?;
         if manifests.contains_key(&manifest) {
             continue;
         }
         let beside = manifest.parent() == Some(dir.as_path());
-        let declares = declares_a_package(&manifest)?;
         if beside || declares {
             manifests.insert(manifest, declares);
         }
@@ -591,16 +595,6 @@ mod tests {
     #[test]
     fn dest_without_value_is_an_error() {
         assert!(parse_dest(&["--dest".to_string()]).is_err());
-    }
-
-    #[test]
-    fn a_package_location_names_the_crate_and_its_directory() {
-        assert_eq!(
-            package_location("zingo v2.0.0 (/w/zingo-ffi/lib)"),
-            Some(("zingo", Path::new("/w/zingo-ffi/lib")))
-        );
-        assert_eq!(package_location("http v1.0.0"), None);
-        assert_eq!(package_location(""), None);
     }
 
     #[test]
