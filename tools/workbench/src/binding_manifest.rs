@@ -382,8 +382,7 @@ pub fn entries_at(root: &Path, revision: Option<&str>) -> Result<Vec<Entry>, Vec
 
 /// - Runs `cargo metadata` as a child process in `checkout`, once per Binding Layer crate.
 pub fn audited_at(checkout: &Path) -> Result<Vec<AuditedCrate>, Vec<String>> {
-    let checkout = &std::fs::canonicalize(checkout)
-        .map_err(|e| vec![format!("cannot resolve {}: {e}", checkout.display())])?;
+    let checkout = &crate::canonical(checkout)?;
     let mut crates: Vec<AuditedCrate> = Vec::new();
     for dir in binding_layer::BINDING_CRATE_DIRS {
         let metadata = crate::metadata_of(&checkout.join(dir).join(crate::MANIFEST), true)?;

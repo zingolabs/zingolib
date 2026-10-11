@@ -249,12 +249,7 @@ fn refuse_an_output_directory_holding_the_root(
     if !out.exists() {
         return Ok(());
     }
-    let canonical = |directory: &path::Path| {
-        directory
-            .canonicalize()
-            .map_err(|e| vec![format!("cannot resolve {}: {e}", directory.display())])
-    };
-    if canonical(root)?.starts_with(canonical(out)?) {
+    if workbench::canonical(root)?.starts_with(workbench::canonical(out)?) {
         Err(vec![format!(
             "{} holds the zingolib root {}, and the build clears the output directory first",
             out.display(),
