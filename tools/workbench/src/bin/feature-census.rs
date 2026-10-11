@@ -327,7 +327,7 @@ fn check(root: &Path, manifest: &Path, crate_dir: &str) -> Result<bool, Vec<Stri
     if manifest == root.join(workbench::MANIFEST) {
         command.arg("--workspace");
     } else {
-        command.arg("--manifest-path").arg(manifest);
+        command.arg(workbench::MANIFEST_PATH_FLAG).arg(manifest);
     }
     match PROBE_FEATURES.iter().find(|(name, _)| *name == crate_dir) {
         Some((_, features)) => {

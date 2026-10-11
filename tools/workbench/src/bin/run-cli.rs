@@ -194,7 +194,7 @@ fn bundle_proxy(root: &Path, release: bool, beside: &Path) -> Result<(), Vec<Str
     bundle.current_dir(root).args([
         "run",
         "-q",
-        "--manifest-path",
+        workbench::MANIFEST_PATH_FLAG,
         "tools/workbench/Cargo.toml",
         "--bin",
         "bundle-nym-proxy",

@@ -505,7 +505,7 @@ pub fn bindgen_args(inputs: &BindgenInputs, library: &str, out_dir: &str) -> Vec
         &["run", "--locked", "--target-dir", inputs.target_dir],
         inputs.profile.cargo_args(),
         &[
-            "--manifest-path",
+            crate::MANIFEST_PATH_FLAG,
             inputs.wallet_workspace,
             "--package",
             BINDGEN_PACKAGE,
@@ -729,7 +729,7 @@ mod tests {
                 "--target-dir",
                 "/t",
                 "--release",
-                "--manifest-path",
+                crate::MANIFEST_PATH_FLAG,
                 "/w/Cargo.toml",
                 "--package",
                 "zingo-uniffi-bindgen",
