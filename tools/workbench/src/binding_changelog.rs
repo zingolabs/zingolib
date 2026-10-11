@@ -19,7 +19,11 @@ const DEMOTION: &str = "##";
 const DIFF_HEADER_MARK: &str = "diff --git";
 const HUNK_MARK: &str = "@@";
 const RANGE_SEPARATOR: char = ',';
-const FENCE_MARK: &str = "```";
+const FENCE_MARKS: [char; 2] = ['`', '~'];
+const FENCE_LENGTH_MIN: usize = 3;
+const INDENT_LIMIT: usize = 3;
+const HEADING_LEVEL_LIMIT: usize = 6;
+const LIST_MARKS: [&str; 3] = ["- ", "* ", "+ "];
 const ADDED_MARK: char = '+';
 const KEPT_MARK: char = ' ';
 const NO_NEWLINE_MARK: char = '\\';
@@ -39,6 +43,7 @@ pub struct Section {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     HunkHeader(String),
+    ItemAboveHeadings(String),
     MissingChangelog {
         name: String,
         relative: String,
@@ -53,6 +58,10 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::HunkHeader(line) => write!(f, "cannot read the hunk header `{line}`"),
+            Error::ItemAboveHeadings(line) => write!(
+                f,
+                "`{line}` was gained above the first heading of its changelog"
+            ),
             Error::MissingChangelog {
                 name,
                 relative,
@@ -82,20 +91,49 @@ impl From<Error> for Vec<String> {
     }
 }
 
+fn unindented(line: &str) -> Option<&str> {
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    (indent <= INDENT_LIMIT).then(|| &line[indent..])
+}
+
 fn heading_level(line: &str) -> Option<usize> {
-    let level = line.chars().take_while(|c| *c == HEADING_MARK).count();
-    (level > 0 && line[level..].starts_with(' ')).then_some(level)
+    let rest = unindented(line)?;
+    let level = rest.chars().take_while(|c| *c == HEADING_MARK).count();
+    let followed = rest[level..]
+        .chars()
+        .next()
+        .is_none_or(|c| c == ' ' || c == '\t');
+    ((1..=HEADING_LEVEL_LIMIT).contains(&level) && followed).then_some(level)
+}
+
+fn fence_opening(line: &str) -> Option<(char, usize)> {
+    let rest = unindented(line)?;
+    let mark = rest.chars().next().filter(|c| FENCE_MARKS.contains(c))?;
+    let length = rest.chars().take_while(|c| *c == mark).count();
+    (length >= FENCE_LENGTH_MIN).then_some((mark, length))
+}
+
+fn is_list_item(line: &str) -> bool {
+    let rest = line.trim_start();
+    LIST_MARKS.iter().any(|mark| rest.starts_with(mark))
 }
 
 fn heading_levels<'a>(
     lines: impl Iterator<Item = &'a str> + 'a,
 ) -> impl Iterator<Item = Option<usize>> + 'a {
-    let mut in_fence = false;
+    let mut fence: Option<(char, usize)> = None;
     lines.map(move |line| {
-        if line.trim_start().starts_with(FENCE_MARK) {
-            in_fence = !in_fence;
+        let opening = fence_opening(line);
+        match (fence, opening) {
+            (Some((mark, length)), Some((closing, closing_length)))
+                if closing == mark && closing_length >= length =>
+            {
+                fence = None;
+            }
+            (Some(_), _) => {}
+            (None, _) => fence = opening,
         }
-        if in_fence {
+        if fence.is_some() || opening.is_some() {
             None
         } else {
             heading_level(line)
@@ -113,9 +151,12 @@ fn hunk_new_start(header: &str) -> Option<usize> {
         .ok()
 }
 
-type NewFileLines<'a> = Vec<(&'a str, bool)>;
+struct Diff<'a> {
+    removed: Vec<&'a str>,
+    new_file: Vec<(&'a str, bool)>,
+}
 
-fn diff_lines(diff: &str) -> Result<(Vec<&str>, NewFileLines<'_>), Error> {
+fn diff_lines(diff: &str) -> Result<Diff<'_>, Error> {
     let mut in_header = false;
     let mut next_new_line: usize = 1;
     let mut overlap = 0;
@@ -159,7 +200,7 @@ fn diff_lines(diff: &str) -> Result<(Vec<&str>, NewFileLines<'_>), Error> {
             _ => {}
         }
     }
-    Ok((removed, new_file))
+    Ok(Diff { removed, new_file })
 }
 
 fn cancels_a_move(removed: &mut Vec<&str>, text: &str) -> bool {
@@ -173,7 +214,10 @@ fn cancels_a_move(removed: &mut Vec<&str>, text: &str) -> bool {
 }
 
 pub fn gained_lines(diff: &str) -> Result<Vec<String>, Error> {
-    let (mut removed, new_file) = diff_lines(diff)?;
+    let Diff {
+        mut removed,
+        new_file,
+    } = diff_lines(diff)?;
     let levels = heading_levels(new_file.iter().map(|(text, _)| *text));
     let mut lines: Vec<String> = Vec::new();
     let mut headings: Vec<(usize, &str)> = Vec::new();
@@ -191,8 +235,13 @@ pub fn gained_lines(diff: &str) -> Result<Vec<String>, Error> {
             }
             continue;
         }
-        if headings.is_empty() || !added || (!is_blank(text) && cancels_a_move(&mut removed, text))
-        {
+        if headings.is_empty() {
+            if added && is_list_item(text) {
+                return Err(Error::ItemAboveHeadings(text.to_string()));
+            }
+            continue;
+        }
+        if !added || (!is_blank(text) && cancels_a_move(&mut removed, text)) {
             continue;
         }
         if is_blank(text) {
@@ -212,7 +261,7 @@ fn emit_context(lines: &mut Vec<String>, headings: &[(usize, &str)], emitted: &m
         if lines.last().is_some_and(|last| !is_blank(last)) {
             lines.push(String::new());
         }
-        lines.push(text.to_string());
+        lines.push(format!("{DEMOTION}{}", text.trim_start()));
     }
     *emitted = headings.len();
 }
@@ -234,14 +283,6 @@ fn tidy(lines: Vec<String>) -> Vec<String> {
         tidy.pop();
     }
     tidy
-}
-
-fn demoted(line: &str, level: Option<usize>) -> String {
-    if level.is_some() {
-        format!("{DEMOTION}{line}")
-    } else {
-        line.to_string()
-    }
 }
 
 pub fn render_header() -> String {
@@ -268,15 +309,7 @@ pub fn render_section(section: &Section) -> String {
         .entries
         .iter()
         .filter(|(_, lines)| !lines.is_empty())
-        .map(|(name, lines)| {
-            let levels = heading_levels(lines.iter().map(String::as_str));
-            let body = lines
-                .iter()
-                .zip(levels)
-                .map(|(line, level)| demoted(line, level))
-                .collect::<Vec<_>>();
-            format!("{CRATE_MARK}{name}\n\n{}\n", body.join("\n"))
-        })
+        .map(|(name, lines)| format!("{CRATE_MARK}{name}\n\n{}\n", lines.join("\n")))
         .collect::<Vec<_>>()
         .join("\n");
     let audited = section
@@ -424,7 +457,7 @@ mod tests {
                     +- moved entry\n";
         assert_eq!(
             gained_lines(diff)?,
-            ["## [Unreleased]", "- new entry", "  continues here"]
+            ["#### [Unreleased]", "- new entry", "  continues here"]
         );
         Ok(())
     }
@@ -439,7 +472,7 @@ mod tests {
                     +- bullet\n";
         assert_eq!(
             gained_lines(diff)?,
-            ["### Changed", "- new bullet", "- bullet"]
+            ["##### Changed", "- new bullet", "- bullet"]
         );
         Ok(())
     }
@@ -463,12 +496,12 @@ mod tests {
         assert_eq!(
             gained_lines(diff)?,
             [
-                "## [Unreleased]",
+                "#### [Unreleased]",
                 "",
-                "### Added",
+                "##### Added",
                 "- new entry",
                 "",
-                "### Changed",
+                "##### Changed",
                 "- changed entry"
             ]
         );
@@ -487,7 +520,7 @@ mod tests {
                     +- new entry\n";
         assert_eq!(
             gained_lines(diff)?,
-            ["## [Unreleased]", "", "### Added", "- new entry"]
+            ["#### [Unreleased]", "", "##### Added", "- new entry"]
         );
         Ok(())
     }
@@ -525,7 +558,81 @@ mod tests {
                     \x20## [Unreleased]\n\
                     \x20- a\n\
                     +- b\n";
-        assert_eq!(gained_lines(diff)?, ["## [Unreleased]", "- a", "- b"]);
+        assert_eq!(gained_lines(diff)?, ["#### [Unreleased]", "- a", "- b"]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_gained_comment_inside_a_kept_fence_is_not_demoted_in_the_section() -> Result<(), Error> {
+        let diff = "@@ -1,5 +1,6 @@\n\
+                    \x20## [Unreleased]\n\
+                    \x20\n\
+                    \x20### Added\n\
+                    \x20```sh\n\
+                    +# a new comment in the example\n\
+                    \x20```\n";
+        let section = Section {
+            commit: COMMIT.to_string(),
+            since: SINCE.to_string(),
+            entries: vec![("zingolib".to_string(), gained_lines(diff)?)],
+        };
+        let rendered = render_section(&section);
+        assert!(
+            rendered.contains("\n# a new comment in the example\n"),
+            "{rendered}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_gained_item_above_the_first_heading_is_refused() {
+        let diff = "@@ -1,2 +1,3 @@\n\
+                    \x20# Changelog\n\
+                    +- a stray item\n\
+                    \x20## [Unreleased]\n";
+        assert_eq!(
+            gained_lines(diff),
+            Err(Error::ItemAboveHeadings("- a stray item".to_string()))
+        );
+    }
+
+    #[test]
+    fn a_heading_may_be_indented_or_followed_by_a_tab_and_has_at_most_six_marks() {
+        assert_eq!(heading_level("##\tChanged"), Some(2));
+        assert_eq!(heading_level("   ## Indented"), Some(2));
+        assert_eq!(heading_level("    ## Code"), None);
+        assert_eq!(heading_level("####### Seven"), None);
+        assert_eq!(heading_level("#"), Some(1));
+        assert_eq!(heading_level("#hashtag"), None);
+    }
+
+    #[test]
+    fn a_tilde_fence_and_a_longer_backtick_fence_hide_their_lines() -> Result<(), Error> {
+        let tilde = "@@ -1,6 +1,7 @@\n\
+                     \x20## [Unreleased]\n\
+                     \x20\n\
+                     \x20### Added\n\
+                     \x20~~~\n\
+                     \x20# a comment\n\
+                     \x20~~~\n\
+                     +- new entry\n";
+        assert_eq!(
+            gained_lines(tilde)?,
+            ["#### [Unreleased]", "", "##### Added", "- new entry"]
+        );
+        let longer = "@@ -1,7 +1,8 @@\n\
+                      \x20## [Unreleased]\n\
+                      \x20\n\
+                      \x20### Added\n\
+                      \x20````\n\
+                      \x20```\n\
+                      \x20# a comment\n\
+                      \x20````\n\
+                      +- new entry\n";
+        assert_eq!(
+            gained_lines(longer)?,
+            ["#### [Unreleased]", "", "##### Added", "- new entry"]
+        );
         Ok(())
     }
 
@@ -548,13 +655,13 @@ mod tests {
         let diff = changelog_diff(&repo, &since, &commit, CRATE_CHANGELOG)?;
         assert_eq!(
             gained_lines(&diff)?,
-            ["## [Unreleased]", "", "### Added", "- new"]
+            ["#### [Unreleased]", "", "##### Added", "- new"]
         );
         Ok(())
     }
 
     #[test]
-    fn a_section_demotes_gained_headings_keeps_paragraph_breaks_and_omits_silent_crates() {
+    fn a_section_keeps_paragraph_breaks_and_omits_silent_crates() {
         let section = Section {
             commit: COMMIT.to_string(),
             since: SINCE.to_string(),
@@ -562,7 +669,7 @@ mod tests {
                 (
                     "zingolib".to_string(),
                     vec![
-                        "### Added".to_string(),
+                        "##### Added".to_string(),
                         "- entry".to_string(),
                         String::new(),
                         "Consumers must re-run codegen.".to_string(),

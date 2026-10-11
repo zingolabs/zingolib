@@ -242,7 +242,7 @@ pub fn main() -> ! {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     use super::*;
 
@@ -299,14 +299,6 @@ mod tests {
             .collect()
     }
 
-    fn tool(dir: &Path, args: &[&str]) -> Result<crate::Finished, Vec<String>> {
-        dupes(dir, args)
-    }
-
-    fn strict(dir: &Path) -> Result<crate::Finished, Vec<String>> {
-        tool(dir, &check_args(NO_NEAR))
-    }
-
     fn function(name: &str, tail: &str) -> String {
         format!(
             "fn {name}(input: &[u64]) -> u64 {{
@@ -361,9 +353,9 @@ mod tests {
     }
 
     fn baseline(dir: &Path) -> Result<(), Vec<String>> {
-        let report = tool(dir, &["report"])?.stdout;
+        let report = dupes(dir, &["report"])?.stdout;
         for fingerprint in fingerprints(&report) {
-            tool(dir, &["ignore", &fingerprint])?;
+            dupes(dir, &["ignore", &fingerprint])?;
         }
         assert_eq!(check(dir, NO_NEAR), Ok(()));
         Ok(())
@@ -377,19 +369,18 @@ mod tests {
         let checkout = fixture(name, &[(SOURCE, before)])?;
         baseline(&checkout)?;
         crate::write(&checkout.join(SOURCE), after)?;
-        Ok((strict(&checkout)?, tool(&checkout, &CLEANUP)?.stdout))
-    }
-
-    fn root() -> Result<PathBuf, Vec<String>> {
-        crate::repo_root()
+        Ok((
+            dupes(&checkout, &check_args(NO_NEAR))?,
+            dupes(&checkout, &CLEANUP)?.stdout,
+        ))
     }
 
     fn read_root(relative: &str) -> Result<String, Vec<String>> {
-        crate::read(&root()?.join(relative))
+        crate::read(&crate::repo_root()?.join(relative))
     }
 
     fn tracked_rust_files() -> Result<Vec<String>, Vec<String>> {
-        let root = root()?;
+        let root = crate::repo_root()?;
         Ok(crate::git_in(&root, &["ls-files", "--", "*.rs"])?
             .lines()
             .map(|file| root.join(file).to_string_lossy().into_owned())
@@ -417,7 +408,7 @@ mod tests {
 
     #[test]
     fn every_directory_pattern_is_a_path_from_the_repository_root() -> Result<(), Vec<String>> {
-        let root = root()?;
+        let root = crate::repo_root()?;
         for pattern in EXCLUDE {
             if pattern.ends_with(DIRECTORY_MARK) {
                 assert!(
@@ -480,7 +471,7 @@ mod tests {
 
     #[test]
     fn the_gate_passes_on_this_checkout() -> Result<(), Vec<String>> {
-        assert_eq!(gate(&root()?), Ok(()));
+        assert_eq!(gate(&crate::repo_root()?), Ok(()));
         Ok(())
     }
 
@@ -522,7 +513,7 @@ mod tests {
                 &module("#[cfg(any(test, feature = \"test-elevation\"))]", &body),
             )],
         )?;
-        let run = strict(&checkout)?;
+        let run = dupes(&checkout, &check_args(NO_NEAR))?;
         assert_eq!(run.status.code(), Some(DUPLICATION));
         assert!(run.stdout.contains(EXACT_GROUP));
         Ok(())
@@ -599,17 +590,17 @@ mod tests {
             .into_iter()
             .chain([EXCLUDE_FLAG, PARENT_PATTERN])
             .collect();
-        assert_eq!(tool(&checkout, &args)?.status.code(), Some(TOOL_ERROR));
+        assert_eq!(dupes(&checkout, &args)?.status.code(), Some(TOOL_ERROR));
         Ok(())
     }
 
     #[test]
     fn cleanup_exits_zero_with_a_stale_entry_and_two_without_sources() -> Result<(), Vec<String>> {
-        let run = tool(&stale("stale")?, &CLEANUP)?;
+        let run = dupes(&stale("stale")?, &CLEANUP)?;
         assert_eq!(run.status.code(), Some(PASSED));
         assert!(run.stdout.contains(STALE_ENTRIES));
         let empty = fixture("empty", &[("README.md", "")])?;
-        assert_eq!(tool(&empty, &CLEANUP)?.status.code(), Some(TOOL_ERROR));
+        assert_eq!(dupes(&empty, &CLEANUP)?.status.code(), Some(TOOL_ERROR));
         Ok(())
     }
 
