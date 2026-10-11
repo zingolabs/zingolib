@@ -191,23 +191,37 @@ pub fn git_in(directory: &Path, args: &[&str]) -> Result<String, Vec<String>> {
 }
 
 #[cfg(test)]
-const HERMETIC_GIT_CONFIG: [&str; 6] = [
-    "-c",
-    "user.name=workbench",
-    "-c",
-    "user.email=workbench@example.invalid",
-    "-c",
-    "commit.gpgsign=false",
+const HERMETIC_GIT_CONFIG: [(&str, &str); 3] = [
+    ("user.name", "workbench"),
+    ("user.email", "workbench@example.invalid"),
+    ("commit.gpgsign", "false"),
 ];
+
+#[cfg(test)]
+const CONFIG_FLAG: &str = "-c";
 
 /// - Runs `git <args>` as a child process in `directory` under [`HERMETIC_GIT_CONFIG`].
 /// - Panics when git fails.
 #[cfg(test)]
 pub(crate) fn hermetic_git(directory: &Path, args: &[&str]) -> String {
-    git_in(directory, &[HERMETIC_GIT_CONFIG.as_slice(), args].concat())
-        .unwrap()
-        .trim()
-        .to_string()
+    let settings: Vec<String> = HERMETIC_GIT_CONFIG
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect();
+    let mut full: Vec<&str> = settings
+        .iter()
+        .flat_map(|setting| [CONFIG_FLAG, setting.as_str()])
+        .collect();
+    full.extend_from_slice(args);
+    git_in(directory, &full).unwrap().trim().to_string()
+}
+
+/// - Runs `git config` in `directory` for each setting of [`HERMETIC_GIT_CONFIG`].
+#[cfg(test)]
+pub(crate) fn configure_hermetic_git(directory: &Path) {
+    for (key, value) in HERMETIC_GIT_CONFIG {
+        hermetic_git(directory, &["config", key, value]);
+    }
 }
 
 /// - Removes and recreates `workbench-<name>-<pid>` under the system temp dir.
