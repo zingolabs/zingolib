@@ -17,6 +17,8 @@ const HEADING_MARK: char = '#';
 const DEMOTION: &str = "##";
 const DIFF_HEADER_MARK: &str = "diff --git";
 const HUNK_MARK: &str = "@@";
+const RANGE_SEPARATOR: char = ',';
+const FENCE_MARK: &str = "```";
 const ADDED_MARK: char = '+';
 const KEPT_MARK: char = ' ';
 const NO_NEWLINE_MARK: char = '\\';
@@ -38,10 +40,38 @@ fn heading_level(line: &str) -> Option<usize> {
     (level > 0 && line[level..].starts_with(' ')).then_some(level)
 }
 
+fn heading_levels<'a>(
+    lines: impl Iterator<Item = &'a str> + 'a,
+) -> impl Iterator<Item = Option<usize>> + 'a {
+    let mut in_fence = false;
+    lines.map(move |line| {
+        if line.trim_start().starts_with(FENCE_MARK) {
+            in_fence = !in_fence;
+        }
+        if in_fence {
+            None
+        } else {
+            heading_level(line)
+        }
+    })
+}
+
+fn hunk_new_start(header: &str) -> Option<usize> {
+    header
+        .split(' ')
+        .find_map(|field| field.strip_prefix(ADDED_MARK))?
+        .split(RANGE_SEPARATOR)
+        .next()?
+        .parse()
+        .ok()
+}
+
 type NewFileLines<'a> = Vec<(&'a str, bool)>;
 
-fn diff_lines(diff: &str) -> (Vec<&str>, NewFileLines<'_>) {
+fn diff_lines(diff: &str) -> Result<(Vec<&str>, NewFileLines<'_>), Vec<String>> {
     let mut in_header = false;
+    let mut next_new_line: usize = 1;
+    let mut overlap = 0;
     let mut removed = Vec::new();
     let mut new_file = Vec::new();
     for line in diff.lines() {
@@ -49,22 +79,40 @@ fn diff_lines(diff: &str) -> (Vec<&str>, NewFileLines<'_>) {
             in_header = true;
             continue;
         }
-        if line.starts_with(HUNK_MARK) {
+        if let Some(header) = line.strip_prefix(HUNK_MARK) {
             in_header = false;
+            let start = hunk_new_start(header)
+                .ok_or_else(|| vec![format!("cannot read the hunk header `{line}`")])?;
+            overlap = next_new_line.saturating_sub(start);
             continue;
         }
         if in_header || line.starts_with(NO_NEWLINE_MARK) {
             continue;
         }
-        if let Some(text) = line.strip_prefix(ADDED_MARK) {
-            new_file.push((text, true));
-        } else if let Some(text) = line.strip_prefix(REMOVED_MARK) {
-            removed.push(text);
-        } else if let Some(text) = line.strip_prefix(KEPT_MARK) {
-            new_file.push((text, false));
+        let Some(mark) = line.chars().next() else {
+            continue;
+        };
+        let text = &line[mark.len_utf8()..];
+        if overlap > 0 {
+            if mark != REMOVED_MARK {
+                overlap -= 1;
+            }
+            continue;
+        }
+        match mark {
+            ADDED_MARK => {
+                new_file.push((text, true));
+                next_new_line += 1;
+            }
+            KEPT_MARK => {
+                new_file.push((text, false));
+                next_new_line += 1;
+            }
+            REMOVED_MARK => removed.push(text),
+            _ => {}
         }
     }
-    (removed, new_file)
+    Ok((removed, new_file))
 }
 
 fn cancels_a_move(removed: &mut Vec<&str>, text: &str) -> bool {
@@ -77,13 +125,13 @@ fn cancels_a_move(removed: &mut Vec<&str>, text: &str) -> bool {
     }
 }
 
-pub fn gained_lines(diff: &str) -> Vec<String> {
-    let (mut removed, new_file) = diff_lines(diff);
+pub fn gained_lines(diff: &str) -> Result<Vec<String>, Vec<String>> {
+    let (mut removed, new_file) = diff_lines(diff)?;
+    let levels = heading_levels(new_file.iter().map(|(text, _)| *text));
     let mut lines: Vec<String> = Vec::new();
     let mut headings: Vec<(usize, &str)> = Vec::new();
     let mut emitted = 0;
-    for (text, added) in new_file {
-        let level = heading_level(text);
+    for (&(text, added), level) in new_file.iter().zip(levels) {
         if let Some(level) = level {
             let above = headings
                 .iter()
@@ -94,23 +142,22 @@ pub fn gained_lines(diff: &str) -> Vec<String> {
             if level > TITLE_LEVEL {
                 headings.push((level, text));
             }
-        }
-        if headings.is_empty() {
             continue;
         }
-        if !added || (!is_blank(text) && cancels_a_move(&mut removed, text)) {
+        if headings.is_empty() || !added || (!is_blank(text) && cancels_a_move(&mut removed, text))
+        {
             continue;
         }
         if is_blank(text) {
-            lines.push(String::new());
+            if emitted == headings.len() {
+                lines.push(String::new());
+            }
             continue;
         }
         emit_context(&mut lines, &headings, &mut emitted);
-        if level.is_none() {
-            lines.push(text.to_string());
-        }
+        lines.push(text.to_string());
     }
-    tidy(lines)
+    Ok(tidy(lines))
 }
 
 fn emit_context(lines: &mut Vec<String>, headings: &[(usize, &str)], emitted: &mut usize) {
@@ -142,8 +189,8 @@ fn tidy(lines: Vec<String>) -> Vec<String> {
     tidy
 }
 
-fn demoted(line: &str) -> String {
-    if heading_level(line).is_some() {
+fn demoted(line: &str, level: Option<usize>) -> String {
+    if level.is_some() {
         format!("{DEMOTION}{line}")
     } else {
         line.to_string()
@@ -175,7 +222,12 @@ pub fn render_section(section: &Section) -> String {
         .iter()
         .filter(|(_, lines)| !lines.is_empty())
         .map(|(name, lines)| {
-            let body = lines.iter().map(|line| demoted(line)).collect::<Vec<_>>();
+            let levels = heading_levels(lines.iter().map(String::as_str));
+            let body = lines
+                .iter()
+                .zip(levels)
+                .map(|(line, level)| demoted(line, level))
+                .collect::<Vec<_>>();
             format!("{CRATE_MARK}{name}\n\n{}\n", body.join("\n"))
         })
         .collect::<Vec<_>>()
@@ -230,7 +282,7 @@ fn gather(
             }
             Ok((
                 found.name.clone(),
-                gained_lines(&changelog_diff(root, since, commit, &relative)?),
+                gained_lines(&changelog_diff(root, since, commit, &relative)?)?,
             ))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -333,21 +385,22 @@ mod tests {
                     +  continues here\n\
                     +- moved entry\n";
         assert_eq!(
-            gained_lines(diff),
-            ["## [Unreleased]", "", "- new entry", "  continues here"]
+            gained_lines(diff).unwrap(),
+            ["## [Unreleased]", "- new entry", "  continues here"]
         );
     }
 
     #[test]
     fn a_removed_line_cancels_one_added_line_and_not_every_repeat() {
-        let diff = "@@ -1,1 +1,3 @@\n\
-                    -### Changed\n\
-                    +### Changed\n\
+        let diff = "@@ -1,2 +1,4 @@\n\
+                    \x20### Changed\n\
+                    -- bullet\n\
+                    +- bullet\n\
                     +- new bullet\n\
-                    +### Changed\n";
+                    +- bullet\n";
         assert_eq!(
-            gained_lines(diff),
-            ["### Changed", "- new bullet", "", "### Changed"]
+            gained_lines(diff).unwrap(),
+            ["### Changed", "- new bullet", "- bullet"]
         );
     }
 
@@ -368,7 +421,7 @@ mod tests {
                     \x20### Fixed\n\
                     \x20- old fix\n";
         assert_eq!(
-            gained_lines(diff),
+            gained_lines(diff).unwrap(),
             [
                 "## [Unreleased]",
                 "",
@@ -378,6 +431,60 @@ mod tests {
                 "### Changed",
                 "- changed entry"
             ]
+        );
+    }
+
+    #[test]
+    fn a_comment_inside_a_fenced_block_is_not_a_heading() {
+        let diff = "@@ -1,6 +1,7 @@\n\
+                    \x20## [Unreleased]\n\
+                    \x20\n\
+                    \x20### Added\n\
+                    \x20```sh\n\
+                    \x20# a comment in a shell example\n\
+                    \x20```\n\
+                    +- new entry\n";
+        assert_eq!(
+            gained_lines(diff).unwrap(),
+            ["## [Unreleased]", "", "### Added", "- new entry"]
+        );
+    }
+
+    #[test]
+    fn a_release_cut_whose_items_all_moved_gains_nothing() {
+        let diff = "@@ -1,4 +1,6 @@\n\
+                    \x20## [Unreleased]\n\
+                    -\n\
+                    -### Added\n\
+                    -- entry\n\
+                    +\n\
+                    +## [0.2.0] - 2026-10-11\n\
+                    +\n\
+                    +### Added\n\
+                    +- entry\n";
+        assert_eq!(gained_lines(diff).unwrap(), [""; 0]);
+    }
+
+    #[test]
+    fn a_hunk_header_the_tool_cannot_read_is_refused() {
+        let diagnostic = gained_lines("@@ garbage @@\n+- entry\n")
+            .unwrap_err()
+            .concat();
+        assert_eq!(diagnostic, "cannot read the hunk header `@@ garbage @@`");
+    }
+
+    #[test]
+    fn a_kept_line_repeated_by_overlapping_hunks_is_walked_once() {
+        let diff = "@@ -1,1 +1,2 @@\n\
+                    \x20## [Unreleased]\n\
+                    +- a\n\
+                    @@ -1,1 +1,3 @@\n\
+                    \x20## [Unreleased]\n\
+                    \x20- a\n\
+                    +- b\n";
+        assert_eq!(
+            gained_lines(diff).unwrap(),
+            ["## [Unreleased]", "- a", "- b"]
         );
     }
 
@@ -403,7 +510,7 @@ mod tests {
         let commit = git(&repo, &["rev-parse", "HEAD"]);
         let diff = changelog_diff(&repo, &since, &commit, CRATE_CHANGELOG).unwrap();
         assert_eq!(
-            gained_lines(&diff),
+            gained_lines(&diff).unwrap(),
             ["## [Unreleased]", "", "### Added", "- new"]
         );
         std::fs::remove_dir_all(&repo).unwrap();
@@ -422,6 +529,9 @@ mod tests {
                         "- entry".to_string(),
                         String::new(),
                         "Consumers must re-run codegen.".to_string(),
+                        "```sh".to_string(),
+                        "# the codegen step".to_string(),
+                        "```".to_string(),
                     ],
                 ),
                 ("pepper-sync".to_string(), vec![]),
@@ -430,7 +540,7 @@ mod tests {
         assert_eq!(
             render_section(&section),
             format!(
-                "## {COMMIT}\n\nSince {SINCE}.\n\nAudited `zingolib`, `pepper-sync`.\n\n### zingolib\n\n##### Added\n- entry\n\nConsumers must re-run codegen.\n"
+                "## {COMMIT}\n\nSince {SINCE}.\n\nAudited `zingolib`, `pepper-sync`.\n\n### zingolib\n\n##### Added\n- entry\n\nConsumers must re-run codegen.\n```sh\n# the codegen step\n```\n"
             )
         );
     }
