@@ -137,7 +137,7 @@ fn run_phase(invocation: &str, forwarded_args: &[String]) -> Result<(i32, String
     let stdout = child
         .stdout
         .take()
-        .expect("child stdout is piped: Stdio::piped() was set above");
+        .ok_or_else(|| std::io::Error::other("the child's stdout was not piped"))?;
     let mut captured = String::new();
     for line in BufReader::new(stdout).lines() {
         let line = line?;
@@ -439,16 +439,17 @@ mod package_selection_guard {
     /// it keeps the shared `--workspace` build scope every phase relies on.
     /// Falsified if the filterset drops the package term or the test term.
     #[test]
-    fn the_lite_libtonode_phase_names_a_package_and_a_test() {
-        let (_, lite) = LITE_PHASES
-            .iter()
-            .find(|(phase, _)| *phase == "libtonode")
-            .expect("the lite set has a libtonode phase");
+    fn the_lite_libtonode_phase_names_a_package_and_a_test() -> Result<(), Vec<String>> {
+        let (_, lite) = workbench::required(
+            LITE_PHASES.iter().find(|(phase, _)| *phase == "libtonode"),
+            "libtonode phase in the lite set",
+        )?;
         assert!(lite.contains("package(libtonode-tests)"), "{lite}");
         assert!(
             lite.contains("test(chain_generics::send_shield_cycle)"),
             "{lite}"
         );
+        Ok(())
     }
 
     /// HYPOTHESIS: the lite phase builds one test binary rather than the
@@ -459,16 +460,17 @@ mod package_selection_guard {
     /// selection, which would re-unify features and compile a second
     /// zingolib.
     #[test]
-    fn the_lite_libtonode_phase_builds_one_test_binary() {
-        let (_, lite) = LITE_PHASES
-            .iter()
-            .find(|(phase, _)| *phase == "libtonode")
-            .expect("the lite set has a libtonode phase");
+    fn the_lite_libtonode_phase_builds_one_test_binary() -> Result<(), Vec<String>> {
+        let (_, lite) = workbench::required(
+            LITE_PHASES.iter().find(|(phase, _)| *phase == "libtonode"),
+            "libtonode phase in the lite set",
+        )?;
         assert!(lite.contains("--test chain_generics"), "{lite}");
         assert!(
             !is_package_selection_arg("--test"),
             "--test must stay a target selection, so the front door still appends --workspace"
         );
+        Ok(())
     }
 
     #[test]

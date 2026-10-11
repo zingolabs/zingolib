@@ -191,30 +191,34 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_command_line_sweeps_the_touched_crates_against_the_default_base() {
+    fn an_empty_command_line_sweeps_the_touched_crates_against_the_default_base(
+    ) -> Result<(), Vec<String>> {
         assert_eq!(
-            parse(&[]).unwrap(),
+            parse(&[])?,
             Request {
                 all: false,
                 base: DEFAULT_BASE.to_string(),
                 crates: Vec::new(),
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn base_parses_in_both_spellings() {
-        assert_eq!(parse(&words("--base main")).unwrap().base, "main");
-        assert_eq!(parse(&words("--base=main")).unwrap().base, "main");
+    fn base_parses_in_both_spellings() -> Result<(), Vec<String>> {
+        assert_eq!(parse(&words("--base main"))?.base, "main");
+        assert_eq!(parse(&words("--base=main"))?.base, "main");
+        Ok(())
     }
 
     #[test]
-    fn a_base_value_is_not_read_as_a_crate() {
-        assert!(parse(&words("--base main")).unwrap().crates.is_empty());
+    fn a_base_value_is_not_read_as_a_crate() -> Result<(), Vec<String>> {
+        assert!(parse(&words("--base main"))?.crates.is_empty());
         assert_eq!(
-            parse(&words("--base main zingo-cli")).unwrap().crates,
+            parse(&words("--base main zingo-cli"))?.crates,
             vec!["zingo-cli".to_string()]
         );
+        Ok(())
     }
 
     #[test]
@@ -228,15 +232,17 @@ mod tests {
     }
 
     #[test]
-    fn all_selects_the_whole_workspace() {
-        assert!(parse(&words("--all")).unwrap().all);
+    fn all_selects_the_whole_workspace() -> Result<(), Vec<String>> {
+        assert!(parse(&words("--all"))?.all);
+        Ok(())
     }
 
     #[test]
-    fn a_lone_separator_passes_through_from_cargo_make() {
+    fn a_lone_separator_passes_through_from_cargo_make() -> Result<(), Vec<String>> {
         assert_eq!(
-            parse(&words("-- zingo-cli")).unwrap().crates,
+            parse(&words("-- zingo-cli"))?.crates,
             vec!["zingo-cli".to_string()]
         );
+        Ok(())
     }
 }

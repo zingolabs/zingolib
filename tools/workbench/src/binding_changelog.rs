@@ -1,3 +1,4 @@
+use std::fmt;
 use std::path::Path;
 
 use crate::binding_manifest;
@@ -35,6 +36,52 @@ pub struct Section {
     pub entries: Vec<(String, Vec<String>)>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum Error {
+    HunkHeader(String),
+    MissingChangelog {
+        name: String,
+        relative: String,
+        commit: String,
+    },
+    Differs,
+    Usage,
+    Diagnostics(Vec<String>),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::HunkHeader(line) => write!(f, "cannot read the hunk header `{line}`"),
+            Error::MissingChangelog {
+                name,
+                relative,
+                commit,
+            } => write!(f, "audited crate {name} has no {relative} at {commit}"),
+            Error::Differs => write!(
+                f,
+                "{FILE} differs from what {BINARY} generates from {}; run `{BINARY}` and commit the result",
+                binding_manifest::FILE
+            ),
+            Error::Usage => f.write_str(USAGE),
+            Error::Diagnostics(lines) => f.write_str(&lines.join("\n")),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+from_diagnostics!(Error::Diagnostics);
+
+impl From<Error> for Vec<String> {
+    fn from(error: Error) -> Self {
+        match error {
+            Error::Diagnostics(lines) => lines,
+            other => vec![other.to_string()],
+        }
+    }
+}
+
 fn heading_level(line: &str) -> Option<usize> {
     let level = line.chars().take_while(|c| *c == HEADING_MARK).count();
     (level > 0 && line[level..].starts_with(' ')).then_some(level)
@@ -68,7 +115,7 @@ fn hunk_new_start(header: &str) -> Option<usize> {
 
 type NewFileLines<'a> = Vec<(&'a str, bool)>;
 
-fn diff_lines(diff: &str) -> Result<(Vec<&str>, NewFileLines<'_>), Vec<String>> {
+fn diff_lines(diff: &str) -> Result<(Vec<&str>, NewFileLines<'_>), Error> {
     let mut in_header = false;
     let mut next_new_line: usize = 1;
     let mut overlap = 0;
@@ -81,8 +128,8 @@ fn diff_lines(diff: &str) -> Result<(Vec<&str>, NewFileLines<'_>), Vec<String>> 
         }
         if let Some(header) = line.strip_prefix(HUNK_MARK) {
             in_header = false;
-            let start = hunk_new_start(header)
-                .ok_or_else(|| vec![format!("cannot read the hunk header `{line}`")])?;
+            let start =
+                hunk_new_start(header).ok_or_else(|| Error::HunkHeader(line.to_string()))?;
             overlap = next_new_line.saturating_sub(start);
             continue;
         }
@@ -125,7 +172,7 @@ fn cancels_a_move(removed: &mut Vec<&str>, text: &str) -> bool {
     }
 }
 
-pub fn gained_lines(diff: &str) -> Result<Vec<String>, Vec<String>> {
+pub fn gained_lines(diff: &str) -> Result<Vec<String>, Error> {
     let (mut removed, new_file) = diff_lines(diff)?;
     let levels = heading_levels(new_file.iter().map(|(text, _)| *text));
     let mut lines: Vec<String> = Vec::new();
@@ -260,7 +307,7 @@ pub fn render_file(header: &str, sections_newest_first: &[String]) -> String {
         .collect()
 }
 
-fn relative_changelog(found: &binding_manifest::AuditedCrate) -> Result<String, Vec<String>> {
+fn relative_changelog(found: &binding_manifest::AuditedCrate) -> Result<String, Error> {
     Ok(crate::utf8(&found.dir.join(CRATE_CHANGELOG))?.to_string())
 }
 
@@ -269,16 +316,17 @@ fn gather(
     crates: &[binding_manifest::AuditedCrate],
     since: &str,
     commit: &str,
-) -> Result<Section, Vec<String>> {
+) -> Result<Section, Error> {
     let entries = crates
         .iter()
         .map(|found| {
             let relative = relative_changelog(found)?;
             if !crate::listed_at(root, commit, &relative)? {
-                return Err(vec![format!(
-                    "audited crate {} has no {relative} at {commit}",
-                    found.name
-                )]);
+                return Err(Error::MissingChangelog {
+                    name: found.name.clone(),
+                    relative,
+                    commit: commit.to_string(),
+                });
             }
             Ok((
                 found.name.clone(),
@@ -294,22 +342,17 @@ fn gather(
 }
 
 /// - Runs `git diff` in `root`.
-fn changelog_diff(
-    root: &Path,
-    since: &str,
-    commit: &str,
-    relative: &str,
-) -> Result<String, Vec<String>> {
+fn changelog_diff(root: &Path, since: &str, commit: &str, relative: &str) -> Result<String, Error> {
     let context = format!("{CONTEXT_FLAG}{WHOLE_FILE_CONTEXT}");
     let args = [
         DIFF_ARGS.as_slice(),
         &[&context, since, commit, "--", relative],
     ]
     .concat();
-    crate::git_in(root, &args)
+    Ok(crate::git_in(root, &args)?)
 }
 
-fn regenerated(root: &Path) -> Result<String, Vec<String>> {
+fn regenerated(root: &Path) -> Result<String, Error> {
     let entries = binding_manifest::entries_at(root, None)?;
     let sections = binding_manifest::publication_commits(&entries)
         .iter()
@@ -323,41 +366,36 @@ fn regenerated(root: &Path) -> Result<String, Vec<String>> {
                 commit,
             )?))
         })
-        .collect::<Result<Vec<_>, Vec<String>>>()?;
+        .collect::<Result<Vec<_>, Error>>()?;
     Ok(render_file(&render_header(), &sections))
 }
 
 /// - Runs `git` child processes in `root`.
 /// - Writes `bindings/CHANGELOG.md`.
-pub fn regenerate(root: &Path) -> Result<(), Vec<String>> {
-    let file = root.join(FILE);
-    std::fs::write(&file, regenerated(root)?)
-        .map_err(|e| vec![format!("cannot write {}: {e}", file.display())])
+pub fn regenerate(root: &Path) -> Result<(), Error> {
+    Ok(crate::write(&root.join(FILE), regenerated(root)?)?)
 }
 
 /// - Runs `git` child processes in `root`.
 /// - Writes `bindings/CHANGELOG.md` unless `args` holds `--check`.
-pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Error> {
     match args {
         [] => regenerate(root),
         [flag] if flag == CHECK_FLAG => {
             if crate::read(&root.join(FILE))? == regenerated(root)? {
                 Ok(())
             } else {
-                Err(vec![format!(
-                    "{FILE} differs from what {BINARY} generates from {}; run `{BINARY}` and commit the result",
-                    binding_manifest::FILE
-                )])
+                Err(Error::Differs)
             }
         }
-        _ => Err(vec![USAGE.to_string()]),
+        _ => Err(Error::Usage),
     }
 }
 
 /// - Reads the process arguments.
 /// - Exits the process through [`crate::run`].
 pub fn main() -> ! {
-    crate::dispatch_from_root(BINARY, dispatch)
+    crate::dispatch_from_root(BINARY, |root, args| dispatch(root, args).map_err(Vec::from))
 }
 
 #[cfg(test)]
@@ -368,7 +406,7 @@ mod tests {
     const SINCE: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     #[test]
-    fn gained_lines_are_the_added_lines_minus_moves_and_preamble() {
+    fn gained_lines_are_the_added_lines_minus_moves_and_preamble() -> Result<(), Error> {
         let diff = "diff --git a/x/CHANGELOG.md b/x/CHANGELOG.md\n\
                     --- a/x/CHANGELOG.md\n\
                     +++ b/x/CHANGELOG.md\n\
@@ -385,13 +423,14 @@ mod tests {
                     +  continues here\n\
                     +- moved entry\n";
         assert_eq!(
-            gained_lines(diff).unwrap(),
+            gained_lines(diff)?,
             ["## [Unreleased]", "- new entry", "  continues here"]
         );
+        Ok(())
     }
 
     #[test]
-    fn a_removed_line_cancels_one_added_line_and_not_every_repeat() {
+    fn a_removed_line_cancels_one_added_line_and_not_every_repeat() -> Result<(), Error> {
         let diff = "@@ -1,2 +1,4 @@\n\
                     \x20### Changed\n\
                     -- bullet\n\
@@ -399,13 +438,14 @@ mod tests {
                     +- new bullet\n\
                     +- bullet\n";
         assert_eq!(
-            gained_lines(diff).unwrap(),
+            gained_lines(diff)?,
             ["### Changed", "- new bullet", "- bullet"]
         );
+        Ok(())
     }
 
     #[test]
-    fn a_gained_item_carries_the_unchanged_headings_above_it() {
+    fn a_gained_item_carries_the_unchanged_headings_above_it() -> Result<(), Error> {
         let diff = "@@ -1,10 +1,14 @@\n\
                     \x20# Changelog\n\
                     \x20\n\
@@ -421,7 +461,7 @@ mod tests {
                     \x20### Fixed\n\
                     \x20- old fix\n";
         assert_eq!(
-            gained_lines(diff).unwrap(),
+            gained_lines(diff)?,
             [
                 "## [Unreleased]",
                 "",
@@ -432,10 +472,11 @@ mod tests {
                 "- changed entry"
             ]
         );
+        Ok(())
     }
 
     #[test]
-    fn a_comment_inside_a_fenced_block_is_not_a_heading() {
+    fn a_comment_inside_a_fenced_block_is_not_a_heading() -> Result<(), Error> {
         let diff = "@@ -1,6 +1,7 @@\n\
                     \x20## [Unreleased]\n\
                     \x20\n\
@@ -445,13 +486,14 @@ mod tests {
                     \x20```\n\
                     +- new entry\n";
         assert_eq!(
-            gained_lines(diff).unwrap(),
+            gained_lines(diff)?,
             ["## [Unreleased]", "", "### Added", "- new entry"]
         );
+        Ok(())
     }
 
     #[test]
-    fn a_release_cut_whose_items_all_moved_gains_nothing() {
+    fn a_release_cut_whose_items_all_moved_gains_nothing() -> Result<(), Error> {
         let diff = "@@ -1,4 +1,6 @@\n\
                     \x20## [Unreleased]\n\
                     -\n\
@@ -462,19 +504,20 @@ mod tests {
                     +\n\
                     +### Added\n\
                     +- entry\n";
-        assert_eq!(gained_lines(diff).unwrap(), [""; 0]);
+        assert_eq!(gained_lines(diff)?, [""; 0]);
+        Ok(())
     }
 
     #[test]
     fn a_hunk_header_the_tool_cannot_read_is_refused() {
-        let diagnostic = gained_lines("@@ garbage @@\n+- entry\n")
-            .unwrap_err()
-            .concat();
-        assert_eq!(diagnostic, "cannot read the hunk header `@@ garbage @@`");
+        assert_eq!(
+            gained_lines("@@ garbage @@\n+- entry\n"),
+            Err(Error::HunkHeader("@@ garbage @@".to_string()))
+        );
     }
 
     #[test]
-    fn a_kept_line_repeated_by_overlapping_hunks_is_walked_once() {
+    fn a_kept_line_repeated_by_overlapping_hunks_is_walked_once() -> Result<(), Error> {
         let diff = "@@ -1,1 +1,2 @@\n\
                     \x20## [Unreleased]\n\
                     +- a\n\
@@ -482,38 +525,32 @@ mod tests {
                     \x20## [Unreleased]\n\
                     \x20- a\n\
                     +- b\n";
-        assert_eq!(
-            gained_lines(diff).unwrap(),
-            ["## [Unreleased]", "- a", "- b"]
-        );
-    }
-
-    fn git(dir: &Path, args: &[&str]) -> String {
-        crate::hermetic_git(dir, args)
+        assert_eq!(gained_lines(diff)?, ["## [Unreleased]", "- a", "- b"]);
+        Ok(())
     }
 
     #[test]
-    fn the_diff_carries_a_heading_far_above_the_change_as_context() {
-        let repo = crate::scratch_dir("changelog-context");
-        git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
+    fn the_diff_carries_a_heading_far_above_the_change_as_context() -> Result<(), Error> {
+        let repo = crate::scratch_dir("changelog-context")?;
+        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"])?;
         let changelog = repo.join(CRATE_CHANGELOG);
         let old = "## [Unreleased]\n\n### Added\n- a\n- b\n- c\n- d\n- e\n- f\n";
-        std::fs::write(&changelog, old).unwrap();
-        git(&repo, &["add", CRATE_CHANGELOG]);
-        git(&repo, &["commit", "--quiet", "--message", "since"]);
-        let since = git(&repo, &["rev-parse", "HEAD"]);
-        std::fs::write(&changelog, format!("{old}- new\n")).unwrap();
-        git(
+        crate::write(&changelog, old)?;
+        crate::hermetic_git(&repo, &["add", CRATE_CHANGELOG])?;
+        crate::hermetic_git(&repo, &["commit", "--quiet", "--message", "since"])?;
+        let since = crate::hermetic_git(&repo, &["rev-parse", "HEAD"])?;
+        crate::write(&changelog, format!("{old}- new\n"))?;
+        crate::hermetic_git(
             &repo,
             &["commit", "--quiet", "--all", "--message", "commit"],
-        );
-        let commit = git(&repo, &["rev-parse", "HEAD"]);
-        let diff = changelog_diff(&repo, &since, &commit, CRATE_CHANGELOG).unwrap();
+        )?;
+        let commit = crate::hermetic_git(&repo, &["rev-parse", "HEAD"])?;
+        let diff = changelog_diff(&repo, &since, &commit, CRATE_CHANGELOG)?;
         assert_eq!(
-            gained_lines(&diff).unwrap(),
+            gained_lines(&diff)?,
             ["## [Unreleased]", "", "### Added", "- new"]
         );
-        std::fs::remove_dir_all(&repo).unwrap();
+        Ok(())
     }
 
     #[test]
@@ -558,16 +595,17 @@ mod tests {
     }
 
     #[test]
-    fn the_committed_file_passes_the_check_at_the_checked_out_commit() {
-        let root = crate::repo_root().unwrap();
-        dispatch(&root, &[CHECK_FLAG.to_string()]).unwrap();
+    fn the_committed_file_passes_the_check_at_the_checked_out_commit() -> Result<(), Error> {
+        dispatch(&crate::repo_root()?, &[CHECK_FLAG.to_string()])
     }
 
     #[test]
-    fn a_flag_the_tool_does_not_know_is_refused_with_the_usage() {
-        let diagnostic = dispatch(&crate::repo_root().unwrap(), &["--since".to_string()])
-            .unwrap_err()
-            .concat();
-        assert_eq!(diagnostic, USAGE);
+    fn a_flag_the_tool_does_not_know_is_refused_with_the_usage() -> Result<(), Error> {
+        assert_eq!(
+            dispatch(&crate::repo_root()?, &["--since".to_string()]),
+            Err(Error::Usage)
+        );
+        assert_eq!(Error::Usage.to_string(), USAGE);
+        Ok(())
     }
 }
