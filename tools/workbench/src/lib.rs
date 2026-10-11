@@ -321,6 +321,8 @@ pub fn file_name_of(file: &Path) -> Result<&str, Vec<String>> {
         .ok_or_else(|| vec![format!("{} has no file name", file.display())])
 }
 
+pub const BRANCH_TIP: &str = "HEAD";
+
 pub const DEFAULT_BASE: &str = "origin/dev";
 
 pub const FALLBACK_BASE: &str = "dev";
@@ -328,7 +330,7 @@ pub const FALLBACK_BASE: &str = "dev";
 /// - Runs `git merge-base` in `root`, again against the fallback when the default base is absent.
 pub fn merge_base(root: &Path, base: &str) -> Result<String, Vec<String>> {
     let found = |reference: &str| {
-        git_in(root, &["merge-base", "HEAD", reference]).map(|commit| commit.trim().to_string())
+        git_in(root, &["merge-base", BRANCH_TIP, reference]).map(|commit| commit.trim().to_string())
     };
     found(base)
         .or_else(|absent| {

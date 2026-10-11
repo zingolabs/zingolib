@@ -747,13 +747,13 @@ mod tests {
         crate::write(&changelog, old)?;
         crate::hermetic_git(&repo, &["add", CRATE_CHANGELOG])?;
         crate::hermetic_git(&repo, &["commit", "--quiet", "--message", "since"])?;
-        let since = crate::hermetic_git(&repo, &["rev-parse", "HEAD"])?;
+        let since = crate::hermetic_git(&repo, &["rev-parse", crate::BRANCH_TIP])?;
         crate::write(&changelog, format!("{old}- new\n"))?;
         crate::hermetic_git(
             &repo,
             &["commit", "--quiet", "--all", "--message", "commit"],
         )?;
-        let commit = crate::hermetic_git(&repo, &["rev-parse", "HEAD"])?;
+        let commit = crate::hermetic_git(&repo, &["rev-parse", crate::BRANCH_TIP])?;
         let diff = changelog_diff(&repo, &since, &commit, CRATE_CHANGELOG)?;
         assert_eq!(
             gained_lines(&diff)?,

@@ -34,7 +34,6 @@ const USAGE: &str =
     "usage: binding-manifest --check [--base <ref>] [--all-digests] | binding-manifest --newest | binding-manifest --orasust-version";
 pub const PUBLISH_COMMAND: &str = "/publish";
 const CHECKOUTS_DIR: &str = "target/binding-manifest";
-const BRANCH_TIP: &str = "HEAD";
 const PACKAGE_DIR_OPEN: &str = " (";
 const PACKAGE_DIR_CLOSE: char = ')';
 const FIRST_ORDINAL: usize = 1;
@@ -505,9 +504,10 @@ fn commits_reachable(root: &Path, entries: &[Entry]) -> Result<(), Vec<String>> 
     let mut diagnostics = Vec::new();
     for (index, entry) in entries.iter().enumerate() {
         let label = format!("entry {} ({})", ordinal(index), entry.commit);
-        if !crate::is_ancestor(root, &entry.commit, BRANCH_TIP)? {
+        if !crate::is_ancestor(root, &entry.commit, crate::BRANCH_TIP)? {
             diagnostics.push(format!(
-                "{label} is not an ancestor of {BRANCH_TIP}, so it is not a commit of this branch"
+                "{label} is not an ancestor of {}, so it is not a commit of this branch",
+                crate::BRANCH_TIP
             ));
         }
         if let Some(since) = &entry.since {
@@ -900,7 +900,7 @@ mod tests {
     fn the_recorded_audited_crates_are_checked_against_cargo_tree_at_the_commit(
     ) -> Result<(), Vec<String>> {
         let root = crate::repo_root()?;
-        let head = crate::commit_of(&root, "HEAD")?;
+        let head = crate::commit_of(&root, crate::BRANCH_TIP)?;
         let mut recorded = entry(&head, Some(ORIGIN), &[ANDROID])?;
         recorded.audited = audited(&EXPECTED_AUDITED)?;
         assert_eq!(
@@ -1139,7 +1139,7 @@ mod tests {
     #[test]
     fn commits_are_resolved_in_one_pass_and_a_missing_one_is_named() -> Result<(), Vec<String>> {
         let root = crate::repo_root()?;
-        let head = crate::commit_of(&root, "HEAD")?;
+        let head = crate::commit_of(&root, crate::BRANCH_TIP)?;
         assert_eq!(
             commits_exist(&root, &[entry(&head, None, &[ANDROID])?]),
             Ok(())
@@ -1158,7 +1158,7 @@ mod tests {
             dir,
             &["commit", "--quiet", "--allow-empty", "--message", subject],
         )?;
-        crate::hermetic_git(dir, &["rev-parse", BRANCH_TIP])
+        crate::hermetic_git(dir, &["rev-parse", crate::BRANCH_TIP])
     }
 
     #[test]
@@ -1181,7 +1181,7 @@ mod tests {
         ))?
         .concat();
         assert!(
-            off_branch.contains(&side) && off_branch.contains(BRANCH_TIP),
+            off_branch.contains(&side) && off_branch.contains(crate::BRANCH_TIP),
             "{off_branch}"
         );
         let later_since = crate::refused(commits_reachable(
@@ -1201,7 +1201,10 @@ mod tests {
         assert_eq!(merged_base(&root, Some("")), Ok(None));
         assert_eq!(merged_base(&root, Some(&no_commit_before)), Ok(None));
         assert_eq!(merged_base(&root, Some("no-such-ref")), Ok(None));
-        assert_eq!(merged_base(&root, Some(BRANCH_TIP)), Ok(Some(BRANCH_TIP)));
+        assert_eq!(
+            merged_base(&root, Some(crate::BRANCH_TIP)),
+            Ok(Some(crate::BRANCH_TIP))
+        );
         Ok(())
     }
 
