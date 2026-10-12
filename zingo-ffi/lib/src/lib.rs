@@ -119,6 +119,14 @@ pub enum ZingolibError {
     Mixnet(String),
     #[error("Error: wallet chain mismatch: {0}")]
     WalletChainMismatch(String),
+    #[error("Error: initializing wallet: cannot reach the server: {0}")]
+    InitConnection(String),
+    #[error("Error: initializing wallet: invalid key: {0}")]
+    InitKey(String),
+    #[error("Error: initializing wallet: birthday too early: {0}")]
+    InitBirthday(String),
+    #[error("Error: initializing wallet: unreadable wallet file: {0}")]
+    InitWalletFile(String),
 }
 
 /// The separator between two layers of a rendered cause chain, and the one
@@ -180,7 +188,43 @@ fn open_error(error: &LightClientError) -> ZingolibError {
     if mismatch {
         ZingolibError::WalletChainMismatch(chain_text(error))
     } else {
-        ZingolibError::init(chain_text(error))
+        init_error(error)
+    }
+}
+
+/// A failure to build a client at init, by what the user can change about
+/// it: the server when the dial fails, the key when a seed or viewing key
+/// does not parse or belongs to another network, the birthday when it
+/// lies before sapling, the file when the wallet bytes do not decode.
+/// Exhaustive like `ffi_error`: the variants that cannot arise while a
+/// client is built stay `Init`.
+fn init_error(error: &LightClientError) -> ZingolibError {
+    use zingolib::wallet::error::WalletError;
+    let text = chain_text(error);
+    match error {
+        LightClientError::ClientError(_) | LightClientError::IndexerError(_) => {
+            ZingolibError::InitConnection(text)
+        }
+        LightClientError::WalletError(WalletError::MnemonicError(_) | WalletError::KeyError(_)) => {
+            ZingolibError::InitKey(text)
+        }
+        LightClientError::WalletError(WalletError::BirthdayBelowSapling(_, _)) => {
+            ZingolibError::InitBirthday(text)
+        }
+        LightClientError::FileError(_) => ZingolibError::InitWalletFile(text),
+        LightClientError::Offline => ZingolibError::Offline,
+        LightClientError::WalletError(_)
+        | LightClientError::SyncLaunchError
+        | LightClientError::SyncNotRunning
+        | LightClientError::SyncError(_)
+        | LightClientError::SyncModeError(_)
+        | LightClientError::SendError(_)
+        | LightClientError::MigrationError(_)
+        | LightClientError::PriceError(_)
+        | LightClientError::MixnetNotReady(_)
+        | LightClientError::IneligibleProbeTarget(_)
+        | LightClientError::MigrationTransmissionTargetIsSyncEndpoint { .. }
+        | LightClientError::NoEligibleDestination(_) => ZingolibError::Init(text),
     }
 }
 
@@ -867,7 +911,7 @@ fn init_lightclient(
         let config = build_client_config(&params, wallet_config)?;
         let lightclient = RT
             .block_on(LightClient::new(config, false))
-            .map_err(chained(ZingolibError::Init))?;
+            .map_err(|error| init_error(&error))?;
         let _ = store_client(lightclient);
 
         finish()
@@ -913,7 +957,7 @@ pub fn init_new(connection: IndexerConnection, birthday: u32) -> Result<String, 
                             .await
                             .map_err(|e| chain_text(&e))
                     })
-                    .map_err(ZingolibError::init)?
+                    .map_err(ZingolibError::InitConnection)?
                     .height as u32
                 }
                 None => {
@@ -1184,7 +1228,10 @@ mod cause_chain_tests {
             std::io::ErrorKind::InvalidData,
             "invalid account id",
         ));
-        assert!(matches!(open_error(&other), ZingolibError::Init(_)));
+        assert!(matches!(
+            open_error(&other),
+            ZingolibError::InitWalletFile(_)
+        ));
     }
 
     #[test]
@@ -1214,6 +1261,10 @@ mod cause_chain_tests {
         assert!(
             text.contains("Mnemonic error"),
             "the cause must survive the crossing: {text}"
+        );
+        assert!(
+            matches!(error, ZingolibError::InitKey(_)),
+            "a seed that does not parse is a key failure: {error}"
         );
     }
 
@@ -1375,12 +1426,82 @@ mod regtest_activation_heights_tests {
 }
 
 /// The init-path data/error channel contract (zingo-mobile#1151): domain
-/// failures travel on the error channel as the typed `Init` variant, never
-/// as prose in the data channel. Every case here fails before any network
-/// dial, so the tests run host-side with no infrastructure.
+/// failures travel on the error channel as a typed init variant, never as
+/// prose in the data channel. The variant names what the user can change
+/// (zingolib#2939): the server, the key, the birthday or the wallet file.
+/// No case here needs a server: the dials go to a closed local port.
 #[cfg(test)]
 mod init_error_channel_tests {
     use super::*;
+
+    const VALID_SEED: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
+                              abandon abandon abandon abandon abandon abandon abandon abandon \
+                              abandon abandon abandon abandon abandon abandon abandon art";
+    const CLOSED_PORT: &str = "http://127.0.0.1:1";
+
+    #[test]
+    fn a_dial_the_server_refuses_is_a_connection_failure_on_create() {
+        let _serial = lock_discipline_tests::serialized();
+        let error = init_new(test_connection(CLOSED_PORT, "main", "Medium"), 0)
+            .expect_err("a create cannot ask a closed port for the chain tip");
+        assert!(
+            matches!(error, ZingolibError::InitConnection(_)),
+            "the failure must be the typed InitConnection variant: {error}"
+        );
+    }
+
+    #[test]
+    fn a_dial_the_server_refuses_is_a_connection_failure_on_restore() {
+        let _serial = lock_discipline_tests::serialized();
+        let error = init_from_seed(
+            VALID_SEED.to_string(),
+            2_000_000,
+            test_connection(CLOSED_PORT, "main", "Medium"),
+        )
+        .expect_err("a restore cannot build its client against a closed port");
+        assert!(
+            matches!(error, ZingolibError::InitConnection(_)),
+            "the failure must be the typed InitConnection variant: {error}"
+        );
+    }
+
+    #[test]
+    fn a_birthday_before_sapling_is_a_birthday_failure() {
+        let _serial = lock_discipline_tests::serialized();
+        let error = init_from_seed(
+            VALID_SEED.to_string(),
+            1,
+            test_connection("", "main", "Medium"),
+        )
+        .expect_err("a mainnet wallet cannot be born before sapling");
+        assert!(
+            matches!(error, ZingolibError::InitBirthday(_)),
+            "the failure must be the typed InitBirthday variant: {error}"
+        );
+    }
+
+    #[test]
+    fn a_viewing_key_that_does_not_parse_is_a_key_failure() {
+        let _serial = lock_discipline_tests::serialized();
+        let error = init_from_ufvk(
+            "uview1notakey".to_string(),
+            1,
+            test_connection("", "main", "Medium"),
+        )
+        .expect_err("a viewing key that does not parse does not build a wallet");
+        assert!(
+            matches!(error, ZingolibError::InitKey(_)),
+            "the failure must be the typed InitKey variant: {error}"
+        );
+    }
+
+    #[test]
+    fn a_client_error_at_init_is_a_connection_failure() {
+        let error = init_error(&LightClientError::ClientError(
+            netutils::GetClientError::InvalidScheme,
+        ));
+        assert!(matches!(error, ZingolibError::InitConnection(_)));
+    }
 
     #[test]
     fn invalid_server_uri_travels_on_the_error_channel() {
@@ -1446,8 +1567,8 @@ mod init_error_channel_tests {
         )
         .expect_err("unreadable wallet bytes must be typed, not prose in the data channel");
         assert!(
-            matches!(error, ZingolibError::Init(_)),
-            "the failure must be the typed Init variant: {error}"
+            matches!(error, ZingolibError::InitWalletFile(_)),
+            "the failure must be the typed InitWalletFile variant: {error}"
         );
         assert!(
             !error.to_string().contains("not-a-wallet"),
