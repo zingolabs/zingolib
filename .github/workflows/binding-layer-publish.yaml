@@ -87,6 +87,22 @@ jobs:
             exit 1
           fi
 
+      # The author association admits every collaborator, read-only and
+      # triage ones included, so the permission endpoint decides.
+      - name: Require write permission
+        env:
+          COMMENTER: ${{ github.event.comment.user.login }}
+        run: |
+          set -eu
+          permission="$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${COMMENTER}/permission" --jq .permission)"
+          case "$permission" in
+            admin|maintain|write) ;;
+            *)
+              echo "::error::${COMMENTER} has ${permission} permission on this repository, and /publish needs write"
+              exit 1
+              ;;
+          esac
+
       - name: Acknowledge the comment
         run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=eyes
 
@@ -133,6 +149,12 @@ jobs:
         env:
           COMMIT: ${{ steps.manifest.outputs.commit }}
         run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$COMMIT" >> "$GITHUB_OUTPUT"
+
+      # An issue_comment run is not among the commit's checks, so the
+      # comment is the only place a failure can show.
+      - name: Report the refusal
+        if: failure()
+        run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=confused
 
   android:
     needs: request
@@ -235,3 +257,10 @@ jobs:
 
       - name: Report the publish
         run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=rocket
+
+      # A failed build leaves the tool refusing in the step above, and a
+      # failed push or record fails there too; either way the comment is
+      # the only place the failure can show.
+      - name: Report the failure
+        if: failure()
+        run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=confused

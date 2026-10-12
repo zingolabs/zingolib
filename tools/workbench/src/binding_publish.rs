@@ -76,12 +76,6 @@ pub fn built_platforms(bundles: &Path, commit: &str) -> Vec<(&'static str, PathB
     built
 }
 
-fn file_name_of(file: &Path) -> Result<&str, Vec<String>> {
-    file.file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| vec![format!("{} has no file name", file.display())])
-}
-
 fn find_file(
     dir: &Path,
     what: &str,
@@ -169,7 +163,10 @@ fn bundle_of(root: &Path, platform: &str, dir: &Path, commit: &str) -> Result<Bu
 }
 
 fn swift_package_archive(root: &Path, dir: &Path, commit: &str) -> Result<PathBuf, Vec<String>> {
-    let staging = dir.with_file_name(format!("{}{PACKAGE_STAGING_SUFFIX}", file_name_of(dir)?));
+    let staging = dir.with_file_name(format!(
+        "{}{PACKAGE_STAGING_SUFFIX}",
+        crate::file_name_of(dir)?
+    ));
     let package_dir = crate::fresh_dir(&staging.join(binding_layer::SWIFT_PACKAGE))?;
     let output_dir = package_dir.join(binding_layer::SWIFT_PACKAGE_OUTPUT_DIR);
     std::fs::rename(dir, &output_dir).map_err(|e| {
@@ -184,7 +181,7 @@ fn swift_package_archive(root: &Path, dir: &Path, commit: &str) -> Result<PathBu
         root,
         &["show", &format!("{commit}:{}", manifest_path.display())],
     )?;
-    let manifest_file = package_dir.join(file_name_of(manifest_path)?);
+    let manifest_file = package_dir.join(crate::file_name_of(manifest_path)?);
     std::fs::write(&manifest_file, manifest_text)
         .map_err(|e| vec![format!("cannot write {}: {e}", manifest_file.display())])?;
     let archive_name = format!("{}{ARCHIVE_SUFFIX}", binding_layer::SWIFT_PACKAGE);
