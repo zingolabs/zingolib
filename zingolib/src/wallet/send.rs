@@ -356,22 +356,11 @@ mod tests {
 
     use crate::lightclient::LightClient;
     use crate::testutils::lightclient::from_inputs;
-    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
-    use crate::wallet::keys::unified::ReceiverSelection;
+    use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
     use crate::wallet::utils;
 
     const ORCHARD_FUNDS: u64 = 100_000;
     const PAYMENT: u64 = 20_000;
-
-    /// An Orchard address that belongs to no wallet in this test.
-    fn external_orchard_address() -> String {
-        let mut wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let (_, unified_address) = wallet
-            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
-            .expect("the external wallet derives an Orchard-only address");
-        unified_address.encode(&wallet.chain_type())
-    }
 
     /// HYPOTHESIS: a wallet that holds Orchard funds alone builds its
     /// transaction without parsing the Sapling prover, so a device with no
@@ -385,7 +374,7 @@ mod tests {
         let mut client = LightClient::new_for_test(wallet).await;
         let proposal = from_inputs::propose(
             &mut client,
-            vec![(&external_orchard_address(), PAYMENT, None)],
+            vec![(&synthetic_wallet::external_orchard_address(), PAYMENT, None)],
         )
         .await
         .expect("an Orchard-only wallet proposes an Orchard payment");
