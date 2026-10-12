@@ -7,6 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use zcash_protocol::PoolType;
+use zcash_protocol::memo::Memo;
 
 use zingolib::lightclient::LightClient;
 use zingolib::wallet::LightWallet;
@@ -23,6 +24,41 @@ use crate::finsight::{
 use crate::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransfer, ValueTransferKind, ValueTransfers,
 };
+
+/// The text-only memo policy this editorial layer applies: a text memo
+/// shows as its string; empty and non-text memos are not shown. The
+/// canonical summaries carry every memo losslessly typed.
+fn text_memo(memo: &Memo) -> Option<String> {
+    if let Memo::Text(text) = memo {
+        Some(text.to_string())
+    } else {
+        None
+    }
+}
+
+/// All text memos on the transaction's wallet-received shielded notes,
+/// in pool order ironwood, orchard, sapling: the received-memo view the
+/// text-only policy exposes, driving the memo-to-self classification.
+fn received_text_memos(transaction: &TransactionSummary) -> Vec<String> {
+    transaction
+        .shielded_notes_by_pool()
+        .into_iter()
+        .flat_map(|(notes, _)| notes.iter().filter_map(|note| text_memo(&note.memo)))
+        .collect()
+}
+
+/// The value of the wallet-received shielded notes whose memos the
+/// text-only policy displays, so a memo-to-self row's value agrees with
+/// the memos it shows; memo-less change is excluded with the rest.
+fn received_memo_value(transaction: &TransactionSummary) -> u64 {
+    transaction
+        .shielded_notes_by_pool()
+        .into_iter()
+        .flat_map(|(notes, _)| notes.iter())
+        .filter(|note| text_memo(&note.memo).is_some())
+        .map(|note| note.value)
+        .sum()
+}
 
 /// Creates one value transfer of `kind` for each shielded pool the transaction
 /// received notes into, newest pool first (ironwood, orchard, sapling).
@@ -41,7 +77,10 @@ fn shielded_pool_value_transfers(
                 notes.iter().map(|output| output.value).sum(),
                 None,
                 vec![pool],
-                notes.iter().filter_map(|note| note.memo.clone()).collect(),
+                notes
+                    .iter()
+                    .filter_map(|note| text_memo(&note.memo))
+                    .collect(),
             )
         })
         .collect()
@@ -136,7 +175,7 @@ fn create_send_value_transfers(
             .sum();
         let memos: Vec<String> = outgoing_notes_to_address
             .iter()
-            .filter_map(|&(note, _)| note.memo.clone())
+            .filter_map(|&(note, _)| text_memo(&note.memo))
             .collect();
         let has_notes_in = |pool: PoolType| {
             outgoing_notes_to_address
@@ -238,12 +277,12 @@ impl LightWalletPerspectiveExt for LightWallet {
                     value_transfers.append(&mut create_send_value_transfers(self, &transaction)?);
 
                     // create 1 memo-to-self if any number of memos are received in the sending transaction
-                    let memos = transaction.received_memos();
+                    let memos = received_text_memos(&transaction);
                     if !memos.is_empty() {
                         value_transfers.push(self_send_value_transfer(
                             &transaction,
                             SelfSendValueTransfer::MemoToSelf,
-                            transaction.received_memo_value(),
+                            received_memo_value(&transaction),
                             memos,
                         ));
                     }
@@ -264,7 +303,7 @@ impl LightWalletPerspectiveExt for LightWallet {
                     // any number of memos, otherwise 1 basic send-to-self so every transaction
                     // creates at least 1 value transfer.
                     // (deshield and other pool-movement kinds may join this list later.)
-                    let memos = transaction.received_memos();
+                    let memos = received_text_memos(&transaction);
                     let self_send_kind = if transaction.is_orchard_to_ironwood_migration() {
                         SelfSendValueTransfer::Migration
                     } else if !memos.is_empty() {

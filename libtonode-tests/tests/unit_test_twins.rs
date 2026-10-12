@@ -28,10 +28,13 @@
 //! either side.
 
 mod unit_test_twins {
+    use std::str::FromStr as _;
+
     use pepper_sync::wallet::IronwoodNote;
     use zcash_primitives::transaction::fees::zip317::{MARGINAL_FEE, MINIMUM_FEE};
     use zcash_protocol::PoolType;
     use zcash_protocol::consensus::{BlockHeight, COINBASE_MATURITY_BLOCKS};
+    use zcash_protocol::memo::Memo;
     use zcash_protocol::value::Zatoshis;
     use zingo_perspective::{LightClientPerspectiveExt as _, SentValueTransfer, ValueTransferKind};
     use zingo_status::confirmation_status::ConfirmationStatus;
@@ -176,7 +179,7 @@ mod unit_test_twins {
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 0,
-                None,
+                Memo::Empty,
             )],
             orchard_notes: vec![],
             sapling_notes: vec![],
@@ -218,7 +221,7 @@ mod unit_test_twins {
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 0,
-                None,
+                Memo::Empty,
             )],
             orchard_notes: vec![],
             sapling_notes: vec![],
@@ -228,7 +231,7 @@ mod unit_test_twins {
             outgoing_sapling_notes: vec![OutgoingNoteSummary {
                  output_index: 0,
                  value: first_send_to_sapling,
-                 memo: None,
+                 memo: Memo::Empty,
                  recipient: "zregtestsapling1sa4rckrf4zs6ny3l3ljnezupacvxfnjjn90lpeaa4ddtjeyww2ypzqr3jxfsta3t8dn3jk8cm4f".to_string(),
                  recipient_unified_address: Some("uregtest183rtm3qhxxermx3nxwa706va0xnypt3td648tayetchlp28hue08vrcnwq02ryyk5rh3y0xhftay8a5ynjdg8kr3juq5x0d9ygd5ffht".to_string()),
                  account_id: AccountId::ZERO,
@@ -255,7 +258,7 @@ mod unit_test_twins {
                 99_925_000,
                 SpendStatus::Unspent,
                 0,
-                None,
+                Memo::Empty,
             )],
             orchard_notes: vec![],
             sapling_notes: vec![],
@@ -344,7 +347,7 @@ mod unit_test_twins {
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 0,
-                Some("Second wave incoming".to_string()),
+                Memo::from_str("Second wave incoming").unwrap(),
             )],
             orchard_notes: vec![],
             sapling_notes: vec![],
@@ -388,7 +391,7 @@ mod unit_test_twins {
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 0,
-                None,
+                Memo::Empty,
             )],
             orchard_notes: vec![],
             sapling_notes: vec![],
@@ -427,7 +430,7 @@ TransactionSummary {
                 99_885_000,
                 SpendStatus::Unspent,
                 0,
-                None,
+                Memo::Empty,
             )],
             orchard_notes: vec![],
             sapling_notes: vec![],
@@ -437,7 +440,7 @@ TransactionSummary {
             outgoing_sapling_notes: vec![OutgoingNoteSummary {
                 output_index: 0,
                  value: second_send_to_sapling,
-                memo: None,
+                memo: Memo::Empty,
                  recipient: "zregtestsapling1sa4rckrf4zs6ny3l3ljnezupacvxfnjjn90lpeaa4ddtjeyww2ypzqr3jxfsta3t8dn3jk8cm4f".to_string(),
                  recipient_unified_address: Some("uregtest183rtm3qhxxermx3nxwa706va0xnypt3td648tayetchlp28hue08vrcnwq02ryyk5rh3y0xhftay8a5ynjdg8kr3juq5x0d9ygd5ffht".to_string()),
                  account_id: AccountId::ZERO,
@@ -477,7 +480,7 @@ TransactionSummary {
                 930_000,
                 SpendStatus::Unspent,
                 0,
-                None,
+                Memo::Empty,
             )],
             orchard_notes: vec![],
             sapling_notes: vec![],
