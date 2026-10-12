@@ -31,6 +31,7 @@ use zingolib::lightclient::migrate::{
     SplitStatus, SplitStep,
 };
 use zingolib::lightclient::{LightClient, SaveShutdown, TransmitProgressHandle};
+use zingolib::perspective::sync_progress;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
@@ -884,13 +885,16 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
                     .await
                     .map_err(not_yet_typed)?,
             };
-            Ok(json::JsonValue::from(status).pretty(JSON_INDENT))
+            Ok(
+                json::JsonValue::from(sync_progress::SyncProgress::from(status))
+                    .pretty(JSON_INDENT),
+            )
         }
         SyncSubCommand::Poll => match lightclient.poll_sync() {
             PollReport::NoHandle => Ok("Sync task has not been launched.".to_string()),
             PollReport::NotReady => Ok("Sync task is not complete.".to_string()),
             PollReport::Ready(result) => match result {
-                Ok(sync_result) => Ok(sync_result.to_string()),
+                Ok(sync_result) => Ok(sync_progress::SessionReport::from(sync_result).to_string()),
                 Err(e) => Err(not_yet_typed(e)),
             },
         },

@@ -50,6 +50,7 @@ use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::{LightClientError, SendError};
 use zingolib::lightclient::migrate::SplitStep;
 use zingolib::netutils::{self, GrpcIndexer, Indexer, time};
+use zingolib::perspective::sync_progress;
 use zingolib::utils;
 use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
 use zingolib::wallet;
@@ -2254,7 +2255,7 @@ pub fn poll_sync() -> Result<String, ZingolibError> {
                 RT.block_on(lightclient.capture_migration_witnesses())
                     .map_err(ffi_error)?;
                 Ok(json::object! {
-                    "sync_complete" => json::JsonValue::from(sync_result)
+                    "sync_complete" => json::JsonValue::from(sync_progress::SessionReport::from(sync_result))
                 }
                 .pretty(2))
             }
@@ -2349,7 +2350,9 @@ fn status_sync() -> Result<String, ZingolibError> {
         RT.block_on(async {
             let wallet = lightclient.wallet().read().await;
             match pepper_sync::sync_status(&*wallet).await {
-                Ok(status) => Ok(json::JsonValue::from(status).pretty(2)),
+                Ok(status) => {
+                    Ok(json::JsonValue::from(sync_progress::SyncProgress::from(status)).pretty(2))
+                }
                 Err(e) => Err(ZingolibError::sync(&e)),
             }
         })

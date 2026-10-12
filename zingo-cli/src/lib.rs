@@ -42,6 +42,7 @@ use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfi
 use zingolib::data::PollReport;
 use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use zingolib::netutils::Indexer as _;
+use zingolib::perspective::sync_progress;
 use zingolib::wallet::WalletSettings;
 
 use crate::commands::RT;
@@ -294,7 +295,7 @@ async fn prompt_indicator(
             {
                 sync_recovery.attempts_left = SYNC_RECOVERY_ATTEMPT_BUDGET;
             }
-            eprintln!("{sync_result}");
+            eprintln!("{}", sync_progress::SessionReport::from(sync_result));
             synced_indicator(scan_progress(lightclient).await)
         }
         PollReport::NotReady => syncing_indicator(scan_progress(lightclient).await),
@@ -326,7 +327,7 @@ async fn await_sync_narrated(lightclient: &mut LightClient) -> Result<String, St
             }
             PollReport::Ready(result) => {
                 return result
-                    .map(|sync_result| sync_result.to_string())
+                    .map(|sync_result| sync_progress::SessionReport::from(sync_result).to_string())
                     .map_err(|e| format!("Error: {}", commands::render_error_chain(&e)));
             }
         }
