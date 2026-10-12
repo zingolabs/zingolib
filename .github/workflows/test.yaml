@@ -6,10 +6,18 @@ on:
       nextest-flags:
         required: false
         type: string
+      # Names the suite in the job titles and in the archive artifact. Two
+      # calls of this workflow inside one run must pass different suites,
+      # or the second upload overwrites the first while its shards download.
+      suite:
+        required: false
+        type: string
+        default: normal
 
 env:
   NEXTEST-FLAGS: ${{ inputs.nextest-flags }}
   NEXTEST_VERSION: "0.9.132"
+  ARCHIVE: nextest-archive-${{ inputs.suite }}
 
 jobs:
   ensure-image:
@@ -31,7 +39,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
       - name: Install nextest
         uses: taiki-e/install-action@v2
@@ -43,24 +52,21 @@ jobs:
           apt-get update
           apt-get install -y libsqlite3-dev pkg-config
 
-      - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
-
       - name: Build and archive tests
         run: |
           cargo nextest archive --verbose \
             --workspace \
-            --archive-file nextest-archive-normal.tar.zst
+            --archive-file "${ARCHIVE}.tar.zst"
 
       - name: Upload archive
         uses: actions/upload-artifact@v7
         with:
-          name: nextest-archive-normal
-          path: nextest-archive-normal.tar.zst
+          name: ${{ env.ARCHIVE }}
+          path: ${{ env.ARCHIVE }}.tar.zst
           overwrite: true
 
   run-tests:
-    name: Run normal tests
+    name: Run ${{ inputs.suite }} tests
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     needs: [build-test-artifacts, ensure-image]
@@ -75,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2, 3, 4, 5, 6, 7, 8]
+        partition: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -91,15 +97,15 @@ jobs:
         with:
           tool: nextest@${{ env.NEXTEST_VERSION }}
 
-      - name: Download normal archive
+      - name: Download the ${{ inputs.suite }} archive
         uses: actions/download-artifact@v8
         with:
-          name: nextest-archive-normal
+          name: ${{ env.ARCHIVE }}
 
-      - name: Run normal tests
+      - name: Run the ${{ inputs.suite }} tests
         run: |
           cargo nextest run --verbose --profile ci --retries 0 \
-            --archive-file nextest-archive-normal.tar.zst \
+            --archive-file "${ARCHIVE}.tar.zst" \
             --workspace-remap ./ \
-            --partition count:${{ matrix.partition }}/8 \
+            --partition count:${{ matrix.partition }}/16 \
             ${{ env.NEXTEST-FLAGS }}
