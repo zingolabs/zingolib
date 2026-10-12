@@ -7,6 +7,16 @@
 
 #![forbid(unsafe_code)]
 
+macro_rules! from_diagnostics {
+    ($error:ident :: $variant:ident) => {
+        impl From<Vec<String>> for $error {
+            fn from(diagnostics: Vec<String>) -> Self {
+                $error::$variant(diagnostics)
+            }
+        }
+    };
+}
+
 pub mod binding_changelog;
 pub mod binding_layer;
 pub mod binding_manifest;
@@ -15,7 +25,7 @@ pub mod dupes_gate;
 pub mod orasust;
 pub mod session;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command, ExitStatus, Stdio};
 
@@ -190,6 +200,87 @@ pub fn git_in(directory: &Path, args: &[&str]) -> Result<String, Vec<String>> {
     stdout_in(directory, GIT, args, &[])
 }
 
+#[cfg(test)]
+const HERMETIC_GIT_CONFIG: [(&str, &str); 3] = [
+    ("user.name", "workbench"),
+    ("user.email", "workbench@example.invalid"),
+    ("commit.gpgsign", "false"),
+];
+
+#[cfg(test)]
+const HERMETIC_GIT_ENV: [(&str, &str); 2] = [
+    ("GIT_CONFIG_GLOBAL", "/dev/null"),
+    ("GIT_CONFIG_NOSYSTEM", "1"),
+];
+
+#[cfg(test)]
+const CONFIG_FLAG: &str = "-c";
+
+/// - Runs `git <args>` as a child process in `directory` under [`HERMETIC_GIT_CONFIG`],
+///   with the global and system git config masked by [`HERMETIC_GIT_ENV`].
+#[cfg(test)]
+pub(crate) fn hermetic_git(directory: &Path, args: &[&str]) -> Result<String, Vec<String>> {
+    let settings: Vec<String> = HERMETIC_GIT_CONFIG
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect();
+    let mut full: Vec<&str> = settings
+        .iter()
+        .flat_map(|setting| [CONFIG_FLAG, setting.as_str()])
+        .collect();
+    full.extend_from_slice(args);
+    Ok(stdout_in(directory, GIT, &full, &HERMETIC_GIT_ENV)?
+        .trim()
+        .to_string())
+}
+
+/// - Runs `git config` in `directory` for each setting of [`HERMETIC_GIT_CONFIG`].
+#[cfg(test)]
+pub(crate) fn configure_hermetic_git(directory: &Path) -> Result<(), Vec<String>> {
+    for (key, value) in HERMETIC_GIT_CONFIG {
+        hermetic_git(directory, &["config", key, value])?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+pub(crate) struct ScratchDir(PathBuf);
+
+#[cfg(test)]
+impl std::ops::Deref for ScratchDir {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+/// - Removes the directory and everything under it.
+#[cfg(test)]
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// - Removes and recreates `workbench-<name>-<pid>` under the system temp dir.
+#[cfg(test)]
+pub(crate) fn scratch_dir(name: &str) -> Result<ScratchDir, Vec<String>> {
+    let dir = std::env::temp_dir().join(format!("workbench-{name}-{}", std::process::id()));
+    Ok(ScratchDir(fresh_dir(&dir)?))
+}
+
+pub fn required<T>(value: Option<T>, what: &str) -> Result<T, Vec<String>> {
+    value.ok_or_else(|| vec![format!("no {what}")])
+}
+
+pub fn refused<T>(result: Result<T, Vec<String>>) -> Result<Vec<String>, Vec<String>> {
+    match result {
+        Err(diagnostics) => Ok(diagnostics),
+        Ok(_) => Err(vec!["expected a refusal, got a success".to_string()]),
+    }
+}
+
 /// - Runs `git ls-tree` in `root`.
 pub fn listed_at(root: &Path, revision: &str, relative: &str) -> Result<bool, Vec<String>> {
     git_in(root, &["ls-tree", "--name-only", revision, "--", relative])
@@ -208,6 +299,26 @@ pub fn commit_of(root: &Path, revision: &str) -> Result<String, Vec<String>> {
     )
     .map(|sha| sha.trim().to_string())
     .map_err(|_| vec![format!("{revision} is not a commit of this repository")])
+}
+
+/// - Runs `git merge-base --is-ancestor` in `root`.
+pub fn is_ancestor(root: &Path, ancestor: &str, descendant: &str) -> Result<bool, Vec<String>> {
+    let args = ["merge-base", "--is-ancestor", ancestor, descendant];
+    let finished = finished_in(root, GIT, &args, &[])?;
+    match finished.status.code() {
+        Some(IS_ANCESTOR) => Ok(true),
+        Some(IS_NOT_ANCESTOR) => Ok(false),
+        _ => Err(vec![format!("`{GIT} {}` failed", args.join(" "))]),
+    }
+}
+
+const IS_ANCESTOR: i32 = 0;
+const IS_NOT_ANCESTOR: i32 = 1;
+
+pub fn file_name_of(file: &Path) -> Result<&str, Vec<String>> {
+    file.file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| vec![format!("{} has no file name", file.display())])
 }
 
 pub const DEFAULT_BASE: &str = "origin/dev";
@@ -237,58 +348,82 @@ pub fn merge_base(root: &Path, base: &str) -> Result<String, Vec<String>> {
 
 const LOCKFILE: &str = "Cargo.lock";
 pub const MANIFEST_PATH_FLAG: &str = "--manifest-path";
-const LOCATE_PROJECT_ARGS: [&str; 3] = ["locate-project", "--message-format", "plain"];
-const PKGID: &str = "pkgid";
-pub const PACKAGE_ID_FORMAT: &str = "{p}";
-const MEMBERS_ARGS: [&str; 8] = [
-    "tree",
-    "--workspace",
-    "--depth",
-    "0",
-    "--prefix",
-    "none",
-    "--format",
-    PACKAGE_ID_FORMAT,
-];
-const PACKAGE_DIR_OPEN: &str = " (";
-const PACKAGE_DIR_CLOSE: char = ')';
+pub const PACKAGE_DIR_OPEN: &str = " (";
+pub const PACKAGE_DIR_CLOSE: char = ')';
+const LOCKED_FLAG: &str = "--locked";
 
-/// - Runs `cargo locate-project` as a child process in `dir`.
+/// - Runs `cargo metadata` as a child process, resolving dependencies only when `deps` is set.
+pub fn metadata_of(manifest: &Path, deps: bool) -> Result<cargo_metadata::Metadata, Vec<String>> {
+    let mut command = cargo_metadata::MetadataCommand::new();
+    command.manifest_path(manifest);
+    if deps {
+        command.other_options([LOCKED_FLAG.to_string()]);
+    } else {
+        command.no_deps();
+    }
+    command.exec().map_err(|e| {
+        vec![format!(
+            "`{CARGO} metadata` failed for {}: {e}",
+            manifest.display()
+        )]
+    })
+}
+
+/// - Resolves `path` through the filesystem, following symbolic links.
+pub fn canonical(path: &Path) -> Result<PathBuf, Vec<String>> {
+    at_path(path, "resolve", |path| std::fs::canonicalize(path))
+}
+
+/// - Runs `cargo metadata` as a child process in `dir`, without resolving dependencies.
+fn package_above(dir: &Path) -> Result<(PathBuf, bool), Vec<String>> {
+    let metadata = cargo_metadata::MetadataCommand::new()
+        .current_dir(dir)
+        .no_deps()
+        .exec()
+        .map_err(|e| {
+            vec![format!(
+                "`{CARGO} metadata` failed in {}: {e}",
+                dir.display()
+            )]
+        })?;
+    let dir = canonical(dir)?;
+    let nearest = metadata
+        .packages
+        .iter()
+        .filter_map(|package| {
+            let crate_dir = package.manifest_path.parent()?.as_std_path();
+            dir.starts_with(crate_dir).then_some((crate_dir, package))
+        })
+        .max_by_key(|(crate_dir, _)| crate_dir.components().count());
+    Ok(match nearest {
+        Some((_, package)) => (package.manifest_path.clone().into_std_path_buf(), true),
+        None => (
+            metadata.workspace_root.join(MANIFEST).into_std_path_buf(),
+            false,
+        ),
+    })
+}
+
+/// - Runs `cargo metadata` through [`package_above`].
 pub fn manifest_above(dir: &Path) -> Result<PathBuf, Vec<String>> {
-    stdout_in(dir, CARGO, &LOCATE_PROJECT_ARGS, &[]).map(|path| PathBuf::from(path.trim()))
+    package_above(dir).map(|(manifest, _)| manifest)
 }
 
-/// - Runs `cargo pkgid` as a child process with both output streams discarded.
+/// - Runs `cargo metadata` through [`metadata_of`].
 pub fn declares_a_package(manifest: &Path) -> Result<bool, Vec<String>> {
-    Command::new(CARGO)
-        .args([PKGID, MANIFEST_PATH_FLAG])
-        .arg(manifest)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .map_err(|e| vec![format!("failed to run {CARGO}: {e}")])
+    let manifest = canonical(manifest)?;
+    Ok(metadata_of(&manifest, false)?
+        .packages
+        .iter()
+        .any(|package| package.manifest_path.as_std_path() == manifest))
 }
 
-pub fn package_location(package: &str) -> Option<(&str, &Path)> {
-    let (head, rest) = package.split_once(PACKAGE_DIR_OPEN)?;
-    let dir = rest.strip_suffix(PACKAGE_DIR_CLOSE)?;
-    let name = head.split_whitespace().next()?;
-    Some((name, Path::new(dir)))
-}
-
-/// - Runs `cargo tree` as a child process.
+/// - Runs `cargo metadata` through [`metadata_of`].
 pub fn workspace_members(manifest: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
-    let args = [
-        MEMBERS_ARGS.as_slice(),
-        &[MANIFEST_PATH_FLAG, utf8(manifest)?],
-    ]
-    .concat();
-    let listing = stdout_of(CARGO, &args)?;
-    Ok(listing
-        .lines()
-        .filter_map(package_location)
-        .map(|(_, dir)| dir.join(MANIFEST))
+    Ok(metadata_of(manifest, false)?
+        .workspace_packages()
+        .iter()
+        .map(|package| package.manifest_path.clone().into_std_path_buf())
         .collect())
 }
 
@@ -302,22 +437,37 @@ pub fn workspace_manifests(root: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
         .collect())
 }
 
-/// - Runs `git diff` in `root`, then `cargo locate-project` and `cargo pkgid` once per changed directory.
+/// - Runs `git diff` in `root`, then `cargo metadata` once per changed directory.
 pub fn touched_manifests(root: &Path, merge_base: &str) -> Result<Vec<PathBuf>, Vec<String>> {
+    Ok(touched(root, merge_base)?.into_keys().collect())
+}
+
+/// - Runs the same child processes as [`touched_manifests`].
+pub fn touched_packages(root: &Path, merge_base: &str) -> Result<Vec<PathBuf>, Vec<String>> {
+    Ok(touched(root, merge_base)?
+        .into_iter()
+        .filter_map(|(manifest, declares_a_package)| declares_a_package.then_some(manifest))
+        .collect())
+}
+
+fn touched(root: &Path, merge_base: &str) -> Result<BTreeMap<PathBuf, bool>, Vec<String>> {
     let changed = git_in(root, &["diff", "--name-only", merge_base])?;
     let dirs: BTreeSet<PathBuf> = changed
         .lines()
         .map(|file| existing_dir_of(root, Path::new(file)))
         .collect();
-    let mut manifests = BTreeSet::new();
+    let mut manifests = BTreeMap::new();
     for dir in dirs {
-        let manifest = manifest_above(&dir)?;
+        let (manifest, declares) = package_above(&dir)?;
+        if manifests.contains_key(&manifest) {
+            continue;
+        }
         let beside = manifest.parent() == Some(dir.as_path());
-        if beside || declares_a_package(&manifest)? {
-            manifests.insert(manifest);
+        if beside || declares {
+            manifests.insert(manifest, declares);
         }
     }
-    Ok(manifests.into_iter().collect())
+    Ok(manifests)
 }
 
 fn existing_dir_of(root: &Path, file: &Path) -> PathBuf {
@@ -374,14 +524,22 @@ pub fn verdict(diagnostics: Vec<String>) -> Result<(), Vec<String>> {
     }
 }
 
-/// Read `path` to a string, or a one-line `cannot read …` diagnostic.
-pub fn read(path: &Path) -> Result<String, Vec<String>> {
-    String::from_utf8(read_bytes(path)?)
-        .map_err(|e| vec![format!("{} is not UTF-8: {e}", path.display())])
+fn at_path<T>(
+    path: &Path,
+    verb: &str,
+    action: impl FnOnce(&Path) -> std::io::Result<T>,
+) -> Result<T, Vec<String>> {
+    action(path).map_err(|e| vec![format!("cannot {verb} {}: {e}", path.display())])
 }
 
-pub fn read_bytes(path: &Path) -> Result<Vec<u8>, Vec<String>> {
-    std::fs::read(path).map_err(|e| vec![format!("cannot read {}: {e}", path.display())])
+/// - Writes `contents` to `path`.
+pub fn write(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), Vec<String>> {
+    at_path(path, "write", |path| std::fs::write(path, contents))
+}
+
+pub fn read(path: &Path) -> Result<String, Vec<String>> {
+    let bytes = at_path(path, "read", |path| std::fs::read(path))?;
+    String::from_utf8(bytes).map_err(|e| vec![format!("{} is not UTF-8: {e}", path.display())])
 }
 
 /// The value of the first `<flag> <value>` or `<flag>=<value>` argument, if present.
@@ -476,25 +634,28 @@ mod tests {
     const ABSENT_WORKBENCH_DIR: &str = "/absent/zingolib/tools/workbench";
 
     #[test]
-    fn the_root_is_two_directories_above_the_workbench_crate() {
+    fn the_root_is_two_directories_above_the_workbench_crate() -> Result<(), Vec<String>> {
         let workbench_dir = Path::new(BUILT_WORKBENCH_DIR);
+        let tools_dir = required(workbench_dir.parent(), "parent of the workbench directory")?;
         assert_eq!(
-            root_above(workbench_dir).unwrap(),
-            workbench_dir.parent().unwrap().parent().unwrap()
+            root_above(workbench_dir)?,
+            required(tools_dir.parent(), "parent of the tools directory")?
         );
+        Ok(())
     }
 
     #[test]
-    fn repo_root_is_the_root_above_the_built_crate_directory() {
-        assert_eq!(
-            repo_root().unwrap(),
-            root_above(Path::new(BUILT_WORKBENCH_DIR)).unwrap()
-        );
+    fn repo_root_is_the_root_above_the_built_crate_directory() -> Result<(), Vec<String>> {
+        assert_eq!(repo_root()?, root_above(Path::new(BUILT_WORKBENCH_DIR))?);
+        Ok(())
     }
 
     #[test]
-    fn a_foreign_manifest_directory_in_the_environment_does_not_move_the_root() {
-        let inner = Command::new(std::env::current_exe().unwrap())
+    fn a_foreign_manifest_directory_in_the_environment_does_not_move_the_root(
+    ) -> Result<(), Vec<String>> {
+        let test_binary = std::env::current_exe()
+            .map_err(|e| vec![format!("cannot locate the test binary: {e}")])?;
+        let inner = Command::new(test_binary)
             .env("CARGO_MANIFEST_DIR", ABSENT_WORKBENCH_DIR)
             .args([
                 "--exact",
@@ -502,23 +663,24 @@ mod tests {
             ])
             .stdout(Stdio::null())
             .status()
-            .unwrap();
+            .map_err(|e| vec![format!("cannot rerun the test binary: {e}")])?;
         assert!(inner.success());
+        Ok(())
     }
 
     #[test]
-    fn a_directory_that_is_not_the_workbench_crate_is_refused_by_name() {
+    fn a_directory_that_is_not_the_workbench_crate_is_refused_by_name() -> Result<(), Vec<String>> {
         let source_dir = Path::new(BUILT_WORKBENCH_DIR).join("src");
-        let diagnostic = root_above(&source_dir).unwrap_err().concat();
-        assert!(diagnostic.contains(source_dir.to_str().unwrap()));
+        let diagnostic = refused(root_above(&source_dir))?.concat();
+        assert!(diagnostic.contains(utf8(&source_dir)?));
+        Ok(())
     }
 
     #[test]
-    fn a_workbench_crate_directory_that_is_absent_is_refused_by_name() {
-        let diagnostic = root_above(Path::new(ABSENT_WORKBENCH_DIR))
-            .unwrap_err()
-            .concat();
+    fn a_workbench_crate_directory_that_is_absent_is_refused_by_name() -> Result<(), Vec<String>> {
+        let diagnostic = refused(root_above(Path::new(ABSENT_WORKBENCH_DIR)))?.concat();
         assert!(diagnostic.contains(ABSENT_WORKBENCH_DIR));
+        Ok(())
     }
 
     #[test]
@@ -534,21 +696,23 @@ mod tests {
     }
 
     #[test]
-    fn parses_separate_and_joined_dest() {
+    fn parses_separate_and_joined_dest() -> Result<(), Vec<String>> {
         let sep = vec![
             "--release".to_string(),
             "--dest".to_string(),
             "/x".to_string(),
         ];
-        assert_eq!(parse_dest(&sep).unwrap(), Some(PathBuf::from("/x")));
+        assert_eq!(parse_dest(&sep)?, Some(PathBuf::from("/x")));
 
         let joined = vec!["--dest=/y".to_string()];
-        assert_eq!(parse_dest(&joined).unwrap(), Some(PathBuf::from("/y")));
+        assert_eq!(parse_dest(&joined)?, Some(PathBuf::from("/y")));
+        Ok(())
     }
 
     #[test]
-    fn no_dest_is_none() {
-        assert_eq!(parse_dest(&["--release".to_string()]).unwrap(), None);
+    fn no_dest_is_none() -> Result<(), Vec<String>> {
+        assert_eq!(parse_dest(&["--release".to_string()])?, None);
+        Ok(())
     }
 
     #[test]
@@ -557,67 +721,59 @@ mod tests {
     }
 
     #[test]
-    fn a_package_location_names_the_crate_and_its_directory() {
+    fn the_manifest_above_a_nested_member_source_is_that_member() -> Result<(), Vec<String>> {
+        let root = repo_root()?;
         assert_eq!(
-            package_location("zingo v2.0.0 (/w/zingo-ffi/lib)"),
-            Some(("zingo", Path::new("/w/zingo-ffi/lib")))
-        );
-        assert_eq!(package_location("http v1.0.0"), None);
-        assert_eq!(package_location(""), None);
-    }
-
-    #[test]
-    fn the_manifest_above_a_nested_member_source_is_that_member() {
-        let root = repo_root().unwrap();
-        assert_eq!(
-            manifest_above(&root.join("zingo-ffi/lib/src")).unwrap(),
+            manifest_above(&root.join("zingo-ffi/lib/src"))?,
             root.join("zingo-ffi/lib").join(MANIFEST)
         );
-        assert_eq!(
-            manifest_above(&root.join("docs")).unwrap(),
-            root.join(MANIFEST)
-        );
+        assert_eq!(manifest_above(&root.join("docs"))?, root.join(MANIFEST));
+        Ok(())
     }
 
     #[test]
-    fn a_virtual_manifest_declares_no_package() {
-        let root = repo_root().unwrap();
-        assert!(!declares_a_package(&root.join(MANIFEST)).unwrap());
-        assert!(declares_a_package(&root.join("zingo-cli").join(MANIFEST)).unwrap());
+    fn a_virtual_manifest_declares_no_package() -> Result<(), Vec<String>> {
+        let root = repo_root()?;
+        assert!(!declares_a_package(&root.join(MANIFEST))?);
+        assert!(declares_a_package(&root.join("zingo-cli").join(MANIFEST))?);
+        Ok(())
     }
 
     #[test]
-    fn the_root_workspace_members_include_the_nested_ones() {
-        let root = repo_root().unwrap();
-        let members = workspace_members(&root.join(MANIFEST)).unwrap();
+    fn the_root_workspace_members_include_the_nested_ones() -> Result<(), Vec<String>> {
+        let root = repo_root()?;
+        let members = workspace_members(&root.join(MANIFEST))?;
         for member in ["zingo-ffi/lib", "zingo-ffi/uniffi-bindgen", "zingo-cli"] {
             assert!(
                 members.contains(&root.join(member).join(MANIFEST)),
                 "{member}"
             );
         }
+        Ok(())
     }
 
     #[test]
-    fn every_workspace_is_found_by_its_lockfile() {
-        let root = repo_root().unwrap();
-        let found = workspace_manifests(&root).unwrap();
+    fn every_workspace_is_found_by_its_lockfile() -> Result<(), Vec<String>> {
+        let root = repo_root()?;
+        let found = workspace_manifests(&root)?;
         for workspace in ["", "zingo-netutils", WORKBENCH_RELATIVE_DIR] {
             assert!(
                 found.contains(&root.join(workspace).join(MANIFEST)),
                 "{workspace:?}"
             );
         }
+        Ok(())
     }
 
     #[test]
-    fn a_deleted_file_resolves_through_its_nearest_existing_directory() {
-        let root = repo_root().unwrap();
+    fn a_deleted_file_resolves_through_its_nearest_existing_directory() -> Result<(), Vec<String>> {
+        let root = repo_root()?;
         assert_eq!(
             existing_dir_of(&root, Path::new("zingo-cli/src/gone/file.rs")),
             root.join("zingo-cli/src")
         );
         assert_eq!(existing_dir_of(&root, Path::new("README.md")), root);
+        Ok(())
     }
 
     #[test]

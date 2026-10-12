@@ -4,11 +4,6 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use workbench::{
-    display_relative, merge_base, read, repo_root, run, touched_manifests, workspace_manifests,
-    workspace_members, DEFAULT_BASE, MANIFEST,
-};
-
 /// The blessed entries, one per line, relative to the repository root.
 const BLESSING_PATH: &str = "tools/workbench/feature-census-blessed.txt";
 
@@ -78,22 +73,20 @@ struct Request {
     crates: Vec<String>,
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    run("feature-census", || census(&args), |()| {})
+fn main() -> ! {
+    workbench::dispatch_from_root("feature-census", census)
 }
 
 /// Probes each declared dependency feature and reports the ones nothing needs.
-fn census(args: &[String]) -> Result<(), Vec<String>> {
+fn census(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
         return Ok(());
     }
 
-    let root = repo_root()?;
     let request = parse(args)?;
-    let manifests = match scope(&root, &request)? {
-        Scope::Everything => every_manifest(&root)?,
+    let manifests = match scope(root, &request)? {
+        Scope::Everything => every_manifest(root)?,
         Scope::Touched(paths) => paths,
     };
 
@@ -104,15 +97,18 @@ fn census(args: &[String]) -> Result<(), Vec<String>> {
 
     let mut unneeded = Vec::new();
     for manifest in &manifests {
-        println!("feature-census: {}", display_relative(&root, manifest));
-        unneeded.extend(probe_manifest(&root, manifest)?);
+        println!(
+            "feature-census: {}",
+            workbench::display_relative(root, manifest)
+        );
+        unneeded.extend(probe_manifest(root, manifest)?);
     }
     unneeded.sort();
 
     if request.bless {
-        return bless(&root, &unneeded);
+        return bless(root, &unneeded);
     }
-    judge(&root, &unneeded)
+    judge(root, &unneeded)
 }
 
 /// Prints how to call the census and what each argument selects.
@@ -128,7 +124,10 @@ fn print_usage() {
     println!("by blessing the feature with a reason, and the census stays quiet after.");
     println!();
     println!("  --all          probe every manifest in the repository");
-    println!("  --base <ref>   compare against <ref> instead of {DEFAULT_BASE}");
+    println!(
+        "  --base <ref>   compare against <ref> instead of {}",
+        workbench::DEFAULT_BASE
+    );
     println!("  --bless        rewrite the blessing file to today's report");
     println!("  <crate-dir>    probe these crates and no others");
     println!();
@@ -140,7 +139,7 @@ fn parse(args: &[String]) -> Result<Request, Vec<String>> {
     let mut request = Request {
         all: false,
         bless: false,
-        base: DEFAULT_BASE.to_string(),
+        base: workbench::DEFAULT_BASE.to_string(),
         crates: Vec::new(),
     };
     let mut iter = args.iter();
@@ -175,7 +174,7 @@ fn scope(root: &Path, request: &Request) -> Result<Scope, Vec<String>> {
     if !request.crates.is_empty() {
         let mut manifests = Vec::new();
         for name in &request.crates {
-            let manifest = root.join(name).join(MANIFEST);
+            let manifest = root.join(name).join(workbench::MANIFEST);
             if !manifest.is_file() {
                 return Err(vec![format!("no crate at {}", manifest.display())]);
             }
@@ -183,17 +182,17 @@ fn scope(root: &Path, request: &Request) -> Result<Scope, Vec<String>> {
         }
         return Ok(Scope::Touched(manifests));
     }
-    Ok(Scope::Touched(touched_manifests(
+    Ok(Scope::Touched(workbench::touched_manifests(
         root,
-        &merge_base(root, &request.base)?,
+        &workbench::merge_base(root, &request.base)?,
     )?))
 }
 
 /// - Runs `git ls-files` and `cargo tree` through the library, once per workspace.
 fn every_manifest(root: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
     let mut manifests = Vec::new();
-    for workspace in workspace_manifests(root)? {
-        manifests.extend(workspace_members(&workspace)?);
+    for workspace in workbench::workspace_manifests(root)? {
+        manifests.extend(workbench::workspace_members(&workspace)?);
         manifests.push(workspace);
     }
     manifests.sort();
@@ -204,16 +203,16 @@ fn every_manifest(root: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
 /// Every declared dependency feature in `manifest` whose removal still compiles.
 fn probe_manifest(root: &Path, manifest: &Path) -> Result<Vec<Candidate>, Vec<String>> {
     let crate_dir = crate_name(root, manifest);
-    let original = read(manifest)?;
+    let original = workbench::read(manifest)?;
     let mut unneeded = Vec::new();
 
     for candidate in declared(&crate_dir, &original)? {
         let Some(without) = manifest_without(&original, &candidate) else {
             continue;
         };
-        write(manifest, &without)?;
+        workbench::write(manifest, &without)?;
         let compiled = check(root, manifest, &crate_dir);
-        write(manifest, &original)?;
+        workbench::write(manifest, &original)?;
         if compiled? {
             println!("  unneeded: {}", candidate.key());
             unneeded.push(candidate);
@@ -316,11 +315,6 @@ fn manifest_without(text: &str, candidate: &Candidate) -> Option<String> {
     Some(document.to_string())
 }
 
-/// Writes `text` to `path`, or a one-line diagnostic on failure.
-fn write(path: &Path, text: &str) -> Result<(), Vec<String>> {
-    std::fs::write(path, text).map_err(|e| vec![format!("cannot write {}: {e}", path.display())])
-}
-
 /// Whether the crate still compiles, with every target and the probe's features.
 fn check(root: &Path, manifest: &Path, crate_dir: &str) -> Result<bool, Vec<String>> {
     let mut command = Command::new("cargo");
@@ -330,7 +324,7 @@ fn check(root: &Path, manifest: &Path, crate_dir: &str) -> Result<bool, Vec<Stri
         .arg("check")
         .arg("--quiet")
         .arg("--all-targets");
-    if manifest == root.join(MANIFEST) {
+    if manifest == root.join(workbench::MANIFEST) {
         command.arg("--workspace");
     } else {
         command.arg("--manifest-path").arg(manifest);
@@ -368,7 +362,7 @@ fn blessings(root: &Path) -> Result<BTreeMap<String, String>, Vec<String>> {
         return Ok(BTreeMap::new());
     }
     let mut blessed = BTreeMap::new();
-    for line in read(&path)?.lines() {
+    for line in workbench::read(&path)?.lines() {
         let entry = line.trim();
         if entry.is_empty() || entry.starts_with('#') {
             continue;
@@ -426,7 +420,7 @@ fn bless(root: &Path, unneeded: &[Candidate]) -> Result<(), Vec<String>> {
         out.push_str(&reason);
         out.push('\n');
     }
-    write(&root.join(BLESSING_PATH), &out)?;
+    workbench::write(&root.join(BLESSING_PATH), &out)?;
     println!(
         "feature-census: blessed {} feature(s) into {BLESSING_PATH}",
         unneeded.len()
@@ -439,22 +433,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_manifest_reaches_the_nested_workspace_members() {
-        let root = repo_root().unwrap();
-        let manifests = every_manifest(&root).unwrap();
+    fn every_manifest_reaches_the_nested_workspace_members() -> Result<(), Vec<String>> {
+        let root = workbench::repo_root()?;
+        let manifests = every_manifest(&root)?;
         for member in ["zingo-ffi/lib", "zingo-ffi/uniffi-bindgen", "zingo-cli"] {
             assert!(
-                manifests.contains(&root.join(member).join(MANIFEST)),
+                manifests.contains(&root.join(member).join(workbench::MANIFEST)),
                 "{member} is a workspace member the census must probe"
             );
         }
-        assert!(manifests.contains(&root.join(MANIFEST)));
+        assert!(manifests.contains(&root.join(workbench::MANIFEST)));
+        Ok(())
     }
 
     /// A manifest's inline dependency tables yield one candidate per feature,
     /// each named by the dependency whose table encloses it.
     #[test]
-    fn declared_names_each_feature_by_its_dependency() {
+    fn declared_names_each_feature_by_its_dependency() -> Result<(), Vec<String>> {
         let manifest = r#"
 [dependencies]
 reqwest = { workspace = true, default-features = false, features = [
@@ -463,7 +458,7 @@ reqwest = { workspace = true, default-features = false, features = [
 ] }
 serde = { workspace = true, features = ["derive"] }
 "#;
-        let found = declared("zingo-price", manifest).unwrap();
+        let found = declared("zingo-price", manifest)?;
         let keys: Vec<String> = found.iter().map(Candidate::key).collect();
         assert_eq!(
             keys,
@@ -473,22 +468,23 @@ serde = { workspace = true, features = ["derive"] }
                 "zingo-price::serde::derive",
             ]
         );
+        Ok(())
     }
 
     #[test]
-    fn a_commented_out_feature_list_declares_nothing() {
+    fn a_commented_out_feature_list_declares_nothing() -> Result<(), Vec<String>> {
         let manifest =
             "[dependencies]\n# reqwest = { features = [\"json\"] }\nserde = { workspace = true }\n";
-        assert_eq!(declared("zingo-price", manifest).unwrap(), Vec::new());
+        assert_eq!(declared("zingo-price", manifest)?, Vec::new());
+        Ok(())
     }
 
     #[test]
-    fn workspace_and_target_dependencies_declare_features_too() {
+    fn workspace_and_target_dependencies_declare_features_too() -> Result<(), Vec<String>> {
         let manifest = "[workspace.dependencies]\nhttp = { version = \"1\", features = [\"std\"] }\n\n\
                         [target.'cfg(unix)'.dependencies]\nlibc = { version = \"0.2\", features = [\"extra_traits\"] }\n\n\
                         [dependencies.reqwest]\nversion = \"0.12\"\nfeatures = [\"json\"]\n";
-        let keys: Vec<String> = declared(".", manifest)
-            .unwrap()
+        let keys: Vec<String> = declared(".", manifest)?
             .iter()
             .map(Candidate::key)
             .collect();
@@ -496,50 +492,56 @@ serde = { workspace = true, features = ["derive"] }
             keys,
             vec![".::reqwest::json", ".::http::std", ".::libc::extra_traits"]
         );
+        Ok(())
     }
 
     #[test]
-    fn a_bracket_inside_a_comment_does_not_end_the_list() {
+    fn a_bracket_inside_a_comment_does_not_end_the_list() -> Result<(), Vec<String>> {
         let manifest =
             "[dependencies]\nreqwest = { features = [\n    \"json\", # ]\n    \"socks\",\n] }\n";
-        let features: Vec<String> = declared("zingo-price", manifest)
-            .unwrap()
+        let features: Vec<String> = declared("zingo-price", manifest)?
             .into_iter()
             .map(|candidate| candidate.feature)
             .collect();
         assert_eq!(features, vec!["json".to_string(), "socks".to_string()]);
+        Ok(())
     }
 
     /// `default-features` never reads as a feature list of its own, so a
     /// dependency that disables defaults contributes no phantom candidate.
     #[test]
-    fn default_features_is_not_a_feature_list() {
+    fn default_features_is_not_a_feature_list() -> Result<(), Vec<String>> {
         let manifest = "[dependencies]\nhttp = { version = \"1\", default-features = false }\n";
-        assert_eq!(declared("zingolib", manifest).unwrap(), Vec::new());
+        assert_eq!(declared("zingolib", manifest)?, Vec::new());
+        Ok(())
     }
 
     /// Removal keeps every other item and every other line of the manifest,
     /// whether the list was written across lines or all on one.
     #[test]
-    fn removal_keeps_every_other_item() {
+    fn removal_keeps_every_other_item() -> Result<(), Vec<String>> {
         for manifest in [
             "[dependencies]\nreqwest = { features = [\n    \"json\",\n    \"socks\",\n] }\nserde = \"1\"\n",
             "[dependencies]\nreqwest = { features = [\"json\", \"socks\"] }\nserde = \"1\"\n",
         ] {
-            let candidate = declared("zingo-price", manifest)
-                .unwrap()
-                .into_iter()
-                .find(|found| found.feature == "json")
-                .expect("json is declared");
-            let without = manifest_without(manifest, &candidate).expect("the feature is present");
-            let remaining: Vec<String> = declared("zingo-price", &without)
-                .unwrap()
+            let candidate = workbench::required(
+                declared("zingo-price", manifest)?
+                    .into_iter()
+                    .find(|found| found.feature == "json"),
+                "declared json feature",
+            )?;
+            let without = workbench::required(
+                manifest_without(manifest, &candidate),
+                "manifest without the json feature",
+            )?;
+            let remaining: Vec<String> = declared("zingo-price", &without)?
                 .into_iter()
                 .map(|found| found.feature)
                 .collect();
             assert_eq!(remaining, vec!["socks".to_string()], "in {manifest:?}");
             assert!(without.ends_with("serde = \"1\"\n"), "the rest of {manifest:?} stays");
         }
+        Ok(())
     }
 
     /// A feature the manifest does not declare cannot be removed from it.

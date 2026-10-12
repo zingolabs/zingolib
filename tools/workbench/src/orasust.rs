@@ -105,10 +105,7 @@ pub fn push(
         .iter()
         .map(|(key, value)| format!("{key}{ANNOTATION_SEPARATOR}{value}"))
         .collect();
-    let name = file
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| vec![format!("{} has no file name", file.display())])?;
+    let name = crate::file_name_of(file)?;
     let layer = format!("{name}{MEDIA_TYPE_SEPARATOR}{media_type}");
     let mut args = vec![PUSH, USERNAME_FLAG, username, PASSWORD_STDIN_FLAG];
     for pair in &pairs {
@@ -196,11 +193,12 @@ mod tests {
     }
 
     #[test]
-    fn the_pin_is_read_from_the_workbench_manifest() {
-        let pin = version().unwrap();
+    fn the_pin_is_read_from_the_workbench_manifest() -> Result<(), Vec<String>> {
+        let pin = version()?;
         let components: Vec<&str> = pin.split('.').collect();
         assert_eq!(components.len(), 3, "{pin} is not a release version");
         assert!(components.iter().all(|c| c.parse::<u64>().is_ok()), "{pin}");
+        Ok(())
     }
 
     #[test]
