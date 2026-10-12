@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `wallet::keys::WalletKind` and `LightWallet::kind`, the wallet's key material as one of `Mnemonic`, `SpendingKey`, `ViewingKey` with the receivers the key holds, or `NoKeys`, or `KeyError::NoAccountKeys` for a wallet without account zero. zingo-cli and the FFI each computed this themselves.
 
 ### Changed
+- `MigrationError::SplitTransactionFailed` and `SplitConfirmationTimeout` are
+  `TransactionFailed` and `ConfirmationTimeout`. The confirmation wait is
+  shared by note splits and migration parts, so the variants drop the
+  `Split` prefix; `SplitDidNotConverge` keeps its name, being split-only.
 - `SaplingParams` is a plain struct whose `SPEND` and `OUTPUT` constants are
   the embedded Sapling proving parameters, read by `include_bytes!` straight
   from the parameter cache the build script downloads into. `SaplingParams::get`
