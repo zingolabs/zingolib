@@ -598,6 +598,9 @@ mod tests {
             orchard_outputs_scanned: NOTHING_SCANNED,
             ironwood_outputs_scanned: NOTHING_SCANNED,
             percentage_total_outputs_scanned: 0.0,
+            total_outputs_scanned: 0,
+            total_outputs: 0,
+            nullifier_retrieval_pending: false,
         }
     }
 }

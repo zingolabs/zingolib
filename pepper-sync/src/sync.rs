@@ -91,6 +91,7 @@ pub struct SyncStatus {
     pub sync_start_height: BlockHeight,
     pub session_blocks_scanned: u32,
     pub total_blocks_scanned: u32,
+    pub total_blocks: u32,
     pub percentage_total_blocks_scanned: f32,
     pub session_sapling_outputs_scanned: u32,
     pub total_sapling_outputs_scanned: u32,
@@ -125,6 +126,46 @@ impl SyncStatus {
                 .scan_ranges
                 .iter()
                 .all(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+    }
+
+    /// ```
+    /// use pepper_sync::sync::{ScanPriority, ScanRange, SyncStatus};
+    /// use zcash_protocol::consensus::BlockHeight;
+    ///
+    /// let mut status = SyncStatus {
+    ///     scan_ranges: vec![ScanRange::from_parts(
+    ///         BlockHeight::from_u32(1)..BlockHeight::from_u32(2),
+    ///         ScanPriority::ScannedWithoutMapping,
+    ///     )],
+    ///     sync_start_height: BlockHeight::from_u32(1),
+    ///     session_blocks_scanned: 1,
+    ///     total_blocks_scanned: 1,
+    ///     total_blocks: 1,
+    ///     percentage_total_blocks_scanned: 100.0,
+    ///     session_sapling_outputs_scanned: 0,
+    ///     total_sapling_outputs_scanned: 0,
+    ///     session_orchard_outputs_scanned: 0,
+    ///     total_orchard_outputs_scanned: 0,
+    ///     session_ironwood_outputs_scanned: 0,
+    ///     total_ironwood_outputs_scanned: 0,
+    ///     percentage_total_outputs_scanned: 100.0,
+    ///     total_outputs_scanned: 0,
+    ///     total_outputs: 0,
+    /// };
+    /// assert!(status.nullifier_retrieval_pending());
+    /// assert!(!status.is_complete());
+    ///
+    /// status.scan_ranges = vec![ScanRange::from_parts(
+    ///     BlockHeight::from_u32(1)..BlockHeight::from_u32(2),
+    ///     ScanPriority::Scanned,
+    /// )];
+    /// assert!(!status.nullifier_retrieval_pending());
+    /// assert!(status.is_complete());
+    /// ```
+    pub fn nullifier_retrieval_pending(&self) -> bool {
+        self.scan_ranges
+            .iter()
+            .any(|scan_range| scan_range.priority().awaits_nullifier_retrieval())
     }
 }
 
@@ -183,6 +224,9 @@ pub struct SyncResult {
     pub orchard_outputs_scanned: u32,
     pub ironwood_outputs_scanned: u32,
     pub percentage_total_outputs_scanned: f32,
+    pub total_outputs_scanned: u64,
+    pub total_outputs: u64,
+    pub nullifier_retrieval_pending: bool,
 }
 
 impl std::fmt::Display for SyncResult {
@@ -927,6 +971,9 @@ where
         orchard_outputs_scanned: sync_status.session_orchard_outputs_scanned,
         ironwood_outputs_scanned: sync_status.session_ironwood_outputs_scanned,
         percentage_total_outputs_scanned: sync_status.percentage_total_outputs_scanned,
+        total_outputs_scanned: sync_status.total_outputs_scanned,
+        total_outputs: sync_status.total_outputs,
+        nullifier_retrieval_pending: sync_status.nullifier_retrieval_pending(),
     })
 }
 
@@ -1067,6 +1114,7 @@ where
             sync_start_height: 0.into(),
             session_blocks_scanned: 0,
             total_blocks_scanned: 0,
+            total_blocks: 0,
             percentage_total_blocks_scanned: NO_PROGRESS_PERCENTAGE,
             session_sapling_outputs_scanned: 0,
             session_orchard_outputs_scanned: 0,
@@ -1168,6 +1216,7 @@ where
         sync_start_height: sync_state.initial_sync_state.sync_start_height,
         session_blocks_scanned,
         total_blocks_scanned,
+        total_blocks,
         percentage_total_blocks_scanned,
         session_sapling_outputs_scanned,
         total_sapling_outputs_scanned,
@@ -3037,6 +3086,7 @@ mod test {
                 sync_start_height: sync_start_height.into(),
                 session_blocks_scanned: 0,
                 total_blocks_scanned: 0,
+                total_blocks: 0,
                 percentage_total_blocks_scanned: 0.0,
                 session_sapling_outputs_scanned: 0,
                 total_sapling_outputs_scanned: 0,

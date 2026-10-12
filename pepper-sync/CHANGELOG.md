@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- `sync::SyncStatus::total_blocks`, the block span from the wallet birthday to
+  the last known chain height, the denominator `sync_status` already divided
+  by and never reported.
+- `sync::SyncStatus::nullifier_retrieval_pending`, whether any scan range still
+  awaits nullifier mapping or refetching.
+- `sync::SyncResult::total_outputs_scanned`, `sync::SyncResult::total_outputs`,
+  and `sync::SyncResult::nullifier_retrieval_pending`, copied from the final
+  sync status of the session, so a consumer can derive the session's total
+  progress from the result alone.
 - `sync::ScanRange::encloses` and `sync::ScanRange::overlaps`, the geometry of
   a scan range against a block range, and `sync::ScanPriority::in_flight`, the
   priority the wallet holds a selected range at while its scan task runs.
