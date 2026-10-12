@@ -4154,6 +4154,11 @@ mod boundary_pruning {
     const WINDOW_BUCKET: u64 = ANCHOR_BUCKET + 1;
     const ANCHOR_BOUNDARY: u32 = ANCHOR_BUCKET as u32 * PRUNED_BUCKET_MODULUS;
     const DEFERRED_NU6_3: u32 = 200;
+    const BIRTHDAY_CHECKPOINT_RUNWAY: u32 = MAX_SHARDTREE_CHECKPOINTS;
+    const _: () = assert!(
+        BIRTHDAY_CHECKPOINT_RUNWAY + 2 < DEFERRED_NU6_3,
+        "the funding must sit above every checkpoint the birthday verification leaves and still confirm before NU6.3 activates"
+    );
     const TARGET_TIP: u32 =
         WINDOW_BUCKET as u32 * PRUNED_BUCKET_MODULUS + (PRUNED_BUCKET_MODULUS - HIDDEN_BLOCKS) / 2;
     const _: () = assert!(
@@ -4287,7 +4292,7 @@ mod boundary_pruning {
         .await;
         {
             let mut chain = net.chain.write().await;
-            chain.mine_empty_blocks(1);
+            chain.mine_empty_blocks(BIRTHDAY_CHECKPOINT_RUNWAY);
             chain.mine_block(vec![funding_transaction]);
             let funded_tip = chain.tip();
             assert!(
@@ -4335,6 +4340,8 @@ mod boundary_pruning {
             );
         }
 
+        #[cfg(feature = "nym")]
+        recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
         let sent = recipient.transmit_due_parts().await.unwrap();
         assert!(sent.is_empty(), "nothing must be transmitted: {sent:?}");
         assert_eq!(
