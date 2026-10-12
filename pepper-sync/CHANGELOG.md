@@ -10,9 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
-- `wallet::SyncState::set_session_baseline_for_test` (behind `test-features`): places a
-  sync state in the documented overshoot condition, where the session baseline has passed
-  the span frozen at sync start, so consumers can regression-test their progress surfaces.
+- `wallet::SyncState::set_session_baseline_for_test` (behind `test-features`): sets a
+  session baseline above the span, a state the sync engine never records, so consumers
+  can test their progress surfaces over inconsistent state.
 - `sync::ScanRange::encloses` and `sync::ScanRange::overlaps`, the geometry of
   a scan range against a block range, and `sync::ScanPriority::in_flight`, the
   priority the wallet holds a selected range at while its scan task runs.

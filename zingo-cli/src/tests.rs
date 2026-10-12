@@ -1487,12 +1487,12 @@ mod scan_progress_blast_radius {
         SyncRecovery
     }
 
-    /// A client whose scanning has passed the tree bounds frozen at sync
-    /// start: the ordinary condition `SyncStatus::total_outputs_scanned`
-    /// documents, and the one that took the session down. Construction is
-    /// async, so the test rig holds its own crossing into the runtime.
+    /// A client whose session baseline exceeds its span, a state the sync
+    /// engine never records and the one that took the session down.
+    /// Construction is async, so the test rig holds its own crossing into
+    /// the runtime.
     #[allow(clippy::disallowed_methods)]
-    fn client_scanned_past_its_frozen_bounds() -> LightClient {
+    fn client_with_a_baseline_above_its_span() -> LightClient {
         let client = RT.block_on(LightClient::new_for_test(
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
         ));
@@ -1507,18 +1507,18 @@ mod scan_progress_blast_radius {
 
     /// HYPOTHESIS: rendering a prompt over such a wallet returns an
     /// indicator, because a session must not die computing a statistic it
-    /// never reads. Falsified while the session percentage divides by a
-    /// span its baseline has already passed: the panic escapes
-    /// `scan_progress`'s `.ok()` and unwinds the command loop.
+    /// never reads. Falsified while a session percentage divided by that
+    /// span: the panic escaped `scan_progress`'s `.ok()` and unwound the
+    /// command loop.
     #[test]
     #[allow(clippy::disallowed_methods)]
-    fn a_prompt_survives_scanning_past_the_frozen_bounds() {
-        let mut client = client_scanned_past_its_frozen_bounds();
+    fn a_prompt_survives_a_baseline_above_the_span() {
+        let mut client = client_with_a_baseline_above_its_span();
         let mut sync_recovery = parked_recovery();
         let indicator = RT.block_on(prompt_indicator(&mut client, &mut sync_recovery));
         assert!(
             !indicator.is_empty(),
-            "the prompt must render over an overshot wallet: {indicator:?}"
+            "the prompt must render over an inconsistent wallet: {indicator:?}"
         );
     }
 }

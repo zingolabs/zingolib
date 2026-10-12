@@ -830,9 +830,8 @@ impl SyncState {
         sync_state
     }
 
-    /// Places this state in the overshoot condition
-    /// [`crate::sync::SyncStatus::total_outputs_scanned`] documents, where
-    /// the session baseline has passed the span frozen at sync start.
+    /// Sets a session baseline the sync engine never records, one above
+    /// the span, for tests of progress surfaces over inconsistent state.
     pub fn set_session_baseline_for_test(&mut self, start_height: BlockHeight, baseline: u32) {
         self.initial_sync_state.sync_start_height = start_height;
         self.initial_sync_state.previously_scanned_orchard_outputs = baseline;

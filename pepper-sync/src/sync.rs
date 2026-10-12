@@ -101,13 +101,13 @@ pub struct SyncStatus {
     pub total_ironwood_outputs_scanned: u32,
     pub percentage_total_outputs_scanned: f32,
     /// Numerator of the exact scan-progress ratio: outputs scanned so far
-    /// across both shielded pools. May exceed `total_outputs`, whose tree
-    /// bounds are fixed at sync start, when scanning continues past them
-    /// into chain growth.
+    /// across every shielded pool. Never exceeds `total_outputs`: the sync
+    /// engine extends the tree bounds to each newly mined block under the
+    /// wallet lock before it scans that block.
     pub total_outputs_scanned: u64,
     /// Denominator of the exact scan-progress ratio: outputs in the chain
     /// between the wallet birthday and the last known chain height, across
-    /// both shielded pools. Zero when sync has never started, and also when
+    /// every shielded pool. Zero when sync has never started, and also when
     /// the range from birthday to chain height contains no shielded outputs.
     pub total_outputs: u64,
 }
@@ -3604,12 +3604,11 @@ mod test {
         }
     }
 
-    /// The scan-progress baseline hazard, at its two narrowest scopes.
-    ///
-    /// `SyncStatus::total_outputs_scanned` documents that a live scanned
-    /// count passes the span frozen at sync start "when scanning continues
-    /// past them into chain growth". Any code that subtracts one from the
-    /// other therefore meets an unsigned underflow in ordinary operation.
+    /// `sync_status` over a session baseline above its span, a state the
+    /// sync engine does not produce: it extends the tree bounds with the
+    /// chain under the wallet lock and recomputes the baseline after every
+    /// truncation. The function is public and reads whatever state a
+    /// wallet holds, so it must still not panic on that state.
     mod scan_progress_baseline {
         use std::collections::BTreeMap;
 
@@ -3686,19 +3685,18 @@ mod test {
             assert_eq!(75_u32.saturating_sub(70), 5);
         }
 
-        /// HYPOTHESIS: `sync_status` survives the overshoot its own
-        /// documentation describes, and reports the exact ratio unreduced,
-        /// instead of taking its caller down. Falsified while the session
-        /// percentage divides by a span the baseline has already passed.
+        /// HYPOTHESIS: `sync_status` reports a hand-built state whose
+        /// session baseline exceeds its span, with the ratio unreduced and
+        /// the session count saturated, instead of taking its caller down.
+        /// Falsified while a session percentage divided by that span.
         #[tokio::test]
-        async fn status_survives_scanning_past_the_frozen_tree_bounds() {
+        async fn status_survives_a_baseline_above_the_span() {
             let mut sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
                 BlockHeight::from_u32(1_000)..BlockHeight::from_u32(1_010),
                 ScanPriority::Scanned,
             )]);
             sync_state.initial_sync_state.sync_start_height = BlockHeight::from_u32(1_000);
-            // The frozen span: ten orchard outputs between the wallet
-            // bounds measured at sync start.
+            // The span: ten orchard outputs between the recorded tree bounds.
             sync_state.initial_sync_state.wallet_tree_bounds = TreeBounds {
                 sapling_initial_tree_size: 100,
                 sapling_final_tree_size: 100,
@@ -3707,8 +3705,7 @@ mod test {
                 ironwood_initial_tree_size: 300,
                 ironwood_final_tree_size: 300,
             };
-            // The live baseline has already passed that span, exactly as
-            // scanning into chain growth produces.
+            // A baseline above that span, which the engine never records.
             sync_state
                 .initial_sync_state
                 .previously_scanned_orchard_outputs = 70;
@@ -3730,11 +3727,9 @@ mod test {
 
             let status = sync_status(&wallet)
                 .await
-                .expect("an overshoot is an ordinary reading, not a failure");
+                .expect("an inconsistent state is a reading, not a failure");
 
-            // The exact ratio is reported unreduced: the numerator is
-            // allowed to exceed the denominator, which is what the
-            // overshoot means.
+            // The exact ratio is reported unreduced.
             assert_eq!(status.total_outputs_scanned, 75);
             assert_eq!(status.total_outputs, 10);
             // The session count saturates rather than underflowing.
