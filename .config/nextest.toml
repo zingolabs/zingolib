@@ -10,11 +10,6 @@ filter = 'package(libtonode-tests) | package(zingo-cli)'
 filter = 'test(store_all_checkpoints_in_verification_window)'
 slow-timeout = { period = "60s", terminate-after = 30, grace-period = "30s" }
 
-# Mines and scans a ~235-block leap past the first migration bucket boundary.
-[[profile.default.overrides]]
-filter = 'test(unavailable_boundary_tree_state_skips_without_sync)'
-slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
-
 # Long-chain heavies run close to the default limit.
 [[profile.default.overrides]]
 filter = '''
@@ -42,11 +37,6 @@ filter = 'package(libtonode-tests) | package(zingo-cli)'
 [[profile.ci.overrides]]
 filter = 'test(store_all_checkpoints_in_verification_window)'
 slow-timeout = { period = "60s", terminate-after = 30, grace-period = "30s" }
-
-# Mines and scans a ~235-block leap past the first migration bucket boundary.
-[[profile.ci.overrides]]
-filter = 'test(unavailable_boundary_tree_state_skips_without_sync)'
-slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
 
 # Long-chain heavies run close to the default limit.
 [[profile.ci.overrides]]
