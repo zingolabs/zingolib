@@ -17,9 +17,9 @@ use zingolib::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind, ValueTransfers,
 };
 use zingolib::testutils::lightclient::from_inputs;
+use zingolib::testutils::migration::inject_scheduled_migration;
 use zingolib::wallet::migration::{
-    BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId, PartRecord,
-    PartState, RecommendedAction, SigningStrategy,
+    MigrationParams, MigrationPhase, PartId, PartState, RecommendedAction,
 };
 use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 use zingolib_testutils::setup_metrics::MeteredNet;
@@ -84,60 +84,6 @@ fn migrated_value(value_transfers: &ValueTransfers, txids: &[TxId]) -> u64 {
         .sum()
 }
 
-/// Persists a hand-built [`MigrationState`] whose parts are bound to real
-/// wallet notes, standing in for the completed note-splitting phase so the
-/// Phase 2 machinery can be exercised before Ironwood lands on the node
-/// path. `bucket_index` assigns every part to that bucket. `None` leaves
-/// them bound but unscheduled. `bucket_modulus` overrides the provisional
-/// bucket geometry: every consumer of the schedule reads it from the
-/// injected state, so a test can shrink the chain it must mine.
-async fn inject_scheduled_migration(
-    client: &LightClient,
-    bound: Vec<(u64, OutputId, [u8; 32])>,
-    bucket_index: Option<u64>,
-    bucket_modulus: Option<u32>,
-) {
-    let mut wallet = client.wallet().write().await;
-    let mut params = MigrationParams::provisional(wallet.chain_type());
-    if let Some(bucket_modulus) = bucket_modulus {
-        params.bucket_modulus = bucket_modulus;
-    }
-    let parts = bound
-        .into_iter()
-        .enumerate()
-        .map(|(index, (denomination, output_id, nullifier))| {
-            let mut part = PartRecord::new(
-                PartId(u32::try_from(index).expect("test part count fits u32")),
-                denomination,
-                BoundNote {
-                    output_id,
-                    nullifier,
-                    // Never read on these paths: materialization revalidates
-                    // it, but these tests stop before materializing.
-                    commitment: [0; 32],
-                },
-            );
-            if let Some(bucket_index) = bucket_index {
-                part.assign(bucket_index).expect("fresh parts are bound");
-            }
-            part
-        })
-        .collect();
-    wallet.migration = Some(MigrationState {
-        consent: ConsentBinding {
-            params_hash: params.params_hash(),
-            plan_hash: [0; 32],
-            consented_at: 0,
-        },
-        params,
-        strategy: SigningStrategy::LazyAtBoundary,
-        mode: zingolib::wallet::migration::MigrationMode::Scheduled,
-        account: AccountId::ZERO,
-        phase: MigrationPhase::PartsScheduled,
-        parts,
-    });
-}
-
 /// A part's bound note is excluded from ordinary input selection while
 /// another note can satisfy the request, the fallback pass consumes it when
 /// nothing else can, and the external spend then invalidates the part on
@@ -159,8 +105,10 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
 
     let notes = orchard_note_records(&recipient).await;
     let reserved = note_by_value(&notes, 100_000);
+    let params = MigrationParams::provisional(recipient.wallet().read().await.chain_type());
     inject_scheduled_migration(
         &recipient,
+        params,
         vec![(100_000, reserved.output_id, reserved.nullifier)],
         None,
         None,
