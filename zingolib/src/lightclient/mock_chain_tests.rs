@@ -2355,18 +2355,18 @@ async fn the_nakednet_policy_reports_the_nakednet_route_over_a_ready_mixnet() {
     }
 }
 
+fn checkpoint_exists<S>(store: &S, height: u32) -> bool
+where
+    S: ShardStore<CheckpointId = BlockHeight>,
+{
+    store
+        .get_checkpoint(&BlockHeight::from_u32(height))
+        .expect("infallible")
+        .is_some()
+}
+
 #[tokio::test]
 async fn shardtree_roundtrip_restores_retained_checkpoints() {
-    fn checkpoint_exists<S>(store: &S, height: u32) -> bool
-    where
-        S: ShardStore<CheckpointId = BlockHeight>,
-    {
-        store
-            .get_checkpoint(&BlockHeight::from_u32(height))
-            .expect("infallible")
-            .is_some()
-    }
-
     fn all_checkpoints_stored<S>(store: &S, chain_height: u32) -> bool
     where
         S: ShardStore<CheckpointId = BlockHeight>,
@@ -2482,6 +2482,68 @@ async fn shardtree_roundtrip_restores_retained_checkpoints() {
             shard_trees.ironwood.store(),
             chain_height
         ));
+    }
+}
+
+#[tokio::test]
+async fn store_all_checkpoints_in_verification_window_on_the_mock_chain() {
+    const PAYMENT: u64 = 10_000;
+    const DENSE_CYCLES: u32 = 3;
+    const EMPTY_MIDDLE_BLOCKS: u32 = 86;
+
+    async fn dense_cycle(net: &MockNet, orchard_address: &str, sapling_address: &str) {
+        fund(net, vec![(orchard_address, PAYMENT, None)], 0).await;
+        fund(net, vec![(sapling_address, PAYMENT, None)], 0).await;
+        fund(
+            net,
+            vec![
+                (orchard_address, PAYMENT, None),
+                (sapling_address, PAYMENT, None),
+            ],
+            1,
+        )
+        .await;
+    }
+
+    let mut net = MockNet::launch().await;
+    let mut recipient = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+        .await;
+    let orchard_address =
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+    let sapling_address =
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Sapling)).await;
+
+    net.chain.write().await.mine_empty_blocks(1);
+    for _ in 0..DENSE_CYCLES {
+        dense_cycle(&net, &orchard_address, &sapling_address).await;
+    }
+    net.chain
+        .write()
+        .await
+        .mine_empty_blocks(EMPTY_MIDDLE_BLOCKS);
+    for _ in 0..DENSE_CYCLES {
+        dense_cycle(&net, &orchard_address, &sapling_address).await;
+    }
+    recipient.sync_and_await().await.unwrap();
+
+    let tip = net.chain.read().await.tip();
+    let window_start = tip - pepper_sync::sync::MAX_REORG_ALLOWANCE + 1;
+    let wallet = recipient.wallet().read().await;
+    let shard_trees = &wallet.shard_trees;
+    for height in window_start..=tip {
+        assert!(
+            checkpoint_exists(shard_trees.sapling.store(), height),
+            "missing sapling checkpoint at height {height}"
+        );
+        assert!(
+            checkpoint_exists(shard_trees.orchard.store(), height),
+            "missing orchard checkpoint at height {height}"
+        );
+        assert!(
+            checkpoint_exists(shard_trees.ironwood.store(), height),
+            "missing ironwood checkpoint at height {height}"
+        );
     }
 }
 
