@@ -100,6 +100,26 @@ const COMBINED_MODULEMAP: &str = "module.modulemap";
 /// The text between the two module maps in the combined module map.
 const MODULEMAP_SEPARATOR: &str = "\n";
 
+const SIMCTL_LIST_AVAILABLE_DEVICES: [&str; 5] =
+    ["xcrun", "simctl", "list", "devices", "available"];
+
+const XCODEBUILD_TEST: [&str; 3] = ["xcodebuild", "test", "-quiet"];
+
+const SCHEME_FLAG: &str = "-scheme";
+
+const DESTINATION_FLAG: &str = "-destination";
+
+const SIMULATOR_DESTINATION: &str = "platform=iOS Simulator,name=";
+
+fn xcodebuild_test(scheme: &str, simulator: &str) -> Vec<String> {
+    XCODEBUILD_TEST
+        .into_iter()
+        .chain([SCHEME_FLAG, scheme, DESTINATION_FLAG])
+        .map(String::from)
+        .chain(iter::once(format!("{SIMULATOR_DESTINATION}{simulator}")))
+        .collect()
+}
+
 /// The platform whose packaging to build.
 #[derive(Clone, Copy)]
 enum Platform {
@@ -151,6 +171,12 @@ enum Step {
         ndk: Option<binding_layer::NdkLink>,
         command: Vec<String>,
         to: path::PathBuf,
+    },
+    XcodeTest {
+        workdir: String,
+        scheme: String,
+        built: path::PathBuf,
+        consumed: path::PathBuf,
     },
 }
 
@@ -981,6 +1007,12 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
             &[],
             host(binding_layer::DESCRIPTOR_FILE),
         )],
+        vec![Step::XcodeTest {
+            workdir: roots.run_path(binding_layer::SWIFT_CONTRACT_TESTS_DIR),
+            scheme: binding_layer::swift_contract_tests_scheme(),
+            built: roots.out_host.clone(),
+            consumed: roots.host_path(&binding_layer::swift_package_output_dir()),
+        }],
     ];
     fresh_plan(
         roots,
@@ -1068,6 +1100,30 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
             workbench::create_parent(to)?;
             fs::write(to, format!("{descriptor}\n"))
                 .map_err(|e| vec![format!("cannot write {}: {e}", to.display())])
+        }
+        Step::XcodeTest {
+            workdir,
+            scheme,
+            built,
+            consumed,
+        } => {
+            let built = workbench::canonical(built)?;
+            let consumed = workbench::canonical(consumed)?;
+            if built != consumed {
+                return Err(vec![format!(
+                    "the Swift contract test compiles the package that reads {}, and this plan wrote {}",
+                    consumed.display(),
+                    built.display()
+                )]);
+            }
+            let listing = capture_command(
+                runner,
+                workdir,
+                &[],
+                &SIMCTL_LIST_AVAILABLE_DEVICES.map(String::from),
+            )?;
+            let simulator = binding_layer::ios_simulator(&listing)?;
+            run_command(runner, workdir, &[], &xcodebuild_test(scheme, &simulator))
         }
     }
 }
@@ -1267,6 +1323,42 @@ mod tests {
             format!("{TARGET_ADD} {}", targets.join(" "))
         );
         Ok(())
+    }
+
+    #[test]
+    fn the_ios_plan_ends_with_the_swift_contract_test_of_the_package_it_wrote(
+    ) -> Result<(), Vec<String>> {
+        let plan = ios_plan(&host_roots()?);
+        let Some(Step::XcodeTest {
+            workdir,
+            scheme,
+            built,
+            consumed,
+        }) = plan.last()
+        else {
+            return Err(vec![
+                "the iOS plan does not end with the Swift contract test".to_string(),
+            ]);
+        };
+        assert_eq!(
+            workdir,
+            &format!("{HOST_ROOT}/{}", binding_layer::SWIFT_CONTRACT_TESTS_DIR)
+        );
+        assert_eq!(scheme, &binding_layer::swift_contract_tests_scheme());
+        assert_eq!(built, path::Path::new(OUTSIDE_OUT));
+        assert_eq!(
+            consumed,
+            &path::Path::new(HOST_ROOT).join(binding_layer::swift_package_output_dir())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn the_xcodebuild_test_names_the_scheme_and_the_simulator() {
+        assert_eq!(
+            xcodebuild_test("Scheme-Package", "iPhone 16").join(" "),
+            "xcodebuild test -quiet -scheme Scheme-Package -destination platform=iOS Simulator,name=iPhone 16"
+        );
     }
 
     #[test]

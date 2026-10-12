@@ -103,6 +103,62 @@ pub const SWIFT_PACKAGE_MANIFEST: &str = "bindings/swift/Package.swift";
 
 pub const SWIFT_PACKAGE_OUTPUT_DIR: &str = "build";
 
+pub const SWIFT_CONTRACT_TESTS_DIR: &str = "zingo-netutils/nym-proxy-ffi/contract-tests";
+
+pub const SWIFT_CONTRACT_TESTS_MANIFEST: &str =
+    "zingo-netutils/nym-proxy-ffi/contract-tests/Package.swift";
+
+pub const SWIFT_CONTRACT_TESTS_PACKAGE: &str = "ZingoBindingsContractTests";
+
+pub const SWIFT_PACKAGE_FROM_CONTRACT_TESTS: &str = "../../../bindings/swift";
+
+const SWIFTPM_PACKAGE_SCHEME_SUFFIX: &str = "-Package";
+
+pub fn swift_contract_tests_scheme() -> String {
+    format!("{SWIFT_CONTRACT_TESTS_PACKAGE}{SWIFTPM_PACKAGE_SCHEME_SUFFIX}")
+}
+
+const SIMCTL_RUNTIME_PREFIX: &str = "-- ";
+
+const SIMCTL_RUNTIME_SUFFIX: &str = " --";
+
+const SIMCTL_IOS_RUNTIME: &str = "iOS ";
+
+const SIMCTL_IPHONE: &str = "iPhone";
+
+const SIMCTL_FIELD_OPEN: &str = " (";
+
+const SIMCTL_DEVICE_FIELDS: usize = 3;
+
+pub fn ios_simulator(listing: &str) -> Result<String, Vec<String>> {
+    let mut in_ios_runtime = false;
+    for line in listing.lines() {
+        if let Some(runtime) = line
+            .strip_prefix(SIMCTL_RUNTIME_PREFIX)
+            .and_then(|rest| rest.strip_suffix(SIMCTL_RUNTIME_SUFFIX))
+        {
+            in_ios_runtime = runtime.starts_with(SIMCTL_IOS_RUNTIME);
+            continue;
+        }
+        if !in_ios_runtime {
+            continue;
+        }
+        let fields: Vec<&str> = line
+            .trim()
+            .rsplitn(SIMCTL_DEVICE_FIELDS, SIMCTL_FIELD_OPEN)
+            .collect();
+        let [_state, _udid, name] = fields[..] else {
+            continue;
+        };
+        if name.starts_with(SIMCTL_IPHONE) {
+            return Ok(name.to_string());
+        }
+    }
+    Err(vec![format!(
+        "no available {SIMCTL_IPHONE} simulator on an {SIMCTL_IOS_RUNTIME}runtime in:\n{listing}"
+    )])
+}
+
 /// The wallet's generated Swift source.
 pub const WALLET_SWIFT: &str = "zingo.swift";
 
@@ -712,6 +768,68 @@ mod tests {
         )));
         assert!(manifest.contains(&format!("/{}\"", swift_sources_dir())));
         assert!(std::path::Path::new(SWIFT_PACKAGE_MANIFEST).ends_with("Package.swift"));
+    }
+
+    fn resolved(base: &str, relative: &str) -> std::path::PathBuf {
+        let mut path = std::path::PathBuf::new();
+        for component in std::path::Path::new(base).join(relative).components() {
+            match component {
+                std::path::Component::ParentDir => {
+                    path.pop();
+                }
+                other => path.push(other),
+            }
+        }
+        path
+    }
+
+    #[test]
+    fn the_contract_tests_manifest_names_the_shipped_package() -> Result<(), Vec<String>> {
+        let manifest =
+            include_str!("../../../zingo-netutils/nym-proxy-ffi/contract-tests/Package.swift");
+        assert!(manifest.contains(&format!("name: \"{SWIFT_CONTRACT_TESTS_PACKAGE}\"")));
+        assert!(manifest.contains(&format!(
+            ".package(name: \"{SWIFT_PACKAGE}\", path: \"{SWIFT_PACKAGE_FROM_CONTRACT_TESTS}\")"
+        )));
+        assert!(manifest.contains(&format!(
+            ".product(name: \"{SWIFT_PACKAGE}\", package: \"{SWIFT_PACKAGE}\")"
+        )));
+        assert!(!manifest.contains("products:"));
+        assert!(std::path::Path::new(SWIFT_CONTRACT_TESTS_MANIFEST)
+            .starts_with(SWIFT_CONTRACT_TESTS_DIR));
+        let shipped_package = crate::required(
+            std::path::Path::new(SWIFT_PACKAGE_MANIFEST).parent(),
+            "parent of the shipped manifest",
+        )?;
+        assert_eq!(
+            resolved(SWIFT_CONTRACT_TESTS_DIR, SWIFT_PACKAGE_FROM_CONTRACT_TESTS),
+            shipped_package
+        );
+        Ok(())
+    }
+
+    const SIMCTL_LISTING: &str = "== Devices ==\n\
+        -- watchOS 11.2 --\n\
+        \x20   Apple Watch Series 10 (46mm) (1111) (Shutdown)\n\
+        -- Unavailable: com.apple.CoreSimulator.SimRuntime.iOS-17-0 --\n\
+        \x20   iPhone 15 (2222) (Shutdown) (unavailable, runtime profile not found)\n\
+        -- iOS 18.2 --\n\
+        \x20   iPad Pro 13-inch (M4) (3333) (Shutdown)\n\
+        \x20   iPhone 16 Pro (4444) (Shutdown)\n\
+        \x20   iPhone 16 (5555) (Booted)\n";
+
+    #[test]
+    fn the_simulator_is_the_first_iphone_on_an_available_ios_runtime() -> Result<(), Vec<String>> {
+        assert_eq!(ios_simulator(SIMCTL_LISTING)?, "iPhone 16 Pro");
+        Ok(())
+    }
+
+    #[test]
+    fn a_listing_without_an_iphone_on_ios_is_refused_with_the_listing() -> Result<(), Vec<String>> {
+        let listing = "-- watchOS 11.2 --\n    Apple Watch Series 10 (46mm) (1111) (Shutdown)\n";
+        let diagnostic = crate::refused(ios_simulator(listing))?.concat();
+        assert!(diagnostic.contains(listing));
+        Ok(())
     }
 
     #[test]

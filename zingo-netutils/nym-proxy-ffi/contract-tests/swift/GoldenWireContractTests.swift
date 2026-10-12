@@ -6,9 +6,11 @@
 // values below are shared verbatim across the three suites; the pins under
 // test-data/golden/ are never-regenerate contract artifacts.
 //
-// Execution: compiles against the generated Swift bindings in an XCTest
-// bundle; the Mac-gated step-7 packaging (#2504) wires it in. The golden
-// directory resolves relative to this file, or set ZINGO_GOLDEN_DIR.
+// Execution: compiles against the Swift Binding Set through the test-only
+// package beside this directory, which depends on the shipped package under
+// bindings/swift. The iOS plan of build-binding-layer runs it on an iOS
+// simulator as its last step. The golden directory resolves relative to
+// this file, or set ZINGO_GOLDEN_DIR.
 
 import Foundation
 import XCTest

@@ -1,10 +1,10 @@
 name: Binding Layer for Android
 
-# Builds the Binding Layer's Android libraries and Kotlin bindings on the
-# commit the caller names, and packages them into the AAR. The build runs
-# the builder of tools/workbench in the builder's own image. The package
-# job compiles no Rust. The Gradle library takes the prebuilt output,
-# compiles the Kotlin bindings, and bundles the AAR. The caller passes every
+# Builds the Binding Layer's Android libraries and Kotlin Binding Sets on
+# the commit the caller names, and packages them into the AAR. The build
+# runs the builder of tools/workbench in the builder's own image. The
+# package job compiles no Rust. The Gradle library takes the prebuilt
+# output, compiles the Kotlin Binding Sets, and bundles the AAR. The caller passes every
 # artifact name from one run of `build-binding-layer artifact`, so the jobs
 # of one run agree on the names whatever commit they build.
 
@@ -49,7 +49,7 @@ jobs:
   # own image, with the libraries, the pinned toolchain, every Android
   # target, bindgen-cli, and cargo-ndk already installed. The builder runs
   # its plan here with --in-image instead of starting a container. The
-  # output holds the ABI's two libraries and the Kotlin bindings.
+  # output holds the ABI's two libraries and the Kotlin Binding Sets.
   build:
     name: Build ${{ matrix.abi }}
     runs-on: ${{ inputs.runner }}
@@ -158,14 +158,13 @@ jobs:
         with:
           gradle-version: '8.14.3'
 
-      - name: Bundle the AAR
-        run: gradle --project-dir bindings/android bundleReleaseAar
-
-      # The Kotlin wire-contract test of the proxy crate compiles against
-      # the Kotlin Binding Set that the AAR ships and asserts it against the
-      # crate's golden pins, which the Rust and Swift suites share.
-      - name: Run the Kotlin wire-contract test
-        run: gradle --project-dir bindings/android testReleaseUnitTest
+      # One Gradle invocation bundles the AAR and runs the Kotlin
+      # wire-contract test of the proxy crate in one task graph. The test
+      # compiles against the Kotlin Binding Set that the AAR ships and
+      # asserts it against the crate's golden pins, which the Rust and
+      # Swift suites share.
+      - name: Bundle the AAR and run the Kotlin wire-contract test
+        run: gradle --project-dir bindings/android bundleReleaseAar testReleaseUnitTest
 
       - name: Verify the AAR carries both libraries for every ABI
         run: |
