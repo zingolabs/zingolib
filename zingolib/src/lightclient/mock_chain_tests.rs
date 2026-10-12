@@ -4337,6 +4337,8 @@ mod boundary_pruning {
             );
         }
 
+        #[cfg(feature = "nym")]
+        recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
         let sent = recipient.transmit_due_parts().await.unwrap();
         assert!(sent.is_empty(), "nothing must be transmitted: {sent:?}");
         assert_eq!(
