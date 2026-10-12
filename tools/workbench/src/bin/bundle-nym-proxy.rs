@@ -67,10 +67,21 @@ fn bundle(args: &[String]) -> Result<PathBuf, Vec<String>> {
     std::fs::create_dir_all(&dest_dir)
         .map_err(|e| vec![format!("cannot create {}: {e}", dest_dir.display())])?;
     let dest = dest_dir.join(&binary);
-    std::fs::copy(&source, &dest).map_err(|e| {
+    // The previous session's proxy may still be running from `dest`, and a
+    // copy over a running executable fails with "text file busy". A rename
+    // replaces the path atomically and leaves the running image untouched.
+    let staged = dest_dir.join(format!("{binary}.staged"));
+    std::fs::copy(&source, &staged).map_err(|e| {
         vec![format!(
             "cannot copy {} to {}: {e}",
             source.display(),
+            staged.display()
+        )]
+    })?;
+    std::fs::rename(&staged, &dest).map_err(|e| {
+        vec![format!(
+            "cannot move {} to {}: {e}",
+            staged.display(),
             dest.display()
         )]
     })?;

@@ -120,7 +120,7 @@ ensure_taddrs_from_old_seeds_work) both PRESERVED byte-for-byte
 Proposal rig (→ lightclient/propose.rs, wallet/propose.rs, and
 lightclient/send.rs for the transparent-policy case):
 ptfm_insufficient_funds PRESERVED (exact InsufficientFunds{10_000,
-30_000}); ptfm_zero_value PRESERVED (ZeroValueSendAll);
+20_001}); ptfm_zero_value PRESERVED (InsufficientFunds{20_000, 20_001});
 toggle_zennies_for_zingo PRESERVED (max_send_value arithmetic);
 propose_orchard_dust_to_sapling PRESERVED (Ok, FIXME carried);
 four_coin_shield_proposal_shape (from
@@ -365,7 +365,8 @@ an activation-heights override. The parameters precondition dissolved:
 the sapling proving parameters are embedded in the zingolib crate.
 
 - Gap 2: `send_all::send_all_with_zfz_injects_the_zennies_payment`
-  (zingolib/src/lightclient/propose.rs).
+  (zingolib/src/lightclient/propose.rs), since removed with the
+  `zennies_for_zingo` option.
 - Gap 1a: closing balance pinned on
   `multi_input_sapling_send_with_orchard_change_no_panic` (o: 0,
   s: 10_000; observed green solo, 72.6s).

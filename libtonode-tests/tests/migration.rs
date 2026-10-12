@@ -5,7 +5,7 @@
 //! zebra witness serving), so it is ignored until those land. The other
 //! tests exercise the migration state machine against a live regtest chain
 //! with today's stack: bound-note reservation, external-spend invalidation
-//! and the no-sync broadcast path.
+//! and the no-sync transmit path.
 
 use pepper_sync::wallet::{NoteInterface, OrchardNote, OutputId, OutputInterface};
 use zcash_local_net::validator::Validator;
@@ -13,13 +13,13 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::PoolType;
 use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
+use zingolib::perspective::value_transfer::{
+    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind, ValueTransfers,
+};
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::wallet::migration::{
     BoundNote, ConsentBinding, MigrationParams, MigrationPhase, MigrationState, PartId, PartRecord,
     PartState, RecommendedAction, SigningStrategy, bucket_index,
-};
-use zingolib::wallet::summary::data::{
-    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
 };
 use zingolib_testutils::scenarios::{
     self, generate_n_blocks_return_new_height, increase_height_and_wait_for_client,
@@ -62,6 +62,28 @@ fn note_by_value(notes: &[NoteRecord], value: u64) -> &NoteRecord {
         .iter()
         .find(|note| note.value == value)
         .unwrap_or_else(|| panic!("no note of {value} zatoshis in the wallet"))
+}
+
+/// - Panics when a txid of `txids` has no migration value transfer.
+fn migrated_value(value_transfers: &ValueTransfers, txids: &[TxId]) -> u64 {
+    txids
+        .iter()
+        .map(|txid| {
+            value_transfers
+                .iter()
+                .find(|vt| {
+                    vt.txid == *txid
+                        && vt.kind
+                            == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                                SelfSendValueTransfer::Migration,
+                            ))
+                })
+                .unwrap_or_else(|| {
+                    panic!("{txid:?} must be classified as a migration value transfer")
+                })
+                .value
+        })
+        .sum()
 }
 
 /// Persists a hand-built [`MigrationState`] whose parts are bound to real
@@ -249,7 +271,7 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
 async fn unavailable_boundary_tree_state_skips_without_sync() {
     use pepper_sync::sync::MAX_REORG_ALLOWANCE;
 
-    // The blocks mined behind the wallet's back before the broadcast
+    // The blocks mined behind the wallet's back before the transmit
     // attempt: enough to prove the skip performs no hidden sync, few
     // enough to stay inside the bucket.
     const HIDDEN_BLOCKS: u32 = 10;
@@ -268,7 +290,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     // retention, so that boundary's checkpoint is pruned, and far enough
     // below the third boundary that the hidden blocks stay inside the
     // bucket. The second boundary rather than the first, because the
-    // broadcast path skips a part whose boundary lies below the NU6.3
+    // transmit path skips a part whose boundary lies below the NU6.3
     // activation, and the deferred activation below sits past the first.
     const TARGET_TIP: u32 = 2 * PRUNED_BUCKET_MODULUS
         + MAX_REORG_ALLOWANCE
@@ -282,7 +304,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     // earlier; the deferred activation leaves margin beyond that, and
     // still lies below [`TARGET_TIP`] so the leap crosses it.
     const TRANSPARENT_DEFERRED_NU6_3: u32 = COINBASE_MATURITY_BLOCKS + 30;
-    // The part is scheduled at the second bucket boundary; the broadcast
+    // The part is scheduled at the second bucket boundary; the transmit
     // path requires that boundary to sit at or above the activation.
     const _: () = assert!(2 * PRUNED_BUCKET_MODULUS >= TRANSPARENT_DEFERRED_NU6_3);
 
@@ -358,11 +380,11 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     .await;
 
     // New blocks the wallet has not seen: a hidden sync inside the
-    // broadcast path would advance the wallet's known height.
+    // transmit path would advance the wallet's known height.
     generate_n_blocks_return_new_height(&local_net, HIDDEN_BLOCKS).await;
 
-    let sent = recipient.broadcast_due_parts().await.unwrap();
-    assert!(sent.is_empty(), "nothing must be broadcast: {sent:?}");
+    let sent = recipient.transmit_due_parts().await.unwrap();
+    assert!(sent.is_empty(), "nothing must be transmitted: {sent:?}");
 
     let wallet = recipient.wallet().read().await;
     let part = &wallet.migration.as_ref().unwrap().parts[0];
@@ -372,7 +394,7 @@ async fn unavailable_boundary_tree_state_skips_without_sync() {
     assert_eq!(
         wallet.sync_state.last_known_chain_height(),
         Some(known_height),
-        "the broadcast path must never synchronize"
+        "the transmit path must never synchronize"
     );
 }
 
@@ -444,18 +466,13 @@ async fn two_phase_migration_end_to_end() {
 
     // Every confirmed part spends Orchard into the wallet's own Ironwood pool,
     // so it must be classified as a migration value transfer, not a plain
-    // send-to-self.
+    // send-to-self, and those transfers carry the migrated value.
     let value_transfers = recipient.value_transfers(true).await.unwrap();
-    for part_txid in &summary.part_txids {
-        assert!(
-            value_transfers.iter().any(|vt| vt.txid == *part_txid
-                && vt.kind
-                    == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
-                        SelfSendValueTransfer::Migration,
-                    ))),
-            "part {part_txid:?} must be classified as a migration value transfer"
-        );
-    }
+    assert_eq!(
+        migrated_value(&value_transfers, &summary.part_txids),
+        status.value_migrated,
+        "the migration value transfers must carry the migrated value"
+    );
 }
 
 /// The deferred NU6.3 activation height for scenarios that must fund the
@@ -638,22 +655,17 @@ async fn migrate_all_orchard_to_ironwood() {
 
     // The immediate migration moves Orchard funds into the wallet's own Ironwood pool, so
     // each immediate migration transaction must be classified as a migration value transfer,
-    // not a plain send-to-self.
+    // not a plain send-to-self, and those transfers carry the migrated value.
     let value_transfers = recipient.value_transfers(true).await.unwrap();
-    for migration_txid in &summary.txids {
-        assert!(
-            value_transfers.iter().any(|vt| vt.txid == *migration_txid
-                && vt.kind
-                    == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
-                        SelfSendValueTransfer::Migration,
-                    ))),
-            "immediate migration {migration_txid:?} must be classified as a migration value transfer"
-        );
-    }
+    assert_eq!(
+        migrated_value(&value_transfers, &summary.txids),
+        summary.migrated,
+        "the migration value transfers must carry the migrated value"
+    );
 }
 
 /// An immediate migration of a fragmented wallet chunks into several independent transactions,
-/// all built and broadcast in the same pass, and still empties the pool.
+/// all built and transmitted in the same pass, and still empties the pool.
 #[tokio::test]
 async fn immediate_migration_chunks_a_fragmented_wallet() {
     // More notes than fit one transaction's action budget, funded in one

@@ -44,7 +44,6 @@
 // public because the mobile consumer imports through their paths
 // (`parts::PartState`, `parts::SigningStrategy`, `split::plan_hash`);
 // their items are tightened individually instead.
-pub(crate) mod broadcast;
 pub(crate) mod immediate;
 pub(crate) mod params;
 pub mod parts;
@@ -53,8 +52,8 @@ pub(crate) mod reconcile;
 pub(crate) mod schedule;
 pub mod split;
 pub(crate) mod store;
+pub(crate) mod transmission;
 
-pub use broadcast::{BroadcastClient, BroadcastError};
 pub use immediate::{ImmediateMigrationPlan, ImmediateMigrationTx};
 pub use params::MigrationParams;
 pub use parts::{
@@ -65,9 +64,12 @@ pub(crate) use reconcile::due_now_parts;
 pub use reconcile::{
     ChainView, PartAssessment, PartClass, RecommendedAction, ReconcileReport, reconcile,
 };
-pub use schedule::{BroadcastWindow, WindowReport, bucket_index};
+pub use schedule::{TransmissionWindow, WindowReport, bucket_index};
 pub(crate) use schedule::{plan_schedule, upcoming_windows, window_timeline};
 pub use split::{MigrationPlan, NoteSplitTx, plan_hash, plan_migration};
+pub use transmission::{
+    PartTransmissionError, TransmissionClient, TransmissionReceipt, TransmissionRoute,
+};
 
 use zcash_primitives::transaction::TxId;
 
@@ -95,7 +97,7 @@ pub struct ConsentBinding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MigrationMode {
     /// The consent-scheduled flow of `start_ironwood_migration`: parts
-    /// broadcast inside their consented bucket windows.
+    /// transmit inside their consented bucket windows.
     Scheduled,
     /// The one-call interactive flow of `migrate_to_ironwood`: everything
     /// sends now, with the disclosed correlation.
@@ -193,12 +195,12 @@ impl crate::wallet::LightWallet {
 
 #[cfg(test)]
 mod tests {
-    /// Structural decoupling lint (ZIP 318: a broadcast session must never
-    /// synchronize). The migration modules that run on the broadcast path
-    /// must have no dependency edge to the sync engine or the network
+    /// Structural decoupling lint (ZIP 318: a part-transmission session must
+    /// never synchronize). The migration modules that run on the transmission
+    /// path must have no dependency edge to the sync engine or the network
     /// client. The only permitted pepper-sync surface is wallet data types.
     #[test]
-    fn broadcast_path_has_no_sync_dependency() {
+    fn transmission_path_has_no_sync_dependency() {
         let forbidden = [
             "pepper_sync::sync",
             "sync_and_await",
@@ -207,7 +209,7 @@ mod tests {
             "GrpcIndexer",
             "zingo_netutils",
         ];
-        for module in ["parts", "broadcast", "schedule", "store", "reconcile"] {
+        for module in ["parts", "transmission", "schedule", "store", "reconcile"] {
             let path = format!(
                 "{}/src/wallet/migration/{module}.rs",
                 env!("CARGO_MANIFEST_DIR")
@@ -218,7 +220,7 @@ mod tests {
             for needle in forbidden {
                 assert!(
                     !source.contains(needle),
-                    "{path} references `{needle}`: the migration broadcast path must remain \
+                    "{path} references `{needle}`: the migration transmission path must remain \
                      decoupled from the sync engine"
                 );
             }

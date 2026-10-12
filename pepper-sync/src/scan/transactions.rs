@@ -17,7 +17,7 @@ use zcash_keys::{
     address::UnifiedAddress,
     keys::{OutgoingViewingKey, UnifiedFullViewingKey},
 };
-use zcash_note_encryption::{BatchDomain, Domain, ENC_CIPHERTEXT_SIZE, ShieldedOutput};
+use zcash_note_encryption::{BatchDomain, Domain, ShieldedOutput};
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::{
     ShieldedPool,
@@ -45,7 +45,7 @@ use crate::{
 
 use super::DecryptedNoteData;
 
-trait ShieldedOutputExt<D: Domain>: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE> {
+trait ShieldedOutputExt<D: Domain>: ShieldedOutput<D> {
     fn out_ciphertext(&self) -> [u8; 80];
 
     fn value_commitment(&self) -> D::ValueCommitment;
@@ -90,21 +90,36 @@ pub(crate) async fn scan_transactions(
     decrypted_note_data: DecryptedNoteData,
     wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
-    transparent_addresses: HashMap<String, TransparentAddressId>,
+    transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<HashMap<TxId, WalletTransaction>, ScanError> {
     let mut wallet_transactions = HashMap::with_capacity(scan_targets.len());
 
     for scan_target in scan_targets {
+        // TODO: replace wth optional txid in scan targets
         if scan_target.txid == TxId::from_bytes([0u8; 32]) {
             continue;
         }
 
-        let (transaction, block_height) = client::get_transaction_and_block_height(
+        // in case of re-orgs or consumers manually adding incorrect scan target txids, skip if request fails.
+        let (transaction, block_height) = match client::get_transaction_and_block_height(
             fetch_request_sender.clone(),
             consensus_parameters,
             scan_target.txid,
         )
-        .await?;
+        .await
+        {
+            Ok((tx, height)) => (tx, height),
+            // TODO: continue if the request failed and the scan target was added externally by the consumer. there
+            // may also be a case where re-org has occured between gathering transparent scan targets pre-scan and
+            // scanning which may result in the transaction no longer existing. this would cause a repeated failure
+            // of sync if not removed.
+            // Err(ServerError::RequestFailed(e)) => {
+            //     continue;
+            // }
+            Err(e) => {
+                return Err(e.into());
+            }
+        };
 
         if transaction.txid() != scan_target.txid {
             return Err(ScanError::IncorrectTxid {
@@ -134,7 +149,7 @@ pub(crate) async fn scan_transactions(
             Some(&decrypted_note_data),
             &mut NullifierMap::new(),
             outpoint_map,
-            &transparent_addresses,
+            &transparent_inuse_addresses,
             wallet_block.time(),
         )?;
         wallet_transactions.insert(scan_target.txid, wallet_transaction);
@@ -163,7 +178,7 @@ pub(crate) fn scan_transaction(
     decrypted_note_data: Option<&DecryptedNoteData>,
     nullifier_map: &mut NullifierMap,
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
-    transparent_addresses: &HashMap<String, TransparentAddressId>,
+    transparent_inuse_addresses: &HashMap<String, TransparentAddressId>,
     datetime: u32,
 ) -> Result<WalletTransaction, ScanError> {
     let block_height = status.get_height();
@@ -225,7 +240,7 @@ pub(crate) fn scan_transaction(
             }
         }
 
-        if let Some(tkeys) = ufvk.transparent() {
+        if let Some(tkeys) = ufvk.p2pkh() {
             add_unified_ovk(
                 &mut sapling_ovks,
                 &mut orchard_ovks,
@@ -247,7 +262,7 @@ pub(crate) fn scan_transaction(
             consensus_parameters,
             &mut transparent_coins,
             txid,
-            transparent_addresses,
+            transparent_inuse_addresses,
             transparent_outputs,
         );
 
@@ -326,12 +341,6 @@ pub(crate) fn scan_transaction(
             .map(|action| (IronwoodDomain::for_action(action), action.clone()))
             .collect();
 
-        // The decrypted-note-data lookup is deliberately lenient here, unlike
-        // the sapling and orchard passes: an ironwood output can decrypt in a
-        // confirmed transaction the compact scan never saw (a server that
-        // does not serve ironwood actions yet), so a missing entry falls back
-        // to deriving the nullifier from the full viewing key and leaving the
-        // position unset until a compact scan supplies it.
         scan_incoming_notes::<
             IronwoodDomain,
             Action<Signature<SpendAuth>>,
@@ -343,21 +352,8 @@ pub(crate) fn scan_transaction(
             txid,
             ironwood_ivks,
             &ironwood_actions,
-            None,
+            decrypted_note_data.map(|d| &d.ironwood_nullifiers_and_positions),
         )?;
-        for note in &mut ironwood_notes {
-            if let Some((nullifier, position)) = decrypted_note_data
-                .and_then(|d| d.ironwood_nullifiers_and_positions.get(&note.output_id))
-            {
-                note.nullifier = Some(*nullifier);
-                note.position = Some(*position);
-            } else if let Some(fvk) = ufvks
-                .get(&note.key_id.account_id)
-                .and_then(zcash_keys::keys::UnifiedFullViewingKey::orchard)
-            {
-                note.nullifier = Some(note.note.nullifier(fvk));
-            }
-        }
 
         scan_outgoing_notes(
             &mut outgoing_ironwood_notes,
@@ -375,48 +371,21 @@ pub(crate) fn scan_transaction(
         collect_nullifiers(nullifier_map, block_height, txid, &transaction);
     }
 
-    for encoded_memo in encoded_memos {
-        match encoded_memo {
-            ParsedMemo::Version0 { uas } => {
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas.clone(),
-                    &mut outgoing_sapling_notes,
-                )?;
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas.clone(),
-                    &mut outgoing_orchard_notes,
-                )?;
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas,
-                    &mut outgoing_ironwood_notes,
-                )?;
-            }
-            ParsedMemo::Version1 {
-                uas,
-                rejection_address_indexes: _,
-            } => {
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas.clone(),
-                    &mut outgoing_sapling_notes,
-                )?;
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas.clone(),
-                    &mut outgoing_orchard_notes,
-                )?;
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas,
-                    &mut outgoing_ironwood_notes,
-                )?;
-
-                // TODO: handle rejection addresses from encoded memos
-            }
-        }
+    for uas in encoded_memos
+        .into_iter()
+        .map(ParsedMemo::into_unified_addresses)
+    {
+        add_recipient_unified_address(
+            consensus_parameters,
+            uas.clone(),
+            &mut outgoing_sapling_notes,
+        )?;
+        add_recipient_unified_address(
+            consensus_parameters,
+            uas.clone(),
+            &mut outgoing_orchard_notes,
+        )?;
+        add_recipient_unified_address(consensus_parameters, uas, &mut outgoing_ironwood_notes)?;
     }
 
     Ok(WalletTransaction {
@@ -448,13 +417,15 @@ fn scan_incoming_coins<P: consensus::Parameters>(
     consensus_parameters: &P,
     transparent_coins: &mut Vec<TransparentCoin>,
     txid: TxId,
-    transparent_addresses: &HashMap<String, TransparentAddressId>,
+    transparent_inuse_addresses: &HashMap<String, TransparentAddressId>,
     transparent_outputs: &[zcash_transparent::bundle::TxOut],
 ) {
     for (output_index, output) in transparent_outputs.iter().enumerate() {
         if let Some(address) = output.recipient_address() {
             let encoded_address = keys::transparent::encode_address(consensus_parameters, address);
-            if let Some((address, key_id)) = transparent_addresses.get_key_value(&encoded_address) {
+            if let Some((address, key_id)) =
+                transparent_inuse_addresses.get_key_value(&encoded_address)
+            {
                 let output_id = OutputId::new(
                     txid,
                     output_index
@@ -485,7 +456,7 @@ fn scan_incoming_notes<D, Op, N, Nf, P>(
 where
     D: BatchDomain<Note = N>,
     D::Memo: AsRef<[u8]>,
-    Op: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
+    Op: ShieldedOutput<D>,
     Nf: Copy,
 {
     let (key_ids, ivks): (Vec<_>, Vec<_>) = ivks.into_iter().unzip();
@@ -564,7 +535,7 @@ where
 }
 
 #[allow(clippy::type_complexity)]
-fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>>(
+fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D>>(
     domain: &D,
     ovks: &[D::OutgoingViewingKey],
     output: &Output,

@@ -3,16 +3,16 @@ flowchart LR
   %% SYNC
   START([Start sync]) --> INIT["Initialization"]
   INIT --> S0
-  S0{Batcher idle?}
+  S0{Loader idle?}
   S0 -- No --> S6
   S0 -- Yes --> S1{All ranges in wallet state are 'scanned'?}
   S1 -- Yes --> SHUTDOWN([Shutdown sync])
   S1 -- No --> S2["Pick highest-priority scan range"]
   S2 --> S3{Priority is 'historic'?}
-  S3 -- Yes --> S4["Split orchard shard range off lower end"] --> S5["Set range to 'scanning' and send to batcher"]
+  S3 -- Yes --> S4["Split orchard shard range off lower end"] --> S5["Set range to 'scanning' and send to loader"]
   S3 -- No --> S5
   S5 --> S6
-  S6["Batcher: stream compact blocks until fixed output threshold; store batch; when entire scan range batched, set batcher idle"]
+  S6["Loader: stream compact blocks until the output budget would be exceeded; store load; when entire scan range loaded, set loader idle"]
   subgraph WORKERS[Scan workers]
     direction LR
     W1["Scan Worker 1"]

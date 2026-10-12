@@ -87,3 +87,19 @@ on-chain. Every proposal that selects one is rejected by the Validator as a
 double-spend. Distinct from a pending-spent note, whose spend the wallet
 knows about and correctly excludes from selection.
 _Avoid_: stale note, stuck note
+
+**Boot Window**:
+The interval of a benchmarked session from the moment the session process
+is spawned to the moment the Sync Span opens. It is where a mixnet session
+spawns its proxy, proves its quartet, and runs the Server-Selection Sweep,
+so it holds the mixnet's start-up cost. Measured in wall-clock seconds and
+in core-seconds per role.
+_Avoid_: boot phase, startup span
+
+**Scan Window**:
+The interval of a benchmarked session that coincides with the Sync Span:
+from the marker opening that span to the marker closing it. It holds the
+scan and nothing else, so a cost charged to it is a cost the scan paid.
+Measured in core-seconds per role, while the scan's own duration comes
+from the engine's clock rather than from this window.
+_Avoid_: sync window, span window

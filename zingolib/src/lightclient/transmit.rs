@@ -1,6 +1,6 @@
 //! The resilient transmission policy: retry, duplicate-in-mempool, and
 //! queued-probe handling, defined once and generic over the transmission
-//! target so the clearnet indexer path and the Nym broadcast path share a
+//! target so the nakednet indexer path and the Nym transmission path share a
 //! single implementation.
 //!
 //! [`resilient_transmit`] performs no wallet-state mutation: it interprets a
@@ -25,14 +25,13 @@ pub(crate) const MAX_RETRIES: u8 = 3;
 /// cadence, for the verdict to become storage-backed (issue #2450).
 pub(crate) const MAX_QUEUED_PROBES: u8 = 30;
 
-/// The interval between retries and queued-probes.
-const RETRY_INTERVAL: Duration = Duration::from_secs(1);
+use zingo_netutils::time::TRANSMIT_RETRY_INTERVAL;
 
 /// A shareable snapshot of the in-flight Transmission's latest progress line,
 /// or `None` when no transmission is running. A consumer holding a clone (the
 /// CLI's heartbeat, a UI) polls [`Self::latest`] while the transmitting call
 /// holds `&mut LightClient`. The transmit path updates it as submissions,
-/// retries, probes, and fan-out rounds occur. Mirrors the
+/// retries, probes, and escalation rounds occur. Mirrors the
 /// `ImmediateMigrationProgressHandle` pattern.
 #[derive(Clone, Debug, Default)]
 pub struct TransmitProgressHandle(Arc<Mutex<Option<String>>>);
@@ -67,19 +66,56 @@ impl Drop for TransmitProgressScope {
     }
 }
 
+/// What the resilience policy reads from a target's typed failure. The
+/// failure value itself travels whole — nothing is flattened to a string on
+/// the way through the policy — and this trait exposes the one text the
+/// policy classifies: the server's own verdict, when there is one.
+pub(crate) trait SubmitFailure: std::fmt::Display {
+    /// The server's verdict text (a rejection message or an RPC status
+    /// message), or `None` for a transport failure that carries no verdict.
+    fn rejection_text(&self) -> Option<&str>;
+}
+
+/// The nakednet path's failure type: a gRPC status, carried whole. The
+/// server's verdict is the status message (rejections are folded into a
+/// status by `GrpcIndexer::send_transaction`).
+impl SubmitFailure for zingo_netutils::Status {
+    fn rejection_text(&self) -> Option<&str> {
+        Some(self.message())
+    }
+}
+
+/// The mixnet path's failure type, carried whole. Only the variants that
+/// hold a server verdict offer text to classify; transport failures are
+/// transient by construction.
+#[cfg(feature = "nym")]
+impl SubmitFailure for zingo_netutils::Socks5TransmitError {
+    fn rejection_text(&self) -> Option<&str> {
+        match self {
+            zingo_netutils::Socks5TransmitError::Rejected(rejection) => Some(&rejection.message),
+            zingo_netutils::Socks5TransmitError::Rpc { status, .. } => Some(status.message()),
+            _ => None,
+        }
+    }
+}
+
 /// A single transmission endpoint: submits a serialized transaction and can
 /// ask the server whether it already knows a txid. Implemented for the
-/// configured clearnet indexer and, later, for a Nym Broadcast Indexer reached
+/// configured nakednet indexer and for a Nym Destination reached
 /// through the SOCKS5 proxy.
 pub(crate) trait TransmitTarget {
+    /// The target's typed failure, preserved whole through the policy.
+    type Failure: SubmitFailure + Send;
+
     /// Submit `raw_tx` at `height`, returning the server-reported txid on
-    /// acceptance, or the server/transport failure message. The message is
-    /// classified by [`resilient_transmit`] (duplicate, queued, or transient).
+    /// acceptance, or the typed failure. Its
+    /// [`rejection_text`](SubmitFailure::rejection_text) is classified by
+    /// [`resilient_transmit`] (duplicate, queued, or transient).
     fn submit(
         &self,
         raw_tx: &[u8],
         height: u64,
-    ) -> impl Future<Output = Result<String, String>> + Send;
+    ) -> impl Future<Output = Result<String, Self::Failure>> + Send;
 
     /// Whether the server knows `txid`, a delivery check run after the
     /// retries are exhausted, since a lost response can mask a received
@@ -89,9 +125,9 @@ pub(crate) trait TransmitTarget {
 
 /// The transmission exhausted the resilience policy: retries or queued-probes
 /// ran out and the server does not know the transaction. Carries the last
-/// server/transport message.
+/// typed failure, whole.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TransmitFailed(pub String);
+pub(crate) struct TransmitFailed<F>(pub F);
 
 /// How the resilience policy reads a submission failure message.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -129,9 +165,9 @@ pub(crate) fn classify_rejection(message: &str) -> RejectionClass {
 /// A duplicate already in the mempool or chain counts as success (an earlier
 /// submission is minable or mined). "Queued for download" is re-probed up to
 /// [`MAX_QUEUED_PROBES`] times until the verdict is storage-backed. Any other
-/// error retries up to [`MAX_RETRIES`] times. On exhaustion a delivery check
-/// ([`TransmitTarget::knows_transaction`]) confirms whether an earlier attempt
-/// was in fact received. Returns the server-reported txid on success.
+/// error retries up to [`MAX_RETRIES`] times. On either exhaustion a delivery
+/// check ([`TransmitTarget::knows_transaction`]) confirms whether an earlier
+/// attempt was in fact received. Returns the server-reported txid on success.
 ///
 /// `sleep` supplies the wait between probes/retries. Production passes
 /// `tokio::time::sleep`, tests pass a no-op so the policy runs instantly.
@@ -145,7 +181,7 @@ pub(crate) async fn resilient_transmit<T, S, F, P>(
     txid: &TxId,
     mut sleep: S,
     report: P,
-) -> Result<String, TransmitFailed>
+) -> Result<String, TransmitFailed<T::Failure>>
 where
     T: TransmitTarget + Sync,
     S: FnMut(Duration) -> F,
@@ -156,45 +192,46 @@ where
     let mut queued_probes: u8 = 0;
 
     report("submitting".to_string());
-    loop {
-        let message = match target.submit(raw_tx, height).await {
+    let exhausted = loop {
+        let failure = match target.submit(raw_tx, height).await {
             Ok(server_txid) => return Ok(server_txid),
-            Err(message) => message,
+            Err(failure) => failure,
         };
 
-        match classify_rejection(&message) {
+        match classify_rejection(failure.rejection_text().unwrap_or_default()) {
             RejectionClass::StorageBackedDuplicate => return Ok(txid.to_string()),
             RejectionClass::QueuedProbe => {
                 if queued_probes >= MAX_QUEUED_PROBES {
-                    return Err(TransmitFailed(message));
+                    break failure;
                 }
                 queued_probes += 1;
                 report(format!(
                     "delivered, awaiting the server's verdict (probe {queued_probes}/{MAX_QUEUED_PROBES})"
                 ));
-                sleep(RETRY_INTERVAL).await;
+                sleep(TRANSMIT_RETRY_INTERVAL).await;
             }
             RejectionClass::Transient => {
                 if retry_count >= MAX_RETRIES {
-                    // A transmission error does not prove the transaction
-                    // failed to reach the network; an earlier attempt may have
-                    // been accepted with its response lost (e.g. a timeout),
-                    // causing rebroadcasts to be rejected as duplicates. Only
-                    // fail if the server does not know it.
-                    report("checking whether an earlier attempt was delivered".to_string());
-                    if target.knows_transaction(txid).await {
-                        return Ok(txid.to_string());
-                    }
-                    return Err(TransmitFailed(message));
+                    break failure;
                 }
                 retry_count += 1;
                 report(format!(
                     "retrying after a transient error (retry {retry_count}/{MAX_RETRIES})"
                 ));
-                sleep(RETRY_INTERVAL).await;
+                sleep(TRANSMIT_RETRY_INTERVAL).await;
             }
         }
+    };
+
+    // A transmission error does not prove the transaction failed to reach
+    // the network: an earlier attempt may have been accepted with its
+    // response lost, and a queued verdict may become storage-backed moments
+    // after the last probe. Only fail if the server does not know it.
+    report("checking whether an earlier attempt was delivered".to_string());
+    if target.knows_transaction(txid).await {
+        return Ok(txid.to_string());
     }
+    Err(TransmitFailed(exhausted))
 }
 
 #[cfg(test)]
@@ -202,6 +239,23 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
+
+    /// A scripted failure whose whole text is the server's verdict, so the
+    /// policy classifies exactly what the script says.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct TestFailure(String);
+
+    impl std::fmt::Display for TestFailure {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+
+    impl SubmitFailure for TestFailure {
+        fn rejection_text(&self) -> Option<&str> {
+            Some(&self.0)
+        }
+    }
 
     /// A target that replays a scripted sequence of submit responses and a
     /// fixed delivery-check verdict, counting the calls it received. Atomics
@@ -235,18 +289,21 @@ mod tests {
     }
 
     impl TransmitTarget for ScriptedTarget {
+        type Failure = TestFailure;
+
         fn submit(
             &self,
             _raw_tx: &[u8],
             _height: u64,
-        ) -> impl Future<Output = Result<String, String>> + Send {
+        ) -> impl Future<Output = Result<String, TestFailure>> + Send {
             let i = self.next.fetch_add(1, Ordering::Relaxed);
             self.submit_calls.fetch_add(1, Ordering::Relaxed);
             let result = self
                 .submits
                 .get(i)
                 .cloned()
-                .unwrap_or_else(|| Err("script exhausted".to_string()));
+                .unwrap_or_else(|| Err("script exhausted".to_string()))
+                .map_err(TestFailure);
             async move { result }
         }
 
@@ -320,7 +377,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn queued_probe_exhausts() {
+    async fn queued_probe_exhaustion_runs_the_delivery_check() {
         let submits = std::iter::repeat_n(
             Err::<String, String>("already queued for download".into()),
             (MAX_QUEUED_PROBES as usize) + 1,
@@ -329,15 +386,36 @@ mod tests {
         let target = ScriptedTarget::new(submits, false);
         let err = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep, |_| ())
             .await
-            .expect_err("probes exhausted");
-        assert!(err.0.contains("already queued for download"));
+            .expect_err("probes exhausted and the server does not know the txid");
+        assert!(err.0.0.contains("already queued for download"));
         // One initial submit plus MAX_QUEUED_PROBES probes.
         assert_eq!(target.submit_calls(), (MAX_QUEUED_PROBES as usize) + 1);
         assert_eq!(
             target.knows_calls(),
-            0,
-            "queued exhaustion is not a delivery check"
+            1,
+            "queued exhaustion ends with the delivery check"
         );
+    }
+
+    /// HYPOTHESIS: a verdict that lands moments after the last queued probe
+    /// is still a success — the delivery check converts the exhaustion into
+    /// the acceptance the server reached (the 2026-08-06 container run,
+    /// where the mempool held the transaction nine seconds after the first
+    /// submission). Falsified if exhaustion fails without consulting the
+    /// server.
+    #[tokio::test]
+    async fn queued_exhaustion_with_a_known_transaction_is_success() {
+        let submits = std::iter::repeat_n(
+            Err::<String, String>("already queued for download".into()),
+            (MAX_QUEUED_PROBES as usize) + 1,
+        )
+        .collect();
+        let target = ScriptedTarget::new(submits, true);
+        let out = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep, |_| ())
+            .await
+            .expect("the server knows the transaction, so delivery stands");
+        assert_eq!(out, a_txid().to_string());
+        assert_eq!(target.knows_calls(), 1);
     }
 
     #[tokio::test]
@@ -385,7 +463,7 @@ mod tests {
         let err = resilient_transmit(&target, b"tx", 1, &a_txid(), no_sleep, |_| ())
             .await
             .expect_err("server does not know it, so it failed");
-        assert_eq!(err.0, "timeout");
+        assert_eq!(err.0, TestFailure("timeout".to_string()));
         assert_eq!(target.knows_calls(), 1);
     }
 

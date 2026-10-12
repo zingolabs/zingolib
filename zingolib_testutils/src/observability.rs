@@ -467,10 +467,7 @@ async fn relay(
     direction: &'static str,
 ) {
     let mut buffer = vec![0u8; 16 * 1024];
-    loop {
-        let Ok(n) = from.read(&mut buffer).await else {
-            break;
-        };
+    while let Ok(n) = from.read(&mut buffer).await {
         if n == 0 {
             break;
         }

@@ -9,10 +9,7 @@ use std::{
     fmt::Debug,
     marker::PhantomData,
     ops::Range,
-    sync::{
-        Arc,
-        atomic::{self, AtomicU8},
-    },
+    sync::atomic::{self, AtomicU8},
 };
 
 use incrementalmerkletree::Position;
@@ -39,12 +36,9 @@ use crate::{
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
-    shardtree_ext::ShardTreeExt,
-    sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
-    utils::{
-        get_compact_block_hash, get_compact_block_height, get_compact_block_prev_hash,
-        get_compact_tx_txid,
-    },
+    shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt as _},
+    sync::{SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE, ScanPriority, ScanRange},
+    utils::{block, transaction},
     witness,
 };
 
@@ -149,6 +143,17 @@ pub struct SyncState {
     pub(crate) scan_targets: BTreeSet<ScanTarget>,
     /// Initial sync state.
     pub(crate) initial_sync_state: InitialSyncState,
+    /// Compact block transparent data is only scanned above this height. This includes checking transparent outputs
+    /// against the wallet's in-use and gap addresses and mapping transparent inputs to the wallet's outpoint map.
+    ///
+    /// Set to the chain height when transparent address discovery completes at the start of a sync session, as it has
+    /// located all relevant transactions at or below this height. Lowered if the wallet is truncated below this
+    /// height, by a re-org or a chain height below the wallet's, as transparent address discovery does not cover the
+    /// blocks scanned in place of the truncated blocks.
+    ///
+    /// Blocks mined during a sync session are above the floor and may still be unscanned when the session ends, so
+    /// the transparent address discovery of the next sync session searches from the block above the floor.
+    pub(crate) transparent_scan_floor: Option<BlockHeight>,
 }
 
 impl SyncState {
@@ -162,6 +167,7 @@ impl SyncState {
             ironwood_shard_ranges: Vec::new(),
             scan_targets: BTreeSet::new(),
             initial_sync_state: InitialSyncState::new(),
+            transparent_scan_floor: None,
         }
     }
 
@@ -218,16 +224,11 @@ impl SyncState {
     /// Returns `None` if `self.scan_ranges` is empty.
     #[must_use]
     pub fn highest_scanned_height(&self) -> Option<BlockHeight> {
-        if let Some(last_scanned_range) = self
-            .scan_ranges
-            .iter()
-            .filter(|scan_range| {
-                scan_range.priority() == ScanPriority::Scanned
-                    || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                    || scan_range.priority() == ScanPriority::RefetchingNullifiers
-            })
-            .next_back()
-        {
+        if let Some(last_scanned_range) = self.scan_ranges.iter().rfind(|scan_range| {
+            scan_range.priority() == ScanPriority::Scanned
+                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                || scan_range.priority() == ScanPriority::RefetchingNullifiers
+        }) {
             Some(last_scanned_range.block_range().end - 1)
         } else {
             self.wallet_birthday().map(|start| start - 1)
@@ -285,15 +286,44 @@ impl SyncMode {
         }
     }
 
-    /// Creates [`crate::wallet::SyncMode`] from an atomic u8.
-    ///
-    /// # Panic
-    ///
-    /// Panics if `atomic_sync_mode` corresponds to an invalid enum variant.
-    /// It is the consumers responsibility to ensure the library restricts the user API to only set valid values via
-    /// [`crate::wallet::SyncMode`].
-    pub fn from_atomic_u8(atomic_sync_mode: Arc<AtomicU8>) -> Result<SyncMode, SyncModeError> {
+    /// Reads the mode held in `atomic_sync_mode`, failing when the byte is no variant of this enum.
+    pub fn from_atomic_u8(atomic_sync_mode: &AtomicU8) -> Result<SyncMode, SyncModeError> {
         SyncMode::from_u8(atomic_sync_mode.load(atomic::Ordering::Acquire))
+    }
+
+    /// Returns the mode a completed scan leaves behind, which is `Shutdown` for a running engine and the same mode for every other.
+    pub fn on_completion(self) -> Self {
+        match self {
+            Self::Running => Self::Shutdown,
+            other => other,
+        }
+    }
+
+    /// Replaces the mode held in `atomic_sync_mode` with `step` of it in one atomic exchange and returns the mode it replaced.
+    pub fn apply(
+        atomic_sync_mode: &AtomicU8,
+        step: impl Fn(Self) -> Self,
+    ) -> Result<Self, SyncModeError> {
+        atomic_sync_mode
+            .try_update(
+                atomic::Ordering::AcqRel,
+                atomic::Ordering::Acquire,
+                |mode| Self::from_u8(mode).ok().map(|mode| step(mode) as u8),
+            )
+            .map_err(SyncModeError::InvalidSyncMode)
+            .and_then(Self::from_u8)
+    }
+
+    /// Moves `atomic_sync_mode` from `from` to `to` when it holds `from` and returns the mode it held before.
+    pub fn transition(
+        atomic_sync_mode: &AtomicU8,
+        from: Self,
+        to: Self,
+    ) -> Result<Self, SyncModeError> {
+        Self::apply(
+            atomic_sync_mode,
+            |mode| if mode == from { to } else { mode },
+        )
     }
 }
 
@@ -420,11 +450,15 @@ impl WalletBlock {
             calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block).await?;
 
         Ok(Self {
-            block_height: get_compact_block_height(block),
-            block_hash: get_compact_block_hash(block),
-            prev_hash: get_compact_block_prev_hash(block),
+            block_height: block::get_compact_height(block),
+            block_hash: block::get_compact_hash(block),
+            prev_hash: block::get_compact_prev_hash(block),
             time: block.time,
-            txids: block.vtx.iter().map(get_compact_tx_txid).collect(),
+            txids: block
+                .vtx
+                .iter()
+                .map(transaction::get_compact_txid)
+                .collect(),
             tree_bounds,
         })
     }
@@ -1118,9 +1152,8 @@ impl OutputInterface for TransparentCoin {
 
 /// The network upgrade at which a shielded pool begins to exist.
 ///
-/// This is the workspace's single pool-to-upgrade mapping (ADR 0014,
-/// `docs/adr/0014-pool-activation-derived-in-pepper-sync.md` in the
-/// workspace root): upstream `zcash_protocol` deliberately ships
+/// This is the workspace's single pool-to-upgrade mapping: upstream
+/// `zcash_protocol` deliberately ships
 /// `ShieldedPool` and `NetworkUpgrade` as unrelated enums, so the mapping
 /// is defined exactly once, here. Every height clamp involving a pool's
 /// existence derives from it. A second mapping anywhere in the workspace
@@ -1558,7 +1591,7 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
     {
         self.recipient_full_unified_address
             .as_ref()
-            .map(|unified_address| unified_address.encode(consensus_parameters))
+            .map(|unified_address| unified_address.encode_receiver_preserving(consensus_parameters))
     }
 
     fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {
@@ -1617,7 +1650,7 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
     {
         self.recipient_full_unified_address
             .as_ref()
-            .map(|unified_address| unified_address.encode(consensus_parameters))
+            .map(|unified_address| unified_address.encode_receiver_preserving(consensus_parameters))
     }
 
     fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {
@@ -1676,12 +1709,88 @@ impl OutgoingNoteInterface for OutgoingIronwoodNote {
     {
         self.recipient_full_unified_address
             .as_ref()
-            .map(|unified_address| unified_address.encode(consensus_parameters))
+            .map(|unified_address| unified_address.encode_receiver_preserving(consensus_parameters))
     }
 
     fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {
         &transaction.outgoing_ironwood_notes
     }
+}
+
+/// Reduces the wallet to what a build that never tracked `pool` would have
+/// left behind: the very same scanned ranges, and none of that pool's data.
+///
+/// This is the state a wallet reaches by syncing across a pool's activation
+/// on a build that predates the pool, which is not otherwise constructible
+/// from outside. Scan-range priorities are deliberately untouched, since the
+/// defect being reproduced is precisely that the ranges still claim to be
+/// scanned.
+#[cfg(any(test, feature = "test-features"))]
+pub fn strip_pool_tracking_for_test<W>(wallet: &mut W, pool: ShieldedPool) -> Result<(), W::Error>
+where
+    W: traits::SyncWallet
+        + traits::SyncBlocks
+        + traits::SyncTransactions
+        + traits::SyncNullifiers
+        + traits::SyncShardTrees,
+{
+    for block in wallet.get_wallet_blocks_mut()?.values_mut() {
+        let tree_bounds = &mut block.tree_bounds;
+        match pool {
+            ShieldedPool::Sapling => {
+                tree_bounds.sapling_initial_tree_size = 0;
+                tree_bounds.sapling_final_tree_size = 0;
+            }
+            ShieldedPool::Orchard => {
+                tree_bounds.orchard_initial_tree_size = 0;
+                tree_bounds.orchard_final_tree_size = 0;
+            }
+            ShieldedPool::Ironwood => {
+                tree_bounds.ironwood_initial_tree_size = 0;
+                tree_bounds.ironwood_final_tree_size = 0;
+            }
+        }
+    }
+    for transaction in wallet.get_wallet_transactions_mut()?.values_mut() {
+        match pool {
+            ShieldedPool::Sapling => {
+                transaction.sapling_notes.clear();
+                transaction.outgoing_sapling_notes.clear();
+            }
+            ShieldedPool::Orchard => {
+                transaction.orchard_notes.clear();
+                transaction.outgoing_orchard_notes.clear();
+            }
+            ShieldedPool::Ironwood => {
+                transaction.ironwood_notes.clear();
+                transaction.outgoing_ironwood_notes.clear();
+            }
+        }
+    }
+
+    let nullifiers = wallet.get_nullifiers_mut()?;
+    match pool {
+        ShieldedPool::Sapling => nullifiers.sapling.clear(),
+        ShieldedPool::Orchard => nullifiers.orchard.clear(),
+        ShieldedPool::Ironwood => nullifiers.ironwood.clear(),
+    }
+
+    let empty = ShardTrees::new();
+    let shard_trees = wallet.get_shard_trees_mut()?;
+    match pool {
+        ShieldedPool::Sapling => shard_trees.sapling = empty.sapling,
+        ShieldedPool::Orchard => shard_trees.orchard = empty.orchard,
+        ShieldedPool::Ironwood => shard_trees.ironwood = empty.ironwood,
+    }
+
+    let sync_state = wallet.get_sync_state_mut()?;
+    match pool {
+        ShieldedPool::Sapling => sync_state.sapling_shard_ranges.clear(),
+        ShieldedPool::Orchard => sync_state.orchard_shard_ranges.clear(),
+        ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.clear(),
+    }
+
+    Ok(())
 }
 
 // TODO: allow consumer to define shard store. memory shard store has infallible error type but other may not so error
@@ -1720,29 +1829,25 @@ impl ShardTrees {
     /// Create new `ShardTrees`
     #[must_use]
     pub fn new() -> Self {
-        let mut sapling = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-        let mut orchard = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-        let mut ironwood = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
-
-        // These trees are freshly created, so the initial checkpoint must
-        // be `Appended`; a `NotAboveNewest` here would break the
-        // initialization invariant that `add_initial_frontier` and
-        // truncation planning rely on.
-        for tree_checkpoint in [
-            sapling.append_checkpoint(BlockHeight::from_u32(0)),
-            orchard.append_checkpoint(BlockHeight::from_u32(0)),
-            ironwood.append_checkpoint(BlockHeight::from_u32(0)),
-        ] {
-            assert_eq!(
-                tree_checkpoint.expect("should never fail"),
-                crate::shardtree_ext::CheckpointAppendOutcome::Appended
-            );
-        }
-
         Self {
-            sapling,
-            orchard,
-            ironwood,
+            sapling: empty_shard_tree(),
+            orchard: empty_shard_tree(),
+            ironwood: empty_shard_tree(),
+        }
+    }
+
+    /// Replaces one pool's shard tree with an empty tree, leaving the other
+    /// pools alone.
+    ///
+    /// The empty tree is that pool's correct state at its own activation, so
+    /// this is the rollback a pool needs when its recorded history cannot be
+    /// trusted and no checkpoint survives to roll back to.
+    pub(crate) fn clear_pool(&mut self, pool: ShieldedPool) {
+        tracing::info!("Clearing {pool:?} shard tree.");
+        match pool {
+            ShieldedPool::Sapling => self.sapling = empty_shard_tree(),
+            ShieldedPool::Orchard => self.orchard = empty_shard_tree(),
+            ShieldedPool::Ironwood => self.ironwood = empty_shard_tree(),
         }
     }
 }
@@ -1751,6 +1856,28 @@ impl Default for ShardTrees {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// An empty shard tree with the crate's standard checkpoint retention and
+/// the zero-height checkpoint that every fresh tree must carry.
+pub(crate) fn empty_shard_tree<H, const DEPTH: u8, const SHARD_HEIGHT: u8>()
+-> ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>
+where
+    H: incrementalmerkletree::Hashable + Clone + PartialEq,
+{
+    let mut tree = ShardTree::new(
+        MemoryShardStore::empty(),
+        SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE as usize,
+    );
+
+    // `NotAboveNewest` is impossible on an empty checkpoint store.
+    assert_eq!(
+        tree.append_checkpoint(BlockHeight::from_u32(0))
+            .expect("should never fail"),
+        CheckpointAppendOutcome::Appended
+    );
+
+    tree
 }
 
 use shardtree::store::ShardStore;
