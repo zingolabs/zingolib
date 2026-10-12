@@ -257,12 +257,12 @@ jobs:
       # Bundle Pin. It publishes with the Binding Layer, once per version:
       # the step publishes nothing when npm already holds the version the
       # package names. Trusted publishing needs an npm newer than the one
-      # Node 22 bundles.
+      # Node 22 bundles, and no registry-url here, since that setting
+      # writes an empty token entry that the OIDC exchange must not see.
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
 
       - name: Publish the Bundle Pin package when npm lacks its version
         working-directory: bindings/pin
