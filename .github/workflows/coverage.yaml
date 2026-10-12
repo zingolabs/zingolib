@@ -7,20 +7,24 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
-  compute-image-tag:
-    uses: ./.github/workflows/compute-image-tag.yaml
+  ensure-image:
+    uses: ./.github/workflows/ensure-image.yaml
 
   coverage:
     name: Coverage
-    needs: compute-image-tag
+    needs: ensure-image
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
+      image: ghcr.io/zingolabs/ci-build:${{ needs.ensure-image.outputs.image-tag }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
       options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository

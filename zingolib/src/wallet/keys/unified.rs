@@ -1,5 +1,6 @@
 //! TODO: Add Mod Description Here!
 
+use secrecy::ExposeSecret;
 use std::io::{self, Read, Write};
 
 use bip0039::Mnemonic;
@@ -80,7 +81,7 @@ impl UnifiedKeyStore {
         if ufvk_encoded.starts_with(chain_type.hrp_sapling_extended_full_viewing_key()) {
             return Err(KeyError::InvalidFormat);
         }
-        let (network_type, ufvk) =
+        let (network_type, _revision, ufvk) =
             Ufvk::decode(&ufvk_encoded).map_err(|_| KeyError::KeyDecodingError)?;
         if network_type != chain_type.network_type() {
             return Err(KeyError::NetworkMismatch);
@@ -141,7 +142,7 @@ impl UnifiedKeyStore {
         };
 
         let unified_address =
-            UnifiedAddress::from_receivers(orchard_receiver, sapling_receiver, None)
+            UnifiedAddress::from_receivers(orchard_receiver, sapling_receiver, None, None, None)
                 .ok_or(KeyError::UnifiedAddressError)?;
 
         Ok(unified_address)
@@ -154,7 +155,7 @@ impl UnifiedKeyStore {
         scope: TransparentScope,
     ) -> Result<TransparentAddress, KeyError> {
         let account_pubkey = UnifiedFullViewingKey::try_from(self)?
-            .transparent()
+            .p2pkh()
             .ok_or(KeyError::NoViewCapability)?
             .clone();
 
@@ -285,11 +286,23 @@ impl ReadableWriteable for UnifiedSpendingKey {
 
     fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
         let usk_bytes = self.to_bytes(Era::Orchard);
+        let usk_bytes = usk_bytes.expose_secret();
         CompactSize::write(&mut writer, usk_bytes.len())?;
-        writer.write_all(&usk_bytes)?;
+        writer.write_all(usk_bytes)?;
         Ok(())
     }
 }
+/// The string encoding of a unified full viewing key for `chain_type`.
+///
+/// ZIP 316 Revision 0 when that revision can carry the key, Revision 2
+/// otherwise. Every full viewing key a wallet holds has a Revision 2
+/// encoding, so the encoder's error cannot arise here.
+#[must_use]
+pub fn encode_ufvk(ufvk: &UnifiedFullViewingKey, chain_type: &ChainType) -> String {
+    ufvk.encode(chain_type)
+        .expect("every unified full viewing key has a ZIP 316 Revision 2 encoding")
+}
+
 impl ReadableWriteable<ChainType, ChainType> for UnifiedFullViewingKey {
     const VERSION: u8 = 0;
 
@@ -309,7 +322,7 @@ impl ReadableWriteable<ChainType, ChainType> for UnifiedFullViewingKey {
     }
 
     fn write<W: Write>(&self, mut writer: W, input: ChainType) -> io::Result<()> {
-        let ufvk_bytes = self.encode(&input).as_bytes().to_vec();
+        let ufvk_bytes = encode_ufvk(self, &input).into_bytes();
         CompactSize::write(&mut writer, ufvk_bytes.len())?;
         writer.write_all(&ufvk_bytes)?;
         Ok(())
@@ -329,7 +342,7 @@ impl TryFrom<&UnifiedKeyStore> for orchard::keys::SpendingKey {
     type Error = KeyError;
     fn try_from(unified_key_store: &UnifiedKeyStore) -> Result<Self, Self::Error> {
         let usk = UnifiedSpendingKey::try_from(unified_key_store)?;
-        Ok(*usk.orchard())
+        Ok(usk.orchard().clone())
     }
 }
 impl TryFrom<&UnifiedKeyStore> for sapling_crypto::zip32::ExtendedSpendingKey {
@@ -375,9 +388,7 @@ impl TryFrom<&UnifiedKeyStore> for zcash_transparent::keys::AccountPubKey {
     type Error = KeyError;
     fn try_from(unified_key_store: &UnifiedKeyStore) -> Result<Self, Self::Error> {
         let ufvk = UnifiedFullViewingKey::try_from(unified_key_store)?;
-        ufvk.transparent()
-            .ok_or(KeyError::NoViewCapability)
-            .cloned()
+        ufvk.p2pkh().ok_or(KeyError::NoViewCapability).cloned()
     }
 }
 

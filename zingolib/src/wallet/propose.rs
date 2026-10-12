@@ -1,9 +1,14 @@
 //! creating proposals from wallet data
 
+use zcash_address::ZcashAddress;
 use zcash_client_backend::{
-    data_api::wallet::{
-        ConfirmationsPolicy,
-        input_selection::{GreedyInputSelector, SpendPolicy},
+    data_api::{
+        MaxSpendMode,
+        wallet::{
+            ConfirmationsPolicy,
+            input_selection::{GreedyInputSelector, LockedInputPolicy, SpendPolicy},
+            propose_send_max_transfer,
+        },
     },
     fees::{DustAction, DustOutputPolicy},
     zip321::TransactionRequest,
@@ -21,9 +26,22 @@ use super::{
 };
 use crate::{
     config::ChainType,
-    data::proposal::{ProportionalFeeProposal, ZingoProposal},
+    data::{
+        proposal::{ProportionalFeeProposal, ZingoProposal},
+        receivers::{Receiver, transaction_request_from_receivers},
+    },
 };
-use pepper_sync::{keys::transparent::TransparentScope, sync::ScanPriority};
+use pepper_sync::sync::{ScanPriority, ScanRange};
+
+/// How many times [`LightWallet::create_send_all_proposal`] proposes a
+/// send-all request, the first attempt included. Each retry can surface
+/// only one more fee step that the sizing pass left unpriced, and one
+/// such step is known: the change output the send path always writes.
+/// The remaining attempts cover a selection that shifts under the
+/// reduced amount.
+///
+/// This may not be the best solution. The correct one would require a change upstream.
+const SEND_ALL_PROPOSAL_ATTEMPTS: u32 = 4;
 
 impl LightWallet {
     /// Creates a proposal from a transaction request.
@@ -75,6 +93,94 @@ impl LightWallet {
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
             &SpendPolicy::default(),
+            None,
+            None,
+        )
+        .map_err(ProposeSendError::Proposal)
+    }
+
+    /// Creates a proposal that sends the whole shielded spendable balance,
+    /// less the fee, to `address`.
+    ///
+    /// A send-max proposal over every spendable note sizes the send. The
+    /// proposal returned comes from [`Self::create_send_proposal`], the
+    /// path a plain send of the same amount takes, so the two agree on the
+    /// fee and the send-all keeps the change memo.
+    ///
+    /// Sizing prices step 0 with no change output, while the send path
+    /// always writes one, so the sized amount can overshoot what the
+    /// selected notes cover. An `InsufficientFunds` answer names that
+    /// shortfall, the recipient amount drops by it, and the request goes
+    /// out again, up to [`SEND_ALL_PROPOSAL_ATTEMPTS`] times.
+    ///
+    /// If the amount never balances, the send-max proposal is returned.
+    pub(crate) fn create_send_all_proposal(
+        &mut self,
+        address: ZcashAddress,
+        memo: Option<MemoBytes>,
+        account_id: zip32::AccountId,
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
+        let sizing = self.propose_send_max(address.clone(), memo.clone(), account_id)?;
+        let mut amount = recipient_amount(&sizing);
+
+        let request = |amount: Zatoshis| {
+            transaction_request_from_receivers(vec![Receiver::new(
+                address.clone(),
+                amount,
+                memo.clone(),
+            )])
+        };
+
+        for _ in 0..SEND_ALL_PROPOSAL_ATTEMPTS {
+            let attempt = self.create_send_proposal(request(amount)?, account_id);
+            let Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                    required,
+                    available,
+                },
+            )) = &attempt
+            else {
+                return attempt;
+            };
+            match send_all_correction(amount, *required, *available) {
+                SendAllCorrection::Retry(corrected_amount) => amount = corrected_amount,
+                SendAllCorrection::NothingToSend => return attempt,
+                SendAllCorrection::Unbalanced => break,
+            }
+        }
+        Ok(sizing)
+    }
+
+    fn propose_send_max(
+        &mut self,
+        address: ZcashAddress,
+        memo: Option<MemoBytes>,
+        account_id: zip32::AccountId,
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
+        let chain_type = self.chain_type;
+        let confirmations_policy =
+            ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false);
+
+        propose_send_max_transfer::<
+            LightWallet,
+            ChainType,
+            zcash_primitives::transaction::fees::zip317::FeeRule,
+            WalletError,
+        >(
+            self,
+            &chain_type,
+            account_id,
+            &[
+                ShieldedPool::Ironwood,
+                ShieldedPool::Orchard,
+                ShieldedPool::Sapling,
+            ],
+            &zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+            address,
+            memo,
+            MaxSpendMode::MaxSpendable,
+            confirmations_policy,
+            &LockedInputPolicy::Exclude,
             None,
         )
         .map_err(ProposeSendError::Proposal)
@@ -134,6 +240,7 @@ impl LightWallet {
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
             zcash_client_backend::data_api::CoinbaseFilter::AllTransparentOutputs,
+            None,
         )
         .map_err(ProposeShieldError::Component)?;
 
@@ -164,83 +271,84 @@ impl LightWallet {
     }
 
     fn change_memo_from_transaction_request(&self, request: &TransactionRequest) -> MemoBytes {
-        let mut recipient_uas = Vec::new();
-        let mut refund_address_indexes = Vec::new();
-        let mut refund_address_count = self
-            .transparent_addresses
-            .keys()
-            .filter(|&address_id| address_id.scope() == TransparentScope::Refund)
-            .count() as u32;
-        for payment in request.payments().values() {
-            if let Ok(address) = payment
-                .recipient_address()
-                .clone()
-                .convert_if_network::<zcash_keys::address::Address>(self.chain_type.network_type())
-            {
-                match address {
-                    zcash_keys::address::Address::Unified(unified_address) => {
-                        recipient_uas.push(unified_address);
-                    }
-                    zcash_keys::address::Address::Tex(_) => {
-                        refund_address_indexes.push(refund_address_count);
-                        refund_address_count += 1;
-                    }
-                    _ => (),
-                }
-            }
-        }
-        let uas_bytes = match zingo_memo::create_wallet_internal_memo_version_1(
+        let recipient_uas = request
+            .payments()
+            .values()
+            .filter_map(|payment| {
+                payment
+                    .recipient_address()
+                    .clone()
+                    .convert_if_network::<zcash_keys::address::Address>(
+                        self.chain_type.network_type(),
+                    )
+                    .ok()
+            })
+            .filter_map(|address| match address {
+                zcash_keys::address::Address::Unified(unified_address) => Some(*unified_address),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let uas_bytes = match zingo_memo::create_wallet_internal_memo(
             &self.chain_type,
             recipient_uas.as_slice(),
-            refund_address_indexes.as_slice(),
         ) {
-            Ok(bytes) => bytes,
+            Ok(packed) => {
+                if packed.recorded < recipient_uas.len() {
+                    log::error!(
+                        "The memo field holds {} of the {} recipient addresses of this send. \
+                         After a rescan the wallet will not display the sent-to address of the \
+                         rest. This is a visual error only. The correct addresses were sent to.",
+                        packed.recorded,
+                        recipient_uas.len()
+                    );
+                }
+                packed.bytes
+            }
             Err(e) => {
                 log::error!(
                     "Could not write uas to memo field: {e}\n\
         Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
         The correct address was sent to."
                 );
-                [0; 511]
+                [0; zingo_memo::MEMO_LEN]
             }
         };
         MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))
     }
 
-    /// Returns the block height at which all blocks equal to and above this height are scanned (scan ranges set to
-    /// `Scanned`, `ScannedWithoutMapping` or `RefetchingNullifiers` priority).
+    /// Returns the block height at which all blocks equal to and above this height are scanned (scan ranges whose
+    /// priority satisfies [`ScanPriority::is_scanned`]).
     /// Returns `None` if `self.scan_ranges` is empty.
     ///
     /// Useful for determining which height all the nullifiers have been mapped from for guaranteeing if a note is
     /// unspent.
     ///
+    /// The horizon *withholds* a note when the note's confirmation height lies below it. A spending
+    /// transaction can be mined only at or above the block that mined the note, so a note at or
+    /// above the horizon has had its entire spend window scanned, and the absence of a discovered
+    /// spend proves the note unspent. For a note below the horizon, the unscanned gap may conceal
+    /// a spend, so the strict form of [`Self::spendable_notes`] omits the note rather than vouch
+    /// for it. Withholding asserts nothing about the note; it records only that the wallet does
+    /// not yet know.
+    ///
     /// `all_spends_known` may be set if all the spend locations are already known before scanning starts. For example,
     /// the location of all transparent spends are known due to the pre-scan gRPC calls. In this case, the height returned
     /// is the lowest height where there are no higher scan ranges with `FoundNote` or higher scan priority.
     pub(crate) fn spend_horizon(&self, all_spends_known: bool) -> Option<BlockHeight> {
-        if let Some(scan_range) = self
-            .sync_state
-            .scan_ranges()
-            .iter()
-            .rev()
-            .find(|scan_range| {
-                if all_spends_known {
-                    scan_range.priority() >= ScanPriority::FoundNote
-                        || scan_range.priority() == ScanPriority::Scanning
-                } else {
-                    scan_range.priority() != ScanPriority::Scanned
-                        && scan_range.priority() != ScanPriority::ScannedWithoutMapping
-                        && scan_range.priority() != ScanPriority::RefetchingNullifiers
-                }
-            })
-        {
-            Some(scan_range.block_range().end)
-        } else {
-            self.sync_state
-                .scan_ranges()
-                .first()
-                .map(|range| range.block_range().start)
-        }
+        let mut scan_ranges_top_to_bottom = self.sync_state.scan_ranges().iter().rev();
+        let awaits_spend_detection = |scan_range: &&ScanRange| {
+            if all_spends_known {
+                scan_range.priority() >= ScanPriority::FoundNote
+                    || scan_range.priority() == ScanPriority::Scanning
+            } else {
+                !scan_range.priority().is_scanned()
+            }
+        };
+        let highest_range_awaiting_detection =
+            scan_ranges_top_to_bottom.find(awaits_spend_detection);
+        highest_range_awaiting_detection
+            .map(|awaiting_range| awaiting_range.block_range().end)
+            .or_else(|| self.sync_state.wallet_birthday())
     }
 
     /// Returns `true` if all nullifiers above `note_height` have been checked for this note's spend status.
@@ -262,6 +370,94 @@ impl LightWallet {
                         && scan_range.block_range().contains(&(refetch_range.end - 1))
                 })
             })
+    }
+}
+
+/// The amount of the first payment in a proposal's last step.
+pub(crate) fn recipient_amount(proposal: &ProportionalFeeProposal) -> Zatoshis {
+    proposal
+        .steps()
+        .last()
+        .transaction_request()
+        .payments()
+        .get(&0)
+        .and_then(|payment| payment.amount())
+        .unwrap_or(Zatoshis::ZERO)
+}
+
+/// The next step of the send-all correction, once the send path has
+/// refused a recipient amount.
+#[derive(Debug, PartialEq, Eq)]
+enum SendAllCorrection {
+    /// Propose again with this recipient amount.
+    Retry(Zatoshis),
+    /// Balance too small to send anything.
+    NothingToSend,
+    /// Reducing the amount cannot help.
+    Unbalanced,
+}
+
+/// Classifies the send path's refusal of `amount`, which reported the
+/// selected inputs as `available` against the `required` total.
+fn send_all_correction(
+    amount: Zatoshis,
+    required: Zatoshis,
+    available: Zatoshis,
+) -> SendAllCorrection {
+    let Some(shortfall) = (required - available).filter(|shortfall| *shortfall > Zatoshis::ZERO)
+    else {
+        return SendAllCorrection::Unbalanced;
+    };
+    match (amount - shortfall).filter(|corrected| *corrected > Zatoshis::ZERO) {
+        Some(corrected) => SendAllCorrection::Retry(corrected),
+        None => SendAllCorrection::NothingToSend,
+    }
+}
+
+#[cfg(test)]
+mod send_all_correction {
+    use zcash_protocol::value::Zatoshis;
+
+    use super::{SendAllCorrection, send_all_correction};
+
+    fn zats(value: u64) -> Zatoshis {
+        Zatoshis::const_from_u64(value)
+    }
+
+    #[test]
+    fn a_shortfall_below_the_amount_retries_with_the_amount_reduced() {
+        assert_eq!(
+            send_all_correction(zats(125_000), zats(155_000), zats(150_000)),
+            SendAllCorrection::Retry(zats(120_000))
+        );
+    }
+
+    #[test]
+    fn a_shortfall_equal_to_the_amount_leaves_nothing_to_send() {
+        assert_eq!(
+            send_all_correction(zats(5_000), zats(155_000), zats(150_000)),
+            SendAllCorrection::NothingToSend
+        );
+    }
+
+    #[test]
+    fn a_shortfall_above_the_amount_leaves_nothing_to_send() {
+        assert_eq!(
+            send_all_correction(zats(25_000), zats(1_035_000), zats(1_000_000)),
+            SendAllCorrection::NothingToSend
+        );
+    }
+
+    #[test]
+    fn a_refusal_with_no_shortfall_is_unbalanced() {
+        assert_eq!(
+            send_all_correction(zats(76_000), zats(101_000), zats(160_000)),
+            SendAllCorrection::Unbalanced
+        );
+        assert_eq!(
+            send_all_correction(zats(76_000), zats(160_000), zats(160_000)),
+            SendAllCorrection::Unbalanced
+        );
     }
 }
 

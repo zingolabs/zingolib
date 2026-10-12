@@ -74,20 +74,18 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> 
 
 // The send arguments have two possible formats:
 // - 1 arguments in the form of:
-//    *  a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>", "zennies_for_zingo":<true|false>}]'
+//    *  a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>"}]'
 // - 1 + 1 optional arguments for a single address send. &["<address>", "<optional memo>"]
 pub(super) fn parse_send_all_args(
     args: &[&str],
-) -> Result<(ZcashAddress, bool, Option<MemoBytes>), CommandError> {
+) -> Result<(ZcashAddress, Option<MemoBytes>), CommandError> {
     let address: ZcashAddress;
     let memo: Option<MemoBytes>;
-    let zennies_for_zingo: bool;
     if args.len() == 1 {
         if let Ok(addr) = address_from_str(args[0]) {
             address = addr;
             memo = None;
             check_memo_compatibility(&address, &memo)?;
-            zennies_for_zingo = false;
         } else {
             let json_arg =
                 json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
@@ -100,10 +98,8 @@ pub(super) fn parse_send_all_args(
             address = address_from_json(&json_arg)?;
             memo = memo_from_json(&json_arg)?;
             check_memo_compatibility(&address, &memo)?;
-            zennies_for_zingo = zennies_flag_from_json(&json_arg)?;
         }
     } else if args.len() == 2 {
-        zennies_for_zingo = false;
         address = address_from_str(args[0]).map_err(CommandError::ConversionFailed)?;
         memo = Some(
             wallet::utils::memo_bytes_from_string(args[1].to_string())
@@ -113,27 +109,21 @@ pub(super) fn parse_send_all_args(
     } else {
         return Err(CommandError::InvalidArguments);
     }
-    Ok((address, zennies_for_zingo, memo))
+    Ok((address, memo))
 }
 
 // Parse the arguments for `spendable_balance`.
 // The arguments have two possible formats:
-// - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>", "zennies_for_zingo": <true|false>}]'
+// - 1 argument in the form of a JSON string (single address only). '[{"address":"<address>"}]'
 // - 1 argument for a single address. &["<address>"]
-// NOTE: zennies_for_zingo can only be set in a JSON
-// string.
-pub(super) fn parse_max_send_value_args(
-    args: &[&str],
-) -> Result<(ZcashAddress, bool), CommandError> {
+pub(super) fn parse_max_send_value_args(args: &[&str]) -> Result<ZcashAddress, CommandError> {
     if args.len() != 1 {
         return Err(CommandError::InvalidArguments);
     }
     let address: ZcashAddress;
-    let zennies_for_zingo: bool;
 
     if let Ok(addr) = address_from_str(args[0]) {
         address = addr;
-        zennies_for_zingo = false;
     } else {
         let json_arg = json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
 
@@ -146,10 +136,9 @@ pub(super) fn parse_max_send_value_args(
             return Err(CommandError::EmptyJsonArray);
         }
         address = address_from_json(&json_arg)?;
-        zennies_for_zingo = zennies_flag_from_json(&json_arg)?;
     }
 
-    Ok((address, zennies_for_zingo))
+    Ok(address)
 }
 
 // Checks send inputs do not contain memo's to transparent addresses.
@@ -174,18 +163,6 @@ fn address_from_json(json_array: &JsonValue) -> Result<ZcashAddress, CommandErro
             "address is not a string!".to_string(),
         ))?;
     address_from_str(address_str).map_err(CommandError::ConversionFailed)
-}
-
-fn zennies_flag_from_json(json_arg: &JsonValue) -> Result<bool, CommandError> {
-    if !json_arg.has_key("zennies_for_zingo") {
-        return Err(CommandError::MissingZenniesForZingoFlag);
-    }
-    match json_arg["zennies_for_zingo"].as_bool() {
-        Some(boolean) => Ok(boolean),
-        None => Err(CommandError::ZenniesFlagNonBool(
-            json_arg["zennies_for_zingo"].to_string(),
-        )),
-    }
 }
 
 fn zatoshis_from_json(json_array: &JsonValue) -> Result<Zatoshis, CommandError> {
@@ -391,33 +368,17 @@ mod tests {
         // JSON single receiver
         let single_receiver = &[
             "{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
-                 \"memo\":\"test memo\", \
-                 \"zennies_for_zingo\":false}",
+                 \"memo\":\"test memo\"}",
         ];
         assert_eq!(
             super::parse_send_all_args(single_receiver).unwrap(),
-            (address.clone(), false, Some(memo.clone()))
+            (address.clone(), Some(memo.clone()))
         );
-        // NonBool Zenny Flag
-        let nb_zenny = &[
-            "{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
-                 \"memo\":\"test memo\", \
-                 \"zennies_for_zingo\":\"false\"}",
-        ];
-        assert!(matches!(
-            super::parse_send_all_args(nb_zenny),
-            Err(CommandError::ZenniesFlagNonBool(_))
-        ));
         // with memo
         let send_args = &[address_str, memo_str];
         assert_eq!(
             super::parse_send_all_args(send_args).unwrap(),
-            (address.clone(), false, Some(memo.clone()))
-        );
-        let send_args = &[address_str, memo_str];
-        assert_eq!(
-            super::parse_send_all_args(send_args).unwrap(),
-            (address.clone(), false, Some(memo.clone()))
+            (address.clone(), Some(memo.clone()))
         );
 
         // invalid address

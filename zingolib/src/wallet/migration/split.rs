@@ -6,7 +6,6 @@
 //! exactly `denomination + part_fee`, and the denominations of the parts the
 //! wallet will send once splitting completes.
 
-use orchard::builder::BundleType;
 use zcash_protocol::value::Zatoshis;
 
 use super::params::MigrationParams;
@@ -487,20 +486,71 @@ fn split_into(
 impl crate::wallet::LightWallet {
     /// The values (zatoshis) of the account's spendable pre-Ironwood (V2)
     /// Orchard notes, the input to [`plan_migration`].
+    ///
+    /// Errors with [`WalletError::SyncIncomplete`] when the spend horizon
+    /// withholds every V2 note the anchor would otherwise offer.
+    ///
+    /// [`WalletError::SyncIncomplete`]: crate::wallet::error::WalletError::SyncIncomplete
     #[allow(clippy::result_large_err)]
     pub(crate) fn migration_note_values(
         &self,
         account: zip32::AccountId,
     ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
+        let (_, anchor_height) = self.get_migration_heights()?;
+        let known_unspent = self.anchored_v2_known_unspent(account, anchor_height)?;
+        let not_known_spent = self.anchored_v2_not_known_spent(account, anchor_height)?;
+        // The two sets differ only in the spend-confirmation filter, so
+        // an empty first with a non-empty second means spend detection
+        // is incomplete below the recorded tip for every note.
+        if known_unspent.is_empty() && !not_known_spent.is_empty() {
+            return Err(crate::wallet::error::WalletError::SyncIncomplete);
+        }
+        Ok(known_unspent)
+    }
+
+    /// The values of the account's anchored V2 notes that sync has proven
+    /// unspent: every block in each note's possible spend window is scanned
+    /// and no spend appeared. Only this set is safe to plan spends from.
+    #[allow(clippy::result_large_err)]
+    fn anchored_v2_known_unspent(
+        &self,
+        account: zip32::AccountId,
+        anchor_height: zcash_protocol::consensus::BlockHeight,
+    ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
+        self.anchored_v2_values(account, anchor_height, false)
+    }
+
+    /// The values of the account's anchored V2 notes with no recorded
+    /// spending transaction: the known-unspent set plus the notes whose
+    /// spend status sync cannot yet vouch for. A superset of
+    /// [`Self::anchored_v2_known_unspent`]; the difference is exactly the
+    /// notes awaiting spend detection.
+    #[allow(clippy::result_large_err)]
+    fn anchored_v2_not_known_spent(
+        &self,
+        account: zip32::AccountId,
+        anchor_height: zcash_protocol::consensus::BlockHeight,
+    ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
+        self.anchored_v2_values(account, anchor_height, true)
+    }
+
+    /// The shared query behind the named pair above; callers reach it
+    /// through them so the spend-certainty mode always has a name.
+    #[allow(clippy::result_large_err)]
+    fn anchored_v2_values(
+        &self,
+        account: zip32::AccountId,
+        anchor_height: zcash_protocol::consensus::BlockHeight,
+        include_potentially_spent: bool,
+    ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
         use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
 
-        let (_, anchor_height) = self.get_migration_heights()?;
         Ok(self
             .spendable_notes::<pepper_sync::wallet::OrchardNote>(
                 anchor_height,
                 &[],
                 account,
-                false,
+                include_potentially_spent,
             )?
             .into_iter()
             .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
@@ -598,7 +648,7 @@ impl crate::wallet::LightWallet {
     }
 
     /// Builds, proves, signs and records one planned note-splitting
-    /// transaction (Orchard→Orchard self-send). Returns its txid. Broadcast
+    /// transaction (Orchard→Orchard self-send). Returns its txid. Transmission
     /// is the caller's step.
     #[allow(clippy::result_large_err)]
     pub(crate) fn build_note_split_transaction(
@@ -644,7 +694,7 @@ impl crate::wallet::LightWallet {
         outputs: MigrationOutputs<'_>,
     ) -> Result<zcash_primitives::transaction::TxId, crate::wallet::error::WalletError> {
         use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
-        use zcash_primitives::transaction::builder::{BuildConfig, Builder};
+        use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
         use zcash_protocol::memo::MemoBytes;
 
         use crate::wallet::error::WalletError;
@@ -737,12 +787,13 @@ impl crate::wallet::LightWallet {
                 MigrationOutputs::Orchard(_) => None,
                 MigrationOutputs::Ironwood(_) => Some(orchard::Anchor::empty_tree()),
             },
-            orchard_pool_bundle_type: BundleType::Transactional {
-                bundle_required: false,
-                pad_to_minimum: None,
-            },
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
         };
-        let mut builder = Builder::new(self.chain_type, target_height, build_config);
+        let mut builder =
+            Builder::new(self.chain_type, target_height, build_config).with_expiry_height(
+                crate::wallet::expiry::tx_expiry_height(&self.chain_type, target_height),
+            );
         for (note, merkle_path) in notes.into_iter().zip(merkle_paths) {
             builder
                 .add_orchard_spend::<std::convert::Infallible>(
@@ -785,8 +836,7 @@ impl crate::wallet::LightWallet {
             }
         }
 
-        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params()
-            .map_err(|e| WalletError::MigrationBuild(format!("sapling params: {e}")))?;
+        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
         let build_result = builder
@@ -794,7 +844,7 @@ impl crate::wallet::LightWallet {
                 &zcash_transparent::builder::TransparentSigningSet::new(),
                 &[usk.sapling().clone()],
                 &[usk.orchard().into()],
-                rand::rngs::OsRng,
+                crate::utils::system_rng(),
                 &sapling_prover,
                 &sapling_prover,
                 &fee_rule,

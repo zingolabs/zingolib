@@ -61,6 +61,16 @@
 //! its poll replacement now exits immediately after the helper's own
 //! sync, consistent with the observed drop in per-case time.
 //!
+//! Update (2026-09-28, zainod 0.10.1, zebrad 6.3.0): zainod now polls the
+//! validator's mempool every 500 ms by default, and the indexer lag rose
+//! to 89-451 ms across three runs. That outgrew the sync session's 200 ms
+//! mempool drain settle window, so a session could end before the
+//! transaction was streamed and the record stayed Transmitted: this cell
+//! failed with no post-sync path to Mempool status. With the settle window
+//! raised to 750 ms (`zingo_netutils::time::MEMPOOL_DRAIN_SETTLE`) the
+//! record again reaches Mempool status inside the first sync session, at
+//! 802-852 ms with sync_and_await returning at the same instant.
+//!
 //! # Designed cells: one remaining
 //!
 //! Of the rejection-side attribution cells for the boundary-adjacent
@@ -129,7 +139,7 @@ async fn indexer_mempool_view_trails_validator_acceptance() {
     )
     .await
     .unwrap();
-    let bound = Duration::from_secs(10);
+    let bound = zingo_netutils::time::test::MEMPOOL_INGEST_BOUND;
     let indexer_lag = loop {
         let mut mempool_stream = grpc_client
             .get_mempool_tx(
@@ -137,7 +147,7 @@ async fn indexer_mempool_view_trails_validator_acceptance() {
                     exclude_txid_suffixes: vec![],
                     pool_types: vec![],
                 },
-                Duration::from_secs(5),
+                zingo_netutils::time::test::MEMPOOL_STREAM_BOUND,
             )
             .await
             .unwrap();
@@ -195,7 +205,7 @@ async fn wallet_mempool_record_trails_validator_acceptance() {
     recipient.sync_and_await().await.unwrap();
     let sync_returned = accepted_at.elapsed();
 
-    let bound = Duration::from_secs(15);
+    let bound = zingo_netutils::time::test::WALLET_RECORD_LAG_BOUND;
     let wallet_record_lag = loop {
         let in_mempool = {
             let wallet = recipient.wallet();

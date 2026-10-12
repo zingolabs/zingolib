@@ -10,12 +10,11 @@
 //! whenever one of those inputs changes.
 //!
 //! Each test names the claim its failure disproves. The claims and
-//! their history live in `docs/adr/0003-test-owned-chain-caches.md`
+//! their history live in `zingo-adrs zingolib/0003`
 //! and the Launch block entry of `CONTEXT.md`.
 #![cfg(feature = "sentinels")]
 
 use std::path::PathBuf;
-use std::time::Duration;
 
 use zcash_local_net::MinerPool;
 use zcash_local_net::process::Process;
@@ -69,7 +68,7 @@ async fn launch_mines_exactly_one_block_and_nothing_else_mines() {
         "this test issued writes itself, so it cannot attribute block 1: {writes:?}"
     );
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(zingo_netutils::time::test::IDLE_OBSERVATION_WINDOW).await;
     let (idle_height, idle_tip) = validator_rpc::try_get_chain_info(rpc_port)
         .await
         .expect("idle zebrad must still answer");
@@ -145,7 +144,7 @@ async fn suppressed_launch_generate_leaves_genesis() {
          state persists on disk after all, or something other than the launch generate mines"
     );
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(zingo_netutils::time::test::IDLE_OBSERVATION_WINDOW).await;
     let (idle_height, idle_tip) = validator_rpc::try_get_chain_info(rpc_port)
         .await
         .expect("idle cache-loaded zebrad must still answer");

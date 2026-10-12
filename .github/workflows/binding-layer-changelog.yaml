@@ -1,0 +1,37 @@
+# The workbench tool binding-changelog generates bindings/CHANGELOG.md from
+# the changelogs of the audited crates, and this workflow fails when the
+# committed file differs from what the tool generates at this commit.
+#
+# The check has its own workflow with no `paths` filter, for the reason
+# no-duplicated-code.yaml states: a required check must report on every pull
+# request. workbench.yaml runs the workbench's own tests.
+name: Binding Layer changelog
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [stable, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  binding-layer-changelog:
+    name: Binding Layer changelog
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      # The tool diffs each audited changelog between two commits, so the
+      # checkout needs the history that reaches the earlier one.
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Check bindings/CHANGELOG.md
+        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin binding-changelog -- --check

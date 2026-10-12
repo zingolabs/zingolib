@@ -1,0 +1,10 @@
+# Dependency features that compile away but must stay.
+# One entry per line: <crate>::<dependency>::<feature>, two spaces, the reason.
+# Rewrite with `cargo run --bin feature-census -- --all --bless`.
+#
+# This file is empty because no feature has yet earned a blessing. The census
+# runs nightly, and its first full sweep will report every feature whose
+# removal still compiles. Each one is then either deleted or recorded here with
+# the reason it must stay — a feature that changes behaviour without changing
+# the API compiles away exactly like a redundant one, and only a person can
+# tell those apart.

@@ -14,16 +14,19 @@ use zcash_protocol::consensus::{BlockHeight, Parameters};
 use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
 use zingo_common_components::protocol::ActivationHeights;
 
+pub use crate::destination::servers::{IndexerConfig, Location, Role, Trust};
+
 use crate::wallet::{
     WalletBase, WalletSettings,
     error::{KeyError, WalletError},
     keys::unified::UnifiedKeyStore,
 };
 
-/// Default indexer uri
-pub const DEFAULT_INDEXER_URI: &str = "https://zec.rocks:443";
-/// Default indexer uri (testnet)
-pub const DEFAULT_INDEXER_URI_TESTNET: &str = "https://testnet.zec.rocks";
+/// The default indexer URIs, from the census (the sole source of truth for
+/// indexer endpoints). NOTE: the census testnet default carries an explicit
+/// `:443`, retiring the old portless string this module completed to
+/// `:9067` — the drift between that completion and the mobile list's `:443`
+/// is what the census exists to end.
 /// Default wallet file name
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 
@@ -36,7 +39,7 @@ pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 /// tip. The invariant is that the block has been mined, not merely named: a
 /// scheduled-but-future network-upgrade activation height does not qualify.
 /// Bumping this constant to a recently observed height is a release-checklist
-/// step. See `docs/adr/0007-library-birthday.md`.
+/// step.
 pub const LIB_BIRTHDAY_MAINNET: u32 = 3_411_499;
 
 /// The testnet Library Birthday. See [`LIB_BIRTHDAY_MAINNET`].
@@ -52,8 +55,7 @@ pub const LIB_BIRTHDAY_TESTNET: u32 = 4_134_000;
 /// Indexerless.
 ///
 /// Restores must not use this, since a restored seed or viewing key may predate
-/// the library and always requires a caller-supplied birthday. See
-/// `docs/adr/0007-library-birthday.md`.
+/// the library and always requires a caller-supplied birthday.
 pub fn lib_birthday(chain: ChainType) -> u32 {
     match chain {
         ChainType::Mainnet => LIB_BIRTHDAY_MAINNET,
@@ -91,8 +93,8 @@ impl TryFrom<&str> for ChainType {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "mainnet" => Ok(ChainType::Mainnet),
-            "testnet" => Ok(ChainType::Testnet),
+            "mainnet" | "main" => Ok(ChainType::Mainnet),
+            "testnet" | "test" => Ok(ChainType::Testnet),
             "regtest" => Ok(ChainType::Regtest(ActivationHeights::default())),
             _ => Err(InvalidChainType(value.to_string())),
         }
@@ -140,6 +142,7 @@ pub(crate) mod consealed {
                     NetworkUpgrade::Nu6_1 => activation_heights.nu6_1().map(BlockHeight::from_u32),
                     NetworkUpgrade::Nu6_2 => activation_heights.nu6_2().map(BlockHeight::from_u32),
                     NetworkUpgrade::Nu6_3 => activation_heights.nu6_3().map(BlockHeight::from_u32),
+                    NetworkUpgrade::Nu7 => activation_heights.nu7().map(BlockHeight::from_u32),
                 },
             }
         }
@@ -275,30 +278,22 @@ impl WalletConfig {
     }
 }
 
-/// Constructs a http::Uri from a `server` string. If `server` is `None` use the `DEFAULT_INDEXER_URI`.
-/// If the provided string is missing the http prefix, a prefix of `http://` will be added.
-/// If the provided string is missing a port, a port of `:9067` will be added.
-pub fn construct_indexer_uri(server: Option<String>) -> Result<http::Uri, InvalidUri> {
-    match server {
-        Some(s) => {
-            if s.is_empty() {
-                return Ok(http::Uri::default());
-            } else {
-                let mut s = if s.starts_with("http") {
-                    s
-                } else {
-                    "http://".to_string() + &s
-                };
-                let uri: http::Uri = s.parse()?;
-                if uri.port().is_none() {
-                    s += ":9067";
-                }
-                s
-            }
-        }
-        None => DEFAULT_INDEXER_URI.to_string(),
+/// Constructs an `http::Uri` from `server`, adding an `http://` prefix and a
+/// `:9067` port when they are missing.
+pub fn construct_indexer_uri(server: String) -> Result<http::Uri, InvalidUri> {
+    if server.is_empty() {
+        return Ok(http::Uri::default());
     }
-    .parse()
+    let mut s = if server.starts_with("http") {
+        server
+    } else {
+        "http://".to_string() + &server
+    };
+    let uri: http::Uri = s.parse()?;
+    if uri.port().is_none() {
+        s += ":9067";
+    }
+    s.parse()
 }
 
 /// Configuration data for the construction of a [`crate::lightclient::LightClient`].
@@ -307,17 +302,20 @@ pub struct ClientConfig {
     /// URI of the indexer the lightclient is connected to. `None` means the
     /// client is Indexerless (no Indexer connection).
     indexer_uri: Option<http::Uri>,
-    /// URI the Ironwood migration parts are broadcast to. Broadcasting to a
+    /// URI the Ironwood migration parts are transmitted to. Transmitting to a
     /// different server than the one used for synchronization reduces the
     /// correlation between the two (ZIP 318). While Mixnet Mode is on (the
     /// `nym` feature, ADR 0011), this URI is dialed through the mixnet and
-    /// must be https on a host distinct from the synchronization endpoint's
-    /// (a shared host is refused). Unset, parts go to one Broadcast Indexer
-    /// drawn at random per submission. On the clearnet opt-out path it falls
-    /// back to `indexer_uri` with a logged warning when unset. When both are
-    /// `None` the client emits no network traffic and broadcasting fails
+    /// must be https on a host distinct from an untrusted synchronization
+    /// endpoint's (a shared host is refused). Unset, parts go to one
+    /// drawn Destination per submission. When both are
+    /// `None` the client emits no network traffic and transmission fails
     /// with [`crate::lightclient::error::LightClientError::Offline`].
-    migration_broadcast_uri: Option<http::Uri>,
+    migration_transmission_uri: Option<http::Uri>,
+    /// The consumer's indexer classifications.
+    indexers: Vec<IndexerConfig>,
+    /// Overrides the chain's trust for an unclassified remote indexer.
+    remote_indexer_trust: Option<Trust>,
     /// Chain type of the blockchain the lightclient is connected to.
     chain_type: ChainType,
     /// Directory where the wallet file will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
@@ -341,10 +339,22 @@ impl ClientConfig {
         self.indexer_uri.clone()
     }
 
-    /// Returns the migration broadcast URI, if one is configured.
+    /// Returns the migration transmission URI, if one is configured.
     #[must_use]
-    pub fn migration_broadcast_uri(&self) -> Option<http::Uri> {
-        self.migration_broadcast_uri.clone()
+    pub fn migration_transmission_uri(&self) -> Option<http::Uri> {
+        self.migration_transmission_uri.clone()
+    }
+
+    /// Returns the indexer classifications.
+    #[must_use]
+    pub fn indexers(&self) -> &[IndexerConfig] {
+        &self.indexers
+    }
+
+    /// Returns the remote trust override, if any.
+    #[must_use]
+    pub fn remote_indexer_trust(&self) -> Option<Trust> {
+        self.remote_indexer_trust
     }
 
     /// Returns wallet directory.
@@ -385,7 +395,9 @@ impl ClientConfig {
 #[derive(Clone, Debug)]
 pub struct ClientConfigBuilder {
     indexer_uri: Option<http::Uri>,
-    migration_broadcast_uri: Option<http::Uri>,
+    migration_transmission_uri: Option<http::Uri>,
+    indexers: Vec<IndexerConfig>,
+    remote_indexer_trust: Option<Trust>,
     chain_type: ChainType,
     wallet_dir: Option<PathBuf>,
     wallet_name: Option<String>,
@@ -409,10 +421,22 @@ impl ClientConfigBuilder {
         self
     }
 
-    /// Set a dedicated URI for broadcasting Ironwood migration parts,
+    /// Set a dedicated URI for transmitting Ironwood migration parts,
     /// distinct from the synchronization endpoint.
-    pub fn set_migration_broadcast_uri(mut self, migration_broadcast_uri: http::Uri) -> Self {
-        self.migration_broadcast_uri = Some(migration_broadcast_uri);
+    pub fn set_migration_transmission_uri(mut self, migration_transmission_uri: http::Uri) -> Self {
+        self.migration_transmission_uri = Some(migration_transmission_uri);
+        self
+    }
+
+    /// Classify one indexer.
+    pub fn add_indexer(mut self, indexer: IndexerConfig) -> Self {
+        self.indexers.push(indexer);
+        self
+    }
+
+    /// Override the chain's trust for an unclassified remote indexer.
+    pub fn set_remote_indexer_trust(mut self, trust: Trust) -> Self {
+        self.remote_indexer_trust = Some(trust);
         self
     }
 
@@ -454,7 +478,9 @@ impl ClientConfigBuilder {
 
         Ok(ClientConfig {
             indexer_uri: self.indexer_uri,
-            migration_broadcast_uri: self.migration_broadcast_uri,
+            migration_transmission_uri: self.migration_transmission_uri,
+            indexers: self.indexers,
+            remote_indexer_trust: self.remote_indexer_trust,
             chain_type: self.chain_type,
             wallet_dir,
             wallet_name,
@@ -467,7 +493,9 @@ impl Default for ClientConfigBuilder {
     fn default() -> Self {
         Self {
             indexer_uri: None,
-            migration_broadcast_uri: None,
+            migration_transmission_uri: None,
+            indexers: Vec::new(),
+            remote_indexer_trust: None,
             wallet_dir: None,
             wallet_name: None,
             chain_type: ChainType::Mainnet,
@@ -476,8 +504,9 @@ impl Default for ClientConfigBuilder {
                 chain_height: 1,
                 wallet_settings: WalletSettings {
                     sync_config: SyncConfig {
-                        transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                        transparent_address_discovery: TransparentAddressDiscovery::default(),
                         performance_level: pepper_sync::config::PerformanceLevel::High,
+                        shutdown_on_completion: false,
                     },
                     min_confirmations: NonZeroU32::try_from(3)
                         .expect("hard coded non-zero integer"),
@@ -554,14 +583,14 @@ pub enum ClientConfigError {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{ChainType, ClientConfig};
+    use crate::config::ChainType;
+    use crate::config::ClientConfig;
+    use zingo_common_components::protocol::ActivationHeights;
 
     #[tokio::test]
     async fn test_load_clientconfig() {
-        let valid_uri = crate::config::construct_indexer_uri(Some(
-            crate::config::DEFAULT_INDEXER_URI.to_string(),
-        ))
-        .unwrap();
+        let valid_uri =
+            crate::config::construct_indexer_uri("https://zec.rocks:443".to_string()).unwrap();
 
         let temp_dir = tempfile::TempDir::new().unwrap();
         let temp_path = temp_dir.path().to_path_buf();
@@ -575,6 +604,32 @@ mod tests {
 
         assert_eq!(valid_config.indexer_uri(), Some(valid_uri));
         assert_eq!(valid_config.chain_type(), ChainType::Mainnet);
+    }
+
+    #[test]
+    fn test_chaintypes_from_strings() {
+        assert_eq!(ChainType::try_from("mainnet").unwrap(), ChainType::Mainnet);
+        assert_eq!(ChainType::try_from("testnet").unwrap(), ChainType::Testnet);
+        // the following 2 variants match the string from get_lightd_info, from the LightdInfo struct
+        // as referenced in librustzcash/zcash_client_backend/src/proto/service.rs 17a4830c70
+        // and provided by an indexer (previously called lightwallet)
+        assert_eq!(ChainType::try_from("main").unwrap(), ChainType::Mainnet);
+        assert_eq!(ChainType::try_from("test").unwrap(), ChainType::Testnet);
+        assert_eq!(
+            ChainType::try_from("regtest").unwrap(),
+            ChainType::Regtest(ActivationHeights::default())
+        );
+        assert!(ChainType::try_from("invalid").is_err());
+        let err = ChainType::try_from("badvalue").unwrap_err();
+        assert_eq!(err.0, "badvalue");
+        assert!(ChainType::try_from("").is_err());
+        assert!(ChainType::try_from("Mainnet").is_err());
+        assert!(ChainType::try_from("MAINNET").is_err());
+        assert!(ChainType::try_from("Testnet").is_err());
+        assert!(ChainType::try_from("Regtest").is_err());
+        assert!(ChainType::try_from("mainnet ").is_err()); // trailing space
+        assert!(ChainType::try_from(" mainnet").is_err()); // leading space
+        assert!(ChainType::try_from("regtест").is_err()); // lookalike chars
     }
 
     /// The Library Birthday must land at or above Sapling activation on the
