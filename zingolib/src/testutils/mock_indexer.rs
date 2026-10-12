@@ -893,7 +893,8 @@ impl MockChain {
         self.chain_type
     }
 
-    pub(crate) fn activation_heights(&self) -> ActivationHeights {
+    /// - Panics when the chain is not regtest.
+    pub fn activation_heights(&self) -> ActivationHeights {
         match self.chain_type {
             ChainType::Regtest(activation_heights) => activation_heights,
             other => panic!("the mock chain is regtest, not {other:?}"),
@@ -2252,6 +2253,8 @@ fn faucet_tip(height: BlockHeight) -> u32 {
 /// - Builds (without transmitting) one real transaction to `receivers` from a synthetic faucet whose
 ///   fabricated backing note sits in the newest pool the schedule allows at the faucet's tip, so a
 ///   pre-Ironwood schedule yields Orchard outputs and a post-Ironwood one Ironwood outputs.
+/// - Aims the transaction at `FAUCET_DEFAULT_TIP + 1` whatever height the caller mines it at, so its
+///   era, and its expiry, follow that fixed height rather than the chain's tip.
 pub async fn faucet_funding_transaction_on(
     activation_heights: ActivationHeights,
     receivers: Vec<(&str, u64, Option<&str>)>,

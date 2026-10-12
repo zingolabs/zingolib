@@ -39,7 +39,7 @@ fn bundle(args: &[String]) -> Result<PathBuf, Vec<String>> {
     let mut build = Command::new("cargo");
     build
         .arg("build")
-        .arg("--manifest-path")
+        .arg(workbench::MANIFEST_PATH_FLAG)
         .arg(&manifest)
         .args(["--features", "nym", "--bin", "nym-proxy"]);
     if release {
