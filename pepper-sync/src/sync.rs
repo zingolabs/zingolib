@@ -159,7 +159,8 @@ impl SyncStatus {
     pub fn nullifier_retrieval_pending(&self) -> bool {
         self.scan_ranges
             .iter()
-            .any(|scan_range| scan_range.priority().awaits_nullifier_retrieval())
+            .map(ScanRange::priority)
+            .any(ScanPriority::awaits_nullifier_retrieval)
     }
 }
 
