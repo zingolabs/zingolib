@@ -30,6 +30,7 @@ on:
       - "zingo-ffi/lib/src/exported_surface.txt"
       - ".github/workflows/**"
       - "deny.toml"
+      - ".github/actions/**"
   push:
     branches: [stable, dev]
 
@@ -62,11 +63,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
@@ -130,6 +128,23 @@ jobs:
             exit 1
           fi
 
+  # .github/actions/rust-setup holds the one toolchain and cache policy.
+  # No workflow names the toolchain action or the cache action directly.
+  one-rust-setup:
+    name: One Rust setup
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Reject a toolchain or cache step outside the action
+        run: |
+          if grep --recursive --line-number --extended-regexp \
+            '^ *(- )?uses: .*(setup-rust-toolchain|rust-cache)' .github/workflows; then
+            echo "::error::a workflow bypasses .github/actions/rust-setup"
+            exit 1
+          fi
+
   # On a pull_request event the inputs are empty, so each expression
   # below falls back to the check.
   cargo-hack-check:
@@ -140,13 +155,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      # The nightly's build and the pull request's check share one
+      # GITHUB_JOB, so the subcommand keys the cache.
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
         with:
-          toolchain: ${{ inputs.toolchain }}
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+          key: ${{ inputs.cargo-hack-subcommand || 'check' }}
 
       # The flags are the action's defaults plus one exclusion:
       # zingo-uniffi-bindgen is a binary with no library target and no
@@ -172,11 +186,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
         with:
           workspaces: zingo-netutils
 
@@ -237,11 +248,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
         with:
           workspaces: tools/workbench
 
@@ -281,11 +289,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
       - name: Clippy
         run: cargo clippy -p zingolib -p zingo-cli --features nym --all-targets -- -D warnings
@@ -321,10 +326,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
       - name: Run doc tests
         run: cargo test --doc
