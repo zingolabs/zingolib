@@ -8,7 +8,7 @@ headings it sits beneath in its changelog. The check in CI
 regenerates every section and fails when the committed file differs. The
 audited crates of an entry are the two Binding Layer crates and their
 direct dependencies in this repository at the entry's commit, as the
-publish workflow recorded them from `cargo tree`; each section names them
+publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
 

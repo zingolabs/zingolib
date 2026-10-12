@@ -29,7 +29,7 @@
 #
 # The audited crates are the two Binding Layer crates and their direct
 # dependencies in this repository at the entry's commit, as binding-manifest
-# reads them from `cargo tree` there, each as its package name and its
+# reads them from `cargo metadata` there, each as its package name and its
 # directory. The manifest check reads them again at the commit and rejects
 # an entry whose array differs.
 

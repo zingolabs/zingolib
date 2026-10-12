@@ -79,23 +79,19 @@ jobs:
       - name: Trust the workspace
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      # With no toolchain named, rustup installs the one rust-toolchain.toml
-      # pins, with its components. The image holds that toolchain until the
-      # pin moves. The builder repeats this step and adds the ABI's target
-      # to that toolchain itself.
-      - name: Install the pinned toolchain
-        run: rustup toolchain install
-
-      # The dependencies of the wallet, the proxy, and the bindgen, built
+      # The action installs the toolchain rust-toolchain.toml pins, with
+      # its components; the image holds that toolchain until the pin moves,
+      # and the builder adds the ABI's target to it itself. The cache holds
+      # the dependencies of the wallet, the proxy, and the bindgen, built
       # for this ABI, and the workbench's own build. The image already
       # holds the cargo-installed tools, so the cache leaves CARGO_HOME/bin
       # out. The builder's plan clears only its output directory, never
       # target/binding-layer, so a restored cache stays usable.
-      - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
         with:
           key: ${{ matrix.abi }}
-          cache-bin: false
+          cache-bin: "false"
           workspaces: |
             . -> target/binding-layer
             tools/workbench -> target
