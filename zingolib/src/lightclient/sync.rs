@@ -620,7 +620,10 @@ pub mod test {
         let mut lc = wallet_case.load_example_wallet().await;
 
         let sync_result = lc.sync_and_await().await.unwrap();
-        tracing::info!("{sync_result}");
+        tracing::info!(
+            "{}",
+            crate::perspective::sync_progress::SessionReport::from(sync_result)
+        );
         tracing::info!("{:?}", lc.account_balance(zip32::AccountId::ZERO).await);
         lc
     }
