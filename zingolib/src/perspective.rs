@@ -3,6 +3,7 @@
 //! logic.
 
 pub mod finsight;
+pub mod sync_progress;
 pub mod value_transfer;
 
 use std::collections::{HashMap, HashSet};
