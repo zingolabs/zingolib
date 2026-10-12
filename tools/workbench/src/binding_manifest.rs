@@ -34,7 +34,8 @@ const USAGE: &str =
     "usage: binding-manifest --check [--base <ref>] [--all-digests] | binding-manifest --newest | binding-manifest --orasust-version";
 pub const PUBLISH_COMMAND: &str = "/publish";
 const CHECKOUTS_DIR: &str = "target/binding-manifest";
-const BRANCH_TIP: &str = "HEAD";
+const PACKAGE_DIR_OPEN: &str = " (";
+const PACKAGE_DIR_CLOSE: char = ')';
 const FIRST_ORDINAL: usize = 1;
 
 fn ordinal(index: usize) -> usize {
@@ -65,17 +66,17 @@ impl fmt::Display for AuditedCrate {
             f,
             "{}{}{}{}",
             self.name,
-            crate::PACKAGE_DIR_OPEN,
+            PACKAGE_DIR_OPEN,
             self.dir.display(),
-            crate::PACKAGE_DIR_CLOSE
+            PACKAGE_DIR_CLOSE
         )
     }
 }
 
 impl AuditedCrate {
     pub fn parse(text: &str) -> Option<Self> {
-        let (name, rest) = text.split_once(crate::PACKAGE_DIR_OPEN)?;
-        let dir = rest.strip_suffix(crate::PACKAGE_DIR_CLOSE)?;
+        let (name, rest) = text.split_once(PACKAGE_DIR_OPEN)?;
+        let dir = rest.strip_suffix(PACKAGE_DIR_CLOSE)?;
         (!name.is_empty() && !name.contains(' ') && !dir.is_empty()).then(|| Self {
             name: name.to_string(),
             dir: PathBuf::from(dir),
@@ -459,14 +460,14 @@ pub fn with_checkout<T>(
 }
 
 /// - Creates and removes one detached worktree per entry through [`with_checkout`].
-/// - Runs `cargo tree` in each worktree through [`audited_at`].
+/// - Runs `cargo metadata` in each worktree through [`audited_at`].
 pub fn audited_diagnostics(root: &Path, entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
     let mut diagnostics = Vec::new();
     for entry in entries {
         let found = with_checkout(root, &entry.commit, audited_at)?;
         if found != entry.audited {
             diagnostics.push(format!(
-                "entry {} records {AUDITED_KEY} {} and `cargo tree` at that commit reports {}",
+                "entry {} records {AUDITED_KEY} {} and `cargo metadata` at that commit reports {}",
                 entry.commit,
                 audited_array(&entry.audited),
                 audited_array(&found)
@@ -503,9 +504,10 @@ fn commits_reachable(root: &Path, entries: &[Entry]) -> Result<(), Vec<String>> 
     let mut diagnostics = Vec::new();
     for (index, entry) in entries.iter().enumerate() {
         let label = format!("entry {} ({})", ordinal(index), entry.commit);
-        if !crate::is_ancestor(root, &entry.commit, BRANCH_TIP)? {
+        if !crate::is_ancestor(root, &entry.commit, crate::BRANCH_TIP)? {
             diagnostics.push(format!(
-                "{label} is not an ancestor of {BRANCH_TIP}, so it is not a commit of this branch"
+                "{label} is not an ancestor of {}, so it is not a commit of this branch",
+                crate::BRANCH_TIP
             ));
         }
         if let Some(since) = &entry.since {
@@ -528,7 +530,9 @@ fn merged_base<'a>(root: &Path, base: Option<&'a str>) -> Result<Option<&'a str>
         return Ok(None);
     }
     if crate::commit_of(root, base).is_err() {
-        eprintln!("warning: {base} is not a commit of this checkout, so every entry is checked");
+        crate::warn(&format!(
+            "{base} is not a commit of this checkout, so every entry is checked"
+        ));
         return Ok(None);
     }
     Ok(Some(base))
@@ -590,12 +594,12 @@ fn registry_diagnostics(entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
 }
 
 /// - Reads `bindings/published.toml` and, with `--base`, its copy at that git revision.
-/// - Runs `git` child processes in `root`, and `cargo tree` in a detached worktree of each
+/// - Runs `git` child processes in `root`, and `cargo metadata` in a detached worktree of each
 ///   entry appended after the base's.
 /// - Runs `orasust resolve` and `orasust manifest fetch` as child processes, in series, once per
 ///   recorded digest of the appended entries, or of every entry with `--all-digests`.
-/// - Writes a warning to stderr when `--base` names no commit of the checkout, and then checks
-///   every entry.
+/// - Writes a warning to stderr, as a workflow command under `GITHUB_ACTIONS`, when `--base`
+///   names no commit of the checkout, and then checks every entry.
 pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     match args.first().map(String::as_str) {
         Some(CHECK_FLAG) => check(root, args),
@@ -898,7 +902,7 @@ mod tests {
     fn the_recorded_audited_crates_are_checked_against_cargo_tree_at_the_commit(
     ) -> Result<(), Vec<String>> {
         let root = crate::repo_root()?;
-        let head = crate::commit_of(&root, "HEAD")?;
+        let head = crate::commit_of(&root, crate::BRANCH_TIP)?;
         let mut recorded = entry(&head, Some(ORIGIN), &[ANDROID])?;
         recorded.audited = audited(&EXPECTED_AUDITED)?;
         assert_eq!(
@@ -1137,7 +1141,7 @@ mod tests {
     #[test]
     fn commits_are_resolved_in_one_pass_and_a_missing_one_is_named() -> Result<(), Vec<String>> {
         let root = crate::repo_root()?;
-        let head = crate::commit_of(&root, "HEAD")?;
+        let head = crate::commit_of(&root, crate::BRANCH_TIP)?;
         assert_eq!(
             commits_exist(&root, &[entry(&head, None, &[ANDROID])?]),
             Ok(())
@@ -1156,7 +1160,7 @@ mod tests {
             dir,
             &["commit", "--quiet", "--allow-empty", "--message", subject],
         )?;
-        crate::hermetic_git(dir, &["rev-parse", BRANCH_TIP])
+        crate::hermetic_git(dir, &["rev-parse", crate::BRANCH_TIP])
     }
 
     #[test]
@@ -1179,7 +1183,7 @@ mod tests {
         ))?
         .concat();
         assert!(
-            off_branch.contains(&side) && off_branch.contains(BRANCH_TIP),
+            off_branch.contains(&side) && off_branch.contains(crate::BRANCH_TIP),
             "{off_branch}"
         );
         let later_since = crate::refused(commits_reachable(
@@ -1199,7 +1203,10 @@ mod tests {
         assert_eq!(merged_base(&root, Some("")), Ok(None));
         assert_eq!(merged_base(&root, Some(&no_commit_before)), Ok(None));
         assert_eq!(merged_base(&root, Some("no-such-ref")), Ok(None));
-        assert_eq!(merged_base(&root, Some(BRANCH_TIP)), Ok(Some(BRANCH_TIP)));
+        assert_eq!(
+            merged_base(&root, Some(crate::BRANCH_TIP)),
+            Ok(Some(crate::BRANCH_TIP))
+        );
         Ok(())
     }
 

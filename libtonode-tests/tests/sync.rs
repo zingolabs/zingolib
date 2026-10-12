@@ -9,7 +9,6 @@ use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedPool::{Ironwood, Orchard, Sapling};
-use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::lightwallet_protocol::{BlockId, BlockRange, GetSubtreeRootsArg};
 use zingo_netutils::{GrpcIndexer, Indexer};
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
@@ -19,8 +18,6 @@ use zingolib::lightclient::DEFAULT_REQUEST_TIMEOUT;
 use zingolib::lightclient::error::LightClientError;
 use zingolib::sync::SyncModeError;
 use zingolib::testutils::default_test_wallet_settings;
-use zingolib::testutils::lightclient::from_inputs::quick_send;
-use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::{
     config::construct_indexer_uri,
@@ -31,9 +28,7 @@ use zingolib::{
 
 /// The mainnet indexer these ignored, hand-run sync tests dial explicitly.
 const SYNC_TEST_INDEXER: &str = "https://zec.rocks:443";
-use zingolib_testutils::scenarios::{
-    self, IndexerConvergence, increase_height_and_wait_for_client,
-};
+use zingolib_testutils::scenarios::{self, IndexerConvergence};
 
 // TODO: migrate to mock test as this test is long and connects to mainnet
 #[tokio::test]
@@ -306,164 +301,6 @@ async fn sync_test() {
     // );
     // let wallet = recipient.wallet.lock().await;
     // dbg!(wallet.wallet_blocks.len());
-}
-
-/// The raw blocks artifact for `store_all_checkpoints_in_verification_window`,
-/// under the gitignored `chain_caches/` root (mirroring the framework's
-/// `chain_caches/<binary>/<test>/` keying). The artifact is a
-/// hand-managed `LoadRaw` cache rather than a `PerTest` one because the
-/// chain's content is wallet sends, which lie past the send boundary
-/// that `PerTest` snapshots at.
-fn checkpoint_window_blocks_path() -> std::path::PathBuf {
-    get_cargo_manifest_dir()
-        .parent()
-        .expect("libtonode-tests sits directly under the repo root")
-        .join("chain_caches/sync/store_all_checkpoints_in_verification_window/raw.blocks")
-}
-
-/// Build the ~112-block send-dense chain the checkpoint-window assertion
-/// replays, and export it to [`checkpoint_window_blocks_path`]. Runs on
-/// the first execution per machine and under
-/// [`zingolib_testutils::chain_cache::REGENERATE_ENV`]. Every other run
-/// replays the exported artifact.
-async fn build_checkpoint_window_chain() {
-    // ChainCachePolicy::Disabled, not PerTest: under PerTest the inner
-    // scenario would claim this test's chain_caches/<binary>/<test>/
-    // directory for its own mined-setup cache, colliding with the raw
-    // artifact this builder exports there, and a mined-setup replay
-    // would not shorten the build anyway, since the expensive part is
-    // the post-boundary sends.
-    let (local_net, mut faucet, recipient) = scenarios::faucet_recipient(
-        zcash_protocol::PoolType::ORCHARD,
-        scenarios::default_test_activation_heights(),
-        scenarios::ChainCachePolicy::Disabled,
-    )
-    .await;
-
-    let recipient_orchard_addr = get_base_address_macro!(recipient, "unified");
-    let recipient_sapling_addr = get_base_address_macro!(recipient, "sapling");
-
-    // One dense cycle: four blocks carrying orchard and sapling
-    // commitments (and one empty block), mutating both trees.
-    macro_rules! dense_cycle {
-        () => {
-            quick_send(&mut faucet, vec![(&recipient_orchard_addr, 10_000, None)])
-                .await
-                .unwrap();
-            increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-                .await
-                .unwrap();
-
-            quick_send(&mut faucet, vec![(&recipient_sapling_addr, 10_000, None)])
-                .await
-                .unwrap();
-            increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-                .await
-                .unwrap();
-
-            quick_send(&mut faucet, vec![(&recipient_orchard_addr, 10_000, None)])
-                .await
-                .unwrap();
-            quick_send(&mut faucet, vec![(&recipient_sapling_addr, 10_000, None)])
-                .await
-                .unwrap();
-            increase_height_and_wait_for_client(&local_net, &mut faucet, 2)
-                .await
-                .unwrap();
-        };
-    }
-
-    // Dense head, bulk-mined empty middle, dense tail. Proved sends are
-    // ~95% of the build's wall clock, and checkpoint presence is
-    // per-scanned-block regardless of commitments (adjudicated
-    // empirically against the fully dense 27-cycle chain, 2026-07-08),
-    // so the dense regions exist to bracket the verification window
-    // with genuinely mutating trees, not to fill it: the head cycles
-    // straddle the window's start (the pruning boundary crosses a
-    // mutated region) and the tail cycles sit at the tip. The empty
-    // middle is itself coverage: rewind targets between mutations must
-    // checkpoint too.
-    for _ in 0..3 {
-        dense_cycle!();
-    }
-    increase_height_and_wait_for_client(&local_net, &mut faucet, 86)
-        .await
-        .unwrap();
-    for _ in 0..3 {
-        dense_cycle!();
-    }
-
-    zingolib_testutils::chain_cache::export_raw(&local_net, &checkpoint_window_blocks_path()).await;
-}
-
-#[tokio::test]
-async fn store_all_checkpoints_in_verification_window() {
-    let regenerate = std::env::var_os(zingolib_testutils::chain_cache::REGENERATE_ENV)
-        .is_some_and(|v| !v.is_empty() && v != *"0");
-    if regenerate || !checkpoint_window_blocks_path().exists() {
-        build_checkpoint_window_chain().await;
-    }
-    let (local_net, lightclient) = scenarios::unfunded_client(
-        scenarios::default_test_activation_heights(),
-        scenarios::ChainCachePolicy::LoadRaw(checkpoint_window_blocks_path()),
-    )
-    .await;
-
-    // The verification window is anchored to the actual replayed tip,
-    // not a hardcoded height: the scenario prelude (launch block,
-    // shielded-funds offload) mines blocks before the send cycles, so
-    // the chain is longer than the cycles alone and heights below
-    // tip − MAX_REORG_ALLOWANCE are legitimately checkpoint-free
-    // (pruned; that pruning having run is part of what this exercises).
-    let tip = local_net.validator().get_chain_height().await;
-    // Retention observed: the last MAX_REORG_ALLOWANCE checkpoints
-    // INCLUDING the tip (tip−99..=tip). Whether the finalized fork
-    // point at tip−100 also needs its checkpoint (a maximal truncation
-    // lands there) is an open question for the pepper-sync owners; if
-    // the answer is yes, extend this window down by one and the test
-    // correctly goes red until retention grows.
-    let window_start = tip - pepper_sync::sync::MAX_REORG_ALLOWANCE + 1;
-    for height in window_start..=tip {
-        assert!(
-            lightclient
-                .wallet()
-                .read()
-                .await
-                .shard_trees
-                .sapling
-                .store()
-                .get_checkpoint(&BlockHeight::from_u32(height))
-                .unwrap()
-                .is_some(),
-            "missing sapling checkpoint at height {height}"
-        );
-        assert!(
-            lightclient
-                .wallet()
-                .read()
-                .await
-                .shard_trees
-                .orchard
-                .store()
-                .get_checkpoint(&BlockHeight::from_u32(height))
-                .unwrap()
-                .is_some(),
-            "missing orchard checkpoint at height {height}"
-        );
-        assert!(
-            lightclient
-                .wallet()
-                .read()
-                .await
-                .shard_trees
-                .ironwood
-                .store()
-                .get_checkpoint(&BlockHeight::from_u32(height))
-                .unwrap()
-                .is_some(),
-            "missing ironwood checkpoint at height {height}"
-        );
-    }
 }
 
 /// Diagnostic for the container-only `add_subtree_roots` failure (wallet

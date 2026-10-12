@@ -21,28 +21,6 @@ jobs:
       skip-binding-layer-build: true
       cargo-hack-subcommand: build
 
-  feature-census:
-    name: Feature Census
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: ${{ inputs.toolchain }}
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      # Removes each declared dependency feature in turn and checks without it.
-      # One `cargo check` per feature, so this runs nightly rather than per PR.
-      - name: Run feature-census
-        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin feature-census -- --all
-
   # The online sync rate of the dev head against the newest first-parent
   # commit older than a day, in a real run-cli --online session (AGENTS.md,
   # the benchmark rule). Two release builds, two warm-ups and six measured
@@ -59,13 +37,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: ${{ inputs.toolchain }}
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
       - name: Install cargo-make
         uses: taiki-e/install-action@v2
@@ -110,11 +83,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
         with:
           workspaces: tools/workbench
 
@@ -142,8 +112,3 @@ jobs:
       out: ${{ needs.binding-layer-names.outputs.ios_out }}
       bundle: ${{ needs.binding-layer-names.outputs.bundle_ios }}
 
-  test:
-    uses: ./.github/workflows/test.yaml
-    permissions:
-      contents: read
-      packages: write

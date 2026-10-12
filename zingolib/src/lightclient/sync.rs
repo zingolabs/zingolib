@@ -614,7 +614,7 @@ pub mod test {
     ) -> LightClient {
         zingo_netutils::ensure_default_crypto_provider();
 
-        let mut lc = wallet_case.load_example_wallet().await;
+        let mut lc = wallet_case.load_example_wallet_online().await;
 
         let sync_result = lc.sync_and_await().await.unwrap();
         tracing::info!("{sync_result}");

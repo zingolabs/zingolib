@@ -58,7 +58,7 @@ fn sweep(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
             }
             for manifest in &manifests {
                 let path = manifest.to_string_lossy().to_string();
-                check(root, &["--manifest-path".to_string(), path])?;
+                check(root, &[workbench::MANIFEST_PATH_FLAG.to_string(), path])?;
             }
             Ok(())
         }
