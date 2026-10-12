@@ -69,9 +69,6 @@ rayon.workspace = true
 # Error handling
 thiserror.workspace = true
 
-# JSON
-json.workspace = true
-
 # Serialization
 byteorder = { workspace = true, optional = true }
 hex.workspace = true

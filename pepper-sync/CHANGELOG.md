@@ -281,6 +281,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   range kept its `Scanned` priority with its wallet data removed.
 
 ### Removed
+- **Breaking.** `sync::SyncStatus::percentage_total_blocks_scanned`,
+  `sync::SyncStatus::percentage_total_outputs_scanned`, and
+  `sync::SyncResult::percentage_total_outputs_scanned`. The engine reports the
+  counts and spans the percentages were derived from; the derivation, with its
+  clamp, its reading of an empty span as complete, and its one-step-short
+  reading while nullifiers await retrieval, now lives in
+  `zingolib::perspective::sync_progress`.
+- **Breaking.** The `Display` and `From<_> for json::JsonValue` implementations
+  of `sync::SyncStatus` and `sync::SyncResult`. `zingolib::perspective::sync_progress`
+  renders both, with the same text and the same JSON keys. pepper-sync no longer
+  depends on the `json` crate.
 - **Breaking.** `sync::SyncStatus::percentage_session_blocks_scanned` and
   `sync::SyncStatus::percentage_session_outputs_scanned`. These were the only fields whose
   computation could abort the process, and no consumer read them: the CLI's progress
