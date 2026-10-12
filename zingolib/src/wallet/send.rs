@@ -17,6 +17,7 @@ use zcash_protocol::{ShieldedPool, TxId};
 
 use super::LightWallet;
 use super::error::{CalculateTransactionError, KeyError};
+use crate::wallet::utils;
 
 impl LightWallet {
     /// Creates and stores transaction from the given `proposal`, returning the txids for each calculated transaction.
@@ -68,8 +69,7 @@ impl LightWallet {
             .ok_or(KeyError::NoAccountKeys)?
             .try_into()?;
 
-        // TODO:  Remove fallible sapling operations from Orchard only sends.
-        let sapling_prover = crate::wallet::utils::LazySaplingProver;
+        let sapling_prover = utils::LazySaplingProver::default();
 
         let expiry_height = self.proposal_expiry_height(&proposal);
 
@@ -374,11 +374,11 @@ mod tests {
     }
 
     /// HYPOTHESIS: a wallet that holds Orchard funds alone builds its
-    /// transaction without ever requesting the Sapling prover, so a device
-    /// with no Sapling notes never parses the embedded Sapling parameters.
-    /// Falsified if the build requests the prover on this thread.
+    /// transaction without parsing the Sapling prover, so a device with no
+    /// Sapling notes never parses the embedded Sapling parameters.
+    /// Falsified if the build parses them on this thread.
     #[tokio::test]
-    async fn orchard_only_build_requests_no_sapling_prover() {
+    async fn orchard_only_build_parses_no_sapling_prover() {
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .orchard_note(ORCHARD_FUNDS)
             .build();
@@ -390,7 +390,7 @@ mod tests {
         .await
         .expect("an Orchard-only wallet proposes an Orchard payment");
 
-        let requests_before = utils::sapling_prover_requests();
+        let parses_before = utils::sapling_prover_parses();
         client
             .wallet()
             .write()
@@ -400,9 +400,9 @@ mod tests {
             .expect("the Orchard-only transaction builds");
 
         assert_eq!(
-            utils::sapling_prover_requests(),
-            requests_before,
-            "an Orchard-only build requested the Sapling prover"
+            utils::sapling_prover_parses(),
+            parses_before,
+            "an Orchard-only build parsed the Sapling prover"
         );
     }
 

@@ -29,6 +29,7 @@ use pepper_sync::keys::transparent::TransparentAddressId;
 
 use super::LightWallet;
 use super::error::{KeyError, WalletError};
+use crate::wallet::utils;
 
 /// The maximum size, in bytes, of an OP_RETURN payload that relays on the
 /// network. This is the same limit the upstream transaction builder
@@ -217,7 +218,7 @@ impl LightWallet {
             .add_transparent_null_data_output::<std::convert::Infallible>(data.as_bytes())
             .map_err(|e| WalletError::TransparentBuild(format!("op_return: {e:?}")))?;
 
-        let prover = crate::wallet::utils::LazySaplingProver;
+        let prover = utils::LazySaplingProver::default();
         let build_result = builder
             .build(
                 &signing_set,

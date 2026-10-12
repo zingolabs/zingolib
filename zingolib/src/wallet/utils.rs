@@ -77,34 +77,38 @@ pub fn txid_from_slice(txid: &[u8]) -> TxId {
 
 #[cfg(test)]
 thread_local! {
-    static SAPLING_PROVER_REQUESTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static SAPLING_PROVER_PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
-pub(crate) fn sapling_prover_requests() -> usize {
-    SAPLING_PROVER_REQUESTS.with(std::cell::Cell::get)
+pub(crate) fn sapling_prover_parses() -> usize {
+    SAPLING_PROVER_PARSES.with(std::cell::Cell::get)
 }
 
-/// - Increments this thread's count of Sapling prover requests.
+/// - Increments this thread's count of Sapling parameter parses.
 #[cfg(test)]
-fn note_sapling_prover_request() {
-    SAPLING_PROVER_REQUESTS.with(|requests| requests.set(requests.get() + 1));
+fn note_sapling_prover_parse() {
+    SAPLING_PROVER_PARSES.with(|parses| parses.set(parses.get() + 1));
 }
 
-static SAPLING_PROVER: std::sync::OnceLock<prover::LocalTxProver> = std::sync::OnceLock::new();
-
-/// - Parses the embedded Sapling parameters on the first call and holds the
-///   result in a process-global for the life of the process.
-fn embedded_prover() -> &'static prover::LocalTxProver {
-    #[cfg(test)]
-    note_sapling_prover_request();
-    SAPLING_PROVER.get_or_init(|| {
-        prover::LocalTxProver::from_bytes(crate::SaplingParams::SPEND, crate::SaplingParams::OUTPUT)
-    })
+#[derive(Default)]
+pub(crate) struct LazySaplingProver {
+    prover: std::sync::OnceLock<prover::LocalTxProver>,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct LazySaplingProver;
+impl LazySaplingProver {
+    /// - Parses the embedded Sapling parameters on this adapter's first call.
+    fn prover(&self) -> &prover::LocalTxProver {
+        self.prover.get_or_init(|| {
+            #[cfg(test)]
+            note_sapling_prover_parse();
+            prover::LocalTxProver::from_bytes(
+                crate::SaplingParams::SPEND,
+                crate::SaplingParams::OUTPUT,
+            )
+        })
+    }
+}
 
 impl sapling_prover::SpendProver for LazySaplingProver {
     type Proof = <prover::LocalTxProver as sapling_prover::SpendProver>::Proof;
@@ -131,14 +135,13 @@ impl sapling_prover::SpendProver for LazySaplingProver {
         )
     }
 
-    /// - Parses the embedded Sapling parameters if no earlier Sapling proof
-    ///   in this process has done so.
+    /// - Parses the embedded Sapling parameters if this adapter has not yet.
     fn create_proof<R: rand::Rng>(
         &self,
         circuit: sapling_circuit::Spend,
         rng: &mut R,
     ) -> Self::Proof {
-        sapling_prover::SpendProver::create_proof(embedded_prover(), circuit, rng)
+        sapling_prover::SpendProver::create_proof(self.prover(), circuit, rng)
     }
 
     fn encode_proof(proof: Self::Proof) -> sapling_bundle::GrothProofBytes {
@@ -165,14 +168,13 @@ impl sapling_prover::OutputProver for LazySaplingProver {
         )
     }
 
-    /// - Parses the embedded Sapling parameters if no earlier Sapling proof
-    ///   in this process has done so.
+    /// - Parses the embedded Sapling parameters if this adapter has not yet.
     fn create_proof<R: rand::Rng>(
         &self,
         circuit: sapling_circuit::Output,
         rng: &mut R,
     ) -> Self::Proof {
-        sapling_prover::OutputProver::create_proof(embedded_prover(), circuit, rng)
+        sapling_prover::OutputProver::create_proof(self.prover(), circuit, rng)
     }
 
     fn encode_proof(proof: Self::Proof) -> sapling_bundle::GrothProofBytes {
@@ -202,20 +204,6 @@ mod tests {
             !crate::SaplingParams::SPEND.is_empty(),
             "spend params are embedded"
         );
-    }
-
-    /// HYPOTHESIS: holding the adapter costs nothing, so binding it at a
-    /// build site cannot trigger the parse. Falsified if it carries state.
-    #[test]
-    fn lazy_sapling_prover_is_zero_sized() {
-        assert_eq!(std::mem::size_of::<LazySaplingProver>(), 0);
-    }
-
-    /// HYPOTHESIS: the Sapling prover is parsed once per process. Falsified
-    /// if two calls hand back different allocations.
-    #[test]
-    fn embedded_prover_is_parsed_once() {
-        assert!(std::ptr::eq(embedded_prover(), embedded_prover()));
     }
 
     #[test]

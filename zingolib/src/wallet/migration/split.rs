@@ -10,6 +10,7 @@ use zcash_protocol::value::Zatoshis;
 
 use super::params::MigrationParams;
 use super::quantize::decompose;
+use crate::wallet::utils;
 
 /// ZIP-317 marginal fee per logical action, in zatoshis.
 /// [`zcash_primitives::transaction::fees::zip317::MARGINAL_FEE`] as a `u64`,
@@ -835,7 +836,7 @@ impl crate::wallet::LightWallet {
             }
         }
 
-        let sapling_prover = crate::wallet::utils::LazySaplingProver;
+        let sapling_prover = utils::LazySaplingProver::default();
         let build_result = builder
             .build(
                 &zcash_transparent::builder::TransparentSigningSet::new(),
