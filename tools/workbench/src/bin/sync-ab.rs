@@ -424,10 +424,8 @@ fn graft(source: &str) -> Result<String, Vec<String>> {
             source.matches(SPAWN_ANCHOR).count()
         )]);
     }
-    let opens = source
-        .find(SPAWN_ANCHOR)
-        .expect("the anchor was just counted")
-        + SPAWN_ANCHOR.len();
+    let opens =
+        workbench::required(source.find(SPAWN_ANCHOR), "sync launch anchor")? + SPAWN_ANCHOR.len();
     let mut depth = 1usize;
     let mut closes = None;
     for (offset, character) in source[opens..].char_indices() {
@@ -832,9 +830,9 @@ mod tests {
     /// surrounds it with the span. Falsified if a call is altered or a
     /// marker is missing.
     #[test]
-    fn the_graft_surrounds_each_era_without_touching_its_call() {
+    fn the_graft_surrounds_each_era_without_touching_its_call() -> Result<(), Vec<String>> {
         for era in [EARLY_ERA, LATER_ERA] {
-            let grafted = graft(era).expect("the era anchors exactly once");
+            let grafted = graft(era)?;
             assert!(
                 grafted.contains(SYNC_SPAN_OPEN) && grafted.contains(SYNC_SPAN_CLOSE),
                 "the span must open and close: {grafted}"
@@ -843,13 +841,16 @@ mod tests {
                 grafted.contains(SYNC_SPAN_OUTPUTS),
                 "the close must carry the output count: {grafted}"
             );
-            let call = era
-                .split_once(SPAWN_ANCHOR)
-                .expect("the era anchors")
-                .1
-                .rsplit_once("});")
-                .expect("the launch closes")
-                .0;
+            let after_anchor = workbench::required(
+                era.split_once(SPAWN_ANCHOR),
+                "sync launch anchor in the era",
+            )?
+            .1;
+            let call = workbench::required(
+                after_anchor.rsplit_once("});"),
+                "closing of the launch in the era",
+            )?
+            .0;
             assert!(
                 grafted.contains(call.trim_end()),
                 "the call must survive verbatim: {grafted}"
@@ -859,6 +860,7 @@ mod tests {
                 "everything after the launch must survive: {grafted}"
             );
         }
+        Ok(())
     }
 
     /// HYPOTHESIS: a graft that cannot find exactly one launch refuses
