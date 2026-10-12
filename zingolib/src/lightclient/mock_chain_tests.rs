@@ -4124,7 +4124,6 @@ mod mixnet_wire_offline {
     }
 }
 
-/// A shielded coinbase, paid in the newest pool of the era the block sits in.
 mod shielded_coinbase {
     use zcash_protocol::PoolType;
     use zcash_protocol::ShieldedPool;
@@ -4132,18 +4131,12 @@ mod shielded_coinbase {
 
     use crate::check_client_balances;
     use crate::testutils::lightclient::get_base_address;
-    use crate::testutils::mock_activation_heights_with;
+    use crate::testutils::mock_activation_heights_deferring_nu6_3;
     use crate::testutils::mock_indexer::{MockChain, MockNet};
 
     const REWARD_ZATS: u64 = 625_000;
     const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
     const DEFERRED_NU6_3: u32 = 130;
-
-    fn deferred_schedule() -> MockChain {
-        MockChain::with_activation_heights(mock_activation_heights_with(|era| {
-            era.set_nu6_3(Some(DEFERRED_NU6_3)).set_nu7(None)
-        }))
-    }
 
     #[tokio::test]
     async fn a_shielded_coinbase_pays_the_miner_in_ironwood_after_the_activation() {
@@ -4164,7 +4157,10 @@ mod shielded_coinbase {
 
     #[tokio::test]
     async fn a_shielded_coinbase_pays_the_miner_in_orchard_before_the_activation() {
-        let mut net = MockNet::launch_with(deferred_schedule()).await;
+        let mut net = MockNet::launch_with(MockChain::with_activation_heights(
+            mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
+        ))
+        .await;
         let mut miner = net
             .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
             .await;
@@ -4178,7 +4174,6 @@ mod shielded_coinbase {
     }
 }
 
-/// The unavailable-boundary skip on a chain whose leap left the anchor boundary without a usable checkpoint.
 mod boundary_pruning {
     use incrementalmerkletree::Position;
     use pepper_sync::sync::MAX_SHARDTREE_CHECKPOINTS;
@@ -4191,21 +4186,18 @@ mod boundary_pruning {
     use zcash_protocol::PoolType;
     use zcash_protocol::ShieldedPool;
     use zcash_protocol::consensus::BlockHeight;
-    use zip32::AccountId;
 
     use crate::check_client_balances;
     use crate::lightclient::LightClient;
     use crate::testutils::lightclient::get_base_address;
-    use crate::testutils::mock_activation_heights_with;
+    use crate::testutils::migration::inject_scheduled_migration;
+    use crate::testutils::mock_activation_heights_deferring_nu6_3;
     use crate::testutils::mock_indexer::{
         Fault, MockChain, MockNet, Rpc, faucet_funding_transaction_on,
     };
     use crate::wallet::LightWallet;
     use crate::wallet::migration::parts::SkipReason;
-    use crate::wallet::migration::{
-        BoundNote, ConsentBinding, MigrationMode, MigrationParams, MigrationPhase, MigrationState,
-        PartId, PartRecord, PartState, PrepareResult, SigningStrategy, bucket_index,
-    };
+    use crate::wallet::migration::{MigrationParams, PartState, PrepareResult, bucket_index};
 
     const HIDDEN_BLOCKS: u32 = 10;
     const PRUNED_BUCKET_MODULUS: u32 = (MAX_SHARDTREE_CHECKPOINTS + 1).next_power_of_two();
@@ -4232,47 +4224,6 @@ mod boundary_pruning {
         TARGET_TIP + HIDDEN_BLOCKS < (WINDOW_BUCKET as u32 + 1) * PRUNED_BUCKET_MODULUS,
         "the hidden blocks must keep the tip inside the transmission window"
     );
-
-    fn schedule() -> MockChain {
-        MockChain::with_activation_heights(mock_activation_heights_with(|era| {
-            era.set_nu6_3(Some(DEFERRED_NU6_3)).set_nu7(None)
-        }))
-    }
-
-    /// - Writes a hand-built scheduled migration into the client's wallet, its one part
-    ///   anchored at `ANCHOR_BUCKET` and transmitting in `WINDOW_BUCKET`.
-    async fn inject_scheduled_migration(
-        client: &LightClient,
-        params: MigrationParams,
-        bound: (u64, OutputId, [u8; 32]),
-    ) {
-        let mut wallet = client.wallet().write().await;
-        let (funding, output_id, nullifier) = bound;
-        let mut part = PartRecord::new(
-            PartId(0),
-            funding - params.part_fee,
-            BoundNote {
-                output_id,
-                nullifier,
-                commitment: [0; 32],
-            },
-        );
-        part.assign(WINDOW_BUCKET).expect("fresh parts are bound");
-        part.anchor_bucket = Some(ANCHOR_BUCKET);
-        wallet.migration = Some(MigrationState {
-            consent: ConsentBinding {
-                params_hash: params.params_hash(),
-                plan_hash: [0; 32],
-                consented_at: 0,
-            },
-            params,
-            strategy: SigningStrategy::LazyAtBoundary,
-            mode: MigrationMode::Scheduled,
-            account: AccountId::ZERO,
-            phase: MigrationPhase::PartsScheduled,
-            parts: vec![part],
-        });
-    }
 
     async fn funding_note(
         client: &LightClient,
@@ -4316,11 +4267,6 @@ mod boundary_pruning {
             .collect()
     }
 
-    /// The mock twin of the live `unavailable_boundary_tree_state_skips_without_sync`:
-    /// the recipient syncs across a leap that leaves the anchor boundary below
-    /// pepper-sync's rolling checkpoint window, on a schedule whose canonical
-    /// retention grid pins nothing at or below that boundary, and a poisoned
-    /// block fetch proves the transmit path never syncs.
     #[tokio::test]
     async fn unavailable_boundary_tree_state_skips_without_sync_on_the_mock_chain() {
         let anchor_boundary = BlockHeight::from_u32(ANCHOR_BOUNDARY);
@@ -4335,7 +4281,10 @@ mod boundary_pruning {
             "the canonical retention grid must pin no checkpoint at or below the anchor boundary"
         );
 
-        let mut net = MockNet::launch_with(schedule()).await;
+        let mut net = MockNet::launch_with(MockChain::with_activation_heights(
+            mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
+        ))
+        .await;
         let mut params = MigrationParams::provisional(net.chain_type());
         params.bucket_modulus = PRUNED_BUCKET_MODULUS;
         let funding = params.max_residual_value + params.part_fee;
@@ -4344,14 +4293,15 @@ mod boundary_pruning {
             .await;
         let recipient_ua =
             get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-        let funding_transaction = faucet_funding_transaction_on(
-            net.chain.read().await.activation_heights(),
-            vec![(&recipient_ua, funding, None)],
-        )
-        .await;
         {
             let mut chain = net.chain.write().await;
             chain.mine_empty_blocks(BIRTHDAY_CHECKPOINT_RUNWAY);
+            let funding_transaction = faucet_funding_transaction_on(
+                chain.activation_heights(),
+                chain.next_height(),
+                vec![(&recipient_ua, funding, None)],
+            )
+            .await;
             chain.mine_block(vec![funding_transaction]);
             let funded_tip = chain.tip();
             assert!(
@@ -4385,7 +4335,16 @@ mod boundary_pruning {
             Vec::<BlockHeight>::new(),
             "no checkpoint at or below the anchor boundary may hold the bound note"
         );
-        inject_scheduled_migration(&recipient, params, bound).await;
+        let (funding_value, output_id, nullifier) = bound;
+        let denomination = funding_value - params.part_fee;
+        inject_scheduled_migration(
+            &recipient,
+            params,
+            vec![(denomination, output_id, nullifier)],
+            Some(WINDOW_BUCKET),
+            Some(ANCHOR_BUCKET),
+        )
+        .await;
 
         {
             let mut chain = net.chain.write().await;
