@@ -57,11 +57,18 @@ pub fn mock_activation_heights_with(
     .build()
 }
 
+/// The in-process era with NU6.3 activating at `activation` and NU7 switched off.
+#[must_use]
+pub fn mock_activation_heights_deferring_nu6_3(activation: u32) -> ActivationHeights {
+    mock_activation_heights_with(|era| era.set_nu6_3(Some(activation)).set_nu7(None))
+}
+
 pub mod assertions;
 pub mod chain_generics;
 pub mod fee_tables;
 pub mod lightclient;
 pub mod macros;
+pub mod migration;
 pub mod mock_indexer;
 pub mod paths;
 pub mod socks5_relay;

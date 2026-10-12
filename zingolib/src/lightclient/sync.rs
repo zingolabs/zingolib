@@ -597,7 +597,9 @@ mod tests {
             sapling_outputs_scanned: NOTHING_SCANNED,
             orchard_outputs_scanned: NOTHING_SCANNED,
             ironwood_outputs_scanned: NOTHING_SCANNED,
-            percentage_total_outputs_scanned: 0.0,
+            total_outputs_scanned: 0,
+            total_outputs: 0,
+            nullifier_retrieval_pending: false,
         }
     }
 }
@@ -614,10 +616,13 @@ pub mod test {
     ) -> LightClient {
         zingo_netutils::ensure_default_crypto_provider();
 
-        let mut lc = wallet_case.load_example_wallet().await;
+        let mut lc = wallet_case.load_example_wallet_online().await;
 
         let sync_result = lc.sync_and_await().await.unwrap();
-        tracing::info!("{sync_result}");
+        tracing::info!(
+            "{}",
+            crate::perspective::sync_progress::SessionReport::from(sync_result)
+        );
         tracing::info!("{:?}", lc.account_balance(zip32::AccountId::ZERO).await);
         lc
     }

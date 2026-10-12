@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `perspective::sync_progress`, the sync-progress editorial types.
+  `SyncProgress`, built from a `pepper_sync::sync::SyncStatus`, derives the
+  total block and output percentages the engine reported before: the exact
+  ratio on a percentage scale, clamped, reading complete over an empty span
+  once sync has started and one step short while nullifiers await retrieval.
+  `SessionReport`, built from a `pepper_sync::sync::SyncResult`, derives the
+  session's total output percentage by the same rule. Both render the
+  `Display` text and the `json::JsonValue` document pepper-sync rendered
+  before, with `total_blocks` added to the status document and the two
+  output totals added to the result document.
 - `wallet::expiry`, the transaction expiry delta: `tx_expiry_delta` and
   `tx_expiry_height` answer for a target height, and `NU7_TX_EXPIRY_DELTA` is
   the delta from NU7 activation.

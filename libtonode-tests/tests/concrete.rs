@@ -1838,6 +1838,7 @@ async fn propose_and_send_with_op_return_confirms_on_chain() {
 
 mod testnet_test {
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+    use zingolib::perspective::sync_progress;
     use zingolib::{
         config::{ChainType, ClientConfig, WalletConfig},
         lightclient::LightClient,
@@ -1876,10 +1877,9 @@ mod testnet_test {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             interval.tick().await;
-            while lightclient
-                .latest_sync_status()
-                .is_none_or(|status| status.percentage_total_outputs_scanned < 1.0)
-            {
+            while lightclient.latest_sync_status().is_none_or(|status| {
+                sync_progress::SyncProgress::from(status).percentage_total_outputs_scanned < 1.0
+            }) {
                 interval.tick().await;
             }
             lightclient.stop_sync().unwrap();

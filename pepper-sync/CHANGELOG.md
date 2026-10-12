@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- `sync::SyncStatus::total_blocks`, the block span from the wallet birthday to
+  the last known chain height, the denominator `sync_status` already divided
+  by and never reported.
+- `sync::SyncStatus::nullifier_retrieval_pending`, whether any scan range still
+  awaits nullifier mapping or refetching.
+- `sync::SyncResult::total_outputs_scanned`, `sync::SyncResult::total_outputs`,
+  and `sync::SyncResult::nullifier_retrieval_pending`, copied from the final
+  sync status of the session, so a consumer can derive the session's total
+  progress from the result alone.
 - `sync::ScanRange::encloses` and `sync::ScanRange::overlaps`, the geometry of
   a scan range against a block range, and `sync::ScanPriority::in_flight`, the
   priority the wallet holds a selected range at while its scan task runs.
@@ -272,6 +281,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   range kept its `Scanned` priority with its wallet data removed.
 
 ### Removed
+- **Breaking.** `sync::SyncStatus::percentage_total_blocks_scanned`,
+  `sync::SyncStatus::percentage_total_outputs_scanned`, and
+  `sync::SyncResult::percentage_total_outputs_scanned`. The engine reports the
+  counts and spans the percentages were derived from; the derivation, with its
+  clamp, its reading of an empty span as complete, and its one-step-short
+  reading while nullifiers await retrieval, now lives in
+  `zingolib::perspective::sync_progress`.
+- **Breaking.** The `Display` and `From<_> for json::JsonValue` implementations
+  of `sync::SyncStatus` and `sync::SyncResult`. `zingolib::perspective::sync_progress`
+  renders both, with the same text and the same JSON keys. pepper-sync no longer
+  depends on the `json` crate.
 - **Breaking.** `sync::SyncStatus::percentage_session_blocks_scanned` and
   `sync::SyncStatus::percentage_session_outputs_scanned`. These were the only fields whose
   computation could abort the process, and no consumer read them: the CLI's progress
