@@ -204,7 +204,8 @@ const OUTPUT_ASSIGNMENT: char = '=';
 const JSON_QUOTE: char = '"';
 const JSON_SEPARATOR: &str = ",";
 const JSON_PAIR: char = ':';
-const UNPARSED_MESSAGE: &str = "cannot parse a cargo message: ";
+const JSON_OBJECT_OPEN: char = '{';
+const UNPARSED_MESSAGE: &str = "a cargo message does not match the cargo_metadata schema: ";
 
 pub fn descriptor_in_messages(messages: &str) -> Result<Option<String>, Vec<String>> {
     let mut unparsed = Vec::new();
@@ -222,6 +223,9 @@ pub fn descriptor_in_messages(messages: &str) -> Result<Option<String>, Vec<Stri
                 if descriptor.is_some() {
                     return Ok(descriptor);
                 }
+            }
+            Ok(cargo_metadata::Message::TextLine(line)) if line.starts_with(JSON_OBJECT_OPEN) => {
+                unparsed.push(format!("{UNPARSED_MESSAGE}{line}"));
             }
             Ok(_) => {}
             Err(e) => unparsed.push(format!("{UNPARSED_MESSAGE}{e}")),
@@ -607,7 +611,12 @@ mod tests {
         let refused = descriptor_in_messages(truncated).unwrap_err();
         assert_eq!(refused.len(), 1, "{refused:?}");
         assert!(refused[0].starts_with(UNPARSED_MESSAGE), "{refused:?}");
-        assert!(refused[0].contains("missing field"), "{refused:?}");
+        assert!(refused[0].ends_with(truncated.trim_end()), "{refused:?}");
+        assert_eq!(
+            descriptor_in_messages("not json at all\n"),
+            Ok(None),
+            "a plain text line is not a rejected message"
+        );
     }
 
     #[test]
