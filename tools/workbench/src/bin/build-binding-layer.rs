@@ -1057,13 +1057,14 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
                 None => env.clone(),
             };
             let messages = capture_command(runner, workdir, &env, command)?;
-            let descriptor = binding_layer::descriptor_in_messages(&messages).ok_or_else(|| {
-                vec![format!(
-                    "`{}` reported no {} for zingolib",
-                    command.join(" "),
-                    binding_layer::DESCRIPTOR_ENV
-                )]
-            })?;
+            let descriptor =
+                binding_layer::descriptor_in_messages(&messages)?.ok_or_else(|| {
+                    vec![format!(
+                        "`{}` reported no {} for zingolib",
+                        command.join(" "),
+                        binding_layer::DESCRIPTOR_ENV
+                    )]
+                })?;
             workbench::create_parent(to)?;
             fs::write(to, format!("{descriptor}\n"))
                 .map_err(|e| vec![format!("cannot write {}: {e}", to.display())])

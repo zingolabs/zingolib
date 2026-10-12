@@ -28,7 +28,7 @@ use std::process::{Command, Stdio};
 fn is_package_selection_arg(arg: &str) -> bool {
     matches!(
         arg,
-        "-p" | "--package" | "--workspace" | "--all" | "--exclude" | "--manifest-path"
+        "-p" | "--package" | "--workspace" | "--all" | "--exclude" | workbench::MANIFEST_PATH_FLAG
     ) || arg.starts_with("--package=")
         || arg.starts_with("--exclude=")
         || arg.starts_with("--manifest-path=")

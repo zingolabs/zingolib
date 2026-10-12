@@ -204,23 +204,38 @@ const OUTPUT_ASSIGNMENT: char = '=';
 const JSON_QUOTE: char = '"';
 const JSON_SEPARATOR: &str = ",";
 const JSON_PAIR: char = ':';
+const JSON_OBJECT_OPEN: char = '{';
+const UNPARSED_MESSAGE: &str = "a cargo message does not match the cargo_metadata schema: ";
 
-pub fn descriptor_in_messages(messages: &str) -> Option<String> {
-    cargo_metadata::Message::parse_stream(messages.as_bytes())
-        .filter_map(Result::ok)
-        .find_map(|message| match message {
-            cargo_metadata::Message::BuildScriptExecuted(script)
+pub fn descriptor_in_messages(messages: &str) -> Result<Option<String>, Vec<String>> {
+    let mut unparsed = Vec::new();
+    for message in cargo_metadata::Message::parse_stream(messages.as_bytes()) {
+        match message {
+            Ok(cargo_metadata::Message::BuildScriptExecuted(script))
                 if script.package_id.repr.contains(ZINGOLIB_PACKAGE_ID_TAIL) =>
             {
-                script
+                let descriptor = script
                     .env
                     .into_iter()
                     .find(|(key, _)| key == DESCRIPTOR_ENV)
                     .map(|(_, value)| value)
-                    .filter(|descriptor| !descriptor.is_empty())
+                    .filter(|descriptor| !descriptor.is_empty());
+                if descriptor.is_some() {
+                    return Ok(descriptor);
+                }
             }
-            _ => None,
-        })
+            Ok(cargo_metadata::Message::TextLine(line)) if line.starts_with(JSON_OBJECT_OPEN) => {
+                unparsed.push(format!("{UNPARSED_MESSAGE}{line}"));
+            }
+            Ok(_) => {}
+            Err(e) => unparsed.push(format!("{UNPARSED_MESSAGE}{e}")),
+        }
+    }
+    if unparsed.is_empty() {
+        Ok(None)
+    } else {
+        Err(unparsed)
+    }
 }
 
 pub fn ndk_env_command(triple: &str) -> Vec<String> {
@@ -494,7 +509,7 @@ pub fn bindgen_args(inputs: &BindgenInputs, library: &str, out_dir: &str) -> Vec
         &["run", "--locked", "--target-dir", inputs.target_dir],
         inputs.profile.cargo_args(),
         &[
-            "--manifest-path",
+            crate::MANIFEST_PATH_FLAG,
             inputs.wallet_workspace,
             "--package",
             BINDGEN_PACKAGE,
@@ -577,15 +592,30 @@ mod tests {
         );
         assert_eq!(
             descriptor_in_messages(&messages),
-            Some("zl_6.0.0_2691e".to_string())
+            Ok(Some("zl_6.0.0_2691e".to_string()))
         );
         assert_eq!(
             descriptor_in_messages("{\"reason\":\"build-finished\",\"success\":true}\n"),
-            None
+            Ok(None)
         );
         assert_eq!(
             descriptor_in_messages(&script("zingolib#6.0.0", "[]")),
-            None
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn a_build_script_message_the_schema_rejects_is_reported_instead_of_no_descriptor() {
+        let truncated = "{\"reason\":\"build-script-executed\",\
+                         \"package_id\":\"path+file:///x/zingolib#6.0.0\"}\n";
+        let refused = descriptor_in_messages(truncated).unwrap_err();
+        assert_eq!(refused.len(), 1, "{refused:?}");
+        assert!(refused[0].starts_with(UNPARSED_MESSAGE), "{refused:?}");
+        assert!(refused[0].ends_with(truncated.trim_end()), "{refused:?}");
+        assert_eq!(
+            descriptor_in_messages("not json at all\n"),
+            Ok(None),
+            "a plain text line is not a rejected message"
         );
     }
 
@@ -708,7 +738,7 @@ mod tests {
                 "--target-dir",
                 "/t",
                 "--release",
-                "--manifest-path",
+                crate::MANIFEST_PATH_FLAG,
                 "/w/Cargo.toml",
                 "--package",
                 "zingo-uniffi-bindgen",

@@ -39,6 +39,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.issue.number }}
 
 jobs:
+  # The author association is only a cheap pre-filter that keeps a runner
+  # from starting on an outsider's comment; the permission step below is
+  # the gate that decides.
   request:
     name: Read the request
     if: >-
@@ -75,20 +78,17 @@ jobs:
       # The trigger above fires on any comment that starts with the command,
       # so a stray trailing space still reaches this job and gets an answer
       # rather than silence; anything beyond the bare command is refused
-      # here, with a reaction the maintainer can see.
+      # here, and the last step of the job reacts to the refusal.
       - name: Require the bare command
         env:
           BODY: ${{ github.event.comment.body }}
         run: |
           command="$(printf '%s' "$BODY" | tr -d '\r' | sed -e 's/[[:space:]]*$//')"
           if [ "$command" != "/publish" ]; then
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=confused
             echo "::error::the comment must be exactly /publish on its own; it reads: ${command}"
             exit 1
           fi
 
-      # The author association admits every collaborator, read-only and
-      # triage ones included, so the permission endpoint decides.
       - name: Require write permission
         env:
           COMMENTER: ${{ github.event.comment.user.login }}
@@ -255,12 +255,11 @@ jobs:
           cargo run --quiet --manifest-path tools/workbench/Cargo.toml \
             --bin binding-publish -- --commit "$COMMIT" --bundles "$BUNDLES"
 
-      - name: Report the publish
-        run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=rocket
-
       # A failed build leaves the tool refusing in the step above, and a
       # failed push or record fails there too; either way the comment is
-      # the only place the failure can show.
-      - name: Report the failure
-        if: failure()
-        run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field content=confused
+      # the only place the outcome can show, so one reaction reports it.
+      - name: Report the outcome
+        if: ${{ !cancelled() }}
+        env:
+          REACTION: ${{ job.status == 'success' && 'rocket' || 'confused' }}
+        run: gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT}/reactions" --field "content=${REACTION}"
