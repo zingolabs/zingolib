@@ -325,7 +325,13 @@
 
 **RN Bridge** — A React Native app's native modules and app shell, which marshal calls between JavaScript and the Binding Layer. Beyond marshalling it owns one thing, the app-serviced host of the Mixnet Session: it holds the Nym proxy's handle, watches for the proxy's death, and releases the handle. Each React Native consumer keeps its own RN Bridge in its own repository. Ruled 2026-09-23, pending review. *Avoid*: native modules (names the mechanism, not the role), FFI. See `zingo-adrs zingolib/0054`.
 
-**Prebuilt Bundle** — A compiled native artifact of the Binding Layer, such as an Android `.so` set or an iOS XCFramework, that one repository builds and another consumes without rebuilding it. Ruled 2026-09-23, pending review. *Avoid*: bundle alone, and never "bundle" for grouping changes into one pull request. See `zingo-adrs zingolib/0054`.
+**Prebuilt Bundle** — The compiled and packaged Binding Layer for one platform, which zingolib builds and publishes and a consumer fetches without rebuilding it. The Android Prebuilt Bundle is an AAR holding the four ABIs' native libraries and the compiled Kotlin Binding Sets; the iOS Prebuilt Bundle is the `ZingoBindings` Swift package holding the two XCFrameworks and the Swift Binding Sets. Ruled 2026-09-23 as a loose `.so` set or XCFramework; restated 2026-10-12 to the packaged form that #2833 publishes. *Avoid*: bundle alone, and never "bundle" for grouping changes into one pull request. See `zingo-adrs zingolib/0054`.
+
+**Binding Set** — The generated source code that projects one Binding Layer crate into one language: the Kotlin or the Swift output of UniFFI for the wallet crate or the Nym proxy crate. A Prebuilt Bundle carries one Binding Set per crate for its platform. Ruled 2026-10-12. *Avoid*: the bindings (ambiguous between one Binding Set and the whole Binding Layer).
+
+**Binding Layer Endpoint** — One function or method that the Binding Layer exports to foreign code, such as `get_version`. A consumer's RN Bridge adds one native method per Binding Layer Endpoint it uses. Ruled 2026-10-12. *Avoid*: binding alone, FFI call.
+
+**Bundle Pin** — A consumer's fixed choice of zingolib's Prebuilt Bundles: one zingolib commit, and the digest of that commit's bundle for each platform the consumer uses, kept in one lock file in the consumer's repository. The commit's tag in the registry never moves, and the pin holds the commit to its recorded digests. Ruled 2026-10-12. *Avoid*: the submodule pin (the pin zingo-mobile held before #2930), the lock alone.
 
 ---
 

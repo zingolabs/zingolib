@@ -12,6 +12,7 @@
 
 import Foundation
 import XCTest
+@testable import ZingoBindings
 
 final class GoldenWireContractTests: XCTestCase {
     private func goldenDir() -> URL {
@@ -21,6 +22,7 @@ final class GoldenWireContractTests: XCTestCase {
         return URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // swift/
             .deletingLastPathComponent() // contract-tests/
+            .deletingLastPathComponent() // nym-proxy-ffi/
             .appendingPathComponent("test-data/golden")
     }
 

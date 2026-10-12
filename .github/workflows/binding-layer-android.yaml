@@ -161,6 +161,12 @@ jobs:
       - name: Bundle the AAR
         run: gradle --project-dir bindings/android bundleReleaseAar
 
+      # The Kotlin wire-contract test of the proxy crate compiles against
+      # the Kotlin Binding Set that the AAR ships and asserts it against the
+      # crate's golden pins, which the Rust and Swift suites share.
+      - name: Run the Kotlin wire-contract test
+        run: gradle --project-dir bindings/android testReleaseUnitTest
+
       - name: Verify the AAR carries both libraries for every ABI
         run: |
           set -eu

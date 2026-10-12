@@ -84,6 +84,21 @@ jobs:
             --bin build-binding-layer -- \
             ios --out "${{ inputs.out }}"
 
+      # The Swift wire-contract test of the proxy crate compiles against
+      # the Swift Binding Set the package ships and asserts it against the
+      # crate's golden pins, which the Rust and Kotlin suites share. The
+      # XCFrameworks hold iOS slices only, so the test runs on a simulator.
+      - name: Run the Swift wire-contract test
+        working-directory: zingo-netutils/nym-proxy-ffi/contract-tests
+        run: |
+          set -euo pipefail
+          simulator="$(xcrun simctl list devices available iPhone -j \
+            | python3 -c 'import json,sys; print(next(d["name"] for devices in json.load(sys.stdin)["devices"].values() for d in devices))')"
+          xcodebuild test \
+            -scheme GoldenWireContractTests \
+            -destination "platform=iOS Simulator,name=$simulator" \
+            | tail -40
+
       - name: Upload the Binding Layer
         uses: actions/upload-artifact@v4
         with:
