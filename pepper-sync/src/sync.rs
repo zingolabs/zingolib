@@ -83,7 +83,6 @@ pub const CHECK_NEW_BLOCKS_INTERVAL: u64 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 ///
-/// `percentage_outputs_scanned` is a much more accurate indicator of sync completion than `percentage_blocks_scanned`.
 /// `percentage_total_outputs_scanned` is the percentage of outputs scanned from birthday to chain height.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
@@ -3601,88 +3600,6 @@ mod test {
                 status.percentage_total_outputs_scanned,
                 expected_percentage,
             );
-        }
-    }
-
-    /// `sync_status` over a session baseline above its span, a state the
-    /// sync engine does not produce: it extends the tree bounds with the
-    /// chain under the wallet lock and recomputes the baseline after every
-    /// truncation. The function is public and reads whatever state a
-    /// wallet holds, so it must still not panic on that state.
-    mod scan_progress_baseline {
-        use std::collections::BTreeMap;
-
-        use zcash_primitives::block::BlockHash;
-        use zcash_protocol::consensus::BlockHeight;
-
-        use crate::mocks::MockWalletBuilder;
-        use crate::sync::{ScanPriority, ScanRange, sync_status};
-        use crate::wallet::{SyncState, TreeBounds, WalletBlock};
-
-        fn block(height: u32, tree_bounds: TreeBounds) -> WalletBlock {
-            WalletBlock {
-                block_height: BlockHeight::from_u32(height),
-                block_hash: BlockHash([0; 32]),
-                prev_hash: BlockHash([0; 32]),
-                time: 0,
-                txids: Vec::new(),
-                tree_bounds,
-            }
-        }
-
-        fn flat_bounds(sapling: u32, orchard: u32, ironwood: u32) -> TreeBounds {
-            TreeBounds {
-                sapling_initial_tree_size: sapling,
-                sapling_final_tree_size: sapling,
-                orchard_initial_tree_size: orchard,
-                orchard_final_tree_size: orchard,
-                ironwood_initial_tree_size: ironwood,
-                ironwood_final_tree_size: ironwood,
-            }
-        }
-
-        /// HYPOTHESIS: the unguarded subtraction is profile-dependent, so
-        /// the class of bug is visible in the suite rather than only in
-        /// production. Overflow checks turn it into a panic that aborts
-        /// whatever thread computes it; their absence turns it into a
-        /// wrapped denominator that pins every derived percentage at zero.
-        /// Both readings are wrong, and neither is detectable by the
-        /// caller.
-        #[test]
-        fn the_unguarded_baseline_subtraction_is_profile_dependent() {
-            let span = std::hint::black_box(30_u64);
-            let baseline = std::hint::black_box(70_u64);
-            let scanned = std::hint::black_box(75_u64);
-
-            let previous_hook = std::panic::take_hook();
-            std::panic::set_hook(Box::new(|_| {}));
-            let outcome = std::panic::catch_unwind(|| span - baseline);
-            std::panic::set_hook(previous_hook);
-
-            if cfg!(debug_assertions) {
-                assert!(
-                    outcome.is_err(),
-                    "with overflow checks the underflow must panic"
-                );
-            } else {
-                let wrapped = outcome.expect("without overflow checks it wraps");
-                assert_eq!(wrapped, u64::MAX - 39);
-                let percentage =
-                    ((scanned - baseline) as f32 / wrapped as f32 * 100.0).clamp(0.0, 100.0);
-                assert_eq!(
-                    percentage, 0.0,
-                    "the wrapped denominator silently pins progress at zero"
-                );
-            }
-        }
-
-        /// HYPOTHESIS: the saturating baseline the session counts now use
-        /// reports no session progress rather than underflowing, when a
-        /// re-org truncation shrinks the live count below the baseline.
-        #[test]
-        fn a_baseline_above_the_live_count_saturates_to_zero() {
-            assert_eq!(40_u32.saturating_sub(70), 0);
-            assert_eq!(75_u32.saturating_sub(70), 5);
         }
 
         /// HYPOTHESIS: `sync_status` reports a hand-built state whose
