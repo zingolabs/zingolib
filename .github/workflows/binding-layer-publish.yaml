@@ -29,8 +29,12 @@ on:
 
 # The reactions on the comment go through the issue-comment endpoint,
 # which the token's `issues` permission gates.
+# The npm publish of bindings/pin signs its provenance with the job's OIDC
+# token, which `id-token` grants; npm's trusted publishing for this
+# repository and workflow takes the place of a stored npm token.
 permissions:
   contents: write
+  id-token: write
   issues: write
   packages: write
   pull-requests: write
@@ -248,6 +252,28 @@ jobs:
         run: |
           cargo run --quiet --manifest-path tools/workbench/Cargo.toml \
             --bin binding-publish -- --commit "$COMMIT" --bundles "$BUNDLES"
+
+      # bindings/pin is the npm package every consumer installs to hold its
+      # Bundle Pin. It publishes with the Binding Layer, once per version:
+      # the step publishes nothing when npm already holds the version the
+      # package names. Trusted publishing needs an npm newer than the one
+      # Node 22 bundles.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish the Bundle Pin package when npm lacks its version
+        working-directory: bindings/pin
+        run: |
+          npm install --global npm@latest
+          version="$(node --print "require('./package.json').version")"
+          if npm view "@zingolabs/bundle-pin@${version}" version >/dev/null 2>&1; then
+            echo "npm holds @zingolabs/bundle-pin@${version}."
+          else
+            npm publish --access public --provenance
+          fi
 
       # A failed build leaves the tool refusing in the step above, and a
       # failed push or record fails there too; either way the comment is
