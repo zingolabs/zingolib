@@ -145,6 +145,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-org allowance of the last known chain height, as before.
 
 ### Fixed
+- A transaction request that zaino refuses with "retry with a fresh snapshot",
+  because it fell between two mempool snapshots, is sent again, at most three
+  times, instead of ending the sync session with a server error.
 - `sync` rolls each shard tree back to the wallet's highest scanned height
   when it starts, where the tree holds a checkpoint above that height. A sync
   session that ended partway through a wallet update left note commitments in

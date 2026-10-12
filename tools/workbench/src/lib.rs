@@ -321,6 +321,8 @@ pub fn file_name_of(file: &Path) -> Result<&str, Vec<String>> {
         .ok_or_else(|| vec![format!("{} has no file name", file.display())])
 }
 
+pub const BRANCH_TIP: &str = "HEAD";
+
 pub const DEFAULT_BASE: &str = "origin/dev";
 
 pub const FALLBACK_BASE: &str = "dev";
@@ -328,7 +330,7 @@ pub const FALLBACK_BASE: &str = "dev";
 /// - Runs `git merge-base` in `root`, again against the fallback when the default base is absent.
 pub fn merge_base(root: &Path, base: &str) -> Result<String, Vec<String>> {
     let found = |reference: &str| {
-        git_in(root, &["merge-base", "HEAD", reference]).map(|commit| commit.trim().to_string())
+        git_in(root, &["merge-base", BRANCH_TIP, reference]).map(|commit| commit.trim().to_string())
     };
     found(base)
         .or_else(|absent| {
@@ -346,10 +348,28 @@ pub fn merge_base(root: &Path, base: &str) -> Result<String, Vec<String>> {
         })
 }
 
+const ACTIONS_ENV: &str = "GITHUB_ACTIONS";
+const ACTIONS_WARNING: &str = "::warning::";
+const WARNING_PREFIX: &str = "warning: ";
+
+pub fn warning_line(message: &str, in_actions: bool) -> String {
+    let prefix = if in_actions {
+        ACTIONS_WARNING
+    } else {
+        WARNING_PREFIX
+    };
+    format!("{prefix}{message}")
+}
+
+/// - Reads `GITHUB_ACTIONS` from the environment.
+/// - Writes one line to stderr.
+pub fn warn(message: &str) {
+    let in_actions = std::env::var_os(ACTIONS_ENV).is_some();
+    eprintln!("{}", warning_line(message, in_actions));
+}
+
 const LOCKFILE: &str = "Cargo.lock";
 pub const MANIFEST_PATH_FLAG: &str = "--manifest-path";
-pub const PACKAGE_DIR_OPEN: &str = " (";
-pub const PACKAGE_DIR_CLOSE: char = ')';
 const LOCKED_FLAG: &str = "--locked";
 
 /// - Runs `cargo metadata` as a child process, resolving dependencies only when `deps` is set.
@@ -374,39 +394,44 @@ pub fn canonical(path: &Path) -> Result<PathBuf, Vec<String>> {
     at_path(path, "resolve", |path| std::fs::canonicalize(path))
 }
 
-/// - Runs `cargo metadata` as a child process in `dir`, without resolving dependencies.
-fn package_above(dir: &Path) -> Result<(PathBuf, bool), Vec<String>> {
-    let metadata = cargo_metadata::MetadataCommand::new()
-        .current_dir(dir)
-        .no_deps()
-        .exec()
-        .map_err(|e| {
-            vec![format!(
-                "`{CARGO} metadata` failed in {}: {e}",
-                dir.display()
-            )]
-        })?;
-    let dir = canonical(dir)?;
-    let nearest = metadata
-        .packages
-        .iter()
-        .filter_map(|package| {
-            let crate_dir = package.manifest_path.parent()?.as_std_path();
-            dir.starts_with(crate_dir).then_some((crate_dir, package))
-        })
-        .max_by_key(|(crate_dir, _)| crate_dir.components().count());
-    Ok(match nearest {
-        Some((_, package)) => (package.manifest_path.clone().into_std_path_buf(), true),
-        None => (
-            metadata.workspace_root.join(MANIFEST).into_std_path_buf(),
-            false,
-        ),
-    })
+struct ManifestLookup {
+    by_directory: BTreeMap<PathBuf, (PathBuf, bool)>,
 }
 
-/// - Runs `cargo metadata` through [`package_above`].
-pub fn manifest_above(dir: &Path) -> Result<PathBuf, Vec<String>> {
-    package_above(dir).map(|(manifest, _)| manifest)
+impl ManifestLookup {
+    /// - Runs `git ls-files` in `root` through [`workspace_manifests`].
+    /// - Runs `cargo metadata` through [`metadata_of`] once per workspace.
+    fn of(root: &Path) -> Result<Self, Vec<String>> {
+        let mut by_directory = BTreeMap::new();
+        for workspace in workspace_manifests(root)? {
+            let metadata = metadata_of(&canonical(&workspace)?, false)?;
+            by_directory
+                .entry(metadata.workspace_root.clone().into_std_path_buf())
+                .or_insert_with(|| {
+                    (
+                        metadata.workspace_root.join(MANIFEST).into_std_path_buf(),
+                        false,
+                    )
+                });
+            for package in &metadata.packages {
+                if let Some(crate_dir) = package.manifest_path.parent() {
+                    by_directory.insert(
+                        crate_dir.as_std_path().to_path_buf(),
+                        (package.manifest_path.clone().into_std_path_buf(), true),
+                    );
+                }
+            }
+        }
+        Ok(Self { by_directory })
+    }
+
+    /// - Resolves `dir` through the filesystem, following symbolic links.
+    fn nearest(&self, dir: &Path) -> Result<(PathBuf, bool), Vec<String>> {
+        let dir = canonical(dir)?;
+        dir.ancestors()
+            .find_map(|ancestor| self.by_directory.get(ancestor).cloned())
+            .ok_or_else(|| vec![format!("no workspace holds {}", dir.display())])
+    }
 }
 
 /// - Runs `cargo metadata` through [`metadata_of`].
@@ -437,7 +462,7 @@ pub fn workspace_manifests(root: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
         .collect())
 }
 
-/// - Runs `git diff` in `root`, then `cargo metadata` once per changed directory.
+/// - Runs `git diff` and `git ls-files` in `root`, then `cargo metadata` once per workspace.
 pub fn touched_manifests(root: &Path, merge_base: &str) -> Result<Vec<PathBuf>, Vec<String>> {
     Ok(touched(root, merge_base)?.into_keys().collect())
 }
@@ -456,9 +481,10 @@ fn touched(root: &Path, merge_base: &str) -> Result<BTreeMap<PathBuf, bool>, Vec
         .lines()
         .map(|file| existing_dir_of(root, Path::new(file)))
         .collect();
+    let lookup = ManifestLookup::of(root)?;
     let mut manifests = BTreeMap::new();
     for dir in dirs {
-        let (manifest, declares) = package_above(&dir)?;
+        let (manifest, declares) = lookup.nearest(&dir)?;
         if manifests.contains_key(&manifest) {
             continue;
         }
@@ -628,10 +654,29 @@ fn is_concrete_numeric(channel: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_warning_is_a_workflow_command_only_under_actions() {
+        assert_eq!(
+            super::warning_line("base is gone", true),
+            "::warning::base is gone"
+        );
+        assert_eq!(
+            super::warning_line("base is gone", false),
+            "warning: base is gone"
+        );
+    }
+
     use super::*;
 
     /// A workbench crate directory under a checkout that was moved or removed after the build.
     const ABSENT_WORKBENCH_DIR: &str = "/absent/zingolib/tools/workbench";
+
+    /// - Runs the same child processes as [`ManifestLookup::of`] over the repo root.
+    fn manifest_above(dir: &Path) -> Result<PathBuf, Vec<String>> {
+        ManifestLookup::of(&repo_root()?)?
+            .nearest(dir)
+            .map(|(manifest, _)| manifest)
+    }
 
     #[test]
     fn the_root_is_two_directories_above_the_workbench_crate() -> Result<(), Vec<String>> {

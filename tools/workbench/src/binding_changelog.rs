@@ -339,7 +339,7 @@ pub fn render_header() -> String {
          regenerates every section and fails when the committed file differs. The\n\
          audited crates of an entry are the two Binding Layer crates and their\n\
          direct dependencies in this repository at the entry's commit, as the\n\
-         publish workflow recorded them from `cargo tree`; each section names them\n\
+         publish workflow recorded them from `cargo metadata`; each section names them\n\
          in its `{}` line. A change in another crate of this repository appears\n\
          only where one of those changelogs records it.\n",
         binding_manifest::FILE,
@@ -747,13 +747,13 @@ mod tests {
         crate::write(&changelog, old)?;
         crate::hermetic_git(&repo, &["add", CRATE_CHANGELOG])?;
         crate::hermetic_git(&repo, &["commit", "--quiet", "--message", "since"])?;
-        let since = crate::hermetic_git(&repo, &["rev-parse", "HEAD"])?;
+        let since = crate::hermetic_git(&repo, &["rev-parse", crate::BRANCH_TIP])?;
         crate::write(&changelog, format!("{old}- new\n"))?;
         crate::hermetic_git(
             &repo,
             &["commit", "--quiet", "--all", "--message", "commit"],
         )?;
-        let commit = crate::hermetic_git(&repo, &["rev-parse", "HEAD"])?;
+        let commit = crate::hermetic_git(&repo, &["rev-parse", crate::BRANCH_TIP])?;
         let diff = changelog_diff(&repo, &since, &commit, CRATE_CHANGELOG)?;
         assert_eq!(
             gained_lines(&diff)?,

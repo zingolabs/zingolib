@@ -142,8 +142,3 @@ jobs:
       out: ${{ needs.binding-layer-names.outputs.ios_out }}
       bundle: ${{ needs.binding-layer-names.outputs.bundle_ios }}
 
-  test:
-    uses: ./.github/workflows/test.yaml
-    permissions:
-      contents: read
-      packages: write

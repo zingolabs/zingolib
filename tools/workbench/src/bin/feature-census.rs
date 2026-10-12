@@ -188,7 +188,7 @@ fn scope(root: &Path, request: &Request) -> Result<Scope, Vec<String>> {
     )?))
 }
 
-/// - Runs `git ls-files` and `cargo tree` through the library, once per workspace.
+/// - Runs `git ls-files` and `cargo metadata` through the library, once per workspace.
 fn every_manifest(root: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
     let mut manifests = Vec::new();
     for workspace in workbench::workspace_manifests(root)? {
@@ -327,7 +327,7 @@ fn check(root: &Path, manifest: &Path, crate_dir: &str) -> Result<bool, Vec<Stri
     if manifest == root.join(workbench::MANIFEST) {
         command.arg("--workspace");
     } else {
-        command.arg("--manifest-path").arg(manifest);
+        command.arg(workbench::MANIFEST_PATH_FLAG).arg(manifest);
     }
     match PROBE_FEATURES.iter().find(|(name, _)| *name == crate_dir) {
         Some((_, features)) => {
