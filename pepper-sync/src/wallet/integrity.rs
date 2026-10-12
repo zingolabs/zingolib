@@ -49,6 +49,12 @@ use zcash_protocol::{ShieldedPool, consensus::BlockHeight};
 
 use super::SyncState;
 
+/// The one block that legally belongs to two consecutive shard ranges:
+/// the block completing a shard usually also holds the first note
+/// commitments of the next, so `add_shard_ranges` starts every new
+/// range at the previous exclusive end minus this many blocks.
+const SHARD_BOUNDARY_OVERLAP: u32 = 1;
+
 /// A violation of the Sync State Contract: the first invariant breach
 /// found in a [`SyncState`], with the evidence that convicts it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -109,13 +115,31 @@ pub enum SyncStateIntegrityError {
         /// The range's end bound, below the start.
         end: BlockHeight,
     },
-    /// Consecutive shard ranges overlap or are out of height order.
-    /// Gaps between shard ranges are legal; overlap and disorder are
-    /// the same conviction because a descending pair always overlaps
-    /// the ascending reading of the vec.
+    /// Consecutive shard ranges leave blocks uncovered. The engine
+    /// extends a range's end up to the next shard's start, so a hole
+    /// in shard coverage is never legally produced.
+    #[error(
+        "{pool:?} shard range {index} ends at {end} but its successor starts at {next_start}: gap"
+    )]
+    ShardRangeGap {
+        /// The pool whose shard-range vec offends.
+        pool: ShieldedPool,
+        /// Position of the earlier range in that vec.
+        index: usize,
+        /// Where the earlier range ends.
+        end: BlockHeight,
+        /// Where the successor starts, above the end.
+        next_start: BlockHeight,
+    },
+    /// Consecutive shard ranges overlap by more than the one boundary
+    /// block, or are out of height order. The block that completes one
+    /// shard usually also starts the next, so the exclusive end of a
+    /// range legally sits one above its successor's start; overlap and
+    /// disorder are the same conviction because a descending pair
+    /// always overlaps the ascending reading of the vec.
     #[error(
         "{pool:?} shard range {index} ends at {end} but its successor starts at {next_start}: \
-         overlap or disorder"
+         overlap beyond the boundary block or disorder"
     )]
     ShardRangeDisorder {
         /// The pool whose shard-range vec offends.
@@ -203,15 +227,23 @@ impl SyncState {
                         end: range.end,
                     });
                 }
-                if let Some(next) = shard_ranges.get(index + 1)
-                    && range.end > next.start
-                {
-                    return Err(SyncStateIntegrityError::ShardRangeDisorder {
-                        pool,
-                        index,
-                        end: range.end,
-                        next_start: next.start,
-                    });
+                if let Some(next) = shard_ranges.get(index + 1) {
+                    if range.end < next.start {
+                        return Err(SyncStateIntegrityError::ShardRangeGap {
+                            pool,
+                            index,
+                            end: range.end,
+                            next_start: next.start,
+                        });
+                    }
+                    if range.end > next.start + SHARD_BOUNDARY_OVERLAP {
+                        return Err(SyncStateIntegrityError::ShardRangeDisorder {
+                            pool,
+                            index,
+                            end: range.end,
+                            next_start: next.start,
+                        });
+                    }
                 }
             }
         }
@@ -280,8 +312,11 @@ mod attack_corpus {
             scan_range(1..361, ScanPriority::Scanned),
             scan_range(361..601, ScanPriority::Historic),
         ];
-        state.sapling_shard_ranges = vec![height(10)..height(50), height(80)..height(120)];
-        state.orchard_shard_ranges = vec![height(100)..height(200)];
+        // Sapling shows the engine's usual shape, consecutive ranges
+        // sharing the boundary block; orchard shows the rarer exact
+        // meeting, where the shard boundary falls on a block edge.
+        state.sapling_shard_ranges = vec![height(10)..height(50), height(49)..height(120)];
+        state.orchard_shard_ranges = vec![height(100)..height(200), height(200)..height(300)];
         state.ironwood_shard_ranges = vec![height(400)..height(500)];
         state
             .initial_sync_state
@@ -425,10 +460,10 @@ mod attack_corpus {
         );
     }
 
-    /// Both shapes of the same invariant: a descending pair and an
-    /// overlapping ascending pair are the same conviction, because
-    /// shard ranges promise only ascending non-overlap (gaps between
-    /// shards are legal).
+    /// Three shapes of the same invariant: a descending pair, an
+    /// ascending pair overlapping deep inside a shard, and an ascending
+    /// pair overlapping by exactly one block more than the shared
+    /// boundary block the engine produces.
     #[test]
     fn attack_shard_range_disorder() {
         let mut descending = honest_state();
@@ -453,6 +488,37 @@ mod attack_corpus {
                 index: 0,
                 end: height(200),
                 next_start: height(150),
+            })
+        );
+
+        let mut two_block_overlap = honest_state();
+        two_block_overlap.ironwood_shard_ranges =
+            vec![height(100)..height(200), height(198)..height(300)];
+        assert_eq!(
+            two_block_overlap.validate(),
+            Err(SyncStateIntegrityError::ShardRangeDisorder {
+                pool: ShieldedPool::Ironwood,
+                index: 0,
+                end: height(200),
+                next_start: height(198),
+            })
+        );
+    }
+
+    /// The engine extends a shard range's end up to the next shard's
+    /// start, so a hole between shard ranges is never legally produced
+    /// and must convict; a one-block hole is the smallest.
+    #[test]
+    fn attack_shard_range_gap() {
+        let mut state = honest_state();
+        state.ironwood_shard_ranges = vec![height(100)..height(200), height(201)..height(300)];
+        assert_eq!(
+            state.validate(),
+            Err(SyncStateIntegrityError::ShardRangeGap {
+                pool: ShieldedPool::Ironwood,
+                index: 0,
+                end: height(200),
+                next_start: height(201),
             })
         );
     }

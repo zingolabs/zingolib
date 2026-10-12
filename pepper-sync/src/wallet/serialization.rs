@@ -1459,7 +1459,7 @@ mod tests {
         let mut state = SyncState::new();
         state.ironwood_shard_ranges = vec![
             BlockHeight::from_u32(100)..BlockHeight::from_u32(200),
-            BlockHeight::from_u32(300)..BlockHeight::from_u32(400),
+            BlockHeight::from_u32(199)..BlockHeight::from_u32(400),
         ];
         state.scan_ranges.push(ScanRange::from_parts(
             BlockHeight::from_u32(100)..BlockHeight::from_u32(400),
