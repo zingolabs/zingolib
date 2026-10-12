@@ -57,11 +57,7 @@ enum Rejection {
     StaleEntry,
 }
 
-impl From<Vec<String>> for Rejection {
-    fn from(lines: Vec<String>) -> Self {
-        Rejection::Unrunnable(lines)
-    }
-}
+from_diagnostics!(Rejection::Unrunnable);
 
 impl Rejection {
     fn lines(self) -> Vec<String> {
@@ -246,7 +242,7 @@ pub fn main() -> ! {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     use super::*;
 
@@ -258,7 +254,7 @@ mod tests {
     const PRUNED_DIRECTORY: &str = "target";
     const HIDDEN_MARK: char = '.';
     const DIRECTORY_MARK: char = '/';
-    const FIXTURE_ROOT: &str = "workbench-dupes-gate";
+    const FIXTURE_ROOT: &str = "dupes-gate";
     const NO_NEAR: &str = "0";
     const SLACK_CEILING: &str = "1";
     const SOURCE: &str = "src/lib.rs";
@@ -270,27 +266,14 @@ mod tests {
     const NEAR_GROUP: &str = "near duplicate groups";
     const EXACT_GROUP: &str = "exact duplicate groups";
 
-    struct Fixture {
-        dir: PathBuf,
-    }
-
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.dir);
-        }
-    }
-
-    fn fixture(name: &str, files: &[(&str, &str)]) -> Fixture {
-        let dir = std::env::temp_dir()
-            .join(FIXTURE_ROOT)
-            .join(format!("{name}-{}", std::process::id()));
-        crate::fresh_dir(&dir).unwrap();
+    fn fixture(name: &str, files: &[(&str, &str)]) -> Result<crate::ScratchDir, Vec<String>> {
+        let dir = crate::scratch_dir(&format!("{FIXTURE_ROOT}-{name}"))?;
         for (relative, contents) in files {
             let file = dir.join(relative);
-            crate::create_parent(&file).unwrap();
-            std::fs::write(&file, contents).unwrap();
+            crate::create_parent(&file)?;
+            crate::write(&file, contents)?;
         }
-        Fixture { dir }
+        Ok(dir)
     }
 
     fn is_excluded(path: &str, patterns: &[&str]) -> bool {
@@ -314,14 +297,6 @@ mod tests {
                     .collect()
             })
             .collect()
-    }
-
-    fn tool(dir: &Path, args: &[&str]) -> crate::Finished {
-        dupes(dir, args).unwrap()
-    }
-
-    fn strict(dir: &Path) -> crate::Finished {
-        tool(dir, &check_args(NO_NEAR))
     }
 
     fn function(name: &str, tail: &str) -> String {
@@ -373,51 +348,55 @@ mod tests {
         ])
     }
 
-    fn stale(name: &str) -> Fixture {
+    fn stale(name: &str) -> Result<crate::ScratchDir, Vec<String>> {
         fixture(name, &[(SOURCE, &lone()), (BASELINE, STALE_BASELINE)])
     }
 
-    fn baseline(dir: &Path) {
-        let report = tool(dir, &["report"]).stdout;
+    fn baseline(dir: &Path) -> Result<(), Vec<String>> {
+        let report = dupes(dir, &["report"])?.stdout;
         for fingerprint in fingerprints(&report) {
-            tool(dir, &["ignore", &fingerprint]);
+            dupes(dir, &["ignore", &fingerprint])?;
         }
         assert_eq!(check(dir, NO_NEAR), Ok(()));
+        Ok(())
     }
 
-    fn after_rewrite(name: &str, before: &str, after: &str) -> (crate::Finished, String) {
-        let checkout = fixture(name, &[(SOURCE, before)]);
-        baseline(&checkout.dir);
-        std::fs::write(checkout.dir.join(SOURCE), after).unwrap();
-        (strict(&checkout.dir), tool(&checkout.dir, &CLEANUP).stdout)
+    fn after_rewrite(
+        name: &str,
+        before: &str,
+        after: &str,
+    ) -> Result<(crate::Finished, String), Vec<String>> {
+        let checkout = fixture(name, &[(SOURCE, before)])?;
+        baseline(&checkout)?;
+        crate::write(&checkout.join(SOURCE), after)?;
+        Ok((
+            dupes(&checkout, &check_args(NO_NEAR))?,
+            dupes(&checkout, &CLEANUP)?.stdout,
+        ))
     }
 
-    fn root() -> PathBuf {
-        crate::repo_root().unwrap()
+    fn read_root(relative: &str) -> Result<String, Vec<String>> {
+        crate::read(&crate::repo_root()?.join(relative))
     }
 
-    fn read_root(relative: &str) -> String {
-        crate::read(&root().join(relative)).unwrap()
-    }
-
-    fn tracked_rust_files() -> Vec<String> {
-        let root = root();
-        crate::git_in(&root, &["ls-files", "--", "*.rs"])
-            .unwrap()
+    fn tracked_rust_files() -> Result<Vec<String>, Vec<String>> {
+        let root = crate::repo_root()?;
+        Ok(crate::git_in(&root, &["ls-files", "--", "*.rs"])?
             .lines()
             .map(|file| root.join(file).to_string_lossy().into_owned())
-            .collect()
+            .collect())
     }
 
     #[test]
-    fn every_exclude_pattern_matches_a_tracked_rust_file() {
-        let files = tracked_rust_files();
+    fn every_exclude_pattern_matches_a_tracked_rust_file() -> Result<(), Vec<String>> {
+        let files = tracked_rust_files()?;
         for pattern in EXCLUDE {
             assert!(
                 files.iter().any(|file| file.contains(pattern)),
                 "{pattern} matches no tracked Rust file"
             );
         }
+        Ok(())
     }
 
     #[test]
@@ -428,15 +407,17 @@ mod tests {
     }
 
     #[test]
-    fn every_directory_pattern_is_a_path_from_the_repository_root() {
+    fn every_directory_pattern_is_a_path_from_the_repository_root() -> Result<(), Vec<String>> {
+        let root = crate::repo_root()?;
         for pattern in EXCLUDE {
             if pattern.ends_with(DIRECTORY_MARK) {
                 assert!(
-                    root().join(pattern).is_dir(),
+                    root.join(pattern).is_dir(),
                     "{pattern} is not a directory under the root"
                 );
             }
         }
+        Ok(())
     }
 
     #[test]
@@ -462,62 +443,68 @@ mod tests {
     }
 
     #[test]
-    fn the_gate_workflow_filters_no_path() {
-        let workflow = read_root(GATE_WORKFLOW);
+    fn the_gate_workflow_filters_no_path() -> Result<(), Vec<String>> {
+        let workflow = read_root(GATE_WORKFLOW)?;
         let keys: Vec<&str> = workflow.lines().map(str::trim).collect();
         assert!(keys.contains(&"pull_request:"));
         assert!(!keys.contains(&"paths:"));
         assert!(!keys.contains(&"paths-ignore:"));
+        Ok(())
     }
 
     #[test]
-    fn a_job_in_the_gate_workflow_reports_the_required_check_name() {
+    fn a_job_in_the_gate_workflow_reports_the_required_check_name() -> Result<(), Vec<String>> {
         let name = format!("name: {CHECK_NAME}");
-        assert!(read_root(GATE_WORKFLOW)
+        assert!(read_root(GATE_WORKFLOW)?
             .lines()
             .any(|line| line.starts_with(char::is_whitespace) && line.trim() == name));
+        Ok(())
     }
 
     #[test]
-    fn the_pull_request_workflow_carries_no_gate() {
-        let workflow = read_root(PULL_REQUEST_WORKFLOW);
+    fn the_pull_request_workflow_carries_no_gate() -> Result<(), Vec<String>> {
+        let workflow = read_root(PULL_REQUEST_WORKFLOW)?;
         assert!(!workflow.contains(GATE_JOB));
         assert!(!workflow.contains(SUBCOMMAND));
+        Ok(())
     }
 
     #[test]
-    fn the_gate_passes_on_this_checkout() {
-        assert_eq!(gate(&root()), Ok(()));
+    fn the_gate_passes_on_this_checkout() -> Result<(), Vec<String>> {
+        assert_eq!(gate(&crate::repo_root()?), Ok(()));
+        Ok(())
     }
 
     #[test]
-    fn a_near_count_below_the_ceiling_is_rejected() {
-        let checkout = fixture("slack-ceiling", &[(SOURCE, &lone())]);
+    fn a_near_count_below_the_ceiling_is_rejected() -> Result<(), Vec<String>> {
+        let checkout = fixture("slack-ceiling", &[(SOURCE, &lone())])?;
         assert_eq!(
-            check(&checkout.dir, SLACK_CEILING),
+            check(&checkout, SLACK_CEILING),
             Err(Rejection::NearBelowCeiling {
                 count: NO_NEAR.to_string(),
                 ceiling: SLACK_CEILING.to_string(),
             })
         );
-        assert_eq!(check(&checkout.dir, NO_NEAR), Ok(()));
+        assert_eq!(check(&checkout, NO_NEAR), Ok(()));
+        Ok(())
     }
 
     #[test]
-    fn a_tool_error_is_not_reported_as_duplication() {
-        let empty = fixture("check-empty", &[("README.md", "")]);
+    fn a_tool_error_is_not_reported_as_duplication() -> Result<(), Vec<String>> {
+        let empty = fixture("check-empty", &[("README.md", "")])?;
         assert!(matches!(
-            check(&empty.dir, NO_NEAR),
+            check(&empty, NO_NEAR),
             Err(Rejection::ToolFailed(_))
         ));
         assert_eq!(
-            check(&fixture("check-pair", &[(SOURCE, &pair(""))]).dir, NO_NEAR),
+            check(&fixture("check-pair", &[(SOURCE, &pair(""))])?, NO_NEAR),
             Err(Rejection::Duplication)
         );
+        Ok(())
     }
 
     #[test]
-    fn an_async_test_in_a_feature_gated_module_is_not_excluded() {
+    fn an_async_test_in_a_feature_gated_module_is_not_excluded() -> Result<(), Vec<String>> {
         let body = pair("#[tokio::test]");
         let checkout = fixture(
             "async-gated",
@@ -525,98 +512,107 @@ mod tests {
                 SOURCE,
                 &module("#[cfg(any(test, feature = \"test-elevation\"))]", &body),
             )],
-        );
-        let run = strict(&checkout.dir);
+        )?;
+        let run = dupes(&checkout, &check_args(NO_NEAR))?;
         assert_eq!(run.status.code(), Some(DUPLICATION));
         assert!(run.stdout.contains(EXACT_GROUP));
+        Ok(())
     }
 
     #[test]
-    fn a_literal_test_in_a_cfg_test_module_is_excluded() {
+    fn a_literal_test_in_a_cfg_test_module_is_excluded() -> Result<(), Vec<String>> {
         let body = pair("#[test]");
-        let checkout = fixture("literal-test", &[(SOURCE, &module("#[cfg(test)]", &body))]);
-        assert_eq!(check(&checkout.dir, NO_NEAR), Ok(()));
+        let checkout = fixture("literal-test", &[(SOURCE, &module("#[cfg(test)]", &body))])?;
+        assert_eq!(check(&checkout, NO_NEAR), Ok(()));
+        Ok(())
     }
 
     #[test]
-    fn a_near_group_gets_a_new_fingerprint_when_a_member_changes() {
+    fn a_near_group_gets_a_new_fingerprint_when_a_member_changes() -> Result<(), Vec<String>> {
         let (check, cleanup) = after_rewrite(
             "near-edit",
             &near_group("total *= 2;"),
             &near_group("total ^= 2;"),
-        );
+        )?;
         assert_eq!(check.status.code(), Some(DUPLICATION));
         assert!(check.stdout.contains(NEAR_GROUP));
         assert!(cleanup.contains(STALE_ENTRIES));
+        Ok(())
     }
 
     #[test]
-    fn a_near_group_gets_a_new_fingerprint_when_a_member_leaves() {
+    fn a_near_group_gets_a_new_fingerprint_when_a_member_leaves() -> Result<(), Vec<String>> {
         let (check, cleanup) = after_rewrite(
             "near-leave",
             &near_group("total *= 2;"),
             &functions(&[("first", "total += 1;"), ("second", "total -= 1;")]),
-        );
+        )?;
         assert_eq!(check.status.code(), Some(DUPLICATION));
         assert!(check.stdout.contains(NEAR_GROUP));
         assert!(cleanup.contains(STALE_ENTRIES));
+        Ok(())
     }
 
     #[test]
-    fn an_exact_group_keeps_its_fingerprint_when_a_member_leaves() {
+    fn an_exact_group_keeps_its_fingerprint_when_a_member_leaves() -> Result<(), Vec<String>> {
         let (check, cleanup) = after_rewrite(
             "exact-leave",
             &functions(&[("first", ""), ("second", ""), ("third", "")]),
             &functions(&[("first", ""), ("second", "")]),
-        );
+        )?;
         assert_eq!(check.status.code(), Some(PASSED));
         assert!(cleanup.contains(NO_STALE_ENTRIES));
+        Ok(())
     }
 
     #[test]
-    fn a_target_directory_is_pruned_without_a_pattern() {
+    fn a_target_directory_is_pruned_without_a_pattern() -> Result<(), Vec<String>> {
         let checkout = fixture(
             "pruned",
             &[
                 (SOURCE, &lone()),
                 (&format!("{PRUNED_DIRECTORY}/generated.rs"), &pair("")),
             ],
-        );
-        assert_eq!(check(&checkout.dir, NO_NEAR), Ok(()));
+        )?;
+        assert_eq!(check(&checkout, NO_NEAR), Ok(()));
+        Ok(())
     }
 
     #[test]
-    fn a_pattern_matches_a_parent_directory_of_the_checkout() {
+    fn a_pattern_matches_a_parent_directory_of_the_checkout() -> Result<(), Vec<String>> {
         let parent = fixture(
             "parent",
             &[(&format!("{NESTED_CHECKOUT}/{SOURCE}"), &lone())],
-        );
-        let checkout = parent.dir.join(NESTED_CHECKOUT);
+        )?;
+        let checkout = parent.join(NESTED_CHECKOUT);
         assert_eq!(check(&checkout, NO_NEAR), Ok(()));
         let args: Vec<&str> = check_args(NO_NEAR)
             .into_iter()
             .chain([EXCLUDE_FLAG, PARENT_PATTERN])
             .collect();
-        assert_eq!(tool(&checkout, &args).status.code(), Some(TOOL_ERROR));
+        assert_eq!(dupes(&checkout, &args)?.status.code(), Some(TOOL_ERROR));
+        Ok(())
     }
 
     #[test]
-    fn cleanup_exits_zero_with_a_stale_entry_and_two_without_sources() {
-        let run = tool(&stale("stale").dir, &CLEANUP);
+    fn cleanup_exits_zero_with_a_stale_entry_and_two_without_sources() -> Result<(), Vec<String>> {
+        let run = dupes(&stale("stale")?, &CLEANUP)?;
         assert_eq!(run.status.code(), Some(PASSED));
         assert!(run.stdout.contains(STALE_ENTRIES));
-        let empty = fixture("empty", &[("README.md", "")]);
-        assert_eq!(tool(&empty.dir, &CLEANUP).status.code(), Some(TOOL_ERROR));
+        let empty = fixture("empty", &[("README.md", "")])?;
+        assert_eq!(dupes(&empty, &CLEANUP)?.status.code(), Some(TOOL_ERROR));
+        Ok(())
     }
 
     #[test]
-    fn the_gate_names_a_stale_entry() {
+    fn the_gate_names_a_stale_entry() -> Result<(), Vec<String>> {
         assert_eq!(
-            no_stale_entry(&stale("gate-stale").dir),
+            no_stale_entry(&stale("gate-stale")?),
             Err(Rejection::StaleEntry)
         );
-        let clean = fixture("gate-clean", &[(SOURCE, &lone())]);
-        assert_eq!(no_stale_entry(&clean.dir), Ok(()));
+        let clean = fixture("gate-clean", &[(SOURCE, &lone())])?;
+        assert_eq!(no_stale_entry(&clean), Ok(()));
+        Ok(())
     }
 
     #[test]
