@@ -92,12 +92,28 @@ jobs:
         working-directory: zingo-netutils/nym-proxy-ffi/contract-tests
         run: |
           set -euo pipefail
-          simulator="$(xcrun simctl list devices available iPhone -j \
-            | python3 -c 'import json,sys; print(next(d["name"] for devices in json.load(sys.stdin)["devices"].values() for d in devices))')"
-          xcodebuild test \
-            -scheme GoldenWireContractTests \
-            -destination "platform=iOS Simulator,name=$simulator" \
-            | tail -40
+          # Pick the first available iPhone on an iOS runtime; the image
+          # also ships watchOS, tvOS and visionOS devices.
+          simulator="$(xcrun simctl list -j devices available \
+            | jq --raw-output '
+                .devices
+                | to_entries[]
+                | select(.key | startswith("com.apple.CoreSimulator.SimRuntime.iOS-"))
+                | .value[]
+                | select(.isAvailable and (.name | startswith("iPhone")))
+                | .name' \
+            | head -1)"
+          if [ -z "$simulator" ]; then
+            echo "no available iPhone simulator on an iOS runtime" >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          # A product-less package gets exactly one scheme, named after
+          # the package. -quiet keeps the log to errors, warnings and
+          # test results, so no failure scrolls out of reach.
+          xcodebuild test -quiet \
+            -scheme ZingoBindingsContractTests-Package \
+            -destination "platform=iOS Simulator,name=$simulator"
 
       - name: Upload the Binding Layer
         uses: actions/upload-artifact@v4
