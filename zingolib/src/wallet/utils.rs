@@ -106,10 +106,37 @@ fn embedded_prover() -> &'static prover::LocalTxProver {
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct LazySaplingProver;
 
-impl sapling_prover::SpendProver for LazySaplingProver {
-    type Proof = <prover::LocalTxProver as sapling_prover::SpendProver>::Proof;
+macro_rules! delegate_sapling_prover {
+    (
+        $prover_trait:ident,
+        $circuit:ty,
+        fn prepare_circuit($($arg:ident: $arg_ty:ty),* $(,)?) -> $prepared:ty
+    ) => {
+        impl sapling_prover::$prover_trait for LazySaplingProver {
+            type Proof = <prover::LocalTxProver as sapling_prover::$prover_trait>::Proof;
 
-    #[allow(clippy::too_many_arguments)]
+            fn prepare_circuit($($arg: $arg_ty),*) -> $prepared {
+                <prover::LocalTxProver as sapling_prover::$prover_trait>::prepare_circuit(
+                    $($arg),*
+                )
+            }
+
+            /// - Parses the embedded Sapling parameters if no earlier Sapling proof
+            ///   in this process has done so.
+            fn create_proof<R: rand::Rng>(&self, circuit: $circuit, rng: &mut R) -> Self::Proof {
+                sapling_prover::$prover_trait::create_proof(embedded_prover(), circuit, rng)
+            }
+
+            fn encode_proof(proof: Self::Proof) -> sapling_bundle::GrothProofBytes {
+                <prover::LocalTxProver as sapling_prover::$prover_trait>::encode_proof(proof)
+            }
+        }
+    };
+}
+
+delegate_sapling_prover!(
+    SpendProver,
+    sapling_circuit::Spend,
     fn prepare_circuit(
         proof_generation_key: sapling_crypto::ProofGenerationKey,
         diversifier: sapling_crypto::Diversifier,
@@ -119,67 +146,20 @@ impl sapling_prover::SpendProver for LazySaplingProver {
         rcv: sapling_value::ValueCommitTrapdoor,
         anchor: jubjub::Fq,
         merkle_path: sapling_crypto::MerklePath,
-    ) -> Option<sapling_circuit::Spend> {
-        <prover::LocalTxProver as sapling_prover::SpendProver>::prepare_circuit(
-            proof_generation_key,
-            diversifier,
-            rseed,
-            value,
-            alpha,
-            rcv,
-            anchor,
-            merkle_path,
-        )
-    }
+    ) -> Option<sapling_circuit::Spend>
+);
 
-    /// - Parses the embedded Sapling parameters if no earlier Sapling proof
-    ///   in this process has done so.
-    fn create_proof<R: rand::Rng>(
-        &self,
-        circuit: sapling_circuit::Spend,
-        rng: &mut R,
-    ) -> Self::Proof {
-        sapling_prover::SpendProver::create_proof(embedded_prover(), circuit, rng)
-    }
-
-    fn encode_proof(proof: Self::Proof) -> sapling_bundle::GrothProofBytes {
-        <prover::LocalTxProver as sapling_prover::SpendProver>::encode_proof(proof)
-    }
-}
-
-impl sapling_prover::OutputProver for LazySaplingProver {
-    type Proof = <prover::LocalTxProver as sapling_prover::OutputProver>::Proof;
-
+delegate_sapling_prover!(
+    OutputProver,
+    sapling_circuit::Output,
     fn prepare_circuit(
         esk: &sapling_keys::EphemeralSecretKey,
         payment_address: sapling_crypto::PaymentAddress,
         rcm: jubjub::Fr,
         value: sapling_value::NoteValue,
         rcv: sapling_value::ValueCommitTrapdoor,
-    ) -> sapling_circuit::Output {
-        <prover::LocalTxProver as sapling_prover::OutputProver>::prepare_circuit(
-            esk,
-            payment_address,
-            rcm,
-            value,
-            rcv,
-        )
-    }
-
-    /// - Parses the embedded Sapling parameters if no earlier Sapling proof
-    ///   in this process has done so.
-    fn create_proof<R: rand::Rng>(
-        &self,
-        circuit: sapling_circuit::Output,
-        rng: &mut R,
-    ) -> Self::Proof {
-        sapling_prover::OutputProver::create_proof(embedded_prover(), circuit, rng)
-    }
-
-    fn encode_proof(proof: Self::Proof) -> sapling_bundle::GrothProofBytes {
-        <prover::LocalTxProver as sapling_prover::OutputProver>::encode_proof(proof)
-    }
-}
+    ) -> sapling_circuit::Output
+);
 
 /// Returns the path to the default directory that the Zcash proving parameters are located in.
 pub fn get_zcash_params_path() -> std::io::Result<PathBuf> {
