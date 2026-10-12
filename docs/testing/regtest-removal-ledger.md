@@ -160,6 +160,13 @@ cell as the sentinel; retire the rest.
 with its own recorded verdict. Mock: done. Not mockable: acceptance of
 the bytes, which the 2026-07-21 live adjudication settled once.
 
+**Removed 2026-10-12.** All eight originals are deleted, with the file,
+the `unit_test_twins` feature, and the live timeout entries. Row 8's twin
+now carries the live ledger from step 10 onward (drain 465_000 at fee
+15_000, 190_000 in total), so the step-10 fork recorded below is closed
+and the mock twin is the one record. The equivalence record stays as
+history.
+
 ## concrete.rs (22)
 
 **39. unified_address_discovery.** Asserts new unified addresses are
@@ -348,7 +355,7 @@ outputs decrypt and spend like real ones.
 | 5 | slow::list_value_transfers_check_fees | mock_chain_tests::list_value_transfers_check_fees | EQUIVALENT (assertion-identical; ledger adjudicated live 2026-07-21) |
 | 6 | slow::self_send_to_t_displays_as_one_transaction | mock_chain_tests::self_send_to_t_displays_as_one_transaction | EQUIVALENT (assertion-identical) |
 | 7 | slow::send_to_transparent_and_sapling_maintain_balance | mock_chain_tests::send_to_transparent_and_sapling_maintain_balance | EQUIVALENT (assertion-identical since 2026-07-21; the second-wave fee divergence closed with the era flip) |
-| 8 | slow::from_t_z_o_tz_to_zo_tzo_to_orchard | mock_chain_tests::from_t_z_o_tz_to_zo_tzo_to_orchard | EQUIVALENT-CORE; step-10 ledger fork adjudicated live 2026-07-21 (live proposer drains single-pool, refuses the mock's exact drain) |
+| 8 | slow::from_t_z_o_tz_to_zo_tzo_to_orchard | mock_chain_tests::from_t_z_o_tz_to_zo_tzo_to_orchard | EQUIVALENT since 2026-10-12: the twin follows the live ledger from step 10 (the fork adjudicated live 2026-07-21: single-pool drain of 465_000, no exact drain) |
 
 **1: multi-note gathering.** The twin asserts strictly more than the
 live original at proposal time: exact selection (both 40_000 notes),
