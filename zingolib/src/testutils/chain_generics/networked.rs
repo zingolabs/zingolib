@@ -7,10 +7,10 @@ use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::Indexer as _;
 
 use super::conduct_chain::ConductChain;
-use crate::{
-    config::DEFAULT_INDEXER_URI_TESTNET,
-    lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient},
-};
+use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
+
+/// The testnet indexer this networked test environment dials explicitly.
+const TESTNET_INDEXER: &str = "https://testnet.zec.rocks:443";
 
 /// this is essentially a placeholder.
 /// allows using existing `ChainGeneric` functions with `TestNet` wallets
@@ -39,7 +39,7 @@ impl NetworkedTestEnvironment {
 impl ConductChain for NetworkedTestEnvironment {
     async fn setup() -> Self {
         Self {
-            indexer_uri: <Uri as std::str::FromStr>::from_str(DEFAULT_INDEXER_URI_TESTNET).unwrap(),
+            indexer_uri: <Uri as std::str::FromStr>::from_str(TESTNET_INDEXER).unwrap(),
             latest_known_server_height: None,
         }
     }

@@ -39,6 +39,7 @@ zcash_note_encryption.workspace = true
 zcash_primitives.workspace = true
 zcash_protocol.workspace = true
 zcash_transparent.workspace = true
+zcash_script.workspace = true
 
 # Protocol
 bip32.workspace = true

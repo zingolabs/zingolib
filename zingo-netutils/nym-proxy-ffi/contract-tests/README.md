@@ -2,9 +2,9 @@
 
 The hex files under `../test-data/golden/` pin the exact uniffi wire encoding
 of every value the nym FFI functions carry: the `Socks5Endpoint` record that
-`socks5_endpoint()` returns (including both port extremes), the
-`ProxyDeathReason` that `ProxyDeathObserver::on_death` receives, and every
-`ProxyFfiError` variant that `start()` can raise. Three test suites assert
+`socks5_endpoint()` returns (including both port extremes), every
+`ProxyDeathReason` variant that `ProxyDeathObserver::on_death` receives, and
+every `ProxyFfiError` variant that `start()` can raise. Three test suites assert
 both directions — lowering produces exactly the pinned bytes, and lifting the
 pinned bytes produces exactly the canonical value — against the same files:
 
@@ -12,9 +12,9 @@ pinned bytes produces exactly the canonical value — against the same files:
   workspace. This suite also owns the canonical values; the Kotlin and Swift
   suites repeat them verbatim.
 - **Kotlin**: `kotlin/GoldenWireContractTest.kt`, compiled against the
-  generated bindings and JUnit 4. zingo-mobile's test suite wires it in
-  during the step-3/step-4 packaging (#2513/#2505); point `zingo.golden.dir`
-  at `../test-data/golden` if the working directory differs.
+  generated bindings and JUnit 4. The app's Gradle unit suite adds this
+  directory as a test source and sets `zingo.golden.dir` to
+  `../test-data/golden`. Neither file has a copy under `android/`.
 - **Swift**: `swift/GoldenWireContractTests.swift`, an XCTest that joins the
   Mac-gated step-7 packaging (#2504). The golden directory resolves relative
   to the file, or set `ZINGO_GOLDEN_DIR`.

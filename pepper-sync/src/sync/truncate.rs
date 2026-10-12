@@ -173,6 +173,33 @@ pub(crate) fn plan_pool_truncation(
     }
 }
 
+/// Decides whether one shard tree rolls back to the wallet's highest
+/// scanned height at the start of a sync session, purely, from the
+/// evidence in its facts gathered at that height.
+///
+/// A newest checkpoint above the highest scanned height is the evidence
+/// of state from blocks the wallet has yet to record as scanned, which
+/// a sync session leaves behind when it ends partway through a wallet
+/// update. Such a tree rolls back to its checkpoint at the highest
+/// scanned height, and the checkpoint is returned.
+///
+/// Every other tree is left as it is. A tree whose newest checkpoint is
+/// at or below the highest scanned height has nothing to remove. A tree
+/// that holds a newer checkpoint and none at the highest scanned height
+/// cannot roll back, and its state above that height only conflicts
+/// with scanning when a re-org replaces the blocks it came from. A pool
+/// rescan leaves the trees of the earlier pools in this state.
+pub(crate) fn plan_unscanned_state_rollback(
+    facts: TreeTruncationFacts,
+    highest_scanned_height: BlockHeight,
+) -> Option<BlockHeight> {
+    facts.checkpoint_at_target.filter(|_| {
+        facts
+            .newest_checkpoint
+            .is_some_and(|newest_checkpoint| newest_checkpoint > highest_scanned_height)
+    })
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -251,6 +278,42 @@ mod test {
             PoolTruncation::ToCheckpoint {
                 checkpoint: BlockHeight::from_u32(8),
             }
+        );
+    }
+
+    /// A tree holding a checkpoint above the highest scanned height
+    /// rolls back to its checkpoint at that height.
+    #[test]
+    fn state_above_highest_scanned_rolls_back() {
+        assert_eq!(
+            plan_unscanned_state_rollback(facts(Some(10), Some(11)), BlockHeight::from_u32(10)),
+            Some(BlockHeight::from_u32(10))
+        );
+    }
+
+    /// A tree whose newest checkpoint is the highest scanned height is
+    /// left as it is, so the subtree roots it holds above that height
+    /// are kept.
+    #[test]
+    fn tree_at_highest_scanned_is_left_as_it_is() {
+        assert_eq!(
+            plan_unscanned_state_rollback(facts(Some(10), Some(10)), BlockHeight::from_u32(10)),
+            None
+        );
+        assert_eq!(
+            plan_unscanned_state_rollback(facts(None, Some(0)), BlockHeight::from_u32(10)),
+            None
+        );
+    }
+
+    /// A tree holding a newer checkpoint and none at the highest scanned
+    /// height is left as it is, as a pool rescan leaves the trees of the
+    /// earlier pools.
+    #[test]
+    fn tree_without_a_checkpoint_at_highest_scanned_is_left_as_it_is() {
+        assert_eq!(
+            plan_unscanned_state_rollback(facts(None, Some(12)), BlockHeight::from_u32(10)),
+            None
         );
     }
 

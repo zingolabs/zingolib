@@ -8,18 +8,14 @@ use nonempty::NonEmpty;
 use zcash_client_backend::data_api::wallet::TargetHeight;
 use zcash_client_backend::proposal::{Proposal, ProposalError};
 use zcash_client_backend::zip321::TransactionRequest;
-use zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
 use zcash_primitives::transaction::{TxId, fees::zip317};
-use zcash_protocol::consensus::BranchId;
-use zcash_transparent::keys::NonHardenedChildIndex;
-
-use pepper_sync::keys::transparent::{TransparentAddressId, TransparentScope};
+use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::config::ChainType;
-use crate::data::proposal::ZingoProposal;
+use crate::data::proposal::{OpReturnProposal, ZingoProposal};
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
 use crate::lightclient::indexer_history::{
     AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, IndexerHistoryHandle, now_unix_secs,
@@ -34,26 +30,105 @@ use crate::lightclient::transmit::{
 /// failed, never the raw failure prose, which can embed the txid.
 fn record_send_attempt(
     history: &IndexerHistoryHandle,
-    host: &str,
+    host: &crate::destination::Host,
     route: AttemptRoute,
     started: std::time::Instant,
-    outcome: &Result<String, String>,
+    outcome: &Result<String, zingo_net_diag::NetOpFailure>,
+    fault_domain: Option<crate::destination::health::FaultDomain>,
 ) {
     history.record(&IndexerAttempt {
         unix_secs: now_unix_secs(),
-        host: host.to_string(),
+        host: host.clone(),
         route,
         kind: AttemptKind::Send,
         millis: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
+        fault_domain,
         outcome: match outcome {
             Ok(_) => Ok(()),
-            Err(detail) => Err(FailureKind::classify(detail)),
+            Err(failure) => Err(FailureKind::classify(&failure.to_string())),
         },
     });
 }
+
+/// Why one transaction's transmission failed.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum TransmitError {
+    /// The Destination draw refused.
+    #[error(transparent)]
+    Draw(#[from] crate::destination::servers::NoEligibleDestinations),
+    /// Every arm of the escalation failed, reported whole.
+    #[error("{0}")]
+    Escalation(crate::destination::rotation::EscalationError<zingo_net_diag::NetOpFailure>),
+}
+
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
+use crate::wallet::LightWallet;
 use crate::wallet::error::WalletError;
 use crate::wallet::output::OutputRef;
+
+/// Attestation of one transmitted transaction: the route the bytes
+/// traveled, the endpoint that accepted them, and the transmission's
+/// round-trip time. It rides the success value — not a log — the same
+/// doctrine as the nym-gated `MixnetPriceFetch` price attestation
+/// (ADR 0011), so every consumer of a send holds per-transaction
+/// evidence of the route.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TransmitReport {
+    /// The transmitted transaction.
+    pub txid: TxId,
+    /// The route the transaction traveled and the endpoint that accepted
+    /// it.
+    pub route: TransmitRoute,
+    /// Wall-clock time from dispatching the transmission to its delivery
+    /// confirmation, retries and Destination escalation included.
+    pub round_trip: std::time::Duration,
+}
+
+/// Resolves whether a transmission runs over the mixnet tunnel (`Some`
+/// SOCKS5 address) or nakednet through the configured sync indexer
+/// (`None`), from the session's connectivity and its send route.
+///
+/// An Indexerless session transmits only over a ready mixnet (ruling
+/// 2026-07-29): the Destination escalation needs no sync indexer, so
+/// the ADR 0022 exclusion holds vacuously. A mixnet-less offline session
+/// keeps the typed [`LightClientError::Offline`] refusal — an unattached
+/// mixnet carries no online intent — while attached-but-not-ready states
+/// (bootstrapping, died) surface their own typed error, so the caller
+/// learns to wait or repair rather than to connect an indexer.
+#[cfg(feature = "nym")]
+fn resolve_transmit_route(
+    has_indexer: bool,
+    route: Result<crate::mixnet::MixnetRoute, crate::mixnet::MixnetNotReady>,
+) -> Result<Option<zingo_netutils::conduit::ConduitDial>, LightClientError> {
+    use crate::mixnet::{MixnetNotReady, MixnetRoute};
+    match (has_indexer, route) {
+        // The guard rides out to the caller, which holds it for the send.
+        (_, Ok(MixnetRoute::Mixnet(conduit))) => Ok(Some(conduit.dial())),
+        (true, Ok(MixnetRoute::Nakednet)) => Ok(None),
+        (false, Ok(MixnetRoute::Nakednet)) => Err(LightClientError::Offline),
+        (false, Err(MixnetNotReady::Unattached)) => Err(LightClientError::Offline),
+        (_, Err(e)) => Err(LightClientError::MixnetNotReady(e)),
+    }
+}
+
+/// The route one transmitted transaction traveled (ADR 0011).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TransmitRoute {
+    /// Direct submission to a drawn Destination.
+    Nakednet {
+        /// The accepting Destination's host.
+        destination: String,
+    },
+    /// Mixnet escalation over the Destinations (ADR 0022), reached
+    /// through the local SOCKS5 tunnel endpoint.
+    Mixnet {
+        /// The host of the Destination whose delivery confirmation
+        /// won the escalation.
+        destination: String,
+        /// The local SOCKS5 endpoint of the mixnet tunnel.
+        via_socks5: String,
+    },
+}
 
 /// ZIP 203: `nExpiryHeight` values at or above this threshold are
 /// interpreted as a block time rather than a block height, so a
@@ -65,9 +140,9 @@ pub(crate) const ZIP_203_EXPIRY_HEIGHT_THRESHOLD: u32 = 500_000_000;
 /// consensus-branch epoch the wallet believes it is in, for offline signing.
 ///
 /// The transaction built from a proposal expires at its target height plus
-/// [`DEFAULT_TX_EXPIRY_DELTA`], so the lift gives it the longest expiry the
-/// epoch permits: it stays transmittable until the next scheduled network
-/// upgrade. That is the outer limit for any pre-signed Zcash transaction:
+/// the delta of [`crate::wallet::expiry::tx_expiry_delta`], so the lift gives
+/// it the longest expiry the epoch permits: it stays transmittable until the
+/// next scheduled network upgrade. That is the outer limit for any pre-signed Zcash transaction:
 /// the signature commits to the epoch's consensus branch ID, so no expiry
 /// height can carry it past the upgrade. When the params schedule no
 /// upgrade above the stored target, the cap is instead the highest target
@@ -83,7 +158,14 @@ fn retarget_for_offline_signing<NoteRef: Clone>(
     let epoch = BranchId::for_height(chain_type, stored_target.into());
     let cap = match epoch.height_bounds(chain_type) {
         Some((_, Some(next_activation))) => u32::from(next_activation) - 1,
-        _ => ZIP_203_EXPIRY_HEIGHT_THRESHOLD - 1 - DEFAULT_TX_EXPIRY_DELTA,
+        _ => {
+            let highest_encodable = ZIP_203_EXPIRY_HEIGHT_THRESHOLD - 1;
+            highest_encodable
+                - crate::wallet::expiry::tx_expiry_delta(
+                    chain_type,
+                    BlockHeight::from_u32(highest_encodable),
+                )
+        }
     };
     let lifted_target = cap.max(u32::from(stored_target));
     Proposal::multi_step(
@@ -94,25 +176,50 @@ fn retarget_for_offline_signing<NoteRef: Clone>(
     )
 }
 
-/// The configured clearnet indexer as a [`TransmitTarget`]: it submits over the
-/// ordinary gRPC channel and delivery-checks with `get_transaction`. The Nym
-/// path supplies a SOCKS5-backed target to the same [`resilient_transmit`]
-/// policy.
-struct ClearnetTarget(zingo_netutils::GrpcIndexer);
+/// A gRPC indexer as a [`TransmitTarget`].
+struct NakednetTarget(zingo_netutils::GrpcIndexer);
 
-impl TransmitTarget for ClearnetTarget {
+impl NakednetTarget {
+    /// A target for `destination`, connecting on first use.
+    fn lazy(destination: http::Uri) -> Result<Self, zingo_net_diag::NetOpFailure> {
+        let host = crate::destination::Host::of_uri(&destination);
+        zingo_netutils::GrpcIndexer::new_lazy(destination)
+            .map(NakednetTarget)
+            .map_err(|error| {
+                zingo_net_diag::NetOpFailure::from_error(
+                    zingo_net_diag::NetOpStage::RouteResolution,
+                    &host,
+                    &error,
+                )
+            })
+    }
+
+    fn failure(
+        status: &zingo_netutils::Status,
+        host: &crate::destination::Host,
+    ) -> zingo_net_diag::NetOpFailure {
+        zingo_net_diag::NetOpFailure::from_error(
+            zingo_net_diag::NetOpStage::RemoteHttp,
+            host,
+            status,
+        )
+    }
+}
+
+impl TransmitTarget for NakednetTarget {
+    type Failure = zingo_netutils::Status;
+
     fn submit(
         &self,
         raw_tx: &[u8],
         height: u64,
-    ) -> impl Future<Output = Result<String, String>> + Send {
+    ) -> impl Future<Output = Result<String, zingo_netutils::Status>> + Send {
         let mut client = self.0.clone();
         let data = raw_tx.to_vec();
         async move {
             client
                 .send_transaction(RawTransaction { data, height }, DEFAULT_REQUEST_TIMEOUT)
                 .await
-                .map_err(|e| format!("{e:?}"))
         }
     }
 
@@ -135,168 +242,238 @@ impl TransmitTarget for ClearnetTarget {
     }
 }
 
-/// A single Broadcast Indexer reached through the local SOCKS5 proxy, as a
-/// [`TransmitTarget`]: it submits and delivery-checks over the mixnet tunnel,
-/// running the same [`resilient_transmit`] policy as the clearnet path. The
-/// fan-out builds one of these per pick.
+/// A [`zingo_netutils::Socks5Indexer`] is the mixnet [`TransmitTarget`]:
+/// one Destination that submits and delivery-checks over its own tunnel,
+/// running the same [`resilient_transmit`] policy as the nakednet wire.
 #[cfg(feature = "nym")]
-struct SocksTarget {
-    socks5_addr: String,
-    indexer: http::Uri,
-}
+impl TransmitTarget for zingo_netutils::Socks5Indexer {
+    type Failure = zingo_netutils::Socks5TransmitError;
 
-#[cfg(feature = "nym")]
-impl TransmitTarget for SocksTarget {
-    fn submit(
+    async fn submit(
         &self,
         raw_tx: &[u8],
         height: u64,
-    ) -> impl Future<Output = Result<String, String>> + Send {
-        let socks5_addr = self.socks5_addr.clone();
-        let indexer = self.indexer.clone();
-        let data = raw_tx.to_vec();
-        async move {
-            zingo_netutils::send_transaction_via_socks5(
-                &socks5_addr,
-                &indexer,
-                &data,
-                height,
-                DEFAULT_REQUEST_TIMEOUT,
-            )
-            .await
-            .map_err(|e| e.to_string())
-        }
+    ) -> Result<String, zingo_netutils::Socks5TransmitError> {
+        self.send_transaction(raw_tx, height).await
     }
 
     fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send {
-        let socks5_addr = self.socks5_addr.clone();
-        let indexer = self.indexer.clone();
         let hash = txid.as_ref().to_vec();
-        async move {
-            zingo_netutils::transaction_known_via_socks5(
-                &socks5_addr,
-                &indexer,
-                &hash,
-                DEFAULT_REQUEST_TIMEOUT,
-            )
-            .await
+        async move { self.transaction_known(&hash).await }
+    }
+}
+
+/// The wire one Transmission's pulls travel.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Wire {
+    /// Direct connections.
+    Nakednet,
+    /// The session's standing mixnet client.
+    #[cfg(feature = "nym")]
+    Mixnet { shared_socks5: std::net::SocketAddr },
+    /// A test-attached slot whose arms submit over the mock indexer's channel.
+    #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+    MixnetOverMock { shared_socks5: std::net::SocketAddr },
+}
+
+impl Wire {
+    fn transport(self) -> crate::destination::servers::Transport {
+        use crate::destination::servers::Transport;
+        match self {
+            Wire::Nakednet => Transport::Nakednet,
+            #[cfg(feature = "nym")]
+            Wire::Mixnet { .. } => Transport::Mixnet,
+            #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+            Wire::MixnetOverMock { .. } => Transport::Mixnet,
+        }
+    }
+
+    fn reach(self) -> crate::destination::servers::Transport {
+        match self {
+            #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+            Wire::MixnetOverMock { .. } => crate::destination::servers::Transport::Nakednet,
+            other => other.transport(),
+        }
+    }
+
+    fn attempt_route(self) -> AttemptRoute {
+        match self {
+            Wire::Nakednet => AttemptRoute::Nakednet,
+            #[cfg(feature = "nym")]
+            Wire::Mixnet { .. } => AttemptRoute::Mixnet,
+            #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+            Wire::MixnetOverMock { .. } => AttemptRoute::Mixnet,
+        }
+    }
+
+    fn is_mixnet(self) -> bool {
+        !matches!(self, Wire::Nakednet)
+    }
+
+    fn route_to(self, destination: &crate::destination::Host) -> TransmitRoute {
+        match self {
+            Wire::Nakednet => TransmitRoute::Nakednet {
+                destination: destination.to_string(),
+            },
+            #[cfg(feature = "nym")]
+            Wire::Mixnet { shared_socks5 } => TransmitRoute::Mixnet {
+                destination: destination.to_string(),
+                via_socks5: shared_socks5.to_string(),
+            },
+            #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+            Wire::MixnetOverMock { shared_socks5 } => TransmitRoute::Mixnet {
+                destination: destination.to_string(),
+                via_socks5: shared_socks5.to_string(),
+            },
         }
     }
 }
 
-/// Submit one transaction under the route the Mixnet Mode policy resolved:
-/// clearnet through the configured indexer when `socks5_proxy` is `None`, or
-/// the mixnet fan-out over the Broadcast Indexers reached through the SOCKS5
-/// proxy when it is `Some`. Returns the server-reported txid or the last
-/// failure message.
+/// The ambient state a transmission narrates through, records against, and paces itself by.
+struct TransmitContext<'a> {
+    progress: &'a TransmitProgressHandle,
+    history: &'a IndexerHistoryHandle,
+    retry_interval: std::time::Duration,
+}
+
+/// Transmits one transaction as a hedged race over the Destinations drawn for `wire`.
 async fn transmit_one_transaction(
-    socks5_proxy: Option<&str>,
-    indexer: &zingo_netutils::GrpcIndexer,
+    wire: Wire,
+    servers: &crate::destination::servers::DestinationServerSet,
+    sync_indexer: Option<&http::Uri>,
     tx_bytes: &[u8],
     height: u64,
     txid: &TxId,
-    progress: &TransmitProgressHandle,
-    history: &IndexerHistoryHandle,
-) -> Result<String, String> {
-    match socks5_proxy {
-        None => {
-            let host = indexer
-                .uri()
-                .host()
-                .map_or_else(|| indexer.uri().to_string(), str::to_string);
-            let started = std::time::Instant::now();
-            let outcome = resilient_transmit(
-                &ClearnetTarget(indexer.clone()),
+    context: &TransmitContext<'_>,
+) -> Result<(String, TransmitRoute), TransmitError> {
+    let draw = servers.draw_reaching(
+        wire.transport(),
+        wire.reach(),
+        sync_indexer,
+        &context.history.health().lock().expect("health mutex"),
+    )?;
+    match wire {
+        Wire::Nakednet => {
+            rotate_transmit(
+                wire,
+                &draw,
+                NakednetTarget::lazy,
+                NakednetTarget::failure,
                 tx_bytes,
                 height,
                 txid,
-                |interval| tokio::time::sleep(interval),
-                |event| progress.set(format!("indexer {host}: {event}")),
+                context,
             )
             .await
-            .map_err(|TransmitFailed(message)| message);
-            record_send_attempt(history, &host, AttemptRoute::Clearnet, started, &outcome);
-            outcome
         }
         #[cfg(feature = "nym")]
-        Some(socks5_addr) => {
-            mixnet_fanout_transmit(
-                socks5_addr,
-                indexer.uri(),
+        Wire::Mixnet { shared_socks5 } => {
+            rotate_transmit(
+                wire,
+                &draw,
+                |destination| {
+                    Ok(zingo_netutils::Socks5Indexer::new(
+                        shared_socks5,
+                        destination,
+                        DEFAULT_REQUEST_TIMEOUT,
+                    ))
+                },
+                |error, host| crate::mixnet::socks5_transmit_failure(error, host),
                 tx_bytes,
                 height,
                 txid,
-                progress,
-                history,
+                context,
             )
             .await
         }
-        #[cfg(not(feature = "nym"))]
-        Some(_) => Err("a mixnet route requires the nym feature".to_string()),
+        #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+        Wire::MixnetOverMock { .. } => {
+            rotate_transmit(
+                wire,
+                &draw,
+                NakednetTarget::lazy,
+                NakednetTarget::failure,
+                tx_bytes,
+                height,
+                txid,
+                context,
+            )
+            .await
+        }
     }
 }
 
-/// Broadcast one transaction over the mixnet as the escalating, serially gated
-/// fan-out (ADR 0011): each arm runs the shared [`resilient_transmit`] policy
-/// against one Broadcast Indexer through the SOCKS5 proxy, and the fan-out
-/// escalates round by round until an indexer confirms delivery or the witness
-/// cap is reached.
-///
-/// The draw comes from [`eligible_witnesses`], never the raw curated list: a
-/// witness is never the sync indexer's operator (ADR 0022), because that party
-/// already holds the wallet's address set and must not receive the broadcast
-/// too. An emptied pool refuses rather than falling back.
-#[cfg(feature = "nym")]
-async fn mixnet_fanout_transmit(
-    socks5_addr: &str,
-    sync_indexer: &http::Uri,
+/// Races `draw`, building each arm's target with `make_target`.
+#[allow(clippy::too_many_arguments)]
+async fn rotate_transmit<T, M, F>(
+    wire: Wire,
+    draw: &crate::destination::servers::Draw,
+    make_target: M,
+    describe_failure: F,
     tx_bytes: &[u8],
     height: u64,
     txid: &TxId,
-    progress: &TransmitProgressHandle,
-    history: &IndexerHistoryHandle,
-) -> Result<String, String> {
-    use crate::nym::broadcast::{MAX_BROADCAST_WITNESSES, fanout_broadcast};
-    use crate::nym::broadcast_indexers::eligible_witnesses;
+    context: &TransmitContext<'_>,
+) -> Result<(String, TransmitRoute), TransmitError>
+where
+    T: TransmitTarget + Sync,
+    M: Fn(http::Uri) -> Result<T, zingo_net_diag::NetOpFailure>,
+    F: Fn(&T::Failure, &crate::destination::Host) -> zingo_net_diag::NetOpFailure,
+{
+    use crate::destination::rotation::{MAX_TRANSMISSION_DESTINATIONS, escalating_transmit};
 
-    let indexers = eligible_witnesses(sync_indexer).map_err(|e| e.to_string())?;
-    let run_arm = |indexer: http::Uri| {
-        let socks5_addr = socks5_addr.to_string();
-        let tx_bytes = tx_bytes.to_vec();
+    let run_pull = |destination: http::Uri| {
+        let host = crate::destination::Host::of_uri(&destination);
+        let target = make_target(destination);
+        let describe_failure = &describe_failure;
         let txid = *txid;
-        let host = indexer
-            .host()
-            .map_or_else(|| indexer.to_string(), str::to_string);
         async move {
-            let target = SocksTarget {
-                socks5_addr,
-                indexer,
-            };
             let started = std::time::Instant::now();
-            let outcome = resilient_transmit(
-                &target,
-                &tx_bytes,
-                height,
-                &txid,
-                |interval| tokio::time::sleep(interval),
-                |event| progress.set(format!("witness {host}: {event}")),
-            )
-            .await
-            .map_err(|TransmitFailed(message)| message);
-            record_send_attempt(history, &host, AttemptRoute::Mixnet, started, &outcome);
-            outcome
+            let outcome = match target {
+                Ok(target) => resilient_transmit(
+                    &target,
+                    tx_bytes,
+                    height,
+                    &txid,
+                    move |_| tokio::time::sleep(context.retry_interval),
+                    |event| context.progress.set(format!("destination {host}: {event}")),
+                )
+                .await
+                .map_err(|TransmitFailed(failure)| describe_failure(&failure, &host)),
+                Err(failure) => Err(failure),
+            };
+            record_send_attempt(
+                context.history,
+                &host,
+                wire.attempt_route(),
+                started,
+                &outcome,
+                outcome
+                    .as_ref()
+                    .err()
+                    .map(|failure| crate::destination::health::fault_domain(&failure.stage)),
+            );
+            outcome.map(|server_txid| (server_txid, wire.route_to(&host)))
         }
     };
 
-    fanout_broadcast(
-        &indexers,
-        &mut rand::rngs::OsRng,
-        MAX_BROADCAST_WITNESSES,
-        run_arm,
-        |line| progress.set(format!("mixnet fan-out: {line}")),
+    escalating_transmit(
+        draw.destinations(),
+        draw.preferred(),
+        &mut crate::utils::system_rng(),
+        MAX_TRANSMISSION_DESTINATIONS,
+        run_pull,
+        |line| context.progress.set(format!("escalation: {line}")),
     )
     .await
-    .map_err(|error| error.to_string())
+    .map_err(TransmitError::Escalation)
+}
+
+fn fail_unsent(wallet: &mut LightWallet, calculated_txids: &NonEmpty<TxId>, from: usize) {
+    let unsent: Vec<TxId> = calculated_txids.iter().skip(from).copied().collect();
+    pepper_sync::set_transactions_failed(&mut wallet.wallet_transactions, unsent);
+    wallet.truncate_failed_refund_addresses();
+    wallet.save_required = true;
 }
 
 impl LightClient {
@@ -304,9 +481,20 @@ impl LightClient {
         &mut self,
         proposal: Proposal<zip317::FeeRule, OutputRef>,
         sending_account: zip32::AccountId,
-    ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.require_indexer()?;
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        self.preflight_transmit()?;
+        let indexerless = self.indexer.is_none();
         let mut wallet = self.wallet().write().await;
+        // An Indexerless calculation cannot trust the wallet's stale chain
+        // view for an ordinary tip-plus-delta expiry, so it takes the
+        // epoch-limit retarget the offline-signing flow uses (issue #2455).
+        let proposal = if indexerless {
+            let chain_type = wallet.chain_type();
+            retarget_for_offline_signing(&proposal, &chain_type)
+                .map_err(SendError::RetargetError)?
+        } else {
+            proposal
+        };
         let highest_refund_address_index = wallet.highest_refund_address_index();
         let calculated_txids = wallet
             .calculate_transactions(proposal, sending_account)
@@ -318,42 +506,14 @@ impl LightClient {
             })?;
         drop(wallet);
 
-        let transmission_result = self.transmit_transactions(calculated_txids).await;
-        if transmission_result.is_err() {
-            let mut wallet = self.wallet().write().await;
-            let new_refund_address_index = highest_refund_address_index
-                .map_or(Some(NonHardenedChildIndex::ZERO), |i| i.next());
-            let new_refund_address = new_refund_address_index.and_then(|i| {
-                wallet
-                    .transparent_addresses()
-                    .get(&TransparentAddressId::new(
-                        sending_account,
-                        TransparentScope::Refund,
-                        i,
-                    ))
-                    .cloned()
-            });
-            let truncate = new_refund_address.is_some_and(|addr| {
-                let deshielding_tx = wallet.wallet_transactions.values().find(|tx| {
-                    tx.transparent_coins()
-                        .iter()
-                        .any(|coin| coin.address() == addr)
-                });
-                deshielding_tx.is_some_and(|tx| tx.status().is_failed())
-            });
-            if truncate {
-                wallet.truncate_refund_addresses(highest_refund_address_index);
-            }
-        }
-
-        transmission_result
+        self.transmit_transactions(calculated_txids).await
     }
 
     async fn shield(
         &mut self,
         proposal: Proposal<zip317::FeeRule, Infallible>,
         shielding_account: zip32::AccountId,
-    ) -> Result<NonEmpty<TxId>, LightClientError> {
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
         let calculated_txids = self
             .wallet()
             .write()
@@ -379,7 +539,7 @@ impl LightClient {
         self.require_indexer()?;
         let opt_proposal = self.wallet().write().await.take_proposal();
         if let Some(proposal) = opt_proposal {
-            let txids = match proposal {
+            let reports = match proposal {
                 ZingoProposal::Send {
                     proposal,
                     sending_account,
@@ -388,11 +548,12 @@ impl LightClient {
                     proposal,
                     shielding_account,
                 } => self.shield(proposal, shielding_account).await,
+                ZingoProposal::OpReturn(proposal) => self.send_op_return(proposal).await,
             };
 
             self.release_proposal_pause(resume_sync);
 
-            txids
+            reports.map(|reports| reports.map(|report| report.txid))
         } else {
             Err(SendError::NoStoredProposal.into())
         }
@@ -415,8 +576,8 @@ impl LightClient {
     /// to the epoch's consensus branch ID, and a stale offline chain view
     /// cannot expire it before an Indexer is available (issue #2455). An
     /// Indexer-connected calculation keeps the proposal's ordinary expiry,
-    /// [`DEFAULT_TX_EXPIRY_DELTA`] blocks past the target: connected
-    /// callers are expected to transmit promptly.
+    /// [`crate::wallet::expiry::tx_expiry_delta`] blocks past the target:
+    /// connected callers are expected to transmit promptly.
     pub async fn calculate_stored_proposal(&mut self) -> Result<NonEmpty<TxId>, LightClientError> {
         let indexerless = self.indexer.is_none();
         let mut wallet = self.wallet().write().await;
@@ -462,12 +623,33 @@ impl LightClient {
                     Err(e) => Err(e),
                 }
             }
+            ZingoProposal::OpReturn(proposal) => {
+                wallet.store_proposal(ZingoProposal::OpReturn(proposal));
+                return Err(SendError::OpReturnNotCalculable.into());
+            }
         };
         drop(wallet);
         // The proposal is consumed on every path above, so its pause
         // has nothing left to guard; the engine returns to its prior mode.
         self.release_proposal_pause(true);
         result.map_err(LightClientError::from)
+    }
+
+    /// Pre-flights the transmission route without transmitting, so a route
+    /// that would refuse is caught before any transaction is built and no
+    /// freshly Calculated transaction is stranded. The same resolution
+    /// [`Self::transmit_transactions`] performs for real: nakednet demands
+    /// the configured indexer, and an Indexerless session passes only with
+    /// a ready mixnet (ruling 2026-07-29).
+    fn preflight_transmit(&self) -> Result<(), LightClientError> {
+        #[cfg(feature = "nym")]
+        {
+            resolve_transmit_route(self.indexer.is_some(), self.send_route()).map(|_| ())
+        }
+        #[cfg(not(feature = "nym"))]
+        {
+            self.require_indexer().map(|_| ())
+        }
     }
 
     /// Transmits previously calculated transactions to the Indexer, in the
@@ -479,7 +661,9 @@ impl LightClient {
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        self.transmit_transactions(calculated_txids).await
+        self.transmit_transactions(calculated_txids)
+            .await
+            .map(|reports| reports.map(|report| report.txid))
     }
 
     /// Proposes and transmits transactions from a transaction request skipping proposal confirmation.
@@ -494,6 +678,20 @@ impl LightClient {
         account_id: zip32::AccountId,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
+        self.quick_send_reported(request, account_id, resume_sync)
+            .await
+            .map(|reports| reports.map(|report| report.txid))
+    }
+
+    /// [`Self::quick_send`] with the transmission attested: each
+    /// transaction's [`TransmitReport`] carries the route it traveled, the
+    /// endpoint that accepted it, and the transmission's round-trip time.
+    pub async fn quick_send_reported(
+        &mut self,
+        request: TransactionRequest,
+        account_id: zip32::AccountId,
+        resume_sync: bool,
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
         // Proposing is an Indexerless capability; only the calculate/transmit
         // stage below demands a connection.
         let guard = self.pause_sync_scoped().ok();
@@ -503,7 +701,7 @@ impl LightClient {
             .await
             .create_send_proposal(request, account_id)
             .map_err(SendError::ProposeSendError);
-        let txids = match proposal_result {
+        let reports = match proposal_result {
             Ok(proposal) => self.send(proposal, account_id).await,
             Err(e) => Err(e.into()),
         };
@@ -513,7 +711,172 @@ impl LightClient {
             guard.disarm();
         }
 
-        txids
+        reports
+    }
+
+    /// Proposes and transmits an OP_RETURN send skipping proposal
+    /// confirmation. See [`Self::propose_send_with_op_return`] for the
+    /// proposal and [`OpReturnProposal`] for the two transactions.
+    ///
+    /// If sync is running, it is paused before creating the proposal. If
+    /// `resume_sync` is `true`, the engine is restored to its prior mode
+    /// after the send. If `false`, it stays paused for the caller to
+    /// resume.
+    ///
+    /// Returns the transmit reports for both transactions, deshield first.
+    pub async fn quick_send_with_op_return(
+        &mut self,
+        recipient: &str,
+        amount: zcash_protocol::value::Zatoshis,
+        data: crate::wallet::transparent::OpReturnData,
+        account_id: zip32::AccountId,
+        resume_sync: bool,
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        let guard = self.pause_sync_scoped().ok();
+        let reports = match self
+            .create_op_return_proposal(recipient, amount, data, account_id)
+            .await
+        {
+            Ok(proposal) => self.send_op_return(proposal).await,
+            Err(e) => Err(e),
+        };
+        if let Some(guard) = guard
+            && !resume_sync
+        {
+            guard.disarm();
+        }
+
+        reports
+    }
+
+    /// Reserves the source address of `proposal`, transmits its deshield,
+    /// then builds and transmits the OP_RETURN send that spends it.
+    ///
+    /// The source address must still be the next unreserved Refund-scope
+    /// address. If another send reserved it after the proposal was made,
+    /// the proposal is stale and is refused. A deshield that fails before
+    /// transmission releases the reservation.
+    ///
+    /// If a step fails after the deshield is transmitted, the error is
+    /// [`SendError::OpReturnAfterDeshield`]. It names the deshield txid.
+    /// If the OP_RETURN transaction was not built, the proposal is stored
+    /// again with that txid and the next `send_stored_proposal` resumes
+    /// from the OP_RETURN step. If it was built, it stays in the wallet
+    /// with `Calculated` status and the error names its txid.
+    ///
+    /// A proposal that carries a deshield txid skips the reservation and
+    /// the deshield.
+    ///
+    /// Returns the transmit reports for both transactions, deshield first.
+    /// A resumed send returns the OP_RETURN report only.
+    async fn send_op_return(
+        &mut self,
+        proposal: OpReturnProposal,
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        let account = proposal.sending_account();
+
+        let (deshield_reports, deshield_txid) = match proposal.deshield_txid() {
+            Some(txid) => (None, txid),
+            None => {
+                let highest_before = {
+                    let mut wallet = self.wallet().write().await;
+                    let (next_id, next_address) = wallet
+                        .derive_refund_addresses(1, account)
+                        .map_err(|e| SendError::OpReturn(WalletError::from(e)))?[0];
+                    if next_id != proposal.source_address_id()
+                        || next_address != *proposal.source_address()
+                    {
+                        return Err(SendError::OpReturnSourceAddressStale.into());
+                    }
+                    let highest_before = wallet.highest_refund_address_index();
+                    wallet
+                        .generate_refund_addresses(1, account)
+                        .map_err(|e| SendError::OpReturn(WalletError::from(e)))?;
+                    highest_before
+                };
+
+                match self.send(proposal.deshield().clone(), account).await {
+                    Ok(reports) => {
+                        let txid = reports.first().txid;
+                        (Some(reports), txid)
+                    }
+                    Err(e) => {
+                        let transmitted = matches!(
+                            e,
+                            LightClientError::SendError(SendError::TransmissionError(_))
+                        );
+                        if !transmitted {
+                            self.wallet()
+                                .write()
+                                .await
+                                .truncate_refund_addresses(highest_before);
+                        }
+                        return Err(e);
+                    }
+                }
+            }
+        };
+
+        let op_return_txid = {
+            let mut wallet = self.wallet().write().await;
+            let built = wallet
+                .get_migration_heights()
+                .map(|(target, _)| target)
+                .map_err(SendError::OpReturn)
+                .and_then(|target_height| {
+                    wallet
+                        .find_transparent_output(deshield_txid, proposal.source_address())
+                        .map(|(outpoint, txout)| (outpoint, txout, target_height))
+                        .map_err(SendError::OpReturn)
+                })
+                .and_then(|(source_outpoint, source_txout, target_height)| {
+                    wallet
+                        .build_op_return_send(
+                            account,
+                            proposal.source_address_id(),
+                            source_outpoint,
+                            source_txout,
+                            proposal.recipient(),
+                            proposal.amount(),
+                            proposal.data(),
+                            target_height,
+                        )
+                        .map_err(SendError::OpReturn)
+                });
+            match built {
+                Ok(txid) => txid,
+                Err(e) => {
+                    wallet.store_proposal(ZingoProposal::OpReturn(
+                        proposal.with_deshield_txid(deshield_txid),
+                    ));
+                    return Err(SendError::OpReturnAfterDeshield {
+                        deshield_txid,
+                        op_return_txid: None,
+                        source: Box::new(e.into()),
+                    }
+                    .into());
+                }
+            }
+        };
+
+        let op_return_reports = self
+            .transmit_transactions(NonEmpty::new(op_return_txid))
+            .await
+            .map_err(|e| SendError::OpReturnAfterDeshield {
+                deshield_txid,
+                op_return_txid: Some(op_return_txid),
+                source: Box::new(e),
+            })?;
+
+        Ok(match deshield_reports {
+            Some(mut reports) => {
+                for report in op_return_reports {
+                    reports.push(report);
+                }
+                reports
+            }
+            None => op_return_reports,
+        })
     }
 
     /// Shields all transparent funds skipping proposal confirmation. The
@@ -535,7 +898,9 @@ impl LightClient {
             .create_shield_proposal(account_id)
             .map_err(SendError::ProposeShieldError)?;
 
-        self.shield(proposal, account_id).await
+        self.shield(proposal, account_id)
+            .await
+            .map(|reports| reports.map(|report| report.txid))
     }
 
     /// Tranmits calculated transactions stored in the wallet matching txids of `calculated_txids` in the given order.
@@ -543,21 +908,42 @@ impl LightClient {
     pub(crate) async fn transmit_transactions(
         &mut self,
         calculated_txids: NonEmpty<TxId>,
-    ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let indexer = self.require_indexer()?.clone();
+    ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
+        let indexer = self.indexer.clone();
 
-        // Resolve the Mixnet Mode route once for the whole send (ADR 0011).
-        // `Clearnet` submits through the configured indexer; `Mixnet(addr)`
-        // routes the fan-out through the SOCKS5 proxy; `Bootstrapping` fails
-        // closed here, before any submission, rather than leaking to clearnet.
-        // Without the `nym` feature there is no mixnet, so the route is clearnet.
+        // Resolve the send route once for the whole send (ADR 0011), under
+        // the session's transmit policy as it stands at this moment.
+        // The guard is bound for the whole send, so the conduit counts this
+        // transmission as outstanding until the escalation finishes.
         #[cfg(feature = "nym")]
-        let socks5_proxy: Option<String> = match self.mixnet_route()? {
-            crate::nym::MixnetRoute::Clearnet => None,
-            crate::nym::MixnetRoute::Mixnet(socks5_addr) => Some(socks5_addr),
+        let transmit_dial = resolve_transmit_route(indexer.is_some(), self.send_route())?;
+        // A test-attached slot pairs its mixnet route with arms that submit
+        // over the mock indexer's channel; a live Ready session keeps the
+        // SOCKS5 escalation, and a nakednet-policy send over a test slot
+        // takes the nakednet arm as it would in production. Production
+        // builds carry no test slot state, so this distinction does not
+        // exist there.
+        #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+        let mock_arms = matches!(
+            *self.mixnet_slot.lock().expect("mixnet slot mutex"),
+            crate::mixnet::MixnetSlot::AttachedForTests {
+                mock_arms: true,
+                ..
+            }
+        );
+        #[cfg(feature = "nym")]
+        let wire = match transmit_dial.as_ref().map(|dial| dial.socks5()) {
+            None => Wire::Nakednet,
+            #[cfg(any(test, feature = "testutils"))]
+            Some(shared_socks5) if mock_arms => Wire::MixnetOverMock { shared_socks5 },
+            Some(shared_socks5) => Wire::Mixnet { shared_socks5 },
         };
         #[cfg(not(feature = "nym"))]
-        let socks5_proxy: Option<String> = None;
+        let wire = Wire::Nakednet;
+        if !wire.is_mixnet() && indexer.is_none() {
+            return Err(LightClientError::Offline);
+        }
+        let sync_indexer = indexer.as_ref().map(|indexer| indexer.uri());
 
         // Narrate the transmission into the side channel; the scope clears it
         // on every exit so no stale line outlives this call.
@@ -565,6 +951,7 @@ impl LightClient {
         let _progress_scope = TransmitProgressScope(progress.clone());
         let history = self.indexer_history.clone();
         let total = calculated_txids.len();
+        let mut reports: Vec<TransmitReport> = Vec::with_capacity(total);
 
         let mut wallet = self.wallet().write().await;
         for (index, txid) in calculated_txids.iter().enumerate() {
@@ -590,38 +977,50 @@ impl LightClient {
                 .transaction()
                 .write(&mut transaction_bytes)
                 .map_err(|e| {
-                    pepper_sync::set_transactions_failed(
-                        &mut wallet.wallet_transactions,
-                        vec![*txid],
-                    );
-                    wallet.save_required = true;
+                    fail_unsent(&mut wallet, &calculated_txids, index);
                     WalletError::TransactionWrite(e)
                 })?;
 
-            // The retry / duplicate-in-mempool / queued-probe policy is defined
-            // once in `transmit::resilient_transmit`; the clearnet path runs it
-            // directly and the mixnet path runs it per fan-out arm. Wallet-state
-            // effects stay here, around the pure transmission.
-            let txid_from_server = match transmit_one_transaction(
-                socks5_proxy.as_deref(),
-                &indexer,
+            let dispatched = std::time::Instant::now();
+            let transmit_context = TransmitContext {
+                progress: &progress,
+                history: &history,
+                retry_interval: self.transmit_retry_interval,
+            };
+            let transmit_outcome = transmit_one_transaction(
+                wire,
+                &self.destination_servers,
+                sync_indexer,
                 &transaction_bytes,
                 height.into(),
                 txid,
-                &progress,
-                &history,
+                &transmit_context,
             )
-            .await
-            {
-                Ok(server_txid) => server_txid,
-                Err(message) => {
-                    pepper_sync::set_transactions_failed(
-                        &mut wallet.wallet_transactions,
-                        vec![*txid],
-                    );
-                    wallet.save_required = true;
+            .await;
+            let (txid_from_server, route) = match transmit_outcome {
+                Ok(server_txid_and_route) => {
+                    // A delivered mixnet transmission is a completed round
+                    // trip through the Standing Client, promoting stale
+                    // proof to earned.
+                    #[cfg(feature = "nym")]
+                    if matches!(server_txid_and_route.1, TransmitRoute::Mixnet { .. }) {
+                        self.note_standing_round_trip();
+                    }
+                    server_txid_and_route
+                }
+                Err(failure) => {
+                    // A failed mixnet transmission raises the suspicion that
+                    // the standing exit is dead; the arbiter probe
+                    // adjudicates rather than convicting on one failure.
+                    #[cfg(feature = "nym")]
+                    if wire.is_mixnet() {
+                        self.note_standing_exit_suspicion();
+                    }
+                    fail_unsent(&mut wallet, &calculated_txids, index);
+                    // The typed failure is rendered only here, at the
+                    // report's existing prose field.
                     return Err(SendError::TransmissionError(
-                        TransmissionError::TransmissionFailed(message),
+                        TransmissionError::TransmissionFailed(failure.to_string()),
                     )
                     .into());
                 }
@@ -654,9 +1053,15 @@ impl LightClient {
             // and the two are mutually exclusive in practice.
             self.immediate_migration_progress.set_sent(index as u32 + 1);
             self.split_progress.set_sent(index as u32 + 1);
+
+            reports.push(TransmitReport {
+                txid: *txid,
+                route,
+                round_trip: dispatched.elapsed(),
+            });
         }
 
-        Ok(calculated_txids)
+        Ok(NonEmpty::from_vec(reports).expect("one report per calculated transaction"))
     }
 }
 
@@ -664,9 +1069,163 @@ impl LightClient {
 /// (docs/testing/test-protection-audit-dev-to-ironwood.md § Gap
 /// remediation plan): the built transaction's expiry and consensus
 /// branch id must derive from the wallet's synced height + 1.
-/// `LightWallet::calculate_transactions` is the build-without-broadcast
+/// `LightWallet::calculate_transactions` is the build-without-transmit
 /// seam (it proves and stores the transaction without transmitting),
 /// so these cells run offline over a synthetic wallet.
+#[cfg(test)]
+mod transmit_error_seam {
+    use super::*;
+
+    #[cfg(feature = "nym")]
+    #[test]
+    fn the_route_resolver_fails_closed_in_every_state() {
+        use crate::mixnet::{MixnetNotReady, MixnetRoute};
+
+        let socks5 = crate::mocks::transmission::MOCK_SOCKS5_ADDR;
+        let ready = || {
+            Ok(MixnetRoute::Mixnet(crate::mixnet::MixnetConduit::over(
+                socks5,
+            )))
+        };
+        for has_indexer in [true, false] {
+            let dial = resolve_transmit_route(has_indexer, ready())
+                .expect("a ready conduit carries the send")
+                .expect("the mixnet route dials the conduit");
+            assert_eq!(dial.socks5(), socks5);
+        }
+        assert!(matches!(
+            resolve_transmit_route(true, Ok(MixnetRoute::Nakednet)),
+            Ok(None)
+        ));
+        assert!(matches!(
+            resolve_transmit_route(false, Ok(MixnetRoute::Nakednet)),
+            Err(LightClientError::Offline)
+        ));
+        assert!(matches!(
+            resolve_transmit_route(false, Err(MixnetNotReady::Unattached)),
+            Err(LightClientError::Offline)
+        ));
+        assert!(matches!(
+            resolve_transmit_route(true, Err(MixnetNotReady::Unattached)),
+            Err(LightClientError::MixnetNotReady(MixnetNotReady::Unattached))
+        ));
+        for has_indexer in [true, false] {
+            for not_ready in [MixnetNotReady::Bootstrapping, MixnetNotReady::Died] {
+                assert!(
+                    matches!(
+                        resolve_transmit_route(has_indexer, Err(not_ready)),
+                        Err(LightClientError::MixnetNotReady(refusal)) if refusal == not_ready
+                    ),
+                    "{not_ready:?} with an indexer: {has_indexer}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn each_wire_draws_reaches_records_and_reports_its_own_transport() {
+        use crate::destination::servers::Transport;
+
+        let host = crate::destination::Host::of_host_str("node.example");
+        assert_eq!(Wire::Nakednet.transport(), Transport::Nakednet);
+        assert_eq!(Wire::Nakednet.reach(), Transport::Nakednet);
+        assert_eq!(Wire::Nakednet.attempt_route(), AttemptRoute::Nakednet);
+        assert!(!Wire::Nakednet.is_mixnet());
+        assert_eq!(
+            Wire::Nakednet.route_to(&host),
+            TransmitRoute::Nakednet {
+                destination: "node.example".to_string()
+            }
+        );
+        #[cfg(feature = "nym")]
+        {
+            let shared_socks5 = crate::mocks::transmission::MOCK_SOCKS5_ADDR;
+            let mixnet = Wire::Mixnet { shared_socks5 };
+            assert_eq!(mixnet.transport(), Transport::Mixnet);
+            assert_eq!(mixnet.reach(), Transport::Mixnet);
+            assert_eq!(mixnet.attempt_route(), AttemptRoute::Mixnet);
+            assert!(mixnet.is_mixnet());
+            let mock = Wire::MixnetOverMock { shared_socks5 };
+            assert_eq!(mock.transport(), Transport::Mixnet);
+            assert_eq!(mock.reach(), Transport::Nakednet);
+            assert_eq!(mock.attempt_route(), AttemptRoute::Mixnet);
+            for wire in [mixnet, mock] {
+                assert_eq!(
+                    wire.route_to(&host),
+                    TransmitRoute::Mixnet {
+                        destination: "node.example".to_string(),
+                        via_socks5: shared_socks5.to_string(),
+                    }
+                );
+            }
+        }
+    }
+
+    /// The chain height a seam test hands the transmitter; nothing on the
+    /// refusal path reads it.
+    const ARBITRARY_HEIGHT: u64 = 0;
+
+    /// HYPOTHESIS: a send attempt's failure reaches the history as the typed
+    /// taxonomy record, classified whole rather than from hand-rendered
+    /// prose. Falsified if the recorded category drifts.
+    #[test]
+    fn send_attempt_failure_is_classified_from_the_record() {
+        let history = IndexerHistoryHandle::default();
+        let failure = zingo_net_diag::NetOpFailure::message(
+            zingo_net_diag::NetOpStage::RemoteConnect,
+            "indexer.example",
+            "connection refused",
+        );
+        record_send_attempt(
+            &history,
+            &crate::destination::Host::of_host_str("indexer.example"),
+            AttemptRoute::Nakednet,
+            std::time::Instant::now(),
+            &Err(failure),
+            None,
+        );
+        let recorded = history.load();
+        assert_eq!(recorded.len(), 1, "one attempt is recorded");
+        assert_eq!(
+            recorded[0].outcome,
+            Err(crate::lightclient::indexer_history::FailureKind::Unreachable),
+            "the category comes from the typed record"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_empty_draw_refuses_typed() {
+        let history = IndexerHistoryHandle::default();
+        let progress = TransmitProgressHandle::default();
+        let servers = crate::destination::servers::DestinationServerSet::for_chain(
+            &ChainType::Regtest(crate::ActivationHeights::default()),
+            None,
+            Vec::new(),
+        );
+        let refusal = transmit_one_transaction(
+            Wire::Nakednet,
+            &servers,
+            None,
+            &[],
+            ARBITRARY_HEIGHT,
+            &TxId::from_bytes([0u8; 32]),
+            &TransmitContext {
+                progress: &progress,
+                history: &history,
+                retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
+            },
+        )
+        .await
+        .expect_err("no indexer must refuse");
+        assert!(matches!(
+            refusal,
+            TransmitError::Draw(crate::destination::servers::NoEligibleDestinations::Empty(
+                crate::destination::servers::Transport::Nakednet
+            ))
+        ));
+    }
+}
+
 #[cfg(test)]
 mod built_transaction_shape {
     use zcash_protocol::consensus::{BlockHeight, BranchId};
@@ -689,17 +1248,12 @@ mod built_transaction_shape {
         address_from_str(&unified_address.encode(&external_wallet.chain_type())).unwrap()
     }
 
-    /// Builds (without broadcasting) one send-all from the given wallet
+    /// Builds (without transmitting) one send-all from the given wallet
     /// and returns the stored transaction's (target, expiry, branch id).
     async fn build_one_send(wallet: LightWallet) -> (u32, u32, BranchId) {
         let mut client = LightClient::new_for_test(wallet).await;
         let proposal = client
-            .propose_send_all(
-                external_orchard_address(),
-                false,
-                None,
-                zip32::AccountId::ZERO,
-            )
+            .propose_send_all(external_orchard_address(), None, zip32::AccountId::ZERO)
             .await
             .unwrap();
         let txids = client
@@ -739,7 +1293,11 @@ mod built_transaction_shape {
         let (target, expiry, branch_id) = build_one_send(wallet).await;
 
         assert_eq!(target, tip + 1);
-        assert_eq!(expiry, target + 40, "standard tx expiry delta");
+        assert_eq!(
+            expiry,
+            target + crate::wallet::expiry::NU7_TX_EXPIRY_DELTA,
+            "the in-process era is NU7-active, so the NU7 expiry delta applies"
+        );
         assert_eq!(
             branch_id,
             BranchId::for_height(&chain, BlockHeight::from_u32(tip + 1))
@@ -1086,30 +1644,16 @@ mod built_transaction_shape {
     /// The boundary cell the tip_spend_rejection attribution isolated:
     /// a wallet synced to activation − 1 builds a transaction targeting
     /// the activation height, so it must commit to the POST-activation
-    /// branch id. This is the permanent unit fence for the wallet-side
-    /// wrong-branch-id failure observed live at the height-5 NU6.1/6.2
-    /// co-activation.
-    #[tokio::test]
-    async fn boundary_adjacent_build_uses_post_activation_branch_id() {
-        let boundary = 10;
-        let heights = ActivationHeights::builder()
-            .set_overwinter(Some(1))
-            .set_sapling(Some(1))
-            .set_blossom(Some(1))
-            .set_heartwood(Some(1))
-            .set_canopy(Some(1))
-            .set_nu5(Some(1))
-            .set_nu6(Some(1))
-            .set_nu6_1(Some(1))
-            .set_nu6_2(Some(boundary))
-            .set_nu6_3(None)
-            .set_nu7(None)
-            .build();
-        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .orchard_note(100_000)
-            .tip(boundary - 1)
-            .activation_heights(heights)
-            .build();
+    /// branch id, and to the expiry delta of that branch, `expected_delta`.
+    /// `heights` must activate a branch at `boundary`, and the wallet must
+    /// hold a note spendable on both sides of it.
+    async fn assert_boundary_adjacent_build_uses_post_activation_branch_id(
+        heights: ActivationHeights,
+        boundary: u32,
+        expected_delta: u32,
+        wallet: SyntheticWalletBuilder,
+    ) {
+        let wallet = wallet.tip(boundary - 1).activation_heights(heights).build();
         let chain = wallet.chain_type();
         let pre_activation = BranchId::for_height(&chain, BlockHeight::from_u32(boundary - 1));
         let post_activation = BranchId::for_height(&chain, BlockHeight::from_u32(boundary));
@@ -1118,10 +1662,47 @@ mod built_transaction_shape {
             "the cell must sit on a real branch boundary"
         );
 
-        let (target, _, branch_id) = build_one_send(wallet).await;
+        let (target, expiry, branch_id) = build_one_send(wallet).await;
 
         assert_eq!(target, boundary);
         assert_eq!(branch_id, post_activation);
+        assert_eq!(expiry, target + expected_delta);
+    }
+
+    /// The permanent unit fence for the wallet-side wrong-branch-id failure
+    /// observed live at the height-5 NU6.1/6.2 co-activation.
+    #[tokio::test]
+    async fn boundary_adjacent_build_uses_post_activation_branch_id() {
+        let boundary = 10;
+        let heights = crate::testutils::mock_activation_heights_with(|era| {
+            era.set_nu6_2(Some(boundary)).set_nu6_3(None).set_nu7(None)
+        });
+        assert_boundary_adjacent_build_uses_post_activation_branch_id(
+            heights,
+            boundary,
+            zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA,
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(100_000),
+        )
+        .await;
+    }
+
+    /// The same fence at the NU7 boundary, which mainnet crosses on
+    /// 2026-11-05: an Ironwood note spent from NU7 − 1 commits to the NU7
+    /// branch id, the id the previous dependency cohort did not know.
+    #[tokio::test]
+    async fn nu7_boundary_adjacent_build_uses_post_activation_branch_id() {
+        let boundary = 10;
+        let heights =
+            crate::testutils::mock_activation_heights_with(|era| era.set_nu7(Some(boundary)));
+        assert_boundary_adjacent_build_uses_post_activation_branch_id(
+            heights,
+            boundary,
+            crate::wallet::expiry::NU7_TX_EXPIRY_DELTA,
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .ironwood_note(100_000),
+        )
+        .await;
     }
 }
 
@@ -1159,7 +1740,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn complete_and_broadcast_unconnected_error() {
+    async fn complete_and_transmit_unconnected_error() {
         let mut lc = create_basic_client().await;
         let proposal = ProposalBuilder::default().build();
         let err = lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
@@ -1361,5 +1942,153 @@ mod transparent_policy {
                 }
             )))
         ));
+    }
+}
+
+#[cfg(test)]
+mod op_return {
+    use pepper_sync::keys::transparent::TransparentScope;
+    use zcash_primitives::transaction::TxId;
+    use zcash_protocol::value::Zatoshis;
+
+    use crate::data::proposal::{OpReturnProposal, ZingoProposal};
+    use crate::lightclient::LightClient;
+    use crate::lightclient::error::{LightClientError, SendError};
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::wallet::error::WalletError;
+    use crate::wallet::transparent::OpReturnData;
+
+    const ACCOUNT: zip32::AccountId = zip32::AccountId::ZERO;
+
+    async fn client() -> LightClient {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(1_000_000)
+            .build();
+        LightClient::new_for_test(wallet).await
+    }
+
+    async fn proposal(client: &mut LightClient) -> OpReturnProposal {
+        client
+            .create_op_return_proposal(
+                zingo_test_vectors::EXT_TADDR,
+                Zatoshis::const_from_u64(100_000),
+                OpReturnData::new(b"payload".to_vec()).unwrap(),
+                ACCOUNT,
+            )
+            .await
+            .unwrap()
+    }
+
+    async fn reserved_refund_addresses(client: &LightClient) -> usize {
+        client
+            .wallet()
+            .read()
+            .await
+            .transparent_addresses()
+            .keys()
+            .filter(|id| id.scope() == TransparentScope::Refund)
+            .count()
+    }
+
+    /// A proposal whose source address another send reserved is refused.
+    /// Nothing is reserved or sent. The other reservation is untouched.
+    #[tokio::test]
+    async fn stale_source_address_is_refused() {
+        let mut client = client().await;
+        let proposal = proposal(&mut client).await;
+        client
+            .wallet()
+            .write()
+            .await
+            .generate_refund_addresses(1, ACCOUNT)
+            .unwrap();
+
+        let result = client.send_op_return(proposal).await;
+
+        assert!(matches!(
+            result,
+            Err(LightClientError::SendError(
+                SendError::OpReturnSourceAddressStale
+            ))
+        ));
+        assert_eq!(reserved_refund_addresses(&client).await, 1);
+    }
+
+    /// A deshield that fails before transmission releases the
+    /// reservation. An Indexerless client fails at preflight.
+    #[tokio::test]
+    async fn deshield_failure_before_transmission_releases_the_reservation() {
+        let mut client = client().await;
+        let proposal = proposal(&mut client).await;
+
+        let result = client.send_op_return(proposal).await;
+
+        assert!(matches!(result, Err(LightClientError::Offline)));
+        assert_eq!(reserved_refund_addresses(&client).await, 0);
+    }
+
+    /// A proposal with a deshield txid skips the reservation and the
+    /// deshield. A failure in the OP_RETURN step stores the proposal
+    /// again with that txid and reports it.
+    #[tokio::test]
+    async fn resume_skips_the_deshield_and_reports_the_txid_on_failure() {
+        let mut client = client().await;
+        let deshield_txid = TxId::from_bytes([9u8; 32]);
+        let proposal = proposal(&mut client)
+            .await
+            .with_deshield_txid(deshield_txid);
+
+        let result = client.send_op_return(proposal).await;
+
+        match result {
+            Err(LightClientError::SendError(SendError::OpReturnAfterDeshield {
+                deshield_txid: reported,
+                op_return_txid,
+                source,
+            })) => {
+                assert_eq!(reported, deshield_txid);
+                assert_eq!(op_return_txid, None);
+                assert!(matches!(
+                    *source,
+                    LightClientError::SendError(SendError::OpReturn(
+                        WalletError::TransactionNotFound(_)
+                    ))
+                ));
+            }
+            other => panic!("expected OpReturnAfterDeshield, got {other:?}"),
+        }
+        assert_eq!(reserved_refund_addresses(&client).await, 0);
+        match client.wallet().write().await.take_proposal() {
+            Some(ZingoProposal::OpReturn(stored)) => {
+                assert_eq!(stored.deshield_txid(), Some(deshield_txid));
+            }
+            other => panic!("expected the proposal stored again, got {other:?}"),
+        }
+    }
+
+    /// The stale check and the release do not apply to a resumed send.
+    /// Another reservation made after the deshield does not refuse it.
+    #[tokio::test]
+    async fn resume_ignores_the_stale_check() {
+        let mut client = client().await;
+        let proposal = proposal(&mut client)
+            .await
+            .with_deshield_txid(TxId::from_bytes([9u8; 32]));
+        client
+            .wallet()
+            .write()
+            .await
+            .generate_refund_addresses(1, ACCOUNT)
+            .unwrap();
+
+        let result = client.send_op_return(proposal).await;
+
+        assert!(matches!(
+            result,
+            Err(LightClientError::SendError(
+                SendError::OpReturnAfterDeshield { .. }
+            ))
+        ));
+        assert_eq!(reserved_refund_addresses(&client).await, 1);
     }
 }

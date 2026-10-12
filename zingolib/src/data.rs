@@ -1,5 +1,7 @@
 //! This is a mod for data structs that will be used across all sections of zingolib.
 
+use zingo_netutils::lightwallet_protocol;
+
 pub mod proposal;
 
 /// Return type for fns that poll the status of task handles.
@@ -34,6 +36,22 @@ pub struct ServerInfo {
     pub consensus_branch_id: String,
     /// The server's view of the chain tip height.
     pub latest_block_height: u64,
+}
+
+impl ServerInfo {
+    pub fn from_lightd_info(info: lightwallet_protocol::LightdInfo, server_uri: http::Uri) -> Self {
+        Self {
+            version: info.version,
+            git_commit: info.git_commit,
+            server_uri,
+            vendor: info.vendor,
+            taddr_support: info.taddr_support,
+            chain_name: info.chain_name,
+            sapling_activation_height: info.sapling_activation_height,
+            consensus_branch_id: info.consensus_branch_id,
+            latest_block_height: info.block_height,
+        }
+    }
 }
 
 impl From<ServerInfo> for json::JsonValue {

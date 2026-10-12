@@ -1,0 +1,48 @@
+# AGENTS.md states the rule, and tools/workbench/src/dupes_gate.rs holds the
+# gate: the `dupes-gate` binary pins the cargo-dupes version and settings,
+# installs that version, runs the check, and rejects a stale baseline entry.
+#
+# The gate has its own workflow with no `paths` filter. Branch protection
+# requires the check `No duplicated code`, and GitHub holds a pull request
+# forever on a required check that never reports, which the filter in
+# ci-pr.yaml would cause on a pull request outside its paths.
+name: No duplicated code
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [stable, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  no-duplicated-code:
+    name: No duplicated code
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      # dupes_gate.rs holds the version pin, so its hash keys the installed
+      # binary, and a pull request compiles cargo-dupes only when that file
+      # changes.
+      - name: Restore cargo-dupes
+        id: cargo-dupes
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-dupes
+          key: cargo-dupes-${{ hashFiles('tools/workbench/src/dupes_gate.rs') }}-${{ runner.os }}
+
+      - name: Install cargo-dupes
+        if: steps.cargo-dupes.outputs.cache-hit != 'true'
+        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin dupes-gate -- --install
+
+      - name: Run dupes-gate
+        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin dupes-gate

@@ -72,9 +72,9 @@ the same sha. (makers-tasks lane owns the image.) The publish side
 replicates zaino's dev method (zingolabs/zaino
 `.github/workflows/build-n-push-ci-image.yaml`, content-addressed
 tagging per zingolabs/zaino@d8754b72a): `build-n-push-ci-image.yaml`
-rebuilds and pushes `zingodevops/ci-build:<content-tag>` whenever the
-tag's hash inputs change, and the test/coverage workflows resolve the
-same tag through the reusable `compute-image-tag.yaml`, so CI always
+publishes `ghcr.io/zingolabs/ci-build:<content-tag>` on request, and
+the test/coverage workflows resolve the same tag through the reusable
+`ensure-image.yaml`, which publishes an absent tag itself, so CI always
 runs the image the working tree's pins describe. The hardcoded
 `ci-build:011` reference is gone. Heights fixture untouched, so all
 caches remain valid (zainod's version is deliberately not in the
@@ -102,9 +102,8 @@ two adopts it verbatim so the branches converge:
   become an import instead of a documented mirror.
 - **Surroundings**: orchard 0.15.0-pre.1, zcash_address 0.13.0-pre.0,
   `zcash_primitives` gains the `non-standard-fees` feature, and
-  `lightwallet-protocol` is patched to the fork rev carrying the
-  Ironwood proto fields with `rebuild-proto` (build environments need
-  `protoc`, a container-image requirement for the makers-tasks lane).
+  `lightwallet-protocol` is patched to the fork rev whose committed
+  bindings carry the Ironwood proto fields.
 - **Compiler cfg**: ironwood sits behind `--cfg zcash_unstable="nu6.3"`
   RUSTFLAGS via the in-repo `.cargo/config.toml`, which the container
   inherits through the bind mount.

@@ -6,6 +6,7 @@ use zcash_protocol::{PoolType, ShieldedPool};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::lightclient::LightClient;
+use crate::wallet::summary::data::TransactionKind;
 
 /// gets the first address that will allow a sender to send to a specific pool, as a string
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
@@ -41,13 +42,22 @@ pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> Strin
             .to_string(),
     }
 }
-/// Get the total fees paid by a given client (assumes 1 capability per client).
+/// Get the total fees paid by a given client (assumes 1 capability per client):
+/// the sum of fees on confirmed sending transactions.
 pub async fn get_fees_paid_by_client(client: &LightClient) -> u64 {
     client
         .transaction_summaries(false)
         .await
         .unwrap()
-        .paid_fees()
+        .iter()
+        .filter_map(|summary| {
+            if matches!(summary.kind, TransactionKind::Sent(_)) && summary.status.is_confirmed() {
+                summary.fee
+            } else {
+                None
+            }
+        })
+        .sum()
 }
 /// Helpers to provide `raw_receivers` to lightclients for send and shield, etc.
 pub mod from_inputs {
@@ -57,7 +67,7 @@ pub mod from_inputs {
 
     use crate::{
         data::{proposal::ProportionalFeeProposal, receivers::Receivers},
-        lightclient::{LightClient, error::LightClientError},
+        lightclient::{LightClient, error::LightClientError, send},
         wallet::error::ProposeSendError,
     };
 
@@ -70,6 +80,18 @@ pub mod from_inputs {
             .expect("should be able to create a transaction request as receivers are valid.");
         quick_sender
             .quick_send(request, zip32::AccountId::ZERO, true)
+            .await
+    }
+
+    /// Panics if the address, amount or memo conversion fails.
+    pub async fn quick_send_reported(
+        quick_sender: &mut crate::lightclient::LightClient,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
+    ) -> Result<NonEmpty<send::TransmitReport>, LightClientError> {
+        let request = transaction_request_from_send_inputs(raw_receivers)
+            .expect("should be able to create a transaction request as receivers are valid.");
+        quick_sender
+            .quick_send_reported(request, zip32::AccountId::ZERO, true)
             .await
     }
 
