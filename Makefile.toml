@@ -581,7 +581,7 @@ cargo nextest run "${args[@]}"
 
 # The extra-credit libtonode suite: the sentinels (environment-contract
 # checks) and unit_test_twins (pre-migration live originals of the offline
-# unit twins, docs/testing/live-offline-twins.md). Both are off by default
+# unit twins, docs/testing/regtest-removal-ledger.md). Both are off by default
 # and behind the `extra-credit-tests` feature; this is their scheduled
 # entry point — a containerized nextest run so a cron or CI job can invoke
 # one canonical command. Extra nextest args pass through.

@@ -4,10 +4,13 @@
 //! bookkeeping) driven against a fabricated in-process chain, with no
 //! zebrad or zainod.
 //!
-//! Every port here is an OFFLINE TWIN: the live original stays in
-//! libtonode-tests as the control group (user direction, 2026-07-08:
-//! live versions are never removed. They eventually move to a gated
-//! "pre-migration" mod once side-by-side equivalence is documented).
+//! Every port here is an OFFLINE TWIN of a libtonode test. Under the
+//! regtest removal directive (2026-10-09, docs/testing/regtest-removal-ledger.md)
+//! a port replaces its live original: one commit deletes the live test
+//! and adds the twin, so a reviewer reads both sides together. The eight
+//! twins of 2026-07-08 predate that rule; their originals sit in
+//! libtonode-tests/tests/unit_test_twins.rs until their own replacement
+//! commits.
 
 use pepper_sync::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 use pepper_sync::wallet::IronwoodNote;
@@ -2355,18 +2358,18 @@ async fn the_nakednet_policy_reports_the_nakednet_route_over_a_ready_mixnet() {
     }
 }
 
+fn checkpoint_exists<S>(store: &S, height: u32) -> bool
+where
+    S: ShardStore<CheckpointId = BlockHeight>,
+{
+    store
+        .get_checkpoint(&BlockHeight::from_u32(height))
+        .expect("infallible")
+        .is_some()
+}
+
 #[tokio::test]
 async fn shardtree_roundtrip_restores_retained_checkpoints() {
-    fn checkpoint_exists<S>(store: &S, height: u32) -> bool
-    where
-        S: ShardStore<CheckpointId = BlockHeight>,
-    {
-        store
-            .get_checkpoint(&BlockHeight::from_u32(height))
-            .expect("infallible")
-            .is_some()
-    }
-
     fn all_checkpoints_stored<S>(store: &S, chain_height: u32) -> bool
     where
         S: ShardStore<CheckpointId = BlockHeight>,
@@ -2482,6 +2485,68 @@ async fn shardtree_roundtrip_restores_retained_checkpoints() {
             shard_trees.ironwood.store(),
             chain_height
         ));
+    }
+}
+
+#[tokio::test]
+async fn store_all_checkpoints_in_verification_window_on_the_mock_chain() {
+    const PAYMENT: u64 = 10_000;
+    const DENSE_CYCLES: u32 = 3;
+    const EMPTY_MIDDLE_BLOCKS: u32 = 86;
+
+    async fn dense_cycle(net: &MockNet, orchard_address: &str, sapling_address: &str) {
+        fund(net, vec![(orchard_address, PAYMENT, None)], 0).await;
+        fund(net, vec![(sapling_address, PAYMENT, None)], 0).await;
+        fund(
+            net,
+            vec![
+                (orchard_address, PAYMENT, None),
+                (sapling_address, PAYMENT, None),
+            ],
+            1,
+        )
+        .await;
+    }
+
+    let mut net = MockNet::launch().await;
+    let mut recipient = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+        .await;
+    let orchard_address =
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+    let sapling_address =
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Sapling)).await;
+
+    net.chain.write().await.mine_empty_blocks(1);
+    for _ in 0..DENSE_CYCLES {
+        dense_cycle(&net, &orchard_address, &sapling_address).await;
+    }
+    net.chain
+        .write()
+        .await
+        .mine_empty_blocks(EMPTY_MIDDLE_BLOCKS);
+    for _ in 0..DENSE_CYCLES {
+        dense_cycle(&net, &orchard_address, &sapling_address).await;
+    }
+    recipient.sync_and_await().await.unwrap();
+
+    let tip = net.chain.read().await.tip();
+    let window_start = tip - pepper_sync::sync::MAX_REORG_ALLOWANCE + 1;
+    let wallet = recipient.wallet().read().await;
+    let shard_trees = &wallet.shard_trees;
+    for height in window_start..=tip {
+        assert!(
+            checkpoint_exists(shard_trees.sapling.store(), height),
+            "missing sapling checkpoint at height {height}"
+        );
+        assert!(
+            checkpoint_exists(shard_trees.orchard.store(), height),
+            "missing orchard checkpoint at height {height}"
+        );
+        assert!(
+            checkpoint_exists(shard_trees.ironwood.store(), height),
+            "missing ironwood checkpoint at height {height}"
+        );
     }
 }
 
@@ -4059,5 +4124,278 @@ mod mixnet_wire_offline {
             client_for(UNROUTED_URI).submit(part, expiry).await,
             Err(PartTransmissionError::Transport(_))
         ));
+    }
+}
+
+mod shielded_coinbase {
+    use zcash_protocol::PoolType;
+    use zcash_protocol::ShieldedPool;
+    use zcash_protocol::value::Zatoshis;
+
+    use crate::check_client_balances;
+    use crate::testutils::lightclient::get_base_address;
+    use crate::testutils::mock_activation_heights_deferring_nu6_3;
+    use crate::testutils::mock_indexer::{MockChain, MockNet};
+
+    const REWARD_ZATS: u64 = 625_000;
+    const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
+    const DEFERRED_NU6_3: u32 = 130;
+
+    #[tokio::test]
+    async fn a_shielded_coinbase_pays_the_miner_in_ironwood_after_the_activation() {
+        let mut net = MockNet::launch().await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_ua = get_base_address(&miner, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.chain.write().await.mine_empty_blocks(1);
+        let coinbase = net
+            .mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+            .await;
+        assert!(!coinbase.is_empty());
+        net.chain.write().await.mine_empty_blocks(1);
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: REWARD_ZATS o: 0 s: 0 t: 0);
+    }
+
+    #[tokio::test]
+    async fn a_shielded_coinbase_pays_the_miner_in_orchard_before_the_activation() {
+        let mut net = MockNet::launch_with(MockChain::with_activation_heights(
+            mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
+        ))
+        .await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_ua = get_base_address(&miner, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.chain.write().await.mine_empty_blocks(1);
+        net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+            .await;
+        net.chain.write().await.mine_empty_blocks(1);
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: 0 o: REWARD_ZATS s: 0 t: 0);
+    }
+}
+
+mod boundary_pruning {
+    use incrementalmerkletree::Position;
+    use pepper_sync::sync::MAX_SHARDTREE_CHECKPOINTS;
+    use pepper_sync::wallet::{NoteInterface, OrchardNote, OutputId, OutputInterface};
+    use shardtree::store::ShardStore as _;
+    use zaino_proto::tonic::Code;
+    use zcash_client_backend::data_api::anchor_retention::{
+        AnchorRetention, AnchorRetentionInterval,
+    };
+    use zcash_protocol::PoolType;
+    use zcash_protocol::ShieldedPool;
+    use zcash_protocol::consensus::BlockHeight;
+
+    use crate::check_client_balances;
+    use crate::lightclient::LightClient;
+    use crate::testutils::lightclient::get_base_address;
+    use crate::testutils::migration::inject_scheduled_migration;
+    use crate::testutils::mock_activation_heights_deferring_nu6_3;
+    use crate::testutils::mock_indexer::{
+        Fault, MockChain, MockNet, Rpc, faucet_funding_transaction_on,
+    };
+    use crate::wallet::LightWallet;
+    use crate::wallet::migration::parts::SkipReason;
+    use crate::wallet::migration::{MigrationParams, PartState, PrepareResult, bucket_index};
+
+    const HIDDEN_BLOCKS: u32 = 10;
+    const PRUNED_BUCKET_MODULUS: u32 = (MAX_SHARDTREE_CHECKPOINTS + 1).next_power_of_two();
+    const ANCHOR_BUCKET: u64 = 2;
+    const WINDOW_BUCKET: u64 = ANCHOR_BUCKET + 1;
+    const ANCHOR_BOUNDARY: u32 = ANCHOR_BUCKET as u32 * PRUNED_BUCKET_MODULUS;
+    const DEFERRED_NU6_3: u32 = 200;
+    const BIRTHDAY_CHECKPOINT_RUNWAY: u32 = MAX_SHARDTREE_CHECKPOINTS;
+    const _: () = assert!(
+        BIRTHDAY_CHECKPOINT_RUNWAY + 2 < DEFERRED_NU6_3,
+        "the funding must sit above every checkpoint the birthday verification leaves and still confirm before NU6.3 activates"
+    );
+    const TARGET_TIP: u32 =
+        WINDOW_BUCKET as u32 * PRUNED_BUCKET_MODULUS + (PRUNED_BUCKET_MODULUS - HIDDEN_BLOCKS) / 2;
+    const _: () = assert!(
+        ANCHOR_BOUNDARY >= DEFERRED_NU6_3,
+        "the transmit path skips an anchor below the NU6.3 activation before it looks at the tree"
+    );
+    const _: () = assert!(
+        TARGET_TIP - ANCHOR_BOUNDARY > MAX_SHARDTREE_CHECKPOINTS,
+        "the leap must leave the anchor boundary below pepper-sync's rolling checkpoint window"
+    );
+    const _: () = assert!(
+        TARGET_TIP + HIDDEN_BLOCKS < (WINDOW_BUCKET as u32 + 1) * PRUNED_BUCKET_MODULUS,
+        "the hidden blocks must keep the tip inside the transmission window"
+    );
+
+    async fn funding_note(
+        client: &LightClient,
+        funding: u64,
+    ) -> ((u64, OutputId, [u8; 32]), Position) {
+        let wallet = client.wallet().read().await;
+        wallet
+            .wallet_transactions
+            .values()
+            .flat_map(|transaction| OrchardNote::transaction_outputs(transaction).to_vec())
+            .find(|note| note.value() == funding)
+            .map(|note| {
+                (
+                    (
+                        note.value(),
+                        note.output_id(),
+                        note.nullifier()
+                            .expect("scanned wallet notes carry nullifiers")
+                            .to_bytes(),
+                    ),
+                    note.position()
+                        .expect("scanned wallet notes carry tree positions"),
+                )
+            })
+            .expect("the recipient holds its funding note")
+    }
+
+    fn orchard_checkpoints_holding(
+        wallet: &LightWallet,
+        at_or_below: BlockHeight,
+        position: Position,
+    ) -> Vec<BlockHeight> {
+        let store = wallet.shard_trees.orchard.store();
+        let count = store.checkpoint_count().expect("infallible");
+        (0..count)
+            .filter_map(|depth| store.get_checkpoint_at_depth(depth).expect("infallible"))
+            .filter(|(id, checkpoint)| {
+                *id <= at_or_below && checkpoint.position().is_some_and(|held| held >= position)
+            })
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn unavailable_boundary_tree_state_skips_without_sync_on_the_mock_chain() {
+        let anchor_boundary = BlockHeight::from_u32(ANCHOR_BOUNDARY);
+        let retention = AnchorRetention::new(
+            BlockHeight::from_u32(DEFERRED_NU6_3),
+            AnchorRetentionInterval::default(),
+        );
+        assert!(
+            retention
+                .retained_in_range(BlockHeight::from_u32(0)..=anchor_boundary)
+                .is_empty(),
+            "the canonical retention grid must pin no checkpoint at or below the anchor boundary"
+        );
+
+        let mut net = MockNet::launch_with(MockChain::with_activation_heights(
+            mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
+        ))
+        .await;
+        let mut params = MigrationParams::provisional(net.chain_type());
+        params.bucket_modulus = PRUNED_BUCKET_MODULUS;
+        let funding = params.max_residual_value + params.part_fee;
+        let mut recipient = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let recipient_ua =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        {
+            let mut chain = net.chain.write().await;
+            chain.mine_empty_blocks(BIRTHDAY_CHECKPOINT_RUNWAY);
+            let funding_transaction = faucet_funding_transaction_on(
+                chain.activation_heights(),
+                chain.next_height(),
+                vec![(&recipient_ua, funding, None)],
+            )
+            .await;
+            chain.mine_block(vec![funding_transaction]);
+            let funded_tip = chain.tip();
+            assert!(
+                funded_tip < DEFERRED_NU6_3,
+                "the funding must confirm before NU6.3 activates, but the chain is at {funded_tip}"
+            );
+            chain.mine_empty_blocks(TARGET_TIP - funded_tip);
+        }
+        recipient.sync_and_await().await.unwrap();
+        check_client_balances!(recipient, i: 0 o: funding s: 0 t: 0);
+
+        let known_height = recipient
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .last_known_chain_height()
+            .expect("the recipient has synced");
+        assert_eq!(
+            bucket_index(known_height, PRUNED_BUCKET_MODULUS),
+            WINDOW_BUCKET,
+            "the chain must sit inside the transmission window"
+        );
+        let (bound, position) = funding_note(&recipient, funding).await;
+        assert_eq!(
+            orchard_checkpoints_holding(
+                &*recipient.wallet().read().await,
+                anchor_boundary,
+                position
+            ),
+            Vec::<BlockHeight>::new(),
+            "no checkpoint at or below the anchor boundary may hold the bound note"
+        );
+        let (funding_value, output_id, nullifier) = bound;
+        let denomination = funding_value - params.part_fee;
+        inject_scheduled_migration(
+            &recipient,
+            params,
+            vec![(denomination, output_id, nullifier)],
+            Some(WINDOW_BUCKET),
+            Some(ANCHOR_BUCKET),
+        )
+        .await;
+
+        {
+            let mut chain = net.chain.write().await;
+            chain.mine_empty_blocks(HIDDEN_BLOCKS);
+            chain.faults.inject(
+                Rpc::BlockRange,
+                Fault::Fail(
+                    Code::Unavailable,
+                    "a hidden sync fetched blocks".to_string(),
+                ),
+            );
+        }
+
+        #[cfg(feature = "nym")]
+        recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
+        let sent = recipient.transmit_due_parts().await.unwrap();
+        assert!(sent.is_empty(), "nothing must be transmitted: {sent:?}");
+        assert_eq!(
+            net.chain.read().await.faults.pending(Rpc::BlockRange),
+            1,
+            "the transmit path must never fetch blocks"
+        );
+        let mut wallet = recipient.wallet().write().await;
+        let state = wallet.migration.as_ref().unwrap();
+        let part = &state.parts[0];
+        assert_eq!(part.state, PartState::Assigned, "a skip writes nothing");
+        assert_eq!(part.attempts, 0, "a skip records no attempt");
+        assert!(part.anchor_witness.is_none());
+        assert_eq!(
+            wallet.sync_state.last_known_chain_height(),
+            Some(known_height),
+            "the transmit path must never synchronize"
+        );
+
+        let (account, params, mut probe) = (state.account, state.params.clone(), part.clone());
+        match wallet
+            .prepare_part(account, &mut probe, &params)
+            .expect("an unavailable boundary is a skip, not an error")
+        {
+            PrepareResult::Skip(SkipReason::MissedBoundary { boundary }) => {
+                assert_eq!(boundary, anchor_boundary);
+            }
+            PrepareResult::Skip(other) => {
+                panic!("the part skipped for the wrong reason: {other:?}")
+            }
+            PrepareResult::Ready { .. } => {
+                panic!("the anchor boundary's tree state must be unavailable")
+            }
+        }
     }
 }
