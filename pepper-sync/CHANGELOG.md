@@ -117,12 +117,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "RESCAN TRIGGERED" sentence naming the consequence and the cause.
   `error::ScanError::IncorrectTreeSize` gains the disagreeing block's
   `height`, and the truncation site logs at error level where it warned.
-- `sync::sync_status`: a session with no scannable blocks or outputs no longer
-  reports a finished sync. A stale initial sync state, whose previously scanned
-  counts stand at or above the wallet's whole span, saturates the session
-  denominator to zero. The status now reports the wallet's total progress for
-  that session, where it previously divided zero by zero and coerced the
-  resulting `NaN` to one hundred percent. The pool totals and the block span are
+- `sync::sync_status`: the session counts saturate against a stale initial
+  sync state, whose previously scanned counts stand at or above the wallet's
+  whole span, instead of underflowing. The pool totals and the block span are
   saturated likewise, so a rewound tree bound can no longer underflow them.
 - BREAKING: a wrapper error variant renders only its own layer. The
   `Display` texts of the `error::SyncError`, `error::MempoolError`, and
@@ -145,6 +142,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-org allowance of the last known chain height, as before.
 
 ### Fixed
+- A transaction request that zaino refuses with "retry with a fresh snapshot",
+  because it fell between two mempool snapshots, is sent again, at most three
+  times, instead of ending the sync session with a server error.
 - `sync` rolls each shard tree back to the wallet's highest scanned height
   when it starts, where the tree holds a checkpoint above that height. A sync
   session that ended partway through a wallet update left note commitments in
@@ -272,6 +272,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   range kept its `Scanned` priority with its wallet data removed.
 
 ### Removed
+- **Breaking.** `sync::SyncStatus::percentage_session_blocks_scanned` and
+  `sync::SyncStatus::percentage_session_outputs_scanned`. These were the only fields whose
+  computation could abort the process, and no consumer read them: the CLI's progress
+  surfaces take `total_outputs_scanned`, `total_outputs`, and `is_complete()`, and
+  `SyncResult` carries the total percentage only. A consumer that wants a session
+  percentage computes it from the session and total counts the struct still reports. The
+  two fields also leave the `json::JsonValue` rendering of a sync status.
 
 ## [0.5.0] - 2026-06-10
 

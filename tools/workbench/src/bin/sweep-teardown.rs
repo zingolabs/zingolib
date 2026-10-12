@@ -67,7 +67,7 @@ fn teardown(args: &[String]) -> Result<(), Vec<String>> {
 /// Waits out the proxy bootstrap, then probes every host for `rounds`
 /// rounds through the announced SOCKS5 port.
 fn probe_rounds(proxy: &mut Child, rounds: usize) -> Result<(), Vec<String>> {
-    let stdout = proxy.stdout.take().expect("stdout was piped");
+    let stdout = workbench::required(proxy.stdout.take(), "piped stdout of the proxy")?;
     let mut lines = std::io::BufReader::new(stdout).lines();
     let started = Instant::now();
     let mut socks_port = None;

@@ -1,12 +1,16 @@
+# A banned crate behind an optional feature is still banned, so the graph
+# carries every feature. CI and a local `cargo deny check bans` read this
+# table and pass no feature flags, so both evaluate the same graph.
 [graph]
 targets = []
-all-features = false
+all-features = true
 no-default-features = false
 
 [bans]
-multiple-versions = "warn"
+# Duplicate-version policy belongs to the cargo-dupes gate in the workbench
+# (`.dupes-ignore.toml`); warning here would only bury a ban hit.
+multiple-versions = "allow"
 wildcards = "allow"
-highlight = "all"
 
 # Deny openssl and boringssl dependencies
 deny = [

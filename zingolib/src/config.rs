@@ -527,6 +527,13 @@ fn wallet_name_or_default(opt_wallet_name: Option<String>) -> String {
 
 fn wallet_dir_or_default(
     opt_wallet_dir: Option<PathBuf>,
+    #[cfg_attr(
+        any(target_os = "ios", target_os = "android"),
+        expect(
+            unused_variables,
+            reason = "a mobile caller names the wallet directory, so no default is derived from the chain"
+        )
+    )]
     chain: ChainType,
 ) -> Result<PathBuf, ClientConfigError> {
     let wallet_dir: PathBuf;

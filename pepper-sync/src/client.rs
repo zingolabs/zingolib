@@ -342,23 +342,35 @@ pub(crate) async fn get_frontiers(
     tree_state.try_into().map_err(ServerError::InvalidFrontier)
 }
 
-/// Gets a full transaction for a specified txid.
-///
-/// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
+const SNAPSHOT_RETRY_HINT: &str = "retry with a fresh snapshot";
+
+/// - Sends a transaction request to the fetcher, and sends it again after each
+///   refusal that carries [`SNAPSHOT_RETRY_HINT`], at most [`MAX_RETRIES`] times.
 pub(crate) async fn get_transaction_and_block_height(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     consensus_parameters: &impl consensus::Parameters,
     txid: TxId,
 ) -> Result<(Transaction, BlockHeight), ServerError> {
-    let (reply_sender, reply_receiver) = oneshot::channel();
-    fetch_request_sender
-        .send(FetchRequest::Transaction(reply_sender, txid))
-        .map_err(|_| ServerError::FetcherDropped)?;
+    let mut retry_count = 0;
+    let raw_transaction = loop {
+        let (reply_sender, reply_receiver) = oneshot::channel();
+        fetch_request_sender
+            .send(FetchRequest::Transaction(reply_sender, txid))
+            .map_err(|_| ServerError::FetcherDropped)?;
 
-    let raw_transaction = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)?
-        .map_err(ServerError::RequestFailed)?;
+        match reply_receiver
+            .await
+            .map_err(|_| ServerError::FetcherDropped)?
+        {
+            Ok(raw_transaction) => break raw_transaction,
+            Err(status)
+                if status.message().contains(SNAPSHOT_RETRY_HINT) && retry_count < MAX_RETRIES =>
+            {
+                retry_count += 1;
+            }
+            Err(status) => return Err(ServerError::RequestFailed(status)),
+        }
+    };
     let block_height =
         BlockHeight::from_u32(u32::try_from(raw_transaction.height).expect("should be valid u32"));
     let transaction = Transaction::read(
@@ -588,6 +600,91 @@ mod tests {
                 ));
             }
         }
+    }
+
+    /// Answers transaction requests with each status of `replies` in turn, then
+    /// panics, so a caller that asks more often than the script allows fails.
+    fn spawn_transaction_fetcher(
+        replies: Vec<tonic::Status>,
+    ) -> mpsc::UnboundedSender<FetchRequest> {
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            let mut replies = replies.into_iter();
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::Transaction(reply_sender, _) => {
+                        let status = replies.next().expect("a request beyond the script");
+                        let _ignore_error = reply_sender.send(Err(status));
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+        });
+        fetch_request_sender
+    }
+
+    fn snapshot_race() -> tonic::Status {
+        tonic::Status::unknown(
+            "Chain index error: unavailable: mempool is not coherent with the requested \
+             snapshot; retry with a fresh snapshot",
+        )
+    }
+
+    fn status_of(result: Result<(Transaction, BlockHeight), ServerError>) -> tonic::Status {
+        match result {
+            Err(ServerError::RequestFailed(status)) => status,
+            other => panic!("expected a failed request, got {other:?}"),
+        }
+    }
+
+    /// HYPOTHESIS: zaino answers a transaction request caught between two
+    /// mempool snapshots with an `Unknown` status that asks the client to
+    /// retry, and the client obeys, up to the retry ceiling. Falsified if the
+    /// first such status surfaces, or if the ceiling is not enforced.
+    #[tokio::test]
+    async fn a_snapshot_race_is_retried_up_to_the_ceiling() {
+        let within_ceiling: Vec<tonic::Status> = (0..MAX_RETRIES)
+            .map(|_| snapshot_race())
+            .chain([tonic::Status::not_found("gone")])
+            .collect();
+        let status = status_of(
+            get_transaction_and_block_height(
+                spawn_transaction_fetcher(within_ceiling),
+                &NETWORK,
+                TxId::from_bytes([0; 32]),
+            )
+            .await,
+        );
+        assert_eq!(status.code(), tonic::Code::NotFound, "{status}");
+
+        let beyond_ceiling: Vec<tonic::Status> = (0..=MAX_RETRIES)
+            .map(|_| snapshot_race())
+            .chain([tonic::Status::not_found("never asked")])
+            .collect();
+        let status = status_of(
+            get_transaction_and_block_height(
+                spawn_transaction_fetcher(beyond_ceiling),
+                &NETWORK,
+                TxId::from_bytes([0; 32]),
+            )
+            .await,
+        );
+        assert_eq!(status.code(), tonic::Code::Unknown, "{status}");
+    }
+
+    /// HYPOTHESIS: any other failed request surfaces at once. Falsified if a
+    /// second request is made.
+    #[tokio::test]
+    async fn an_unrelated_failure_is_not_retried() {
+        let status = status_of(
+            get_transaction_and_block_height(
+                spawn_transaction_fetcher(vec![tonic::Status::internal("broken")]),
+                &NETWORK,
+                TxId::from_bytes([0; 32]),
+            )
+            .await,
+        );
+        assert_eq!(status.code(), tonic::Code::Internal, "{status}");
     }
 
     /// Zaino reports the protocol version with a `v` prefix. Servers that pre-date the field report an empty string.
