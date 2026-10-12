@@ -28,32 +28,15 @@
 //! either side.
 
 mod unit_test_twins {
-    use pepper_sync::wallet::IronwoodNote;
-    use zcash_primitives::transaction::fees::zip317::{MARGINAL_FEE, MINIMUM_FEE};
-    use zcash_protocol::PoolType;
-    use zcash_protocol::consensus::{BlockHeight, COINBASE_MATURITY_BLOCKS};
     use zcash_protocol::value::Zatoshis;
-    use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingo_test_vectors::TEST_TXID;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::config::WalletConfig;
     use zingolib::lightclient::error::{LightClientError, SendError};
-    use zingolib::perspective::value_transfer::{SentValueTransfer, ValueTransferKind};
+    use zingolib::testutils::default_test_wallet_settings;
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
-    use zingolib::testutils::{
-        assert_transaction_summary_equality, assert_transaction_summary_exists,
-        default_test_wallet_settings,
-    };
-    use zingolib::utils;
     use zingolib::wallet::error::ProposeSendError;
-    use zingolib::wallet::output::SpendStatus;
-    use zingolib::wallet::summary;
-    use zingolib::wallet::summary::data::{
-        BasicNoteSummary, OutgoingNoteSummary, SendType, TransactionKind, TransactionSummary,
-    };
     use zingolib::{check_client_balances, get_base_address_macro};
     use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
-    use zip32::AccountId;
 
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
@@ -379,9 +362,5 @@ mod unit_test_twins {
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
-    }
-
-    mod basic_transactions {
-        use super::*;
     }
 }
