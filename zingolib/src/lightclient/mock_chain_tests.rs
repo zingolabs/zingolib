@@ -8,9 +8,8 @@
 //! regtest removal directive (2026-10-09, docs/testing/regtest-removal-ledger.md)
 //! a port replaces its live original: one commit deletes the live test
 //! and adds the twin, so a reviewer reads both sides together. The eight
-//! twins of 2026-07-08 predate that rule; their originals sit in
-//! libtonode-tests/tests/unit_test_twins.rs until their own replacement
-//! commits.
+//! twins of 2026-07-08 predate that rule; their originals were removed
+//! by their own replacement commits.
 
 use pepper_sync::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 use pepper_sync::wallet::IronwoodNote;
@@ -842,16 +841,17 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
-    // 10 orchard + sapling demoted to own transparent: 30_000
-    from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 470_000, None)])
+    // 10 ironwood demoted to own transparent, sapling stays put: 15_000
+    from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 465_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 i: 0 s: 0 t: 470_000);
-    total_expected_fee += 30_000;
+    bump_and_check!(o: 0 i: 10_000 s: 10_000 t: 465_000);
+    total_expected_fee += 15_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 10b transparent-to-transparent is refused: transparent funds are
-    // not send-spendable.
+    // not send-spendable, and the 20_000 shielded leftover cannot pay
+    // the 10_000 payment plus its 25_000 fee.
     match from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 10_000, None)]).await {
         Err(LightClientError::SendError(SendError::ProposeSendError(
             ProposeSendError::Proposal(
@@ -861,12 +861,12 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
                 },
             ),
         ))) => {
-            assert_eq!(available, Zatoshis::from_u64(0).unwrap());
-            assert_eq!(required, Zatoshis::from_u64(20_000).unwrap());
+            assert_eq!(available, Zatoshis::from_u64(20_000).unwrap());
+            assert_eq!(required, Zatoshis::from_u64(35_000).unwrap());
         }
         other => panic!("expected InsufficientFunds, got {other:?}"),
     }
-    bump_and_check!(o: 0 i: 0 s: 0 t: 470_000);
+    bump_and_check!(o: 0 i: 10_000 s: 10_000 t: 465_000);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 11 transparent-to-sapling likewise refused.
@@ -879,49 +879,49 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
                 },
             ),
         ))) => {
-            assert_eq!(available, Zatoshis::from_u64(0).unwrap());
-            assert_eq!(required, Zatoshis::from_u64(60_000).unwrap());
+            assert_eq!(available, Zatoshis::from_u64(20_000).unwrap());
+            assert_eq!(required, Zatoshis::from_u64(70_000).unwrap());
         }
         other => panic!("expected InsufficientFunds, got {other:?}"),
     }
-    bump_and_check!(o: 0 i: 0 s: 0 t: 470_000);
+    bump_and_check!(o: 0 i: 10_000 s: 10_000 t: 465_000);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
-    // 12 shield: 15_000 (1 t-in, 2 orchard)
+    // 12 shield: 15_000 (1 t-in, the ironwood pair)
     client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
-    bump_and_check!(o: 0 i: 455_000 s: 0 t: 0);
+    bump_and_check!(o: 0 i: 460_000 s: 10_000 t: 0);
     total_expected_fee += 15_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
-    // 13 orchard to own sapling: 20_000
+    // 13 ironwood to own sapling: 20_000
     from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 10_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 i: 425_000 s: 10_000 t: 0);
+    bump_and_check!(o: 0 i: 430_000 s: 20_000 t: 0);
     total_expected_fee += 20_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
-    // 14 orchard self-send: 10_000
+    // 14 ironwood self-send: 10_000
     from_inputs::quick_send(&mut client, vec![(&pmc_unified, 20_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 i: 415_000 s: 10_000 t: 0);
+    bump_and_check!(o: 0 i: 420_000 s: 20_000 t: 0);
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
-    // 15 orchard + sapling to own sapling: 20_000
-    from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 405_000, None)])
+    // 15 sapling + ironwood to own sapling, not an exact drain: 20_000
+    from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 400_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 i: 0 s: 405_000 t: 0);
+    bump_and_check!(o: 0 i: 20_000 s: 400_000 t: 0);
     total_expected_fee += 20_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 16 sapling self-send: 10_000
-    from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 380_000, None)])
+    from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 350_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 i: 0 s: 395_000 t: 0);
+    bump_and_check!(o: 0 i: 20_000 s: 390_000 t: 0);
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 }
@@ -4080,7 +4080,7 @@ mod shielded_coinbase {
     const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
     const DEFERRED_NU6_3: u32 = 130;
 
-    fn deferred_schedule() -> MockChain {
+    pub(super) fn deferred_schedule() -> MockChain {
         MockChain::with_activation_heights(mock_activation_heights_with(|era| {
             era.set_nu6_3(Some(DEFERRED_NU6_3)).set_nu7(None)
         }))
