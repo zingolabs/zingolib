@@ -804,6 +804,18 @@ pub fn transparent_only_transaction(
     inputs: Vec<TxIn<TransparentAuthorized>>,
     outputs: Vec<TxOut>,
 ) -> Vec<u8> {
+    transparent_only_transaction_expiring(chain_type, height, NO_EXPIRY, inputs, outputs)
+}
+
+/// Serializes an unsigned transparent-only transaction for the branch at `height` with `expiry`, which a
+/// coinbase sets to its block height, the rule that keeps consecutive coinbases' txids distinct.
+pub fn transparent_only_transaction_expiring(
+    chain_type: &ChainType,
+    height: BlockHeight,
+    expiry: BlockHeight,
+    inputs: Vec<TxIn<TransparentAuthorized>>,
+    outputs: Vec<TxOut>,
+) -> Vec<u8> {
     let bundle = TransparentBundle {
         vin: inputs,
         vout: outputs,
@@ -811,6 +823,7 @@ pub fn transparent_only_transaction(
     };
     transaction_bytes_for_branch(
         BranchId::for_height(chain_type, height),
+        expiry,
         bundle,
         None,
         None,
@@ -824,6 +837,7 @@ type OrchardBundle = orchard::Bundle<orchard::bundle::Authorized, ZatBalance>;
 /// - Panics when `ironwood` is given for a branch whose transaction version predates V6.
 fn transaction_bytes_for_branch(
     branch_id: BranchId,
+    expiry: BlockHeight,
     transparent: TransparentBundle<TransparentAuthorized>,
     sapling: Option<SaplingBundle>,
     orchard: Option<OrchardBundle>,
@@ -833,7 +847,7 @@ fn transaction_bytes_for_branch(
         TxVersion::V6 => TransactionData::<Authorized>::from_parts_v6(
             branch_id,
             0,
-            NO_EXPIRY,
+            expiry,
             Some(transparent),
             sapling,
             orchard,
@@ -848,7 +862,7 @@ fn transaction_bytes_for_branch(
                 version,
                 branch_id,
                 0,
-                NO_EXPIRY,
+                expiry,
                 Some(transparent),
                 None,
                 sapling,
@@ -1120,6 +1134,13 @@ impl MockChain {
         self.mine_block(pending);
     }
 
+    /// - Mines every mempool transaction into one block under `coinbase`, a transaction the caller built for the
+    ///   next height, as a miner collecting the block's fees would.
+    pub fn mine_mempool_with_coinbase(&mut self, coinbase: Vec<u8>) {
+        let pending = std::mem::take(&mut self.mempool);
+        self.mine_block_with_coinbase(coinbase, pending);
+    }
+
     /// Mines the given raw transactions (plus nothing else) into the
     /// next block.
     pub fn mine_block(&mut self, raw_transactions: Vec<Vec<u8>>) {
@@ -1149,7 +1170,13 @@ impl MockChain {
             .expect("the miner address is a transparent address of this chain");
         let input = TxIn::from_parts(OutPoint::NULL, coinbase_script_sig(height), u32::MAX);
         let output = TxOut::new(reward, script_pubkey);
-        transparent_only_transaction(&self.chain_type(), height, vec![input], vec![output])
+        transparent_only_transaction_expiring(
+            &self.chain_type(),
+            height,
+            height,
+            vec![input],
+            vec![output],
+        )
     }
 
     fn mine(&mut self, coinbase: Option<Vec<u8>>, raw_transactions: Vec<Vec<u8>>) {
@@ -2054,14 +2081,17 @@ impl MockNet {
         raw_transactions: Vec<Vec<u8>>,
     ) -> Vec<u8> {
         let mut chain = self.chain.write().await;
-        let coinbase = shielded_coinbase_transaction(
-            chain.activation_heights(),
-            chain.next_height(),
-            miner,
-            reward,
-        )
-        .await;
+        let coinbase = next_shielded_coinbase(&chain, miner, reward).await;
         chain.mine_block_with_coinbase(coinbase.clone(), raw_transactions);
+        coinbase
+    }
+
+    /// - Holds the chain's write lock from reading the next height until the block is mined, proof included.
+    /// - Appends one block carrying the shielded coinbase and every mempool transaction.
+    pub async fn mine_mempool_rewarding_shielded(&self, miner: &str, reward: Zatoshis) -> Vec<u8> {
+        let mut chain = self.chain.write().await;
+        let coinbase = next_shielded_coinbase(&chain, miner, reward).await;
+        chain.mine_mempool_with_coinbase(coinbase.clone());
         coinbase
     }
 
@@ -2330,6 +2360,17 @@ pub async fn faucet_funding_transaction_on(
 }
 
 /// - Runs the Sapling and Halo2 provers for the built bundles.
+async fn next_shielded_coinbase(chain: &MockChain, miner: &str, reward: Zatoshis) -> Vec<u8> {
+    shielded_coinbase_transaction(
+        chain.activation_heights(),
+        chain.next_height(),
+        miner,
+        reward,
+    )
+    .await
+}
+
+/// - Runs the Sapling and Halo2 provers for the built bundles.
 /// - Panics when an activation in `activation_heights` falls between `height` and the faucet's
 ///   proposal height, one above its clamped tip.
 pub async fn shielded_coinbase_transaction(
@@ -2355,6 +2396,7 @@ pub async fn shielded_coinbase_transaction(
     };
     transaction_bytes_for_branch(
         branch_id,
+        height,
         transparent,
         built.sapling_bundle().cloned(),
         built.orchard_bundle().cloned(),
