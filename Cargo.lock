@@ -2149,7 +2149,6 @@ dependencies = [
  "futures",
  "hex",
  "incrementalmerkletree",
- "json",
  "jubjub",
  "memuse",
  "orchard",
