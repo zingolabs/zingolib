@@ -39,7 +39,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
 
       - name: Install nextest
         uses: taiki-e/install-action@v2
@@ -50,9 +51,6 @@ jobs:
         run: |
           apt-get update
           apt-get install -y libsqlite3-dev pkg-config
-
-      - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
 
       - name: Build and archive tests
         run: |
@@ -83,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2, 3, 4, 5, 6, 7, 8]
+        partition: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -109,5 +107,5 @@ jobs:
           cargo nextest run --verbose --profile ci --retries 0 \
             --archive-file "${ARCHIVE}.tar.zst" \
             --workspace-remap ./ \
-            --partition count:${{ matrix.partition }}/8 \
+            --partition count:${{ matrix.partition }}/16 \
             ${{ env.NEXTEST-FLAGS }}
