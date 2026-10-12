@@ -48,8 +48,11 @@
   runs cargo-dupes with the settings that module pins. The gate rejects an
   exact group outside `.dupes-ignore.toml`, a near group count other than
   the ceiling `MAX_NEAR` in that module, and a baseline entry whose group
-  is gone. Never add an entry for a new group. Remove the duplication,
-  then run `dupes-gate cleanup` and commit the result. When a near group
+  is gone. Never add an entry for a new group, with one exception: a
+  trait-delegation pair, where one type implements two traits whose
+  methods delegate identically and cannot share an impl, takes an entry
+  whose reason names the pair. Otherwise remove the duplication, then run
+  `dupes-gate cleanup` and commit the result. When a near group
   disappears, lower `MAX_NEAR` to the new count; the ceiling only moves
   down. No config file holds the settings, so run cargo-dupes through the
   binary: `cargo run --manifest-path tools/workbench/Cargo.toml --bin
