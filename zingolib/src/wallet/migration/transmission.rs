@@ -17,17 +17,17 @@ use zcash_protocol::consensus::BlockHeight;
 /// session's policy after the fact. Mirrors the send path's `TransmitRoute`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TransmissionRoute {
-    /// Clearnet submission to this endpoint's host: reachable only by the
+    /// Nakednet submission to this endpoint's host: reachable only by the
     /// deliberate mixnet opt-out, or a build without the `nym` feature.
-    Clearnet {
+    Nakednet {
         /// The endpoint's host.
         endpoint: String,
     },
-    /// Mixnet submission to this Correspondent's host, through the local
+    /// Mixnet submission to this Destination's host, through the local
     /// SOCKS5 tunnel endpoint.
     Mixnet {
-        /// The drawn Correspondent's host.
-        correspondent: String,
+        /// The drawn Destination's host.
+        destination: String,
         /// The local SOCKS5 endpoint of the mixnet tunnel.
         via_socks5: String,
     },

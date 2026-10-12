@@ -9,7 +9,7 @@ use crossbeam_channel as channel;
 
 use orchard::note_encryption::{IronwoodDomain, OrchardDomain};
 use sapling_crypto::note_encryption::SaplingDomain;
-use zcash_note_encryption::{BatchDomain, COMPACT_NOTE_SIZE, Domain, ShieldedOutput, batch};
+use zcash_note_encryption::{BatchDomain, Domain, ShieldedOutput, batch};
 use zcash_primitives::{
     block::BlockHash, transaction::TxId, transaction::components::sapling::zip212_enforcement,
 };
@@ -238,9 +238,7 @@ pub(crate) trait Decryptor<D: BatchDomain, Output> {
 /// A decryptor of outputs as encoded in compact blocks.
 pub(crate) struct CompactDecryptor;
 
-impl<D: BatchDomain, Output: ShieldedOutput<D, COMPACT_NOTE_SIZE>> Decryptor<D, Output>
-    for CompactDecryptor
-{
+impl<D: BatchDomain, Output: ShieldedOutput<D>> Decryptor<D, Output> for CompactDecryptor {
     type Memo = ();
 
     fn batch_decrypt(

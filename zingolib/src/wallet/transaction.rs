@@ -44,22 +44,28 @@ impl SpendsByPool<'_> {
 
 impl LightWallet {
     /// Gets all outputs of a given type spent in the given `transaction`.
+    ///
+    /// Failing a transaction releases its inputs.
     pub(super) fn find_spends<Op: OutputInterface>(
         &self,
         transaction: &WalletTransaction,
         fail_on_miss: bool,
     ) -> Result<Vec<&Op>, SpendError> {
+        let inputs = Op::transaction_inputs(transaction);
+        let released = transaction.status().is_failed();
         let spends = self
             .wallet_outputs::<Op>()
             .into_iter()
             .filter_map(|output| {
+                let spent_here = output
+                    .spend_link()
+                    .is_some_and(|link| inputs.contains(&&link));
+                if released {
+                    return spent_here.then_some(Ok(output));
+                }
                 output.spending_transaction().and_then(|txid| {
                     if txid == transaction.txid() {
-                        let spend = Op::transaction_inputs(transaction)
-                            .into_iter()
-                            .find(|&input| output.spend_link() == Some(input.clone()));
-
-                        if spend.is_none() {
+                        if !spent_here {
                             return Some(Err(SpendError::IncorrectSpendingTransaction {
                                 output_id: output.output_id(),
                                 txid,

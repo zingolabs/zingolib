@@ -11,7 +11,7 @@ fn zaddr_from_seed(
     PreparedIncomingViewingKey,
     PaymentAddress,
 ) {
-    let extsk = ExtendedSpendingKey::master(&seed);
+    let extsk = ExtendedSpendingKey::master(&seed).expect("the seed derives a valid master key");
     let dfvk = extsk.to_diversifiable_full_viewing_key();
     let fvk = dfvk;
     let (_, addr) = fvk.default_address();
@@ -38,7 +38,7 @@ pub fn default_zaddr() -> (
     zaddr_from_seed([0u8; 32])
 }
 
-use rand::{Rng, rngs::OsRng};
+use rand::Rng;
 use sapling_crypto::{
     PaymentAddress, note_encryption::PreparedIncomingViewingKey, zip32::ExtendedSpendingKey,
 };
@@ -46,9 +46,8 @@ use sapling_crypto::{
 /// Any old OS randomness
 #[must_use]
 pub fn random_txid() -> zcash_primitives::transaction::TxId {
-    let mut rng = OsRng;
     let mut seed = [0u8; 32];
-    rng.fill(&mut seed);
+    crate::utils::system_rng().fill_bytes(&mut seed);
     zcash_primitives::transaction::TxId::from_bytes(seed)
 }
 /// Any old OS randomness
@@ -58,9 +57,8 @@ pub fn random_zaddr() -> (
     PreparedIncomingViewingKey,
     PaymentAddress,
 ) {
-    let mut rng = OsRng;
     let mut seed = [0u8; 32];
-    rng.fill(&mut seed);
+    crate::utils::system_rng().fill_bytes(&mut seed);
 
     zaddr_from_seed(seed)
 }
@@ -228,7 +226,7 @@ pub mod orchard_note {
         note::{RandomSeed, Rho},
         value::NoteValue,
     };
-    use rand::{Rng, rngs::OsRng};
+    use rand::Rng;
     use zip32::Scope;
 
     use crate::testutils::build_method;
@@ -275,12 +273,12 @@ pub mod orchard_note {
 
         /// selects a random recipient address for the orchard note
         pub fn randomize_recipient(&mut self) -> &mut Self {
-            let mut rng = OsRng;
+            let mut rng = crate::utils::system_rng();
 
             let sk = {
                 loop {
                     let mut bytes = [0; 32];
-                    rng.fill(&mut bytes);
+                    rng.fill_bytes(&mut bytes);
                     let sk = SpendingKey::from_bytes(bytes);
                     if sk.is_some().into() {
                         break sk.unwrap();
@@ -295,12 +293,12 @@ pub mod orchard_note {
 
         /// selects a random nullifier for the orchard note
         pub fn randomize_rho_and_rseed(&mut self) -> &mut Self {
-            let mut rng = OsRng;
+            let mut rng = crate::utils::system_rng();
 
             let rho = {
                 loop {
                     let mut bytes = [0u8; 32];
-                    rng.fill(&mut bytes);
+                    rng.fill_bytes(&mut bytes);
                     let rho = Rho::from_bytes(&bytes);
                     if rho.is_some().into() {
                         break rho.unwrap();
@@ -311,7 +309,7 @@ pub mod orchard_note {
             let random_seed = {
                 loop {
                     let mut bytes = [0; 32];
-                    rng.fill(&mut bytes);
+                    rng.fill_bytes(&mut bytes);
                     let random_seed = RandomSeed::from_bytes(bytes, &rho);
                     if random_seed.is_some().into() {
                         break random_seed.unwrap();
@@ -682,7 +680,7 @@ pub mod proposal {
 /// Mock for the migration transmission client.
 pub(crate) mod transmission {
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use zcash_protocol::consensus::BlockHeight;
 
@@ -690,12 +688,19 @@ pub(crate) mod transmission {
         PartTransmissionError, TransmissionClient, TransmissionReceipt, TransmissionRoute,
     };
 
-    /// The mock's stand-in mixnet tunnel endpoint, the address a chain-mock
-    /// session reports as its SOCKS5 route. Never dialed.
-    pub const MOCK_SOCKS5_ADDR: &str = "127.0.0.1:1";
+    /// The port of the mock's stand-in tunnel endpoint, reserved by no
+    /// service the tests run.
+    pub const MOCK_SOCKS5_PORT: u16 = 1;
 
-    /// The mock's stand-in Correspondent host.
-    pub const MOCK_CORRESPONDENT: &str = "mock.correspondent.indexer";
+    /// The mock's stand-in mixnet tunnel endpoint, the address a chain-mock
+    /// session reports as its SOCKS5 route and never dials.
+    pub const MOCK_SOCKS5_ADDR: std::net::SocketAddr = std::net::SocketAddr::new(
+        std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+        MOCK_SOCKS5_PORT,
+    );
+
+    /// The mock's stand-in Destination host.
+    pub const MOCK_DESTINATION: &str = "mock.destination.indexer";
 
     /// Records every submission. Fails with a transport error while `fail`
     /// is set (the raw transaction is then not consumed, mirroring the real
@@ -703,13 +708,15 @@ pub(crate) mod transmission {
     ///
     /// Each submission is answered with a route record, mixnet by default,
     /// so a validation pass can assert over the wire every part traveled.
-    /// [`Self::clearnet`] builds one that answers clearnet instead, the
+    /// [`Self::nakednet`] builds one that answers nakednet instead, the
     /// leak a mixnet-only migration must never produce.
     pub struct MockTransmissionClient {
         /// Raw transactions received, with their expiry heights.
         pub submissions: Mutex<Vec<(Vec<u8>, BlockHeight)>>,
         /// When set, every submit fails.
         pub fail: AtomicBool,
+        /// Submits fail once this many were accepted. `usize::MAX` never.
+        pub fail_from: AtomicUsize,
         /// The route every receipt from this client names.
         route: TransmissionRoute,
     }
@@ -719,8 +726,9 @@ pub(crate) mod transmission {
             MockTransmissionClient {
                 submissions: Mutex::new(Vec::new()),
                 fail: AtomicBool::new(false),
+                fail_from: AtomicUsize::new(usize::MAX),
                 route: TransmissionRoute::Mixnet {
-                    correspondent: MOCK_CORRESPONDENT.to_string(),
+                    destination: MOCK_DESTINATION.to_string(),
                     via_socks5: MOCK_SOCKS5_ADDR.to_string(),
                 },
             }
@@ -728,12 +736,12 @@ pub(crate) mod transmission {
     }
 
     impl MockTransmissionClient {
-        /// A client whose receipts name a clearnet route, for the falsifier
+        /// A client whose receipts name a nakednet route, for the falsifier
         /// half of a mixnet-only assertion.
-        pub fn clearnet() -> Self {
+        pub fn nakednet() -> Self {
             MockTransmissionClient {
-                route: TransmissionRoute::Clearnet {
-                    endpoint: "mock.clearnet.indexer".to_string(),
+                route: TransmissionRoute::Nakednet {
+                    endpoint: "mock.nakednet.indexer".to_string(),
                 },
                 ..MockTransmissionClient::default()
             }
@@ -746,7 +754,10 @@ pub(crate) mod transmission {
             raw_tx: Vec<u8>,
             expiry_height: BlockHeight,
         ) -> Result<TransmissionReceipt, PartTransmissionError> {
-            if self.fail.load(Ordering::Relaxed) {
+            let accepted = self.submissions.lock().unwrap().len();
+            if self.fail.load(Ordering::Relaxed)
+                || accepted >= self.fail_from.load(Ordering::Relaxed)
+            {
                 return Err(PartTransmissionError::Transport(
                     "mock transport failure".to_string(),
                 ));

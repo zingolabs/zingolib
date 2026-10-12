@@ -1,31 +1,25 @@
 //! `LightClient` function `do_propose` generates a proposal to send to specified addresses.
 
 use zcash_address::ZcashAddress;
+use zcash_client_backend::data_api::error::Error as ProposalError;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_protocol::value::Zatoshis;
 
-use crate::ZENNIES_FOR_ZINGO_AMOUNT;
+use crate::data::proposal::OpReturnProposal;
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
 use crate::data::proposal::ZingoProposal;
 use crate::data::receivers::Receiver;
 use crate::data::receivers::transaction_request_from_receivers;
-use crate::get_zennies_for_zingo_address;
 use crate::lightclient::LightClient;
+use crate::lightclient::error::{LightClientError, SendError};
 use crate::wallet::error::ProposeSendError;
 use crate::wallet::error::ProposeShieldError;
+use crate::wallet::error::WalletError;
+use crate::wallet::propose::recipient_amount;
+use crate::wallet::transparent::OpReturnData;
 
 impl LightClient {
-    fn append_zingo_zenny_receiver(&self, receivers: &mut Vec<Receiver>) {
-        let zfz_address = get_zennies_for_zingo_address(self.chain_type());
-        let dev_donation_receiver = Receiver::new(
-            crate::utils::conversion::address_from_str(zfz_address).expect("Hard coded str"),
-            Zatoshis::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("Hard coded u64."),
-            None,
-        );
-        receivers.push(dev_donation_receiver);
-    }
-
     /// Creates and stores a proposal from a transaction request.
     ///
     /// Pauses the sync engine before the first wallet read and holds that
@@ -56,59 +50,31 @@ impl LightClient {
         result
     }
 
-    /// Creates and stores a proposal for sending all shielded funds from a specified account to a given `address`.
-    ///
-    /// The pause a proposal holds (see [`Self::propose_send`]) is
-    /// established before the send-all sizing: the [`Self::max_send_value`]
-    /// trial proposals are wallet reads the sizing must not race a running
-    /// engine for, and the value they compute must still hold when the real
-    /// proposal is created.
+    /// Creates and stores a proposal that sends all shielded funds of
+    /// `account_id` to `address`, under the same pause as
+    /// [`Self::propose_send`].
     pub async fn propose_send_all(
         &mut self,
         address: ZcashAddress,
-        zennies_for_zingo: bool,
         memo: Option<zcash_protocol::memo::MemoBytes>,
         account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let minted = self.hold_proposal_pause();
-        let result = self
-            .propose_send_all_paused(address, zennies_for_zingo, memo, account_id)
-            .await;
+        let result = {
+            let mut wallet = self.wallet().write().await;
+            wallet
+                .create_send_all_proposal(address, memo, account_id)
+                .inspect(|proposal| {
+                    wallet.store_proposal(ZingoProposal::Send {
+                        proposal: proposal.clone(),
+                        sending_account: account_id,
+                    });
+                })
+        };
         if result.is_err() && minted {
             self.release_proposal_pause(true);
         }
         result
-    }
-
-    /// The [`Self::propose_send_all`] body, from sizing through storing,
-    /// which its caller runs under the stored proposal's pause.
-    async fn propose_send_all_paused(
-        &mut self,
-        address: ZcashAddress,
-        zennies_for_zingo: bool,
-        memo: Option<zcash_protocol::memo::MemoBytes>,
-        account_id: zip32::AccountId,
-    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
-        let max_send_value = self
-            .max_send_value(address.clone(), zennies_for_zingo, account_id)
-            .await?;
-        if max_send_value == Zatoshis::ZERO {
-            return Err(ProposeSendError::ZeroValueSendAll);
-        }
-        let mut receivers = vec![Receiver::new(address, max_send_value, memo)];
-        if zennies_for_zingo {
-            self.append_zingo_zenny_receiver(&mut receivers);
-        }
-        let request = transaction_request_from_receivers(receivers)
-            .map_err(ProposeSendError::TransactionRequestFailed)?;
-        let mut wallet = self.wallet().write().await;
-        let proposal = wallet.create_send_proposal(request, account_id)?;
-        wallet.store_proposal(ZingoProposal::Send {
-            proposal: proposal.clone(),
-            sending_account: account_id,
-        });
-
-        Ok(proposal)
     }
 
     /// Creates and stores a proposal for shielding all transparent funds,
@@ -137,80 +103,146 @@ impl LightClient {
         result
     }
 
-    /// Returns the maximum value that can be sent from the given `account_id`.
+    /// Creates and stores a proposal to send `amount` to the transparent
+    /// address `recipient` with `data` in an OP_RETURN (null-data) output.
+    /// `recipient` is a P2PKH, P2SH, or TEX address. Holds the same
+    /// stored-proposal pause as [`Self::propose_send`].
     ///
-    /// This value is calculated from the shielded spendable balance minus any fees required to send those funds to
-    /// the given `address`. If the wallet is still syncing, the spendable balance may be less than the confirmed
-    /// balance - minus the fee - due to notes being above the minimum confirmation threshold or not being able to
-    /// construct a witness from the current state of the wallet's note commitment tree.
-    /// If `zennies_for_zingo` is set true, an additional payment of `1_000_000` ZAT to the `ZingoLabs` developer address
-    /// will be taken into account.
-    ///
-    /// # Error
-    ///
-    /// Will return an error if this method fails to calculate the total wallet balance or create the
-    /// proposal needed to calculate the fee
+    /// The ephemeral source address is derived, not reserved. The wallet
+    /// reserves it in [`Self::send_stored_proposal`], when the deshield
+    /// is built. A dropped proposal leaves no trace in the address book.
+    /// See [`OpReturnProposal`] for the two transactions the proposal
+    /// describes and the fees it reports.
+    pub async fn propose_send_with_op_return(
+        &mut self,
+        recipient: &str,
+        amount: Zatoshis,
+        data: OpReturnData,
+        account_id: zip32::AccountId,
+    ) -> Result<OpReturnProposal, LightClientError> {
+        let minted = self.hold_proposal_pause();
+        let result = self
+            .create_op_return_proposal(recipient, amount, data, account_id)
+            .await;
+        match &result {
+            Ok(proposal) => self
+                .wallet()
+                .write()
+                .await
+                .store_proposal(ZingoProposal::OpReturn(proposal.clone())),
+            Err(_) if minted => self.release_proposal_pause(true),
+            Err(_) => (),
+        }
+        result
+    }
+
+    /// Builds an [`OpReturnProposal`] without storing it. Derives the next
+    /// ephemeral source address, sizes the OP_RETURN send fee, and creates
+    /// the deshield proposal for `amount` plus that fee.
+    pub(crate) async fn create_op_return_proposal(
+        &mut self,
+        recipient: &str,
+        amount: Zatoshis,
+        data: OpReturnData,
+        account_id: zip32::AccountId,
+    ) -> Result<OpReturnProposal, LightClientError> {
+        use zcash_protocol::consensus::Parameters as _;
+
+        let mut wallet = self.wallet().write().await;
+        let chain_type = wallet.chain_type();
+
+        let recipient = match ZcashAddress::try_from_encoded(recipient)
+            .map_err(|e| SendError::OpReturn(WalletError::ParseError(e)))?
+            .convert_if_network::<zcash_keys::address::Address>(chain_type.network_type())
+        {
+            Ok(zcash_keys::address::Address::Transparent(address)) => address,
+            Ok(zcash_keys::address::Address::Tex(hash)) => {
+                zcash_transparent::address::TransparentAddress::PublicKeyHash(hash)
+            }
+            _ => {
+                return Err(
+                    SendError::OpReturn(WalletError::OpReturnRecipientNotTransparent).into(),
+                );
+            }
+        };
+
+        let (source_address_id, source_address) = wallet
+            .derive_refund_addresses(1, account_id)
+            .map_err(|e| SendError::OpReturn(WalletError::from(e)))?
+            .into_iter()
+            .next()
+            .expect("a request for one address yields one address");
+
+        let target_height = wallet
+            .get_migration_heights()
+            .map_err(SendError::OpReturn)?
+            .ok_or(SendError::OpReturn(WalletError::NoSyncData))?
+            .0;
+
+        let op_return_fee = wallet
+            .op_return_send_fee(&recipient, &data, target_height)
+            .map_err(SendError::OpReturn)?;
+
+        let deshield_amount = (amount + op_return_fee).ok_or_else(|| {
+            SendError::OpReturn(WalletError::TransparentBuild(
+                "deshield amount overflows the zatoshi range".to_string(),
+            ))
+        })?;
+
+        let source_zcash_address = ZcashAddress::try_from_encoded(
+            &pepper_sync::keys::transparent::encode_address(&chain_type, source_address),
+        )
+        .map_err(|e| SendError::OpReturn(WalletError::ParseError(e)))?;
+
+        let deshield_request = transaction_request_from_receivers(vec![Receiver::new(
+            source_zcash_address,
+            deshield_amount,
+            None,
+        )])
+        .map_err(|e| {
+            SendError::OpReturn(WalletError::TransparentBuild(format!(
+                "deshield request: {e}"
+            )))
+        })?;
+
+        let deshield = wallet
+            .create_send_proposal(deshield_request, account_id)
+            .map_err(SendError::ProposeSendError)?;
+
+        Ok(OpReturnProposal::new(
+            deshield,
+            account_id,
+            source_address_id,
+            source_address,
+            recipient,
+            amount,
+            data,
+            op_return_fee,
+        ))
+    }
+
+    /// Returns the maximum value that can be sent from `account_id` to
+    /// `address`: the shielded spendable balance less the fee. A wallet
+    /// that cannot cover the fee reports zero. A wallet that still needs
+    /// a scan returns the `ScanRequired` error. To send that amount, use
+    /// [`Self::propose_send_all`] rather than a `propose_send` request.
     pub async fn max_send_value(
         &self,
         address: ZcashAddress,
-        zennies_for_zingo: bool,
         account_id: zip32::AccountId,
     ) -> Result<Zatoshis, ProposeSendError> {
-        let mut wallet = self.wallet().write().await;
-        let confirmed_balance = wallet.shielded_spendable_balance(account_id, false)?;
-        let mut spendable_balance = confirmed_balance;
-
-        loop {
-            let mut receivers = vec![Receiver::new(address.clone(), spendable_balance, None)];
-            if zennies_for_zingo {
-                self.append_zingo_zenny_receiver(&mut receivers);
+        let proposal = self
+            .wallet()
+            .write()
+            .await
+            .create_send_all_proposal(address, None, account_id);
+        match proposal {
+            Ok(proposal) => Ok(recipient_amount(&proposal)),
+            Err(ProposeSendError::Proposal(ProposalError::InsufficientFunds { .. })) => {
+                Ok(Zatoshis::ZERO)
             }
-            let request = transaction_request_from_receivers(receivers)?;
-            let trial_proposal = wallet.create_send_proposal(request, account_id);
-
-            match trial_proposal {
-                Err(ProposeSendError::Proposal(
-                    zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                        available,
-                        required,
-                    },
-                )) => {
-                    if let Some(shortfall) = required - confirmed_balance {
-                        match spendable_balance - shortfall {
-                            Some(updated_spendable) => {
-                                spendable_balance = updated_spendable;
-                            }
-                            None => {
-                                return Err(ProposeSendError::Proposal(
-                                zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                                    available: confirmed_balance,
-                                    required,
-                                },
-                            ));
-                            }
-                        }
-                    } else {
-                        // bugged underflow case, required should always be larger than confirmed shielded balance to cause
-                        // insufficient funds error.
-                        // returns insufficient funds error with same values from original error for debugging
-                        return Err(ProposeSendError::Proposal(
-                            zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                                available,
-                                required,
-                            },
-                        ));
-                    }
-                }
-                Err(e) => {
-                    return Err(e);
-                }
-                Ok(_) => {
-                    break;
-                }
-            }
+            Err(e) => Err(e),
         }
-
-        Ok(spendable_balance)
     }
 }
 
@@ -319,7 +351,7 @@ mod send_all {
 
     /// Migrated from libtonode `send_all::ptfm_insufficient_funds`: a
     /// send-all whose only note cannot cover the fee of a cross-pool spend
-    /// reports the exact shortfall.
+    /// reports the fee plus one as the required amount.
     #[tokio::test]
     async fn ptfm_insufficient_funds() {
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
@@ -330,7 +362,6 @@ mod send_all {
         let proposal_error = client
             .propose_send_all(
                 external_address(PoolType::SAPLING),
-                false,
                 None,
                 zip32::AccountId::ZERO,
             )
@@ -344,15 +375,15 @@ mod send_all {
                 },
             )) => {
                 assert_eq!(a, Zatoshis::const_from_u64(10_000));
-                assert_eq!(r, Zatoshis::const_from_u64(30_000));
+                assert_eq!(r, Zatoshis::const_from_u64(20_001));
             }
             _ => panic!("expected an InsufficientFunds error"),
         }
     }
 
     /// Migrated from libtonode `send_all::ptfm_zero_value`: a send-all
-    /// whose only note is entirely consumed by the fee is rejected as a
-    /// zero-value send. The 20_000-zat note exactly covers the V6 fee
+    /// whose only note is entirely consumed by the fee is rejected as
+    /// insufficient funds. The 20_000-zat note exactly covers the V6 fee
     /// (orchard input bundle plus ironwood payment bundle, two padded
     /// actions each), leaving zero to send.
     #[tokio::test]
@@ -365,16 +396,23 @@ mod send_all {
         let proposal_error = client
             .propose_send_all(
                 external_address(PoolType::ORCHARD),
-                false,
                 None,
                 zip32::AccountId::ZERO,
             )
             .await;
 
-        assert!(matches!(
-            proposal_error,
-            Err(ProposeSendError::ZeroValueSendAll)
-        ));
+        match proposal_error {
+            Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                    available: a,
+                    required: r,
+                },
+            )) => {
+                assert_eq!(a, Zatoshis::const_from_u64(20_000));
+                assert_eq!(r, Zatoshis::const_from_u64(20_001));
+            }
+            _ => panic!("expected an InsufficientFunds error"),
+        }
     }
 
     /// Migrated from libtonode `send_all::ptfm_general`: a send-all from a
@@ -405,7 +443,6 @@ mod send_all {
         let proposal = client
             .propose_send_all(
                 external_address(PoolType::SAPLING),
-                false,
                 None,
                 zip32::AccountId::ZERO,
             )
@@ -465,7 +502,7 @@ mod send_all {
         let mut client = LightClient::new_for_test(wallet).await;
 
         let proposal = client
-            .propose_send_all(destination, false, None, zip32::AccountId::ZERO)
+            .propose_send_all(destination, None, zip32::AccountId::ZERO)
             .await
             .unwrap();
 
@@ -481,84 +518,320 @@ mod send_all {
         assert_eq!(payment + fee, note_value);
     }
 
-    /// Gap-2 remediation from the protection audit (§ Gap remediation
-    /// plan): with Zennies for Zingo enabled, the proposal itself carries
-    /// the injected zenny payment. toggle_zennies_for_zingo pins the
-    /// max-send arithmetic. This pins the injection mechanism: the
-    /// request `propose_send_all` builds contains exactly one payment to
-    /// the Zennies for Zingo address at `ZENNIES_FOR_ZINGO_AMOUNT`,
-    /// alongside the send-all payment, and the step still balances.
-    #[tokio::test]
-    async fn send_all_with_zfz_injects_the_zennies_payment() {
-        let initial_funds = 2_000_000;
+    fn external_transparent_address() -> zcash_address::ZcashAddress {
+        let external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        address_from_str(&external_wallet.get_address(PoolType::Transparent)).unwrap()
+    }
 
-        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .orchard_note(initial_funds)
-            .build();
-        let zfz_address = crate::get_zennies_for_zingo_address(wallet.chain_type());
-        let mut client = LightClient::new_for_test(wallet).await;
+    #[tokio::test]
+    async fn send_all_to_transparent_recipient() {
+        let mut client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(100_000)
+                .orchard_note(50_000)
+                .build(),
+        )
+        .await;
 
         let proposal = client
-            .propose_send_all(
-                external_address(PoolType::ORCHARD),
-                true,
-                None,
-                zip32::AccountId::ZERO,
-            )
+            .propose_send_all(external_transparent_address(), None, zip32::AccountId::ZERO)
             .await
             .unwrap();
 
         assert_eq!(proposal.steps().len(), 1);
         let step = proposal.steps().first();
-        let zennies_payments: Vec<u64> = step
-            .transaction_request()
-            .payments()
-            .values()
-            .filter(|payment| payment.recipient_address().encode() == zfz_address)
-            .map(|payment| u64::from(payment.amount().expect("send-all payments carry amounts")))
-            .collect();
-        assert_eq!(
-            zennies_payments,
-            [crate::ZENNIES_FOR_ZINGO_AMOUNT],
-            "exactly one zenny payment, at the fixed donation amount"
-        );
-        assert_eq!(step.transaction_request().payments().len(), 2);
         let fee = u64::from(step.balance().fee_required());
         let payment: u64 = step
             .transaction_request()
             .payments()
             .values()
-            .map(|payment| u64::from(payment.amount().expect("send-all payments carry amounts")))
+            .map(|payment| u64::from(payment.amount().unwrap()))
             .sum();
-        assert_eq!(payment + fee, initial_funds);
+        assert_eq!(payment + fee, 150_000);
+        let change: u64 = step
+            .balance()
+            .proposed_change()
+            .iter()
+            .map(|change| u64::from(change.value()))
+            .sum();
+        assert_eq!(change, 0, "send-all leaves no non-dust value behind");
     }
 
-    /// Migrated from libtonode `send_all::toggle_zennies_for_zingo`: with
-    /// Zennies for Zingo enabled, the maximum sendable value deducts the
-    /// zenny amount and the fee for one ironwood note in, three outputs
-    /// out: the ironwood input bundle pads to two actions, and the payment,
-    /// zenny, and change outputs land in the ironwood bundle as three.
     #[tokio::test]
-    async fn toggle_zennies_for_zingo() {
-        let initial_funds = 2_000_000;
-        let zennies_magnitude = 1_000_000;
-        let expected_fee = 15_000;
+    async fn max_send_value_is_zero_for_an_empty_wallet() {
+        let client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+        )
+        .await;
 
-        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .ironwood_note(initial_funds)
-            .build();
-        let client = LightClient::new_for_test(wallet).await;
+        for address in [
+            external_transparent_address(),
+            external_address(PoolType::ORCHARD),
+        ] {
+            assert_eq!(
+                client
+                    .max_send_value(address, zip32::AccountId::ZERO)
+                    .await
+                    .unwrap(),
+                Zatoshis::ZERO
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn max_send_value_requires_a_scan_on_an_unsynced_wallet() {
+        let config = crate::config::ClientConfig::builder()
+            .set_wallet_config(crate::config::WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 419200,
+                wallet_settings: crate::testutils::default_test_wallet_settings(),
+            })
+            .build()
+            .unwrap();
+        let client = LightClient::new(config, true).await.unwrap();
+
+        assert!(matches!(
+            client
+                .max_send_value(external_transparent_address(), zip32::AccountId::ZERO)
+                .await,
+            Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::ScanRequired
+            ))
+        ));
+    }
+
+    #[tokio::test]
+    async fn max_send_value_is_zero_when_fee_consumes_everything() {
+        let client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(20_000)
+                .build(),
+        )
+        .await;
 
         assert_eq!(
             client
-                .max_send_value(
-                    external_address(PoolType::IRONWOOD),
-                    true,
-                    zip32::AccountId::ZERO
-                )
+                .max_send_value(external_address(PoolType::ORCHARD), zip32::AccountId::ZERO)
                 .await
                 .unwrap(),
-            Zatoshis::from_u64(initial_funds - zennies_magnitude - expected_fee).unwrap()
+            Zatoshis::ZERO
+        );
+    }
+
+    #[tokio::test]
+    async fn send_all_rejects_a_memo_to_a_transparent_recipient() {
+        let mut client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(100_000)
+                .build(),
+        )
+        .await;
+        let memo = zcash_protocol::memo::MemoBytes::from_bytes(b"memo").unwrap();
+
+        let proposal_error = client
+            .propose_send_all(
+                external_transparent_address(),
+                Some(memo),
+                zip32::AccountId::ZERO,
+            )
+            .await;
+        assert!(matches!(
+            proposal_error,
+            Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::Payment(
+                    zcash_client_backend::zip321::PaymentError::TransparentMemo
+                )
+            ))
+        ));
+    }
+
+    #[tokio::test]
+    async fn send_all_on_an_unsynced_wallet_requires_a_scan() {
+        let config = crate::config::ClientConfig::builder()
+            .set_wallet_config(crate::config::WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 419200,
+                wallet_settings: crate::testutils::default_test_wallet_settings(),
+            })
+            .build()
+            .unwrap();
+        let mut client = LightClient::new(config, true).await.unwrap();
+
+        let proposal_error = client
+            .propose_send_all(
+                external_address(PoolType::ORCHARD),
+                None,
+                zip32::AccountId::ZERO,
+            )
+            .await;
+        assert!(matches!(
+            proposal_error,
+            Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::ScanRequired
+            ))
+        ));
+    }
+
+    /// Returns a TEX-encoded taddr from an external wallet, as a
+    /// `ZcashAddress` ready for a payment.
+    fn external_tex_address() -> zcash_address::ZcashAddress {
+        use pepper_sync::keys::decode_address;
+        use zcash_client_backend::address::Address;
+        use zcash_transparent::address::TransparentAddress;
+
+        let external_wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
+        let taddr = external_wallet
+            .transparent_addresses()
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) =
+            decode_address(&external_wallet.chain_type(), &taddr).unwrap()
+        else {
+            panic!("a wallet-generated first taddr is p2pkh")
+        };
+        let tex_address = crate::testutils::interpret_taddr_as_tex_addr(
+            taddr_bytes,
+            &external_wallet.chain_type(),
+        );
+        zcash_address::ZcashAddress::try_from_encoded(&tex_address).unwrap()
+    }
+
+    /// Pins the zero-valued change note the send path always writes,
+    /// which the send-max sizing does not price. With two legacy Orchard
+    /// notes a post-NU6.3 orchard_v3 bundle costs spends + outputs rather
+    /// than max(spends, outputs), so that change output is worth one more
+    /// logical action, and the reported max must still send to a TEX
+    /// recipient.
+    #[tokio::test]
+    async fn max_send_value_to_tex_with_legacy_orchard_notes_is_sendable() {
+        let mut client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(100_000)
+                .orchard_note(50_000)
+                .build(),
+        )
+        .await;
+        let destination = external_tex_address();
+
+        let max = client
+            .max_send_value(destination.clone(), zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert!(
+            max > Zatoshis::ZERO,
+            "two legacy orchard notes must report a sendable max to a TEX address"
+        );
+
+        let request = zcash_client_backend::zip321::TransactionRequest::new(vec![
+            zcash_client_backend::zip321::Payment::without_memo(destination.clone(), max),
+        ])
+        .unwrap();
+        client
+            .propose_send(request, zip32::AccountId::ZERO)
+            .await
+            .expect("the reported max must actually propose");
+
+        let past_max = (max + Zatoshis::const_from_u64(1)).unwrap();
+        let past_request = zcash_client_backend::zip321::TransactionRequest::new(vec![
+            zcash_client_backend::zip321::Payment::without_memo(destination, past_max),
+        ])
+        .unwrap();
+        assert!(matches!(
+            client
+                .propose_send(past_request, zip32::AccountId::ZERO)
+                .await,
+            Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::InsufficientFunds { .. }
+            ))
+        ));
+    }
+
+    /// Pins the same unpriced change output against a shielded
+    /// destination, where the two legacy Orchard notes still make it cost
+    /// an extra action but the send carries no padded transparent leg.
+    #[tokio::test]
+    async fn max_send_value_to_shielded_with_legacy_orchard_notes_is_sendable() {
+        let mut client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .orchard_note(100_000)
+                .orchard_note(50_000)
+                .build(),
+        )
+        .await;
+        let destination = external_address(PoolType::ORCHARD);
+
+        let max = client
+            .max_send_value(destination.clone(), zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert!(
+            max > Zatoshis::ZERO,
+            "two legacy orchard notes must report a sendable max to a shielded address"
+        );
+
+        let request = zcash_client_backend::zip321::TransactionRequest::new(vec![
+            zcash_client_backend::zip321::Payment::without_memo(destination.clone(), max),
+        ])
+        .unwrap();
+        client
+            .propose_send(request, zip32::AccountId::ZERO)
+            .await
+            .expect("the reported max must actually propose");
+
+        let past_max = (max + Zatoshis::const_from_u64(1)).unwrap();
+        let past_request = zcash_client_backend::zip321::TransactionRequest::new(vec![
+            zcash_client_backend::zip321::Payment::without_memo(destination, past_max),
+        ])
+        .unwrap();
+        assert!(matches!(
+            client
+                .propose_send(past_request, zip32::AccountId::ZERO)
+                .await,
+            Err(ProposeSendError::Proposal(
+                zcash_client_backend::data_api::error::Error::InsufficientFunds { .. }
+            ))
+        ));
+    }
+
+    /// The selector refuses 80_000 from the Ironwood note alone.
+    #[tokio::test]
+    async fn send_all_to_tex_falls_back_when_the_selector_refuses_the_sized_amount() {
+        let mut client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .ironwood_note(100_000)
+                .sapling_note(15_000)
+                .build(),
+        )
+        .await;
+        let destination = external_tex_address();
+
+        let proposal = client
+            .propose_send_all(destination.clone(), None, zip32::AccountId::ZERO)
+            .await
+            .expect("the send-max proposal stands in for the refused request");
+        let fee: u64 = proposal
+            .steps()
+            .iter()
+            .map(|step| step.balance().fee_required().into_u64())
+            .sum();
+        assert_eq!(
+            crate::wallet::propose::recipient_amount(&proposal),
+            Zatoshis::const_from_u64(80_000)
+        );
+        assert_eq!(fee, 35_000);
+
+        assert_eq!(
+            client
+                .max_send_value(destination, zip32::AccountId::ZERO)
+                .await
+                .unwrap(),
+            Zatoshis::const_from_u64(80_000)
         );
     }
 }
@@ -1651,7 +1924,7 @@ mod sync_pause_contract {
         tokio::task::yield_now().await;
 
         assert_ne!(
-            SyncMode::from_atomic_u8(sync_mode).unwrap(),
+            SyncMode::from_atomic_u8(&sync_mode).unwrap(),
             SyncMode::Running,
             "quick_shield began its wallet reads while the engine ran"
         );
@@ -1660,12 +1933,11 @@ mod sync_pause_contract {
         call.await.unwrap();
     }
 
-    /// The send-all sizing (the `max_send_value` trial proposals) is
-    /// `propose_send_all`'s first wallet read and must already run under
-    /// a pause. Simulate the engine mid-batch by holding the wallet
-    /// write lock: the sizing blocks on that lock, so if the engine's mode
-    /// still reads `Running` while the call is in flight, the call began
-    /// its reads without pausing the engine first.
+    /// The send-all proposal is `propose_send_all`'s first wallet read
+    /// and must already run under a pause. Simulate the engine mid-batch
+    /// by holding the wallet write lock: the proposal blocks on that lock,
+    /// so if the engine's mode still reads `Running` while the call is in
+    /// flight, the call began its reads without pausing the engine first.
     #[tokio::test]
     async fn send_all_sizing_runs_under_pause() {
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
@@ -1679,7 +1951,7 @@ mod sync_pause_contract {
         let address = external_address(PoolType::ORCHARD);
         let call = tokio::spawn(async move {
             client
-                .propose_send_all(address, false, None, zip32::AccountId::ZERO)
+                .propose_send_all(address, None, zip32::AccountId::ZERO)
                 .await
         });
         // The current-thread runtime polls the spawned call until it
@@ -1687,7 +1959,7 @@ mod sync_pause_contract {
         tokio::task::yield_now().await;
 
         assert_ne!(
-            SyncMode::from_atomic_u8(sync_mode).unwrap(),
+            SyncMode::from_atomic_u8(&sync_mode).unwrap(),
             SyncMode::Running,
             "the send-all sizing began while the engine ran"
         );
@@ -1762,5 +2034,226 @@ mod sync_pause_contract {
             SyncMode::Paused,
             "a send that consumed nothing must release nothing"
         );
+    }
+}
+
+#[cfg(test)]
+mod op_return {
+    use pepper_sync::keys::transparent::TransparentScope;
+    use zcash_protocol::value::Zatoshis;
+
+    use crate::data::proposal::{ZingoProposal, total_payment_amount};
+    use crate::lightclient::LightClient;
+    use crate::lightclient::error::{LightClientError, SendError};
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::wallet::error::WalletError;
+    use crate::wallet::keys::unified::ReceiverSelection;
+    use crate::wallet::transparent::OpReturnData;
+
+    const ACCOUNT: zip32::AccountId = zip32::AccountId::ZERO;
+    const PAYLOAD: &[u8] = b"zingolib op_return payload";
+
+    async fn client() -> LightClient {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(1_000_000)
+            .build();
+        LightClient::new_for_test(wallet).await
+    }
+
+    fn data() -> OpReturnData {
+        OpReturnData::new(PAYLOAD.to_vec()).unwrap()
+    }
+
+    /// The proposal is stored as an OP_RETURN proposal. The deshield pays
+    /// the amount plus the OP_RETURN fee to the next Refund-scope address.
+    /// The total fee is the sum of both fees. The address is not reserved.
+    #[tokio::test]
+    async fn proposal_is_stored_and_reports_both_fees() {
+        let mut client = client().await;
+        let amount = Zatoshis::const_from_u64(100_000);
+
+        let proposal = client
+            .propose_send_with_op_return(zingo_test_vectors::EXT_TADDR, amount, data(), ACCOUNT)
+            .await
+            .unwrap();
+
+        assert_eq!(proposal.amount(), amount);
+        assert_eq!(proposal.data(), &data());
+        assert!(u64::from(proposal.op_return_fee()) >= 10_000);
+        assert_eq!(u64::from(proposal.op_return_fee()) % 5_000, 0);
+        assert_eq!(
+            total_payment_amount(proposal.deshield()).unwrap(),
+            (amount + proposal.op_return_fee()).unwrap(),
+            "the deshield pays the amount plus the OP_RETURN fee"
+        );
+        assert_eq!(
+            proposal.total_fee().unwrap(),
+            (proposal.deshield_fee().unwrap() + proposal.op_return_fee()).unwrap()
+        );
+
+        let mut wallet = client.wallet().write().await;
+        let stored = wallet.take_proposal().expect("proposal stored");
+        assert!(matches!(stored, ZingoProposal::OpReturn(_)));
+        let (next_id, next_address) = wallet.derive_refund_addresses(1, ACCOUNT).unwrap()[0];
+        assert_eq!(
+            proposal.source_address(),
+            &next_address,
+            "the deshield pays the next Refund-scope address"
+        );
+        assert!(
+            !wallet.transparent_addresses().contains_key(&next_id),
+            "proposing does not reserve the address"
+        );
+    }
+
+    /// Proposing twice derives the same source address. Neither call
+    /// reserves it.
+    #[tokio::test]
+    async fn proposing_does_not_reserve_the_source_address() {
+        let mut client = client().await;
+        let amount = Zatoshis::const_from_u64(100_000);
+
+        let first = client
+            .propose_send_with_op_return(zingo_test_vectors::EXT_TADDR, amount, data(), ACCOUNT)
+            .await
+            .unwrap();
+        let second = client
+            .propose_send_with_op_return(zingo_test_vectors::EXT_TADDR, amount, data(), ACCOUNT)
+            .await
+            .unwrap();
+
+        assert_eq!(first.source_address(), second.source_address());
+        let wallet = client.wallet().read().await;
+        assert!(
+            wallet
+                .transparent_addresses()
+                .keys()
+                .all(|id| id.scope() != TransparentScope::Refund),
+            "no Refund-scope address was reserved"
+        );
+    }
+
+    /// The network of the test wallet.
+    async fn network(client: &LightClient) -> zcash_protocol::consensus::NetworkType {
+        use zcash_protocol::consensus::Parameters as _;
+        client.wallet().read().await.chain_type().network_type()
+    }
+
+    /// A TEX recipient is accepted. The proposal pays the P2PKH hash it
+    /// wraps.
+    #[tokio::test]
+    async fn tex_recipient_is_accepted() {
+        use zcash_address::ToAddress as _;
+        use zcash_transparent::address::TransparentAddress;
+        let mut client = client().await;
+        let hash = [4u8; 20];
+        let tex = zcash_address::ZcashAddress::from_tex(network(&client).await, hash).encode();
+
+        let proposal = client
+            .propose_send_with_op_return(&tex, Zatoshis::const_from_u64(100_000), data(), ACCOUNT)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            proposal.recipient(),
+            &TransparentAddress::PublicKeyHash(hash)
+        );
+    }
+
+    /// A P2SH recipient is accepted.
+    #[tokio::test]
+    async fn p2sh_recipient_is_accepted() {
+        use zcash_address::ToAddress as _;
+        use zcash_transparent::address::TransparentAddress;
+        let mut client = client().await;
+        let hash = [5u8; 20];
+        let p2sh = zcash_address::ZcashAddress::from_transparent_p2sh(network(&client).await, hash)
+            .encode();
+
+        let proposal = client
+            .propose_send_with_op_return(&p2sh, Zatoshis::const_from_u64(100_000), data(), ACCOUNT)
+            .await
+            .unwrap();
+
+        assert_eq!(proposal.recipient(), &TransparentAddress::ScriptHash(hash));
+    }
+
+    /// A shielded recipient is refused. Nothing is stored.
+    #[tokio::test]
+    async fn shielded_recipient_is_refused() {
+        let mut client = client().await;
+        let unified = {
+            let mut wallet = client.wallet().write().await;
+            let (_, address) = wallet
+                .generate_unified_address(ReceiverSelection::orchard_only(), ACCOUNT)
+                .unwrap();
+            address.encode(&wallet.chain_type())
+        };
+
+        let result = client
+            .propose_send_with_op_return(
+                &unified,
+                Zatoshis::const_from_u64(100_000),
+                data(),
+                ACCOUNT,
+            )
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(LightClientError::SendError(SendError::OpReturn(
+                WalletError::OpReturnRecipientNotTransparent
+            )))
+        ));
+        assert!(client.wallet().write().await.take_proposal().is_none());
+    }
+
+    /// Insufficient shielded funds fail at the deshield proposal.
+    #[tokio::test]
+    async fn insufficient_funds_fail_at_the_deshield() {
+        let mut client = client().await;
+
+        let result = client
+            .propose_send_with_op_return(
+                zingo_test_vectors::EXT_TADDR,
+                Zatoshis::const_from_u64(5_000_000),
+                data(),
+                ACCOUNT,
+            )
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(LightClientError::SendError(SendError::ProposeSendError(_)))
+        ));
+    }
+
+    /// Offline calculation refuses an OP_RETURN proposal and keeps it
+    /// stored.
+    #[tokio::test]
+    async fn calculate_refuses_and_preserves_the_proposal() {
+        let mut client = client().await;
+        client
+            .propose_send_with_op_return(
+                zingo_test_vectors::EXT_TADDR,
+                Zatoshis::const_from_u64(100_000),
+                data(),
+                ACCOUNT,
+            )
+            .await
+            .unwrap();
+
+        let result = client.calculate_stored_proposal().await;
+
+        assert!(matches!(
+            result,
+            Err(LightClientError::SendError(
+                SendError::OpReturnNotCalculable
+            ))
+        ));
+        assert!(matches!(
+            client.wallet().write().await.take_proposal(),
+            Some(ZingoProposal::OpReturn(_))
+        ));
     }
 }

@@ -10,9 +10,9 @@ For local reproducible test runs:
 
 For Github CI workflow images:
  - run `makers compute-image-tag` to get the reproducible image tag
- - run `docker login` and fill in the credentials for DockerHub
- - run `docker push zingodevops/ci-build:<computed image tag>` to push to DockerHub
+ - run `docker login ghcr.io` with a GitHub token that holds write:packages
+ - run `docker push ghcr.io/zingolabs/ci-build:<computed image tag>` to publish it
  - update github workflow files to the new image tag
 
  NOTE: if `sudo` is necessary use `sudo` with all commands including login.
- for MAC M1...5 -> 'docker buildx build --platform=linux/amd64 -t zingodevops/ci-build:011 --load .'
+ for MAC M1...5 -> 'docker buildx build --platform=linux/amd64 -t ghcr.io/zingolabs/ci-build:<computed image tag> --load .'

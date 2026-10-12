@@ -67,7 +67,7 @@ assert_eq!(
 ```
 
 For a production producer in a Nym-touching context, see
-`zingolib::nym::socks5_transmit_stage`: a pure typed match that
+`zingolib::mixnet::socks5_transmit_stage`: a pure typed match that
 classifies every `Socks5TransmitError` variant into its stage with no
 substring inspection. For the consumer-visible payoff, see
 `LightClient::mixnet_death_detail`, which answers *why* the mixnet

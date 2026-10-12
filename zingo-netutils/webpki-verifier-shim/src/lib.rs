@@ -1,14 +1,14 @@
 //! The webpki-roots stand-in for `rustls-platform-verifier` (ADR 0021,
 //! zingolib#2531).
 //!
-//! The mobile mixnet shim cannot use the real crate: on Android it demands
-//! JVM-side initialization with an app `Context` before any TLS handshake,
-//! which requires hand-written JNI — `unsafe` the shim's ratified invariant
-//! forbids — plus a Kotlin component in every consuming app. This crate is
-//! substituted through the workspace `[patch.crates-io]` and verifies
-//! against the compiled-in Mozilla root bundle (`webpki-root-certs`)
-//! instead of the operating system's trust store, identically on every
-//! platform.
+//! This workspace does not use the real crate: ADR 0021 chose the
+//! compiled-in Mozilla root bundle (`webpki-root-certs`) over the
+//! operating system's trust store, so verification is byte-identical on
+//! every platform and the workspace stays free of hand-written `unsafe`.
+//! The choice originated in the Android JNI initialization that the
+//! since-relocated mobile shim could not perform (zingolib#2531; the shim
+//! now lives in zingo-mobile). This crate is substituted through the
+//! workspace `[patch.crates-io]`.
 //!
 //! API parity is deliberately minimal: the only consumer in this workspace's
 //! dependency tree is reqwest (`>=0.6, <0.8` requirement), which constructs

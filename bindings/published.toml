@@ -1,0 +1,41 @@
+# The published commits of the Binding Layer, oldest first. A pull request
+# appends one entry with its commit; the publish workflow, started by a
+# maintainer's `/publish` comment, writes the entry's digests and its
+# audited crates and regenerates bindings/CHANGELOG.md in one commit. Until
+# that commit the entry is incomplete, and the checks "Binding Layer
+# manifest" and "Binding Layer changelog" fail on it by design. The
+# manifest check passes only when the registry holds every named
+# platform's Prebuilt Bundle at the entry's digest. The registry keeps
+# every published bundle, so it mirrors this file. An entry never changes
+# after its merge. The workbench tool binding-manifest reads this file, and
+# binding-changelog takes the commits and the audited crates of
+# bindings/CHANGELOG.md from it.
+#
+# An entry names every platform that binding-manifest requires. The
+# required set lives in REQUIRED_PLATFORMS of
+# tools/workbench/src/binding_manifest.rs alone, and it names both
+# platforms (zingolib#2833, decision 6): a consumer ships both from one
+# commit, and an entry never changes after its merge, so an entry that
+# lacked one digest could never gain it. The publish workflow asks the
+# tool rather than naming a platform itself, and the tool refuses to push
+# anything when a required platform's build produced no bundle.
+#
+# [[entry]]
+# commit = "<the full zingolib commit>"
+# since = "<the commit the first entry's changelog section starts after; the first entry alone>"
+# android = "sha256:<the digest of ghcr.io/zingolabs/zingolib/binding-layer-android:<commit>>"
+# ios = "sha256:<the digest of ghcr.io/zingolabs/zingolib/binding-layer-ios:<commit>>"
+# audited = ["<package> (<directory>)", ...]
+#
+# The audited crates are the two Binding Layer crates and their direct
+# dependencies in this repository at the entry's commit, as binding-manifest
+# reads them from `cargo metadata` there, each as its package name and its
+# directory. The manifest check reads them again at the commit and rejects
+# an entry whose array differs.
+
+[[entry]]
+commit = "ba7336710419c9ac1e9362ac1b4e5b0073ff477e"
+since = "6d037df7a4f4f72f219fbadd8c6fe34d8c8ea97c"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:9c950b9c10ce62e85de894f73139d9770caa844705c01bfcde4154d2404a50de"
+ios = "sha256:045aa74c2bb591325969fcdbf6923bcd7c9b023665ea2c3cc8e2b2ffbacd1f41"

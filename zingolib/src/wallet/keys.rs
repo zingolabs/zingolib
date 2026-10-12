@@ -1,5 +1,7 @@
 //! [`crate::wallet::LightWallet`] methods associated with keys and address derivation.
 
+use std::collections::BTreeSet;
+
 use pepper_sync::{
     keys::{
         decode_address,
@@ -7,7 +9,7 @@ use pepper_sync::{
     },
     wallet::{KeyIdInterface, TransparentCoin},
 };
-use unified::{ReceiverSelection, UnifiedAddressId};
+use unified::{ReceiverSelection, UnifiedAddressId, UnifiedKeyStore};
 use zcash_keys::address::UnifiedAddress;
 use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::keys::NonHardenedChildIndex;
@@ -45,7 +47,39 @@ pub enum WalletAddressRef {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WalletKind {
+    Mnemonic,
+    SpendingKey,
+    ViewingKey {
+        transparent: bool,
+        sapling: bool,
+        orchard: bool,
+    },
+    NoKeys,
+}
+
 impl LightWallet {
+    pub fn kind(&self) -> Result<WalletKind, KeyError> {
+        if self.mnemonic_phrase().is_some() {
+            return Ok(WalletKind::Mnemonic);
+        }
+        let kind = match self
+            .unified_key_store
+            .get(&zip32::AccountId::ZERO)
+            .ok_or(KeyError::NoAccountKeys)?
+        {
+            UnifiedKeyStore::Spend(_) => WalletKind::SpendingKey,
+            UnifiedKeyStore::View(ufvk) => WalletKind::ViewingKey {
+                transparent: ufvk.p2pkh().is_some(),
+                sapling: ufvk.sapling().is_some(),
+                orchard: ufvk.orchard().is_some(),
+            },
+            UnifiedKeyStore::Empty => WalletKind::NoKeys,
+        };
+        Ok(kind)
+    }
+
     /// Returns a new unified address for the given `receivers` and `account_id`, adding this new unified address to
     /// the wallet.
     pub fn generate_unified_address(
@@ -125,10 +159,22 @@ impl LightWallet {
         Ok((address_id, external_address))
     }
 
-    /// Generates 'n' new transparent addresses of `refund` (ephemeral) scope for the given `account_id`.
-    /// The new addresses are added to the wallet and returned.
-    pub fn generate_refund_addresses(
-        &mut self,
+    /// Derives, without reserving, the next `n` refund-scope (ephemeral)
+    /// transparent addresses for the given `account_id`. Pure: the wallet
+    /// is not modified, so an abandoned proposal leaves no trace and its
+    /// indexes are reused. Reservation — insertion into the wallet's
+    /// address book — happens only when a transaction bearing the address
+    /// comes into existence (ADR 0010).
+    ///
+    /// Public so a caller can name the address a coming proposal will spend
+    /// through to a counterparty that wants it before the transaction exists.
+    /// A swap provider that reads the refund destination off the deposit's
+    /// origin is the case this serves. Every call answers with the same
+    /// indexes until an apply reserves them, so a quote the user walks away
+    /// from leaves the gap limit where it was. A proposal applied in between
+    /// claims those indexes, and the next call answers with the ones after.
+    pub fn derive_refund_addresses(
+        &self,
         n: usize,
         account_id: zip32::AccountId,
     ) -> Result<Vec<(TransparentAddressId, TransparentAddress)>, KeyError> {
@@ -148,7 +194,7 @@ impl LightWallet {
             })?
             .index() as usize;
 
-        let refund_addresses = (first_index..(first_index + n))
+        (first_index..(first_index + n))
             .map(|address_index| {
                 let address_id = TransparentAddressId::new(
                     account_id,
@@ -162,14 +208,25 @@ impl LightWallet {
                     .ok_or(KeyError::NoAccountKeys)?
                     .generate_transparent_address(address_id.address_index(), address_id.scope())?;
 
-                self.transparent_addresses.insert(
-                    address_id,
-                    transparent::encode_address(&self.chain_type, refund_address),
-                );
-
                 Ok((address_id, refund_address))
             })
-            .collect::<Result<Vec<(TransparentAddressId, TransparentAddress)>, KeyError>>()?;
+            .collect()
+    }
+
+    /// Generates 'n' new transparent addresses of `refund` (ephemeral) scope for the given `account_id`.
+    /// The new addresses are added to the wallet and returned.
+    pub fn generate_refund_addresses(
+        &mut self,
+        n: usize,
+        account_id: zip32::AccountId,
+    ) -> Result<Vec<(TransparentAddressId, TransparentAddress)>, KeyError> {
+        let refund_addresses = self.derive_refund_addresses(n, account_id)?;
+        for (address_id, refund_address) in &refund_addresses {
+            self.transparent_addresses.insert(
+                *address_id,
+                transparent::encode_address(&self.chain_type, *refund_address),
+            );
+        }
         self.save_required = true;
 
         Ok(refund_addresses)
@@ -287,7 +344,7 @@ impl LightWallet {
                                         address_index,
                                     })
                                     .and_then(|unified_address| {
-                                        if *unified_address == address {
+                                        if *unified_address == *address {
                                             Some(address_index)
                                         } else {
                                             None
@@ -329,7 +386,7 @@ impl LightWallet {
                                 address_index,
                             })
                             .and_then(|unified_address| {
-                                if *unified_address == address {
+                                if *unified_address == *address {
                                     Some(address_index)
                                 } else {
                                     None
@@ -457,6 +514,50 @@ impl LightWallet {
             .filter(|id| id.scope() == TransparentScope::Refund)
             .max_by_key(|id| id.address_index())
             .map(|id| id.address_index())
+    }
+
+    pub(crate) fn truncate_failed_refund_addresses(&mut self) {
+        let accounts: BTreeSet<zip32::AccountId> = self
+            .transparent_addresses()
+            .keys()
+            .filter(|id| id.scope() == TransparentScope::Refund)
+            .map(|id| id.account_id())
+            .collect();
+        for account_id in accounts {
+            self.truncate_failed_refund_addresses_for_account(account_id);
+        }
+    }
+
+    fn truncate_failed_refund_addresses_for_account(&mut self, account_id: zip32::AccountId) {
+        loop {
+            let Some((id, address)) = self
+                .transparent_addresses()
+                .iter()
+                .filter(|(id, _)| {
+                    id.scope() == TransparentScope::Refund && id.account_id() == account_id
+                })
+                .max_by_key(|(id, _)| id.address_index())
+                .map(|(id, address)| (*id, address.clone()))
+            else {
+                return;
+            };
+            let mut paid = false;
+            let mut live = false;
+            for transaction in self.wallet_transactions.values() {
+                if transaction
+                    .transparent_coins()
+                    .iter()
+                    .any(|coin| coin.address() == address)
+                {
+                    paid = true;
+                    live |= !transaction.status().is_failed();
+                }
+            }
+            if !paid || live {
+                return;
+            }
+            self.transparent_addresses_mut().remove(&id);
+        }
     }
 
     /// Removes any refund address in the wallet above the given index.
@@ -617,6 +718,58 @@ uregtest1n22mmna853578fakgx6z6adn24ey5r7wfye8ulhscqc9hvm0rf5czxjuz9te0zzc8j93y35
             transparent::encode_address(&network, new_taddress),
             "\
 tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
+        );
+    }
+
+    /// The property ADR 0010 bought by moving reservation to apply time, and
+    /// the one an external caller now depends on: the address it names to a
+    /// counterparty is the address the next proposal spends through, however
+    /// many times it asks in between.
+    #[test]
+    fn deriving_a_refund_address_answers_with_the_same_index_until_apply() {
+        let wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+
+        let first = wallet
+            .derive_refund_addresses(1, zip32::AccountId::ZERO)
+            .unwrap();
+        let again = wallet
+            .derive_refund_addresses(1, zip32::AccountId::ZERO)
+            .unwrap();
+
+        assert_eq!(first, again);
+        assert_eq!(
+            first[0].0,
+            TransparentAddressId::new(
+                zip32::AccountId::ZERO,
+                TransparentScope::Refund,
+                NonHardenedChildIndex::ZERO
+            )
+        );
+    }
+
+    /// Reserving is what moves the index on, so a caller that reserves before
+    /// naming an address to a counterparty names one the proposal will not
+    /// use. That was the bug this method was made public to retire.
+    #[test]
+    fn reserving_a_refund_address_moves_the_next_derivation_on() {
+        let mut wallet = regtest_wallet(seeds::HOSPITAL_MUSEUM_SEED);
+
+        let reserved = wallet
+            .generate_refund_addresses(1, zip32::AccountId::ZERO)
+            .unwrap();
+        let next = wallet
+            .derive_refund_addresses(1, zip32::AccountId::ZERO)
+            .unwrap();
+
+        assert_eq!(
+            reserved[0].0.address_index(),
+            NonHardenedChildIndex::ZERO,
+            "the first reservation takes index zero"
+        );
+        assert_eq!(
+            next[0].0.address_index(),
+            NonHardenedChildIndex::from_index(1).unwrap(),
+            "a reserved index is spent, so the next derivation moves past it"
         );
     }
 }

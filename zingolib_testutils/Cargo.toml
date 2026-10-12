@@ -30,9 +30,9 @@ zingo-netutils.workspace = true
 
 [features]
 # Compile zingolib's mixnet surface for consumers (zingo-mobile's
-# integration harness) that exercise it. The scenarios' clearnet consent no
+# integration harness) that exercise it. The scenarios' nakednet consent no
 # longer keys on this feature: it delegates to zingolib unconditionally
-# (`consent_to_clearnet_for_tests`), because feature unification can enable
+# (`consent_to_nakednet_for_tests`), because feature unification can enable
 # `zingolib/nym` from any workspace member — zingo-cli carries it as a
 # default feature (ADR 0026) — and a local cfg desyncs exactly then.
 nym = ["zingolib/nym"]

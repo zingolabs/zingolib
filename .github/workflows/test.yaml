@@ -6,23 +6,33 @@ on:
       nextest-flags:
         required: false
         type: string
+      # Names the suite in the job titles and in the archive artifact. Two
+      # calls of this workflow inside one run must pass different suites,
+      # or the second upload overwrites the first while its shards download.
+      suite:
+        required: false
+        type: string
+        default: normal
 
 env:
   NEXTEST-FLAGS: ${{ inputs.nextest-flags }}
   NEXTEST_VERSION: "0.9.132"
+  ARCHIVE: nextest-archive-${{ inputs.suite }}
 
 jobs:
-  compute-image-tag:
-    uses: ./.github/workflows/compute-image-tag.yaml
+  ensure-image:
+    uses: ./.github/workflows/ensure-image.yaml
 
   build-test-artifacts:
     name: Build test artifacts
-    needs: compute-image-tag
+    needs: ensure-image
     container:
-      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
+      image: ghcr.io/zingolabs/ci-build:${{ needs.ensure-image.outputs.image-tag }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings
     steps:
@@ -48,25 +58,27 @@ jobs:
         run: |
           cargo nextest archive --verbose \
             --workspace \
-            --archive-file nextest-archive-normal.tar.zst
+            --archive-file "${ARCHIVE}.tar.zst"
 
       - name: Upload archive
         uses: actions/upload-artifact@v7
         with:
-          name: nextest-archive-normal
-          path: nextest-archive-normal.tar.zst
+          name: ${{ env.ARCHIVE }}
+          path: ${{ env.ARCHIVE }}.tar.zst
           overwrite: true
 
   run-tests:
-    name: Run normal tests
+    name: Run ${{ inputs.suite }} tests
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    if: github.event.pull_request.draft == false
-    needs: [build-test-artifacts, compute-image-tag]
+    needs: [build-test-artifacts, ensure-image]
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:${{ needs.compute-image-tag.outputs.image-tag }}
+      image: ghcr.io/zingolabs/ci-build:${{ needs.ensure-image.outputs.image-tag }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
       options: --security-opt seccomp=unconfined
     strategy:
       fail-fast: false
@@ -87,15 +99,15 @@ jobs:
         with:
           tool: nextest@${{ env.NEXTEST_VERSION }}
 
-      - name: Download normal archive
+      - name: Download the ${{ inputs.suite }} archive
         uses: actions/download-artifact@v8
         with:
-          name: nextest-archive-normal
+          name: ${{ env.ARCHIVE }}
 
-      - name: Run normal tests
+      - name: Run the ${{ inputs.suite }} tests
         run: |
           cargo nextest run --verbose --profile ci --retries 0 \
-            --archive-file nextest-archive-normal.tar.zst \
+            --archive-file "${ARCHIVE}.tar.zst" \
             --workspace-remap ./ \
             --partition count:${{ matrix.partition }}/8 \
             ${{ env.NEXTEST-FLAGS }}

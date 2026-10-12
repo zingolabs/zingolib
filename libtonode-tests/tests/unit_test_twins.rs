@@ -890,8 +890,6 @@ TransactionSummary {
                     }
                 }
                 ProposeSendError::TransactionRequestFailed(_) => panic!(),
-                ProposeSendError::ZeroValueSendAll => panic!(),
-                ProposeSendError::BalanceError(_) => panic!(),
             },
             _ => panic!(),
         }

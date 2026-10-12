@@ -1,9 +1,8 @@
 //! Per-network migration constants, versioned so testnet and mainnet
 //! activations can carry different ratified values.
 
-use zcash_pool_migration::denomination::{MIGRATION_MAX_DENOMINATION_ZEC, RESIDUAL_MIGRATION_MIN};
+use zcash_pool_migration::denomination::{DENOM_CAP, MAX_RESIDUAL_VALUE};
 use zcash_pool_migration::scheduling::AnchorBucketInterval;
-use zcash_protocol::value::COIN;
 
 use crate::config::ChainType;
 
@@ -100,8 +99,8 @@ impl MigrationParams {
     /// the ZIP names `K_MAX` at
     /// <https://zips.z.cash/zip-0318#whalehandling> without fixing a value.
     pub fn provisional(_chain: ChainType) -> Self {
-        let denom_cap = MIGRATION_MAX_DENOMINATION_ZEC * COIN;
-        let max_residual_value = u64::from(RESIDUAL_MIGRATION_MIN);
+        let denom_cap = u64::from(DENOM_CAP);
+        let max_residual_value = u64::from(MAX_RESIDUAL_VALUE);
         MigrationParams {
             // Version 2: the preparation bound moved to the ZIP's 16-action
             // shape and the target-draw law moved to the canonical

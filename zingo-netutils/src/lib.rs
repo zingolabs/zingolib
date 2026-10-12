@@ -67,7 +67,7 @@ pub const NYM_EXIT_LINE_PREFIX: &str = "NYM_EXIT=";
 pub mod time;
 pub use error::*;
 pub use lightwallet_protocol;
-pub use tonic::{Status, Streaming};
+pub use tonic::{Status, Streaming, TimeoutExpired};
 
 #[cfg(feature = "globally-public-transparent")]
 mod globally_public;
@@ -82,9 +82,13 @@ mod mixnet_connect;
 // mixnet bootstrap here and zingolib's send escalation (ADR 0011).
 pub mod arm_race;
 
-// Deliberately ungated and public: the wallet side names an acquisition's
-// class at compile time even in builds where the nym transport is off.
-pub mod responsiveness;
+// Deliberately ungated: Exit Node identity and health are data, so gating
+// them would make the featureless build harder to reason about (ADR 0046).
+pub mod exit;
+
+pub mod conduit;
+
+pub mod provider;
 
 #[cfg(feature = "nym")]
 mod nym_proxy;
@@ -94,13 +98,48 @@ pub use nym_proxy::NymProxy;
 #[cfg(feature = "nym")]
 pub mod live_indexer_discovery;
 
+#[cfg(feature = "socks5-fetch")]
+pub mod socks5_fetch;
+
 #[cfg(feature = "socks5-transmit")]
 mod socks5_transmit;
 #[cfg(feature = "socks5-transmit")]
-pub use socks5_transmit::{
-    ProxyDialFailure, Socks5TransmitError, TunnelFailure, get_lightd_info_via_socks5,
-    send_transaction_via_socks5, transaction_known_via_socks5,
-};
+pub use socks5_transmit::{ProxyDialFailure, Socks5Indexer, Socks5TransmitError, TunnelFailure};
+
+#[cfg(feature = "socks5-transmit")]
+pub mod sentinel;
+
+/// The committed localhost certificate and key.
+#[cfg(any(test, feature = "testutils"))]
+pub mod test_tls {
+    /// The self-signed `localhost` certificate.
+    pub const LOCALHOST_CERT_PEM: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test-data/localhost.pem"
+    ));
+    /// Its private key.
+    pub const LOCALHOST_KEY_PEM: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test-data/localhost.key"
+    ));
+}
+
+/// The TCP half of a connection to an indexer, built here rather than left to
+/// tonic so that [`crate::time::INDEXER_CONNECT_TIMEOUT`] covers the TLS
+/// handshake as well.
+///
+/// tonic applies `Endpoint::connect_timeout` in one of two places. Through
+/// `connect` and `connect_lazy` it reaches only the TCP connector, so a path
+/// that accepts the connection and then goes silent stalls the handshake with
+/// no bound at all. Through `connect_with_connector` it wraps the whole
+/// connector, TLS included. This one is configured the way tonic's own would be
+/// for these endpoints.
+fn indexer_connector() -> hyper_util::client::legacy::connect::HttpConnector {
+    let mut http = hyper_util::client::legacy::connect::HttpConnector::new();
+    http.enforce_http(false);
+    http.set_nodelay(true);
+    http
+}
 
 fn client_tls_config() -> ClientTlsConfig {
     // The config built here is consumed by rustls at connect time; make
@@ -302,13 +341,14 @@ impl GrpcIndexer {
             .ok_or(GetClientError::InvalidAuthority)?
             .clone();
 
-        let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
+        let endpoint = Endpoint::from_shared(uri.to_string())?
+            .connect_timeout(crate::time::INDEXER_CONNECT_TIMEOUT);
         let endpoint = if scheme == "https" {
             endpoint.tls_config(client_tls_config())?
         } else {
             endpoint
         };
-        let channel = endpoint.connect().await?;
+        let channel = endpoint.connect_with_connector(indexer_connector()).await?;
         let clear_net_client = CompactTxStreamerClient::new(channel);
 
         Ok(Self {
@@ -333,13 +373,14 @@ impl GrpcIndexer {
             .ok_or(GetClientError::InvalidAuthority)?
             .clone();
 
-        let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
+        let endpoint = Endpoint::from_shared(uri.to_string())?
+            .connect_timeout(crate::time::INDEXER_CONNECT_TIMEOUT);
         let endpoint = if scheme == "https" {
             endpoint.tls_config(client_tls_config())?
         } else {
             endpoint
         };
-        let channel = endpoint.connect_lazy();
+        let channel = endpoint.connect_with_connector_lazy(indexer_connector());
         let clear_net_client = CompactTxStreamerClient::new(channel);
 
         Ok(Self {
@@ -374,7 +415,7 @@ pub struct SendRejection {
 /// Interpret a lightwalletd `SendResponse`: `error_code` 0 means the
 /// transaction was accepted and `error_message` carries the txid (sometimes
 /// quote-wrapped, which is stripped). Any other code is a rejection carrying
-/// both fields. The single definition shared by the clearnet
+/// both fields. The single definition shared by the nakednet
 /// [`GrpcIndexer::send_transaction`] and the SOCKS5 transmit path.
 pub(crate) fn parse_send_response(
     error_code: i32,
@@ -475,7 +516,7 @@ impl Indexer for GrpcIndexer {
             .send_transaction(request)
             .await?
             .into_inner();
-        // The clearnet path keeps its historical error text: the bare server
+        // The nakednet path keeps its historical error text: the bare server
         // message, without the code prefix `SendRejection` renders.
         parse_send_response(sendresponse.error_code, sendresponse.error_message)
             .map_err(|rejection| tonic::Status::new(tonic::Code::Unknown, rejection.message))
@@ -962,6 +1003,46 @@ mod tests {
         );
 
         server_task.abort();
+    }
+
+    /// A path that goes silent while the channel is connecting must fail the
+    /// call, not hold it. This listener accepts the TCP connection and never
+    /// answers, which is what a dropped network looks like to a client that is
+    /// reconnecting: the TLS handshake waits for a reply that is not coming.
+    ///
+    /// Before `INDEXER_CONNECT_TIMEOUT` the call below never returned, whatever
+    /// deadline it carried, because a request's deadline only starts once the
+    /// channel has a connection to send it on.
+    #[tokio::test]
+    async fn a_silent_indexer_fails_the_call_instead_of_hanging() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr failed");
+
+        // Held open and never written to.
+        let silent = tokio::spawn(async move {
+            let mut held = Vec::new();
+            loop {
+                let (socket, _) = listener.accept().await.expect("accept failed");
+                held.push(socket);
+            }
+        });
+
+        let uri: http::Uri = format!("https://127.0.0.1:{}", addr.port())
+            .parse()
+            .expect("uri");
+        let mut indexer = GrpcIndexer::new_lazy(uri).expect("lazy indexer");
+
+        let outcome = timeout(
+            crate::time::INDEXER_CONNECT_TIMEOUT + Duration::from_secs(10),
+            indexer.get_latest_block(Duration::from_secs(1)),
+        )
+        .await;
+        silent.abort();
+
+        assert!(
+            matches!(outcome, Ok(Err(_))),
+            "expected the call to fail within the connect bound, got {outcome:?}"
+        );
     }
 
     #[tokio::test]

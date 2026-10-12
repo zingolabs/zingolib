@@ -54,7 +54,7 @@ impl TransmissionClient for GrpcTransmissionClient {
             })?;
         Ok(TransmissionReceipt {
             txid,
-            route: TransmissionRoute::Clearnet {
+            route: TransmissionRoute::Nakednet {
                 endpoint: host_of(&self.uri),
             },
         })

@@ -30,7 +30,7 @@ use zingolib::lightclient::migrate::{
     ImmediateMigrationPhase, ImmediateMigrationStatus, PartSendResult, SplitOutcome, SplitPhase,
     SplitStatus, SplitStep,
 };
-use zingolib::lightclient::{LightClient, TransmitProgressHandle};
+use zingolib::lightclient::{LightClient, SaveShutdown, TransmitProgressHandle};
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
@@ -75,7 +75,7 @@ struct ProgressPeek {
     drain: zingolib::lightclient::migrate::ImmediateMigrationProgressHandle,
     split: zingolib::lightclient::migrate::SplitProgressHandle,
     #[cfg(feature = "nym")]
-    mixnet: tokio::sync::watch::Receiver<zingolib::nym::MixnetStatus>,
+    mixnet: tokio::sync::watch::Receiver<zingolib::mixnet::MixnetStatus>,
 }
 
 impl ProgressPeek {
@@ -113,7 +113,7 @@ impl ProgressPeek {
 
 /// The result-is-a-txid-list rendering, kept in one place so every
 /// transmitting body shares it.
-async fn transmit_txids<T: ToString, E: std::fmt::Display>(
+async fn transmit_txids<T: ToString, E: std::error::Error + Send + Sync + 'static>(
     operation: impl Future<Output = Result<impl IntoIterator<Item = T>, E>>,
 ) -> Result<String, CommandError> {
     match operation.await {
@@ -136,28 +136,37 @@ pub enum CommandError {
     Network(#[from] NetworkCommandError),
     #[error("the `{0}` command runs only at the interactive prompt")]
     ReplOnly(String),
-    /// Transitional quarantine for commands whose failure prose is not
-    /// yet typed: the message is stored WITHOUT the "Error: " prefix
-    /// (the renderer adds it). Every construction site is a candidate
-    /// for a dedicated variant, and none may ever be string-matched.
-    #[error("{0}")]
-    NotYetTyped(String),
+    /// Transitional quarantine for commands whose failure is not yet
+    /// typed, carrying the failure itself so the dispatch renderer still
+    /// walks its whole source chain.
+    #[error(transparent)]
+    NotYetTyped(Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+
+/// Separates one link of a rendered cause chain from the next at the
+/// dispatch seam, which gives each link its own line.
+const DISPATCH_CHAIN_SEPARATOR: &str = "\ncaused by: ";
+
+/// Renders `error` and then every link of its source chain, one `caused
+/// by:` line per link, over the one sanctioned chain walk.
+pub(crate) fn render_error_chain(error: &(impl std::error::Error + 'static)) -> String {
+    zingo_net_diag::chain_texts(error).join(DISPATCH_CHAIN_SEPARATOR)
 }
 
 /// A usage failure carrying the standard "Try 'help `<command>`'" pointer,
 /// with the command name drawn from the caller instead of re-typed prose.
 fn usage(command: &str, detail: impl std::fmt::Display) -> CommandError {
-    CommandError::NotYetTyped(format!(
-        "{detail}\nTry 'help {command}' for correct usage and examples."
-    ))
+    CommandError::NotYetTyped(
+        format!("{detail}\nTry 'help {command}' for correct usage and examples.").into(),
+    )
 }
 
 /// The indent width of every JSON object the CLI prints.
 const JSON_INDENT: u16 = 2;
 
-/// Wraps a failure's rendering in the transitional [`CommandError::NotYetTyped`] variant.
-fn not_yet_typed(e: impl std::fmt::Display) -> CommandError {
-    CommandError::NotYetTyped(e.to_string())
+/// Wraps a failure in the transitional [`CommandError::NotYetTyped`] variant, source chain and all.
+fn not_yet_typed(e: impl std::error::Error + Send + Sync + 'static) -> CommandError {
+    CommandError::NotYetTyped(Box::new(e))
 }
 
 async fn addresses(lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -203,9 +212,7 @@ async fn change_server(
 ) -> Result<String, CommandError> {
     match lightclient.set_indexer_uri(uri.unwrap_or_default()).await {
         Ok(()) => Ok("server set".to_string()),
-        Err(e) => Err(CommandError::NotYetTyped(format!(
-            "failed to set server: {e}"
-        ))),
+        Err(e) => Err(not_yet_typed(e)),
     }
 }
 
@@ -297,13 +304,17 @@ async fn confirm(lightclient: &mut LightClient) -> Result<String, CommandError> 
 #[cfg(feature = "nym")]
 async fn current_price(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.update_current_price().await {
-        Ok(fetch) => Ok(format!(
-            "current price: {} USD (source: {}, rtt: {} ms, fetched over the mixnet via {})",
-            fetch.usd,
-            fetch.source.name(),
-            fetch.round_trip.as_millis(),
-            fetch.via_socks5
-        )),
+        Ok(fetch) => {
+            let zingolib::lightclient::PriceFetchRoute::Mixnet { via_socks5 } = &fetch.route;
+            let route = format!("over the mixnet via {via_socks5}");
+            Ok(format!(
+                "current price: {} USD (source: {}, rtt: {} ms, fetched {})",
+                fetch.usd,
+                fetch.source.name(),
+                fetch.round_trip.as_millis(),
+                route
+            ))
+        }
         Err(e) => Err(not_yet_typed(e)),
     }
 }
@@ -343,7 +354,7 @@ async fn export_ufvk(lightclient: &mut LightClient) -> Result<String, CommandErr
         Err(e) => return Err(not_yet_typed(e)),
     };
     Ok(object! {
-        "ufvk" => ufvk.encode(&lightclient.chain_type()),
+        "ufvk" => zingolib::wallet::keys::unified::encode_ufvk(&ufvk, &lightclient.chain_type()),
         "birthday" => lightclient.birthday()
     }
     .pretty(JSON_INDENT))
@@ -365,7 +376,7 @@ async fn height(lightclient: &mut LightClient) -> Result<String, CommandError> {
 }
 
 fn help(command: Option<&str>) -> Result<String, CommandError> {
-    Ok(format_help(crate::CommunicationMode::Online, command))
+    Ok(format_help(crate::Communications::Online, command))
 }
 
 async fn info(lightclient: &mut LightClient) -> Result<String, CommandError> {
@@ -386,10 +397,9 @@ async fn max_send_value(
     args: &[String],
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    let (address, zennies_for_zingo) =
-        utils::parse_max_send_value_args(&as_strs(args)).map_err(|e| usage(name, e))?;
+    let address = utils::parse_max_send_value_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     match lightclient
-        .max_send_value(address, zennies_for_zingo, zip32::AccountId::ZERO)
+        .max_send_value(address, zip32::AccountId::ZERO)
         .await
     {
         Ok(bal) => Ok(object! { "max_send_value" => bal.into_u64() }.pretty(JSON_INDENT)),
@@ -415,14 +425,41 @@ async fn messages(
 }
 
 async fn migrate(lightclient: &mut LightClient) -> Result<String, CommandError> {
-    Ok(run_migrate(lightclient).await?)
+    let sync_was_running = lightclient.sync_mode() != SyncMode::NotRunning;
+    let result = run_migrate(lightclient).await;
+    if sync_was_running {
+        relaunch_sync(lightclient).await;
+    }
+    Ok(result?)
 }
 
 async fn migration(
     sub: MigrationSubCommand,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    Ok(run_migration(sub, lightclient).await?)
+    let sync_was_running = matches!(
+        sub,
+        MigrationSubCommand::Continue
+            | MigrationSubCommand::Execute { .. }
+            | MigrationSubCommand::Auto
+    ) && lightclient.sync_mode() != SyncMode::NotRunning;
+    let result = run_migration(sub, lightclient).await;
+    if sync_was_running {
+        relaunch_sync(lightclient).await;
+    }
+    Ok(result?)
+}
+
+/// Relaunches the sync that a migration command's sync to the chain tip
+/// stopped.
+async fn relaunch_sync(lightclient: &mut LightClient) {
+    match lightclient.sync().await {
+        Ok(())
+        | Err(zingolib::lightclient::error::LightClientError::SyncModeError(
+            pepper_sync::error::SyncModeError::SyncAlreadyRunning,
+        )) => (),
+        Err(e) => eprintln!("Error: failed to relaunch sync. {}", render_error_chain(&e)),
+    }
 }
 
 /// The `new_address` argument: `o`, `z`, or both, naming the receivers the
@@ -463,11 +500,11 @@ async fn new_address(
 
 async fn taddress(
     lightclient: &mut LightClient,
-    enforce_gap: bool,
+    enforce_no_gap: bool,
 ) -> Result<String, CommandError> {
     let chain_type = lightclient.chain_type();
     let mut wallet = lightclient.wallet().write().await;
-    match wallet.generate_transparent_address(zip32::AccountId::ZERO, enforce_gap) {
+    match wallet.generate_transparent_address(zip32::AccountId::ZERO, enforce_no_gap) {
         Ok((id, transparent_address)) => Ok(json::object! {
             "account" => u32::from(id.account_id()),
             "address_index" => id.address_index().index(),
@@ -540,8 +577,9 @@ async fn quickshield(lightclient: &mut LightClient) -> Result<String, CommandErr
 
 async fn quit(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.shutdown_save_task().await {
-        Ok(()) => eprintln!("Save task shutdown successfully."),
-        Err(e) => eprintln!("Error: save failed. {e}"),
+        Ok(SaveShutdown::ShutDown) => eprintln!("Save task shutdown successfully."),
+        Ok(SaveShutdown::NotRunning) => eprintln!("No save task was running."),
+        Err(e) => eprintln!("Error: save failed. {}", render_error_chain(&e)),
     }
     Ok("Zingo CLI quit successfully.".to_string())
 }
@@ -550,7 +588,7 @@ async fn recovery_info(lightclient: &mut LightClient) -> Result<String, CommandE
     match lightclient.wallet().read().await.recovery_info() {
         Some(backup_info) => Ok(backup_info.to_string()),
         None => Err(CommandError::NotYetTyped(
-            "no mnemonic found. wallet loaded from key.".to_string(),
+            "no mnemonic found. wallet loaded from key.".into(),
         )),
     }
 }
@@ -603,13 +641,20 @@ async fn save(sub: SaveSubCommand, lightclient: &mut LightClient) -> Result<Stri
         }
         SaveSubCommand::Check => match lightclient.check_save_error().await {
             Ok(()) => Ok(String::new()),
-            Err(e) => Err(CommandError::NotYetTyped(format!(
-                "save failed. {e}\nRestarting save task..."
-            ))),
+            Err(e) => Err(CommandError::NotYetTyped(
+                format!(
+                    "save failed. {}\nRestarting save task...",
+                    render_error_chain(&e)
+                )
+                .into(),
+            )),
         },
         SaveSubCommand::Shutdown => match lightclient.shutdown_save_task().await {
-            Ok(()) => Ok("Save task shutdown successfully.".to_string()),
-            Err(e) => Err(CommandError::NotYetTyped(format!("save failed. {e}"))),
+            Ok(SaveShutdown::ShutDown) => Ok("Save task shutdown successfully.".to_string()),
+            Ok(SaveShutdown::NotRunning) => Ok("No save task was running.".to_string()),
+            Err(e) => Err(CommandError::NotYetTyped(
+                format!("save failed. {}", render_error_chain(&e)).into(),
+            )),
         },
     }
 }
@@ -639,10 +684,9 @@ async fn send_all(
     args: &[String],
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    let (address, zennies_for_zingo, memo) =
-        utils::parse_send_all_args(&as_strs(args)).map_err(|e| usage(name, e))?;
+    let (address, memo) = utils::parse_send_all_args(&as_strs(args)).map_err(|e| usage(name, e))?;
     match lightclient
-        .propose_send_all(address, zennies_for_zingo, memo, zip32::AccountId::ZERO)
+        .propose_send_all(address, memo, zip32::AccountId::ZERO)
         .await
     {
         Ok(proposal) => {
@@ -680,6 +724,11 @@ pub(crate) enum SettingsSubCommand {
         #[arg(value_name = "count")]
         count: NonZeroU32,
     },
+    #[command(about = "Set the gap limit for transparent address and fund discovery")]
+    TransparentGapLimit {
+        #[arg(value_name = "gap limit")]
+        gap_limit: u8,
+    },
 }
 
 /// The sync performance levels as a clap grammar, minting CLI value names
@@ -714,9 +763,15 @@ async fn settings(
             r"
 performance: {}
 min confirmations: {}
+transparent gap limit: {}
             ",
             wallet.wallet_settings.sync_config.performance_level,
             wallet.wallet_settings.min_confirmations,
+            wallet
+                .wallet_settings
+                .sync_config
+                .transparent_address_discovery
+                .gap_limit
         ));
     };
 
@@ -726,6 +781,13 @@ min confirmations: {}
         }
         SettingsSubCommand::MinConfirmations { count } => {
             wallet.wallet_settings.min_confirmations = count;
+        }
+        SettingsSubCommand::TransparentGapLimit { gap_limit } => {
+            wallet
+                .wallet_settings
+                .sync_config
+                .transparent_address_discovery
+                .gap_limit = gap_limit;
         }
     }
 
@@ -739,7 +801,7 @@ async fn shield(lightclient: &mut LightClient) -> Result<String, CommandError> {
         Ok(proposal) => {
             if proposal.steps().len() != 1 {
                 return Err(CommandError::NotYetTyped(
-                    "shielding transactions should not have multiple proposal steps".to_string(),
+                    "shielding transactions should not have multiple proposal steps".into(),
                 ));
             }
             let step = proposal.steps().first();
@@ -750,7 +812,7 @@ async fn shield(lightclient: &mut LightClient) -> Result<String, CommandError> {
                 .try_fold(Zatoshis::ZERO, |acc, c| acc + c.value())
             else {
                 return Err(CommandError::NotYetTyped(
-                    "shield amount outside valid range of zatoshis".to_string(),
+                    "shield amount outside valid range of zatoshis".into(),
                 ));
             };
             let fee = step.balance().fee_required();
@@ -816,10 +878,13 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
             Err(e) => Err(not_yet_typed(e)),
         },
         SyncSubCommand::Status => {
-            match pepper_sync::sync_status(&*lightclient.wallet().read().await).await {
-                Ok(status) => Ok(json::JsonValue::from(status).pretty(JSON_INDENT)),
-                Err(e) => Err(not_yet_typed(e)),
-            }
+            let status = match lightclient.latest_sync_status() {
+                Some(status) if lightclient.sync_mode() != SyncMode::NotRunning => status,
+                _ => pepper_sync::sync_status(&*lightclient.wallet().read().await)
+                    .await
+                    .map_err(not_yet_typed)?,
+            };
+            Ok(json::JsonValue::from(status).pretty(JSON_INDENT))
         }
         SyncSubCommand::Poll => match lightclient.poll_sync() {
             PollReport::NoHandle => Ok("Sync task has not been launched.".to_string()),
@@ -873,7 +938,7 @@ async fn transmit(
 
     let Some(txids) = nonempty::NonEmpty::from_vec(txids) else {
         return Err(CommandError::NotYetTyped(
-            "no calculated transactions to transmit".to_string(),
+            "no calculated transactions to transmit".into(),
         ));
     };
 
@@ -925,7 +990,7 @@ async fn wallet_kind(lightclient: &mut LightClient) -> Result<String, CommandErr
             .pretty(4),
             UnifiedKeyStore::View(ufvk) => object! {
                 "kind" => "Loaded from unified full viewing key",
-                "transparent" => ufvk.transparent().is_some(),
+                "transparent" => ufvk.p2pkh().is_some(),
                 "sapling" => ufvk.sapling().is_some(),
                 "orchard" => ufvk.orchard().is_some(),
             }
@@ -999,7 +1064,7 @@ fn parse_address(address: &str) -> Result<String, CommandError> {
                         "chain_name" => chain_name_string,
                         "address_kind" => "unified",
                         "receivers_available" => receivers_available,
-                        "only_orchard_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().copied(), None, None).expect("To construct UA").encode(&chain_name),
+                        "only_orchard_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().copied(), None, None, None, None).expect("To construct UA").encode(&chain_name),
                     }
                     .to_string()
                     } else {
@@ -1027,9 +1092,9 @@ fn parse_address(address: &str) -> Result<String, CommandError> {
 fn parse_viewkey(viewkey: &str) -> Result<String, CommandError> {
     Ok(json::stringify_pretty(
         match Ufvk::decode(viewkey) {
-            Ok((network, ufvk)) => {
+            Ok((network, _revision, ufvk)) => {
                 let mut pools_available = vec![];
-                for fvk in ufvk.items_as_parsed() {
+                for fvk in ufvk.items() {
                     match fvk {
                         zcash_address::unified::Fvk::Orchard(_) => {
                             pools_available.push("orchard");
@@ -1037,7 +1102,8 @@ fn parse_viewkey(viewkey: &str) -> Result<String, CommandError> {
                         zcash_address::unified::Fvk::Sapling(_) => {
                             pools_available.push("sapling");
                         }
-                        zcash_address::unified::Fvk::P2pkh(_) => {
+                        zcash_address::unified::Fvk::P2pkh(_)
+                        | zcash_address::unified::Fvk::P2sh(_) => {
                             pools_available.push("transparent");
                         }
                         zcash_address::unified::Fvk::Unknown { .. } => pools_available
@@ -1092,12 +1158,12 @@ async fn network(
 /// This consumer's platform hints for provisioning the `nym-proxy` binary:
 /// the explicit flag value and the executable-sibling bundled directory
 /// (where the `bundle-nym-proxy` workbench tool places the binary).
-/// [`zingolib::nym::provision`] owns the precedence rule and its tests
+/// [`zingolib::mixnet::provision`] owns the precedence rule and its tests
 /// (ADR 0024); this names only what zingolib cannot know by itself. Shared
 /// by the session driver call at startup and the `network on` command.
 #[cfg(feature = "nym")]
-pub(crate) fn spawn_hints(explicit: Option<&str>) -> zingolib::nym::provision::SpawnHints<'_> {
-    use zingolib::nym::provision::{self, SpawnHints};
+pub(crate) fn spawn_hints(explicit: Option<&str>) -> zingolib::mixnet::provision::SpawnHints<'_> {
+    use zingolib::mixnet::provision::{self, SpawnHints};
     SpawnHints {
         explicit,
         bundled_dir: provision::executable_sibling_dir(),
@@ -1108,7 +1174,7 @@ pub(crate) fn spawn_hints(explicit: Option<&str>) -> zingolib::nym::provision::S
 /// [`spawn_hints`], for the `network on` command's in-session enable.
 #[cfg(feature = "nym")]
 pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
-    zingolib::nym::provision::resolve_proxy_path(&spawn_hints(explicit))
+    zingolib::mixnet::provision::resolve_proxy_path(&spawn_hints(explicit))
 }
 
 /// Typed failure of the `network` command family. The family exists only
@@ -1124,21 +1190,23 @@ pub enum NetworkCommandError {
     Probe(#[from] zingolib::lightclient::error::LightClientError),
     /// The `network on` consent act could not resolve any indexer URI while
     /// switching the session to Online Mode; the session stays offline.
-    #[error("no indexer could be resolved for going online: {0}")]
-    ServerResolution(#[from] http::uri::InvalidUri),
+    /// Reachable only from the quarantined nakednet resolution.
+    #[cfg(feature = "nakednet-test-mode")]
+    #[error("no indexer could be resolved for going online")]
+    ServerResolution(#[from] crate::server_select_nakednet::ResolveServerError),
     /// The `network on` consent act selected an indexer, but the connection
     /// failed; the session stays offline. Reachable only from the
-    /// quarantined clearnet resolution.
-    #[cfg(feature = "clearnet-test-mode")]
-    #[error("failed to connect to '{uri}' while switching to Online Mode: {source}")]
+    /// quarantined nakednet resolution.
+    #[cfg(feature = "nakednet-test-mode")]
+    #[error("failed to connect to '{uri}' while switching to Online Mode")]
     GoOnline {
         uri: String,
         source: zingolib::netutils::GetClientError,
     },
-    #[error("failed to start the nym proxy at '{path}': {source}")]
+    #[error("failed to start the nym proxy at '{path}'")]
     ProxyStart {
         path: String,
-        source: zingolib::nym::MixnetProxyError,
+        source: zingolib::mixnet::acquire::TransportError,
     },
     /// The proxy spawned but its bootstrap reached a terminal failure while
     /// the command waited; re-enabling spawns a fresh proxy.
@@ -1178,7 +1246,7 @@ fn parse_probe_target(raw: &str) -> Result<http::Uri, String> {
         .parse::<http::Uri>()
         .map_err(|_| "not a valid indexer uri to probe".to_string())?;
     #[cfg(feature = "nym")]
-    if !zingolib::nym::probe::probe_eligible(&uri) {
+    if !zingolib::mixnet::probe::probe_eligible(&uri) {
         return Err("probe targets must be https on port 443".to_string());
     }
     Ok(uri)
@@ -1189,47 +1257,30 @@ use zingolib::netutils::time::PROBE_LEG_TIMEOUT;
 
 /// Render one mixnet liveness probe. Pure, pinned by unit tests.
 #[cfg(feature = "nym")]
-fn render_mixnet_probe(probe: &zingolib::nym::probe::MixnetProbe) -> String {
-    let leg = |leg: &zingolib::nym::probe::ProbeLeg| match &leg.outcome {
-        Ok(success) => format!(
-            "ok in {}ms: chain {}, height {}",
-            leg.millis, success.chain, success.height
-        ),
+fn render_mixnet_probe(probe: &zingolib::mixnet::probe::MixnetProbe) -> String {
+    let leg = |leg: &zingolib::mixnet::probe::ProbeLeg| match &leg.outcome {
+        Ok(success) => format!("ok in {}ms: height {}", leg.millis, success.height),
         Err(failure) => format!("FAILED after {}ms: {failure}", leg.millis),
     };
     format!("{}\n  mixnet:   {}", probe.host, leg(&probe.leg))
 }
 
-/// Renders the accumulated record for `network history` when the indexer diary is
-/// compiled in, reminding an opted-out session how recording starts.
-#[cfg(all(feature = "nym", feature = "nym-diary"))]
+/// Renders this session's accumulated per-indexer record for `network history`.
+#[cfg(feature = "nym")]
 fn nym_history_command(lightclient: &LightClient) -> String {
-    let handle = lightclient.indexer_history_handle();
-    let mut rendered = render_history(
-        &handle.load(),
+    render_history(
+        &lightclient.indexer_history_handle().load(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|elapsed| elapsed.as_secs())
             .unwrap_or(0),
-    );
-    if !handle.is_recording() {
-        rendered.push_str("\n(recording is off this session; start with --indexer-diary)");
-    }
-    rendered
+    )
 }
 
-/// The `network history` body when the indexer diary is not compiled in.
-#[cfg(all(feature = "nym", not(feature = "nym-diary")))]
-fn nym_history_command(_lightclient: &LightClient) -> String {
-    "This build has no indexer diary. Rebuild zingo-cli with `--features nym-diary`, then \
-     opt a session in with --indexer-diary to record per-indexer history."
-        .to_string()
-}
-
-/// Render the accumulated per-indexer history as per-host, per-route
+/// Render this session's per-indexer history as per-host, per-route
 /// aggregates, most-attempted hosts first. Pure over the loaded attempts and
 /// a caller-supplied "now" so tests pin the ages.
-#[cfg(all(feature = "nym", feature = "nym-diary"))]
+#[cfg(feature = "nym")]
 fn render_history(
     attempts: &[zingolib::lightclient::indexer_history::IndexerAttempt],
     now_unix_secs: u64,
@@ -1251,11 +1302,11 @@ fn render_history(
     let mut hosts: BTreeMap<String, BTreeMap<&'static str, RouteStats>> = BTreeMap::new();
     for attempt in attempts {
         let route = match attempt.route {
-            AttemptRoute::Clearnet => "clearnet",
+            AttemptRoute::Nakednet => "nakednet",
             AttemptRoute::Mixnet => "mixnet",
         };
         let stats = hosts
-            .entry(attempt.host.clone())
+            .entry(attempt.host.to_string())
             .or_default()
             .entry(route)
             .or_insert(RouteStats {
@@ -1307,21 +1358,22 @@ fn render_history(
 /// reusable by any other frontend.
 #[cfg(feature = "nym")]
 fn render_status(
-    mode: zingolib::nym::MixnetMode,
+    mode: zingolib::mixnet::Indicator,
     socks5_addr: Option<&str>,
     bootstrap_detail: Option<&str>,
 ) -> String {
-    use zingolib::nym::MixnetMode;
+    use zingolib::mixnet::Indicator;
 
     match mode {
-        MixnetMode::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled, \
-             and no consent to clearnet has been given: send and price-fetch refuse. Run \
-             `network on` to enable the mixnet, or `network off` to use clearnet."
+        Indicator::Unattached => "Mixnet Mode: unattached. The mixnet has not been enabled: \
+             price-fetch refuses, and send refuses under the mixnet transmit policy. Run \
+             `network on` to enable the mixnet."
             .to_string(),
-        MixnetMode::SwitchedOff => {
-            "Mixnet Mode: switched off (send and price-fetch use clearnet)".to_string()
+        Indicator::SwitchedOff => {
+            "Mixnet Mode: switched off (price-fetch refuses; send follows the transmit policy)"
+                .to_string()
         }
-        MixnetMode::Bootstrapping => match bootstrap_detail {
+        Indicator::Bootstrapping => match bootstrap_detail {
             Some(detail) => format!(
                 "Mixnet Mode: bootstrapping, {detail} (send and price-fetch are unavailable \
                  until ready)"
@@ -1329,34 +1381,48 @@ fn render_status(
             None => "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
                 .to_string(),
         },
-        MixnetMode::Ready => match socks5_addr {
+        Indicator::Ready => match socks5_addr {
             Some(addr) => format!("Mixnet Mode: ready (SOCKS5 {addr})"),
             None => "Mixnet Mode: ready".to_string(),
         },
-        MixnetMode::Died => "Mixnet Mode: died. The proxy exited unexpectedly. Send and \
-             price-fetch refuse and will not fall back to clearnet. Run `network on` to \
+        Indicator::PreviouslyProvenThisEpoch => match socks5_addr {
+            Some(addr) => format!(
+                "Mixnet Mode: previously proven this epoch (SOCKS5 {addr}; the exit's \
+                 proof is stale until a round trip of this session confirms it)"
+            ),
+            None => "Mixnet Mode: previously proven this epoch".to_string(),
+        },
+        Indicator::Died => "Mixnet Mode: died. The proxy exited unexpectedly. Send and \
+             price-fetch refuse and will not fall back to nakednet. Run `network on` to \
              restart the proxy."
             .to_string(),
     }
 }
 
-/// The complete `network status` output: the Mixnet Mode line followed by the
-/// IP-correlation disclaimer. The disclaimer always accompanies the status
-/// (ZIP-0318), because Mixnet Mode obfuscates only send and price-fetch while
-/// synchronization stays on the ordinary connector, so a bare "ready" must
-/// never be read as end-to-end IP protection. The canonical text lives in
-/// [`zingolib::nym::IP_CORRELATION_DISCLAIMER`] so every frontend shows the same
-/// wording.
+/// The IP-correlation disclaimer this frontend shows alongside every Mixnet
+/// Mode status.
+#[cfg(feature = "nym")]
+const IP_CORRELATION_DISCLAIMER: &str = "\
+IP-correlation risk: Mixnet Mode covers only transaction transmission and \
+price-fetch. Wallet synchronization always uses the ordinary connection, so \
+the sync indexer (and any network operator on that path) sees your IP \
+address and can correlate it with the transactions you transmit; reusing the \
+same IP across sessions can reveal your wallet's total balance to that \
+operator. To hide your IP during synchronization as well, route the wallet \
+through a system-level VPN or NymVPN. See ZIP-0318.";
+
+/// Render the Mixnet Mode status line followed by the IP-correlation
+/// disclaimer.
 #[cfg(feature = "nym")]
 fn render_status_with_disclaimer(
-    mode: zingolib::nym::MixnetMode,
+    mode: zingolib::mixnet::Indicator,
     socks5_addr: Option<&str>,
     bootstrap_detail: Option<&str>,
 ) -> String {
     format!(
         "{}\n\n{}",
         render_status(mode, socks5_addr, bootstrap_detail),
-        zingolib::nym::IP_CORRELATION_DISCLAIMER,
+        IP_CORRELATION_DISCLAIMER,
     )
 }
 
@@ -1364,14 +1430,18 @@ fn render_status_with_disclaimer(
 #[cfg(feature = "nym")]
 #[derive(Debug, PartialEq, Eq)]
 enum BootstrapOutcome {
-    Ready { exits: Vec<String> },
-    Failed { report: String },
+    Ready {
+        exits: Vec<zingolib::mixnet::ExitNodeId>,
+    },
+    Failed {
+        report: String,
+    },
 }
 
 /// Renders the bound Exit Nodes for the `network on` success report,
 /// shortening each identity for the terminal.
 #[cfg(feature = "nym")]
-pub(crate) fn render_exit_nodes(exits: &[String]) -> String {
+pub(crate) fn render_exit_nodes(exits: &[zingolib::mixnet::ExitNodeId]) -> String {
     fn shorten(identity: &str) -> String {
         if identity.chars().count() > 15 {
             let head: String = identity.chars().take(12).collect();
@@ -1380,7 +1450,7 @@ pub(crate) fn render_exit_nodes(exits: &[String]) -> String {
             identity.to_string()
         }
     }
-    let named: Vec<String> = exits.iter().map(|exit| shorten(exit)).collect();
+    let named: Vec<String> = exits.iter().map(|exit| shorten(exit.as_str())).collect();
     match named.len() {
         0 => String::new(),
         1 => format!(" Exit Node bound: {}.", named[0]),
@@ -1392,19 +1462,19 @@ pub(crate) fn render_exit_nodes(exits: &[String]) -> String {
 /// mode, so `network on` reports an outcome instead of a promise to poll.
 #[cfg(feature = "nym")]
 async fn await_bootstrap_outcome(
-    mut rx: tokio::sync::watch::Receiver<zingolib::nym::MixnetStatus>,
+    mut rx: tokio::sync::watch::Receiver<zingolib::mixnet::MixnetStatus>,
 ) -> BootstrapOutcome {
-    use zingolib::nym::MixnetMode;
+    use zingolib::mixnet::Indicator;
     let mut was_bootstrapping = false;
     loop {
         let status = rx.borrow_and_update().clone();
         match status.mode {
-            MixnetMode::Ready => {
+            Indicator::Ready | Indicator::PreviouslyProvenThisEpoch => {
                 return BootstrapOutcome::Ready {
                     exits: status.exits.clone(),
                 };
             }
-            MixnetMode::Died => {
+            Indicator::Died => {
                 let cause = status
                     .death
                     .as_ref()
@@ -1415,13 +1485,13 @@ async fn await_bootstrap_outcome(
                     report: format!("the mixnet transport died{cause}"),
                 };
             }
-            MixnetMode::Bootstrapping => was_bootstrapping = true,
-            MixnetMode::Unattached | MixnetMode::SwitchedOff if was_bootstrapping => {
+            Indicator::Bootstrapping => was_bootstrapping = true,
+            Indicator::Unattached | Indicator::SwitchedOff if was_bootstrapping => {
                 return BootstrapOutcome::Failed {
                     report: format!("the bootstrap ended in mode {}", status.mode),
                 };
             }
-            MixnetMode::Unattached | MixnetMode::SwitchedOff => {}
+            Indicator::Unattached | Indicator::SwitchedOff => {}
         }
         if rx.changed().await.is_err() {
             return BootstrapOutcome::Failed {
@@ -1439,22 +1509,27 @@ async fn network_command(
     lightclient: &mut LightClient,
 ) -> Result<String, NetworkCommandError> {
     match sub {
-        NetworkSubCommand::Status => Ok(render_status_with_disclaimer(
-            lightclient.mixnet_mode(),
-            lightclient.mixnet_socks5_addr().as_deref(),
-            lightclient.mixnet_bootstrap_detail().as_deref(),
-        )),
+        NetworkSubCommand::Status => {
+            let socks5 = lightclient
+                .mixnet_socks5_addr()
+                .map(|addr| addr.to_string());
+            Ok(render_status_with_disclaimer(
+                lightclient.read_mixnet_indicator(),
+                socks5.as_deref(),
+                lightclient.mixnet_bootstrap_detail().as_deref(),
+            ))
+        }
         NetworkSubCommand::On { path } => {
             // In an offline session, `network on` is itself the
             // Connectivity Consent act (ADR 0026, amending ADR 0025's
             // act list): the session switches to Online Mode for this
             // session only by bootstrapping the mixnet. It engages no
-            // clearnet indexer link; the quarantined clearnet resolution
-            // survives only under `clearnet-test-mode`.
-            #[cfg(feature = "clearnet-test-mode")]
+            // nakednet indexer link; the quarantined nakednet resolution
+            // survives only under `nakednet-test-mode`.
+            #[cfg(feature = "nakednet-test-mode")]
             let went_online = if lightclient.indexer_uri().is_none() {
                 let (server, _ranked) =
-                    crate::server_select_clearnet::resolve_ranked_server().await?;
+                    crate::server_select_nakednet::resolve_ranked_server().await?;
                 lightclient
                     .set_indexer_uri(server.clone())
                     .await
@@ -1466,41 +1541,33 @@ async fn network_command(
             } else {
                 None
             };
-            #[cfg(not(feature = "clearnet-test-mode"))]
+            #[cfg(not(feature = "nakednet-test-mode"))]
             let went_online: Option<http::Uri> = None;
             let path = resolve_proxy_path(path.as_deref());
-            // `network on` is an interactive act: the user sits at the prompt.
+            // `network on` waits out the standing client's proven birth: the
+            // command returns with a client whose exit carried a round trip.
             lightclient
-                .enable_mixnet::<zingolib::nym::Critical>(std::path::Path::new(&path))
+                .enable_mixnet(std::path::Path::new(&path))
                 .await
                 .map_err(|source| NetworkCommandError::ProxyStart {
                     path: path.clone(),
                     source,
                 })?;
-            // Block until the bootstrap resolves so the return is the
-            // outcome, not a promise to poll; the dispatch seam's progress
-            // heartbeat narrates the wait. The supervisor's own lifecycle
-            // timeout flips a stuck bootstrap to died, and the outer
-            // timeout is the backstop.
-            let outcome = tokio::time::timeout(
-                zingolib::netutils::time::NYM_LIFECYCLE_TIMEOUT,
-                await_bootstrap_outcome(lightclient.subscribe_mixnet_status()),
-            )
-            .await;
+            // The enable itself waited out the proven birth — the six-birth
+            // budget bounds the wait, the supervisor's lifecycle timeout
+            // bounds each bootstrap inside it, and the dispatch seam's
+            // progress heartbeat narrates it — so the session channel holds
+            // the settled outcome and reading it does not block.
+            let outcome = await_bootstrap_outcome(lightclient.subscribe_mixnet_status()).await;
             let readiness = match outcome {
-                Ok(BootstrapOutcome::Ready { exits }) => format!(
+                BootstrapOutcome::Ready { exits } => format!(
                     "Mixnet Mode ready; the nym proxy at '{path}' serves send and \
                      price-fetch over the mixnet.{}",
                     render_exit_nodes(&exits)
                 ),
-                Ok(BootstrapOutcome::Failed { report }) => {
+                BootstrapOutcome::Failed { report } => {
                     return Err(NetworkCommandError::Bootstrap { report });
                 }
-                Err(_elapsed) => format!(
-                    "Mixnet Mode still bootstrapping after {}s; run `network status` \
-                     to check readiness.",
-                    zingolib::netutils::time::NYM_LIFECYCLE_TIMEOUT.as_secs()
-                ),
             };
             Ok(match went_online {
                 Some(server) => format!(
@@ -1512,12 +1579,12 @@ async fn network_command(
         }
         NetworkSubCommand::Off => {
             // Zero-emission teardown: the session drops to the unconsented
-            // posture, never to clearnet transmit, and the stored standing
+            // posture, never to nakednet transmit, and the stored standing
             // consent is untouched (`--forget-online` is the erasure act).
             lightclient.go_offline().await;
             Ok(
                 "Network off: the nym proxy is stopped, the Indexer connection is dropped, \
-                 and in-flight sync is aborted. Nothing network-visible is emitted until \
+                 and in-flight sync is stopped. Nothing network-visible is emitted until \
                  `network on` re-consents for this session. The stored Connectivity \
                  Consent record is untouched: a standing consent, if recorded, attaches \
                  the next launch again (`--forget-online` erases it)."
@@ -1528,7 +1595,7 @@ async fn network_command(
             // Probing runs only over the mixnet route; the typed refusal
             // below names the transport state and its remedy.
             let probes = lightclient
-                .probe_correspondents(target, PROBE_LEG_TIMEOUT)
+                .probe_destinations(target, PROBE_LEG_TIMEOUT)
                 .await?;
             Ok(probes
                 .iter()
@@ -1546,19 +1613,19 @@ fn render_transmit_report(report: &zingolib::lightclient::send::TransmitReport) 
     use zingolib::lightclient::send::TransmitRoute;
     let rtt_ms = u64::try_from(report.round_trip.as_millis()).unwrap_or(u64::MAX);
     match &report.route {
-        TransmitRoute::Clearnet { indexer } => object! {
+        TransmitRoute::Nakednet { destination } => object! {
             "txid" => report.txid.to_string(),
             "over_mixnet" => false,
-            "indexer" => indexer.clone(),
+            "destination" => destination.clone(),
             "rtt_ms" => rtt_ms,
         },
         TransmitRoute::Mixnet {
-            correspondent,
+            destination,
             via_socks5,
         } => object! {
             "txid" => report.txid.to_string(),
             "over_mixnet" => true,
-            "correspondent" => correspondent.clone(),
+            "destination" => destination.clone(),
             "via_socks5" => via_socks5.clone(),
             "rtt_ms" => rtt_ms,
         },
@@ -1582,9 +1649,9 @@ fn render_migration_phase(phase: &MigrationPhase) -> String {
 /// the type, and prose is produced at exactly one rendering site per command.
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationCommandError {
-    #[error("sync failed: {0}")]
-    Sync(zingolib::lightclient::error::LightClientError),
-    #[error("{0}")]
+    #[error("sync failed")]
+    Sync(#[source] zingolib::lightclient::error::LightClientError),
+    #[error(transparent)]
     Client(#[from] zingolib::lightclient::error::LightClientError),
 }
 
@@ -1703,7 +1770,7 @@ async fn run_migration(
         }
         MigrationSubCommand::Continue => {
             lightclient
-                .sync_and_await()
+                .sync_to_tip_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
             match lightclient.continue_note_splitting().await? {
@@ -1732,7 +1799,7 @@ async fn run_migration(
         }
         MigrationSubCommand::Execute { spacing } => {
             lightclient
-                .sync_and_await()
+                .sync_to_tip_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
             let report = lightclient.execute_due_parts(spacing).await?;
@@ -1761,7 +1828,7 @@ async fn run_migration(
         }
         MigrationSubCommand::Auto => {
             lightclient
-                .sync_and_await()
+                .sync_to_tip_and_await()
                 .await
                 .map_err(MigrationCommandError::Sync)?;
             let txids = lightclient.auto_transmit_if_due().await?;
@@ -2106,7 +2173,7 @@ pub(crate) enum CliCommand {
 
             Price travels only over the mixnet (ADR 0011): the fetch runs while
             Mixnet Mode is ready and refuses in every other state, including
-            switched off — the clearnet consent covers sends, never price,
+            switched off — the nakednet consent covers sends, never price,
             because the price source is a third party outside the Zcash
             ecosystem. A build without the `nym` feature has no price fetch.
         "}
@@ -2175,12 +2242,10 @@ pub(crate) enum CliCommand {
         long_about = indoc! {r"
             Print the most the wallet can send to an address: shielded spendable
             balance less the fee. Mid-sync this can trail the confirmed balance.
-            `zennies_for_zingo` also budgets 1_000_000 ZAT to the ZingoLabs developer
-            address.
         "},
         override_usage = concat!(
             "max_send_value <address>\n",
-            "       max_send_value { \"address\": \"<address>\", \"zennies_for_zingo\": <true|false> }",
+            "       max_send_value { \"address\": \"<address>\" }",
         )
     )]
     MaxSendValue { args: Vec<String> },
@@ -2195,7 +2260,7 @@ pub(crate) enum CliCommand {
         about = "List memos for this wallet.",
         long_about = indoc! {r"
             List the wallet's memo-bearing value transfers. An address filters to that
-            correspondent, any other string filters to memos containing it, and no
+            destination, any other string filters to memos containing it, and no
             argument shows every memo. Received messages are matched on the memo's
             reply-to address.
         "}
@@ -2269,7 +2334,7 @@ pub(crate) enum CliCommand {
             (the mixnet is Nym; the name is implicit).
 
             With Mixnet Mode on, send and price-fetch route over the mixnet and
-            fail closed while it bootstraps, never falling back to clearnet.
+            fail closed while it bootstraps, never falling back to nakednet.
 
             WARNING: in an unconsented offline session, `network on` is itself
             the consent act: it switches the session to ONLINE MODE, for this
@@ -2283,10 +2348,10 @@ pub(crate) enum CliCommand {
             $ZINGO_NYM_PROXY, else one bundled beside this binary, else PATH.
             `off` disconnects every network capability of the session, keeping
             any stored standing consent; `network on` re-consents (ADR 0032).
-            `probe` runs GetLightdInfo over the mixnet route to establish an
+            `probe` runs GetLatestBlock over the mixnet route to establish an
             indexer's liveness; it requires the mixnet and touches no
-            clearnet endpoint. `history` shows per-indexer attempts across
-            sessions, and needs the nym-diary feature plus --indexer-diary.
+            nakednet endpoint. `history` shows the indexer attempts this
+            session recorded; nothing survives the session that made it.
         "}
     )]
     Network {
@@ -2459,8 +2524,7 @@ pub(crate) enum CliCommand {
         about = "Propose a transfer of all shielded ZEC to one address, for 'confirm' to transmit.",
         long_about = concat!(
             "Propose a transfer of every shielded ZEC to one address. Shows the fee,\n",
-            "then 'confirm' transmits it. `zennies_for_zingo` adds 1_000_000 ZAT to the\n",
-            "zingolabs developer address per transaction.\n",
+            "then 'confirm' transmits it.\n",
             "\n",
             "Skips transparent funds: shield those first, see `help shield`.\n",
             "\n",
@@ -2474,7 +2538,7 @@ pub(crate) enum CliCommand {
         ),
         override_usage = concat!(
             "send_all <address> \"<optional memo>\"\n",
-            "       send_all '{ \"address\": \"<address>\", \"memo\": \"<optional memo>\", \"zennies_for_zingo\": <true|false> }'",
+            "       send_all '{ \"address\": \"<address>\", \"memo\": \"<optional memo>\" }'",
         )
     )]
     SendAll { args: Vec<String> },
@@ -2496,8 +2560,9 @@ pub(crate) enum CliCommand {
             Show or set wallet settings. With no argument, prints them all. To set one,
             name it and give a value.
 
-            performance        low | medium | high | maximum
-            min_confirmations  1 or greater
+            performance            low | medium | high | maximum
+            min_confirmations      1 or greater
+            transparent_gap_limit  0-255
         "}
     )]
     Settings {
@@ -2703,7 +2768,12 @@ impl CliCommand {
     /// section of `help` lists the command.
     pub(crate) fn requires_wallet(&self) -> bool {
         match self {
-            CliCommand::Help { .. }
+            // These reach the indexer or the mixnet, never the wallet, so
+            // they are wallet-free even though they are not offline.
+            CliCommand::ChangeServer { .. }
+            | CliCommand::CurrentPrice
+            | CliCommand::Help { .. }
+            | CliCommand::Info
             | CliCommand::ParseAddress { .. }
             | CliCommand::ParseViewkey { .. }
             | CliCommand::Servers
@@ -2714,17 +2784,14 @@ impl CliCommand {
             | CliCommand::Balance
             | CliCommand::Birthday
             | CliCommand::Calculate
-            | CliCommand::ChangeServer { .. }
             | CliCommand::CheckAddress { .. }
             | CliCommand::Clear
             | CliCommand::Coins { .. }
             | CliCommand::Confirm
-            | CliCommand::CurrentPrice
             | CliCommand::Delete
             | CliCommand::Drain { .. }
             | CliCommand::ExportUfvk
             | CliCommand::Height
-            | CliCommand::Info
             | CliCommand::MaxSendValue { .. }
             | CliCommand::MemobytesToAddress
             | CliCommand::Messages { .. }
@@ -2847,17 +2914,17 @@ impl CliCommand {
     /// True when `mode` suppresses the command: it leaves `help` and is
     /// refused if typed, the network family surviving only where `network
     /// on` remains the consent act.
-    pub(crate) fn suppressed(&self, mode: crate::CommunicationMode) -> bool {
+    pub(crate) fn suppressed(&self, mode: crate::Communications) -> bool {
         match mode {
-            crate::CommunicationMode::Online => false,
-            crate::CommunicationMode::DeliberateOffline => {
+            crate::Communications::Online => false,
+            crate::Communications::DeliberateOffline => {
                 #[cfg(feature = "nym")]
                 if matches!(self, CliCommand::Network { .. }) {
                     return true;
                 }
                 self.transmits() || self.requires_indexer()
             }
-            crate::CommunicationMode::UnconsentedOffline => {
+            crate::Communications::UnconsentedOffline => {
                 #[cfg(feature = "nym")]
                 if matches!(self, CliCommand::Network { .. }) {
                     return false;
@@ -3012,7 +3079,7 @@ fn wallet_free_commands() -> Vec<CliCommand> {
 /// Renders the two-section help listing, or one command's long help, from
 /// [`CommandLine`]'s clap model, offering only what `mode` leaves
 /// unsuppressed so help reflects the live session posture.
-pub fn format_help(mode: crate::CommunicationMode, command: Option<&str>) -> String {
+pub fn format_help(mode: crate::Communications, command: Option<&str>) -> String {
     let mut model = COMMAND_MODEL.clone();
     let offered: Vec<String> = every_command()
         .into_iter()
@@ -3100,13 +3167,13 @@ pub(crate) async fn dispatch_parsed(
 /// resolver at the transmit seam as the sole refusal authority.
 #[cfg(feature = "nym")]
 async fn wait_out_bootstrap(lightclient: &LightClient) {
+    use zingolib::mixnet::Indicator;
     use zingolib::netutils::time::{TRANSMIT_HEARTBEAT_INTERVAL, TRANSMIT_READINESS_BUDGET};
-    use zingolib::nym::MixnetMode;
 
     let mut status_rx = lightclient.subscribe_mixnet_status();
     let started = tokio::time::Instant::now();
     let deadline = started + TRANSMIT_READINESS_BUDGET;
-    while status_rx.borrow_and_update().mode == MixnetMode::Bootstrapping {
+    while status_rx.borrow_and_update().mode == Indicator::Bootstrapping {
         tokio::select! {
             changed = status_rx.changed() => {
                 if changed.is_err() {

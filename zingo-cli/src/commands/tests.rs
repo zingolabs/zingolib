@@ -29,7 +29,7 @@ mod table_invariants {
     /// rather than any debug-only assertion.
     #[test]
     fn help_sections_agree_with_requires_wallet() {
-        let listing = format_help(crate::CommunicationMode::Online, None);
+        let listing = format_help(crate::Communications::Online, None);
         let wallet_header = listing
             .find("Wallet commands:")
             .expect("the listing carries a wallet section");
@@ -174,7 +174,7 @@ mod progress_heartbeat {
             "confirm",
             PROGRESS_HEARTBEAT_INTERVAL,
             "working",
-            || Some("correspondent zec.rocks: submitting".to_string()),
+            || Some("destination zec.rocks: submitting".to_string()),
             move |line| sink.lock().expect("line sink poisoned").push(line),
             tokio::time::sleep(PROGRESS_HEARTBEAT_INTERVAL * 3 + Duration::from_millis(500)),
         )
@@ -183,7 +183,7 @@ mod progress_heartbeat {
         let expected: Vec<String> = (1..=3)
             .map(|tick| {
                 format!(
-                    "confirm: correspondent zec.rocks: submitting ({}s elapsed)",
+                    "confirm: destination zec.rocks: submitting ({}s elapsed)",
                     PROGRESS_HEARTBEAT_INTERVAL.as_secs() * tick
                 )
             })
@@ -398,6 +398,12 @@ mod typed_argument_parsing {
             parse(&["settings", "min_confirmations", "3"]).expect("a count parses"),
             CliCommand::Settings {
                 sub: Some(SettingsSubCommand::MinConfirmations { .. })
+            }
+        ));
+        assert!(matches!(
+            parse(&["settings", "transparent_gap_limit", "20"]).expect("a gap limit parses"),
+            CliCommand::Settings {
+                sub: Some(SettingsSubCommand::TransparentGapLimit { gap_limit: 20, .. })
             }
         ));
         for junk in [
@@ -659,10 +665,10 @@ mod network_command_parsing {
     #[test]
     fn mixnet_probe_rendering_carries_outcome_timing_and_failure() {
         use zingo_net_diag::{NetOpFailure, NetOpStage};
-        use zingolib::nym::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
+        use zingolib::mixnet::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
 
         let live = MixnetProbe {
-            host: "zec.rocks".to_string(),
+            host: zingolib::destination::Host::of_host_str("zec.rocks"),
             leg: ProbeLeg {
                 outcome: Ok(ProbeSuccess {
                     chain: "main".to_string(),
@@ -673,11 +679,11 @@ mod network_command_parsing {
         };
         assert_eq!(
             render_mixnet_probe(&live),
-            "zec.rocks\n  mixnet:   ok in 180ms: chain main, height 3420400"
+            "zec.rocks\n  mixnet:   ok in 180ms: height 3420400"
         );
 
         let dead = MixnetProbe {
-            host: "carover0.xyz".to_string(),
+            host: zingolib::destination::Host::of_host_str("carover0.xyz"),
             leg: ProbeLeg {
                 outcome: Err(NetOpFailure {
                     stage: NetOpStage::SocksHandshake,
@@ -698,8 +704,8 @@ mod network_command_parsing {
 
     /// HYPOTHESIS: the history rendering aggregates per host and route with
     /// the most recent outcome and its age. Falsified if counts mix routes
-    /// or the last outcome reflects file order rather than timestamps.
-    #[cfg(all(feature = "nym", feature = "nym-diary"))]
+    /// or the last outcome reflects insertion order rather than timestamps.
+    #[cfg(feature = "nym")]
     #[test]
     fn history_aggregates_per_host_and_route() {
         use zingolib::lightclient::indexer_history::{
@@ -708,17 +714,18 @@ mod network_command_parsing {
 
         let attempt = |host: &str, route, unix_secs, outcome| IndexerAttempt {
             unix_secs,
-            host: host.to_string(),
+            host: zingolib::destination::Host::of_host_str(host),
             route,
             kind: AttemptKind::Send,
             millis: 10,
             outcome,
+            fault_domain: None,
         };
         let tunnel = Err(FailureKind::Unreachable);
         let attempts = vec![
-            attempt("zec.rocks", AttemptRoute::Mixnet, 1_000, tunnel),
             attempt("zec.rocks", AttemptRoute::Mixnet, 2_000, Ok(())),
-            attempt("zec.rocks", AttemptRoute::Clearnet, 1_500, Ok(())),
+            attempt("zec.rocks", AttemptRoute::Mixnet, 1_000, tunnel),
+            attempt("zec.rocks", AttemptRoute::Nakednet, 1_500, Ok(())),
             attempt("carover0.xyz", AttemptRoute::Mixnet, 1_800, tunnel),
         ];
 
@@ -726,7 +733,7 @@ mod network_command_parsing {
             render_history(&attempts, 2_060),
             "Indexer history (all sessions):\n  \
              carover0.xyz: mixnet 0/1 ok, last failed 4m ago\n  \
-             zec.rocks: clearnet 1/1 ok, last ok 9m ago; mixnet 1/2 ok, last ok 1m ago"
+             zec.rocks: mixnet 1/2 ok, last ok 1m ago; nakednet 1/1 ok, last ok 9m ago"
         );
         assert_eq!(render_history(&[], 0), "No indexer history recorded yet.");
     }
@@ -735,37 +742,37 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn status_lines_render_byte_identically_to_the_replaced_strings() {
-        use zingolib::nym::MixnetMode;
+        use zingolib::mixnet::Indicator;
 
         assert_eq!(
-            render_status(MixnetMode::Unattached, None, None),
-            "Mixnet Mode: unattached. The mixnet has not been enabled, and no consent to \
-             clearnet has been given: send and price-fetch refuse. Run `network on` to enable \
-             the mixnet, or `network off` to use clearnet.",
-            "absence is not consent: unattached names refusal, never clearnet"
+            render_status(Indicator::Unattached, None, None),
+            "Mixnet Mode: unattached. The mixnet has not been enabled: price-fetch refuses, \
+             and send refuses under the mixnet transmit policy. Run `network on` to enable \
+             the mixnet.",
+            "absence is not consent: unattached names refusal, never nakednet"
         );
         assert_eq!(
-            render_status(MixnetMode::SwitchedOff, None, None),
-            "Mixnet Mode: switched off (send and price-fetch use clearnet)"
+            render_status(Indicator::SwitchedOff, None, None),
+            "Mixnet Mode: switched off (price-fetch refuses; send follows the transmit policy)"
         );
         assert_eq!(
-            render_status(MixnetMode::Bootstrapping, None, None),
+            render_status(Indicator::Bootstrapping, None, None),
             "Mixnet Mode: bootstrapping (send and price-fetch are unavailable until ready)"
         );
         assert_eq!(
-            render_status(MixnetMode::Ready, Some("127.0.0.1:43210"), None),
+            render_status(Indicator::Ready, Some("127.0.0.1:43210"), None),
             "Mixnet Mode: ready (SOCKS5 127.0.0.1:43210)"
         );
         assert_eq!(
-            render_status(MixnetMode::Ready, None, None),
+            render_status(Indicator::Ready, None, None),
             "Mixnet Mode: ready",
             "ready with no address yet still renders (the route resolver, \
              not the renderer, refuses that state)"
         );
         assert_eq!(
-            render_status(MixnetMode::Died, None, None),
+            render_status(Indicator::Died, None, None),
             "Mixnet Mode: died. The proxy exited unexpectedly. Send and price-fetch \
-             refuse and will not fall back to clearnet. Run `network on` to restart the proxy.",
+             refuse and will not fall back to nakednet. Run `network on` to restart the proxy.",
             "a died proxy is reported distinctly from switched off, and tells the user how to \
              recover"
         );
@@ -778,11 +785,11 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn bootstrap_detail_reaches_the_status_line_only_while_bootstrapping() {
-        use zingolib::nym::MixnetMode;
+        use zingolib::mixnet::Indicator;
 
         assert_eq!(
             render_status(
-                MixnetMode::Bootstrapping,
+                Indicator::Bootstrapping,
                 None,
                 Some("attempt 2/10: 2 in flight, 0 failed")
             ),
@@ -790,7 +797,7 @@ mod network_command_parsing {
              (send and price-fetch are unavailable until ready)"
         );
         assert_eq!(
-            render_status(MixnetMode::Ready, Some("127.0.0.1:1"), Some("stale")),
+            render_status(Indicator::Ready, Some("127.0.0.1:1"), Some("stale")),
             "Mixnet Mode: ready (SOCKS5 127.0.0.1:1)",
             "a stale detail must not leak into the ready line"
         );
@@ -798,21 +805,21 @@ mod network_command_parsing {
 
     /// HYPOTHESIS: `network status` always carries the IP-correlation disclaimer in
     /// every mode, so a "ready" mixnet is never mistaken for end-to-end IP
-    /// protection while synchronization stays on clearnet (ZIP-0318). The mode
+    /// protection while synchronization stays on nakednet (ZIP-0318). The mode
     /// line is preserved verbatim as the first line. Falsified if the
     /// disclaimer is dropped in any mode, no longer leads with the mode line,
     /// or omits the sync/IP/indexer/balance risk it must name.
     #[cfg(feature = "nym")]
     #[test]
     fn status_always_carries_the_ip_correlation_disclaimer() {
-        use zingolib::nym::MixnetMode;
+        use zingolib::mixnet::Indicator;
 
         for mode in [
-            MixnetMode::Unattached,
-            MixnetMode::SwitchedOff,
-            MixnetMode::Bootstrapping,
-            MixnetMode::Ready,
-            MixnetMode::Died,
+            Indicator::Unattached,
+            Indicator::SwitchedOff,
+            Indicator::Bootstrapping,
+            Indicator::Ready,
+            Indicator::Died,
         ] {
             let addr = Some("127.0.0.1:43210");
             let out = render_status_with_disclaimer(mode, addr, None);
@@ -847,11 +854,11 @@ mod bootstrap_wait {
     //! driver is a sync frontend, so it is an audited crossing.
     #![allow(clippy::disallowed_methods)]
 
-    use zingolib::nym::{MixnetMode, MixnetStatus};
+    use zingolib::mixnet::{Indicator, MixnetStatus};
 
     use super::super::{BootstrapOutcome, await_bootstrap_outcome};
 
-    fn status(mode: MixnetMode) -> MixnetStatus {
+    fn status(mode: Indicator) -> MixnetStatus {
         MixnetStatus {
             mode,
             socks5_addr: None,
@@ -866,19 +873,21 @@ mod bootstrap_wait {
     /// unattached snapshot.
     #[tokio::test]
     async fn ready_resolves_the_wait_carrying_the_exits() {
-        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Unattached));
+        let (tx, rx) = tokio::sync::watch::channel(status(Indicator::Unattached));
         let waiter = tokio::spawn(await_bootstrap_outcome(rx));
         tokio::task::yield_now().await;
-        tx.send(status(MixnetMode::Bootstrapping))
+        tx.send(status(Indicator::Bootstrapping))
             .expect("the waiter holds the receiver");
         tokio::task::yield_now().await;
-        let mut ready = status(MixnetMode::Ready);
-        ready.exits = vec!["exit-alpha".to_string()];
+        let mut ready = status(Indicator::Ready);
+        let exit_alpha =
+            zingolib::mixnet::ExitNodeId::parse("exit-alpha").expect("the test identity parses");
+        ready.exits = vec![exit_alpha.clone()];
         tx.send(ready).expect("the waiter holds the receiver");
         assert_eq!(
             waiter.await.expect("the waiter must not panic"),
             BootstrapOutcome::Ready {
-                exits: vec!["exit-alpha".to_string()]
+                exits: vec![exit_alpha]
             }
         );
     }
@@ -888,14 +897,17 @@ mod bootstrap_wait {
     #[test]
     fn exit_nodes_render_shortened_by_count() {
         assert_eq!(super::super::render_exit_nodes(&[]), "");
+        let parsed = |identity: &str| {
+            zingolib::mixnet::ExitNodeId::parse(identity).expect("the test identity parses")
+        };
         assert_eq!(
-            super::super::render_exit_nodes(&["short-exit".to_string()]),
+            super::super::render_exit_nodes(&[parsed("short-exit")]),
             " Exit Node bound: short-exit."
         );
         assert_eq!(
             super::super::render_exit_nodes(&[
-                "AlphaBetaGammaDeltaEpsilon.ZetaEtaTheta".to_string(),
-                "short-exit".to_string(),
+                parsed("AlphaBetaGammaDeltaEpsilon.ZetaEtaTheta"),
+                parsed("short-exit"),
             ]),
             " Exit Nodes bound: AlphaBetaGam…, short-exit."
         );
@@ -905,10 +917,10 @@ mod bootstrap_wait {
     /// report rather than hanging until a timeout.
     #[tokio::test]
     async fn death_resolves_the_wait_as_failed() {
-        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let (tx, rx) = tokio::sync::watch::channel(status(Indicator::Bootstrapping));
         let waiter = tokio::spawn(await_bootstrap_outcome(rx));
         tokio::task::yield_now().await;
-        tx.send(status(MixnetMode::Died))
+        tx.send(status(Indicator::Died))
             .expect("the waiter holds the receiver");
         let outcome = waiter.await.expect("the waiter must not panic");
         assert_eq!(
@@ -924,10 +936,10 @@ mod bootstrap_wait {
     /// survive subscribing before the driver flips to bootstrapping.
     #[tokio::test]
     async fn unattached_fails_only_after_bootstrapping_began() {
-        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let (tx, rx) = tokio::sync::watch::channel(status(Indicator::Bootstrapping));
         let waiter = tokio::spawn(await_bootstrap_outcome(rx));
         tokio::task::yield_now().await;
-        tx.send(status(MixnetMode::Unattached))
+        tx.send(status(Indicator::Unattached))
             .expect("the waiter holds the receiver");
         let outcome = waiter.await.expect("the waiter must not panic");
         assert_eq!(
@@ -942,7 +954,7 @@ mod bootstrap_wait {
     /// waiting forever on a sender that will never speak again.
     #[tokio::test]
     async fn a_closed_channel_resolves_the_wait_as_failed() {
-        let (tx, rx) = tokio::sync::watch::channel(status(MixnetMode::Bootstrapping));
+        let (tx, rx) = tokio::sync::watch::channel(status(Indicator::Bootstrapping));
         let waiter = tokio::spawn(await_bootstrap_outcome(rx));
         tokio::task::yield_now().await;
         drop(tx);
@@ -970,7 +982,7 @@ mod offline_contract {
     //! - every connectivity-requiring command refuses offline with the one
     //!   typed refusal, [`zingolib::lightclient::error::LightClientError::Offline`],
     //!   carried through the command's `Err` channel (ADR 0031) — never a
-    //!   hang, a panic, or a silent clearnet fallback.
+    //!   hang, a panic, or a silent nakednet fallback.
     //!
     //! The `change_server` pin lives at the REPL dispatch, not here: see
     //! `offline_mode_refusal` and its tests in `crate::tests`.
@@ -991,7 +1003,9 @@ mod offline_contract {
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-    use super::super::{CommandError, RT, dispatch_parsed, parse_command_tokens};
+    use super::super::{
+        CommandError, RT, dispatch_parsed, parse_command_tokens, render_error_chain,
+    };
 
     /// The Display of `LightClientError::Offline`: the single refusal every
     /// connectivity-requiring command must surface, and the string no
@@ -1049,7 +1063,7 @@ mod offline_contract {
     fn assert_unblocked_offline(client: &mut LightClient, command: &str, args: &[&str]) -> String {
         let rendered = match exec(client, command, args) {
             Ok(output) => output,
-            Err(error) => error.to_string(),
+            Err(error) => render_error_chain(&error),
         };
         assert!(
             !rendered.contains(OFFLINE_REFUSAL),
@@ -1069,12 +1083,13 @@ mod offline_contract {
     }
 
     /// Asserts `command` refuses offline through its `Err` channel with the
-    /// typed Offline refusal.
+    /// typed Offline refusal, judged over the whole rendered chain.
     fn assert_refuses_offline_via_err(client: &mut LightClient, command: &str, args: &[&str]) {
         let error = exec(client, command, args).expect_err(command);
+        let rendered = render_error_chain(&error);
         assert!(
-            error.to_string().contains(OFFLINE_REFUSAL),
-            "`{command}` must refuse with the typed Offline error: {error}"
+            rendered.contains(OFFLINE_REFUSAL),
+            "`{command}` must refuse with the typed Offline error: {rendered}"
         );
     }
 
@@ -1371,7 +1386,7 @@ mod offline_contract {
 
         /// `network probe` runs only over the mixnet route: a session whose
         /// mixnet is unattached refuses with the mixnet refusal, never by
-        /// falling back to a clearnet probe.
+        /// falling back to a nakednet probe.
         #[cfg(feature = "nym")]
         #[test]
         fn network_probe_refuses_without_the_mixnet() {
@@ -1513,17 +1528,62 @@ mod pure_helpers {
     //! Runtime-free checks of the pure rendering vocabulary: every function
     //! here takes already-fetched values and returns its whole result.
 
+    use pepper_sync::error::SyncModeError;
+    use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::wallet::keys::WalletAddressRef;
 
-    use super::super::{JSON_INDENT, address_check_json, not_yet_typed, txids_json};
+    use super::super::{
+        JSON_INDENT, MigrationCommandError, address_check_json, not_yet_typed, render_error_chain,
+        txids_json,
+    };
 
     /// HYPOTHESIS: the wrapper stores the rendering verbatim, without an
     /// "Error: " prefix, so the edge renderer adds it exactly once.
     #[test]
     fn not_yet_typed_renders_the_message_unprefixed() {
         assert_eq!(
-            not_yet_typed("no such wallet file").to_string(),
+            not_yet_typed(std::io::Error::other("no such wallet file")).to_string(),
             "no such wallet file"
+        );
+    }
+
+    /// HYPOTHESIS: the wrapper carries the failure itself rather than its
+    /// outermost line, so the dispatch renderer walks the whole source
+    /// chain; a rendering that drops the innermost detail falsifies it.
+    #[test]
+    fn not_yet_typed_keeps_the_source_chain_renderable() {
+        let wrapped = not_yet_typed(LightClientError::SendError(SendError::NoStoredProposal));
+        assert_eq!(
+            render_error_chain(&wrapped),
+            "Send error.\ncaused by: No proposal found in the wallet."
+        );
+    }
+
+    /// HYPOTHESIS: the dispatch seam renders a two-link cause chain exactly
+    /// as the one sanctioned chain walk joined by the seam's separator does,
+    /// so the seam keeps no private copy of the walk. Falsified if the two
+    /// renderings differ by a single byte.
+    #[test]
+    fn the_dispatch_rendering_matches_the_sanctioned_walk() {
+        let wrapped = not_yet_typed(LightClientError::SendError(SendError::NoStoredProposal));
+
+        assert_eq!(
+            render_error_chain(&wrapped),
+            zingo_net_diag::chain_texts(&wrapped).join("\ncaused by: ")
+        );
+    }
+
+    /// HYPOTHESIS: a migration sync failure keeps the LightClient failure
+    /// as its source, so the chain walk reaches the innermost detail; a
+    /// rendering that stops at the wrapper line falsifies it.
+    #[test]
+    fn migration_sync_failure_keeps_its_source_chain() {
+        let refused = MigrationCommandError::Sync(LightClientError::SyncModeError(
+            SyncModeError::SyncAlreadyRunning,
+        ));
+        assert_eq!(
+            render_error_chain(&refused),
+            "sync failed\ncaused by: Sync mode error.\ncaused by: sync is already running"
         );
     }
 
@@ -1596,7 +1656,7 @@ mod finding_pins {
     /// exists to drift.
     #[test]
     fn the_standalone_section_derives_from_requires_wallet() {
-        let listing = format_help(crate::CommunicationMode::Online, None);
+        let listing = format_help(crate::Communications::Online, None);
         let wallet_header = listing
             .find("Wallet commands:")
             .expect("the listing carries a wallet section");
@@ -1629,7 +1689,7 @@ mod finding_pins {
     #[test]
     fn family_long_help_never_advertises_nested_help() {
         for &family in FAMILIES {
-            let help = format_help(crate::CommunicationMode::Online, Some(family));
+            let help = format_help(crate::Communications::Online, Some(family));
             assert!(
                 !help
                     .lines()
@@ -1662,7 +1722,7 @@ mod finding_pins {
     #[test]
     fn family_sub_commands_all_carry_abouts() {
         for &family in FAMILIES {
-            let help = format_help(crate::CommunicationMode::Online, Some(family));
+            let help = format_help(crate::Communications::Online, Some(family));
             let listing = help
                 .split("Commands:")
                 .nth(1)
@@ -1742,7 +1802,7 @@ mod finding_pins {
     fn network_arguments_meet_the_unknown_command_refusal() {
         use super::super::{CommandError, dispatch_parsed};
         let rendered = match parse_command_tokens(&tokens(&["network", "probe", "http://x.com"]))
-            .map_err(CommandError::NotYetTyped)
+            .map_err(|error| CommandError::NotYetTyped(error.into()))
             .and_then(|parsed| RT.block_on(dispatch_parsed(parsed, &mut offline_client())))
         {
             Ok(output) => output,
@@ -1756,10 +1816,10 @@ mod finding_pins {
 mod posture_surface {
     //! ADR 0032's rendered surface: `help` offers only what the live
     //! posture leaves unsuppressed, and `network off` is a zero-emission
-    //! teardown, never a clearnet fallback.
+    //! teardown, never a nakednet fallback.
     #![allow(clippy::disallowed_methods)]
 
-    use crate::CommunicationMode;
+    use crate::Communications;
 
     use super::super::format_help;
 
@@ -1768,7 +1828,7 @@ mod posture_surface {
     /// Indexerless surface stays listed.
     #[test]
     fn a_deliberate_offline_help_hides_the_network_requiring_surface() {
-        let listing = format_help(CommunicationMode::DeliberateOffline, None);
+        let listing = format_help(Communications::DeliberateOffline, None);
         for hidden in [
             "  confirm - ",
             "  transmit - ",
@@ -1794,7 +1854,7 @@ mod posture_surface {
     #[cfg(feature = "nym")]
     #[test]
     fn an_unconsented_help_keeps_the_network_family() {
-        let listing = format_help(CommunicationMode::UnconsentedOffline, None);
+        let listing = format_help(Communications::UnconsentedOffline, None);
         assert!(listing.contains("  network - "), "{listing}");
         assert!(!listing.contains("  confirm - "), "{listing}");
     }
@@ -1804,17 +1864,17 @@ mod posture_surface {
     #[test]
     fn a_suppressed_commands_long_help_is_not_found() {
         assert_eq!(
-            format_help(CommunicationMode::DeliberateOffline, Some("confirm")),
+            format_help(Communications::DeliberateOffline, Some("confirm")),
             "Command confirm not found"
         );
         assert!(
-            format_help(CommunicationMode::Online, Some("confirm")).contains("Usage:"),
+            format_help(Communications::Online, Some("confirm")).contains("Usage:"),
             "online help must still render the long help"
         );
     }
 
     /// HYPOTHESIS: `network off` reports the minted teardown, leaves the
-    /// client Indexerless, and never mentions a clearnet fallback.
+    /// client Indexerless, and never mentions a nakednet fallback.
     #[cfg(feature = "nym")]
     #[test]
     fn network_off_tears_down_and_keeps_the_stored_consent() {
@@ -1828,12 +1888,68 @@ mod posture_surface {
         ));
         let tokens: Vec<String> = ["network", "off"].map(String::from).into();
         let report = parse_command_tokens(&tokens)
-            .map_err(CommandError::NotYetTyped)
+            .map_err(|error| CommandError::NotYetTyped(error.into()))
             .and_then(|parsed| RT.block_on(dispatch_parsed(parsed, &mut client)))
             .expect("network off succeeds offline");
         assert!(report.contains("Network off"), "{report}");
         assert!(report.contains("`--forget-online` erases it"), "{report}");
-        assert!(!report.contains("clearnet"), "{report}");
+        assert!(!report.contains("nakednet"), "{report}");
         assert!(client.indexer_uri().is_none());
+    }
+}
+
+#[cfg(all(test, feature = "nym"))]
+mod attached_exit_reporting {
+    use zingolib::lightclient::LightClient;
+    use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+    use super::super::{BootstrapOutcome, await_bootstrap_outcome};
+
+    /// HYPOTHESIS: an attached endpoint that accepts TCP but carries no data
+    /// fails closed — the readiness gate is a round trip through the tunnel,
+    /// not a loopback dial, so a dead mixnet path never reports `Ready`.
+    /// Falsified if a listener that answers no gRPC reaches `Ready` (the
+    /// #2662 headline finding ran this red while the gate was a bare dial).
+    // Seam justification (ADR 0030): the block_on is the tokio::test
+    // harness's own crossing, not a new seam in the CLI.
+    #[tokio::test]
+    #[allow(clippy::disallowed_methods)]
+    async fn an_attached_endpoint_that_carries_no_data_fails_closed() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a loopback listener binds");
+        let addr = listener
+            .local_addr()
+            .expect("the bound listener has an address")
+            .to_string();
+        // A stand-in host that accepts the connection and answers nothing.
+        let host = tokio::spawn(async move {
+            loop {
+                drop(listener.accept().await);
+            }
+        });
+
+        let mut client = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+        )
+        .await;
+        let receiver = client.subscribe_mixnet_status();
+        client
+            .attach_mixnet(
+                &addr,
+                &[zingolib::mixnet::ExitNodeId::parse("host-bound-exit")
+                    .expect("the test identity parses")],
+            )
+            .await
+            .expect("a valid loopback address attaches");
+
+        let outcome = await_bootstrap_outcome(receiver).await;
+        host.abort();
+        match outcome {
+            BootstrapOutcome::Failed { .. } => {}
+            BootstrapOutcome::Ready { exits } => {
+                panic!("a data-dead endpoint must never reach Ready; got exits {exits:?}")
+            }
+        }
     }
 }
