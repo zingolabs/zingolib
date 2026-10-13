@@ -1,4 +1,4 @@
-# @zingolabs/bundle-pin
+# zingolib-bundle-pin
 
 The package that a consumer of the Binding Layer installs to hold its Bundle
 Pin and to fetch the pinned Prebuilt Bundles. zingolib publishes it to npm
@@ -8,7 +8,7 @@ the scripts and the bundle layout they read change in one pull request.
 ## Install
 
 ```sh
-yarn add --dev @zingolabs/bundle-pin
+yarn add --dev zingolib-bundle-pin
 ```
 
 The package depends on nothing beyond Node 20 and `tar`.

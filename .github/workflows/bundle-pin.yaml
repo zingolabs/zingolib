@@ -1,4 +1,4 @@
-# bindings/pin is the npm package @zingolabs/bundle-pin, which consumers of
+# bindings/pin is the npm package zingolib-bundle-pin, which consumers of
 # the Binding Layer install to hold their Bundle Pin and fetch the Prebuilt
 # Bundles. The package has no dependency, so the tests run on Node's own
 # runner with no install. The publish workflow publishes the package when
@@ -57,8 +57,8 @@ jobs:
             exit 0
           fi
           version="$(node --print "require('./package.json').version")"
-          if npm view "@zingolabs/bundle-pin@${version}" version >/dev/null 2>&1; then
-            echo "npm already holds @zingolabs/bundle-pin@${version}; raise the version in bindings/pin/package.json."
+          if npm view "zingolib-bundle-pin@${version}" version >/dev/null 2>&1; then
+            echo "npm already holds zingolib-bundle-pin@${version}; raise the version in bindings/pin/package.json."
             exit 1
           fi
-          echo "@zingolabs/bundle-pin@${version} is unpublished."
+          echo "zingolib-bundle-pin@${version} is unpublished."

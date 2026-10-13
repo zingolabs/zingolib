@@ -269,8 +269,8 @@ jobs:
         run: |
           npm install --global npm@latest
           version="$(node --print "require('./package.json').version")"
-          if npm view "@zingolabs/bundle-pin@${version}" version >/dev/null 2>&1; then
-            echo "npm holds @zingolabs/bundle-pin@${version}."
+          if npm view "zingolib-bundle-pin@${version}" version >/dev/null 2>&1; then
+            echo "npm holds zingolib-bundle-pin@${version}."
           else
             npm publish --access public --provenance
           fi

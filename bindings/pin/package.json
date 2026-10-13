@@ -1,5 +1,5 @@
 {
-  "name": "@zingolabs/bundle-pin",
+  "name": "zingolib-bundle-pin",
   "version": "0.1.0",
   "description": "Pins and fetches zingolib's published Prebuilt Bundles for a consumer of the Binding Layer.",
   "license": "MIT",
