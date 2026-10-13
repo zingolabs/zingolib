@@ -136,7 +136,8 @@ module-level blocks.
 ### Rust
 
 - Don't reach for `.clone()` to satisfy the borrow checker. Borrow or restructure first.
-- Use `?` for propagation. Avoid `.unwrap()`/`.expect()` outside tests and throwaway code.
+- Use `?` for propagation. `.unwrap()` is disallowed: never write one, and replace every one a change touches. Avoid `.expect()` outside tests and throwaway code.
+- Every `.unwrap()` or `.expect()` a change touches is considered, never carried along. Touching means adding, moving, rewriting, or keeping one on a line the diff alters, in test code as much as in shipped code. For each one, present the options for explicit `Err` handling and their trade-offs: propagate with `?` into a typed error, restructure so the failure is impossible by construction, match the failure and define the fallback, or keep an `.expect()` whose message states the invariant that makes it unreachable. Every `.expect()` MUST state its invariant as its argument, the fact that makes the failure unreachable, never a description of the failure. An `.expect()` with an explicit invariant is acceptable in test code. A touched 'expect' that stays does so by the reviewer's choice, with its invariant written where the reviewer sees it. This applies in implementation and in review alike.
 - Use tail expressions. No explicit `return` on the final line.
 - Don't annotate types the compiler infers (`let x: i32 = 5;`).
 - Prefer `if let` and combinators (`map`, `and_then`, `ok_or`, `unwrap_or_else`) over verbose `match` when clearer.
