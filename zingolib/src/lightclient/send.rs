@@ -1237,27 +1237,19 @@ mod built_transaction_shape {
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::lightclient::LightClient;
-    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
-    use crate::utils::conversion::address_from_str;
+    use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
     use crate::wallet::LightWallet;
-    use crate::wallet::keys::unified::ReceiverSelection;
-
-    /// An orchard address of a different wallet, so the send is external.
-    fn external_orchard_address() -> zcash_address::ZcashAddress {
-        let mut external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let (_, unified_address) = external_wallet
-            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
-            .unwrap();
-        address_from_str(&unified_address.encode(&external_wallet.chain_type())).unwrap()
-    }
 
     /// Builds (without transmitting) one send-all from the given wallet
     /// and returns the stored transaction's (target, expiry, branch id).
     async fn build_one_send(wallet: LightWallet) -> (u32, u32, BranchId) {
         let mut client = LightClient::new_for_test(wallet).await;
         let proposal = client
-            .propose_send_all(external_orchard_address(), None, zip32::AccountId::ZERO)
+            .propose_send_all(
+                synthetic_wallet::external_orchard_zcash_address(),
+                None,
+                zip32::AccountId::ZERO,
+            )
             .await
             .unwrap();
         let txids = client
@@ -1389,7 +1381,7 @@ mod built_transaction_shape {
         // the change, plus the ironwood payment pair) exceeds either note
         // alone, so both are gathered and 5_000 returns as sapling change.
         let request = TransactionRequest::new(vec![Payment::without_memo(
-            external_orchard_address(),
+            synthetic_wallet::external_orchard_zcash_address(),
             Zatoshis::const_from_u64(25_000),
         )])
         .unwrap();
@@ -1476,7 +1468,7 @@ mod built_transaction_shape {
         let mut client = LightClient::new_for_test(wallet).await;
 
         let request = TransactionRequest::new(vec![Payment::without_memo(
-            external_orchard_address(),
+            synthetic_wallet::external_orchard_zcash_address(),
             Zatoshis::const_from_u64(sent_value),
         )])
         .unwrap();
