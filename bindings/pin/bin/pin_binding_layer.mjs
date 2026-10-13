@@ -1,16 +1,10 @@
 #!/usr/bin/env node
-// Moves the Bundle Pin to one zingolib commit. It asks the registry for the
-// digest of each pinned platform's bundle and rewrites binding-layer.json,
-// for every platform or for none.
-//
-// Usage, from the consumer's root: pin-binding-layer <commit> [--platform <platform>]
-
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { failureMessage } from '../lib/bundle_messages.mjs';
 import { movePin, repository } from '../lib/bundle_pin.mjs';
 import { readPin, writePin } from '../lib/pin_file.mjs';
-import { resolveBundle } from '../lib/registry.mjs';
+import { resolveTag } from '../lib/registry.mjs';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -29,7 +23,7 @@ const outcome =
         current,
         positionals[0] ?? '',
         values.platform,
-        (platform, commit) => resolveBundle(repository(platform), commit),
+        (platform, commit) => resolveTag(repository(platform), commit),
       );
 if (outcome.kind !== 'moved') {
   process.stderr.write(`${failureMessage(outcome)}\n`);

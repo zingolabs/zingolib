@@ -1,5 +1,3 @@
-// The Bundle Pin's file: binding-layer.json.
-
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { parsePin, serializePin } from './bundle_pin.mjs';
 

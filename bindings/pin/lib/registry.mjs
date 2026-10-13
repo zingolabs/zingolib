@@ -1,6 +1,3 @@
-// The registry requests of the Bundle Pin scripts: a token, a manifest, and a
-// layer's content.
-
 import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
@@ -27,7 +24,7 @@ async function request(url, headers, tolerated) {
   return reply;
 }
 
-async function access(repository) {
+export async function access(repository) {
   const reply = await request(
     `https://${REGISTRY}/token?service=${REGISTRY}&scope=repository:${repository}:pull`,
     {},
@@ -37,16 +34,16 @@ async function access(repository) {
     return { kind: 'refused' };
   }
   const { token } = await reply.json();
-  return { kind: 'granted', headers: { Authorization: `Bearer ${token}` } };
+  return {
+    kind: 'granted',
+    repository,
+    headers: { Authorization: `Bearer ${token}` },
+  };
 }
 
-export async function resolveBundle(repository, tag) {
-  const granted = await access(repository);
-  if (granted.kind === 'refused') {
-    return granted;
-  }
+export async function resolveBundle(granted, tag) {
   const reply = await request(
-    `https://${REGISTRY}/v2/${repository}/manifests/${tag}`,
+    `https://${REGISTRY}/v2/${granted.repository}/manifests/${tag}`,
     { ...granted.headers, Accept: MANIFEST },
     NOT_FOUND,
   );
@@ -67,13 +64,14 @@ export async function resolveBundle(repository, tag) {
   };
 }
 
-export async function download(repository, digest, path) {
+export async function resolveTag(repository, tag) {
   const granted = await access(repository);
-  if (granted.kind === 'refused') {
-    throw new Error(`${REGISTRY} refused access to ${repository}`);
-  }
+  return granted.kind === 'granted' ? resolveBundle(granted, tag) : granted;
+}
+
+export async function download(granted, digest, path) {
   const reply = await request(
-    `https://${REGISTRY}/v2/${repository}/blobs/${digest}`,
+    `https://${REGISTRY}/v2/${granted.repository}/blobs/${digest}`,
     granted.headers,
     [],
   );

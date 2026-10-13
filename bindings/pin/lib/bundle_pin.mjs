@@ -1,6 +1,3 @@
-// The Bundle Pin: one zingolib commit, and one digest per platform. Every
-// function here decides from its arguments alone.
-
 export const REGISTRY = 'ghcr.io';
 export const PLATFORMS = ['android', 'ios'];
 
@@ -16,7 +13,13 @@ export function reference(platform, commit) {
 }
 
 export function parsePin(text) {
-  const { commit, digests } = JSON.parse(text);
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { kind: 'malformedPin', field: 'JSON' };
+  }
+  const { commit, digests } = parsed ?? {};
   if (!COMMIT.test(commit)) {
     return { kind: 'malformedPin', field: 'commit' };
   }

@@ -58,3 +58,11 @@ package. The consumer's CI fetches each platform in its own job with
 ```sh
 node --test test/*.test.mjs
 ```
+
+## Publish
+
+The workflow "Bundle Pin package" publishes this directory to npm on a push
+to `dev` whenever npm lacks the version that `package.json` names, so every
+published version is a merged commit and its provenance names that commit. A
+pull request that changes `bin`, `lib`, or `package.json` must raise the
+version, and the same workflow fails the pull request when it does not.

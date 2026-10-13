@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { mock, test } from 'node:test';
 import { movePin, parsePin, serializePin } from '../lib/bundle_pin.mjs';
-import { fetchBundle } from '../lib/fetch_binding_layer.mjs';
+import { fetchBundle, pinnedBundle } from '../lib/fetch_binding_layer.mjs';
 
 const COMMIT = 'a'.repeat(40);
 const NEXT = 'b'.repeat(40);
@@ -27,8 +27,13 @@ function bundle(digest, revision) {
 
 function registry(found) {
   return {
+    access: mock.fn(async repository => ({
+      kind: 'granted',
+      repository,
+      headers: {},
+    })),
     resolveBundle: mock.fn(async () => found),
-    download: mock.fn(async (_repository, _digest, path) => {
+    download: mock.fn(async (_granted, _digest, path) => {
       await writeFile(path, 'bundle');
       return { kind: 'downloaded', path };
     }),
@@ -62,6 +67,14 @@ test('serializePin writes the commit first and the platforms in order', () => {
 test('parsePin names the commit when the commit is abbreviated', () => {
   const text = JSON.stringify({ commit: 'aaaaa', digests: { android: ANDROID } });
   assert.deepEqual(parsePin(text), { kind: 'malformedPin', field: 'commit' });
+});
+
+test('parsePin names the JSON when the file does not parse', () => {
+  assert.deepEqual(parsePin('{"commit": }'), { kind: 'malformedPin', field: 'JSON' });
+});
+
+test('parsePin names the commit when the file holds null', () => {
+  assert.deepEqual(parsePin('null'), { kind: 'malformedPin', field: 'commit' });
 });
 
 test('parsePin names the platform when its digest is malformed', () => {
@@ -142,6 +155,28 @@ test("fetchBundle downloads into the digest's directory when the checkout lacks 
     path: join(root, ANDROID.slice('sha256:'.length), FILE),
   });
   assert.equal(requests.download.mock.calls[0].arguments[1], LAYER);
+  assert.equal(requests.access.mock.callCount(), 1);
+});
+
+test('fetchBundle holds the bundle beside a dotfile in its directory', async () => {
+  const { root, path } = await storeWithBundle();
+  await writeFile(join(dirname(path), '.DS_Store'), '');
+  const requests = registry(bundle(ANDROID, COMMIT));
+  const fetched = await fetchBundle(pin, 'android', root, false, requests);
+  assert.deepEqual(fetched, { kind: 'fetched', path });
+  assert.equal(requests.download.mock.callCount(), 0);
+});
+
+test("fetchBundle replaces the digest's directory when it holds no bundle", async () => {
+  const root = await store();
+  const home = join(root, ANDROID.slice('sha256:'.length));
+  await mkdir(home);
+  await writeFile(join(home, 'stray.txt'), '');
+  await writeFile(join(home, 'other.txt'), '');
+  const requests = registry(bundle(ANDROID, COMMIT));
+  const fetched = await fetchBundle(pin, 'android', root, false, requests);
+  assert.deepEqual(fetched, { kind: 'fetched', path: join(home, FILE) });
+  assert.deepEqual(await readdir(home), [FILE]);
 });
 
 test('fetchBundle downloads nothing when the tag resolves to another digest', async () => {
@@ -156,4 +191,9 @@ test('fetchBundle reports a moved tag when asked to check, although the checkout
   const requests = registry(bundle(IOS, COMMIT));
   const fetched = await fetchBundle(pin, 'android', root, true, requests);
   assert.equal(fetched.kind, 'movedTag');
+});
+
+test('pinnedBundle refuses before reading the pin when no platform is named', async () => {
+  const outcome = await pinnedBundle(join(tmpdir(), 'absent'), {});
+  assert.deepEqual(outcome, { kind: 'unnamedPlatform' });
 });

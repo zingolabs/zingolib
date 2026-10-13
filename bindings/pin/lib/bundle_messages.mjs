@@ -1,5 +1,3 @@
-// The message that a person reads for each failure of the Bundle Pin scripts.
-
 import { PLATFORMS, reference, REGISTRY, repository } from './bundle_pin.mjs';
 
 const REPORT = 'Report this to zingolib.';
@@ -10,6 +8,8 @@ export function failureMessage(failure) {
       return `"${failure.commit}" is not a full zingolib commit. Give all 40 hexadecimal characters.`;
     case 'noPlatform':
       return 'The Bundle Pin lists no platform. Add one with --platform android.';
+    case 'unnamedPlatform':
+      return `Name the platform with --platform ${PLATFORMS.join(' or --platform ')}.`;
     case 'unknownPlatform':
       return `"${
         failure.platform
@@ -21,7 +21,7 @@ export function failureMessage(failure) {
           failure.platform,
           failure.commit,
         )}. ` +
-        'Request the publish in zingolib, or pin a published commit with "yarn pin <commit>".'
+        'Request the publish in zingolib, or pin a published commit with "pin-binding-layer <commit>".'
       );
     case 'refused':
       return (
@@ -44,13 +44,13 @@ export function failureMessage(failure) {
         `and the Bundle Pin holds ${failure.pinned}. A published tag never moves. ${REPORT}`
       );
     case 'malformedPin':
-      return `binding-layer.json holds no valid ${failure.field}. Write the file with "yarn pin <commit>".`;
+      return `binding-layer.json holds no valid ${failure.field}. Write the file with "pin-binding-layer <commit>".`;
     case 'unpinned':
-      return 'This checkout has no binding-layer.json. Create it with "yarn pin <commit> --platform android".';
+      return 'This checkout has no binding-layer.json. Create it with "pin-binding-layer <commit> --platform android".';
     case 'unpinnedPlatform':
       return (
         `The Bundle Pin holds no ${failure.platform} digest. ` +
-        `Add it with "yarn pin <commit> --platform ${failure.platform}".`
+        `Add it with "pin-binding-layer <commit> --platform ${failure.platform}".`
       );
     case 'badLayout':
       return `The ${failure.platform} bundle is not one named file in one layer. ${REPORT}`;
