@@ -6014,12 +6014,12 @@ mod test {
         use zcash_protocol::consensus::{self, BlockHeight, Parameters as _};
         use zcash_protocol::local_consensus::LocalNetwork;
         use zcash_protocol::{PoolType, ShieldedPool};
-        use zingo_netutils::lightwallet_protocol::{SubtreeRoot, TreeState};
+        use zingo_netutils::lightwallet_protocol::TreeState;
         use zingo_status::confirmation_status::ConfirmationStatus;
 
         use crate::client::FetchRequest;
         use crate::error::SyncError;
-        use crate::mocks::MockWalletBuilder;
+        use crate::mocks::{MockWalletBuilder, subtree_root};
         use crate::sync::{ScanPriority, ScanRange, state, truncate_to_pool_activation_height};
         use crate::wallet::{
             ShardTrees, SyncState, TreeBounds, WalletBlock, WalletTransaction,
@@ -6047,13 +6047,6 @@ mod test {
                     ironwood_initial_tree_size: 0,
                     ironwood_final_tree_size: 0,
                 },
-            }
-        }
-
-        fn subtree_root(completing_block_height: u64) -> SubtreeRoot {
-            SubtreeRoot {
-                completing_block_height,
-                ..Default::default()
             }
         }
 

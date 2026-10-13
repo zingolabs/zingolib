@@ -9,6 +9,14 @@ use crate::wallet::{
 };
 use std::collections::{BTreeMap, HashMap};
 use zcash_protocol::{TxId, consensus::BlockHeight};
+use zingo_netutils::lightwallet_protocol::SubtreeRoot;
+
+pub(crate) fn subtree_root(completing_block_height: u64) -> SubtreeRoot {
+    SubtreeRoot {
+        completing_block_height,
+        ..Default::default()
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum MockWalletError {

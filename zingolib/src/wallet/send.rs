@@ -201,11 +201,7 @@ fn check_note_shards_are_scanned(
 
     let mut scanned_ranges = scan_ranges
         .iter()
-        .filter(|scan_range| {
-            scan_range.priority() == ScanPriority::Scanned
-                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                || scan_range.priority() == ScanPriority::RefetchingNullifiers
-        })
+        .filter(|scan_range| scan_range.priority().is_scanned())
         .cloned()
         .collect::<Vec<_>>();
     'main: loop {

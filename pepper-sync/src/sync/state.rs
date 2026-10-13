@@ -1308,7 +1308,7 @@ pub(super) fn add_shard_ranges(
         .fold(
             highest_subtree_completing_height,
             |previous_subtree_completing_height, subtree_completing_height| {
-                if subtree_completing_height >= previous_subtree_completing_height {
+                if subtree_completing_height > previous_subtree_completing_height {
                     shard_ranges.push(Range {
                         start: previous_subtree_completing_height,
                         end: subtree_completing_height + 1,
@@ -1316,18 +1316,36 @@ pub(super) fn add_shard_ranges(
 
                     subtree_completing_height
                 } else {
-                    tracing::error!(
-                        "error: first {:?} subtree root from server has completing block height {} which is lower than the
-                        completing block height of latest shard range in wallet with height {}",
+                    // A block holds far fewer note commitments than a shard, so no block completes two shards.
+                    // A root completing at the recorded height is the newest recorded root fetched again, and a
+                    // lower one is a root recorded in an earlier session. The ranges hold both already, so
+                    // neither adds one. A shard tree rolled back below its bare roots fetches them again, so
+                    // this is not an error. A recorded range is only ever replaced through
+                    // `pop_newest_shard_range`.
+                    tracing::warn!(
+                        "{:?} subtree root completing at block {} is already recorded by the shard ranges, whose \
+                         newest range completes at block {}",
                         shielded_protocol,
-                        previous_subtree_completing_height,
-                        subtree_completing_height
+                        subtree_completing_height,
+                        previous_subtree_completing_height
                     );
 
                     previous_subtree_completing_height
                 }
             },
         );
+
+    debug_assert!(
+        shard_ranges_are_contiguous(shard_ranges),
+        "{shielded_protocol:?} shard ranges must stay contiguous: {shard_ranges:?}"
+    );
+}
+
+pub(super) fn shard_ranges_are_contiguous(shard_ranges: &[Range<BlockHeight>]) -> bool {
+    shard_ranges.iter().all(|range| range.end > range.start + 1)
+        && shard_ranges
+            .windows(2)
+            .all(|pair| pair[1].start + 1 == pair[0].end && pair[1].end > pair[0].end)
 }
 
 /// Updates the `shielded_protocol` shard range to `FoundNote` scan priority if the `wallet_transaction` contains
@@ -1356,6 +1374,7 @@ pub(super) fn update_found_note_shard_priority(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mocks::subtree_root as root;
     use zcash_protocol::local_consensus::LocalNetwork;
 
     /// A refetched newest subtree root (see
@@ -1364,12 +1383,6 @@ mod tests {
     /// unchanged, corrected when a reorg moved it, never duplicated.
     #[test]
     fn refetched_newest_root_rebuilds_its_shard_range() {
-        fn root(completing_block_height: u64) -> SubtreeRoot {
-            SubtreeRoot {
-                completing_block_height,
-                ..Default::default()
-            }
-        }
         let mut sync_state = SyncState::new();
         add_shard_ranges(
             &BASE_NETWORK,
@@ -1408,6 +1421,128 @@ mod tests {
             sync_state.orchard_shard_ranges.last().unwrap().start,
             BlockHeight::from_u32(100)
         );
+    }
+
+    fn range(start: u32, end: u32) -> Range<BlockHeight> {
+        BlockHeight::from_u32(start)..BlockHeight::from_u32(end)
+    }
+
+    fn orchard_state_from_roots(completing_heights: &[u64]) -> SyncState {
+        let mut sync_state = SyncState::new();
+        let roots = completing_heights
+            .iter()
+            .copied()
+            .map(root)
+            .collect::<Vec<_>>();
+        add_shard_ranges(
+            &BASE_NETWORK,
+            ShieldedPool::Orchard,
+            &mut sync_state,
+            &roots,
+        );
+        sync_state
+    }
+
+    // The first range starts at the pool's activation height and every range after it starts at the
+    // completing block of the range before, the one block whose note commitments belong to both shards.
+    #[test]
+    fn fetched_roots_build_contiguous_ranges_from_the_activation_height() {
+        let sync_state = orchard_state_from_roots(&[100, 200, 300]);
+
+        assert_eq!(
+            sync_state.orchard_shard_ranges,
+            vec![range(1, 101), range(100, 201), range(200, 301)]
+        );
+        assert!(shard_ranges_are_contiguous(
+            &sync_state.orchard_shard_ranges
+        ));
+    }
+
+    #[test]
+    fn appended_roots_continue_from_the_newest_range() {
+        let mut sync_state = orchard_state_from_roots(&[100, 200]);
+
+        add_shard_ranges(
+            &BASE_NETWORK,
+            ShieldedPool::Orchard,
+            &mut sync_state,
+            &[root(300), root(400)],
+        );
+
+        assert_eq!(
+            sync_state.orchard_shard_ranges,
+            vec![
+                range(1, 101),
+                range(100, 201),
+                range(200, 301),
+                range(300, 401)
+            ]
+        );
+        assert!(shard_ranges_are_contiguous(
+            &sync_state.orchard_shard_ranges
+        ));
+    }
+
+    // A shard tree rolled back below its bare roots fetches them again without a pop (see
+    // `crate::sync::rollback_unscanned_tree_states`). The roots are already recorded, so the ranges are unchanged:
+    // in particular the newest, completing at the recorded height, adds no degenerate one-block range.
+    #[test]
+    fn already_recorded_roots_leave_the_ranges_unchanged() {
+        let mut sync_state = orchard_state_from_roots(&[100, 200, 300]);
+        let recorded = sync_state.orchard_shard_ranges.clone();
+
+        add_shard_ranges(
+            &BASE_NETWORK,
+            ShieldedPool::Orchard,
+            &mut sync_state,
+            &[root(200), root(300)],
+        );
+        assert_eq!(sync_state.orchard_shard_ranges, recorded);
+
+        add_shard_ranges(
+            &BASE_NETWORK,
+            ShieldedPool::Orchard,
+            &mut sync_state,
+            &[root(300), root(400)],
+        );
+        assert_eq!(
+            sync_state.orchard_shard_ranges,
+            [recorded.as_slice(), &[range(300, 401)]].concat()
+        );
+        assert!(shard_ranges_are_contiguous(
+            &sync_state.orchard_shard_ranges
+        ));
+    }
+
+    #[test]
+    fn ranges_with_a_gap_an_overlap_or_a_duplicate_are_not_contiguous() {
+        assert!(shard_ranges_are_contiguous(&[]));
+        assert!(shard_ranges_are_contiguous(&[range(1, 101)]));
+        // a gap
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(101, 201)
+        ]));
+        // an overlap of two blocks
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(99, 201)
+        ]));
+        // a duplicate
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(1, 101)
+        ]));
+        // a degenerate one-block range at the boundary
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(100, 101)
+        ]));
+        // a range ending below the one before
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(100, 51)
+        ]));
     }
 
     const BASE_NETWORK: LocalNetwork = LocalNetwork {
