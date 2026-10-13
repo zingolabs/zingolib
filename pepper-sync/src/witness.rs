@@ -95,7 +95,7 @@ where
     located_tree_data
 }
 
-/// The number of subtree roots the shard store currently holds.
+#[cfg(test)]
 pub(crate) fn stored_subtree_root_count<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     shard_tree: &shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
 ) -> usize
@@ -150,6 +150,20 @@ where
         >,
 {
     for (index, tree_root) in subtree_roots.into_iter().enumerate() {
+        let address = incrementalmerkletree::Address::from_parts(
+            incrementalmerkletree::Level::new(SHARD_HEIGHT),
+            (subtree_root_start_index + index) as u64,
+        );
+        // A shard that scanning populated holds the wallet's own note commitments and is kept. A bare root or an
+        // empty shard is replaced, which heals a root that a re-org moved after it was fetched.
+        let populated = shard_tree
+            .store()
+            .get_shard(address)
+            .expect("infallible")
+            .is_some_and(|shard| !shard.root().is_empty() && !shard.root().is_leaf());
+        if populated {
+            continue;
+        }
         let node = <S::H as FromBytes>::from_bytes(
             tree_root
                 .root_hash
@@ -159,10 +173,7 @@ where
         .into_option()
         .ok_or(ServerError::InvalidSubtreeRoot)?;
         let shard = LocatedPrunableTree::with_root_value(
-            incrementalmerkletree::Address::from_parts(
-                incrementalmerkletree::Level::new(SHARD_HEIGHT),
-                (subtree_root_start_index + index) as u64,
-            ),
+            address,
             (node, shardtree::RetentionFlags::EPHEMERAL),
         );
         shard_tree.store_mut().put_shard(shard).expect("infallible");
@@ -425,8 +436,36 @@ pub(crate) fn repin_anchor_checkpoints<S>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mocks::{orchard_subtree_root, orchard_tree_scanned_past_the_fetched_roots};
     use crate::shardtree_ext::ShardTreeExt;
     use crate::wallet::empty_shard_tree;
+    use incrementalmerkletree::{Address, Hashable as _, Level};
+
+    #[test]
+    fn fetched_roots_replace_bare_roots_and_keep_scanned_shards() {
+        let mut shard_trees = orchard_tree_scanned_past_the_fetched_roots();
+        let tree = &mut shard_trees.orchard;
+        assert_eq!(stored_subtree_root_count(tree), 5);
+        let moved_root = MerkleHashOrchard::empty_root(Level::from(SHARD_HEIGHT + 1));
+
+        add_subtree_roots(2, vec![orchard_subtree_root(moved_root); 2], tree).unwrap();
+
+        let shard = |index: u64| {
+            let address = Address::from_parts(Level::from(SHARD_HEIGHT), index);
+            tree.store().get_shard(address).unwrap().unwrap()
+        };
+        assert_eq!(
+            shard(2)
+                .root_hash(Position::from(3 << SHARD_HEIGHT))
+                .unwrap(),
+            moved_root,
+            "the bare root is replaced"
+        );
+        assert!(
+            !shard(3).root().is_leaf(),
+            "the shard scanning populated is kept"
+        );
+    }
 
     /// Pinned grid boundaries survive checkpoint pruning until re-deriving the pins releases
     /// them.
