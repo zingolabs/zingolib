@@ -9197,6 +9197,7 @@ version = "0.1.0"
 name = "zingo-netutils"
 version = "5.0.1"
 dependencies = [
+ "futures-channel",
  "http 1.5.0",
  "http-body-util",
  "hyper 1.11.0",
@@ -9205,6 +9206,7 @@ dependencies = [
  "lightwallet-protocol",
  "nym-http-api-client",
  "nym-sdk",
+ "nym-socks5-proxy-helpers",
  "nym-validator-client",
  "rand 0.10.2",
  "reqwest 0.12.28",

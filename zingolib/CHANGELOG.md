@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the `rust-embed` dependency are gone, the build script no longer writes
   into the source tree, and `zingolib/zcash-params/` is no longer a tracked
   stub; delete any stale copy there by hand.
+- The Sapling prover is parsed from the embedded parameters on the first
+  Sapling proof of a transaction build and dropped with the build. A build
+  with no Sapling spend and no Sapling output never parses it, which removes
+  about a second from every Orchard-only and Ironwood-only send. A build with
+  one parses about 51 MB of parameters and frees them when the build ends.
+  Before, every build parsed the parameters, after copying them to the heap.
 - A transaction targeting a height at or above the NU7 activation expires 120
   blocks past its target, the delta ZIP 203 and ZIP 218 recommend for
   25-second blocks, where it expired 40 blocks past. Below the activation,
