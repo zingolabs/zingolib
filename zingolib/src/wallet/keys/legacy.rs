@@ -291,7 +291,7 @@ pub(crate) fn legacy_fvks_to_ufvk<P: zcash_protocol::consensus::Parameters>(
     if let Some(fvk) = transparent_fvk {
         let mut fvk_bytes = [0u8; 65];
         fvk_bytes[0..32].copy_from_slice(&fvk.chain_code[..]);
-        fvk_bytes[32..65].copy_from_slice(&fvk.public_key);
+        fvk_bytes[32..65].copy_from_slice(&fvk.key);
         fvks.push(zcash_address::unified::Fvk::P2pkh(fvk_bytes));
     }
 
@@ -346,7 +346,7 @@ pub(crate) fn legacy_sks_to_usk(
     };
     // Add leading `0` byte
     let mut key_bytes = [0u8; 33];
-    key_bytes[1..].copy_from_slice(&transparent_key.private_key);
+    key_bytes[1..].copy_from_slice(&transparent_key.key);
 
     let extended_key = bip32::ExtendedKey {
         prefix,
