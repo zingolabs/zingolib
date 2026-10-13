@@ -9197,7 +9197,7 @@ version = "0.1.0"
 name = "zingo-netutils"
 version = "5.0.1"
 dependencies = [
- "futures",
+ "futures-channel",
  "http 1.5.0",
  "http-body-util",
  "hyper 1.11.0",
