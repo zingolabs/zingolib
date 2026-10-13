@@ -591,6 +591,9 @@ fn time_entropy_seed() -> u64 {
 }
 
 #[cfg(test)]
+mod closed_input_channel;
+
+#[cfg(test)]
 mod tests {
     use std::time::Duration;
 
