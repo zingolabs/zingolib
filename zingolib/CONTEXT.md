@@ -56,6 +56,8 @@
 
 **Anchor age** — How many Boundaries below the most recent Boundary a Part's anchor sits, counted at proving time. Drawn per Part when it proves and never zero, so a Part's anchor is always a Boundary the chain has already passed and whose Cohort has had time to accumulate before the Part proves against it. Small ages are the likeliest and the draw is capped, so anchors stay recent without ever being the newest tree state in existence.
 
+**Anchor draw** — The canonical random choice, made for each Part when it proves, of the Boundary that Part proves against. The drawn Boundary sits one or more Anchor ages below the Part's transmission window, small ages are the likeliest, the age is capped, and the draw repeats until the Boundary is one the Part may legally use: at or above the Ironwood activation, and no earlier than the confirmation of the note the Part spends. The rule is the same for every migrating wallet, so a Part's anchor places it in a Cohort instead of fingerprinting its wallet. When no legal Boundary exists the window is too early for the Part, which is a scheduling fact rather than a passing failure. *Avoid*: "anchor selection" for the same act, and never describe the draw as choosing when a Part transmits; that is its Bucket.
+
 **Cohort** — The Parts, across all wallets on the network, that prove against the same anchor Boundary. A Cohort is the anonymity set the anchor draw exists to build: the more Parts have accumulated at a Boundary, the less a Part's anchor distinguishes the wallet that sent it. *Avoid*: Cohort for one wallet's own Parts sharing a transmission window — that is a Batch.
 
 **Note** — A shielded output belonging to the Sapling, Orchard, or Ironwood pool.
