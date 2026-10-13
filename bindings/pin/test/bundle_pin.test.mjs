@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { mock, test } from 'node:test';
 import { movePin, parsePin, serializePin } from '../lib/bundle_pin.mjs';
-import { fetchBundle, pinnedBundle } from '../lib/fetch_binding_layer.mjs';
+import { fetchBundle, MARKER, pinnedBundle } from '../lib/fetch_binding_layer.mjs';
 
 const COMMIT = 'a'.repeat(40);
 const NEXT = 'b'.repeat(40);
@@ -49,6 +49,7 @@ async function storeWithBundle() {
   const home = join(root, ANDROID.slice('sha256:'.length));
   await mkdir(home);
   await writeFile(join(home, FILE), 'bundle');
+  await writeFile(join(home, MARKER), `${FILE}\n`);
   return { root, path: join(home, FILE) };
 }
 
@@ -156,6 +157,7 @@ test("fetchBundle downloads into the digest's directory when the checkout lacks 
   });
   assert.equal(requests.download.mock.calls[0].arguments[1], LAYER);
   assert.equal(requests.access.mock.callCount(), 1);
+  assert.equal(await readFile(join(root, ANDROID.slice('sha256:'.length), MARKER), 'utf8'), `${FILE}\n`);
 });
 
 test('fetchBundle holds the bundle beside a dotfile in its directory', async () => {
@@ -167,16 +169,25 @@ test('fetchBundle holds the bundle beside a dotfile in its directory', async () 
   assert.equal(requests.download.mock.callCount(), 0);
 });
 
-test("fetchBundle replaces the digest's directory when it holds no bundle", async () => {
+test("fetchBundle replaces the digest's directory when no marker names its bundle", async () => {
   const root = await store();
   const home = join(root, ANDROID.slice('sha256:'.length));
   await mkdir(home);
-  await writeFile(join(home, 'stray.txt'), '');
-  await writeFile(join(home, 'other.txt'), '');
+  await writeFile(join(home, FILE), 'stale');
   const requests = registry(bundle(ANDROID, COMMIT));
   const fetched = await fetchBundle(pin, 'android', root, false, requests);
   assert.deepEqual(fetched, { kind: 'fetched', path: join(home, FILE) });
-  assert.deepEqual(await readdir(home), [FILE]);
+  assert.deepEqual((await readdir(home)).sort(), [FILE, MARKER].sort());
+  assert.equal(await readFile(join(home, FILE), 'utf8'), 'bundle');
+});
+
+test('fetchBundle leaves no directory when the download is corrupt', async () => {
+  const root = await store();
+  const requests = registry(bundle(ANDROID, COMMIT));
+  requests.download = mock.fn(async () => ({ kind: 'corrupt', expected: LAYER, found: IOS }));
+  const fetched = await fetchBundle(pin, 'android', root, false, requests);
+  assert.equal(fetched.kind, 'corrupt');
+  assert.deepEqual(await readdir(root), []);
 });
 
 test('fetchBundle downloads nothing when the tag resolves to another digest', async () => {

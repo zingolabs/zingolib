@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { failureMessage } from '../lib/bundle_messages.mjs';
 import { pinnedBundle } from '../lib/fetch_binding_layer.mjs';
+import { pinPath } from '../lib/pin_file.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -16,7 +17,7 @@ const { values } = parseArgs({
 const root = resolve(values.root);
 const outcome = await pinnedBundle(root, {
   ...values,
-  pin: values.pin ?? join(root, 'binding-layer.json'),
+  pin: pinPath(root, values.pin),
 });
 if (outcome.kind === 'fetched') {
   process.stdout.write(`${outcome.path}\n`);

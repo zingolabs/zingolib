@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { failureMessage } from '../lib/bundle_messages.mjs';
 import { movePin, repository } from '../lib/bundle_pin.mjs';
-import { readPin, writePin } from '../lib/pin_file.mjs';
+import { pinPath, readPin, writePin } from '../lib/pin_file.mjs';
 import { resolveTag } from '../lib/registry.mjs';
 
 const { values, positionals } = parseArgs({
@@ -14,8 +14,8 @@ const { values, positionals } = parseArgs({
     pin: { type: 'string' },
   },
 });
-const pinPath = values.pin ?? join(resolve(values.root), 'binding-layer.json');
-const current = await readPin(pinPath);
+const path = pinPath(resolve(values.root), values.pin);
+const current = await readPin(path);
 const outcome =
   current.kind === 'malformedPin'
     ? current
@@ -29,7 +29,7 @@ if (outcome.kind !== 'moved') {
   process.stderr.write(`${failureMessage(outcome)}\n`);
   process.exitCode = 1;
 } else {
-  await writePin(pinPath, outcome.pin);
+  await writePin(path, outcome.pin);
   for (const [platform, digest] of Object.entries(outcome.pin.digests)) {
     process.stdout.write(
       `${platform} ${outcome.descriptors[platform]} ${digest}\n`,

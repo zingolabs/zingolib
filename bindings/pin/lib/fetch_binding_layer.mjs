@@ -1,21 +1,20 @@
-import { mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { checkTag, PLATFORMS, repository } from './bundle_pin.mjs';
+import { exists, replaceDirectory, text } from './disk.mjs';
 import { readPin } from './pin_file.mjs';
 import { access, download, resolveBundle } from './registry.mjs';
 import { placeSwiftPackage } from './swift_package.mjs';
 
+export const MARKER = 'bundle';
+
 async function held(home) {
-  const entries = await readdir(home).catch(failure => {
-    if (failure.code === 'ENOENT') {
-      return [];
-    }
-    throw failure;
-  });
-  const visible = entries.filter(entry => !entry.startsWith('.'));
-  return visible.length === 1
-    ? { kind: 'held', path: join(home, visible[0]) }
-    : { kind: 'missing' };
+  const file = await text(join(home, MARKER));
+  if (file === undefined) {
+    return { kind: 'missing' };
+  }
+  const path = join(home, file);
+  return (await exists(path)) ? { kind: 'held', path } : { kind: 'missing' };
 }
 
 export async function fetchBundle(pin, platform, store, always, registry) {
@@ -44,21 +43,22 @@ export async function fetchBundle(pin, platform, store, always, registry) {
   if (found.layers.length !== 1 || !layer.file) {
     return { kind: 'badLayout', platform };
   }
-  const partial = `${home}.partial`;
   const file = basename(layer.file);
-  await rm(partial, { recursive: true, force: true });
-  await mkdir(partial, { recursive: true });
-  const blob = await registry.download(
-    granted,
-    layer.digest,
-    join(partial, file),
-  );
-  if (blob.kind !== 'downloaded') {
-    return blob;
-  }
-  await rm(home, { recursive: true, force: true });
-  await rename(partial, home);
-  return { kind: 'fetched', path: join(home, file) };
+  const replaced = await replaceDirectory(home, async partial => {
+    const blob = await registry.download(
+      granted,
+      layer.digest,
+      join(partial, file),
+    );
+    if (blob.kind !== 'downloaded') {
+      return blob;
+    }
+    await writeFile(join(partial, MARKER), `${file}\n`);
+    return { kind: 'filled' };
+  });
+  return replaced.kind === 'replaced'
+    ? { kind: 'fetched', path: join(home, file) }
+    : replaced;
 }
 
 export async function pinnedBundle(root, values) {

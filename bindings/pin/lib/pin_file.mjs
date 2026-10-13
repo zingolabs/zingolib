@@ -1,14 +1,15 @@
-import { readFile, rename, writeFile } from 'node:fs/promises';
+import { rename, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { parsePin, serializePin } from './bundle_pin.mjs';
+import { text } from './disk.mjs';
+
+export function pinPath(root, pin) {
+  return pin ?? join(root, 'binding-layer.json');
+}
 
 export async function readPin(path) {
-  const text = await readFile(path, 'utf8').catch(failure => {
-    if (failure.code === 'ENOENT') {
-      return undefined;
-    }
-    throw failure;
-  });
-  return text === undefined ? { kind: 'unpinned' } : parsePin(text);
+  const content = await text(path);
+  return content === undefined ? { kind: 'unpinned' } : parsePin(content);
 }
 
 export async function writePin(path, pin) {

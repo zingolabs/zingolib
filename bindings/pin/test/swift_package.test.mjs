@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { mock, test } from 'node:test';
 import { promisify } from 'node:util';
 import { MARKER, PACKAGE, placeSwiftPackage, placement } from '../lib/swift_package.mjs';
@@ -63,4 +63,5 @@ test('placeSwiftPackage reports a bundle that holds no package manifest', async 
   const home = join(await scratch(), 'binding-layer');
   const placed = await placeSwiftPackage(await archive(false), DIGEST, home);
   assert.deepEqual(placed, { kind: 'badPackage', platform: 'ios' });
+  assert.deepEqual(await readdir(dirname(home)), []);
 });

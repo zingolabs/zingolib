@@ -40,9 +40,10 @@ platforms with `--platform`.
 
 `fetch-binding-layer --platform <platform> [--check-tag]` prints the path of
 the pinned bundle, downloading it first when the checkout does not hold it.
-Android bundles land under `android/build/binding-layer/<digest>/`. The iOS
-bundle is extracted to `ios/binding-layer/ZingoBindings`, beside a marker file
-that names its digest, and the command prints that package path. With
+Android bundles land under `android/build/binding-layer/<digest>/`, beside a
+marker file that names the bundle's file. The iOS bundle is extracted to
+`ios/binding-layer/ZingoBindings`, beside a marker file that names its digest,
+and the command prints that package path. With
 `--check-tag` the command also verifies that the registry's tag for the pinned
 commit still resolves to the pinned digest.
 
