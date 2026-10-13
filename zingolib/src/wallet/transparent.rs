@@ -84,10 +84,6 @@ fn transparent_only_build_config() -> BuildConfig {
 }
 
 impl LightWallet {
-    /// The account's [`UnifiedSpendingKey`]. Callers derive the transparent
-    /// signing key from it and leave the `secp256k1` types inferred. The
-    /// `secp256k1` version used by `zcash_transparent` differs from the
-    /// version zingolib depends on.
     fn unified_spending_key(
         &self,
         account_id: zip32::AccountId,

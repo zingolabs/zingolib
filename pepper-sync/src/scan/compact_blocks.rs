@@ -241,10 +241,12 @@ where
 
                 // check transparent outputs against inuse and gap addresses
                 for output in transaction.vout.iter() {
+                    let mut script_pubkey = Script::default();
+                    script_pubkey.0.0 = output.script_pub_key.clone();
                     let output = zcash_transparent::bundle::TxOut::new(
                         Zatoshis::from_u64(output.value)
                             .map_err(|_| ScanError::TransparentOutputInvalidValue(output.value))?,
-                        Script(zcash_script::script::Code(output.script_pub_key.clone())),
+                        script_pubkey,
                     );
                     if let Some(address) = output.recipient_address() {
                         let encoded_address =
