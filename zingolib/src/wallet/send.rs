@@ -17,6 +17,7 @@ use zcash_protocol::{ShieldedPool, TxId};
 
 use super::LightWallet;
 use super::error::{CalculateTransactionError, KeyError};
+use crate::wallet::utils;
 
 impl LightWallet {
     /// Creates and stores transaction from the given `proposal`, returning the txids for each calculated transaction.
@@ -68,11 +69,7 @@ impl LightWallet {
             .ok_or(KeyError::NoAccountKeys)?
             .try_into()?;
 
-        // TODO:  Remove fallible sapling operations from Orchard only sends.
-        let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
-            crate::wallet::utils::read_sapling_params();
-        let sapling_prover =
-            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let sapling_prover = utils::LazySaplingProver::default();
 
         let expiry_height = self.proposal_expiry_height(&proposal);
 
@@ -356,6 +353,47 @@ mod tests {
     use zcash_client_backend::zip321::TransactionRequest;
     use zcash_protocol::memo::{Memo, MemoBytes};
     use zcash_protocol::value::Zatoshis;
+
+    use crate::lightclient::LightClient;
+    use crate::testutils::lightclient::from_inputs;
+    use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
+    use crate::wallet::utils;
+
+    const ORCHARD_FUNDS: u64 = 100_000;
+    const PAYMENT: u64 = 20_000;
+
+    /// HYPOTHESIS: a wallet that holds Orchard funds alone builds its
+    /// transaction without parsing the Sapling prover, so a device with no
+    /// Sapling notes never parses the embedded Sapling parameters.
+    /// Falsified if the build parses them on this thread.
+    #[tokio::test]
+    async fn orchard_only_build_parses_no_sapling_prover() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(ORCHARD_FUNDS)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+        let proposal = from_inputs::propose(
+            &mut client,
+            vec![(&synthetic_wallet::external_orchard_address(), PAYMENT, None)],
+        )
+        .await
+        .expect("an Orchard-only wallet proposes an Orchard payment");
+
+        let parses_before = utils::sapling_prover_parses();
+        client
+            .wallet()
+            .write()
+            .await
+            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .await
+            .expect("the Orchard-only transaction builds");
+
+        assert_eq!(
+            utils::sapling_prover_parses(),
+            parses_before,
+            "an Orchard-only build parsed the Sapling prover"
+        );
+    }
 
     use crate::data::receivers::{Receivers, transaction_request_from_receivers};
 

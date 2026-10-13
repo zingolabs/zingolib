@@ -66,6 +66,8 @@ tokio = { workspace = true, optional = true, features = [
 zingo-net-diag = { version = "0.1.0", path = "../zingo-net-diag", optional = true }
 rand = "0.10"
 serde = { version = "1.0.229", features = ["derive"] }
+nym-socks5-proxy-helpers = { version = "1.21.4", optional = true }
+futures-channel = { version = "0.3", optional = true }
 
 [features]
 globally-public-transparent = ["dep:tokio-stream"]
@@ -97,6 +99,13 @@ socks5-fetch = [
 ]
 nym = [
     "dep:nym-sdk",
+    # Used only by the closed-input-channel test under src/nym_proxy/:
+    # the SOCKS5 connection runner and the channel its constructor takes.
+    # A dev-dependency cannot be feature-gated and would compile the nym
+    # stack for every netutils test build, so the two ride this feature.
+    # Both already ship as nym-sdk transitives, so the graph gains no node.
+    "dep:nym-socks5-proxy-helpers",
+    "dep:futures-channel",
     "dep:nym-http-api-client",
     "dep:nym-validator-client",
     "dep:tokio-socks",
