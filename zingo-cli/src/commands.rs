@@ -31,6 +31,7 @@ use zingolib::lightclient::migrate::{
     SplitStatus, SplitStep,
 };
 use zingolib::lightclient::{LightClient, SaveShutdown, TransmitProgressHandle};
+use zingolib::perspective::sync_progress;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
@@ -354,7 +355,7 @@ async fn export_ufvk(lightclient: &mut LightClient) -> Result<String, CommandErr
         Err(e) => return Err(not_yet_typed(e)),
     };
     Ok(object! {
-        "ufvk" => ufvk.encode(&lightclient.chain_type()),
+        "ufvk" => zingolib::wallet::keys::unified::encode_ufvk(&ufvk, &lightclient.chain_type()),
         "birthday" => lightclient.birthday()
     }
     .pretty(JSON_INDENT))
@@ -884,13 +885,16 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
                     .await
                     .map_err(not_yet_typed)?,
             };
-            Ok(json::JsonValue::from(status).pretty(JSON_INDENT))
+            Ok(
+                json::JsonValue::from(sync_progress::SyncProgress::from(status))
+                    .pretty(JSON_INDENT),
+            )
         }
         SyncSubCommand::Poll => match lightclient.poll_sync() {
             PollReport::NoHandle => Ok("Sync task has not been launched.".to_string()),
             PollReport::NotReady => Ok("Sync task is not complete.".to_string()),
             PollReport::Ready(result) => match result {
-                Ok(sync_result) => Ok(sync_result.to_string()),
+                Ok(sync_result) => Ok(sync_progress::SessionReport::from(sync_result).to_string()),
                 Err(e) => Err(not_yet_typed(e)),
             },
         },
@@ -990,7 +994,7 @@ async fn wallet_kind(lightclient: &mut LightClient) -> Result<String, CommandErr
             .pretty(4),
             UnifiedKeyStore::View(ufvk) => object! {
                 "kind" => "Loaded from unified full viewing key",
-                "transparent" => ufvk.transparent().is_some(),
+                "transparent" => ufvk.p2pkh().is_some(),
                 "sapling" => ufvk.sapling().is_some(),
                 "orchard" => ufvk.orchard().is_some(),
             }
@@ -1064,7 +1068,7 @@ fn parse_address(address: &str) -> Result<String, CommandError> {
                         "chain_name" => chain_name_string,
                         "address_kind" => "unified",
                         "receivers_available" => receivers_available,
-                        "only_orchard_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().copied(), None, None).expect("To construct UA").encode(&chain_name),
+                        "only_orchard_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().copied(), None, None, None, None).expect("To construct UA").encode(&chain_name),
                     }
                     .to_string()
                     } else {
@@ -1092,9 +1096,9 @@ fn parse_address(address: &str) -> Result<String, CommandError> {
 fn parse_viewkey(viewkey: &str) -> Result<String, CommandError> {
     Ok(json::stringify_pretty(
         match Ufvk::decode(viewkey) {
-            Ok((network, ufvk)) => {
+            Ok((network, _revision, ufvk)) => {
                 let mut pools_available = vec![];
-                for fvk in ufvk.items_as_parsed() {
+                for fvk in ufvk.items() {
                     match fvk {
                         zcash_address::unified::Fvk::Orchard(_) => {
                             pools_available.push("orchard");
@@ -1102,7 +1106,8 @@ fn parse_viewkey(viewkey: &str) -> Result<String, CommandError> {
                         zcash_address::unified::Fvk::Sapling(_) => {
                             pools_available.push("sapling");
                         }
-                        zcash_address::unified::Fvk::P2pkh(_) => {
+                        zcash_address::unified::Fvk::P2pkh(_)
+                        | zcash_address::unified::Fvk::P2sh(_) => {
                             pools_available.push("transparent");
                         }
                         zcash_address::unified::Fvk::Unknown { .. } => pools_available

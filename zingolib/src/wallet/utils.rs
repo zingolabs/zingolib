@@ -1,10 +1,15 @@
 //! TODO: Add Mod Description Here!
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use sapling_crypto::{
+    bundle as sapling_bundle, circuit as sapling_circuit, keys as sapling_keys,
+    prover as sapling_prover, value as sapling_value,
+};
 use std::{
     io::{self, Read, Write},
     path::PathBuf,
 };
 use zcash_primitives::transaction::TxId;
+use zcash_proofs::prover;
 use zcash_protocol::memo::MemoBytes;
 
 pub(crate) const MAX_STRING_LENGTH: u64 = 1 << 16;
@@ -70,25 +75,111 @@ pub fn txid_from_slice(txid: &[u8]) -> TxId {
     TxId::from_bytes(txid_bytes)
 }
 
-/// Returns the embedded Sapling parameters as bytes.
-pub(crate) fn read_sapling_params() -> (Vec<u8>, Vec<u8>) {
-    use crate::SaplingParams;
-    let mut sapling_output = vec![];
-    sapling_output.extend_from_slice(
-        SaplingParams::get("sapling-output.params")
-            .unwrap()
-            .data
-            .as_ref(),
-    );
+#[cfg(test)]
+thread_local! {
+    static SAPLING_PROVER_PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
-    let mut sapling_spend = vec![];
-    sapling_spend.extend_from_slice(
-        SaplingParams::get("sapling-spend.params")
-            .unwrap()
-            .data
-            .as_ref(),
-    );
-    (sapling_output, sapling_spend)
+#[cfg(test)]
+pub(crate) fn sapling_prover_parses() -> usize {
+    SAPLING_PROVER_PARSES.with(std::cell::Cell::get)
+}
+
+/// - Increments this thread's count of Sapling parameter parses.
+#[cfg(test)]
+fn note_sapling_prover_parse() {
+    SAPLING_PROVER_PARSES.with(|parses| parses.set(parses.get() + 1));
+}
+
+#[derive(Default)]
+pub(crate) struct LazySaplingProver {
+    prover: std::sync::OnceLock<prover::LocalTxProver>,
+}
+
+impl LazySaplingProver {
+    /// - Parses the embedded Sapling parameters on this adapter's first call.
+    fn prover(&self) -> &prover::LocalTxProver {
+        self.prover.get_or_init(|| {
+            #[cfg(test)]
+            note_sapling_prover_parse();
+            prover::LocalTxProver::from_bytes(
+                crate::SaplingParams::SPEND,
+                crate::SaplingParams::OUTPUT,
+            )
+        })
+    }
+}
+
+impl sapling_prover::SpendProver for LazySaplingProver {
+    type Proof = <prover::LocalTxProver as sapling_prover::SpendProver>::Proof;
+
+    fn prepare_circuit(
+        proof_generation_key: sapling_crypto::ProofGenerationKey,
+        diversifier: sapling_crypto::Diversifier,
+        rseed: sapling_crypto::Rseed,
+        value: sapling_value::NoteValue,
+        alpha: jubjub::Fr,
+        rcv: sapling_value::ValueCommitTrapdoor,
+        anchor: jubjub::Fq,
+        merkle_path: sapling_crypto::MerklePath,
+    ) -> Option<sapling_circuit::Spend> {
+        <prover::LocalTxProver as sapling_prover::SpendProver>::prepare_circuit(
+            proof_generation_key,
+            diversifier,
+            rseed,
+            value,
+            alpha,
+            rcv,
+            anchor,
+            merkle_path,
+        )
+    }
+
+    /// - Parses the embedded Sapling parameters if this adapter has not yet.
+    fn create_proof<R: rand::Rng>(
+        &self,
+        circuit: sapling_circuit::Spend,
+        rng: &mut R,
+    ) -> Self::Proof {
+        sapling_prover::SpendProver::create_proof(self.prover(), circuit, rng)
+    }
+
+    fn encode_proof(proof: Self::Proof) -> sapling_bundle::GrothProofBytes {
+        <prover::LocalTxProver as sapling_prover::SpendProver>::encode_proof(proof)
+    }
+}
+
+impl sapling_prover::OutputProver for LazySaplingProver {
+    type Proof = <prover::LocalTxProver as sapling_prover::OutputProver>::Proof;
+
+    fn prepare_circuit(
+        esk: &sapling_keys::EphemeralSecretKey,
+        payment_address: sapling_crypto::PaymentAddress,
+        rcm: jubjub::Fr,
+        value: sapling_value::NoteValue,
+        rcv: sapling_value::ValueCommitTrapdoor,
+    ) -> sapling_circuit::Output {
+        <prover::LocalTxProver as sapling_prover::OutputProver>::prepare_circuit(
+            esk,
+            payment_address,
+            rcm,
+            value,
+            rcv,
+        )
+    }
+
+    /// - Parses the embedded Sapling parameters if this adapter has not yet.
+    fn create_proof<R: rand::Rng>(
+        &self,
+        circuit: sapling_circuit::Output,
+        rng: &mut R,
+    ) -> Self::Proof {
+        sapling_prover::OutputProver::create_proof(self.prover(), circuit, rng)
+    }
+
+    fn encode_proof(proof: Self::Proof) -> sapling_bundle::GrothProofBytes {
+        <prover::LocalTxProver as sapling_prover::OutputProver>::encode_proof(proof)
+    }
 }
 
 /// Returns the path to the default directory that the Zcash proving parameters are located in.
@@ -105,9 +196,14 @@ mod tests {
     /// loading them is infallible. Falsified if either blob is empty.
     #[test]
     fn embedded_sapling_params_load_whole() {
-        let (sapling_output, sapling_spend) = read_sapling_params();
-        assert!(!sapling_output.is_empty(), "output params are embedded");
-        assert!(!sapling_spend.is_empty(), "spend params are embedded");
+        assert!(
+            !crate::SaplingParams::OUTPUT.is_empty(),
+            "output params are embedded"
+        );
+        assert!(
+            !crate::SaplingParams::SPEND.is_empty(),
+            "spend params are embedded"
+        );
     }
 
     #[test]

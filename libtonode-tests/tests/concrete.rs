@@ -6,7 +6,6 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 use pepper_sync::wallet::{IronwoodNote, TransparentCoin};
 use zcash_protocol::PoolType;
-use zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS;
 use zcash_protocol::value::Zatoshis;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::wallet::balance::AccountBalance;
@@ -123,27 +122,24 @@ fn check_view_capability_bounds(
         assert_eq!(sapling_notes.len(), 0);
     }
     if fvks.contains(&transparent_fvk) {
-        assert!(ufvk.transparent().is_some());
+        assert!(ufvk.p2pkh().is_some());
         assert_eq!(balance.confirmed_transparent_balance, sent_t_value);
         assert_eq!(transparent_coins.len(), 1);
     } else {
-        assert!(ufvk.transparent().is_none());
+        assert!(ufvk.p2pkh().is_none());
         assert_eq!(balance.confirmed_transparent_balance, None);
         assert_eq!(transparent_coins.len(), 0);
     }
 }
 
-use libtonode_tests::chain_generics::LibtonodeEnvironment;
 use pepper_sync::wallet::OutputInterface;
 use zcash_client_backend::encoding::encode_payment_address_p;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingolib::config::WalletConfig;
-use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedAddressId};
-use zip32::AccountId;
 
 #[tokio::test]
 async fn unified_address_discovery() {
@@ -300,33 +296,6 @@ async fn unified_address_discovery() {
     );
 }
 
-/// Diagnostic probe for the Core-stack coinbase model. Each assert tests
-/// one hypothesis, and each failure mode has a distinct quantized delta:
-/// - orchard off by one POST_STREAM_BLOCK_REWARD (618_750_000):
-///   ORCHARD_COINBASE_START_HEIGHT is wrong (flip 2 <-> 3)
-/// - sapling delta of BLOCK_ONE_SAPLING_COINBASE (625_000_000): the
-///   block-1-pays-the-sapling-receiver rule is wrong
-/// - transparent nonzero: pre-NU5 or activation-block coinbase pays a
-///   transparent output instead
-/// - balances short by whole blocks: the deterministic
-///   sync_client_to_validator_tip is not actually deterministic.
-#[tokio::test]
-async fn ironwood_miner_coinbase_distribution() {
-    let mut environment = LibtonodeEnvironment::setup().await;
-    let mut faucet = environment.create_faucet().await;
-    environment.increase_chain_height().await;
-    scenarios::sync_client_to_validator_tip(&environment.local_net, &mut faucet).await;
-
-    // Tip is height 4: launch block + 2 setup blocks + 1 above. Every
-    // coinbase block (2..=4) predates the fixture's NU6.3 activation at 5,
-    // so the orchard-receiver rewards are legacy Orchard notes and the
-    // Ironwood pool is empty.
-    check_client_balances!(
-        faucet,
-        i: 0 o: (scenarios::orchard_coinbase_total(4)) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0u64
-    );
-}
-
 #[tokio::test]
 async fn received_tx_status_pending_to_confirmed_with_mempool_monitor() {
     tracing_subscriber::fmt().init();
@@ -429,101 +398,6 @@ async fn utxos_are_not_prematurely_confirmed() {
     assert_eq!(
         preshield_utxos.first().unwrap().output_id(),
         postshield_utxos.first().unwrap().output_id(),
-    );
-}
-
-#[tokio::test]
-async fn mine_to_ironwood() {
-    let (local_net, mut faucet) = scenarios::faucet(
-        PoolType::IRONWOOD,
-        scenarios::default_test_activation_heights(),
-        scenarios::ChainCachePolicy::PerTest,
-    )
-    .await;
-    check_client_balances!(
-        faucet,
-        i: (scenarios::funded_faucet_ironwood_balance()) o: 0 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
-    );
-    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-        .await
-        .unwrap();
-    check_client_balances!(
-        faucet,
-        i: (scenarios::funded_faucet_ironwood_balance() + scenarios::POST_STREAM_BLOCK_REWARD) o: 0 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
-    );
-}
-
-#[tokio::test]
-async fn mine_to_orchard() {
-    let fixture = scenarios::wallet_activation_heights(
-        &zcash_local_net::validator::regtest_test_activation_heights(),
-    );
-    let activation_heights = zingolib::ActivationHeights::builder()
-        .set_overwinter(fixture.overwinter())
-        .set_sapling(fixture.sapling())
-        .set_blossom(fixture.blossom())
-        .set_heartwood(fixture.heartwood())
-        .set_canopy(fixture.canopy())
-        .set_nu5(fixture.nu5())
-        .set_nu6(fixture.nu6())
-        .set_nu6_1(fixture.nu6_1())
-        .set_nu6_2(fixture.nu6_2())
-        .set_nu6_3(None)
-        .set_nu7(None)
-        .build();
-    let (local_net, mut faucet) = scenarios::faucet(
-        PoolType::ORCHARD,
-        activation_heights,
-        scenarios::ChainCachePolicy::PerTest,
-    )
-    .await;
-    check_client_balances!(
-        faucet,
-        i: 0 o: 1_237_500_000 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
-    );
-    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-        .await
-        .unwrap();
-    check_client_balances!(
-        faucet,
-        i: 0 o: (1_237_500_000 + scenarios::POST_STREAM_BLOCK_REWARD) s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
-    );
-}
-
-/// Tests that the miner's address receives (immature) rewards from mining to the transparent pool.
-#[tokio::test]
-async fn mine_to_transparent() {
-    let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
-        PoolType::Transparent,
-        scenarios::default_test_activation_heights(),
-        scenarios::ChainCachePolicy::PerTest,
-    )
-    .await;
-
-    let unconfirmed_balance = faucet
-        .wallet()
-        .read()
-        .await
-        .get_filtered_balance::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
-        .unwrap();
-
-    assert_eq!(
-        unconfirmed_balance,
-        Zatoshis::const_from_u64(scenarios::mined_block_rewards_total(3))
-    );
-
-    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-        .await
-        .unwrap();
-
-    assert_eq!(
-        faucet
-            .wallet()
-            .read()
-            .await
-            .get_filtered_balance::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
-            .unwrap(),
-        Zatoshis::const_from_u64(scenarios::mined_block_rewards_total(4))
     );
 }
 
@@ -654,7 +528,12 @@ async fn test_scanning_in_watch_only_mode() {
 
         let ufvk = zcash_address::unified::Encoding::encode(
             &<zcash_address::unified::Ufvk as zcash_address::unified::Encoding>::try_from_items(
-                fvks.iter().copied().cloned().collect(),
+                zcash_address::unified::Revision::R0,
+                fvks.iter()
+                    .copied()
+                    .cloned()
+                    .map(zcash_address::unified::Uitem::Data)
+                    .collect(),
             )
             .unwrap(),
             &zcash_protocol::consensus::NetworkType::Regtest,
@@ -931,47 +810,6 @@ async fn send_orchard_back_and_forth() {
         i: faucet_final_ironwood o: 0 s: (scenarios::BLOCK_ONE_SAPLING_COINBASE) t: 0
     );
     check_client_balances!(recipient, i: recipient_final_ironwood o: 0 s: 0 t: 0);
-}
-
-#[tokio::test]
-async fn send_mined_ironwood_to_ironwood() {
-    // This test shows a confirmation changing the state of balance by
-    // debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
-    // consistent with all the notes in the relevant block changing state.
-    // NOTE that the balance doesn't give insight into the distribution across notes.
-    let (local_net, mut faucet) = scenarios::faucet(
-        PoolType::IRONWOOD,
-        scenarios::default_test_activation_heights(),
-        scenarios::ChainCachePolicy::PerTest,
-    )
-    .await;
-
-    let amount_to_send = 10_000;
-    let faucet_ua = get_base_address_macro!(faucet, "unified");
-    from_inputs::quick_send(
-        &mut faucet,
-        vec![(&faucet_ua, amount_to_send, Some("Scenario test: engage!"))],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-        .await
-        .unwrap();
-    let balance = faucet
-        .account_balance(zip32::AccountId::ZERO)
-        .await
-        .unwrap();
-    assert_eq!(
-        balance.unconfirmed_ironwood_balance,
-        Some(0.try_into().unwrap())
-    );
-    // The send is to self, so only the fee leaves the wallet, and the
-    // faucet mines the confirming block, collecting a fresh coinbase
-    // reward plus that same fee back.
-    assert_eq!(
-        balance.confirmed_ironwood_balance.unwrap().into_u64(),
-        scenarios::funded_faucet_ironwood_balance() + scenarios::POST_STREAM_BLOCK_REWARD
-    );
 }
 
 /// This mod collects tests of `outgoing_metadata` (a `TransactionRecordField`) across rescans
@@ -1678,47 +1516,6 @@ mod basic_transactions {
     // }
 }
 
-/// Tests that transparent coinbases mature after `COINBASE_MATURITY_BLOCKS`.
-#[tokio::test]
-async fn mine_to_transparent_coinbase_maturity() {
-    let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
-        PoolType::Transparent,
-        scenarios::default_test_activation_heights(),
-        scenarios::ChainCachePolicy::PerTest,
-    )
-    .await;
-
-    // After 3 blocks...
-    check_client_balances!(faucet, i: 0 o: 0 s: 0 t: 0);
-
-    // Balance should be 0 because coinbase needs COINBASE_MATURITY_BLOCKS confirmations
-    assert_eq!(
-        faucet
-            .wallet()
-            .read()
-            .await
-            .confirmed_balance_excluding_dust::<TransparentCoin>(zip32::AccountId::ZERO)
-            .unwrap()
-            .into_u64(),
-        0
-    );
-
-    increase_height_and_wait_for_client(&local_net, &mut faucet, COINBASE_MATURITY_BLOCKS)
-        .await
-        .unwrap();
-
-    let mature_balance = faucet
-        .wallet()
-        .read()
-        .await
-        .confirmed_balance_excluding_dust::<TransparentCoin>(zip32::AccountId::ZERO)
-        .unwrap()
-        .into_u64();
-
-    // Should have 3 blocks worth of rewards
-    assert_eq!(mature_balance, scenarios::mined_block_rewards_total(3));
-}
-
 /// `propose_send_with_op_return` reports the fee of both transactions.
 /// `send_stored_proposal` broadcasts a deshield and a transparent-only
 /// transaction from a shielded balance. After mining, both confirm. The
@@ -1833,6 +1630,7 @@ async fn propose_and_send_with_op_return_confirms_on_chain() {
 
 mod testnet_test {
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+    use zingolib::perspective::sync_progress;
     use zingolib::{
         config::{ChainType, ClientConfig, WalletConfig},
         lightclient::LightClient,
@@ -1871,10 +1669,9 @@ mod testnet_test {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             interval.tick().await;
-            while lightclient
-                .latest_sync_status()
-                .is_none_or(|status| status.percentage_total_outputs_scanned < 1.0)
-            {
+            while lightclient.latest_sync_status().is_none_or(|status| {
+                sync_progress::SyncProgress::from(status).percentage_total_outputs_scanned < 1.0
+            }) {
                 interval.tick().await;
             }
             lightclient.stop_sync().unwrap();

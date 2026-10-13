@@ -103,6 +103,15 @@ candidate is drawn alone. Derived at session open, never serialized.
 Distinct from the Exit Pool, which holds mixnet exits.
 _Avoid_: "Destination pool", "curated Destination list".
 
+**IndexerConnection** (ratified 2026-10-09):
+The uniffi record that the Binding Layer's four init functions take in
+place of loose arguments: the indexer's `server_uri` (empty for Offline),
+the `chain_hint`, and the `sync` settings (`SyncSettings`: performance
+level and minimum confirmations). The name carries the domain so the
+record never collides with a consumer's own `Connection` type in Swift
+or Kotlin.
+_Avoid_: bare "Connection" for the record; "WalletConnection".
+
 ### Command classes
 
 **Readiness budget**:

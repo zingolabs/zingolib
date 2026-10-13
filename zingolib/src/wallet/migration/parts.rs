@@ -19,6 +19,7 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::error::WalletError;
+use crate::wallet::utils;
 
 /// Stable identifier of a part within one migration: its index in
 /// [`super::MigrationState::parts`].
@@ -614,7 +615,7 @@ impl crate::wallet::LightWallet {
                     if let Some(anchor) = super::schedule::draw_anchor_bucket(
                         bucket,
                         &floor,
-                        &mut rand::rngs::OsRng,
+                        &mut crate::utils::system_rng(),
                         state.params.bucket_modulus,
                     ) {
                         part.anchor_bucket = Some(anchor);
@@ -923,15 +924,13 @@ impl ProveOnce {
             )
             .map_err(|e| WalletError::MigrationBuild(format!("{e}")))?;
 
-        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
-        let sapling_prover =
-            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let sapling_prover = utils::LazySaplingProver::default();
         let build_result = builder
             .build(
                 &zcash_transparent::builder::TransparentSigningSet::new(),
                 &[usk.sapling().clone()],
                 &[usk.orchard().into()],
-                rand::rngs::OsRng,
+                crate::utils::system_rng(),
                 &sapling_prover,
                 &sapling_prover,
                 &fee_rule,

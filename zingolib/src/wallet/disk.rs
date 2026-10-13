@@ -114,15 +114,54 @@ fn read_account_id<R: Read>(reader: &mut R) -> io::Result<zip32::AccountId> {
     })
 }
 
+/// A wallet file written for one chain, read for another. It travels inside
+/// the `io::Error` the read returns, so a caller can tell this failure apart
+/// without reading the message.
+#[derive(Debug)]
+pub struct ChainMismatch {
+    /// The chain the file was written for.
+    pub saved: String,
+    /// The chain the file was read for.
+    pub expected: String,
+}
+
+impl std::fmt::Display for ChainMismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "wallet chain name {} doesn't match expected {}",
+            self.saved, self.expected
+        )
+    }
+}
+
+impl std::error::Error for ChainMismatch {}
+
+fn chain_mismatch(saved_network: &str, chain_type: &ChainType) -> Error {
+    Error::new(
+        ErrorKind::InvalidData,
+        ChainMismatch {
+            saved: saved_network.to_string(),
+            expected: chain_type.to_string(),
+        },
+    )
+}
+
 fn check_saved_chain(saved_network: &str, chain_type: &ChainType) -> io::Result<()> {
     if saved_network == chain_type.to_string() {
         Ok(())
     } else {
-        Err(Error::new(
-            ErrorKind::InvalidData,
-            format!("wallet chain name {saved_network} doesn't match expected {chain_type}"),
-        ))
+        Err(chain_mismatch(saved_network, chain_type))
     }
+}
+
+/// The chain a stored chain name stands for, through the tag of that chain.
+fn chain_type_from_stored(stored: &str) -> io::Result<ChainType> {
+    chain_type_from_tag(match chain_name_from_stored(stored)? {
+        "mainnet" => 0,
+        "testnet" => 1,
+        _ => 2,
+    })
 }
 
 impl LightWallet {
@@ -280,6 +319,46 @@ impl LightWallet {
         }
     }
 
+    /// The chain a wallet file was written for. Version 32 and later store
+    /// it right after the version word; older files store it past the keys,
+    /// so they are read whole under each chain until one parses.
+    pub fn read_chain(bytes: &[u8]) -> io::Result<ChainType> {
+        let mut reader = bytes;
+        let version = reader.read_u64::<LittleEndian>()?;
+        match version {
+            ..32 => [
+                ChainType::Mainnet,
+                ChainType::Testnet,
+                ChainType::Regtest(ActivationHeights::default()),
+            ]
+            .into_iter()
+            .find(|chain| Self::read(bytes, *chain).is_ok())
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InvalidData,
+                    format!("wallet version {version} parses under no chain"),
+                )
+            }),
+            32..=45 => {
+                if version >= 41 {
+                    chain_type_from_tag(reader.read_u8()?)
+                } else if version == 40 {
+                    match read_v40_chain_field(&mut reader)? {
+                        V40ChainField::Tag(tag) => chain_type_from_tag(tag),
+                        V40ChainField::Name(stored) => chain_type_from_stored(&stored),
+                    }
+                } else {
+                    let stored = utils::read_string(&mut reader)?;
+                    chain_type_from_stored(&stored)
+                }
+            }
+            _ => Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("wallet version {version} is newer than this build reads"),
+            )),
+        }
+    }
+
     /// Confirms the bytes parse as a complete wallet this build can read, by
     /// running the full [`Self::read`] deserialization and discarding the
     /// result; on failure the error names the byte offset reached.
@@ -321,10 +400,7 @@ impl LightWallet {
             }
         };
         if saved_network != chain_type.to_string() {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!("wallet chain name {saved_network} doesn't match expected {chain_type}"),
-            ));
+            return Err(chain_mismatch(saved_network, &chain_type));
         }
 
         let _wallet_options = if version <= 23 {

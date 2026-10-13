@@ -696,18 +696,8 @@ impl LightClient {
     /// to learn whether the call succeeded (zingolabs/zingolib#2446).
     pub async fn info(&mut self) -> Result<ServerInfo, LightClientError> {
         let mut indexer = self.require_indexer()?.clone();
-        let i = indexer.get_lightd_info(DEFAULT_REQUEST_TIMEOUT).await?;
-        Ok(ServerInfo {
-            version: i.version,
-            git_commit: i.git_commit,
-            server_uri: indexer.uri().clone(),
-            vendor: i.vendor,
-            taddr_support: i.taddr_support,
-            chain_name: i.chain_name,
-            sapling_activation_height: i.sapling_activation_height,
-            consensus_branch_id: i.consensus_branch_id,
-            latest_block_height: i.block_height,
-        })
+        let info = indexer.get_lightd_info(DEFAULT_REQUEST_TIMEOUT).await?;
+        Ok(ServerInfo::from_lightd_info(info, indexer.uri().clone()))
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::generate_unified_address`].

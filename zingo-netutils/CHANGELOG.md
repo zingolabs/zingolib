@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The crate re-exports tonic's `TimeoutExpired` beside `Status`, the marker
+  tonic leaves in a status's source chain when the client's own request
+  deadline fired, so a consumer tells a timed-out request apart from a
+  verdict the indexer returned.
 - `test_tls`, behind `testutils`: the committed localhost certificate and
   key. A `Socks5Indexer` in a `testutils` build also trusts that
   certificate, so a test can serve a Destination over TLS behind a loopback
@@ -22,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a superseded conduit permanently short of `Retired`.
 
 ### Changed
+- BREAKING: `rand` 0.10. `provider::rotation_interval` takes a `rand` 0.10
+  generator, and the exit tiers shuffle with the thread-local generator
+  where they drew `rand::rngs::OsRng`, a type `rand` 0.10 removed.
 - `lightwallet-protocol` moves to 0.4.0, the upstream rev whose committed
   bindings carry the Ironwood proto fields. The workspace no longer enables
   `rebuild-proto`, so a build of zingo-netutils no longer runs protoc.
@@ -53,6 +60,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parking it on a cadence whose answer cannot change.
 
 ### Added
+- `nym_proxy::BootstrapEvent` and the observed lifecycle entries
+  `NymProxy::start_observed`, `NymProxy::start_over_observed`, and
+  `NymProxy::reconnect_observed`: every acquisition race — the first
+  bootstrap and each reconnect after a proxy death — reports its steps as
+  typed events naming the Exit Node each concerns, while `start`,
+  `start_over`, and `reconnect` remain thin silent renderings over the same
+  path, so the two narrations cannot drift. `PullFailed` carries the pull's
+  whole typed `zingo_net_diag::NetOpFailure` — the stage, the target, and
+  the cause chain — rather than a line rendered for a human, so a
+  diagnostics surface renders structure instead of parsing prose.
 - The `socks5-fetch` feature and the `socks5_fetch` module: one HTTP request
   carried through a conduit, classified into a typed `zingo_net_diag`
   failure. `ConduitDial::fetch_text` is the entry, and it is the first

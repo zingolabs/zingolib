@@ -13,7 +13,7 @@ ZINGOLIB_NEXTEST_PROFILE = "ci"
 ZINGOLIB_NEXTEST_RETRIES = { value = "0", condition = { env_not_set = [
   "ZINGOLIB_NEXTEST_RETRIES",
 ] } }
-IMAGE_NAME = "zingodevops/ci-build"
+IMAGE_NAME = "ghcr.io/zingolabs/ci-build"
 # Single source of truth: rust-toolchain.toml's `channel`, extracted and
 # validated (concrete numeric versions only) by the workbench
 # `get-rust-version` binary.
@@ -580,13 +580,12 @@ cargo nextest run "${args[@]}"
 '''
 
 # The extra-credit libtonode suite: the sentinels (environment-contract
-# checks) and unit_test_twins (pre-migration live originals of the offline
-# unit twins, docs/testing/live-offline-twins.md). Both are off by default
-# and behind the `extra-credit-tests` feature; this is their scheduled
-# entry point — a containerized nextest run so a cron or CI job can invoke
-# one canonical command. Extra nextest args pass through.
+# checks) and the slow gate. Both are off by default and behind the
+# `extra-credit-tests` feature; this is their scheduled entry point — a
+# containerized nextest run so a cron or CI job can invoke one canonical
+# command. Extra nextest args pass through.
 [tasks.test-extra-credit]
-description = "Containerized run of libtonode's extra-credit suite (sentinels + unit_test_twins twins)"
+description = "Containerized run of libtonode's extra-credit suite (sentinels + slow)"
 script_runner = "bash"
 extend = "base-script"
 script.main = '''

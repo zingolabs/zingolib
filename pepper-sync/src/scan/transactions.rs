@@ -17,7 +17,7 @@ use zcash_keys::{
     address::UnifiedAddress,
     keys::{OutgoingViewingKey, UnifiedFullViewingKey},
 };
-use zcash_note_encryption::{BatchDomain, Domain, ENC_CIPHERTEXT_SIZE, ShieldedOutput};
+use zcash_note_encryption::{BatchDomain, Domain, ShieldedOutput};
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::{
     ShieldedPool,
@@ -45,7 +45,7 @@ use crate::{
 
 use super::DecryptedNoteData;
 
-trait ShieldedOutputExt<D: Domain>: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE> {
+trait ShieldedOutputExt<D: Domain>: ShieldedOutput<D> {
     fn out_ciphertext(&self) -> [u8; 80];
 
     fn value_commitment(&self) -> D::ValueCommitment;
@@ -240,7 +240,7 @@ pub(crate) fn scan_transaction(
             }
         }
 
-        if let Some(tkeys) = ufvk.transparent() {
+        if let Some(tkeys) = ufvk.p2pkh() {
             add_unified_ovk(
                 &mut sapling_ovks,
                 &mut orchard_ovks,
@@ -371,48 +371,21 @@ pub(crate) fn scan_transaction(
         collect_nullifiers(nullifier_map, block_height, txid, &transaction);
     }
 
-    for encoded_memo in encoded_memos {
-        match encoded_memo {
-            ParsedMemo::Version0 { uas } => {
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas.clone(),
-                    &mut outgoing_sapling_notes,
-                )?;
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas.clone(),
-                    &mut outgoing_orchard_notes,
-                )?;
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas,
-                    &mut outgoing_ironwood_notes,
-                )?;
-            }
-            ParsedMemo::Version1 {
-                uas,
-                rejection_address_indexes: _,
-            } => {
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas.clone(),
-                    &mut outgoing_sapling_notes,
-                )?;
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas.clone(),
-                    &mut outgoing_orchard_notes,
-                )?;
-                add_recipient_unified_address(
-                    consensus_parameters,
-                    uas,
-                    &mut outgoing_ironwood_notes,
-                )?;
-
-                // TODO: handle rejection addresses from encoded memos
-            }
-        }
+    for uas in encoded_memos
+        .into_iter()
+        .map(ParsedMemo::into_unified_addresses)
+    {
+        add_recipient_unified_address(
+            consensus_parameters,
+            uas.clone(),
+            &mut outgoing_sapling_notes,
+        )?;
+        add_recipient_unified_address(
+            consensus_parameters,
+            uas.clone(),
+            &mut outgoing_orchard_notes,
+        )?;
+        add_recipient_unified_address(consensus_parameters, uas, &mut outgoing_ironwood_notes)?;
     }
 
     Ok(WalletTransaction {
@@ -483,7 +456,7 @@ fn scan_incoming_notes<D, Op, N, Nf, P>(
 where
     D: BatchDomain<Note = N>,
     D::Memo: AsRef<[u8]>,
-    Op: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
+    Op: ShieldedOutput<D>,
     Nf: Copy,
 {
     let (key_ids, ivks): (Vec<_>, Vec<_>) = ivks.into_iter().unzip();
@@ -562,7 +535,7 @@ where
 }
 
 #[allow(clippy::type_complexity)]
-fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>>(
+fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D>>(
     domain: &D,
     ovks: &[D::OutgoingViewingKey],
     output: &Output,

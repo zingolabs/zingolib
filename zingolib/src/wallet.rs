@@ -25,6 +25,7 @@ use error::{KeyError, WalletError};
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 
 pub mod error;
+pub mod expiry;
 pub(crate) mod legacy;
 pub mod traits;
 pub mod utils;

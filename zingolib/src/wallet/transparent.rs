@@ -12,7 +12,6 @@
 //! `LightWallet::build_op_return_send` builds and records the
 //! transaction.
 
-use rand::rngs::OsRng;
 use thiserror::Error;
 
 use zcash_keys::keys::UnifiedSpendingKey;
@@ -30,6 +29,7 @@ use pepper_sync::keys::transparent::TransparentAddressId;
 
 use super::LightWallet;
 use super::error::{KeyError, WalletError};
+use crate::wallet::utils;
 
 /// The maximum size, in bytes, of an OP_RETURN payload that relays on the
 /// network. This is the same limit the upstream transaction builder
@@ -203,7 +203,11 @@ impl LightWallet {
             self.chain_type,
             target_height,
             transparent_only_build_config(),
-        );
+        )
+        .with_expiry_height(crate::wallet::expiry::tx_expiry_height(
+            &self.chain_type,
+            target_height,
+        ));
         builder
             .add_transparent_p2pkh_input(pubkey, source_outpoint, source_txout)
             .map_err(|e| WalletError::TransparentBuild(format!("input: {e:?}")))?;
@@ -214,15 +218,13 @@ impl LightWallet {
             .add_transparent_null_data_output::<std::convert::Infallible>(data.as_bytes())
             .map_err(|e| WalletError::TransparentBuild(format!("op_return: {e:?}")))?;
 
-        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params();
-        let prover =
-            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let prover = utils::LazySaplingProver::default();
         let build_result = builder
             .build(
                 &signing_set,
                 &[],
                 &[],
-                OsRng,
+                crate::utils::system_rng(),
                 &prover,
                 &prover,
                 &zip317::FeeRule::standard(),

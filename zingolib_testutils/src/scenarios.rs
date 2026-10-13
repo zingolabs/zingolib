@@ -166,6 +166,9 @@ pub fn default_test_activation_heights() -> ActivationHeights {
         .set_nu6_1(fixture.nu6_1())
         .set_nu6_2(fixture.nu6_2())
         .set_nu6_3(fixture.nu6_3())
+        // NU7 stays off in the regtest tier until an indexer serves it:
+        // zaino's NU7 support waits on Zebra 7.0.0. The in-process era,
+        // `zingolib::testutils::mock_activation_heights`, has it on.
         .set_nu7(None)
         .build()
 }

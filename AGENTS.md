@@ -48,8 +48,11 @@
   runs cargo-dupes with the settings that module pins. The gate rejects an
   exact group outside `.dupes-ignore.toml`, a near group count other than
   the ceiling `MAX_NEAR` in that module, and a baseline entry whose group
-  is gone. Never add an entry for a new group. Remove the duplication,
-  then run `dupes-gate cleanup` and commit the result. When a near group
+  is gone. Never add an entry for a new group, with one exception: a
+  trait-delegation pair, where one type implements two traits whose
+  methods delegate identically and cannot share an impl, takes an entry
+  whose reason names the pair. Otherwise remove the duplication, then run
+  `dupes-gate cleanup` and commit the result. When a near group
   disappears, lower `MAX_NEAR` to the new count; the ceiling only moves
   down. No config file holds the settings, so run cargo-dupes through the
   binary: `cargo run --manifest-path tools/workbench/Cargo.toml --bin
@@ -117,10 +120,24 @@ Goal: produce prose and code that reads as if written by a specific, competent h
 - Don't add guards for conditions that can't occur. Don't wrap non-throwing code in try/catch. Don't swallow-and-log errors; let them propagate.
 - Match the surrounding codebase's idioms and conventions over textbook-uniform formatting.
 
+### Documentation in code
+
+A doc-comment holds only a succinct bulleted list of the item's side effects.
+The rule covers every doc-comment form: Rust `///` and `//!`, and file- or
+module-level blocks.
+
+- Each bullet names one side effect: a write to disk, a network call, a lock
+  taken, a mutation of shared state, a spawned task, a panic.
+- A doc-comment holds no summary sentence, no parameter or return
+  description, and no restatement of the signature.
+- A doc-comment references no ADR, issue, or other document.
+- An item with no side effect carries no doc-comment.
+
 ### Rust
 
 - Don't reach for `.clone()` to satisfy the borrow checker. Borrow or restructure first.
-- Use `?` for propagation. Avoid `.unwrap()`/`.expect()` outside tests and throwaway code.
+- Use `?` for propagation. `.unwrap()` is disallowed: never write one, and replace every one a change touches. Avoid `.expect()` outside tests and throwaway code.
+- Every `.unwrap()` or `.expect()` a change touches is considered, never carried along. Touching means adding, moving, rewriting, or keeping one on a line the diff alters, in test code as much as in shipped code. For each one, present the options for explicit `Err` handling and their trade-offs: propagate with `?` into a typed error, restructure so the failure is impossible by construction, match the failure and define the fallback, or keep an `.expect()` whose message states the invariant that makes it unreachable. Every `.expect()` MUST state its invariant as its argument, the fact that makes the failure unreachable, never a description of the failure. An `.expect()` with an explicit invariant is acceptable in test code. A touched 'expect' that stays does so by the reviewer's choice, with its invariant written where the reviewer sees it. This applies in implementation and in review alike.
 - Use tail expressions. No explicit `return` on the final line.
 - Don't annotate types the compiler infers (`let x: i32 = 5;`).
 - Prefer `if let` and combinators (`map`, `and_then`, `ok_or`, `unwrap_or_else`) over verbose `match` when clearer.

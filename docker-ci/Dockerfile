@@ -46,6 +46,7 @@ RUN apt update \
     build-essential \
     libclang-dev \
     ca-certificates \
+    gnupg \
     && update-ca-certificates
 
 # Install pinned Rust tooling and test helpers

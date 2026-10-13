@@ -310,7 +310,7 @@ impl ExitPool {
         // which is why the shuffle is explicit.
         let mut ordered: Vec<ExitNodeId> = Vec::new();
         for mut tier in [proven, unknown, failed] {
-            tier.shuffle(&mut rand::rngs::OsRng);
+            tier.shuffle(&mut rand::rng());
             ordered.extend(tier);
         }
         // One exit per birth: the preference order above decides what a

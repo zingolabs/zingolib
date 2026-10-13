@@ -280,7 +280,7 @@ where
         }
 
         for (account_id, ufvk) in ufvks.iter() {
-            let Some(account_pubkey) = ufvk.transparent() else {
+            let Some(account_pubkey) = ufvk.p2pkh() else {
                 continue;
             };
 
@@ -1008,7 +1008,7 @@ mod tests {
     ) -> zcash_transparent::address::TransparentAddress {
         use zcash_transparent::keys::IncomingViewingKey as _;
 
-        ufvk.transparent()
+        ufvk.p2pkh()
             .expect("the test key has a transparent component")
             .derive_external_ivk()
             .unwrap()

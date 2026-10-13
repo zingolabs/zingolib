@@ -30,7 +30,7 @@ pub use zingo_netutils::{GetClientError, GrpcIndexer, Indexer, ensure_default_cr
 // the indexer's own verdict, so the probe carries that verdict rather than a
 // rendering of it. A consumer holding a typed rejection cannot reach it
 // without this, because the funnel is a consumer's only path to the crate.
-pub use zingo_netutils::Status;
+pub use zingo_netutils::{Status, TimeoutExpired};
 
 pub use zingo_netutils::indexers;
 pub use zingo_netutils::time;

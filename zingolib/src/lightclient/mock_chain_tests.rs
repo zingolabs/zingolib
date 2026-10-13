@@ -4,10 +4,12 @@
 //! bookkeeping) driven against a fabricated in-process chain, with no
 //! zebrad or zainod.
 //!
-//! Every port here is an OFFLINE TWIN: the live original stays in
-//! libtonode-tests as the control group (user direction, 2026-07-08:
-//! live versions are never removed. They eventually move to a gated
-//! "pre-migration" mod once side-by-side equivalence is documented).
+//! Every port here is an OFFLINE TWIN of a libtonode test. Under the
+//! regtest removal directive (2026-10-09, docs/testing/regtest-removal-ledger.md)
+//! a port replaces its live original: one commit deletes the live test
+//! and adds the twin, so a reviewer reads both sides together. The eight
+//! twins of 2026-07-08 predate that rule; their originals were removed
+//! by their own replacement commits.
 
 use pepper_sync::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 use pepper_sync::wallet::IronwoodNote;
@@ -839,16 +841,17 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
-    // 10 orchard + sapling demoted to own transparent: 30_000
-    from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 470_000, None)])
+    // 10 ironwood demoted to own transparent, sapling stays put: 15_000
+    from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 465_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 i: 0 s: 0 t: 470_000);
-    total_expected_fee += 30_000;
+    bump_and_check!(o: 0 i: 10_000 s: 10_000 t: 465_000);
+    total_expected_fee += 15_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 10b transparent-to-transparent is refused: transparent funds are
-    // not send-spendable.
+    // not send-spendable, and the 20_000 shielded leftover cannot pay
+    // the 10_000 payment plus its 25_000 fee.
     match from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 10_000, None)]).await {
         Err(LightClientError::SendError(SendError::ProposeSendError(
             ProposeSendError::Proposal(
@@ -858,12 +861,12 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
                 },
             ),
         ))) => {
-            assert_eq!(available, Zatoshis::from_u64(0).unwrap());
-            assert_eq!(required, Zatoshis::from_u64(20_000).unwrap());
+            assert_eq!(available, Zatoshis::from_u64(20_000).unwrap());
+            assert_eq!(required, Zatoshis::from_u64(35_000).unwrap());
         }
         other => panic!("expected InsufficientFunds, got {other:?}"),
     }
-    bump_and_check!(o: 0 i: 0 s: 0 t: 470_000);
+    bump_and_check!(o: 0 i: 10_000 s: 10_000 t: 465_000);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 11 transparent-to-sapling likewise refused.
@@ -876,49 +879,49 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
                 },
             ),
         ))) => {
-            assert_eq!(available, Zatoshis::from_u64(0).unwrap());
-            assert_eq!(required, Zatoshis::from_u64(60_000).unwrap());
+            assert_eq!(available, Zatoshis::from_u64(20_000).unwrap());
+            assert_eq!(required, Zatoshis::from_u64(70_000).unwrap());
         }
         other => panic!("expected InsufficientFunds, got {other:?}"),
     }
-    bump_and_check!(o: 0 i: 0 s: 0 t: 470_000);
+    bump_and_check!(o: 0 i: 10_000 s: 10_000 t: 465_000);
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
-    // 12 shield: 15_000 (1 t-in, 2 orchard)
+    // 12 shield: 15_000 (1 t-in, the ironwood pair)
     client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
-    bump_and_check!(o: 0 i: 455_000 s: 0 t: 0);
+    bump_and_check!(o: 0 i: 460_000 s: 10_000 t: 0);
     total_expected_fee += 15_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
-    // 13 orchard to own sapling: 20_000
+    // 13 ironwood to own sapling: 20_000
     from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 10_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 i: 425_000 s: 10_000 t: 0);
+    bump_and_check!(o: 0 i: 430_000 s: 20_000 t: 0);
     total_expected_fee += 20_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
-    // 14 orchard self-send: 10_000
+    // 14 ironwood self-send: 10_000
     from_inputs::quick_send(&mut client, vec![(&pmc_unified, 20_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 i: 415_000 s: 10_000 t: 0);
+    bump_and_check!(o: 0 i: 420_000 s: 20_000 t: 0);
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
-    // 15 orchard + sapling to own sapling: 20_000
-    from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 405_000, None)])
+    // 15 sapling + ironwood to own sapling, not an exact drain: 20_000
+    from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 400_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 i: 0 s: 405_000 t: 0);
+    bump_and_check!(o: 0 i: 20_000 s: 400_000 t: 0);
     total_expected_fee += 20_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 
     // 16 sapling self-send: 10_000
-    from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 380_000, None)])
+    from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 350_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 i: 0 s: 395_000 t: 0);
+    bump_and_check!(o: 0 i: 20_000 s: 390_000 t: 0);
     total_expected_fee += 10_000;
     assert_eq!(get_fees_paid_by_client(&client).await, total_expected_fee);
 }
@@ -2355,18 +2358,18 @@ async fn the_nakednet_policy_reports_the_nakednet_route_over_a_ready_mixnet() {
     }
 }
 
+fn checkpoint_exists<S>(store: &S, height: u32) -> bool
+where
+    S: ShardStore<CheckpointId = BlockHeight>,
+{
+    store
+        .get_checkpoint(&BlockHeight::from_u32(height))
+        .expect("infallible")
+        .is_some()
+}
+
 #[tokio::test]
 async fn shardtree_roundtrip_restores_retained_checkpoints() {
-    fn checkpoint_exists<S>(store: &S, height: u32) -> bool
-    where
-        S: ShardStore<CheckpointId = BlockHeight>,
-    {
-        store
-            .get_checkpoint(&BlockHeight::from_u32(height))
-            .expect("infallible")
-            .is_some()
-    }
-
     fn all_checkpoints_stored<S>(store: &S, chain_height: u32) -> bool
     where
         S: ShardStore<CheckpointId = BlockHeight>,
@@ -2482,6 +2485,68 @@ async fn shardtree_roundtrip_restores_retained_checkpoints() {
             shard_trees.ironwood.store(),
             chain_height
         ));
+    }
+}
+
+#[tokio::test]
+async fn store_all_checkpoints_in_verification_window_on_the_mock_chain() {
+    const PAYMENT: u64 = 10_000;
+    const DENSE_CYCLES: u32 = 3;
+    const EMPTY_MIDDLE_BLOCKS: u32 = 86;
+
+    async fn dense_cycle(net: &MockNet, orchard_address: &str, sapling_address: &str) {
+        fund(net, vec![(orchard_address, PAYMENT, None)], 0).await;
+        fund(net, vec![(sapling_address, PAYMENT, None)], 0).await;
+        fund(
+            net,
+            vec![
+                (orchard_address, PAYMENT, None),
+                (sapling_address, PAYMENT, None),
+            ],
+            1,
+        )
+        .await;
+    }
+
+    let mut net = MockNet::launch().await;
+    let mut recipient = net
+        .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+        .await;
+    let orchard_address =
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+    let sapling_address =
+        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Sapling)).await;
+
+    net.chain.write().await.mine_empty_blocks(1);
+    for _ in 0..DENSE_CYCLES {
+        dense_cycle(&net, &orchard_address, &sapling_address).await;
+    }
+    net.chain
+        .write()
+        .await
+        .mine_empty_blocks(EMPTY_MIDDLE_BLOCKS);
+    for _ in 0..DENSE_CYCLES {
+        dense_cycle(&net, &orchard_address, &sapling_address).await;
+    }
+    recipient.sync_and_await().await.unwrap();
+
+    let tip = net.chain.read().await.tip();
+    let window_start = tip - pepper_sync::sync::MAX_REORG_ALLOWANCE + 1;
+    let wallet = recipient.wallet().read().await;
+    let shard_trees = &wallet.shard_trees;
+    for height in window_start..=tip {
+        assert!(
+            checkpoint_exists(shard_trees.sapling.store(), height),
+            "missing sapling checkpoint at height {height}"
+        );
+        assert!(
+            checkpoint_exists(shard_trees.orchard.store(), height),
+            "missing orchard checkpoint at height {height}"
+        );
+        assert!(
+            checkpoint_exists(shard_trees.ironwood.store(), height),
+            "missing ironwood checkpoint at height {height}"
+        );
     }
 }
 
@@ -4059,5 +4124,664 @@ mod mixnet_wire_offline {
             client_for(UNROUTED_URI).submit(part, expiry).await,
             Err(PartTransmissionError::Transport(_))
         ));
+    }
+}
+
+mod shielded_coinbase {
+    use zcash_protocol::PoolType;
+    use zcash_protocol::ShieldedPool;
+    use zcash_protocol::value::Zatoshis;
+
+    use crate::check_client_balances;
+    use crate::testutils::lightclient::get_base_address;
+    use crate::testutils::mock_activation_heights_deferring_nu6_3;
+    use crate::testutils::mock_indexer::{MockChain, MockNet};
+
+    const REWARD_ZATS: u64 = 625_000;
+    const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
+    const DEFERRED_NU6_3: u32 = 130;
+
+    #[tokio::test]
+    async fn a_shielded_coinbase_pays_the_miner_in_ironwood_after_the_activation() {
+        let mut net = MockNet::launch().await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_ua = get_base_address(&miner, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.chain.write().await.mine_empty_blocks(1);
+        let coinbase = net
+            .mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+            .await;
+        assert!(!coinbase.is_empty());
+        net.chain.write().await.mine_empty_blocks(1);
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: REWARD_ZATS o: 0 s: 0 t: 0);
+    }
+
+    #[tokio::test]
+    async fn a_shielded_coinbase_pays_the_miner_in_orchard_before_the_activation() {
+        let mut net = MockNet::launch_with(MockChain::with_activation_heights(
+            mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
+        ))
+        .await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_ua = get_base_address(&miner, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.chain.write().await.mine_empty_blocks(1);
+        net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+            .await;
+        net.chain.write().await.mine_empty_blocks(1);
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: 0 o: REWARD_ZATS s: 0 t: 0);
+    }
+}
+
+mod boundary_pruning {
+    use incrementalmerkletree::Position;
+    use pepper_sync::sync::MAX_SHARDTREE_CHECKPOINTS;
+    use pepper_sync::wallet::{NoteInterface, OrchardNote, OutputId, OutputInterface};
+    use shardtree::store::ShardStore as _;
+    use zaino_proto::tonic::Code;
+    use zcash_client_backend::data_api::anchor_retention::{
+        AnchorRetention, AnchorRetentionInterval,
+    };
+    use zcash_protocol::PoolType;
+    use zcash_protocol::ShieldedPool;
+    use zcash_protocol::consensus::BlockHeight;
+
+    use crate::check_client_balances;
+    use crate::lightclient::LightClient;
+    use crate::testutils::lightclient::get_base_address;
+    use crate::testutils::migration::inject_scheduled_migration;
+    use crate::testutils::mock_activation_heights_deferring_nu6_3;
+    use crate::testutils::mock_indexer::{
+        Fault, MockChain, MockNet, Rpc, faucet_funding_transaction_on,
+    };
+    use crate::wallet::LightWallet;
+    use crate::wallet::migration::parts::SkipReason;
+    use crate::wallet::migration::{MigrationParams, PartState, PrepareResult, bucket_index};
+
+    const HIDDEN_BLOCKS: u32 = 10;
+    const PRUNED_BUCKET_MODULUS: u32 = (MAX_SHARDTREE_CHECKPOINTS + 1).next_power_of_two();
+    const ANCHOR_BUCKET: u64 = 2;
+    const WINDOW_BUCKET: u64 = ANCHOR_BUCKET + 1;
+    const ANCHOR_BOUNDARY: u32 = ANCHOR_BUCKET as u32 * PRUNED_BUCKET_MODULUS;
+    const DEFERRED_NU6_3: u32 = 200;
+    const BIRTHDAY_CHECKPOINT_RUNWAY: u32 = MAX_SHARDTREE_CHECKPOINTS;
+    const _: () = assert!(
+        BIRTHDAY_CHECKPOINT_RUNWAY + 2 < DEFERRED_NU6_3,
+        "the funding must sit above every checkpoint the birthday verification leaves and still confirm before NU6.3 activates"
+    );
+    const TARGET_TIP: u32 =
+        WINDOW_BUCKET as u32 * PRUNED_BUCKET_MODULUS + (PRUNED_BUCKET_MODULUS - HIDDEN_BLOCKS) / 2;
+    const _: () = assert!(
+        ANCHOR_BOUNDARY >= DEFERRED_NU6_3,
+        "the transmit path skips an anchor below the NU6.3 activation before it looks at the tree"
+    );
+    const _: () = assert!(
+        TARGET_TIP - ANCHOR_BOUNDARY > MAX_SHARDTREE_CHECKPOINTS,
+        "the leap must leave the anchor boundary below pepper-sync's rolling checkpoint window"
+    );
+    const _: () = assert!(
+        TARGET_TIP + HIDDEN_BLOCKS < (WINDOW_BUCKET as u32 + 1) * PRUNED_BUCKET_MODULUS,
+        "the hidden blocks must keep the tip inside the transmission window"
+    );
+
+    async fn funding_note(
+        client: &LightClient,
+        funding: u64,
+    ) -> ((u64, OutputId, [u8; 32]), Position) {
+        let wallet = client.wallet().read().await;
+        wallet
+            .wallet_transactions
+            .values()
+            .flat_map(|transaction| OrchardNote::transaction_outputs(transaction).to_vec())
+            .find(|note| note.value() == funding)
+            .map(|note| {
+                (
+                    (
+                        note.value(),
+                        note.output_id(),
+                        note.nullifier()
+                            .expect("scanned wallet notes carry nullifiers")
+                            .to_bytes(),
+                    ),
+                    note.position()
+                        .expect("scanned wallet notes carry tree positions"),
+                )
+            })
+            .expect("the recipient holds its funding note")
+    }
+
+    fn orchard_checkpoints_holding(
+        wallet: &LightWallet,
+        at_or_below: BlockHeight,
+        position: Position,
+    ) -> Vec<BlockHeight> {
+        let store = wallet.shard_trees.orchard.store();
+        let count = store.checkpoint_count().expect("infallible");
+        (0..count)
+            .filter_map(|depth| store.get_checkpoint_at_depth(depth).expect("infallible"))
+            .filter(|(id, checkpoint)| {
+                *id <= at_or_below && checkpoint.position().is_some_and(|held| held >= position)
+            })
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn unavailable_boundary_tree_state_skips_without_sync_on_the_mock_chain() {
+        let anchor_boundary = BlockHeight::from_u32(ANCHOR_BOUNDARY);
+        let retention = AnchorRetention::new(
+            BlockHeight::from_u32(DEFERRED_NU6_3),
+            AnchorRetentionInterval::default(),
+        );
+        assert!(
+            retention
+                .retained_in_range(BlockHeight::from_u32(0)..=anchor_boundary)
+                .is_empty(),
+            "the canonical retention grid must pin no checkpoint at or below the anchor boundary"
+        );
+
+        let mut net = MockNet::launch_with(MockChain::with_activation_heights(
+            mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
+        ))
+        .await;
+        let mut params = MigrationParams::provisional(net.chain_type());
+        params.bucket_modulus = PRUNED_BUCKET_MODULUS;
+        let funding = params.max_residual_value + params.part_fee;
+        let mut recipient = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let recipient_ua =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        {
+            let mut chain = net.chain.write().await;
+            chain.mine_empty_blocks(BIRTHDAY_CHECKPOINT_RUNWAY);
+            let funding_transaction = faucet_funding_transaction_on(
+                chain.activation_heights(),
+                chain.next_height(),
+                vec![(&recipient_ua, funding, None)],
+            )
+            .await;
+            chain.mine_block(vec![funding_transaction]);
+            let funded_tip = chain.tip();
+            assert!(
+                funded_tip < DEFERRED_NU6_3,
+                "the funding must confirm before NU6.3 activates, but the chain is at {funded_tip}"
+            );
+            chain.mine_empty_blocks(TARGET_TIP - funded_tip);
+        }
+        recipient.sync_and_await().await.unwrap();
+        check_client_balances!(recipient, i: 0 o: funding s: 0 t: 0);
+
+        let known_height = recipient
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .last_known_chain_height()
+            .expect("the recipient has synced");
+        assert_eq!(
+            bucket_index(known_height, PRUNED_BUCKET_MODULUS),
+            WINDOW_BUCKET,
+            "the chain must sit inside the transmission window"
+        );
+        let (bound, position) = funding_note(&recipient, funding).await;
+        assert_eq!(
+            orchard_checkpoints_holding(
+                &*recipient.wallet().read().await,
+                anchor_boundary,
+                position
+            ),
+            Vec::<BlockHeight>::new(),
+            "no checkpoint at or below the anchor boundary may hold the bound note"
+        );
+        let (funding_value, output_id, nullifier) = bound;
+        let denomination = funding_value - params.part_fee;
+        inject_scheduled_migration(
+            &recipient,
+            params,
+            vec![(denomination, output_id, nullifier)],
+            Some(WINDOW_BUCKET),
+            Some(ANCHOR_BUCKET),
+        )
+        .await;
+
+        {
+            let mut chain = net.chain.write().await;
+            chain.mine_empty_blocks(HIDDEN_BLOCKS);
+            chain.faults.inject(
+                Rpc::BlockRange,
+                Fault::Fail(
+                    Code::Unavailable,
+                    "a hidden sync fetched blocks".to_string(),
+                ),
+            );
+        }
+
+        #[cfg(feature = "nym")]
+        recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
+        let sent = recipient.transmit_due_parts().await.unwrap();
+        assert!(sent.is_empty(), "nothing must be transmitted: {sent:?}");
+        assert_eq!(
+            net.chain.read().await.faults.pending(Rpc::BlockRange),
+            1,
+            "the transmit path must never fetch blocks"
+        );
+        let mut wallet = recipient.wallet().write().await;
+        let state = wallet.migration.as_ref().unwrap();
+        let part = &state.parts[0];
+        assert_eq!(part.state, PartState::Assigned, "a skip writes nothing");
+        assert_eq!(part.attempts, 0, "a skip records no attempt");
+        assert!(part.anchor_witness.is_none());
+        assert_eq!(
+            wallet.sync_state.last_known_chain_height(),
+            Some(known_height),
+            "the transmit path must never synchronize"
+        );
+
+        let (account, params, mut probe) = (state.account, state.params.clone(), part.clone());
+        match wallet
+            .prepare_part(account, &mut probe, &params)
+            .expect("an unavailable boundary is a skip, not an error")
+        {
+            PrepareResult::Skip(SkipReason::MissedBoundary { boundary }) => {
+                assert_eq!(boundary, anchor_boundary);
+            }
+            PrepareResult::Skip(other) => {
+                panic!("the part skipped for the wrong reason: {other:?}")
+            }
+            PrepareResult::Ready { .. } => {
+                panic!("the anchor boundary's tree state must be unavailable")
+            }
+        }
+    }
+}
+
+/// Twins moved from regtest under the removal directive, one commit each.
+mod moved_from_regtest {
+    use std::time::Duration;
+
+    use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+    use zcash_protocol::PoolType;
+    use zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS;
+    use zcash_protocol::value::Zatoshis;
+    use zip32::AccountId;
+
+    use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
+    use zcash_protocol::ShieldedPool;
+
+    use super::{external_address, fund};
+    use crate::check_client_balances;
+    use crate::testutils::lightclient::{from_inputs, get_base_address, get_fees_paid_by_client};
+    use crate::testutils::mock_activation_heights_deferring_nu6_3;
+    use crate::testutils::mock_indexer::{MockChain, MockNet};
+
+    const REWARD_ZATS: u64 = 625_000;
+    const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
+    const COINBASES: u64 = 4;
+    const DEFERRED_NU6_3: u32 = 130;
+    /// Four transparent inputs and one shielded output: four transparent logical actions plus the
+    /// two-action shielded minimum.
+    const SHIELD_LOGICAL_ACTIONS: u64 = 6;
+
+    #[tokio::test]
+    async fn mine_to_transparent_and_shield() {
+        let mut net = MockNet::launch().await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        miner.set_transmit_retry_interval(Duration::ZERO);
+        let miner_taddr = get_base_address(&miner, PoolType::Transparent).await;
+        {
+            let mut chain = net.chain.write().await;
+            for _ in 0..COINBASES {
+                chain.mine_block_rewarding(&miner_taddr, REWARD, vec![]);
+            }
+            chain.mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
+        }
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: 0 o: 0 s: 0 t: (COINBASES * REWARD_ZATS));
+
+        miner.quick_shield(AccountId::ZERO).await.unwrap();
+        net.chain.write().await.mine_mempool();
+        miner.sync_and_await().await.unwrap();
+
+        let fee = get_fees_paid_by_client(&miner).await;
+        assert_eq!(
+            fee,
+            Option::unwrap(MARGINAL_FEE * SHIELD_LOGICAL_ACTIONS).into_u64()
+        );
+        check_client_balances!(miner, i: (COINBASES * REWARD_ZATS - fee) o: 0 s: 0 t: 0);
+    }
+    #[tokio::test]
+    async fn sapling_dust_fee_collection() {
+        const FEES_FOR_ORCHARD: u64 = 10;
+        const DUST_DIVISOR: u64 = 10;
+        const FEES_SENT: u64 = 5;
+        let fee = u64::from(MINIMUM_FEE);
+        let for_orchard = fee * FEES_FOR_ORCHARD;
+        let for_sapling = fee / DUST_DIVISOR;
+
+        let mut net = MockNet::launch().await;
+        let mut recipient = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let recipient_sapling =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Sapling)).await;
+        let recipient_unified =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        check_client_balances!(recipient, i: 0 o: 0 s: 0 t: 0);
+
+        net.chain.write().await.mine_empty_blocks(1);
+        fund(
+            &net,
+            vec![
+                (&recipient_unified, for_orchard, Some("Plenty for orchard.")),
+                (&recipient_sapling, for_sapling, Some("Dust for sapling.")),
+            ],
+            0,
+        )
+        .await;
+        recipient.sync_and_await().await.unwrap();
+        check_client_balances!(recipient, i: for_orchard o: 0 s: 0 t: 0);
+
+        from_inputs::quick_send(
+            &mut recipient,
+            vec![(
+                &external_address(PoolType::ORCHARD),
+                fee * FEES_SENT,
+                Some("Five times fee."),
+            )],
+        )
+        .await
+        .unwrap();
+        net.chain.write().await.mine_mempool();
+        recipient.sync_and_await().await.unwrap();
+        let remaining_ironwood = for_orchard - (FEES_SENT + 1) * fee;
+        check_client_balances!(recipient, i: remaining_ironwood o: 0 s: 0 t: 0);
+    }
+    #[tokio::test]
+    async fn send_and_sync_with_multiple_notes_no_panic() {
+        const NOTE: u64 = 40_000;
+        const PAYMENT: u64 = 50_000;
+        let fee = u64::from(MINIMUM_FEE);
+
+        let mut net = MockNet::launch().await;
+        let mut recipient = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let recipient_ua =
+            get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.chain.write().await.mine_empty_blocks(1);
+        fund(&net, vec![(&recipient_ua, NOTE, None)], 0).await;
+        fund(&net, vec![(&recipient_ua, NOTE, None)], 0).await;
+        recipient.sync_and_await().await.unwrap();
+        check_client_balances!(recipient, i: (2 * NOTE) o: 0 s: 0 t: 0);
+
+        from_inputs::quick_send(
+            &mut recipient,
+            vec![(&external_address(PoolType::ORCHARD), PAYMENT, None)],
+        )
+        .await
+        .unwrap();
+        net.chain.write().await.mine_mempool();
+        recipient.sync_and_await().await.unwrap();
+        // The payment plus its fee exceeds either note alone, so the send
+        // consumed both and returned the rest as change.
+        check_client_balances!(recipient, i: (2 * NOTE - PAYMENT - fee) o: 0 s: 0 t: 0);
+    }
+    #[tokio::test]
+    async fn mine_to_transparent() {
+        use crate::lightclient::LightClient;
+        use pepper_sync::wallet::TransparentCoin;
+
+        const FIRST_BLOCKS: u64 = 3;
+        let mut net = MockNet::launch().await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_taddr = get_base_address(&miner, PoolType::Transparent).await;
+        {
+            let mut chain = net.chain.write().await;
+            for _ in 0..FIRST_BLOCKS {
+                chain.mine_block_rewarding(&miner_taddr, REWARD, vec![]);
+            }
+        }
+        miner.sync_and_await().await.unwrap();
+        async fn unfiltered(miner: &LightClient) -> u64 {
+            miner
+                .wallet()
+                .read()
+                .await
+                .get_filtered_balance::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
+                .unwrap()
+                .into_u64()
+        }
+        assert_eq!(unfiltered(&miner).await, FIRST_BLOCKS * REWARD_ZATS);
+
+        net.chain
+            .write()
+            .await
+            .mine_block_rewarding(&miner_taddr, REWARD, vec![]);
+        miner.sync_and_await().await.unwrap();
+        assert_eq!(unfiltered(&miner).await, (FIRST_BLOCKS + 1) * REWARD_ZATS);
+    }
+    #[tokio::test]
+    async fn mine_to_transparent_coinbase_maturity() {
+        use crate::lightclient::LightClient;
+        use pepper_sync::wallet::TransparentCoin;
+
+        const FIRST_BLOCKS: u64 = 3;
+        let mut net = MockNet::launch().await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_taddr = get_base_address(&miner, PoolType::Transparent).await;
+        {
+            let mut chain = net.chain.write().await;
+            for _ in 0..FIRST_BLOCKS {
+                chain.mine_block_rewarding(&miner_taddr, REWARD, vec![]);
+            }
+        }
+        miner.sync_and_await().await.unwrap();
+        async fn mature(miner: &LightClient) -> u64 {
+            miner
+                .wallet()
+                .read()
+                .await
+                .confirmed_balance_excluding_dust::<TransparentCoin>(AccountId::ZERO)
+                .unwrap()
+                .into_u64()
+        }
+        check_client_balances!(miner, i: 0 o: 0 s: 0 t: 0);
+        assert_eq!(mature(&miner).await, 0);
+
+        net.chain
+            .write()
+            .await
+            .mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
+        miner.sync_and_await().await.unwrap();
+        assert_eq!(mature(&miner).await, FIRST_BLOCKS * REWARD_ZATS);
+    }
+    #[tokio::test]
+    async fn mine_to_orchard() {
+        const ORCHARD_BLOCKS: u64 = 3;
+        let mut net = MockNet::launch_with(MockChain::with_activation_heights(
+            mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
+        ))
+        .await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_sapling =
+            get_base_address(&miner, PoolType::Shielded(ShieldedPool::Sapling)).await;
+        let miner_ua = get_base_address(&miner, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.mine_block_rewarding_shielded(&miner_sapling, REWARD, vec![])
+            .await;
+        for _ in 0..ORCHARD_BLOCKS {
+            net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+                .await;
+        }
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: 0 o: (ORCHARD_BLOCKS * REWARD_ZATS) s: REWARD_ZATS t: 0);
+
+        net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+            .await;
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: 0 o: ((ORCHARD_BLOCKS + 1) * REWARD_ZATS) s: REWARD_ZATS t: 0);
+    }
+    #[tokio::test]
+    async fn mine_to_ironwood() {
+        const IRONWOOD_BLOCKS: u64 = 3;
+        let mut net = MockNet::launch().await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_sapling =
+            get_base_address(&miner, PoolType::Shielded(ShieldedPool::Sapling)).await;
+        let miner_ua = get_base_address(&miner, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.mine_block_rewarding_shielded(&miner_sapling, REWARD, vec![])
+            .await;
+        for _ in 0..IRONWOOD_BLOCKS {
+            net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+                .await;
+        }
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: (IRONWOOD_BLOCKS * REWARD_ZATS) o: 0 s: REWARD_ZATS t: 0);
+
+        net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+            .await;
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: ((IRONWOOD_BLOCKS + 1) * REWARD_ZATS) o: 0 s: REWARD_ZATS t: 0);
+    }
+    #[tokio::test]
+    async fn ironwood_miner_coinbase_distribution() {
+        use crate::testutils::mock_activation_heights_with;
+        use crate::testutils::mock_indexer::MockChain;
+
+        const NU6_3: u32 = 5;
+        const ORCHARD_BLOCKS: u64 = (NU6_3 - 2) as u64;
+        let mut net = MockNet::launch_with(MockChain::with_activation_heights(
+            mock_activation_heights_with(|era| era.set_nu6_3(Some(NU6_3)).set_nu7(None)),
+        ))
+        .await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_sapling =
+            get_base_address(&miner, PoolType::Shielded(ShieldedPool::Sapling)).await;
+        let miner_ua = get_base_address(&miner, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.mine_block_rewarding_shielded(&miner_sapling, REWARD, vec![])
+            .await;
+        for _ in 0..ORCHARD_BLOCKS {
+            net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+                .await;
+        }
+        assert_eq!(net.chain.read().await.tip(), NU6_3 - 1);
+        miner.sync_and_await().await.unwrap();
+        // Every coinbase so far predates the activation, so the unified
+        // address's rewards are legacy Orchard notes and the Ironwood pool
+        // is empty.
+        check_client_balances!(miner, i: 0 o: (ORCHARD_BLOCKS * REWARD_ZATS) s: REWARD_ZATS t: 0);
+
+        // The activation block's coinbase lands in Ironwood.
+        net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+            .await;
+        miner.sync_and_await().await.unwrap();
+        check_client_balances!(miner, i: REWARD_ZATS o: (ORCHARD_BLOCKS * REWARD_ZATS) s: REWARD_ZATS t: 0);
+    }
+    #[tokio::test]
+    async fn send_mined_ironwood_to_ironwood() {
+        const IRONWOOD_BLOCKS: u64 = 3;
+        const AMOUNT_TO_SEND: u64 = 10_000;
+        let fee = u64::from(MINIMUM_FEE);
+        let mut net = MockNet::launch().await;
+        let mut miner = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let miner_ua = get_base_address(&miner, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        for _ in 0..IRONWOOD_BLOCKS {
+            net.mine_block_rewarding_shielded(&miner_ua, REWARD, vec![])
+                .await;
+        }
+        miner.sync_and_await().await.unwrap();
+        let funded = IRONWOOD_BLOCKS * REWARD_ZATS;
+        check_client_balances!(miner, i: funded o: 0 s: 0 t: 0);
+
+        from_inputs::quick_send(
+            &mut miner,
+            vec![(&miner_ua, AMOUNT_TO_SEND, Some("Scenario test: engage!"))],
+        )
+        .await
+        .unwrap();
+        // The miner mines the confirming block itself, collecting a fresh
+        // reward plus the fee it paid.
+        let reward_with_fee = Zatoshis::from_u64(REWARD_ZATS + fee).unwrap();
+        net.mine_mempool_rewarding_shielded(&miner_ua, reward_with_fee)
+            .await;
+        miner.sync_and_await().await.unwrap();
+        let balance = miner.account_balance(AccountId::ZERO).await.unwrap();
+        assert_eq!(balance.unconfirmed_ironwood_balance, Some(Zatoshis::ZERO));
+        assert_eq!(
+            balance.confirmed_ironwood_balance.unwrap().into_u64(),
+            funded + REWARD_ZATS
+        );
+    }
+    #[tokio::test]
+    async fn verify_old_wallet_uses_server_height_in_send() {
+        const FUNDING: u64 = 100_000;
+        const SYNCED_BLOCKS: u32 = 5;
+        const HIDDEN_BLOCKS: u32 = 2;
+        const PAYMENT: u64 = 10_000;
+
+        let mut net = MockNet::launch().await;
+        let mut sender = net
+            .client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None)
+            .await;
+        let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
+        net.chain.write().await.mine_empty_blocks(1);
+        fund(&net, vec![(&sender_ua, FUNDING, None)], SYNCED_BLOCKS).await;
+        sender.sync_and_await().await.unwrap();
+        let synced_height = sender
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .fully_scanned_height()
+            .unwrap();
+        assert_eq!(u32::from(synced_height), net.chain.read().await.tip());
+
+        // Blocks the wallet has not seen: it stays at the height it last
+        // synced to, two behind the server's tip.
+        net.chain.write().await.mine_empty_blocks(HIDDEN_BLOCKS);
+        let stale_height = sender
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .fully_scanned_height()
+            .unwrap();
+        assert_eq!(stale_height, synced_height);
+        assert_eq!(
+            u32::from(stale_height) + HIDDEN_BLOCKS,
+            net.chain.read().await.tip()
+        );
+
+        // A send built from the server's height, not the wallet's, is one
+        // the chain accepts into its mempool.
+        from_inputs::quick_send(
+            &mut sender,
+            vec![(
+                &external_address(PoolType::ORCHARD),
+                PAYMENT,
+                Some("Interrupting sync!!"),
+            )],
+        )
+        .await
+        .unwrap();
+        assert_eq!(net.chain.read().await.mempool_len(), 1);
     }
 }

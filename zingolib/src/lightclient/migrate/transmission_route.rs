@@ -66,11 +66,11 @@ impl TransmissionClient for RoutedTransmissionClient {
         raw_tx: Vec<u8>,
         expiry_height: BlockHeight,
     ) -> Result<TransmissionReceipt, PartTransmissionError> {
-        use rand::seq::SliceRandom as _;
+        use rand::seq::IndexedRandom as _;
 
         let indexer = self
             .candidates
-            .choose(&mut rand::rngs::OsRng)
+            .choose(&mut crate::utils::system_rng())
             .ok_or_else(|| {
                 PartTransmissionError::Transport("no transmission candidates".to_string())
             })?;

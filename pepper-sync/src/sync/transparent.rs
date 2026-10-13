@@ -108,7 +108,7 @@ pub(crate) async fn address_discovery<W: SyncWallet>(
     // discover new addresses and find scan_targets for relevant transactions
     let mut gap_addresses = HashMap::new();
     for (account_id, ufvk) in ufvks {
-        if let Some(account_pubkey) = ufvk.transparent() {
+        if let Some(account_pubkey) = ufvk.p2pkh() {
             for scope in &scopes {
                 // start with the first address index previously unused by the wallet
                 let mut address_index = if let Some(id) = wallet_addresses

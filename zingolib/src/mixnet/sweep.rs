@@ -9,7 +9,7 @@
 #![forbid(unsafe_code)]
 
 use http::Uri;
-use rand::seq::SliceRandom as _;
+use rand::seq::{IndexedRandom as _, SliceRandom as _};
 
 use super::probe::ProbeSuccess;
 use crate::lightclient::indexer_history::FailureKind;
@@ -230,7 +230,7 @@ pub fn healthy_draw_verdict(
     pin: Option<&Uri>,
     rng: &mut impl rand::Rng,
 ) -> Option<Uri> {
-    use rand::seq::SliceRandom as _;
+    use rand::seq::IndexedRandom as _;
     let drawn = |rng: &mut _| {
         let healthy_set: Vec<&Uri> = results
             .iter()

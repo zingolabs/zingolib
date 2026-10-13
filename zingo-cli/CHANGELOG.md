@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `sync status` reports `total_blocks`, the block span from the wallet
+  birthday to the last known chain height, beside `total_blocks_scanned`.
+  Every other key, and the text `sync poll` prints, is unchanged; both are
+  now rendered by `zingolib::perspective::sync_progress`.
 - A dead sync recovers without the user when the error's typed
   recommendation allows it. A transient error relaunches sync against the
   bound indexer. An error that condemns the server redraws the sync
@@ -34,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation a second time to decide where log output goes.
 
 ### Changed
+- BREAKING: moves to the librustzcash NU7 pre-release cohort zingolib
+  pins. `parse_viewkey` lists a P2SH viewing key item as `transparent`
+  beside a P2PKH one.
 - **Breaking:** the term clearnet is renamed nakednet. The cargo feature
   `clearnet-test-mode` is now `nakednet-test-mode`, and `network history`
   reports a direct route as `nakednet` where it reported `clearnet`.

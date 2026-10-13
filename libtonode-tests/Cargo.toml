@@ -7,10 +7,6 @@ publish = false
 [features]
 default = ["chain_generic_tests"]
 chain_generic_tests = []
-# Pre-migration originals of tests that gained offline unit twins
-# (docs/testing/live-offline-twins.md). Off by default: the twins carry
-# the default coverage; enable to run the live originals side-by-side.
-unit_test_twins = []
 # Sentinel tests pin environment contracts (zebrad behavior and the
 # zcash_local_net launch contract), not this repository's code. Off by
 # default: run them when the environment moves, such as infra pin bumps,
@@ -22,7 +18,7 @@ sentinels = []
 # re-baseline. Currently empty pending the next recorded full-suite run.
 slow = []
 # Everything beyond the default suite, in one switch.
-extra-credit-tests = ["sentinels", "unit_test_twins", "slow"]
+extra-credit-tests = ["sentinels", "slow"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]

@@ -4,8 +4,10 @@ use std::ops::Range;
 
 use nonempty::NonEmpty;
 
+use zcash_client_backend::data_api::WalletRead as _;
 use zcash_client_backend::data_api::wallet::SpendingKeys;
 use zcash_client_backend::proposal::Proposal;
+use zcash_client_backend::util::SystemClock;
 
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::NoteInterface;
@@ -15,6 +17,7 @@ use zcash_protocol::{ShieldedPool, TxId};
 
 use super::LightWallet;
 use super::error::{CalculateTransactionError, KeyError};
+use crate::wallet::utils;
 
 impl LightWallet {
     /// Creates and stores transaction from the given `proposal`, returning the txids for each calculated transaction.
@@ -66,23 +69,50 @@ impl LightWallet {
             .ok_or(KeyError::NoAccountKeys)?
             .try_into()?;
 
-        // TODO:  Remove fallible sapling operations from Orchard only sends.
-        let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
-            crate::wallet::utils::read_sapling_params();
-        let sapling_prover =
-            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+        let sapling_prover = utils::LazySaplingProver::default();
+
+        let expiry_height = self.proposal_expiry_height(&proposal);
 
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self,
             &chain_type,
+            &SystemClock,
+            &mut crate::utils::system_rng(),
             &sapling_prover,
             &sapling_prover,
             &SpendingKeys::new(usk),
             zcash_client_backend::wallet::OvkPolicy::Sender,
             &proposal,
-            None,
+            expiry_height,
         )
         .map_err(CalculateTransactionError::Calculation)
+    }
+
+    /// The expiry height the wallet asks the backend to give a proposal's
+    /// transactions, or `None` to leave the expiry to the backend.
+    ///
+    /// A step the backend builds as a canonical ZIP 318 crossing takes the
+    /// ZIP's rolling expiry, which every crossing in a modulus period shares,
+    /// and the backend refuses any other. A proposal holding one therefore
+    /// leaves the expiry to the backend. Every other proposal takes the
+    /// wallet's delta for its target height.
+    pub(crate) fn proposal_expiry_height<NoteRef>(
+        &self,
+        proposal: &Proposal<zip317::FeeRule, NoteRef>,
+    ) -> Option<BlockHeight> {
+        let target_height = proposal.min_target_height();
+        let holds_canonical_crossing = zcash_client_backend::fees::canonical_crossing_fee(
+            &self.chain_type,
+            target_height.into(),
+        )
+        .is_ok_and(|canonical_fee| {
+            proposal.steps().iter().any(|step| {
+                step.is_canonical_crossing(&self.pool_migration_params(), canonical_fee)
+            })
+        });
+        (!holds_canonical_crossing).then(|| {
+            crate::wallet::expiry::tx_expiry_height(&self.chain_type, target_height.into())
+        })
     }
 
     pub(crate) fn can_build_witness<N>(
@@ -219,6 +249,103 @@ fn check_note_shards_are_scanned(
 }
 
 #[cfg(test)]
+mod proposal_expiry {
+    use nonempty::NonEmpty;
+    use zcash_client_backend::proposal::ShieldedInputs;
+    use zcash_client_backend::wallet::{Note, ReceivedNote};
+    use zcash_protocol::PoolType;
+    use zcash_protocol::consensus::BlockHeight;
+    use zcash_protocol::value::{COIN, Zatoshis};
+
+    use crate::mocks::default_txid;
+    use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
+    use crate::mocks::proposal::{
+        PaymentBuilder, ProposalBuilder, StepBuilder, TransactionRequestBuilder,
+    };
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::wallet::expiry::tx_expiry_height;
+    use crate::wallet::output::OutputRef;
+    use pepper_sync::wallet::OutputId;
+
+    const TARGET: u32 = 147;
+    /// A ZIP 318 bucket boundary: a multiple of the 144-block grid.
+    const BUCKET_BOUNDARY: u32 = 144;
+
+    /// An ordinary proposal takes the wallet's delta for its target height.
+    #[test]
+    fn an_ordinary_proposal_takes_the_wallets_delta() {
+        let wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
+        let mut builder = ProposalBuilder::default();
+        builder.min_target_height(BlockHeight::from_u32(TARGET));
+        let proposal = builder.build();
+
+        assert_eq!(
+            wallet.proposal_expiry_height(&proposal),
+            Some(tx_expiry_height(
+                &wallet.chain_type(),
+                BlockHeight::from_u32(TARGET)
+            ))
+        );
+    }
+
+    /// A proposal holding a canonical ZIP 318 crossing, one Orchard note
+    /// paying exactly one denomination into Ironwood from a bucket-boundary
+    /// anchor at the canonical fee, leaves the expiry to the backend, which
+    /// gives such a step the ZIP's rolling expiry and refuses any other.
+    #[test]
+    fn a_canonical_crossing_leaves_the_expiry_to_the_backend() {
+        let wallet =
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
+        let chain = wallet.chain_type();
+        let canonical_fee = zcash_client_backend::fees::canonical_crossing_fee(
+            &chain,
+            BlockHeight::from_u32(TARGET),
+        )
+        .unwrap();
+        let denomination = Zatoshis::const_from_u64(COIN);
+        let txid = default_txid();
+        let note = OrchardCryptoNoteBuilder::default()
+            .value(orchard::value::NoteValue::from_raw(
+                COIN + u64::from(canonical_fee),
+            ))
+            .build();
+        let mut payment = PaymentBuilder::default();
+        payment.amount(denomination);
+        let mut request = TransactionRequestBuilder::new();
+        request.payments(payment.build());
+        let mut step = StepBuilder::default();
+        step.transaction_request(request.build())
+            .shielded_inputs(Some(ShieldedInputs::from_parts(NonEmpty::singleton(
+                ReceivedNote::from_parts(
+                    OutputRef::new(OutputId::new(txid, 0), PoolType::ORCHARD),
+                    txid,
+                    0,
+                    Note::Orchard {
+                        note,
+                        pool: orchard::ValuePool::Orchard,
+                    },
+                    zip32::Scope::External,
+                    incrementalmerkletree::Position::from(1),
+                    None,
+                    None,
+                ),
+            ))))
+            .anchor_height(BlockHeight::from_u32(BUCKET_BOUNDARY))
+            .balance(
+                zcash_client_backend::fees::TransactionBalance::new(vec![], canonical_fee).unwrap(),
+            );
+        let mut builder = ProposalBuilder::default();
+        builder
+            .min_target_height(BlockHeight::from_u32(TARGET))
+            .steps(NonEmpty::singleton(step.build()));
+        let proposal = builder.build();
+
+        assert_eq!(wallet.proposal_expiry_height(&proposal), None);
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
@@ -226,6 +353,47 @@ mod tests {
     use zcash_client_backend::zip321::TransactionRequest;
     use zcash_protocol::memo::{Memo, MemoBytes};
     use zcash_protocol::value::Zatoshis;
+
+    use crate::lightclient::LightClient;
+    use crate::testutils::lightclient::from_inputs;
+    use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
+    use crate::wallet::utils;
+
+    const ORCHARD_FUNDS: u64 = 100_000;
+    const PAYMENT: u64 = 20_000;
+
+    /// HYPOTHESIS: a wallet that holds Orchard funds alone builds its
+    /// transaction without parsing the Sapling prover, so a device with no
+    /// Sapling notes never parses the embedded Sapling parameters.
+    /// Falsified if the build parses them on this thread.
+    #[tokio::test]
+    async fn orchard_only_build_parses_no_sapling_prover() {
+        let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(ORCHARD_FUNDS)
+            .build();
+        let mut client = LightClient::new_for_test(wallet).await;
+        let proposal = from_inputs::propose(
+            &mut client,
+            vec![(&synthetic_wallet::external_orchard_address(), PAYMENT, None)],
+        )
+        .await
+        .expect("an Orchard-only wallet proposes an Orchard payment");
+
+        let parses_before = utils::sapling_prover_parses();
+        client
+            .wallet()
+            .write()
+            .await
+            .calculate_transactions(proposal, zip32::AccountId::ZERO)
+            .await
+            .expect("the Orchard-only transaction builds");
+
+        assert_eq!(
+            utils::sapling_prover_parses(),
+            parses_before,
+            "an Orchard-only build parsed the Sapling prover"
+        );
+    }
 
     use crate::data::receivers::{Receivers, transaction_request_from_receivers};
 

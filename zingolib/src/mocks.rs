@@ -11,7 +11,7 @@ fn zaddr_from_seed(
     PreparedIncomingViewingKey,
     PaymentAddress,
 ) {
-    let extsk = ExtendedSpendingKey::master(&seed);
+    let extsk = ExtendedSpendingKey::master(&seed).expect("the seed derives a valid master key");
     let dfvk = extsk.to_diversifiable_full_viewing_key();
     let fvk = dfvk;
     let (_, addr) = fvk.default_address();
@@ -38,7 +38,7 @@ pub fn default_zaddr() -> (
     zaddr_from_seed([0u8; 32])
 }
 
-use rand::{Rng, rngs::OsRng};
+use rand::Rng;
 use sapling_crypto::{
     PaymentAddress, note_encryption::PreparedIncomingViewingKey, zip32::ExtendedSpendingKey,
 };
@@ -46,9 +46,8 @@ use sapling_crypto::{
 /// Any old OS randomness
 #[must_use]
 pub fn random_txid() -> zcash_primitives::transaction::TxId {
-    let mut rng = OsRng;
     let mut seed = [0u8; 32];
-    rng.fill(&mut seed);
+    crate::utils::system_rng().fill_bytes(&mut seed);
     zcash_primitives::transaction::TxId::from_bytes(seed)
 }
 /// Any old OS randomness
@@ -58,9 +57,8 @@ pub fn random_zaddr() -> (
     PreparedIncomingViewingKey,
     PaymentAddress,
 ) {
-    let mut rng = OsRng;
     let mut seed = [0u8; 32];
-    rng.fill(&mut seed);
+    crate::utils::system_rng().fill_bytes(&mut seed);
 
     zaddr_from_seed(seed)
 }
@@ -228,7 +226,7 @@ pub mod orchard_note {
         note::{RandomSeed, Rho},
         value::NoteValue,
     };
-    use rand::{Rng, rngs::OsRng};
+    use rand::Rng;
     use zip32::Scope;
 
     use crate::testutils::build_method;
@@ -275,12 +273,12 @@ pub mod orchard_note {
 
         /// selects a random recipient address for the orchard note
         pub fn randomize_recipient(&mut self) -> &mut Self {
-            let mut rng = OsRng;
+            let mut rng = crate::utils::system_rng();
 
             let sk = {
                 loop {
                     let mut bytes = [0; 32];
-                    rng.fill(&mut bytes);
+                    rng.fill_bytes(&mut bytes);
                     let sk = SpendingKey::from_bytes(bytes);
                     if sk.is_some().into() {
                         break sk.unwrap();
@@ -295,12 +293,12 @@ pub mod orchard_note {
 
         /// selects a random nullifier for the orchard note
         pub fn randomize_rho_and_rseed(&mut self) -> &mut Self {
-            let mut rng = OsRng;
+            let mut rng = crate::utils::system_rng();
 
             let rho = {
                 loop {
                     let mut bytes = [0u8; 32];
-                    rng.fill(&mut bytes);
+                    rng.fill_bytes(&mut bytes);
                     let rho = Rho::from_bytes(&bytes);
                     if rho.is_some().into() {
                         break rho.unwrap();
@@ -311,7 +309,7 @@ pub mod orchard_note {
             let random_seed = {
                 loop {
                     let mut bytes = [0; 32];
-                    rng.fill(&mut bytes);
+                    rng.fill_bytes(&mut bytes);
                     let random_seed = RandomSeed::from_bytes(bytes, &rho);
                     if random_seed.is_some().into() {
                         break random_seed.unwrap();

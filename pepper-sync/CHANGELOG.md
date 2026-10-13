@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
+- `sync::SyncStatus::total_blocks`, the block span from the wallet birthday to
+  the last known chain height, the denominator `sync_status` already divided
+  by and never reported.
+- `sync::SyncStatus::nullifier_retrieval_pending`, whether any scan range still
+  awaits nullifier mapping or refetching.
+- `sync::SyncResult::total_outputs_scanned`, `sync::SyncResult::total_outputs`,
+  and `sync::SyncResult::nullifier_retrieval_pending`, copied from the final
+  sync status of the session, so a consumer can derive the session's total
+  progress from the result alone.
 - `sync::ScanRange::encloses` and `sync::ScanRange::overlaps`, the geometry of
   a scan range against a block range, and `sync::ScanPriority::in_flight`, the
   priority the wallet holds a selected range at while its scan task runs.
@@ -75,6 +84,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the server's chain.
 
 ### Changed
+- Scanning reads version 2 zingo memos, which carry a recipient's unified
+  address with its ZIP 316 revision and metadata, through
+  `ParsedMemo::into_unified_addresses`.
+- BREAKING: the Zcash stack moves to the librustzcash NU7 pre-release cohort:
+  `zcash_client_backend` 0.25.0-pre.1, `zcash_keys` 0.17.0-pre.1, `zcash_primitives` 0.31.0-pre.1, `zcash_proofs` 0.31.0-pre.1, `zcash_protocol` 0.11.0-pre.0, `zcash_address` 0.14.0-pre.1, `zcash_transparent` 0.11.0-pre.1, `zcash_encoding` 0.5, `zcash_note_encryption` 0.5, `zcash_script` 0.6, `orchard` 0.16, `sapling-crypto` 0.9, `incrementalmerkletree` 0.9, `shardtree` 0.8, `zip32` 0.3, `bip32` 0.6, `jubjub` 0.11, `secp256k1` 0.33, `rand` 0.10. `LocalNetwork` gains its `nu7` field, the note-size constants
+  come from `orchard::note_encryption` and `sapling_crypto::note_encryption`
+  where `zcash_note_encryption` exported them, and the `ShieldedOutput` bound
+  loses its ciphertext-size parameter.
+- A note's recipient full unified address is encoded with every receiver it
+  carries, in the wallet file and through
+  `OutputInterface::encoded_recipient_full_unified_address`. `zcash_keys`
+  0.17 made `UnifiedAddress::encode` omit the transparent receiver of a
+  shielded address, which is the sharing form and not the recorded one.
 - BREAKING: `wallet::SyncMode::from_atomic_u8` borrows the atomic as
   `&AtomicU8` in place of taking an `Arc<AtomicU8>` by value.
 - BREAKING: `client::FetchRequest::CompactBlockRange` has an added `bool`
@@ -104,12 +126,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "RESCAN TRIGGERED" sentence naming the consequence and the cause.
   `error::ScanError::IncorrectTreeSize` gains the disagreeing block's
   `height`, and the truncation site logs at error level where it warned.
-- `sync::sync_status`: a session with no scannable blocks or outputs no longer
-  reports a finished sync. A stale initial sync state, whose previously scanned
-  counts stand at or above the wallet's whole span, saturates the session
-  denominator to zero. The status now reports the wallet's total progress for
-  that session, where it previously divided zero by zero and coerced the
-  resulting `NaN` to one hundred percent. The pool totals and the block span are
+- `sync::sync_status`: the session counts saturate against a stale initial
+  sync state, whose previously scanned counts stand at or above the wallet's
+  whole span, instead of underflowing. The pool totals and the block span are
   saturated likewise, so a rewound tree bound can no longer underflow them.
 - BREAKING: a wrapper error variant renders only its own layer. The
   `Display` texts of the `error::SyncError`, `error::MempoolError`, and
@@ -132,6 +151,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-org allowance of the last known chain height, as before.
 
 ### Fixed
+- A transaction request that zaino refuses with "retry with a fresh snapshot",
+  because it fell between two mempool snapshots, is sent again, at most three
+  times, instead of ending the sync session with a server error.
 - `sync` rolls each shard tree back to the wallet's highest scanned height
   when it starts, where the tree holds a checkpoint above that height. A sync
   session that ended partway through a wallet update left note commitments in
@@ -259,6 +281,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   range kept its `Scanned` priority with its wallet data removed.
 
 ### Removed
+- **Breaking.** `sync::SyncStatus::percentage_total_blocks_scanned`,
+  `sync::SyncStatus::percentage_total_outputs_scanned`, and
+  `sync::SyncResult::percentage_total_outputs_scanned`. The engine reports the
+  counts and spans the percentages were derived from; the derivation, with its
+  clamp, its reading of an empty span as complete, and its one-step-short
+  reading while nullifiers await retrieval, now lives in
+  `zingolib::perspective::sync_progress`.
+- **Breaking.** The `Display` and `From<_> for json::JsonValue` implementations
+  of `sync::SyncStatus` and `sync::SyncResult`. `zingolib::perspective::sync_progress`
+  renders both, with the same text and the same JSON keys. pepper-sync no longer
+  depends on the `json` crate.
+- **Breaking.** `sync::SyncStatus::percentage_session_blocks_scanned` and
+  `sync::SyncStatus::percentage_session_outputs_scanned`. These were the only fields whose
+  computation could abort the process, and no consumer read them: the CLI's progress
+  surfaces take `total_outputs_scanned`, `total_outputs`, and `is_complete()`, and
+  `SyncResult` carries the total percentage only. A consumer that wants a session
+  percentage computes it from the session and total counts the struct still reports. The
+  two fields also leave the `json::JsonValue` rendering of a sync status.
 
 ## [0.5.0] - 2026-06-10
 

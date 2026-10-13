@@ -1421,6 +1421,7 @@ mod tests {
         nu6_1: Some(BlockHeight::from_u32(1)),
         nu6_2: Some(BlockHeight::from_u32(1)),
         nu6_3: Some(BlockHeight::from_u32(100)),
+        nu7: Some(BlockHeight::from_u32(100)),
     };
 
     const NO_NU6_3_NETWORK: LocalNetwork = LocalNetwork {
@@ -1434,6 +1435,7 @@ mod tests {
         nu6_1: Some(BlockHeight::from_u32(1)),
         nu6_2: Some(BlockHeight::from_u32(1)),
         nu6_3: None,
+        nu7: None,
     };
 
     fn sync_state_with_ranges(birthday: u32, tip: u32) -> SyncState {
@@ -1499,6 +1501,7 @@ mod tests {
         nu6_1: Some(BlockHeight::from_u32(1)),
         nu6_2: Some(BlockHeight::from_u32(1)),
         nu6_3: Some(BlockHeight::from_u32(19_000)),
+        nu7: Some(BlockHeight::from_u32(19_000)),
     };
 
     #[test]

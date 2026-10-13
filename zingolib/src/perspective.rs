@@ -3,6 +3,7 @@
 //! logic.
 
 pub mod finsight;
+pub mod sync_progress;
 pub mod value_transfer;
 
 use std::collections::{HashMap, HashSet};
@@ -54,6 +55,10 @@ impl TransactionSummary {
             .flat_map(|(notes, _)| notes.iter().map(|note| note.value))
             .chain(self.transparent_coins.iter().map(|coin| coin.value))
             .sum()
+    }
+
+    pub(crate) fn ironwood_received_value(&self) -> u64 {
+        self.ironwood_notes.iter().map(|note| note.value).sum()
     }
 
     /// The sum of the wallet-received shielded notes that carry a memo,
@@ -276,17 +281,27 @@ impl LightWallet {
                     // creates at least 1 value transfer.
                     // (deshield and other pool-movement kinds may join this list later.)
                     let memos = transaction.received_memos();
-                    let self_send_kind = if transaction.is_orchard_to_ironwood_migration() {
-                        SelfSendValueTransfer::Migration
+                    let (self_send_kind, value) = if transaction.is_orchard_to_ironwood_migration()
+                    {
+                        (
+                            SelfSendValueTransfer::Migration,
+                            transaction.ironwood_received_value(),
+                        )
                     } else if !memos.is_empty() {
-                        SelfSendValueTransfer::MemoToSelf
+                        (
+                            SelfSendValueTransfer::MemoToSelf,
+                            transaction.self_received_value(),
+                        )
                     } else {
-                        SelfSendValueTransfer::Basic
+                        (
+                            SelfSendValueTransfer::Basic,
+                            transaction.self_received_value(),
+                        )
                     };
                     value_transfers.push(self_send_value_transfer(
                         &transaction,
                         self_send_kind,
-                        transaction.self_received_value(),
+                        value,
                         memos,
                     ));
 

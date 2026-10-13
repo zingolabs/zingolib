@@ -308,7 +308,7 @@ impl LightWallet {
             UnifiedKeyStore::Spend(_) => (),
             UnifiedKeyStore::View(ufvk) => match Op::POOL_TYPE {
                 PoolType::Transparent => {
-                    if ufvk.transparent().is_none() {
+                    if ufvk.p2pkh().is_none() {
                         return Err(KeyError::NoViewCapability.into());
                     }
                 }

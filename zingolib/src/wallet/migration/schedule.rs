@@ -15,7 +15,6 @@
 //! age zero: the newest tree state, whose cohort is empty. See ADR 0018.
 
 use pepper_sync::wallet::PoolActivation;
-use rand::Rng;
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::error::WalletError;
@@ -34,7 +33,7 @@ use super::parts::{PartId, PartRecord, PartState};
 /// records that gap.
 fn random_target_in_bucket(
     bucket: u64,
-    rng: &mut (impl Rng + CryptoRng),
+    rng: &mut impl CryptoRng,
     params: &MigrationParams,
 ) -> BlockHeight {
     let boundary = u32::from(boundary_of(bucket, params.bucket_modulus));
@@ -165,7 +164,7 @@ impl AnchorFloor {
 pub fn draw_anchor_bucket(
     window: u64,
     floor: &AnchorFloor,
-    rng: &mut (impl Rng + CryptoRng),
+    rng: &mut impl CryptoRng,
     bucket_modulus: u32,
 ) -> Option<u64> {
     let interval = AnchorBucketInterval::custom(
@@ -244,7 +243,7 @@ pub fn place(
     part: &mut PartRecord,
     bucket: u64,
     floor: &AnchorFloor,
-    rng: &mut (impl Rng + CryptoRng),
+    rng: &mut impl CryptoRng,
     params: &MigrationParams,
 ) -> Result<(), WalletError> {
     let anchor = anchor_for(bucket, floor, rng, params)?;
@@ -267,7 +266,7 @@ pub fn place_immediate(
     part: &mut PartRecord,
     bucket: u64,
     floor: &AnchorFloor,
-    rng: &mut (impl Rng + CryptoRng),
+    rng: &mut impl CryptoRng,
     params: &MigrationParams,
 ) -> Result<(), WalletError> {
     let anchor = anchor_for(bucket, floor, rng, params)?;
@@ -283,7 +282,7 @@ pub fn place_immediate(
 fn anchor_for(
     bucket: u64,
     floor: &AnchorFloor,
-    rng: &mut (impl Rng + CryptoRng),
+    rng: &mut impl CryptoRng,
     params: &MigrationParams,
 ) -> Result<u64, WalletError> {
     draw_anchor_bucket(bucket, floor, rng, params.bucket_modulus).ok_or(
@@ -330,7 +329,7 @@ pub fn plan_schedule(
     activation: PoolActivation,
     note_confirmed_at: impl Fn(&PartRecord) -> Option<BlockHeight>,
     params: &MigrationParams,
-    rng: &mut (impl Rng + CryptoRng),
+    rng: &mut impl CryptoRng,
 ) -> Result<(), WalletError> {
     let unassigned: Vec<usize> = parts
         .iter()
@@ -627,7 +626,7 @@ mod tests {
             PoolActivation::new_for_test(activation),
             old_notes,
             &params,
-            &mut rand::rngs::OsRng,
+            &mut crate::utils::system_rng(),
         )
         .unwrap();
 
@@ -670,7 +669,7 @@ mod tests {
             let anchor = draw_anchor_bucket(
                 window,
                 &floor,
-                &mut rand::rngs::OsRng,
+                &mut crate::utils::system_rng(),
                 params.bucket_modulus,
             )
             .expect("the set is non-empty forty buckets above the floor");
@@ -703,7 +702,7 @@ mod tests {
             draw_anchor_bucket(
                 lowest,
                 &floor,
-                &mut rand::rngs::OsRng,
+                &mut crate::utils::system_rng(),
                 params.bucket_modulus
             )
             .is_none(),
@@ -717,7 +716,13 @@ mod tests {
 
         let mut part = bound_part(0, 1_000_000);
         assert!(matches!(
-            place(&mut part, lowest, &floor, &mut rand::rngs::OsRng, &params),
+            place(
+                &mut part,
+                lowest,
+                &floor,
+                &mut crate::utils::system_rng(),
+                &params
+            ),
             Err(WalletError::MigrationNoLegalAnchor { .. })
         ));
     }
@@ -746,7 +751,7 @@ mod tests {
             &mut part,
             5,
             &weakest_floor(),
-            &mut rand::rngs::OsRng,
+            &mut crate::utils::system_rng(),
             &params,
         )
         .unwrap();
@@ -779,7 +784,7 @@ mod tests {
             no_floor(),
             old_notes,
             &params,
-            &mut rand::rngs::OsRng,
+            &mut crate::utils::system_rng(),
         )
         .unwrap();
 
@@ -918,7 +923,7 @@ mod tests {
             no_floor(),
             old_notes,
             &params,
-            &mut rand::rngs::OsRng,
+            &mut crate::utils::system_rng(),
         )
         .unwrap();
 
@@ -956,7 +961,7 @@ mod tests {
             no_floor(),
             |_| Some(split_confirmed),
             &params,
-            &mut rand::rngs::OsRng,
+            &mut crate::utils::system_rng(),
         )
         .unwrap();
 
@@ -998,7 +1003,7 @@ mod tests {
             no_floor(),
             old_notes,
             &params,
-            &mut rand::rngs::OsRng,
+            &mut crate::utils::system_rng(),
         ).unwrap();
 
             let k = (denominations.len() as u64)
@@ -1055,7 +1060,7 @@ mod tests {
             no_floor(),
             old_notes,
             &params,
-            &mut rand::rngs::OsRng,
+            &mut crate::utils::system_rng(),
         )
         .unwrap();
 
@@ -1189,7 +1194,7 @@ mod tests {
         }
 
         /// The `zcash_pool_migration` release this workspace has adjudicated.
-        const ADJUDICATED_UPSTREAM_VERSION: &str = "0.1.0";
+        const ADJUDICATED_UPSTREAM_VERSION: &str = "0.2.0-pre.1";
 
         /// Fails when the migration dependency moves (ADR 0020's movement
         /// tripwire). Reads the workspace lockfile rather than any crate

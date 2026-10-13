@@ -43,6 +43,12 @@ use crate::mocks::nullifier::{OrchardNullifierBuilder, SaplingNullifierBuilder};
 use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
 use crate::testutils::default_test_wallet_settings;
 use crate::wallet::LightWallet;
+#[cfg(test)]
+use crate::wallet::keys::unified::ReceiverSelection;
+#[cfg(test)]
+use zcash_address::ZcashAddress;
+#[cfg(test)]
+use zcash_keys::address::UnifiedAddress;
 
 /// Builds an offline [`LightWallet`] whose fabricated orchard funds pass
 /// every spendability gate, so `propose_send` (and balance/summary logic)
@@ -64,7 +70,7 @@ impl SyntheticWalletBuilder {
         Self {
             mnemonic: mnemonic.to_string(),
             tip: 20,
-            activation_heights: ActivationHeights::default(),
+            activation_heights: crate::testutils::mock_activation_heights(),
             ironwood_note_values: Vec::new(),
             orchard_note_values: Vec::new(),
             sapling_note_values: Vec::new(),
@@ -354,6 +360,42 @@ impl SyntheticWalletBuilder {
 
         wallet
     }
+}
+
+#[cfg(test)]
+fn stranger_wallet() -> LightWallet {
+    SyntheticWalletBuilder::new(zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED).build()
+}
+
+#[cfg(test)]
+fn stranger_orchard_address() -> (ChainType, UnifiedAddress) {
+    let mut stranger = stranger_wallet();
+    let (_, unified_address) = stranger
+        .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
+        .expect("a seed-built synthetic wallet holds account zero's Orchard key");
+    (stranger.chain_type(), unified_address)
+}
+
+#[cfg(test)]
+pub(crate) fn external_orchard_address() -> String {
+    let (chain_type, unified_address) = stranger_orchard_address();
+    unified_address.encode(&chain_type)
+}
+
+#[cfg(test)]
+pub(crate) fn external_orchard_zcash_address() -> ZcashAddress {
+    let (chain_type, unified_address) = stranger_orchard_address();
+    unified_address.to_zcash_address(chain_type.network_type())
+}
+
+#[cfg(test)]
+pub(crate) fn external_transparent_address() -> String {
+    stranger_wallet()
+        .transparent_addresses()
+        .values()
+        .next()
+        .expect("a seed-built synthetic wallet derives account zero's first transparent address")
+        .clone()
 }
 
 /// Injects `count` confirmed, unspent legacy-Orchard (V2) notes of `value`

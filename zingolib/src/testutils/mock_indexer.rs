@@ -86,6 +86,8 @@ const SIGN_BIT: u8 = 0x80;
 const GENESIS_HEIGHT: BlockHeight = BlockHeight::from_u32(0);
 const NO_EXPIRY: BlockHeight = BlockHeight::from_u32(0);
 const FAUCET_FUNDING: u64 = 1_000_000_000;
+const FAUCET_DEFAULT_TIP: u32 = 20;
+const FAUCET_MIN_TIP: u32 = 3;
 const FAUCET_HEADROOM: u64 = 1_000_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -468,7 +470,7 @@ struct MempoolState {
 
 /// The fabricated chain: blocks, transactions, tree states, mempool.
 pub struct MockChain {
-    chain_type: ChainType,
+    activation_heights: ActivationHeights,
     /// `blocks[i]` is the block at height `i + 1`.
     blocks: Vec<CompactBlock>,
     transactions: HashMap<TxId, Mined>,
@@ -802,36 +804,75 @@ pub fn transparent_only_transaction(
     inputs: Vec<TxIn<TransparentAuthorized>>,
     outputs: Vec<TxOut>,
 ) -> Vec<u8> {
+    transparent_only_transaction_expiring(chain_type, height, NO_EXPIRY, inputs, outputs)
+}
+
+/// Serializes an unsigned transparent-only transaction for the branch at `height` with `expiry`, which a
+/// coinbase sets to its block height, the rule that keeps consecutive coinbases' txids distinct.
+pub fn transparent_only_transaction_expiring(
+    chain_type: &ChainType,
+    height: BlockHeight,
+    expiry: BlockHeight,
+    inputs: Vec<TxIn<TransparentAuthorized>>,
+    outputs: Vec<TxOut>,
+) -> Vec<u8> {
     let bundle = TransparentBundle {
         vin: inputs,
         vout: outputs,
         authorization: TransparentAuthorized,
     };
-    let branch_id = BranchId::for_height(chain_type, height);
+    transaction_bytes_for_branch(
+        BranchId::for_height(chain_type, height),
+        expiry,
+        bundle,
+        None,
+        None,
+        None,
+    )
+}
+
+type SaplingBundle = sapling_crypto::Bundle<sapling_crypto::bundle::Authorized, ZatBalance>;
+type OrchardBundle = orchard::Bundle<orchard::bundle::Authorized, ZatBalance>;
+
+/// - Panics when `ironwood` is given for a branch whose transaction version predates V6.
+fn transaction_bytes_for_branch(
+    branch_id: BranchId,
+    expiry: BlockHeight,
+    transparent: TransparentBundle<TransparentAuthorized>,
+    sapling: Option<SaplingBundle>,
+    orchard: Option<OrchardBundle>,
+    ironwood: Option<OrchardBundle>,
+) -> Vec<u8> {
     let data = match TxVersion::suggested_for_branch(branch_id) {
         TxVersion::V6 => TransactionData::<Authorized>::from_parts_v6(
             branch_id,
             0,
-            NO_EXPIRY,
-            Some(bundle),
-            None,
-            None,
-            None,
+            expiry,
+            Some(transparent),
+            sapling,
+            orchard,
+            ironwood,
         ),
-        version => TransactionData::<Authorized>::from_parts(
-            version,
-            branch_id,
-            0,
-            NO_EXPIRY,
-            Some(bundle),
-            None,
-            None,
-            None,
-        ),
+        version => {
+            assert!(
+                ironwood.is_none(),
+                "an Ironwood bundle needs a V6 transaction, not {version:?}"
+            );
+            TransactionData::<Authorized>::from_parts(
+                version,
+                branch_id,
+                0,
+                expiry,
+                Some(transparent),
+                None,
+                sapling,
+                orchard,
+            )
+        }
     };
     let mut bytes = vec![];
     data.freeze()
-        .expect("a transparent-only transaction freezes")
+        .expect("a transaction with authorized bundles freezes")
         .write(&mut bytes)
         .expect("in-memory serialization is infallible");
     bytes
@@ -844,12 +885,12 @@ impl Default for MockChain {
 }
 
 impl MockChain {
-    /// An empty regtest chain at height 0 with the default (everything
-    /// at height 1) activation schedule, matching
-    /// [`SyntheticWalletBuilder`]'s default and [`MockNet::client`]'s
-    /// config.
+    /// An empty regtest chain at height 0 in the in-process era
+    /// ([`crate::testutils::mock_activation_heights`]: everything through
+    /// NU7 at height 1), matching [`SyntheticWalletBuilder`]'s default and
+    /// [`MockNet::client`]'s config.
     pub fn new() -> Self {
-        Self::with_activation_heights(ActivationHeights::default())
+        Self::with_activation_heights(crate::testutils::mock_activation_heights())
     }
 
     /// Creates an empty regtest chain with the given activation schedule.
@@ -860,7 +901,7 @@ impl MockChain {
         let genesis_state = tree_state_hex(&sapling_tree, &orchard_tree, &ironwood_tree);
         let genesis_roots = tree_roots(&sapling_tree, &orchard_tree, &ironwood_tree);
         Self {
-            chain_type: ChainType::Regtest(activation_heights),
+            activation_heights,
             blocks: Vec::new(),
             transactions: HashMap::new(),
             tree_states: vec![genesis_state],
@@ -888,7 +929,12 @@ impl MockChain {
 
     /// Returns the chain type.
     pub fn chain_type(&self) -> ChainType {
-        self.chain_type
+        ChainType::Regtest(self.activation_heights)
+    }
+
+    /// Returns the activation schedule.
+    pub fn activation_heights(&self) -> ActivationHeights {
+        self.activation_heights
     }
 
     /// The `GetTaddressTxids` requests served so far, for diagnosing
@@ -942,7 +988,7 @@ impl MockChain {
     /// Checks `bytes` against the chain's rules for the next block.
     pub fn validate(&self, bytes: &[u8]) -> Result<Transaction, Rejection> {
         let next_height = self.next_height();
-        let expected_branch = BranchId::for_height(&self.chain_type, next_height);
+        let expected_branch = BranchId::for_height(&self.chain_type(), next_height);
         let transaction = Transaction::read(bytes, expected_branch)
             .map_err(|error| Rejection::Unparseable(error.to_string()))?;
 
@@ -1088,6 +1134,13 @@ impl MockChain {
         self.mine_block(pending);
     }
 
+    /// - Mines every mempool transaction into one block under `coinbase`, a transaction the caller built for the
+    ///   next height, as a miner collecting the block's fees would.
+    pub fn mine_mempool_with_coinbase(&mut self, coinbase: Vec<u8>) {
+        let pending = std::mem::take(&mut self.mempool);
+        self.mine_block_with_coinbase(coinbase, pending);
+    }
+
     /// Mines the given raw transactions (plus nothing else) into the
     /// next block.
     pub fn mine_block(&mut self, raw_transactions: Vec<Vec<u8>>) {
@@ -1102,17 +1155,28 @@ impl MockChain {
         raw_transactions: Vec<Vec<u8>>,
     ) -> Vec<u8> {
         let coinbase = self.coinbase_transaction(miner, reward);
-        self.mine(Some(coinbase.clone()), raw_transactions);
+        self.mine_block_with_coinbase(coinbase.clone(), raw_transactions);
         coinbase
+    }
+
+    /// - Mines one block under `coinbase`, a transaction the caller built for the next height, with `raw_transactions`.
+    pub fn mine_block_with_coinbase(&mut self, coinbase: Vec<u8>, raw_transactions: Vec<Vec<u8>>) {
+        self.mine(Some(coinbase), raw_transactions);
     }
 
     fn coinbase_transaction(&self, miner: &str, reward: Zatoshis) -> Vec<u8> {
         let height = self.next_height();
-        let script_pubkey = taddr_script(miner, &self.chain_type)
+        let script_pubkey = taddr_script(miner, &self.chain_type())
             .expect("the miner address is a transparent address of this chain");
         let input = TxIn::from_parts(OutPoint::NULL, coinbase_script_sig(height), u32::MAX);
         let output = TxOut::new(reward, script_pubkey);
-        transparent_only_transaction(&self.chain_type, height, vec![input], vec![output])
+        transparent_only_transaction_expiring(
+            &self.chain_type(),
+            height,
+            height,
+            vec![input],
+            vec![output],
+        )
     }
 
     fn mine(&mut self, coinbase: Option<Vec<u8>>, raw_transactions: Vec<Vec<u8>>) {
@@ -1196,7 +1260,7 @@ impl MockChain {
 
     fn evict_expired_from_mempool(&mut self) {
         let next_height = self.next_height();
-        let chain_type = self.chain_type;
+        let chain_type = self.chain_type();
         self.mempool.retain(|bytes| {
             let expiry = Transaction::read(
                 bytes.as_slice(),
@@ -1295,7 +1359,7 @@ impl MockChain {
     }
 
     fn parse_transaction(&self, bytes: &[u8], height: BlockHeight) -> Transaction {
-        Transaction::read(bytes, BranchId::for_height(&self.chain_type, height))
+        Transaction::read(bytes, BranchId::for_height(&self.chain_type(), height))
             .expect("fabricated and wallet-built transactions parse")
     }
 
@@ -1305,7 +1369,7 @@ impl MockChain {
         address: &str,
         start_height: BlockHeight,
     ) -> Result<Vec<GetAddressUtxosReply>, String> {
-        let target_script = taddr_script(address, &self.chain_type)?;
+        let target_script = taddr_script(address, &self.chain_type())?;
         let mut unspent = Vec::new();
         for (txid, mined) in &self.transactions {
             if mined.height < start_height {
@@ -1415,7 +1479,7 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
             nullifier: action.nullifier().to_bytes().to_vec(),
             cmx: action.cmx().to_bytes().to_vec(),
             ephemeral_key: action.encrypted_note().epk_bytes.to_vec(),
-            ciphertext: action.encrypted_note().enc_ciphertext[..52].to_vec(),
+            ciphertext: action.encrypted_note().enc_ciphertext.as_ref()[..52].to_vec(),
         })
         .collect();
     let ironwood_actions = transaction
@@ -1426,7 +1490,7 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
             nullifier: action.nullifier().to_bytes().to_vec(),
             cmx: action.cmx().to_bytes().to_vec(),
             ephemeral_key: action.encrypted_note().epk_bytes.to_vec(),
-            ciphertext: action.encrypted_note().enc_ciphertext[..52].to_vec(),
+            ciphertext: action.encrypted_note().enc_ciphertext.as_ref()[..52].to_vec(),
         })
         .collect();
     let vin = transaction
@@ -1760,7 +1824,7 @@ impl CompactTxStreamer for MockIndexerService {
         let end = BlockHeight::from_u32(range.end.map_or(u64::MAX, |id| id.height) as u32);
         let chain = self.chain.read().await;
         let target_script =
-            taddr_script(&filter.address, &chain.chain_type).map_err(Status::invalid_argument)?;
+            taddr_script(&filter.address, &chain.chain_type()).map_err(Status::invalid_argument)?;
         // A transaction involves the address if an output pays its
         // script, or an input spends an outpoint that paid its script.
         let mut involved: Vec<(BlockHeight, usize, Vec<u8>)> = Vec::new();
@@ -1873,9 +1937,9 @@ impl CompactTxStreamer for MockIndexerService {
         let chain = self.chain.read().await;
         let tip = chain.tip();
         let branch_id: u32 =
-            BranchId::for_height(&chain.chain_type, BlockHeight::from_u32(tip.max(1))).into();
+            BranchId::for_height(&chain.chain_type(), BlockHeight::from_u32(tip.max(1))).into();
         let sapling_activation_height = chain
-            .chain_type
+            .chain_type()
             .activation_height(NetworkUpgrade::Sapling)
             .map_or(0, |height| u64::from(u32::from(height)));
         Ok(Response::new(LightdInfo {
@@ -2006,6 +2070,29 @@ impl MockNet {
     /// Launches the mock server on an ephemeral localhost port serving `chain`.
     pub async fn launch_with(chain: MockChain) -> Self {
         Self::serve(chain, None).await
+    }
+
+    /// - Holds the chain's write lock from reading the next height until the block is mined, proof included.
+    /// - Appends one block carrying the shielded coinbase and `raw_transactions`.
+    pub async fn mine_block_rewarding_shielded(
+        &self,
+        miner: &str,
+        reward: Zatoshis,
+        raw_transactions: Vec<Vec<u8>>,
+    ) -> Vec<u8> {
+        let mut chain = self.chain.write().await;
+        let coinbase = next_shielded_coinbase(&chain, miner, reward).await;
+        chain.mine_block_with_coinbase(coinbase.clone(), raw_transactions);
+        coinbase
+    }
+
+    /// - Holds the chain's write lock from reading the next height until the block is mined, proof included.
+    /// - Appends one block carrying the shielded coinbase and every mempool transaction.
+    pub async fn mine_mempool_rewarding_shielded(&self, miner: &str, reward: Zatoshis) -> Vec<u8> {
+        let mut chain = self.chain.write().await;
+        let coinbase = next_shielded_coinbase(&chain, miner, reward).await;
+        chain.mine_mempool_with_coinbase(coinbase.clone());
+        coinbase
     }
 
     /// Launches the mock over TLS with the committed localhost certificate.
@@ -2164,8 +2251,16 @@ impl ConductChain for MockNet {
     async fn create_faucet(&mut self) -> LightClient {
         let mut faucet = self.create_client().await;
         let address = get_base_address(&faucet, PoolType::Shielded(ShieldedPool::Orchard)).await;
-        let funding = faucet_funding_transaction(vec![(&address, FAUCET_FUNDING, None)]).await;
-        self.chain.write().await.mine_block(vec![funding]);
+        {
+            let mut chain = self.chain.write().await;
+            let funding = faucet_funding_transaction_on(
+                chain.activation_heights(),
+                chain.next_height(),
+                vec![(&address, FAUCET_FUNDING, None)],
+            )
+            .await;
+            chain.mine_block(vec![funding]);
+        }
         faucet
             .sync_and_await()
             .await
@@ -2193,16 +2288,52 @@ impl ConductChain for MockNet {
     }
 }
 
-/// Builds (without transmitting) one real transaction from a synthetic
-/// faucet to the given receivers, returning its raw bytes, the mock
-/// chain's funding primitive. Each call uses a fresh faucet whose
-/// fabricated backing note never exists on the mock chain. Nothing
-/// validates that, and the recipient-facing outputs are real.
+/// - Runs the Sapling and Halo2 provers for the built bundles.
 pub async fn faucet_funding_transaction(receivers: Vec<(&str, u64, Option<&str>)>) -> Vec<u8> {
+    faucet_funding_transaction_on(
+        crate::testutils::mock_activation_heights(),
+        BlockHeight::from_u32(FAUCET_DEFAULT_TIP + 1),
+        receivers,
+    )
+    .await
+}
+
+fn ironwood_era(activation_heights: ActivationHeights, height: BlockHeight) -> bool {
+    let branch_id = BranchId::for_height(&ChainType::Regtest(activation_heights), height);
+    matches!(TxVersion::suggested_for_branch(branch_id), TxVersion::V6)
+}
+
+fn faucet_tip(height: BlockHeight) -> u32 {
+    u32::from(height).saturating_sub(1).max(FAUCET_MIN_TIP)
+}
+
+/// - Runs the Sapling and Halo2 provers for the built bundles.
+/// - Panics when an activation in `activation_heights` falls between `height` and the faucet's
+///   proposal height, one above its clamped tip.
+pub async fn faucet_funding_transaction_on(
+    activation_heights: ActivationHeights,
+    height: BlockHeight,
+    receivers: Vec<(&str, u64, Option<&str>)>,
+) -> Vec<u8> {
+    let tip = faucet_tip(height);
+    let ironwood = ironwood_era(activation_heights, height);
+    assert_eq!(
+        ironwood,
+        ironwood_era(activation_heights, BlockHeight::from_u32(tip + 1)),
+        "the faucet proposes for height {} while the transaction is aimed at {height}, \
+         and an activation falls between them",
+        tip + 1
+    );
     let total: u64 = receivers.iter().map(|(_, value, _)| value).sum();
-    let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED)
-        .ironwood_note(total + FAUCET_HEADROOM)
-        .build();
+    let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED)
+        .activation_heights(activation_heights)
+        .tip(tip);
+    let wallet = if ironwood {
+        builder.ironwood_note(total + FAUCET_HEADROOM)
+    } else {
+        builder.orchard_note(total + FAUCET_HEADROOM)
+    }
+    .build();
     let mut faucet = LightClient::new_for_test(wallet).await;
     let proposal = from_inputs::propose(&mut faucet, receivers)
         .await
@@ -2228,9 +2359,55 @@ pub async fn faucet_funding_transaction(receivers: Vec<(&str, u64, Option<&str>)
     bytes
 }
 
+/// - Runs the Sapling and Halo2 provers for the built bundles.
+async fn next_shielded_coinbase(chain: &MockChain, miner: &str, reward: Zatoshis) -> Vec<u8> {
+    shielded_coinbase_transaction(
+        chain.activation_heights(),
+        chain.next_height(),
+        miner,
+        reward,
+    )
+    .await
+}
+
+/// - Runs the Sapling and Halo2 provers for the built bundles.
+/// - Panics when an activation in `activation_heights` falls between `height` and the faucet's
+///   proposal height, one above its clamped tip.
+pub async fn shielded_coinbase_transaction(
+    activation_heights: ActivationHeights,
+    height: BlockHeight,
+    miner: &str,
+    reward: Zatoshis,
+) -> Vec<u8> {
+    let branch_id = BranchId::for_height(&ChainType::Regtest(activation_heights), height);
+    let built_bytes = faucet_funding_transaction_on(
+        activation_heights,
+        height,
+        vec![(miner, reward.into_u64(), None)],
+    )
+    .await;
+    let built = Transaction::read(built_bytes.as_slice(), branch_id)
+        .expect("the faucet's own transaction parses on the branch it was aimed at");
+    let input = TxIn::from_parts(OutPoint::NULL, coinbase_script_sig(height), u32::MAX);
+    let transparent = TransparentBundle {
+        vin: vec![input],
+        vout: vec![],
+        authorization: TransparentAuthorized,
+    };
+    transaction_bytes_for_branch(
+        branch_id,
+        height,
+        transparent,
+        built.sapling_bundle().cloned(),
+        built.orchard_bundle().cloned(),
+        built.ironwood_bundle().cloned(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutils::synthetic_wallet;
     use tokio_stream::StreamExt as _;
 
     const REWARD: Zatoshis = Zatoshis::const_from_u64(1_000_000);
@@ -2240,31 +2417,13 @@ mod tests {
     const HEIGHT_ONE: BlockHeight = BlockHeight::from_u32(1);
     const HEIGHT_TWO: BlockHeight = BlockHeight::from_u32(2);
 
-    fn external_orchard_address() -> String {
-        let mut wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
-        let (_, unified_address) = wallet
-            .generate_unified_address(
-                crate::wallet::keys::unified::ReceiverSelection::orchard_only(),
-                zip32::AccountId::ZERO,
-            )
-            .unwrap();
-        unified_address.encode(&wallet.chain_type())
-    }
-
-    fn external_transparent_address() -> String {
-        let wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
-        wallet
-            .transparent_addresses()
-            .values()
-            .next()
-            .expect("the synthetic wallet carries a transparent address")
-            .clone()
-    }
-
     async fn funding_bytes() -> Vec<u8> {
-        faucet_funding_transaction(vec![(&external_orchard_address(), PAYMENT, None)]).await
+        faucet_funding_transaction(vec![(
+            &synthetic_wallet::external_orchard_address(),
+            PAYMENT,
+            None,
+        )])
+        .await
     }
 
     fn lax_anchors() -> MockChain {
@@ -2274,18 +2433,7 @@ mod tests {
     }
 
     fn pre_ironwood_activation_heights() -> ActivationHeights {
-        ActivationHeights::builder()
-            .set_overwinter(Some(1))
-            .set_sapling(Some(1))
-            .set_blossom(Some(1))
-            .set_heartwood(Some(1))
-            .set_canopy(Some(1))
-            .set_nu5(Some(1))
-            .set_nu6(Some(1))
-            .set_nu6_1(Some(1))
-            .set_nu6_2(Some(1))
-            .set_nu6_3(Some(1_000))
-            .build()
+        crate::testutils::mock_activation_heights_deferring_nu6_3(1_000)
     }
 
     fn transparent_spend(
@@ -2428,7 +2576,7 @@ mod tests {
     #[test]
     fn coinbase_outputs_mature_after_one_hundred_blocks() {
         let mut chain = MockChain::new();
-        let miner = external_transparent_address();
+        let miner = synthetic_wallet::external_transparent_address();
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_outpoint = first_output(txid_of(&chain, &coinbase));
         assert!(
@@ -2468,7 +2616,7 @@ mod tests {
     #[test]
     fn unknown_transparent_input_is_rejected() {
         let mut chain = MockChain::new();
-        let miner = external_transparent_address();
+        let miner = synthetic_wallet::external_transparent_address();
         let outpoint = OutPoint::new([7; 32], 0);
         let spend = transparent_spend(&chain, outpoint.clone(), SPEND_VALUE, &miner);
         assert_eq!(
@@ -2480,7 +2628,7 @@ mod tests {
     #[test]
     fn mempool_outputs_are_spendable_before_they_are_mined() {
         let mut chain = MockChain::new();
-        let miner = external_transparent_address();
+        let miner = synthetic_wallet::external_transparent_address();
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         chain.mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
         let first = transparent_spend(
@@ -2510,7 +2658,7 @@ mod tests {
     #[test]
     fn outputs_above_inputs_are_rejected() {
         let mut chain = MockChain::new();
-        let miner = external_transparent_address();
+        let miner = synthetic_wallet::external_transparent_address();
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_outpoint = first_output(txid_of(&chain, &coinbase));
         chain.mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
@@ -2529,7 +2677,7 @@ mod tests {
     #[test]
     fn unspent_outputs_exclude_spent_outpoints() {
         let mut chain = MockChain::new();
-        let miner = external_transparent_address();
+        let miner = synthetic_wallet::external_transparent_address();
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_txid = txid_of(&chain, &coinbase);
         let unspent = chain.unspent_outputs(&miner, HEIGHT_ONE).unwrap();
@@ -2610,7 +2758,7 @@ mod tests {
     #[tokio::test]
     async fn address_utxos_stream_applies_injected_stream_faults() {
         let chain = Arc::new(RwLock::new(MockChain::new()));
-        let miner = external_transparent_address();
+        let miner = synthetic_wallet::external_transparent_address();
         {
             let mut chain = chain.write().await;
             chain.mine_block_rewarding(&miner, REWARD, vec![]);

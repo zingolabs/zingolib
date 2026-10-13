@@ -5,16 +5,6 @@ slow-timeout = { period = "60s", terminate-after = 10, grace-period = "30s" }
 [[profile.default.overrides]]
 filter = 'package(libtonode-tests) | package(zingo-cli)'
 
-# Builds a ~116-block chain.
-[[profile.default.overrides]]
-filter = 'test(store_all_checkpoints_in_verification_window)'
-slow-timeout = { period = "60s", terminate-after = 30, grace-period = "30s" }
-
-# Mines and scans a ~235-block leap past the first migration bucket boundary.
-[[profile.default.overrides]]
-filter = 'test(unavailable_boundary_tree_state_skips_without_sync)'
-slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
-
 # Long-chain heavies run close to the default limit.
 [[profile.default.overrides]]
 filter = '''
@@ -26,7 +16,6 @@ test(mempool_spend_balance_and_note_status_accounting)
 | test(generate_a_range_of_value_transfers)
 | test(drain_chunks_a_fragmented_wallet)
 | test(immediate_migration_chunks_a_fragmented_wallet)
-| test(from_t_z_o_tz_to_zo_tzo_to_orchard)
 '''
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
 
@@ -38,16 +27,6 @@ slow-timeout = { period = "60s", terminate-after = 10, grace-period = "30s" }
 [[profile.ci.overrides]]
 filter = 'package(libtonode-tests) | package(zingo-cli)'
 
-# Builds a ~116-block chain.
-[[profile.ci.overrides]]
-filter = 'test(store_all_checkpoints_in_verification_window)'
-slow-timeout = { period = "60s", terminate-after = 30, grace-period = "30s" }
-
-# Mines and scans a ~235-block leap past the first migration bucket boundary.
-[[profile.ci.overrides]]
-filter = 'test(unavailable_boundary_tree_state_skips_without_sync)'
-slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
-
 # Long-chain heavies run close to the default limit.
 [[profile.ci.overrides]]
 filter = '''
@@ -59,6 +38,5 @@ test(mempool_spend_balance_and_note_status_accounting)
 | test(generate_a_range_of_value_transfers)
 | test(drain_chunks_a_fragmented_wallet)
 | test(immediate_migration_chunks_a_fragmented_wallet)
-| test(from_t_z_o_tz_to_zo_tzo_to_orchard)
 '''
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }

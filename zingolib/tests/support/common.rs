@@ -40,7 +40,7 @@ pub fn zfz_unified_address() -> zcash_client_backend::address::UnifiedAddress {
     else {
         panic!("ZFZ address must be unified");
     };
-    address
+    *address
 }
 
 pub fn received(txid_byte: u8, height: u32, memos: &[Memo]) -> WalletTransaction {
