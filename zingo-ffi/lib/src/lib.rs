@@ -168,10 +168,13 @@ fn chain_text(error: &(dyn std::error::Error + 'static)) -> String {
     text
 }
 
-/// A failure to open wallet bytes: a chain mismatch keeps its own variant.
-/// `LightClientError::FileError` holds its `io::Error` without naming it as
-/// the source, and an `io::Error`'s `source()` skips the error it wraps, so
-/// every `io::Error` on the way is opened directly.
+/// A failure to open wallet bytes: a chain mismatch keeps its own variant,
+/// and any other failure of the read is an unreadable file. `from_reader`
+/// reads before it dials, so a wallet for another chain is a mismatch even
+/// with the server down. `LightClientError::FileError` holds its
+/// `io::Error` without naming it as the source, and an `io::Error`'s
+/// `source()` skips the error it wraps, so every `io::Error` on the way is
+/// opened directly.
 fn open_error(error: &LightClientError) -> ZingolibError {
     let file_io = match error {
         LightClientError::FileError(io) => Some(io),
@@ -187,33 +190,49 @@ fn open_error(error: &LightClientError) -> ZingolibError {
         .any(|inner| inner.is::<zingolib::wallet::disk::ChainMismatch>());
     if mismatch {
         ZingolibError::WalletChainMismatch(chain_text(error))
+    } else if file_io.is_some() {
+        ZingolibError::InitWalletFile(chain_text(error))
     } else {
         init_error(error)
+    }
+}
+
+/// Across the chains an offline open tries, a wallet that does not decode
+/// under its own chain is the finding: the mismatches the other chains
+/// report are expected and never replace it.
+fn keep_the_cause(kept: ZingolibError, next: ZingolibError) -> ZingolibError {
+    match (&kept, &next) {
+        (ZingolibError::InitWalletFile(_), ZingolibError::WalletChainMismatch(_)) => kept,
+        _ => next,
     }
 }
 
 /// A failure to build a client at init, by what the user can change about
 /// it: the server when the dial fails, the key when a seed or viewing key
 /// does not parse or belongs to another network, the birthday when it
-/// lies before sapling, the file when the wallet bytes do not decode.
-/// Exhaustive like `ffi_error`: the variants that cannot arise while a
-/// client is built stay `Init`.
+/// lies before sapling. Exhaustive like `ffi_error`: everything else stays
+/// `Init`, a wallet file already at the path and a URI without a scheme
+/// or an authority included, since neither names something the user can
+/// change on the error screen. `open_error` adds the unreadable file.
 fn init_error(error: &LightClientError) -> ZingolibError {
+    use netutils::GetClientError;
     use zingolib::wallet::error::WalletError;
     let text = chain_text(error);
     match error {
-        LightClientError::ClientError(_) | LightClientError::IndexerError(_) => {
-            ZingolibError::InitConnection(text)
-        }
+        LightClientError::ClientError(GetClientError::Transport(_))
+        | LightClientError::IndexerError(_) => ZingolibError::InitConnection(text),
         LightClientError::WalletError(WalletError::MnemonicError(_) | WalletError::KeyError(_)) => {
             ZingolibError::InitKey(text)
         }
         LightClientError::WalletError(WalletError::BirthdayBelowSapling(_, _)) => {
             ZingolibError::InitBirthday(text)
         }
-        LightClientError::FileError(_) => ZingolibError::InitWalletFile(text),
-        LightClientError::Offline => ZingolibError::Offline,
-        LightClientError::WalletError(_)
+        LightClientError::ClientError(
+            GetClientError::InvalidScheme | GetClientError::InvalidAuthority,
+        )
+        | LightClientError::FileError(_)
+        | LightClientError::Offline
+        | LightClientError::WalletError(_)
         | LightClientError::SyncLaunchError
         | LightClientError::SyncNotRunning
         | LightClientError::SyncError(_)
@@ -1101,13 +1120,13 @@ pub fn init_from_bytes(
                             break;
                         }
                         Err(e) => {
-                            last_error = open_error(&e);
+                            last_error = keep_the_cause(last_error, open_error(&e));
                             continue;
                         }
                     }
                 }
                 Err(e) => {
-                    last_error = open_error(&e);
+                    last_error = keep_the_cause(last_error, open_error(&e));
                     continue;
                 }
             }
@@ -1496,11 +1515,27 @@ mod init_error_channel_tests {
     }
 
     #[test]
-    fn a_client_error_at_init_is_a_connection_failure() {
+    fn a_uri_without_a_scheme_is_not_a_connection_failure() {
         let error = init_error(&LightClientError::ClientError(
             netutils::GetClientError::InvalidScheme,
         ));
-        assert!(matches!(error, ZingolibError::InitConnection(_)));
+        assert!(matches!(error, ZingolibError::Init(_)));
+    }
+
+    #[test]
+    fn a_wallet_that_does_not_decode_under_its_own_chain_is_unreadable_offline() {
+        let _serial = lock_discipline_tests::serialized();
+        // A mainnet header and nothing after it: unreadable under main, a
+        // mismatch under test and regtest, which the offline open tries
+        // last.
+        let mut bytes = 41u64.to_le_bytes().to_vec();
+        bytes.push(0);
+        let error = init_from_bytes(bytes, test_connection("", "main", "Medium"))
+            .expect_err("a truncated wallet does not open");
+        assert!(
+            matches!(error, ZingolibError::InitWalletFile(_)),
+            "the chain that matched must report, not the ones that did not: {error}"
+        );
     }
 
     #[test]
