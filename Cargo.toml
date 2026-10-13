@@ -88,8 +88,8 @@ zcash_script = "0.4.5"
 
 ### Blockchain Protocol
 bip0039 = { version = "0.14", features = ["rand"] }
-bip32 = { version = "0.6.0-pre.1", default-features = false }
-zip32 = "0.2.0"
+bip32 = { version = "0.6.0", default-features = false }
+zip32 = "0.3.0"
 
 ### Cryptographic
 blake2b_simd = "1"
@@ -174,3 +174,10 @@ opt-level = "z"
 # upstream PR #6, which commits the bindings regenerated from the Ironwood protos
 # as 0.4.0, so no workspace enables `rebuild-proto` and no build needs protoc.
 lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust", rev = "02211904910a50218f8b15f6136b5b127f98e4cc" }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "c1d750af456168f7a8cdf056b2d89a7ee3772b83" }
+zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "c1d750af456168f7a8cdf056b2d89a7ee3772b83" }
+zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "c1d750af456168f7a8cdf056b2d89a7ee3772b83" }
+zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "c1d750af456168f7a8cdf056b2d89a7ee3772b83" }
+sapling-crypto = { git = "https://github.com/zcash/sapling-crypto", rev = "cc5353d3590b8defc5c4333d1528bc123b7ab0f8" }
+zip32 = { git = "https://github.com/zcash/zip32.git", rev = "0399cd62dae9b3abe5dc8d5e761b8ef11b57b12a" }
+orchard = { git = "https://github.com/zcash/orchard", rev = "b223d12e8e8dcfa4e242ed33a9cbf3512a8e6fb4" }
