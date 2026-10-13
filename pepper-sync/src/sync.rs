@@ -2580,17 +2580,7 @@ where
 
     let sapling_subtree_roots = sapling_subtree_roots?;
     let orchard_subtree_roots = orchard_subtree_roots?;
-    // Ironwood subtree roots are only required where NU6.3 exists. A server
-    // that does not serve them is an error, as the ironwood subtree roots of
-    // any shards below the shards inserted by scanning would never be fetched.
-    let ironwood_subtree_roots = if consensus_parameters
-        .activation_height(consensus::NetworkUpgrade::Nu6_3)
-        .is_some()
-    {
-        ironwood_subtree_roots?
-    } else {
-        Vec::new()
-    };
+    let ironwood_subtree_roots = ironwood_subtree_roots?;
 
     let sync_state = wallet
         .get_sync_state_mut()
