@@ -110,13 +110,16 @@ const SCHEME_FLAG: &str = "-scheme";
 const DESTINATION_FLAG: &str = "-destination";
 
 const SIMULATOR_DESTINATION: &str = "platform=iOS Simulator,id=";
+const SIMULATOR_ARCH: &str = ",arch=arm64";
 
 fn xcodebuild_test(scheme: &str, udid: &str) -> Vec<String> {
     XCODEBUILD_TEST
         .into_iter()
         .chain([SCHEME_FLAG, scheme, DESTINATION_FLAG])
         .map(String::from)
-        .chain(iter::once(format!("{SIMULATOR_DESTINATION}{udid}")))
+        .chain(iter::once(format!(
+            "{SIMULATOR_DESTINATION}{udid}{SIMULATOR_ARCH}"
+        )))
         .collect()
 }
 
@@ -1395,7 +1398,7 @@ mod tests {
     fn the_xcodebuild_test_names_the_scheme_and_the_simulator_by_id() {
         assert_eq!(
             xcodebuild_test("Scheme-Package", "5555").join(" "),
-            "xcodebuild test -scheme Scheme-Package -destination platform=iOS Simulator,id=5555"
+            "xcodebuild test -scheme Scheme-Package -destination platform=iOS Simulator,id=5555,arch=arm64"
         );
     }
 
