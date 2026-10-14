@@ -210,13 +210,13 @@ pub trait SyncNullifiers: SyncWallet {
         let nullifier_map = self.get_nullifiers_mut()?;
         nullifier_map
             .sapling
-            .retain(|_, scan_target| scan_target.block_height <= truncate_height);
+            .retain(|_, scan_target| scan_target.block_height() <= truncate_height);
         nullifier_map
             .orchard
-            .retain(|_, scan_target| scan_target.block_height <= truncate_height);
+            .retain(|_, scan_target| scan_target.block_height() <= truncate_height);
         nullifier_map
             .ironwood
-            .retain(|_, scan_target| scan_target.block_height <= truncate_height);
+            .retain(|_, scan_target| scan_target.block_height() <= truncate_height);
 
         Ok(())
     }
@@ -243,7 +243,7 @@ pub trait SyncOutPoints: SyncWallet {
     /// Removes all mapped outpoints above the given `block_height`.
     fn truncate_outpoints(&mut self, truncate_height: BlockHeight) -> Result<(), Self::Error> {
         self.get_outpoints_mut()?
-            .retain(|_, scan_target| scan_target.block_height <= truncate_height);
+            .retain(|_, scan_target| scan_target.block_height() <= truncate_height);
 
         Ok(())
     }

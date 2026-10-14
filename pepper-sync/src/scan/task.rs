@@ -16,7 +16,6 @@ use tokio::{
 };
 
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::transaction::TxId;
 use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zingo_netutils::lightwallet_protocol::CompactBlock;
@@ -975,11 +974,8 @@ impl ScanTask {
         };
 
         let mut lower_task_scan_targets = self.scan_targets;
-        let upper_task_scan_targets = lower_task_scan_targets.split_off(&ScanTarget {
-            block_height,
-            txid: TxId::from_bytes([0; 32]),
-            narrow_scan_area: false,
-        });
+        let upper_task_scan_targets =
+            lower_task_scan_targets.split_off(&ScanTarget::new(block_height, None));
 
         let lower_task_last_block = if let Some(block) = lower_compact_blocks.last() {
             Some(

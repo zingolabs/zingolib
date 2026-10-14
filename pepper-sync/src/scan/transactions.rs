@@ -34,12 +34,12 @@ use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
-    error::ScanError,
+    error::{ScanError, ServerError, status_is_network_weather},
     keys::{self, KeyId, transparent::TransparentAddressId},
     wallet::{
         IronwoodNote, NullifierMap, OrchardNote, OutgoingIronwoodNote, OutgoingNote,
         OutgoingNoteInterface, OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote,
-        ScanTarget, TransparentCoin, WalletBlock, WalletNote, WalletTransaction,
+        ScanTarget, ScanTargetOrigin, TransparentCoin, WalletBlock, WalletNote, WalletTransaction,
     },
 };
 
@@ -82,6 +82,14 @@ impl<Proof> ShieldedOutputExt<SaplingDomain> for OutputDescription<Proof> {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// The transactions scanned for a set of scan targets, and the external targets whose transaction the server did
+/// not serve.
+pub(crate) struct ScannedTransactions {
+    pub(crate) transactions: HashMap<TxId, WalletTransaction>,
+    pub(crate) dropped_targets: BTreeSet<ScanTarget>,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn scan_transactions(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: &impl consensus::Parameters,
@@ -91,39 +99,55 @@ pub(crate) async fn scan_transactions(
     wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
     transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
-) -> Result<HashMap<TxId, WalletTransaction>, ScanError> {
-    let mut wallet_transactions = HashMap::with_capacity(scan_targets.len());
+) -> Result<ScannedTransactions, ScanError> {
+    let mut transactions = HashMap::with_capacity(scan_targets.len());
+    let mut dropped_targets = BTreeSet::new();
 
     for scan_target in scan_targets {
-        // TODO: replace wth optional txid in scan targets
-        if scan_target.txid == TxId::from_bytes([0u8; 32]) {
+        let Some(txid) = scan_target.txid() else {
             continue;
-        }
+        };
 
-        // in case of re-orgs or consumers manually adding incorrect scan target txids, skip if request fails.
         let (transaction, block_height) = match client::get_transaction_and_block_height(
             fetch_request_sender.clone(),
             consensus_parameters,
-            scan_target.txid,
+            txid,
         )
         .await
         {
-            Ok((tx, height)) => (tx, height),
-            // TODO: continue if the request failed and the scan target was added externally by the consumer. there
-            // may also be a case where re-org has occured between gathering transparent scan targets pre-scan and
-            // scanning which may result in the transaction no longer existing. this would cause a repeated failure
-            // of sync if not removed.
-            // Err(ServerError::RequestFailed(e)) => {
-            //     continue;
-            // }
+            Ok(fetched) => fetched,
+            // the server answered that it does not serve the transaction. a consumer's target may name a txid
+            // that never existed, or one a re-org removed, and is dropped rather than failing every scan of its
+            // range. a target the sync engine discovered came from the served data, so the same answer is an
+            // inconsistency in that data and is reported with the recommendation to change server. network
+            // weather is neither and is reported as the transient failure it is.
+            Err(ServerError::RequestFailed(status)) if !status_is_network_weather(&status) => {
+                match scan_target.origin() {
+                    ScanTargetOrigin::External => {
+                        tracing::warn!(
+                            "scan target {txid} at block {} dropped: the server does not serve the transaction. {status}",
+                            scan_target.block_height()
+                        );
+                        dropped_targets.insert(scan_target);
+                        continue;
+                    }
+                    ScanTargetOrigin::Internal => {
+                        return Err(ScanError::TransactionNotServed {
+                            txid,
+                            block_height: scan_target.block_height(),
+                            status,
+                        });
+                    }
+                }
+            }
             Err(e) => {
                 return Err(e.into());
             }
         };
 
-        if transaction.txid() != scan_target.txid {
+        if transaction.txid() != txid {
             return Err(ScanError::IncorrectTxid {
-                txid_requested: scan_target.txid,
+                txid_requested: txid,
                 txid_returned: transaction.txid(),
             });
         }
@@ -143,7 +167,7 @@ pub(crate) async fn scan_transactions(
         let wallet_transaction = scan_transaction(
             consensus_parameters,
             ufvks,
-            scan_target.txid,
+            txid,
             transaction,
             confirmation_status,
             Some(&decrypted_note_data),
@@ -152,10 +176,13 @@ pub(crate) async fn scan_transactions(
             &transparent_inuse_addresses,
             wallet_block.time(),
         )?;
-        wallet_transactions.insert(scan_target.txid, wallet_transaction);
+        transactions.insert(txid, wallet_transaction);
     }
 
-    Ok(wallet_transactions)
+    Ok(ScannedTransactions {
+        transactions,
+        dropped_targets,
+    })
 }
 
 /// Scans `transaction` with the given `status` and returns [`crate::wallet::WalletTransaction`], decrypting all
@@ -628,53 +655,36 @@ fn collect_nullifiers(
     txid: TxId,
     transaction: &Transaction,
 ) {
+    let scan_target = ScanTarget::internal(block_height, txid);
     if let Some(bundle) = transaction.sapling_bundle() {
-        bundle
-            .shielded_spends()
-            .iter()
-            .map(sapling_crypto::bundle::SpendDescription::nullifier)
-            .for_each(|nullifier| {
-                nullifier_map.sapling.insert(
-                    *nullifier,
-                    ScanTarget {
-                        block_height,
-                        txid,
-                        narrow_scan_area: false,
-                    },
-                );
-            });
+        nullifier_map.sapling.extend(
+            bundle
+                .shielded_spends()
+                .iter()
+                .map(sapling_crypto::bundle::SpendDescription::nullifier)
+                .copied()
+                .zip(std::iter::repeat(scan_target)),
+        );
     }
     if let Some(bundle) = transaction.orchard_bundle() {
-        bundle
-            .actions()
-            .iter()
-            .map(orchard::Action::nullifier)
-            .for_each(|nullifier| {
-                nullifier_map.orchard.insert(
-                    *nullifier,
-                    ScanTarget {
-                        block_height,
-                        txid,
-                        narrow_scan_area: false,
-                    },
-                );
-            });
+        nullifier_map.orchard.extend(
+            bundle
+                .actions()
+                .iter()
+                .map(orchard::Action::nullifier)
+                .copied()
+                .zip(std::iter::repeat(scan_target)),
+        );
     }
     if let Some(bundle) = transaction.ironwood_bundle() {
-        bundle
-            .actions()
-            .iter()
-            .map(orchard::Action::nullifier)
-            .for_each(|nullifier| {
-                nullifier_map.ironwood.insert(
-                    *nullifier,
-                    ScanTarget {
-                        block_height,
-                        txid,
-                        narrow_scan_area: false,
-                    },
-                );
-            });
+        nullifier_map.ironwood.extend(
+            bundle
+                .actions()
+                .iter()
+                .map(orchard::Action::nullifier)
+                .copied()
+                .zip(std::iter::repeat(scan_target)),
+        );
     }
 }
 
@@ -692,11 +702,104 @@ fn collect_outpoints<A: TransparentAuthorization>(
         .for_each(|outpoint| {
             outpoint_map.insert(
                 OutputId::from(outpoint),
-                ScanTarget {
-                    block_height,
-                    txid,
-                    narrow_scan_area: true,
-                },
+                ScanTarget::internal(block_height, txid),
             );
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use zcash_protocol::consensus::MAIN_NETWORK;
+
+    use super::*;
+
+    // A fetcher that answers every transaction request with `status`.
+    fn fetcher_answering(status: tonic::Status) -> mpsc::UnboundedSender<FetchRequest> {
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::Transaction(reply_sender, _) => {
+                        let _ignore_error = reply_sender.send(Err(status.clone()));
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+        });
+        fetch_request_sender
+    }
+
+    async fn scan(scan_target: ScanTarget) -> Result<ScannedTransactions, ScanError> {
+        scan_against(scan_target, tonic::Status::not_found("no such transaction")).await
+    }
+
+    async fn scan_against(
+        scan_target: ScanTarget,
+        status: tonic::Status,
+    ) -> Result<ScannedTransactions, ScanError> {
+        scan_transactions(
+            fetcher_answering(status),
+            &MAIN_NETWORK,
+            &HashMap::new(),
+            BTreeSet::from([scan_target]),
+            DecryptedNoteData::new(),
+            &BTreeMap::new(),
+            &mut BTreeMap::new(),
+            HashMap::new(),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn an_external_target_the_server_does_not_serve_is_dropped() {
+        let scan_target =
+            ScanTarget::new(BlockHeight::from_u32(100), Some(TxId::from_bytes([1; 32])));
+
+        let scanned = scan(scan_target).await.unwrap();
+
+        assert!(scanned.transactions.is_empty());
+        assert_eq!(scanned.dropped_targets, BTreeSet::from([scan_target]));
+    }
+
+    // The transaction came from the served data, so the server not serving it is an inconsistency in that
+    // data, reported with the recommendation to change server.
+    #[tokio::test]
+    async fn an_internal_target_the_server_does_not_serve_is_an_inconsistency() {
+        let txid = TxId::from_bytes([1; 32]);
+        let scan_target = ScanTarget::internal(BlockHeight::from_u32(100), txid);
+
+        assert!(matches!(
+            scan(scan_target).await,
+            Err(ScanError::TransactionNotServed { txid: unserved, block_height, status })
+                if unserved == txid
+                    && block_height == BlockHeight::from_u32(100)
+                    && status.code() == tonic::Code::NotFound
+        ));
+    }
+
+    // Network weather is not an answer about the transaction: the request failure is reported as the transient
+    // failure it is, and a consumer's target is not dropped for it.
+    #[tokio::test]
+    async fn network_weather_is_reported_and_drops_no_target() {
+        for scan_target in [
+            ScanTarget::new(BlockHeight::from_u32(100), Some(TxId::from_bytes([1; 32]))),
+            ScanTarget::internal(BlockHeight::from_u32(100), TxId::from_bytes([1; 32])),
+        ] {
+            assert!(matches!(
+                scan_against(scan_target, tonic::Status::unavailable("down")).await,
+                Err(ScanError::ServerError(ServerError::RequestFailed(status)))
+                    if status.code() == tonic::Code::Unavailable
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_target_without_a_txid_fetches_no_transaction() {
+        let scanned = scan(ScanTarget::new(BlockHeight::from_u32(100), None))
+            .await
+            .unwrap();
+
+        assert!(scanned.transactions.is_empty());
+        assert!(scanned.dropped_targets.is_empty());
+    }
 }
