@@ -743,10 +743,12 @@ where
             )?;
 
             if !first_verification_complete {
-                // frontier is added after subtree roots to retain subtree roots below birthday
-                if let Some(birthday) =
-                    initial_frontier_height(consensus_parameters, &*wallet.read().await)?
-                {
+                // frontier is added after subtree roots to retain subtree roots below birthday.
+                // the height is bound first: a wallet guard in an `if let` scrutinee lives through the body, and
+                // the body takes the write lock.
+                let initial_frontier_height =
+                    initial_frontier_height(consensus_parameters, &*wallet.read().await)?;
+                if let Some(birthday) = initial_frontier_height {
                     let Some(frontiers) = unless_shutdown(
                         &sync_mode,
                         client::get_frontiers(
