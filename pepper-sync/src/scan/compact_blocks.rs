@@ -105,25 +105,13 @@ where
             // the edge case of transactions that this capability created but did not receive change
             // or create outgoing data is handled when the nullifiers are added and linked
             for output_id in incoming_sapling_outputs.keys() {
-                decrypted_scan_targets.insert(ScanTarget {
-                    block_height,
-                    txid: output_id.txid(),
-                    narrow_scan_area: false,
-                });
+                decrypted_scan_targets.insert(ScanTarget::internal(block_height, output_id.txid()));
             }
             for output_id in incoming_orchard_outputs.keys() {
-                decrypted_scan_targets.insert(ScanTarget {
-                    block_height,
-                    txid: output_id.txid(),
-                    narrow_scan_area: false,
-                });
+                decrypted_scan_targets.insert(ScanTarget::internal(block_height, output_id.txid()));
             }
             for output_id in incoming_ironwood_outputs.keys() {
-                decrypted_scan_targets.insert(ScanTarget {
-                    block_height,
-                    txid: output_id.txid(),
-                    narrow_scan_area: false,
-                });
+                decrypted_scan_targets.insert(ScanTarget::internal(block_height, output_id.txid()));
             }
 
             collect_nullifiers_compact(&mut nullifiers, block_height, transaction)?;
@@ -252,11 +240,7 @@ where
                         if let Some((_address, _key_id)) =
                             transparent_inuse_addresses.get_key_value(&encoded_address)
                         {
-                            decrypted_scan_targets.insert(ScanTarget {
-                                block_height,
-                                txid,
-                                narrow_scan_area: true,
-                            });
+                            decrypted_scan_targets.insert(ScanTarget::internal(block_height, txid));
                         }
                         if let Some((_address, key_id)) =
                             transparent_gap_addresses.get_key_value(&encoded_address)
@@ -264,11 +248,7 @@ where
                             // NOTE: the new transparent in-use addresses do not need to be appended to the transparent
                             // in-use addresses in this loop as the scan target has already been added here
                             gap_addresses_in_use.insert(*key_id);
-                            decrypted_scan_targets.insert(ScanTarget {
-                                block_height,
-                                txid,
-                                narrow_scan_area: true,
-                            });
+                            decrypted_scan_targets.insert(ScanTarget::internal(block_height, txid));
                         }
                     }
                 }
@@ -1219,11 +1199,7 @@ mod tests {
             scan_data.outpoints.into_iter().collect::<Vec<_>>(),
             vec![(
                 OutputId::new(TxId::from_bytes([21; 32]), 0),
-                ScanTarget {
-                    block_height: BlockHeight::from_u32(101),
-                    txid: TxId::from_bytes([12; 32]),
-                    narrow_scan_area: true,
-                },
+                ScanTarget::internal(BlockHeight::from_u32(101), TxId::from_bytes([12; 32])),
             )]
         );
     }

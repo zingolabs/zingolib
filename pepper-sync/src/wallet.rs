@@ -47,25 +47,159 @@ pub mod traits;
 #[cfg(feature = "wallet_essentials")]
 pub mod serialization;
 
-/// Block height and txid of relevant transactions that have yet to be scanned. These may be added due to transparent
-/// output/spend discovery or for targetted rescan.
+/// A block, or a transaction in it, that scanning must reach. A target names a block height and, when a particular
+/// transaction is wanted, its txid. Two targets naming the same block height and txid are the same target.
 ///
-/// `narrow_scan_area` is used to narrow the surrounding area scanned around the target from a shard to 100 blocks.
-/// For example, this is useful when targetting transparent outputs as scanning the whole shard will not affect the
-/// spendability of the scan target but will significantly reduce memory usage and/or storage as well as prioritise
-/// creating spendable notes.
-///
-/// Scan targets with block heights below sapling activation height are not supported.
-// FIXME: add a bool field which is set when users add scan targets manually so `get_transaction` can ignore the error
-// if the txid does not exist.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// The blocks around a target are prioritised for scanning: a narrow range by default, and the whole shard of each
+/// pool the target's transaction was found to hold notes of, so those notes become spendable.
+#[derive(Debug, Clone, Copy)]
 pub struct ScanTarget {
-    /// Block height.
-    pub block_height: BlockHeight,
-    /// Txid.
-    pub txid: TxId,
-    /// Narrow surrounding scan area of target.
-    pub narrow_scan_area: bool,
+    block_height: BlockHeight,
+    txid: Option<TxId>,
+    pools: ScanTargetPools,
+    origin: ScanTargetOrigin,
+}
+
+// Where a scan target came from, which decides what a transaction the server does not serve means.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScanTargetOrigin {
+    // Trial decryption, spend detection or transparent address discovery. A transaction the server does not serve
+    // is an inconsistency in the served data.
+    Internal,
+    // `crate::add_scan_targets`. A transaction the server does not serve, or a block height outside the chain, is a
+    // consumer error and the target is dropped.
+    External,
+}
+
+// The shielded pools a scan target's transaction was found to hold notes of, as bits of a byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct ScanTargetPools(u8);
+
+impl ScanTargetPools {
+    const ALL_POOLS: [ShieldedPool; 3] = [
+        ShieldedPool::Sapling,
+        ShieldedPool::Orchard,
+        ShieldedPool::Ironwood,
+    ];
+
+    const fn bit(pool: ShieldedPool) -> u8 {
+        match pool {
+            ShieldedPool::Sapling => 1,
+            ShieldedPool::Orchard => 1 << 1,
+            ShieldedPool::Ironwood => 1 << 2,
+        }
+    }
+
+    #[cfg(feature = "wallet_essentials")]
+    pub(crate) fn from_bits(bits: u8) -> Option<Self> {
+        let known = Self::ALL_POOLS
+            .into_iter()
+            .fold(0, |known, pool| known | Self::bit(pool));
+        (bits & !known == 0).then_some(Self(bits))
+    }
+
+    #[cfg(feature = "wallet_essentials")]
+    pub(crate) fn bits(self) -> u8 {
+        self.0
+    }
+
+    pub(crate) fn with(self, pool: ShieldedPool) -> Self {
+        Self(self.0 | Self::bit(pool))
+    }
+
+    pub(crate) fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    pub(crate) fn iter(self) -> impl Iterator<Item = ShieldedPool> {
+        Self::ALL_POOLS
+            .into_iter()
+            .filter(move |&pool| self.0 & Self::bit(pool) != 0)
+    }
+}
+
+impl ScanTarget {
+    /// A target to add through [`crate::add_scan_targets`]. The blocks around `block_height` are prioritised for
+    /// scanning, and the transaction `txid` is scanned there when given.
+    #[must_use]
+    pub fn new(block_height: BlockHeight, txid: Option<TxId>) -> Self {
+        Self {
+            block_height,
+            txid,
+            pools: ScanTargetPools::default(),
+            origin: ScanTargetOrigin::External,
+        }
+    }
+
+    pub(crate) fn internal(block_height: BlockHeight, txid: TxId) -> Self {
+        Self {
+            block_height,
+            txid: Some(txid),
+            pools: ScanTargetPools::default(),
+            origin: ScanTargetOrigin::Internal,
+        }
+    }
+
+    /// The block height of the target.
+    #[must_use]
+    pub fn block_height(&self) -> BlockHeight {
+        self.block_height
+    }
+
+    /// The txid of the transaction to scan at the target's block height, when a particular one is wanted.
+    #[must_use]
+    pub fn txid(&self) -> Option<TxId> {
+        self.txid
+    }
+
+    pub(crate) fn pools(&self) -> ScanTargetPools {
+        self.pools
+    }
+
+    pub(crate) fn origin(&self) -> ScanTargetOrigin {
+        self.origin
+    }
+
+    pub(crate) fn with_pool(self, pool: ShieldedPool) -> Self {
+        Self {
+            pools: self.pools.with(pool),
+            ..self
+        }
+    }
+
+    // The target that stands for both `self` and `other`, which name the same block height and txid: it holds the
+    // pools of both, and it is internal where either is.
+    fn merge(mut self, other: Self) -> Self {
+        self.pools.0 |= other.pools.0;
+        if other.origin == ScanTargetOrigin::Internal {
+            self.origin = ScanTargetOrigin::Internal;
+        }
+        self
+    }
+
+    fn key(&self) -> (BlockHeight, Option<TxId>) {
+        (self.block_height, self.txid)
+    }
+}
+
+impl PartialEq for ScanTarget {
+    fn eq(&self, other: &Self) -> bool {
+        self.key() == other.key()
+    }
+}
+
+impl Eq for ScanTarget {}
+
+impl PartialOrd for ScanTarget {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ScanTarget {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.key().cmp(&other.key())
+    }
 }
 
 /// Initial sync state.
@@ -195,6 +329,16 @@ impl SyncState {
         &self.ironwood_shard_ranges
     }
 
+    /// The shard ranges of `pool`
+    #[must_use]
+    pub fn shard_ranges(&self, pool: ShieldedPool) -> &[Range<BlockHeight>] {
+        match pool {
+            ShieldedPool::Sapling => &self.sapling_shard_ranges,
+            ShieldedPool::Orchard => &self.orchard_shard_ranges,
+            ShieldedPool::Ironwood => &self.ironwood_shard_ranges,
+        }
+    }
+
     /// Returns true if all scan ranges are scanned.
     pub(crate) fn scan_complete(&self) -> bool {
         self.scan_ranges
@@ -242,6 +386,15 @@ impl SyncState {
         self.scan_ranges
             .first()
             .map(|range| range.block_range().start)
+    }
+
+    /// - Inserts `scan_target`, merged into the target already held for the same block height and txid if any.
+    pub(crate) fn insert_scan_target(&mut self, scan_target: ScanTarget) {
+        let merged = self
+            .scan_targets
+            .take(&scan_target)
+            .map_or(scan_target, |held| held.merge(scan_target));
+        self.scan_targets.insert(merged);
     }
 
     /// Returns the last known chain height to the wallet or `None` if `self.scan_ranges` is empty.
