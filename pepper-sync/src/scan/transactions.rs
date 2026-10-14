@@ -34,7 +34,7 @@ use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
-    error::{ScanError, ServerError},
+    error::{ScanError, ServerError, status_is_network_weather},
     keys::{self, KeyId, transparent::TransparentAddressId},
     wallet::{
         IronwoodNote, NullifierMap, OrchardNote, OutgoingIronwoodNote, OutgoingNote,
@@ -116,19 +116,29 @@ pub(crate) async fn scan_transactions(
         .await
         {
             Ok(fetched) => fetched,
-            // a consumer's target names a transaction the server does not serve: a txid that never existed, or
-            // one a re-org removed. the target is dropped rather than failing every scan of its range. a target
-            // the sync engine discovered came from the served data, so the same refusal is an inconsistency in
-            // that data and is reported.
-            Err(ServerError::RequestFailed(status))
-                if scan_target.origin() == ScanTargetOrigin::External =>
-            {
-                tracing::warn!(
-                    "scan target {txid} at block {} dropped: the server did not serve the transaction. {status}",
-                    scan_target.block_height()
-                );
-                dropped_targets.insert(scan_target);
-                continue;
+            // the server answered that it does not serve the transaction. a consumer's target may name a txid
+            // that never existed, or one a re-org removed, and is dropped rather than failing every scan of its
+            // range. a target the sync engine discovered came from the served data, so the same answer is an
+            // inconsistency in that data and is reported with the recommendation to change server. network
+            // weather is neither and is reported as the transient failure it is.
+            Err(ServerError::RequestFailed(status)) if !status_is_network_weather(&status) => {
+                match scan_target.origin() {
+                    ScanTargetOrigin::External => {
+                        tracing::warn!(
+                            "scan target {txid} at block {} dropped: the server does not serve the transaction. {status}",
+                            scan_target.block_height()
+                        );
+                        dropped_targets.insert(scan_target);
+                        continue;
+                    }
+                    ScanTargetOrigin::Internal => {
+                        return Err(ScanError::TransactionNotServed {
+                            txid,
+                            block_height: scan_target.block_height(),
+                            status,
+                        });
+                    }
+                }
             }
             Err(e) => {
                 return Err(e.into());
@@ -703,15 +713,14 @@ mod tests {
 
     use super::*;
 
-    // A fetcher that serves no transaction.
-    fn fetcher_without_transactions() -> mpsc::UnboundedSender<FetchRequest> {
+    // A fetcher that answers every transaction request with `status`.
+    fn fetcher_answering(status: tonic::Status) -> mpsc::UnboundedSender<FetchRequest> {
         let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
         tokio::spawn(async move {
             while let Some(fetch_request) = fetch_request_receiver.recv().await {
                 match fetch_request {
-                    FetchRequest::Transaction(reply_sender, txid) => {
-                        let _ignore_error =
-                            reply_sender.send(Err(tonic::Status::not_found(txid.to_string())));
+                    FetchRequest::Transaction(reply_sender, _) => {
+                        let _ignore_error = reply_sender.send(Err(status.clone()));
                     }
                     _ => panic!("unexpected fetch request"),
                 }
@@ -721,8 +730,15 @@ mod tests {
     }
 
     async fn scan(scan_target: ScanTarget) -> Result<ScannedTransactions, ScanError> {
+        scan_against(scan_target, tonic::Status::not_found("no such transaction")).await
+    }
+
+    async fn scan_against(
+        scan_target: ScanTarget,
+        status: tonic::Status,
+    ) -> Result<ScannedTransactions, ScanError> {
         scan_transactions(
-            fetcher_without_transactions(),
+            fetcher_answering(status),
             &MAIN_NETWORK,
             &HashMap::new(),
             BTreeSet::from([scan_target]),
@@ -745,16 +761,36 @@ mod tests {
         assert_eq!(scanned.dropped_targets, BTreeSet::from([scan_target]));
     }
 
+    // The transaction came from the served data, so the server not serving it is an inconsistency in that
+    // data, reported with the recommendation to change server.
     #[tokio::test]
-    async fn an_internal_target_the_server_does_not_serve_is_an_error() {
-        let scan_target =
-            ScanTarget::internal(BlockHeight::from_u32(100), TxId::from_bytes([1; 32]));
+    async fn an_internal_target_the_server_does_not_serve_is_an_inconsistency() {
+        let txid = TxId::from_bytes([1; 32]);
+        let scan_target = ScanTarget::internal(BlockHeight::from_u32(100), txid);
 
         assert!(matches!(
             scan(scan_target).await,
-            Err(ScanError::ServerError(ServerError::RequestFailed(status)))
-                if status.code() == tonic::Code::NotFound
+            Err(ScanError::TransactionNotServed { txid: unserved, block_height, status })
+                if unserved == txid
+                    && block_height == BlockHeight::from_u32(100)
+                    && status.code() == tonic::Code::NotFound
         ));
+    }
+
+    // Network weather is not an answer about the transaction: the request failure is reported as the transient
+    // failure it is, and a consumer's target is not dropped for it.
+    #[tokio::test]
+    async fn network_weather_is_reported_and_drops_no_target() {
+        for scan_target in [
+            ScanTarget::new(BlockHeight::from_u32(100), Some(TxId::from_bytes([1; 32]))),
+            ScanTarget::internal(BlockHeight::from_u32(100), TxId::from_bytes([1; 32])),
+        ] {
+            assert!(matches!(
+                scan_against(scan_target, tonic::Status::unavailable("down")).await,
+                Err(ScanError::ServerError(ServerError::RequestFailed(status)))
+                    if status.code() == tonic::Code::Unavailable
+            ));
+        }
     }
 
     #[tokio::test]
