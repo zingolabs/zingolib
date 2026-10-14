@@ -151,6 +151,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-org allowance of the last known chain height, as before.
 
 ### Fixed
+- `sync` makes the server requests of its session start, the chain height,
+  the tree states that bound the session and the subtree roots, with the
+  wallet lock released, and takes the lock only to apply what they return. A
+  consumer reading the wallet, including `sync_status` and a save, no longer
+  waits for a slow server to answer them. Against zaino, whose
+  `GetSubtreeRoots` serves one block per subtree, a fresh wallet held the lock
+  for the whole fetch. (#2961)
+- `sync` observes a `SyncMode::Shutdown` request while a session-start server
+  request is pending, abandons the request and returns its result, instead of
+  shutting down only once the request is answered or fails. The abandoned
+  request is left to the fetcher, which is aborted at shutdown rather than
+  joined. (#2962)
 - A transaction request that zaino refuses with "retry with a fresh snapshot",
   because it fell between two mempool snapshots, is sent again, at most three
   times, instead of ending the sync session with a server error.
