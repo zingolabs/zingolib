@@ -13,8 +13,9 @@ pinned bytes produces exactly the canonical value — against the same files:
   suites repeat them verbatim.
 - **Kotlin**: `kotlin/GoldenWireContractTest.kt`, compiled against the
   Kotlin Binding Set and JUnit 4. The Gradle library under `bindings/android`
-  adds this directory as a test source and sets `zingo.golden.dir` to
-  `../test-data/golden`, and the package job of
+  adds this directory as a test source and sets `zingo.golden.dir` to the
+  absolute path of `zingo-netutils/nym-proxy-ffi/test-data/golden`, and the
+  package job of
   `.github/workflows/binding-layer-android.yaml` runs it with
   `testReleaseUnitTest` against the Binding Set the AAR ships.
 - **Swift**: `swift/GoldenWireContractTests.swift`, an XCTest in the
@@ -22,7 +23,8 @@ pinned bytes produces exactly the canonical value — against the same files:
   package under `bindings/swift`. The iOS plan of `build-binding-layer` ends
   by running it on an iOS simulator, so
   `.github/workflows/binding-layer-ios.yaml` runs it on every build. The
-  golden directory resolves relative to the file, or set `ZINGO_GOLDEN_DIR`.
+  golden directory resolves relative to the file. The builder requires the
+  executed test count that xcodebuild reports to equal the suite's size.
 
 A single-language round trip proves only that one side's codec is
 self-inverse. Sharing the pins is what makes the guarantee two-sided at test

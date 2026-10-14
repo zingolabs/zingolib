@@ -10,7 +10,7 @@
 // package beside this directory, which depends on the shipped package under
 // bindings/swift. The iOS plan of build-binding-layer runs it on an iOS
 // simulator as its last step. The golden directory resolves relative to
-// this file, or set ZINGO_GOLDEN_DIR.
+// this file.
 
 import Foundation
 import XCTest
@@ -18,9 +18,6 @@ import XCTest
 
 final class GoldenWireContractTests: XCTestCase {
     private func goldenDir() -> URL {
-        if let env = ProcessInfo.processInfo.environment["ZINGO_GOLDEN_DIR"] {
-            return URL(fileURLWithPath: env)
-        }
         return URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // swift/
             .deletingLastPathComponent() // contract-tests/

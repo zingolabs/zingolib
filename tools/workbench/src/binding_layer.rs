@@ -128,35 +128,99 @@ const SIMCTL_IPHONE: &str = "iPhone";
 
 const SIMCTL_FIELD_OPEN: &str = " (";
 
+const SIMCTL_FIELD_CLOSE: &str = ")";
+
+const SIMCTL_BOOTED: &str = "Booted";
+
 const SIMCTL_DEVICE_FIELDS: usize = 3;
 
-pub fn ios_simulator(listing: &str) -> Result<String, Vec<String>> {
-    let mut in_ios_runtime = false;
+const VERSION_SEPARATOR: char = '.';
+
+pub const SWIFT_CONTRACT_TEST_COUNT: usize = 3;
+
+const XCODEBUILD_EXECUTED: &str = "Executed ";
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct IosSimulator {
+    pub name: String,
+    pub udid: String,
+}
+
+fn version(text: &str) -> Option<Vec<u32>> {
+    text.split(VERSION_SEPARATOR)
+        .map(|part| part.parse().ok())
+        .collect()
+}
+
+pub fn ios_simulator(listing: &str, minimum_runtime: &str) -> Result<IosSimulator, Vec<String>> {
+    let floor = version(minimum_runtime)
+        .ok_or_else(|| vec![format!("`{minimum_runtime}` is not a dotted version")])?;
+    let mut eligible = false;
+    let mut first = None;
     for line in listing.lines() {
         if let Some(runtime) = line
             .strip_prefix(SIMCTL_RUNTIME_PREFIX)
             .and_then(|rest| rest.strip_suffix(SIMCTL_RUNTIME_SUFFIX))
         {
-            in_ios_runtime = runtime.starts_with(SIMCTL_IOS_RUNTIME);
+            eligible = runtime
+                .strip_prefix(SIMCTL_IOS_RUNTIME)
+                .and_then(version)
+                .is_some_and(|found| found >= floor);
             continue;
         }
-        if !in_ios_runtime {
+        if !eligible {
             continue;
         }
         let fields: Vec<&str> = line
             .trim()
             .rsplitn(SIMCTL_DEVICE_FIELDS, SIMCTL_FIELD_OPEN)
             .collect();
-        let [_state, _udid, name] = fields[..] else {
+        let [state, udid, name] = fields[..] else {
             continue;
         };
-        if name.starts_with(SIMCTL_IPHONE) {
-            return Ok(name.to_string());
+        if !name.starts_with(SIMCTL_IPHONE) {
+            continue;
+        }
+        let simulator = IosSimulator {
+            name: name.to_string(),
+            udid: udid.trim_end_matches(SIMCTL_FIELD_CLOSE).to_string(),
+        };
+        if state.trim_end_matches(SIMCTL_FIELD_CLOSE) == SIMCTL_BOOTED {
+            return Ok(simulator);
+        }
+        first.get_or_insert(simulator);
+    }
+    first.ok_or_else(|| {
+        vec![format!(
+            "no available {SIMCTL_IPHONE} simulator on an {SIMCTL_IOS_RUNTIME}{minimum_runtime} or newer runtime in:\n{listing}"
+        )]
+    })
+}
+
+pub fn executed_tests(log: &str) -> Result<usize, Vec<String>> {
+    log.lines()
+        .filter_map(|line| line.trim().strip_prefix(XCODEBUILD_EXECUTED))
+        .filter_map(|rest| rest.split_whitespace().next()?.parse().ok())
+        .next_back()
+        .ok_or_else(|| {
+            vec![format!(
+                "xcodebuild reported no `{XCODEBUILD_EXECUTED}N tests` line"
+            )]
+        })
+}
+
+pub fn lexical(path: &std::path::Path) -> std::path::PathBuf {
+    let mut resolved = std::path::PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                resolved.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => resolved.push(other),
         }
     }
-    Err(vec![format!(
-        "no available {SIMCTL_IPHONE} simulator on an {SIMCTL_IOS_RUNTIME}runtime in:\n{listing}"
-    )])
+    resolved
 }
 
 /// The wallet's generated Swift source.
@@ -771,16 +835,7 @@ mod tests {
     }
 
     fn resolved(base: &str, relative: &str) -> std::path::PathBuf {
-        let mut path = std::path::PathBuf::new();
-        for component in std::path::Path::new(base).join(relative).components() {
-            match component {
-                std::path::Component::ParentDir => {
-                    path.pop();
-                }
-                other => path.push(other),
-            }
-        }
-        path
+        lexical(&std::path::Path::new(base).join(relative))
     }
 
     #[test]
@@ -813,23 +868,83 @@ mod tests {
         \x20   Apple Watch Series 10 (46mm) (1111) (Shutdown)\n\
         -- Unavailable: com.apple.CoreSimulator.SimRuntime.iOS-17-0 --\n\
         \x20   iPhone 15 (2222) (Shutdown) (unavailable, runtime profile not found)\n\
+        -- iOS 15.5 --\n\
+        \x20   iPhone 13 (6666) (Booted)\n\
         -- iOS 18.2 --\n\
         \x20   iPad Pro 13-inch (M4) (3333) (Shutdown)\n\
         \x20   iPhone 16 Pro (4444) (Shutdown)\n\
         \x20   iPhone 16 (5555) (Booted)\n";
 
+    const MINIMUM_RUNTIME: &str = "16.0";
+
     #[test]
-    fn the_simulator_is_the_first_iphone_on_an_available_ios_runtime() -> Result<(), Vec<String>> {
-        assert_eq!(ios_simulator(SIMCTL_LISTING)?, "iPhone 16 Pro");
+    fn the_simulator_is_the_booted_iphone_on_a_runtime_at_or_above_the_minimum(
+    ) -> Result<(), Vec<String>> {
+        assert_eq!(
+            ios_simulator(SIMCTL_LISTING, MINIMUM_RUNTIME)?,
+            IosSimulator {
+                name: "iPhone 16".to_string(),
+                udid: "5555".to_string(),
+            }
+        );
         Ok(())
     }
 
     #[test]
-    fn a_listing_without_an_iphone_on_ios_is_refused_with_the_listing() -> Result<(), Vec<String>> {
-        let listing = "-- watchOS 11.2 --\n    Apple Watch Series 10 (46mm) (1111) (Shutdown)\n";
-        let diagnostic = crate::refused(ios_simulator(listing))?.concat();
-        assert!(diagnostic.contains(listing));
+    fn the_simulator_is_the_first_eligible_iphone_when_none_is_booted() -> Result<(), Vec<String>> {
+        let listing = SIMCTL_LISTING.replace("(Booted)", "(Shutdown)");
+        assert_eq!(ios_simulator(&listing, MINIMUM_RUNTIME)?.udid, "4444");
         Ok(())
+    }
+
+    #[test]
+    fn a_runtime_version_compares_numerically_not_textually() -> Result<(), Vec<String>> {
+        let listing = SIMCTL_LISTING.replace("iOS 18.2", "iOS 100.0");
+        assert_eq!(ios_simulator(&listing, "99.0")?.udid, "5555");
+        Ok(())
+    }
+
+    #[test]
+    fn a_listing_without_an_iphone_on_an_eligible_runtime_is_refused_with_the_listing(
+    ) -> Result<(), Vec<String>> {
+        let listing = "-- iOS 15.5 --\n    iPhone 13 (6666) (Booted)\n";
+        let diagnostic = crate::refused(ios_simulator(listing, MINIMUM_RUNTIME))?.concat();
+        assert!(diagnostic.contains(listing) && diagnostic.contains(MINIMUM_RUNTIME));
+        Ok(())
+    }
+
+    #[test]
+    fn the_executed_test_count_is_the_last_one_xcodebuild_reports() -> Result<(), Vec<String>> {
+        let log = "Test Suite 'GoldenWireContractTests' passed\n\
+            \t Executed 3 tests, with 0 failures (0 unexpected) in 0.012 (0.015) seconds\n\
+            Test Suite 'All tests' passed\n\
+            \t Executed 3 tests, with 0 failures (0 unexpected) in 0.013 (0.016) seconds\n";
+        assert_eq!(executed_tests(log)?, 3);
+        assert!(crate::refused(executed_tests("** TEST SUCCEEDED **\n"))?
+            .concat()
+            .contains(XCODEBUILD_EXECUTED));
+        Ok(())
+    }
+
+    #[test]
+    fn the_swift_contract_test_count_is_the_number_of_test_methods() {
+        let suite = include_str!(
+            "../../../zingo-netutils/nym-proxy-ffi/contract-tests/swift/GoldenWireContractTests.swift"
+        );
+        assert_eq!(
+            suite.matches("func test").count(),
+            SWIFT_CONTRACT_TEST_COUNT
+        );
+    }
+
+    #[test]
+    fn lexical_resolution_drops_parent_and_current_components() {
+        assert_eq!(
+            lexical(std::path::Path::new(
+                "/host/zingolib/bindings/android/../swift/./build"
+            )),
+            std::path::Path::new("/host/zingolib/bindings/swift/build")
+        );
     }
 
     #[test]
