@@ -933,7 +933,6 @@ pub(super) fn lower_transparent_scan_floor(sync_state: &mut SyncState, height: B
     }
 }
 
-/// Sets the `initial_sync_state` field at the start of the sync session
 /// The wallet facts the session's tree bounds are derived from, read under one wallet lock so the server requests
 /// that complete them are made with the lock released.
 #[derive(Debug, Clone, Copy)]
@@ -1025,6 +1024,7 @@ pub(super) async fn fetch_tree_bounds(
     })
 }
 
+/// Sets the `initial_sync_state` field at the start of the sync session
 pub(super) fn set_initial_state<W>(
     wallet: &mut W,
     chain_height: BlockHeight,
