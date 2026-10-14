@@ -1835,6 +1835,66 @@ async fn first_session_of_a_wallet_born_after_sapling_inserts_its_frontier_and_s
     );
 }
 
+/// A stop during the chain height request of a wallet's first session ends the session before its first scan range
+/// exists. The shutdown tail reads the wallet as it is, with no scan range and no initial sync state, and returns a
+/// result that scanned nothing.
+#[tokio::test]
+async fn stop_during_the_first_chain_height_request_returns_an_empty_session() {
+    use crate::testutils::mock_indexer::{Fault, Rpc};
+
+    const CHAIN_HEIGHT: u32 = 10;
+    const FETCH_HOLD: std::time::Duration = std::time::Duration::from_secs(30);
+    const STOP_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+    let mut net = MockNet::launch().await;
+    {
+        let mut chain = net.chain.write().await;
+        chain.mine_empty_blocks(CHAIN_HEIGHT);
+        chain
+            .faults
+            .inject(Rpc::LatestBlock, Fault::Delay(FETCH_HOLD));
+    }
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    client.sync().await.expect("continuous sync launches");
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    client.stop_sync().unwrap();
+    let sync_result = tokio::time::timeout(STOP_WAIT, client.await_sync())
+        .await
+        .expect("the session ends while the server still holds the request")
+        .expect("a session stopped before its first scan range returns its result");
+
+    assert_eq!(sync_result.blocks_scanned, 0);
+    assert_eq!(sync_result.sync_start_height, sync_result.sync_end_height);
+    assert!(
+        client
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .scan_ranges()
+            .is_empty(),
+        "no scan range was created before the stop"
+    );
+
+    client.sync_to_tip_and_await().await.unwrap();
+    assert_eq!(
+        client
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .fully_scanned_height(),
+        Some(BlockHeight::from_u32(CHAIN_HEIGHT)),
+        "the next session syncs the wallet from scratch"
+    );
+}
+
 /// Sync is rejected when the server's lightwallet protocol version is below v0.5.0, or not reported, as the server does
 /// not serve the transparent and ironwood data sync requires. The error recommends switching servers.
 #[tokio::test]
