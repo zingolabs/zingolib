@@ -114,6 +114,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - zingolib sets `shutdown_on_completion` to `false` by default. Wallet files from earlier versions, which lack the `shutdown_on_completion` byte, read it as `false`, so existing wallets also sync continuously. Consumers must set the sync config accordingly before each call to sync. Otherwise, awaiting a sync that is expected to return at the chain tip will wait indefinitely.
 - **Breaking:** `testutils::mock_indexer::MockNet::client` takes an `Option<WalletSettings>`; `None` uses `default_test_wallet_settings`, which now sets `shutdown_on_completion` to `true`.
 
+### Fixed
+- `LightWallet::spendable_balance` and note selection require the anchor's
+  shard to be scanned as well as the note's. The witness path's right-hand
+  siblings are computed from the anchor's shard up to the anchor, so a note in
+  a scanned shard could count as spendable while its witness could not be
+  built. `InputSource::anchor_computable` checks the anchor's shard, where it
+  checked the birthday shard, which is what the backend's canonical crossing
+  proposal asks of it. (#2953)
+
 ### Removed
 - **Breaking:** remove `LightWallet::get_filtered_balance_mut`, which no code called with a mutating filter. Use `LightWallet::get_filtered_balance`, which keeps its `Fn` bound.
 - **Breaking:** remove the `zennies_for_zingo` parameter from `LightClient::propose_send_all` and `LightClient::max_send_value`, since upstream send-max cannot carry a second payment.
