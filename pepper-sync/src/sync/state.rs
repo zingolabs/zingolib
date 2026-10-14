@@ -933,12 +933,102 @@ pub(super) fn lower_transparent_scan_floor(sync_state: &mut SyncState, height: B
     }
 }
 
-/// Sets the `initial_sync_state` field at the start of the sync session
-pub(super) async fn set_initial_state<W>(
+/// The wallet facts the session's tree bounds are derived from, read under one wallet lock so the server requests
+/// that complete them are made with the lock released.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct TreeBoundsSource {
+    birthday: BlockHeight,
+    chain_height: BlockHeight,
+    /// The initial tree sizes of the wallet's birthday block, where it holds one.
+    birthday_initial_tree_sizes: Option<(u32, u32, u32)>,
+    /// The final tree sizes of the wallet's block at the chain height, where it holds one.
+    chain_tip_final_tree_sizes: Option<(u32, u32, u32)>,
+}
+
+impl TreeBoundsSource {
+    /// Reads the source from `wallet` for a session whose chain tip is `chain_height`.
+    pub(super) fn read<W>(wallet: &W, chain_height: BlockHeight) -> Result<Self, W::Error>
+    where
+        W: SyncWallet + SyncBlocks,
+    {
+        let birthday = wallet
+            .get_sync_state()?
+            .wallet_birthday()
+            .expect("scan ranges must be non-empty");
+        Ok(Self {
+            birthday,
+            chain_height,
+            birthday_initial_tree_sizes: wallet.get_wallet_block(birthday).ok().map(|block| {
+                (
+                    block.tree_bounds().sapling_initial_tree_size,
+                    block.tree_bounds().orchard_initial_tree_size,
+                    block.tree_bounds().ironwood_initial_tree_size,
+                )
+            }),
+            chain_tip_final_tree_sizes: wallet.get_wallet_block(chain_height).ok().map(|block| {
+                (
+                    block.tree_bounds().sapling_final_tree_size,
+                    block.tree_bounds().orchard_final_tree_size,
+                    block.tree_bounds().ironwood_final_tree_size,
+                )
+            }),
+        })
+    }
+}
+
+/// Fetches the tree bounds of a session from `source`: the initial tree sizes of the birthday and the final tree
+/// sizes of the chain tip, each from the server where the wallet holds no block for it.
+pub(super) async fn fetch_tree_bounds(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    source: TreeBoundsSource,
+) -> Result<TreeBounds, ServerError> {
+    let (
+        birthday_sapling_initial_tree_size,
+        birthday_orchard_initial_tree_size,
+        birthday_ironwood_initial_tree_size,
+    ) = match source.birthday_initial_tree_sizes {
+        Some(tree_sizes) => tree_sizes,
+        None => {
+            final_tree_sizes(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                source.birthday - 1,
+            )
+            .await?
+        }
+    };
+    let (
+        chain_tip_sapling_final_tree_size,
+        chain_tip_orchard_final_tree_size,
+        chain_tip_ironwood_final_tree_size,
+    ) = match source.chain_tip_final_tree_sizes {
+        Some(tree_sizes) => tree_sizes,
+        None => {
+            final_tree_sizes(
+                consensus_parameters,
+                fetch_request_sender,
+                source.chain_height,
+            )
+            .await?
+        }
+    };
+
+    Ok(TreeBounds {
+        sapling_initial_tree_size: birthday_sapling_initial_tree_size,
+        sapling_final_tree_size: chain_tip_sapling_final_tree_size,
+        orchard_initial_tree_size: birthday_orchard_initial_tree_size,
+        orchard_final_tree_size: chain_tip_orchard_final_tree_size,
+        ironwood_initial_tree_size: birthday_ironwood_initial_tree_size,
+        ironwood_final_tree_size: chain_tip_ironwood_final_tree_size,
+    })
+}
+
+/// Sets the `initial_sync_state` field at the start of the sync session
+pub(super) fn set_initial_state<W>(
     wallet: &mut W,
     chain_height: BlockHeight,
+    tree_bounds: TreeBounds,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks,
@@ -977,73 +1067,21 @@ where
         previously_scanned_ironwood_outputs,
     };
 
-    update_wallet_tree_bounds(
-        consensus_parameters,
-        fetch_request_sender,
-        wallet,
-        chain_height,
-    )
-    .await?;
-
-    Ok(())
+    update_wallet_tree_bounds(wallet, tree_bounds)
 }
 
-pub(super) async fn update_wallet_tree_bounds<W>(
-    consensus_parameters: &impl consensus::Parameters,
-    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+pub(super) fn update_wallet_tree_bounds<W>(
     wallet: &mut W,
-    chain_height: BlockHeight,
+    tree_bounds: TreeBounds,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks,
 {
-    let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-    let birthday = sync_state
-        .wallet_birthday()
-        .expect("scan ranges must be non-empty");
-    let (
-        birthday_sapling_initial_tree_size,
-        birthday_orchard_initial_tree_size,
-        birthday_ironwood_initial_tree_size,
-    ) = if let Ok(block) = wallet.get_wallet_block(birthday) {
-        (
-            block.tree_bounds.sapling_initial_tree_size,
-            block.tree_bounds.orchard_initial_tree_size,
-            block.tree_bounds.ironwood_initial_tree_size,
-        )
-    } else {
-        final_tree_sizes(
-            consensus_parameters,
-            fetch_request_sender.clone(),
-            wallet,
-            birthday - 1,
-        )
-        .await?
-    };
-    let (
-        chain_tip_sapling_final_tree_size,
-        chain_tip_orchard_final_tree_size,
-        chain_tip_ironwood_final_tree_size,
-    ) = final_tree_sizes(
-        consensus_parameters,
-        fetch_request_sender.clone(),
-        wallet,
-        chain_height,
-    )
-    .await?;
-
     wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?
         .initial_sync_state
-        .wallet_tree_bounds = TreeBounds {
-        sapling_initial_tree_size: birthday_sapling_initial_tree_size,
-        sapling_final_tree_size: chain_tip_sapling_final_tree_size,
-        orchard_initial_tree_size: birthday_orchard_initial_tree_size,
-        orchard_final_tree_size: chain_tip_orchard_final_tree_size,
-        ironwood_initial_tree_size: birthday_ironwood_initial_tree_size,
-        ironwood_final_tree_size: chain_tip_ironwood_final_tree_size,
-    };
+        .wallet_tree_bounds = tree_bounds;
 
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
@@ -1086,58 +1124,46 @@ where
         }))
 }
 
-/// Gets `block_height` final tree sizes from wallet block if it exists, otherwise from frontiers fetched from server.
-async fn final_tree_sizes<W>(
+/// Gets `block_height` final tree sizes from frontiers fetched from server.
+async fn final_tree_sizes(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    wallet: &mut W,
     block_height: BlockHeight,
-) -> Result<(u32, u32, u32), ServerError>
-where
-    W: SyncBlocks,
-{
-    if let Ok(block) = wallet.get_wallet_block(block_height) {
-        Ok((
-            block.tree_bounds().sapling_final_tree_size,
-            block.tree_bounds().orchard_final_tree_size,
-            block.tree_bounds().ironwood_final_tree_size,
-        ))
-    } else {
-        // TODO: move this whole block into `client::get_frontiers`
-        let sapling_activation_height =
-            crate::wallet::PoolActivation::of(consensus_parameters, ShieldedPool::Sapling)
-                .expect("should have some sapling activation height")
-                .height();
+) -> Result<(u32, u32, u32), ServerError> {
+    // TODO: move this whole block into `client::get_frontiers`
+    let sapling_activation_height =
+        crate::wallet::PoolActivation::of(consensus_parameters, ShieldedPool::Sapling)
+            .expect("should have some sapling activation height")
+            .height();
 
-        match block_height.cmp(&(sapling_activation_height - 1)) {
-            cmp::Ordering::Greater => {
-                let frontiers = client::get_frontiers(
-                    fetch_request_sender.clone(),
-                    consensus_parameters,
-                    block_height,
-                )
-                .await?;
-                Ok((
-                    frontiers
-                        .final_sapling_tree()
-                        .tree_size()
-                        .try_into()
-                        .expect("should not be more than 2^32 note commitments in the tree!"),
-                    frontiers
-                        .final_orchard_tree()
-                        .tree_size()
-                        .try_into()
-                        .expect("should not be more than 2^32 note commitments in the tree!"),
-                    frontiers
-                        .final_ironwood_tree()
-                        .tree_size()
-                        .try_into()
-                        .expect("should not be more than 2^32 note commitments in the tree!"),
-                ))
-            }
-            cmp::Ordering::Equal => Ok((0, 0, 0)),
-            cmp::Ordering::Less => panic!("pre-sapling not supported!"),
+    match block_height.cmp(&(sapling_activation_height - 1)) {
+        cmp::Ordering::Greater => {
+            let frontiers = client::get_frontiers(
+                fetch_request_sender.clone(),
+                consensus_parameters,
+                block_height,
+            )
+            .await?;
+            Ok((
+                frontiers
+                    .final_sapling_tree()
+                    .tree_size()
+                    .try_into()
+                    .expect("should not be more than 2^32 note commitments in the tree!"),
+                frontiers
+                    .final_orchard_tree()
+                    .tree_size()
+                    .try_into()
+                    .expect("should not be more than 2^32 note commitments in the tree!"),
+                frontiers
+                    .final_ironwood_tree()
+                    .tree_size()
+                    .try_into()
+                    .expect("should not be more than 2^32 note commitments in the tree!"),
+            ))
         }
+        cmp::Ordering::Equal => Ok((0, 0, 0)),
+        cmp::Ordering::Less => panic!("pre-sapling not supported!"),
     }
 }
 
@@ -1162,24 +1188,6 @@ where
         ironwood_initial_tree_size: start_block.tree_bounds().ironwood_initial_tree_size,
         ironwood_final_tree_size: end_block.tree_bounds().ironwood_final_tree_size,
     })
-}
-
-/// Creates block ranges that contain all outputs for the shards associated with `subtree_roots` and adds them to
-/// `sync_state`.
-///
-/// The network upgrade activation height for the `shielded_protocol` is the first shard start height for the case
-/// where shard ranges in `sync_state` are empty.
-/// Drops the newest stored shard range for `shielded_protocol`, so a
-/// refetched newest subtree root can rebuild it through
-/// [`add_shard_ranges`], never duplicated, and corrected when a reorg
-/// moved the subtree's completing height. No-op when no range exists.
-pub(super) fn pop_newest_shard_range(sync_state: &mut SyncState, shielded_protocol: ShieldedPool) {
-    let shard_ranges: &mut Vec<Range<BlockHeight>> = match shielded_protocol {
-        ShieldedPool::Sapling => sync_state.sapling_shard_ranges.as_mut(),
-        ShieldedPool::Orchard => sync_state.orchard_shard_ranges.as_mut(),
-        ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.as_mut(),
-    };
-    shard_ranges.pop();
 }
 
 /// Removes all shard ranges of `shielded_protocol` so they can be rebuilt from the pool's subtree roots through
@@ -1272,12 +1280,21 @@ pub(super) fn reopen_scan_ranges_inner(sync_state: &mut SyncState, from_height: 
     }
 }
 
+/// - Truncates the `shielded_protocol` shard ranges of `sync_state` to `start_index` and appends one range per
+///   subtree root, unless `subtree_roots` is empty.
 pub(super) fn add_shard_ranges(
     consensus_parameters: &impl consensus::Parameters,
     shielded_protocol: ShieldedPool,
     sync_state: &mut SyncState,
+    start_index: u32,
     subtree_roots: &[SubtreeRoot],
 ) {
+    // A server that serves no root from `start_index` is behind, or a re-org returned the newest recorded shard
+    // to incomplete. Neither is told from the other here, so the recorded ranges are kept.
+    if subtree_roots.is_empty() {
+        return;
+    }
+
     let network_upgrade_activation_height =
         crate::wallet::PoolActivation::of(consensus_parameters, shielded_protocol)
             .expect("activation height should exist for this network upgrade!")
@@ -1288,6 +1305,11 @@ pub(super) fn add_shard_ranges(
         ShieldedPool::Orchard => sync_state.orchard_shard_ranges.as_mut(),
         ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.as_mut(),
     };
+
+    // The fetch starts at the newest recorded root at the latest (see `crate::sync::subtree_root_fetch_index`), so
+    // the ranges from `start_index` are rebuilt from the roots the server holds now. Range `i` then belongs to
+    // subtree root `i`, and a range whose completing block a re-org moved is corrected.
+    shard_ranges.truncate(start_index as usize);
 
     let highest_subtree_completing_height = if let Some(shard_range) = shard_ranges.last() {
         shard_range.end - 1
@@ -1308,7 +1330,7 @@ pub(super) fn add_shard_ranges(
         .fold(
             highest_subtree_completing_height,
             |previous_subtree_completing_height, subtree_completing_height| {
-                if subtree_completing_height >= previous_subtree_completing_height {
+                if subtree_completing_height > previous_subtree_completing_height {
                     shard_ranges.push(Range {
                         start: previous_subtree_completing_height,
                         end: subtree_completing_height + 1,
@@ -1316,18 +1338,34 @@ pub(super) fn add_shard_ranges(
 
                     subtree_completing_height
                 } else {
-                    tracing::error!(
-                        "error: first {:?} subtree root from server has completing block height {} which is lower than the
-                        completing block height of latest shard range in wallet with height {}",
+                    // A block holds far fewer note commitments than a shard, so no block completes two shards.
+                    // A root completing at or below the recorded height contradicts the ranges kept below
+                    // `start_index`, which only a re-org reaching below the refetched root can cause. The root
+                    // is skipped so the ranges stay contiguous.
+                    tracing::warn!(
+                        "{:?} subtree root completing at block {} contradicts the recorded shard ranges, whose \
+                         newest range completes at block {}",
                         shielded_protocol,
-                        previous_subtree_completing_height,
-                        subtree_completing_height
+                        subtree_completing_height,
+                        previous_subtree_completing_height
                     );
 
                     previous_subtree_completing_height
                 }
             },
         );
+
+    debug_assert!(
+        shard_ranges_are_contiguous(shard_ranges),
+        "{shielded_protocol:?} shard ranges must stay contiguous: {shard_ranges:?}"
+    );
+}
+
+pub(super) fn shard_ranges_are_contiguous(shard_ranges: &[Range<BlockHeight>]) -> bool {
+    shard_ranges.iter().all(|range| range.end > range.start + 1)
+        && shard_ranges
+            .windows(2)
+            .all(|pair| pair[1].start + 1 == pair[0].end && pair[1].end > pair[0].end)
 }
 
 /// Updates the `shielded_protocol` shard range to `FoundNote` scan priority if the `wallet_transaction` contains
@@ -1356,58 +1394,162 @@ pub(super) fn update_found_note_shard_priority(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mocks::subtree_root as root;
     use zcash_protocol::local_consensus::LocalNetwork;
 
-    /// A refetched newest subtree root (see
-    /// `crate::sync::update_subtree_roots`) rebuilds its shard range via
-    /// pop-then-readd: idempotent when the completing height is
-    /// unchanged, corrected when a reorg moved it, never duplicated.
+    fn range(start: u32, end: u32) -> Range<BlockHeight> {
+        BlockHeight::from_u32(start)..BlockHeight::from_u32(end)
+    }
+
+    fn add_orchard_roots(sync_state: &mut SyncState, start_index: u32, completing_heights: &[u64]) {
+        let roots = completing_heights
+            .iter()
+            .copied()
+            .map(root)
+            .collect::<Vec<_>>();
+        add_shard_ranges(
+            &BASE_NETWORK,
+            ShieldedPool::Orchard,
+            sync_state,
+            start_index,
+            &roots,
+        );
+    }
+
+    fn orchard_state_from_roots(completing_heights: &[u64]) -> SyncState {
+        let mut sync_state = SyncState::new();
+        add_orchard_roots(&mut sync_state, 0, completing_heights);
+        sync_state
+    }
+
+    // The first range starts at the pool's activation height and every range after it starts at the
+    // completing block of the range before, the one block whose note commitments belong to both shards.
+    #[test]
+    fn fetched_roots_build_contiguous_ranges_from_the_activation_height() {
+        let sync_state = orchard_state_from_roots(&[100, 200, 300]);
+
+        assert_eq!(
+            sync_state.orchard_shard_ranges,
+            vec![range(1, 101), range(100, 201), range(200, 301)]
+        );
+        assert!(shard_ranges_are_contiguous(
+            &sync_state.orchard_shard_ranges
+        ));
+    }
+
+    #[test]
+    fn appended_roots_continue_from_the_newest_range() {
+        let mut sync_state = orchard_state_from_roots(&[100, 200]);
+
+        add_orchard_roots(&mut sync_state, 2, &[300, 400]);
+
+        assert_eq!(
+            sync_state.orchard_shard_ranges,
+            vec![
+                range(1, 101),
+                range(100, 201),
+                range(200, 301),
+                range(300, 401)
+            ]
+        );
+        assert!(shard_ranges_are_contiguous(
+            &sync_state.orchard_shard_ranges
+        ));
+    }
+
+    // The newest recorded root is fetched again every session (see `crate::sync::subtree_root_fetch_index`):
+    // unchanged when its completing block is unchanged, corrected when a re-org moved it, kept when the server
+    // serves nothing.
     #[test]
     fn refetched_newest_root_rebuilds_its_shard_range() {
-        fn root(completing_block_height: u64) -> SubtreeRoot {
-            SubtreeRoot {
-                completing_block_height,
-                ..Default::default()
-            }
-        }
-        let mut sync_state = SyncState::new();
-        add_shard_ranges(
-            &BASE_NETWORK,
-            ShieldedPool::Orchard,
-            &mut sync_state,
-            &[root(100), root(200)],
-        );
-        let initial = sync_state.orchard_shard_ranges.clone();
-        assert_eq!(initial.len(), 2);
+        let mut sync_state = orchard_state_from_roots(&[100, 200]);
+        let recorded = sync_state.orchard_shard_ranges.clone();
 
-        // Unchanged completing height: pop-then-readd is idempotent.
-        pop_newest_shard_range(&mut sync_state, ShieldedPool::Orchard);
-        add_shard_ranges(
-            &BASE_NETWORK,
-            ShieldedPool::Orchard,
-            &mut sync_state,
-            &[root(200)],
-        );
-        assert_eq!(sync_state.orchard_shard_ranges, initial);
+        add_orchard_roots(&mut sync_state, 1, &[200]);
+        assert_eq!(sync_state.orchard_shard_ranges, recorded);
 
-        // A reorg moved the completing height: the range is corrected,
-        // not duplicated.
-        pop_newest_shard_range(&mut sync_state, ShieldedPool::Orchard);
-        add_shard_ranges(
-            &BASE_NETWORK,
-            ShieldedPool::Orchard,
-            &mut sync_state,
-            &[root(205)],
-        );
-        assert_eq!(sync_state.orchard_shard_ranges.len(), 2);
+        add_orchard_roots(&mut sync_state, 1, &[205]);
         assert_eq!(
-            sync_state.orchard_shard_ranges.last().unwrap().end,
-            BlockHeight::from_u32(206)
+            sync_state.orchard_shard_ranges,
+            vec![range(1, 101), range(100, 206)]
         );
+
+        add_orchard_roots(&mut sync_state, 1, &[]);
         assert_eq!(
-            sync_state.orchard_shard_ranges.last().unwrap().start,
-            BlockHeight::from_u32(100)
+            sync_state.orchard_shard_ranges,
+            vec![range(1, 101), range(100, 206)]
         );
+        assert!(shard_ranges_are_contiguous(
+            &sync_state.orchard_shard_ranges
+        ));
+    }
+
+    // A shard tree rolled back below its bare roots fetches from below the recorded count (see
+    // `crate::sync::rollback_unscanned_tree_states`). The ranges from there are rebuilt, never duplicated.
+    #[test]
+    fn a_fetch_below_the_recorded_count_rebuilds_the_ranges_from_there() {
+        let mut sync_state = orchard_state_from_roots(&[100, 200, 300]);
+
+        add_orchard_roots(&mut sync_state, 1, &[200, 300, 400]);
+
+        assert_eq!(
+            sync_state.orchard_shard_ranges,
+            vec![
+                range(1, 101),
+                range(100, 201),
+                range(200, 301),
+                range(300, 401)
+            ]
+        );
+        assert!(shard_ranges_are_contiguous(
+            &sync_state.orchard_shard_ranges
+        ));
+    }
+
+    #[test]
+    fn a_root_completing_at_or_below_the_kept_ranges_is_skipped() {
+        let mut sync_state = orchard_state_from_roots(&[100, 200, 300]);
+
+        add_orchard_roots(&mut sync_state, 2, &[200, 400]);
+
+        assert_eq!(
+            sync_state.orchard_shard_ranges,
+            vec![range(1, 101), range(100, 201), range(200, 401)]
+        );
+        assert!(shard_ranges_are_contiguous(
+            &sync_state.orchard_shard_ranges
+        ));
+    }
+
+    #[test]
+    fn ranges_with_a_gap_an_overlap_or_a_duplicate_are_not_contiguous() {
+        assert!(shard_ranges_are_contiguous(&[]));
+        assert!(shard_ranges_are_contiguous(&[range(1, 101)]));
+        // a gap
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(101, 201)
+        ]));
+        // an overlap of two blocks
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(99, 201)
+        ]));
+        // a duplicate
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(1, 101)
+        ]));
+        // a degenerate one-block range at the boundary
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(100, 101)
+        ]));
+        // a range ending below the one before
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(100, 51)
+        ]));
     }
 
     const BASE_NETWORK: LocalNetwork = LocalNetwork {

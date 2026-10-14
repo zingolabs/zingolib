@@ -149,8 +149,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transparent scan floor. Earlier versions read it as unset, and the next sync
   session's transparent address discovery then searches the blocks within the
   re-org allowance of the last known chain height, as before.
+- The ironwood subtree roots are fetched on every chain. The wallet checks the
+  lightwallet protocol version to ensure ironwood is served, so a server that
+  does not serve them is an error rather than a chain without NU6.3.
 
 ### Fixed
+- `sync` makes the server requests of its session start, the chain height,
+  the tree states that bound the session and the subtree roots, with the
+  wallet lock released, and takes the lock only to apply what they return. A
+  consumer reading the wallet, including `sync_status` and a save, no longer
+  waits for a slow server to answer them. Against zaino, whose
+  `GetSubtreeRoots` serves one block per subtree, a fresh wallet held the lock
+  for the whole fetch. (#2961)
+- `sync` observes a `SyncMode::Shutdown` request while a session-start server
+  request is pending, abandons the request and returns its result, instead of
+  shutting down only once the request is answered or fails. The abandoned
+  request is left to the fetcher, which is aborted at shutdown rather than
+  joined. (#2962)
 - A transaction request that zaino refuses with "retry with a fresh snapshot",
   because it fell between two mempool snapshots, is sent again, at most three
   times, instead of ending the sync session with a server error.
@@ -279,6 +294,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scanned again. Truncating the wallet removes the wallet data of every block
   above the truncation height, and a scanned range above the verification
   range kept its `Scanned` priority with its wallet data removed.
+- `sync` fetches subtree roots from the newest recorded shard range rather than
+  the shard tree's stored shard count. Scanning advances that count past the
+  roots the server holds, so after the first sync session the fetch returned
+  nothing and the shard range list never grew: every shard the wallet completed
+  by scanning had no shard range, and the trailing "incomplete shard" the
+  spendability check and the chain tip priority range start from reached back
+  to a root that could be months old. The ranges are now rebuilt from the fetch
+  index, so range `i` belongs to subtree root `i`, and the newest recorded root
+  is fetched again every session, which corrects a range whose completing block
+  a re-org moved. An existing wallet catches up on its next session. (#2951)
+- A fetched subtree root completing at or below the recorded newest height adds
+  no shard range. After a shard tree rollback refetched its bare roots, the
+  root completing at the recorded height pushed a degenerate one-block range.
+  Shard ranges are contiguous: each spans at least two blocks, each starts at
+  the completing block of the one before, and their ends strictly increase.
+  (#2952)
+- A fetched subtree root for a shard that scanning populated but left with a
+  gap becomes the cached annotation of the shard's root node, so the shard's
+  root is computable before the gap is scanned and the leaves scanned in
+  afterwards are checked against it. The root used to be skipped, leaving a
+  shard that completed on chain while partially scanned without a computable
+  root, and a witness that needed it failed although the note's shard and the
+  anchor's shard were scanned. (#2954)
 
 ### Removed
 - **Breaking.** `sync::SyncStatus::percentage_total_blocks_scanned`,

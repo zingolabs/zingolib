@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
+use std::future::Future;
 use std::ops::{Bound, Range};
 use std::sync::atomic::{self, AtomicBool, AtomicU8, AtomicU32};
 use std::sync::{Arc, OnceLock};
@@ -18,7 +19,7 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_protocol::{PoolType, ShieldedPool};
-use zingo_netutils::lightwallet_protocol::RawTransaction;
+use zingo_netutils::lightwallet_protocol::{RawTransaction, SubtreeRoot};
 use zingo_netutils::{Indexer, TransparentIndexer};
 use zip32::AccountId;
 
@@ -386,6 +387,33 @@ impl Drop for MempoolShutdownGuard {
     }
 }
 
+/// How often a session-start request checks the sync mode for a shutdown request.
+const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// Awaits `request` unless `sync_mode` is set to `Shutdown` first, in which case `request` is dropped and `None` is
+/// returned.
+async fn unless_shutdown<F>(
+    sync_mode: &AtomicU8,
+    request: F,
+) -> Result<Option<F::Output>, SyncModeError>
+where
+    F: Future,
+{
+    let mut interval = tokio::time::interval(SHUTDOWN_POLL_INTERVAL);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    tokio::pin!(request);
+    loop {
+        tokio::select! {
+            output = &mut request => return Ok(Some(output)),
+            _ = interval.tick() => {
+                if SyncMode::from_atomic_u8(sync_mode)? == SyncMode::Shutdown {
+                    return Ok(None);
+                }
+            }
+        }
+    }
+}
+
 /// Syncs a wallet to the latest state of the blockchain.
 ///
 /// `sync_mode` is intended to be stored in a struct that owns the wallet(s) (i.e. lightclient) and has a non-atomic
@@ -499,13 +527,21 @@ where
         continuous_sync_interval.reset();
         let mut reorg_occured = false;
         scanner.state.reverify();
-        let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
+        // every server request made before scanning begins is abandoned when shutdown is requested, so a stop is
+        // not held behind a slow server. the requests are made with the wallet lock released.
+        let Some(chain_height) = unless_shutdown(
+            &sync_mode,
+            client::get_chain_height(fetch_request_sender.clone()),
+        )
+        .await?
+        else {
+            break 'continuous_sync;
+        };
+        let chain_height = chain_height?;
         if chain_height == 0.into() {
             return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
         }
 
-        // hold wallet guard until initial sync state is set to avoid inconsistencies and potential subtraction overflows
-        // when calculating sync status.
         let mut wallet_guard = wallet.write().await;
         let last_known_chain_height =
             checked_wallet_height(&mut *wallet_guard, chain_height, consensus_parameters)?;
@@ -517,26 +553,36 @@ where
                 .get_sync_state_mut()
                 .map_err(SyncError::WalletError)?,
         );
-        // only set intiial sync state on first continuous sync loop.
-        // otherwise, only extend the wallet tree bounds to include new blocks.
-        if first_verification_complete && new_blocks_mined {
-            state::update_wallet_tree_bounds(
-                consensus_parameters,
-                fetch_request_sender.clone(),
-                &mut *wallet_guard,
-                chain_height,
-            )
-            .await?;
-        } else if !first_verification_complete {
-            state::set_initial_state(
-                consensus_parameters,
-                fetch_request_sender.clone(),
-                &mut *wallet_guard,
-                chain_height,
-            )
-            .await?;
-        }
+        // the initial sync state is set on the first continuous sync loop. afterwards, the wallet tree bounds are
+        // only extended when new blocks have been mined. the wallet lock is released while the tree bounds are
+        // fetched: `sync_status` saturates, so an initial sync state that lags the new scan range for the length of
+        // the request under-reports the session's progress and nothing more.
+        let tree_bounds_source = (!first_verification_complete || new_blocks_mined)
+            .then(|| state::TreeBoundsSource::read(&*wallet_guard, chain_height))
+            .transpose()
+            .map_err(SyncError::WalletError)?;
         drop(wallet_guard);
+        if let Some(tree_bounds_source) = tree_bounds_source {
+            let Some(tree_bounds) = unless_shutdown(
+                &sync_mode,
+                state::fetch_tree_bounds(
+                    consensus_parameters,
+                    fetch_request_sender.clone(),
+                    tree_bounds_source,
+                ),
+            )
+            .await?
+            else {
+                break 'continuous_sync;
+            };
+            let tree_bounds = tree_bounds?;
+            let mut wallet_guard = wallet.write().await;
+            if first_verification_complete {
+                state::update_wallet_tree_bounds(&mut *wallet_guard, tree_bounds)?;
+            } else {
+                state::set_initial_state(&mut *wallet_guard, chain_height, tree_bounds)?;
+            }
+        }
 
         // on the first verification we verify the previous wallet state.
         // afterwards, we only verify the newly mined blocks if they exist.
@@ -569,8 +615,15 @@ where
                 );
             } else {
                 // in this case, no blocks have been mined since last sync session but a re-org may have occured
-                let chain_height_server_block =
-                    client::get_compact_block(fetch_request_sender.clone(), chain_height).await?;
+                let Some(chain_height_server_block) = unless_shutdown(
+                    &sync_mode,
+                    client::get_compact_block(fetch_request_sender.clone(), chain_height),
+                )
+                .await?
+                else {
+                    break 'continuous_sync;
+                };
+                let chain_height_server_block = chain_height_server_block?;
                 let chain_height_wallet_block = wallet
                     .read()
                     .await
@@ -581,8 +634,6 @@ where
                 {
                     tracing::info!("Re-org detected.");
                     reorg_occured = true;
-                    // hold wallet guard until initial sync state is set to avoid inconsistencies and potential subtraction overflows
-                    // when calculating sync status
                     let mut wallet_guard = wallet.write().await;
                     let scan_range_to_verify = state::set_verify_scan_range(
                         wallet_guard
@@ -599,13 +650,29 @@ where
                             .expect("value must exist in this scope")
                             - 1,
                     )?;
-                    state::set_initial_state(
-                        consensus_parameters,
-                        fetch_request_sender.clone(),
-                        &mut *wallet_guard,
-                        chain_height,
+                    // the re-orged block at the chain height is truncated, so its tree sizes are fetched. the wallet
+                    // lock is released for the request as it is above.
+                    let tree_bounds_source =
+                        state::TreeBoundsSource::read(&*wallet_guard, chain_height)
+                            .map_err(SyncError::WalletError)?;
+                    drop(wallet_guard);
+                    let Some(tree_bounds) = unless_shutdown(
+                        &sync_mode,
+                        state::fetch_tree_bounds(
+                            consensus_parameters,
+                            fetch_request_sender.clone(),
+                            tree_bounds_source,
+                        ),
                     )
-                    .await?;
+                    .await?
+                    else {
+                        break 'continuous_sync;
+                    };
+                    state::set_initial_state(
+                        &mut *wallet.write().await,
+                        chain_height,
+                        tree_bounds?,
+                    )?;
                 } else {
                     // there are no new blocks to verify and no re-org has occured
                     scanner.state.verified();
@@ -655,25 +722,48 @@ where
         if new_blocks_mined || reorg_occured || !first_verification_complete {
             // subtree roots are always updated on the first continuous sync loop, even if no new blocks have been mined,
             // so they are added before any note commitments are inserted into the shard trees by scanning.
-            // the shard store fills every shard below an inserted shard with an empty shard, and subtree roots are
-            // fetched from the number of stored shards, so the subtree roots of these empty shards would never be
+            // the shard store fills every shard below an inserted shard with an empty shard, and the shard tree resumes
+            // fetching from the number of stored shards, so the subtree roots of these empty shards would never be
             // fetched. for example, a pool rescan (see `truncate_to_pool_activation_height`) clears the pool's shard
             // tree and ends the sync session, relying on the next sync session to fetch the pool's subtree roots.
-            update_subtree_roots(
-                consensus_parameters,
-                fetch_request_sender.clone(),
-                &mut *wallet.write().await,
+            let fetch_start = subtree_root_fetch_start(&*wallet.read().await)?;
+            let Some(subtree_roots) = unless_shutdown(
+                &sync_mode,
+                fetch_subtree_roots(fetch_request_sender.clone(), fetch_start),
             )
-            .await?;
+            .await?
+            else {
+                break 'continuous_sync;
+            };
+            let subtree_roots = subtree_roots?;
+            add_fetched_subtree_roots(
+                consensus_parameters,
+                &mut *wallet.write().await,
+                subtree_roots,
+            )?;
 
             if !first_verification_complete {
-                // frontier is added after subtree roots to retain subtree roots below birthday
-                add_initial_frontier(
-                    consensus_parameters,
-                    fetch_request_sender.clone(),
-                    &mut *wallet.write().await,
-                )
-                .await?;
+                // frontier is added after subtree roots to retain subtree roots below birthday.
+                // the height is bound first: a wallet guard in an `if let` scrutinee lives through the body, and
+                // the body takes the write lock.
+                let initial_frontier_height =
+                    initial_frontier_height(consensus_parameters, &*wallet.read().await)?;
+                if let Some(birthday) = initial_frontier_height {
+                    let Some(frontiers) = unless_shutdown(
+                        &sync_mode,
+                        client::get_frontiers(
+                            fetch_request_sender.clone(),
+                            consensus_parameters,
+                            birthday,
+                        ),
+                    )
+                    .await?
+                    else {
+                        break 'continuous_sync;
+                    };
+                    let frontiers = frontiers?;
+                    insert_initial_frontier(&mut *wallet.write().await, birthday, &frontiers)?;
+                }
             }
 
             // now any new transparent scan targets and subtree roots have been added, set ranges to be prioritized
@@ -860,23 +950,34 @@ where
     drop(scanner);
     drop(fetch_request_sender);
 
+    // a session shut down before scanning began has not asked the mempool monitor to stop.
+    shutdown_mempool.store(true, atomic::Ordering::Release);
     match mempool_handle.await.expect("task panicked") {
         Ok(()) => (),
         Err(e @ MempoolError::ShutdownWithoutStream) => tracing::warn!("{e}"),
         Err(e) => return Err(e.into()),
     }
-    fetcher_handle.await.expect("task panicked");
+    // the fetcher is aborted rather than joined: the only request it can still be serving is one that a shutdown
+    // abandoned, whose reply nobody awaits, and a slow server must not hold the shutdown for it.
+    fetcher_handle.abort();
+    if let Err(join_error) = fetcher_handle.await
+        && join_error.is_panic()
+    {
+        std::panic::resume_unwind(join_error.into_panic());
+    }
     tracing::info!("Sync successfully shutdown.");
+
+    // a session shut down before its first scan range was created ends where it started.
+    let sync_end_height = sync_status
+        .scan_ranges
+        .last()
+        .map_or(sync_status.sync_start_height, |scan_range| {
+            scan_range.block_range().end - 1
+        });
 
     Ok(SyncResult {
         sync_start_height: sync_status.sync_start_height,
-        sync_end_height: (sync_status
-            .scan_ranges
-            .last()
-            .expect("should be non-empty after syncing")
-            .block_range()
-            .end
-            - 1),
+        sync_end_height,
         blocks_scanned: sync_status.session_blocks_scanned,
         sapling_outputs_scanned: sync_status.session_sapling_outputs_scanned,
         orchard_outputs_scanned: sync_status.session_orchard_outputs_scanned,
@@ -1746,13 +1847,16 @@ where
                 // the truncated wallet with its scan ranges reopened is complete as it is. the requests made here
                 // only feed the initial sync state, which reports the progress of this session and is calculated
                 // again at the start of the next one, so a failed request costs nothing that lasts.
-                state::set_initial_state(
+                let tree_bounds_source =
+                    state::TreeBoundsSource::read(&*wallet, last_known_chain_height)
+                        .map_err(SyncError::WalletError)?;
+                let tree_bounds = state::fetch_tree_bounds(
                     consensus_parameters,
                     fetch_request_sender.clone(),
-                    wallet,
-                    last_known_chain_height,
+                    tree_bounds_source,
                 )
                 .await?;
+                state::set_initial_state(wallet, last_known_chain_height, tree_bounds)?;
 
                 Ok(ProcessedScanResults::default())
             } else if height == scan_range.block_range().start {
@@ -1998,7 +2102,7 @@ where
 /// replacing blocks then conflict with the stale ones on every sync session, as re-org handling only truncates
 /// blocks the wallet records as scanned.
 ///
-/// A rollback also removes the pool's subtree roots above the highest scanned height. [`update_subtree_roots`]
+/// A rollback also removes the pool's subtree roots above the highest scanned height. [`fetch_subtree_roots`]
 /// fetches them again in the same sync session.
 fn rollback_unscanned_tree_states<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
 where
@@ -2556,79 +2660,119 @@ where
     Ok(())
 }
 
-async fn update_subtree_roots<W>(
-    consensus_parameters: &impl consensus::Parameters,
+/// Where each pool's subtree root fetch resumes, read from the shard trees and the recorded shard ranges.
+#[derive(Debug, Clone, Copy)]
+struct SubtreeRootFetchStart {
+    sapling_start_index: u32,
+    orchard_start_index: u32,
+    ironwood_start_index: u32,
+}
+
+/// The subtree roots fetched from the server, with the fetch start they resume from.
+#[derive(Debug)]
+struct FetchedSubtreeRoots {
+    fetch_start: SubtreeRootFetchStart,
+    sapling: Vec<SubtreeRoot>,
+    orchard: Vec<SubtreeRoot>,
+    ironwood: Vec<SubtreeRoot>,
+}
+
+fn subtree_root_fetch_start<W>(wallet: &W) -> Result<SubtreeRootFetchStart, SyncError<W::Error>>
+where
+    W: SyncWallet + SyncShardTrees,
+{
+    let shard_trees = wallet.get_shard_trees().map_err(SyncError::WalletError)?;
+    let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
+    Ok(SubtreeRootFetchStart {
+        sapling_start_index: subtree_root_fetch_index(
+            &shard_trees.sapling,
+            sync_state.sapling_shard_ranges(),
+        ),
+        orchard_start_index: subtree_root_fetch_index(
+            &shard_trees.orchard,
+            sync_state.orchard_shard_ranges(),
+        ),
+        ironwood_start_index: subtree_root_fetch_index(
+            &shard_trees.ironwood,
+            sync_state.ironwood_shard_ranges(),
+        ),
+    })
+}
+
+async fn fetch_subtree_roots(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    fetch_start: SubtreeRootFetchStart,
+) -> Result<FetchedSubtreeRoots, ServerError> {
+    let (sapling_subtree_roots, orchard_subtree_roots, ironwood_subtree_roots) = futures::join!(
+        client::get_subtree_roots(
+            fetch_request_sender.clone(),
+            fetch_start.sapling_start_index,
+            0,
+            0
+        ),
+        client::get_subtree_roots(
+            fetch_request_sender.clone(),
+            fetch_start.orchard_start_index,
+            1,
+            0
+        ),
+        client::get_subtree_roots(fetch_request_sender, fetch_start.ironwood_start_index, 2, 0)
+    );
+
+    Ok(FetchedSubtreeRoots {
+        fetch_start,
+        sapling: sapling_subtree_roots?,
+        orchard: orchard_subtree_roots?,
+        ironwood: ironwood_subtree_roots?,
+    })
+}
+
+fn add_fetched_subtree_roots<W>(
+    consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
+    subtree_roots: FetchedSubtreeRoots,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncShardTrees,
 {
-    // Resume from the stored-root count, except that a newest root which
-    // is still bare (never scanned into) is refetched every session: no
-    // checkpoint witnesses it, so this refetch is the only mechanism that
-    // heals it after a reorg (see `subtree_fetch_start_index`). When a
-    // refetch happens, the pool's newest stored shard range is dropped
-    // before the fetched roots are accounted, so the range accounting is
-    // rebuilt from the refetched root, never duplicated, and corrected
-    // if a reorg moved the subtree's completing height.
-    let shard_trees = wallet.get_shard_trees().map_err(SyncError::WalletError)?;
-    let stored_sapling_roots = witness::stored_subtree_root_count(&shard_trees.sapling);
-    let stored_orchard_roots = witness::stored_subtree_root_count(&shard_trees.orchard);
-    let stored_ironwood_roots = witness::stored_subtree_root_count(&shard_trees.ironwood);
-    let sapling_start_index = witness::subtree_fetch_start_index(&shard_trees.sapling);
-    let orchard_start_index = witness::subtree_fetch_start_index(&shard_trees.orchard);
-    let ironwood_start_index = witness::subtree_fetch_start_index(&shard_trees.ironwood);
-    let (sapling_subtree_roots, orchard_subtree_roots, ironwood_subtree_roots) = futures::join!(
-        client::get_subtree_roots(fetch_request_sender.clone(), sapling_start_index, 0, 0),
-        client::get_subtree_roots(fetch_request_sender.clone(), orchard_start_index, 1, 0),
-        client::get_subtree_roots(fetch_request_sender, ironwood_start_index, 2, 0)
-    );
-
-    let sapling_subtree_roots = sapling_subtree_roots?;
-    let orchard_subtree_roots = orchard_subtree_roots?;
-    // Ironwood subtree roots are only required where NU6.3 exists. A server
-    // that does not serve them is an error, as the ironwood subtree roots of
-    // any shards below the shards inserted by scanning would never be fetched.
-    let ironwood_subtree_roots = if consensus_parameters
-        .activation_height(consensus::NetworkUpgrade::Nu6_3)
-        .is_some()
-    {
-        ironwood_subtree_roots?
-    } else {
-        Vec::new()
-    };
+    let FetchedSubtreeRoots {
+        fetch_start:
+            SubtreeRootFetchStart {
+                sapling_start_index,
+                orchard_start_index,
+                ironwood_start_index,
+            },
+        sapling: sapling_subtree_roots,
+        orchard: orchard_subtree_roots,
+        ironwood: ironwood_subtree_roots,
+    } = subtree_roots;
 
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
-    if (sapling_start_index as usize) < stored_sapling_roots && !sapling_subtree_roots.is_empty() {
-        state::pop_newest_shard_range(sync_state, ShieldedPool::Sapling);
-    }
-    state::add_shard_ranges(
-        consensus_parameters,
-        ShieldedPool::Sapling,
-        sync_state,
-        &sapling_subtree_roots,
-    );
-    if (orchard_start_index as usize) < stored_orchard_roots && !orchard_subtree_roots.is_empty() {
-        state::pop_newest_shard_range(sync_state, ShieldedPool::Orchard);
-    }
-    state::add_shard_ranges(
-        consensus_parameters,
-        ShieldedPool::Orchard,
-        sync_state,
-        &orchard_subtree_roots,
-    );
-    if !ironwood_subtree_roots.is_empty() {
-        if (ironwood_start_index as usize) < stored_ironwood_roots {
-            state::pop_newest_shard_range(sync_state, ShieldedPool::Ironwood);
-        }
+    for (pool, start_index, subtree_roots) in [
+        (
+            ShieldedPool::Sapling,
+            sapling_start_index,
+            &sapling_subtree_roots,
+        ),
+        (
+            ShieldedPool::Orchard,
+            orchard_start_index,
+            &orchard_subtree_roots,
+        ),
+        (
+            ShieldedPool::Ironwood,
+            ironwood_start_index,
+            &ironwood_subtree_roots,
+        ),
+    ] {
         state::add_shard_ranges(
             consensus_parameters,
-            ShieldedPool::Ironwood,
+            pool,
             sync_state,
-            &ironwood_subtree_roots,
+            start_index,
+            subtree_roots,
         );
     }
 
@@ -2653,6 +2797,22 @@ where
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
+}
+
+fn subtree_root_fetch_index<H, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    shard_tree: &ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>,
+    shard_ranges: &[Range<BlockHeight>],
+) -> u32
+where
+    H: incrementalmerkletree::Hashable + Clone + PartialEq,
+{
+    // The shard tree resumes from its stored shard count, which scanning advances past the roots the server
+    // holds, so the shard ranges resume from their own count instead: the newest recorded root is fetched again
+    // every session, which corrects a range whose completing block a re-org moved. The lower index serves both.
+    // The ranges are rebuilt from it (see `state::add_shard_ranges`) and the tree replaces only the shards that
+    // scanning has not populated (see `witness::add_subtree_roots`).
+    let newest_recorded_root = shard_ranges.len().saturating_sub(1) as u32;
+    witness::subtree_fetch_start_index(shard_tree).min(newest_recorded_root)
 }
 
 /// Re-derives the pinned anchor-checkpoint set of each shard tree from the retention policy in
@@ -2685,11 +2845,12 @@ where
     Ok(())
 }
 
-async fn add_initial_frontier<W>(
+/// The birthday whose frontiers complete the shard trees, where the shard store only holds the first checkpoint
+/// added on initialisation and the birthday is above sapling activation.
+fn initial_frontier_height<W>(
     consensus_parameters: &impl consensus::Parameters,
-    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    wallet: &mut W,
-) -> Result<(), SyncError<W::Error>>
+    wallet: &W,
+) -> Result<Option<BlockHeight>, SyncError<W::Error>>
 where
     W: SyncWallet + SyncShardTrees,
 {
@@ -2699,55 +2860,61 @@ where
             .activation_height(consensus::NetworkUpgrade::Sapling)
             .expect("sapling activation height should always return Some")
     {
-        return Ok(());
+        return Ok(None);
     }
 
-    // if the shard store only contains the first checkpoint added on initialisation, add frontiers to complete the
-    // shard trees.
-    let shard_trees = wallet
-        .get_shard_trees_mut()
-        .map_err(SyncError::WalletError)?;
-    if shard_trees
+    let shard_trees = wallet.get_shard_trees().map_err(SyncError::WalletError)?;
+    Ok((shard_trees
         .sapling
         .store()
         .checkpoint_count()
         .expect("infallible")
-        == 1
-    {
-        let frontiers =
-            client::get_frontiers(fetch_request_sender, consensus_parameters, birthday).await?;
-        shard_trees
-            .sapling
-            .insert_frontier(
-                frontiers.final_sapling_tree().clone(),
-                Retention::Checkpoint {
-                    id: birthday,
-                    marking: Marking::None,
-                },
-            )
-            .expect("infallible");
-        shard_trees
-            .orchard
-            .insert_frontier(
-                frontiers.final_orchard_tree().clone(),
-                Retention::Checkpoint {
-                    id: birthday,
-                    marking: Marking::None,
-                },
-            )
-            .expect("infallible");
-        shard_trees
-            .ironwood
-            .insert_frontier(
-                frontiers.final_ironwood_tree().clone(),
-                Retention::Checkpoint {
-                    id: birthday,
-                    marking: Marking::None,
-                },
-            )
-            .expect("infallible");
-        wallet.set_save_flag().map_err(SyncError::WalletError)?;
-    }
+        == 1)
+        .then_some(birthday))
+}
+
+fn insert_initial_frontier<W>(
+    wallet: &mut W,
+    birthday: BlockHeight,
+    frontiers: &witness::Frontiers,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncShardTrees,
+{
+    let shard_trees = wallet
+        .get_shard_trees_mut()
+        .map_err(SyncError::WalletError)?;
+    shard_trees
+        .sapling
+        .insert_frontier(
+            frontiers.final_sapling_tree().clone(),
+            Retention::Checkpoint {
+                id: birthday,
+                marking: Marking::None,
+            },
+        )
+        .expect("infallible");
+    shard_trees
+        .orchard
+        .insert_frontier(
+            frontiers.final_orchard_tree().clone(),
+            Retention::Checkpoint {
+                id: birthday,
+                marking: Marking::None,
+            },
+        )
+        .expect("infallible");
+    shard_trees
+        .ironwood
+        .insert_frontier(
+            frontiers.final_ironwood_tree().clone(),
+            Retention::Checkpoint {
+                id: birthday,
+                marking: Marking::None,
+            },
+        )
+        .expect("infallible");
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
 }
@@ -2863,11 +3030,13 @@ fn expire_transactions<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncTransactions,
 {
-    let fully_scanned_height = wallet
+    let Some(fully_scanned_height) = wallet
         .get_sync_state()
         .map_err(SyncError::WalletError)?
         .fully_scanned_height()
-        .expect("wallet height must exist after scan ranges have been updated");
+    else {
+        return Ok(());
+    };
     let wallet_transactions = wallet
         .get_wallet_transactions_mut()
         .map_err(SyncError::WalletError)?;
@@ -6003,6 +6172,68 @@ mod test {
         }
     }
 
+    mod subtree_root_fetch {
+        use std::ops::Range;
+
+        use orchard::tree::MerkleHashOrchard;
+        use zcash_protocol::consensus::BlockHeight;
+
+        use crate::mocks::orchard_tree_scanned_past_the_fetched_roots;
+        use crate::sync::subtree_root_fetch_index;
+        use crate::wallet::ShardTrees;
+        use crate::witness;
+
+        fn shard_ranges(count: u32) -> Vec<Range<BlockHeight>> {
+            (0..count)
+                .map(|index| {
+                    let start = if index == 0 { 1 } else { index * 100 };
+                    BlockHeight::from_u32(start)..BlockHeight::from_u32((index + 1) * 100 + 1)
+                })
+                .collect()
+        }
+
+        // Scanning carried the tree into shard 4 while the ranges record three roots. The tree would resume
+        // from index 5 and never fetch root 3, so the fetch resumes from the newest recorded root instead.
+        #[test]
+        fn resumes_from_the_newest_recorded_root_when_scanning_carried_the_tree_ahead() {
+            let shard_trees = orchard_tree_scanned_past_the_fetched_roots();
+            assert_eq!(witness::subtree_fetch_start_index(&shard_trees.orchard), 5);
+
+            assert_eq!(
+                subtree_root_fetch_index(&shard_trees.orchard, &shard_ranges(3)),
+                2
+            );
+        }
+
+        // A rollback dropped the tree's bare roots while the ranges still record them, so the fetch resumes
+        // from the tree's newest, still bare, root.
+        #[test]
+        fn resumes_from_the_tree_when_a_rollback_dropped_its_bare_roots() {
+            let mut shard_trees = ShardTrees::new();
+            let bare_root = zingo_netutils::lightwallet_protocol::SubtreeRoot {
+                root_hash: <MerkleHashOrchard as incrementalmerkletree::Hashable>::empty_root(
+                    incrementalmerkletree::Level::from(witness::SHARD_HEIGHT),
+                )
+                .to_bytes()
+                .to_vec(),
+                ..Default::default()
+            };
+            witness::add_subtree_roots(0, vec![bare_root; 2], &mut shard_trees.orchard).unwrap();
+
+            assert_eq!(
+                subtree_root_fetch_index(&shard_trees.orchard, &shard_ranges(3)),
+                1
+            );
+        }
+
+        #[test]
+        fn a_fresh_or_cleared_pool_fetches_from_the_first_root() {
+            let shard_trees = ShardTrees::new();
+
+            assert_eq!(subtree_root_fetch_index(&shard_trees.orchard, &[]), 0);
+        }
+    }
+
     mod pool_rescan {
         use std::collections::{BTreeMap, HashMap};
 
@@ -6014,12 +6245,12 @@ mod test {
         use zcash_protocol::consensus::{self, BlockHeight, Parameters as _};
         use zcash_protocol::local_consensus::LocalNetwork;
         use zcash_protocol::{PoolType, ShieldedPool};
-        use zingo_netutils::lightwallet_protocol::{SubtreeRoot, TreeState};
+        use zingo_netutils::lightwallet_protocol::TreeState;
         use zingo_status::confirmation_status::ConfirmationStatus;
 
         use crate::client::FetchRequest;
         use crate::error::SyncError;
-        use crate::mocks::MockWalletBuilder;
+        use crate::mocks::{MockWalletBuilder, subtree_root};
         use crate::sync::{ScanPriority, ScanRange, state, truncate_to_pool_activation_height};
         use crate::wallet::{
             ShardTrees, SyncState, TreeBounds, WalletBlock, WalletTransaction,
@@ -6047,13 +6278,6 @@ mod test {
                     ironwood_initial_tree_size: 0,
                     ironwood_final_tree_size: 0,
                 },
-            }
-        }
-
-        fn subtree_root(completing_block_height: u64) -> SubtreeRoot {
-            SubtreeRoot {
-                completing_block_height,
-                ..Default::default()
             }
         }
 
@@ -6091,12 +6315,9 @@ mod test {
         }
 
         /// A pool rescan clears the pool's shard tree, so the pool's shard ranges are cleared with it and both are
-        /// rebuilt from the subtree roots fetched from index 0 in the next sync session. The kept ranges would still
-        /// be correct, as they only depend on the chain, but `add_shard_ranges` can only append: against kept ranges
-        /// it would reject every refetched root below the newest with an error log each and push a degenerate
-        /// one-block range for the newest. Clearing keeps the ranges mirroring the roots the tree holds. The shard
-        /// trees and shard ranges of pools activated before the rescanned pool are kept, as their data below the
-        /// rescanned pool's activation height is not rescanned.
+        /// rebuilt from the subtree roots fetched from index 0 in the next sync session, so the ranges keep mirroring
+        /// the roots the tree holds. The shard trees and shard ranges of pools activated before the rescanned pool
+        /// are kept, as their data below the rescanned pool's activation height is not rescanned.
         #[tokio::test]
         async fn rescan_clears_pool_shard_ranges() {
             let mut sync_state = SyncState::new_for_test(vec![ScanRange::from_parts(
@@ -6165,6 +6386,7 @@ mod test {
                 &NETWORK,
                 ShieldedPool::Ironwood,
                 sync_state,
+                0,
                 &[subtree_root(150), subtree_root(250)],
             );
             assert_eq!(
@@ -6297,6 +6519,56 @@ mod test {
 
             assert!(processed.new_transparent_inuse_addresses.is_empty());
             assert!(processed.new_transparent_gap_addresses.is_empty());
+        }
+    }
+
+    /// A session-start request is abandoned when shutdown is requested while it is pending.
+    mod unless_shutdown {
+        use std::sync::atomic::{AtomicU8, Ordering};
+        use std::time::Duration;
+
+        use crate::sync::{SHUTDOWN_POLL_INTERVAL, unless_shutdown};
+        use crate::wallet::SyncMode;
+
+        #[tokio::test]
+        async fn a_request_that_completes_while_running_is_served() {
+            let sync_mode = AtomicU8::new(SyncMode::Running as u8);
+
+            let outcome = unless_shutdown(&sync_mode, async { 7 }).await.unwrap();
+
+            assert_eq!(outcome, Some(7));
+        }
+
+        #[tokio::test]
+        async fn a_pending_request_is_abandoned_when_shutdown_is_requested() {
+            let sync_mode = AtomicU8::new(SyncMode::Running as u8);
+            let request = std::future::pending::<()>();
+            let stop = async {
+                tokio::time::sleep(SHUTDOWN_POLL_INTERVAL / 2).await;
+                sync_mode.store(SyncMode::Shutdown as u8, Ordering::Release);
+            };
+
+            let (outcome, ()) = tokio::time::timeout(
+                Duration::from_secs(5),
+                futures::future::join(unless_shutdown(&sync_mode, request), stop),
+            )
+            .await
+            .expect("the request is abandoned within the poll interval");
+
+            assert_eq!(outcome.unwrap(), None);
+        }
+
+        #[tokio::test]
+        async fn a_request_pending_under_pause_is_kept() {
+            let sync_mode = AtomicU8::new(SyncMode::Paused as u8);
+            let request = async {
+                tokio::time::sleep(SHUTDOWN_POLL_INTERVAL * 3).await;
+                "served"
+            };
+
+            let outcome = unless_shutdown(&sync_mode, request).await.unwrap();
+
+            assert_eq!(outcome, Some("served"));
         }
     }
 }
