@@ -934,11 +934,101 @@ pub(super) fn lower_transparent_scan_floor(sync_state: &mut SyncState, height: B
 }
 
 /// Sets the `initial_sync_state` field at the start of the sync session
-pub(super) async fn set_initial_state<W>(
+/// The wallet facts the session's tree bounds are derived from, read under one wallet lock so the server requests
+/// that complete them are made with the lock released.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct TreeBoundsSource {
+    birthday: BlockHeight,
+    chain_height: BlockHeight,
+    /// The initial tree sizes of the wallet's birthday block, where it holds one.
+    birthday_initial_tree_sizes: Option<(u32, u32, u32)>,
+    /// The final tree sizes of the wallet's block at the chain height, where it holds one.
+    chain_tip_final_tree_sizes: Option<(u32, u32, u32)>,
+}
+
+impl TreeBoundsSource {
+    /// Reads the source from `wallet` for a session whose chain tip is `chain_height`.
+    pub(super) fn read<W>(wallet: &W, chain_height: BlockHeight) -> Result<Self, W::Error>
+    where
+        W: SyncWallet + SyncBlocks,
+    {
+        let birthday = wallet
+            .get_sync_state()?
+            .wallet_birthday()
+            .expect("scan ranges must be non-empty");
+        Ok(Self {
+            birthday,
+            chain_height,
+            birthday_initial_tree_sizes: wallet.get_wallet_block(birthday).ok().map(|block| {
+                (
+                    block.tree_bounds().sapling_initial_tree_size,
+                    block.tree_bounds().orchard_initial_tree_size,
+                    block.tree_bounds().ironwood_initial_tree_size,
+                )
+            }),
+            chain_tip_final_tree_sizes: wallet.get_wallet_block(chain_height).ok().map(|block| {
+                (
+                    block.tree_bounds().sapling_final_tree_size,
+                    block.tree_bounds().orchard_final_tree_size,
+                    block.tree_bounds().ironwood_final_tree_size,
+                )
+            }),
+        })
+    }
+}
+
+/// Fetches the tree bounds of a session from `source`: the initial tree sizes of the birthday and the final tree
+/// sizes of the chain tip, each from the server where the wallet holds no block for it.
+pub(super) async fn fetch_tree_bounds(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    source: TreeBoundsSource,
+) -> Result<TreeBounds, ServerError> {
+    let (
+        birthday_sapling_initial_tree_size,
+        birthday_orchard_initial_tree_size,
+        birthday_ironwood_initial_tree_size,
+    ) = match source.birthday_initial_tree_sizes {
+        Some(tree_sizes) => tree_sizes,
+        None => {
+            final_tree_sizes(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                source.birthday - 1,
+            )
+            .await?
+        }
+    };
+    let (
+        chain_tip_sapling_final_tree_size,
+        chain_tip_orchard_final_tree_size,
+        chain_tip_ironwood_final_tree_size,
+    ) = match source.chain_tip_final_tree_sizes {
+        Some(tree_sizes) => tree_sizes,
+        None => {
+            final_tree_sizes(
+                consensus_parameters,
+                fetch_request_sender,
+                source.chain_height,
+            )
+            .await?
+        }
+    };
+
+    Ok(TreeBounds {
+        sapling_initial_tree_size: birthday_sapling_initial_tree_size,
+        sapling_final_tree_size: chain_tip_sapling_final_tree_size,
+        orchard_initial_tree_size: birthday_orchard_initial_tree_size,
+        orchard_final_tree_size: chain_tip_orchard_final_tree_size,
+        ironwood_initial_tree_size: birthday_ironwood_initial_tree_size,
+        ironwood_final_tree_size: chain_tip_ironwood_final_tree_size,
+    })
+}
+
+pub(super) fn set_initial_state<W>(
     wallet: &mut W,
     chain_height: BlockHeight,
+    tree_bounds: TreeBounds,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks,
@@ -977,73 +1067,21 @@ where
         previously_scanned_ironwood_outputs,
     };
 
-    update_wallet_tree_bounds(
-        consensus_parameters,
-        fetch_request_sender,
-        wallet,
-        chain_height,
-    )
-    .await?;
-
-    Ok(())
+    update_wallet_tree_bounds(wallet, tree_bounds)
 }
 
-pub(super) async fn update_wallet_tree_bounds<W>(
-    consensus_parameters: &impl consensus::Parameters,
-    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+pub(super) fn update_wallet_tree_bounds<W>(
     wallet: &mut W,
-    chain_height: BlockHeight,
+    tree_bounds: TreeBounds,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks,
 {
-    let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-    let birthday = sync_state
-        .wallet_birthday()
-        .expect("scan ranges must be non-empty");
-    let (
-        birthday_sapling_initial_tree_size,
-        birthday_orchard_initial_tree_size,
-        birthday_ironwood_initial_tree_size,
-    ) = if let Ok(block) = wallet.get_wallet_block(birthday) {
-        (
-            block.tree_bounds.sapling_initial_tree_size,
-            block.tree_bounds.orchard_initial_tree_size,
-            block.tree_bounds.ironwood_initial_tree_size,
-        )
-    } else {
-        final_tree_sizes(
-            consensus_parameters,
-            fetch_request_sender.clone(),
-            wallet,
-            birthday - 1,
-        )
-        .await?
-    };
-    let (
-        chain_tip_sapling_final_tree_size,
-        chain_tip_orchard_final_tree_size,
-        chain_tip_ironwood_final_tree_size,
-    ) = final_tree_sizes(
-        consensus_parameters,
-        fetch_request_sender.clone(),
-        wallet,
-        chain_height,
-    )
-    .await?;
-
     wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?
         .initial_sync_state
-        .wallet_tree_bounds = TreeBounds {
-        sapling_initial_tree_size: birthday_sapling_initial_tree_size,
-        sapling_final_tree_size: chain_tip_sapling_final_tree_size,
-        orchard_initial_tree_size: birthday_orchard_initial_tree_size,
-        orchard_final_tree_size: chain_tip_orchard_final_tree_size,
-        ironwood_initial_tree_size: birthday_ironwood_initial_tree_size,
-        ironwood_final_tree_size: chain_tip_ironwood_final_tree_size,
-    };
+        .wallet_tree_bounds = tree_bounds;
 
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
@@ -1086,58 +1124,46 @@ where
         }))
 }
 
-/// Gets `block_height` final tree sizes from wallet block if it exists, otherwise from frontiers fetched from server.
-async fn final_tree_sizes<W>(
+/// Gets `block_height` final tree sizes from frontiers fetched from server.
+async fn final_tree_sizes(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    wallet: &mut W,
     block_height: BlockHeight,
-) -> Result<(u32, u32, u32), ServerError>
-where
-    W: SyncBlocks,
-{
-    if let Ok(block) = wallet.get_wallet_block(block_height) {
-        Ok((
-            block.tree_bounds().sapling_final_tree_size,
-            block.tree_bounds().orchard_final_tree_size,
-            block.tree_bounds().ironwood_final_tree_size,
-        ))
-    } else {
-        // TODO: move this whole block into `client::get_frontiers`
-        let sapling_activation_height =
-            crate::wallet::PoolActivation::of(consensus_parameters, ShieldedPool::Sapling)
-                .expect("should have some sapling activation height")
-                .height();
+) -> Result<(u32, u32, u32), ServerError> {
+    // TODO: move this whole block into `client::get_frontiers`
+    let sapling_activation_height =
+        crate::wallet::PoolActivation::of(consensus_parameters, ShieldedPool::Sapling)
+            .expect("should have some sapling activation height")
+            .height();
 
-        match block_height.cmp(&(sapling_activation_height - 1)) {
-            cmp::Ordering::Greater => {
-                let frontiers = client::get_frontiers(
-                    fetch_request_sender.clone(),
-                    consensus_parameters,
-                    block_height,
-                )
-                .await?;
-                Ok((
-                    frontiers
-                        .final_sapling_tree()
-                        .tree_size()
-                        .try_into()
-                        .expect("should not be more than 2^32 note commitments in the tree!"),
-                    frontiers
-                        .final_orchard_tree()
-                        .tree_size()
-                        .try_into()
-                        .expect("should not be more than 2^32 note commitments in the tree!"),
-                    frontiers
-                        .final_ironwood_tree()
-                        .tree_size()
-                        .try_into()
-                        .expect("should not be more than 2^32 note commitments in the tree!"),
-                ))
-            }
-            cmp::Ordering::Equal => Ok((0, 0, 0)),
-            cmp::Ordering::Less => panic!("pre-sapling not supported!"),
+    match block_height.cmp(&(sapling_activation_height - 1)) {
+        cmp::Ordering::Greater => {
+            let frontiers = client::get_frontiers(
+                fetch_request_sender.clone(),
+                consensus_parameters,
+                block_height,
+            )
+            .await?;
+            Ok((
+                frontiers
+                    .final_sapling_tree()
+                    .tree_size()
+                    .try_into()
+                    .expect("should not be more than 2^32 note commitments in the tree!"),
+                frontiers
+                    .final_orchard_tree()
+                    .tree_size()
+                    .try_into()
+                    .expect("should not be more than 2^32 note commitments in the tree!"),
+                frontiers
+                    .final_ironwood_tree()
+                    .tree_size()
+                    .try_into()
+                    .expect("should not be more than 2^32 note commitments in the tree!"),
+            ))
         }
+        cmp::Ordering::Equal => Ok((0, 0, 0)),
+        cmp::Ordering::Less => panic!("pre-sapling not supported!"),
     }
 }
 
