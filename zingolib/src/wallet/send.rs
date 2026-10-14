@@ -115,6 +115,9 @@ impl LightWallet {
         })
     }
 
+    /// Whether the witness of a note at `note_height` can be built as of `anchor_height`: the note's shard holds
+    /// the leaves the witness path runs through, and the anchor's shard holds the leaves up to the anchor that the
+    /// right-hand siblings of that path are computed from.
     pub(crate) fn can_build_witness<N>(
         &self,
         note_height: BlockHeight,
@@ -145,7 +148,8 @@ impl LightWallet {
         .is_some()
     }
 
-    /// Whether every shard carrying `protocol` notes between `note_height` (the scan floor when absent) and `anchor_height` is scanned.
+    /// Whether the `protocol` shard holding `anchor_height`, and the one holding `note_height` when given, are
+    /// scanned.
     fn shards_are_scanned(
         &self,
         protocol: ShieldedPool,
@@ -172,7 +176,7 @@ impl LightWallet {
             ShieldedPool::Sapling => self.sync_state.sapling_shard_ranges(),
         };
         check_note_shards_are_scanned(
-            note_height.unwrap_or(scan_floor),
+            note_height,
             anchor_height,
             scan_floor,
             scan_ranges,
@@ -182,7 +186,7 @@ impl LightWallet {
 }
 
 fn check_note_shards_are_scanned(
-    note_height: BlockHeight,
+    note_height: Option<BlockHeight>,
     anchor_height: BlockHeight,
     scan_floor: BlockHeight,
     scan_ranges: &[ScanRange],
@@ -198,11 +202,7 @@ fn check_note_shards_are_scanned(
 
     let mut scanned_ranges = scan_ranges
         .iter()
-        .filter(|scan_range| {
-            scan_range.priority() == ScanPriority::Scanned
-                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                || scan_range.priority() == ScanPriority::RefetchingNullifiers
-        })
+        .filter(|scan_range| scan_range.priority().is_scanned())
         .cloned()
         .collect::<Vec<_>>();
     'main: loop {
@@ -233,17 +233,22 @@ fn check_note_shards_are_scanned(
     }
 
     // a single block may contain two shards at the boundary so we check both are scanned in this case
-    shard_ranges
-        .iter()
-        .filter(|&shard_range| shard_range.contains(&note_height))
-        .all(|note_shard_range| {
+    note_height
+        .into_iter()
+        .chain([anchor_height])
+        .flat_map(|height| {
+            shard_ranges
+                .iter()
+                .filter(move |&shard_range| shard_range.contains(&height))
+        })
+        .all(|shard_range| {
             scanned_ranges
                 .iter()
                 .map(ScanRange::block_range)
                 .any(|block_range| {
-                    block_range.contains(&(note_shard_range.end - 1))
-                        && (block_range.contains(&note_shard_range.start)
-                            || note_shard_range.start < scan_floor)
+                    block_range.contains(&(shard_range.end - 1))
+                        && (block_range.contains(&shard_range.start)
+                            || shard_range.start < scan_floor)
                 })
         })
 }
@@ -456,7 +461,7 @@ mod tests {
             ];
 
             assert!(check_note_shards_are_scanned(
-                note_height,
+                Some(note_height),
                 anchor_height,
                 wallet_birthday,
                 &scan_ranges,
@@ -482,7 +487,7 @@ mod tests {
             ];
 
             assert!(check_note_shards_are_scanned(
-                note_height,
+                Some(note_height),
                 anchor_height,
                 wallet_birthday,
                 &scan_ranges,
@@ -508,7 +513,72 @@ mod tests {
             ];
 
             assert!(check_note_shards_are_scanned(
-                note_height,
+                Some(note_height),
+                anchor_height,
+                wallet_birthday,
+                &scan_ranges,
+                &shard_ranges,
+            ));
+        }
+
+        // The witness of a note in a scanned shard still needs the leaves of the anchor's shard up to the anchor,
+        // so an unscanned block below the anchor in that shard blocks the note.
+        #[test]
+        fn unscanned_anchor_shard_blocks_a_note_in_a_scanned_shard() {
+            let wallet_birthday = BlockHeight::from_u32(10);
+            let note_height = BlockHeight::from_u32(70);
+            let anchor_height = BlockHeight::from_u32(200);
+            let scan_ranges = vec![
+                ScanRange::from_parts(wallet_birthday..160.into(), ScanPriority::Scanned),
+                ScanRange::from_parts(160.into()..180.into(), ScanPriority::Historic),
+                ScanRange::from_parts(180.into()..203.into(), ScanPriority::Scanned),
+            ];
+            let shard_ranges = vec![
+                1.into()..51.into(),
+                50.into()..101.into(),
+                100.into()..151.into(),
+            ];
+
+            assert!(!check_note_shards_are_scanned(
+                Some(note_height),
+                anchor_height,
+                wallet_birthday,
+                &scan_ranges,
+                &shard_ranges,
+            ));
+            assert!(!check_note_shards_are_scanned(
+                None,
+                anchor_height,
+                wallet_birthday,
+                &scan_ranges,
+                &shard_ranges,
+            ));
+        }
+
+        // Without a note height only the anchor's shard is checked, so an unscanned shard below it is no obstacle.
+        #[test]
+        fn anchor_shard_alone_is_checked_without_a_note_height() {
+            let wallet_birthday = BlockHeight::from_u32(10);
+            let anchor_height = BlockHeight::from_u32(200);
+            let scan_ranges = vec![
+                ScanRange::from_parts(wallet_birthday..60.into(), ScanPriority::Historic),
+                ScanRange::from_parts(60.into()..203.into(), ScanPriority::Scanned),
+            ];
+            let shard_ranges = vec![
+                1.into()..51.into(),
+                50.into()..101.into(),
+                100.into()..151.into(),
+            ];
+
+            assert!(check_note_shards_are_scanned(
+                None,
+                anchor_height,
+                wallet_birthday,
+                &scan_ranges,
+                &shard_ranges,
+            ));
+            assert!(!check_note_shards_are_scanned(
+                Some(BlockHeight::from_u32(20)),
                 anchor_height,
                 wallet_birthday,
                 &scan_ranges,
@@ -534,7 +604,7 @@ mod tests {
             ];
 
             assert!(check_note_shards_are_scanned(
-                note_height,
+                Some(note_height),
                 anchor_height,
                 wallet_birthday,
                 &scan_ranges,

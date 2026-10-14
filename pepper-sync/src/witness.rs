@@ -1,6 +1,7 @@
 //! Module for structs and types associated with witness construction
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use incrementalmerkletree::{
     Position, Retention,
@@ -95,7 +96,7 @@ where
     located_tree_data
 }
 
-/// The number of subtree roots the shard store currently holds.
+#[cfg(test)]
 pub(crate) fn stored_subtree_root_count<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     shard_tree: &shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
 ) -> usize
@@ -150,6 +151,10 @@ where
         >,
 {
     for (index, tree_root) in subtree_roots.into_iter().enumerate() {
+        let address = incrementalmerkletree::Address::from_parts(
+            incrementalmerkletree::Level::new(SHARD_HEIGHT),
+            (subtree_root_start_index + index) as u64,
+        );
         let node = <S::H as FromBytes>::from_bytes(
             tree_root
                 .root_hash
@@ -158,13 +163,26 @@ where
         )
         .into_option()
         .ok_or(ServerError::InvalidSubtreeRoot)?;
-        let shard = LocatedPrunableTree::with_root_value(
-            incrementalmerkletree::Address::from_parts(
-                incrementalmerkletree::Level::new(SHARD_HEIGHT),
-                (subtree_root_start_index + index) as u64,
+        let stored = shard_tree
+            .store()
+            .get_shard(address)
+            .expect("infallible")
+            .filter(|shard| !shard.root().is_empty() && !shard.root().is_leaf());
+        let shard = match stored {
+            // A shard whose root the wallet's own leaves already compute is kept as it is.
+            Some(shard) if shard.root_hash(address.position_range_end()).is_ok() => continue,
+            // A shard that scanning populated but left with a gap keeps its leaves and takes the fetched root as
+            // the cached annotation of its root node. shardtree returns the annotation for any query spanning
+            // the whole shard, so the root is computable before the gap is scanned, and checks the leaves
+            // scanned into the shard afterwards against it.
+            Some(shard) => shard.reannotate_root(Some(Arc::new(node))),
+            // A bare root or an empty shard is replaced, which heals a root that a re-org moved after it was
+            // fetched.
+            None => LocatedPrunableTree::with_root_value(
+                address,
+                (node, shardtree::RetentionFlags::EPHEMERAL),
             ),
-            (node, shardtree::RetentionFlags::EPHEMERAL),
-        );
+        };
         shard_tree.store_mut().put_shard(shard).expect("infallible");
     }
 
@@ -425,8 +443,84 @@ pub(crate) fn repin_anchor_checkpoints<S>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mocks::{orchard_subtree_root, orchard_tree_scanned_past_the_fetched_roots};
     use crate::shardtree_ext::ShardTreeExt;
     use crate::wallet::empty_shard_tree;
+    use incrementalmerkletree::{Address, Hashable as _, Level};
+
+    #[test]
+    fn fetched_roots_replace_bare_roots_and_keep_scanned_shards() {
+        let mut shard_trees = orchard_tree_scanned_past_the_fetched_roots();
+        let tree = &mut shard_trees.orchard;
+        assert_eq!(stored_subtree_root_count(tree), 5);
+        let moved_root = MerkleHashOrchard::empty_root(Level::from(SHARD_HEIGHT + 1));
+
+        add_subtree_roots(2, vec![orchard_subtree_root(moved_root); 2], tree).unwrap();
+
+        let shard = |index: u64| {
+            let address = Address::from_parts(Level::from(SHARD_HEIGHT), index);
+            tree.store().get_shard(address).unwrap().unwrap()
+        };
+        assert_eq!(
+            shard(2)
+                .root_hash(Position::from(3 << SHARD_HEIGHT))
+                .unwrap(),
+            moved_root,
+            "the bare root is replaced"
+        );
+        assert!(
+            !shard(3).root().is_leaf(),
+            "the shard scanning populated is kept"
+        );
+    }
+
+    // A shard that scanning populated but left with a gap has no computable root until the gap is scanned. The
+    // fetched root fills in as the cached annotation of its root node, survives the leaves scanned into the shard
+    // afterwards, and is not used for an anchor inside the shard, which still needs the leaves up to the anchor.
+    #[test]
+    fn fetched_root_annotates_a_populated_shard_with_a_gap() {
+        let mut shard_trees = orchard_tree_scanned_past_the_fetched_roots();
+        let tree = &mut shard_trees.orchard;
+        let shard_3 = Address::from_parts(Level::from(SHARD_HEIGHT), 3);
+        let whole_shard = shard_3.position_range_end();
+        let stored_shard = |tree: &shardtree::ShardTree<
+            crate::wallet::OrchardShardStore,
+            { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+            SHARD_HEIGHT,
+        >| tree.store().get_shard(shard_3).unwrap().unwrap();
+        assert!(stored_shard(tree).root_hash(whole_shard).is_err());
+        // the root the chain holds for shard 3, consistent with the cap node over shards 0 to 3 that the shard 4
+        // frontier placed, as a fetched root and the frontier both come from the chain
+        let chain_root = MerkleHashOrchard::empty_root(Level::from(SHARD_HEIGHT));
+
+        add_subtree_roots(3, vec![orchard_subtree_root(chain_root)], tree).unwrap();
+
+        assert!(
+            !stored_shard(tree).root().is_leaf(),
+            "the scanned leaves are kept"
+        );
+        assert_eq!(
+            stored_shard(tree).root_hash(whole_shard).unwrap(),
+            chain_root
+        );
+
+        tree.batch_insert(
+            Position::from((3 << SHARD_HEIGHT) + 1),
+            std::iter::repeat_n((MerkleHashOrchard::empty_leaf(), Retention::Ephemeral), 4),
+        )
+        .unwrap();
+
+        assert_eq!(
+            stored_shard(tree).root_hash(whole_shard).unwrap(),
+            chain_root
+        );
+        assert!(
+            stored_shard(tree)
+                .root_hash(Position::from((3 << SHARD_HEIGHT) + 3))
+                .is_err(),
+            "an anchor inside the shard computes from the leaves, and the gap is still there"
+        );
+    }
 
     /// Pinned grid boundaries survive checkpoint pruning until re-deriving the pins releases
     /// them.

@@ -462,11 +462,7 @@ impl LightWallet {
                         transaction
                             .status()
                             .get_confirmed_height()
-                            .map(|height| ScanTarget {
-                                block_height: height,
-                                txid: transaction.txid(),
-                                narrow_scan_area: true,
-                            })
+                            .map(|height| ScanTarget::new(height, Some(transaction.txid())))
                     })
                     .collect::<Vec<_>>(),
             );

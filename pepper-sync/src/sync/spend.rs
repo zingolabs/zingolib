@@ -8,17 +8,17 @@ use incrementalmerkletree::{Hashable, Position};
 use shardtree::{ShardTree, store::ShardStore};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::{
-    ShieldedPool,
-    consensus::{self, BlockHeight},
-};
+use zcash_protocol::consensus::{self, BlockHeight};
 use zip32::AccountId;
 
 use crate::{
     SyncDomain,
     client::{self, FetchRequest},
     error::SyncError,
-    scan::{DecryptedNoteData, transactions::scan_transactions},
+    scan::{
+        DecryptedNoteData,
+        transactions::{ScannedTransactions, scan_transactions},
+    },
     wallet::{
         Ironwood, NoteInterface, NullifierMap, Orchard, OutputId, OutputInterface, Sapling,
         ScanTarget, WalletBlock, WalletTransaction,
@@ -146,24 +146,10 @@ where
     P: consensus::Parameters,
     W: SyncTransactions + SyncShardTrees,
 {
-    let sync_state = wallet.get_sync_state_mut()?;
     state::set_found_note_scan_ranges(
         consensus_parameters,
-        sync_state,
-        ShieldedPool::Sapling,
-        spend_scan_targets.sapling.values().copied(),
-    );
-    state::set_found_note_scan_ranges(
-        consensus_parameters,
-        sync_state,
-        ShieldedPool::Orchard,
-        spend_scan_targets.orchard.values().copied(),
-    );
-    state::set_found_note_scan_ranges(
-        consensus_parameters,
-        sync_state,
-        ShieldedPool::Ironwood,
-        spend_scan_targets.ironwood.values().copied(),
+        wallet.get_sync_state_mut()?,
+        spend_scan_targets.scan_targets(),
     );
 
     update_spent_notes(wallet, spend_scan_targets, true)
@@ -205,8 +191,11 @@ where
     let mut spending_scan_targets = BTreeSet::new();
     let mut wallet_blocks = BTreeMap::new();
     for scan_target in scan_targets {
-        let block_height = scan_target.block_height;
-        let txid = scan_target.txid;
+        let block_height = scan_target.block_height();
+        // a spend target names the spending transaction
+        let Some(txid) = scan_target.txid() else {
+            continue;
+        };
 
         // skip if confirmed transaction already exists in the wallet
         if confirmed_wallet_txids.contains(&txid) {
@@ -235,7 +224,12 @@ where
     }
 
     let mut outpoint_map = BTreeMap::new(); // dummy outpoint map
-    let spending_transactions = scan_transactions(
+    // spend targets are discovered by the sync engine, so a transaction the server does not serve is an error
+    // and no target is dropped.
+    let ScannedTransactions {
+        transactions: spending_transactions,
+        dropped_targets: _,
+    } = scan_transactions(
         fetch_request_sender,
         consensus_parameters,
         ufvks,
@@ -363,8 +357,12 @@ where
     for transaction in wallet_transactions.values_mut() {
         let transaction_confirmed = transaction.status().is_confirmed();
         D::notes_mut(transaction).into_iter().for_each(|note| {
-            if let Some(scan_target) = note.nullifier().and_then(|nf| spend_scan_targets.get(&nf)) {
-                note.set_spending_transaction(Some(scan_target.txid));
+            if let Some(spending_txid) = note
+                .nullifier()
+                .and_then(|nf| spend_scan_targets.get(&nf))
+                .and_then(ScanTarget::txid)
+            {
+                note.set_spending_transaction(Some(spending_txid));
 
                 if remove_marks
                     && transaction_confirmed
@@ -372,7 +370,7 @@ where
                 {
                     spent_notes.push(SpentNote {
                         position,
-                        spending_txid: scan_target.txid,
+                        spending_txid,
                     });
                 }
             }
@@ -515,8 +513,11 @@ pub(super) fn update_spent_coins(
         .values_mut()
         .flat_map(|tx| tx.transparent_coins_mut())
         .for_each(|coin| {
-            if let Some(scan_target) = transparent_spend_scan_targets.get(&coin.output_id) {
-                coin.spending_transaction = Some(scan_target.txid);
+            if let Some(spending_txid) = transparent_spend_scan_targets
+                .get(&coin.output_id)
+                .and_then(ScanTarget::txid)
+            {
+                coin.spending_transaction = Some(spending_txid);
             }
         });
 }

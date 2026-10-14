@@ -113,6 +113,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reading a wallet file fails with an `InvalidData` error when a pepper-sync, zingo-status or zingo-price type in it has a serialized version above the one this build writes. A change to one of those versions no longer takes a new wallet file version.
 - zingolib sets `shutdown_on_completion` to `false` by default. Wallet files from earlier versions, which lack the `shutdown_on_completion` byte, read it as `false`, so existing wallets also sync continuously. Consumers must set the sync config accordingly before each call to sync. Otherwise, awaiting a sync that is expected to return at the chain tip will wait indefinitely.
 - **Breaking:** `testutils::mock_indexer::MockNet::client` takes an `Option<WalletSettings>`; `None` uses `default_test_wallet_settings`, which now sets `shutdown_on_completion` to `true`.
+- **Breaking:** the values of `LightWallet::outpoint_map`, and the scan
+  targets `LightWallet::clear_all` and the legacy wallet import add, are
+  `pepper_sync::wallet::ScanTarget` with private fields, constructed through
+  `ScanTarget::new(block_height, Option<TxId>)` and read through its
+  accessors. A wallet file written before the change still loads.
+
+### Fixed
+- `LightWallet::spendable_balance` and note selection require the anchor's
+  shard to be scanned as well as the note's. The witness path's right-hand
+  siblings are computed from the anchor's shard up to the anchor, so a note in
+  a scanned shard could count as spendable while its witness could not be
+  built. `InputSource::anchor_computable` checks the anchor's shard, where it
+  checked the birthday shard, which is what the backend's canonical crossing
+  proposal asks of it. (#2953)
 
 ### Removed
 - **Breaking:** remove `LightWallet::get_filtered_balance_mut`, which no code called with a mutating filter. Use `LightWallet::get_filtered_balance`, which keeps its `Fn` bound.
