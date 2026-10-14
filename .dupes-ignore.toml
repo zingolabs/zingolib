@@ -653,3 +653,11 @@ reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wal
 [[ignore]]
 fingerprint = "fd4f05e86db5c1b7"
 reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/keys.rs:105"
+
+[[ignore]]
+fingerprint = "624700e8593e4294"
+reason = "trait delegation pair: one type implementing two traits cannot share the impl, so the Sapling prover adapter's SpendProver and OutputProver methods delegate identically"
+
+[[ignore]]
+fingerprint = "ab76baf131af1b5d"
+reason = "trait delegation pair: one type implementing two traits cannot share the impl, so the Sapling prover adapter's SpendProver and OutputProver methods delegate identically"
