@@ -2407,6 +2407,7 @@ pub async fn shielded_coinbase_transaction(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutils::synthetic_wallet;
     use tokio_stream::StreamExt as _;
 
     const REWARD: Zatoshis = Zatoshis::const_from_u64(1_000_000);
@@ -2416,31 +2417,13 @@ mod tests {
     const HEIGHT_ONE: BlockHeight = BlockHeight::from_u32(1);
     const HEIGHT_TWO: BlockHeight = BlockHeight::from_u32(2);
 
-    fn external_orchard_address() -> String {
-        let mut wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
-        let (_, unified_address) = wallet
-            .generate_unified_address(
-                crate::wallet::keys::unified::ReceiverSelection::orchard_only(),
-                zip32::AccountId::ZERO,
-            )
-            .unwrap();
-        unified_address.encode(&wallet.chain_type())
-    }
-
-    fn external_transparent_address() -> String {
-        let wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
-        wallet
-            .transparent_addresses()
-            .values()
-            .next()
-            .expect("the synthetic wallet carries a transparent address")
-            .clone()
-    }
-
     async fn funding_bytes() -> Vec<u8> {
-        faucet_funding_transaction(vec![(&external_orchard_address(), PAYMENT, None)]).await
+        faucet_funding_transaction(vec![(
+            &synthetic_wallet::external_orchard_address(),
+            PAYMENT,
+            None,
+        )])
+        .await
     }
 
     fn lax_anchors() -> MockChain {
@@ -2593,7 +2576,7 @@ mod tests {
     #[test]
     fn coinbase_outputs_mature_after_one_hundred_blocks() {
         let mut chain = MockChain::new();
-        let miner = external_transparent_address();
+        let miner = synthetic_wallet::external_transparent_address();
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_outpoint = first_output(txid_of(&chain, &coinbase));
         assert!(
@@ -2633,7 +2616,7 @@ mod tests {
     #[test]
     fn unknown_transparent_input_is_rejected() {
         let mut chain = MockChain::new();
-        let miner = external_transparent_address();
+        let miner = synthetic_wallet::external_transparent_address();
         let outpoint = OutPoint::new([7; 32], 0);
         let spend = transparent_spend(&chain, outpoint.clone(), SPEND_VALUE, &miner);
         assert_eq!(
@@ -2645,7 +2628,7 @@ mod tests {
     #[test]
     fn mempool_outputs_are_spendable_before_they_are_mined() {
         let mut chain = MockChain::new();
-        let miner = external_transparent_address();
+        let miner = synthetic_wallet::external_transparent_address();
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         chain.mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
         let first = transparent_spend(
@@ -2675,7 +2658,7 @@ mod tests {
     #[test]
     fn outputs_above_inputs_are_rejected() {
         let mut chain = MockChain::new();
-        let miner = external_transparent_address();
+        let miner = synthetic_wallet::external_transparent_address();
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_outpoint = first_output(txid_of(&chain, &coinbase));
         chain.mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
@@ -2694,7 +2677,7 @@ mod tests {
     #[test]
     fn unspent_outputs_exclude_spent_outpoints() {
         let mut chain = MockChain::new();
-        let miner = external_transparent_address();
+        let miner = synthetic_wallet::external_transparent_address();
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_txid = txid_of(&chain, &coinbase);
         let unspent = chain.unspent_outputs(&miner, HEIGHT_ONE).unwrap();
@@ -2775,7 +2758,7 @@ mod tests {
     #[tokio::test]
     async fn address_utxos_stream_applies_injected_stream_faults() {
         let chain = Arc::new(RwLock::new(MockChain::new()));
-        let miner = external_transparent_address();
+        let miner = synthetic_wallet::external_transparent_address();
         {
             let mut chain = chain.write().await;
             chain.mine_block_rewarding(&miner, REWARD, vec![]);
