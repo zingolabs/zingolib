@@ -3,8 +3,8 @@ name: CI
 on:
   workflow_call:
     inputs:
-      # The nightly builds every ABI and packages one AAR from them, so it
-      # skips this workflow's x86_64 build.
+      # The nightly builds every ABI, packages one AAR from them, and builds
+      # the XCFrameworks, so it skips this workflow's x86_64 and iOS builds.
       skip-binding-layer-build:
         required: false
         type: boolean
@@ -272,6 +272,20 @@ jobs:
       abi_pattern: ${{ needs.binding-layer-names.outputs.abi_pattern }}
       aar_glob: ${{ needs.binding-layer-names.outputs.aar_glob }}
       bundle: ${{ needs.binding-layer-names.outputs.bundle_android }}
+
+  # The per-PR tier's iOS half: both XCFrameworks and the Swift sources,
+  # on the WarpBuild macOS runner that binding-layer-ios.yaml names. The
+  # Android job above proves the Kotlin Binding Set on every pull request,
+  # and this job proves the Swift one the same way, so a change that
+  # breaks either fails the pull request that makes it rather than the
+  # nightly. The builder runs on this commit here and in the nightly.
+  binding-layer-ios:
+    if: ${{ inputs.skip-binding-layer-build != true }}
+    needs: binding-layer-names
+    uses: ./.github/workflows/binding-layer-ios.yaml
+    with:
+      out: ${{ needs.binding-layer-names.outputs.ios_out }}
+      bundle: ${{ needs.binding-layer-names.outputs.bundle_ios }}
 
   # The `nym` feature gates the mixnet transmission and price-fetch surfaces
   # (ADR 0011) in zingolib and zingo-cli. zingo-cli carries it as a default

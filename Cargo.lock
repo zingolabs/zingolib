@@ -1766,7 +1766,6 @@ version = "0.2.0"
 dependencies = [
  "http",
  "incrementalmerkletree",
- "itertools",
  "json",
  "pepper-sync",
  "shardtree",
