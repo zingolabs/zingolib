@@ -971,15 +971,17 @@ where
     }
     tracing::info!("Sync successfully shutdown.");
 
+    // a session shut down before its first scan range was created ends where it started.
+    let sync_end_height = sync_status
+        .scan_ranges
+        .last()
+        .map_or(sync_status.sync_start_height, |scan_range| {
+            scan_range.block_range().end - 1
+        });
+
     Ok(SyncResult {
         sync_start_height: sync_status.sync_start_height,
-        sync_end_height: (sync_status
-            .scan_ranges
-            .last()
-            .expect("should be non-empty after syncing")
-            .block_range()
-            .end
-            - 1),
+        sync_end_height,
         blocks_scanned: sync_status.session_blocks_scanned,
         sapling_outputs_scanned: sync_status.session_sapling_outputs_scanned,
         orchard_outputs_scanned: sync_status.session_orchard_outputs_scanned,
