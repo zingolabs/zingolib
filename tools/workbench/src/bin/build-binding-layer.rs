@@ -73,11 +73,45 @@ const PROFILE_DIR: &str = BUILDER_PROFILE.directory();
 /// The iOS output subdirectory that holds intermediate generated files.
 const GENERATED_DIR: &str = "generated";
 
+#[derive(Clone, Copy)]
+struct IosTarget {
+    triple: &'static str,
+    arch: &'static str,
+    platform: &'static str,
+}
+
+const ARM64_ARCH: &str = "arm64";
+
+const X86_64_ARCH: &str = "x86_64";
+
+const IOS_PLATFORM: &str = "ios";
+
+const IOS_SIMULATOR_PLATFORM: &str = "ios-simulator";
+
+const IOS_DEVICE: IosTarget = IosTarget {
+    triple: "aarch64-apple-ios",
+    arch: ARM64_ARCH,
+    platform: IOS_PLATFORM,
+};
+
+const IOS_SIMULATORS: [IosTarget; 2] = [
+    IosTarget {
+        triple: "aarch64-apple-ios-sim",
+        arch: ARM64_ARCH,
+        platform: IOS_SIMULATOR_PLATFORM,
+    },
+    IosTarget {
+        triple: "x86_64-apple-ios",
+        arch: X86_64_ARCH,
+        platform: IOS_SIMULATOR_PLATFORM,
+    },
+];
+
 /// The iOS target that builds for devices.
-const IOS_DEVICE_TARGET: &str = "aarch64-apple-ios";
+const IOS_DEVICE_TARGET: &str = IOS_DEVICE.triple;
 
 /// The iOS targets that `lipo` merges into one simulator library.
-const IOS_SIMULATOR_TARGETS: [&str; 2] = ["aarch64-apple-ios-sim", "x86_64-apple-ios"];
+const IOS_SIMULATOR_TARGETS: [&str; 2] = [IOS_SIMULATORS[0].triple, IOS_SIMULATORS[1].triple];
 
 /// The directory, under a target directory, that holds merged simulator libraries.
 const UNIVERSAL_SIMULATOR_DIR: &str = "universal-sim";
@@ -91,6 +125,10 @@ const OBJECT_SUFFIX: &str = ".o";
 const LD: &str = "ld";
 
 const RELOCATABLE_FLAG: &str = "-r";
+
+const ARCH_FLAG: &str = "-arch";
+
+const PLATFORM_VERSION_FLAG: &str = "-platform_version";
 
 const FORCE_LOAD_FLAG: &str = "-force_load";
 
@@ -870,7 +908,8 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
             to: host(&exports),
             text: binding_layer::exported_symbols(lib_name),
         })
-        .chain(iter_targets().flat_map(|triple| {
+        .chain(iter_ios_targets().flat_map(|target| {
+            let triple = target.triple;
             let object = hidden(
                 target_dir,
                 triple,
@@ -888,6 +927,12 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
                     command: [
                         LD,
                         RELOCATABLE_FLAG,
+                        ARCH_FLAG,
+                        target.arch,
+                        PLATFORM_VERSION_FLAG,
+                        target.platform,
+                        IOS_DEPLOYMENT_TARGET,
+                        IOS_DEPLOYMENT_TARGET,
                         FORCE_LOAD_FLAG,
                         &library(target_dir, triple, &file),
                         EXPORTED_SYMBOLS_FLAG,
@@ -1086,9 +1131,13 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
     )
 }
 
+fn iter_ios_targets() -> impl Iterator<Item = IosTarget> {
+    iter::once(IOS_DEVICE).chain(IOS_SIMULATORS)
+}
+
 /// The device target followed by the simulator targets.
 fn iter_targets() -> impl Iterator<Item = &'static str> {
-    [IOS_DEVICE_TARGET].into_iter().chain(IOS_SIMULATOR_TARGETS)
+    iter_ios_targets().map(|target| target.triple)
 }
 
 /// Execute a plan in order, stopping at the first failing step.
@@ -1378,6 +1427,12 @@ mod tests {
         )
     }
 
+    const LINKER_TARGETS: [(&str, &str, &str); 3] = [
+        ("aarch64-apple-ios", "arm64", "ios"),
+        ("aarch64-apple-ios-sim", "arm64", "ios-simulator"),
+        ("x86_64-apple-ios", "x86_64", "ios-simulator"),
+    ];
+
     #[test]
     fn the_ios_plan_hides_every_symbol_but_the_uniffi_exports_of_each_library(
     ) -> Result<(), Vec<String>> {
@@ -1398,7 +1453,8 @@ mod tests {
             });
             assert_eq!(written, Some(&binding_layer::exported_symbols(lib_name)));
             let file = ios_static_library(lib_name);
-            for triple in iter_targets() {
+            assert_eq!(iter_targets().count(), LINKER_TARGETS.len());
+            for (triple, arch, platform) in LINKER_TARGETS {
                 let profile_dir = format!("{target_dir}/{triple}/{PROFILE_DIR}");
                 let raw = format!("{profile_dir}/{file}");
                 let object = format!(
@@ -1411,7 +1467,7 @@ mod tests {
                 );
                 let archive = format!("{profile_dir}/{HIDDEN_DIR}/{file}");
                 let link = format!(
-                    "{LD} {RELOCATABLE_FLAG} {FORCE_LOAD_FLAG} {raw} {EXPORTED_SYMBOLS_FLAG} {exports} {OUTPUT_FLAG} {object}"
+                    "ld -r -arch {arch} -platform_version {platform} 16.0 16.0 -force_load {raw} -exported_symbols_list {exports} -o {object}"
                 );
                 let pack =
                     format!("{LIBTOOL} {LIBTOOL_STATIC_FLAG} {OUTPUT_FLAG} {archive} {object}");
