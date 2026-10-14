@@ -1619,6 +1619,113 @@ async fn fetch_under_a_lowered_chain_height_recommends_syncing_again() {
     );
 }
 
+/// A sync session makes its session-start server requests with the wallet lock released, so the wallet is read while
+/// a slow server holds the tree state and then the subtree root request.
+#[tokio::test]
+async fn session_start_requests_release_the_wallet_lock() {
+    use crate::testutils::mock_indexer::{Fault, Rpc};
+
+    const CHAIN_HEIGHT: u32 = 10;
+    const FETCH_HOLD: std::time::Duration = std::time::Duration::from_secs(5);
+    const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
+
+    let mut net = MockNet::launch().await;
+    {
+        let mut chain = net.chain.write().await;
+        chain.mine_empty_blocks(CHAIN_HEIGHT);
+        chain
+            .faults
+            .inject(Rpc::TreeState, Fault::Delay(FETCH_HOLD));
+        chain
+            .faults
+            .inject(Rpc::SubtreeRoots, Fault::Delay(FETCH_HOLD));
+    }
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    client.sync().await.expect("continuous sync launches");
+
+    // the session waits on the held tree state request, then on the held subtree root request.
+    for held_request in ["tree state", "subtree roots"] {
+        tokio::time::sleep(FETCH_HOLD / 2).await;
+        let wallet = client.wallet();
+        let wallet_guard = tokio::time::timeout(LOCK_WAIT, wallet.read())
+            .await
+            .unwrap_or_else(|_| {
+                panic!("the wallet lock is held across the {held_request} request")
+            });
+        assert!(
+            wallet_guard
+                .sync_state
+                .fully_scanned_height()
+                .is_some_and(|height| height < BlockHeight::from_u32(CHAIN_HEIGHT)),
+            "no block is scanned while the {held_request} request is held"
+        );
+        drop(wallet_guard);
+        tokio::time::sleep(FETCH_HOLD / 2).await;
+    }
+
+    client.sync_to_tip_and_await().await.unwrap();
+    assert_eq!(
+        client
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .fully_scanned_height(),
+        Some(BlockHeight::from_u32(CHAIN_HEIGHT))
+    );
+}
+
+/// A stop requested while a slow server holds a session-start request ends the session at once, without scanning,
+/// instead of waiting for the server.
+#[tokio::test]
+async fn stop_ends_the_session_during_a_held_session_start_request() {
+    use crate::testutils::mock_indexer::{Fault, Rpc};
+
+    const CHAIN_HEIGHT: u32 = 10;
+    const FETCH_HOLD: std::time::Duration = std::time::Duration::from_secs(30);
+    const STOP_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+    let mut net = MockNet::launch().await;
+    {
+        let mut chain = net.chain.write().await;
+        chain.mine_empty_blocks(CHAIN_HEIGHT);
+        chain
+            .faults
+            .inject(Rpc::SubtreeRoots, Fault::Delay(FETCH_HOLD));
+    }
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    client.sync().await.expect("continuous sync launches");
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    client.stop_sync().unwrap();
+    let sync_result = tokio::time::timeout(STOP_WAIT, client.await_sync())
+        .await
+        .expect("the session ends while the server still holds the request")
+        .expect("a stopped session returns its result");
+
+    assert_eq!(sync_result.blocks_scanned, 0);
+    assert!(
+        client
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .fully_scanned_height()
+            .is_some_and(|height| height < BlockHeight::from_u32(CHAIN_HEIGHT)),
+        "the session ended before scanning began"
+    );
+}
+
 /// Sync is rejected when the server's lightwallet protocol version is below v0.5.0, or not reported, as the server does
 /// not serve the transparent and ironwood data sync requires. The error recommends switching servers.
 #[tokio::test]
