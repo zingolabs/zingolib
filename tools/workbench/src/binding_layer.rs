@@ -100,6 +100,7 @@ pub fn swift_sources_dir() -> String {
 }
 
 pub const SWIFT_PACKAGE_MANIFEST: &str = "bindings/swift/Package.swift";
+pub const SWIFT_LINKED_FRAMEWORK: &str = "SystemConfiguration";
 
 pub const SWIFT_PACKAGE_OUTPUT_DIR: &str = "build";
 
@@ -831,6 +832,9 @@ mod tests {
             "let builderOutput = \"{SWIFT_PACKAGE_OUTPUT_DIR}\""
         )));
         assert!(manifest.contains(&format!("/{}\"", swift_sources_dir())));
+        assert!(manifest.contains(&format!(
+            "linkerSettings: [.linkedFramework(\"{SWIFT_LINKED_FRAMEWORK}\")]"
+        )));
         assert!(std::path::Path::new(SWIFT_PACKAGE_MANIFEST).ends_with("Package.swift"));
     }
 
