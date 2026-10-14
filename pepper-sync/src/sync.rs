@@ -3040,11 +3040,13 @@ fn expire_transactions<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncTransactions,
 {
-    let fully_scanned_height = wallet
+    let Some(fully_scanned_height) = wallet
         .get_sync_state()
         .map_err(SyncError::WalletError)?
         .fully_scanned_height()
-        .expect("wallet height must exist after scan ranges have been updated");
+    else {
+        return Ok(());
+    };
     let wallet_transactions = wallet
         .get_wallet_transactions_mut()
         .map_err(SyncError::WalletError)?;
