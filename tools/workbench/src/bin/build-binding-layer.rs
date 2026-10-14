@@ -82,6 +82,26 @@ const IOS_SIMULATOR_TARGETS: [&str; 2] = ["aarch64-apple-ios-sim", "x86_64-apple
 /// The directory, under a target directory, that holds merged simulator libraries.
 const UNIVERSAL_SIMULATOR_DIR: &str = "universal-sim";
 
+const HIDDEN_DIR: &str = "hidden";
+
+const EXPORTS_FILE: &str = "exports.txt";
+
+const OBJECT_SUFFIX: &str = ".o";
+
+const LD: &str = "ld";
+
+const RELOCATABLE_FLAG: &str = "-r";
+
+const FORCE_LOAD_FLAG: &str = "-force_load";
+
+const EXPORTED_SYMBOLS_FLAG: &str = "-exported_symbols_list";
+
+const OUTPUT_FLAG: &str = "-o";
+
+const LIBTOOL: &str = "libtool";
+
+const LIBTOOL_STATIC_FLAG: &str = "-static";
+
 /// The wallet's generated C header.
 const WALLET_HEADER: &str = "zingoFFI.h";
 
@@ -140,6 +160,10 @@ enum Step {
         separator: &'static str,
         /// The destination file.
         to: path::PathBuf,
+    },
+    Write {
+        to: path::PathBuf,
+        text: String,
     },
     /// Remove a host directory if it exists and create it empty.
     FreshDir(path::PathBuf),
@@ -795,8 +819,11 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
         "IPHONEOS_DEPLOYMENT_TARGET".to_string(),
         IOS_DEPLOYMENT_TARGET.to_string(),
     )];
-    let wallet_target = roots.run_path(&format!("{BUILD_ROOT}/ios/wallet"));
-    let proxy_target = roots.run_path(&format!("{BUILD_ROOT}/ios/proxy"));
+    let target_dir_of = |generation: binding_layer::Generation| {
+        roots.run_path(&format!("{BUILD_ROOT}/ios/{}", generation.label()))
+    };
+    let wallet_target = target_dir_of(binding_layer::Generation::Wallet);
+    let proxy_target = target_dir_of(binding_layer::Generation::Proxy);
     let with_target = |target_dir: &str| {
         [
             env.clone(),
@@ -810,7 +837,7 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
     let wallet_crate_dir = roots.run_path(binding_layer::WALLET_CRATE_DIR);
     let proxy_crate_dir = roots.run_path(binding_layer::PROXY_CRATE_DIR);
     let wallet_workspace_dir = roots.run_path(WALLET_WORKSPACE_DIR);
-    let static_library = |lib_name| {
+    let static_library = |lib_name: &str| {
         binding_layer::library_file(
             binding_layer::LIBRARY_PREFIX,
             lib_name,
@@ -824,9 +851,70 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
     };
     let universal =
         |target_dir: &str, file: &str| library(target_dir, UNIVERSAL_SIMULATOR_DIR, file);
-    let wallet_generated = format!("{GENERATED_DIR}/wallet");
-    let proxy_generated = format!("{GENERATED_DIR}/proxy");
+    let hidden_dir = |target_dir: &str, triple: &str| {
+        format!("{target_dir}/{triple}/{PROFILE_DIR}/{HIDDEN_DIR}")
+    };
+    let hidden = |target_dir: &str, triple: &str, file: &str| {
+        format!("{}/{file}", hidden_dir(target_dir, triple))
+    };
+    let generated_of =
+        |generation: binding_layer::Generation| format!("{GENERATED_DIR}/{}", generation.label());
+    let wallet_generated = generated_of(binding_layer::Generation::Wallet);
+    let proxy_generated = generated_of(binding_layer::Generation::Proxy);
     let headers = format!("{GENERATED_DIR}/headers");
+    let host = |relative: &str| roots.out_host_path(relative);
+    let hide = |target_dir: &str, lib_name: &str, generated: &str| {
+        let file = static_library(lib_name);
+        let exports = format!("{generated}/{EXPORTS_FILE}");
+        iter::once(Step::Write {
+            to: host(&exports),
+            text: binding_layer::exported_symbols(lib_name),
+        })
+        .chain(iter_targets().flat_map(|triple| {
+            let object = hidden(
+                target_dir,
+                triple,
+                &binding_layer::library_file(
+                    binding_layer::LIBRARY_PREFIX,
+                    lib_name,
+                    OBJECT_SUFFIX,
+                ),
+            );
+            [
+                Step::FreshDir(host_of(roots, &hidden_dir(target_dir, triple))),
+                Step::Run {
+                    workdir: roots.run.clone(),
+                    env: env.clone(),
+                    command: [
+                        LD,
+                        RELOCATABLE_FLAG,
+                        FORCE_LOAD_FLAG,
+                        &library(target_dir, triple, &file),
+                        EXPORTED_SYMBOLS_FLAG,
+                        &roots.out_run_path(&exports),
+                        OUTPUT_FLAG,
+                        &object,
+                    ]
+                    .map(String::from)
+                    .to_vec(),
+                },
+                Step::Run {
+                    workdir: roots.run.clone(),
+                    env: env.clone(),
+                    command: [
+                        LIBTOOL,
+                        LIBTOOL_STATIC_FLAG,
+                        OUTPUT_FLAG,
+                        &hidden(target_dir, triple, &file),
+                        &object,
+                    ]
+                    .map(String::from)
+                    .to_vec(),
+                },
+            ]
+        }))
+        .collect::<Vec<_>>()
+    };
     let inputs = binding_layer::BindgenInputs {
         language: binding_layer::SWIFT,
         profile: BUILDER_PROFILE,
@@ -870,7 +958,7 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
                     .chain(
                         IOS_SIMULATOR_TARGETS
                             .iter()
-                            .map(|triple| library(target_dir, triple, file)),
+                            .map(|triple| hidden(target_dir, triple, file)),
                     )
                     .chain(["-output".to_string(), universal(target_dir, file)])
                     .collect(),
@@ -899,7 +987,6 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
             },
         ]
     };
-    let host = |relative: &str| roots.out_host_path(relative);
     let steps: Vec<Vec<Step>> = vec![
         vec![
             Step::FreshDir(host(&wallet_generated)),
@@ -912,6 +999,11 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
             &library(&wallet_target, IOS_DEVICE_TARGET, &wallet_static),
             &wallet_generated,
         )],
+        hide(
+            &wallet_target,
+            binding_layer::WALLET_LIB_NAME,
+            &wallet_generated,
+        ),
         lipo(&wallet_target, &wallet_static).into_iter().collect(),
         cargo_builds(
             &proxy_crate_dir,
@@ -923,6 +1015,11 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
             &library(&proxy_target, IOS_DEVICE_TARGET, &proxy_static),
             &proxy_generated,
         )],
+        hide(
+            &proxy_target,
+            binding_layer::PROXY_LIB_NAME,
+            &proxy_generated,
+        ),
         lipo(&proxy_target, &proxy_static).into_iter().collect(),
         vec![
             Step::Copy {
@@ -945,7 +1042,7 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
         xcframework(
             binding_layer::WALLET_XCFRAMEWORK,
             vec![
-                library(&wallet_target, IOS_DEVICE_TARGET, &wallet_static),
+                hidden(&wallet_target, IOS_DEVICE_TARGET, &wallet_static),
                 universal(&wallet_target, &wallet_static),
             ],
             true,
@@ -955,7 +1052,7 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
         xcframework(
             binding_layer::PROXY_XCFRAMEWORK,
             vec![
-                library(&proxy_target, IOS_DEVICE_TARGET, &proxy_static),
+                hidden(&proxy_target, IOS_DEVICE_TARGET, &proxy_static),
                 universal(&proxy_target, &proxy_static),
             ],
             false,
@@ -1029,6 +1126,10 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
                 .join(separator);
             workbench::create_parent(to)?;
             fs::write(to, contents).map_err(|e| vec![format!("cannot write {}: {e}", to.display())])
+        }
+        Step::Write { to, text } => {
+            workbench::create_parent(to)?;
+            fs::write(to, text).map_err(|e| vec![format!("cannot write {}: {e}", to.display())])
         }
         Step::FreshDir(directory) => workbench::fresh_dir(directory).map(drop),
         Step::Remove(directory) => {
@@ -1266,6 +1367,90 @@ mod tests {
             commands[target_add],
             format!("{TARGET_ADD} {}", targets.join(" "))
         );
+        Ok(())
+    }
+
+    fn ios_static_library(lib_name: &str) -> String {
+        binding_layer::library_file(
+            binding_layer::LIBRARY_PREFIX,
+            lib_name,
+            binding_layer::STATIC_SUFFIX,
+        )
+    }
+
+    #[test]
+    fn the_ios_plan_hides_every_symbol_but_the_uniffi_exports_of_each_library(
+    ) -> Result<(), Vec<String>> {
+        let plan = ios_plan(&host_roots()?);
+        let commands = commands(&plan);
+        for (generation, lib_name) in binding_layer::GENERATIONS
+            .into_iter()
+            .zip(binding_layer::LIB_NAMES)
+        {
+            let target_dir = format!("{HOST_ROOT}/{BUILD_ROOT}/ios/{}", generation.label());
+            let exports = format!(
+                "{OUTSIDE_OUT}/{GENERATED_DIR}/{}/{EXPORTS_FILE}",
+                generation.label()
+            );
+            let written = plan.iter().find_map(|step| match step {
+                Step::Write { to, text } if to == path::Path::new(&exports) => Some(text),
+                _ => None,
+            });
+            assert_eq!(written, Some(&binding_layer::exported_symbols(lib_name)));
+            let file = ios_static_library(lib_name);
+            for triple in iter_targets() {
+                let profile_dir = format!("{target_dir}/{triple}/{PROFILE_DIR}");
+                let raw = format!("{profile_dir}/{file}");
+                let object = format!(
+                    "{profile_dir}/{HIDDEN_DIR}/{}",
+                    binding_layer::library_file(
+                        binding_layer::LIBRARY_PREFIX,
+                        lib_name,
+                        OBJECT_SUFFIX
+                    )
+                );
+                let archive = format!("{profile_dir}/{HIDDEN_DIR}/{file}");
+                let link = format!(
+                    "{LD} {RELOCATABLE_FLAG} {FORCE_LOAD_FLAG} {raw} {EXPORTED_SYMBOLS_FLAG} {exports} {OUTPUT_FLAG} {object}"
+                );
+                let pack =
+                    format!("{LIBTOOL} {LIBTOOL_STATIC_FLAG} {OUTPUT_FLAG} {archive} {object}");
+                let link_at = workbench::required(
+                    commands.iter().position(|command| command == &link),
+                    "the relocatable link",
+                )?;
+                let pack_at = workbench::required(
+                    commands.iter().position(|command| command == &pack),
+                    "the archive step",
+                )?;
+                let bindgen_at = workbench::required(
+                    commands
+                        .iter()
+                        .position(|command| command.contains(&format!("--library {raw} "))),
+                    "the bindgen step",
+                );
+                assert!(link_at < pack_at);
+                if triple == IOS_DEVICE_TARGET {
+                    assert!(bindgen_at? < link_at);
+                } else {
+                    assert!(bindgen_at.is_err());
+                }
+            }
+        }
+        for command in commands.iter().filter(|command| {
+            command.starts_with("lipo ") || command.contains("-create-xcframework")
+        }) {
+            for archive in command
+                .split(' ')
+                .filter(|word| word.ends_with(binding_layer::STATIC_SUFFIX))
+            {
+                assert!(
+                    archive.contains(&format!("/{HIDDEN_DIR}/"))
+                        || archive.contains(&format!("/{UNIVERSAL_SIMULATOR_DIR}/")),
+                    "{archive} is not a hidden archive"
+                );
+            }
+        }
         Ok(())
     }
 
