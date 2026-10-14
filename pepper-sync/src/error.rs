@@ -135,24 +135,7 @@ impl ServerError {
         let ServerError::RequestFailed(status) = self else {
             return false;
         };
-        let mut link = std::error::Error::source(status);
-        while let Some(cause) = link {
-            if cause.is::<tonic::transport::Error>()
-                || cause.is::<tonic::TimeoutExpired>()
-                || cause.is::<std::io::Error>()
-            {
-                return true;
-            }
-            link = cause.source();
-        }
-        matches!(
-            status.code(),
-            tonic::Code::Unavailable
-                | tonic::Code::DeadlineExceeded
-                | tonic::Code::Cancelled
-                | tonic::Code::ResourceExhausted
-                | tonic::Code::Aborted
-        )
+        status_is_network_weather(status)
     }
 
     /// Returns `true` if this server error is likely transient.
@@ -186,6 +169,30 @@ impl ServerError {
             | ServerError::UnsupportedProtocolVersion { .. } => false,
         }
     }
+}
+
+// Whether a failed gRPC request hit network weather: a tonic transport error, a client-side timeout or an I/O
+// error in the status's source chain, or one of the codes gRPC names as transient. Every other status is an answer
+// from a server that cannot serve the request.
+pub(crate) fn status_is_network_weather(status: &tonic::Status) -> bool {
+    let mut link = std::error::Error::source(status);
+    while let Some(cause) = link {
+        if cause.is::<tonic::transport::Error>()
+            || cause.is::<tonic::TimeoutExpired>()
+            || cause.is::<std::io::Error>()
+        {
+            return true;
+        }
+        link = cause.source();
+    }
+    matches!(
+        status.code(),
+        tonic::Code::Unavailable
+            | tonic::Code::DeadlineExceeded
+            | tonic::Code::Cancelled
+            | tonic::Code::ResourceExhausted
+            | tonic::Code::Aborted
+    )
 }
 
 /// Recommended action when sync fails.
@@ -227,6 +234,11 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
             // The server does not report the tree size of a pool, so a
             // different server is required.
             SyncError::ScanError(ScanError::TreeSizeNotReported { .. }) => {
+                SyncRecoveryObservables::ServerUnavailable
+            }
+            // The server's own data placed a transaction it does not serve, so
+            // its data is inconsistent and a different server is required.
+            SyncError::ScanError(ScanError::TransactionNotServed { .. }) => {
                 SyncRecoveryObservables::ServerUnavailable
             }
             SyncError::ScanError(_) => SyncRecoveryObservables::Abort,
@@ -368,6 +380,18 @@ pub enum ScanError {
         height: BlockHeight,
         /// Calculated size
         calculated_size: u32,
+    },
+    /// The server does not serve a transaction that its own data placed in the chain.
+    #[error(
+        "the server does not serve transaction {txid}, which its own data placed at block {block_height}. connect to a different server and sync again. {status}"
+    )]
+    TransactionNotServed {
+        /// The transaction the server does not serve.
+        txid: TxId,
+        /// The block the server's own data placed the transaction in.
+        block_height: BlockHeight,
+        /// The server's answer.
+        status: tonic::Status,
     },
     /// Txid of transaction returned by the server does not match requested txid.
     #[error(
@@ -1000,6 +1024,20 @@ mod tests {
             fn scan_error_wrapping_server_error() {
                 let e: TestSyncError =
                     ScanError::ServerError(ServerError::InvalidSubtreeRoot).into();
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
+
+            #[test]
+            fn scan_error_transaction_not_served() {
+                let e: TestSyncError = ScanError::TransactionNotServed {
+                    txid: TxId::from_bytes([1; 32]),
+                    block_height: BlockHeight::from_u32(100),
+                    status: tonic::Status::not_found("no such transaction"),
+                }
+                .into();
                 assert_eq!(
                     e.recovery_recommendation(),
                     SyncRecoveryObservables::ServerUnavailable

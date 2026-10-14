@@ -2176,12 +2176,26 @@ impl MockNet {
         mnemonic: &str,
         wallet_settings_opt: Option<WalletSettings>,
     ) -> LightClient {
+        self.client_with_birthday(mnemonic, 1, wallet_settings_opt)
+            .await
+    }
+
+    /// Builds a `LightClient` for `mnemonic` with `birthday` dialed at the
+    /// mock, with its wallet directory in a tempdir this net keeps
+    /// alive. A birthday above the mock's sapling activation makes the
+    /// first sync session fetch the birthday frontier.
+    pub async fn client_with_birthday(
+        &mut self,
+        mnemonic: &str,
+        birthday: u32,
+        wallet_settings_opt: Option<WalletSettings>,
+    ) -> LightClient {
         let config = self
             .config_builder()
             .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: mnemonic.to_string(),
                 no_of_accounts: 1.try_into().expect("hard-coded non-zero"),
-                birthday: 1,
+                birthday,
                 wallet_settings: wallet_settings_opt.unwrap_or_else(default_test_wallet_settings),
             })
             .build()

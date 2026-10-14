@@ -28,7 +28,7 @@ Pepper-sync is a rust-based sync engine library for wallets operating on the zca
 3. Fetch subtree metadata from the server for shard range scanning and add the initial frontiers to the wallet's shard trees.
 4. Create a new scan range from [wallet height + 1] to chain height. For first time sync, wallet height is [wallet birthday - 1].
 5. Update wallet height to chain height.
-6. Uses scan targets from transparent address discovery and targetted scanning to set "found note" priority ranges.
+6. Uses scan targets from transparent address discovery, trial decryption, spend detection and targetted scanning to set "found note" priority ranges: the narrow range of blocks around a target, or the whole shard of each pool the target's transaction was found to hold notes of.
 7. Finds the upper range bound of the latest orchard and sapling shard ranges and splits the scan range at the lowest height of the two, setting the upper scan range to priority "chain tip". This ensures that both the sapling and orchard note commitments are scanned in the latest incomplete shard at the chain tip.
 8. Set the first 10 blocks after the highest previously scanned blocks to "verify" priority to check for re-org.
 
@@ -54,7 +54,7 @@ Pepper-sync is a rust-based sync engine library for wallets operating on the zca
   4e. Add outpoints, to the wallet's outpoint map
   4f. Update the wallet's shard trees
   4g. Check output id of all coins in wallet against the outpoint map. If a spend is found, update the coin's spend status and set the surrounding narrow range of blocks to "found note" priority
-  4h. Check derived nullifiers of all notes in wallet against the nullifier map. If a spend is found, update the note's spend status and set the surrounding shard range of its corresponding shielded protocol to "found note" priority
+  4h. Check derived nullifiers of all notes in wallet against the nullifier map. If a spend is found, update the note's spend status and set the surrounding narrow range of blocks to "found note" priority
   4i. Add wallet blocks to the wallet. Only retaining blocks at scan ranges bounds, blocks containing relevant transactions to the wallet or blocks within the max verification window of the highest scanned block in the wallet
   4j. Set the scan range containing the load of scanned blocks to "scanned" priority
   4k. Merge all adjacent scanned ranges together

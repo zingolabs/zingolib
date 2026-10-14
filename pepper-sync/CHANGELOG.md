@@ -82,6 +82,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SyncRecoveryObservables::MaybeRecoverableServer`, and syncing again
   truncates the wallet to the server's chain height and verifies it against
   the server's chain.
+- BREAKING: `error::ScanError::TransactionNotServed` variant, returned when
+  the server does not serve a transaction that its own data placed in the
+  chain: one the sync engine discovered through trial decryption, spend
+  detection or transparent address discovery. The served data is inconsistent,
+  so the error recommends `SyncRecoveryObservables::ServerUnavailable`, and
+  the consumer should switch to a different server and sync again. A
+  transaction a consumer's scan target names is not covered: that target is
+  dropped instead.
+- `wallet::ScanTarget::new`, the one constructor of a consumer's scan target
+  from a block height and an optional txid, and the `block_height` and `txid`
+  accessors.
 
 ### Changed
 - Scanning reads version 2 zingo memos, which carry a recipient's unified
@@ -149,8 +160,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transparent scan floor. Earlier versions read it as unset, and the next sync
   session's transparent address discovery then searches the blocks within the
   re-org allowance of the last known chain height, as before.
+- The ironwood subtree roots are fetched on every chain. The wallet checks the
+  lightwallet protocol version to ensure ironwood is served, so a server that
+  does not serve them is an error rather than a chain without NU6.3.
+- BREAKING: `wallet::ScanTarget` has private fields. A consumer constructs a
+  target through `ScanTarget::new(block_height, Option<TxId>)` and reads it
+  through its accessors; the `narrow_scan_area` flag and the all-zero txid
+  standing for "no transaction" are gone. Two targets naming the same block
+  height and txid are the same target, and adding one merges it into the one
+  the sync state holds. A target also records, internally, the shielded pools
+  its transaction was found to hold notes of and whether the sync engine or
+  the consumer added it. `ScanTarget` is serialized as version 1, carrying the
+  optional txid, the pools and the origin; a version 0 target is read as a
+  consumer's target with no pool, a zero txid becoming none. (#2862)
+- The narrow range of blocks prioritised around a scan target is 1,000 blocks,
+  down from 10,000. A detected spend prioritises the narrow range around the
+  spending transaction rather than the whole shard of the spent note's pool: a
+  spent note needs no witness, and a change note in the spending transaction
+  prioritises its own pool's shard when it is found.
+- A pool rescan targets the wallet's transactions above the rescan height as
+  the sync engine's own rather than as a consumer's, since the wallet's
+  records of the pool are wrong and the chain's are not, so one the server no
+  longer serves is reported as an inconsistency.
 
 ### Fixed
+- `sync` makes the server requests of its session start, the chain height,
+  the tree states that bound the session and the subtree roots, with the
+  wallet lock released, and takes the lock only to apply what they return. A
+  consumer reading the wallet, including `sync_status` and a save, no longer
+  waits for a slow server to answer them. Against zaino, whose
+  `GetSubtreeRoots` serves one block per subtree, a fresh wallet held the lock
+  for the whole fetch. (#2961)
+- `sync` observes a `SyncMode::Shutdown` request while a session-start server
+  request is pending, abandons the request and returns its result, instead of
+  shutting down only once the request is answered or fails. The abandoned
+  request is left to the fetcher, which is aborted at shutdown rather than
+  joined. (#2962)
 - A transaction request that zaino refuses with "retry with a fresh snapshot",
   because it fell between two mempool snapshots, is sent again, at most three
   times, instead of ending the sync session with a server error.
@@ -279,6 +324,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scanned again. Truncating the wallet removes the wallet data of every block
   above the truncation height, and a scanned range above the verification
   range kept its `Scanned` priority with its wallet data removed.
+- `sync` fetches subtree roots from the newest recorded shard range rather than
+  the shard tree's stored shard count. Scanning advances that count past the
+  roots the server holds, so after the first sync session the fetch returned
+  nothing and the shard range list never grew: every shard the wallet completed
+  by scanning had no shard range, and the trailing "incomplete shard" the
+  spendability check and the chain tip priority range start from reached back
+  to a root that could be months old. The ranges are now rebuilt from the fetch
+  index, so range `i` belongs to subtree root `i`, and the newest recorded root
+  is fetched again every session, which corrects a range whose completing block
+  a re-org moved. An existing wallet catches up on its next session. (#2951)
+- A fetched subtree root completing at or below the recorded newest height adds
+  no shard range. After a shard tree rollback refetched its bare roots, the
+  root completing at the recorded height pushed a degenerate one-block range.
+  Shard ranges are contiguous: each spans at least two blocks, each starts at
+  the completing block of the one before, and their ends strictly increase.
+  (#2952)
+- A fetched subtree root for a shard that scanning populated but left with a
+  gap becomes the cached annotation of the shard's root node, so the shard's
+  root is computable before the gap is scanned and the leaves scanned in
+  afterwards are checked against it. The root used to be skipped, leaving a
+  shard that completed on chain while partially scanned without a computable
+  root, and a witness that needed it failed although the note's shard and the
+  anchor's shard were scanned. (#2954)
+- The scan ranges prioritised around a scan target at the start of a sync
+  session follow the pools the target's transaction holds notes of, recorded
+  when the notes are found: the whole shard of each such pool, and the narrow
+  range of blocks around a target with none. Every target used to be
+  prioritised as an ironwood target, which `determine_block_range` resolved to
+  the orchard shard before NU6.3 and the ironwood shard after, so a sapling
+  note's shard, or an orchard note's shard once ironwood had completed shards,
+  could be left at `Historic` behind the whole unscanned history. (#2957)
+- A scan target that recorded a pool is kept until, for every such pool, its
+  block lies below the completing block of the pool's newest recorded shard
+  and every recorded shard range holding the block is scanned through its
+  completing block. The target used to be dropped as soon as the fully scanned
+  height passed it, so the rest of a shard mined while the wallet was closed
+  arrived as `Historic` with nothing left to prioritise it. A target on the
+  newest completing block is kept, as that block also holds the first
+  commitments of the incomplete shard. (#2958)
+- A consumer's scan target whose transaction the server does not serve is
+  dropped with a warning and the scan continues, where it used to fail every
+  scan of its range. A consumer's target whose block height lies below the
+  wallet birthday or above the chain height is dropped at the start of the
+  session. Network weather on any target is reported as the transient failure
+  it is and drops nothing. (#2959)
+- A re-org truncation removes the scan targets above the truncation height
+  with the wallet's blocks, transactions, nullifiers and outpoints. A target
+  above it names a transaction in a block the wallet no longer holds and asked
+  the server for it when the replacing blocks were scanned. (#2960)
 
 ### Removed
 - **Breaking.** `sync::SyncStatus::percentage_total_blocks_scanned`,

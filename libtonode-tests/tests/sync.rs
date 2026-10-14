@@ -2,7 +2,6 @@ use std::{num::NonZeroU32, time::Duration};
 
 use incrementalmerkletree::Position;
 use pepper_sync::error::SyncError;
-use pepper_sync::sync::ScanPriority;
 use pepper_sync::test_support::block;
 use pepper_sync::wallet::ShardTrees;
 use shardtree::store::ShardStore;
@@ -165,14 +164,10 @@ async fn add_subtree_roots() {
     }
 
     lightclient.sync().await.unwrap();
-    while !(lightclient
-        .wallet()
-        .read()
-        .await
-        .sync_state
-        .scan_ranges()
-        .iter()
-        .any(|range| range.priority() == ScanPriority::Scanning)
+    // the session's first status is published once its start, which fetches the subtree roots, is complete. a
+    // stop requested earlier abandons the session start, and a `Scanning` range the previous session left behind
+    // would ask for one.
+    while !(lightclient.latest_sync_status().is_some()
         || matches!(lightclient.poll_sync(), PollReport::Ready(_)))
     {
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -218,14 +213,10 @@ async fn add_subtree_roots() {
     tokio::time::sleep(Duration::from_secs(100)).await;
 
     lightclient.sync().await.unwrap();
-    while !(lightclient
-        .wallet()
-        .read()
-        .await
-        .sync_state
-        .scan_ranges()
-        .iter()
-        .any(|range| range.priority() == ScanPriority::Scanning)
+    // the session's first status is published once its start, which fetches the subtree roots, is complete. a
+    // stop requested earlier abandons the session start, and a `Scanning` range the previous session left behind
+    // would ask for one.
+    while !(lightclient.latest_sync_status().is_some()
         || matches!(lightclient.poll_sync(), PollReport::Ready(_)))
     {
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -412,14 +403,10 @@ async fn diagnose_subtree_root_stream() {
         .unwrap();
     let mut lightclient = LightClient::new(config, true).await.unwrap();
     lightclient.sync().await.unwrap();
-    while !(lightclient
-        .wallet()
-        .read()
-        .await
-        .sync_state
-        .scan_ranges()
-        .iter()
-        .any(|range| range.priority() == ScanPriority::Scanning)
+    // the session's first status is published once its start, which fetches the subtree roots, is complete. a
+    // stop requested earlier abandons the session start, and a `Scanning` range the previous session left behind
+    // would ask for one.
+    while !(lightclient.latest_sync_status().is_some()
         || matches!(lightclient.poll_sync(), PollReport::Ready(_)))
     {
         tokio::time::sleep(Duration::from_secs(1)).await;
