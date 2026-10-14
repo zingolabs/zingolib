@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   place of `Init`, when the wallet bytes were written for another chain.
 
 ### Changed
+- Wallets are created and loaded with `TransparentAddressDiscovery::default()`
+  (gap limit 10) in place of `minimal()` (gap limit 1). Loading overrides the
+  stored settings, so wallets saved by earlier releases also scan with gap 10.
 - **Breaking:** the bindings come from `#[uniffi::export]` attributes and the
   uniffi derives on uniffi 0.32.2 in place of `zingo.udl`. The UDL, the
   `build.rs` and the crate's `uniffi-bindgen` binary target are gone, and
