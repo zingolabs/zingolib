@@ -1802,6 +1802,39 @@ async fn sync_status_holds_while_a_reorg_truncation_awaits_the_tree_bounds() {
     );
 }
 
+/// A wallet whose birthday is above sapling activation fetches its birthday frontier on its first session, after
+/// the subtree roots. The session reads the wallet to decide that, then takes the write lock to insert the
+/// frontier, so the read must not outlive the decision.
+#[tokio::test]
+async fn first_session_of_a_wallet_born_after_sapling_inserts_its_frontier_and_scans() {
+    const BIRTHDAY: u32 = 5;
+    const CHAIN_HEIGHT: u32 = 20;
+
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(CHAIN_HEIGHT);
+    let mut client = net
+        .client_with_birthday(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            BIRTHDAY,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    client.sync().await.expect("continuous sync launches");
+
+    wait_until_scanned_to(&client, CHAIN_HEIGHT).await;
+    client.stop_sync().unwrap();
+    let sync_result = client.await_sync().await.unwrap();
+    assert_eq!(
+        sync_result.sync_start_height,
+        BlockHeight::from_u32(BIRTHDAY)
+    );
+    assert_eq!(
+        sync_result.blocks_scanned,
+        CHAIN_HEIGHT - BIRTHDAY + 1,
+        "every block from the birthday to the tip is scanned"
+    );
+}
+
 /// Sync is rejected when the server's lightwallet protocol version is below v0.5.0, or not reported, as the server does
 /// not serve the transparent and ironwood data sync requires. The error recommends switching servers.
 #[tokio::test]
