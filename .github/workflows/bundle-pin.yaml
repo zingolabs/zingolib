@@ -1,0 +1,112 @@
+# bindings/pin is the npm package zingolib-bundle-pin, which consumers of
+# the Binding Layer install to hold their Bundle Pin and fetch the Prebuilt
+# Bundles. The package has no dependency, so the tests run on Node's own
+# runner with no install.
+#
+# The publish job runs on a push to dev and publishes the package when npm
+# lacks the version it names, so the published content is always a merged
+# commit and the provenance names that commit. A change to the package must
+# therefore raise the version, and the check job fails a pull request that
+# does not. A failed publish leaves npm without the version, and the next
+# push to dev publishes it.
+#
+# The check has its own workflow with no `paths` filter, for the reason
+# no-duplicated-code.yaml states: a required check must report on every pull
+# request.
+name: Bundle Pin package
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [stable, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Trusted publishing needs an npm newer than the one Node 22 bundles.
+  NPM_VERSION: 12.2.0
+
+jobs:
+  bundle-pin:
+    name: Bundle Pin package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: bindings/pin
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run the tests
+        run: node --test test/*.test.mjs
+
+      - name: Check the published files
+        run: npm pack --dry-run
+
+      # A pull request that changes the package must name a version npm
+      # does not hold, or the publish job would publish nothing.
+      - name: Check that a changed package raises its version
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          if git diff --quiet "$BASE" -- bin lib package.json; then
+            echo "The package is unchanged."
+            exit 0
+          fi
+          version="$(node --print "require('./package.json').version")"
+          if npm view "zingolib-bundle-pin@${version}" version >/dev/null 2>&1; then
+            echo "npm already holds zingolib-bundle-pin@${version}; raise the version in bindings/pin/package.json."
+            exit 1
+          fi
+          echo "zingolib-bundle-pin@${version} is unpublished."
+
+  # The OIDC token that `id-token` grants is what npm's trusted publishing
+  # for this repository and workflow accepts in place of a stored npm
+  # token, so only this job holds the grant. No registry-url goes to
+  # setup-node, since that setting writes an empty token entry that the
+  # OIDC exchange must not see.
+  publish:
+    name: Publish the Bundle Pin package
+    needs: bundle-pin
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: bindings/pin
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Publish the package when npm lacks its version
+        run: |
+          npm install --global "npm@${NPM_VERSION}"
+          version="$(node --print "require('./package.json').version")"
+          if npm view "zingolib-bundle-pin@${version}" version >/dev/null 2>&1; then
+            echo "npm holds zingolib-bundle-pin@${version}."
+          else
+            npm publish --access public --provenance
+          fi
