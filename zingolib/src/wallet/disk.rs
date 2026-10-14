@@ -554,11 +554,7 @@ impl LightWallet {
                     transaction
                         .status
                         .get_confirmed_height()
-                        .map(|height| ScanTarget {
-                            block_height: height,
-                            txid: transaction.txid,
-                            narrow_scan_area: true,
-                        })
+                        .map(|height| ScanTarget::new(height, Some(transaction.txid)))
                 })
                 .collect::<Vec<_>>(),
         );
@@ -778,11 +774,7 @@ impl LightWallet {
                 let block_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
                 let txid = TxId::read(&mut r)?;
 
-                ScanTarget {
-                    block_height,
-                    txid,
-                    narrow_scan_area: true,
-                }
+                ScanTarget::new(block_height, Some(txid))
             };
 
             Ok((OutputId::new(outpoint_txid, output_index), scan_target))

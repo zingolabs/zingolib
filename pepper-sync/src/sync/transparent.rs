@@ -86,11 +86,7 @@ pub(crate) async fn address_discovery<W: SyncWallet>(
         // any new developments to sync state management and scanning. It also separates concerns, with tasks happening in one
         // place and performed once, wherever possible.
         for (height, tx) in &transactions {
-            scan_targets.insert(ScanTarget {
-                block_height: *height,
-                txid: tx.txid(),
-                narrow_scan_area: true,
-            });
+            scan_targets.insert(ScanTarget::internal(*height, tx.txid()));
         }
     }
 
@@ -147,11 +143,7 @@ pub(crate) async fn address_discovery<W: SyncWallet>(
                         unused_address_count += 1;
                     } else {
                         for (height, tx) in &transactions {
-                            scan_targets.insert(ScanTarget {
-                                block_height: *height,
-                                txid: tx.txid(),
-                                narrow_scan_area: true,
-                            });
+                            scan_targets.insert(ScanTarget::internal(*height, tx.txid()));
                         }
                         unused_address_count = 0;
                     }
@@ -181,11 +173,12 @@ pub(crate) async fn address_discovery<W: SyncWallet>(
     }
 
     let mut wallet_guard = wallet.write().await;
-    wallet_guard
+    let sync_state = wallet_guard
         .get_sync_state_mut()
-        .map_err(SyncError::WalletError)?
-        .scan_targets
-        .append(&mut scan_targets);
+        .map_err(SyncError::WalletError)?;
+    for scan_target in scan_targets {
+        sync_state.insert_scan_target(scan_target);
+    }
     wallet_guard
         .set_save_flag()
         .map_err(SyncError::WalletError)?;
