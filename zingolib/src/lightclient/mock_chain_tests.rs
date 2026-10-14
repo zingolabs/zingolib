@@ -1726,6 +1726,82 @@ async fn stop_ends_the_session_during_a_held_session_start_request() {
     );
 }
 
+/// A re-org detected at session start truncates the wallet and resets its scan ranges before the session's tree
+/// bounds are fetched, and the wallet lock is released for that request. The previous session's snapshot still
+/// counts every block it scanned, so every live counter sits below the snapshot in that window. `sync_status` read
+/// in the window returns a status with its session counters saturated at zero.
+#[tokio::test]
+async fn sync_status_holds_while_a_reorg_truncation_awaits_the_tree_bounds() {
+    use pepper_sync::sync::ScanPriority;
+
+    use crate::testutils::mock_indexer::{Fault, Rpc};
+
+    const CHAIN_HEIGHT: u32 = 20;
+    const FETCH_HOLD: std::time::Duration = std::time::Duration::from_secs(5);
+
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(CHAIN_HEIGHT);
+    let mut client = net
+        .client(
+            zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED,
+            Some(continuous_sync_wallet_settings()),
+        )
+        .await;
+    client.sync().await.expect("continuous sync launches");
+    wait_until_scanned_to(&client, CHAIN_HEIGHT).await;
+    client.stop_sync().unwrap();
+    client.await_sync().await.unwrap();
+
+    // the chain tip is replaced at the same height, so the next session detects the re-org at its start, truncates
+    // the wallet below the verify range and fetches the tree bounds of the blocks it no longer holds.
+    {
+        let mut chain = net.chain.write().await;
+        chain.reorg_to(CHAIN_HEIGHT - 1);
+        chain.mine_empty_blocks(1);
+        chain
+            .faults
+            .inject(Rpc::TreeState, Fault::Delay(FETCH_HOLD));
+    }
+    client.sync().await.expect("the next session launches");
+
+    let status_in_the_window = tokio::time::timeout(FETCH_HOLD, async {
+        loop {
+            let wallet = client.wallet();
+            let wallet_guard = wallet.read().await;
+            let status = pepper_sync::sync_status(&*wallet_guard)
+                .await
+                .expect("the status is computable while the tree bounds are fetched");
+            if status
+                .scan_ranges
+                .iter()
+                .any(|range| range.priority() == ScanPriority::Verify)
+            {
+                break status;
+            }
+            drop(wallet_guard);
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the re-org truncation is read while the tree state request is held");
+    assert!(
+        status_in_the_window.total_blocks_scanned < CHAIN_HEIGHT,
+        "the truncation has removed scanned blocks: {status_in_the_window:?}"
+    );
+    assert_eq!(
+        status_in_the_window.session_blocks_scanned, 0,
+        "the live count below the previous session's snapshot saturates"
+    );
+
+    wait_until_scanned_to(&client, CHAIN_HEIGHT).await;
+    client.stop_sync().unwrap();
+    let sync_result = client.await_sync().await.unwrap();
+    assert!(
+        sync_result.blocks_scanned > 0,
+        "the replacing blocks are scanned"
+    );
+}
+
 /// Sync is rejected when the server's lightwallet protocol version is below v0.5.0, or not reported, as the server does
 /// not serve the transparent and ironwood data sync requires. The error recommends switching servers.
 #[tokio::test]
