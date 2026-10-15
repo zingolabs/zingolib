@@ -6,11 +6,11 @@
 // values below are shared verbatim across the three suites; the pins under
 // test-data/golden/ are never-regenerate contract artifacts.
 //
-// Execution: this file compiles against the generated bindings
-// (uniffi.zingo_nym_proxy_ffi) and JUnit 4; zingo-mobile's test suite wires
-// it in during step-4/step-3 packaging (#2513/#2505). Point
-// -Dzingo.golden.dir at the crate's test-data/golden directory if the
-// working directory is not the crate root.
+// Execution: this file compiles against the Kotlin Binding Set
+// (uniffi.zingo_nym_proxy_ffi) and JUnit 4. The Gradle library under
+// bindings/android adds this directory as a test source and sets
+// -Dzingo.golden.dir to the crate's test-data/golden directory, and
+// binding-layer-android.yaml runs it with testReleaseUnitTest.
 
 package uniffi.zingo_nym_proxy_ffi.contract
 
