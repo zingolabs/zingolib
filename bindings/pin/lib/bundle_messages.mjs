@@ -1,4 +1,10 @@
-import { PLATFORMS, reference, REGISTRY, repository } from './bundle_pin.mjs';
+import {
+  JNA_PREFIX,
+  PLATFORMS,
+  reference,
+  REGISTRY,
+  repository,
+} from './bundle_pin.mjs';
 
 const REPORT = 'Report this to zingolib.';
 
@@ -58,5 +64,11 @@ export function failureMessage(failure) {
       return `The downloaded content hashes to ${failure.found}, and the bundle's layer is ${failure.expected}.`;
     case 'badPackage':
       return `The ${failure.platform} bundle holds no ZingoBindings/Package.swift. ${REPORT}`;
+    case 'noJna':
+      return failure.jna === undefined
+        ? `The ${failure.platform} bundle tagged ${failure.commit} names no JNA dependency. ` +
+            'zingolib published it before the publish recorded the JNA coordinate. Pin a commit published later.'
+        : `The ${failure.platform} bundle tagged ${failure.commit} names the JNA dependency "${failure.jna}", ` +
+            `which is not a ${JNA_PREFIX}<version>@aar coordinate. ${REPORT}`;
   }
 }

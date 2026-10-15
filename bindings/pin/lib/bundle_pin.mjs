@@ -1,8 +1,16 @@
 export const REGISTRY = 'ghcr.io';
 export const PLATFORMS = ['android', 'ios'];
 
+export const JNA_PLATFORM = 'android';
+export const JNA_PREFIX = 'net.java.dev.jna:jna:';
+
 const COMMIT = /^[0-9a-f]{40}$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
+const JNA = /^net\.java\.dev\.jna:jna:[^\s"@]+@aar$/;
+
+function withJna(pin, jna) {
+  return jna === undefined ? pin : { ...pin, jna };
+}
 
 export function repository(platform) {
   return `zingolabs/zingolib/binding-layer-${platform}`;
@@ -19,7 +27,7 @@ export function parsePin(text) {
   } catch {
     return { kind: 'malformedPin', field: 'JSON' };
   }
-  const { commit, digests } = parsed ?? {};
+  const { commit, digests, jna } = parsed ?? {};
   if (!COMMIT.test(commit)) {
     return { kind: 'malformedPin', field: 'commit' };
   }
@@ -31,16 +39,20 @@ export function parsePin(text) {
   if (platforms.length === 0 || bad) {
     return { kind: 'malformedPin', field: bad ? `digests.${bad}` : 'digests' };
   }
-  return { kind: 'pin', commit, digests };
+  if (jna !== undefined && !JNA.test(jna)) {
+    return { kind: 'malformedPin', field: 'jna' };
+  }
+  return withJna({ kind: 'pin', commit, digests }, jna);
 }
 
-export function serializePin({ commit, digests }) {
+export function serializePin({ commit, digests, jna }) {
   const sorted = Object.fromEntries(
     Object.entries(digests).sort(([left], [right]) =>
       left.localeCompare(right),
     ),
   );
-  return `${JSON.stringify({ commit, digests: sorted }, null, 2)}\n`;
+  const pin = withJna({ commit, digests: sorted }, jna);
+  return `${JSON.stringify(pin, null, 2)}\n`;
 }
 
 export function checkTag(platform, commit, pinned, found) {
@@ -64,6 +76,9 @@ function judge(current, platform, commit, found) {
       commit,
       revision: found.revision,
     };
+  }
+  if (platform === JNA_PLATFORM && !JNA.test(found.jna ?? '')) {
+    return { kind: 'noJna', platform, commit, jna: found.jna };
   }
   const pinned = current.kind === 'pin' && current.commit === commit;
   if (pinned && current.digests[platform]) {
@@ -97,14 +112,18 @@ export async function movePin(current, commit, added, resolve) {
   if (failure) {
     return failure;
   }
+  const jnaBundle = bundles.find(({ platform }) => platform === JNA_PLATFORM);
   return {
     kind: 'moved',
-    pin: {
-      commit,
-      digests: Object.fromEntries(
-        bundles.map(({ platform, found }) => [platform, found.digest]),
-      ),
-    },
+    pin: withJna(
+      {
+        commit,
+        digests: Object.fromEntries(
+          bundles.map(({ platform, found }) => [platform, found.digest]),
+        ),
+      },
+      jnaBundle?.found.jna,
+    ),
     descriptors: Object.fromEntries(
       bundles.map(({ platform, found }) => [platform, found.descriptor]),
     ),

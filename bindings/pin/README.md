@@ -24,9 +24,20 @@ digest of that commit's Prebuilt Bundle for each platform the consumer uses:
   "digests": {
     "android": "sha256:<64 hexadecimal characters>",
     "ios": "sha256:<64 hexadecimal characters>"
-  }
+  },
+  "jna": "net.java.dev.jna:jna:<version>@aar"
 }
 ```
+
+`jna` is the Gradle coordinate of the JNA (Java Native Access) library that
+the Android bundle's own build declares. The AAR carries no POM, so nothing
+else tells a consumer which JNA the Kotlin Binding Set loads its native
+libraries through. The publish writes the coordinate into the Android
+bundle's manifest annotation `org.zingolabs.zingolib.jna`, `pin-binding-layer`
+copies it into the pin whenever `android` is pinned, and the consumer's Gradle
+build declares the dependency from the pin. A pin written before the
+annotation existed has no `jna` key, and an Android bundle published before it
+cannot be pinned.
 
 ## Commands
 
@@ -36,7 +47,8 @@ and `--pin <file>` another pin file.
 `pin-binding-layer <commit> [--platform <platform>]` moves the pin. It asks
 the registry for the digest of each pinned platform's bundle at that commit
 and rewrites the pin for every platform or for none. The first move names the
-platforms with `--platform`.
+platforms with `--platform`. It prints one line per platform with the bundle's
+`zl_` descriptor and digest, and a `jna` line when `android` is pinned.
 
 `fetch-binding-layer --platform <platform> [--check-tag]` prints the path of
 the pinned bundle, downloading it first when the checkout does not hold it.
@@ -49,7 +61,18 @@ commit still resolves to the pinned digest.
 
 ## Consumers
 
-A Gradle build runs the fetch and adds the printed AAR as a file dependency.
+A Gradle build runs the fetch and adds the printed AAR as a file dependency,
+and it declares JNA from the pin's `jna` key, so a pin move carries the JNA
+version with it:
+
+```groovy
+def bindingLayerPin = new groovy.json.JsonSlurper().parse(rootProject.file("../binding-layer.json"))
+dependencies {
+    implementation files(bindingLayerAar)
+    implementation(bindingLayerPin.jna)
+}
+```
+
 An Xcode project references `ios/binding-layer/ZingoBindings` as a local
 package. The consumer's CI fetches each platform in its own job with
 `--check-tag`.

@@ -35,4 +35,7 @@ if (outcome.kind !== 'moved') {
       `${platform} ${outcome.descriptors[platform]} ${digest}\n`,
     );
   }
+  if (outcome.pin.jna !== undefined) {
+    process.stdout.write(`jna ${outcome.pin.jna}\n`);
+  }
 }

@@ -33,6 +33,7 @@ struct Bundle {
     file: PathBuf,
     descriptor: String,
     media_type: &'static str,
+    jna: Option<String>,
 }
 
 pub fn media_type_of(platform: &str) -> Result<&'static str, Vec<String>> {
@@ -43,8 +44,12 @@ pub fn media_type_of(platform: &str) -> Result<&'static str, Vec<String>> {
         .ok_or_else(|| vec![format!("no bundle shape is known for {platform}")])
 }
 
-pub fn manifest_annotations(commit: &str, descriptor: &str) -> Vec<(String, String)> {
-    vec![
+pub fn manifest_annotations(
+    commit: &str,
+    descriptor: &str,
+    jna: Option<&str>,
+) -> Vec<(String, String)> {
+    let mut annotations = vec![
         (
             binding_manifest::REVISION_ANNOTATION.to_string(),
             commit.to_string(),
@@ -53,7 +58,14 @@ pub fn manifest_annotations(commit: &str, descriptor: &str) -> Vec<(String, Stri
             binding_manifest::DESCRIPTOR_ANNOTATION.to_string(),
             descriptor.to_string(),
         ),
-    ]
+    ];
+    if let Some(coordinate) = jna {
+        annotations.push((
+            binding_manifest::JNA_ANNOTATION.to_string(),
+            coordinate.to_string(),
+        ));
+    }
+    annotations
 }
 
 pub fn built_platforms(bundles: &Path, commit: &str) -> Vec<(&'static str, PathBuf)> {
@@ -113,7 +125,7 @@ fn push(
         &name,
         &bundle.file,
         bundle.media_type,
-        &manifest_annotations(commit, &bundle.descriptor),
+        &manifest_annotations(commit, &bundle.descriptor, bundle.jna.as_deref()),
         &credentials.username,
         &credentials.token,
     )?;
@@ -138,6 +150,7 @@ fn credentials() -> Result<Credentials, Vec<String>> {
 }
 
 /// - Reads the descriptor file under `dir`.
+/// - For Android, reads the commit's `build.gradle.kts` from `git show` for the JNA coordinate.
 /// - For iOS, moves `dir` under a sibling staging directory, writes the commit's `Package.swift`
 ///   beside it from `git show`, and runs `tar` as a child process to archive the package.
 fn bundle_of(root: &Path, platform: &str, dir: &Path, commit: &str) -> Result<Bundle, Vec<String>> {
@@ -147,19 +160,32 @@ fn bundle_of(root: &Path, platform: &str, dir: &Path, commit: &str) -> Result<Bu
     .trim()
     .to_string();
     let media_type = media_type_of(platform)?;
-    let file = match platform {
-        binding_manifest::ANDROID => {
+    let (file, jna) = match platform {
+        binding_manifest::ANDROID => (
             find_file(dir, &format!("*{}", binding_layer::AAR_SUFFIX), |name| {
                 name.ends_with(binding_layer::AAR_SUFFIX)
-            })?
-        }
-        _ => swift_package_archive(root, dir, commit)?,
+            })?,
+            Some(jna_dependency_at(root, commit)?),
+        ),
+        _ => (swift_package_archive(root, dir, commit)?, None),
     };
     Ok(Bundle {
         file,
         descriptor,
         media_type,
+        jna,
     })
+}
+
+fn jna_dependency_at(root: &Path, commit: &str) -> Result<String, Vec<String>> {
+    let gradle = crate::git_in(
+        root,
+        &[
+            "show",
+            &format!("{commit}:{}", binding_layer::ANDROID_GRADLE_MANIFEST),
+        ],
+    )?;
+    binding_layer::jna_dependency(&gradle)
 }
 
 fn swift_package_archive(root: &Path, dir: &Path, commit: &str) -> Result<PathBuf, Vec<String>> {
@@ -298,10 +324,10 @@ mod tests {
     }
 
     #[test]
-    fn the_annotations_carry_the_commit_the_descriptor_and_the_file_name() {
+    fn the_annotations_carry_the_commit_and_the_descriptor() {
         let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         assert_eq!(
-            manifest_annotations(commit, "zl_6.0.0_2691e"),
+            manifest_annotations(commit, "zl_6.0.0_2691e", None),
             [
                 (
                     "org.opencontainers.image.revision".to_string(),
@@ -312,6 +338,21 @@ mod tests {
                     "zl_6.0.0_2691e".to_string()
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn the_android_annotations_also_carry_the_jna_coordinate() {
+        let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let jna = "net.java.dev.jna:jna:5.18.1@aar";
+        let annotations = manifest_annotations(commit, "zl_6.0.0_2691e", Some(jna));
+        assert_eq!(
+            annotations.last(),
+            Some(&("org.zingolabs.zingolib.jna".to_string(), jna.to_string()))
+        );
+        assert_eq!(
+            annotations.len(),
+            manifest_annotations(commit, "zl_6.0.0_2691e", None).len() + 1
         );
     }
 

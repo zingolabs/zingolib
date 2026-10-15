@@ -12,15 +12,17 @@ const ANDROID = `sha256:${'1'.repeat(64)}`;
 const IOS = `sha256:${'2'.repeat(64)}`;
 const LAYER = `sha256:${'3'.repeat(64)}`;
 const FILE = 'binding-layer.aar';
+const JNA = 'net.java.dev.jna:jna:5.18.1@aar';
 
 const pin = { kind: 'pin', commit: COMMIT, digests: { android: ANDROID } };
 
-function bundle(digest, revision) {
+function bundle(digest, revision, annotations = { jna: JNA }) {
   return {
     kind: 'bundle',
     digest,
     revision,
     descriptor: 'zl_3.0.0_aaaaa',
+    ...annotations,
     layers: [{ digest: LAYER, file: FILE }],
   };
 }
@@ -88,7 +90,59 @@ test('movePin moves every listed platform when each has a bundle for the commit'
   const moved = await movePin(current, NEXT, [], async platform =>
     bundle(platform === 'android' ? IOS : ANDROID, NEXT),
   );
-  assert.deepEqual(moved.pin, { commit: NEXT, digests: { android: IOS, ios: ANDROID } });
+  assert.deepEqual(moved.pin, {
+    commit: NEXT,
+    digests: { android: IOS, ios: ANDROID },
+    jna: JNA,
+  });
+});
+
+test('movePin records no JNA coordinate when only iOS is pinned', async () => {
+  const current = { ...pin, digests: { ios: IOS } };
+  const moved = await movePin(current, NEXT, [], async () =>
+    bundle(ANDROID, NEXT, {}),
+  );
+  assert.deepEqual(moved.pin, { commit: NEXT, digests: { ios: ANDROID } });
+});
+
+test('movePin returns no pin when the android bundle names no JNA dependency', async () => {
+  const moved = await movePin(pin, NEXT, [], async () =>
+    bundle(ANDROID, NEXT, {}),
+  );
+  assert.deepEqual(moved, {
+    kind: 'noJna',
+    platform: 'android',
+    commit: NEXT,
+    jna: undefined,
+  });
+});
+
+test('movePin returns no pin when the android bundle names a JNA dependency of another shape', async () => {
+  const moved = await movePin(pin, NEXT, [], async () =>
+    bundle(ANDROID, NEXT, { jna: 'net.java.dev.jna:jna:5.18.1' }),
+  );
+  assert.equal(moved.kind, 'noJna');
+  assert.equal(moved.jna, 'net.java.dev.jna:jna:5.18.1');
+});
+
+test('parsePin reads the JNA coordinate that serializePin wrote after the digests', () => {
+  const written = { commit: COMMIT, digests: { android: ANDROID }, jna: JNA };
+  const text = serializePin(written);
+  assert.equal(
+    text,
+    `{\n  "commit": "${COMMIT}",\n  "digests": {\n    "android": "${ANDROID}"\n  },\n  "jna": "${JNA}"\n}\n`,
+  );
+  assert.deepEqual(parsePin(text), { kind: 'pin', ...written });
+});
+
+test('parsePin accepts a pin written before the JNA coordinate was recorded', () => {
+  const text = JSON.stringify({ commit: COMMIT, digests: { android: ANDROID } });
+  assert.deepEqual(parsePin(text), { kind: 'pin', commit: COMMIT, digests: { android: ANDROID } });
+});
+
+test('parsePin names the JNA coordinate when it is malformed', () => {
+  const text = JSON.stringify({ commit: COMMIT, digests: { android: ANDROID }, jna: 'jna' });
+  assert.deepEqual(parsePin(text), { kind: 'malformedPin', field: 'jna' });
 });
 
 test('movePin returns no pin when one listed platform has no bundle for the commit', async () => {

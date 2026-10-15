@@ -102,6 +102,41 @@ pub fn swift_sources_dir() -> String {
 pub const SWIFT_PACKAGE_MANIFEST: &str = "bindings/swift/Package.swift";
 pub const SWIFT_LINKED_FRAMEWORK: &str = "SystemConfiguration";
 
+pub const ANDROID_GRADLE_MANIFEST: &str = "bindings/android/build.gradle.kts";
+pub const JNA_DEPENDENCY_VAL: &str = "jnaDependency";
+pub const JNA_COORDINATE_PREFIX: &str = "net.java.dev.jna:jna:";
+const KOTLIN_VAL: &str = "val ";
+const KOTLIN_ASSIGNMENT: &str = " = ";
+const KOTLIN_STRING_QUOTE: char = '"';
+
+pub fn jna_dependency(gradle: &str) -> Result<String, Vec<String>> {
+    let declaration = format!("{KOTLIN_VAL}{JNA_DEPENDENCY_VAL}{KOTLIN_ASSIGNMENT}");
+    let quoted = gradle
+        .lines()
+        .find_map(|line| line.trim_start().strip_prefix(&declaration))
+        .ok_or_else(|| {
+            vec![format!(
+                "{ANDROID_GRADLE_MANIFEST} declares no `{declaration}\"<coordinate>\"`"
+            )]
+        })?;
+    let coordinate = quoted
+        .trim()
+        .strip_prefix(KOTLIN_STRING_QUOTE)
+        .and_then(|rest| rest.strip_suffix(KOTLIN_STRING_QUOTE))
+        .filter(|inner| !inner.contains(KOTLIN_STRING_QUOTE))
+        .ok_or_else(|| {
+            vec![format!(
+                "{JNA_DEPENDENCY_VAL} in {ANDROID_GRADLE_MANIFEST} is not one quoted string: {quoted}"
+            )]
+        })?;
+    if !coordinate.starts_with(JNA_COORDINATE_PREFIX) {
+        return Err(vec![format!(
+            "{JNA_DEPENDENCY_VAL} in {ANDROID_GRADLE_MANIFEST} is {coordinate}, not a {JNA_COORDINATE_PREFIX}<version> coordinate"
+        )]);
+    }
+    Ok(coordinate.to_string())
+}
+
 pub const SWIFT_PACKAGE_OUTPUT_DIR: &str = "build";
 
 pub const SWIFT_CONTRACT_TESTS_DIR: &str = "zingo-netutils/nym-proxy-ffi/contract-tests";
@@ -836,6 +871,33 @@ mod tests {
             "linkerSettings: [.linkedFramework(\"{SWIFT_LINKED_FRAMEWORK}\")]"
         )));
         assert!(std::path::Path::new(SWIFT_PACKAGE_MANIFEST).ends_with("Package.swift"));
+    }
+
+    #[test]
+    fn the_android_gradle_manifest_declares_the_jna_coordinate() -> Result<(), Vec<String>> {
+        let gradle = include_str!("../../../bindings/android/build.gradle.kts");
+        let coordinate = jna_dependency(gradle)?;
+        assert!(
+            coordinate.starts_with(JNA_COORDINATE_PREFIX),
+            "{coordinate}"
+        );
+        assert!(coordinate.ends_with("@aar"), "{coordinate}");
+        assert!(gradle.contains(&format!("api({JNA_DEPENDENCY_VAL})")));
+        assert!(std::path::Path::new(ANDROID_GRADLE_MANIFEST).ends_with("build.gradle.kts"));
+        Ok(())
+    }
+
+    #[test]
+    fn a_gradle_manifest_without_the_declaration_is_refused() {
+        let diagnostic = |gradle: &str| jna_dependency(gradle).err().unwrap_or_default().concat();
+        assert!(diagnostic("val other = \"x\"").contains(JNA_DEPENDENCY_VAL));
+        assert!(diagnostic("val jnaDependency = unquoted").contains("one quoted string"));
+        assert!(diagnostic("val jnaDependency = \"a\" + \"b\"").contains("one quoted string"));
+        assert!(diagnostic("val jnaDependency = \"org.other:lib:1@aar\"").contains("not a"));
+        assert_eq!(
+            jna_dependency("  val jnaDependency = \"net.java.dev.jna:jna:5.18.1@aar\"\n"),
+            Ok("net.java.dev.jna:jna:5.18.1@aar".to_string())
+        );
     }
 
     fn resolved(base: &str, relative: &str) -> std::path::PathBuf {
