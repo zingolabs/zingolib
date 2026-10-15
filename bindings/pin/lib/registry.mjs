@@ -59,6 +59,7 @@ export async function resolveBundle(granted, tag) {
     descriptor: annotations[DESCRIPTOR],
     layers: layers.map(layer => ({
       digest: layer.digest,
+      mediaType: layer.mediaType,
       file: layer.annotations?.[TITLE],
     })),
   };

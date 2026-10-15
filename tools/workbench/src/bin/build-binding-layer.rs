@@ -25,6 +25,8 @@ const IMAGE_COMMAND: &str = "image";
 
 const COMMIT_FLAG: &str = "--commit";
 
+const REVISION_PATH_SEPARATOR: &str = ":";
+
 /// The flag that runs the Android plan directly, inside a job that already runs in the builder image.
 const IN_IMAGE_FLAG: &str = "--in-image";
 
@@ -374,10 +376,16 @@ fn main() {
     }
 }
 
+/// - Runs `git show` to read the wallet manifest at the commit.
 fn artifact(args: &[String]) -> Result<String, Vec<String>> {
     let commit = workbench::required_flag(args, COMMIT_FLAG, USAGE)?;
+    let manifest = workbench::git(&[
+        "show",
+        &[commit, binding_layer::WALLET_MANIFEST].join(REVISION_PATH_SEPARATOR),
+    ])?;
+    let crate_version = binding_layer::crate_version(&manifest)?;
     Ok(binding_layer::render_outputs(
-        &binding_layer::artifact_outputs(&binding_manifest::PLATFORMS, commit),
+        &binding_layer::artifact_outputs(&binding_manifest::PLATFORMS, commit, &crate_version)?,
     ))
 }
 
