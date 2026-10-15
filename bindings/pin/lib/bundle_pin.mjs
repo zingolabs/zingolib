@@ -45,11 +45,8 @@ export function serializePin({ commit, digests }) {
 
 export const ARCHIVE_MEDIA_TYPE = 'application/gzip';
 
-export function oldShape(platform, found) {
-  return (
-    PLATFORMS.includes(platform) &&
-    !found.layers.every(layer => layer.mediaType === ARCHIVE_MEDIA_TYPE)
-  );
+export function oldShape(found) {
+  return !found.layers.every(layer => layer.mediaType === ARCHIVE_MEDIA_TYPE);
 }
 
 export function checkTag(platform, commit, pinned, found) {
@@ -59,7 +56,7 @@ export function checkTag(platform, commit, pinned, found) {
   if (found.digest !== pinned) {
     return { kind: 'movedTag', platform, commit, pinned, found: found.digest };
   }
-  if (oldShape(platform, found)) {
+  if (oldShape(found)) {
     return { kind: 'oldShape', platform, commit };
   }
   return { kind: 'agrees' };
@@ -77,7 +74,7 @@ function judge(current, platform, commit, found) {
       revision: found.revision,
     };
   }
-  if (oldShape(platform, found)) {
+  if (oldShape(found)) {
     return { kind: 'oldShape', platform, commit };
   }
   const pinned = current.kind === 'pin' && current.commit === commit;
