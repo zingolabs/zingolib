@@ -7,9 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
 ### Deprecated
 
+### Removed
+
+### Fixed
+
+## [0.6.0] - 2026-10-15
+
 ### Added
+
 - `sync::SyncStatus::total_blocks`, the block span from the wallet birthday to
   the last known chain height, the denominator `sync_status` already divided
   by and never reported.
@@ -95,6 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accessors.
 
 ### Changed
+
 - Scanning reads version 2 zingo memos, which carry a recipient's unified
   address with its ZIP 316 revision and metadata, through
   `ParsedMemo::into_unified_addresses`.
@@ -183,7 +195,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   records of the pool are wrong and the chain's are not, so one the server no
   longer serves is reported as an inconsistency.
 
+### Removed
+
+- **Breaking.** `sync::SyncStatus::percentage_total_blocks_scanned`,
+  `sync::SyncStatus::percentage_total_outputs_scanned`, and
+  `sync::SyncResult::percentage_total_outputs_scanned`. The engine reports the
+  counts and spans the percentages were derived from; the derivation, with its
+  clamp, its reading of an empty span as complete, and its one-step-short
+  reading while nullifiers await retrieval, now lives in
+  `zingolib::perspective::sync_progress`.
+- **Breaking.** The `Display` and `From<_> for json::JsonValue` implementations
+  of `sync::SyncStatus` and `sync::SyncResult`. `zingolib::perspective::sync_progress`
+  renders both, with the same text and the same JSON keys. pepper-sync no longer
+  depends on the `json` crate.
+- **Breaking.** `sync::SyncStatus::percentage_session_blocks_scanned` and
+  `sync::SyncStatus::percentage_session_outputs_scanned`. These were the only fields whose
+  computation could abort the process, and no consumer read them: the CLI's progress
+  surfaces take `total_outputs_scanned`, `total_outputs`, and `is_complete()`, and
+  `SyncResult` carries the total percentage only. A consumer that wants a session
+  percentage computes it from the session and total counts the struct still reports. The
+  two fields also leave the `json::JsonValue` rendering of a sync status.
+
 ### Fixed
+
 - `sync` makes the server requests of its session start, the chain height,
   the tree states that bound the session and the subtree roots, with the
   wallet lock released, and takes the lock only to apply what they return. A
@@ -373,26 +407,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the wallet's blocks, transactions, nullifiers and outpoints. A target
   above it names a transaction in a block the wallet no longer holds and asked
   the server for it when the replacing blocks were scanned. (#2960)
-
-### Removed
-- **Breaking.** `sync::SyncStatus::percentage_total_blocks_scanned`,
-  `sync::SyncStatus::percentage_total_outputs_scanned`, and
-  `sync::SyncResult::percentage_total_outputs_scanned`. The engine reports the
-  counts and spans the percentages were derived from; the derivation, with its
-  clamp, its reading of an empty span as complete, and its one-step-short
-  reading while nullifiers await retrieval, now lives in
-  `zingolib::perspective::sync_progress`.
-- **Breaking.** The `Display` and `From<_> for json::JsonValue` implementations
-  of `sync::SyncStatus` and `sync::SyncResult`. `zingolib::perspective::sync_progress`
-  renders both, with the same text and the same JSON keys. pepper-sync no longer
-  depends on the `json` crate.
-- **Breaking.** `sync::SyncStatus::percentage_session_blocks_scanned` and
-  `sync::SyncStatus::percentage_session_outputs_scanned`. These were the only fields whose
-  computation could abort the process, and no consumer read them: the CLI's progress
-  surfaces take `total_outputs_scanned`, `total_outputs`, and `is_complete()`, and
-  `SyncResult` carries the total percentage only. A consumer that wants a session
-  percentage computes it from the session and total counts the struct still reports. The
-  two fields also leave the `json::JsonValue` rendering of a sync status.
 
 ## [0.5.0] - 2026-06-10
 
