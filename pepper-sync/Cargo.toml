@@ -15,8 +15,6 @@ maintenance = { status = "actively-developed" }
 default = ["wallet_essentials"]
 # utility not necessary for the sync engine but essential for wallets using pepper_sync::primitives for wallet functionality
 wallet_essentials = ["dep:byteorder", "dep:zcash_encoding"]
-# removes failing calls to `GetSubTreeRoots` in darkside testing
-darkside_test = []
 # exposes test constructors for wallet types
 test-features = []
 
@@ -41,6 +39,7 @@ zcash_note_encryption.workspace = true
 zcash_primitives.workspace = true
 zcash_protocol.workspace = true
 zcash_transparent.workspace = true
+zcash_script.workspace = true
 
 # Protocol
 bip32.workspace = true
@@ -70,9 +69,6 @@ rayon.workspace = true
 # Error handling
 thiserror.workspace = true
 
-# JSON
-json.workspace = true
-
 # Serialization
 byteorder = { workspace = true, optional = true }
 hex.workspace = true
@@ -81,4 +77,5 @@ hex.workspace = true
 simple-mermaid.workspace = true
 
 [dev-dependencies]
+proptest.workspace = true
 zcash_protocol = { workspace = true, features = [ "local-consensus"] }

@@ -2,35 +2,34 @@
 
 use std::{
     cmp,
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     ops::Range,
 };
 
 use tokio::sync::mpsc;
 
-use zcash_primitives::transaction::TxId;
 use zcash_protocol::{
-    ShieldedProtocol,
-    consensus::{self, BlockHeight, NetworkUpgrade},
+    ShieldedPool,
+    consensus::{self, BlockHeight},
 };
 
 use crate::{
     client::{self, FetchRequest},
     error::{ServerError, SyncError},
     keys::transparent::TransparentAddressId,
-    scan::task::ScanTask,
+    scan::task::{ScanTask, TaskId},
     sync::ScanRange,
     wallet::{
-        InitialSyncState, ScanTarget, SyncState, TreeBounds, WalletTransaction,
+        InitialSyncState, ScanTarget, ScanTargetOrigin, SyncState, TreeBounds, WalletBlock,
+        WalletTransaction,
         traits::{SyncBlocks, SyncNullifiers, SyncWallet},
     },
 };
 
-use super::{ScanPriority, VERIFY_BLOCK_RANGE_SIZE};
+use super::{ScanPriority, VERIFY_BLOCK_RANGE_SIZE, held_at, overlaps};
 
-const NARROW_SCAN_AREA: u32 = 10_000;
+const NARROW_SCAN_AREA: u32 = 1_000;
 
-#[cfg(not(feature = "darkside_test"))]
 use zingo_netutils::lightwallet_protocol::SubtreeRoot;
 
 /// Used to determine which end of the scan range is verified.
@@ -46,74 +45,93 @@ fn find_scan_targets(
 ) -> BTreeSet<ScanTarget> {
     sync_state
         .scan_targets
-        .range(
-            ScanTarget {
-                block_height: block_range.start,
-                txid: TxId::from_bytes([0; 32]),
-                narrow_scan_area: false,
-            }..ScanTarget {
-                block_height: block_range.end,
-                txid: TxId::from_bytes([0; 32]),
-                narrow_scan_area: false,
-            },
-        )
+        .range(ScanTarget::new(block_range.start, None)..ScanTarget::new(block_range.end, None))
         .copied()
         .collect()
 }
 
-/// Update scan ranges for scanning.
-/// Returns the block height that reorg detection will start from.
-pub(super) async fn update_scan_ranges<W>(
+/// Prioritize scan ranges for scanning.
+pub(super) fn prioritize_scan_ranges<W>(
     consensus_parameters: &impl consensus::Parameters,
-    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     wallet: &mut W,
-) -> Result<BlockHeight, SyncError<W::Error>>
+) -> Result<(), W::Error>
 where
     W: SyncWallet + SyncBlocks,
 {
-    let sync_state = wallet
-        .get_sync_state_mut()
-        .map_err(SyncError::WalletError)?;
-    reset_scan_ranges(sync_state);
-    create_scan_range(last_known_chain_height, chain_height, sync_state);
+    let sync_state = wallet.get_sync_state_mut()?;
+    drop_external_scan_targets_outside_the_chain(sync_state, chain_height);
     let scan_targets = sync_state.scan_targets.clone();
-    set_found_note_scan_ranges(
-        consensus_parameters,
-        sync_state,
-        ShieldedProtocol::Orchard,
-        scan_targets.into_iter(),
-    );
+    set_found_note_scan_ranges(consensus_parameters, sync_state, scan_targets.into_iter());
     set_chain_tip_scan_range(consensus_parameters, sync_state, chain_height);
     merge_scan_ranges(sync_state, ScanPriority::ChainTip);
+    wallet.set_save_flag()?;
 
-    let reorg_detection_start_height = sync_state
-        .highest_scanned_height()
-        .expect("scan ranges must be non-empty")
-        + 1;
-    if reorg_detection_start_height <= chain_height {
-        set_verify_scan_range(
-            sync_state,
-            reorg_detection_start_height,
-            VerifyEnd::VerifyLowest,
-        );
-    } else {
-        let chain_height_server_block =
-            client::get_compact_block(fetch_request_sender, chain_height).await?;
-        let chain_height_wallet_block = wallet
-            .get_wallet_block(chain_height)
-            .map_err(SyncError::WalletError)?;
-        let sync_state = wallet
-            .get_sync_state_mut()
-            .map_err(SyncError::WalletError)?;
-        if chain_height_wallet_block.block_hash().0.to_vec() != chain_height_server_block.hash {
-            set_verify_scan_range(sync_state, chain_height, VerifyEnd::VerifyHighest);
+    Ok(())
+}
+
+/// - Removes every external scan target whose block height is below the wallet birthday or above `chain_height`,
+///   which no scan range reaches.
+fn drop_external_scan_targets_outside_the_chain(
+    sync_state: &mut SyncState,
+    chain_height: BlockHeight,
+) {
+    let Some(birthday) = sync_state.wallet_birthday() else {
+        return;
+    };
+    sync_state.scan_targets.retain(|scan_target| {
+        let reachable = scan_target.origin() == ScanTargetOrigin::Internal
+            || (birthday..=chain_height).contains(&scan_target.block_height());
+        if !reachable {
+            tracing::warn!(
+                "scan target at block {} dropped: outside the wallet's chain range {birthday}..={chain_height}",
+                scan_target.block_height()
+            );
         }
-    }
-    wallet.set_save_flag().map_err(SyncError::WalletError)?;
+        reachable
+    });
+}
 
-    Ok(reorg_detection_start_height)
+// A scan target is settled once the fully scanned height has passed its block and, for every pool its transaction
+// holds notes of, the block lies below the completing block of the pool's newest recorded shard and every recorded
+// shard range holding the block is scanned through its completing block. A target at or above that completing
+// block lies in the pool's incomplete shard, whose remaining blocks are yet to be mined, and is kept so they are
+// prioritised when they are. A target without a pool has had its transaction scanned, or names none, once the
+// fully scanned height passes it.
+fn scan_target_is_settled(
+    sync_state: &SyncState,
+    scan_target: &ScanTarget,
+    fully_scanned_height: BlockHeight,
+) -> bool {
+    let block_height = scan_target.block_height();
+    block_height <= fully_scanned_height
+        && scan_target.pools().iter().all(|pool| {
+            let shard_ranges = sync_state.shard_ranges(pool);
+            let below_incomplete_shard = shard_ranges
+                .last()
+                .is_some_and(|newest| block_height < newest.end - 1);
+            below_incomplete_shard
+                && shard_ranges
+                    .iter()
+                    .filter(|range| range.contains(&block_height))
+                    .all(|range| range.end - 1 <= fully_scanned_height)
+        })
+}
+
+/// - Removes every scan target of `sync_state` that is settled at `fully_scanned_height`.
+pub(super) fn drop_settled_scan_targets(
+    sync_state: &mut SyncState,
+    fully_scanned_height: BlockHeight,
+) {
+    let settled = sync_state
+        .scan_targets
+        .iter()
+        .filter(|scan_target| scan_target_is_settled(sync_state, scan_target, fully_scanned_height))
+        .copied()
+        .collect::<Vec<_>>();
+    for scan_target in settled {
+        sync_state.scan_targets.remove(&scan_target);
+    }
 }
 
 /// Merges all adjacent ranges of a given `scan_priority`.
@@ -154,12 +172,12 @@ pub(super) fn merge_scan_ranges(sync_state: &mut SyncState, scan_priority: ScanP
 }
 
 /// Create scan range between the wallet height and the chain height from the server.
-fn create_scan_range(
+pub(super) fn create_scan_range(
     last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
 ) {
-    if last_known_chain_height == chain_height {
+    if last_known_chain_height >= chain_height {
         return;
     }
 
@@ -208,7 +226,7 @@ pub(super) fn truncate_scan_ranges(truncate_height: BlockHeight, sync_state: &mu
 /// scanning.
 /// A range that was previously refetching nullifiers when sync was last interrupted is set to `ScannedWithoutMapping`
 /// so the nullifiers can be fetched again.
-fn reset_scan_ranges(sync_state: &mut SyncState) {
+pub(super) fn reset_scan_ranges(sync_state: &mut SyncState) {
     let previously_scanning_scan_ranges = sync_state
         .scan_ranges
         .iter()
@@ -299,44 +317,57 @@ fn set_chain_tip_scan_range(
         consensus_parameters,
         sync_state,
         chain_height,
-        Some(ShieldedProtocol::Sapling),
+        Some(ShieldedPool::Sapling),
     );
     let orchard_incomplete_shard = determine_block_range(
         consensus_parameters,
         sync_state,
         chain_height,
-        Some(ShieldedProtocol::Orchard),
+        Some(ShieldedPool::Orchard),
+    );
+    let ironwood_incomplete_shard = determine_block_range(
+        consensus_parameters,
+        sync_state,
+        chain_height,
+        Some(ShieldedPool::Ironwood),
     );
 
-    let chain_tip = if sapling_incomplete_shard.start < orchard_incomplete_shard.start {
-        sapling_incomplete_shard
-    } else {
-        orchard_incomplete_shard
-    };
+    let chain_tip = [
+        sapling_incomplete_shard,
+        orchard_incomplete_shard,
+        ironwood_incomplete_shard,
+    ]
+    .into_iter()
+    .min_by_key(|r| r.start)
+    .expect("non-empty");
 
     punch_scan_priority(sync_state, chain_tip, ScanPriority::ChainTip);
 }
 
 /// Punches in the `shielded_protocol` shard block ranges surrounding each scan target with `ScanPriority::FoundNote`.
 ///
-/// If all `scan_targets` have the `narrow_scan_area` set to `true`, `shielded_protocol` is irrelevant.
 pub(super) fn set_found_note_scan_ranges<T: Iterator<Item = ScanTarget>>(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
-    shielded_protocol: ShieldedProtocol,
     scan_targets: T,
 ) {
     for scan_target in scan_targets {
-        set_found_note_scan_range(
-            consensus_parameters,
-            sync_state,
-            if scan_target.narrow_scan_area {
-                None
-            } else {
-                Some(shielded_protocol)
-            },
-            scan_target.block_height,
-        );
+        // the narrow range around a target whose transaction holds no known note, and the whole shard of each pool
+        // the transaction holds notes of, so those notes become spendable.
+        let pools = scan_target.pools();
+        let shielded_protocols = if pools.is_empty() {
+            vec![None]
+        } else {
+            pools.iter().map(Some).collect()
+        };
+        for shielded_protocol in shielded_protocols {
+            set_found_note_scan_range(
+                consensus_parameters,
+                sync_state,
+                shielded_protocol,
+                scan_target.block_height(),
+            );
+        }
     }
 }
 
@@ -347,7 +378,7 @@ pub(super) fn set_found_note_scan_ranges<T: Iterator<Item = ScanTarget>>(
 pub(super) fn set_found_note_scan_range(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
-    shielded_protocol: Option<ShieldedProtocol>,
+    shielded_protocol: Option<ShieldedPool>,
     block_height: BlockHeight,
 ) {
     let block_range = determine_block_range(
@@ -364,15 +395,11 @@ pub(super) fn set_scanned_scan_range(
     scanned_range: Range<BlockHeight>,
     nullifiers_mapped: bool,
 ) {
-    let Some((index, scan_range)) =
-        sync_state
-            .scan_ranges
-            .iter()
-            .enumerate()
-            .find(|(_, scan_range)| {
-                scan_range.block_range().contains(&scanned_range.start)
-                    && scan_range.block_range().contains(&(scanned_range.end - 1))
-            })
+    let Some((index, scan_range)) = sync_state
+        .scan_ranges
+        .iter()
+        .enumerate()
+        .find(|(_, scan_range)| scan_range.encloses(&scanned_range))
     else {
         panic!("scan range containing scanned range should exist!");
     };
@@ -393,19 +420,11 @@ pub(super) fn reset_refetching_nullifiers_scan_range(
     sync_state: &mut SyncState,
     invalid_refetch_range: Range<BlockHeight>,
 ) {
-    let Some((index, scan_range)) =
-        sync_state
-            .scan_ranges
-            .iter()
-            .enumerate()
-            .find(|(_, scan_range)| {
-                scan_range
-                    .block_range()
-                    .contains(&invalid_refetch_range.start)
-                    && scan_range
-                        .block_range()
-                        .contains(&(invalid_refetch_range.end - 1))
-            })
+    let Some((index, scan_range)) = sync_state
+        .scan_ranges
+        .iter()
+        .enumerate()
+        .find(|(_, scan_range)| scan_range.encloses(&invalid_refetch_range))
     else {
         panic!("scan range containing invalid refetch range should exist!");
     };
@@ -416,6 +435,142 @@ pub(super) fn reset_refetching_nullifiers_scan_range(
         ScanPriority::ScannedWithoutMapping,
     );
     sync_state.scan_ranges.splice(index..=index, split_ranges);
+}
+
+/// Where the scan results of one load stand once they return to the engine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ScanResultsStanding {
+    /// A wallet range of the task's in-flight priority still holds the whole load, and no later task holds a block of it.
+    Current,
+    /// The load's blocks are stale for `cause`, and `reset` names the blocks the wallet still holds for the task to scan again.
+    Stale {
+        cause: StaleCause,
+        reset: Vec<Range<BlockHeight>>,
+    },
+}
+
+/// Why the scan results of a load are stale.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StaleCause {
+    /// A task selected after the load's task holds a block of the load.
+    Superseded,
+    /// The chain height dropped below a block of the load.
+    Truncated,
+    /// A re-org moved the load's blocks to another priority.
+    Reprioritised,
+}
+
+/// Classifies the scan results of a `load` of `task` against the wallet's `scan_ranges` and the ranges of the tasks selected after it.
+pub(super) fn scan_results_standing(
+    scan_ranges: &[ScanRange],
+    later_tasks: &[Range<BlockHeight>],
+    task: &ScanRange,
+    load: &Range<BlockHeight>,
+) -> ScanResultsStanding {
+    let in_flight = task.priority().in_flight();
+    let superseded = later_tasks.iter().any(|later| overlaps(later, load));
+    let held_whole = held_at(scan_ranges, in_flight).any(|held| held.encloses(load));
+    if held_whole && !superseded {
+        return ScanResultsStanding::Current;
+    }
+
+    let reset = held_at(scan_ranges, in_flight)
+        .filter(|held| held.overlaps(load))
+        .map(|held| intersection(held.block_range(), load))
+        .flat_map(|held| subtract(held, later_tasks))
+        .collect();
+    let chain_tip = scan_ranges
+        .iter()
+        .map(|scan_range| scan_range.block_range().end)
+        .max();
+    let cause = if superseded {
+        StaleCause::Superseded
+    } else if chain_tip.is_some_and(|tip| load.end > tip) {
+        StaleCause::Truncated
+    } else {
+        StaleCause::Reprioritised
+    };
+
+    ScanResultsStanding::Stale { cause, reset }
+}
+
+/// Returns the blocks the two ranges share.
+fn intersection(first: &Range<BlockHeight>, second: &Range<BlockHeight>) -> Range<BlockHeight> {
+    first.start.max(second.start)..first.end.min(second.end)
+}
+
+/// Returns the parts of `range` that lie in none of `cuts`.
+fn subtract(range: Range<BlockHeight>, cuts: &[Range<BlockHeight>]) -> Vec<Range<BlockHeight>> {
+    cuts.iter().fold(vec![range], |remaining, cut| {
+        remaining
+            .into_iter()
+            .flat_map(|part| {
+                [
+                    part.start..cut.start.min(part.end),
+                    cut.end.max(part.start)..part.end,
+                ]
+            })
+            .filter(|part| !part.is_empty())
+            .collect()
+    })
+}
+
+/// Sets the `reset` blocks of a stale load from `task_priority.in_flight()` back to `task_priority`.
+pub(super) fn reset_stale_load(
+    sync_state: &mut SyncState,
+    task_priority: ScanPriority,
+    reset: &[Range<BlockHeight>],
+) {
+    for block_range in reset {
+        sync_state.scan_ranges = split_out_overlapping(
+            std::mem::take(&mut sync_state.scan_ranges),
+            block_range,
+            task_priority.in_flight(),
+            task_priority,
+        );
+    }
+}
+
+/// Sets the blocks of a failed `Verify` load from `Scanning` back to `Verify` within whichever wallet range holds them.
+pub(super) fn reset_verify_scan_range(
+    sync_state: &mut SyncState,
+    block_range: &Range<BlockHeight>,
+) {
+    sync_state.scan_ranges = split_out_overlapping(
+        std::mem::take(&mut sync_state.scan_ranges),
+        block_range,
+        ScanPriority::Scanning,
+        ScanPriority::Verify,
+    );
+}
+
+/// Splits every scan range of `from` priority that overlaps `block_range` so the overlap takes `to`, and passes every other range through.
+pub(super) fn split_out_overlapping(
+    scan_ranges: Vec<ScanRange>,
+    block_range: &Range<BlockHeight>,
+    from: ScanPriority,
+    to: ScanPriority,
+) -> Vec<ScanRange> {
+    split_out_where(scan_ranges, block_range, to, |priority| priority == from)
+}
+
+/// Splits every scan range whose priority passes `eligible` and overlaps `block_range` so the overlap takes `to`, and passes every other range through.
+fn split_out_where(
+    scan_ranges: Vec<ScanRange>,
+    block_range: &Range<BlockHeight>,
+    to: ScanPriority,
+    eligible: impl Fn(ScanPriority) -> bool,
+) -> Vec<ScanRange> {
+    scan_ranges
+        .into_iter()
+        .flat_map(|scan_range| {
+            if eligible(scan_range.priority()) && scan_range.overlaps(block_range) {
+                split_out_scan_range(scan_range, block_range.clone(), to)
+            } else {
+                vec![scan_range]
+            }
+        })
+        .collect()
 }
 
 /// Sets the scan range in `sync_state` with `block_range` to the given `scan_priority`.
@@ -439,56 +594,20 @@ pub(super) fn set_scan_priority(
     }
 }
 
-/// Punches in a `scan_priority` for a given `block_range`.
-///
-/// This function will set all scan ranges in `sync_state` with block range bounds contained by `block_range` to
-/// the given `scan_priority`.
-/// If any scan ranges in `sync_state` are found to overlap with the given `block_range`, they will be split at the
-/// boundary and the new scan ranges contained by `block_range` will be set to `scan_priority`.
-/// Any scan ranges that fully contain the `block_range` will be split out with the given `scan_priority`.
-/// Any scan ranges with `Scanning`, `RefetchingNullifiers` or `Scanned` priority or with higher (or equal) priority than
-/// `scan_priority` will be ignored.
+/// Sets the blocks of `block_range` to `scan_priority` within every unscanned, idle wallet range of a lower priority, splitting the ranges at the bounds.
 pub(super) fn punch_scan_priority(
     sync_state: &mut SyncState,
     block_range: Range<BlockHeight>,
     scan_priority: ScanPriority,
 ) {
-    let mut scan_ranges_contained_by_block_range = Vec::new();
-    let mut scan_ranges_for_splitting = Vec::new();
-
-    for (index, scan_range) in sync_state.scan_ranges().iter().enumerate() {
-        if scan_range.priority() == ScanPriority::Scanned
-            || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-            || scan_range.priority() == ScanPriority::Scanning
-            || scan_range.priority() == ScanPriority::RefetchingNullifiers
-            || scan_range.priority() >= scan_priority
-        {
-            continue;
-        }
-
-        match (
-            block_range.contains(&scan_range.block_range().start),
-            block_range.contains(&(scan_range.block_range().end - 1)),
-            scan_range.block_range().contains(&block_range.start),
-        ) {
-            (true, true, _) => scan_ranges_contained_by_block_range.push(scan_range.clone()),
-            (true, false, _) | (false, true, _) => {
-                scan_ranges_for_splitting.push((index, scan_range.clone()));
-            }
-            (false, false, true) => scan_ranges_for_splitting.push((index, scan_range.clone())),
-            (false, false, false) => {}
-        }
-    }
-
-    for scan_range in scan_ranges_contained_by_block_range {
-        set_scan_priority(sync_state, scan_range.block_range(), scan_priority);
-    }
-
-    // split out the scan ranges in reverse order to maintain the correct index for lower scan ranges
-    for (index, scan_range) in scan_ranges_for_splitting.into_iter().rev() {
-        let split_ranges = split_out_scan_range(scan_range, block_range.clone(), scan_priority);
-        sync_state.scan_ranges.splice(index..=index, split_ranges);
-    }
+    sync_state.scan_ranges = split_out_where(
+        std::mem::take(&mut sync_state.scan_ranges),
+        &block_range,
+        scan_priority,
+        |priority| {
+            !priority.is_scanned() && priority != ScanPriority::Scanning && priority < scan_priority
+        },
+    );
 }
 
 /// Determines the block range which contains all the note commitments for the shard of a given `shielded_protocol` surrounding
@@ -503,40 +622,27 @@ fn determine_block_range(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &SyncState,
     block_height: BlockHeight,
-    shielded_protocol: Option<ShieldedProtocol>,
+    shielded_protocol: Option<ShieldedPool>,
 ) -> Range<BlockHeight> {
     if let Some(mut shielded_protocol) = shielded_protocol {
+        // Walk down to the newest pool already active at `block_height`,
+        // judging each pool by its Pool Activation (the single
+        // pool-to-upgrade derivation; a missing activation means the pool
+        // is not active).
         loop {
-            match shielded_protocol {
-                ShieldedProtocol::Sapling => {
-                    if block_height
-                        < consensus_parameters
-                            .activation_height(consensus::NetworkUpgrade::Sapling)
-                            .expect("network activation height should be set")
-                    {
-                        panic!("pre-sapling not supported");
-                    } else {
-                        break;
-                    }
-                }
-                ShieldedProtocol::Orchard => {
-                    if block_height
-                        < consensus_parameters
-                            .activation_height(consensus::NetworkUpgrade::Nu5)
-                            .expect("network activation height should be set")
-                    {
-                        shielded_protocol = ShieldedProtocol::Sapling;
-                    } else {
-                        break;
-                    }
-                }
+            let active = crate::wallet::PoolActivation::of(consensus_parameters, shielded_protocol)
+                .is_some_and(|activation| block_height >= activation.height());
+            if active {
+                break;
             }
+            shielded_protocol = match shielded_protocol {
+                ShieldedPool::Sapling => panic!("pre-sapling not supported"),
+                ShieldedPool::Orchard => ShieldedPool::Sapling,
+                ShieldedPool::Ironwood => ShieldedPool::Orchard,
+            };
         }
 
-        let shard_ranges = match shielded_protocol {
-            ShieldedProtocol::Sapling => sync_state.sapling_shard_ranges.as_slice(),
-            ShieldedProtocol::Orchard => sync_state.orchard_shard_ranges.as_slice(),
-        };
+        let shard_ranges = sync_state.shard_ranges(shielded_protocol);
 
         let target_ranges = shard_ranges
             .iter()
@@ -548,9 +654,18 @@ fn determine_block_range(
             let start = if let Some(range) = shard_ranges.last() {
                 range.end - 1
             } else {
-                sync_state
-                    .wallet_birthday()
-                    .expect("scan range should not be empty")
+                // With no shard ranges at all (a pool freshly activated, with
+                // no complete shards), fall back to the
+                // pool's own history: the wallet birthday clamped to the
+                // pool's activation height. An unclamped birthday would let
+                // the chain-tip punch flood the entire wallet range.
+                crate::wallet::PoolActivation::of(consensus_parameters, shielded_protocol)
+                    .expect("the pool was selected because its upgrade is active")
+                    .max_with(
+                        sync_state
+                            .wallet_birthday()
+                            .expect("scan range should not be empty"),
+                    )
             };
             let end = sync_state
                 .last_known_chain_height()
@@ -677,11 +792,17 @@ fn select_scan_range(
             // (`nullifier_map_limit_exceeded` is set `true`) then the range with the highest priority and lowest starting block
             // height is selected to allow notes to be spendable quickly on rescan, otherwise spends would not be detected as nullifiers will be temporarily discarded.
             // TODO: add this documentation of performance levels and order of scanning to pepper-sync doc comments
-            let mut scan_ranges_priority_sorted: Vec<(usize, ScanRange)> =
-                sync_state.scan_ranges.iter().cloned().enumerate().collect();
+            // `ScannedWithoutMapping` ranges are only selected above, when they are the first unscanned range.
+            let mut scan_ranges_priority_sorted: Vec<(usize, ScanRange)> = sync_state
+                .scan_ranges
+                .iter()
+                .cloned()
+                .enumerate()
+                .filter(|(_, range)| range.priority() != ScanPriority::ScannedWithoutMapping)
+                .collect();
             if nullifier_map_limit_exceeded {
                 scan_ranges_priority_sorted
-                    .sort_by(|(_, a), (_, b)| b.block_range().start.cmp(&a.block_range().start));
+                    .sort_by_key(|(_, range)| std::cmp::Reverse(range.block_range().start));
             }
             scan_ranges_priority_sorted.sort_by_key(|(_, scan_range)| scan_range.priority());
 
@@ -728,7 +849,7 @@ fn select_scan_range(
                 consensus_parameters,
                 sync_state,
                 selected_scan_range.block_range().start,
-                Some(ShieldedProtocol::Orchard),
+                Some(ShieldedPool::Ironwood),
             );
             let split_ranges = split_out_scan_range(
                 selected_scan_range,
@@ -746,19 +867,6 @@ fn select_scan_range(
 
             selected_block_range
         }
-        ScanPriority::ScannedWithoutMapping => {
-            let selected_scan_range = sync_state
-                .scan_ranges
-                .get_mut(selected_index)
-                .expect("scan range should exist due to previous logic");
-
-            *selected_scan_range = ScanRange::from_parts(
-                selected_scan_range.block_range().clone(),
-                ScanPriority::RefetchingNullifiers,
-            );
-
-            selected_scan_range.block_range().clone()
-        }
         _ => {
             let selected_scan_range = sync_state
                 .scan_ranges
@@ -767,7 +875,7 @@ fn select_scan_range(
 
             *selected_scan_range = ScanRange::from_parts(
                 selected_scan_range.block_range().clone(),
-                ScanPriority::Scanning,
+                selected_priority.in_flight(),
             );
 
             selected_scan_range.block_range().clone()
@@ -785,6 +893,8 @@ pub(crate) fn create_scan_task<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
     nullifier_map_limit_exceeded: bool,
+    transparent_gap_addresses: HashMap<String, TransparentAddressId>,
+    task_id: TaskId,
 ) -> Result<Option<ScanTask>, W::Error>
 where
     W: SyncWallet + SyncBlocks + SyncNullifiers,
@@ -794,17 +904,45 @@ where
         wallet.get_sync_state_mut()?,
         nullifier_map_limit_exceeded,
     ) {
+        let transparent_scan_floor = wallet
+            .get_sync_state()?
+            .transparent_scan_floor
+            .expect("transparent scan floor should be set before scanning");
         if selected_range.priority() == ScanPriority::ScannedWithoutMapping {
             // all continuity checks and scanning is already complete, the scan worker will only re-fetch the nullifiers
             // for final spend detection.
             Ok(Some(ScanTask::from_parts(
+                task_id,
                 selected_range,
                 None,
                 None,
                 BTreeSet::new(),
                 HashMap::new(),
+                HashMap::new(),
+                transparent_scan_floor,
             )))
         } else {
+            // in continuous sync there is a case where the range directly below the newly mined block (chain tip) is
+            // currently being scanned.
+            // sync must be postponed until this range has completed scanning to then reverify in case of re-org.
+            if selected_range.priority() == ScanPriority::Verify
+                && wallet.get_sync_state()?.scan_ranges().iter().any(|range| {
+                    range
+                        .block_range()
+                        .contains(&(selected_range.block_range().start - 1))
+                        && range.priority() == ScanPriority::Scanning
+                })
+            {
+                // reset from scanning priority to verify until chain tip is scanned.
+                set_scan_priority(
+                    wallet.get_sync_state_mut()?,
+                    selected_range.block_range(),
+                    ScanPriority::Verify,
+                );
+
+                return Ok(None);
+            }
+
             let start_seam_block = wallet
                 .get_wallet_block(selected_range.block_range().start - 1)
                 .ok();
@@ -814,18 +952,23 @@ where
 
             let scan_targets =
                 find_scan_targets(wallet.get_sync_state()?, selected_range.block_range());
-            let transparent_addresses: HashMap<String, TransparentAddressId> = wallet
+
+            // convert transparent addreses to hash map with address as the key for efficient scanning.
+            let transparent_inuse_addresses: HashMap<String, TransparentAddressId> = wallet
                 .get_transparent_addresses()?
                 .iter()
                 .map(|(id, address)| (address.clone(), *id))
                 .collect();
 
             Ok(Some(ScanTask::from_parts(
+                task_id,
                 selected_range,
                 start_seam_block,
                 end_seam_block,
                 scan_targets,
-                transparent_addresses,
+                transparent_inuse_addresses,
+                transparent_gap_addresses,
+                transparent_scan_floor,
             )))
         }
     } else {
@@ -833,48 +976,123 @@ where
     }
 }
 
-/// Sets the `initial_sync_state` field at the start of the sync session
-pub(super) async fn set_initial_state<W>(
+/// Lowers the transparent scan floor to `height` if `height` is below the current floor.
+pub(super) fn lower_transparent_scan_floor(sync_state: &mut SyncState, height: BlockHeight) {
+    if let Some(floor) = sync_state.transparent_scan_floor.as_mut() {
+        *floor = (*floor).min(height);
+    }
+}
+
+/// The wallet facts the session's tree bounds are derived from, read under one wallet lock so the server requests
+/// that complete them are made with the lock released.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct TreeBoundsSource {
+    birthday: BlockHeight,
+    chain_height: BlockHeight,
+    /// The initial tree sizes of the wallet's birthday block, where it holds one.
+    birthday_initial_tree_sizes: Option<(u32, u32, u32)>,
+    /// The final tree sizes of the wallet's block at the chain height, where it holds one.
+    chain_tip_final_tree_sizes: Option<(u32, u32, u32)>,
+}
+
+impl TreeBoundsSource {
+    /// Reads the source from `wallet` for a session whose chain tip is `chain_height`.
+    pub(super) fn read<W>(wallet: &W, chain_height: BlockHeight) -> Result<Self, W::Error>
+    where
+        W: SyncWallet + SyncBlocks,
+    {
+        let birthday = wallet
+            .get_sync_state()?
+            .wallet_birthday()
+            .expect("scan ranges must be non-empty");
+        Ok(Self {
+            birthday,
+            chain_height,
+            birthday_initial_tree_sizes: wallet.get_wallet_block(birthday).ok().map(|block| {
+                (
+                    block.tree_bounds().sapling_initial_tree_size,
+                    block.tree_bounds().orchard_initial_tree_size,
+                    block.tree_bounds().ironwood_initial_tree_size,
+                )
+            }),
+            chain_tip_final_tree_sizes: wallet.get_wallet_block(chain_height).ok().map(|block| {
+                (
+                    block.tree_bounds().sapling_final_tree_size,
+                    block.tree_bounds().orchard_final_tree_size,
+                    block.tree_bounds().ironwood_final_tree_size,
+                )
+            }),
+        })
+    }
+}
+
+/// Fetches the tree bounds of a session from `source`: the initial tree sizes of the birthday and the final tree
+/// sizes of the chain tip, each from the server where the wallet holds no block for it.
+pub(super) async fn fetch_tree_bounds(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    source: TreeBoundsSource,
+) -> Result<TreeBounds, ServerError> {
+    let (
+        birthday_sapling_initial_tree_size,
+        birthday_orchard_initial_tree_size,
+        birthday_ironwood_initial_tree_size,
+    ) = match source.birthday_initial_tree_sizes {
+        Some(tree_sizes) => tree_sizes,
+        None => {
+            final_tree_sizes(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                source.birthday - 1,
+            )
+            .await?
+        }
+    };
+    let (
+        chain_tip_sapling_final_tree_size,
+        chain_tip_orchard_final_tree_size,
+        chain_tip_ironwood_final_tree_size,
+    ) = match source.chain_tip_final_tree_sizes {
+        Some(tree_sizes) => tree_sizes,
+        None => {
+            final_tree_sizes(
+                consensus_parameters,
+                fetch_request_sender,
+                source.chain_height,
+            )
+            .await?
+        }
+    };
+
+    Ok(TreeBounds {
+        sapling_initial_tree_size: birthday_sapling_initial_tree_size,
+        sapling_final_tree_size: chain_tip_sapling_final_tree_size,
+        orchard_initial_tree_size: birthday_orchard_initial_tree_size,
+        orchard_final_tree_size: chain_tip_orchard_final_tree_size,
+        ironwood_initial_tree_size: birthday_ironwood_initial_tree_size,
+        ironwood_final_tree_size: chain_tip_ironwood_final_tree_size,
+    })
+}
+
+/// Sets the `initial_sync_state` field at the start of the sync session
+pub(super) fn set_initial_state<W>(
     wallet: &mut W,
     chain_height: BlockHeight,
+    tree_bounds: TreeBounds,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks,
 {
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-    let birthday = sync_state
-        .wallet_birthday()
-        .expect("scan ranges must be non-empty");
     let fully_scanned_height = sync_state
         .fully_scanned_height()
         .expect("scan ranges must be non-empty");
     let previously_scanned_blocks = calculate_scanned_blocks(sync_state);
-    let (previously_scanned_sapling_outputs, previously_scanned_orchard_outputs) =
-        calculate_scanned_outputs(wallet).map_err(SyncError::WalletError)?;
-    let (birthday_sapling_initial_tree_size, birthday_orchard_initial_tree_size) =
-        if let Ok(block) = wallet.get_wallet_block(birthday) {
-            (
-                block.tree_bounds.sapling_initial_tree_size,
-                block.tree_bounds.orchard_initial_tree_size,
-            )
-        } else {
-            final_tree_sizes(
-                consensus_parameters,
-                fetch_request_sender.clone(),
-                wallet,
-                birthday - 1,
-            )
-            .await?
-        };
-    let (chain_tip_sapling_final_tree_size, chain_tip_orchard_final_tree_size) = final_tree_sizes(
-        consensus_parameters,
-        fetch_request_sender.clone(),
-        wallet,
-        chain_height,
-    )
-    .await?;
+    let (
+        previously_scanned_sapling_outputs,
+        previously_scanned_orchard_outputs,
+        previously_scanned_ironwood_outputs,
+    ) = calculate_scanned_outputs(wallet).map_err(SyncError::WalletError)?;
 
     wallet
         .get_sync_state_mut()
@@ -886,15 +1104,36 @@ where
             chain_height
         },
         wallet_tree_bounds: TreeBounds {
-            sapling_initial_tree_size: birthday_sapling_initial_tree_size,
-            sapling_final_tree_size: chain_tip_sapling_final_tree_size,
-            orchard_initial_tree_size: birthday_orchard_initial_tree_size,
-            orchard_final_tree_size: chain_tip_orchard_final_tree_size,
+            sapling_initial_tree_size: 0,
+            sapling_final_tree_size: 0,
+            orchard_initial_tree_size: 0,
+            orchard_final_tree_size: 0,
+            ironwood_initial_tree_size: 0,
+            ironwood_final_tree_size: 0,
         },
         previously_scanned_blocks,
         previously_scanned_sapling_outputs,
         previously_scanned_orchard_outputs,
+        previously_scanned_ironwood_outputs,
     };
+
+    update_wallet_tree_bounds(wallet, tree_bounds)
+}
+
+pub(super) fn update_wallet_tree_bounds<W>(
+    wallet: &mut W,
+    tree_bounds: TreeBounds,
+) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks,
+{
+    wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?
+        .initial_sync_state
+        .wallet_tree_bounds = tree_bounds;
+
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
 }
@@ -903,18 +1142,14 @@ pub(super) fn calculate_scanned_blocks(sync_state: &SyncState) -> u32 {
     sync_state
         .scan_ranges()
         .iter()
-        .filter(|scan_range| {
-            scan_range.priority() == ScanPriority::Scanned
-                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                || scan_range.priority() == ScanPriority::RefetchingNullifiers
-        })
+        .filter(|scan_range| scan_range.priority().is_scanned())
         .map(super::ScanRange::block_range)
         .fold(0, |acc, block_range| {
             acc + (block_range.end - block_range.start)
         })
 }
 
-pub(super) fn calculate_scanned_outputs<W>(wallet: &W) -> Result<(u32, u32), W::Error>
+pub(super) fn calculate_scanned_outputs<W>(wallet: &W) -> Result<(u32, u32, u32), W::Error>
 where
     W: SyncWallet + SyncBlocks,
 {
@@ -922,65 +1157,63 @@ where
         .get_sync_state()?
         .scan_ranges()
         .iter()
-        .filter(|scan_range| {
-            scan_range.priority() == ScanPriority::Scanned
-                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                || scan_range.priority() == ScanPriority::RefetchingNullifiers
-        })
+        .filter(|scan_range| scan_range.priority().is_scanned())
         .map(|scanned_range| scanned_range_tree_bounds(wallet, scanned_range.block_range().clone()))
         .collect::<Result<Vec<_>, _>>()?
         .iter()
-        .fold((0, 0), |acc, tree_bounds| {
+        .fold((0, 0, 0), |acc, tree_bounds| {
             (
                 acc.0
                     + (tree_bounds.sapling_final_tree_size - tree_bounds.sapling_initial_tree_size),
                 acc.1
                     + (tree_bounds.orchard_final_tree_size - tree_bounds.orchard_initial_tree_size),
+                acc.2
+                    + (tree_bounds.ironwood_final_tree_size
+                        - tree_bounds.ironwood_initial_tree_size),
             )
         }))
 }
 
-/// Gets `block_height` final tree sizes from wallet block if it exists, otherwise from frontiers fetched from server.
-async fn final_tree_sizes<W>(
+/// Gets `block_height` final tree sizes from frontiers fetched from server.
+async fn final_tree_sizes(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    wallet: &mut W,
     block_height: BlockHeight,
-) -> Result<(u32, u32), ServerError>
-where
-    W: SyncBlocks,
-{
-    if let Ok(block) = wallet.get_wallet_block(block_height) {
-        Ok((
-            block.tree_bounds().sapling_final_tree_size,
-            block.tree_bounds().orchard_final_tree_size,
-        ))
-    } else {
-        // TODO: move this whole block into `client::get_frontiers`
-        let sapling_activation_height = consensus_parameters
-            .activation_height(NetworkUpgrade::Sapling)
-            .expect("should have some sapling activation height");
+) -> Result<(u32, u32, u32), ServerError> {
+    // TODO: move this whole block into `client::get_frontiers`
+    let sapling_activation_height =
+        crate::wallet::PoolActivation::of(consensus_parameters, ShieldedPool::Sapling)
+            .expect("should have some sapling activation height")
+            .height();
 
-        match block_height.cmp(&(sapling_activation_height - 1)) {
-            cmp::Ordering::Greater => {
-                let frontiers =
-                    client::get_frontiers(fetch_request_sender.clone(), block_height).await?;
-                Ok((
-                    frontiers
-                        .final_sapling_tree()
-                        .tree_size()
-                        .try_into()
-                        .expect("should not be more than 2^32 note commitments in the tree!"),
-                    frontiers
-                        .final_orchard_tree()
-                        .tree_size()
-                        .try_into()
-                        .expect("should not be more than 2^32 note commitments in the tree!"),
-                ))
-            }
-            cmp::Ordering::Equal => Ok((0, 0)),
-            cmp::Ordering::Less => panic!("pre-sapling not supported!"),
+    match block_height.cmp(&(sapling_activation_height - 1)) {
+        cmp::Ordering::Greater => {
+            let frontiers = client::get_frontiers(
+                fetch_request_sender.clone(),
+                consensus_parameters,
+                block_height,
+            )
+            .await?;
+            Ok((
+                frontiers
+                    .final_sapling_tree()
+                    .tree_size()
+                    .try_into()
+                    .expect("should not be more than 2^32 note commitments in the tree!"),
+                frontiers
+                    .final_orchard_tree()
+                    .tree_size()
+                    .try_into()
+                    .expect("should not be more than 2^32 note commitments in the tree!"),
+                frontiers
+                    .final_ironwood_tree()
+                    .tree_size()
+                    .try_into()
+                    .expect("should not be more than 2^32 note commitments in the tree!"),
+            ))
         }
+        cmp::Ordering::Equal => Ok((0, 0, 0)),
+        cmp::Ordering::Less => panic!("pre-sapling not supported!"),
     }
 }
 
@@ -1002,34 +1235,131 @@ where
         sapling_final_tree_size: end_block.tree_bounds().sapling_final_tree_size,
         orchard_initial_tree_size: start_block.tree_bounds().orchard_initial_tree_size,
         orchard_final_tree_size: end_block.tree_bounds().orchard_final_tree_size,
+        ironwood_initial_tree_size: start_block.tree_bounds().ironwood_initial_tree_size,
+        ironwood_final_tree_size: end_block.tree_bounds().ironwood_final_tree_size,
     })
 }
 
-/// Creates block ranges that contain all outputs for the shards associated with `subtree_roots` and adds them to
-/// `sync_state`.
+/// Removes all shard ranges of `shielded_protocol` so they can be rebuilt from the pool's subtree roots through
+/// [`add_shard_ranges`].
+pub(super) fn clear_shard_ranges(sync_state: &mut SyncState, shielded_protocol: ShieldedPool) {
+    match shielded_protocol {
+        ShieldedPool::Sapling => sync_state.sapling_shard_ranges.clear(),
+        ShieldedPool::Orchard => sync_state.orchard_shard_ranges.clear(),
+        ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.clear(),
+    }
+}
+
+/// Reopens for scanning every scanned range at or above `from_height`,
+/// splitting the range that straddles it.
 ///
-/// The network upgrade activation height for the `shielded_protocol` is the first shard start height for the case
-/// where shard ranges in `sync_state` are empty.
-#[cfg(not(feature = "darkside_test"))]
+/// `Historic` is the priority a range carries when it has never been
+/// scanned, which is what a range whose recorded history cannot be trusted
+/// has effectively become. Historic ranges are selected lowest first, so the
+/// rescan works upward and each range takes its tree-size baseline from a
+/// range below that the same rescan has already corrected.
+///
+/// Ranges being scanned right now are left alone, since their results are
+/// already in flight against the bounds they were dispatched with.
+///
+/// `missing_block_bound` is the block [`fetch_reopened_block_bound`]
+/// fetched, which bounds the scanned range below `from_height`.
+pub(super) fn reopen_scan_ranges_from<W>(
+    wallet: &mut W,
+    from_height: BlockHeight,
+    missing_block_bound: Option<WalletBlock>,
+) -> Result<(), W::Error>
+where
+    W: SyncWallet + SyncBlocks,
+{
+    reopen_scan_ranges_inner(wallet.get_sync_state_mut()?, from_height);
+    if let Some(block_bound) = missing_block_bound {
+        wallet.append_wallet_blocks(BTreeMap::from([(block_bound.block_height(), block_bound)]))?;
+    }
+
+    Ok(())
+}
+
+/// Fetches the block below `from_height` where the wallet is missing it,
+/// for [`reopen_scan_ranges_from`] to add to the wallet. The wallet is only
+/// read, so a failed server request leaves it as it is.
+pub(super) async fn fetch_reopened_block_bound<W>(
+    consensus_parameters: &impl consensus::Parameters,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    wallet: &W,
+    from_height: BlockHeight,
+) -> Result<Option<WalletBlock>, SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks,
+{
+    let upper_block_bound_height = from_height - 1;
+    if wallet.get_wallet_block(upper_block_bound_height).is_ok() {
+        return Ok(None);
+    }
+
+    Ok(Some(
+        WalletBlock::from_compact_block(
+            consensus_parameters,
+            fetch_request_sender.clone(),
+            &client::get_compact_block(fetch_request_sender.clone(), upper_block_bound_height)
+                .await?,
+        )
+        .await?,
+    ))
+}
+
+pub(super) fn reopen_scan_ranges_inner(sync_state: &mut SyncState, from_height: BlockHeight) {
+    if let Some((index, range_to_split)) = sync_state
+        .scan_ranges()
+        .iter()
+        .cloned()
+        .enumerate()
+        .find(|(_index, range)| range.block_range().contains(&from_height))
+        && let Some((below, above)) = range_to_split.split_at(from_height)
+    {
+        sync_state
+            .scan_ranges
+            .splice(index..=index, vec![below, above]);
+    }
+
+    for scan_range in &mut sync_state.scan_ranges {
+        if scan_range.block_range().start >= from_height && scan_range.priority().is_scanned() {
+            *scan_range =
+                ScanRange::from_parts(scan_range.block_range().clone(), ScanPriority::Historic);
+        }
+    }
+}
+
+/// - Truncates the `shielded_protocol` shard ranges of `sync_state` to `start_index` and appends one range per
+///   subtree root, unless `subtree_roots` is empty.
 pub(super) fn add_shard_ranges(
     consensus_parameters: &impl consensus::Parameters,
-    shielded_protocol: ShieldedProtocol,
+    shielded_protocol: ShieldedPool,
     sync_state: &mut SyncState,
+    start_index: u32,
     subtree_roots: &[SubtreeRoot],
 ) {
-    let network_upgrade_activation_height = match shielded_protocol {
-        ShieldedProtocol::Sapling => consensus_parameters
-            .activation_height(consensus::NetworkUpgrade::Sapling)
-            .expect("activation height should exist for this network upgrade!"),
-        ShieldedProtocol::Orchard => consensus_parameters
-            .activation_height(consensus::NetworkUpgrade::Nu5)
-            .expect("activation height should exist for this network upgrade!"),
-    };
+    // A server that serves no root from `start_index` is behind, or a re-org returned the newest recorded shard
+    // to incomplete. Neither is told from the other here, so the recorded ranges are kept.
+    if subtree_roots.is_empty() {
+        return;
+    }
+
+    let network_upgrade_activation_height =
+        crate::wallet::PoolActivation::of(consensus_parameters, shielded_protocol)
+            .expect("activation height should exist for this network upgrade!")
+            .height();
 
     let shard_ranges: &mut Vec<Range<BlockHeight>> = match shielded_protocol {
-        ShieldedProtocol::Sapling => sync_state.sapling_shard_ranges.as_mut(),
-        ShieldedProtocol::Orchard => sync_state.orchard_shard_ranges.as_mut(),
+        ShieldedPool::Sapling => sync_state.sapling_shard_ranges.as_mut(),
+        ShieldedPool::Orchard => sync_state.orchard_shard_ranges.as_mut(),
+        ShieldedPool::Ironwood => sync_state.ironwood_shard_ranges.as_mut(),
     };
+
+    // The fetch starts at the newest recorded root at the latest (see `crate::sync::subtree_root_fetch_index`), so
+    // the ranges from `start_index` are rebuilt from the roots the server holds now. Range `i` then belongs to
+    // subtree root `i`, and a range whose completing block a re-org moved is corrected.
+    shard_ranges.truncate(start_index as usize);
 
     let highest_subtree_completing_height = if let Some(shard_range) = shard_ranges.last() {
         shard_range.end - 1
@@ -1050,40 +1380,70 @@ pub(super) fn add_shard_ranges(
         .fold(
             highest_subtree_completing_height,
             |previous_subtree_completing_height, subtree_completing_height| {
-                shard_ranges.push(Range {
-                    start: previous_subtree_completing_height,
-                    end: subtree_completing_height + 1,
-                });
+                if subtree_completing_height > previous_subtree_completing_height {
+                    shard_ranges.push(Range {
+                        start: previous_subtree_completing_height,
+                        end: subtree_completing_height + 1,
+                    });
 
-                tracing::debug!(
-                    "{:?} subtree root height: {}",
-                    shielded_protocol,
                     subtree_completing_height
-                );
+                } else {
+                    // A block holds far fewer note commitments than a shard, so no block completes two shards.
+                    // A root completing at or below the recorded height contradicts the ranges kept below
+                    // `start_index`, which only a re-org reaching below the refetched root can cause. The root
+                    // is skipped so the ranges stay contiguous.
+                    tracing::warn!(
+                        "{:?} subtree root completing at block {} contradicts the recorded shard ranges, whose \
+                         newest range completes at block {}",
+                        shielded_protocol,
+                        subtree_completing_height,
+                        previous_subtree_completing_height
+                    );
 
-                subtree_completing_height
+                    previous_subtree_completing_height
+                }
             },
         );
+
+    debug_assert!(
+        shard_ranges_are_contiguous(shard_ranges),
+        "{shielded_protocol:?} shard ranges must stay contiguous: {shard_ranges:?}"
+    );
 }
 
-/// Updates the `shielded_protocol` shard range to `FoundNote` scan priority if the `wallet_transaction` contains
-/// a note from the corresponding `shielded_protocol`.
+pub(super) fn shard_ranges_are_contiguous(shard_ranges: &[Range<BlockHeight>]) -> bool {
+    shard_ranges.iter().all(|range| range.end > range.start + 1)
+        && shard_ranges
+            .windows(2)
+            .all(|pair| pair[1].start + 1 == pair[0].end && pair[1].end > pair[0].end)
+}
+
+/// - Sets the `shielded_protocol` shard range around `wallet_transaction` to `FoundNote` scan priority if the
+///   transaction holds a note of that pool.
+/// - Records the pool on the transaction's scan target, so the shard is prioritised again at the start of every
+///   later sync session until the fully scanned height passes the transaction.
 pub(super) fn update_found_note_shard_priority(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
-    shielded_protocol: ShieldedProtocol,
+    shielded_protocol: ShieldedPool,
     wallet_transaction: &WalletTransaction,
 ) {
     let found_note = match shielded_protocol {
-        ShieldedProtocol::Sapling => !wallet_transaction.sapling_notes().is_empty(),
-        ShieldedProtocol::Orchard => !wallet_transaction.orchard_notes().is_empty(),
+        ShieldedPool::Sapling => !wallet_transaction.sapling_notes().is_empty(),
+        ShieldedPool::Orchard => !wallet_transaction.orchard_notes().is_empty(),
+        ShieldedPool::Ironwood => !wallet_transaction.ironwood_notes().is_empty(),
     };
     if found_note {
+        let block_height = wallet_transaction.status().get_height();
         set_found_note_scan_range(
             consensus_parameters,
             sync_state,
             Some(shielded_protocol),
-            wallet_transaction.status().get_height(),
+            block_height,
+        );
+        sync_state.insert_scan_target(
+            ScanTarget::internal(block_height, wallet_transaction.txid())
+                .with_pool(shielded_protocol),
         );
     }
 }
@@ -1091,6 +1451,562 @@ pub(super) fn update_found_note_shard_priority(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mocks::subtree_root as root;
+    use zcash_protocol::local_consensus::LocalNetwork;
+
+    fn range(start: u32, end: u32) -> Range<BlockHeight> {
+        BlockHeight::from_u32(start)..BlockHeight::from_u32(end)
+    }
+
+    fn add_orchard_roots(sync_state: &mut SyncState, start_index: u32, completing_heights: &[u64]) {
+        let roots = completing_heights
+            .iter()
+            .copied()
+            .map(root)
+            .collect::<Vec<_>>();
+        add_shard_ranges(
+            &BASE_NETWORK,
+            ShieldedPool::Orchard,
+            sync_state,
+            start_index,
+            &roots,
+        );
+    }
+
+    fn orchard_state_from_roots(completing_heights: &[u64]) -> SyncState {
+        let mut sync_state = SyncState::new();
+        add_orchard_roots(&mut sync_state, 0, completing_heights);
+        sync_state
+    }
+
+    // The first range starts at the pool's activation height and every range after it starts at the
+    // completing block of the range before, the one block whose note commitments belong to both shards.
+    #[test]
+    fn fetched_roots_build_contiguous_ranges_from_the_activation_height() {
+        let sync_state = orchard_state_from_roots(&[100, 200, 300]);
+
+        assert_eq!(
+            sync_state.orchard_shard_ranges,
+            vec![range(1, 101), range(100, 201), range(200, 301)]
+        );
+        assert!(shard_ranges_are_contiguous(
+            &sync_state.orchard_shard_ranges
+        ));
+    }
+
+    #[test]
+    fn appended_roots_continue_from_the_newest_range() {
+        let mut sync_state = orchard_state_from_roots(&[100, 200]);
+
+        add_orchard_roots(&mut sync_state, 2, &[300, 400]);
+
+        assert_eq!(
+            sync_state.orchard_shard_ranges,
+            vec![
+                range(1, 101),
+                range(100, 201),
+                range(200, 301),
+                range(300, 401)
+            ]
+        );
+        assert!(shard_ranges_are_contiguous(
+            &sync_state.orchard_shard_ranges
+        ));
+    }
+
+    // The newest recorded root is fetched again every session (see `crate::sync::subtree_root_fetch_index`):
+    // unchanged when its completing block is unchanged, corrected when a re-org moved it, kept when the server
+    // serves nothing.
+    #[test]
+    fn refetched_newest_root_rebuilds_its_shard_range() {
+        let mut sync_state = orchard_state_from_roots(&[100, 200]);
+        let recorded = sync_state.orchard_shard_ranges.clone();
+
+        add_orchard_roots(&mut sync_state, 1, &[200]);
+        assert_eq!(sync_state.orchard_shard_ranges, recorded);
+
+        add_orchard_roots(&mut sync_state, 1, &[205]);
+        assert_eq!(
+            sync_state.orchard_shard_ranges,
+            vec![range(1, 101), range(100, 206)]
+        );
+
+        add_orchard_roots(&mut sync_state, 1, &[]);
+        assert_eq!(
+            sync_state.orchard_shard_ranges,
+            vec![range(1, 101), range(100, 206)]
+        );
+        assert!(shard_ranges_are_contiguous(
+            &sync_state.orchard_shard_ranges
+        ));
+    }
+
+    // A shard tree rolled back below its bare roots fetches from below the recorded count (see
+    // `crate::sync::rollback_unscanned_tree_states`). The ranges from there are rebuilt, never duplicated.
+    #[test]
+    fn a_fetch_below_the_recorded_count_rebuilds_the_ranges_from_there() {
+        let mut sync_state = orchard_state_from_roots(&[100, 200, 300]);
+
+        add_orchard_roots(&mut sync_state, 1, &[200, 300, 400]);
+
+        assert_eq!(
+            sync_state.orchard_shard_ranges,
+            vec![
+                range(1, 101),
+                range(100, 201),
+                range(200, 301),
+                range(300, 401)
+            ]
+        );
+        assert!(shard_ranges_are_contiguous(
+            &sync_state.orchard_shard_ranges
+        ));
+    }
+
+    #[test]
+    fn a_root_completing_at_or_below_the_kept_ranges_is_skipped() {
+        let mut sync_state = orchard_state_from_roots(&[100, 200, 300]);
+
+        add_orchard_roots(&mut sync_state, 2, &[200, 400]);
+
+        assert_eq!(
+            sync_state.orchard_shard_ranges,
+            vec![range(1, 101), range(100, 201), range(200, 401)]
+        );
+        assert!(shard_ranges_are_contiguous(
+            &sync_state.orchard_shard_ranges
+        ));
+    }
+
+    #[test]
+    fn ranges_with_a_gap_an_overlap_or_a_duplicate_are_not_contiguous() {
+        assert!(shard_ranges_are_contiguous(&[]));
+        assert!(shard_ranges_are_contiguous(&[range(1, 101)]));
+        // a gap
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(101, 201)
+        ]));
+        // an overlap of two blocks
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(99, 201)
+        ]));
+        // a duplicate
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(1, 101)
+        ]));
+        // a degenerate one-block range at the boundary
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(100, 101)
+        ]));
+        // a range ending below the one before
+        assert!(!shard_ranges_are_contiguous(&[
+            range(1, 101),
+            range(100, 51)
+        ]));
+    }
+
+    mod scan_targets {
+        use sapling_crypto::value::NoteValue;
+        use zcash_primitives::transaction::TxId;
+        use zcash_protocol::memo::Memo;
+        use zingo_status::confirmation_status::ConfirmationStatus;
+
+        use super::*;
+        use crate::wallet::{OutputId, ScanTargetOrigin, WalletNote, WalletTransaction};
+
+        fn height(height: u32) -> BlockHeight {
+            BlockHeight::from_u32(height)
+        }
+
+        fn txid(byte: u8) -> TxId {
+            TxId::from_bytes([byte; 32])
+        }
+
+        fn scan_range(start: u32, end: u32, priority: ScanPriority) -> ScanRange {
+            ScanRange::from_parts(range(start, end), priority)
+        }
+
+        fn sapling_transaction(txid: TxId, block_height: u32) -> WalletTransaction {
+            let (_, recipient) = sapling_crypto::zip32::ExtendedSpendingKey::master(&[0; 32])
+                .expect("a 32 byte seed derives a key")
+                .default_address();
+            let note = WalletNote::new_for_test(
+                OutputId::new(txid, 0),
+                zip32::AccountId::ZERO,
+                zip32::Scope::External,
+                sapling_crypto::Note::from_parts(
+                    recipient,
+                    NoteValue::from_raw(1),
+                    sapling_crypto::Rseed::AfterZip212([0; 32]),
+                ),
+                Memo::Empty,
+                None,
+            );
+            WalletTransaction::new_for_test(
+                txid,
+                ConfirmationStatus::Confirmed(height(block_height)),
+            )
+            .with_sapling_notes_for_test(vec![note])
+        }
+
+        // A target whose transaction holds no known note prioritises the narrow range of blocks around it, and a
+        // target whose transaction holds a note of a pool prioritises that pool's whole shard around it.
+        #[test]
+        fn a_target_prioritises_the_narrow_range_without_a_pool_and_the_shard_with_one() {
+            let mut sync_state = sync_state_with_ranges(1, 5000);
+            sync_state.orchard_shard_ranges = vec![range(1, 1501), range(1500, 3001)];
+            set_found_note_scan_ranges(
+                &BASE_NETWORK,
+                &mut sync_state,
+                [ScanTarget::new(height(2200), None)].into_iter(),
+            );
+            assert_eq!(
+                sync_state.scan_ranges(),
+                [
+                    scan_range(1, 2000, ScanPriority::Historic),
+                    scan_range(2000, 3000, ScanPriority::FoundNote),
+                    scan_range(3000, 5001, ScanPriority::Historic),
+                ]
+            );
+
+            let mut sync_state = sync_state_with_ranges(1, 5000);
+            sync_state.orchard_shard_ranges = vec![range(1, 1501), range(1500, 3001)];
+            set_found_note_scan_ranges(
+                &BASE_NETWORK,
+                &mut sync_state,
+                [ScanTarget::internal(height(2200), txid(1)).with_pool(ShieldedPool::Orchard)]
+                    .into_iter(),
+            );
+            assert_eq!(
+                sync_state.scan_ranges(),
+                [
+                    scan_range(1, 1500, ScanPriority::Historic),
+                    scan_range(1500, 3001, ScanPriority::FoundNote),
+                    scan_range(3001, 5001, ScanPriority::Historic),
+                ]
+            );
+        }
+
+        #[test]
+        fn a_found_note_records_its_pool_on_the_transaction_scan_target() {
+            let mut sync_state = sync_state_with_ranges(1, 5000);
+            sync_state.sapling_shard_ranges = vec![range(1, 1501), range(1500, 3001)];
+            let transaction = sapling_transaction(txid(7), 2200);
+
+            for pool in [ShieldedPool::Sapling, ShieldedPool::Orchard] {
+                update_found_note_shard_priority(
+                    &BASE_NETWORK,
+                    &mut sync_state,
+                    pool,
+                    &transaction,
+                );
+            }
+
+            let targets = sync_state.scan_targets.iter().copied().collect::<Vec<_>>();
+            assert_eq!(targets, [ScanTarget::internal(height(2200), txid(7))]);
+            assert_eq!(
+                targets[0].pools().iter().collect::<Vec<_>>(),
+                [ShieldedPool::Sapling]
+            );
+            assert_eq!(targets[0].origin(), ScanTargetOrigin::Internal);
+            assert_eq!(
+                sync_state.scan_ranges(),
+                [
+                    scan_range(1, 1500, ScanPriority::Historic),
+                    scan_range(1500, 3001, ScanPriority::FoundNote),
+                    scan_range(3001, 5001, ScanPriority::Historic),
+                ]
+            );
+        }
+
+        // Targets naming the same block height and txid are one target: it holds the pools of every insertion,
+        // and it is internal once any insertion was.
+        #[test]
+        fn inserting_the_same_target_merges_its_pools_and_keeps_the_internal_origin() {
+            let mut sync_state = SyncState::new();
+            sync_state.insert_scan_target(ScanTarget::new(height(50), Some(txid(1))));
+            sync_state.insert_scan_target(
+                ScanTarget::internal(height(50), txid(1)).with_pool(ShieldedPool::Orchard),
+            );
+            sync_state.insert_scan_target(ScanTarget::new(height(50), Some(txid(1))));
+            sync_state.insert_scan_target(
+                ScanTarget::internal(height(50), txid(1)).with_pool(ShieldedPool::Ironwood),
+            );
+            sync_state.insert_scan_target(ScanTarget::new(height(50), None));
+
+            let targets = sync_state.scan_targets.iter().copied().collect::<Vec<_>>();
+            assert_eq!(
+                targets,
+                [
+                    ScanTarget::new(height(50), None),
+                    ScanTarget::new(height(50), Some(txid(1))),
+                ]
+            );
+            assert!(targets[0].pools().is_empty());
+            assert_eq!(targets[0].origin(), ScanTargetOrigin::External);
+            assert_eq!(
+                targets[1].pools().iter().collect::<Vec<_>>(),
+                [ShieldedPool::Orchard, ShieldedPool::Ironwood]
+            );
+            assert_eq!(targets[1].origin(), ScanTargetOrigin::Internal);
+        }
+
+        #[test]
+        fn external_targets_outside_the_chain_are_dropped_and_internal_ones_kept() {
+            let mut sync_state = sync_state_with_ranges(100, 200);
+            for scan_target in [
+                ScanTarget::new(height(50), None),
+                ScanTarget::new(height(150), None),
+                ScanTarget::new(height(250), None),
+                ScanTarget::internal(height(250), txid(1)),
+            ] {
+                sync_state.insert_scan_target(scan_target);
+            }
+
+            drop_external_scan_targets_outside_the_chain(&mut sync_state, height(200));
+
+            assert_eq!(
+                sync_state.scan_targets.iter().copied().collect::<Vec<_>>(),
+                [
+                    ScanTarget::new(height(150), None),
+                    ScanTarget::internal(height(250), txid(1)),
+                ]
+            );
+        }
+
+        fn settled_targets_dropped(
+            orchard_shard_ranges: Vec<Range<BlockHeight>>,
+            scan_targets: Vec<ScanTarget>,
+            fully_scanned_height: u32,
+        ) -> Vec<ScanTarget> {
+            let mut sync_state = SyncState::new();
+            sync_state.orchard_shard_ranges = orchard_shard_ranges;
+            sync_state.sapling_shard_ranges = vec![range(1, 101)];
+            for scan_target in scan_targets {
+                sync_state.insert_scan_target(scan_target);
+            }
+            drop_settled_scan_targets(&mut sync_state, height(fully_scanned_height));
+            sync_state.scan_targets.into_iter().collect()
+        }
+
+        // A target that recorded a pool outlives the fully scanned height while the pool's shard holding it is
+        // incomplete, so the rest of the shard is prioritised when it is mined. A target without a pool does not.
+        #[test]
+        fn a_pool_target_is_kept_until_its_shard_is_complete_and_scanned() {
+            let orchard = ShieldedPool::Orchard;
+            let in_the_incomplete_shard =
+                ScanTarget::internal(height(250), txid(1)).with_pool(orchard);
+            let in_a_complete_shard = ScanTarget::internal(height(150), txid(2)).with_pool(orchard);
+            let without_a_pool = ScanTarget::new(height(250), None);
+
+            assert_eq!(
+                settled_targets_dropped(
+                    vec![range(1, 101), range(100, 201)],
+                    vec![in_the_incomplete_shard, in_a_complete_shard, without_a_pool],
+                    300,
+                ),
+                [in_the_incomplete_shard]
+            );
+            assert_eq!(
+                settled_targets_dropped(
+                    vec![range(1, 101), range(100, 201)],
+                    vec![in_a_complete_shard],
+                    180,
+                ),
+                [in_a_complete_shard],
+                "the shard is not scanned through its completing block"
+            );
+        }
+
+        // The completing block of the newest recorded shard also holds the first commitments of the incomplete
+        // shard, so a target there is kept until the next shard is recorded and scanned.
+        #[test]
+        fn a_pool_target_on_the_newest_completing_block_is_kept() {
+            let on_the_boundary =
+                ScanTarget::internal(height(200), txid(1)).with_pool(ShieldedPool::Orchard);
+
+            assert_eq!(
+                settled_targets_dropped(
+                    vec![range(1, 101), range(100, 201)],
+                    vec![on_the_boundary],
+                    300
+                ),
+                [on_the_boundary]
+            );
+            assert_eq!(
+                settled_targets_dropped(
+                    vec![range(1, 101), range(100, 201), range(200, 301)],
+                    vec![on_the_boundary],
+                    300
+                ),
+                []
+            );
+            assert_eq!(
+                settled_targets_dropped(
+                    vec![range(1, 101), range(100, 201), range(200, 301)],
+                    vec![on_the_boundary],
+                    250
+                ),
+                [on_the_boundary],
+                "the next shard is not scanned through its completing block"
+            );
+        }
+
+        #[test]
+        fn a_target_recording_two_pools_is_kept_while_either_shard_is_incomplete() {
+            // the orchard shard holding block 150 is complete and scanned, the sapling one is not yet recorded
+            let in_both_pools = ScanTarget::internal(height(150), txid(1))
+                .with_pool(ShieldedPool::Orchard)
+                .with_pool(ShieldedPool::Sapling);
+
+            assert_eq!(
+                settled_targets_dropped(
+                    vec![range(1, 101), range(100, 201)],
+                    vec![in_both_pools],
+                    300
+                ),
+                [in_both_pools]
+            );
+        }
+    }
+
+    const BASE_NETWORK: LocalNetwork = LocalNetwork {
+        overwinter: Some(BlockHeight::from_u32(1)),
+        sapling: Some(BlockHeight::from_u32(1)),
+        blossom: Some(BlockHeight::from_u32(1)),
+        heartwood: Some(BlockHeight::from_u32(1)),
+        canopy: Some(BlockHeight::from_u32(1)),
+        nu5: Some(BlockHeight::from_u32(1)),
+        nu6: Some(BlockHeight::from_u32(1)),
+        nu6_1: Some(BlockHeight::from_u32(1)),
+        nu6_2: Some(BlockHeight::from_u32(1)),
+        nu6_3: Some(BlockHeight::from_u32(100)),
+        nu7: Some(BlockHeight::from_u32(100)),
+    };
+
+    const NO_NU6_3_NETWORK: LocalNetwork = LocalNetwork {
+        overwinter: Some(BlockHeight::from_u32(1)),
+        sapling: Some(BlockHeight::from_u32(1)),
+        blossom: Some(BlockHeight::from_u32(1)),
+        heartwood: Some(BlockHeight::from_u32(1)),
+        canopy: Some(BlockHeight::from_u32(1)),
+        nu5: Some(BlockHeight::from_u32(1)),
+        nu6: Some(BlockHeight::from_u32(1)),
+        nu6_1: Some(BlockHeight::from_u32(1)),
+        nu6_2: Some(BlockHeight::from_u32(1)),
+        nu6_3: None,
+        nu7: None,
+    };
+
+    fn sync_state_with_ranges(birthday: u32, tip: u32) -> SyncState {
+        let mut s = SyncState::new();
+        s.scan_ranges = vec![ScanRange::from_parts(
+            BlockHeight::from_u32(birthday)..BlockHeight::from_u32(tip + 1),
+            ScanPriority::Historic,
+        )];
+        s
+    }
+
+    #[test]
+    fn ironwood_before_nu6_3_downgrades_to_orchard() {
+        let sync_state = sync_state_with_ranges(1, 200);
+        let range = determine_block_range(
+            &BASE_NETWORK,
+            &sync_state,
+            BlockHeight::from_u32(50),
+            Some(ShieldedPool::Ironwood),
+        );
+        assert!(
+            range.contains(&BlockHeight::from_u32(50)),
+            "range should cover the requested height even after downgrade"
+        );
+    }
+
+    #[test]
+    fn ironwood_without_nu6_3_always_downgrades_to_orchard() {
+        let sync_state = sync_state_with_ranges(1, 200);
+        let range = determine_block_range(
+            &NO_NU6_3_NETWORK,
+            &sync_state,
+            BlockHeight::from_u32(150),
+            Some(ShieldedPool::Ironwood),
+        );
+        assert!(range.contains(&BlockHeight::from_u32(150)));
+    }
+
+    #[test]
+    fn ironwood_at_nu6_3_activation_uses_ironwood_shard_ranges() {
+        let mut sync_state = sync_state_with_ranges(1, 200);
+        sync_state.ironwood_shard_ranges =
+            vec![BlockHeight::from_u32(100)..BlockHeight::from_u32(150)];
+        let range = determine_block_range(
+            &BASE_NETWORK,
+            &sync_state,
+            BlockHeight::from_u32(120),
+            Some(ShieldedPool::Ironwood),
+        );
+        assert_eq!(range.start, BlockHeight::from_u32(100));
+        assert_eq!(range.end, BlockHeight::from_u32(150));
+    }
+
+    /// Mainnet-shaped network: NU6.3 activates recently, near the chain tip.
+    const TIP_ACTIVATION_NETWORK: LocalNetwork = LocalNetwork {
+        overwinter: Some(BlockHeight::from_u32(1)),
+        sapling: Some(BlockHeight::from_u32(1)),
+        blossom: Some(BlockHeight::from_u32(1)),
+        heartwood: Some(BlockHeight::from_u32(1)),
+        canopy: Some(BlockHeight::from_u32(1)),
+        nu5: Some(BlockHeight::from_u32(1)),
+        nu6: Some(BlockHeight::from_u32(1)),
+        nu6_1: Some(BlockHeight::from_u32(1)),
+        nu6_2: Some(BlockHeight::from_u32(1)),
+        nu6_3: Some(BlockHeight::from_u32(19_000)),
+        nu7: Some(BlockHeight::from_u32(19_000)),
+    };
+
+    #[test]
+    fn chain_tip_priority_confined_to_tip_when_ironwood_shards_are_empty() {
+        // A wallet with a long history: birthday (1_000) far below the chain tip (20_000).
+        let mut sync_state = sync_state_with_ranges(1_000, 20_000);
+
+        // Sapling and orchard have complete shards reaching near the tip, so their
+        // incomplete tip shards start close to the chain tip (17_999 and 18_499).
+        sync_state.sapling_shard_ranges =
+            vec![BlockHeight::from_u32(1_000)..BlockHeight::from_u32(18_000)];
+        sync_state.orchard_shard_ranges =
+            vec![BlockHeight::from_u32(1_000)..BlockHeight::from_u32(18_500)];
+        // Ironwood shard ranges are empty: the universal state on every network
+        // immediately after NU6.3 activation.
+        assert!(sync_state.ironwood_shard_ranges.is_empty());
+
+        set_chain_tip_scan_range(
+            &TIP_ACTIVATION_NETWORK,
+            &mut sync_state,
+            BlockHeight::from_u32(20_000),
+        );
+
+        let chain_tip_start = sync_state
+            .scan_ranges()
+            .iter()
+            .filter(|range| range.priority() == ScanPriority::ChainTip)
+            .map(|range| range.block_range().start)
+            .min()
+            .expect("chain tip punch should mark at least one range");
+
+        // The chain-tip region must stay confined near the tip. The lowest
+        // legitimate anchor is the sapling incomplete tip shard start (17_999);
+        // an ironwood fallback may reach no lower than the NU6.3 activation
+        // height (19_000). It must never flood down to the wallet birthday.
+        assert!(
+            chain_tip_start >= BlockHeight::from_u32(17_999),
+            "ChainTip priority flooded down to {chain_tip_start} (wallet birthday is 1_000); \
+             expected the chain-tip region confined to the tip shards (start >= 17_999)"
+        );
+    }
 
     #[test]
     fn truncate_scan_ranges() {
@@ -1112,5 +2028,262 @@ mod tests {
                 ScanRange::from_parts(200.into()..251.into(), ScanPriority::Historic),
             ]
         );
+    }
+
+    /// A re-org lowers the transparent scan floor to the height the wallet was truncated to. A truncation above the
+    /// floor leaves it where it is, as transparent address discovery has only covered the blocks at or below it.
+    #[test]
+    fn lower_transparent_scan_floor() {
+        let mut sync_state = SyncState::new();
+        sync_state.transparent_scan_floor = Some(100.into());
+
+        super::lower_transparent_scan_floor(&mut sync_state, 110.into());
+        assert_eq!(sync_state.transparent_scan_floor, Some(100.into()));
+
+        super::lower_transparent_scan_floor(&mut sync_state, 90.into());
+        assert_eq!(sync_state.transparent_scan_floor, Some(90.into()));
+    }
+
+    /// Reopening splits the range straddling the height and returns every
+    /// scanned range above it to `Historic`. History below is left scanned,
+    /// since a pool's record below its own first commitment is not in
+    /// question, and a range being scanned right now is left alone because
+    /// its results are already in flight against the bounds it was
+    /// dispatched with.
+    #[test]
+    fn reopen_scan_ranges_from() {
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(1.into()..100.into(), ScanPriority::Scanned),
+            ScanRange::from_parts(100.into()..200.into(), ScanPriority::Scanned),
+            ScanRange::from_parts(200.into()..300.into(), ScanPriority::ScannedWithoutMapping),
+            ScanRange::from_parts(300.into()..400.into(), ScanPriority::Scanning),
+        ];
+
+        super::reopen_scan_ranges_inner(&mut sync_state, 150.into());
+
+        assert_eq!(
+            sync_state.scan_ranges,
+            vec![
+                ScanRange::from_parts(1.into()..100.into(), ScanPriority::Scanned),
+                ScanRange::from_parts(100.into()..150.into(), ScanPriority::Scanned),
+                ScanRange::from_parts(150.into()..200.into(), ScanPriority::Historic),
+                ScanRange::from_parts(200.into()..300.into(), ScanPriority::Historic),
+                ScanRange::from_parts(300.into()..400.into(), ScanPriority::Scanning),
+            ]
+        );
+    }
+
+    /// A `ScannedWithoutMapping` range is not selected while a lower range is still scanning, as its re-fetched
+    /// nullifiers would be discarded. It is selected once it is the first unscanned range.
+    #[test]
+    fn scanned_without_mapping_range_waits_for_lower_ranges() {
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(1.into()..21.into(), ScanPriority::Scanned),
+            ScanRange::from_parts(21.into()..41.into(), ScanPriority::Scanning),
+            ScanRange::from_parts(41.into()..46.into(), ScanPriority::ScannedWithoutMapping),
+        ];
+        assert_eq!(
+            super::select_scan_range(&BASE_NETWORK, &mut sync_state, true),
+            None
+        );
+
+        sync_state.scan_ranges[1] =
+            ScanRange::from_parts(21.into()..41.into(), ScanPriority::Scanned);
+        assert_eq!(
+            super::select_scan_range(&BASE_NETWORK, &mut sync_state, true),
+            Some(ScanRange::from_parts(
+                41.into()..46.into(),
+                ScanPriority::ScannedWithoutMapping
+            ))
+        );
+        assert_eq!(
+            sync_state.scan_ranges[2].priority(),
+            ScanPriority::RefetchingNullifiers
+        );
+    }
+
+    /// Where a load's scan results stand once they return, decided from the wallet's scan ranges, the tasks selected
+    /// after the load's task, the load's task, and the load's own blocks.
+    mod scan_results_standing {
+        use super::*;
+
+        fn blocks(start: u32, end: u32) -> Range<BlockHeight> {
+            BlockHeight::from_u32(start)..BlockHeight::from_u32(end)
+        }
+
+        /// The wallet after a `Verify` range was carved out of a task's `Scanning` range and selected as a later task.
+        fn wallet_with_a_later_task() -> Vec<ScanRange> {
+            vec![
+                ScanRange::from_parts(blocks(1, 21), ScanPriority::Scanned),
+                ScanRange::from_parts(blocks(21, 31), ScanPriority::Scanning),
+                ScanRange::from_parts(blocks(31, 41), ScanPriority::Scanning),
+            ]
+        }
+
+        #[test]
+        fn a_load_of_an_earlier_task_is_stale_where_a_later_task_was_selected_over_it() {
+            let earlier_task = ScanRange::from_parts(blocks(21, 41), ScanPriority::ChainTip);
+
+            assert_eq!(
+                scan_results_standing(
+                    &wallet_with_a_later_task(),
+                    &[blocks(31, 41)],
+                    &earlier_task,
+                    &blocks(31, 41),
+                ),
+                ScanResultsStanding::Stale {
+                    cause: StaleCause::Superseded,
+                    reset: Vec::new(),
+                },
+            );
+        }
+
+        #[test]
+        fn a_load_of_the_later_task_is_current() {
+            let later_task = ScanRange::from_parts(blocks(31, 41), ScanPriority::Verify);
+
+            assert_eq!(
+                scan_results_standing(
+                    &wallet_with_a_later_task(),
+                    &[],
+                    &later_task,
+                    &blocks(31, 41)
+                ),
+                ScanResultsStanding::Current,
+            );
+        }
+
+        #[test]
+        fn a_stale_load_resets_only_the_blocks_no_later_task_holds() {
+            let earlier_task = ScanRange::from_parts(blocks(21, 41), ScanPriority::ChainTip);
+
+            assert_eq!(
+                scan_results_standing(
+                    &wallet_with_a_later_task(),
+                    &[blocks(31, 41)],
+                    &earlier_task,
+                    &blocks(28, 41),
+                ),
+                ScanResultsStanding::Stale {
+                    cause: StaleCause::Superseded,
+                    reset: vec![blocks(28, 31)],
+                },
+            );
+        }
+
+        #[test]
+        fn a_load_past_the_truncated_tip_is_stale_and_resets_the_blocks_the_wallet_still_holds() {
+            let wallet = vec![
+                ScanRange::from_parts(blocks(1, 21), ScanPriority::Scanned),
+                ScanRange::from_parts(blocks(21, 40), ScanPriority::Scanning),
+            ];
+            let task = ScanRange::from_parts(blocks(21, 41), ScanPriority::ChainTip);
+
+            assert_eq!(
+                scan_results_standing(&wallet, &[], &task, &blocks(31, 41)),
+                ScanResultsStanding::Stale {
+                    cause: StaleCause::Truncated,
+                    reset: vec![blocks(31, 40)],
+                },
+            );
+            assert_eq!(
+                scan_results_standing(&wallet, &[], &task, &blocks(21, 31)),
+                ScanResultsStanding::Current,
+            );
+        }
+
+        #[test]
+        fn a_load_below_a_chain_height_that_dropped_past_it_is_stale_with_nothing_to_reset() {
+            let wallet = vec![ScanRange::from_parts(blocks(1, 21), ScanPriority::Scanned)];
+            let task = ScanRange::from_parts(blocks(21, 22), ScanPriority::Verify);
+
+            assert_eq!(
+                scan_results_standing(&wallet, &[], &task, &blocks(21, 22)),
+                ScanResultsStanding::Stale {
+                    cause: StaleCause::Truncated,
+                    reset: Vec::new(),
+                },
+            );
+        }
+
+        #[test]
+        fn a_stale_load_resets_blocks_of_its_own_in_flight_priority_alone() {
+            let wallet = vec![
+                ScanRange::from_parts(blocks(1, 11), ScanPriority::RefetchingNullifiers),
+                ScanRange::from_parts(blocks(11, 22), ScanPriority::Scanning),
+            ];
+            let refetch_task =
+                ScanRange::from_parts(blocks(1, 21), ScanPriority::ScannedWithoutMapping);
+
+            assert_eq!(
+                scan_results_standing(&wallet, &[], &refetch_task, &blocks(1, 21)),
+                ScanResultsStanding::Stale {
+                    cause: StaleCause::Reprioritised,
+                    reset: vec![blocks(1, 11)],
+                },
+            );
+
+            let mut sync_state = SyncState::new();
+            sync_state.scan_ranges = wallet;
+            reset_stale_load(&mut sync_state, refetch_task.priority(), &[blocks(1, 11)]);
+            assert_eq!(
+                sync_state.scan_ranges,
+                vec![
+                    ScanRange::from_parts(blocks(1, 11), ScanPriority::ScannedWithoutMapping),
+                    ScanRange::from_parts(blocks(11, 22), ScanPriority::Scanning),
+                ],
+            );
+        }
+
+        #[test]
+        fn a_load_of_a_reprioritised_range_is_stale_with_nothing_to_reset() {
+            let wallet = vec![ScanRange::from_parts(blocks(21, 41), ScanPriority::Verify)];
+            let task = ScanRange::from_parts(blocks(21, 41), ScanPriority::ChainTip);
+
+            assert_eq!(
+                scan_results_standing(&wallet, &[], &task, &blocks(21, 41)),
+                ScanResultsStanding::Stale {
+                    cause: StaleCause::Reprioritised,
+                    reset: Vec::new(),
+                },
+            );
+        }
+    }
+
+    /// One pure split over the wallet's scan ranges serves the stale reset and the priority punch alike.
+    mod split_out_overlapping {
+        use super::*;
+
+        fn blocks(start: u32, end: u32) -> Range<BlockHeight> {
+            BlockHeight::from_u32(start)..BlockHeight::from_u32(end)
+        }
+
+        #[test]
+        fn splits_every_range_of_the_given_priority_that_overlaps_and_passes_the_rest_through() {
+            let ranges = vec![
+                ScanRange::from_parts(blocks(1, 21), ScanPriority::Scanned),
+                ScanRange::from_parts(blocks(21, 31), ScanPriority::Scanning),
+                ScanRange::from_parts(blocks(31, 41), ScanPriority::Scanning),
+                ScanRange::from_parts(blocks(41, 51), ScanPriority::Historic),
+            ];
+
+            assert_eq!(
+                split_out_overlapping(
+                    ranges,
+                    &blocks(28, 45),
+                    ScanPriority::Scanning,
+                    ScanPriority::ChainTip,
+                ),
+                vec![
+                    ScanRange::from_parts(blocks(1, 21), ScanPriority::Scanned),
+                    ScanRange::from_parts(blocks(21, 28), ScanPriority::Scanning),
+                    ScanRange::from_parts(blocks(28, 31), ScanPriority::ChainTip),
+                    ScanRange::from_parts(blocks(31, 41), ScanPriority::ChainTip),
+                    ScanRange::from_parts(blocks(41, 51), ScanPriority::Historic),
+                ],
+            );
+        }
     }
 }

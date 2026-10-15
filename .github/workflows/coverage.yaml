@@ -7,22 +7,31 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
+  ensure-image:
+    uses: ./.github/workflows/ensure-image.yaml
+
   coverage:
     name: Coverage
+    needs: ensure-image
     runs-on: ubuntu-24.04
+    timeout-minutes: 180
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:011
+      image: ghcr.io/zingolabs/ci-build:${{ needs.ensure-image.outputs.image-tag }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
       options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
         with:
           components: llvm-tools-preview
 
@@ -45,10 +54,7 @@ jobs:
         run: mkdir -p ./test_binaries/bins
 
       - name: Symlink lightwalletd and zcash binaries
-        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./test_binaries/bins/
-
-      - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad ./test_binaries/bins/
 
       - name: Run instrumented tests
         run: cargo llvm-cov nextest --workspace --no-report

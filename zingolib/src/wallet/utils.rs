@@ -1,23 +1,46 @@
 //! TODO: Add Mod Description Here!
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use sapling_crypto::{
+    bundle as sapling_bundle, circuit as sapling_circuit, keys as sapling_keys,
+    prover as sapling_prover, value as sapling_value,
+};
 use std::{
     io::{self, Read, Write},
     path::PathBuf,
 };
 use zcash_primitives::transaction::TxId;
+use zcash_proofs::prover;
 use zcash_protocol::memo::MemoBytes;
 
-/// TODO: Add Doc Comment Here!
+pub(crate) const MAX_STRING_LENGTH: u64 = 1 << 16;
+
+/// ```
+/// use zingolib::wallet::utils::{read_string, write_string};
+///
+/// let mut encoded = Vec::new();
+/// write_string(&mut encoded, &"main".to_string()).unwrap();
+/// assert_eq!(read_string(encoded.as_slice()).unwrap(), "main");
+///
+/// let unbounded_length = u64::MAX.to_le_bytes();
+/// assert!(read_string(unbounded_length.as_slice()).is_err());
+/// ```
 pub fn read_string<R: Read>(mut reader: R) -> io::Result<String> {
-    // Strings are written as <littleendian> len + bytes
     let str_len = reader.read_u64::<LittleEndian>()?;
+    read_string_body(reader, str_len)
+}
+
+pub(crate) fn read_string_body<R: Read>(mut reader: R, str_len: u64) -> io::Result<String> {
+    if str_len > MAX_STRING_LENGTH {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("string length {str_len} exceeds the wallet-file maximum {MAX_STRING_LENGTH}"),
+        ));
+    }
     let mut str_bytes = vec![0; str_len as usize];
     reader.read_exact(&mut str_bytes)?;
 
-    let str = String::from_utf8(str_bytes)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-
-    Ok(str)
+    String::from_utf8(str_bytes)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
 }
 
 /// TODO: Add Doc Comment Here!
@@ -27,12 +50,21 @@ pub fn write_string<W: Write>(mut writer: W, s: &String) -> io::Result<()> {
     writer.write_all(s.as_bytes())
 }
 
+/// Failure to interpret a memo string.
+///
+/// Carries the offending memo's byte length, never its content, so the
+/// memo cannot leak into logs or error channels.
+#[derive(Debug, thiserror::Error)]
+pub enum MemoError {
+    /// The encoded memo exceeds the memo field's capacity.
+    #[error("Error creating output. Memo of {0} bytes is too long")]
+    TooLong(usize),
+}
+
 /// Create memo bytes from string.
-// TODO: replace string err variant with error enum which maps to MemoBytes errors.
-pub fn memo_bytes_from_string(memo_str: String) -> Result<MemoBytes, String> {
+pub fn memo_bytes_from_string(memo_str: String) -> Result<MemoBytes, MemoError> {
     let s_bytes = Vec::from(memo_str.as_bytes());
-    MemoBytes::from_bytes(&s_bytes)
-        .map_err(|_| format!("Error creating output. Memo '{memo_str:?}' is too long"))
+    MemoBytes::from_bytes(&s_bytes).map_err(|_| MemoError::TooLong(s_bytes.len()))
 }
 
 /// TODO: Add Doc Comment Here!
@@ -43,25 +75,111 @@ pub fn txid_from_slice(txid: &[u8]) -> TxId {
     TxId::from_bytes(txid_bytes)
 }
 
-/// Returns the downloaded Sapling parameters as bytes.
-pub(crate) fn read_sapling_params() -> Result<(Vec<u8>, Vec<u8>), String> {
-    use crate::SaplingParams;
-    let mut sapling_output = vec![];
-    sapling_output.extend_from_slice(
-        SaplingParams::get("sapling-output.params")
-            .unwrap()
-            .data
-            .as_ref(),
-    );
+#[cfg(test)]
+thread_local! {
+    static SAPLING_PROVER_PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
-    let mut sapling_spend = vec![];
-    sapling_spend.extend_from_slice(
-        SaplingParams::get("sapling-spend.params")
-            .unwrap()
-            .data
-            .as_ref(),
-    );
-    Ok((sapling_output, sapling_spend))
+#[cfg(test)]
+pub(crate) fn sapling_prover_parses() -> usize {
+    SAPLING_PROVER_PARSES.with(std::cell::Cell::get)
+}
+
+/// - Increments this thread's count of Sapling parameter parses.
+#[cfg(test)]
+fn note_sapling_prover_parse() {
+    SAPLING_PROVER_PARSES.with(|parses| parses.set(parses.get() + 1));
+}
+
+#[derive(Default)]
+pub(crate) struct LazySaplingProver {
+    prover: std::sync::OnceLock<prover::LocalTxProver>,
+}
+
+impl LazySaplingProver {
+    /// - Parses the embedded Sapling parameters on this adapter's first call.
+    fn prover(&self) -> &prover::LocalTxProver {
+        self.prover.get_or_init(|| {
+            #[cfg(test)]
+            note_sapling_prover_parse();
+            prover::LocalTxProver::from_bytes(
+                crate::SaplingParams::SPEND,
+                crate::SaplingParams::OUTPUT,
+            )
+        })
+    }
+}
+
+impl sapling_prover::SpendProver for LazySaplingProver {
+    type Proof = <prover::LocalTxProver as sapling_prover::SpendProver>::Proof;
+
+    fn prepare_circuit(
+        proof_generation_key: sapling_crypto::ProofGenerationKey,
+        diversifier: sapling_crypto::Diversifier,
+        rseed: sapling_crypto::Rseed,
+        value: sapling_value::NoteValue,
+        alpha: jubjub::Fr,
+        rcv: sapling_value::ValueCommitTrapdoor,
+        anchor: jubjub::Fq,
+        merkle_path: sapling_crypto::MerklePath,
+    ) -> Option<sapling_circuit::Spend> {
+        <prover::LocalTxProver as sapling_prover::SpendProver>::prepare_circuit(
+            proof_generation_key,
+            diversifier,
+            rseed,
+            value,
+            alpha,
+            rcv,
+            anchor,
+            merkle_path,
+        )
+    }
+
+    /// - Parses the embedded Sapling parameters if this adapter has not yet.
+    fn create_proof<R: rand::Rng>(
+        &self,
+        circuit: sapling_circuit::Spend,
+        rng: &mut R,
+    ) -> Self::Proof {
+        sapling_prover::SpendProver::create_proof(self.prover(), circuit, rng)
+    }
+
+    fn encode_proof(proof: Self::Proof) -> sapling_bundle::GrothProofBytes {
+        <prover::LocalTxProver as sapling_prover::SpendProver>::encode_proof(proof)
+    }
+}
+
+impl sapling_prover::OutputProver for LazySaplingProver {
+    type Proof = <prover::LocalTxProver as sapling_prover::OutputProver>::Proof;
+
+    fn prepare_circuit(
+        esk: &sapling_keys::EphemeralSecretKey,
+        payment_address: sapling_crypto::PaymentAddress,
+        rcm: jubjub::Fr,
+        value: sapling_value::NoteValue,
+        rcv: sapling_value::ValueCommitTrapdoor,
+    ) -> sapling_circuit::Output {
+        <prover::LocalTxProver as sapling_prover::OutputProver>::prepare_circuit(
+            esk,
+            payment_address,
+            rcm,
+            value,
+            rcv,
+        )
+    }
+
+    /// - Parses the embedded Sapling parameters if this adapter has not yet.
+    fn create_proof<R: rand::Rng>(
+        &self,
+        circuit: sapling_circuit::Output,
+        rng: &mut R,
+    ) -> Self::Proof {
+        sapling_prover::OutputProver::create_proof(self.prover(), circuit, rng)
+    }
+
+    fn encode_proof(proof: Self::Proof) -> sapling_bundle::GrothProofBytes {
+        <prover::LocalTxProver as sapling_prover::OutputProver>::encode_proof(proof)
+    }
 }
 
 /// Returns the path to the default directory that the Zcash proving parameters are located in.
@@ -73,6 +191,20 @@ pub fn get_zcash_params_path() -> std::io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// HYPOTHESIS: the embedded Sapling parameters are present whole, so
+    /// loading them is infallible. Falsified if either blob is empty.
+    #[test]
+    fn embedded_sapling_params_load_whole() {
+        assert!(
+            !crate::SaplingParams::OUTPUT.is_empty(),
+            "output params are embedded"
+        );
+        assert!(
+            !crate::SaplingParams::SPEND.is_empty(),
+            "spend params are embedded"
+        );
+    }
 
     #[test]
     fn test_memo_bytes_from_string_plain_text() {
