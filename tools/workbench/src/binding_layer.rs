@@ -17,23 +17,15 @@ pub const WALLET_LIB_NAME: &str = "zingo";
 /// The proxy crate's library name, from which its library file names derive.
 pub const PROXY_LIB_NAME: &str = "zingo_nym_proxy_ffi";
 
-pub const LIB_NAMES: [&str; 2] = [WALLET_LIB_NAME, PROXY_LIB_NAME];
-
 const MACH_O_SYMBOL_PREFIX: &str = "_";
 const UNIFFI_SYMBOL_PREFIXES: [&str; 2] = ["uniffi_", "ffi_"];
 const SYMBOL_WILDCARD: &str = "*";
 const SYMBOL_SEPARATOR: &str = "_";
-const EXPORTS_LINE_END: &str = "\n";
 
-pub fn exported_symbols(lib_name: &str) -> String {
-    UNIFFI_SYMBOL_PREFIXES
-        .iter()
-        .map(|prefix| {
-            format!(
-                "{MACH_O_SYMBOL_PREFIX}{prefix}{lib_name}{SYMBOL_SEPARATOR}{SYMBOL_WILDCARD}{EXPORTS_LINE_END}"
-            )
-        })
-        .collect()
+pub fn exported_symbol_patterns(lib_name: &str) -> [String; 2] {
+    UNIFFI_SYMBOL_PREFIXES.map(|prefix| {
+        format!("{MACH_O_SYMBOL_PREFIX}{prefix}{lib_name}{SYMBOL_SEPARATOR}{SYMBOL_WILDCARD}")
+    })
 }
 
 /// The proxy crate's package name, which cargo selects in its own workspace.
@@ -447,6 +439,13 @@ impl Generation {
             Generation::Proxy => "proxy",
         }
     }
+
+    pub fn lib_name(self) -> &'static str {
+        match self {
+            Generation::Wallet => WALLET_LIB_NAME,
+            Generation::Proxy => PROXY_LIB_NAME,
+        }
+    }
 }
 
 /// Every binding set, in a fixed order.
@@ -574,18 +573,6 @@ pub fn library_file(prefix: &str, lib_name: &str, suffix: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_exported_symbols_are_the_uniffi_functions_of_the_library() {
-        assert_eq!(
-            exported_symbols(WALLET_LIB_NAME),
-            "_uniffi_zingo_*\n_ffi_zingo_*\n"
-        );
-        assert_eq!(
-            exported_symbols(PROXY_LIB_NAME),
-            "_uniffi_zingo_nym_proxy_ffi_*\n_ffi_zingo_nym_proxy_ffi_*\n"
-        );
-    }
 
     #[test]
     fn the_android_workflow_runs_in_the_published_image() {
