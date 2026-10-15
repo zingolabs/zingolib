@@ -1,13 +1,14 @@
 name: Binding Layer for Android
 
 # Builds the Binding Layer's Android libraries and Kotlin Binding Sets on
-# the commit the caller names, and packages them into the AAR. The build
-# runs the builder of tools/workbench in the builder's own image. The
-# package job compiles no Rust. The Gradle library takes the prebuilt
-# output, compiles the Kotlin Binding Sets, and bundles the AAR. The
-# caller passes every artifact name from one run of `build-binding-layer
-# artifact`, so the jobs of one run agree on the names whatever commit
-# they build.
+# the commit the caller names, and publishes them as a Maven repository
+# layout. The build runs the builder of tools/workbench in the builder's
+# own image. The package job compiles no Rust beyond the workbench. The
+# Gradle library takes the prebuilt output, compiles the Kotlin Binding
+# Sets, and publishes the AAR with its POM into a repository directory,
+# versioned by the workbench. The caller passes every artifact name from
+# one run of `build-binding-layer artifact`, so the jobs of one run agree
+# on the names whatever commit they build.
 
 on:
   workflow_call:
@@ -29,15 +30,15 @@ on:
       # The artifact names, from one run of `build-binding-layer artifact`
       # in the caller, so that every job of one run agrees on them whatever
       # commit it builds: the per-ABI artifact of each ABI as a JSON object,
-      # the pattern that matches them all, the glob of the AAR that Gradle
-      # writes, and the bundle this workflow uploads.
+      # the pattern that matches them all, the Maven repository directory
+      # that Gradle publishes into, and the bundle this workflow uploads.
       abi_artifacts:
         required: true
         type: string
       abi_pattern:
         required: true
         type: string
-      aar_glob:
+      repository:
         required: true
         type: string
       bundle:
@@ -114,19 +115,24 @@ jobs:
           overwrite: true
 
   package:
-    name: Package the AAR
+    name: Publish the Maven layout
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       ABIS: ${{ join(fromJSON(inputs.abis), ' ') }}
       OUTPUT: bindings/android/build/binding-layer
-      AAR: bindings/android/build/outputs/aar/${{ inputs.aar_glob }}
+      REPOSITORY: ${{ inputs.repository }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
+
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+        with:
+          workspaces: tools/workbench
 
       # The ABIs share one output directory.
       - name: Download the Binding Layer
@@ -147,9 +153,16 @@ jobs:
           test -f "$OUTPUT/kotlin/uniffi/zingo_nym_proxy_ffi/zingo_nym_proxy_ffi.kt"
 
       # Gradle reads ORG_GRADLE_PROJECT_<name> as the project property <name>,
-      # and the Binding Layer build then skips its own build.
-      - name: Point Gradle at the prebuilt Binding Layer
-        run: echo "ORG_GRADLE_PROJECT_bindingLayerPrebuilt=$GITHUB_WORKSPACE/$OUTPUT" >> "$GITHUB_ENV"
+      # and the Binding Layer build then skips its own build. The workbench
+      # derives the Maven version from the descriptor the builder wrote and
+      # the commit, so Gradle never computes it.
+      - name: Point Gradle at the prebuilt Binding Layer and name its version
+        run: |
+          set -eu
+          version="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- \
+            maven-version --descriptor "$OUTPUT/descriptor.txt" --commit "$(git rev-parse HEAD)")"
+          echo "ORG_GRADLE_PROJECT_bindingLayerPrebuilt=$GITHUB_WORKSPACE/$OUTPUT" >> "$GITHUB_ENV"
+          echo "ORG_GRADLE_PROJECT_bindingLayerVersion=$version" >> "$GITHUB_ENV"
 
       - name: Install the NDK that the AAR declares
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
@@ -159,18 +172,24 @@ jobs:
         with:
           gradle-version: '8.14.3'
 
-      # One Gradle invocation bundles the AAR and runs the Kotlin
-      # wire-contract test of the proxy crate in one task graph. The test
-      # compiles against the Kotlin Binding Set that the AAR ships and
-      # asserts it against the crate's golden pins, which the Rust and
-      # Swift suites share.
-      - name: Bundle the AAR and run the Kotlin wire-contract test
-        run: gradle --project-dir bindings/android bundleReleaseAar testReleaseUnitTest
+      # One Gradle invocation publishes the AAR and its POM into the Maven
+      # repository directory and runs the Kotlin wire-contract test of the
+      # proxy crate in one task graph. The test compiles against the Kotlin
+      # Binding Set that the AAR ships and asserts it against the crate's
+      # golden pins, which the Rust and Swift suites share.
+      - name: Publish the Maven layout and run the Kotlin wire-contract test
+        run: gradle --project-dir bindings/android publish testReleaseUnitTest
 
-      - name: Verify the AAR carries both libraries for every ABI
+      # The layout holds one AAR beside one POM, and the POM declares JNA,
+      # which the AAR needs and does not contain.
+      - name: Verify the layout holds the AAR, its POM, and every ABI
         run: |
           set -eu
-          aar="$(ls $AAR)"
+          aar="$(find "$REPOSITORY" -name '*.aar')"
+          test "$(printf '%s\n' "$aar" | wc -l)" -eq 1
+          pom="${aar%.aar}.pom"
+          test -f "$pom"
+          grep --quiet '<artifactId>jna</artifactId>' "$pom"
           entries="$(unzip -Z1 "$aar")"
           for abi in $ABIS; do
             for library in libuniffi_zingo.so libzingo_nym_proxy_ffi.so; do
@@ -178,14 +197,15 @@ jobs:
             done
           done
 
-      # The publish workflow pushes this AAR, with the descriptor the
-      # builder read from the wallet build, as the Android Prebuilt Bundle.
-      - name: Upload the AAR and the descriptor
+      # The publish workflow archives this directory, with the descriptor
+      # the builder read from the wallet build, as the Android Prebuilt
+      # Bundle.
+      - name: Upload the Maven layout and the descriptor
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.bundle }}
           path: |
-            ${{ env.AAR }}
+            ${{ env.REPOSITORY }}
             ${{ env.OUTPUT }}/descriptor.txt
           retention-days: 3
           overwrite: true

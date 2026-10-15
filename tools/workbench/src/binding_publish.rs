@@ -7,11 +7,10 @@ use crate::binding_manifest;
 pub const BINARY: &str = "binding-publish";
 pub const USERNAME_VARIABLE: &str = "REGISTRY_USERNAME";
 pub const TOKEN_VARIABLE: &str = "REGISTRY_TOKEN";
-const ZIP_MEDIA_TYPE: &str = "application/zip";
-const GZIP_MEDIA_TYPE: &str = "application/gzip";
+pub const GZIP_MEDIA_TYPE: &str = "application/gzip";
 const ARCHIVE_SUFFIX: &str = ".tar.gz";
 const SHAPES: [(&str, &str); 2] = [
-    (binding_manifest::ANDROID, ZIP_MEDIA_TYPE),
+    (binding_manifest::ANDROID, GZIP_MEDIA_TYPE),
     (binding_manifest::IOS, GZIP_MEDIA_TYPE),
 ];
 const TAR: &str = "tar";
@@ -148,11 +147,7 @@ fn bundle_of(root: &Path, platform: &str, dir: &Path, commit: &str) -> Result<Bu
     .to_string();
     let media_type = media_type_of(platform)?;
     let file = match platform {
-        binding_manifest::ANDROID => {
-            find_file(dir, &format!("*{}", binding_layer::AAR_SUFFIX), |name| {
-                name.ends_with(binding_layer::AAR_SUFFIX)
-            })?
-        }
+        binding_manifest::ANDROID => maven_repository_archive(dir)?,
         _ => swift_package_archive(root, dir, commit)?,
     };
     Ok(Bundle {
@@ -160,6 +155,37 @@ fn bundle_of(root: &Path, platform: &str, dir: &Path, commit: &str) -> Result<Bu
         descriptor,
         media_type,
     })
+}
+
+/// - Runs `tar` as a child process in `parent`, writing `<name>.tar.gz` beside `<name>`.
+fn archive(parent: &Path, name: &str) -> Result<PathBuf, Vec<String>> {
+    let archive_name = format!("{name}{ARCHIVE_SUFFIX}");
+    let args = [TAR_ARGS.as_slice(), &[archive_name.as_str(), name]].concat();
+    crate::stdout_in(parent, TAR, &args, &[])?;
+    Ok(parent.join(archive_name))
+}
+
+/// - Runs `tar` as a child process to archive the Maven repository directory under `dir`.
+fn maven_repository_archive(dir: &Path) -> Result<PathBuf, Vec<String>> {
+    let metadata = find_file(dir, binding_layer::MAVEN_METADATA_FILE, |name| {
+        name == binding_layer::MAVEN_METADATA_FILE
+    })?;
+    let repository = metadata
+        .ancestors()
+        .find(|ancestor| {
+            ancestor
+                .file_name()
+                .is_some_and(|name| name == binding_layer::MAVEN_REPOSITORY_DIR)
+        })
+        .ok_or_else(|| {
+            vec![format!(
+                "{} lies under no directory named {}",
+                metadata.display(),
+                binding_layer::MAVEN_REPOSITORY_DIR
+            )]
+        })?;
+    let parent = crate::required(repository.parent(), "parent of the Maven repository")?;
+    archive(parent, binding_layer::MAVEN_REPOSITORY_DIR)
 }
 
 fn swift_package_archive(root: &Path, dir: &Path, commit: &str) -> Result<PathBuf, Vec<String>> {
@@ -184,14 +210,7 @@ fn swift_package_archive(root: &Path, dir: &Path, commit: &str) -> Result<PathBu
     let manifest_file = package_dir.join(crate::file_name_of(manifest_path)?);
     std::fs::write(&manifest_file, manifest_text)
         .map_err(|e| vec![format!("cannot write {}: {e}", manifest_file.display())])?;
-    let archive_name = format!("{}{ARCHIVE_SUFFIX}", binding_layer::SWIFT_PACKAGE);
-    let args = [
-        TAR_ARGS.as_slice(),
-        &[archive_name.as_str(), binding_layer::SWIFT_PACKAGE],
-    ]
-    .concat();
-    crate::stdout_in(&staging, TAR, &args, &[])?;
-    Ok(staging.join(archive_name))
+    archive(&staging, binding_layer::SWIFT_PACKAGE)
 }
 
 /// - Runs `git add` and `git commit` in `root`, then `git pull --rebase` and `git push`, the
@@ -288,7 +307,10 @@ mod tests {
 
     #[test]
     fn every_platform_has_one_bundle_shape_and_nothing_else_does() {
-        assert_eq!(media_type_of(binding_manifest::ANDROID), Ok(ZIP_MEDIA_TYPE));
+        assert_eq!(
+            media_type_of(binding_manifest::ANDROID),
+            Ok(GZIP_MEDIA_TYPE)
+        );
         assert_eq!(media_type_of(binding_manifest::IOS), Ok(GZIP_MEDIA_TYPE));
         assert!(media_type_of("linux").is_err());
         assert_eq!(

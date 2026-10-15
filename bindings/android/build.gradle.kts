@@ -1,6 +1,7 @@
 plugins {
     id("com.android.library") version "8.11.0"
     id("org.jetbrains.kotlin.android") version "2.1.20"
+    id("maven-publish")
 }
 
 val bindingCompileSdk = 36
@@ -11,7 +12,12 @@ val jnaDependency = "net.java.dev.jna:jna:5.18.1@aar"
 val annotationDependency = "androidx.annotation:annotation:1.8.1"
 val junitDependency = "junit:junit:4.13.2"
 
+val bindingLayerVersion: Provider<String> = providers.gradleProperty("bindingLayerVersion")
+val unversioned = "unversioned"
+val repositoryOutput: Provider<Directory> = layout.buildDirectory.dir("repository")
+
 group = "org.zingolabs"
+version = bindingLayerVersion.getOrElse(unversioned)
 
 val zingolibRoot: File = rootDir.resolve("../..")
 val proxyCrate: File = zingolibRoot.resolve("zingo-netutils/nym-proxy-ffi")
@@ -73,6 +79,10 @@ android {
             it.systemProperty("zingo.golden.dir", goldenDir.normalize().absolutePath)
         }
     }
+
+    publishing {
+        singleVariant("release")
+    }
 }
 
 kotlin {
@@ -83,6 +93,38 @@ kotlin {
 
 tasks.named("preBuild") {
     dependsOn(buildBindingLayer)
+}
+
+val clearRepository by tasks.registering(Delete::class) {
+    description = "Clears the Maven repository directory before a publication writes it."
+    delete(repositoryOutput)
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            register<MavenPublication>("release") {
+                from(components["release"])
+            }
+        }
+        repositories {
+            maven {
+                name = "bundle"
+                url = uri(repositoryOutput)
+            }
+        }
+    }
+}
+
+tasks.withType<PublishToMavenRepository>().configureEach {
+    dependsOn(clearRepository)
+    doFirst {
+        if (!bindingLayerVersion.isPresent) {
+            throw GradleException(
+                "Set the Gradle property bindingLayerVersion from `build-binding-layer maven-version` before publishing."
+            )
+        }
+    }
 }
 
 dependencies {

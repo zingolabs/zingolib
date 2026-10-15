@@ -17,13 +17,18 @@ const PROGRAM: &str = "build-binding-layer";
 const USAGE: &str = "usage: build-binding-layer <android|ios|kotlin> --out <directory> \
     [android only: --abi <android abi>] [android only: --in-image] \
     | build-binding-layer artifact --commit <commit> \
+    | build-binding-layer maven-version --descriptor <file> --commit <commit> \
     | build-binding-layer image";
 
 const ARTIFACT_COMMAND: &str = "artifact";
 
+const MAVEN_VERSION_COMMAND: &str = "maven-version";
+
 const IMAGE_COMMAND: &str = "image";
 
 const COMMIT_FLAG: &str = "--commit";
+
+const DESCRIPTOR_FLAG: &str = "--descriptor";
 
 /// The flag that runs the Android plan directly, inside a job that already runs in the builder image.
 const IN_IMAGE_FLAG: &str = "--in-image";
@@ -363,6 +368,11 @@ fn main() {
         Some((command, rest)) if command == ARTIFACT_COMMAND => {
             workbench::run(PROGRAM, || artifact(rest), |outputs| print!("{outputs}"))
         }
+        Some((command, rest)) if command == MAVEN_VERSION_COMMAND => workbench::run(
+            PROGRAM,
+            || maven_version(rest),
+            |version| println!("{version}"),
+        ),
         Some((command, rest)) if command == IMAGE_COMMAND => {
             workbench::run(PROGRAM, || image(rest), |tag| println!("{tag}"))
         }
@@ -379,6 +389,17 @@ fn artifact(args: &[String]) -> Result<String, Vec<String>> {
     Ok(binding_layer::render_outputs(
         &binding_layer::artifact_outputs(&binding_manifest::PLATFORMS, commit),
     ))
+}
+
+/// - Reads the descriptor file that `--descriptor` names.
+fn maven_version(args: &[String]) -> Result<String, Vec<String>> {
+    let descriptor = workbench::read(path::Path::new(workbench::required_flag(
+        args,
+        DESCRIPTOR_FLAG,
+        USAGE,
+    )?))?;
+    let commit = workbench::required_flag(args, COMMIT_FLAG, USAGE)?;
+    binding_layer::maven_version(&descriptor, commit)
 }
 
 /// - Runs the container engine's `build`, which writes `PUBLISHED_ANDROID_IMAGE` to its store.

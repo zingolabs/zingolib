@@ -55,7 +55,7 @@ jobs:
       abis: ${{ steps.names.outputs.abis }}
       abi_artifacts: ${{ steps.names.outputs.abi_artifacts }}
       abi_pattern: ${{ steps.names.outputs.abi_pattern }}
-      aar_glob: ${{ steps.names.outputs.aar_glob }}
+      android_repository: ${{ steps.names.outputs.android_repository }}
       bundle_android: ${{ steps.names.outputs.bundle_android }}
       bundle_ios: ${{ steps.names.outputs.bundle_ios }}
       bundle_pattern: ${{ steps.names.outputs.bundle_pattern }}
@@ -161,7 +161,7 @@ jobs:
       abis: ${{ needs.request.outputs.abis }}
       abi_artifacts: ${{ needs.request.outputs.abi_artifacts }}
       abi_pattern: ${{ needs.request.outputs.abi_pattern }}
-      aar_glob: ${{ needs.request.outputs.aar_glob }}
+      repository: ${{ needs.request.outputs.android_repository }}
       bundle: ${{ needs.request.outputs.bundle_android }}
 
   ios:

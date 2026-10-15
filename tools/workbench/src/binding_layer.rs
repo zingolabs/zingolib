@@ -324,11 +324,24 @@ pub const ABI_ARTIFACT: &str = "abi";
 pub const ARTIFACT_KINDS: [&str; 2] = [BUNDLE_ARTIFACT, ABI_ARTIFACT];
 pub const ARTIFACT_WILDCARD: &str = "*";
 const ARTIFACT_SEPARATOR: &str = "-";
-pub const AAR_SUFFIX: &str = "-release.aar";
+pub const ANDROID_GRADLE_MANIFEST: &str = "bindings/android/build.gradle.kts";
+pub const ANDROID_GRADLE_SETTINGS: &str = "bindings/android/settings.gradle.kts";
+pub const ANDROID_BUILD_DIR: &str = "bindings/android/build";
+pub const MAVEN_REPOSITORY_DIR: &str = "repository";
+pub const MAVEN_GROUP: &str = "org.zingolabs";
+pub const MAVEN_ARTIFACT: &str = "zingo-binding-layer";
+pub const MAVEN_VERSION_PROPERTY: &str = "bindingLayerVersion";
+pub const MAVEN_METADATA_FILE: &str = "maven-metadata.xml";
+pub const MAVEN_PUBLISH_PLUGIN: &str = "maven-publish";
+pub const MAVEN_COMMIT_LENGTH: usize = 16;
+const MAVEN_VERSION_SEPARATOR: &str = "-";
+const MAVEN_COORDINATE_SEPARATOR: &str = ":";
+const DESCRIPTOR_PREFIX: &str = "zl_";
+const DESCRIPTOR_SEPARATOR: char = '_';
 pub const ABIS_OUTPUT: &str = "abis";
 pub const ABI_ARTIFACTS_OUTPUT: &str = "abi_artifacts";
 pub const ABI_PATTERN_OUTPUT: &str = "abi_pattern";
-pub const AAR_GLOB_OUTPUT: &str = "aar_glob";
+pub const ANDROID_REPOSITORY_OUTPUT: &str = "android_repository";
 pub const BUNDLE_OUTPUT_PREFIX: &str = "bundle_";
 pub const BUNDLE_PATTERN_OUTPUT: &str = "bundle_pattern";
 pub const IOS_OUT_OUTPUT: &str = "ios_out";
@@ -472,6 +485,46 @@ pub fn swift_package_output_dir() -> String {
     format!("{}/{SWIFT_PACKAGE_OUTPUT_DIR}", dir.display())
 }
 
+pub fn maven_repository_dir() -> String {
+    format!("{ANDROID_BUILD_DIR}/{MAVEN_REPOSITORY_DIR}")
+}
+
+pub fn maven_version(descriptor: &str, commit: &str) -> Result<String, Vec<String>> {
+    let descriptor = descriptor.trim();
+    let (crate_version, abbreviation) = descriptor
+        .strip_prefix(DESCRIPTOR_PREFIX)
+        .and_then(|body| body.rsplit_once(DESCRIPTOR_SEPARATOR))
+        .filter(|(version, abbreviation)| !version.is_empty() && !abbreviation.is_empty())
+        .ok_or_else(|| {
+            vec![format!(
+                "{descriptor} is not a {DESCRIPTOR_PREFIX}<crate version>{DESCRIPTOR_SEPARATOR}<commit> descriptor"
+            )]
+        })?;
+    let commit = commit.trim();
+    let full = commit.len() == crate::binding_manifest::COMMIT_LENGTH
+        && commit
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase());
+    if !full {
+        return Err(vec![format!(
+            "{commit} is not a full lowercase commit hash"
+        )]);
+    }
+    if !commit.starts_with(abbreviation) {
+        return Err(vec![format!(
+            "the descriptor {descriptor} names {abbreviation}, which does not begin {commit}"
+        )]);
+    }
+    Ok(format!(
+        "{crate_version}{MAVEN_VERSION_SEPARATOR}{}",
+        &commit[..MAVEN_COMMIT_LENGTH]
+    ))
+}
+
+pub fn maven_coordinate(version: &str) -> String {
+    format!("{MAVEN_GROUP}{MAVEN_COORDINATE_SEPARATOR}{MAVEN_ARTIFACT}{MAVEN_COORDINATE_SEPARATOR}{version}")
+}
+
 pub fn artifact_outputs(platforms: &[&str], commit: &str) -> Vec<(String, String)> {
     let abis = ANDROID_ABIS.iter().map(|abi| abi.jni_dir);
     let mut outputs = vec![
@@ -490,8 +543,8 @@ pub fn artifact_outputs(platforms: &[&str], commit: &str) -> Vec<(String, String
             artifact_name(ABI_ARTIFACT, ARTIFACT_WILDCARD, commit),
         ),
         (
-            AAR_GLOB_OUTPUT.to_string(),
-            format!("{ARTIFACT_WILDCARD}{AAR_SUFFIX}"),
+            ANDROID_REPOSITORY_OUTPUT.to_string(),
+            maven_repository_dir(),
         ),
     ];
     outputs.extend(platforms.iter().map(|platform| {
@@ -856,6 +909,48 @@ mod tests {
         assert!(std::path::Path::new(SWIFT_PACKAGE_MANIFEST).ends_with("Package.swift"));
     }
 
+    #[test]
+    fn the_android_gradle_files_name_the_maven_publication() {
+        let manifest = include_str!("../../../bindings/android/build.gradle.kts");
+        let settings = include_str!("../../../bindings/android/settings.gradle.kts");
+        assert!(manifest.contains(&format!("id(\"{MAVEN_PUBLISH_PLUGIN}\")")));
+        assert!(manifest.contains(&format!("group = \"{MAVEN_GROUP}\"")));
+        assert!(manifest.contains(&format!(
+            "providers.gradleProperty(\"{MAVEN_VERSION_PROPERTY}\")"
+        )));
+        assert!(manifest.contains(&format!(
+            "layout.buildDirectory.dir(\"{MAVEN_REPOSITORY_DIR}\")"
+        )));
+        assert!(settings.contains(&format!("rootProject.name = \"{MAVEN_ARTIFACT}\"")));
+        assert!(std::path::Path::new(ANDROID_GRADLE_MANIFEST).starts_with("bindings/android"));
+        assert!(std::path::Path::new(ANDROID_GRADLE_SETTINGS).starts_with("bindings/android"));
+        assert!(std::path::Path::new(ANDROID_BUILD_DIR).starts_with("bindings/android"));
+    }
+
+    #[test]
+    fn the_maven_version_joins_the_crate_version_and_sixteen_commit_characters() {
+        let commit = "ba7336710419c9ac1e9362ac1b4e5b0073ff477e";
+        assert_eq!(
+            maven_version("zl_6.0.0_ba733\n", commit),
+            Ok("6.0.0-ba7336710419c9ac".to_string())
+        );
+        assert_eq!(
+            maven_coordinate("6.0.0-ba7336710419c9ac"),
+            "org.zingolabs:zingo-binding-layer:6.0.0-ba7336710419c9ac"
+        );
+        let diagnostic = |descriptor: &str, commit: &str| {
+            maven_version(descriptor, commit)
+                .err()
+                .unwrap_or_default()
+                .concat()
+        };
+        assert!(diagnostic("6.0.0_ba733", commit).contains("descriptor"));
+        assert!(diagnostic("zl_6.0.0", commit).contains("descriptor"));
+        assert!(diagnostic("zl_6.0.0_ba733", "ba733").contains("full lowercase"));
+        assert!(diagnostic("zl_6.0.0_ba733", &commit.to_uppercase()).contains("full lowercase"));
+        assert!(diagnostic("zl_6.0.0_cafe0", commit).contains("does not begin"));
+    }
+
     fn resolved(base: &str, relative: &str) -> std::path::PathBuf {
         lexical(&std::path::Path::new(base).join(relative))
     }
@@ -1059,7 +1154,7 @@ mod tests {
                  \"x86\":\"binding-layer-abi-x86-{commit}\",\
                  \"x86_64\":\"binding-layer-abi-x86_64-{commit}\"}}\n\
                  abi_pattern=binding-layer-abi-*-{commit}\n\
-                 aar_glob=*-release.aar\n\
+                 android_repository=bindings/android/build/repository\n\
                  bundle_android=binding-layer-bundle-android-{commit}\n\
                  bundle_ios=binding-layer-bundle-ios-{commit}\n\
                  bundle_pattern=binding-layer-bundle-*-{commit}\n\
