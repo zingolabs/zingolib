@@ -1,0 +1,98 @@
+name: Binding Layer for iOS
+
+# Builds the Binding Layer's two XCFrameworks and the Swift sources of the
+# ZingoBindings package on this commit, with the builder of tools/workbench.
+
+on:
+  workflow_call:
+    inputs:
+      # The CI_IOS_RUNNER repository variable sets the runner label. The
+      # fallback warp-macos-15-arm64-12x is WarpBuild's 12-vCPU M4 Pro
+      # machine. The stock macos-15 label has three cores.
+      runner:
+        required: false
+        type: string
+        default: ${{ vars.CI_IOS_RUNNER || 'warp-macos-15-arm64-12x' }}
+      # The commit to build. The publish workflow names a commit the
+      # manifest lists, which is rarely the commit that triggered it.
+      ref:
+        required: false
+        type: string
+        default: ${{ github.sha }}
+      # From one run of `build-binding-layer artifact` in the caller: the
+      # builder's output directory, which Package.swift expects, and the
+      # bundle this workflow uploads.
+      out:
+        required: true
+        type: string
+      bundle:
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build the XCFrameworks and the Swift sources
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 45
+    env:
+      RUSTUP_HOME: ${{ github.workspace }}/.rustup
+      CARGO_HOME: ${{ github.workspace }}/.cargo
+    steps:
+      # The zl_ descriptor names the release tag that points at HEAD.
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-tags: true
+
+      # The action installs the toolchain rust-toolchain.toml pins, with
+      # its components, and the builder adds the iOS targets to it itself.
+      # The builder puts each crate's iOS target directory under
+      # target/binding-layer, so the list names those directories. The
+      # wallet crate resolves in the root workspace and the proxy crate in
+      # the zingo-netutils workspace, so each entry names the workspace
+      # whose lockfile keys the cache.
+      - name: Setup Rust and the cargo cache (registry, git, iOS targets)
+        uses: ./.github/actions/rust-setup
+        with:
+          workspaces: |
+            . -> target/binding-layer/ios/wallet
+            zingo-netutils -> ../target/binding-layer/ios/proxy
+            tools/workbench
+
+      - name: Install bindgen-cli
+        run: cargo install --locked bindgen-cli
+
+      # A dependency uses bindgen 0.69, which needs the simulator target and
+      # SDK stated for the aarch64 simulator. The job environment carries
+      # them, and the repository's .cargo/config.toml keeps its contents.
+      - name: Environment for the iOS simulator
+        shell: bash
+        run: |
+          sdkroot="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          flags="--target=arm64-apple-ios-simulator -isysroot $sdkroot"
+          printf '%s\n' \
+            "BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios_sim=$flags" \
+            "CFLAGS_aarch64_apple_ios_sim=$flags" \
+            "CXXFLAGS_aarch64_apple_ios_sim=$flags" \
+            >> "$GITHUB_ENV"
+
+      # The plan ends with the Swift wire-contract test of the proxy crate,
+      # which compiles against the Swift Binding Set the package ships and
+      # asserts it against the crate's golden pins, which the Rust and
+      # Kotlin suites share. The XCFrameworks hold iOS slices only, so the
+      # builder runs the test on an iOS simulator it picks.
+      - name: Build the Binding Layer and run the Swift wire-contract test
+        run: |
+          cargo run \
+            --manifest-path tools/workbench/Cargo.toml \
+            --bin build-binding-layer -- \
+            ios --out "${{ inputs.out }}"
+
+      - name: Upload the Binding Layer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.bundle }}
+          path: ${{ inputs.out }}
+          retention-days: 3
+          overwrite: true

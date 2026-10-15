@@ -1,71 +1,37 @@
-ARG RUST_VERSION=1.90
-ARG LIGHTWALLETD_VERSION=0.4.18
-ARG ZCASH_VERSION=6.20.0
-ARG ZAINO_IMAGE_TAG=0.3.0-rc.1
-ARG NEXTEST_VERSION=0.9.128
+# No ARG defaults, deliberately: .env.testing-artifacts is the single
+# source of truth for every pinned value (and rust-toolchain.toml for
+# RUST_VERSION, which the Makefile derives). Build through
+# `makers build-image`, which sources the env file and passes each
+# value; a bare `docker build` without --build-args fails loudly
+# instead of assembling an image from stale duplicated defaults.
+ARG RUST_VERSION
+ARG ZAINO_IMAGE_TAG
+ARG ZEBRA_VERSION
+ARG NEXTEST_VERSION
+# Digests pin the CONTENT the tags merely point at; tag@digest fails
+# loudly if upstream repushes a tag, so every machine building from
+# the same commit provisions byte-identical binaries.
+ARG ZAINO_IMAGE_DIGEST
+ARG ZEBRA_IMAGE_DIGEST
 
-FROM docker.io/zodlinc/zcash:v${ZCASH_VERSION} AS zcashd-downloader
-FROM docker.io/zingodevops/zaino:${ZAINO_IMAGE_TAG} AS zainod-downloader
-
-FROM debian:trixie-slim AS builder
-
-ARG LIGHTWALLETD_VERSION
-
-WORKDIR /usr/src
-
-# Install dependencies and update ca certificates
-RUN apt update \
-    && apt install -y --no-install-recommends --no-install-suggests \
-    build-essential \
-    pkg-config \
-    libc6-dev \
-    m4 \
-    autoconf \
-    libtool \
-    ncurses-dev \
-    unzip \
-    git \
-    python3 \
-    python3-zmq \
-    zlib1g-dev \
-    curl \
-    bsdmainutils \
-    automake \
-    golang \
-    ca-certificates \
-    && update-ca-certificates
-
-# Build lightwalletd
-RUN git clone https://github.com/zcash/lightwalletd \
-    && cd lightwalletd \
-    && git checkout "v${LIGHTWALLETD_VERSION}" \
-    && make
-
-# Build zcashd and fetch params
-# RUN git clone https://github.com/zcash/zcash.git \
-#     && cd zcash/ \
-#     && git checkout v6.20.0 \
-#     && ./zcutil/build.sh -j$(nproc)
+FROM docker.io/zingodevops/zaino:${ZAINO_IMAGE_TAG}@${ZAINO_IMAGE_DIGEST} AS zainod-downloader
+FROM docker.io/zfnd/zebra:${ZEBRA_VERSION}@${ZEBRA_IMAGE_DIGEST} AS zebrad-downloader
 
 FROM debian:trixie-slim AS runner
 
 ARG RUST_VERSION
-ARG LIGHTWALLETD_VERSION
-ARG ZCASH_VERSION
 ARG ZAINO_IMAGE_TAG
+ARG ZEBRA_VERSION
 ARG NEXTEST_VERSION
 
 LABEL org.zingolib.test-artifacts.versions.rust="${RUST_VERSION}"
-LABEL org.zingolib.test-artifacts.versions.lightwalletd="${LIGHTWALLETD_VERSION}"
-LABEL org.zingolib.test-artifacts.versions.zcashd="${ZCASH_VERSION}"
 LABEL org.zingolib.test-artifacts.versions.zaino="${ZAINO_IMAGE_TAG}"
+LABEL org.zingolib.test-artifacts.versions.zebra="${ZEBRA_VERSION}"
 LABEL org.zingolib.test-artifacts.versions.nextest="${NEXTEST_VERSION}"
 
-# Copy regtest binaries and zcash params from builder
-COPY --from=builder /usr/src/lightwalletd/lightwalletd /usr/bin/
-COPY --from=zcashd-downloader /usr/bin/zcashd /usr/bin/
-COPY --from=zcashd-downloader /usr/bin/zcash-cli /usr/bin/
+# Copy regtest binaries
 COPY --from=zainod-downloader /usr/local/bin/zainod /usr/bin/
+COPY --from=zebrad-downloader /usr/local/bin/zebrad /usr/bin/
 
 # Install dependencies and update ca certificates
 RUN apt update \
@@ -78,9 +44,9 @@ RUN apt update \
     libssl-dev \
     libsqlite3-dev \
     build-essential \
-    protobuf-compiler \
     libclang-dev \
     ca-certificates \
+    gnupg \
     && update-ca-certificates
 
 # Install pinned Rust tooling and test helpers

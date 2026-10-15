@@ -7,8 +7,76 @@ use crate::wallet::{
         SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
     },
 };
+use incrementalmerkletree::{Hashable as _, Level, Marking, Position, Retention};
+use orchard::tree::MerkleHashOrchard;
 use std::collections::{BTreeMap, HashMap};
 use zcash_protocol::{TxId, consensus::BlockHeight};
+use zingo_netutils::lightwallet_protocol::SubtreeRoot;
+
+pub(crate) fn subtree_root(completing_block_height: u64) -> SubtreeRoot {
+    SubtreeRoot {
+        completing_block_height,
+        ..Default::default()
+    }
+}
+
+pub(crate) fn orchard_subtree_root(root_hash: MerkleHashOrchard) -> SubtreeRoot {
+    SubtreeRoot {
+        root_hash: root_hash.to_bytes().to_vec(),
+        ..Default::default()
+    }
+}
+
+// An orchard shard tree in the state a wallet reaches once its own scanning has carried the tree past the roots
+// the server supplied: shards 0 to 2 are bare server roots, shards 3 and 4 hold the wallet's own leaves, so the
+// tree's resume index is 5 while only three roots were ever fetched.
+pub(crate) fn orchard_tree_scanned_past_the_fetched_roots() -> ShardTrees {
+    let mut shard_trees = ShardTrees::new();
+    let tree = &mut shard_trees.orchard;
+    // Three server roots land in shards 0 to 2 as bare leaf nodes holding only the hash. Any valid 32 bytes would
+    // do, and the empty root keeps the ommers below consistent with the stored shards.
+    let fetched_root = MerkleHashOrchard::empty_root(Level::from(crate::witness::SHARD_HEIGHT));
+    crate::witness::add_subtree_roots(0, vec![orchard_subtree_root(fetched_root); 3], tree)
+        .unwrap();
+    // A frontier at the first position of a shard populates that shard with one call, where appending would
+    // take a whole shard of leaves to reach the next one. The frontier at shard 3 stands in for the wallet's
+    // birthday frontier or scanning landing there, and the one at shard 4 for scanning completing shard 3 and
+    // reaching the first commitment of shard 4. A frontier carries one ommer per set bit of its position: shard
+    // 3 is binary 11, so it carries the root of shard 2 at the shard level and the root over shards 0 and 1 one
+    // level up, and shard 4 is binary 100, so it carries the root over shards 0 to 3 two levels up. The
+    // checkpoint heights are arbitrary labels.
+    for (shard_index, ommers) in [
+        (
+            3,
+            vec![
+                MerkleHashOrchard::empty_root(Level::from(crate::witness::SHARD_HEIGHT)),
+                MerkleHashOrchard::empty_root(Level::from(crate::witness::SHARD_HEIGHT + 1)),
+            ],
+        ),
+        (
+            4,
+            vec![MerkleHashOrchard::empty_root(Level::from(
+                crate::witness::SHARD_HEIGHT + 2,
+            ))],
+        ),
+    ] {
+        let frontier = incrementalmerkletree::frontier::NonEmptyFrontier::from_parts(
+            Position::from(shard_index << crate::witness::SHARD_HEIGHT),
+            MerkleHashOrchard::empty_leaf(),
+            ommers,
+        )
+        .unwrap();
+        tree.insert_frontier_nodes(
+            frontier,
+            Retention::Checkpoint {
+                id: BlockHeight::from_u32(shard_index as u32 * 100),
+                marking: Marking::None,
+            },
+        )
+        .unwrap();
+    }
+    shard_trees
+}
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum MockWalletError {
@@ -16,8 +84,8 @@ pub(super) enum MockWalletError {
     AnErrorVariant(String),
 }
 
-type SyncStatePatch = Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError>>;
-type GetBirthdayPatch = Box<dyn Fn(&BlockHeight) -> Result<BlockHeight, MockWalletError>>;
+type SyncStatePatch = Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError> + Send>;
+type GetBirthdayPatch = Box<dyn Fn(&BlockHeight) -> Result<BlockHeight, MockWalletError> + Send>;
 pub(super) struct MockWallet {
     birthday: BlockHeight,
     sync_state: SyncState,
@@ -28,6 +96,7 @@ pub(super) struct MockWallet {
     nullifier_map: NullifierMap,
     outpoint_map: BTreeMap<OutputId, ScanTarget>,
     shard_trees: ShardTrees,
+    transparent_addresses: BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
 }
 impl MockWalletError {}
 
@@ -106,6 +175,7 @@ impl MockWalletBuilder {
             nullifier_map: self.nullifier_map,
             outpoint_map: self.outpoint_map,
             shard_trees: self.shard_trees,
+            transparent_addresses: BTreeMap::new(),
         }
     }
 }
@@ -155,22 +225,24 @@ impl SyncWallet for MockWallet {
         todo!()
     }
 
+    /// The mock wallet does not keep shielded addresses, so a discovered address is accepted and dropped.
     fn add_orchard_address(
         &mut self,
-        account_id: zip32::AccountId,
-        address: orchard::Address,
-        diversifier_index: zip32::DiversifierIndex,
+        _account_id: zip32::AccountId,
+        _address: orchard::Address,
+        _diversifier_index: zip32::DiversifierIndex,
     ) -> Result<(), Self::Error> {
-        todo!()
+        Ok(())
     }
 
+    /// The mock wallet does not keep shielded addresses, so a discovered address is accepted and dropped.
     fn add_sapling_address(
         &mut self,
-        account_id: zip32::AccountId,
-        address: sapling_crypto::PaymentAddress,
-        diversifier_index: zip32::DiversifierIndex,
+        _account_id: zip32::AccountId,
+        _address: sapling_crypto::PaymentAddress,
+        _diversifier_index: zip32::DiversifierIndex,
     ) -> Result<(), Self::Error> {
-        todo!()
+        Ok(())
     }
 
     fn get_transparent_addresses(
@@ -179,7 +251,7 @@ impl SyncWallet for MockWallet {
         &std::collections::BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
         Self::Error,
     > {
-        todo!()
+        Ok(&self.transparent_addresses)
     }
 
     fn get_transparent_addresses_mut(
@@ -188,7 +260,7 @@ impl SyncWallet for MockWallet {
         &mut std::collections::BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
         Self::Error,
     > {
-        todo!()
+        Ok(&mut self.transparent_addresses)
     }
 
     fn set_save_flag(&mut self) -> Result<(), Self::Error> {
@@ -200,7 +272,12 @@ impl SyncBlocks for MockWallet {
         &self,
         block_height: BlockHeight,
     ) -> Result<crate::wallet::WalletBlock, Self::Error> {
-        todo!()
+        self.wallet_blocks
+            .get(&block_height)
+            .cloned()
+            .ok_or_else(|| {
+                MockWalletError::AnErrorVariant(format!("no wallet block at {block_height}"))
+            })
     }
 
     fn get_wallet_blocks_mut(
@@ -231,7 +308,7 @@ impl SyncTransactions for MockWallet {
 }
 impl SyncNullifiers for MockWallet {
     fn get_nullifiers(&self) -> Result<&crate::wallet::NullifierMap, Self::Error> {
-        todo!()
+        Ok(&self.nullifier_map)
     }
 
     fn get_nullifiers_mut(&mut self) -> Result<&mut crate::wallet::NullifierMap, Self::Error> {
@@ -245,7 +322,7 @@ impl SyncOutPoints for MockWallet {
         &std::collections::BTreeMap<crate::wallet::OutputId, crate::wallet::ScanTarget>,
         Self::Error,
     > {
-        todo!()
+        Ok(&self.outpoint_map)
     }
 
     fn get_outpoints_mut(

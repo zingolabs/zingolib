@@ -7,6 +7,7 @@ jobs:
   cargo-checkmate:
     name: Cargo Checkmate
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     strategy:
       matrix:
         phase: [build, check, clippy, doc, format]
@@ -14,20 +15,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      # The five phases share one GITHUB_JOB, so the phase keys the cache.
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
         with:
-          toolchain: ${{ inputs.toolchain }}
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install protoc
-        run: |
-          if ! command -v protoc; then
-            sudo apt-get update
-            sudo apt-get install -y protobuf-compiler
-          fi
+          key: ${{ matrix.phase }}
 
       - name: Run cargo-checkmate
         uses: zingolabs/infrastructure/.github/actions/cargo-checkmate@20485fed7a080e381130ed8120419dc81acae641

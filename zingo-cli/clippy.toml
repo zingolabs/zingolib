@@ -1,0 +1,4 @@
+disallowed-methods = [
+    { path = "tokio::runtime::Runtime::block_on", reason = "ADR 0030 as amended: the CLI crosses sync to async only at audited seams (the command loop, the startup driver, server resolution); a new block_on needs an explicit allow and a seam justification" },
+    { path = "tokio::runtime::Handle::block_on", reason = "ADR 0030: same invariant as Runtime::block_on" },
+]

@@ -64,8 +64,8 @@ pub async fn lookup_fees_with_proposal_check<N>(
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
 pub enum LookupRecordsPairStepsError {
-    #[error("TxId missing from broadcast.")]
-    MissingFromBroadcast,
+    #[error("TxId missing from transmission.")]
+    MissingFromTransmission,
     #[error("Could not look up TransactionRecord with txid {0:?}.")]
     MissingRecord(TxId),
 }
@@ -89,7 +89,7 @@ pub async fn for_each_proposed_transaction<N, Res>(
                     Err(LookupRecordsPairStepsError::MissingRecord(*txid))
                 }
             } else {
-                Err(LookupRecordsPairStepsError::MissingFromBroadcast)
+                Err(LookupRecordsPairStepsError::MissingFromTransmission)
             }
         });
     }

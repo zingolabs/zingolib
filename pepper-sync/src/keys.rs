@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use incrementalmerkletree::Position;
 use orchard::{
     keys::{FullViewingKey, IncomingViewingKey},
-    note_encryption::OrchardDomain,
+    note_encryption::{IronwoodDomain, OrchardDomain},
 };
 use sapling_crypto::{
     self as sapling, NullifierDerivingKey, SaplingIvk, note_encryption::SaplingDomain,
@@ -143,10 +143,37 @@ impl ScanningKeyOps<OrchardDomain, orchard::note::Nullifier>
     }
 }
 
+impl ScanningKeyOps<IronwoodDomain, orchard::note::Nullifier>
+    for ScanningKey<IncomingViewingKey, FullViewingKey>
+{
+    fn prepare(&self) -> orchard::keys::PreparedIncomingViewingKey {
+        orchard::keys::PreparedIncomingViewingKey::new(&self.ivk)
+    }
+
+    fn nf(
+        &self,
+        note: &orchard::note::Note,
+        _position: Position,
+    ) -> Option<orchard::note::Nullifier> {
+        self.nk.as_ref().map(|key| note.nullifier(key))
+    }
+
+    fn account_id(&self) -> &zip32::AccountId {
+        &self.key_id.account_id
+    }
+
+    fn key_scope(&self) -> Option<Scope> {
+        Some(self.key_id.scope)
+    }
+}
+
 /// A set of keys to be used in scanning for decryptable transaction outputs.
 pub(crate) struct ScanningKeys {
     pub(crate) sapling: HashMap<KeyId, ScanningKey<SaplingIvk, NullifierDerivingKey>>,
     pub(crate) orchard: HashMap<KeyId, ScanningKey<IncomingViewingKey, FullViewingKey>>,
+    /// Ironwood scans with the same key material as Orchard, held separately
+    /// so the ironwood decryption batch runner has its own key set.
+    pub(crate) ironwood: HashMap<KeyId, ScanningKey<IncomingViewingKey, FullViewingKey>>,
 }
 
 impl ScanningKeys {
@@ -160,6 +187,8 @@ impl ScanningKeys {
         let mut sapling: HashMap<KeyId, ScanningKey<SaplingIvk, NullifierDerivingKey>> =
             HashMap::new();
         let mut orchard: HashMap<KeyId, ScanningKey<IncomingViewingKey, FullViewingKey>> =
+            HashMap::new();
+        let mut ironwood: HashMap<KeyId, ScanningKey<IncomingViewingKey, FullViewingKey>> =
             HashMap::new();
 
         for (account_id, ufvk) in ufvks {
@@ -188,11 +217,23 @@ impl ScanningKeys {
                             nk: Some(fvk.clone()),
                         },
                     );
+                    ironwood.insert(
+                        key_id,
+                        ScanningKey {
+                            key_id,
+                            ivk: fvk.to_ivk(scope),
+                            nk: Some(fvk.clone()),
+                        },
+                    );
                 }
             }
         }
 
-        Self { sapling, orchard }
+        Self {
+            sapling,
+            orchard,
+            ironwood,
+        }
     }
 }
 
@@ -202,8 +243,9 @@ pub(crate) fn encode_orchard_receiver(
 ) -> Result<String, ParseError> {
     Ok(zcash_address::unified::Encoding::encode(
         &<zcash_address::unified::Address as zcash_address::unified::Encoding>::try_from_items(
-            vec![zcash_address::unified::Receiver::Orchard(
-                orchard_address.to_raw_address_bytes(),
+            zcash_address::unified::Revision::R0,
+            vec![zcash_address::unified::Uitem::Data(
+                zcash_address::unified::Receiver::Orchard(orchard_address.to_raw_address_bytes()),
             )],
         )?,
         &parameters.network_type(),
@@ -219,7 +261,7 @@ pub fn decode_unified_address(
     if let zcash_keys::address::Address::Unified(unified_address) =
         decode_address(consensus_parameters, encoded_address)?
     {
-        Ok(unified_address)
+        Ok(*unified_address)
     } else {
         Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,

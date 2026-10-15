@@ -1,5 +1,7 @@
 //! This is a mod for data structs that will be used across all sections of zingolib.
 
+use zingo_netutils::lightwallet_protocol;
+
 pub mod proposal;
 
 /// Return type for fns that poll the status of task handles.
@@ -10,6 +12,62 @@ pub enum PollReport<T, E> {
     NotReady,
     /// Task has completed successfully or failed.
     Ready(Result<T, E>),
+}
+
+/// The connected Indexer's server diagnostics, as reported by its
+/// `get_lightd_info` RPC. Returned by `LightClient::info`.
+#[derive(Debug, Clone)]
+pub struct ServerInfo {
+    /// The server's software version.
+    pub version: String,
+    /// The git commit the server was built from.
+    pub git_commit: String,
+    /// The URI this client is connected to.
+    pub server_uri: http::Uri,
+    /// The server's vendor string.
+    pub vendor: String,
+    /// Whether the server supports transparent addresses.
+    pub taddr_support: bool,
+    /// The chain name ("main", "test", "regtest").
+    pub chain_name: String,
+    /// The Sapling activation height of the chain.
+    pub sapling_activation_height: u64,
+    /// The consensus branch ID the server reports.
+    pub consensus_branch_id: String,
+    /// The server's view of the chain tip height.
+    pub latest_block_height: u64,
+}
+
+impl ServerInfo {
+    pub fn from_lightd_info(info: lightwallet_protocol::LightdInfo, server_uri: http::Uri) -> Self {
+        Self {
+            version: info.version,
+            git_commit: info.git_commit,
+            server_uri,
+            vendor: info.vendor,
+            taddr_support: info.taddr_support,
+            chain_name: info.chain_name,
+            sapling_activation_height: info.sapling_activation_height,
+            consensus_branch_id: info.consensus_branch_id,
+            latest_block_height: info.block_height,
+        }
+    }
+}
+
+impl From<ServerInfo> for json::JsonValue {
+    fn from(info: ServerInfo) -> Self {
+        json::object! {
+            "version" => info.version,
+            "git_commit" => info.git_commit,
+            "server_uri" => info.server_uri.to_string(),
+            "vendor" => info.vendor,
+            "taddr_support" => info.taddr_support,
+            "chain_name" => info.chain_name,
+            "sapling_activation_height" => info.sapling_activation_height,
+            "consensus_branch_id" => info.consensus_branch_id,
+            "latest_block_height" => info.latest_block_height
+        }
+    }
 }
 
 /// transforming data related to the destination of a send.

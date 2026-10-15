@@ -48,7 +48,7 @@ pub(crate) use send_all_memo;
 
 macro_rules! server_uri {
     () => {
-        "https://mainnet.lightwalletd.com:9067"
+        "https://zec.rocks:443"
     };
 }
 pub(crate) use server_uri;
@@ -78,3 +78,5 @@ pub(crate) const SEED_PHRASE: &str = "abandon abandon abandon abandon abandon ab
 pub(crate) const BIRTHDAY: &str = "600000";
 #[cfg(test)]
 pub(crate) const DATA_DIR: &str = "/tmp/zingo-test-data";
+#[cfg(test)]
+pub(crate) const TXID: &str = "8f7a03e9aac8bd1b7ed64c773b445d0da2ab4bd0ab26eb0e0f78e6b6b9d63f2e";

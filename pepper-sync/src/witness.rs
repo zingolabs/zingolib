@@ -1,6 +1,7 @@
 //! Module for structs and types associated with witness construction
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use incrementalmerkletree::{
     Position, Retention,
@@ -9,11 +10,11 @@ use incrementalmerkletree::{
 use orchard::tree::MerkleHashOrchard;
 use sapling_crypto::Node;
 use shardtree::LocatedPrunableTree;
+use zcash_client_backend::data_api::anchor_retention::{AnchorRetention, AnchorRetentionInterval};
 use zcash_primitives::{block::BlockHash, merkle_tree::read_commitment_tree};
 use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::lightwallet_protocol::TreeState;
 
-#[cfg(not(feature = "darkside_test"))]
 use {
     crate::error::ServerError, shardtree::store::ShardStore, subtle::CtOption,
     zingo_netutils::lightwallet_protocol::SubtreeRoot,
@@ -26,8 +27,10 @@ pub(crate) const SHARD_HEIGHT: u8 = 16;
 pub(crate) struct WitnessData {
     pub(crate) sapling_initial_position: Position,
     pub(crate) orchard_initial_position: Position,
+    pub(crate) ironwood_initial_position: Position,
     pub(crate) sapling_leaves_and_retentions: Vec<(sapling_crypto::Node, Retention<BlockHeight>)>,
     pub(crate) orchard_leaves_and_retentions: Vec<(MerkleHashOrchard, Retention<BlockHeight>)>,
+    pub(crate) ironwood_leaves_and_retentions: Vec<(MerkleHashOrchard, Retention<BlockHeight>)>,
 }
 
 impl WitnessData {
@@ -35,12 +38,15 @@ impl WitnessData {
     pub(crate) fn new(
         sapling_initial_position: Position,
         orchard_initial_position: Position,
+        ironwood_initial_position: Position,
     ) -> Self {
         WitnessData {
             sapling_initial_position,
             orchard_initial_position,
+            ironwood_initial_position,
             sapling_leaves_and_retentions: Vec::new(),
             orchard_leaves_and_retentions: Vec::new(),
+            ironwood_leaves_and_retentions: Vec::new(),
         }
     }
 }
@@ -90,7 +96,48 @@ where
     located_tree_data
 }
 
-#[cfg(not(feature = "darkside_test"))]
+#[cfg(test)]
+pub(crate) fn stored_subtree_root_count<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    shard_tree: &shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
+) -> usize
+where
+    S: ShardStore<
+            H: incrementalmerkletree::Hashable + Clone + PartialEq,
+            CheckpointId: Clone + Ord + std::fmt::Debug,
+            Error = std::convert::Infallible,
+        >,
+{
+    shard_tree
+        .store()
+        .get_shard_roots()
+        .expect("infallible")
+        .len()
+}
+
+/// Returns the index to resume subtree-root fetching from for `shard_tree`:
+/// its stored-root count, less one when its newest stored root is bare
+pub(crate) fn subtree_fetch_start_index<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    shard_tree: &shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
+) -> u32
+where
+    S: ShardStore<
+            H: incrementalmerkletree::Hashable + Clone + PartialEq,
+            CheckpointId: Clone + Ord + std::fmt::Debug,
+            Error = std::convert::Infallible,
+        >,
+{
+    let roots = shard_tree.store().get_shard_roots().expect("infallible");
+    let Some(newest) = roots.last() else {
+        return 0;
+    };
+    let bare = shard_tree
+        .store()
+        .get_shard(*newest)
+        .expect("infallible")
+        .is_some_and(|shard| shard.root().is_leaf());
+    (roots.len() - usize::from(bare)) as u32
+}
+
 pub(crate) fn add_subtree_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     subtree_root_start_index: usize,
     subtree_roots: Vec<SubtreeRoot>,
@@ -104,6 +151,10 @@ where
         >,
 {
     for (index, tree_root) in subtree_roots.into_iter().enumerate() {
+        let address = incrementalmerkletree::Address::from_parts(
+            incrementalmerkletree::Level::new(SHARD_HEIGHT),
+            (subtree_root_start_index + index) as u64,
+        );
         let node = <S::H as FromBytes>::from_bytes(
             tree_root
                 .root_hash
@@ -112,13 +163,26 @@ where
         )
         .into_option()
         .ok_or(ServerError::InvalidSubtreeRoot)?;
-        let shard = LocatedPrunableTree::with_root_value(
-            incrementalmerkletree::Address::from_parts(
-                incrementalmerkletree::Level::new(SHARD_HEIGHT),
-                (subtree_root_start_index + index) as u64,
+        let stored = shard_tree
+            .store()
+            .get_shard(address)
+            .expect("infallible")
+            .filter(|shard| !shard.root().is_empty() && !shard.root().is_leaf());
+        let shard = match stored {
+            // A shard whose root the wallet's own leaves already compute is kept as it is.
+            Some(shard) if shard.root_hash(address.position_range_end()).is_ok() => continue,
+            // A shard that scanning populated but left with a gap keeps its leaves and takes the fetched root as
+            // the cached annotation of its root node. shardtree returns the annotation for any query spanning
+            // the whole shard, so the root is computable before the gap is scanned, and checks the leaves
+            // scanned into the shard afterwards against it.
+            Some(shard) => shard.reannotate_root(Some(Arc::new(node))),
+            // A bare root or an empty shard is replaced, which heals a root that a re-org moved after it was
+            // fetched.
+            None => LocatedPrunableTree::with_root_value(
+                address,
+                (node, shardtree::RetentionFlags::EPHEMERAL),
             ),
-            (node, shardtree::RetentionFlags::EPHEMERAL),
-        );
+        };
         shard_tree.store_mut().put_shard(shard).expect("infallible");
     }
 
@@ -126,7 +190,6 @@ where
 }
 
 /// Allows generic construction of a shardtree node from raw byte representation
-#[cfg(not(feature = "darkside_test"))]
 pub(crate) trait FromBytes
 where
     Self: Sized,
@@ -134,14 +197,12 @@ where
     fn from_bytes(array: [u8; 32]) -> CtOption<Self>;
 }
 
-#[cfg(not(feature = "darkside_test"))]
 impl FromBytes for orchard::tree::MerkleHashOrchard {
     fn from_bytes(array: [u8; 32]) -> CtOption<Self> {
         Self::from_bytes(&array)
     }
 }
 
-#[cfg(not(feature = "darkside_test"))]
 impl FromBytes for sapling_crypto::Node {
     fn from_bytes(array: [u8; 32]) -> CtOption<Self> {
         Self::from_bytes(array)
@@ -157,6 +218,8 @@ pub(crate) struct Frontiers {
         Frontier<sapling_crypto::Node, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }>,
     final_orchard_tree:
         Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>,
+    final_ironwood_tree:
+        Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>,
 }
 
 #[allow(dead_code)]
@@ -168,6 +231,7 @@ impl Frontiers {
             block_hash,
             final_sapling_tree: Frontier::empty(),
             final_orchard_tree: Frontier::empty(),
+            final_ironwood_tree: Frontier::empty(),
         }
     }
 
@@ -183,12 +247,17 @@ impl Frontiers {
             orchard::tree::MerkleHashOrchard,
             { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
         >,
+        final_ironwood_tree: Frontier<
+            orchard::tree::MerkleHashOrchard,
+            { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+        >,
     ) -> Self {
         Self {
             block_height,
             block_hash,
             final_sapling_tree,
             final_orchard_tree,
+            final_ironwood_tree,
         }
     }
 
@@ -218,6 +287,15 @@ impl Frontiers {
     {
         &self.final_orchard_tree
     }
+
+    /// Returns the frontier of the Ironwood note commitment tree as of the end of the block at
+    /// [`Self::block_height`]. Empty pre-activation.
+    pub(crate) fn final_ironwood_tree(
+        &self,
+    ) -> &Frontier<orchard::tree::MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>
+    {
+        &self.final_ironwood_tree
+    }
 }
 
 impl TryFrom<TreeState> for Frontiers {
@@ -230,7 +308,7 @@ impl TryFrom<TreeState> for Frontiers {
                 format!("Block hash is not valid hex: {e:?}"),
             )
         })?;
-        // Zcashd hex strings for block hashes are byte-reversed.
+        // Block-hash hex strings are byte-reversed on the wire.
         hash_bytes.reverse();
 
         Ok(Frontiers::new(
@@ -245,6 +323,7 @@ impl TryFrom<TreeState> for Frontiers {
             })?,
             get_sapling_tree(&value)?.to_frontier(),
             get_orchard_tree(&value)?.to_frontier(),
+            get_ironwood_tree(&value)?.to_frontier(),
         ))
     }
 }
@@ -268,7 +347,7 @@ pub(crate) fn get_sapling_tree(
     }
 }
 
-/// Deserializes and returns the Sapling note commitment tree field of the tree state.
+/// Deserializes and returns the Orchard note commitment tree field of the tree state.
 pub(crate) fn get_orchard_tree(
     tree_state: &TreeState,
 ) -> std::io::Result<CommitmentTree<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>>
@@ -285,5 +364,230 @@ pub(crate) fn get_orchard_tree(
         read_commitment_tree::<MerkleHashOrchard, _, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>(
             &orchard_tree_bytes[..],
         )
+    }
+}
+
+/// Deserializes and returns the Ironwood note commitment tree field of the
+/// tree state. Servers omit the field below the ironwood activation height,
+/// so an empty field means the tree is empty. See [`crate::client::get_frontiers`]
+/// for the rejection of an omitted field at or above the activation height.
+pub(crate) fn get_ironwood_tree(
+    tree_state: &TreeState,
+) -> std::io::Result<CommitmentTree<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>>
+{
+    if tree_state.ironwood_tree.is_empty() {
+        Ok(CommitmentTree::empty())
+    } else {
+        let ironwood_tree_bytes = hex::decode(&tree_state.ironwood_tree).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Hex decoding of Ironwood tree bytes failed: {e:?}"),
+            )
+        })?;
+        read_commitment_tree::<MerkleHashOrchard, _, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>(
+            &ironwood_tree_bytes[..],
+        )
+    }
+}
+
+/// How many grid intervals behind the wallet's newest scanned block anchor-boundary checkpoints
+/// stay pinned: the ZIP 318 anchor age cap plus two intervals of slack.
+pub(crate) const ANCHOR_RETENTION_INTERVALS: u32 = zcash_protocol::zip318::ANCHOR_AGE_CAP + 2;
+
+/// The anchor-checkpoint retention policy in force for `consensus_parameters` — the ZIP 318
+/// grid from the Ironwood pool's activation — or `None` when that upgrade never activates.
+pub(crate) fn anchor_retention_policy(
+    consensus_parameters: &impl zcash_protocol::consensus::Parameters,
+) -> Option<AnchorRetention> {
+    crate::wallet::PoolActivation::of(consensus_parameters, zcash_protocol::ShieldedPool::Ironwood)
+        .map(|activation| {
+            AnchorRetention::new(activation.height(), AnchorRetentionInterval::default())
+        })
+}
+
+/// The height range whose grid-boundary checkpoints must currently be pinned, given `as_of`,
+/// the wallet's newest scanned block.
+pub(crate) fn anchor_retention_window(
+    policy: &AnchorRetention,
+    as_of: BlockHeight,
+) -> std::ops::RangeInclusive<BlockHeight> {
+    let span = policy
+        .intervals()
+        .iter()
+        .map(|interval| interval.block_count().get())
+        .max()
+        .unwrap_or(0)
+        .saturating_mul(ANCHOR_RETENTION_INTERVALS);
+    as_of.saturating_sub(span)..=as_of
+}
+
+/// Re-derives one shard store's pinned-checkpoint set from `policy`, pinning every grid
+/// boundary in `window` and releasing every pin outside it.
+pub(crate) fn repin_anchor_checkpoints<S>(
+    policy: &AnchorRetention,
+    window: &std::ops::RangeInclusive<BlockHeight>,
+    store: &mut S,
+) where
+    S: ShardStore<CheckpointId = BlockHeight, Error = std::convert::Infallible>,
+{
+    for id in store.retained_checkpoints().expect("infallible") {
+        if !window.contains(&id) || !policy.retains(id) {
+            store.remove_retained_checkpoint(&id).expect("infallible");
+        }
+    }
+    for boundary in policy.retained_in_range(window.clone()) {
+        store.add_retained_checkpoint(boundary).expect("infallible");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mocks::{orchard_subtree_root, orchard_tree_scanned_past_the_fetched_roots};
+    use crate::shardtree_ext::ShardTreeExt;
+    use crate::wallet::empty_shard_tree;
+    use incrementalmerkletree::{Address, Hashable as _, Level};
+
+    #[test]
+    fn fetched_roots_replace_bare_roots_and_keep_scanned_shards() {
+        let mut shard_trees = orchard_tree_scanned_past_the_fetched_roots();
+        let tree = &mut shard_trees.orchard;
+        assert_eq!(stored_subtree_root_count(tree), 5);
+        let moved_root = MerkleHashOrchard::empty_root(Level::from(SHARD_HEIGHT + 1));
+
+        add_subtree_roots(2, vec![orchard_subtree_root(moved_root); 2], tree).unwrap();
+
+        let shard = |index: u64| {
+            let address = Address::from_parts(Level::from(SHARD_HEIGHT), index);
+            tree.store().get_shard(address).unwrap().unwrap()
+        };
+        assert_eq!(
+            shard(2)
+                .root_hash(Position::from(3 << SHARD_HEIGHT))
+                .unwrap(),
+            moved_root,
+            "the bare root is replaced"
+        );
+        assert!(
+            !shard(3).root().is_leaf(),
+            "the shard scanning populated is kept"
+        );
+    }
+
+    // A shard that scanning populated but left with a gap has no computable root until the gap is scanned. The
+    // fetched root fills in as the cached annotation of its root node, survives the leaves scanned into the shard
+    // afterwards, and is not used for an anchor inside the shard, which still needs the leaves up to the anchor.
+    #[test]
+    fn fetched_root_annotates_a_populated_shard_with_a_gap() {
+        let mut shard_trees = orchard_tree_scanned_past_the_fetched_roots();
+        let tree = &mut shard_trees.orchard;
+        let shard_3 = Address::from_parts(Level::from(SHARD_HEIGHT), 3);
+        let whole_shard = shard_3.position_range_end();
+        let stored_shard = |tree: &shardtree::ShardTree<
+            crate::wallet::OrchardShardStore,
+            { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+            SHARD_HEIGHT,
+        >| tree.store().get_shard(shard_3).unwrap().unwrap();
+        assert!(stored_shard(tree).root_hash(whole_shard).is_err());
+        // the root the chain holds for shard 3, consistent with the cap node over shards 0 to 3 that the shard 4
+        // frontier placed, as a fetched root and the frontier both come from the chain
+        let chain_root = MerkleHashOrchard::empty_root(Level::from(SHARD_HEIGHT));
+
+        add_subtree_roots(3, vec![orchard_subtree_root(chain_root)], tree).unwrap();
+
+        assert!(
+            !stored_shard(tree).root().is_leaf(),
+            "the scanned leaves are kept"
+        );
+        assert_eq!(
+            stored_shard(tree).root_hash(whole_shard).unwrap(),
+            chain_root
+        );
+
+        tree.batch_insert(
+            Position::from((3 << SHARD_HEIGHT) + 1),
+            std::iter::repeat_n((MerkleHashOrchard::empty_leaf(), Retention::Ephemeral), 4),
+        )
+        .unwrap();
+
+        assert_eq!(
+            stored_shard(tree).root_hash(whole_shard).unwrap(),
+            chain_root
+        );
+        assert!(
+            stored_shard(tree)
+                .root_hash(Position::from((3 << SHARD_HEIGHT) + 3))
+                .is_err(),
+            "an anchor inside the shard computes from the leaves, and the gap is still there"
+        );
+    }
+
+    /// Pinned grid boundaries survive checkpoint pruning until re-deriving the pins releases
+    /// them.
+    #[test]
+    fn pinned_boundaries_survive_pruning_until_released() {
+        let policy =
+            AnchorRetention::new(BlockHeight::from_u32(1), AnchorRetentionInterval::default());
+        let mut tree = empty_shard_tree::<
+            sapling_crypto::Node,
+            { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
+            SHARD_HEIGHT,
+        >();
+
+        for height in 1..=600u32 {
+            let height = BlockHeight::from_u32(height);
+            if policy.retains(height) {
+                tree.store_mut()
+                    .add_retained_checkpoint(height)
+                    .expect("infallible");
+            }
+            tree.append_checkpoint(height).expect("infallible");
+        }
+
+        let checkpoint_exists = |store: &shardtree::store::memory::MemoryShardStore<
+            sapling_crypto::Node,
+            BlockHeight,
+        >,
+                                 height: u32| {
+            store
+                .get_checkpoint(&BlockHeight::from_u32(height))
+                .expect("infallible")
+                .is_some()
+        };
+        let count = tree.store().checkpoint_count().expect("infallible");
+        tree.store()
+            .for_each_checkpoint(count, |id, _| {
+                if u32::from(*id) < 494 {
+                    assert_eq!(
+                        u32::from(*id) % 144,
+                        0,
+                        "old checkpoint {id} is not a boundary"
+                    );
+                }
+                Ok(())
+            })
+            .expect("infallible");
+        for boundary in [144, 288, 432, 576] {
+            assert!(
+                checkpoint_exists(tree.store(), boundary),
+                "boundary {boundary}"
+            );
+        }
+        for pruned in [143, 300, 431] {
+            assert!(
+                !checkpoint_exists(tree.store(), pruned),
+                "non-boundary {pruned}"
+            );
+        }
+
+        let window = anchor_retention_window(&policy, BlockHeight::from_u32(1200));
+        assert_eq!(*window.start(), BlockHeight::from_u32(336));
+        repin_anchor_checkpoints(&policy, &window, tree.store_mut());
+        tree.append_checkpoint(BlockHeight::from_u32(601))
+            .expect("infallible");
+        assert!(!checkpoint_exists(tree.store(), 144));
+        assert!(!checkpoint_exists(tree.store(), 288));
+        assert!(checkpoint_exists(tree.store(), 432));
+        assert!(checkpoint_exists(tree.store(), 576));
     }
 }
