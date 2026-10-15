@@ -240,7 +240,8 @@ jobs:
       abis: ${{ steps.names.outputs.abis }}
       abi_artifacts: ${{ steps.names.outputs.abi_artifacts }}
       abi_pattern: ${{ steps.names.outputs.abi_pattern }}
-      aar_glob: ${{ steps.names.outputs.aar_glob }}
+      android_repository: ${{ steps.names.outputs.android_repository }}
+      maven_version: ${{ steps.names.outputs.maven_version }}
       bundle_android: ${{ steps.names.outputs.bundle_android }}
       bundle_ios: ${{ steps.names.outputs.bundle_ios }}
       ios_out: ${{ steps.names.outputs.ios_out }}
@@ -253,6 +254,8 @@ jobs:
         with:
           workspaces: tools/workbench
 
+      # The Maven version joins the wallet crate's version at the commit
+      # with the commit, so the workbench reads the manifest from git.
       - name: Name the artifacts
         id: names
         run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
@@ -270,7 +273,8 @@ jobs:
       abis: '["x86_64"]'
       abi_artifacts: ${{ needs.binding-layer-names.outputs.abi_artifacts }}
       abi_pattern: ${{ needs.binding-layer-names.outputs.abi_pattern }}
-      aar_glob: ${{ needs.binding-layer-names.outputs.aar_glob }}
+      repository: ${{ needs.binding-layer-names.outputs.android_repository }}
+      version: ${{ needs.binding-layer-names.outputs.maven_version }}
       bundle: ${{ needs.binding-layer-names.outputs.bundle_android }}
 
   # The per-PR tier's iOS half: both XCFrameworks and the Swift sources,

@@ -21,6 +21,9 @@ const outcome = await pinnedBundle(root, {
 });
 if (outcome.kind === 'fetched') {
   process.stdout.write(`${outcome.path}\n`);
+  if (outcome.coordinate !== undefined) {
+    process.stdout.write(`${outcome.coordinate}\n`);
+  }
 } else {
   process.stderr.write(`${failureMessage(outcome)}\n`);
   process.exitCode = 1;
