@@ -68,6 +68,7 @@ pub(crate) struct Scanner<P> {
     unique_id: usize,
     next_task_id: TaskId,
     in_flight_tasks: BTreeMap<TaskId, ScanRange>,
+    load_order: LoadOrder,
     scan_results_sender: mpsc::UnboundedSender<(ScanLoad, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: P,
@@ -96,6 +97,7 @@ where
             unique_id: 0,
             next_task_id: TaskId::first(),
             in_flight_tasks: BTreeMap::new(),
+            load_order: LoadOrder::default(),
             scan_results_sender,
             fetch_request_sender,
             consensus_parameters,
@@ -110,12 +112,23 @@ where
         &self.in_flight_tasks
     }
 
-    /// Forgets every task whose selected range no longer overlaps a wallet range held at its in-flight priority.
+    /// Forgets every task whose selected range no longer overlaps a wallet range held at its in-flight priority,
+    /// with any results of its loads held back for ordering.
     pub(crate) fn retire_finished_tasks(&mut self, scan_ranges: &[ScanRange]) {
         self.in_flight_tasks.retain(|_, task| {
             sync::held_at(scan_ranges, task.priority().in_flight())
                 .any(|held| held.overlaps(task.block_range()))
         });
+        self.load_order.retain(&self.in_flight_tasks);
+    }
+
+    /// - Holds the results of a load above an unprocessed lower load of its task back until that load arrives.
+    pub(crate) fn admit_scan_results(
+        &mut self,
+        load: ScanLoad,
+        scan_results: Result<ScanResults, ScanError>,
+    ) -> Vec<(ScanLoad, Result<ScanResults, ScanError>)> {
+        self.load_order.admit(load, scan_results)
     }
 
     /// Applies the changes to the transparent gap addresses found by a scan.
@@ -294,7 +307,13 @@ where
 
     fn update_workers(&mut self) {
         let loader = self.loader.as_ref().expect("loader should be running");
+        let scanning_workers = self
+            .workers
+            .iter()
+            .filter(|worker| worker.is_scanning())
+            .count();
         if loader.load.is_some()
+            && load_admitted(scanning_workers, self.load_order.held())
             && let Some(worker) = self.idle_worker()
         {
             let load = loader
@@ -325,6 +344,8 @@ where
             )? {
                 self.in_flight_tasks
                     .insert(scan_task.task_id, scan_task.scan_range.clone());
+                self.load_order
+                    .track(scan_task.task_id, scan_task.scan_range.block_range().start);
                 self.next_task_id = self.next_task_id.next();
                 loader.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
@@ -910,6 +931,71 @@ pub(crate) struct ScanLoad {
     pub(crate) scan_range: ScanRange,
 }
 
+// a held result occupies the place of the compact blocks its lower load's worker still holds, so the loads in
+// memory never exceed the worker pool.
+fn load_admitted(scanning_workers: usize, held_results: usize) -> bool {
+    scanning_workers + held_results < MAX_WORKER_POOLSIZE
+}
+
+// the loads of a task are built in block height order and their results return in completion order. a task's
+// results are held back until every lower load of the task has been released, so a note found in a lower load is
+// known to the wallet before the spends of any higher load are located.
+#[derive(Debug, Default)]
+struct LoadOrder {
+    // the start of the load each tracked task releases next.
+    next_load_start: BTreeMap<TaskId, BlockHeight>,
+    // results of loads above their task's next load, keyed by task and load start.
+    held: BTreeMap<(TaskId, BlockHeight), (ScanLoad, Result<ScanResults, ScanError>)>,
+}
+
+impl LoadOrder {
+    /// - Tracks `task_id` from `first_load_start`.
+    fn track(&mut self, task_id: TaskId, first_load_start: BlockHeight) {
+        self.next_load_start.insert(task_id, first_load_start);
+    }
+
+    /// - Holds `scan_results` back when `load` is above its task's next load.
+    /// - Otherwise releases it and every held load that then follows it, advancing the task's next load past each.
+    ///
+    /// The results of an untracked task are released as they are.
+    fn admit(
+        &mut self,
+        load: ScanLoad,
+        scan_results: Result<ScanResults, ScanError>,
+    ) -> Vec<(ScanLoad, Result<ScanResults, ScanError>)> {
+        let task_id = load.task_id;
+        if !self.next_load_start.contains_key(&task_id) {
+            return vec![(load, scan_results)];
+        }
+        self.held.insert(
+            (task_id, load.scan_range.block_range().start),
+            (load, scan_results),
+        );
+
+        let mut released = Vec::new();
+        while let Some(next_load_start) = self.next_load_start.get_mut(&task_id)
+            && let Some((load, scan_results)) = self.held.remove(&(task_id, *next_load_start))
+        {
+            *next_load_start = load.scan_range.block_range().end;
+            released.push((load, scan_results));
+        }
+
+        released
+    }
+
+    fn held(&self) -> usize {
+        self.held.len()
+    }
+
+    /// - Drops the tracking and held results of every task absent from `in_flight_tasks`.
+    fn retain(&mut self, in_flight_tasks: &BTreeMap<TaskId, ScanRange>) {
+        self.next_load_start
+            .retain(|task_id, _| in_flight_tasks.contains_key(task_id));
+        self.held
+            .retain(|(task_id, _), _| in_flight_tasks.contains_key(task_id));
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ScanTask {
     pub(crate) task_id: TaskId,
@@ -1182,6 +1268,127 @@ mod tests {
         let error = fetch_failure(fetch_request_sender, &block_range(), no_block_error()).await;
 
         assert!(matches!(error, ServerError::RequestFailed(_)));
+    }
+
+    fn load(task_id: TaskId, start: u32, end: u32) -> ScanLoad {
+        ScanLoad {
+            task_id,
+            scan_range: ScanRange::from_parts(
+                BlockHeight::from_u32(start)..BlockHeight::from_u32(end),
+                ScanPriority::ChainTip,
+            ),
+        }
+    }
+
+    fn results() -> Result<ScanResults, ScanError> {
+        Err(ScanError::ServerError(no_block_error()))
+    }
+
+    fn released_starts(released: &[(ScanLoad, Result<ScanResults, ScanError>)]) -> Vec<u32> {
+        released
+            .iter()
+            .map(|(load, _)| u32::from(load.scan_range.block_range().start))
+            .collect()
+    }
+
+    /// Loads of a task arriving in block height order are released as they arrive.
+    #[test]
+    fn loads_arriving_in_order_are_released_as_they_arrive() {
+        let task = TaskId::first();
+        let mut order = LoadOrder::default();
+        order.track(task, BlockHeight::from_u32(10));
+
+        assert_eq!(
+            released_starts(&order.admit(load(task, 10, 20), results())),
+            [10]
+        );
+        assert_eq!(
+            released_starts(&order.admit(load(task, 20, 30), results())),
+            [20]
+        );
+        assert_eq!(order.held(), 0);
+    }
+
+    /// A load arriving above an unreleased lower load of its task is held back, and released in height order once
+    /// the lower load arrives.
+    #[test]
+    fn a_load_above_an_unreleased_load_is_held_until_the_lower_load_arrives() {
+        let task = TaskId::first();
+        let mut order = LoadOrder::default();
+        order.track(task, BlockHeight::from_u32(10));
+
+        assert!(order.admit(load(task, 30, 40), results()).is_empty());
+        assert!(order.admit(load(task, 20, 30), results()).is_empty());
+        assert_eq!(order.held(), 2);
+        assert_eq!(
+            released_starts(&order.admit(load(task, 10, 20), results())),
+            [10, 20, 30]
+        );
+        assert_eq!(order.held(), 0);
+    }
+
+    /// The ordering of one task does not hold back the loads of another.
+    #[test]
+    fn tasks_are_ordered_independently() {
+        let first = TaskId::first();
+        let second = first.next();
+        let mut order = LoadOrder::default();
+        order.track(first, BlockHeight::from_u32(10));
+        order.track(second, BlockHeight::from_u32(50));
+
+        assert!(order.admit(load(first, 20, 30), results()).is_empty());
+        assert_eq!(
+            released_starts(&order.admit(load(second, 50, 60), results())),
+            [50]
+        );
+    }
+
+    /// The results of a task the scanner does not track are released as they are.
+    #[test]
+    fn loads_of_an_untracked_task_are_released_as_they_are() {
+        let mut order = LoadOrder::default();
+
+        assert_eq!(
+            released_starts(&order.admit(load(TaskId::first(), 20, 30), results())),
+            [20]
+        );
+        assert_eq!(order.held(), 0);
+    }
+
+    /// Retiring a task drops the results held back for it.
+    #[test]
+    fn retiring_a_task_drops_its_held_results() {
+        let task = TaskId::first();
+        let mut order = LoadOrder::default();
+        order.track(task, BlockHeight::from_u32(10));
+        assert!(order.admit(load(task, 20, 30), results()).is_empty());
+
+        order.retain(&BTreeMap::new());
+
+        assert_eq!(order.held(), 0);
+        assert_eq!(
+            released_starts(&order.admit(load(task, 10, 20), results())),
+            [10]
+        );
+    }
+
+    /// A held result takes the place of a load of compact blocks in a worker, so a worker takes a load only while
+    /// the scanning workers and held results together stay within the pool.
+    #[test]
+    fn a_worker_takes_a_load_only_within_the_pool() {
+        for (scanning_workers, held_results, admitted) in [
+            (0, 0, true),
+            (1, 0, true),
+            (0, 1, true),
+            (1, 1, false),
+            (0, MAX_WORKER_POOLSIZE, false),
+        ] {
+            assert_eq!(
+                load_admitted(scanning_workers, held_results),
+                admitted,
+                "{scanning_workers} scanning, {held_results} held"
+            );
+        }
     }
 
     /// A scan task of any priority is split above its first block when a load budget is reached.
