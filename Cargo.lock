@@ -334,6 +334,20 @@ dependencies = [
 
 [[package]]
 name = "bip0039"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "568b6890865156d9043af490d4c4081c385dd68ea10acd6ca15733d511e6b51c"
+dependencies = [
+ "hmac 0.12.1",
+ "pbkdf2",
+ "rand 0.8.7",
+ "sha2 0.10.9",
+ "unicode-normalization",
+ "zeroize",
+]
+
+[[package]]
+name = "bip0039"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2da3803045ec5ba2ee8f65eb36b29115ec8a05fe519a7ae023c84770bd5f676b"
@@ -1779,7 +1793,7 @@ dependencies = [
  "zcash_protocol",
  "zingo-netutils",
  "zingo-status",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingolib",
  "zingolib_testutils",
  "zip32",
@@ -3255,7 +3269,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -4433,7 +4447,7 @@ dependencies = [
  "toml 0.8.23",
  "tracing",
  "zingo-consensus",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a2416144d1bbbae30aca02bec062d1492)",
 ]
 
 [[package]]
@@ -4730,7 +4744,7 @@ dependencies = [
  "zingo-status",
  "zingo_common_components",
  "zingo_grpc_proxy",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingolib",
  "zip32",
 ]
@@ -4827,15 +4841,24 @@ dependencies = [
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0610b074a9384c4e22c387637b8c24fff121a931f417de76212e12102bca0554"
+dependencies = [
+ "bip0039 0.12.0",
+]
+
+[[package]]
+name = "zingo_test_vectors"
+version = "0.0.1"
 source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a2416144d1bbbae30aca02bec062d1492#89cf104a2416144d1bbbae30aca02bec062d1492"
 
 [[package]]
 name = "zingolib"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "append-only-vec",
  "bech32",
- "bip0039",
+ "bip0039 0.14.0",
  "bip32",
  "blake2b_simd",
  "bs58",
@@ -4887,7 +4910,7 @@ dependencies = [
  "zingo-price",
  "zingo-status",
  "zingo_common_components",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingolib",
  "zip32",
 ]
@@ -4908,7 +4931,7 @@ dependencies = [
  "zcash_protocol",
  "zingo-netutils",
  "zingo_common_components",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingolib",
  "zip32",
 ]

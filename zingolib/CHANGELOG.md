@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+## [7.0.0] - 2026-10-15
+
+### Added
+
 - `perspective::sync_progress`, the sync-progress editorial types.
   `SyncProgress`, built from a `pepper_sync::sync::SyncStatus`, derives the
   total block and output percentages the engine reported before: the exact
@@ -42,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `wallet::keys::WalletKind` and `LightWallet::kind`, the wallet's key material as one of `Mnemonic`, `SpendingKey`, `ViewingKey` with the receivers the key holds, or `NoKeys`, or `KeyError::NoAccountKeys` for a wallet without account zero. zingo-cli and the FFI each computed this themselves.
 
 ### Changed
+
 - `SaplingParams` is a plain struct whose `SPEND` and `OUTPUT` constants are
   the embedded Sapling proving parameters, read by `include_bytes!` straight
   from the parameter cache the build script downloads into. `SaplingParams::get`
@@ -119,7 +133,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ScanTarget::new(block_height, Option<TxId>)` and read through its
   accessors. A wallet file written before the change still loads.
 
+### Removed
+
+- **Breaking:** remove `LightWallet::get_filtered_balance_mut`, which no code called with a mutating filter. Use `LightWallet::get_filtered_balance`, which keeps its `Fn` bound.
+- **Breaking:** remove the `zennies_for_zingo` parameter from `LightClient::propose_send_all` and `LightClient::max_send_value`, since upstream send-max cannot carry a second payment.
+- **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
+- **Breaking:** remove the `sync::sync_status` re-export of `pepper_sync::sync_status`. Use `LightClient::latest_sync_status` or `pepper_sync::sync_status` directly.
+- **Breaking:** remove `PriceFetchRoute::Nakednet` and `LightClientError::ProbeRequiresMixnet`, both unreachable once the price fetch and the probe are mixnet-only.
+
 ### Fixed
+
 - `LightWallet::spendable_balance` and note selection require the anchor's
   shard to be scanned as well as the note's. The witness path's right-hand
   siblings are computed from the anchor's shard up to the anchor, so a note in
@@ -127,13 +150,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built. `InputSource::anchor_computable` checks the anchor's shard, where it
   checked the birthday shard, which is what the backend's canonical crossing
   proposal asks of it. (#2953)
-
-### Removed
-- **Breaking:** remove `LightWallet::get_filtered_balance_mut`, which no code called with a mutating filter. Use `LightWallet::get_filtered_balance`, which keeps its `Fn` bound.
-- **Breaking:** remove the `zennies_for_zingo` parameter from `LightClient::propose_send_all` and `LightClient::max_send_value`, since upstream send-max cannot carry a second payment.
-- **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
-- **Breaking:** remove the `sync::sync_status` re-export of `pepper_sync::sync_status`. Use `LightClient::latest_sync_status` or `pepper_sync::sync_status` directly.
-- **Breaking:** remove `PriceFetchRoute::Nakednet` and `LightClientError::ProbeRequiresMixnet`, both unreachable once the price fetch and the probe are mixnet-only.
 
 ## [6.0.0] - 2026-09-07
 

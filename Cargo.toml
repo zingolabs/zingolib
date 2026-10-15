@@ -26,14 +26,14 @@ resolver = "2"
 
 [workspace.dependencies]
 ### Workspace
-pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
+pepper-sync = { version = "0.6.0", path = "pepper-sync" }
 zingo-memo = { version = "0.2.0", path = "zingo-memo" }
 zingo-net-diag = { version = "0.1.0", path = "zingo-net-diag" }
 # default-features = false: the fetch machinery (socks5-fetch) is opt-in;
 # zingolib re-enables it only under its `nym` feature (the mixnet-only
 # price rule). The crate's own default keeps the fetch for standalone
 # builds and tests.
-zingo-price = { path = "zingo-price", default-features = false }
+zingo-price = { version = "0.2.0", path = "zingo-price", default-features = false }
 zingo-status = { version = "0.2.2", path = "zingo-status" }
 zingolib = { path = "zingolib" }
 
@@ -47,7 +47,7 @@ tempfile = "3"
 quote = "1"
 syn = { version = "2", features = ["full"] }
 zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "89cf104a2416144d1bbbae30aca02bec062d1492" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "89cf104a2416144d1bbbae30aca02bec062d1492" }
+zingo_test_vectors = "0.0.1"
 
 ### Documentation
 indoc = "2"
