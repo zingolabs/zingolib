@@ -100,6 +100,29 @@ const COMBINED_MODULEMAP: &str = "module.modulemap";
 /// The text between the two module maps in the combined module map.
 const MODULEMAP_SEPARATOR: &str = "\n";
 
+const SIMCTL_LIST_AVAILABLE_DEVICES: [&str; 5] =
+    ["xcrun", "simctl", "list", "devices", "available"];
+
+const XCODEBUILD_TEST: [&str; 2] = ["xcodebuild", "test"];
+
+const SCHEME_FLAG: &str = "-scheme";
+
+const DESTINATION_FLAG: &str = "-destination";
+
+const SIMULATOR_DESTINATION: &str = "platform=iOS Simulator,id=";
+const SIMULATOR_ARCH: &str = ",arch=arm64";
+
+fn xcodebuild_test(scheme: &str, udid: &str) -> Vec<String> {
+    XCODEBUILD_TEST
+        .into_iter()
+        .chain([SCHEME_FLAG, scheme, DESTINATION_FLAG])
+        .map(String::from)
+        .chain(iter::once(format!(
+            "{SIMULATOR_DESTINATION}{udid}{SIMULATOR_ARCH}"
+        )))
+        .collect()
+}
+
 /// The platform whose packaging to build.
 #[derive(Clone, Copy)]
 enum Platform {
@@ -152,6 +175,10 @@ enum Step {
         command: Vec<String>,
         to: path::PathBuf,
     },
+    XcodeTest {
+        workdir: String,
+        scheme: String,
+    },
 }
 
 /// Where `Run` steps execute.
@@ -181,7 +208,6 @@ struct Roots {
 }
 
 impl Roots {
-    /// The roots of a plan whose `Run` steps execute on the host, where any output directory serves.
     fn on_host(root: path::PathBuf, out: path::PathBuf) -> Result<Self, Vec<String>> {
         refuse_an_output_directory_holding_the_root(&root, &out)?;
         Ok(Self {
@@ -260,6 +286,19 @@ fn refuse_an_output_directory_holding_the_root(
     }
 }
 
+fn refuse_an_ios_output_the_swift_package_does_not_read(roots: &Roots) -> Result<(), Vec<String>> {
+    let consumed = roots.host_path(&binding_layer::swift_package_output_dir());
+    if binding_layer::lexical(&roots.out_host) == binding_layer::lexical(&consumed) {
+        Ok(())
+    } else {
+        Err(vec![format!(
+            "the Swift contract test compiles the package that reads {}, and this plan would write {}",
+            consumed.display(),
+            roots.out_host.display()
+        )])
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().skip(PROGRAM_NAME_ARGUMENTS).collect();
     match args.split_first() {
@@ -332,6 +371,7 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
                 return Err(vec!["iOS packaging requires macOS with Xcode".to_string()]);
             }
             let roots = Roots::on_host(root, out)?;
+            refuse_an_ios_output_the_swift_package_does_not_read(&roots)?;
             execute(&Runner::Host, &ios_plan(&roots))?;
             roots
         }
@@ -981,6 +1021,10 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
             &[],
             host(binding_layer::DESCRIPTOR_FILE),
         )],
+        vec![Step::XcodeTest {
+            workdir: roots.run_path(binding_layer::SWIFT_CONTRACT_TESTS_DIR),
+            scheme: binding_layer::swift_contract_tests_scheme(),
+        }],
     ];
     fresh_plan(
         roots,
@@ -1069,6 +1113,32 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
             fs::write(to, format!("{descriptor}\n"))
                 .map_err(|e| vec![format!("cannot write {}: {e}", to.display())])
         }
+        Step::XcodeTest { workdir, scheme } => {
+            let listing = capture_command(
+                runner,
+                workdir,
+                &[],
+                &SIMCTL_LIST_AVAILABLE_DEVICES.map(String::from),
+            )?;
+            let simulator = binding_layer::ios_simulator(&listing, IOS_DEPLOYMENT_TARGET)?;
+            println!("testing on {} ({})", simulator.name, simulator.udid);
+            let command = xcodebuild_test(scheme, &simulator.udid);
+            let output = output_of(runner, workdir, &[], &command)?;
+            let log = String::from_utf8_lossy(&output.stdout);
+            print!("{log}");
+            if !output.status.success() {
+                return Err(failure_of(&command, output.status));
+            }
+            let executed = binding_layer::executed_tests(&log)?;
+            if executed == binding_layer::SWIFT_CONTRACT_TEST_COUNT {
+                Ok(())
+            } else {
+                Err(vec![format!(
+                    "xcodebuild executed {executed} tests, and the Swift contract suite holds {}",
+                    binding_layer::SWIFT_CONTRACT_TEST_COUNT
+                )])
+            }
+        }
     }
 }
 
@@ -1137,23 +1207,43 @@ fn host_command(started: &Invocation) -> process::Command {
     command
 }
 
+fn require_host_workdir(runner: &Runner, started: &Invocation) -> Result<(), Vec<String>> {
+    if matches!(runner, Runner::Host) && !path::Path::new(&started.workdir).is_dir() {
+        return Err(vec![format!(
+            "the step's working directory {} is absent",
+            started.workdir
+        )]);
+    }
+    Ok(())
+}
+
+fn failure_of(command: &[String], status: process::ExitStatus) -> Vec<String> {
+    vec![format!("`{}` failed ({status})", command.join(" "))]
+}
+
+fn output_of(
+    runner: &Runner,
+    workdir: &str,
+    env: &[(String, String)],
+    command: &[String],
+) -> Result<process::Output, Vec<String>> {
+    let started = invocation(runner, workdir, env, command);
+    require_host_workdir(runner, &started)?;
+    host_command(&started)
+        .stderr(process::Stdio::inherit())
+        .output()
+        .map_err(|e| vec![format!("cannot run {}: {e}", started.program)])
+}
+
 fn capture_command(
     runner: &Runner,
     workdir: &str,
     env: &[(String, String)],
     command: &[String],
 ) -> Result<String, Vec<String>> {
-    let started = invocation(runner, workdir, env, command);
-    let output = host_command(&started)
-        .stderr(process::Stdio::inherit())
-        .output()
-        .map_err(|e| vec![format!("cannot run {}: {e}", started.program)])?;
+    let output = output_of(runner, workdir, env, command)?;
     if !output.status.success() {
-        return Err(vec![format!(
-            "`{}` failed ({})",
-            command.join(" "),
-            output.status
-        )]);
+        return Err(failure_of(command, output.status));
     }
     String::from_utf8(output.stdout).map_err(|e| {
         vec![format!(
@@ -1171,19 +1261,14 @@ fn run_command(
     command: &[String],
 ) -> Result<(), Vec<String>> {
     let started = invocation(runner, workdir, env, command);
-    if matches!(runner, Runner::Host) && !path::Path::new(&started.workdir).is_dir() {
-        return Err(vec![format!(
-            "the step's working directory {} is absent",
-            started.workdir
-        )]);
-    }
+    require_host_workdir(runner, &started)?;
     let status = host_command(&started)
         .status()
         .map_err(|e| vec![format!("cannot run {}: {e}", started.program)])?;
     if status.success() {
         Ok(())
     } else {
-        Err(vec![format!("`{}` failed ({status})", command.join(" "))])
+        Err(failure_of(command, status))
     }
 }
 
@@ -1267,6 +1352,54 @@ mod tests {
             format!("{TARGET_ADD} {}", targets.join(" "))
         );
         Ok(())
+    }
+
+    #[test]
+    fn the_ios_plan_ends_with_the_swift_contract_test() -> Result<(), Vec<String>> {
+        let plan = ios_plan(&host_roots()?);
+        let Some(Step::XcodeTest { workdir, scheme }) = plan.last() else {
+            return Err(vec![
+                "the iOS plan does not end with the Swift contract test".to_string(),
+            ]);
+        };
+        assert_eq!(
+            workdir,
+            &format!("{HOST_ROOT}/{}", binding_layer::SWIFT_CONTRACT_TESTS_DIR)
+        );
+        assert_eq!(scheme, &binding_layer::swift_contract_tests_scheme());
+        Ok(())
+    }
+
+    #[test]
+    fn an_ios_output_the_swift_package_does_not_read_is_refused_before_the_plan(
+    ) -> Result<(), Vec<String>> {
+        let diagnostic = workbench::refused(refuse_an_ios_output_the_swift_package_does_not_read(
+            &host_roots()?,
+        ))?
+        .concat();
+        assert!(diagnostic.contains(OUTSIDE_OUT));
+        assert!(diagnostic.contains(&binding_layer::swift_package_output_dir()));
+        let consumed = path::Path::new(HOST_ROOT).join(binding_layer::swift_package_output_dir());
+        refuse_an_ios_output_the_swift_package_does_not_read(&Roots::on_host(
+            path::PathBuf::from(HOST_ROOT),
+            consumed,
+        )?)?;
+        let roundabout = path::Path::new(HOST_ROOT)
+            .join(binding_layer::SWIFT_CONTRACT_TESTS_DIR)
+            .join(binding_layer::SWIFT_PACKAGE_FROM_CONTRACT_TESTS)
+            .join(binding_layer::SWIFT_PACKAGE_OUTPUT_DIR);
+        refuse_an_ios_output_the_swift_package_does_not_read(&Roots::on_host(
+            path::PathBuf::from(HOST_ROOT),
+            roundabout,
+        )?)
+    }
+
+    #[test]
+    fn the_xcodebuild_test_names_the_scheme_and_the_simulator_by_id() {
+        assert_eq!(
+            xcodebuild_test("Scheme-Package", "5555").join(" "),
+            "xcodebuild test -scheme Scheme-Package -destination platform=iOS Simulator,id=5555,arch=arm64"
+        );
     }
 
     #[test]
@@ -1693,6 +1826,14 @@ mod tests {
         ))?
         .concat();
         assert!(diagnostic.contains(&step_workdir) && !diagnostic.contains("cargo"));
+        let captured = workbench::refused(capture_command(
+            &Runner::Host,
+            &step_workdir,
+            &[],
+            &["cargo".to_string()],
+        ))?
+        .concat();
+        assert_eq!(captured, diagnostic);
         Ok(())
     }
 

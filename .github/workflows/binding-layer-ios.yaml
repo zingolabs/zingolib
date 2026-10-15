@@ -77,7 +77,12 @@ jobs:
             "CXXFLAGS_aarch64_apple_ios_sim=$flags" \
             >> "$GITHUB_ENV"
 
-      - name: Build the Binding Layer
+      # The plan ends with the Swift wire-contract test of the proxy crate,
+      # which compiles against the Swift Binding Set the package ships and
+      # asserts it against the crate's golden pins, which the Rust and
+      # Kotlin suites share. The XCFrameworks hold iOS slices only, so the
+      # builder runs the test on an iOS simulator it picks.
+      - name: Build the Binding Layer and run the Swift wire-contract test
         run: |
           cargo run \
             --manifest-path tools/workbench/Cargo.toml \

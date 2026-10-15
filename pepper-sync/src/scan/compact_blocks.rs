@@ -41,12 +41,6 @@ use super::{DecryptedNoteData, InitialScanData, ScanData, collect_nullifiers_com
 
 mod runners;
 
-fn script_from_compact_bytes(bytes: Vec<u8>) -> Script {
-    let mut script = Script::default();
-    script.0.0 = bytes;
-    script
-}
-
 #[allow(clippy::complexity)]
 pub(super) fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,
@@ -238,7 +232,7 @@ where
                     let output = zcash_transparent::bundle::TxOut::new(
                         Zatoshis::from_u64(output.value)
                             .map_err(|_| ScanError::TransparentOutputInvalidValue(output.value))?,
-                        script_from_compact_bytes(output.script_pub_key.clone()),
+                        script_from_bytes(output.script_pub_key.clone()),
                     );
                     if let Some(address) = output.recipient_address() {
                         let encoded_address =
@@ -372,6 +366,12 @@ where
         new_transparent_inuse_addresses,
         new_transparent_gap_addresses,
     })
+}
+
+fn script_from_bytes(bytes: Vec<u8>) -> Script {
+    let mut script = Script::default();
+    script.0.0 = bytes;
+    script
 }
 
 fn trial_decrypt<P>(

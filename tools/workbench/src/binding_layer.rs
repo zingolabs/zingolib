@@ -100,8 +100,129 @@ pub fn swift_sources_dir() -> String {
 }
 
 pub const SWIFT_PACKAGE_MANIFEST: &str = "bindings/swift/Package.swift";
+pub const SWIFT_LINKED_FRAMEWORK: &str = "SystemConfiguration";
 
 pub const SWIFT_PACKAGE_OUTPUT_DIR: &str = "build";
+
+pub const SWIFT_CONTRACT_TESTS_DIR: &str = "zingo-netutils/nym-proxy-ffi/contract-tests";
+
+pub const SWIFT_CONTRACT_TESTS_MANIFEST: &str =
+    "zingo-netutils/nym-proxy-ffi/contract-tests/Package.swift";
+
+pub const SWIFT_CONTRACT_TESTS_PACKAGE: &str = "ZingoBindingsContractTests";
+
+pub const SWIFT_PACKAGE_FROM_CONTRACT_TESTS: &str = "../../../bindings/swift";
+
+const SWIFTPM_PACKAGE_SCHEME_SUFFIX: &str = "-Package";
+
+pub fn swift_contract_tests_scheme() -> String {
+    format!("{SWIFT_CONTRACT_TESTS_PACKAGE}{SWIFTPM_PACKAGE_SCHEME_SUFFIX}")
+}
+
+const SIMCTL_RUNTIME_PREFIX: &str = "-- ";
+
+const SIMCTL_RUNTIME_SUFFIX: &str = " --";
+
+const SIMCTL_IOS_RUNTIME: &str = "iOS ";
+
+const SIMCTL_IPHONE: &str = "iPhone";
+
+const SIMCTL_FIELD_OPEN: &str = " (";
+
+const SIMCTL_FIELD_CLOSE: &str = ")";
+
+const SIMCTL_BOOTED: &str = "Booted";
+
+const SIMCTL_DEVICE_FIELDS: usize = 3;
+
+const VERSION_SEPARATOR: char = '.';
+
+pub const SWIFT_CONTRACT_TEST_COUNT: usize = 3;
+
+const XCODEBUILD_EXECUTED: &str = "Executed ";
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct IosSimulator {
+    pub name: String,
+    pub udid: String,
+}
+
+fn version(text: &str) -> Option<Vec<u32>> {
+    text.split(VERSION_SEPARATOR)
+        .map(|part| part.parse().ok())
+        .collect()
+}
+
+pub fn ios_simulator(listing: &str, minimum_runtime: &str) -> Result<IosSimulator, Vec<String>> {
+    let floor = version(minimum_runtime)
+        .ok_or_else(|| vec![format!("`{minimum_runtime}` is not a dotted version")])?;
+    let mut eligible = false;
+    let mut first = None;
+    for line in listing.lines() {
+        if let Some(runtime) = line
+            .strip_prefix(SIMCTL_RUNTIME_PREFIX)
+            .and_then(|rest| rest.strip_suffix(SIMCTL_RUNTIME_SUFFIX))
+        {
+            eligible = runtime
+                .strip_prefix(SIMCTL_IOS_RUNTIME)
+                .and_then(version)
+                .is_some_and(|found| found >= floor);
+            continue;
+        }
+        if !eligible {
+            continue;
+        }
+        let fields: Vec<&str> = line
+            .trim()
+            .rsplitn(SIMCTL_DEVICE_FIELDS, SIMCTL_FIELD_OPEN)
+            .collect();
+        let [state, udid, name] = fields[..] else {
+            continue;
+        };
+        if !name.starts_with(SIMCTL_IPHONE) {
+            continue;
+        }
+        let simulator = IosSimulator {
+            name: name.to_string(),
+            udid: udid.trim_end_matches(SIMCTL_FIELD_CLOSE).to_string(),
+        };
+        if state.trim_end_matches(SIMCTL_FIELD_CLOSE) == SIMCTL_BOOTED {
+            return Ok(simulator);
+        }
+        first.get_or_insert(simulator);
+    }
+    first.ok_or_else(|| {
+        vec![format!(
+            "no available {SIMCTL_IPHONE} simulator on an {SIMCTL_IOS_RUNTIME}{minimum_runtime} or newer runtime in:\n{listing}"
+        )]
+    })
+}
+
+pub fn executed_tests(log: &str) -> Result<usize, Vec<String>> {
+    log.lines()
+        .filter_map(|line| line.trim().strip_prefix(XCODEBUILD_EXECUTED))
+        .filter_map(|rest| rest.split_whitespace().next()?.parse().ok())
+        .next_back()
+        .ok_or_else(|| {
+            vec![format!(
+                "xcodebuild reported no `{XCODEBUILD_EXECUTED}N tests` line"
+            )]
+        })
+}
+
+pub fn lexical(path: &std::path::Path) -> std::path::PathBuf {
+    let mut resolved = std::path::PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                resolved.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => resolved.push(other),
+        }
+    }
+    resolved
+}
 
 /// The wallet's generated Swift source.
 pub const WALLET_SWIFT: &str = "zingo.swift";
@@ -711,7 +832,123 @@ mod tests {
             "let builderOutput = \"{SWIFT_PACKAGE_OUTPUT_DIR}\""
         )));
         assert!(manifest.contains(&format!("/{}\"", swift_sources_dir())));
+        assert!(manifest.contains(&format!(
+            "linkerSettings: [.linkedFramework(\"{SWIFT_LINKED_FRAMEWORK}\")]"
+        )));
         assert!(std::path::Path::new(SWIFT_PACKAGE_MANIFEST).ends_with("Package.swift"));
+    }
+
+    fn resolved(base: &str, relative: &str) -> std::path::PathBuf {
+        lexical(&std::path::Path::new(base).join(relative))
+    }
+
+    #[test]
+    fn the_contract_tests_manifest_names_the_shipped_package() -> Result<(), Vec<String>> {
+        let manifest =
+            include_str!("../../../zingo-netutils/nym-proxy-ffi/contract-tests/Package.swift");
+        assert!(manifest.contains(&format!("name: \"{SWIFT_CONTRACT_TESTS_PACKAGE}\"")));
+        assert!(manifest.contains(&format!(
+            ".package(name: \"{SWIFT_PACKAGE}\", path: \"{SWIFT_PACKAGE_FROM_CONTRACT_TESTS}\")"
+        )));
+        assert!(manifest.contains(&format!(
+            ".product(name: \"{SWIFT_PACKAGE}\", package: \"{SWIFT_PACKAGE}\")"
+        )));
+        assert!(!manifest.contains("products:"));
+        assert!(std::path::Path::new(SWIFT_CONTRACT_TESTS_MANIFEST)
+            .starts_with(SWIFT_CONTRACT_TESTS_DIR));
+        let shipped_package = crate::required(
+            std::path::Path::new(SWIFT_PACKAGE_MANIFEST).parent(),
+            "parent of the shipped manifest",
+        )?;
+        assert_eq!(
+            resolved(SWIFT_CONTRACT_TESTS_DIR, SWIFT_PACKAGE_FROM_CONTRACT_TESTS),
+            shipped_package
+        );
+        Ok(())
+    }
+
+    const SIMCTL_LISTING: &str = "== Devices ==\n\
+        -- watchOS 11.2 --\n\
+        \x20   Apple Watch Series 10 (46mm) (1111) (Shutdown)\n\
+        -- Unavailable: com.apple.CoreSimulator.SimRuntime.iOS-17-0 --\n\
+        \x20   iPhone 15 (2222) (Shutdown) (unavailable, runtime profile not found)\n\
+        -- iOS 15.5 --\n\
+        \x20   iPhone 13 (6666) (Booted)\n\
+        -- iOS 18.2 --\n\
+        \x20   iPad Pro 13-inch (M4) (3333) (Shutdown)\n\
+        \x20   iPhone 16 Pro (4444) (Shutdown)\n\
+        \x20   iPhone 16 (5555) (Booted)\n";
+
+    const MINIMUM_RUNTIME: &str = "16.0";
+
+    #[test]
+    fn the_simulator_is_the_booted_iphone_on_a_runtime_at_or_above_the_minimum(
+    ) -> Result<(), Vec<String>> {
+        assert_eq!(
+            ios_simulator(SIMCTL_LISTING, MINIMUM_RUNTIME)?,
+            IosSimulator {
+                name: "iPhone 16".to_string(),
+                udid: "5555".to_string(),
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn the_simulator_is_the_first_eligible_iphone_when_none_is_booted() -> Result<(), Vec<String>> {
+        let listing = SIMCTL_LISTING.replace("(Booted)", "(Shutdown)");
+        assert_eq!(ios_simulator(&listing, MINIMUM_RUNTIME)?.udid, "4444");
+        Ok(())
+    }
+
+    #[test]
+    fn a_runtime_version_compares_numerically_not_textually() -> Result<(), Vec<String>> {
+        let listing = SIMCTL_LISTING.replace("iOS 18.2", "iOS 100.0");
+        assert_eq!(ios_simulator(&listing, "99.0")?.udid, "5555");
+        Ok(())
+    }
+
+    #[test]
+    fn a_listing_without_an_iphone_on_an_eligible_runtime_is_refused_with_the_listing(
+    ) -> Result<(), Vec<String>> {
+        let listing = "-- iOS 15.5 --\n    iPhone 13 (6666) (Booted)\n";
+        let diagnostic = crate::refused(ios_simulator(listing, MINIMUM_RUNTIME))?.concat();
+        assert!(diagnostic.contains(listing) && diagnostic.contains(MINIMUM_RUNTIME));
+        Ok(())
+    }
+
+    #[test]
+    fn the_executed_test_count_is_the_last_one_xcodebuild_reports() -> Result<(), Vec<String>> {
+        let log = "Test Suite 'GoldenWireContractTests' passed\n\
+            \t Executed 3 tests, with 0 failures (0 unexpected) in 0.012 (0.015) seconds\n\
+            Test Suite 'All tests' passed\n\
+            \t Executed 3 tests, with 0 failures (0 unexpected) in 0.013 (0.016) seconds\n";
+        assert_eq!(executed_tests(log)?, 3);
+        assert!(crate::refused(executed_tests("** TEST SUCCEEDED **\n"))?
+            .concat()
+            .contains(XCODEBUILD_EXECUTED));
+        Ok(())
+    }
+
+    #[test]
+    fn the_swift_contract_test_count_is_the_number_of_test_methods() {
+        let suite = include_str!(
+            "../../../zingo-netutils/nym-proxy-ffi/contract-tests/swift/GoldenWireContractTests.swift"
+        );
+        assert_eq!(
+            suite.matches("func test").count(),
+            SWIFT_CONTRACT_TEST_COUNT
+        );
+    }
+
+    #[test]
+    fn lexical_resolution_drops_parent_and_current_components() {
+        assert_eq!(
+            lexical(std::path::Path::new(
+                "/host/zingolib/bindings/android/../swift/./build"
+            )),
+            std::path::Path::new("/host/zingolib/bindings/swift/build")
+        );
     }
 
     #[test]
