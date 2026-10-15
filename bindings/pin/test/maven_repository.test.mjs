@@ -89,7 +89,7 @@ test('placeMavenRepository extracts nothing when the layout is already in place'
   const tarball = await archive([VERSION]);
   await placeMavenRepository(tarball, home);
   const extract = mock.fn();
-  const placed = await placeMavenRepository(tarball, home, extract);
+  const placed = await placeMavenRepository(tarball, home, undefined, extract);
   assert.equal(placed.kind, 'placed');
   assert.equal(placed.coordinate, COORDINATE);
   assert.equal(extract.mock.callCount(), 0);
@@ -100,6 +100,23 @@ test('placeMavenRepository leaves nothing when the archive holds no artifact met
   const placed = await placeMavenRepository(await archive(undefined), home);
   assert.deepEqual(placed, { kind: 'badRepository', platform: 'android' });
   assert.deepEqual(await readdir(dirname(home)), []);
+});
+
+test('placeMavenRepository leaves nothing when the refusal rejects the layout', async () => {
+  const home = join(await scratch(), 'extracted');
+  const refused = { kind: 'wrongVersion', version: VERSION };
+  const placed = await placeMavenRepository(await archive([VERSION]), home, () => refused);
+  assert.deepEqual(placed, refused);
+  assert.deepEqual(await readdir(dirname(home)), []);
+});
+
+test('placeMavenRepository refuses a held layout that the refusal rejects', async () => {
+  const home = join(await scratch(), 'extracted');
+  const tarball = await archive([VERSION]);
+  await placeMavenRepository(tarball, home);
+  const refused = { kind: 'wrongVersion', version: VERSION };
+  const placed = await placeMavenRepository(tarball, home, () => refused);
+  assert.deepEqual(placed, refused);
 });
 
 test('coordinateOf reads nothing from an absent directory', async () => {

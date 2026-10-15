@@ -1,3 +1,5 @@
+use crate::binding_manifest;
+
 /// The language of the Android bindings.
 pub const KOTLIN: &str = "kotlin";
 
@@ -324,8 +326,8 @@ pub const ABI_ARTIFACT: &str = "abi";
 pub const ARTIFACT_KINDS: [&str; 2] = [BUNDLE_ARTIFACT, ABI_ARTIFACT];
 pub const ARTIFACT_WILDCARD: &str = "*";
 const ARTIFACT_SEPARATOR: &str = "-";
-pub const ANDROID_GRADLE_MANIFEST: &str = "bindings/android/build.gradle.kts";
-pub const ANDROID_GRADLE_SETTINGS: &str = "bindings/android/settings.gradle.kts";
+pub const WALLET_MANIFEST: &str = "zingolib/Cargo.toml";
+const MANIFEST_VERSION_PATH: [&str; 2] = ["package", "version"];
 pub const ANDROID_BUILD_DIR: &str = "bindings/android/build";
 pub const MAVEN_REPOSITORY_DIR: &str = "repository";
 pub const MAVEN_GROUP: &str = "org.zingolabs";
@@ -335,13 +337,12 @@ pub const MAVEN_METADATA_FILE: &str = "maven-metadata.xml";
 pub const MAVEN_PUBLISH_PLUGIN: &str = "maven-publish";
 pub const MAVEN_COMMIT_LENGTH: usize = 16;
 const MAVEN_VERSION_SEPARATOR: &str = "-";
-const MAVEN_COORDINATE_SEPARATOR: &str = ":";
-const DESCRIPTOR_PREFIX: &str = "zl_";
-const DESCRIPTOR_SEPARATOR: char = '_';
+const MAVEN_COMMIT_KEY: &str = "commit";
 pub const ABIS_OUTPUT: &str = "abis";
 pub const ABI_ARTIFACTS_OUTPUT: &str = "abi_artifacts";
 pub const ABI_PATTERN_OUTPUT: &str = "abi_pattern";
 pub const ANDROID_REPOSITORY_OUTPUT: &str = "android_repository";
+pub const MAVEN_VERSION_OUTPUT: &str = "maven_version";
 pub const BUNDLE_OUTPUT_PREFIX: &str = "bundle_";
 pub const BUNDLE_PATTERN_OUTPUT: &str = "bundle_pattern";
 pub const IOS_OUT_OUTPUT: &str = "ios_out";
@@ -489,43 +490,36 @@ pub fn maven_repository_dir() -> String {
     format!("{ANDROID_BUILD_DIR}/{MAVEN_REPOSITORY_DIR}")
 }
 
-pub fn maven_version(descriptor: &str, commit: &str) -> Result<String, Vec<String>> {
-    let descriptor = descriptor.trim();
-    let (crate_version, abbreviation) = descriptor
-        .strip_prefix(DESCRIPTOR_PREFIX)
-        .and_then(|body| body.rsplit_once(DESCRIPTOR_SEPARATOR))
-        .filter(|(version, abbreviation)| !version.is_empty() && !abbreviation.is_empty())
+pub fn crate_version(manifest: &str) -> Result<String, Vec<String>> {
+    let document: toml_edit::DocumentMut = manifest
+        .parse()
+        .map_err(|error| vec![format!("{WALLET_MANIFEST} does not parse: {error}")])?;
+    MANIFEST_VERSION_PATH
+        .iter()
+        .try_fold(document.as_item(), |item, key| item.get(key))
+        .and_then(toml_edit::Item::as_str)
+        .map(str::to_string)
         .ok_or_else(|| {
             vec![format!(
-                "{descriptor} is not a {DESCRIPTOR_PREFIX}<crate version>{DESCRIPTOR_SEPARATOR}<commit> descriptor"
+                "{WALLET_MANIFEST} names no string at {}",
+                MANIFEST_VERSION_PATH.join(".")
             )]
-        })?;
-    let commit = commit.trim();
-    let full = commit.len() == crate::binding_manifest::COMMIT_LENGTH
-        && commit
-            .chars()
-            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase());
-    if !full {
-        return Err(vec![format!(
-            "{commit} is not a full lowercase commit hash"
-        )]);
-    }
-    if !commit.starts_with(abbreviation) {
-        return Err(vec![format!(
-            "the descriptor {descriptor} names {abbreviation}, which does not begin {commit}"
-        )]);
-    }
+        })
+}
+
+pub fn maven_version(crate_version: &str, commit: &str) -> Result<String, Vec<String>> {
+    let commit = binding_manifest::commit_value(MAVEN_COMMIT_KEY, commit.trim())?;
     Ok(format!(
         "{crate_version}{MAVEN_VERSION_SEPARATOR}{}",
         &commit[..MAVEN_COMMIT_LENGTH]
     ))
 }
 
-pub fn maven_coordinate(version: &str) -> String {
-    format!("{MAVEN_GROUP}{MAVEN_COORDINATE_SEPARATOR}{MAVEN_ARTIFACT}{MAVEN_COORDINATE_SEPARATOR}{version}")
-}
-
-pub fn artifact_outputs(platforms: &[&str], commit: &str) -> Vec<(String, String)> {
+pub fn artifact_outputs(
+    platforms: &[&str],
+    commit: &str,
+    crate_version: &str,
+) -> Result<Vec<(String, String)>, Vec<String>> {
     let abis = ANDROID_ABIS.iter().map(|abi| abi.jni_dir);
     let mut outputs = vec![
         (
@@ -546,6 +540,10 @@ pub fn artifact_outputs(platforms: &[&str], commit: &str) -> Vec<(String, String
             ANDROID_REPOSITORY_OUTPUT.to_string(),
             maven_repository_dir(),
         ),
+        (
+            MAVEN_VERSION_OUTPUT.to_string(),
+            maven_version(crate_version, commit)?,
+        ),
     ];
     outputs.extend(platforms.iter().map(|platform| {
         (
@@ -558,7 +556,7 @@ pub fn artifact_outputs(platforms: &[&str], commit: &str) -> Vec<(String, String
         artifact_name(BUNDLE_ARTIFACT, ARTIFACT_WILDCARD, commit),
     ));
     outputs.push((IOS_OUT_OUTPUT.to_string(), swift_package_output_dir()));
-    outputs
+    Ok(outputs)
 }
 
 pub fn render_outputs(outputs: &[(String, String)]) -> String {
@@ -922,33 +920,51 @@ mod tests {
             "layout.buildDirectory.dir(\"{MAVEN_REPOSITORY_DIR}\")"
         )));
         assert!(settings.contains(&format!("rootProject.name = \"{MAVEN_ARTIFACT}\"")));
-        assert!(std::path::Path::new(ANDROID_GRADLE_MANIFEST).starts_with("bindings/android"));
-        assert!(std::path::Path::new(ANDROID_GRADLE_SETTINGS).starts_with("bindings/android"));
         assert!(std::path::Path::new(ANDROID_BUILD_DIR).starts_with("bindings/android"));
+    }
+
+    #[test]
+    fn the_bundle_pin_package_names_the_maven_contract() {
+        let reader = include_str!("../../../bindings/pin/lib/maven_repository.mjs");
+        assert!(reader.contains(&format!("REPOSITORY = '{MAVEN_REPOSITORY_DIR}';")));
+        assert!(reader.contains(&format!("METADATA = '{MAVEN_METADATA_FILE}';")));
+        assert!(reader.contains(&format!("COMMIT_CHARACTERS = {MAVEN_COMMIT_LENGTH};")));
+        assert!(reader.contains(&format!("VERSION_SEPARATOR = '{MAVEN_VERSION_SEPARATOR}';")));
+    }
+
+    #[test]
+    fn the_crate_version_reads_the_package_version_of_the_wallet_manifest(
+    ) -> Result<(), Vec<String>> {
+        assert_eq!(
+            crate_version("[package]\nname = \"zingolib\"\nversion = \"6.0.0\"\n"),
+            Ok("6.0.0".to_string())
+        );
+        assert!(
+            crate::refused(crate_version("[package]\nname = \"zingolib\"\n"))?
+                .concat()
+                .contains("package.version")
+        );
+        assert!(crate::refused(crate_version("[package"))?
+            .concat()
+            .contains("does not parse"));
+        Ok(())
     }
 
     #[test]
     fn the_maven_version_joins_the_crate_version_and_sixteen_commit_characters() {
         let commit = "ba7336710419c9ac1e9362ac1b4e5b0073ff477e";
         assert_eq!(
-            maven_version("zl_6.0.0_ba733\n", commit),
+            maven_version("6.0.0", &format!("{commit}\n")),
             Ok("6.0.0-ba7336710419c9ac".to_string())
         );
-        assert_eq!(
-            maven_coordinate("6.0.0-ba7336710419c9ac"),
-            "org.zingolabs:zingo-binding-layer:6.0.0-ba7336710419c9ac"
-        );
-        let diagnostic = |descriptor: &str, commit: &str| {
-            maven_version(descriptor, commit)
+        let diagnostic = |commit: &str| {
+            maven_version("6.0.0", commit)
                 .err()
                 .unwrap_or_default()
                 .concat()
         };
-        assert!(diagnostic("6.0.0_ba733", commit).contains("descriptor"));
-        assert!(diagnostic("zl_6.0.0", commit).contains("descriptor"));
-        assert!(diagnostic("zl_6.0.0_ba733", "ba733").contains("full lowercase"));
-        assert!(diagnostic("zl_6.0.0_ba733", &commit.to_uppercase()).contains("full lowercase"));
-        assert!(diagnostic("zl_6.0.0_cafe0", commit).contains("does not begin"));
+        assert!(diagnostic("ba733").contains("full lowercase"));
+        assert!(diagnostic(&commit.to_uppercase()).contains("full lowercase"));
     }
 
     fn resolved(base: &str, relative: &str) -> std::path::PathBuf {
@@ -1142,9 +1158,9 @@ mod tests {
     }
 
     #[test]
-    fn the_artifact_outputs_name_every_artifact_of_a_commit_once() {
+    fn the_artifact_outputs_name_every_artifact_of_a_commit_once() -> Result<(), Vec<String>> {
         let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let rendered = render_outputs(&artifact_outputs(&["android", "ios"], commit));
+        let rendered = render_outputs(&artifact_outputs(&["android", "ios"], commit, "6.0.0")?);
         assert_eq!(
             rendered,
             format!(
@@ -1155,12 +1171,14 @@ mod tests {
                  \"x86_64\":\"binding-layer-abi-x86_64-{commit}\"}}\n\
                  abi_pattern=binding-layer-abi-*-{commit}\n\
                  android_repository=bindings/android/build/repository\n\
+                 maven_version=6.0.0-aaaaaaaaaaaaaaaa\n\
                  bundle_android=binding-layer-bundle-android-{commit}\n\
                  bundle_ios=binding-layer-bundle-ios-{commit}\n\
                  bundle_pattern=binding-layer-bundle-*-{commit}\n\
                  ios_out=bindings/swift/build\n"
             )
         );
+        Ok(())
     }
 
     #[test]

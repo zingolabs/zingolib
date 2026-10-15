@@ -123,7 +123,7 @@ fn hex_value(
     }
 }
 
-fn commit_value(key: &str, value: &str) -> Result<String, Vec<String>> {
+pub fn commit_value(key: &str, value: &str) -> Result<String, Vec<String>> {
     hex_value(key, value, value, COMMIT_LENGTH, COMMIT_EXPECTATION)
 }
 

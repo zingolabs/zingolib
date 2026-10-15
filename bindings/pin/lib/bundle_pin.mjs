@@ -44,11 +44,10 @@ export function serializePin({ commit, digests }) {
 }
 
 export const ARCHIVE_MEDIA_TYPE = 'application/gzip';
-const ARCHIVED_PLATFORMS = ['android', 'ios'];
 
 export function oldShape(platform, found) {
   return (
-    ARCHIVED_PLATFORMS.includes(platform) &&
+    PLATFORMS.includes(platform) &&
     !found.layers.every(layer => layer.mediaType === ARCHIVE_MEDIA_TYPE)
   );
 }

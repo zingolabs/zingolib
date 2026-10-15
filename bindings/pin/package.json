@@ -18,7 +18,7 @@
     "lib"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=20.12"
   },
   "scripts": {
     "test": "node --test test/*.test.mjs"

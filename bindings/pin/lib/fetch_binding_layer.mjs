@@ -20,21 +20,21 @@ async function held(home) {
   return (await exists(path)) ? { kind: 'held', path } : { kind: 'missing' };
 }
 
+function wrongVersion(commit) {
+  return ({ version }) =>
+    versionNamesCommit(version, commit)
+      ? undefined
+      : { kind: 'wrongVersion', platform: 'android', commit, version };
+}
+
 async function mavenCoordinate(archive, commit) {
   const placed = await placeMavenRepository(
     archive,
     join(dirname(archive), EXTRACTED),
+    wrongVersion(commit),
   );
   if (placed.kind !== 'placed') {
     return placed;
-  }
-  if (!versionNamesCommit(placed.version, commit)) {
-    return {
-      kind: 'wrongVersion',
-      platform: 'android',
-      commit,
-      version: placed.version,
-    };
   }
   return { kind: 'fetched', path: placed.path, coordinate: placed.coordinate };
 }

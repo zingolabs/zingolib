@@ -51,19 +51,25 @@ export async function coordinateOf(repository) {
   return found.length === 1 ? found[0] : undefined;
 }
 
-export async function placeMavenRepository(archive, home, extract = untar) {
+export async function placeMavenRepository(
+  archive,
+  home,
+  refuse = () => undefined,
+  extract = untar,
+) {
   const repository = join(home, REPOSITORY);
   const held = await coordinateOf(repository);
   if (held) {
-    return { kind: 'placed', path: repository, ...held };
+    return refuse(held) ?? { kind: 'placed', path: repository, ...held };
   }
   let found;
   const replaced = await replaceDirectory(home, async partial => {
     await extract(archive, partial);
     found = await coordinateOf(join(partial, REPOSITORY));
-    return found
-      ? { kind: 'filled' }
-      : { kind: 'badRepository', platform: 'android' };
+    if (!found) {
+      return { kind: 'badRepository', platform: 'android' };
+    }
+    return refuse(found) ?? { kind: 'filled' };
   });
   return replaced.kind === 'replaced'
     ? { kind: 'placed', path: repository, ...found }

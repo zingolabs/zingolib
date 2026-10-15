@@ -121,7 +121,7 @@ tasks.withType<PublishToMavenRepository>().configureEach {
     doFirst {
         if (!bindingLayerVersion.isPresent) {
             throw GradleException(
-                "Set the Gradle property bindingLayerVersion from `build-binding-layer maven-version` before publishing."
+                "Set the Gradle property bindingLayerVersion from `build-binding-layer artifact` before publishing."
             )
         }
     }
