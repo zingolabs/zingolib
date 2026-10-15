@@ -70,7 +70,7 @@ zcash_primitives = { workspace = true }
 # only: build.rs fetches the sapling params; runtime code never downloads.
 zcash_proofs = { workspace = true }
 zcash_protocol = { workspace = true }
-zcash_transparent = { workspace = true }
+zcash_transparent = { workspace = true, features = ["transparent-inputs"] }
 zingo-memo = { workspace = true }
 zingo-netutils = { workspace = true }
 zingo-price = { workspace = true }
