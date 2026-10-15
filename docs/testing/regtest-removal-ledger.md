@@ -229,6 +229,23 @@ of the null-data output. Keep on testnet.
 **62. reload_wallet_after_short_sync.** Already a testnet test, ignored by
 default.
 
+**Unified 2026-10-15.** Entries 42, 48, 49, 52, 54 and 60, and the
+Ironwood half of entry 20, started from the same fixture,
+`scenarios::faucet_recipient_default`, so they now run as the phases of
+one live test, `faucet_recipient_default_in_one_chain` in `concrete.rs`,
+in the order 52, 54, 48, 49, 60, 20. Each former test survives as a phase
+function of its own name and keeps its assertions. Entry 42 is folded into
+entry 48's phase, which performs the identical transparent funding and
+shield. Entry 49 now checks the transaction it sent by txid, because the
+first phase had already sent to the same unified address. Entry 48's
+"exactly two value transfers" became a delta over the transfers the
+earlier phases recorded, and its balance checks carry the Sapling note
+entry 54 leaves untouched. The Orchard half of entry 20 stays in `sync.rs`
+on its own pre-Ironwood chain; both halves share
+`tests/support/untracked_history.rs`. The dispositions above are
+unchanged, and the test runs under the long slow-timeout override that
+entry 54 held.
+
 ## Totals
 
 | disposition | tests |

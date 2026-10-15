@@ -26,17 +26,15 @@ resolver = "2"
 
 [workspace.dependencies]
 ### Workspace
-pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
-zingo-memo = { path = "zingo-memo" }   # NOTE: for development between releases
-# zingo-memo = "0.1.1"
-zingo-net-diag = { path = "zingo-net-diag" }
+pepper-sync = { version = "0.6.0", path = "pepper-sync" }
+zingo-memo = { version = "0.2.0", path = "zingo-memo" }
+zingo-net-diag = { version = "0.1.0", path = "zingo-net-diag" }
 # default-features = false: the fetch machinery (socks5-fetch) is opt-in;
 # zingolib re-enables it only under its `nym` feature (the mixnet-only
 # price rule). The crate's own default keeps the fetch for standalone
 # builds and tests.
-zingo-price = { path = "zingo-price", default-features = false }
-zingo-status = { path = "zingo-status" } # NOTE: for development between releases
-# zingo-status = "0.2.1"
+zingo-price = { version = "0.2.0", path = "zingo-price", default-features = false }
+zingo-status = { version = "0.2.2", path = "zingo-status" }
 zingolib = { path = "zingolib" }
 
 ### Tests and Integration Tests
@@ -49,7 +47,7 @@ tempfile = "3"
 quote = "1"
 syn = { version = "2", features = ["full"] }
 zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "89cf104a2416144d1bbbae30aca02bec062d1492" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "89cf104a2416144d1bbbae30aca02bec062d1492" }
+zingo_test_vectors = "0.0.1"
 
 ### Documentation
 indoc = "2"
@@ -61,7 +59,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 ### Zingo-common
-zingo-netutils = { path = "zingo-netutils", features = ["globally-public-transparent"] }
+zingo-netutils = { version = "6.0.0", path = "zingo-netutils", features = ["globally-public-transparent"] }
 zingo_common_components = "0.4.0"
 tokio-stream = "0.1"
 
@@ -163,10 +161,3 @@ codegen-units = 1
 overflow-checks = true
 panic = "abort"
 opt-level = "z"
-
-[patch.crates-io]
-# Ironwood (NU6.3) proto fields (CompactTx.ironwoodActions, TreeState.ironwoodTree,
-# ShieldedProtocol.ironwood, ChainMetadata.ironwoodCommitmentTreeSize). The rev is
-# upstream PR #6, which commits the bindings regenerated from the Ironwood protos
-# as 0.4.0, so no workspace enables `rebuild-proto` and no build needs protoc.
-lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust", rev = "02211904910a50218f8b15f6136b5b127f98e4cc" }
