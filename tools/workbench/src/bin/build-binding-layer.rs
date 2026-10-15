@@ -1402,17 +1402,20 @@ fn stream_command(
         .spawn()
         .map_err(|e| vec![format!("cannot run {}: {e}", started.program)])?;
     let piped = workbench::required(child.stdout.take(), "the piped standard output")?;
+    let mut reader = io::BufReader::new(piped);
+    let mut bytes = Vec::new();
     let mut log = String::new();
-    for line in io::BufReader::new(piped).lines() {
-        let line = line.map_err(|e| {
-            vec![format!(
-                "`{}` wrote output that is not UTF-8 lines: {e}",
-                command.join(" ")
-            )]
-        })?;
-        println!("{line}");
+    loop {
+        bytes.clear();
+        let read = reader
+            .read_until(b'\n', &mut bytes)
+            .map_err(|e| vec![format!("cannot read from {}: {e}", started.program)])?;
+        if read == 0 {
+            break;
+        }
+        let line = String::from_utf8_lossy(&bytes);
+        print!("{line}");
         log.push_str(&line);
-        log.push('\n');
     }
     let status = child
         .wait()
