@@ -170,20 +170,18 @@ fn maven_repository_archive(dir: &Path) -> Result<PathBuf, Vec<String>> {
     let metadata = find_file(dir, binding_layer::MAVEN_METADATA_FILE, |name| {
         name == binding_layer::MAVEN_METADATA_FILE
     })?;
-    let repository = metadata
-        .ancestors()
-        .find(|ancestor| {
+    let repository = crate::required(
+        metadata.ancestors().find(|ancestor| {
             ancestor
                 .file_name()
                 .is_some_and(|name| name == binding_layer::MAVEN_REPOSITORY_DIR)
-        })
-        .ok_or_else(|| {
-            vec![format!(
-                "{} lies under no directory named {}",
-                metadata.display(),
-                binding_layer::MAVEN_REPOSITORY_DIR
-            )]
-        })?;
+        }),
+        &format!(
+            "directory named {} above {}",
+            binding_layer::MAVEN_REPOSITORY_DIR,
+            metadata.display()
+        ),
+    )?;
     let parent = crate::required(repository.parent(), "parent of the Maven repository")?;
     archive(parent, binding_layer::MAVEN_REPOSITORY_DIR)
 }
