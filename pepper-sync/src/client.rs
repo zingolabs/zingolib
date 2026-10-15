@@ -342,16 +342,46 @@ pub(crate) async fn get_frontiers(
     tree_state.try_into().map_err(ServerError::InvalidFrontier)
 }
 
+/// The hint zaino's refusal carries when a request falls between two mempool snapshots: the caller's view of the
+/// chain has moved on from the one the mempool is coherent with. zaino raises it from its transaction read, which
+/// also serves each transaction of a transparent address request.
 const SNAPSHOT_RETRY_HINT: &str = "retry with a fresh snapshot";
 
+/// The pause before a request refused between mempool snapshots is sent again. zaino reconciles its mempool with a
+/// new tip asynchronously, so a request sent again at once lands in the same window as the refused one.
+const SNAPSHOT_RETRY_PAUSE: Duration = Duration::from_millis(500);
+
+/// The number of times a request refused between mempool snapshots is sent again, bounding the wait for the mempool
+/// to catch up at `SNAPSHOT_MAX_RETRIES * SNAPSHOT_RETRY_PAUSE`.
+const SNAPSHOT_MAX_RETRIES: u8 = 6;
+
+/// The retries of one request that zaino refused between mempool snapshots.
+#[derive(Default)]
+struct SnapshotRetries(u8);
+
+impl SnapshotRetries {
+    /// Whether `status` is a refusal between mempool snapshots that is still within the retry ceiling. When it is,
+    /// the retry is counted and [`SNAPSHOT_RETRY_PAUSE`] passes before returning, so the caller sends the request
+    /// again once the mempool has had time to catch up with the tip.
+    async fn pause_before_retrying(&mut self, status: &tonic::Status) -> bool {
+        if !status.message().contains(SNAPSHOT_RETRY_HINT) || self.0 >= SNAPSHOT_MAX_RETRIES {
+            return false;
+        }
+        self.0 += 1;
+        tokio::time::sleep(SNAPSHOT_RETRY_PAUSE).await;
+        true
+    }
+}
+
 /// - Sends a transaction request to the fetcher, and sends it again after each
-///   refusal that carries [`SNAPSHOT_RETRY_HINT`], at most [`MAX_RETRIES`] times.
+///   refusal that carries [`SNAPSHOT_RETRY_HINT`], pausing [`SNAPSHOT_RETRY_PAUSE`]
+///   first, at most [`SNAPSHOT_MAX_RETRIES`] times.
 pub(crate) async fn get_transaction_and_block_height(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     consensus_parameters: &impl consensus::Parameters,
     txid: TxId,
 ) -> Result<(Transaction, BlockHeight), ServerError> {
-    let mut retry_count = 0;
+    let mut snapshot_retries = SnapshotRetries::default();
     let raw_transaction = loop {
         let (reply_sender, reply_receiver) = oneshot::channel();
         fetch_request_sender
@@ -363,12 +393,12 @@ pub(crate) async fn get_transaction_and_block_height(
             .map_err(|_| ServerError::FetcherDropped)?
         {
             Ok(raw_transaction) => break raw_transaction,
-            Err(status)
-                if status.message().contains(SNAPSHOT_RETRY_HINT) && retry_count < MAX_RETRIES =>
-            {
-                retry_count += 1;
+            Err(status) => {
+                if snapshot_retries.pause_before_retrying(&status).await {
+                    continue;
+                }
+                return Err(ServerError::RequestFailed(status));
             }
-            Err(status) => return Err(ServerError::RequestFailed(status)),
         }
     };
     let block_height =
@@ -412,6 +442,10 @@ pub(crate) async fn get_utxo_metadata(
 
 /// Gets transactions relevant to a given `transparent address` in the specified `block_range`.
 ///
+/// The request is sent again after a stream timeout, at most [`MAX_RETRIES`] times, and after a refusal between
+/// mempool snapshots, whether it answers the request or arrives on the stream, at most [`SNAPSHOT_MAX_RETRIES`]
+/// times with [`SNAPSHOT_RETRY_PAUSE`] before each.
+///
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub(crate) async fn get_transparent_address_transactions(
     fetch_request_sender: UnboundedSender<FetchRequest>,
@@ -421,6 +455,7 @@ pub(crate) async fn get_transparent_address_transactions(
 ) -> Result<Vec<(BlockHeight, Transaction)>, ServerError> {
     let mut raw_transactions: Vec<RawTransaction> = Vec::new();
     let mut retry_count = 0;
+    let mut snapshot_retries = SnapshotRetries::default();
 
     'retry: loop {
         let (reply_sender, reply_receiver) = oneshot::channel();
@@ -432,10 +467,18 @@ pub(crate) async fn get_transparent_address_transactions(
             ))
             .map_err(|_| ServerError::FetcherDropped)?;
 
-        let mut raw_transaction_stream = reply_receiver
+        let mut raw_transaction_stream = match reply_receiver
             .await
             .map_err(|_| ServerError::FetcherDropped)?
-            .map_err(ServerError::RequestFailed)?;
+        {
+            Ok(stream) => stream,
+            Err(status) => {
+                if snapshot_retries.pause_before_retrying(&status).await {
+                    continue 'retry;
+                }
+                return Err(ServerError::RequestFailed(status));
+            }
+        };
 
         while let Some(raw_tx) =
             match next_stream_item(&mut raw_transaction_stream, "TransparentAddressTxs").await {
@@ -450,7 +493,13 @@ pub(crate) async fn get_transparent_address_transactions(
                     raw_transactions.clear();
                     continue 'retry;
                 }
-                Err(e) => return Err(e.into()),
+                Err(e) => {
+                    if snapshot_retries.pause_before_retrying(&e).await {
+                        raw_transactions.clear();
+                        continue 'retry;
+                    }
+                    return Err(e.into());
+                }
             }
         {
             raw_transactions.push(raw_tx);
@@ -602,8 +651,9 @@ mod tests {
         }
     }
 
-    /// Answers transaction requests with each status of `replies` in turn, then
-    /// panics, so a caller that asks more often than the script allows fails.
+    /// Answers transaction and transparent address requests with each status of
+    /// `replies` in turn, then panics, so a caller that asks more often than the
+    /// script allows fails.
     fn spawn_transaction_fetcher(
         replies: Vec<tonic::Status>,
     ) -> mpsc::UnboundedSender<FetchRequest> {
@@ -611,9 +661,12 @@ mod tests {
         tokio::spawn(async move {
             let mut replies = replies.into_iter();
             while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                let status = replies.next().expect("a request beyond the script");
                 match fetch_request {
                     FetchRequest::Transaction(reply_sender, _) => {
-                        let status = replies.next().expect("a request beyond the script");
+                        let _ignore_error = reply_sender.send(Err(status));
+                    }
+                    FetchRequest::TransparentAddressTxs(reply_sender, _) => {
                         let _ignore_error = reply_sender.send(Err(status));
                     }
                     _ => panic!("unexpected fetch request"),
@@ -621,6 +674,15 @@ mod tests {
             }
         });
         fetch_request_sender
+    }
+
+    /// The statuses a fetcher answers so that a request is refused between mempool
+    /// snapshots `refusals` times, then fails with `NotFound` if asked again.
+    fn snapshot_races_then_not_found(refusals: u8) -> Vec<tonic::Status> {
+        (0..refusals)
+            .map(|_| snapshot_race())
+            .chain([tonic::Status::not_found("gone")])
+            .collect()
     }
 
     fn snapshot_race() -> tonic::Status {
@@ -639,36 +701,65 @@ mod tests {
 
     /// HYPOTHESIS: zaino answers a transaction request caught between two
     /// mempool snapshots with an `Unknown` status that asks the client to
-    /// retry, and the client obeys, up to the retry ceiling. Falsified if the
-    /// first such status surfaces, or if the ceiling is not enforced.
-    #[tokio::test]
-    async fn a_snapshot_race_is_retried_up_to_the_ceiling() {
-        let within_ceiling: Vec<tonic::Status> = (0..MAX_RETRIES)
-            .map(|_| snapshot_race())
-            .chain([tonic::Status::not_found("gone")])
-            .collect();
+    /// retry, and the client obeys, up to the retry ceiling, pausing before
+    /// each retry so the retries span the window in which the mempool catches
+    /// up rather than landing inside it. Falsified if the first such status
+    /// surfaces, if the ceiling is not enforced, or if the retries take less
+    /// than the ceiling's worth of pauses.
+    #[tokio::test(start_paused = true)]
+    async fn a_snapshot_race_is_retried_up_to_the_ceiling_with_pauses() {
+        let started = tokio::time::Instant::now();
         let status = status_of(
             get_transaction_and_block_height(
-                spawn_transaction_fetcher(within_ceiling),
+                spawn_transaction_fetcher(snapshot_races_then_not_found(SNAPSHOT_MAX_RETRIES)),
                 &NETWORK,
                 TxId::from_bytes([0; 32]),
             )
             .await,
         );
         assert_eq!(status.code(), tonic::Code::NotFound, "{status}");
+        assert_eq!(
+            started.elapsed(),
+            SNAPSHOT_RETRY_PAUSE * u32::from(SNAPSHOT_MAX_RETRIES),
+            "every retry is paused before"
+        );
 
-        let beyond_ceiling: Vec<tonic::Status> = (0..=MAX_RETRIES)
-            .map(|_| snapshot_race())
-            .chain([tonic::Status::not_found("never asked")])
-            .collect();
         let status = status_of(
             get_transaction_and_block_height(
-                spawn_transaction_fetcher(beyond_ceiling),
+                spawn_transaction_fetcher(snapshot_races_then_not_found(SNAPSHOT_MAX_RETRIES + 1)),
                 &NETWORK,
                 TxId::from_bytes([0; 32]),
             )
             .await,
         );
+        assert_eq!(status.code(), tonic::Code::Unknown, "{status}");
+    }
+
+    /// HYPOTHESIS: zaino serves each transaction of a transparent address request
+    /// through the read that refuses between mempool snapshots, so the address
+    /// request is retried under the same policy. Falsified if the refusal
+    /// surfaces within the ceiling, or if it does not surface beyond it.
+    #[tokio::test(start_paused = true)]
+    async fn a_transparent_address_request_caught_in_a_snapshot_race_is_retried() {
+        let request = |replies| {
+            get_transparent_address_transactions(
+                spawn_transaction_fetcher(replies),
+                &NETWORK,
+                String::from("t1"),
+                BlockHeight::from_u32(1)..BlockHeight::from_u32(2),
+            )
+        };
+        let status_of = |result: Result<Vec<(BlockHeight, Transaction)>, ServerError>| match result
+        {
+            Err(ServerError::RequestFailed(status)) => status,
+            other => panic!("expected a failed request, got {other:?}"),
+        };
+
+        let status = status_of(request(snapshot_races_then_not_found(SNAPSHOT_MAX_RETRIES)).await);
+        assert_eq!(status.code(), tonic::Code::NotFound, "{status}");
+
+        let status =
+            status_of(request(snapshot_races_then_not_found(SNAPSHOT_MAX_RETRIES + 1)).await);
         assert_eq!(status.code(), tonic::Code::Unknown, "{status}");
     }
 

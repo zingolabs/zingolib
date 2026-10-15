@@ -78,4 +78,6 @@ simple-mermaid.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+# `test-util` pauses time in the retry tests, so a paused pause costs no wall-clock.
+tokio = { workspace = true, features = ["test-util"] }
 zcash_protocol = { workspace = true, features = [ "local-consensus"] }

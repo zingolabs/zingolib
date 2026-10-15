@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 ### Fixed
+- A request that zaino refuses between two mempool snapshots ("retry with a
+  fresh snapshot") is sent again after a 500 ms pause, up to six times, where
+  the transaction request was sent again at once up to three times and the
+  transparent address request was not sent again at all. zaino reconciles its
+  mempool with a new tip asynchronously, and serves each transaction of a
+  transparent address request through the read that refuses, so a sync that
+  followed a mined block could fail with `ServerError::RequestFailed` from
+  transparent address discovery, or from a scan whose immediate retries all
+  fell inside the same window.
 
 ## [0.6.0] - 2026-10-15
 
