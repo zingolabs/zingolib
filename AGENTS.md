@@ -174,15 +174,15 @@ module-level blocks.
 
 ### Issue tracker
 
-Issues and PRDs live in **Linear** (Zingo Mobile team), managed via the
-`linear-server` MCP tools. External GitHub PRs are **not** a triage surface. See
-`docs/agents/issue-tracker.md`.
+Issues live in **GitHub Issues** on `zingolabs/zingolib`, managed via the `gh`
+CLI. Linear holds the Zingo Mobile team's issues only. Pull requests are
+**not** a triage surface. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Five canonical triage roles map onto Linear **statuses** (Backlog → `needs-triage`,
-Todo → `ready-for-human`, Canceled → `wontfix`) plus two **labels**
-(`needs-info`, `ready-for-agent`). See `docs/agents/triage-labels.md`.
+Five canonical triage roles are GitHub **labels** (`needs-triage`, `needs-info`,
+`ready-for-agent`, `ready-for-human`, `wontfix`), with `wontfix` also closing
+the issue as not planned. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
