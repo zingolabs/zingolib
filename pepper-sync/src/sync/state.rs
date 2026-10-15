@@ -908,6 +908,10 @@ where
             .get_sync_state()?
             .transparent_scan_floor
             .expect("transparent scan floor should be set before scanning");
+        let highest_scanned_height = wallet
+            .get_sync_state()?
+            .highest_scanned_height()
+            .expect("the scan ranges hold the selected range");
         if selected_range.priority() == ScanPriority::ScannedWithoutMapping {
             // all continuity checks and scanning is already complete, the scan worker will only re-fetch the nullifiers
             // for final spend detection.
@@ -920,6 +924,7 @@ where
                 HashMap::new(),
                 HashMap::new(),
                 transparent_scan_floor,
+                highest_scanned_height,
             )))
         } else {
             // in continuous sync there is a case where the range directly below the newly mined block (chain tip) is
@@ -969,6 +974,7 @@ where
                 transparent_inuse_addresses,
                 transparent_gap_addresses,
                 transparent_scan_floor,
+                highest_scanned_height,
             )))
         }
     } else {

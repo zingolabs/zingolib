@@ -921,6 +921,9 @@ pub(crate) struct ScanTask {
     pub(crate) transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
     pub(crate) transparent_gap_addresses: HashMap<String, TransparentAddressId>,
     pub(crate) transparent_scan_floor: BlockHeight,
+    // the wallet's highest scanned block when the task was selected, which places the checkpoint window of each
+    // load where the shard tree update will look for it.
+    pub(crate) highest_scanned_height: BlockHeight,
 }
 
 impl ScanTask {
@@ -934,6 +937,7 @@ impl ScanTask {
         transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
         transparent_gap_addresses: HashMap<String, TransparentAddressId>,
         transparent_scan_floor: BlockHeight,
+        highest_scanned_height: BlockHeight,
     ) -> Self {
         Self {
             task_id,
@@ -945,6 +949,7 @@ impl ScanTask {
             transparent_inuse_addresses,
             transparent_gap_addresses,
             transparent_scan_floor,
+            highest_scanned_height,
         }
     }
 
@@ -1016,6 +1021,7 @@ impl ScanTask {
                 transparent_inuse_addresses: self.transparent_inuse_addresses.clone(),
                 transparent_gap_addresses: self.transparent_gap_addresses.clone(),
                 transparent_scan_floor: self.transparent_scan_floor,
+                highest_scanned_height: self.highest_scanned_height,
             },
             ScanTask {
                 task_id: self.task_id,
@@ -1030,6 +1036,7 @@ impl ScanTask {
                 transparent_inuse_addresses: self.transparent_inuse_addresses,
                 transparent_gap_addresses: self.transparent_gap_addresses,
                 transparent_scan_floor: self.transparent_scan_floor,
+                highest_scanned_height: self.highest_scanned_height,
             },
         ))
     }

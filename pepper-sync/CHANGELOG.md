@@ -95,6 +95,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accessors.
 
 ### Changed
+- Scanning places a shard tree checkpoint only on the blocks the wallet
+  will hold one for: the top `MAX_SHARDTREE_CHECKPOINTS` blocks of a range
+  scanned above the highest scanned height, the blocks of a lower range
+  inside that window, and the anchor retention boundaries inside their
+  window. Every other block's checkpoint was built, inserted and pruned
+  from each pool's tree for nothing, a fixed cost per block per active
+  pool that grew with the ironwood pool. The heights come from one function,
+  `witness::checkpoint_heights`, which the shard tree update also uses to
+  decide the checkpoints it adds for blocks that leave a pool's tree
+  unchanged, so the two sides agree. A scan task carries the wallet's
+  highest scanned height from its selection for this.
 - Scanning reads version 2 zingo memos, which carry a recipient's unified
   address with its ZIP 316 revision and metadata, through
   `ParsedMemo::into_unified_addresses`.

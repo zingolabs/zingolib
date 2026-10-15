@@ -1,6 +1,7 @@
 //! Module for structs and types associated with witness construction
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Range;
 use std::sync::Arc;
 
 use incrementalmerkletree::{
@@ -14,6 +15,8 @@ use zcash_client_backend::data_api::anchor_retention::{AnchorRetention, AnchorRe
 use zcash_primitives::{block::BlockHash, merkle_tree::read_commitment_tree};
 use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::lightwallet_protocol::TreeState;
+
+use crate::sync::MAX_SHARDTREE_CHECKPOINTS;
 
 use {
     crate::error::ServerError, shardtree::store::ShardStore, subtle::CtOption,
@@ -421,6 +424,45 @@ pub(crate) fn anchor_retention_window(
     as_of.saturating_sub(span)..=as_of
 }
 
+// checkpoints are held for the top MAX_SHARDTREE_CHECKPOINTS scanned blocks only. the chain tip is scanned first
+// and a spend anchors close to the chain height, so no anchor or truncation needs a checkpoint below this window.
+fn checkpoint_range(
+    block_range: &Range<BlockHeight>,
+    highest_scanned_height: BlockHeight,
+) -> Range<BlockHeight> {
+    let window_start = if block_range.start > highest_scanned_height {
+        block_range.end.saturating_sub(MAX_SHARDTREE_CHECKPOINTS)
+    } else {
+        highest_scanned_height.saturating_sub(MAX_SHARDTREE_CHECKPOINTS) + 1
+    };
+
+    std::cmp::max(block_range.start, window_start)..block_range.end
+}
+
+// the blocks of `block_range` the shard trees hold a checkpoint for: the blocks inside the checkpoint window given
+// `highest_scanned_height`, the wallet's highest scanned block outside the range, and the anchor retention
+// boundaries of `policy` inside its window. the scan places a leaf checkpoint on these blocks and on no other, and
+// the shard tree update adds a checkpoint to every tree the block leaves unchanged.
+pub(crate) fn checkpoint_heights(
+    block_range: &Range<BlockHeight>,
+    highest_scanned_height: BlockHeight,
+    policy: Option<&AnchorRetention>,
+) -> BTreeSet<BlockHeight> {
+    let window = checkpoint_range(block_range, highest_scanned_height);
+    let mut heights = (u32::from(window.start)..u32::from(window.end))
+        .map(BlockHeight::from_u32)
+        .collect::<BTreeSet<_>>();
+    if let Some(policy) = policy {
+        let as_of = std::cmp::max(highest_scanned_height, block_range.end - 1);
+        let retention_window = anchor_retention_window(policy, as_of);
+        let start = std::cmp::max(*retention_window.start(), block_range.start);
+        let end = std::cmp::min(*retention_window.end(), block_range.end - 1);
+        heights.extend(policy.retained_in_range(start..=end));
+    }
+
+    heights
+}
+
 /// Re-derives one shard store's pinned-checkpoint set from `policy`, pinning every grid
 /// boundary in `window` and releasing every pin outside it.
 pub(crate) fn repin_anchor_checkpoints<S>(
@@ -520,6 +562,87 @@ mod tests {
                 .is_err(),
             "an anchor inside the shard computes from the leaves, and the gap is still there"
         );
+    }
+
+    mod checkpoint_heights {
+        use std::num::NonZeroU32;
+
+        use super::*;
+
+        const HIGHEST_SCANNED: u32 = 10_000;
+
+        fn heights(
+            block_range: Range<u32>,
+            highest_scanned_height: u32,
+            policy: Option<&AnchorRetention>,
+        ) -> Vec<u32> {
+            checkpoint_heights(
+                &(BlockHeight::from_u32(block_range.start)..BlockHeight::from_u32(block_range.end)),
+                BlockHeight::from_u32(highest_scanned_height),
+                policy,
+            )
+            .into_iter()
+            .map(u32::from)
+            .collect()
+        }
+
+        /// A range above the highest scanned height holds checkpoints for its top window of blocks.
+        #[test]
+        fn a_range_above_the_highest_scanned_height_checkpoints_its_top_window() {
+            let range = HIGHEST_SCANNED + 1_000..HIGHEST_SCANNED + 2_000;
+
+            assert_eq!(
+                heights(range.clone(), HIGHEST_SCANNED, None),
+                (range.end - MAX_SHARDTREE_CHECKPOINTS..range.end).collect::<Vec<_>>()
+            );
+        }
+
+        /// A range inside the window below the highest scanned height holds checkpoints from the window start.
+        #[test]
+        fn a_range_below_the_highest_scanned_height_checkpoints_from_the_window_start() {
+            let window_start = HIGHEST_SCANNED - MAX_SHARDTREE_CHECKPOINTS + 1;
+            let range = window_start - 10..window_start + 10;
+
+            assert_eq!(
+                heights(range.clone(), HIGHEST_SCANNED, None),
+                (window_start..range.end).collect::<Vec<_>>()
+            );
+        }
+
+        /// A range below the window holds no checkpoint.
+        #[test]
+        fn a_range_below_the_window_holds_no_checkpoint() {
+            let window_start = HIGHEST_SCANNED - MAX_SHARDTREE_CHECKPOINTS + 1;
+
+            assert!(
+                heights(window_start - 100..window_start - 50, HIGHEST_SCANNED, None).is_empty()
+            );
+        }
+
+        /// The anchor retention boundaries inside the retention window are held below the top window, and nothing
+        /// else is.
+        #[test]
+        fn anchor_boundaries_in_the_retention_window_are_held() {
+            const INTERVAL: u32 = 50;
+            let policy = AnchorRetention::new(
+                BlockHeight::from_u32(1),
+                AnchorRetentionInterval::custom(NonZeroU32::new(INTERVAL).expect("nonzero")),
+            );
+            let range = HIGHEST_SCANNED + 1_000..HIGHEST_SCANNED + 2_000;
+            let top_window = range.end - MAX_SHARDTREE_CHECKPOINTS..range.end;
+            let retention_window =
+                anchor_retention_window(&policy, BlockHeight::from_u32(range.end - 1));
+            let boundaries = (range.start..top_window.start)
+                .filter(|height| height % INTERVAL == 0)
+                .filter(|height| retention_window.contains(&BlockHeight::from_u32(*height)))
+                .collect::<Vec<_>>();
+            assert!(!boundaries.is_empty(), "the test range holds a boundary");
+
+            assert_eq!(
+                heights(range.clone(), HIGHEST_SCANNED, Some(&policy)),
+                boundaries.into_iter().chain(top_window).collect::<Vec<_>>()
+            );
+        }
     }
 
     /// Pinned grid boundaries survive checkpoint pruning until re-deriving the pins releases

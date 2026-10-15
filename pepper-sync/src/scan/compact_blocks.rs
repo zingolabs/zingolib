@@ -52,6 +52,7 @@ pub(super) fn scan_compact_blocks<P>(
     mut transparent_gap_addresses: HashMap<String, TransparentAddressId>,
     transparent_gap_limit: u32,
     transparent_scan_floor: BlockHeight,
+    checkpoint_heights: &BTreeSet<BlockHeight>,
 ) -> Result<ScanData, ScanError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -162,18 +163,21 @@ where
                 transaction::shielded_output_count(transaction, ShieldedPool::Ironwood);
         }
 
-        set_checkpoint_retentions(
-            block_height,
-            &mut witness_data.sapling_leaves_and_retentions,
-        );
-        set_checkpoint_retentions(
-            block_height,
-            &mut witness_data.orchard_leaves_and_retentions,
-        );
-        set_checkpoint_retentions(
-            block_height,
-            &mut witness_data.ironwood_leaves_and_retentions,
-        );
+        // a checkpoint on every other block would be built, inserted and pruned from the shard tree for nothing.
+        if checkpoint_heights.contains(&block_height) {
+            set_checkpoint_retentions(
+                block_height,
+                &mut witness_data.sapling_leaves_and_retentions,
+            );
+            set_checkpoint_retentions(
+                block_height,
+                &mut witness_data.orchard_leaves_and_retentions,
+            );
+            set_checkpoint_retentions(
+                block_height,
+                &mut witness_data.ironwood_leaves_and_retentions,
+            );
+        }
 
         let wallet_block = WalletBlock {
             block_height,
@@ -824,6 +828,7 @@ mod tests {
             HashMap::new(),
             10,
             BlockHeight::from_u32(0),
+            &BTreeSet::new(),
         )
         .unwrap();
 
@@ -835,6 +840,47 @@ mod tests {
             .tree_bounds();
         assert_eq!(tree_bounds.ironwood_initial_tree_size, 100);
         assert_eq!(tree_bounds.ironwood_final_tree_size, 105);
+    }
+
+    /// A leaf checkpoint is placed on the last note commitment of a checkpoint height and on no other block.
+    #[test]
+    fn checkpoints_are_placed_on_the_checkpoint_heights_only() {
+        let first = block_with_served_ironwood_actions(5, 105);
+        let mut second = block_with_served_ironwood_actions(5, 110);
+        second.height = 101;
+        second.hash = vec![2; 32];
+        second.prev_hash = first.hash.clone();
+        second.vtx[0].txid = vec![4; 32];
+
+        let scan_data = scan_compact_blocks(
+            vec![first, second],
+            &zcash_protocol::consensus::MAIN_NETWORK,
+            &HashMap::new(),
+            initial_scan_data(100),
+            100,
+            HashMap::new(),
+            HashMap::new(),
+            10,
+            BlockHeight::from_u32(0),
+            &BTreeSet::from([BlockHeight::from_u32(101)]),
+        )
+        .unwrap();
+
+        let retentions = scan_data
+            .witness_data
+            .ironwood_leaves_and_retentions
+            .iter()
+            .map(|(_, retention)| *retention)
+            .collect::<Vec<_>>();
+        assert_eq!(retentions.len(), 10);
+        assert_eq!(retentions[4], Retention::Ephemeral);
+        assert_eq!(
+            retentions[9],
+            Retention::Checkpoint {
+                id: BlockHeight::from_u32(101),
+                marking: Marking::None,
+            }
+        );
     }
 
     /// A baseline understating the true tree size below the range must fail
@@ -853,6 +899,7 @@ mod tests {
             HashMap::new(),
             10,
             BlockHeight::from_u32(0),
+            &BTreeSet::new(),
         );
 
         assert!(matches!(
@@ -1069,6 +1116,7 @@ mod tests {
             gap_addresses.clone(),
             GAP_LIMIT,
             transparent_scan_floor,
+            &BTreeSet::new(),
         )
         .unwrap()
     }
@@ -1192,6 +1240,7 @@ mod tests {
             HashMap::new(),
             GAP_LIMIT,
             BlockHeight::from_u32(100),
+            &BTreeSet::new(),
         )
         .unwrap();
 
