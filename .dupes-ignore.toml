@@ -227,10 +227,6 @@ fingerprint = "537f75d83f9aa526"
 reason = "baseline at 639986655: exact group of 2, first member zingo-netutils/webpki-verifier-shim/src/lib.rs:92"
 
 [[ignore]]
-fingerprint = "580362527144835b"
-reason = "baseline at 639986655: exact group of 4, first member zingolib/src/wallet/keys/legacy/extended_transparent.rs:171"
-
-[[ignore]]
 fingerprint = "5ace608d9c3fb51c"
 reason = "baseline at 639986655: exact group of 4, first member zingolib/src/wallet/zcb_traits.rs:88"
 

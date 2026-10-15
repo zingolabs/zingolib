@@ -1,317 +1,176 @@
-//! BIP32 key derivation primitives
+use std::fmt;
+use std::hint;
 use std::io;
-use zcash_protocol::consensus::NetworkConstants;
 
-use crate::config::ClientConfig;
-use hmac::{Hmac, Mac};
-use secp256k1::{Error, PublicKey, SecretKey};
-use sha2::Sha512;
 use zcash_encoding::Vector;
 
 use crate::wallet::traits::ReadableWriteable;
 
-/// Random entropy, part of extended key.
-type ChainCode = Vec<u8>;
+pub(crate) const CHAIN_CODE_LEN: usize = 32;
+pub(crate) const SECRET_KEY_LEN: usize = 32;
+pub(crate) const COMPRESSED_PUBLIC_KEY_LEN: usize = 33;
 
-const HARDENED_KEY_START_INDEX: u32 = 2_147_483_648; // 2 ** 31
+const DEBUG_DIGEST_LEN: usize = 32;
+const DEBUG_PERSONALIZATION: &[u8; 16] = b"Zingo_LegacyXKey";
 
-/// `KeyIndex` indicates the key type and index of a child key.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum KeyIndex {
-    /// Normal key, index range is from 0 to 2 ** 31 - 1
-    Normal(u32),
-    /// Hardened key, index range is from 2 ** 31 to 2 ** 32 - 1
-    Hardened(u32),
+#[derive(Clone)]
+pub struct LegacyExtendedKey<const KEY_LEN: usize> {
+    pub key: [u8; KEY_LEN],
+    pub chain_code: [u8; CHAIN_CODE_LEN],
 }
 
-impl KeyIndex {
-    /// Check index range.
-    #[must_use]
-    pub fn is_valid(self) -> bool {
-        match self {
-            KeyIndex::Normal(i) => i < HARDENED_KEY_START_INDEX,
-            KeyIndex::Hardened(i) => i >= HARDENED_KEY_START_INDEX,
-        }
-    }
+pub type ExtendedPrivKey = LegacyExtendedKey<SECRET_KEY_LEN>;
+pub type ExtendedPubKey = LegacyExtendedKey<COMPRESSED_PUBLIC_KEY_LEN>;
 
-    /// Generate Hardened `KeyIndex` from normalize index value.
-    pub fn hardened_from_normalize_index(i: u32) -> Result<KeyIndex, Error> {
-        if i < HARDENED_KEY_START_INDEX {
-            Ok(KeyIndex::Hardened(HARDENED_KEY_START_INDEX + i))
-        } else {
-            Ok(KeyIndex::Hardened(i))
-        }
-    }
-
-    /// Generate `KeyIndex` from raw index value.
-    #[must_use]
-    pub fn from_index(i: u32) -> Self {
-        if i < HARDENED_KEY_START_INDEX {
-            KeyIndex::Normal(i)
-        } else {
-            KeyIndex::Hardened(i)
-        }
+impl<const KEY_LEN: usize> fmt::Debug for LegacyExtendedKey<KEY_LEN> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let digest = blake2b_simd::Params::new()
+            .hash_length(DEBUG_DIGEST_LEN)
+            .personal(DEBUG_PERSONALIZATION)
+            .to_state()
+            .update(&self.key)
+            .update(&self.chain_code)
+            .finalize();
+        write!(formatter, "LegacyExtendedKey(#{})", digest.to_hex())
     }
 }
 
-impl From<u32> for KeyIndex {
-    fn from(index: u32) -> Self {
-        KeyIndex::from_index(index)
+impl<const KEY_LEN: usize> PartialEq for LegacyExtendedKey<KEY_LEN> {
+    fn eq(&self, other: &Self) -> bool {
+        let differing_bits = self
+            .key
+            .iter()
+            .zip(other.key.iter())
+            .chain(self.chain_code.iter().zip(other.chain_code.iter()))
+            .fold(0u8, |accumulated, (left, right)| {
+                accumulated | hint::black_box(left ^ right)
+            });
+        hint::black_box(differing_bits) == 0
     }
 }
 
-/// `ExtendedPrivKey` is used for child key derivation.
-/// See [secp256k1 crate documentation](https://docs.rs/secp256k1) for `SecretKey` signatures usage.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExtendedPrivKey {
-    /// TODO: Add Doc Comment Here!
-    pub private_key: SecretKey,
-    /// TODO: Add Doc Comment Here!
-    pub chain_code: ChainCode,
-}
+impl<const KEY_LEN: usize> Eq for LegacyExtendedKey<KEY_LEN> {}
 
-type HmacSha512 = Hmac<Sha512>;
-
-/// HMAC-SHA512 over the concatenation of `parts`, keyed by `key` (BIP32).
-fn hmac_sha512(key: &[u8], parts: &[&[u8]]) -> [u8; 64] {
-    let mut mac = HmacSha512::new_from_slice(key).expect("HMAC-SHA512 accepts any key length");
-    for part in parts {
-        mac.update(part);
-    }
-    mac.finalize().into_bytes().into()
-}
-
-// Uses type inference from return to get 32 byte chunk size
-fn get_32_byte_key_chunk_and_cc(signature: [u8; 64]) -> ([u8; 32], Vec<u8>) {
-    let (k, cc) = signature.split_first_chunk().expect("signature.len >= 32");
-    (*k, cc.to_vec())
-}
-impl ExtendedPrivKey {
-    /// Generate an `ExtendedPrivKey` from seed
-    pub fn with_seed(seed: &[u8]) -> Result<ExtendedPrivKey, Error> {
-        let signature = hmac_sha512(b"Bitcoin seed", &[seed]);
-        let (key, chain_code) = get_32_byte_key_chunk_and_cc(signature);
-        let private_key = SecretKey::from_secret_bytes(key)?;
-        Ok(ExtendedPrivKey {
-            private_key,
-            chain_code,
-        })
-    }
-
-    /// TODO: Add Doc Comment Here!
-    #[must_use]
-    pub fn get_ext_taddr_from_bip39seed(
-        config: &ClientConfig,
-        bip39_seed: &[u8],
-        position: u32,
-    ) -> Self {
-        assert_eq!(bip39_seed.len(), 64);
-
-        let ext_t_key = ExtendedPrivKey::with_seed(bip39_seed).unwrap();
-        ext_t_key
-            .derive_private_key(KeyIndex::hardened_from_normalize_index(44).unwrap())
-            .unwrap()
-            .derive_private_key(
-                KeyIndex::hardened_from_normalize_index(config.chain_type().coin_type()).unwrap(),
-            )
-            .unwrap()
-            .derive_private_key(KeyIndex::hardened_from_normalize_index(position).unwrap())
-            .unwrap()
-            .derive_private_key(KeyIndex::Normal(0))
-            .unwrap()
-    }
-
-    fn sign_hardened_key(&self, index: u32) -> [u8; 64] {
-        hmac_sha512(
-            &self.chain_code,
-            &[&[0x00], &self.private_key[..], &index.to_be_bytes()],
-        )
-    }
-
-    fn sign_normal_key(&self, index: u32) -> [u8; 64] {
-        let public_key = PublicKey::from_secret_key(&self.private_key);
-        hmac_sha512(
-            &self.chain_code,
-            &[&public_key.serialize(), &index.to_be_bytes()],
-        )
-    }
-
-    /// Derive a child key from `ExtendedPrivKey`.
-    pub fn derive_private_key(&self, key_index: KeyIndex) -> Result<ExtendedPrivKey, Error> {
-        if !key_index.is_valid() {
-            return Err(Error::InvalidTweak);
-        }
-        let signature = match key_index {
-            KeyIndex::Hardened(index) => self.sign_hardened_key(index),
-            KeyIndex::Normal(index) => self.sign_normal_key(index),
-        };
-        let (key, chain_code) = get_32_byte_key_chunk_and_cc(signature);
-        let private_key = SecretKey::from_secret_bytes(key)?;
-        let tweak = secp256k1::Scalar::from(self.private_key);
-        let tweaked_private_key = private_key.add_tweak(&tweak)?;
-        Ok(ExtendedPrivKey {
-            private_key: tweaked_private_key,
-            chain_code,
-        })
-    }
-}
-
-impl ReadableWriteable for SecretKey {
-    const VERSION: u8 = 0; // not applicable
-    fn read<R: std::io::Read>(mut reader: R, (): ()) -> std::io::Result<Self> {
-        let mut secret_key_bytes = [0; 32];
-        reader.read_exact(&mut secret_key_bytes)?;
-        SecretKey::from_secret_bytes(secret_key_bytes)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
-    }
-
-    fn write<W: std::io::Write>(&self, mut _writer: W, _input: ()) -> std::io::Result<()> {
-        unimplemented!()
-    }
-}
-
-impl ReadableWriteable for ExtendedPrivKey {
+impl<const KEY_LEN: usize> ReadableWriteable for LegacyExtendedKey<KEY_LEN> {
     const VERSION: u8 = 1;
 
-    fn read<R: std::io::Read>(mut reader: R, (): ()) -> std::io::Result<Self> {
+    fn read<R: io::Read>(mut reader: R, (): ()) -> io::Result<Self> {
         Self::get_version(&mut reader)?;
-        let private_key = SecretKey::read(&mut reader, ())?;
-        let chain_code = Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?;
-        Ok(Self {
-            private_key,
-            chain_code,
-        })
+        let mut key = [0; KEY_LEN];
+        reader.read_exact(&mut key)?;
+        let chain_code = Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?
+            .try_into()
+            .map_err(|bytes: Vec<u8>| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "legacy chain code holds {} bytes, expected {CHAIN_CODE_LEN}",
+                        bytes.len()
+                    ),
+                )
+            })?;
+        Ok(Self { key, chain_code })
     }
 
-    fn write<W: std::io::Write>(&self, mut _writer: W, _input: ()) -> std::io::Result<()> {
+    fn write<W: io::Write>(&self, mut _writer: W, _input: ()) -> io::Result<()> {
         unimplemented!()
     }
 }
 
-/// `ExtendedPubKey` is used for child pub key derivation in watch-only mode
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExtendedPubKey {
-    /// TODO: Add Doc Comment Here!
-    pub public_key: PublicKey,
-    /// TODO: Add Doc Comment Here!
-    pub chain_code: ChainCode,
-}
+#[cfg(test)]
+mod tests {
+    use std::io;
 
-impl ExtendedPubKey {
-    fn sign_normal_key(&self, index: u32) -> [u8; 64] {
-        hmac_sha512(
-            &self.chain_code,
-            &[&self.public_key.serialize(), &index.to_be_bytes()],
-        )
+    use byteorder::WriteBytesExt;
+    use zcash_encoding::Vector;
+
+    use crate::wallet::error::KeyError;
+    use crate::wallet::keys::legacy;
+    use crate::wallet::traits::ReadableWriteable;
+
+    const SECP256K1_GENERATOR_COMPRESSED: &str =
+        "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+
+    fn sample() -> super::ExtendedPrivKey {
+        super::ExtendedPrivKey {
+            key: [0x5a; super::SECRET_KEY_LEN],
+            chain_code: [0xa5; super::CHAIN_CODE_LEN],
+        }
     }
 
-    /// Derive a child key from `ExtendedPubKey`.
-    pub fn derive_public_key(&self, key_index: KeyIndex) -> Result<ExtendedPubKey, Error> {
-        if !key_index.is_valid() {
-            return Err(Error::InvalidTweak);
-        }
-        let signature = match key_index {
-            KeyIndex::Hardened(_) => return Err(Error::InvalidTweak),
-            KeyIndex::Normal(index) => self.sign_normal_key(index),
+    fn encode_version_one(key: &[u8], chain_code: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![super::ExtendedPubKey::VERSION];
+        bytes.extend_from_slice(key);
+        Vector::write(&mut bytes, chain_code, |writer, byte| {
+            writer.write_u8(*byte)
+        })
+        .expect("writing into an in-memory Vec<u8> never returns an io::Error");
+        bytes
+    }
+
+    #[test]
+    fn debug_prints_a_digest_and_not_the_secret() {
+        let rendered = format!("{:?}", sample());
+        assert!(rendered.starts_with("LegacyExtendedKey(#"));
+        assert!(!rendered.contains(&hex::encode([0x5a; super::SECRET_KEY_LEN])));
+        assert!(!rendered.contains(&hex::encode([0xa5; super::CHAIN_CODE_LEN])));
+    }
+
+    #[test]
+    fn equality_covers_both_fields() {
+        let mut other_key = sample();
+        other_key.key[super::SECRET_KEY_LEN - 1] ^= 1;
+        let mut other_chain_code = sample();
+        other_chain_code.chain_code[0] ^= 1;
+        assert_eq!(sample(), sample());
+        assert_ne!(sample(), other_key);
+        assert_ne!(sample(), other_chain_code);
+    }
+
+    #[test]
+    fn view_only_key_round_trips_into_the_ufvk_p2pkh_item() -> Result<(), KeyError> {
+        let generator: [u8; super::COMPRESSED_PUBLIC_KEY_LEN] =
+            hex::decode(SECP256K1_GENERATOR_COMPRESSED)
+                .expect("the generator constant is valid hex")
+                .try_into()
+                .expect("the generator constant is 33 bytes of hex");
+        let stored = super::ExtendedPubKey {
+            key: generator,
+            chain_code: [0xa5; super::CHAIN_CODE_LEN],
         };
-        let (key, chain_code) = get_32_byte_key_chunk_and_cc(signature);
-        let new_sk = SecretKey::from_secret_bytes(key)?;
-        let new_pk = PublicKey::from_secret_key(&new_sk);
-        Ok(Self {
-            public_key: new_pk.combine(&self.public_key)?,
-            chain_code,
-        })
-    }
-}
 
-impl ReadableWriteable for PublicKey {
-    const VERSION: u8 = 0; // not applicable
-    fn read<R: std::io::Read>(mut reader: R, (): ()) -> std::io::Result<Self> {
-        let mut public_key_bytes = [0; 33];
-        reader.read_exact(&mut public_key_bytes)?;
-        PublicKey::from_slice(&public_key_bytes)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
-    }
+        let bytes = encode_version_one(&stored.key, &stored.chain_code);
+        let read_back = super::ExtendedPubKey::read(bytes.as_slice(), ())?;
+        assert_eq!(read_back, stored);
 
-    fn write<W: std::io::Write>(&self, mut _writer: W, _input: ()) -> std::io::Result<()> {
-        unimplemented!()
-    }
-}
+        let sapling_dfvk = sapling_crypto::zip32::ExtendedSpendingKey::master(&[0u8; 32])
+            .expect("a 32-byte seed derives a valid sapling master key")
+            .to_diversifiable_full_viewing_key();
+        let ufvk = legacy::legacy_fvks_to_ufvk(
+            None,
+            Some(&sapling_dfvk),
+            Some(&read_back),
+            &zcash_protocol::consensus::MAIN_NETWORK,
+        )?;
+        let p2pkh = ufvk
+            .p2pkh()
+            .expect("legacy_fvks_to_ufvk pushed the P2PKH item this test supplied");
 
-impl ReadableWriteable for ExtendedPubKey {
-    const VERSION: u8 = 1;
-
-    fn read<R: std::io::Read>(mut reader: R, _input: ()) -> std::io::Result<Self> {
-        Self::get_version(&mut reader)?;
-        let public_key = PublicKey::read(&mut reader, ())?;
-        let chain_code = Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?;
-        Ok(Self {
-            public_key,
-            chain_code,
-        })
+        let mut expected = stored.chain_code.to_vec();
+        expected.extend_from_slice(&stored.key);
+        assert_eq!(p2pkh.serialize(), expected);
+        Ok(())
     }
 
-    fn write<W: std::io::Write>(&self, mut _writer: W, _input: ()) -> std::io::Result<()> {
-        unimplemented!()
+    #[test]
+    fn a_short_chain_code_is_invalid_data() {
+        let bytes = encode_version_one(
+            &[0x5a; super::SECRET_KEY_LEN],
+            &[0xa5; super::CHAIN_CODE_LEN - 1],
+        );
+        let Err(error) = super::ExtendedPrivKey::read(bytes.as_slice(), ()) else {
+            panic!("a 31-byte chain code must not parse");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
     }
-}
-
-impl From<&ExtendedPrivKey> for ExtendedPubKey {
-    fn from(sk: &ExtendedPrivKey) -> Self {
-        ExtendedPubKey {
-            public_key: PublicKey::from_secret_key(&sk.private_key),
-            chain_code: sk.chain_code.clone(),
-        }
-    }
-}
-
-#[test]
-fn test_commutativity_of_key_derivation_mechanisms() {
-    // sk ---> sk_i
-    //  |       |
-    //  v       v
-    // pk ---> pk_i
-
-    // initial key derivation material
-    let i = KeyIndex::from_index(42);
-    let sk = ExtendedPrivKey::with_seed(&[0xcd; 64]).unwrap();
-
-    // sk -> sk_i -> pk_i derivation
-    let sk_i = sk.derive_private_key(i).unwrap();
-    let pk_i = ExtendedPubKey::from(&sk_i);
-
-    // sk -> pk -> pk_i derivation
-    let pk = ExtendedPubKey::from(&sk);
-    let pk_i_ = pk.derive_public_key(i).unwrap();
-
-    assert_eq!(pk_i, pk_i_);
-}
-
-#[test]
-fn test_sign_and_verify_with_derived_key() {
-    // Show standard sign/verify algoritms work
-    // derive a child key pair
-    // 0xcd = 11001101: alternating bit pattern used as deterministic test seed
-    let sk = ExtendedPrivKey::with_seed(&[0xcd; 64]).unwrap();
-    let sk_i = sk
-        .derive_private_key(KeyIndex::hardened_from_normalize_index(44).unwrap())
-        .unwrap()
-        .derive_private_key(KeyIndex::Normal(0))
-        .unwrap();
-    let pk_i = ExtendedPubKey::from(&sk_i);
-
-    // sign a message: "Hello World" zero-padded to 32 bytes
-    let mut digest = [0u8; 32];
-    digest[..11].copy_from_slice(b"Hello World");
-    let msg = secp256k1::Message::from_digest(digest);
-    let sig = secp256k1::ecdsa::sign(msg, &sk_i.private_key);
-
-    // verify succeeds with the correct public key
-    assert!(secp256k1::ecdsa::verify(&sig, msg, &pk_i.public_key).is_ok());
-
-    // verify fails with a different key
-    // 0xef = 11101111: distinct bit pattern to produce an unrelated key pair
-    let other_sk = ExtendedPrivKey::with_seed(&[0xef; 64]).unwrap();
-    let other_pk = ExtendedPubKey::from(&other_sk);
-    assert!(secp256k1::ecdsa::verify(&sig, msg, &other_pk.public_key).is_err());
 }
