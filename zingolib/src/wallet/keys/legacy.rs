@@ -289,9 +289,10 @@ pub(crate) fn legacy_fvks_to_ufvk<P: zcash_protocol::consensus::Parameters>(
         fvks.push(zcash_address::unified::Fvk::Sapling(fvk.to_bytes()));
     }
     if let Some(fvk) = transparent_fvk {
-        let mut fvk_bytes = [0u8; 65];
-        fvk_bytes[0..32].copy_from_slice(&fvk.chain_code[..]);
-        fvk_bytes[32..65].copy_from_slice(&fvk.public_key.serialize()[..]);
+        let mut fvk_bytes = [0u8; extended_transparent::CHAIN_CODE_LEN
+            + extended_transparent::COMPRESSED_PUBLIC_KEY_LEN];
+        fvk_bytes[..extended_transparent::CHAIN_CODE_LEN].copy_from_slice(&fvk.chain_code);
+        fvk_bytes[extended_transparent::CHAIN_CODE_LEN..].copy_from_slice(&fvk.key);
         fvks.push(zcash_address::unified::Fvk::P2pkh(fvk_bytes));
     }
 
@@ -336,17 +337,15 @@ pub(crate) fn legacy_sks_to_usk(
 
     // the following code performs the same operations for calling `to_bytes()` on an AccountPrivKey in LRZ
     let prefix = bip32::Prefix::XPRV;
-    let mut chain_code = [0u8; 32];
-    chain_code.copy_from_slice(&transparent_key.chain_code);
     let attrs = bip32::ExtendedKeyAttrs {
         depth: 4,
         parent_fingerprint: [0xff, 0xff, 0xff, 0xff],
         child_number: bip32::ChildNumber::new(0, true).expect("correct"),
-        chain_code,
+        chain_code: transparent_key.chain_code,
     };
     // Add leading `0` byte
     let mut key_bytes = [0u8; 33];
-    key_bytes[1..].copy_from_slice(transparent_key.private_key.as_secret_bytes());
+    key_bytes[1..].copy_from_slice(&transparent_key.key);
 
     let extended_key = bip32::ExtendedKey {
         prefix,
