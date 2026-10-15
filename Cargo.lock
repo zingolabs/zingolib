@@ -4742,7 +4742,7 @@ source = "git+https://github.com/zingolabs/infrastructure.git?rev=89cf104a241614
 
 [[package]]
 name = "zingo-memo"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "zcash_address",
  "zcash_encoding",
@@ -4780,7 +4780,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-price"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "byteorder",
  "serde",
@@ -4794,7 +4794,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-status"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "byteorder",
  "zcash_protocol",
