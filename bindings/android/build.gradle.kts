@@ -9,10 +9,14 @@ val bindingNdkVersion = "28.2.13676358"
 val jvmTargetVersion = JavaVersion.VERSION_17
 val jnaDependency = "net.java.dev.jna:jna:5.18.1@aar"
 val annotationDependency = "androidx.annotation:annotation:1.8.1"
+val junitDependency = "junit:junit:4.13.2"
 
 group = "org.zingolabs"
 
 val zingolibRoot: File = rootDir.resolve("../..")
+val proxyCrate: File = zingolibRoot.resolve("zingo-netutils/nym-proxy-ffi")
+val contractTests: File = proxyCrate.resolve("contract-tests/kotlin")
+val goldenDir: File = proxyCrate.resolve("test-data/golden")
 val builderOutput: Provider<Directory> = layout.buildDirectory.dir("binding-layer")
 val prebuiltOutput: Provider<Directory> =
     layout.dir(providers.gradleProperty("bindingLayerPrebuilt").map { file(it) })
@@ -59,6 +63,15 @@ android {
             java.srcDir(layerOutput.map { it.dir("kotlin") })
             jniLibs.srcDir(layerOutput.map { it.dir("jniLibs") })
         }
+        getByName("test") {
+            java.srcDir(contractTests)
+        }
+    }
+
+    testOptions {
+        unitTests.all {
+            it.systemProperty("zingo.golden.dir", goldenDir.normalize().absolutePath)
+        }
     }
 }
 
@@ -75,4 +88,5 @@ tasks.named("preBuild") {
 dependencies {
     api(jnaDependency)
     compileOnly(annotationDependency)
+    testImplementation(junitDependency)
 }

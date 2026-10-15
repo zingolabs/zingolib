@@ -21,7 +21,8 @@ let package = Package(
         .target(
             name: "ZingoBindings",
             dependencies: ["Zingolib", "ZingoNymProxyFFI"],
-            path: "\(builderOutput)/Sources/ZingoBindings"
+            path: "\(builderOutput)/Sources/ZingoBindings",
+            linkerSettings: [.linkedFramework("SystemConfiguration")]
         ),
     ]
 )
