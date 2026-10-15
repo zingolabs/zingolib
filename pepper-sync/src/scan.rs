@@ -156,6 +156,7 @@ where
         mut transparent_inuse_addresses,
         transparent_gap_addresses,
         transparent_scan_floor,
+        highest_scanned_height,
     } = scan_task;
 
     if compact_blocks
@@ -209,6 +210,11 @@ where
     )
     .await?;
 
+    let checkpoint_heights = witness::checkpoint_heights(
+        scan_range.block_range(),
+        highest_scanned_height,
+        witness::anchor_retention_policy(consensus_parameters).as_ref(),
+    );
     let consensus_parameters_clone = consensus_parameters.clone();
     let ufvks_clone = ufvks.clone();
     let initial_scan_data_clone = initial_scan_data.clone();
@@ -224,6 +230,7 @@ where
             transparent_gap_addresses,
             transparent_gap_limit,
             transparent_scan_floor,
+            &checkpoint_heights,
         )
     })
     .await

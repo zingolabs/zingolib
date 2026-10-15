@@ -1,7 +1,6 @@
 //! Traits for interfacing a wallet with the sync engine
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::ops::{Range, RangeInclusive};
 
 use tokio::sync::mpsc;
 use zip32::DiversifierIndex;
@@ -278,32 +277,11 @@ pub trait SyncShardTrees: SyncWallet {
         async move {
             let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
 
-            // limit the range that checkpoints are manually added to the top MAX_SHARDTREE_CHECKPOINTS scanned blocks for efficiency.
-            // As we sync the chain tip first and have spend-before-sync, we will always choose anchors very close to chain
-            // height and we will also never need to truncate to checkpoints lower than this height.
-            let checkpoint_range = if scan_range.block_range().start > highest_scanned_height {
-                let verification_window_start = scan_range
-                    .block_range()
-                    .end
-                    .saturating_sub(MAX_SHARDTREE_CHECKPOINTS);
-
-                std::cmp::max(scan_range.block_range().start, verification_window_start)
-                    ..scan_range.block_range().end
-            } else if scan_range.block_range().end
-                > highest_scanned_height.saturating_sub(MAX_SHARDTREE_CHECKPOINTS) + 1
-            {
-                let verification_window_start =
-                    highest_scanned_height.saturating_sub(MAX_SHARDTREE_CHECKPOINTS) + 1;
-
-                std::cmp::max(scan_range.block_range().start, verification_window_start)
-                    ..scan_range.block_range().end
-            } else {
-                BlockHeight::from_u32(0)..BlockHeight::from_u32(0)
-            };
-
             // in the case that sapling and/or orchard and/or ironwood note commitments are not in an entire block there will be no retention
             // at that height. Therefore, to prevent anchor and truncate errors, checkpoints are manually added first and
             // copy the tree state from the previous checkpoint where the commitment tree has not changed as of that block.
+            // the scan placed a leaf checkpoint on exactly these heights, so a block the located trees hold no
+            // checkpoint for left the pool's tree unchanged.
             let anchor_retention_window = anchor_retention.as_ref().map(|retention| {
                 let as_of = std::cmp::max(highest_scanned_height, scan_range.block_range().end - 1);
                 (
@@ -311,12 +289,10 @@ pub trait SyncShardTrees: SyncWallet {
                     witness::anchor_retention_window(retention, as_of),
                 )
             });
-            let checkpoint_heights = checkpoint_heights(
+            let checkpoint_heights = witness::checkpoint_heights(
                 scan_range.block_range(),
-                &checkpoint_range,
-                anchor_retention_window
-                    .as_ref()
-                    .map(|(retention, window)| (*retention, window)),
+                highest_scanned_height,
+                anchor_retention.as_ref(),
             );
 
             // every checkpoint is determined before the shard trees are updated, as a checkpoint may be fetched from
@@ -478,30 +454,6 @@ pub trait SyncShardTrees: SyncWallet {
 /// rollback the tree store unexpectedly refuses, becomes
 /// [`SyncError::TruncationError`] naming the pool, so the caller can
 /// fall back to the clear-and-rescan recovery.
-/// Returns every block of `checkpoint_range` followed by the anchor retention boundaries that lie inside both
-/// `block_range` and the retention window and outside `checkpoint_range`.
-fn checkpoint_heights(
-    block_range: &Range<BlockHeight>,
-    checkpoint_range: &Range<BlockHeight>,
-    anchor_retention_window: Option<(&AnchorRetention, &RangeInclusive<BlockHeight>)>,
-) -> Vec<BlockHeight> {
-    let mut heights = (u32::from(checkpoint_range.start)..u32::from(checkpoint_range.end))
-        .map(BlockHeight::from_u32)
-        .collect::<Vec<_>>();
-    if let Some((retention, window)) = anchor_retention_window {
-        let start = std::cmp::max(*window.start(), block_range.start);
-        let end = std::cmp::min(*window.end(), block_range.end - 1);
-        heights.extend(
-            retention
-                .retained_in_range(start..=end)
-                .into_iter()
-                .filter(|boundary| !checkpoint_range.contains(boundary)),
-        );
-    }
-
-    heights
-}
-
 fn truncate_pool_tree<H, E, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     tree: &mut ShardTree<MemoryShardStore<H, BlockHeight>, DEPTH, SHARD_HEIGHT>,
     truncate_height: BlockHeight,
