@@ -7,12 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
 ### Deprecated
-- `create_wallet_internal_memo_version_1`. The memo version follows the
-  addresses: `create_wallet_internal_memo` writes version 1 for every list the
-  deprecated function accepts and version 2 for the lists it refuses.
+
+### Removed
+
+### Fixed
+
+## [0.2.0] - 2026-10-15
 
 ### Added
+
 - Memo version 2, which records each unified address with its ZIP 316
   revision and every item it carries, metadata included, so an address read
   back on rescan is the one that was paid, and records no refund address
@@ -27,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ParsedMemo::into_unified_addresses`, the addresses of a memo of any version.
 
 ### Changed
+
 - `create_wallet_internal_memo_version_1` and `write_unified_address_to_raw_encoding`
   refuse an address that only ZIP 316 Revision 2 can represent, one with expiry
   metadata or without a shielded receiver, instead of recording it without its
@@ -40,7 +49,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   memo's raw unified address encoding is unchanged: it carries data items
   alone, read back as a ZIP 316 Revision 0 container.
 
+### Deprecated
+
+- `create_wallet_internal_memo_version_1`. The memo version follows the
+  addresses: `create_wallet_internal_memo` writes version 1 for every list the
+  deprecated function accepts and version 2 for the lists it refuses.
+
 ### Removed
+
 - `create_wallet_internal_memo_version_0`, deprecated since version 1 arrived.
   Version 0 memos are still read.
 
