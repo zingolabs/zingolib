@@ -117,6 +117,9 @@ const IOS_SIMULATORS: [IosTarget; 2] = [
 /// The directory, under a target directory, that holds merged simulator libraries.
 const UNIVERSAL_SIMULATOR_DIR: &str = "universal-sim";
 
+/// The directory, under a profile directory, that holds each hidden-symbol archive and its merged object.
+const HIDDEN_DIR: &str = "hidden";
+
 const OBJECT_SUFFIX: &str = ".o";
 
 const LD: &str = "ld";
@@ -922,6 +925,9 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
     };
     let universal =
         |target_dir: &str, file: &str| library(target_dir, UNIVERSAL_SIMULATOR_DIR, file);
+    let hidden = |target_dir: &str, triple: &str, file: &str| {
+        library(target_dir, triple, &format!("{HIDDEN_DIR}/{file}"))
+    };
     let generated_of =
         |generation: binding_layer::Generation| format!("{GENERATED_DIR}/{}", generation.label());
     let wallet_generated = generated_of(binding_layer::Generation::Wallet);
@@ -940,8 +946,13 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
         iter_ios_targets()
             .flat_map(|target| {
                 let archive = library(&target_dir, target.triple(), &archive_file);
-                let object = library(&target_dir, target.triple(), &object_file);
+                let hidden_archive = hidden(&target_dir, target.triple(), &archive_file);
+                let object = hidden(&target_dir, target.triple(), &object_file);
                 [
+                    Step::FreshDir(host_of(
+                        roots,
+                        &library(&target_dir, target.triple(), HIDDEN_DIR),
+                    )),
                     Step::Run {
                         workdir: roots.run.clone(),
                         env: env.clone(),
@@ -966,9 +977,15 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
                     Step::Run {
                         workdir: roots.run.clone(),
                         env: env.clone(),
-                        command: [LIBTOOL, LIBTOOL_STATIC_FLAG, OUTPUT_FLAG, &archive, &object]
-                            .map(String::from)
-                            .to_vec(),
+                        command: [
+                            LIBTOOL,
+                            LIBTOOL_STATIC_FLAG,
+                            OUTPUT_FLAG,
+                            &hidden_archive,
+                            &object,
+                        ]
+                        .map(String::from)
+                        .to_vec(),
                     },
                 ]
             })
@@ -1017,7 +1034,7 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
                     .chain(
                         IOS_SIMULATORS
                             .iter()
-                            .map(|target| library(target_dir, target.triple(), file)),
+                            .map(|target| hidden(target_dir, target.triple(), file)),
                     )
                     .chain(["-output".to_string(), universal(target_dir, file)])
                     .collect(),
@@ -1094,7 +1111,7 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
         xcframework(
             binding_layer::WALLET_XCFRAMEWORK,
             vec![
-                library(&wallet_target, IosTarget::Device.triple(), &wallet_static),
+                hidden(&wallet_target, IosTarget::Device.triple(), &wallet_static),
                 universal(&wallet_target, &wallet_static),
             ],
             true,
@@ -1104,7 +1121,7 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
         xcframework(
             binding_layer::PROXY_XCFRAMEWORK,
             vec![
-                library(&proxy_target, IosTarget::Device.triple(), &proxy_static),
+                hidden(&proxy_target, IosTarget::Device.triple(), &proxy_static),
                 universal(&proxy_target, &proxy_static),
             ],
             false,
@@ -1486,12 +1503,13 @@ mod tests {
             for target in iter_ios_targets() {
                 let profile_dir = format!("{target_dir}/{}/{PROFILE_DIR}", target.triple());
                 let archive = format!("{profile_dir}/{archive_file}");
-                let object = format!("{profile_dir}/{object_file}");
+                let hidden_archive = format!("{profile_dir}/{HIDDEN_DIR}/{archive_file}");
+                let object = format!("{profile_dir}/{HIDDEN_DIR}/{object_file}");
                 let link = format!(
                     "ld -r -arch {} -platform_version {} {IOS_DEPLOYMENT_TARGET} {IOS_DEPLOYMENT_TARGET} -force_load {archive} -exported_symbol _uniffi_{lib_name}_* -exported_symbol _ffi_{lib_name}_* -o {object}",
                     target.arch(), target.platform()
                 );
-                let pack = format!("libtool -static -o {archive} {object}");
+                let pack = format!("libtool -static -o {hidden_archive} {object}");
                 let link_at = workbench::required(
                     commands.iter().position(|command| command == &link),
                     "the relocatable link",
@@ -1509,16 +1527,23 @@ mod tests {
                 } else {
                     assert!(bindgen_at.is_none());
                 }
+                let mut readers = 0;
                 for (at, command) in commands.iter().enumerate() {
-                    if command.contains(&archive)
-                        && ![Some(link_at), Some(pack_at), bindgen_at].contains(&Some(at))
-                    {
+                    if command.contains(&archive) {
                         assert!(
-                            pack_at < at,
-                            "{command} reads {archive} before it is hidden"
+                            [Some(link_at), bindgen_at].contains(&Some(at)),
+                            "{command} reads the raw {archive}"
                         );
                     }
+                    if command.contains(&hidden_archive) && at != pack_at {
+                        assert!(
+                            pack_at < at,
+                            "{command} reads {hidden_archive} before it exists"
+                        );
+                        readers += 1;
+                    }
                 }
+                assert!(readers > 0, "nothing reads {hidden_archive}");
             }
         }
         Ok(())
