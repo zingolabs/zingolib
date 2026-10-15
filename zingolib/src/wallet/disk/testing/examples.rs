@@ -13,9 +13,14 @@ use crate::config::{ChainType, ClientConfig, WalletConfig};
 const MAINNET_INDEXER: &str = "https://zec.rocks:443";
 
 /// The testnet indexer these example wallets pin explicitly.
+/// - Reads nothing at run time: the directory is zingolib's manifest directory at compile time, so the
+///   example wallets resolve the same from every crate that runs a test.
+fn zingolib_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
 const TESTNET_INDEXER: &str = "https://testnet.zec.rocks:443";
 use crate::lightclient::LightClient;
-use crate::testutils::paths::get_cargo_manifest_dir;
 
 /// `ExampleWalletNetworkCase` sorts first by Network, then seed, then last saved version.
 /// It is public so that any consumer can select and load any example wallet.
@@ -137,51 +142,51 @@ impl NetworkSeedVersion {
         match self {
             NetworkSeedVersion::Regtest(seed) => match seed {
                 RegtestSeedVersion::HospitalMuseum(version) => match version {
-                    HospitalMuseumVersion::V27 => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/regtest/hmvasmuvwmssvichcarbpoct/v27/zingo-wallet.dat",
+                    HospitalMuseumVersion::V27 => zingolib_dir().join("src/wallet/disk/testing/examples/regtest/hmvasmuvwmssvichcarbpoct/v27/zingo-wallet.dat",
                     ),
                 },
                 RegtestSeedVersion::AbandonAbandon(version) => match version {
-                    AbandonAbandonVersion::V26 =>  get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/regtest/aaaaaaaaaaaaaaaaaaaaaaaa/v26/zingo-wallet.dat"
+                    AbandonAbandonVersion::V26 =>  zingolib_dir().join("src/wallet/disk/testing/examples/regtest/aaaaaaaaaaaaaaaaaaaaaaaa/v26/zingo-wallet.dat"
                     ),
                 },
                 RegtestSeedVersion::AbsurdAmount(version) => match version {
-                    AbsurdAmountVersion::OrchAndSapl => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/regtest/aadaalacaadaalacaadaalac/orch_and_sapl/zingo-wallet.dat",
+                    AbsurdAmountVersion::OrchAndSapl => zingolib_dir().join("src/wallet/disk/testing/examples/regtest/aadaalacaadaalacaadaalac/orch_and_sapl/zingo-wallet.dat",
                     ),
-                    AbsurdAmountVersion::OrchOnly => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/regtest/aadaalacaadaalacaadaalac/orch_only/zingo-wallet.dat",
+                    AbsurdAmountVersion::OrchOnly => zingolib_dir().join("src/wallet/disk/testing/examples/regtest/aadaalacaadaalacaadaalac/orch_only/zingo-wallet.dat",
                     ),
                 },
             },
             NetworkSeedVersion::Testnet(seed) => match seed {
                 TestnetSeedVersion::ChimneyBetter(version) => match version {
-                    ChimneyBetterVersion::V26 => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/testnet/cbbhrwiilgbrababsshsmtpr/v26/zingo-wallet.dat",
+                    ChimneyBetterVersion::V26 => zingolib_dir().join("src/wallet/disk/testing/examples/testnet/cbbhrwiilgbrababsshsmtpr/v26/zingo-wallet.dat",
                     ),
-                    ChimneyBetterVersion::V27 => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/testnet/cbbhrwiilgbrababsshsmtpr/v27/zingo-wallet.dat",
+                    ChimneyBetterVersion::V27 => zingolib_dir().join("src/wallet/disk/testing/examples/testnet/cbbhrwiilgbrababsshsmtpr/v27/zingo-wallet.dat",
                     ),
-                    ChimneyBetterVersion::V28 => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/testnet/cbbhrwiilgbrababsshsmtpr/v28/zingo-wallet.dat",
+                    ChimneyBetterVersion::V28 => zingolib_dir().join("src/wallet/disk/testing/examples/testnet/cbbhrwiilgbrababsshsmtpr/v28/zingo-wallet.dat",
                     ),
-                    ChimneyBetterVersion::Latest => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/testnet/cbbhrwiilgbrababsshsmtpr/latest/zingo-wallet.dat",
+                    ChimneyBetterVersion::Latest => zingolib_dir().join("src/wallet/disk/testing/examples/testnet/cbbhrwiilgbrababsshsmtpr/latest/zingo-wallet.dat",
                     ),
                 },
                 TestnetSeedVersion::MobileShuffle(version) => match version {
-                    MobileShuffleVersion::Gab72a38b => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/testnet/mskmgdbhotbpetcjwcspgopp/Gab72a38b/zingo-wallet.dat",
+                    MobileShuffleVersion::Gab72a38b => zingolib_dir().join("src/wallet/disk/testing/examples/testnet/mskmgdbhotbpetcjwcspgopp/Gab72a38b/zingo-wallet.dat",
                     ),
-                    MobileShuffleVersion::G93738061a => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/testnet/mskmgdbhotbpetcjwcspgopp/G93738061a/zingo-wallet.dat",
+                    MobileShuffleVersion::G93738061a => zingolib_dir().join("src/wallet/disk/testing/examples/testnet/mskmgdbhotbpetcjwcspgopp/G93738061a/zingo-wallet.dat",
                     ),
-                    MobileShuffleVersion::Latest => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/testnet/mskmgdbhotbpetcjwcspgopp/latest/zingo-wallet.dat",
+                    MobileShuffleVersion::Latest => zingolib_dir().join("src/wallet/disk/testing/examples/testnet/mskmgdbhotbpetcjwcspgopp/latest/zingo-wallet.dat",
                     ),
                 },
-                TestnetSeedVersion::GloryGoddess => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/testnet/glory_goddess/latest/zingo-wallet.dat",
+                TestnetSeedVersion::GloryGoddess => zingolib_dir().join("src/wallet/disk/testing/examples/testnet/glory_goddess/latest/zingo-wallet.dat",
                     ),
             },
             NetworkSeedVersion::Mainnet(seed) => match seed {
                 MainnetSeedVersion::VillageTarget(version) => match version {
-                    VillageTargetVersion::V28 => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/mainnet/vtfcorfbcbpctcfupmegmwbp/v28/zingo-wallet.dat",
+                    VillageTargetVersion::V28 => zingolib_dir().join("src/wallet/disk/testing/examples/mainnet/vtfcorfbcbpctcfupmegmwbp/v28/zingo-wallet.dat",
                     ),
                 },
                 MainnetSeedVersion::HotelHumor(version) => match version {
-                    HotelHumorVersion::Gf0aaf9347 => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/mainnet/hhcclaltpcckcsslpcnetblr/gf0aaf9347/zingo-wallet.dat",
+                    HotelHumorVersion::Gf0aaf9347 => zingolib_dir().join("src/wallet/disk/testing/examples/mainnet/hhcclaltpcckcsslpcnetblr/gf0aaf9347/zingo-wallet.dat",
                     ),
-                    HotelHumorVersion::Latest => get_cargo_manifest_dir().join("src/wallet/disk/testing/examples/mainnet/hhcclaltpcckcsslpcnetblr/latest/zingo-wallet.dat",
+                    HotelHumorVersion::Latest => zingolib_dir().join("src/wallet/disk/testing/examples/mainnet/hhcclaltpcckcsslpcnetblr/latest/zingo-wallet.dat",
                     ),
                 },
             },

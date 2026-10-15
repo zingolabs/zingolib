@@ -17,6 +17,10 @@ sentinels = []
 # default suite moves behind this non-default feature at the next
 # re-baseline. Currently empty pending the next recorded full-suite run.
 slow = []
+# The chain-generic fixtures against the public testnet, through
+# zingolib's NetworkedTestEnvironment. Off by default: the tests dial the
+# network, spend from one shared testnet wallet, and wait for real blocks.
+testnet = []
 # Everything beyond the default suite, in one switch.
 extra-credit-tests = ["sentinels", "slow"]
 
