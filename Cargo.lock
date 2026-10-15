@@ -1788,7 +1788,8 @@ dependencies = [
 [[package]]
 name = "lightwallet-protocol"
 version = "0.4.0"
-source = "git+https://github.com/zingolabs/lightwallet-protocol-rust?rev=02211904910a50218f8b15f6136b5b127f98e4cc#02211904910a50218f8b15f6136b5b127f98e4cc"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45cca626469584c9868b342372f7410a959a44aaaca08989e5d2a284c5f9b432"
 dependencies = [
  "prost",
  "tonic",
@@ -3254,7 +3255,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
