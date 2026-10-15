@@ -167,10 +167,3 @@ codegen-units = 1
 overflow-checks = true
 panic = "abort"
 opt-level = "z"
-
-[patch.crates-io]
-# Ironwood (NU6.3) proto fields (CompactTx.ironwoodActions, TreeState.ironwoodTree,
-# ShieldedProtocol.ironwood, ChainMetadata.ironwoodCommitmentTreeSize). The rev is
-# upstream PR #6, which commits the bindings regenerated from the Ironwood protos
-# as 0.4.0, so no workspace enables `rebuild-proto` and no build needs protoc.
-lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust", rev = "02211904910a50218f8b15f6136b5b127f98e4cc" }
