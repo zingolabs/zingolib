@@ -4758,7 +4758,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-netutils"
-version = "5.0.1"
+version = "6.0.0"
 dependencies = [
  "http",
  "hyper-util",
