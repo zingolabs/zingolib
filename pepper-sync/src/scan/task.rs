@@ -1378,9 +1378,9 @@ mod tests {
     fn a_worker_takes_a_load_only_within_the_pool() {
         for (scanning_workers, held_results, admitted) in [
             (0, 0, true),
-            (1, 0, true),
-            (0, 1, true),
-            (1, 1, false),
+            (MAX_WORKER_POOLSIZE - 1, 0, true),
+            (0, MAX_WORKER_POOLSIZE - 1, true),
+            (MAX_WORKER_POOLSIZE - 1, 1, false),
             (0, MAX_WORKER_POOLSIZE, false),
         ] {
             assert_eq!(

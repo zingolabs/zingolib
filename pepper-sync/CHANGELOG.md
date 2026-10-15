@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The loads of a scan range are scanned concurrently and returned in
   completion order, so a load could be processed before a lower load of the
   same range. When the nullifier map is capped by the performance level,
-  every processed load of a range below unscanned ranges is scanned without
+  every processed load of a range above unscanned ranges is scanned without
   mapping, and a note found in the lower load then recorded the higher load
   as a range whose nullifiers must be re-fetched before the note is known to
   be unspent. That re-fetch only runs once every range below is scanned, so a
