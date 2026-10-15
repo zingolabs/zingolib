@@ -117,6 +117,7 @@ const IOS_SIMULATORS: [IosTarget; 2] = [
 /// The directory, under a target directory, that holds merged simulator libraries.
 const UNIVERSAL_SIMULATOR_DIR: &str = "universal-sim";
 
+/// The directory, under a profile directory, that holds each hidden-symbol archive and its merged object.
 const HIDDEN_DIR: &str = "hidden";
 
 const OBJECT_SUFFIX: &str = ".o";
