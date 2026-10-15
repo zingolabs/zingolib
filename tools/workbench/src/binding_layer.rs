@@ -19,6 +19,17 @@ pub const WALLET_LIB_NAME: &str = "zingo";
 /// The proxy crate's library name, from which its library file names derive.
 pub const PROXY_LIB_NAME: &str = "zingo_nym_proxy_ffi";
 
+const MACH_O_SYMBOL_PREFIX: &str = "_";
+const UNIFFI_SYMBOL_PREFIXES: [&str; 2] = ["uniffi_", "ffi_"];
+const SYMBOL_WILDCARD: &str = "*";
+const SYMBOL_SEPARATOR: &str = "_";
+
+pub fn exported_symbol_patterns(lib_name: &str) -> [String; 2] {
+    UNIFFI_SYMBOL_PREFIXES.map(|prefix| {
+        format!("{MACH_O_SYMBOL_PREFIX}{prefix}{lib_name}{SYMBOL_SEPARATOR}{SYMBOL_WILDCARD}")
+    })
+}
+
 /// The proxy crate's package name, which cargo selects in its own workspace.
 pub const PROXY_PACKAGE: &str = "zingo-nym-proxy-ffi";
 
@@ -532,6 +543,13 @@ impl Generation {
         match self {
             Generation::Wallet => "wallet",
             Generation::Proxy => "proxy",
+        }
+    }
+
+    pub fn lib_name(self) -> &'static str {
+        match self {
+            Generation::Wallet => WALLET_LIB_NAME,
+            Generation::Proxy => PROXY_LIB_NAME,
         }
     }
 }
