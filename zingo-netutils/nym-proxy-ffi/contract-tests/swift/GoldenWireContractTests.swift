@@ -14,7 +14,7 @@
 
 import Foundation
 import XCTest
-@testable import ZingoBindings
+import ZingoBindings
 
 final class GoldenWireContractTests: XCTestCase {
     private func goldenDir() -> URL {

@@ -17,6 +17,21 @@ val zingolibRoot: File = rootDir.resolve("../..")
 val proxyCrate: File = zingolibRoot.resolve("zingo-netutils/nym-proxy-ffi")
 val contractTests: File = proxyCrate.resolve("contract-tests/kotlin")
 val goldenDir: File = proxyCrate.resolve("test-data/golden")
+val testAnnotation = Regex("""@Test\b""")
+val junitSuiteSize = Regex("""<testsuite\b[^>]*\btests="(\d+)"""")
+
+listOf(contractTests, goldenDir).forEach { directory ->
+    if (!directory.isDirectory) {
+        throw GradleException("the Kotlin wire-contract test reads ${directory.normalize()}, which is not a directory")
+    }
+}
+val contractTestCount: Int = contractTests.walk()
+    .filter { it.extension == "kt" }
+    .sumOf { testAnnotation.findAll(it.readText()).count() }
+if (contractTestCount == 0) {
+    throw GradleException("no @Test method under ${contractTests.normalize()}")
+}
+
 val builderOutput: Provider<Directory> = layout.buildDirectory.dir("binding-layer")
 val prebuiltOutput: Provider<Directory> =
     layout.dir(providers.gradleProperty("bindingLayerPrebuilt").map { file(it) })
@@ -83,6 +98,18 @@ kotlin {
 
 tasks.named("preBuild") {
     dependsOn(buildBindingLayer)
+}
+
+tasks.withType<Test>().configureEach {
+    val junitReports = reports.junitXml.outputLocation
+    doLast {
+        val executed = junitReports.get().asFile.walk()
+            .filter { it.extension == "xml" }
+            .sumOf { junitSuiteSize.find(it.readText())?.groupValues?.get(1)?.toInt() ?: 0 }
+        if (executed != contractTestCount) {
+            throw GradleException("executed $executed tests, and the Kotlin wire-contract suite holds $contractTestCount")
+        }
+    }
 }
 
 dependencies {

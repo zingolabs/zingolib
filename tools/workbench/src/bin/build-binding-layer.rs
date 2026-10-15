@@ -2,6 +2,8 @@
 
 use std::env;
 use std::fs;
+use std::io;
+use std::io::BufRead;
 use std::iter;
 use std::path;
 use std::process;
@@ -14,8 +16,9 @@ use workbench::MANIFEST;
 const PROGRAM: &str = "build-binding-layer";
 
 /// The invocation shape, reported when the arguments do not parse.
-const USAGE: &str = "usage: build-binding-layer <android|ios|kotlin> --out <directory> \
+const USAGE: &str = "usage: build-binding-layer <android|kotlin> --out <directory> \
     [android only: --abi <android abi>] [android only: --in-image] \
+    | build-binding-layer ios \
     | build-binding-layer artifact --commit <commit> \
     | build-binding-layer image";
 
@@ -286,19 +289,6 @@ fn refuse_an_output_directory_holding_the_root(
     }
 }
 
-fn refuse_an_ios_output_the_swift_package_does_not_read(roots: &Roots) -> Result<(), Vec<String>> {
-    let consumed = roots.host_path(&binding_layer::swift_package_output_dir());
-    if binding_layer::lexical(&roots.out_host) == binding_layer::lexical(&consumed) {
-        Ok(())
-    } else {
-        Err(vec![format!(
-            "the Swift contract test compiles the package that reads {}, and this plan would write {}",
-            consumed.display(),
-            roots.out_host.display()
-        )])
-    }
-}
-
 fn main() {
     let args: Vec<String> = env::args().skip(PROGRAM_NAME_ARGUMENTS).collect();
     match args.split_first() {
@@ -342,16 +332,20 @@ fn image(args: &[String]) -> Result<&'static str, Vec<String>> {
 
 /// Build the selected platform's packaging and return its output directory.
 fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
-    let (platform, out, abis) = parse(args)?;
+    let Arguments {
+        platform,
+        out,
+        abis,
+    } = parse(args)?;
     let root = workbench::repo_root()?;
     let roots = match platform {
         Platform::Android { in_image: true } => {
-            let roots = Roots::on_host(root, out)?;
+            let roots = Roots::on_host(root, required_out(out)?)?;
             execute(&Runner::Host, &android_plan(&roots, &abis))?;
             roots
         }
         Platform::Android { in_image: false } => {
-            let roots = Roots::in_container(root, out)?;
+            let roots = Roots::in_container(root, required_out(out)?)?;
             let engine = binding_layer::container_engine()?;
             build_android_image(engine, &roots.host, ANDROID_IMAGE)?;
             let id = start_container(engine, &roots.host)?;
@@ -370,13 +364,13 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
             if env::consts::OS != binding_layer::MACOS {
                 return Err(vec!["iOS packaging requires macOS with Xcode".to_string()]);
             }
+            let out = root.join(binding_layer::swift_package_output_dir());
             let roots = Roots::on_host(root, out)?;
-            refuse_an_ios_output_the_swift_package_does_not_read(&roots)?;
             execute(&Runner::Host, &ios_plan(&roots))?;
             roots
         }
         Platform::Kotlin => {
-            let roots = Roots::on_host(root, out)?;
+            let roots = Roots::on_host(root, required_out(out)?)?;
             execute(&Runner::Host, &kotlin_plan(&roots))?;
             roots
         }
@@ -384,17 +378,17 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
     Ok(roots.out_host)
 }
 
-/// Parse the platform, the absolute output directory, and the selected Android ABIs.
-fn parse(
-    args: &[String],
-) -> Result<
-    (
-        Platform,
-        path::PathBuf,
-        Vec<&'static binding_layer::AndroidAbi>,
-    ),
-    Vec<String>,
-> {
+fn required_out(out: Option<path::PathBuf>) -> Result<path::PathBuf, Vec<String>> {
+    out.ok_or_else(|| vec![format!("missing {OUT_FLAG}"), USAGE.to_string()])
+}
+
+struct Arguments {
+    platform: Platform,
+    out: Option<path::PathBuf>,
+    abis: Vec<&'static binding_layer::AndroidAbi>,
+}
+
+fn parse(args: &[String]) -> Result<Arguments, Vec<String>> {
     let (selection, flags) = args.split_first().ok_or_else(|| vec![USAGE.to_string()])?;
     let in_image = flags.iter().any(|arg| arg == IN_IMAGE_FLAG);
     let platform = match selection.as_str() {
@@ -414,11 +408,21 @@ fn parse(
             ])
         }
     };
-    let out = workbench::flag_value(flags, OUT_FLAG)?
-        .ok_or_else(|| vec![format!("missing {OUT_FLAG}"), USAGE.to_string()])?;
-    let absolute_out = env::current_dir()
-        .map_err(|e| vec![format!("cannot read the current directory: {e}")])?
-        .join(out);
+    let out = workbench::flag_value(flags, OUT_FLAG)?;
+    if out.is_some() && matches!(platform, Platform::Ios) {
+        return Err(vec![
+            format!("{OUT_FLAG} applies only to android and kotlin"),
+            USAGE.to_string(),
+        ]);
+    }
+    let absolute_out = match out {
+        None => None,
+        Some(out) => Some(
+            env::current_dir()
+                .map_err(|e| vec![format!("cannot read the current directory: {e}")])?
+                .join(out),
+        ),
+    };
     let abis = match workbench::flag_value(flags, ABI_FLAG)? {
         None => binding_layer::ANDROID_ABIS.iter().collect(),
         Some(_) if !matches!(platform, Platform::Android { .. }) => {
@@ -432,7 +436,11 @@ fn parse(
             .find(|abi| abi.jni_dir == name)
             .ok_or_else(|| vec![format!("unknown Android ABI `{name}`")])?],
     };
-    Ok((platform, absolute_out, abis))
+    Ok(Arguments {
+        platform,
+        out: absolute_out,
+        abis,
+    })
 }
 
 /// - Reads `rust-toolchain.toml` under `root`.
@@ -1123,11 +1131,9 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
             let simulator = binding_layer::ios_simulator(&listing, IOS_DEPLOYMENT_TARGET)?;
             println!("testing on {} ({})", simulator.name, simulator.udid);
             let command = xcodebuild_test(scheme, &simulator.udid);
-            let output = output_of(runner, workdir, &[], &command)?;
-            let log = String::from_utf8_lossy(&output.stdout);
-            print!("{log}");
-            if !output.status.success() {
-                return Err(failure_of(&command, output.status));
+            let (log, status) = stream_command(runner, workdir, &[], &command)?;
+            if !status.success() {
+                return Err(failure_of(&command, status));
             }
             let executed = binding_layer::executed_tests(&log)?;
             if executed == binding_layer::SWIFT_CONTRACT_TEST_COUNT {
@@ -1253,6 +1259,39 @@ fn capture_command(
     })
 }
 
+/// - Prints every line of the command's standard output as it arrives.
+fn stream_command(
+    runner: &Runner,
+    workdir: &str,
+    env: &[(String, String)],
+    command: &[String],
+) -> Result<(String, process::ExitStatus), Vec<String>> {
+    let started = invocation(runner, workdir, env, command);
+    require_host_workdir(runner, &started)?;
+    let mut child = host_command(&started)
+        .stdout(process::Stdio::piped())
+        .stderr(process::Stdio::inherit())
+        .spawn()
+        .map_err(|e| vec![format!("cannot run {}: {e}", started.program)])?;
+    let piped = workbench::required(child.stdout.take(), "the piped standard output")?;
+    let mut log = String::new();
+    for line in io::BufReader::new(piped).lines() {
+        let line = line.map_err(|e| {
+            vec![format!(
+                "`{}` wrote output that is not UTF-8 lines: {e}",
+                command.join(" ")
+            )]
+        })?;
+        println!("{line}");
+        log.push_str(&line);
+        log.push('\n');
+    }
+    let status = child
+        .wait()
+        .map_err(|e| vec![format!("cannot wait for {}: {e}", started.program)])?;
+    Ok((log, status))
+}
+
 /// Run one command on the runner, streaming its output, and fail if it fails.
 fn run_command(
     runner: &Runner,
@@ -1371,27 +1410,26 @@ mod tests {
     }
 
     #[test]
-    fn an_ios_output_the_swift_package_does_not_read_is_refused_before_the_plan(
-    ) -> Result<(), Vec<String>> {
-        let diagnostic = workbench::refused(refuse_an_ios_output_the_swift_package_does_not_read(
-            &host_roots()?,
-        ))?
-        .concat();
-        assert!(diagnostic.contains(OUTSIDE_OUT));
-        assert!(diagnostic.contains(&binding_layer::swift_package_output_dir()));
-        let consumed = path::Path::new(HOST_ROOT).join(binding_layer::swift_package_output_dir());
-        refuse_an_ios_output_the_swift_package_does_not_read(&Roots::on_host(
-            path::PathBuf::from(HOST_ROOT),
-            consumed,
-        )?)?;
-        let roundabout = path::Path::new(HOST_ROOT)
-            .join(binding_layer::SWIFT_CONTRACT_TESTS_DIR)
-            .join(binding_layer::SWIFT_PACKAGE_FROM_CONTRACT_TESTS)
-            .join(binding_layer::SWIFT_PACKAGE_OUTPUT_DIR);
-        refuse_an_ios_output_the_swift_package_does_not_read(&Roots::on_host(
-            path::PathBuf::from(HOST_ROOT),
-            roundabout,
-        )?)
+    fn the_ios_plan_takes_no_output_directory() -> Result<(), Vec<String>> {
+        let Arguments { platform, out, .. } = parse(&["ios".to_string()])?;
+        assert!(matches!(platform, Platform::Ios));
+        assert_eq!(out, None);
+        let diagnostic =
+            workbench::refused(parse(&["ios", OUT_FLAG, "out"].map(String::from)))?.concat();
+        assert!(diagnostic.contains(OUT_FLAG));
+        Ok(())
+    }
+
+    #[test]
+    fn the_other_plans_require_an_output_directory() -> Result<(), Vec<String>> {
+        for platform in ["android", "kotlin"] {
+            let Arguments { out, .. } = parse(&[platform, OUT_FLAG, "out"].map(String::from))?;
+            assert!(out.is_some_and(|out| out.ends_with("out")));
+            let Arguments { out, .. } = parse(&[platform.to_string()])?;
+            let diagnostic = workbench::refused(required_out(out))?.concat();
+            assert!(diagnostic.contains(OUT_FLAG));
+        }
+        Ok(())
     }
 
     #[test]
