@@ -234,10 +234,8 @@ fn print_row(label: &str, s: &Summary) {
 fn main() -> Result<(), std::io::Error> {
     let forwarded_args: Vec<String> = std::env::args().skip(1).collect();
 
-    let phases = PHASES;
-
     // Forwarded args reach every phase's nextest invocation, where a
-    // package selection would silently replace all three phase scopes
+    // package selection would silently replace every phase's scope
     // with the same one.
     if let Some(arg) = forwarded_args.iter().find(|a| is_package_selection_arg(a)) {
         eprintln!(
@@ -249,7 +247,7 @@ fn main() -> Result<(), std::io::Error> {
 
     let mut results = Vec::new();
     let mut failed = false;
-    for (phase, invocation) in phases {
+    for (phase, invocation) in PHASES {
         if failed {
             results.push((*phase, None));
             continue;

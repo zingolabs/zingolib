@@ -4,8 +4,6 @@ cobertura.xml
 target
 wallets/*
 zingolib/proptest-regressions
-test_binaries/bins/*
-chain_caches/
 test-logs/
 libtonode-tests/store_all_checkpoints_test
 .zingo-cli/

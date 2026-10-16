@@ -24,9 +24,7 @@ use crate::wallet::summary::data::{
 
 /// The era the in-process tests run under: every network upgrade through
 /// NU7 active at height 1, so a mock chain validates the branch id mainnet
-/// carries from the NU7 activation. The regtest tier's era is
-/// `zingolib_testutils::scenarios::default_test_activation_heights`, which
-/// leaves NU7 off until an indexer serves it.
+/// carries from the NU7 activation.
 #[must_use]
 pub fn mock_activation_heights() -> ActivationHeights {
     mock_activation_heights_with(|era| era)
@@ -68,7 +66,6 @@ pub mod lightclient;
 pub mod macros;
 pub mod migration;
 pub mod mock_indexer;
-pub mod paths;
 pub mod socks5_relay;
 pub mod synthetic_wallet;
 
