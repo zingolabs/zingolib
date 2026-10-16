@@ -28,16 +28,18 @@ pub enum PanicStrategy {
     Abort,
 }
 
-impl PanicStrategy {
-    pub const fn cargo_value(self) -> &'static str {
-        match self {
+impl std::fmt::Display for PanicStrategy {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
             PanicStrategy::Unwind => UNWIND,
             PanicStrategy::Abort => ABORT,
-        }
+        })
     }
+}
 
+impl PanicStrategy {
     pub fn rustc_flag(self) -> String {
-        format!("-Cpanic={}", self.cargo_value())
+        format!("-Cpanic={self}")
     }
 
     fn parse(manifest_name: &str, profile: &str, value: &str) -> Result<Self, Vec<String>> {
@@ -294,7 +296,7 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
         let aborting: Vec<String> = strategies
             .iter()
             .filter(|found| found.strategy != PanicStrategy::Unwind)
-            .map(|found| format!("{} ({})", found.manifest, found.strategy.cargo_value()))
+            .map(|found| format!("{} ({})", found.manifest, found.strategy))
             .collect();
         assert!(
             aborting.is_empty(),
@@ -346,8 +348,8 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
             assert!(
                 status.success(),
                 "with the {name} link order the proxy's panic ended the process ({status}); the wallet archive carries {} and the proxy archive carries {}",
-                wallet.cargo_value(),
-                proxy.cargo_value()
+                wallet,
+                proxy
             );
         }
         Ok(())
