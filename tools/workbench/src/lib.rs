@@ -21,6 +21,7 @@ pub mod binding_changelog;
 pub mod binding_layer;
 pub mod binding_manifest;
 pub mod binding_publish;
+pub mod closed_pr_runs;
 pub mod dupes_gate;
 pub mod orasust;
 pub mod session;
