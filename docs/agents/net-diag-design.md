@@ -315,9 +315,10 @@ observability did not hold.
 
 - Every new file starts with `#![forbid(unsafe_code)]` at the crate
   root. No exceptions, per the workspace invariant.
-- CI is cargo-checkmate. Run `cargo fmt --check`, `cargo check
-  --workspace`, `cargo clippy --workspace`, and `RUSTDOCFLAGS="-D
-  warnings" cargo doc --workspace --no-deps` before pushing. Two known
+- CI gates the root workspace with rustfmt, clippy and rustdoc. Run
+  `cargo fmt --check`, `cargo clippy --workspace`, and
+  `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` before
+  pushing. Two known
   traps from this branch's history: rustfmt drift in merge resolutions,
   and public doc comments intra-doc-linking private items.
 - Conventional commits, prose bodies, one topic per paragraph.
