@@ -503,3 +503,4 @@ faucet-economics fee.
 - mempool_spend_balance_and_note_status_accounting (55): `mempool_spend_accounting::mempool_spend_balance_and_note_status_accounting`, waiting on the mempool observation rather than a timer.
 - bound_note_reservation_and_external_spend_invalidation (10): `bound_note_reservation::bound_note_reservation_and_external_spend_invalidation`.
 - migrate_all_orchard_to_ironwood (13): `immediate_migration::migrate_all_orchard_to_ironwood`.
+- immediate_migration_chunks_a_fragmented_wallet (14): `immediate_migration::immediate_migration_chunks_a_fragmented_wallet`.

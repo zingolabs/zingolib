@@ -16,6 +16,9 @@ use crate::wallet::migration::MigrationParams;
 /// crossing the boundary stays cheap.
 const DEFERRED_NU6_3_HEIGHT: u32 = 16;
 const UNEQUAL_NOTES: [u64; 3] = [317_000, 1_250_000, 88_000];
+const FRAGMENT_BASE: u64 = 100_000;
+const FRAGMENTS_BEYOND_ONE_TRANSACTION: u64 = 3;
+const CHUNKED_TRANSACTIONS: usize = 2;
 
 /// - Panics when a txid of `txids` has no migration value transfer.
 fn migrated_value(value_transfers: &ValueTransfers, txids: &[TxId]) -> u64 {
@@ -169,3 +172,44 @@ async fn migrate_all_orchard_to_ironwood() {
     );
 }
 
+/// An immediate migration of a fragmented wallet chunks into several independent transactions,
+/// all built and transmitted in the same pass, and still empties the pool.
+#[tokio::test]
+async fn immediate_migration_chunks_a_fragmented_wallet() {
+    // More notes than fit one transaction's action budget, funded in one
+    // transaction. Distinct values keep every payment in the ZIP-321
+    // request unique.
+    let (net, mut recipient) = pre_ironwood_funded_recipient(|params| {
+        (0..params.max_actions_per_split_tx as u64 + FRAGMENTS_BEYOND_ONE_TRANSACTION)
+            .map(|index| FRAGMENT_BASE + index)
+            .collect()
+    })
+    .await;
+    cross_ironwood_activation(&net, &mut recipient).await;
+
+    let plan = recipient
+        .plan_immediate_migration(AccountId::ZERO)
+        .await
+        .expect("the immediate migration plans over the synced notes");
+    assert_eq!(
+        plan.transactions.len(),
+        CHUNKED_TRANSACTIONS,
+        "the notes must chunk into two transactions"
+    );
+
+    let summary = recipient
+        .migrate_immediately(AccountId::ZERO)
+        .await
+        .expect("the chunked immediate migration builds and transmits");
+    assert_eq!(summary.txids.len(), CHUNKED_TRANSACTIONS);
+
+    net.chain.write().await.mine_mempool();
+    recipient
+        .sync_and_await()
+        .await
+        .expect("the recipient syncs the mined migration chunks");
+
+    let (orchard_after, ironwood_after) = confirmed_orchard_and_ironwood(&recipient).await;
+    assert_eq!(orchard_after, summary.residual);
+    assert_eq!(ironwood_after, summary.migrated);
+}
