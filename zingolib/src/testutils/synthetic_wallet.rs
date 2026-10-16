@@ -383,6 +383,15 @@ pub(crate) fn external_orchard_address() -> String {
 }
 
 #[cfg(test)]
+pub(crate) fn external_sapling_address() -> String {
+    let mut stranger = stranger_wallet();
+    let (_, unified_address) = stranger
+        .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
+        .expect("a seed-built synthetic wallet holds account zero's Sapling key");
+    unified_address.encode(&stranger.chain_type())
+}
+
+#[cfg(test)]
 pub(crate) fn external_orchard_zcash_address() -> ZcashAddress {
     let (chain_type, unified_address) = stranger_orchard_address();
     unified_address.to_zcash_address(chain_type.network_type())

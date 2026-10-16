@@ -1,8 +1,6 @@
 //! Zingo-Testutils
 //! Holds functionality for zingo testing
 
-#![warn(missing_docs)]
-
 use std::num::NonZeroU32;
 use std::{io::Read, string::String, time::Duration};
 
