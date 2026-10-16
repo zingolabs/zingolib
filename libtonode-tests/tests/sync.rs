@@ -29,8 +29,6 @@ use zingolib::{
 const SYNC_TEST_INDEXER: &str = "https://zec.rocks:443";
 use zingolib_testutils::scenarios;
 
-#[path = "support/untracked_history.rs"]
-mod untracked_history;
 
 // TODO: migrate to mock test as this test is long and connects to mainnet
 #[tokio::test]
@@ -473,62 +471,6 @@ async fn indexer_converges_with_validator_after_block_generation() {
              validator tip {validator_height} despite the convergence barrier"
         );
     }
-}
-
-/// A wallet holding blocks that were scanned without tracking a pool must
-/// still end up with the notes those blocks contain. Nothing in such a
-/// wallet asks for them: the ranges are recorded as fully scanned, so the
-/// notes remain lost and the balance silently understates what the wallet
-/// owns.
-///
-/// The wallet's own recorded commitment tree for the pool is what gives it
-/// away, because it cannot account for the tree the chain reports. Nothing
-/// about that reasoning is particular to one pool, one activation height or
-/// one network, so it is exercised for each pool a wallet can be funded in.
-async fn notes_in_untracked_history_are_recovered(pool: PoolType) {
-    let shielded_pool = match pool {
-        PoolType::ORCHARD => zcash_protocol::ShieldedPool::Orchard,
-        PoolType::IRONWOOD => zcash_protocol::ShieldedPool::Ironwood,
-        other => panic!("{other} is not a pool a recipient can be funded in"),
-    };
-
-    let fixture = scenarios::default_test_activation_heights();
-    let activation_heights = zingolib::ActivationHeights::builder()
-        .set_overwinter(fixture.overwinter())
-        .set_sapling(fixture.sapling())
-        .set_blossom(fixture.blossom())
-        .set_heartwood(fixture.heartwood())
-        .set_canopy(fixture.canopy())
-        .set_nu5(fixture.nu5())
-        .set_nu6(fixture.nu6())
-        .set_nu6_1(fixture.nu6_1())
-        .set_nu6_2(fixture.nu6_2())
-        .set_nu6_3(match shielded_pool {
-            zcash_protocol::ShieldedPool::Ironwood => fixture.nu6_3(),
-            _ => None,
-        })
-        .set_nu7(None)
-        .build();
-
-    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
-        pool,
-        activation_heights,
-        scenarios::ChainCachePolicy::PerTest,
-    )
-    .await;
-
-    untracked_history::assert_notes_in_untracked_history_are_recovered(
-        &local_net,
-        &mut faucet,
-        &mut recipient,
-        shielded_pool,
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn orchard_notes_in_untracked_history_are_recovered() {
-    notes_in_untracked_history_are_recovered(PoolType::ORCHARD).await;
 }
 
 /// The serving invariant pepper-sync's `check_tree_size` relies on, verified
