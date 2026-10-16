@@ -302,7 +302,10 @@ jobs:
   # must keep compiling and rendering.
   nym-feature:
     name: nym feature (zingolib + zingo-cli)
-    runs-on: ubuntu-24.04
+    # A compile-bound job: it builds zingolib and zingo-cli under the nym
+    # features for clippy and for the tests, so it runs on a sixteen-core
+    # WarpBuild runner.
+    runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 45
     env:
       RUSTFLAGS: -D warnings

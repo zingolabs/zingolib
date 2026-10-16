@@ -31,7 +31,10 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    runs-on: ubuntu-24.04
+    # The archive compiles the workspace's own crates at opt-level 3, which
+    # rustc parallelises across codegen units, so the job runs on a
+    # sixteen-core WarpBuild runner; the shards stay on the standard ones.
+    runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     env:
       RUSTFLAGS: -D warnings
