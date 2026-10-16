@@ -1,5 +1,7 @@
 const TEST_ATTRIBUTE_PATHS: [&str; 2] = ["test", "tokio::test"];
 
+// Keywords that open an item other than a function, and so end the reach
+// of the attributes read since the last item.
 const ITEM_KEYWORDS: [&str; 10] = [
     "struct",
     "enum",
@@ -13,6 +15,8 @@ const ITEM_KEYWORDS: [&str; 10] = [
     "macro_rules",
 ];
 
+// Where a test function sits in a source file, as nextest's naming of an
+// integration test sees it: only a top-level test keeps its bare name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TestPlacement {
     TopLevel,
@@ -21,6 +25,10 @@ pub enum TestPlacement {
     Absent,
 }
 
+// One `fn` item a Rust source defines. `modules` holds the enclosing
+// modules, outermost first, and `enclosing_bodies` counts the braces open
+// around the item that are not modules (function bodies, impl blocks and
+// other blocks), inside which the test harness collects nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
     pub name: String,
@@ -53,6 +61,7 @@ impl Function {
     }
 }
 
+// The lexical region the blanking pass is inside.
 enum Region {
     Code,
     LineComment,
@@ -66,6 +75,8 @@ fn is_identifier_character(character: char) -> bool {
     character.is_alphanumeric() || character == '_'
 }
 
+// The length of a raw string opener (`r"`, `r#"`, `br##"`) at `start`,
+// with its hash count, or nothing when no raw string opens there.
 fn raw_string_opener(chars: &[char], start: usize) -> Option<(usize, usize)> {
     let mut at = start;
     if chars.get(at) == Some(&'b') {
@@ -80,6 +91,7 @@ fn raw_string_opener(chars: &[char], start: usize) -> Option<(usize, usize)> {
     (chars.get(at) == Some(&'"')).then_some((at + 1 - start, hashes))
 }
 
+// Whether a `'` at `at` opens a character literal rather than a lifetime.
 fn opens_character_literal(chars: &[char], at: usize) -> bool {
     matches!(
         (chars.get(at + 1), chars.get(at + 2)),
@@ -87,6 +99,8 @@ fn opens_character_literal(chars: &[char], at: usize) -> bool {
     )
 }
 
+// The source with every comment, string and character literal replaced by
+// spaces, newlines kept, so the item pass sees code alone.
 fn code_only(source: &str) -> String {
     let chars: Vec<char> = source.chars().collect();
     let mut out = String::with_capacity(source.len());
@@ -200,6 +214,8 @@ fn code_only(source: &str) -> String {
     out
 }
 
+// The code split into identifiers (paths such as `tokio::test` stay one
+// token) and single punctuation characters.
 fn tokens(code: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
@@ -235,11 +251,13 @@ fn tokens(code: &str) -> Vec<String> {
     tokens
 }
 
+// A brace scope the item pass is inside.
 enum Scope {
     Module(String),
     Body,
 }
 
+// The index just past the `]` that closes the attribute whose `[` sits at `open`.
 fn attribute_end(tokens: &[String], open: usize) -> usize {
     let mut depth = 0usize;
     for (index, token) in tokens.iter().enumerate().skip(open) {

@@ -13,6 +13,7 @@ const DIRECTORIES_WITHOUT_SOURCES: [&str; 4] = [".git", "target", "build", "node
 
 const FILTER_KEY: &str = "filter";
 
+// How a `test()` predicate matches a test's nextest name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TestMatcher {
     Contains(String),
@@ -27,6 +28,7 @@ pub enum FiltersetTerm {
     Test(TestMatcher),
 }
 
+// A nextest filterset expression over the predicates the ceilings use.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Filterset {
     Term(FiltersetTerm),
@@ -48,6 +50,7 @@ impl Filterset {
     }
 }
 
+// One `[[profile.<name>.overrides]]` table: its filterset and every other key as TOML text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Override {
     pub filter: Filterset,
