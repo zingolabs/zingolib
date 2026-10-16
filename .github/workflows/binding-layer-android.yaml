@@ -3,9 +3,11 @@ name: Binding Layer for Android
 # Builds the Binding Layer's Android libraries and Kotlin Binding Sets on
 # the commit the caller names, and publishes them as a Maven repository
 # layout. The build runs the builder of tools/workbench in the builder's
-# own image. The package job compiles no Rust. The Gradle library takes
-# the prebuilt output, compiles the Kotlin Binding Sets, and publishes the
-# AAR with its POM into a repository directory, versioned by the caller.
+# own image. The package job compiles no Rust and installs no NDK: the
+# builder strips every library, and the Gradle library packages them as
+# they are. The Gradle library takes the prebuilt output, compiles the
+# Kotlin Binding Sets, and publishes the AAR with its POM into a
+# repository directory, versioned by the caller.
 # The caller passes every artifact name and the Maven version from one run
 # of `build-binding-layer artifact`, so the jobs of one run agree on the
 # names whatever commit they build.
@@ -165,9 +167,6 @@ jobs:
           done
           test -f "$OUTPUT/kotlin/uniffi/zingo/zingo.kt"
           test -f "$OUTPUT/kotlin/uniffi/zingo_nym_proxy_ffi/zingo_nym_proxy_ffi.kt"
-
-      - name: Install the NDK that the AAR declares
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
