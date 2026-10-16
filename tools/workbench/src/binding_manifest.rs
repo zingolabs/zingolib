@@ -20,7 +20,7 @@ const COMMIT_KEY: &str = "commit";
 const SINCE_KEY: &str = "since";
 const AUDITED_KEY: &str = "audited";
 const QUOTE: char = '"';
-const COMMIT_LENGTH: usize = 40;
+pub const COMMIT_LENGTH: usize = 40;
 const COMMIT_EXPECTATION: &str = "a full lowercase commit hash";
 const DIGEST_PREFIX: &str = "sha256:";
 const DIGEST_HEX_LENGTH: usize = 64;
@@ -123,7 +123,7 @@ fn hex_value(
     }
 }
 
-fn commit_value(key: &str, value: &str) -> Result<String, Vec<String>> {
+pub fn commit_value(key: &str, value: &str) -> Result<String, Vec<String>> {
     hex_value(key, value, value, COMMIT_LENGTH, COMMIT_EXPECTATION)
 }
 

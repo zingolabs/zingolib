@@ -1,4 +1,5 @@
 import { PLATFORMS, reference, REGISTRY, repository } from './bundle_pin.mjs';
+import { COMMIT_CHARACTERS } from './maven_repository.mjs';
 
 const REPORT = 'Report this to zingolib.';
 
@@ -58,5 +59,17 @@ export function failureMessage(failure) {
       return `The downloaded content hashes to ${failure.found}, and the bundle's layer is ${failure.expected}.`;
     case 'badPackage':
       return `The ${failure.platform} bundle holds no ZingoBindings/Package.swift. ${REPORT}`;
+    case 'oldShape':
+      return (
+        `The ${failure.platform} bundle tagged ${failure.commit} is not a gzip archive. ` +
+        'zingolib published it before the Maven repository layout. Pin a commit published later.'
+      );
+    case 'badRepository':
+      return `The ${failure.platform} bundle holds no Maven repository with one artifact at one version. ${REPORT}`;
+    case 'wrongVersion':
+      return (
+        `The ${failure.platform} bundle tagged ${failure.commit} is published as version ${failure.version}, ` +
+        `which does not end with the first ${COMMIT_CHARACTERS} characters of the commit. ${REPORT}`
+      );
   }
 }

@@ -8,20 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Deprecated
-
 ### Added
 
 ### Changed
-- `confirmation_status::ConfirmationStatus::read` returns an `InvalidData`
-  error for a serialized version above the one this build writes. It read any
-  version above 0 as version 1 before.
+
+### Deprecated
 
 ### Removed
 
-## [0.2.1] 2026-06-05
+### Fixed
 
-## [0.2.0] 2026-02-26
+## [0.2.2] - 2026-10-15
+
+### Fixed
+
+- `confirmation_status::ConfirmationStatus::read` returns an `InvalidData`
+  error for a serialized version above the one this build writes. It read any
+  version above 0 as version 1 before, so a status written by a newer version
+  of this crate was decoded as the wrong variant instead of refused.
+
+## [0.2.1] - 2026-06-05
+
+## [0.2.0] - 2026-02-26
 
 ### Added
 `confirmation_status::ConfirmationStatus::is_failed`

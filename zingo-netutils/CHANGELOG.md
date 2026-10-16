@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+## [6.0.0] - 2026-10-15
+
+### Added
+
 - The crate re-exports tonic's `TimeoutExpired` beside `Status`, the marker
   tonic leaves in a status's source chain when the client's own request
   deadline fired, so a consumer tells a timed-out request apart from a
@@ -18,48 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SOCKS5 relay and run the real tunneled path offline. A build without
   `testutils` trusts the webpki roots alone, as before.
 
-### Fixed
-- `conduit::MixnetConduit::in_flight` counts guards rather than references
-  to the shared core, so cloning a conduit no longer reads as using it. A
-  session holds one conduit and hands clones to every surface, and under
-  the previous derivation each of those clones inflated the count, leaving
-  a superseded conduit permanently short of `Retired`.
-
-### Changed
-- BREAKING: `rand` 0.10. `provider::rotation_interval` takes a `rand` 0.10
-  generator, and the exit tiers shuffle with the thread-local generator
-  where they drew `rand::rngs::OsRng`, a type `rand` 0.10 removed.
-- `lightwallet-protocol` moves to 0.4.0, the upstream rev whose committed
-  bindings carry the Ironwood proto fields. The workspace no longer enables
-  `rebuild-proto`, so a build of zingo-netutils no longer runs protoc.
-- `time::MEMPOOL_DRAIN_SETTLE` is raised from 200 ms to 750 ms, and
-  `time::MEMPOOL_DRAIN_CEILING` from 1 s to 1.5 s to keep the settle window
-  inside it. zaino polls the validator's mempool every 500 ms by default, so
-  a 200 ms window let a sync session end before a transaction the validator
-  had just accepted was streamed to the wallet, leaving it in `Transmitted`
-  status until the next session.
-- `socks5_fetch::fetch_text_untunneled` no longer sits behind the
-  `testutils` feature. It carries the nakednet price fetch a switched-off
-  Mixnet Mode consents to (ADR 0011, amendment 2026-08-26), where it used
-  to serve tests alone.
-- The `socks5-fetch` feature enables neither reqwest's `cookies` nor its
-  `json`. A price leg is a single stateless GET against a public quote
-  endpoint, so there is no session for a cookie jar to carry, and the fetch
-  reads the body as text and hands it to the source's own parser, so it never
-  touches reqwest's json surface. Both features came across with the fetch
-  when it moved out of zingo-price, where they had been inherited rather than
-  chosen. Dropping them takes `cookie`, `cookie_store`, `psl-types`,
-  `publicsuffix`, and `time-macros` out of the wallet workspace's graph
-  entirely, and leaves this crate's own standalone lockfile gaining `reqwest`
-  alone where it had gained seven packages.
-- BREAKING: `provider::RotationVerdict` gains a `Never` variant, which a
-  platform answers when rotation is ruled out for the session's whole life
-  rather than merely postponed. `Defer` used to carry both meanings, so a
-  desktop that will never rotate had to say so by repeating a ten-minute
-  deferral forever; the wallet now retires its rotation watchdog instead of
-  parking it on a cadence whose answer cannot change.
-
-### Added
 - `nym_proxy::BootstrapEvent` and the observed lifecycle entries
   `NymProxy::start_observed`, `NymProxy::start_over_observed`, and
   `NymProxy::reconnect_observed`: every acquisition race — the first
@@ -121,7 +92,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `time::ANNOUNCEMENT_DEVIATIONS`: the measured exit-announcement
   latency the readiness grace is now derived from.
 
+- `sentinel` module (with the `socks5-transmit` feature): `probe_sentinel`
+  carries an ordinary DNS lookup of a constant name to a reliable public
+  resolver through a SOCKS5 tunnel, and reports `ExitEvidence` — whether the
+  bound Exit Node carried a round trip at all. A survey uses it to tell an
+  exit that carries nothing from indexers that will not answer; binding an
+  exit proves neither, because the mixnet client reports success against a
+  dead exit. `time::SENTINEL_BUDGET` bounds the probe.
+
+- `Socks5Indexer::get_latest_block`: the `GetLatestBlock` tip fetch through
+  the local SOCKS5 proxy, the lightest liveness probe an indexer answers,
+  used by the attach readiness round trip and by live-indexer discovery.
+- `time::TRANSMISSION_HEDGE_INTERVAL` names the send escalation's
+  silence interval, derived as `PER_ATTEMPT_CONNECT_TIMEOUT +
+  MIXNET_ROUND_TRIP_BOUND` so a responsive Destination's confirmed
+  delivery beats the first hedge (ADR 0040).
+
 ### Changed
+
+- BREAKING: `rand` 0.10. `provider::rotation_interval` takes a `rand` 0.10
+  generator, and the exit tiers shuffle with the thread-local generator
+  where they drew `rand::rngs::OsRng`, a type `rand` 0.10 removed.
+- `lightwallet-protocol` moves from 0.3.0 to 0.4.0, whose committed
+  bindings carry the Ironwood proto fields.
+- `time::MEMPOOL_DRAIN_SETTLE` is raised from 200 ms to 750 ms, and
+  `time::MEMPOOL_DRAIN_CEILING` from 1 s to 1.5 s to keep the settle window
+  inside it. zaino polls the validator's mempool every 500 ms by default, so
+  a 200 ms window let a sync session end before a transaction the validator
+  had just accepted was streamed to the wallet, leaving it in `Transmitted`
+  status until the next session.
+- `socks5_fetch::fetch_text_untunneled` no longer sits behind the
+  `testutils` feature. It carries the nakednet price fetch a switched-off
+  Mixnet Mode consents to (ADR 0011, amendment 2026-08-26), where it used
+  to serve tests alone.
+- The `socks5-fetch` feature enables neither reqwest's `cookies` nor its
+  `json`. A price leg is a single stateless GET against a public quote
+  endpoint, so there is no session for a cookie jar to carry, and the fetch
+  reads the body as text and hands it to the source's own parser, so it never
+  touches reqwest's json surface. Both features came across with the fetch
+  when it moved out of zingo-price, where they had been inherited rather than
+  chosen. Dropping them takes `cookie`, `cookie_store`, `psl-types`,
+  `publicsuffix`, and `time-macros` out of the wallet workspace's graph
+  entirely, and leaves this crate's own standalone lockfile gaining `reqwest`
+  alone where it had gained seven packages.
+- BREAKING: `provider::RotationVerdict` gains a `Never` variant, which a
+  platform answers when rotation is ruled out for the session's whole life
+  rather than merely postponed. `Defer` used to carry both meanings, so a
+  desktop that will never rotate had to say so by repeating a ten-minute
+  deferral forever; the wallet now retires its rotation watchdog instead of
+  parking it on a cadence whose answer cannot change.
+
 - BREAKING: `conduit::MixnetConduit` is no longer `Copy`, and its `socks5`
   accessor is gone. Dialing takes a `ConduitDial` guard from `dial()`, whose
   `socks5` is the only way to reach the address, so a use cannot be made
@@ -135,27 +155,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   second. `time::SPEED_ACQUISITION_DEADLINE` derives from the grace and so
   falls with it, from 285 seconds to 105.
 
-### Removed
-- BREAKING: the responsiveness partition is retired. The `Responsiveness`
-  trait, the `PrioritiseSpeed` and `PrioritisePrivacy` marker types,
-  `ResponsivenessClass`, its wire token, and the proxy binary's
-  `--responsiveness` argument are gone; `NymProxy::start` and `start_over`
-  lose their type parameter. Every acquisition now races under the one
-  hedged launch policy (`arm_race::acquisition_launch_policy`), an
-  arm wins by binding, and the child-side Sentinel gate is deleted: proof
-  of the bound exit belongs to the layer above the SOCKS5 seam, which
-  probes once per birth instead of once per losing arm. The speed class's
-  in-race proving starved acquisitions whenever no arm could complete a
-  round trip quickly, stalling the session tunnel at `Bootstrapping`
-  past 90 seconds in three consecutive measured runs.
-- BREAKING: the retirement's residue is gone with it. The `responsiveness`
-  module is deleted, with `RESERVATION_CLUTCH_SIZE` and
-  `acquisition_launch_policy` re-homed in `arm_race` beside the policy they
-  configure; `LaunchPolicy::Saturating`, which nothing outside its own
-  tests constructed, is removed; and `NymProxyError::CarriesNothing`, whose
-  only mint left with the child-side Sentinel gate, is removed.
-
-### Changed
 - `time::PROGRESS_HEARTBEAT_INTERVAL` settles on a ten-second cadence. The
   two-second value was a temporary diagnostic aid for the silent-phase
   reports, and its narration crowded the interactive session it served.
@@ -165,18 +164,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dead exit won the race as readily as a live one. Under the speed priority
   each arm carries a Sentinel round trip before it can win, and an arm
   whose exit stays silent loses the race.
-
-### Added
-- `sentinel` module (with the `socks5-transmit` feature): `probe_sentinel`
-  carries an ordinary DNS lookup of a constant name to a reliable public
-  resolver through a SOCKS5 tunnel, and reports `ExitEvidence` — whether the
-  bound Exit Node carried a round trip at all. A survey uses it to tell an
-  exit that carries nothing from indexers that will not answer; binding an
-  exit proves neither, because the mixnet client reports success against a
-  dead exit. `time::SENTINEL_BUDGET` bounds the probe.
-
-
-### Changed
 
 - BREAKING: the free functions `send_transaction_via_socks5`,
   `get_lightd_info_via_socks5`, and `transaction_known_via_socks5` are
@@ -197,41 +184,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rendering now happens inside the connector, so callers pass the typed
   address they already hold and never render it.
 
-### Removed
-
-- BREAKING: `live_indexer_discovery::DiscoveredIndexer` carries `tip: BlockId`
-  where it carried `info: LightdInfo`, because discovery now probes the tip.
-- BREAKING: the `zingo-nym-proxy-ffi` crate and the `uniffi-bindgen`
-  helper leave this workspace; zingo-mobile now hosts the mobile UniFFI
-  proxy shim in its own `nym-host` workspace (zingo-mobile PR #1251).
-
-### Added
-
-- `Socks5Indexer::get_latest_block`: the `GetLatestBlock` tip fetch through
-  the local SOCKS5 proxy, the lightest liveness probe an indexer answers,
-  used by the attach readiness round trip and by live-indexer discovery.
-- The `responsiveness` module partitions network operations at compile
-  time: the sealed `Responsiveness` trait with the `Critical` and
-  `NonCritical` marker types, the `ResponsivenessClass` enum with
-  `wire`, `parse`, and `launch_policy`, and the
-  `RESERVATION_CLUTCH_SIZE` constant.
-- `LaunchPolicy::Saturating` launches the full clutch at once; a
-  Critical acquisition races under it.
-- The proxy binary accepts `--responsiveness <critical|non-critical>`
-  and defaults a bare invocation to critical.
-- `time::TRANSMISSION_HEDGE_INTERVAL` names the send escalation's
-  silence interval, derived as `PER_ATTEMPT_CONNECT_TIMEOUT +
-  MIXNET_ROUND_TRIP_BOUND` so a responsive Destination's confirmed
-  delivery beats the first hedge (ADR 0040).
-
-### Changed
-
-- BREAKING: `NymProxy::start` and `NymProxy::start_with_progress` take
-  a `R: Responsiveness` type parameter that names the acquisition's
-  responsiveness class.
-- BREAKING: the `MAX_PARALLEL_CONNECTS` constant is renamed
-  `RESERVATION_CLUTCH_SIZE`; the race width is the clutch of exit
-  reservations, never an independent parameter (ADR 0035).
 - BREAKING: the `arm_race` planner speaks ADR 0035's pull vocabulary.
   `PullFailure` (was `ArmFailure`) carries an `arm` field (was
   `candidate`), `RaceEvent::PullFailed` replaces `RaceEvent::ArmFailed`,
@@ -263,12 +215,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ATTACH_PROBE_INTERVAL`), and `ATTACH_LISTENER_RETRY_PAUSE` (was
   `ATTACH_HEALTH_RETRY_PAUSE`), and `ATTACH_READINESS_BUDGET` retunes
   from 61 s to 11 s.
-- BREAKING: the responsiveness classes are renamed for the tradeoff they
-  declare: `PrioritiseSpeed` (was `Critical`, saturating) and
-  `PrioritisePrivacy` (was `NonCritical`, hedged), across the marker
-  types, the `ResponsivenessClass` variants, and the wire tokens
-  (`--responsiveness <prioritise-speed|prioritise-privacy>`). A class
-  names the acquisition's declared priority, never who waits.
 - BREAKING: the Exit Node vocabulary replaces "provider" throughout the
   proxy API (ADR 0038's glossary; "provider" is Loopix's word for the
   gateway role, a false friend). `NymProxy::exit_node`,
@@ -282,7 +228,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-### Deprecated
+- BREAKING: `live_indexer_discovery::DiscoveredIndexer` carries `tip: BlockId`
+  where it carried `info: LightdInfo`, because discovery now probes the tip.
+
+### Fixed
+
+- `conduit::MixnetConduit::in_flight` counts guards rather than references
+  to the shared core, so cloning a conduit no longer reads as using it. A
+  session holds one conduit and hands clones to every surface, and under
+  the previous derivation each of those clones inflated the count, leaving
+  a superseded conduit permanently short of `Retired`.
 
 ## [5.0.1] - 2026-06-08
 

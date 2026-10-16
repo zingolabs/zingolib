@@ -1,6 +1,18 @@
+[test-groups]
+# The testnet tests spend from one shared wallet, so they never overlap.
+testnet = { max-threads = 1 }
+
 [profile.default]
 fail-fast = false
 slow-timeout = { period = "60s", terminate-after = 10, grace-period = "30s" }
+
+# The testnet tests lead the list: nextest applies the first matching override, and the
+# per-test ceilings below also name the chain-generic tests.
+# Each testnet test waits for several real blocks of about 75 seconds.
+[[profile.default.overrides]]
+filter = 'binary(testnet)'
+test-group = 'testnet'
+slow-timeout = { period = "60s", terminate-after = 60, grace-period = "30s" }
 
 [[profile.default.overrides]]
 filter = 'package(libtonode-tests) | package(zingo-cli)'
@@ -11,7 +23,7 @@ filter = '''
 test(mempool_spend_balance_and_note_status_accounting)
 | test(sync_all_expressible_epochs)
 | test(send_mined_ironwood_to_ironwood)
-| test(multi_input_sapling_send_with_orchard_change_no_panic)
+| test(faucet_recipient_default_in_one_chain)
 | test(send_shield_cycle)
 | test(generate_a_range_of_value_transfers)
 | test(drain_chunks_a_fragmented_wallet)
@@ -19,10 +31,19 @@ test(mempool_spend_balance_and_note_status_accounting)
 '''
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
 
+
 [profile.ci]
 failure-output = "immediate-final"
 fail-fast = false
 slow-timeout = { period = "60s", terminate-after = 10, grace-period = "30s" }
+
+# The testnet tests lead the list: nextest applies the first matching override, and the
+# per-test ceilings below also name the chain-generic tests.
+# Each testnet test waits for several real blocks of about 75 seconds.
+[[profile.ci.overrides]]
+filter = 'binary(testnet)'
+test-group = 'testnet'
+slow-timeout = { period = "60s", terminate-after = 60, grace-period = "30s" }
 
 [[profile.ci.overrides]]
 filter = 'package(libtonode-tests) | package(zingo-cli)'
@@ -33,7 +54,7 @@ filter = '''
 test(mempool_spend_balance_and_note_status_accounting)
 | test(sync_all_expressible_epochs)
 | test(send_mined_ironwood_to_ironwood)
-| test(multi_input_sapling_send_with_orchard_change_no_panic)
+| test(faucet_recipient_default_in_one_chain)
 | test(send_shield_cycle)
 | test(generate_a_range_of_value_transfers)
 | test(drain_chunks_a_fragmented_wallet)

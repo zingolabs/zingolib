@@ -3,7 +3,12 @@ import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { mock, test } from 'node:test';
-import { movePin, parsePin, serializePin } from '../lib/bundle_pin.mjs';
+import {
+  ARCHIVE_MEDIA_TYPE,
+  movePin,
+  parsePin,
+  serializePin,
+} from '../lib/bundle_pin.mjs';
 import { fetchBundle, MARKER, pinnedBundle } from '../lib/fetch_binding_layer.mjs';
 
 const COMMIT = 'a'.repeat(40);
@@ -11,18 +16,24 @@ const NEXT = 'b'.repeat(40);
 const ANDROID = `sha256:${'1'.repeat(64)}`;
 const IOS = `sha256:${'2'.repeat(64)}`;
 const LAYER = `sha256:${'3'.repeat(64)}`;
-const FILE = 'binding-layer.aar';
+const FILE = 'repository.tar.gz';
+const OLD_FILE = 'binding-layer.aar';
+const OLD_MEDIA_TYPE = 'application/zip';
 
 const pin = { kind: 'pin', commit: COMMIT, digests: { android: ANDROID } };
 
-function bundle(digest, revision) {
+function bundle(digest, revision, layer = { file: FILE, mediaType: ARCHIVE_MEDIA_TYPE }) {
   return {
     kind: 'bundle',
     digest,
     revision,
     descriptor: 'zl_3.0.0_aaaaa',
-    layers: [{ digest: LAYER, file: FILE }],
+    layers: [{ digest: LAYER, ...layer }],
   };
+}
+
+function oldBundle(digest, revision) {
+  return bundle(digest, revision, { file: OLD_FILE, mediaType: OLD_MEDIA_TYPE });
 }
 
 function registry(found) {
@@ -207,4 +218,28 @@ test('fetchBundle reports a moved tag when asked to check, although the checkout
 test('pinnedBundle refuses before reading the pin when no platform is named', async () => {
   const outcome = await pinnedBundle(join(tmpdir(), 'absent'), {});
   assert.deepEqual(outcome, { kind: 'unnamedPlatform' });
+});
+
+test('movePin refuses a bundle that is not a gzip archive', async () => {
+  const moved = await movePin(pin, NEXT, [], async () => oldBundle(ANDROID, NEXT));
+  assert.deepEqual(moved, { kind: 'oldShape', platform: 'android', commit: NEXT });
+});
+
+test('fetchBundle downloads nothing from a bundle that is not a gzip archive', async () => {
+  const requests = registry(oldBundle(ANDROID, COMMIT));
+  const fetched = await fetchBundle(pin, 'android', await store(), false, requests);
+  assert.deepEqual(fetched, { kind: 'oldShape', platform: 'android', commit: COMMIT });
+  assert.equal(requests.download.mock.callCount(), 0);
+});
+
+test('fetchBundle asks the registry again when the checkout holds a bundle of the old shape', async () => {
+  const root = await store();
+  const home = join(root, ANDROID.slice('sha256:'.length));
+  await mkdir(home);
+  await writeFile(join(home, OLD_FILE), 'bundle');
+  await writeFile(join(home, MARKER), `${OLD_FILE}\n`);
+  const requests = registry(oldBundle(ANDROID, COMMIT));
+  const fetched = await fetchBundle(pin, 'android', root, false, requests);
+  assert.equal(fetched.kind, 'oldShape');
+  assert.equal(requests.resolveBundle.mock.callCount(), 1);
 });

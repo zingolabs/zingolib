@@ -4,15 +4,19 @@ use json::JsonValue;
 use zcash_address::unified::Fvk;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
-use pepper_sync::wallet::{IronwoodNote, TransparentCoin};
-use zcash_protocol::PoolType;
+use pepper_sync::wallet::{IronwoodNote, OutputId, TransparentCoin};
 use zcash_protocol::value::Zatoshis;
+use zcash_protocol::{PoolType, ShieldedPool};
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::wallet::balance::AccountBalance;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
-use zingolib::wallet::summary::data::{CoinSummary, NoteSummary};
+use zingolib::wallet::summary::data::{CoinSummary, NoteSummary, TransactionSummary};
 use zingolib::{check_client_balances, get_base_address_macro};
 use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
+use zingolib_testutils::setup_metrics::MeteredNet;
+
+#[path = "support/untracked_history.rs"]
+mod untracked_history;
 
 fn check_expected_balance_with_fvks(
     fvks: &Vec<&Fvk>,
@@ -349,56 +353,15 @@ async fn received_tx_status_pending_to_confirmed_with_mempool_monitor() {
     );
 }
 
-#[tokio::test]
-async fn utxos_are_not_prematurely_confirmed() {
-    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
-    from_inputs::quick_send(
-        &mut faucet,
-        vec![(
-            &get_base_address_macro!(recipient, "transparent"),
-            100_000,
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-        .await
-        .unwrap();
-    let wallet = recipient.wallet().read().await;
-    let preshield_utxos = wallet
-        .wallet_outputs::<TransparentCoin>()
-        .into_iter()
-        .cloned()
-        .collect::<Vec<_>>();
-    assert_eq!(preshield_utxos.len(), 1);
-    assert!(
-        wallet
-            .output_spend_status(preshield_utxos.first().unwrap())
-            .is_unspent()
-    );
-    drop(wallet);
-
-    recipient
-        .quick_shield(zip32::AccountId::ZERO)
-        .await
-        .unwrap();
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-        .await
-        .unwrap();
-
-    let wallet = recipient.wallet().read().await;
-    let postshield_utxos = wallet.wallet_outputs::<TransparentCoin>();
-    assert_eq!(postshield_utxos.len(), 1);
-    assert!(
-        wallet
-            .output_spend_status(*postshield_utxos.first().unwrap())
-            .is_confirmed_spent()
-    );
-    assert_eq!(
-        preshield_utxos.first().unwrap().output_id(),
-        postshield_utxos.first().unwrap().output_id(),
-    );
+/// - Holds the wallet's read lock while it reads the transparent coins.
+async fn sole_transparent_coin(client: &LightClient) -> (OutputId, SpendStatus) {
+    let wallet = client.wallet().read().await;
+    let coins = wallet.wallet_outputs::<TransparentCoin>();
+    assert_eq!(coins.len(), 1);
+    let coin = coins
+        .first()
+        .expect("the length assertion above leaves exactly one coin");
+    (coin.output_id(), wallet.output_spend_status(*coin))
 }
 
 #[tokio::test]
@@ -608,12 +571,20 @@ async fn test_scanning_in_watch_only_mode() {
         ));
     }
 }
-#[tokio::test]
-async fn sends_to_self_handle_balance_properly() {
+async fn sends_to_self_handle_balance_properly(
+    local_net: &MeteredNet,
+    faucet: &mut LightClient,
+    recipient: &mut LightClient,
+) {
     let transparent_funding = 100_000;
-    let (ref local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
+    let transfers_before_funding = recipient
+        .value_transfers(true)
+        .await
+        .expect("a synced wallet lists its value transfers")
+        .iter()
+        .count();
     from_inputs::quick_send(
-        &mut faucet,
+        faucet,
         vec![(
             &get_base_address_macro!(recipient, "transparent"),
             transparent_funding,
@@ -622,30 +593,39 @@ async fn sends_to_self_handle_balance_properly() {
     )
     .await
     .unwrap();
-    increase_height_and_wait_for_client(local_net, &mut recipient, 1)
+    increase_height_and_wait_for_client(local_net, recipient, 1)
         .await
         .unwrap();
+    let (preshield_coin, preshield_status) = sole_transparent_coin(recipient).await;
+    assert!(preshield_status.is_unspent());
+
     recipient
         .quick_shield(zip32::AccountId::ZERO)
         .await
         .unwrap();
-    increase_height_and_wait_for_client(local_net, &mut recipient, 1)
+    increase_height_and_wait_for_client(local_net, recipient, 1)
         .await
         .unwrap();
+    let (postshield_coin, postshield_status) = sole_transparent_coin(recipient).await;
+    assert!(postshield_status.is_confirmed_spent());
+    assert_eq!(preshield_coin, postshield_coin);
 
     // The shield sweeps the whole transparent funding into the Ironwood
     // pool (a V6 shield's change lands in the ironwood bundle, ADR 0009),
     // less the 15_000 ZIP-317 fee (one transparent input plus the padded
     // two-action ironwood pair).
     let shielded_value = transparent_funding - 15_000;
-    check_client_balances!(recipient, i: shielded_value o: 0 s: 0 t: 0);
+    check_client_balances!(recipient, i: shielded_value o: 0 s: UNTOUCHED_SAPLING_NOTE t: 0);
 
     let pre_rescan_summaries = recipient.transaction_summaries(false).await.unwrap();
     let pre_rescan_value_transfers = recipient.value_transfers(true).await.unwrap();
-    // Exactly two transfers: the transparent funding receipt and the
+    // Exactly two new transfers: the transparent funding receipt and the
     // shield, the latter represented as a self-send of the Shield
     // kind carrying the swept value into the orchard pool.
-    assert_eq!(pre_rescan_value_transfers.iter().count(), 2);
+    assert_eq!(
+        pre_rescan_value_transfers.iter().count(),
+        transfers_before_funding + 2
+    );
     assert!(pre_rescan_value_transfers.iter().any(|vt| {
         vt.kind == ValueTransferKind::Received
             && vt.value == transparent_funding
@@ -672,7 +652,7 @@ async fn sends_to_self_handle_balance_properly() {
     // Rescanning from scratch must reproduce the same balance and
     // identical records.
     recipient.rescan_and_await().await.unwrap();
-    check_client_balances!(recipient, i: shielded_value o: 0 s: 0 t: 0);
+    check_client_balances!(recipient, i: shielded_value o: 0 s: UNTOUCHED_SAPLING_NOTE t: 0);
     assert_eq!(
         pre_rescan_summaries,
         recipient.transaction_summaries(false).await.unwrap()
@@ -682,38 +662,38 @@ async fn sends_to_self_handle_balance_properly() {
         recipient.value_transfers(true).await.unwrap()
     );
 }
-#[tokio::test]
-async fn send_to_ua_saves_full_ua_in_wallet() {
-    let (local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
-    //utils::increase_height_and_wait_for_client(&local_net, &faucet, 5).await;
+async fn send_to_ua_saves_full_ua_in_wallet(
+    local_net: &MeteredNet,
+    faucet: &mut LightClient,
+    recipient: &LightClient,
+) {
     let recipient_unified_address = get_base_address_macro!(recipient, "unified");
     let sent_value = 50_000;
-    from_inputs::quick_send(
-        &mut faucet,
+    let txid = *from_inputs::quick_send(
+        faucet,
         vec![(recipient_unified_address.as_str(), sent_value, None)],
     )
     .await
-    .unwrap();
-    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+    .expect("the funded faucet sends to a unified address")
+    .first();
+    increase_height_and_wait_for_client(local_net, faucet, 1)
         .await
         .unwrap();
+    let saves_full_ua = |transaction: &TransactionSummary| {
+        transaction.txid == txid
+            && transaction
+                .outgoing_ironwood_notes
+                .iter()
+                .chain(transaction.outgoing_sapling_notes.iter())
+                .any(|note| {
+                    note.recipient_unified_address == Some(recipient_unified_address.clone())
+                })
+    };
     let transactions = faucet.transaction_summaries(false).await.unwrap().0;
-    assert!(transactions.iter().any(|transaction| {
-        transaction
-            .outgoing_ironwood_notes
-            .iter()
-            .chain(transaction.outgoing_sapling_notes.iter())
-            .any(|note| note.recipient_unified_address == Some(recipient_unified_address.clone()))
-    }));
+    assert!(transactions.iter().any(saves_full_ua));
     faucet.rescan_and_await().await.unwrap();
     let rescanned_transactions = faucet.transaction_summaries(false).await.unwrap().0;
-    assert!(rescanned_transactions.iter().any(|transaction| {
-        transaction
-            .outgoing_ironwood_notes
-            .iter()
-            .chain(transaction.outgoing_sapling_notes.iter())
-            .any(|note| note.recipient_unified_address == Some(recipient_unified_address.clone()))
-    }));
+    assert!(rescanned_transactions.iter().any(saves_full_ua));
     assert_eq!(
         transactions,
         rescanned_transactions,
@@ -723,10 +703,11 @@ async fn send_to_ua_saves_full_ua_in_wallet() {
     );
 }
 
-#[tokio::test]
-async fn send_orchard_back_and_forth() {
-    // setup
-    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
+async fn send_orchard_back_and_forth(
+    local_net: &MeteredNet,
+    faucet: &mut LightClient,
+    recipient: &mut LightClient,
+) {
     let faucet_to_recipient_amount = 20_000u64;
     let recipient_to_faucet_amount = 10_000u64;
     // check start state
@@ -747,7 +728,7 @@ async fn send_orchard_back_and_forth() {
 
     // post transfer to recipient, and verify
     from_inputs::quick_send(
-        &mut faucet,
+        faucet,
         vec![(
             &get_base_address_macro!(recipient, "unified"),
             faucet_to_recipient_amount,
@@ -762,7 +743,7 @@ async fn send_orchard_back_and_forth() {
     // though note selection is not.
     let ironwood_change =
         scenarios::POST_STREAM_BLOCK_REWARD - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+    increase_height_and_wait_for_client(local_net, recipient, 1)
         .await
         .unwrap();
     faucet.sync_and_await().await.unwrap();
@@ -785,7 +766,7 @@ async fn send_orchard_back_and_forth() {
 
     // post half back to faucet, and verify
     from_inputs::quick_send(
-        &mut recipient,
+        recipient,
         vec![(
             &get_base_address_macro!(faucet, "unified"),
             recipient_to_faucet_amount,
@@ -794,7 +775,7 @@ async fn send_orchard_back_and_forth() {
     )
     .await
     .unwrap();
-    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+    increase_height_and_wait_for_client(local_net, faucet, 1)
         .await
         .unwrap();
     recipient.sync_and_await().await.unwrap();
@@ -887,10 +868,14 @@ mod rescan_still_have_outgoing_notes {
 /// remediation plan). Note-selection ordering itself is asserted
 /// offline by `note_selection_covers_target_with_minimal_change` in
 /// `zingolib::lightclient::propose`.
-#[tokio::test]
-async fn multi_input_sapling_send_with_orchard_change_no_panic() {
-    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
-    increase_height_and_wait_for_client(&local_net, &mut faucet, 5)
+const SAPLING_NOTE_STEP: u64 = 10_000;
+const UNTOUCHED_SAPLING_NOTE: u64 = SAPLING_NOTE_STEP;
+async fn multi_input_sapling_send_with_orchard_change_no_panic(
+    local_net: &MeteredNet,
+    faucet: &mut LightClient,
+    recipient: &mut LightClient,
+) {
+    increase_height_and_wait_for_client(local_net, faucet, 5)
         .await
         .unwrap();
 
@@ -900,12 +885,12 @@ async fn multi_input_sapling_send_with_orchard_change_no_panic() {
     // subsequently receive funding via it's orchard-packed UA.
     let memos = ["1", "2", "3"];
     from_inputs::quick_send(
-        &mut faucet,
+        faucet,
         (1..=3)
             .map(|n| {
                 (
                     client_2_saplingaddress.as_str(),
-                    n * 10_000,
+                    n * SAPLING_NOTE_STEP,
                     Some(memos[(n - 1) as usize]),
                 )
             })
@@ -914,14 +899,14 @@ async fn multi_input_sapling_send_with_orchard_change_no_panic() {
     .await
     .unwrap();
 
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 5)
+    increase_height_and_wait_for_client(local_net, recipient, 5)
         .await
         .unwrap();
     // We know that the largest single note that 2 received from 1 was 30_000, for 2 to send
     // 30_000 back to 1 it will have to collect funds from two notes to pay the full 30_000
     // plus the transaction fee.
     from_inputs::quick_send(
-        &mut recipient,
+        recipient,
         vec![(
             &get_base_address_macro!(faucet, "unified"),
             30_000,
@@ -931,7 +916,7 @@ async fn multi_input_sapling_send_with_orchard_change_no_panic() {
     .await
     .unwrap();
 
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+    increase_height_and_wait_for_client(local_net, recipient, 1)
         .await
         .unwrap();
     // Post-state, observed and pinned: the 30_000 payment plus its
@@ -939,7 +924,7 @@ async fn multi_input_sapling_send_with_orchard_change_no_panic() {
     // covered exactly by the 20_000 and 30_000 notes, so the untouched
     // 10_000 sapling note is the whole remaining balance and the
     // orchard change is zero-value.
-    check_client_balances!(recipient, i: 0 o: 0 s: 10_000 t: 0);
+    check_client_balances!(recipient, i: 0 o: 0 s: UNTOUCHED_SAPLING_NOTE t: 0);
 }
 
 /// Assert the recipient's three-way orchard balance split.
@@ -1522,19 +1507,20 @@ mod basic_transactions {
 /// second transaction pays the recipient, carries the payload in an
 /// OP_RETURN output, and has no change. The deshield pays exactly the
 /// amount plus the OP_RETURN fee.
-#[tokio::test]
-async fn propose_and_send_with_op_return_confirms_on_chain() {
+async fn propose_and_send_with_op_return_confirms_on_chain(
+    local_net: &MeteredNet,
+    faucet: &mut LightClient,
+    recipient: &mut LightClient,
+) {
     use zingolib::wallet::transparent::OpReturnData;
 
     /// A payload under the 80-byte limit.
     const PAYLOAD: &[u8] = b"zingolib op_return payload";
     let amount = Zatoshis::const_from_u64(100_000);
 
-    let (ref local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
-
     scenarios::send_and_bump(
         local_net,
-        &mut faucet,
+        faucet,
         vec![(
             &get_base_address_macro!(recipient, "unified"),
             500_000,
@@ -1569,7 +1555,7 @@ async fn propose_and_send_with_op_return_confirms_on_chain() {
     let deshield_txid = txids[0];
     let op_return_txid = txids[1];
 
-    increase_height_and_wait_for_client(local_net, &mut recipient, 3)
+    increase_height_and_wait_for_client(local_net, recipient, 3)
         .await
         .unwrap();
 
@@ -1626,6 +1612,28 @@ async fn propose_and_send_with_op_return_confirms_on_chain() {
         Zatoshis::ZERO,
         "the recipient output is the non-null-data output"
     );
+}
+
+/// - Launches a validator and an indexer, and mines blocks on their chain.
+/// - Writes the faucet and recipient wallet files, and rescans both from scratch.
+/// - Strips the recipient wallet's Ironwood tracking in the final phase.
+#[tokio::test]
+async fn faucet_recipient_default_in_one_chain() {
+    let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
+    send_orchard_back_and_forth(&local_net, &mut faucet, &mut recipient).await;
+    multi_input_sapling_send_with_orchard_change_no_panic(&local_net, &mut faucet, &mut recipient)
+        .await;
+    sends_to_self_handle_balance_properly(&local_net, &mut faucet, &mut recipient).await;
+    send_to_ua_saves_full_ua_in_wallet(&local_net, &mut faucet, &recipient).await;
+    propose_and_send_with_op_return_confirms_on_chain(&local_net, &mut faucet, &mut recipient)
+        .await;
+    untracked_history::assert_notes_in_untracked_history_are_recovered(
+        &local_net,
+        &mut faucet,
+        &mut recipient,
+        ShieldedPool::Ironwood,
+    )
+    .await;
 }
 
 mod testnet_test {
