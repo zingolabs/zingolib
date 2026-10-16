@@ -1,6 +1,5 @@
-use crate::{run_streaming, stdout_of_owned};
+use crate::{run_streaming, stdout_of_owned, GH};
 
-const GH: &str = "gh";
 const RUN: &str = "run";
 const LIST: &str = "list";
 const CANCEL: &str = "cancel";
