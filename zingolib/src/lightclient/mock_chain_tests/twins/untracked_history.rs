@@ -8,10 +8,9 @@ use crate::testutils::mock_indexer::{MockChain, MockNet};
 use crate::testutils::{mock_activation_heights, mock_activation_heights_deferring_nu6_3};
 
 const HIDDEN_BLOCKS: u32 = 2;
-const RECOVERY_SESSIONS: usize = 5;
 
 /// - Strips the recipient wallet's tracking of `pool` under the wallet's write lock.
-/// - Mines two blocks and runs sync sessions on the recipient until the note is recovered.
+/// - Mines two blocks and runs two sync sessions on the recipient.
 pub(super) async fn recover_untracked_history(
     net: &MockNet,
     recipient: &mut LightClient,
@@ -55,19 +54,19 @@ pub(super) async fn recover_untracked_history(
          session by reopening that history: {reopened:?}"
     );
 
-    // The following sessions rescan the reopened history and recover the note.
-    let mut last_session = reopened;
-    for _ in 0..RECOVERY_SESSIONS {
-        last_session = recipient.sync_and_await().await;
-        if last_session.is_ok() && confirmed_balance(recipient, pool).await == funded_balance {
-            break;
-        }
-    }
+    // The second session rescans the reopened history and recovers the note.
+    // The mock chain is deterministic, so the session after the reopening
+    // one is the one judged, as the live test judged it.
+    let recovered = recipient.sync_and_await().await;
+    assert!(
+        recovered.is_ok(),
+        "the session after a reopening must complete the rescan: {recovered:?}"
+    );
     assert_eq!(
         confirmed_balance(recipient, pool).await,
         funded_balance,
         "the {pool:?} note was left lost in history that was scanned without \
-         {pool:?} tracking; the last session ended {last_session:?}",
+         {pool:?} tracking",
     );
 }
 
