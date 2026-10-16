@@ -95,3 +95,44 @@ pub async fn for_each_proposed_transaction<N, Res>(
     }
     step_results
 }
+
+/// The null-data opcode that opens an OP_RETURN script.
+pub const OP_RETURN: u8 = 0x6a;
+
+/// - Panics unless `bundle` is the one-input, two-output shape of an OP_RETURN send whose zero-value
+///   output's script opens with OP_RETURN and carries `payload` verbatim.
+pub fn assert_null_data_send(
+    bundle: &zcash_transparent::bundle::Bundle<zcash_transparent::bundle::Authorized>,
+    payload: &[u8],
+) {
+    assert_eq!(bundle.vin.len(), 1, "spends exactly one output");
+    assert_eq!(
+        bundle.vout.len(),
+        2,
+        "recipient + OP_RETURN, no change output"
+    );
+    let op_return_out = bundle
+        .vout
+        .iter()
+        .find(|out| out.value() == zcash_protocol::value::Zatoshis::ZERO)
+        .expect("a zero-value OP_RETURN output");
+    let script = op_return_out.script_pubkey().0.0.as_slice();
+    assert_eq!(
+        script.first(),
+        Some(&OP_RETURN),
+        "null-data script starts with OP_RETURN"
+    );
+    assert!(
+        script
+            .windows(payload.len())
+            .any(|window| window == payload),
+        "the OP_RETURN carries the payload verbatim"
+    );
+    assert!(
+        bundle
+            .vout
+            .iter()
+            .any(|out| out.value() != zcash_protocol::value::Zatoshis::ZERO),
+        "the recipient output is the non-null-data output"
+    );
+}
