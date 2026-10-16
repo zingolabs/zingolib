@@ -290,6 +290,11 @@ async fn prompt_indicator(
                 " [Sync error]".to_string()
             }
         }
+        PollReport::Panicked(text) => {
+            eprintln!("Sync error: the sync task panicked: {text}");
+            eprintln!("Please restart sync with `sync run`.");
+            " [Sync error]".to_string()
+        }
         PollReport::Ready(Ok(sync_result)) => {
             #[cfg(feature = "nym")]
             {
@@ -324,6 +329,9 @@ async fn await_sync_narrated(lightclient: &mut LightClient) -> Result<String, St
                     "sync:{}",
                     syncing_indicator(scan_progress(lightclient).await)
                 );
+            }
+            PollReport::Panicked(text) => {
+                return Err(format!("Error: the sync task panicked: {text}"));
             }
             PollReport::Ready(result) => {
                 return result
