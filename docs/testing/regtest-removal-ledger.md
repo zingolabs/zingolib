@@ -502,3 +502,4 @@ faucet-economics fee.
 - received_tx_status_pending_to_confirmed_with_mempool_monitor (41): `received_mempool_status::received_tx_status_pending_to_confirmed_with_mempool_monitor`.
 - mempool_spend_balance_and_note_status_accounting (55): `mempool_spend_accounting::mempool_spend_balance_and_note_status_accounting`, waiting on the mempool observation rather than a timer.
 - bound_note_reservation_and_external_spend_invalidation (10): `bound_note_reservation::bound_note_reservation_and_external_spend_invalidation`.
+- migrate_all_orchard_to_ironwood (13): `immediate_migration::migrate_all_orchard_to_ironwood`.

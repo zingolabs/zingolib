@@ -7,7 +7,6 @@
 //! with today's stack: bound-note reservation, external-spend invalidation
 //! and the no-sync transmit path.
 
-use pepper_sync::wallet::OutputInterface;
 use zcash_local_net::validator::Validator;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::PoolType;
@@ -228,86 +227,6 @@ async fn cross_ironwood_activation(local_net: &MeteredNet, recipient: &mut Light
     increase_height_and_wait_for_client(local_net, recipient, DEFERRED_NU6_3_HEIGHT - tip + 1)
         .await
         .unwrap();
-}
-
-/// The immediate migration: every spendable Orchard note is spent into Ironwood in
-/// one pass, with no note splitting and no schedule. The Orchard pool empties
-/// down to the disclosed dust, and the same value less fees appears in the
-/// Ironwood pool. That second half is what proves the funds actually crossed.
-#[tokio::test]
-async fn migrate_all_orchard_to_ironwood() {
-    // Several notes of unequal value: an immediate migration must sweep all of them, and
-    // nothing here is a canonical denomination.
-    let (local_net, _faucet, mut recipient) =
-        pre_ironwood_funded_recipient(|_| vec![317_000, 1_250_000, 88_000]).await;
-    cross_ironwood_activation(&local_net, &mut recipient).await;
-
-    let orchard_before = recipient
-        .wallet()
-        .read()
-        .await
-        .account_balance(AccountId::ZERO)
-        .unwrap()
-        .confirmed_orchard_balance
-        .unwrap()
-        .into_u64();
-    assert_eq!(orchard_before, 317_000 + 1_250_000 + 88_000);
-
-    let plan = recipient
-        .plan_immediate_migration(AccountId::ZERO)
-        .await
-        .unwrap();
-    // Three modest notes fit one transaction: no chunking here.
-    assert_eq!(plan.transactions.len(), 1);
-    assert_eq!(
-        plan.migrated + plan.fee + plan.residual,
-        orchard_before,
-        "the plan must account for every zatoshi"
-    );
-
-    let summary = recipient
-        .migrate_immediately(AccountId::ZERO)
-        .await
-        .unwrap();
-    assert_eq!(summary.txids.len(), plan.transactions.len());
-    assert_eq!(summary.migrated, plan.migrated);
-
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-        .await
-        .unwrap();
-
-    let balance = recipient
-        .wallet()
-        .read()
-        .await
-        .account_balance(AccountId::ZERO)
-        .unwrap();
-    assert_eq!(
-        balance
-            .confirmed_orchard_balance
-            .map(|zats| zats.into_u64())
-            .unwrap_or(0),
-        summary.residual,
-        "the Orchard pool must be empty but for the disclosed dust"
-    );
-    assert_eq!(
-        balance
-            .confirmed_ironwood_balance
-            .map(|zats| zats.into_u64())
-            .unwrap_or(0),
-        summary.migrated,
-        "the immediate migrationed value must appear in the Ironwood pool"
-    );
-
-    // The immediate migration moves Orchard funds into the wallet's own Ironwood pool, so
-    // each immediate migration transaction must be classified as a migration value transfer,
-    // not a plain send-to-self, and those transfers carry the migrated value.
-    let value_transfers = recipient.value_transfers(true).await.unwrap();
-    assert_eq!(
-        migrated_value(&value_transfers, &summary.txids),
-        summary.migrated,
-        "the migration value transfers must carry the migrated value"
-    );
 }
 
 /// An immediate migration of a fragmented wallet chunks into several independent transactions,
