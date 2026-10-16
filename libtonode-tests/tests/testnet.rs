@@ -5,6 +5,8 @@
 
 #[path = "testnet/chain_generics.rs"]
 mod chain_generics;
+#[path = "testnet/chain_metadata.rs"]
+mod chain_metadata;
 #[path = "testnet/glory_goddess.rs"]
 mod glory_goddess;
 #[path = "testnet/reload.rs"]
