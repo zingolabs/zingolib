@@ -9,6 +9,8 @@ mod chain_generics;
 mod chain_metadata;
 #[path = "testnet/glory_goddess.rs"]
 mod glory_goddess;
+#[path = "testnet/mixnet.rs"]
+mod mixnet;
 #[path = "testnet/op_return.rs"]
 mod op_return;
 #[path = "testnet/reload.rs"]

@@ -521,3 +521,4 @@ zingolabs zainod testnet node once it exists.
 - served_outputs_match_chain_metadata_deltas (22): `chain_metadata::served_outputs_match_chain_metadata_deltas`, over the window around testnet's NU6.3 activation.
 - propose_and_send_with_op_return_confirms_on_chain (60), confirmation half: `op_return::propose_and_send_with_op_return_confirms_on_testnet`, the network's standardness verdict on the null-data output.
 - ZIP 318 enforcement canary (ruling 11, issue #2539): `zip318_canary::a_payment_to_an_orchard_receiver_lands_in_the_expected_pool`, whose expectation flips together with ADR 0009.
+- Mixnet Mode over a real proxy (ruling 10, issue #2591): `mixnet::a_mixnet_send_crosses_a_real_proxy_to_the_node`, asserting the reported route; the node-side assertion that no direct connection arrived waits on the node exposing connection sources.

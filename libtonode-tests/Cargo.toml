@@ -19,7 +19,7 @@ slow = []
 # The chain-generic fixtures against the public testnet, through
 # zingolib's NetworkedTestEnvironment. Off by default: the tests dial the
 # network, spend from one shared testnet wallet, and wait for real blocks.
-testnet = []
+testnet = ["zingolib/nym"]
 # Everything beyond the default suite, in one switch.
 extra-credit-tests = ["sentinels", "slow"]
 
