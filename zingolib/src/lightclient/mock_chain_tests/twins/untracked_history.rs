@@ -1,8 +1,10 @@
+use pepper_sync::error::SyncError;
 use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
 
 use super::{DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, fund_on_chain};
 use crate::lightclient::LightClient;
+use crate::lightclient::error::LightClientError;
 use crate::testutils::lightclient::get_base_address;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
 use crate::testutils::{mock_activation_heights, mock_activation_heights_deferring_nu6_3};
@@ -69,16 +71,21 @@ async fn notes_in_untracked_history_are_recovered(pool: ShieldedPool) {
     // left the notes lost.
     let reopened = recipient.sync_and_await().await;
     assert!(
-        reopened.is_err(),
-        "a wallet whose {pool:?} history cannot account for the chain must not \
-         report a successful sync: {reopened:?}"
+        matches!(
+            reopened,
+            Err(LightClientError::SyncError(
+                SyncError::PoolHistoryReopened { .. }
+            ))
+        ),
+        "a wallet whose {pool:?} history cannot account for the chain must end the \
+         session by reopening that history: {reopened:?}"
     );
 
     // The following sessions rescan the reopened history and recover the note.
+    let mut last_session = reopened;
     for _ in 0..RECOVERY_SESSIONS {
-        if recipient.sync_and_await().await.is_ok()
-            && confirmed_balance(&recipient, pool).await == funded_balance
-        {
+        last_session = recipient.sync_and_await().await;
+        if last_session.is_ok() && confirmed_balance(&recipient, pool).await == funded_balance {
             break;
         }
     }
@@ -86,7 +93,7 @@ async fn notes_in_untracked_history_are_recovered(pool: ShieldedPool) {
         confirmed_balance(&recipient, pool).await,
         funded_balance,
         "the {pool:?} note was left lost in history that was scanned without \
-         {pool:?} tracking",
+         {pool:?} tracking; the last session ended {last_session:?}",
     );
 }
 

@@ -8,10 +8,10 @@ mod received_mempool_status;
 mod rescan_self_send;
 mod rescan_value_transfers;
 mod send_pre_ironwood;
-mod untracked_history;
-mod watch_only;
 mod sync_all_expressible_epochs;
 mod unified_address_discovery;
+mod untracked_history;
+mod watch_only;
 
 const HOSPITAL_MUSEUM: &str = zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 const FUNDING: u64 = 100_000;

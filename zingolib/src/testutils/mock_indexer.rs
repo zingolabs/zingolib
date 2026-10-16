@@ -664,6 +664,22 @@ fn fabricated_block_hash(height: u32) -> Vec<u8> {
     fabricated_branch_hash(height, 0)
 }
 
+fn genesis_compact_block() -> CompactBlock {
+    CompactBlock {
+        height: 0,
+        hash: fabricated_block_hash(0),
+        prev_hash: vec![0u8; 32],
+        time: BLOCK_TIME_BASE,
+        header: vec![],
+        vtx: vec![],
+        chain_metadata: Some(ChainMetadata {
+            sapling_commitment_tree_size: 0,
+            orchard_commitment_tree_size: 0,
+            ironwood_commitment_tree_size: 0,
+        }),
+    }
+}
+
 /// Where a lost-response submission lands, mirroring the validator's
 /// two pre-mining phases: zebra queues a submission for download and
 /// verification before accepting it into the mempool, and rejects a
@@ -1309,7 +1325,7 @@ impl MockChain {
             .blocks
             .last()
             .map(|block| block.hash.clone())
-            .unwrap_or_else(|| vec![0u8; 32]);
+            .unwrap_or_else(|| fabricated_block_hash(0));
         self.blocks.push(CompactBlock {
             height: u64::from(u32::from(height)),
             hash: fabricated_branch_hash(u32::from(height), self.branch_seed),
@@ -1483,7 +1499,8 @@ impl MockChain {
         let (sapling_tree, orchard_tree, ironwood_tree) =
             self.tree_states.get(height as usize)?.clone();
         // The stored block's own hash, so tree states follow the
-        // current branch after a reorg. Height 0 predates the chain.
+        // current branch after a reorg. Height 0 is the genesis block,
+        // which is fabricated on demand and never stored.
         let hash = if height == 0 {
             fabricated_block_hash(0)
         } else {
@@ -1835,17 +1852,19 @@ impl MockIndexerService {
         let fault = self.fault_for(Rpc::BlockRange).await?;
         let start = range.start.as_ref().map_or(0, |id| id.height) as usize;
         let end = range.end.as_ref().map_or(0, |id| id.height) as usize;
-        if start == 0 || end < start {
-            return Err(Status::invalid_argument(
-                "the mock serves ascending ranges starting at height 1",
-            ));
+        if end < start {
+            return Err(Status::invalid_argument("the mock serves ascending ranges"));
         }
         let chain = self.chain.read().await;
         if end > chain.blocks.len() {
             return Err(Status::not_found(format!("no block at height {end}")));
         }
         let pools = RequestedPools::from_range(&range)?;
-        let mut blocks: Vec<_> = chain.blocks[start - 1..end].to_vec();
+        let mut blocks: Vec<_> = (start == 0)
+            .then(genesis_compact_block)
+            .into_iter()
+            .chain(chain.blocks[start.max(1) - 1..end].iter().cloned())
+            .collect();
         for block in &mut blocks {
             pools.prune(block);
             if nullifiers_only {
@@ -1895,10 +1914,13 @@ impl CompactTxStreamer for MockIndexerService {
     async fn get_block(&self, request: Request<BlockId>) -> Result<Response<CompactBlock>, Status> {
         self.fault_for(Rpc::Block).await?;
         let height = request.into_inner().height;
+        if height == 0 {
+            return Ok(Response::new(genesis_compact_block()));
+        }
         let chain = self.chain.read().await;
         chain
             .blocks
-            .get((height as usize).wrapping_sub(1))
+            .get(height as usize - 1)
             .cloned()
             .map(Response::new)
             .ok_or_else(|| Status::not_found(format!("no block at height {height}")))
@@ -2884,6 +2906,20 @@ mod tests {
         assert_eq!(
             chain.submit_transaction(spend).unwrap_err(),
             Rejection::SpentInput(coinbase_outpoint)
+        );
+    }
+
+    #[test]
+    fn the_genesis_block_precedes_the_first_block_and_follows_nothing() {
+        let mut chain = MockChain::new();
+        chain.mine_empty_blocks(1);
+        let genesis = genesis_compact_block();
+        assert_eq!(genesis.height, 0);
+        assert_eq!(genesis.prev_hash, vec![0u8; 32]);
+        assert_eq!(chain.blocks[0].prev_hash, genesis.hash);
+        assert_eq!(
+            chain.tree_state_at(0).map(|state| state.hash),
+            Some(hex::encode(&genesis.hash))
         );
     }
 
