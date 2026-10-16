@@ -517,3 +517,4 @@ carries it under `libtonode-tests/tests/testnet/`, behind the non-default
 zingolabs zainod testnet node once it exists.
 
 - reload_wallet_after_short_sync (62) and the four GloryGoddess self-sends from zingolib's send.rs tests: `reload::reload_wallet_after_short_sync` and `glory_goddess::testnet_send_to_self_*`, no longer `#[ignore]`.
+- add_subtree_roots (15): `subtree_roots::add_subtree_roots`, against testnet instead of the mainnet indexer the default suite dialed; the mock chain serves no subtree roots, so both halves are the real indexer's.

@@ -9,5 +9,7 @@ mod chain_generics;
 mod glory_goddess;
 #[path = "testnet/reload.rs"]
 mod reload;
+#[path = "testnet/subtree_roots.rs"]
+mod subtree_roots;
 
 const TESTNET_INDEXER: &str = "https://testnet.zec.rocks:443";
