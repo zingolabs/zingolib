@@ -522,3 +522,16 @@ zingolabs zainod testnet node once it exists.
 - propose_and_send_with_op_return_confirms_on_chain (60), confirmation half: `op_return::propose_and_send_with_op_return_confirms_on_testnet`, the network's standardness verdict on the null-data output.
 - ZIP 318 enforcement canary (ruling 11, issue #2539): `zip318_canary::a_payment_to_an_orchard_receiver_lands_in_the_expected_pool`, whose expectation flips together with ADR 0009.
 - Mixnet Mode over a real proxy (ruling 10, issue #2591): `mixnet::a_mixnet_send_crosses_a_real_proxy_to_the_node`, asserting the reported route; the node-side assertion that no direct connection arrived waits on the node exposing connection sources.
+
+## Retired (2026-10-15)
+
+Guarantees with no home after the removal, by ruling 4 of the plan.
+
+- launch_mines_exactly_one_block_and_nothing_else_mines (5), transparent_launch_block_is_byte_deterministic (6), suppressed_launch_generate_leaves_genesis (7), chain_mutates_only_via_owned_rpc (4): contracts of the `zcash_local_net` launch and RPC log, which the removal deletes. The `sentinels` feature goes with its file.
+- sync_test (16): no assertion beyond success; its steps are mock twins.
+- diagnose_subtree_root_stream (18): a diagnostic of a real indexer's truncation, which issues #2963 and #2964 cover; `sync_recovers_from_a_truncated_block_stream` reproduces the symptom on the mock chain.
+- The time bounds of entries 8 and 9: operational latency measurements, not wallet guarantees.
+
+## Exported to zaino (pending)
+
+indexer_mempool_view_trails_validator_acceptance (8), indexer_converges_with_validator_after_block_generation (19), and the eight tip_spend_rejection cells (23 to 30) remain in this crate until their zaino pull requests merge.
