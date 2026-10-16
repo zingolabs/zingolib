@@ -2211,6 +2211,7 @@ impl LightClient {
                         .unwrap_or(false)
                 };
                 if !pending {
+                    let _ = self.reconcile_migration().await?;
                     return Ok(MigrationSummary {
                         split_txids,
                         part_txids,

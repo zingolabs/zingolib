@@ -5,8 +5,7 @@ edition = "2024"
 publish = false
 
 [features]
-default = ["chain_generic_tests"]
-chain_generic_tests = []
+default = []
 # Sentinel tests pin environment contracts (zebrad behavior and the
 # zcash_local_net launch contract), not this repository's code. Off by
 # default: run them when the environment moves, such as infra pin bumps,
@@ -20,7 +19,7 @@ slow = []
 # The chain-generic fixtures against the public testnet, through
 # zingolib's NetworkedTestEnvironment. Off by default: the tests dial the
 # network, spend from one shared testnet wallet, and wait for real blocks.
-testnet = []
+testnet = ["zingolib/nym"]
 # Everything beyond the default suite, in one switch.
 extra-credit-tests = ["sentinels", "slow"]
 
