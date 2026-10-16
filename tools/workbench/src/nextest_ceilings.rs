@@ -75,6 +75,10 @@ pub fn overrides(config: &str, profile: &str) -> Result<Vec<Override>, String> {
         .collect()
 }
 
+fn is_identifier_character(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
+}
+
 pub fn function_names(source: &str) -> Vec<String> {
     source
         .lines()
@@ -82,7 +86,7 @@ pub fn function_names(source: &str) -> Vec<String> {
             let (_, rest) = line.split_once("fn ")?;
             let name: String = rest
                 .chars()
-                .take_while(|character| character.is_alphanumeric() || *character == '_')
+                .take_while(|&character| is_identifier_character(character))
                 .collect();
             (!name.is_empty()).then_some(name)
         })
