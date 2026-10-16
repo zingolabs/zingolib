@@ -69,6 +69,17 @@ serde = { version = "1.0.229", features = ["derive"] }
 nym-socks5-proxy-helpers = { version = "1.21.4", optional = true }
 futures-channel = { version = "0.3", optional = true }
 
+# The following are not needed as direct dependencies.
+# We need to pin specific versions, features, etc,
+# as 1.22.2 broke semver guarentees and removed needed aliases
+nym-client-core-config-types = "=1.22.1"
+nym-crypto = "=1.22.1"
+nym-sphinx-types = "=1.22.1"
+nym-client-core = "=1.21.6"
+# Exact version number not needed. Semver violation
+# was feature-gating of needed code
+nym-bandwidth-fetcher = { version = "1.22.1", features = ["credentials"] }
+
 [features]
 globally-public-transparent = ["dep:tokio-stream"]
 ping-very-insecure = []
@@ -141,8 +152,4 @@ rustls-pemfile.workspace = true
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
 http-body-util.workspace = true
 x509-parser.workspace = true
-
-# 1.22.2 broke semver guarentees and removed needed aliases
-# so we need to specify an exact version
-nym-client-core-config-types = "=1.22.1"
 
