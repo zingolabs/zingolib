@@ -62,6 +62,36 @@ metrics file is the census of them.
 _Avoid_: LocalNet test, online test, live test (that names the Makefile
 package partition, not this category)
 
+**Mock chain**:
+The in-process chain and indexer (`MockNet` over `MockChain`) that serves
+the wallet's real sync and send pipeline without a validator process.
+It enforces every consensus rule it models on submission, including
+proofs, signatures and value balance (ruled 2026-10-15), so a guarantee
+needs a live network only when it concerns network policy or a real
+indexer's behaviour.
+_Avoid_: mock indexer (that names the serving half alone), fake chain
+
+**Testnet cell**:
+A chain-bound test behind the non-default `testnet` feature. It is
+compiled on every pull request and run only against the zingolabs
+zainod testnet node: a tagged zaino release, serving TLS, with NU6.3
+active (ruled 2026-10-15). Until that node exists no CI profile
+enables the feature.
+_Avoid_: testnet test, networked test, staged test
+
+**Guarantee**:
+A named claim that a group of a test's assertions pins together, written
+as one bullet of the regtest removal ledger. It is the unit of the
+regtest removal (ruled 2026-10-15): each guarantee takes exactly one
+disposition, mock chain, testnet cell, exported, or retired.
+_Avoid_: assertion (that names one `assert!` call), check, invariant
+
+**Twin**:
+The mock-chain test that carries every guarantee of one chain-bound
+test. A twin may sharpen a guarantee, never narrow one (ruled
+2026-10-15); it lands in the commit that deletes the chain-bound test.
+_Avoid_: offline twin, port, replacement test
+
 **Primed**:
 The state of an observability instrument (a state watch or a front
 record) whose recording window is open: the priming instant is time
