@@ -13,6 +13,12 @@ on:
         required: false
         type: string
         default: normal
+      # Cargo arguments that select what the archive holds, in place of
+      # the default `--workspace`: the packages, the targets, the features.
+      archive-args:
+        required: false
+        type: string
+        default: --workspace
 
 env:
   NEXTEST-FLAGS: ${{ inputs.nextest-flags }}
@@ -42,8 +48,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      # Two suites in one run share this job's name, so the suite keys
+      # the cache; a suite built with other features keeps its own entry.
       - name: Setup Rust and the cargo cache
         uses: ./.github/actions/rust-setup
+        with:
+          key: ${{ inputs.suite }}
 
       - name: Install nextest
         uses: taiki-e/install-action@v2
@@ -58,7 +68,7 @@ jobs:
       - name: Build and archive tests
         run: |
           cargo nextest archive --verbose \
-            --workspace \
+            ${{ inputs.archive-args }} \
             --archive-file "${ARCHIVE}.tar.zst"
 
       - name: Upload archive

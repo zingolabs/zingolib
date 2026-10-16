@@ -84,8 +84,39 @@ jobs:
           cargo deny --manifest-path tools/workbench/Cargo.toml --locked
           check --config deny.toml bans
 
-  cargo-checkmate:
-    uses: ./.github/workflows/cargo-checkmate.yaml
+  # The three gates the root workspace keeps from cargo-checkmate, each
+  # at the scope the phase had: rustfmt over every crate, clippy over
+  # the library and binary targets with the default features (the nym
+  # job lints every target of zingolib and zingo-cli under nym, and the
+  # test archive compiles every test target with warnings denied), and
+  # rustdoc over the workspace's own crates only. The
+  # checkmate doc phase documented every dependency with warnings denied,
+  # six minutes a run that a dependency's rustdoc warning could fail.
+  # The check and build phases are covered by the cargo-hack sweep and
+  # the test archive build.
+  root-lints:
+    name: Format, clippy and rustdoc (root workspace)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Doc
+        run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
 
   # The draft state of the pull request when this job runs. The event
   # payload holds the state at the time of the event. A push and a "ready
@@ -220,9 +251,9 @@ jobs:
             --package zingo-nym-proxy-ffi \
             --features live-mixnet --test live_mixnet -- --test-threads=1
 
-      # Membership in the root workspace used to gate rustdoc through
-      # checkmate's doc phase; clippy does not run rustdoc lints, so the
-      # standalone workspace needs its own doc gate.
+      # The root-lints job documents only the root workspace, and clippy
+      # does not run rustdoc lints, so the standalone workspace needs its
+      # own doc gate.
       - name: Doc
         run: cargo doc --manifest-path zingo-netutils/Cargo.toml --workspace --all-features --no-deps
         env:
@@ -319,17 +350,9 @@ jobs:
       - name: Clippy
         run: cargo clippy -p zingolib -p zingo-cli --features nym --all-targets -- -D warnings
 
-      # Whole suites, deliberately unfiltered: module-path filter lists rot
-      # as gated tests land outside them (PR #2470 review, M6). Re-running
-      # the ungated tests under the features is the price of a gate that
-      # cannot silently go dark; everything here is deterministic and
-      # mixnet-free.
-      - name: Test zingolib under the nym features
-        run: cargo test -p zingolib --features nym --lib
-
-      - name: Test zingo-cli under the nym features
-        run: cargo test -p zingo-cli --features nym --lib
-
+      # The lib suites under the nym features run in the test-nym job
+      # below, sharded like the normal suite. This job keeps the targets
+      # nextest archives never hold: the doc tests, and the opt-out shape.
       - name: Doc-test zingolib under the nym features
         run: cargo test -p zingolib --features nym --doc
 
@@ -360,6 +383,24 @@ jobs:
     needs: draft-state
     if: ${{ needs.draft-state.outputs.draft != 'true' }}
     uses: ./.github/workflows/test.yaml
+    permissions:
+      contents: read
+      packages: write
+
+  # Whole lib suites, deliberately unfiltered: module-path filter lists
+  # rot as gated tests land outside them (PR #2470 review, M6). Re-running
+  # the ungated tests under the features is the price of a gate that
+  # cannot silently go dark; everything here is deterministic and
+  # mixnet-free. Unsharded on one runner the two suites took twelve
+  # minutes and set the run's wall time, so they ride the same archive
+  # and partition shape as the normal suite.
+  test-nym:
+    needs: draft-state
+    if: ${{ needs.draft-state.outputs.draft != 'true' }}
+    uses: ./.github/workflows/test.yaml
+    with:
+      suite: nym
+      archive-args: --package zingolib --package zingo-cli --features nym --lib
     permissions:
       contents: read
       packages: write
