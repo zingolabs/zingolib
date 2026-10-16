@@ -328,13 +328,16 @@ jobs:
   # The `nym` feature gates the mixnet transmission and price-fetch surfaces
   # (ADR 0011) in zingolib and zingo-cli. zingo-cli carries it as a default
   # feature (ADR 0026), so the --workspace jobs above compile the CLI's gated
-  # code; zingolib's own default remains nym-off. This job adds zingolib's
-  # gated tests and the CLI's explicit opt-out build, whose refusal strings
-  # must keep compiling and rendering.
+  # code; zingolib's own default remains nym-off. The gated lib suites run
+  # sharded in the test-nym job below. This job keeps the targets a nextest
+  # archive never holds: clippy under the feature, zingolib's doc tests
+  # under the feature, and the CLI's explicit opt-out build, whose refusal
+  # strings must keep compiling and rendering. Those three steps finish in
+  # about five minutes, so the timeout bounds a hang at four times that.
   nym-feature:
     name: nym feature (zingolib + zingo-cli)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 20
     env:
       RUSTFLAGS: -D warnings
     steps:
@@ -376,10 +379,23 @@ jobs:
       - name: Run doc tests
         run: cargo test --doc
 
+  # The two test suites below pull the same ci-build image, so one job
+  # resolves its content-addressed tag and builds the image when the tag
+  # is absent. Each suite then receives the tag instead of probing, or
+  # building, on its own. The probe takes seconds and runs on drafts too,
+  # because the nym suite does.
+  ensure-image:
+    uses: ./.github/workflows/ensure-image.yaml
+    permissions:
+      contents: read
+      packages: write
+
   test:
-    needs: draft-state
+    needs: [draft-state, ensure-image]
     if: ${{ needs.draft-state.outputs.draft != 'true' }}
     uses: ./.github/workflows/test.yaml
+    with:
+      image-tag: ${{ needs.ensure-image.outputs.image-tag }}
     permissions:
       contents: read
       packages: write
@@ -390,14 +406,18 @@ jobs:
   # cannot silently go dark; everything here is deterministic and
   # mixnet-free. Unsharded on one runner the two suites took twelve
   # minutes and set the run's wall time, so they ride the same archive
-  # and partition shape as the normal suite.
+  # shape as the normal suite across six shards of about two minutes,
+  # sized so that a shard's container start, checkout and archive download
+  # stay below the tests it runs. The suites ran on draft pull requests
+  # when the nym-feature job held them, and they keep doing so here.
   test-nym:
-    needs: draft-state
-    if: ${{ needs.draft-state.outputs.draft != 'true' }}
+    needs: ensure-image
     uses: ./.github/workflows/test.yaml
     with:
       suite: nym
       archive-args: --package zingolib --package zingo-cli --features nym --lib
+      partitions: "[1, 2, 3, 4, 5, 6]"
+      image-tag: ${{ needs.ensure-image.outputs.image-tag }}
     permissions:
       contents: read
       packages: write
