@@ -57,14 +57,6 @@ on:
       bundle:
         required: true
         type: string
-      # Whether the package job runs. The nightly and the publish package
-      # the libraries into the Maven layout and run the Kotlin wire-contract
-      # test there; a pull request builds the libraries and the Kotlin
-      # Binding Sets alone.
-      package:
-        required: false
-        type: boolean
-        default: true
 
 jobs:
   # The job runs in the image that bindings/android/docker/Dockerfile
@@ -137,7 +129,6 @@ jobs:
 
   package:
     name: Publish the Maven layout
-    if: ${{ inputs.package }}
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 15
