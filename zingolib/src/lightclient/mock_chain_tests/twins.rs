@@ -1,7 +1,8 @@
-use super::fund;
+use super::{external_address, fund};
 use crate::testutils::mock_indexer::{MockNet, faucet_funding_transaction_on};
 
 mod rescan_self_send;
+mod rescan_value_transfers;
 mod send_pre_ironwood;
 mod untracked_history;
 mod sync_all_expressible_epochs;

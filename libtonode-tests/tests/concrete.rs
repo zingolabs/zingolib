@@ -777,47 +777,6 @@ async fn send_orchard_back_and_forth(
     check_client_balances!(recipient, i: recipient_final_ironwood o: 0 s: 0 t: 0);
 }
 
-/// This mod collects tests of `outgoing_metadata` (a `TransactionRecordField`) across rescans
-mod rescan_still_have_outgoing_notes {
-    use super::*;
-
-    /// Rescan survival of the spender's records, asserted on BOTH
-    /// `value_transfers` and `transaction_summaries`, across the
-    /// full {sapling, orchard} × {memo, memoless} outgoing-output
-    /// matrix in one transaction. Absorbs the former
-    /// `external_send` (sapling memo/memoless outgoing metadata
-    /// across rescan) per the protection-dominance analysis, and
-    /// adds the previously untested orchard-with-memo cell.
-    #[tokio::test]
-    async fn check_list_value_transfers_across_rescan() {
-        let inital_value = 100_000;
-        let (ref local_net, faucet, mut recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(inital_value).await;
-        let faucet_sapling = get_base_address_macro!(faucet, "sapling");
-        let faucet_unified = get_base_address_macro!(faucet, "unified");
-        from_inputs::quick_send(
-            &mut recipient,
-            vec![
-                (faucet_sapling.as_str(), 10_000, Some("sapling with memo")),
-                (faucet_sapling.as_str(), 10_000, None),
-                (faucet_unified.as_str(), 10_000, Some("orchard with memo")),
-                (faucet_unified.as_str(), 10_000, None),
-            ],
-        )
-        .await
-        .unwrap();
-        increase_height_and_wait_for_client(local_net, &mut recipient, 1)
-            .await
-            .unwrap();
-        let pre_rescan_transactions = recipient.transaction_summaries(false).await.unwrap();
-        let pre_rescan_summaries = recipient.value_transfers(true).await.unwrap();
-        recipient.rescan_and_await().await.unwrap();
-        let post_rescan_transactions = recipient.transaction_summaries(false).await.unwrap();
-        let post_rescan_summaries = recipient.value_transfers(true).await.unwrap();
-        assert_eq!(pre_rescan_transactions, post_rescan_transactions);
-        assert_eq!(pre_rescan_summaries, post_rescan_summaries);
-    }
-}
 /// The final send must gather more than one of the recipient's three
 /// sapling notes (10_000, 20_000, 30_000) to cover 30_000 plus the fee,
 /// making this the suite's only live broadcast of a multi-input sapling
