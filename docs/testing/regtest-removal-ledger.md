@@ -504,3 +504,4 @@ faucet-economics fee.
 - bound_note_reservation_and_external_spend_invalidation (10): `bound_note_reservation::bound_note_reservation_and_external_spend_invalidation`.
 - migrate_all_orchard_to_ironwood (13): `immediate_migration::migrate_all_orchard_to_ironwood`.
 - immediate_migration_chunks_a_fragmented_wallet (14): `immediate_migration::immediate_migration_chunks_a_fragmented_wallet`.
+- wallet_mempool_record_trails_validator_acceptance (9): carried by the existing `transmitted_transaction_has_mempool_status_before_mining`; its time bound retires.
