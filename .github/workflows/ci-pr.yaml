@@ -336,7 +336,7 @@ jobs:
     # A compile-bound job: it builds zingolib and zingo-cli under the nym
     # features for clippy and for the tests, so it runs on a sixteen-core
     # WarpBuild runner.
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'warp-ubuntu-2404-x64-16x' }}
     timeout-minutes: 45
     env:
       RUSTFLAGS: -D warnings
