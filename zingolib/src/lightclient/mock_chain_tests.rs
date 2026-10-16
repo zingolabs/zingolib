@@ -27,6 +27,8 @@ use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 use crate::wallet::error::ProposeSendError;
 use crate::wallet::keys::unified::ReceiverSelection;
 
+mod twins;
+
 /// An address belonging to no wallet on the mock net, so sends to it
 /// are external.
 fn external_address(pool: PoolType) -> String {

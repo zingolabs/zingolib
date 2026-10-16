@@ -364,22 +364,6 @@ async fn sole_transparent_coin(client: &LightClient) -> (OutputId, SpendStatus) 
     (coin.output_id(), wallet.output_spend_status(*coin))
 }
 
-#[tokio::test]
-async fn sync_all_expressible_epochs() {
-    // The zebrad config writer requires every upgrade through Canopy
-    // active at height 1, and the harness subsidy fixtures pair only
-    // with the fixture shape, so the expressible epoch boundaries are
-    // NU5/NU6 at height 2 and NU6.1/NU6.2 at height 5. Sync across all
-    // of them with room to spare.
-    let (local_net, mut lightclient) = scenarios::unfunded_client(
-        scenarios::default_test_activation_heights(),
-        scenarios::ChainCachePolicy::PerTest,
-    )
-    .await;
-    increase_height_and_wait_for_client(&local_net, &mut lightclient, 12)
-        .await
-        .unwrap();
-}
 use pepper_sync::wallet::{OrchardNote, SaplingNote};
 use zcash_local_net::validator::Validator;
 use zingolib::config::{ChainType, ClientConfig};

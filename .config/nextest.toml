@@ -21,7 +21,6 @@ filter = 'package(libtonode-tests) | package(zingo-cli)'
 [[profile.default.overrides]]
 filter = '''
 test(mempool_spend_balance_and_note_status_accounting)
-| test(sync_all_expressible_epochs)
 | test(send_mined_ironwood_to_ironwood)
 | test(faucet_recipient_default_in_one_chain)
 | test(send_shield_cycle)
@@ -52,7 +51,6 @@ filter = 'package(libtonode-tests) | package(zingo-cli)'
 [[profile.ci.overrides]]
 filter = '''
 test(mempool_spend_balance_and_note_status_accounting)
-| test(sync_all_expressible_epochs)
 | test(send_mined_ironwood_to_ironwood)
 | test(faucet_recipient_default_in_one_chain)
 | test(send_shield_cycle)
