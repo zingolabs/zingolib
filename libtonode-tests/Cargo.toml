@@ -6,6 +6,11 @@ publish = false
 
 [features]
 default = []
+# Sentinel tests pin environment contracts (zebrad behavior and the
+# zcash_local_net launch contract), not this repository's code. Off by
+# default: run them when the environment moves, such as infra pin bumps,
+# container-image bumps, activation-height changes.
+sentinels = []
 # Repo-wide policy gate (docs/testing/slow-gate-policy.md): a test whose
 # steady-state solo runtime exceeds 2x the median of this crate's
 # default suite moves behind this non-default feature at the next
@@ -16,7 +21,7 @@ slow = []
 # network, spend from one shared testnet wallet, and wait for real blocks.
 testnet = ["zingolib/nym"]
 # Everything beyond the default suite, in one switch.
-extra-credit-tests = ["slow"]
+extra-credit-tests = ["sentinels", "slow"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
@@ -27,18 +32,12 @@ http = { workspace = true }
 
 [dev-dependencies]
 incrementalmerkletree.workspace = true
-json = { workspace = true }
 pepper-sync = { workspace = true, features = ["test-features"] }
 shardtree.workspace = true
 tokio = { workspace = true, features = ["full"] }
-tracing.workspace = true
 tracing-subscriber.workspace = true
-zcash_address = { workspace = true, features = ["test-dependencies"] }
-zcash_client_backend = { workspace = true }
-zcash_primitives = { workspace = true }
 zcash_protocol = { workspace = true }
 # `testutils` exposes `time::test`, the tests' temporal parameters.
 zingo-netutils = { workspace = true, features = ["testutils"] }
-zingo-status = { workspace = true }
 zingo_test_vectors = { workspace = true }
 zip32 = { workspace = true }

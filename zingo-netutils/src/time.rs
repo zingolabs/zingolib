@@ -336,11 +336,6 @@ pub mod test {
     /// listener.
     pub const LOCAL_TLS_TEST_BOUND: Duration = Duration::from_secs(10);
 
-    /// Idle window after which a quiet chain is declared genuinely quiet:
-    /// the sentinel tests sleep this long, re-query, and assert nothing
-    /// moved.
-    pub const IDLE_OBSERVATION_WINDOW: Duration = Duration::from_secs(5);
-
     /// Deadline for a log line to reach the log file on disk.
     pub const LOG_FLUSH_DEADLINE: Duration = Duration::from_secs(15);
 
