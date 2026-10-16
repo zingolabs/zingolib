@@ -492,3 +492,4 @@ zebrad + zainod pair. The twins' arithmetic matched the live pins
 without adjustment on first passing run, including every
 transaction-summary literal in test 7 except the documented
 faucet-economics fee.
+- send_post_ironwood (59): carried by the existing `funded_send_confirms_on_the_mock_chain`, whose first balance check is this guarantee.

@@ -1135,13 +1135,6 @@ async fn send_pre_ironwood() {
     check_client_balances!(recipient, i: 0 o: 100_000 s: 0 t: 0);
 }
 
-#[tokio::test]
-async fn send_post_ironwood() {
-    let (_local_net, _faucet, recipient, _) =
-        scenarios::faucet_funded_recipient_default(100_000).await;
-    check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
-}
-
 // FIXME: add unified address discovery to pepper sync and add a test here
 
 mod basic_transactions {
