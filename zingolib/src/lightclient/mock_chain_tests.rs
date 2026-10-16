@@ -37,6 +37,25 @@ const FUNDING: u64 = 100_000;
 // crosses the activation.
 const DEFERRED_NU6_3: u32 = 130;
 
+fn blocks_to_reach(tip: u32, target: u32) -> Option<u32> {
+    unimplemented!("the blocks that carry the tip from {tip} to {target}")
+}
+
+#[test]
+fn the_blocks_to_reach_a_target_land_the_tip_on_it() {
+    for (tip, target) in [(2, 131), (101, 201), (5, 7)] {
+        let blocks =
+            blocks_to_reach(tip, target).expect("each tip in the table sits below its target");
+        assert_eq!(tip + blocks, target, "tip {tip}, target {target}");
+    }
+}
+
+#[test]
+fn a_tip_at_or_past_the_target_needs_no_blocks() {
+    assert_eq!(blocks_to_reach(130, 130), None);
+    assert_eq!(blocks_to_reach(131, 130), None);
+}
+
 fn external_wallet() -> crate::wallet::LightWallet {
     SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build()
 }

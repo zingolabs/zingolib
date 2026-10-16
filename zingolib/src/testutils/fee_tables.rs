@@ -99,3 +99,81 @@ pub fn one_to_one(
         .expect("actions expected to be in numerical range")
         .into_u64()
 }
+
+#[must_use]
+pub fn conventional_actions(logical_actions: usize) -> usize {
+    unimplemented!("the conventional action count of {logical_actions} logical actions")
+}
+
+#[must_use]
+pub fn conventional_fee(logical_actions: usize) -> u64 {
+    unimplemented!("the conventional fee of {logical_actions} logical actions")
+}
+
+#[must_use]
+pub fn padded_actions(inputs: usize, outputs: usize) -> usize {
+    unimplemented!("the padded action count of {inputs} inputs and {outputs} outputs")
+}
+
+#[must_use]
+pub fn shield(transparent_inputs: usize) -> u64 {
+    unimplemented!("the fee of shielding {transparent_inputs} transparent coins")
+}
+
+#[cfg(test)]
+mod tests {
+    use zcash_primitives::transaction::fees::zip317;
+
+    use super::{conventional_actions, conventional_fee, padded_actions, shield};
+
+    #[test]
+    fn the_conventional_action_count_floors_at_the_grace_actions() {
+        for logical_actions in 0..=zip317::GRACE_ACTIONS {
+            assert_eq!(conventional_actions(logical_actions), zip317::GRACE_ACTIONS);
+        }
+        assert_eq!(
+            conventional_actions(zip317::GRACE_ACTIONS + 1),
+            zip317::GRACE_ACTIONS + 1
+        );
+    }
+
+    #[test]
+    fn the_conventional_fee_floors_at_the_minimum_fee() {
+        for logical_actions in 0..=zip317::GRACE_ACTIONS {
+            assert_eq!(
+                conventional_fee(logical_actions),
+                zip317::MINIMUM_FEE.into_u64()
+            );
+        }
+    }
+
+    #[test]
+    fn the_conventional_fee_grows_by_one_marginal_fee_per_action_past_the_grace() {
+        for logical_actions in zip317::GRACE_ACTIONS + 1..=zip317::GRACE_ACTIONS + 4 {
+            assert_eq!(
+                conventional_fee(logical_actions) - conventional_fee(logical_actions - 1),
+                zip317::MARGINAL_FEE.into_u64()
+            );
+        }
+    }
+
+    #[test]
+    fn a_bundle_with_any_flow_pads_to_two_actions_and_an_empty_bundle_to_none() {
+        assert_eq!(padded_actions(0, 0), 0);
+        assert_eq!(padded_actions(1, 0), 2);
+        assert_eq!(padded_actions(0, 1), 2);
+        assert_eq!(padded_actions(2, 1), 2);
+        assert_eq!(padded_actions(3, 1), 3);
+        assert_eq!(padded_actions(1, 4), 4);
+    }
+
+    #[test]
+    fn a_shield_pays_one_action_per_transparent_coin_plus_the_padded_shielded_output() {
+        for transparent_inputs in 1..=4 {
+            assert_eq!(
+                shield(transparent_inputs),
+                conventional_fee(transparent_inputs + padded_actions(0, 1))
+            );
+        }
+    }
+}

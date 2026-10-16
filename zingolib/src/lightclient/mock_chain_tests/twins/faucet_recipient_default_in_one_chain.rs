@@ -14,6 +14,7 @@ use crate::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
 };
 use crate::testutils::assertions::assert_null_data_send;
+use crate::testutils::fee_tables;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::mock_indexer::MockNet;
 use crate::wallet::output::SpendStatus;
@@ -36,6 +37,68 @@ const UNIFIED_PAYMENT: u64 = 50_000;
 const OP_RETURN_FUNDING: u64 = 500_000;
 const OP_RETURN_PAYMENT: Zatoshis = Zatoshis::const_from_u64(100_000);
 const UNTRACKED_FUNDING: u64 = 100_000;
+
+fn sapling_note_ladder(notes: u64, step: u64) -> Vec<(u64, String)> {
+    unimplemented!("{notes} notes climbing by {step}, each memo its rung's number")
+}
+
+fn sapling_note_values() -> Vec<u64> {
+    sapling_note_ladder(SAPLING_NOTES, SAPLING_NOTE_STEP)
+        .into_iter()
+        .map(|(value, _)| value)
+        .collect()
+}
+
+fn covering_notes(ladder: &[u64], cost: u64) -> Option<Vec<u64>> {
+    unimplemented!("the largest notes of {ladder:?} that first cover {cost}")
+}
+
+fn send_back_fee() -> u64 {
+    fee_tables::one_to_one(Some(ShieldedPool::Sapling), PoolType::ORCHARD, true)
+}
+
+#[test]
+fn the_sapling_note_ladder_climbs_one_step_per_note_and_numbers_each_memo() {
+    assert_eq!(
+        sapling_note_ladder(3, 10),
+        [
+            (10, "1".to_string()),
+            (20, "2".to_string()),
+            (30, "3".to_string())
+        ]
+    );
+}
+
+#[test]
+fn the_named_notes_sit_at_both_ends_of_the_ladder() {
+    let values = sapling_note_values();
+    assert_eq!(values.first().copied(), Some(UNTOUCHED_SAPLING_NOTE));
+    assert_eq!(values.last().copied(), Some(LARGEST_SAPLING_NOTE));
+}
+
+#[test]
+fn covering_notes_gathers_the_largest_notes_first_until_the_cost_is_met() {
+    assert_eq!(covering_notes(&[10, 20, 30], 50), Some(vec![30, 20]));
+    assert_eq!(covering_notes(&[10, 20, 30], 31), Some(vec![30, 20]));
+    assert_eq!(covering_notes(&[10, 20, 30], 30), Some(vec![30]));
+    assert_eq!(covering_notes(&[10, 20, 30], 61), None);
+}
+
+#[test]
+fn sending_the_largest_note_back_spends_the_two_largest_notes_with_no_change() {
+    let values = sapling_note_values();
+    let cost = LARGEST_SAPLING_NOTE + send_back_fee();
+    let spent =
+        covering_notes(&values, cost).expect("the ladder covers its largest note plus the fee");
+    assert_eq!(spent.len(), 2);
+    assert_eq!(spent.iter().sum::<u64>(), cost);
+    assert_eq!(values.iter().sum::<u64>() - cost, UNTOUCHED_SAPLING_NOTE);
+    assert_eq!(
+        fee_tables::padded_actions(spent.len(), 0),
+        fee_tables::padded_actions(1, 0),
+        "a second sapling input stays within the padded pair, so the one-input fee holds"
+    );
+}
 
 /// - Mines the mempool into a block whose shielded coinbase pays the faucet the reward plus `fee`.
 async fn mine_mempool_to_faucet(net: &MockNet, faucet_ua: &str, fee: u64) {
