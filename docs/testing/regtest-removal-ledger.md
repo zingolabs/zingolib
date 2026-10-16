@@ -520,3 +520,4 @@ zingolabs zainod testnet node once it exists.
 - add_subtree_roots (15): `subtree_roots::add_subtree_roots`, against testnet instead of the mainnet indexer the default suite dialed; the mock chain serves no subtree roots, so both halves are the real indexer's.
 - served_outputs_match_chain_metadata_deltas (22): `chain_metadata::served_outputs_match_chain_metadata_deltas`, over the window around testnet's NU6.3 activation.
 - propose_and_send_with_op_return_confirms_on_chain (60), confirmation half: `op_return::propose_and_send_with_op_return_confirms_on_testnet`, the network's standardness verdict on the null-data output.
+- ZIP 318 enforcement canary (ruling 11, issue #2539): `zip318_canary::a_payment_to_an_orchard_receiver_lands_in_the_expected_pool`, whose expectation flips together with ADR 0009.

@@ -15,5 +15,7 @@ mod op_return;
 mod reload;
 #[path = "testnet/subtree_roots.rs"]
 mod subtree_roots;
+#[path = "testnet/zip318_canary.rs"]
+mod zip318_canary;
 
 const TESTNET_INDEXER: &str = "https://testnet.zec.rocks:443";
