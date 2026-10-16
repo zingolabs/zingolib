@@ -5,8 +5,7 @@ edition = "2024"
 publish = false
 
 [features]
-default = ["chain_generic_tests"]
-chain_generic_tests = []
+default = []
 # Sentinel tests pin environment contracts (zebrad behavior and the
 # zcash_local_net launch contract), not this repository's code. Off by
 # default: run them when the environment moves, such as infra pin bumps,

@@ -492,3 +492,17 @@ zebrad + zainod pair. The twins' arithmetic matched the live pins
 without adjustment on first passing run, including every
 transaction-summary literal in test 7 except the documented
 faucet-economics fee.
+- send_post_ironwood (59): carried by the existing `funded_send_confirms_on_the_mock_chain`, whose first balance check is this guarantee.
+- send_pre_ironwood (58): `send_pre_ironwood::send_pre_ironwood`.
+- orchard_notes_in_untracked_history_are_recovered (21), and the Ironwood half of entry 20: `untracked_history::{orchard,ironwood}_notes_in_untracked_history_are_recovered`.
+- rescan_still_have_outgoing_notes::self_send (50): `rescan_self_send::self_send`, the first twin to rescan against the mock chain.
+- rescan_still_have_outgoing_notes::check_list_value_transfers_across_rescan (51): `rescan_value_transfers::check_list_value_transfers_across_rescan`.
+- unified_address_discovery (39): `unified_address_discovery::unified_address_discovery`.
+- test_scanning_in_watch_only_mode (47): `watch_only::test_scanning_in_watch_only_mode`, with its two balance-bound helpers.
+- received_tx_status_pending_to_confirmed_with_mempool_monitor (41): `received_mempool_status::received_tx_status_pending_to_confirmed_with_mempool_monitor`.
+- mempool_spend_balance_and_note_status_accounting (55): `mempool_spend_accounting::mempool_spend_balance_and_note_status_accounting`; the mock mempool is synchronous, so one sync session records each mempool status and no loop or timer remains.
+- bound_note_reservation_and_external_spend_invalidation (10): `bound_note_reservation::bound_note_reservation_and_external_spend_invalidation`.
+- migrate_all_orchard_to_ironwood (13): `immediate_migration::migrate_all_orchard_to_ironwood`.
+- immediate_migration_chunks_a_fragmented_wallet (14): `immediate_migration::immediate_migration_chunks_a_fragmented_wallet`.
+- wallet_mempool_record_trails_validator_acceptance (9): carried by the existing `transmitted_transaction_has_mempool_status_before_mining`; its time bound retires, and the `WALLET_RECORD_LAG_BOUND` constant that carried it goes with it.
+- generate_a_range_of_value_transfers (1) and send_shield_cycle (2): carried by the existing `generate_a_range_of_value_transfers_on_the_mock_chain` and `send_shield_cycle_on_the_mock_chain`, which run the same fixtures; the `chain_generic_tests` feature goes with the file.
