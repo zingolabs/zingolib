@@ -1,0 +1,56 @@
+# rust-cache saves one entry per job and lockfile hash, and restores by
+# the key without the hash, newest first. Only the newest entry of each
+# family is ever restored, but every older one stays until the seven-day
+# retention removes it. On 2026-10-16 dev held up to eight lockfile
+# hashes per family, 53 GB in 201 entries against a 50 GB limit, so
+# GitHub evicted entries and runs built cold. The saves come only from
+# dev, so this workflow runs after each workflow that saves from dev and
+# hands the store to the workbench tool prune-cache-families, which
+# deletes every rust-cache entry whose family has a newer one. A delete
+# that fails does not stop the others; an entry that GitHub evicted in
+# the meantime counts as done. The tool leaves setup-gradle's entries
+# alone: its bundles are content-addressed and restored by exact key, and
+# the newest gradle-home entry may still name an older bundle.
+name: Prune the cache families
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+      - CI (Nightly)
+      - Coverage (Daily)
+      - Workbench
+      - No duplicated code
+      - Binding Layer manifest
+      - Binding Layer changelog
+      - Publish the Binding Layer
+    types: [completed]
+    branches: [dev]
+
+permissions:
+  actions: write
+
+concurrency:
+  group: ${{ github.workflow }}
+
+jobs:
+  prune:
+    name: Keep the newest entry of each family
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+        with:
+          workspaces: tools/workbench
+
+      - name: Delete the superseded entries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: >-
+          cargo run --quiet --manifest-path tools/workbench/Cargo.toml
+          --bin prune-cache-families
