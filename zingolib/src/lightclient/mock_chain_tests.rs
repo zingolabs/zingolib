@@ -19,6 +19,7 @@ use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
+use zingo_common_components::protocol::ActivationHeights;
 
 use crate::check_client_balances;
 use crate::lightclient::LightClient;
@@ -87,6 +88,52 @@ async fn funding_at_next_height(
     receivers: Vec<(&str, u64, Option<&str>)>,
 ) -> Vec<u8> {
     faucet_funding_transaction_on(chain.activation_heights(), chain.next_height(), receivers).await
+}
+
+/// The way a chain fails to mirror the chain one funding transaction was built for.
+#[derive(Debug, PartialEq, Eq)]
+enum MirrorMismatch {
+    ActivationHeights,
+    NextHeight,
+}
+
+fn mirror_mismatch(
+    built_for: (ActivationHeights, BlockHeight),
+    chain: (ActivationHeights, BlockHeight),
+) -> Option<MirrorMismatch> {
+    unimplemented!(
+        "whether a chain at {chain:?} mirrors the chain the funding was built for at {built_for:?}"
+    )
+}
+
+#[test]
+fn a_chain_with_the_same_schedule_and_next_height_mirrors_the_first() {
+    let schedule = crate::testutils::mock_activation_heights();
+    let height = BlockHeight::from_u32(7);
+    assert_eq!(
+        mirror_mismatch((schedule, height), (schedule, height)),
+        None
+    );
+}
+
+#[test]
+fn a_different_schedule_is_the_first_mismatch_named_and_a_different_height_the_second() {
+    let schedule = crate::testutils::mock_activation_heights();
+    let deferred = crate::testutils::mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3);
+    let height = BlockHeight::from_u32(7);
+    let later = BlockHeight::from_u32(8);
+    assert_eq!(
+        mirror_mismatch((schedule, height), (deferred, height)),
+        Some(MirrorMismatch::ActivationHeights)
+    );
+    assert_eq!(
+        mirror_mismatch((schedule, height), (schedule, later)),
+        Some(MirrorMismatch::NextHeight)
+    );
+    assert_eq!(
+        mirror_mismatch((schedule, height), (deferred, later)),
+        Some(MirrorMismatch::ActivationHeights)
+    );
 }
 
 /// - Mines one empty block into every chain in `nets`, then one block carrying a funding

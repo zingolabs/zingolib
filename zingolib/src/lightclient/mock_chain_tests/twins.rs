@@ -49,3 +49,47 @@ fn migrated_value(value_transfers: &ValueTransfers, txids: &[TxId]) -> u64 {
         })
         .sum()
 }
+
+/// Where a wallet's rescan stands against the chain tip after one more sync session.
+#[derive(Debug, PartialEq, Eq)]
+enum RescanProgress {
+    CaughtUp,
+    Behind,
+    Exhausted,
+}
+
+fn rescan_progress(
+    scanned: Option<u32>,
+    tip: u32,
+    sessions: usize,
+    limit: usize,
+) -> RescanProgress {
+    unimplemented!(
+        "a wallet scanned to {scanned:?} against tip {tip} after {sessions} of {limit} sessions"
+    )
+}
+
+#[test]
+fn a_wallet_scanned_to_the_tip_or_past_it_has_caught_up_whatever_the_session_count() {
+    for sessions in [0, 1, 5] {
+        assert_eq!(
+            rescan_progress(Some(10), 10, sessions, 5),
+            RescanProgress::CaughtUp
+        );
+        assert_eq!(
+            rescan_progress(Some(11), 10, sessions, 5),
+            RescanProgress::CaughtUp
+        );
+    }
+}
+
+#[test]
+fn a_wallet_below_the_tip_is_behind_until_the_sessions_run_out() {
+    assert_eq!(rescan_progress(Some(9), 10, 1, 5), RescanProgress::Behind);
+    assert_eq!(rescan_progress(None, 10, 4, 5), RescanProgress::Behind);
+    assert_eq!(
+        rescan_progress(Some(9), 10, 5, 5),
+        RescanProgress::Exhausted
+    );
+    assert_eq!(rescan_progress(None, 10, 6, 5), RescanProgress::Exhausted);
+}
