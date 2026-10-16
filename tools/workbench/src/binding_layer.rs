@@ -326,6 +326,7 @@ pub const ABI_ARTIFACT: &str = "abi";
 pub const ARTIFACT_KINDS: [&str; 2] = [BUNDLE_ARTIFACT, ABI_ARTIFACT];
 pub const ARTIFACT_WILDCARD: &str = "*";
 const ARTIFACT_SEPARATOR: &str = "-";
+pub const ARCHIVE_SUFFIX: &str = ".tar.gz";
 pub const WALLET_MANIFEST: &str = "zingolib/Cargo.toml";
 const MANIFEST_VERSION_PATH: [&str; 2] = ["package", "version"];
 pub const ANDROID_BUILD_DIR: &str = "bindings/android/build";
@@ -930,6 +931,8 @@ mod tests {
         assert!(reader.contains(&format!("METADATA = '{MAVEN_METADATA_FILE}';")));
         assert!(reader.contains(&format!("COMMIT_CHARACTERS = {MAVEN_COMMIT_LENGTH};")));
         assert!(reader.contains(&format!("VERSION_SEPARATOR = '{MAVEN_VERSION_SEPARATOR}';")));
+        let fetch = include_str!("../../../bindings/pin/lib/fetch_binding_layer.mjs");
+        assert!(fetch.contains(&format!("ARCHIVE_SUFFIX = '{ARCHIVE_SUFFIX}';")));
     }
 
     #[test]
