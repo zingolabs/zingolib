@@ -508,3 +508,12 @@ faucet-economics fee.
 - generate_a_range_of_value_transfers (1) and send_shield_cycle (2): carried by the existing `generate_a_range_of_value_transfers_on_the_mock_chain` and `send_shield_cycle_on_the_mock_chain`, which run the same fixtures; the `chain_generic_tests` feature goes with the file.
 - faucet_recipient_default_in_one_chain (20, 42, 48, 49, 52, 54, 60): `faucet_recipient_default_in_one_chain::faucet_recipient_default_in_one_chain`, six phases on one mock chain whose faucet is a shielded-coinbase miner, so its reward arithmetic pins the mock's schedule rather than zebra's subsidy. The OP_RETURN phase's confirmation guarantee is the network's standardness policy and stays a testnet cell.
 - two_phase_migration_end_to_end (12), ignored on regtest pending node support: `two_phase_migration::two_phase_migration_end_to_end`, funded below a deferred activation and mined across it while the migration awaits confirmations.
+
+## Testnet cells (2026-10-15)
+
+Each line names a guarantee that needs a real network and the cell that
+carries it under `libtonode-tests/tests/testnet/`, behind the non-default
+`testnet` feature, compiled on every pull request and run only against the
+zingolabs zainod testnet node once it exists.
+
+- reload_wallet_after_short_sync (62) and the four GloryGoddess self-sends from zingolib's send.rs tests: `reload::reload_wallet_after_short_sync` and `glory_goddess::testnet_send_to_self_*`, no longer `#[ignore]`.
