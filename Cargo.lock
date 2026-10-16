@@ -1784,7 +1784,6 @@ dependencies = [
  "shardtree",
  "tokio",
  "tracing-subscriber",
- "zcash_primitives",
  "zcash_protocol",
  "zingo-netutils",
  "zingo_test_vectors",

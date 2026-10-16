@@ -22,7 +22,6 @@ pepper-sync = { workspace = true, features = ["test-features"] }
 shardtree.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tracing-subscriber.workspace = true
-zcash_primitives = { workspace = true }
 zcash_protocol = { workspace = true }
 # `testutils` exposes `time::test`, the tests' temporal parameters.
 zingo-netutils = { workspace = true, features = ["testutils"] }
