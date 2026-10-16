@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `time::test::WALLET_RECORD_LAG_BOUND`, behind `testutils`. The live test
+  that bounded the sender's wallet record reaching the mempool retired
+  with the regtest removal, and no other test enforced the bound.
+
 ### Fixed
 
 ## [6.0.0] - 2026-10-15

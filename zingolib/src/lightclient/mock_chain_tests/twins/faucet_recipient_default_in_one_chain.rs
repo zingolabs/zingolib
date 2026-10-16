@@ -7,7 +7,7 @@ use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
-use super::{HOSPITAL_MUSEUM, untracked_history};
+use super::{HOSPITAL_MUSEUM, untracked_history, zatoshis};
 use crate::check_client_balances;
 use crate::lightclient::LightClient;
 use crate::perspective::value_transfer::{
@@ -29,10 +29,6 @@ const UNTOUCHED_SAPLING_NOTE: u64 = SAPLING_NOTE_STEP;
 /// One transparent input plus the padded two-action ironwood pair, at the ZIP-317 marginal fee.
 const TRANSPARENT_SHIELD_FEE: u64 = 15_000;
 const UNTRACKED_FUNDING: u64 = 100_000;
-
-fn zatoshis(value: u64) -> Zatoshis {
-    Zatoshis::from_u64(value).expect("test values stay within the money range")
-}
 
 /// - Mines the mempool into a block whose shielded coinbase pays the faucet the reward plus `fee`.
 async fn mine_mempool_to_faucet(net: &MockNet, faucet_ua: &str, fee: u64) {

@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
-use super::{HOSPITAL_MUSEUM, continuous_sync_wallet_settings, fund_on_chain, migrated_value};
+use super::{HOSPITAL_MUSEUM, continuous_sync_wallet_settings, fund, migrated_value};
 use crate::testutils::lightclient::get_base_address;
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
@@ -32,7 +32,7 @@ async fn two_phase_migration_end_to_end() {
     let recipient_address =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
     net.chain.write().await.mine_empty_blocks(1);
-    fund_on_chain(&net, vec![(&recipient_address, FUNDING, None)]).await;
+    fund(&net, vec![(&recipient_address, FUNDING, None)], 0).await;
     {
         let mut chain = net.chain.write().await;
         let tip = chain.tip();
