@@ -71,7 +71,7 @@ enum Region {
     Char,
 }
 
-fn is_identifier_character(character: char) -> bool {
+pub(crate) fn is_identifier_character(character: char) -> bool {
     character.is_alphanumeric() || character == '_'
 }
 

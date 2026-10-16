@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use toml_edit::{DocumentMut, Item};
 
-use crate::test_placement::Function;
+use crate::test_placement::{is_identifier_character, Function};
 
 pub const NEXTEST_CONFIG: &str = ".config/nextest.toml";
 
@@ -86,10 +86,7 @@ fn tokens(text: &str) -> Result<Vec<Token>, String> {
             }
             start if start.is_alphabetic() || start == '_' => {
                 let word_start = at;
-                while chars
-                    .get(at)
-                    .is_some_and(|c| c.is_alphanumeric() || *c == '_')
-                {
+                while chars.get(at).is_some_and(|c| is_identifier_character(*c)) {
                     at += 1;
                 }
                 let word: String = chars[word_start..at].iter().collect();
@@ -145,6 +142,13 @@ fn term(name: &str, argument: &str) -> Result<FiltersetTerm, String> {
     }
 }
 
+// The two binary operator levels of a filterset, loosest first.
+#[derive(Clone, Copy)]
+enum Precedence {
+    Or,
+    And,
+}
+
 struct Parser {
     tokens: Vec<Token>,
     at: usize,
@@ -155,12 +159,15 @@ impl Parser {
         self.tokens.get(self.at) == Some(token)
     }
 
-    fn joined(
-        &mut self,
-        operator: Token,
-        operand: fn(&mut Parser) -> Result<Filterset, String>,
-        join: fn(Vec<Filterset>) -> Filterset,
-    ) -> Result<Filterset, String> {
+    fn operands(&mut self, precedence: Precedence) -> Result<Filterset, String> {
+        let (operator, join): (Token, fn(Vec<Filterset>) -> Filterset) = match precedence {
+            Precedence::Or => (Token::Or, Filterset::Or),
+            Precedence::And => (Token::And, Filterset::And),
+        };
+        let operand = |parser: &mut Parser| match precedence {
+            Precedence::Or => parser.operands(Precedence::And),
+            Precedence::And => parser.unary(),
+        };
         let mut parts = vec![operand(self)?];
         while self.next_is(&operator) {
             self.at += 1;
@@ -170,14 +177,6 @@ impl Parser {
             1 => parts.remove(0),
             _ => join(parts),
         })
-    }
-
-    fn or(&mut self) -> Result<Filterset, String> {
-        self.joined(Token::Or, Parser::and, Filterset::Or)
-    }
-
-    fn and(&mut self) -> Result<Filterset, String> {
-        self.joined(Token::And, Parser::unary, Filterset::And)
     }
 
     fn unary(&mut self) -> Result<Filterset, String> {
@@ -190,7 +189,7 @@ impl Parser {
         match token {
             Token::Not => Ok(Filterset::Not(Box::new(self.unary()?))),
             Token::Open => {
-                let inner = self.or()?;
+                let inner = self.operands(Precedence::Or)?;
                 if !self.next_is(&Token::Close) {
                     return Err("a parenthesis is unclosed".to_string());
                 }
@@ -209,7 +208,7 @@ pub fn filterset(text: &str) -> Result<Filterset, String> {
         tokens: tokens(text)?,
         at: 0,
     };
-    let filterset = parser.or()?;
+    let filterset = parser.operands(Precedence::Or)?;
     if parser.at < parser.tokens.len() {
         return Err(format!("{text}: a term follows the filterset"));
     }
