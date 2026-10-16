@@ -772,7 +772,7 @@ mod tests {
         let messages = format!(
             "{{\"reason\":\"build-finished\",\"success\":true}}\n{}{}",
             script(
-                "zingolib_testutils#0.1.0",
+                "zingo-status#0.1.0",
                 "[[\"ZINGOLIB_DESCRIPTOR\",\"wrong\"]]"
             ),
             script(

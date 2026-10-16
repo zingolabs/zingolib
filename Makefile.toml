@@ -43,25 +43,19 @@ Test front door — `makers test "$@"` is a containerized
 
 Reserved first words expand to canned invocations:
   makers test packages        every workspace package EXCEPT the live
-                              ones (libtonode-tests and zingo-cli)
-  makers test live            ONLY libtonode-tests and zingo-cli
+                              one (zingo-cli)
+  makers test live            ONLY zingo-cli
 
 Explicit package-selection flags (-p, --workspace, --exclude, ...) replace
 a reserved word's scope entirely. Extra args after a reserved word are
 forwarded to nextest:
   makers test live --no-fail-fast
 
-Run the three gated phases (packages, zingo-cli, libtonode), where a
+Run the two gated phases (packages, zingo-cli), where a
 failing phase stops the later, more expensive ones, with a combined
 per-phase summary:
   makers hierarchy-test
 
-Run the same three phases with the libtonode one narrowed to the
-tip_spend_rejection::tip_note_to_orchard cell, which is the cheapest run
-that still exercises the chain-level machinery. That phase also builds
-only one test binary of libtonode-tests, via a cargo target
-selection that leaves the shared --workspace scope intact:
-  makers lite-hierarchy
 
 Common usage:
   makers container-test
@@ -226,24 +220,14 @@ container_nextest_run() {
     -v "zingolib-cargo-git:/root/.cargo/git${mount_suffix}" \
     -v "zingolib-cargo-registry:/root/.cargo/registry${mount_suffix}" \
     -e "NEXTEST_EXPERIMENTAL_LIBTEST_JSON=${NEXTEST_EXPERIMENTAL_LIBTEST_JSON}" \
-    -e "TEST_BINARIES_DIR=/workspace/test_binaries/bins" \
     ${forwarded_env[@]+"${forwarded_env[@]}"} \
     -w /workspace \
     "${IMAGE_NAME}:${tag}" \
-    bash -lc 'mkdir -p test_binaries/bins && ln -sf /usr/bin/zainod /usr/bin/zebrad test_binaries/bins/ && exec "$@"' \
-    bash \
     cargo nextest run "${args[@]}"
 }
 '''
 script.main = "true"
 
-[tasks.prepare-test-binaries-dir]
-description = "Ensure the local test binary directory exists"
-script_runner = "bash"
-script = '''
-set -euo pipefail
-mkdir -p test_binaries/bins
-'''
 
 [tasks.compute-image-tag]
 description = "Print the reproducible local test image tag"
@@ -260,7 +244,7 @@ runtime="$(container_runtime)"
 for volume in zingolib-container-target zingolib-cargo-git zingolib-cargo-registry; do
   "${runtime}" volume inspect "${volume}" >/dev/null 2>&1 || "${runtime}" volume create "${volume}" >/dev/null
 done
-mkdir -p target test_binaries/bins
+mkdir -p target
 '''
 
 [tasks.build-image]
@@ -312,7 +296,6 @@ fi
 [tasks.local-run]
 clear = true
 description = "Run reproducible workspace tests on the host with the same defaults used by PR CI"
-dependencies = ["prepare-test-binaries-dir"]
 script_runner = "bash"
 extend = "base-script"
 script.main = '''
@@ -374,7 +357,7 @@ extend = "base-script"
 script.main = '''
 # The packages that need live network infrastructure. Single source of truth
 # for the packages/live partition.
-live_packages=(libtonode-tests zingo-cli)
+live_packages=(zingo-cli)
 
 # The live packages the `packages` set drops from the BUILD as well as from
 # the run. Nothing in that set runs their tests, and a failing packages
@@ -388,11 +371,7 @@ live_packages=(libtonode-tests zingo-cli)
 # `makers exclusion-audit <candidate>` decides it, and it reads this array,
 # so what is written here is what gets checked.
 #
-# The array is empty because both candidates were audited and rejected.
-# libtonode-tests looked safe across the workspace's own crates, and is not:
-# it alone activates `zcash_address/test-dependencies`, a registry crate the
-# whole zcash stack and therefore zingolib sits above, so excluding it would
-# build that stack twice and make a hierarchy run slower rather than faster.
+# The array is empty because the one candidate was audited and rejected:
 # zingo-cli alone activates `zingolib/nym`. Nothing is currently excludable,
 # and the machinery stays so a future candidate is a one-word change plus an
 # audit run.
@@ -445,7 +424,7 @@ exec makers container-test ${set_args[@]+"${set_args[@]}"} "$@"
 '''
 
 [tasks.hierarchy-test]
-description = "Run the three gated phases (packages, zingo-cli, libtonode): a failing phase stops the later, more expensive ones; prints a combined per-phase summary"
+description = "Run the two gated phases (packages, zingo-cli): a failing phase stops the later, more expensive one; prints a combined per-phase summary"
 command = "cargo"
 args = [
   "run",
@@ -458,20 +437,6 @@ args = [
   "${@}",
 ]
 
-[tasks.lite-hierarchy]
-description = "Run the same three gated phases as hierarchy-test, with the libtonode phase narrowed to tip_spend_rejection::tip_note_to_orchard and built as that one test binary rather than all of them: the cheapest run that still proves the chain-level machinery, for gating between commits rather than before a push"
-command = "cargo"
-args = [
-  "run",
-  "-q",
-  "--manifest-path",
-  "tools/workbench/Cargo.toml",
-  "--bin",
-  "test-summary",
-  "--",
-  "--lite",
-  "${@}",
-]
 
 [tasks.exclusion-audit]
 description = "Check that every member in Makefile.toml's build_excludable array can be dropped from the packages phase's build for free, by diffing each workspace crate's resolved features with and without it. Name extra candidates as arguments to audit a proposed addition before writing it down."
@@ -570,7 +535,6 @@ container_nextest_run --rerun latest "$@"
 [tasks.run-ignored]
 clear = true
 description = "Run ignored tests with the reproducible nextest profile"
-dependencies = ["prepare-test-binaries-dir"]
 script_runner = "bash"
 extend = "base-script"
 script.main = '''
@@ -579,15 +543,3 @@ while IFS= read -r line; do args+=("${line}"); done < <(nextest_args --run-ignor
 cargo nextest run "${args[@]}"
 '''
 
-# The extra-credit libtonode suite: the sentinels (environment-contract
-# checks) and the slow gate. Both are off by default and behind the
-# `extra-credit-tests` feature; this is their scheduled entry point — a
-# containerized nextest run so a cron or CI job can invoke one canonical
-# command. Extra nextest args pass through.
-[tasks.test-extra-credit]
-description = "Containerized run of libtonode's extra-credit suite (sentinels + slow)"
-script_runner = "bash"
-extend = "base-script"
-script.main = '''
-exec makers container-test --package libtonode-tests --features extra-credit-tests "$@"
-'''

@@ -179,3 +179,23 @@ merges.
 The workspace dependency diet. The zaino pull requests. The zingo-mobile
 repoint off `*_mobileclient`. The nightly job for the `testnet` feature,
 when the node exists.
+
+## 5. Status (2026-10-15)
+
+The stack is open on dev, each pull request based on the one before:
+
+1. #2993 the plan and the glossary terms.
+2. #2994 the testnet fixture and the gated `testnet` feature.
+3. #2995 mock verification of proofs, signatures and null-data standardness.
+4. #2996 the fifteen nothing-new twins, one commit each.
+5. #2997 the unified chain and the two-phase migration twins.
+6. #2998 the testnet cells, including the ZIP 318 canary and the Mixnet Mode cell.
+7. #2999 the retirements.
+8. The cut, as a draft until the zaino exports land.
+
+The decision record and the ADR 0009 amendment are zingo-adrs #43. The
+consumer gate of ruling 5 is already satisfied: neither zingo-mobile nor
+zaino names `zingolib_testutils`. Still open: the zaino pull requests for
+the exported guarantees, the shard-count timing run of ruling 8, the
+nightly job for the `testnet` feature once the node exists, and the
+dependency diet of ruling 6 as its own plan.

@@ -1,16 +1,13 @@
-//! `test-summary` runs the three test phases and prints a combined summary.
+//! `test-summary` runs the two test phases and prints a combined summary.
 //!
 //! Invoked as `makers hierarchy-test`, which runs
-//! `cargo run --bin test-summary -- <nextest args>`, or as
-//! `makers lite-hierarchy`, which adds `--lite` to narrow the libtonode
-//! phase to the `tip_note_to_orchard` cell.
-//! Runs the `packages`, `zingo-cli`, and `libtonode` phases (each in its own
-//! CI container via the `makers test` front door), streams each run's output
-//! while capturing it, parses the nextest summary line, and aggregates the
-//! totals.
+//! `cargo run --bin test-summary -- <nextest args>`.
+//! Runs the `packages` and `zingo-cli` phases (each in its own CI container
+//! via the `makers test` front door), streams each run's output while
+//! capturing it, parses the nextest summary line, and aggregates the totals.
 //!
-//! Phases gate: a failing phase stops the later, more expensive phases from
-//! launching (a broken unit test should never cost a libtonode run). The
+//! Phases gate: a failing phase stops the later, more expensive phase from
+//! launching (a broken unit test should never cost a zingo-cli run). The
 //! summary table still prints for every phase, marking the ones a failure
 //! prevented from running.
 //!
@@ -47,40 +44,7 @@ fn is_package_selection_arg(arg: &str) -> bool {
 const PHASES: &[(&str, &str)] = &[
     ("packages", "packages"),
     ("zingo-cli", "-E 'package(zingo-cli)'"),
-    ("libtonode", "-E 'package(libtonode-tests)'"),
 ];
-
-/// The same phases with the libtonode one narrowed to a single fixture,
-/// selected by [`LITE_FLAG`] and run as `makers lite-hierarchy`.
-///
-/// `tip_note_to_orchard` funds a recipient and spends a tip-block note
-/// to confirmation against a real LocalNet,
-/// so it is the cheapest phase that still proves the chain-level machinery
-/// the earlier phases cannot reach. The narrowing buys back the libtonode
-/// phase's run time, which is what makes the gate usable between commits
-/// rather than only before a push.
-///
-/// The phase also carries `--test tip_spend_rejection`, which narrows what the
-/// phase BUILDS to that one of `libtonode-tests`' test binaries. It is
-/// a cargo target selection rather than a package selection, so cargo still
-/// resolves it against the whole workspace and the `--workspace` scope the
-/// front door appends survives: the feature unification stays identical to
-/// the other phases, and no distinct zingolib variant is compiled. On a
-/// cold run this saves nothing, because the packages phase precedes it
-/// under `--workspace` and has already built them all; it saves the build
-/// wherever this phase meets a tree the earlier phases did not compile.
-const LITE_PHASES: &[(&str, &str)] = &[
-    ("packages", "packages"),
-    ("zingo-cli", "-E 'package(zingo-cli)'"),
-    (
-        "libtonode",
-        "-E 'package(libtonode-tests) & test(tip_spend_rejection::tip_note_to_orchard)' \
-         --test tip_spend_rejection",
-    ),
-];
-
-/// This binary's own flag, consumed here and never forwarded to nextest.
-const LITE_FLAG: &str = "--lite";
 
 /// One nextest run's tallies, zero where the summary line was absent.
 #[derive(Default)]
@@ -268,16 +232,9 @@ fn print_row(label: &str, s: &Summary) {
 }
 
 fn main() -> Result<(), std::io::Error> {
-    let mut forwarded_args: Vec<String> = std::env::args().skip(1).collect();
+    let forwarded_args: Vec<String> = std::env::args().skip(1).collect();
 
-    // The lite flag chooses the phase set here; forwarding it would reach
-    // nextest, which knows no such flag.
-    let phases = if forwarded_args.iter().any(|arg| arg == LITE_FLAG) {
-        forwarded_args.retain(|arg| arg != LITE_FLAG);
-        LITE_PHASES
-    } else {
-        PHASES
-    };
+    let phases = PHASES;
 
     // Forwarded args reach every phase's nextest invocation, where a
     // package selection would silently replace all three phase scopes
@@ -402,7 +359,7 @@ mod package_selection_guard {
     /// build scope.
     #[test]
     fn phase_invocations_select_tests_not_packages() {
-        for (_, invocation) in PHASES.iter().chain(LITE_PHASES) {
+        for (_, invocation) in PHASES.iter() {
             for token in invocation.split_whitespace() {
                 let token = token.trim_matches('\'');
                 assert!(
@@ -411,66 +368,6 @@ mod package_selection_guard {
                 );
             }
         }
-    }
-
-    /// HYPOTHESIS: the lite run is the full run with one phase narrowed, so
-    /// it gates on everything the full run gates on except the libtonode
-    /// tests it deliberately drops. Falsified if the two sets disagree on
-    /// any other phase, which would let a lite run pass work the full run
-    /// would have caught.
-    #[test]
-    fn lite_narrows_the_libtonode_phase_and_nothing_else() {
-        assert_eq!(
-            PHASES.len(),
-            LITE_PHASES.len(),
-            "a lite run must have the same phases in the same order"
-        );
-        for ((phase, full), (lite_phase, lite)) in PHASES.iter().zip(LITE_PHASES) {
-            assert_eq!(phase, lite_phase);
-            if *phase == "libtonode" {
-                assert_ne!(full, lite, "the libtonode phase is the one lite narrows");
-            } else {
-                assert_eq!(full, lite, "lite must not touch the {phase} phase");
-            }
-        }
-    }
-
-    /// HYPOTHESIS: the lite phase narrows by test rather than by package, so
-    /// it keeps the shared `--workspace` build scope every phase relies on.
-    /// Falsified if the filterset drops the package term or the test term.
-    #[test]
-    fn the_lite_libtonode_phase_names_a_package_and_a_test() -> Result<(), Vec<String>> {
-        let (_, lite) = workbench::required(
-            LITE_PHASES.iter().find(|(phase, _)| *phase == "libtonode"),
-            "libtonode phase in the lite set",
-        )?;
-        assert!(lite.contains("package(libtonode-tests)"), "{lite}");
-        assert!(
-            lite.contains("test(tip_spend_rejection::tip_note_to_orchard)"),
-            "{lite}"
-        );
-        Ok(())
-    }
-
-    /// HYPOTHESIS: the lite phase builds one test binary rather than the
-    /// ten `libtonode-tests` carries, and does so with a cargo TARGET
-    /// selection, which cargo resolves workspace-wide and which therefore
-    /// leaves the appended `--workspace` scope intact. Falsified if the
-    /// target selection is missing, or if it is spelled as a package
-    /// selection, which would re-unify features and compile a second
-    /// zingolib.
-    #[test]
-    fn the_lite_libtonode_phase_builds_one_test_binary() -> Result<(), Vec<String>> {
-        let (_, lite) = workbench::required(
-            LITE_PHASES.iter().find(|(phase, _)| *phase == "libtonode"),
-            "libtonode phase in the lite set",
-        )?;
-        assert!(lite.contains("--test tip_spend_rejection"), "{lite}");
-        assert!(
-            !is_package_selection_arg("--test"),
-            "--test must stay a target selection, so the front door still appends --workspace"
-        );
-        Ok(())
     }
 
     #[test]

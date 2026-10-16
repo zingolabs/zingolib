@@ -9,9 +9,7 @@ const MIN_LINES: &str = "0";
 const THRESHOLD: &str = "0.9";
 const MAX_EXACT: &str = "0";
 const MAX_NEAR: &str = "34";
-const EXCLUDE: [&str; 12] = [
-    "libtonode-tests/",
-    "zingolib_testutils/",
+const EXCLUDE: [&str; 10] = [
     "zingo-cli/tests/",
     "zingo-netutils/nym-proxy-ffi/tests/",
     "zingolib/src/testutils/",

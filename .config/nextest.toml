@@ -6,8 +6,7 @@ testnet = { max-threads = 1 }
 fail-fast = false
 slow-timeout = { period = "60s", terminate-after = 10, grace-period = "30s" }
 
-# The testnet tests lead the list: nextest applies the first matching override, and the
-# per-test ceilings below also name the chain-generic tests.
+# The testnet tests lead the list: nextest applies the first matching override.
 # Each testnet test waits for several real blocks of about 75 seconds.
 [[profile.default.overrides]]
 filter = 'binary(testnet)'
@@ -15,7 +14,7 @@ test-group = 'testnet'
 slow-timeout = { period = "60s", terminate-after = 60, grace-period = "30s" }
 
 [[profile.default.overrides]]
-filter = 'package(libtonode-tests) | package(zingo-cli)'
+filter = 'package(zingo-cli)'
 
 # Long-chain heavies run close to the default limit.
 [[profile.default.overrides]]
@@ -31,8 +30,7 @@ failure-output = "immediate-final"
 fail-fast = false
 slow-timeout = { period = "60s", terminate-after = 10, grace-period = "30s" }
 
-# The testnet tests lead the list: nextest applies the first matching override, and the
-# per-test ceilings below also name the chain-generic tests.
+# The testnet tests lead the list: nextest applies the first matching override.
 # Each testnet test waits for several real blocks of about 75 seconds.
 [[profile.ci.overrides]]
 filter = 'binary(testnet)'
@@ -40,7 +38,7 @@ test-group = 'testnet'
 slow-timeout = { period = "60s", terminate-after = 60, grace-period = "30s" }
 
 [[profile.ci.overrides]]
-filter = 'package(libtonode-tests) | package(zingo-cli)'
+filter = 'package(zingo-cli)'
 
 # Long-chain heavies run close to the default limit.
 [[profile.ci.overrides]]
