@@ -19,13 +19,12 @@ use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
+use zingo_common_components::protocol::ActivationHeights;
 
 use crate::check_client_balances;
 use crate::lightclient::LightClient;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
-use crate::testutils::mock_indexer::{
-    MockNet, faucet_funding_transaction, faucet_funding_transaction_on,
-};
+use crate::testutils::mock_indexer::{MockNet, faucet_funding_transaction_on};
 use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 use crate::wallet::error::ProposeSendError;
 use crate::wallet::keys::unified::ReceiverSelection;
@@ -82,17 +81,85 @@ fn external_tex_address() -> String {
     crate::testutils::interpret_taddr_as_tex_addr(taddr_bytes, &chain_type)
 }
 
-/// Mines one empty block, one funding block, and `extra_blocks` into every
-/// chain in `nets`.
+/// The way a chain fails to mirror the chain one funding transaction was built for.
+#[derive(Debug, PartialEq, Eq)]
+enum MirrorMismatch {
+    ActivationHeights,
+    NextHeight,
+}
+
+fn mirror_mismatch(
+    built_for: (ActivationHeights, BlockHeight),
+    chain: (ActivationHeights, BlockHeight),
+) -> Option<MirrorMismatch> {
+    if built_for.0 != chain.0 {
+        Some(MirrorMismatch::ActivationHeights)
+    } else if built_for.1 != chain.1 {
+        Some(MirrorMismatch::NextHeight)
+    } else {
+        None
+    }
+}
+
+#[test]
+fn a_chain_with_the_same_schedule_and_next_height_mirrors_the_first() {
+    let schedule = crate::testutils::mock_activation_heights();
+    let height = BlockHeight::from_u32(7);
+    assert_eq!(
+        mirror_mismatch((schedule, height), (schedule, height)),
+        None
+    );
+}
+
+#[test]
+fn a_different_schedule_is_the_first_mismatch_named_and_a_different_height_the_second() {
+    let schedule = crate::testutils::mock_activation_heights();
+    let deferred = crate::testutils::mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3);
+    let height = BlockHeight::from_u32(7);
+    let later = BlockHeight::from_u32(8);
+    assert_eq!(
+        mirror_mismatch((schedule, height), (deferred, height)),
+        Some(MirrorMismatch::ActivationHeights)
+    );
+    assert_eq!(
+        mirror_mismatch((schedule, height), (schedule, later)),
+        Some(MirrorMismatch::NextHeight)
+    );
+    assert_eq!(
+        mirror_mismatch((schedule, height), (deferred, later)),
+        Some(MirrorMismatch::ActivationHeights)
+    );
+}
+
+/// - Mines one empty block into every chain in `nets`, then one block carrying a funding
+///   transaction built for the first chain's era at its next height, then `extra_blocks`
+///   empty blocks.
+/// - Panics when a later chain's activation schedule or next height differs from the first
+///   chain's.
 async fn fund_mirrored(
     nets: &[&MockNet],
     receivers: Vec<(&str, u64, Option<&str>)>,
     extra_blocks: u32,
 ) {
-    let funding = faucet_funding_transaction(receivers).await;
+    let Some(first) = nets.first() else {
+        return;
+    };
+    for net in nets {
+        net.chain.write().await.mine_empty_blocks(1);
+    }
+    let built_for = {
+        let chain = first.chain.read().await;
+        (chain.activation_heights(), chain.next_height())
+    };
+    let funding = faucet_funding_transaction_on(built_for.0, built_for.1, receivers).await;
     for net in nets {
         let mut chain = net.chain.write().await;
-        chain.mine_empty_blocks(1);
+        let mirrored = (chain.activation_heights(), chain.next_height());
+        assert_eq!(
+            mirror_mismatch(built_for, mirrored),
+            None,
+            "the funding was built for a chain at {built_for:?}, and this chain stands at {mirrored:?}"
+        );
         chain.mine_block(vec![funding.clone()]);
         chain.mine_empty_blocks(extra_blocks);
     }
@@ -101,11 +168,7 @@ async fn fund_mirrored(
 /// - Mines one block carrying a funding transaction built for the chain's own era at its next
 ///   height, then `extra_blocks` empty blocks.
 async fn fund(net: &MockNet, receivers: Vec<(&str, u64, Option<&str>)>, extra_blocks: u32) {
-    let (activation_heights, height) = {
-        let chain = net.chain.read().await;
-        (chain.activation_heights(), chain.next_height())
-    };
-    let funding = faucet_funding_transaction_on(activation_heights, height, receivers).await;
+    let funding = net.funding_transaction(receivers).await;
     let mut chain = net.chain.write().await;
     chain.mine_block(vec![funding]);
     chain.mine_empty_blocks(extra_blocks);
@@ -376,16 +439,17 @@ async fn self_send_to_t_displays_as_one_transaction() {
     )
     .await
     .unwrap();
-    let incoming = faucet_funding_transaction(vec![
-        (recipient_taddr.as_str(), sent_to_taddr_value, None),
-        (recipient_zaddr.as_str(), sent_to_zaddr_value, Some("foo2")),
-        (
-            recipient_ua.as_str(),
-            sent_to_self_orchard_value,
-            Some("bar2"),
-        ),
-    ])
-    .await;
+    let incoming = net
+        .funding_transaction(vec![
+            (recipient_taddr.as_str(), sent_to_taddr_value, None),
+            (recipient_zaddr.as_str(), sent_to_zaddr_value, Some("foo2")),
+            (
+                recipient_ua.as_str(),
+                sent_to_self_orchard_value,
+                Some("bar2"),
+            ),
+        ])
+        .await;
     {
         let mut chain = net.chain.write().await;
         chain.enter_mempool(incoming);
@@ -1306,7 +1370,7 @@ async fn transparent_funds_mined_during_sync_session_are_detected() {
     let taddr = get_base_address(&client, PoolType::Transparent).await;
     // built before the sync session launches, as proving blocks the test runtime's only thread and would starve the
     // session's requests past their timeouts.
-    let funding = faucet_funding_transaction(vec![(&taddr, 50_000, None)]).await;
+    let funding = net.funding_transaction(vec![(&taddr, 50_000, None)]).await;
 
     client.sync().await.expect("continuous sync launches");
 
@@ -1449,7 +1513,7 @@ async fn transparent_funds_remined_at_transparent_scan_floor(
         .client(HOSPITAL_MUSEUM, Some(continuous_sync_wallet_settings()))
         .await;
     let taddr = get_base_address(&client, PoolType::Transparent).await;
-    let funding = faucet_funding_transaction(vec![(&taddr, 50_000, None)]).await;
+    let funding = net.funding_transaction(vec![(&taddr, 50_000, None)]).await;
     net.chain.write().await.mine_block(vec![funding.clone()]);
     assert_eq!(net.chain.read().await.tip(), FUNDING_HEIGHT);
 
@@ -1524,7 +1588,7 @@ async fn scan_results_in_flight_when_chain_height_drops_are_discarded_and_rescan
     let ua = get_base_address(&client, PoolType::Shielded(ShieldedPool::Orchard)).await;
     let mut funding = Vec::new();
     for _ in 0..FUNDING_TRANSACTIONS {
-        funding.push(faucet_funding_transaction(vec![(&ua, 100_000, None)]).await);
+        funding.push(net.funding_transaction(vec![(&ua, 100_000, None)]).await);
         net.chain
             .write()
             .await
@@ -2482,12 +2546,13 @@ mod perspective {
                 .unwrap();
             gap_taddrs.push(gap_taddr);
 
-            let funding_tx = faucet_funding_transaction(vec![(
-                &gap_taddr.1.encode(&recipient.chain_type()),
-                100_000,
-                None,
-            )])
-            .await;
+            let funding_tx = net
+                .funding_transaction(vec![(
+                    &gap_taddr.1.encode(&recipient.chain_type()),
+                    100_000,
+                    None,
+                )])
+                .await;
             funding_txs.push(funding_tx);
         }
         net.chain.write().await.mine_block(funding_txs);
@@ -3543,7 +3608,9 @@ mod strict_chain {
         net.chain.write().await.mine_empty_blocks(1);
         recipient.sync_and_await().await.unwrap();
 
-        let funding = faucet_funding_transaction(vec![(&recipient_ua, FUNDING, None)]).await;
+        let funding = net
+            .funding_transaction(vec![(&recipient_ua, FUNDING, None)])
+            .await;
         let expiry = expiry_of_bytes(&net, &funding);
         net.chain.write().await.enter_mempool(funding);
         recipient.sync_and_await().await.unwrap();
@@ -3582,7 +3649,9 @@ mod strict_chain {
         net.chain.write().await.mine_empty_blocks(1);
         recipient.sync_and_await().await.unwrap();
 
-        let funding = faucet_funding_transaction(vec![(&recipient_ua, FUNDING, None)]).await;
+        let funding = net
+            .funding_transaction(vec![(&recipient_ua, FUNDING, None)])
+            .await;
         let expiry = expiry_of_bytes(&net, &funding);
         net.chain.write().await.enter_mempool(funding);
         recipient.sync_and_await().await.unwrap();
@@ -3773,7 +3842,9 @@ mod strict_chain {
         net.chain.write().await.mine_empty_blocks(1);
         recipient.sync_and_await().await.unwrap();
 
-        let funding = faucet_funding_transaction(vec![(&recipient_ua, FUNDING, None)]).await;
+        let funding = net
+            .funding_transaction(vec![(&recipient_ua, FUNDING, None)])
+            .await;
         let expiry = expiry_of_bytes(net, &funding);
         {
             let mut chain = net.chain.write().await;
@@ -4327,9 +4398,9 @@ mod mixnet_wire_offline {
         }
         rejecting.chain.write().await.answer_sends_with_error_code = Some(REJECTION_CODE);
         relay.route(&uri(REJECTOR_URI), rejecting.addr());
-        let part =
-            faucet_funding_transaction(vec![(&external_address(PoolType::ORCHARD), 20_000, None)])
-                .await;
+        let part = accepting
+            .funding_transaction(vec![(&external_address(PoolType::ORCHARD), 20_000, None)])
+            .await;
         let expiry = BlockHeight::from_u32(1);
         let client_for = |target: &str| {
             RoutedTransmissionClient::new(

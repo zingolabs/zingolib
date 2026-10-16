@@ -49,6 +49,8 @@ async fn two_phase_migration_end_to_end() {
         .client(HOSPITAL_MUSEUM, Some(continuous_sync_wallet_settings()))
         .await;
     recipient.set_transmit_retry_interval(Duration::ZERO);
+    #[cfg(feature = "nym")]
+    recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
     fund_client(
         &net,
         &recipient,

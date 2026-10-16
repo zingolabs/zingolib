@@ -33,7 +33,10 @@
 //! the assured-send helper observes (and the poll-not-sleep commit's
 //! attribution of that wait to "zainod's mempool-polling cadence" was
 //! wrong. This measurement corrects the record). The surviving suspect
-//! is the third leg of the pipeline, measured by the second cell below:
+//! is the third leg of the pipeline, measured by the wallet cell that
+//! has since retired to the mock chain as
+//! transmitted_transaction_has_mempool_status_before_mining in zingolib's
+//! mock_chain_tests:
 //!
 //! - H-WALLET-MONITOR: the wallet's own mempool-monitor pipeline
 //!   (stream delivery plus pepper-sync's mempool-transaction processing)
@@ -47,8 +50,8 @@
 //! within a sync session's lifecycle. That is why the assured-send
 //! helper syncs before its mempool cross-checks and still waits: the
 //! wait is monitor startup and processing after sync_and_await returns.
-//! The cell below therefore syncs after sending, as the helper does,
-//! and measures delivery from validator acceptance.
+//! The wallet cell therefore synced after sending, as the helper does,
+//! and measured delivery from validator acceptance.
 //!
 //! Round-two verdict: wallet-record lag 2.503121 s with sync_and_await
 //! returning at 2.503124 s, IDENTICAL to the microsecond. The mempool
@@ -65,8 +68,8 @@
 //! validator's mempool every 500 ms by default, and the indexer lag rose
 //! to 89-451 ms across three runs. That outgrew the sync session's 200 ms
 //! mempool drain settle window, so a session could end before the
-//! transaction was streamed and the record stayed Transmitted: this cell
-//! failed with no post-sync path to Mempool status. With the settle window
+//! transaction was streamed and the record stayed Transmitted: the wallet
+//! cell failed with no post-sync path to Mempool status. With the settle window
 //! raised to 750 ms (`zingo_netutils::time::MEMPOOL_DRAIN_SETTLE`) the
 //! record again reaches Mempool status inside the first sync session, at
 //! 802-852 ms with sync_and_await returning at the same instant.
