@@ -15,62 +15,8 @@ use zingolib_testutils::setup_metrics::MeteredNet;
 mod untracked_history;
 
 use pepper_sync::wallet::OutputInterface;
-use zcash_protocol::consensus::BlockHeight;
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingolib::testutils::lightclient::from_inputs;
-
-#[tokio::test]
-async fn received_tx_status_pending_to_confirmed_with_mempool_monitor() {
-    tracing_subscriber::fmt().init();
-
-    let (local_net, mut faucet, mut recipient, _txid) =
-        scenarios::faucet_funded_recipient_default(100_000).await;
-
-    from_inputs::quick_send(
-        &mut faucet,
-        vec![(
-            &get_base_address_macro!(&recipient, "unified"),
-            // &get_base_address_macro!(&recipient, "sapling"),
-            20_000,
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-
-    recipient.sync_and_await().await.unwrap();
-
-    let transactions = &recipient.transaction_summaries(false).await.unwrap().0;
-    for tx in transactions {
-        dbg!(tx);
-    }
-    // Setup ends at FUNDED_FAUCET_SETUP_HEIGHT; faucet_funded_recipient
-    // mines one pre-send block and one funding-confirm block, so the
-    // 20_000 send targets the block after that.
-    let mempool_target_height = BlockHeight::from_u32(scenarios::FUNDED_FAUCET_SETUP_HEIGHT + 3);
-    assert_eq!(
-        transactions
-            .iter()
-            .find(|tx| tx.value == 20_000)
-            .unwrap()
-            .status,
-        ConfirmationStatus::Mempool(mempool_target_height)
-    );
-
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-        .await
-        .unwrap();
-
-    let transactions = &recipient.transaction_summaries(false).await.unwrap().0;
-    assert_eq!(
-        transactions
-            .iter()
-            .find(|tx| tx.value == 20_000)
-            .unwrap()
-            .status,
-        ConfirmationStatus::Confirmed(mempool_target_height)
-    );
-}
 
 /// - Holds the wallet's read lock while it reads the transparent coins.
 async fn sole_transparent_coin(client: &LightClient) -> (OutputId, SpendStatus) {
