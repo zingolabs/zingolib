@@ -47,7 +47,7 @@ use incrementalmerkletree::frontier::CommitmentTree;
 use orchard::circuit::{OrchardCircuitVersion, VerifyingKey as OrchardVerifyingKey};
 use orchard::tree::MerkleHashOrchard;
 use sapling_crypto::circuit::{OutputVerifyingKey, SpendVerifyingKey};
-use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
+use zcash_primitives::merkle_tree::{HashSer, read_commitment_tree, write_commitment_tree};
 use zcash_primitives::transaction::fees::zip317::{GRACE_ACTIONS, MARGINAL_FEE};
 use zcash_primitives::transaction::sighash::{SignableInput, signature_hash};
 use zcash_primitives::transaction::txid::TxIdDigester;
@@ -90,6 +90,7 @@ const OP_SMALL_INTEGER_BASE: u8 = 0x50;
 const SMALL_INTEGER_MAX: u32 = 16;
 const SIGN_BIT: u8 = 0x80;
 const GENESIS_HEIGHT: BlockHeight = BlockHeight::from_u32(0);
+const NO_PREDECESSOR_HASH: [u8; 32] = [0u8; 32];
 const NO_EXPIRY: BlockHeight = BlockHeight::from_u32(0);
 const FAUCET_FUNDING: u64 = 1_000_000_000;
 const FAUCET_DEFAULT_TIP: u32 = 20;
@@ -664,20 +665,29 @@ fn fabricated_block_hash(height: u32) -> Vec<u8> {
     fabricated_branch_hash(height, 0)
 }
 
-fn genesis_compact_block() -> CompactBlock {
-    CompactBlock {
-        height: 0,
-        hash: fabricated_block_hash(0),
-        prev_hash: vec![0u8; 32],
-        time: BLOCK_TIME_BASE,
-        header: vec![],
-        vtx: vec![],
-        chain_metadata: Some(ChainMetadata {
-            sapling_commitment_tree_size: 0,
-            orchard_commitment_tree_size: 0,
-            ironwood_commitment_tree_size: 0,
-        }),
+fn block_time(height: u32) -> u32 {
+    BLOCK_TIME_BASE + height
+}
+
+fn chain_metadata(
+    sapling_tree: &SaplingTree,
+    orchard_tree: &OrchardTree,
+    ironwood_tree: &OrchardTree,
+) -> ChainMetadata {
+    ChainMetadata {
+        sapling_commitment_tree_size: sapling_tree.size() as u32,
+        orchard_commitment_tree_size: orchard_tree.size() as u32,
+        ironwood_commitment_tree_size: ironwood_tree.size() as u32,
     }
+}
+
+fn decode_tree<Node: HashSer, const DEPTH: u8>(tree_hex: &str) -> CommitmentTree<Node, DEPTH> {
+    read_commitment_tree(
+        hex::decode(tree_hex)
+            .expect("the chain stores every tree state as the hex it encoded itself")
+            .as_slice(),
+    )
+    .expect("the chain stores every tree state as the bytes it serialized itself")
 }
 
 /// Where a lost-response submission lands, mirroring the validator's
@@ -1321,23 +1331,19 @@ impl MockChain {
         // Chain from the stored predecessor hash rather than recomputing
         // it: after a reorg the predecessor may belong to a different
         // branch seed than this block.
-        let prev_hash = self
-            .blocks
-            .last()
-            .map(|block| block.hash.clone())
-            .unwrap_or_else(|| fabricated_block_hash(0));
+        let prev_hash = self.block_hash_at(self.tip());
         self.blocks.push(CompactBlock {
             height: u64::from(u32::from(height)),
             hash: fabricated_branch_hash(u32::from(height), self.branch_seed),
             prev_hash,
-            time: BLOCK_TIME_BASE + u32::from(height),
+            time: block_time(u32::from(height)),
             header: vec![],
             vtx,
-            chain_metadata: Some(ChainMetadata {
-                sapling_commitment_tree_size: self.sapling_tree.size() as u32,
-                orchard_commitment_tree_size: self.orchard_tree.size() as u32,
-                ironwood_commitment_tree_size: self.ironwood_tree.size() as u32,
-            }),
+            chain_metadata: Some(chain_metadata(
+                &self.sapling_tree,
+                &self.orchard_tree,
+                &self.ironwood_tree,
+            )),
         });
         self.tree_states.push(tree_state_hex(
             &self.sapling_tree,
@@ -1391,25 +1397,10 @@ impl MockChain {
         self.blocks.truncate(height as usize);
         self.tree_states.truncate(height as usize + 1);
         self.roots.truncate(height as usize + 1);
-        let (sapling_hex, orchard_hex, ironwood_hex) = self.tree_states[height as usize].clone();
-        self.sapling_tree = read_commitment_tree(
-            hex::decode(sapling_hex)
-                .expect("stored tree state is valid hex")
-                .as_slice(),
-        )
-        .expect("stored sapling tree state deserializes");
-        self.orchard_tree = read_commitment_tree(
-            hex::decode(orchard_hex)
-                .expect("stored tree state is valid hex")
-                .as_slice(),
-        )
-        .expect("stored orchard tree state deserializes");
-        self.ironwood_tree = read_commitment_tree(
-            hex::decode(ironwood_hex)
-                .expect("stored tree state is valid hex")
-                .as_slice(),
-        )
-        .expect("stored ironwood tree state deserializes");
+        let (sapling_tree, orchard_tree, ironwood_tree) = self.trees_at(height);
+        self.sapling_tree = sapling_tree;
+        self.orchard_tree = orchard_tree;
+        self.ironwood_tree = ironwood_tree;
         let cutoff = BlockHeight::from_u32(height);
         let mut evicted: Vec<(BlockHeight, Vec<u8>)> = Vec::new();
         self.transactions.retain(|_, mined| {
@@ -1498,29 +1489,55 @@ impl MockChain {
     fn tree_state_at(&self, height: u32) -> Option<TreeState> {
         let (sapling_tree, orchard_tree, ironwood_tree) =
             self.tree_states.get(height as usize)?.clone();
-        // The stored block's own hash, so tree states follow the
-        // current branch after a reorg. Height 0 is the genesis block,
-        // which is fabricated on demand and never stored.
-        let hash = if height == 0 {
-            fabricated_block_hash(0)
-        } else {
-            self.blocks[height as usize - 1].hash.clone()
-        };
         Some(TreeState {
             network: "regtest".to_string(),
             height: u64::from(height),
-            hash: hex::encode(hash),
-            time: BLOCK_TIME_BASE + height,
+            hash: hex::encode(self.block_hash_at(height)),
+            time: block_time(height),
             sapling_tree,
             orchard_tree,
             ironwood_tree,
         })
     }
 
+    /// - Decodes the three tree states the chain stored at the end of `height`.
+    fn trees_at(&self, height: u32) -> (SaplingTree, OrchardTree, OrchardTree) {
+        let (sapling_hex, orchard_hex, ironwood_hex) = &self.tree_states[height as usize];
+        (
+            decode_tree(sapling_hex),
+            decode_tree(orchard_hex),
+            decode_tree(ironwood_hex),
+        )
+    }
+
+    // The stored block's own hash, so tree states and predecessors follow
+    // the current branch after a reorg. The genesis block is fabricated on
+    // demand and never stored.
+    fn block_hash_at(&self, height: u32) -> Vec<u8> {
+        if height == u32::from(GENESIS_HEIGHT) {
+            fabricated_block_hash(height)
+        } else {
+            self.blocks[height as usize - 1].hash.clone()
+        }
+    }
+
     fn tip_hash(&self) -> Vec<u8> {
-        self.blocks
-            .last()
-            .map_or_else(|| fabricated_block_hash(0), |block| block.hash.clone())
+        self.block_hash_at(self.tip())
+    }
+
+    /// - Decodes the stored genesis tree states.
+    pub fn genesis_compact_block(&self) -> CompactBlock {
+        let genesis = u32::from(GENESIS_HEIGHT);
+        let (sapling_tree, orchard_tree, ironwood_tree) = self.trees_at(genesis);
+        CompactBlock {
+            height: u64::from(genesis),
+            hash: self.block_hash_at(genesis),
+            prev_hash: NO_PREDECESSOR_HASH.to_vec(),
+            time: block_time(genesis),
+            header: vec![],
+            vtx: vec![],
+            chain_metadata: Some(chain_metadata(&sapling_tree, &orchard_tree, &ironwood_tree)),
+        }
     }
 }
 
@@ -1861,7 +1878,7 @@ impl MockIndexerService {
         }
         let pools = RequestedPools::from_range(&range)?;
         let mut blocks: Vec<_> = (start == 0)
-            .then(genesis_compact_block)
+            .then(|| chain.genesis_compact_block())
             .into_iter()
             .chain(chain.blocks[start.max(1) - 1..end].iter().cloned())
             .collect();
@@ -1914,10 +1931,10 @@ impl CompactTxStreamer for MockIndexerService {
     async fn get_block(&self, request: Request<BlockId>) -> Result<Response<CompactBlock>, Status> {
         self.fault_for(Rpc::Block).await?;
         let height = request.into_inner().height;
-        if height == 0 {
-            return Ok(Response::new(genesis_compact_block()));
-        }
         let chain = self.chain.read().await;
+        if height == u64::from(u32::from(GENESIS_HEIGHT)) {
+            return Ok(Response::new(chain.genesis_compact_block()));
+        }
         chain
             .blocks
             .get(height as usize - 1)
@@ -2343,6 +2360,9 @@ pub struct MockNet {
 }
 
 impl MockNet {
+    /// The birthday [`MockNet::client`] gives every wallet.
+    pub const DEFAULT_BIRTHDAY: u32 = 1;
+
     /// Launches the mock server on an ephemeral localhost port with an
     /// empty chain.
     pub async fn launch() -> Self {
@@ -2450,15 +2470,15 @@ impl MockNet {
         builder
     }
 
-    /// Builds a `LightClient` for `mnemonic` (birthday 1) dialed at the
-    /// mock, with its wallet directory in a tempdir this net keeps
-    /// alive.
+    /// Builds a `LightClient` for `mnemonic` born at [`MockNet::DEFAULT_BIRTHDAY`]
+    /// dialed at the mock, with its wallet directory in a tempdir this net
+    /// keeps alive.
     pub async fn client(
         &mut self,
         mnemonic: &str,
         wallet_settings_opt: Option<WalletSettings>,
     ) -> LightClient {
-        self.client_with_birthday(mnemonic, 1, wallet_settings_opt)
+        self.client_with_birthday(mnemonic, Self::DEFAULT_BIRTHDAY, wallet_settings_opt)
             .await
     }
 
@@ -2913,9 +2933,17 @@ mod tests {
     fn the_genesis_block_precedes_the_first_block_and_follows_nothing() {
         let mut chain = MockChain::new();
         chain.mine_empty_blocks(1);
-        let genesis = genesis_compact_block();
+        let genesis = chain.genesis_compact_block();
         assert_eq!(genesis.height, 0);
-        assert_eq!(genesis.prev_hash, vec![0u8; 32]);
+        assert_eq!(genesis.prev_hash, NO_PREDECESSOR_HASH.to_vec());
+        assert_eq!(
+            genesis.chain_metadata,
+            Some(chain_metadata(
+                &SaplingTree::empty(),
+                &OrchardTree::empty(),
+                &OrchardTree::empty()
+            ))
+        );
         assert_eq!(chain.blocks[0].prev_hash, genesis.hash);
         assert_eq!(
             chain.tree_state_at(0).map(|state| state.hash),

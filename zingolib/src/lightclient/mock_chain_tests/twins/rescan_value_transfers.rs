@@ -1,7 +1,7 @@
-use zcash_protocol::{PoolType, ShieldedPool};
+use zcash_protocol::PoolType;
 
-use super::{FUNDING, HOSPITAL_MUSEUM, external_address, fund};
-use crate::testutils::lightclient::{from_inputs, get_base_address};
+use super::{FUNDING, external_address, funded_client};
+use crate::testutils::lightclient::from_inputs;
 use crate::testutils::mock_indexer::MockNet;
 use crate::testutils::synthetic_wallet;
 
@@ -10,15 +10,7 @@ const PAYMENT: u64 = 10_000;
 #[tokio::test]
 async fn check_list_value_transfers_across_rescan() {
     let mut net = MockNet::launch().await;
-    let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, FUNDING, None)], 1).await;
-    recipient
-        .sync_and_await()
-        .await
-        .expect("the recipient syncs its funding");
+    let mut recipient = funded_client(&mut net, &[(PoolType::ORCHARD, FUNDING)], 1).await;
 
     let faucet_sapling = synthetic_wallet::external_sapling_address();
     let faucet_unified = external_address(PoolType::ORCHARD);

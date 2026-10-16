@@ -1,14 +1,12 @@
-use std::time::{Duration, Instant};
-
 use pepper_sync::wallet::{IronwoodNote, OutputInterface, SaplingNote};
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
-use zcash_protocol::{PoolType, ShieldedPool};
+use zcash_protocol::PoolType;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use super::{HOSPITAL_MUSEUM, external_address, fund};
+use super::{external_address, funded_client};
 use crate::lightclient::LightClient;
-use crate::testutils::lightclient::{from_inputs, get_base_address};
+use crate::testutils::lightclient::from_inputs;
 use crate::testutils::mock_indexer::MockNet;
 use crate::testutils::synthetic_wallet;
 use crate::wallet::output::SpendStatus;
@@ -18,7 +16,6 @@ const SMALL: u64 = 2_000;
 const BIG: u64 = 100_000;
 const STEADY_BLOCKS: u32 = 10;
 const STABILITY_BLOCKS: u32 = 9;
-const MEMPOOL_OBSERVATION_LIMIT: Duration = Duration::from_secs(30);
 
 async fn assert_ironwood_split(client: &LightClient, total: u64, confirmed: u64, unconfirmed: u64) {
     let balance = client
@@ -60,45 +57,30 @@ async fn assert_ironwood_note_statuses(
     }
 }
 
-/// - Runs sync sessions until the wallet records `txid` in the mempool, within a bound.
-async fn sync_until_in_mempool(client: &mut LightClient, txid: TxId) {
-    let deadline = Instant::now() + MEMPOOL_OBSERVATION_LIMIT;
-    loop {
-        client
-            .sync_and_await()
-            .await
-            .expect("a sync session completes");
-        let in_mempool = client
-            .wallet()
-            .read()
-            .await
-            .wallet_transactions
-            .get(&txid)
-            .is_some_and(|transaction| {
-                matches!(transaction.status(), ConfirmationStatus::Mempool(_))
-            });
-        if in_mempool {
-            return;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "transaction {txid} not observed in the mempool within {MEMPOOL_OBSERVATION_LIMIT:?}"
-        );
-    }
+/// - Runs one sync session on `client`.
+async fn sync_into_mempool(client: &mut LightClient, txid: TxId) {
+    client
+        .sync_and_await()
+        .await
+        .expect("the mock chain serves every block and mempool entry the wallet requests");
+    let status = client
+        .wallet()
+        .read()
+        .await
+        .wallet_transactions
+        .get(&txid)
+        .map(|transaction| transaction.status());
+    assert!(
+        matches!(status, Some(ConfirmationStatus::Mempool(_))),
+        "the mock mempool is synchronous, so one sync session records transaction {txid} in \
+         the mempool, but its status is {status:?}"
+    );
 }
 
 #[tokio::test]
 async fn mempool_spend_balance_and_note_status_accounting() {
     let mut net = MockNet::launch().await;
-    let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, FUNDED, None)], 1).await;
-    recipient
-        .sync_and_await()
-        .await
-        .expect("the recipient syncs its funding");
+    let mut recipient = funded_client(&mut net, &[(PoolType::ORCHARD, FUNDED)], 1).await;
 
     // Steady state, and its stability across an empty ten-block mine.
     assert_ironwood_split(&recipient, FUNDED, FUNDED, 0).await;
@@ -120,7 +102,7 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     )
     .await
     .expect("the small send builds and transmits");
-    sync_until_in_mempool(&mut recipient, *small_txids.first()).await;
+    sync_into_mempool(&mut recipient, *small_txids.first()).await;
     let after_small = FUNDED - (SMALL + u64::from(MINIMUM_FEE));
     assert_ironwood_split(&recipient, after_small, 0, after_small).await;
     assert_ironwood_note_statuses(
@@ -158,7 +140,7 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     )
     .await
     .expect("the cross-pool send builds and transmits");
-    sync_until_in_mempool(&mut recipient, *big_txids.first()).await;
+    sync_into_mempool(&mut recipient, *big_txids.first()).await;
     // One ironwood spend, one sapling output, ironwood change: two
     // logical actions on each side of the ZIP-317 count.
     let big_fee = 2 * u64::from(MINIMUM_FEE);

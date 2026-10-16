@@ -1,30 +1,13 @@
 use pepper_sync::error::SyncError;
-use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
 
-use super::{DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, fund_on_chain};
-use crate::lightclient::LightClient;
+use super::{DEFERRED_NU6_3, FUNDING, confirmed_balance, funded_client};
 use crate::lightclient::error::LightClientError;
-use crate::testutils::lightclient::get_base_address;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
 use crate::testutils::{mock_activation_heights, mock_activation_heights_deferring_nu6_3};
 
 const HIDDEN_BLOCKS: u32 = 2;
 const RECOVERY_SESSIONS: usize = 5;
-
-async fn confirmed_balance(client: &LightClient, pool: ShieldedPool) -> u64 {
-    let balance = client
-        .account_balance(zip32::AccountId::ZERO)
-        .await
-        .expect("a synced client reports a balance");
-    match pool {
-        ShieldedPool::Orchard => balance.confirmed_orchard_balance,
-        ShieldedPool::Ironwood => balance.confirmed_ironwood_balance,
-        ShieldedPool::Sapling => balance.confirmed_sapling_balance,
-    }
-    .map(Zatoshis::into_u64)
-    .unwrap_or(0)
-}
 
 async fn notes_in_untracked_history_are_recovered(pool: ShieldedPool) {
     let activation_heights = match pool {
@@ -34,15 +17,7 @@ async fn notes_in_untracked_history_are_recovered(pool: ShieldedPool) {
     };
     let mut net =
         MockNet::launch_with(MockChain::with_activation_heights(activation_heights)).await;
-    let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-    net.chain.write().await.mine_empty_blocks(1);
-    fund_on_chain(&net, vec![(&recipient_ua, FUNDING, None)]).await;
-    recipient
-        .sync_and_await()
-        .await
-        .expect("the funded recipient syncs");
+    let mut recipient = funded_client(&mut net, &[(PoolType::ORCHARD, FUNDING)], 0).await;
     let funded_balance = confirmed_balance(&recipient, pool).await;
     assert_eq!(
         funded_balance, FUNDING,
