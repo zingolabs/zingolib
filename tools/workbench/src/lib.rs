@@ -23,6 +23,7 @@ pub mod binding_manifest;
 pub mod binding_publish;
 pub mod dupes_gate;
 pub mod orasust;
+pub mod panic_strategy;
 pub mod session;
 
 use std::collections::{BTreeMap, BTreeSet};
