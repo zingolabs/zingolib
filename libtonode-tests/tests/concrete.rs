@@ -1,14 +1,5 @@
 #![forbid(unsafe_code)]
 
-/// The final send must gather more than one of the recipient's three
-/// sapling notes (10_000, 20_000, 30_000) to cover 30_000 plus the fee,
-/// making this the suite's only live broadcast of a multi-input sapling
-/// spend with cross-pool (orchard) change. The unwraps assert proposal,
-/// proving, and the validator's acceptance of the bundle. The closing
-/// balance check pins the spend's post-state (gap 1a of the audit's
-/// remediation plan). Note-selection ordering itself is asserted
-/// offline by `note_selection_covers_target_with_minimal_change` in
-/// `zingolib::lightclient::propose`.
 // FIXME: add unified address discovery to pepper sync and add a test here
 
 mod basic_transactions {
