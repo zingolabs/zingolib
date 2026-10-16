@@ -467,6 +467,13 @@ mod tests {
     const RUST_SETUP: &str = "uses: ./.github/actions/rust-setup";
     const RUST_CACHE_OFF: &str = "cache: \"false\"";
     const MATRIX_TARGET: &str = "matrix.target";
+    const BUNDLE_INPUT: &str = "${{ inputs.bundle }}";
+    const MATRIX_TARGET_EXPRESSION: &str = "${{ matrix.target }}";
+    const ARTIFACT_NAME_KEY: &str = "name: ";
+    const ARTIFACT_PATTERN_KEY: &str = "pattern: ";
+    const FAIL_FAST_OFF: &str = "fail-fast: false";
+    const FETCH_TAGS: &str = "fetch-tags: true";
+    const CARGO_BIN: &str = ".cargo/bin";
 
     struct CacheStep {
         paths: Vec<String>,
@@ -542,6 +549,43 @@ mod tests {
         assert_eq!(
             setups, disabled,
             "every rust-setup use turns rust-cache off"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn the_ios_slice_jobs_follow_the_slice_naming_rule_and_run_to_the_end(
+    ) -> Result<(), Vec<String>> {
+        let workflow = repo_file(IOS_WORKFLOW)?;
+        let lines: Vec<&str> = workflow.lines().map(str::trim).collect();
+        let upload = format!(
+            "{ARTIFACT_NAME_KEY}{}",
+            binding_layer::ios_slice_artifact(BUNDLE_INPUT, MATRIX_TARGET_EXPRESSION)
+        );
+        let download = format!(
+            "{ARTIFACT_PATTERN_KEY}{}",
+            binding_layer::ios_slice_pattern(BUNDLE_INPUT)
+        );
+        assert!(lines.contains(&upload.as_str()), "{upload}");
+        assert!(lines.contains(&download.as_str()), "{download}");
+        assert!(
+            lines.contains(&FAIL_FAST_OFF),
+            "one failing slice must not cancel the others"
+        );
+        assert_eq!(
+            lines.iter().filter(|line| **line == FETCH_TAGS).count(),
+            1,
+            "only the slice job writes the descriptor, which reads the tags"
+        );
+        let slice_save = crate::required(
+            cache_steps(&workflow, CACHE_SAVE)?
+                .into_iter()
+                .find(|save| save.key.contains(MATRIX_TARGET)),
+            "the slice save",
+        )?;
+        assert!(
+            slice_save.paths.iter().any(|path| path == CARGO_BIN),
+            "the cache holds bindgen-cli, so cargo install skips the build on a hit"
         );
         Ok(())
     }
