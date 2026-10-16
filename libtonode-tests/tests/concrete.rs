@@ -781,31 +781,6 @@ async fn send_orchard_back_and_forth(
 mod rescan_still_have_outgoing_notes {
     use super::*;
 
-    #[tokio::test]
-    async fn self_send() {
-        let (local_net, mut faucet) = scenarios::faucet_default().await;
-        let faucet_sapling_addr = get_base_address_macro!(faucet, "sapling");
-        let mut txids = vec![];
-        for memo in [None, Some("Second Transaction")] {
-            txids.push(
-                *from_inputs::quick_send(
-                    &mut faucet,
-                    vec![(faucet_sapling_addr.as_str(), 100_000, memo)],
-                )
-                .await
-                .unwrap()
-                .first(),
-            );
-            increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-                .await
-                .unwrap();
-        }
-
-        let pre_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
-        faucet.rescan_and_await().await.unwrap();
-        let post_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
-        assert_eq!(pre_rescan_summaries, post_rescan_summaries);
-    }
     /// Rescan survival of the spender's records, asserted on BOTH
     /// `value_transfers` and `transaction_summaries`, across the
     /// full {sapling, orchard} × {memo, memoless} outgoing-output

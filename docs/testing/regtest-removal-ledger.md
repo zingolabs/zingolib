@@ -495,3 +495,4 @@ faucet-economics fee.
 - send_post_ironwood (59): carried by the existing `funded_send_confirms_on_the_mock_chain`, whose first balance check is this guarantee.
 - send_pre_ironwood (58): `send_pre_ironwood::send_pre_ironwood`.
 - orchard_notes_in_untracked_history_are_recovered (21), and the Ironwood half of entry 20: `untracked_history::{orchard,ironwood}_notes_in_untracked_history_are_recovered`.
+- rescan_still_have_outgoing_notes::self_send (50): `rescan_self_send::self_send`, the first twin to rescan against the mock chain.
