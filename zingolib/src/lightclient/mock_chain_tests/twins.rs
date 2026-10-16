@@ -1,4 +1,5 @@
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::value::Zatoshis;
 
 use super::{
     DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, confirmed_balance, continuous_sync_wallet_settings,
@@ -22,6 +23,10 @@ mod two_phase_migration;
 mod unified_address_discovery;
 mod untracked_history;
 mod watch_only;
+
+fn zatoshis(value: u64) -> Zatoshis {
+    Zatoshis::from_u64(value).expect("test values stay within the money range")
+}
 
 /// - Panics when a txid of `txids` has no migration value transfer.
 fn migrated_value(value_transfers: &ValueTransfers, txids: &[TxId]) -> u64 {
