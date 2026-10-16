@@ -138,10 +138,8 @@ container_dir_hash() {
 }
 
 container_image_tag() {
-  printf 'RUST_%s-ZAINO_%s-ZEBRA_%s-NEXTEST_%s-CONTAINER_%s' \
+  printf 'RUST_%s-NEXTEST_%s-CONTAINER_%s' \
     "${RUST_VERSION}" \
-    "${ZAINO_IMAGE_TAG}" \
-    "${ZEBRA_VERSION}" \
     "${NEXTEST_VERSION}" \
     "$(container_dir_hash)" \
     | git hash-object --stdin \
@@ -196,19 +194,13 @@ container_nextest_run() {
   local line
   while IFS= read -r line; do args+=("${line}"); done < <(nextest_args "$@")
 
-  # ZINGO_REGENERATE_CHAIN_CACHE and RUST_LOG are forwarded only when
-  # set AND non-empty. Never use -e "VAR=${VAR:-}" — that manufactures
-  # a set-but-empty variable in the container — and never forward an
-  # empty value either: an empty (or restrictive) RUST_LOG silences
-  # zainod's "Syncing block" markers, hanging the harness's
-  # log-contract convergence barrier (2026-07-20 stall forensics).
+  # RUST_LOG is forwarded only when set AND non-empty. Never use
+  # -e "VAR=${VAR:-}": that manufactures a set-but-empty variable in
+  # the container, and an empty RUST_LOG silences the tests' own tracing.
   # Expanded below as `${array[@]+"${array[@]}"}`, because this array is
-  # empty whenever neither variable is set and bash before 4.4 calls an
+  # empty whenever the variable is unset and bash before 4.4 calls an
   # empty array's bare expansion an unbound variable under `set -u`.
   local -a forwarded_env=()
-  if [[ -n "${ZINGO_REGENERATE_CHAIN_CACHE:-}" ]]; then
-    forwarded_env+=(-e ZINGO_REGENERATE_CHAIN_CACHE)
-  fi
   if [[ -n "${RUST_LOG:-}" ]]; then
     forwarded_env+=(-e RUST_LOG)
   fi
@@ -257,18 +249,12 @@ tag="$(container_image_tag)"
 
 echo "Building ${IMAGE_NAME}:${tag}"
 echo "  RUST_VERSION=${RUST_VERSION}"
-echo "  ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}"
-echo "  ZEBRA_VERSION=${ZEBRA_VERSION}"
 echo "  NEXTEST_VERSION=${NEXTEST_VERSION}"
 
 "${runtime}" build \
   --platform=linux/amd64 \
   -f docker-ci/Dockerfile \
   --build-arg "RUST_VERSION=${RUST_VERSION}" \
-  --build-arg "ZAINO_IMAGE_TAG=${ZAINO_IMAGE_TAG}" \
-  --build-arg "ZAINO_IMAGE_DIGEST=${ZAINO_IMAGE_DIGEST}" \
-  --build-arg "ZEBRA_VERSION=${ZEBRA_VERSION}" \
-  --build-arg "ZEBRA_IMAGE_DIGEST=${ZEBRA_IMAGE_DIGEST}" \
   --build-arg "NEXTEST_VERSION=${NEXTEST_VERSION}" \
   -t "${IMAGE_NAME}:${tag}" \
   docker-ci
