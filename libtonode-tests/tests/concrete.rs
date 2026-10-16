@@ -1,16 +1,12 @@
 #![forbid(unsafe_code)]
 use json::JsonValue;
 
-use zcash_address::unified::Fvk;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 use pepper_sync::wallet::{IronwoodNote, OutputId, TransparentCoin};
 use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
-use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
-use zingolib::wallet::balance::AccountBalance;
-use zingolib::wallet::keys::unified::UnifiedKeyStore;
-use zingolib::wallet::summary::data::{CoinSummary, NoteSummary, TransactionSummary};
+use zingolib::wallet::summary::data::TransactionSummary;
 use zingolib::{check_client_balances, get_base_address_macro};
 use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 use zingolib_testutils::setup_metrics::MeteredNet;
@@ -18,129 +14,9 @@ use zingolib_testutils::setup_metrics::MeteredNet;
 #[path = "support/untracked_history.rs"]
 mod untracked_history;
 
-fn check_expected_balance_with_fvks(
-    fvks: &Vec<&Fvk>,
-    balance: AccountBalance,
-    o_expect: u64,
-    s_expect: u64,
-    t_expect: u64,
-) {
-    for fvk in fvks {
-        match fvk {
-            Fvk::Sapling(_) => {
-                assert_eq!(balance.total_sapling_balance.unwrap().into_u64(), s_expect);
-                assert_eq!(
-                    balance.confirmed_sapling_balance.unwrap().into_u64(),
-                    s_expect
-                );
-                assert_eq!(
-                    balance.unconfirmed_sapling_balance.unwrap().into_u64(),
-                    s_expect
-                );
-            }
-            Fvk::Orchard(_) => {
-                assert_eq!(balance.total_orchard_balance.unwrap().into_u64(), o_expect);
-                assert_eq!(
-                    balance.confirmed_orchard_balance.unwrap().into_u64(),
-                    o_expect
-                );
-                assert_eq!(
-                    balance.unconfirmed_orchard_balance.unwrap().into_u64(),
-                    o_expect
-                );
-            }
-            Fvk::P2pkh(_) => {
-                assert_eq!(
-                    balance.confirmed_transparent_balance.unwrap().into_u64(),
-                    t_expect
-                );
-            }
-            _ => panic!(),
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn check_view_capability_bounds(
-    balance: &AccountBalance,
-    unified_key_store: &UnifiedKeyStore,
-    fvks: &[&Fvk],
-    orchard_fvk: &Fvk,
-    sapling_fvk: &Fvk,
-    transparent_fvk: &Fvk,
-    sent_i_value: Option<Zatoshis>,
-    sent_o_value: Option<Zatoshis>,
-    sent_s_value: Option<Zatoshis>,
-    sent_t_value: Option<Zatoshis>,
-    ironwood_notes: &[NoteSummary],
-    orchard_notes: &[NoteSummary],
-    sapling_notes: &[NoteSummary],
-    transparent_coins: &[CoinSummary],
-) {
-    let UnifiedKeyStore::View(ufvk) = unified_key_store else {
-        panic!("should be viewing key!")
-    };
-    //Orchard
-    if fvks.contains(&orchard_fvk) {
-        assert!(ufvk.orchard().is_some());
-        assert_eq!(balance.total_orchard_balance, sent_o_value);
-        assert_eq!(balance.confirmed_orchard_balance, sent_o_value);
-        assert_eq!(balance.total_ironwood_balance, sent_i_value);
-        assert_eq!(balance.confirmed_ironwood_balance, sent_i_value);
-        assert_eq!(balance.unconfirmed_ironwood_balance, Some(Zatoshis::ZERO));
-        // assert 1 Orchard note, or 2 notes if a dummy output is included
-        let ironwood_notes_count = ironwood_notes
-            .iter()
-            .filter(|note| note.spend_status.is_unspent())
-            .count();
-        assert!((1..=2).contains(&ironwood_notes_count));
-    } else {
-        assert!(ufvk.orchard().is_none());
-        assert_eq!(balance.total_orchard_balance, None);
-        assert_eq!(balance.confirmed_orchard_balance, None);
-        assert_eq!(balance.unconfirmed_orchard_balance, None);
-        assert_eq!(orchard_notes.len(), 0);
-        assert_eq!(balance.total_ironwood_balance, None);
-        assert_eq!(balance.confirmed_ironwood_balance, None);
-        assert_eq!(balance.unconfirmed_ironwood_balance, None);
-        assert_eq!(ironwood_notes.len(), 0);
-    }
-    //Sapling
-    if fvks.contains(&sapling_fvk) {
-        assert!(ufvk.sapling().is_some());
-        assert_eq!(balance.total_sapling_balance, sent_s_value);
-        assert_eq!(balance.confirmed_sapling_balance, sent_s_value);
-        assert_eq!(balance.unconfirmed_sapling_balance, Some(Zatoshis::ZERO));
-        assert_eq!(
-            sapling_notes
-                .iter()
-                .filter(|note| note.spend_status.is_unspent())
-                .count(),
-            1
-        );
-    } else {
-        assert!(ufvk.sapling().is_none());
-        assert_eq!(balance.total_sapling_balance, None);
-        assert_eq!(balance.confirmed_sapling_balance, None);
-        assert_eq!(balance.unconfirmed_sapling_balance, None);
-        assert_eq!(sapling_notes.len(), 0);
-    }
-    if fvks.contains(&transparent_fvk) {
-        assert!(ufvk.p2pkh().is_some());
-        assert_eq!(balance.confirmed_transparent_balance, sent_t_value);
-        assert_eq!(transparent_coins.len(), 1);
-    } else {
-        assert!(ufvk.p2pkh().is_none());
-        assert_eq!(balance.confirmed_transparent_balance, None);
-        assert_eq!(transparent_coins.len(), 0);
-    }
-}
-
 use pepper_sync::wallet::OutputInterface;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingolib::config::WalletConfig;
-use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs;
 
 #[tokio::test]
@@ -207,197 +83,13 @@ async fn sole_transparent_coin(client: &LightClient) -> (OutputId, SpendStatus) 
     (coin.output_id(), wallet.output_spend_status(*coin))
 }
 
-use pepper_sync::wallet::{OrchardNote, SaplingNote};
-use zcash_local_net::validator::Validator;
-use zingolib::config::{ChainType, ClientConfig};
+use pepper_sync::wallet::SaplingNote;
 use zingolib::lightclient::LightClient;
-use zingolib::lightclient::error::{LightClientError, SendError};
 use zingolib::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
 };
-use zingolib::testutils::build_fvks_from_unified_keystore;
-use zingolib::wallet::error::CalculateTransactionError;
 use zingolib::wallet::output::SpendStatus;
 
-#[tokio::test]
-async fn test_scanning_in_watch_only_mode() {
-    // # Scenario:
-    // 3. reset wallet
-    // 4. for every combination of FVKs
-    //     4.1. init a wallet with UFVK
-    //     4.2. check that the wallet is empty
-    //     4.3. rescan
-    //     4.4. check that notes and utxos were detected by the wallet
-
-    let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-    let mut faucet = client_builder.build_faucet(false).await;
-    let mut original_recipient = client_builder
-        .build_client(
-            WalletConfig::MnemonicPhrase {
-                mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
-                no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1,
-                wallet_settings: default_test_wallet_settings(),
-            },
-            false,
-        )
-        .await;
-
-    let (recipient_taddr, recipient_sapling, recipient_unified) = (
-        get_base_address_macro!(original_recipient, "transparent"),
-        get_base_address_macro!(original_recipient, "sapling"),
-        get_base_address_macro!(original_recipient, "unified"),
-    );
-    let addr_amount_memos = vec![
-        (recipient_taddr.as_str(), 10_000u64, None),
-        (recipient_sapling.as_str(), 20_000u64, None),
-        (recipient_unified.as_str(), 30_000u64, None),
-    ];
-    // 1. fill wallet with a coinbase transaction by syncing faucet with 1-block increase
-    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
-        .await
-        .unwrap();
-    // 2. send a transaction containing all types of outputs
-    from_inputs::quick_send(&mut faucet, addr_amount_memos)
-        .await
-        .unwrap();
-    increase_height_and_wait_for_client(&local_net, &mut original_recipient, 1)
-        .await
-        .unwrap();
-    let original_recipient_balance = original_recipient
-        .account_balance(zip32::AccountId::ZERO)
-        .await
-        .unwrap();
-    let sent_t_value = original_recipient_balance
-        .confirmed_transparent_balance
-        .unwrap()
-        .into_u64();
-    let sent_s_value = original_recipient_balance
-        .total_sapling_balance
-        .unwrap()
-        .into_u64();
-    let sent_o_value = original_recipient_balance
-        .total_orchard_balance
-        .unwrap()
-        .into_u64();
-    let sent_i_value = original_recipient_balance
-        .total_ironwood_balance
-        .unwrap()
-        .into_u64();
-    assert_eq!(sent_t_value, 10_000u64);
-    assert_eq!(sent_s_value, 20_000u64);
-    // The unified-address payment lands in the Ironwood pool (ADR 0009).
-    assert_eq!(sent_o_value, 0u64);
-    assert_eq!(sent_i_value, 30_000u64);
-
-    // check that do_rescan works
-    original_recipient.rescan_and_await().await.unwrap();
-    check_client_balances!(original_recipient, i: sent_i_value o: sent_o_value s: sent_s_value t: sent_t_value);
-
-    // Extract viewing keys
-    let original_wallet = original_recipient.wallet().read().await;
-    let [o_fvk, s_fvk, t_fvk] = build_fvks_from_unified_keystore(
-        original_wallet
-            .unified_key_store
-            .get(&zip32::AccountId::ZERO)
-            .unwrap(),
-    );
-    let fvks_sets = [
-        vec![&o_fvk],
-        vec![&s_fvk],
-        vec![&o_fvk, &s_fvk],
-        vec![&o_fvk, &t_fvk],
-        vec![&s_fvk, &t_fvk],
-        vec![&o_fvk, &s_fvk, &t_fvk],
-    ];
-    for fvks in &fvks_sets {
-        tracing::info!("testing UFVK containing:");
-        tracing::info!("    orchard fvk: {}", fvks.contains(&&o_fvk));
-        tracing::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
-        tracing::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
-
-        let ufvk = zcash_address::unified::Encoding::encode(
-            &<zcash_address::unified::Ufvk as zcash_address::unified::Encoding>::try_from_items(
-                zcash_address::unified::Revision::R0,
-                fvks.iter()
-                    .copied()
-                    .cloned()
-                    .map(zcash_address::unified::Uitem::Data)
-                    .collect(),
-            )
-            .unwrap(),
-            &zcash_protocol::consensus::NetworkType::Regtest,
-        );
-        let zingo_config = ClientConfig::builder()
-            .set_indexer_uri(client_builder.server_id.clone())
-            .set_chain_type(ChainType::Regtest(
-                zingolib_testutils::scenarios::wallet_activation_heights(
-                    &local_net.validator().get_activation_heights().await,
-                ),
-            ))
-            .set_wallet_dir(client_builder.zingo_datadir.path().to_path_buf())
-            .set_wallet_config(WalletConfig::Ufvk {
-                ufvk,
-                birthday: 1,
-                wallet_settings: default_test_wallet_settings(),
-            })
-            .build()
-            .unwrap();
-        let mut watch_client = LightClient::new_nakednet_consented(zingo_config, false)
-            .await
-            .unwrap();
-        // assert empty wallet before rescan
-        let balance = watch_client
-            .account_balance(zip32::AccountId::ZERO)
-            .await
-            .unwrap();
-        check_expected_balance_with_fvks(fvks, balance, 0, 0, 0);
-        watch_client.rescan_and_await().await.unwrap();
-        let balance = watch_client
-            .account_balance(zip32::AccountId::ZERO)
-            .await
-            .unwrap();
-        {
-            let watch_wallet = watch_client.wallet().read().await;
-            let ironwood_notes = watch_wallet.note_summaries::<IronwoodNote>(true);
-            let orchard_notes = watch_wallet.note_summaries::<OrchardNote>(true);
-            let sapling_notes = watch_wallet.note_summaries::<SaplingNote>(true);
-            let transparent_coin = watch_wallet.coin_summaries(true);
-
-            check_view_capability_bounds(
-                &balance,
-                watch_wallet
-                    .unified_key_store
-                    .get(&zip32::AccountId::ZERO)
-                    .unwrap(),
-                fvks,
-                &o_fvk,
-                &s_fvk,
-                &t_fvk,
-                Some(sent_i_value.try_into().unwrap()),
-                Some(sent_o_value.try_into().unwrap()),
-                Some(sent_s_value.try_into().unwrap()),
-                Some(sent_t_value.try_into().unwrap()),
-                &ironwood_notes,
-                &orchard_notes,
-                &sapling_notes,
-                &transparent_coin,
-            );
-        }
-
-        watch_client.rescan_and_await().await.unwrap();
-        assert!(matches!(
-            from_inputs::quick_send(
-                &mut watch_client,
-                vec![(zingo_test_vectors::EXT_TADDR, 1000, None)]
-            )
-            .await,
-            Err(LightClientError::SendError(SendError::CalculateSendError(
-                CalculateTransactionError::NoSpendingKey(_)
-            )))
-        ));
-    }
-}
 async fn sends_to_self_handle_balance_properly(
     local_net: &MeteredNet,
     faucet: &mut LightClient,

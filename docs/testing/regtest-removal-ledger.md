@@ -498,3 +498,4 @@ faucet-economics fee.
 - rescan_still_have_outgoing_notes::self_send (50): `rescan_self_send::self_send`, the first twin to rescan against the mock chain.
 - rescan_still_have_outgoing_notes::check_list_value_transfers_across_rescan (51): `rescan_value_transfers::check_list_value_transfers_across_rescan`.
 - unified_address_discovery (39): `unified_address_discovery::unified_address_discovery`.
+- test_scanning_in_watch_only_mode (47): `watch_only::test_scanning_in_watch_only_mode`, with its two balance-bound helpers.

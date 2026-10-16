@@ -5,6 +5,7 @@ mod rescan_self_send;
 mod rescan_value_transfers;
 mod send_pre_ironwood;
 mod untracked_history;
+mod watch_only;
 mod sync_all_expressible_epochs;
 mod unified_address_discovery;
 
