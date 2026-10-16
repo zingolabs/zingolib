@@ -260,17 +260,20 @@ jobs:
         id: names
         run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
-  # The per-PR tier of zingolib/0054: the x86_64 libraries, the Kotlin
-  # bindings, and the AAR. binding-layer-android.yaml runs the builder on
-  # this commit, here and in the nightly, so one definition builds an ABI
-  # in both tiers. On a pull request that commit is the merge commit, and
-  # every push builds once, on a cargo cache keyed by the ABI.
+  # The per-PR tier of zingolib/0054: the x86_64 libraries and the Kotlin
+  # Binding Sets. The Maven layout and the Kotlin wire-contract test run in
+  # the nightly and in the publish, not here. binding-layer-android.yaml
+  # runs the builder on this commit, here and in the nightly, so one
+  # definition builds an ABI in both tiers. On a pull request that commit
+  # is the merge commit, and every push builds once, on a cargo cache keyed
+  # by the ABI.
   binding-layer-android:
     if: ${{ inputs.skip-binding-layer-build != true }}
     needs: binding-layer-names
     uses: ./.github/workflows/binding-layer-android.yaml
     with:
       abis: '["x86_64"]'
+      package: false
       abi_artifacts: ${{ needs.binding-layer-names.outputs.abi_artifacts }}
       abi_pattern: ${{ needs.binding-layer-names.outputs.abi_pattern }}
       repository: ${{ needs.binding-layer-names.outputs.android_repository }}
