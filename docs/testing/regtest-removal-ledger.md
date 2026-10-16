@@ -61,8 +61,8 @@ own mempool holds the txid right after `send_transaction`, the indexer's
 This measures a real indexer's latency behind a real validator. Mock:
 lag is zero by construction, so nothing to assert. Testnet: the indexer
 half is measurable (send, poll `GetMempoolTx`), the validator half has no
-channel. Retire the validator half; the indexer half is a testnet probe
-if the latency bound matters.
+channel. Exported to zaino: the lag assertion lives in zaino's
+`validator_acceptance` cells; the time bound is retired.
 
 **9. wallet_mempool_record_trails_validator_acceptance.** Asserts the
 sender's record reaches `Mempool` status within a bound. Mock twin:
@@ -125,11 +125,12 @@ scaffold; build the dense chain with `mine_block` carrying sends. Not
 mockable: nothing.
 
 **18. diagnose_subtree_root_stream.** A diagnostic of a real indexer's
-stream truncation. Mock: `Fault::TruncateStream` reproduces the symptom,
-not the server. Testnet: the real question. Retire or move to testnet.
+subtree-root stream truncation, issue #2440. Retired: the issue closed
+on a stuck backend, and the wallet-side guarantee is the testnet cell
+of entry 15.
 
 **19. indexer_converges_with_validator_after_block_generation.** Asserts
-the harness's convergence barrier. Retire with regtest.
+the harness's convergence barrier. Exported to zaino.
 
 **20. ironwood_notes_in_untracked_history_are_recovered** and **21.
 orchard_…** Assert a wallet whose pool history was stripped reports a
@@ -527,9 +528,9 @@ zingolabs zainod testnet node once it exists.
 
 Guarantees with no home after the removal, by ruling 4 of the plan.
 
-- launch_mines_exactly_one_block_and_nothing_else_mines (5), transparent_launch_block_is_byte_deterministic (6), suppressed_launch_generate_leaves_genesis (7), chain_mutates_only_via_owned_rpc (4): contracts of the `zcash_local_net` launch and RPC log, which the removal deletes. The `sentinels` feature goes with its file.
+- launch_mines_exactly_one_block_and_nothing_else_mines (5), transparent_launch_block_is_byte_deterministic (6), suppressed_launch_generate_leaves_genesis (7), chain_mutates_only_via_owned_rpc (4): contracts of the `zcash_local_net` launch and RPC log, which the removal deletes. The `sentinels` feature goes in the cut, by ruling 8 of the plan.
 - sync_test (16): no assertion beyond success; its steps are mock twins.
-- diagnose_subtree_root_stream (18): a diagnostic of a real indexer's truncation, which issues #2963 and #2964 cover; `sync_recovers_from_a_truncated_block_stream` reproduces the symptom on the mock chain.
+- diagnose_subtree_root_stream (18): a diagnostic of the subtree-root stream truncation of issue #2440, closed on a stuck backend; the wallet-side guarantee is `subtree_roots::add_subtree_roots` (15) on testnet.
 - The time bounds of entries 8 and 9: operational latency measurements, not wallet guarantees.
 
 ## Exported to zaino (pending)

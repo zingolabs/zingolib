@@ -4,8 +4,6 @@ use zingolib::lightclient::DEFAULT_REQUEST_TIMEOUT;
 
 use zingolib_testutils::scenarios;
 
-// TODO: migrate to mock test as this test is long and connects to mainnet
-// temporary test for sync development
 /// The indexer tip-lag race behind the historical
 /// `unified_address_discovery` failure: after raw `generate_blocks`
 /// returns, the *validator* has the new block while the *indexer*'s
