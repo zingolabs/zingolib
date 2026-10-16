@@ -93,7 +93,6 @@ const GENESIS_HEIGHT: BlockHeight = BlockHeight::from_u32(0);
 const NO_PREDECESSOR_HASH: [u8; 32] = [0u8; 32];
 const NO_EXPIRY: BlockHeight = BlockHeight::from_u32(0);
 const FAUCET_FUNDING: u64 = 1_000_000_000;
-const FAUCET_DEFAULT_TIP: u32 = 20;
 const FAUCET_MIN_TIP: u32 = 3;
 const FAUCET_HEADROOM: u64 = 1_000_000;
 
@@ -1013,6 +1012,12 @@ impl MockChain {
     /// The height of the next block.
     pub fn next_height(&self) -> BlockHeight {
         BlockHeight::from_u32(self.tip() + 1)
+    }
+
+    /// - Runs the Sapling and Halo2 provers for the built bundles.
+    pub async fn funding_transaction(&self, receivers: Vec<(&str, u64, Option<&str>)>) -> Vec<u8> {
+        faucet_funding_transaction_on(self.activation_heights(), self.next_height(), receivers)
+            .await
     }
 
     /// Returns the number of transactions in the mempool.
@@ -2360,6 +2365,16 @@ pub struct MockNet {
 impl MockNet {
     pub const DEFAULT_BIRTHDAY: u32 = 1;
 
+    /// - Takes the chain's read lock to read its activation schedule and next height, and
+    ///   releases it before running the Sapling and Halo2 provers for the built bundles.
+    pub async fn funding_transaction(&self, receivers: Vec<(&str, u64, Option<&str>)>) -> Vec<u8> {
+        let (activation_heights, height) = {
+            let chain = self.chain.read().await;
+            (chain.activation_heights(), chain.next_height())
+        };
+        faucet_funding_transaction_on(activation_heights, height, receivers).await
+    }
+
     /// Launches the mock server on an ephemeral localhost port with an
     /// empty chain.
     pub async fn launch() -> Self {
@@ -2562,16 +2577,10 @@ impl ConductChain for MockNet {
     async fn create_faucet(&mut self) -> LightClient {
         let mut faucet = self.create_client().await;
         let address = get_base_address(&faucet, PoolType::Shielded(ShieldedPool::Orchard)).await;
-        {
-            let mut chain = self.chain.write().await;
-            let funding = faucet_funding_transaction_on(
-                chain.activation_heights(),
-                chain.next_height(),
-                vec![(&address, FAUCET_FUNDING, None)],
-            )
+        let funding = self
+            .funding_transaction(vec![(&address, FAUCET_FUNDING, None)])
             .await;
-            chain.mine_block(vec![funding]);
-        }
+        self.chain.write().await.mine_block(vec![funding]);
         faucet
             .sync_and_await()
             .await
@@ -2597,16 +2606,6 @@ impl ConductChain for MockNet {
     fn confirmation_patience_blocks(&self) -> usize {
         1
     }
-}
-
-/// - Runs the Sapling and Halo2 provers for the built bundles.
-pub async fn faucet_funding_transaction(receivers: Vec<(&str, u64, Option<&str>)>) -> Vec<u8> {
-    faucet_funding_transaction_on(
-        crate::testutils::mock_activation_heights(),
-        BlockHeight::from_u32(FAUCET_DEFAULT_TIP + 1),
-        receivers,
-    )
-    .await
 }
 
 fn ironwood_era(activation_heights: ActivationHeights, height: BlockHeight) -> bool {
@@ -2728,13 +2727,14 @@ mod tests {
     const HEIGHT_ONE: BlockHeight = BlockHeight::from_u32(1);
     const HEIGHT_TWO: BlockHeight = BlockHeight::from_u32(2);
 
-    async fn funding_bytes() -> Vec<u8> {
-        faucet_funding_transaction(vec![(
-            &synthetic_wallet::external_orchard_address(),
-            PAYMENT,
-            None,
-        )])
-        .await
+    async fn funding_bytes(chain: &MockChain) -> Vec<u8> {
+        chain
+            .funding_transaction(vec![(
+                &synthetic_wallet::external_orchard_address(),
+                PAYMENT,
+                None,
+            )])
+            .await
     }
 
     fn lax_anchors() -> MockChain {
@@ -2806,7 +2806,7 @@ mod tests {
     #[tokio::test]
     async fn faucet_transaction_is_rejected_for_unknown_anchor() {
         let mut chain = MockChain::new();
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&chain).await;
         let rejection = chain.submit_transaction(bytes).unwrap_err();
         assert!(
             matches!(rejection, Rejection::UnknownAnchor(_)),
@@ -2818,7 +2818,7 @@ mod tests {
     #[tokio::test]
     async fn resubmission_with_revealed_nullifier_is_rejected() {
         let mut chain = lax_anchors();
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&chain).await;
         chain.submit_transaction(bytes.clone()).unwrap();
         let in_mempool = chain.submit_transaction(bytes.clone()).unwrap_err();
         assert!(matches!(in_mempool, Rejection::DuplicateNullifier(_)));
@@ -2830,7 +2830,7 @@ mod tests {
     #[tokio::test]
     async fn reorg_removes_nullifiers_of_evicted_blocks() {
         let mut chain = lax_anchors();
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&chain).await;
         chain.mine_empty_blocks(2);
         chain.submit_transaction(bytes.clone()).unwrap();
         chain.mine_mempool();
@@ -2843,7 +2843,7 @@ mod tests {
     #[tokio::test]
     async fn expired_mempool_transactions_are_evicted_when_a_block_is_mined() {
         let mut chain = lax_anchors();
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&chain).await;
         let expiry = chain.parse_transaction(&bytes, HEIGHT_ONE).expiry_height();
         chain.submit_transaction(bytes).unwrap();
         chain.mine_empty_blocks(u32::from(expiry) - 1);
@@ -2855,7 +2855,7 @@ mod tests {
     #[tokio::test]
     async fn expired_transaction_is_rejected() {
         let mut chain = lax_anchors();
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&chain).await;
         let expiry = chain.parse_transaction(&bytes, HEIGHT_ONE).expiry_height();
         assert!(expiry > NO_EXPIRY);
         chain.mine_empty_blocks(u32::from(expiry));
@@ -2873,7 +2873,12 @@ mod tests {
     async fn transaction_with_wrong_branch_id_is_rejected() {
         let mut chain = MockChain::with_activation_heights(pre_ironwood_activation_heights());
         chain.rules.anchors = false;
-        let bytes = funding_bytes().await;
+        let bytes = faucet_funding_transaction_on(
+            crate::testutils::mock_activation_heights(),
+            chain.next_height(),
+            vec![(&synthetic_wallet::external_orchard_address(), PAYMENT, None)],
+        )
+        .await;
         let rejection = chain.submit_transaction(bytes).unwrap_err();
         assert!(
             matches!(
@@ -3042,7 +3047,7 @@ mod tests {
     async fn mempool_stream_yields_new_transactions_and_closes_on_new_block() {
         let chain = Arc::new(RwLock::new(lax_anchors()));
         let service = MockIndexerService::new(chain.clone());
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&*chain.read().await).await;
         let mut stream = service
             .get_mempool_stream(Request::new(Empty {}))
             .await
@@ -3074,7 +3079,7 @@ mod tests {
     async fn mempool_stream_yields_existing_mempool_on_subscription() {
         let chain = Arc::new(RwLock::new(lax_anchors()));
         let service = MockIndexerService::new(chain.clone());
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&*chain.read().await).await;
         chain
             .write()
             .await
@@ -3204,7 +3209,7 @@ mod tests {
     async fn send_transaction_returns_rejection_in_zaino_error_format() {
         let chain = Arc::new(RwLock::new(MockChain::new()));
         let service = MockIndexerService::new(chain.clone());
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&*chain.read().await).await;
         let status = service
             .send_transaction(Request::new(RawTransaction {
                 data: bytes,
@@ -3308,7 +3313,7 @@ mod tests {
     #[tokio::test]
     async fn orchard_bundle_signed_over_another_sighash_is_rejected() {
         let mut chain = lax_anchors();
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&chain).await;
         let expiry = chain.parse_transaction(&bytes, HEIGHT_ONE).expiry_height();
         let resigned = with_expiry(&chain, &bytes, expiry + 1);
         let rejection = chain
@@ -3324,7 +3329,7 @@ mod tests {
     #[tokio::test]
     async fn orchard_bundle_with_corrupted_proof_is_rejected() {
         let mut chain = lax_anchors();
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&chain).await;
         let transaction = chain.parse_transaction(&bytes, HEIGHT_ONE);
         let bundle = transaction
             .ironwood_bundle()
@@ -3343,12 +3348,13 @@ mod tests {
     #[tokio::test]
     async fn sapling_bundle_signed_over_another_sighash_is_rejected() {
         let mut chain = lax_anchors();
-        let bytes = faucet_funding_transaction(vec![(
-            &synthetic_wallet::external_sapling_address(),
-            PAYMENT,
-            None,
-        )])
-        .await;
+        let bytes = chain
+            .funding_transaction(vec![(
+                &synthetic_wallet::external_sapling_address(),
+                PAYMENT,
+                None,
+            )])
+            .await;
         let expiry = chain.parse_transaction(&bytes, HEIGHT_ONE).expiry_height();
         let resigned = with_expiry(&chain, &bytes, expiry + 1);
         let rejection = chain
@@ -3360,12 +3366,13 @@ mod tests {
     #[tokio::test]
     async fn sapling_bundle_with_corrupted_output_proof_is_rejected() {
         let mut chain = lax_anchors();
-        let bytes = faucet_funding_transaction(vec![(
-            &synthetic_wallet::external_sapling_address(),
-            PAYMENT,
-            None,
-        )])
-        .await;
+        let bytes = chain
+            .funding_transaction(vec![(
+                &synthetic_wallet::external_sapling_address(),
+                PAYMENT,
+                None,
+            )])
+            .await;
         let transaction = chain.parse_transaction(&bytes, HEIGHT_ONE);
         let output = transaction
             .sapling_bundle()
@@ -3381,12 +3388,13 @@ mod tests {
     #[tokio::test]
     async fn valid_sapling_and_orchard_bundles_are_accepted_under_verification() {
         let mut chain = lax_anchors();
-        let bytes = faucet_funding_transaction(vec![(
-            &synthetic_wallet::external_sapling_address(),
-            PAYMENT,
-            None,
-        )])
-        .await;
+        let bytes = chain
+            .funding_transaction(vec![(
+                &synthetic_wallet::external_sapling_address(),
+                PAYMENT,
+                None,
+            )])
+            .await;
         chain
             .submit_transaction(bytes)
             .expect("the faucet's own proofs and signatures verify");

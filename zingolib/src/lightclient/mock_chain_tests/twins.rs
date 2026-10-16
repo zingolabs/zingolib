@@ -3,7 +3,7 @@ use zcash_protocol::value::Zatoshis;
 
 use super::{
     DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, confirmed_balance, continuous_sync_wallet_settings,
-    external_address, external_transparent_address, fund, funded_client, funding_at_next_height,
+    external_address, external_transparent_address, fund, funded_client,
 };
 use crate::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind, ValueTransfers,
@@ -64,9 +64,11 @@ fn rescan_progress(
     sessions: usize,
     limit: usize,
 ) -> RescanProgress {
-    unimplemented!(
-        "a wallet scanned to {scanned:?} against tip {tip} after {sessions} of {limit} sessions"
-    )
+    match scanned {
+        Some(height) if height >= tip => RescanProgress::CaughtUp,
+        _ if sessions < limit => RescanProgress::Behind,
+        _ => RescanProgress::Exhausted,
+    }
 }
 
 #[test]
