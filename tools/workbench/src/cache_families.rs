@@ -1,19 +1,12 @@
-use crate::{run_streaming, stdout_of};
+use std::collections::BTreeSet;
+
+use crate::{run_streaming, stdout_of_owned};
 
 const GH: &str = "gh";
 const CACHE: &str = "cache";
-
-/// The branch whose entries the saves target; pull requests only restore.
 pub const SAVING_REF: &str = "refs/heads/dev";
-
-/// The store holds a few hundred entries at most; this bound lists them all.
 const LIST_LIMIT: &str = "500";
-
-/// One line per entry, newest first: the id, the key and the creation time.
 const LISTING: &str = r#".[] | "\(.id)\t\(.key)\t\(.createdAt)""#;
-
-/// rust-cache appends the lockfile hash as the last eight hex digits of a
-/// key; the key without it is the restore prefix every job restores by.
 const LOCKFILE_HASH_LEN: usize = 8;
 
 pub fn list_args() -> Vec<String> {
@@ -76,27 +69,56 @@ pub fn entries(listing: &str) -> Result<Vec<Entry>, Vec<String>> {
         .collect()
 }
 
-/// The entries to delete from a newest-first listing: every entry whose
-/// family already has a newer one.
-pub fn superseded(entries: &[Entry]) -> Vec<&Entry> {
-    let mut seen = std::collections::BTreeSet::new();
+pub fn superseded(entries: Vec<Entry>) -> Vec<Entry> {
+    let mut seen = BTreeSet::new();
     entries
-        .iter()
-        .filter(|entry| !seen.insert(family(&entry.key)))
+        .into_iter()
+        .filter(|entry| !seen.insert(family(&entry.key).to_string()))
         .collect()
+}
+
+pub fn settle(failed: Vec<Entry>, remaining: &[Entry]) -> (Vec<Entry>, Vec<Entry>) {
+    let listed: BTreeSet<&str> = remaining.iter().map(|entry| entry.id.as_str()).collect();
+    failed
+        .into_iter()
+        .partition(|entry| !listed.contains(entry.id.as_str()))
 }
 
 /// - Runs `gh cache list` as a child process and waits for it.
 /// - Runs `gh cache delete` once per superseded entry, each as a child process.
+/// - Runs `gh cache list` again when a delete failed, and waits for it.
 pub fn prune() -> Result<Vec<Entry>, Vec<String>> {
-    let args = list_args();
-    let listing = stdout_of(GH, &args.iter().map(String::as_str).collect::<Vec<_>>())?;
-    let entries = entries(&listing)?;
-    let doomed: Vec<Entry> = superseded(&entries).into_iter().cloned().collect();
-    for entry in &doomed {
-        run_streaming(GH, &[CACHE, "delete", &entry.id], &[])?;
+    let doomed = superseded(entries(&stdout_of_owned(GH, &list_args())?)?);
+    let mut deleted = Vec::new();
+    let mut failed = Vec::new();
+    for entry in doomed {
+        match run_streaming(GH, &[CACHE, "delete", &entry.id], &[]) {
+            Ok(()) => deleted.push(entry),
+            Err(_) => failed.push(entry),
+        }
     }
-    Ok(doomed)
+    if failed.is_empty() {
+        return Ok(deleted);
+    }
+    let remaining = entries(&stdout_of_owned(GH, &list_args())?)?;
+    let (_gone, stuck) = settle(failed, &remaining);
+    if stuck.is_empty() {
+        return Ok(deleted);
+    }
+    Err(stuck
+        .iter()
+        .map(|entry| {
+            format!(
+                "`gh cache delete {}` failed and the entry {} is still listed",
+                entry.id, entry.key
+            )
+        })
+        .chain(std::iter::once(format!(
+            "deleted {} of {} superseded entries",
+            deleted.len(),
+            deleted.len() + stuck.len()
+        )))
+        .collect())
 }
 
 #[cfg(test)]
@@ -126,19 +148,40 @@ mod tests {
     }
 
     #[test]
+    fn a_setup_gradle_key_is_its_own_family() {
+        let home = "gradle-home-v1|Linux-X64|package[b8a35c2f917259958c9abe8f2ff1b5ff]-5d859920e0f6ab6fbc6e0d4c1a1b2c3d4e5f6071";
+        assert_eq!(family(home), home, "the commit sha is not a lockfile hash");
+        let bundle = "gradle-dependencies-v1-b8a35c2f917259958c9abe8f2ff1b5ff";
+        assert_eq!(
+            family(bundle),
+            bundle,
+            "a bundle is restored by its exact key"
+        );
+    }
+
+    #[test]
     fn the_newest_entry_of_each_family_survives() {
-        let listing = [
+        let listing = vec![
             entry("1", "v0-rust-a-26e84094-c5b5aea0"),
             entry("2", "v0-rust-b-26e84094-c5b5aea0"),
             entry("3", "v0-rust-a-26e84094-2afa9efd"),
             entry("4", "v0-rust-a-26e84094-15153fd1"),
             entry("5", "v0-rust-b-26e84094-2afa9efd"),
         ];
-        let doomed: Vec<&str> = superseded(&listing)
+        let doomed: Vec<String> = superseded(listing)
             .into_iter()
-            .map(|entry| entry.id.as_str())
+            .map(|entry| entry.id)
             .collect();
         assert_eq!(doomed, ["3", "4", "5"], "the listing is newest first");
+    }
+
+    #[test]
+    fn a_failed_delete_of_an_entry_no_longer_listed_is_done() {
+        let failed = vec![entry("1", "a"), entry("2", "b")];
+        let remaining = [entry("2", "b"), entry("9", "z")];
+        let (gone, stuck) = settle(failed, &remaining);
+        assert_eq!(gone, [entry("1", "a")]);
+        assert_eq!(stuck, [entry("2", "b")]);
     }
 
     #[test]
