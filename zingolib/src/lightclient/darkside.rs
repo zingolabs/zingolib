@@ -31,7 +31,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::check_client_balances;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
-use crate::testutils::mock_indexer::{MockNet, faucet_funding_transaction};
+use crate::testutils::mock_indexer::MockNet;
 
 const FUNDING: u64 = 100_000_000;
 
@@ -41,9 +41,11 @@ const FUNDING: u64 = 100_000_000;
 /// two more empties to give it confirmations. Mirrors the
 /// darksidewalletd preparation the originals shared.
 async fn fund_at_height_three(net: &MockNet, address: &str) -> Vec<u8> {
-    let funding = faucet_funding_transaction(vec![(address, FUNDING, None)]).await;
+    net.chain.write().await.mine_empty_blocks(2);
+    let funding = net
+        .funding_transaction(vec![(address, FUNDING, None)])
+        .await;
     let mut chain = net.chain.write().await;
-    chain.mine_empty_blocks(2);
     chain.mine_block(vec![funding.clone()]);
     chain.mine_empty_blocks(2);
     funding

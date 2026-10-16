@@ -4,7 +4,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use super::{FUNDING, funded_client};
 use crate::lightclient::LightClient;
 use crate::testutils::lightclient::get_base_address;
-use crate::testutils::mock_indexer::{MockNet, faucet_funding_transaction};
+use crate::testutils::mock_indexer::MockNet;
 
 const RECEIVED: u64 = 20_000;
 
@@ -26,13 +26,11 @@ async fn received_tx_status_pending_to_confirmed_with_mempool_monitor() {
     let mut recipient = funded_client(&mut net, &[(PoolType::ORCHARD, FUNDING)], 1).await;
     let recipient_ua = get_base_address(&recipient, PoolType::ORCHARD).await;
 
-    let incoming = faucet_funding_transaction(vec![(&recipient_ua, RECEIVED, None)]).await;
-    let mempool_target_height = {
-        let mut chain = net.chain.write().await;
-        let target = chain.next_height();
-        chain.enter_mempool(incoming);
-        target
-    };
+    let mempool_target_height = net.chain.read().await.next_height();
+    let incoming = net
+        .funding_transaction(vec![(&recipient_ua, RECEIVED, None)])
+        .await;
+    net.chain.write().await.enter_mempool(incoming);
 
     recipient
         .sync_and_await()

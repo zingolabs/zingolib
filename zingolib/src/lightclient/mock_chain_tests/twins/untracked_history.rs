@@ -1,7 +1,9 @@
 use pepper_sync::error::SyncError;
 use zcash_protocol::{PoolType, ShieldedPool};
 
-use super::{DEFERRED_NU6_3, FUNDING, confirmed_balance, funded_client};
+use super::{
+    DEFERRED_NU6_3, FUNDING, RescanProgress, confirmed_balance, funded_client, rescan_progress,
+};
 use crate::lightclient::LightClient;
 use crate::lightclient::error::LightClientError;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
@@ -11,7 +13,8 @@ const HIDDEN_BLOCKS: u32 = 2;
 const RECOVERY_SESSIONS: usize = 5;
 
 /// - Strips the recipient wallet's tracking of `pool` under the wallet's write lock.
-/// - Mines two blocks and runs sync sessions on the recipient until the note is recovered.
+/// - Mines two blocks and runs sync sessions on the recipient until it has scanned to the tip,
+///   within a bound.
 pub(super) async fn recover_untracked_history(
     net: &MockNet,
     recipient: &mut LightClient,
@@ -55,19 +58,37 @@ pub(super) async fn recover_untracked_history(
          session by reopening that history: {reopened:?}"
     );
 
-    // The following sessions rescan the reopened history and recover the note.
-    let mut last_session = reopened;
-    for _ in 0..RECOVERY_SESSIONS {
-        last_session = recipient.sync_and_await().await;
-        if last_session.is_ok() && confirmed_balance(recipient, pool).await == funded_balance {
-            break;
+    // The following sessions rescan the reopened history until the wallet has
+    // scanned to the chain tip, as the live test's sync_to_target_height did.
+    let tip = net.chain.read().await.tip();
+    let mut sessions = 0;
+    loop {
+        let session = recipient.sync_and_await().await;
+        sessions += 1;
+        assert!(
+            session.is_ok(),
+            "every session after the reopening one completes: {session:?}"
+        );
+        let scanned = recipient
+            .wallet()
+            .read()
+            .await
+            .sync_state
+            .fully_scanned_height()
+            .map(u32::from);
+        match rescan_progress(scanned, tip, sessions, RECOVERY_SESSIONS) {
+            RescanProgress::CaughtUp => break,
+            RescanProgress::Behind => {}
+            RescanProgress::Exhausted => panic!(
+                "the wallet scanned to {scanned:?} against tip {tip} after {sessions} sessions"
+            ),
         }
     }
     assert_eq!(
         confirmed_balance(recipient, pool).await,
         funded_balance,
         "the {pool:?} note was left lost in history that was scanned without \
-         {pool:?} tracking; the last session ended {last_session:?}",
+         {pool:?} tracking",
     );
 }
 
