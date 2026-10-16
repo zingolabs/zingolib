@@ -509,26 +509,31 @@ mod package_selection_guard {
     #[test]
     fn the_makefile_names_the_lite_libtonode_test() {
         let makefile = include_str!("../../../../Makefile.toml");
-        let [description] = makefile
-            .split("[tasks.lite-hierarchy]")
-            .skip(1)
-            .map(|rest| rest.lines().nth(1).unwrap_or_default())
-            .collect::<Vec<_>>()[..]
-        else {
-            panic!("Makefile.toml declares exactly one lite-hierarchy task")
+        let task_body = |task: &str| -> &str {
+            let [body] = makefile
+                .split(&format!("[tasks.{task}]"))
+                .skip(1)
+                .map(|rest| rest.split("\n[tasks.").next().unwrap_or_default())
+                .collect::<Vec<_>>()[..]
+            else {
+                panic!("Makefile.toml declares exactly one {task} task")
+            };
+            body
         };
+        let description = task_body("lite-hierarchy")
+            .lines()
+            .nth(1)
+            .unwrap_or_default();
         assert!(description.starts_with("description ="), "{description}");
+        let usage = task_body("help");
         for name in [LITE_LIBTONODE_BINARY, LITE_LIBTONODE_TEST] {
             assert!(
                 description.contains(name),
                 "the lite-hierarchy description must name {name}: {description}"
             );
             assert!(
-                makefile
-                    .split("[tasks.")
-                    .next()
-                    .is_some_and(|usage| usage.contains(name)),
-                "the usage text must name {name}"
+                usage.contains(name),
+                "the help task's usage text must name {name}"
             );
         }
     }
