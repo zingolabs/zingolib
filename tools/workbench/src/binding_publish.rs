@@ -8,7 +8,6 @@ pub const BINARY: &str = "binding-publish";
 pub const USERNAME_VARIABLE: &str = "REGISTRY_USERNAME";
 pub const TOKEN_VARIABLE: &str = "REGISTRY_TOKEN";
 pub const GZIP_MEDIA_TYPE: &str = "application/gzip";
-const ARCHIVE_SUFFIX: &str = ".tar.gz";
 const SHAPES: [(&str, &str); 2] = [
     (binding_manifest::ANDROID, GZIP_MEDIA_TYPE),
     (binding_manifest::IOS, GZIP_MEDIA_TYPE),
@@ -159,7 +158,7 @@ fn bundle_of(root: &Path, platform: &str, dir: &Path, commit: &str) -> Result<Bu
 
 /// - Runs `tar` as a child process in `parent`, writing `<name>.tar.gz` beside `<name>`.
 fn archive(parent: &Path, name: &str) -> Result<PathBuf, Vec<String>> {
-    let archive_name = format!("{name}{ARCHIVE_SUFFIX}");
+    let archive_name = format!("{name}{}", binding_layer::ARCHIVE_SUFFIX);
     let args = [TAR_ARGS.as_slice(), &[archive_name.as_str(), name]].concat();
     crate::stdout_in(parent, TAR, &args, &[])?;
     Ok(parent.join(archive_name))

@@ -113,10 +113,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: `rand` 0.10. `provider::rotation_interval` takes a `rand` 0.10
   generator, and the exit tiers shuffle with the thread-local generator
   where they drew `rand::rngs::OsRng`, a type `rand` 0.10 removed.
-- `lightwallet-protocol` moves to the crates.io release 0.4.0, whose
-  committed bindings carry the Ironwood proto fields. The `[patch.crates-io]`
-  git pin is gone, the workspace no longer enables `rebuild-proto`, and a
-  build of zingo-netutils no longer runs protoc.
+- `lightwallet-protocol` moves from 0.3.0 to 0.4.0, whose committed
+  bindings carry the Ironwood proto fields.
 - `time::MEMPOOL_DRAIN_SETTLE` is raised from 200 ms to 750 ms, and
   `time::MEMPOOL_DRAIN_CEILING` from 1 s to 1.5 s to keep the settle window
   inside it. zaino polls the validator's mempool every 500 ms by default, so
@@ -186,9 +184,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rendering now happens inside the connector, so callers pass the typed
   address they already hold and never render it.
 
-- BREAKING: the `MAX_PARALLEL_CONNECTS` constant is renamed
-  `arm_race::RESERVATION_CLUTCH_SIZE`; the race width is the clutch of exit
-  reservations, never an independent parameter (ADR 0035).
 - BREAKING: the `arm_race` planner speaks ADR 0035's pull vocabulary.
   `PullFailure` (was `ArmFailure`) carries an `arm` field (was
   `candidate`), `RaceEvent::PullFailed` replaces `RaceEvent::ArmFailed`,
@@ -232,25 +227,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `exit_provider`).
 
 ### Removed
-
-- BREAKING: the responsiveness partition is retired. The `Responsiveness`
-  trait, the `PrioritiseSpeed` and `PrioritisePrivacy` marker types,
-  `ResponsivenessClass`, its wire token, and the proxy binary's
-  `--responsiveness` argument are gone; `NymProxy::start` and `start_over`
-  lose their type parameter. Every acquisition now races under the one
-  hedged launch policy (`arm_race::acquisition_launch_policy`), an
-  arm wins by binding, and the child-side Sentinel gate is deleted: proof
-  of the bound exit belongs to the layer above the SOCKS5 seam, which
-  probes once per birth instead of once per losing arm. The speed class's
-  in-race proving starved acquisitions whenever no arm could complete a
-  round trip quickly, stalling the session tunnel at `Bootstrapping`
-  past 90 seconds in three consecutive measured runs.
-- BREAKING: the retirement's residue is gone with it. The `responsiveness`
-  module is deleted, with `RESERVATION_CLUTCH_SIZE` and
-  `acquisition_launch_policy` re-homed in `arm_race` beside the policy they
-  configure; `LaunchPolicy::Saturating`, which nothing outside its own
-  tests constructed, is removed; and `NymProxyError::CarriesNothing`, whose
-  only mint left with the child-side Sentinel gate, is removed.
 
 - BREAKING: `live_indexer_discovery::DiscoveredIndexer` carries `tip: BlockId`
   where it carried `info: LightdInfo`, because discovery now probes the tip.
