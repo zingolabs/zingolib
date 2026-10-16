@@ -151,13 +151,18 @@ rand = "0.10"
 [profile.test]
 opt-level = 3
 
-# The profile that the Binding Layer builder uses for the mobile libraries,
-# carried unchanged from the zingo-ffi workspace that the crates came from.
+# The profile that the Binding Layer builder uses for the mobile libraries.
+# The panic strategy is unwind, the same as the `mobile` profile of the
+# standalone zingo-netutils workspace that builds the proxy library. The iOS
+# app links both static archives into one binary, and the two copies of std
+# resolve to one panic runtime at link time, so an abort here aborted the app
+# on every panic inside a tokio task of the proxy (issue #2926). The workbench
+# test `panic_strategy` holds both workspaces to one strategy.
 [profile.mobile]
 inherits = "release"
 debug = 1
 lto = "thin"
 codegen-units = 1
 overflow-checks = true
-panic = "abort"
+panic = "unwind"
 opt-level = "z"

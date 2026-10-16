@@ -61,3 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   workspace carried (`nym` and `perspective` on zingolib, `lightwalletd-tonic`
   on zcash_client_backend, the runtime features on tokio), and its release
   profile is the root workspace's `[profile.mobile]`, which the builder ships.
+
+### Fixed
+- The `mobile` profile of the root workspace builds with `panic = "unwind"`,
+  the strategy the standalone zingo-netutils workspace already uses for the
+  proxy library. The iOS app links both static archives into one binary, and
+  the two copies of std resolve to one panic runtime, so the abort runtime of
+  `libzingo.a` ended the app on every panic inside a tokio task of the proxy,
+  which Nym's SOCKS5 tasks raise on a closed input channel (#2926). tokio
+  now contains such a panic to its task, and UniFFI returns a panic at the
+  FFI boundary as an error.
