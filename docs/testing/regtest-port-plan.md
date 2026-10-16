@@ -191,11 +191,10 @@ The stack is open on dev, each pull request based on the one before:
 5. #2997 the unified chain and the two-phase migration twins.
 6. #2998 the testnet cells, including the ZIP 318 canary and the Mixnet Mode cell.
 7. #2999 the retirements.
-8. The cut, as a draft until the zaino exports land.
+8. #3000 the cut, ready for review since zaino #1668 landed the exports.
 
 The decision record and the ADR 0009 amendment are zingo-adrs #43. The
 consumer gate of ruling 5 is already satisfied: neither zingo-mobile nor
-zaino names `zingolib_testutils`. Still open: the zaino pull requests for
-the exported guarantees, the shard-count timing run of ruling 8, the
+zaino names `zingolib_testutils`. Still open: the shard-count timing run of ruling 8, the
 nightly job for the `testnet` feature once the node exists, and the
 dependency diet of ruling 6 as its own plan.
