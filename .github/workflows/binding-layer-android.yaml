@@ -17,9 +17,13 @@ on:
       abis:
         required: true
         type: string
-      # The runner of the per-ABI build job, a sixteen-core WarpBuild
-      # runner by default: each ABI compiles the wallet, the proxy and
-      # the bindgen for its target, and rustc parallelises across cores.
+      # The runner of the per-ABI build job: the Linux runner that the
+      # CI_LINUX_RUNNER repository variable names, falling back to
+      # WarpBuild's sixteen-core label. Each ABI compiles the wallet, the
+      # proxy and the bindgen for its target. cargo compiles independent
+      # crates in parallel; the mobile profile's codegen-units = 1 keeps each
+      # crate's own codegen serial. Measured on 2026-10-16: the x86_64 build
+      # took 7.3 minutes on sixteen cores against 11 to 17 on four.
       runner:
         required: false
         type: string
