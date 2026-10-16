@@ -25,6 +25,7 @@ pub mod dupes_gate;
 pub mod nextest_ceilings;
 pub mod orasust;
 pub mod session;
+pub mod test_placement;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

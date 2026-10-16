@@ -50,10 +50,10 @@ const PHASES: &[(&str, &str)] = &[
     (LIBTONODE_PHASE, "-E 'package(libtonode-tests)'"),
 ];
 
-/// The `libtonode-tests` test binary the lite libtonode phase builds and runs.
+// The `libtonode-tests` test binary the lite libtonode phase builds and runs.
 const LITE_LIBTONODE_BINARY: &str = "tip_spend_rejection";
 
-/// The one top-level test of [`LITE_LIBTONODE_BINARY`] the lite libtonode phase runs.
+// The one top-level test of `LITE_LIBTONODE_BINARY` the lite libtonode phase runs.
 const LITE_LIBTONODE_TEST: &str = "tip_note_to_orchard";
 
 const LIBTONODE_PHASE: &str = "libtonode";
@@ -391,6 +391,7 @@ fn main() -> Result<(), std::io::Error> {
 #[cfg(test)]
 mod package_selection_guard {
     use super::*;
+    use workbench::test_placement;
 
     #[test]
     fn rejects_every_selection_flag_form() {
@@ -452,9 +453,6 @@ mod package_selection_guard {
         }
     }
 
-    /// HYPOTHESIS: the lite phase narrows by test rather than by package, so
-    /// it keeps the shared `--workspace` build scope every phase relies on.
-    /// Falsified if the filterset drops the package term or the test term.
     fn lite_libtonode_invocation() -> Result<String, Vec<String>> {
         workbench::required(
             phases(true)
@@ -465,6 +463,9 @@ mod package_selection_guard {
         )
     }
 
+    // HYPOTHESIS: the lite phase narrows by test rather than by package, so
+    // it keeps the shared `--workspace` build scope every phase relies on.
+    // Falsified if the filterset drops the package term or the test term.
     #[test]
     fn the_lite_libtonode_phase_names_a_package_and_a_test() -> Result<(), Vec<String>> {
         let lite = lite_libtonode_invocation()?;
@@ -476,11 +477,12 @@ mod package_selection_guard {
         Ok(())
     }
 
-    /// HYPOTHESIS: the lite filterset names a test that exists, as a
-    /// top-level function of the binary the phase builds, under the bare
-    /// name nextest gives an integration test. Falsified if the test is
-    /// renamed, moved into a module, or moved to another binary, any of
-    /// which would make the lite phase select zero tests.
+    // HYPOTHESIS: the lite filterset names a test that exists, as a
+    // top-level function of the binary the phase builds, under the bare
+    // name nextest gives an integration test. Falsified if the test is
+    // renamed, moved into a module, stripped of its test attribute, or
+    // moved to another binary, any of which would make the lite phase
+    // select zero tests.
     #[test]
     fn the_lite_libtonode_test_is_a_top_level_test_of_its_binary() -> Result<(), Vec<String>> {
         let source_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -488,24 +490,18 @@ mod package_selection_guard {
             .join(format!("{LITE_LIBTONODE_BINARY}.rs"));
         let source = std::fs::read_to_string(&source_path)
             .map_err(|error| vec![format!("{}: {error}", source_path.display())])?;
-        assert!(
-            source
-                .lines()
-                .any(|line| line.trim_start() == format!("async fn {LITE_LIBTONODE_TEST}() {{")),
-            "{} must define `async fn {LITE_LIBTONODE_TEST}()` at the top level",
-            source_path.display()
-        );
-        assert!(
-            !source.lines().any(|line| line.starts_with("mod ")),
-            "{} must declare no module, so its tests keep their bare names",
+        assert_eq!(
+            test_placement::placement(&source, LITE_LIBTONODE_TEST),
+            test_placement::TestPlacement::TopLevel,
+            "{} must define {LITE_LIBTONODE_TEST} as a top-level test",
             source_path.display()
         );
         Ok(())
     }
 
-    /// HYPOTHESIS: the Makefile's lite-hierarchy prose names the same
-    /// binary and test the phase runs. Falsified if either is renamed here
-    /// without the Makefile following.
+    // HYPOTHESIS: the Makefile's lite-hierarchy prose names the same
+    // binary and test the phase runs. Falsified if either is renamed here
+    // without the Makefile following.
     #[test]
     fn the_makefile_names_the_lite_libtonode_test() {
         let makefile = include_str!("../../../../Makefile.toml");
