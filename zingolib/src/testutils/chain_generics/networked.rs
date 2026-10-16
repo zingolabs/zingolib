@@ -20,7 +20,7 @@ use crate::testutils::{default_test_wallet_settings, tempfile, timed, timestampe
 use crate::wallet::LightWallet;
 use crate::wallet::disk::testing::examples;
 
-const TESTNET_INDEXER: &str = "https://testnet.zec.rocks:443";
+pub const TESTNET_INDEXER: &str = "https://testnet.zec.rocks:443";
 const FAUCET: examples::NetworkSeedVersion =
     examples::NetworkSeedVersion::Testnet(examples::TestnetSeedVersion::GloryGoddess);
 const BLOCK_POLL: Duration = Duration::from_secs(5);

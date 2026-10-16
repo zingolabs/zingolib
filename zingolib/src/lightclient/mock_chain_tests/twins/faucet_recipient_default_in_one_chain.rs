@@ -7,12 +7,13 @@ use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
-use super::{HOSPITAL_MUSEUM, untracked_history};
+use super::{HOSPITAL_MUSEUM, untracked_history, zatoshis};
 use crate::check_client_balances;
 use crate::lightclient::LightClient;
 use crate::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
 };
+use crate::testutils::assertions::assert_null_data_send;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::mock_indexer::MockNet;
 use crate::wallet::output::SpendStatus;
@@ -29,10 +30,6 @@ const UNTOUCHED_SAPLING_NOTE: u64 = SAPLING_NOTE_STEP;
 /// One transparent input plus the padded two-action ironwood pair, at the ZIP-317 marginal fee.
 const TRANSPARENT_SHIELD_FEE: u64 = 15_000;
 const UNTRACKED_FUNDING: u64 = 100_000;
-
-fn zatoshis(value: u64) -> Zatoshis {
-    Zatoshis::from_u64(value).expect("test values stay within the money range")
-}
 
 /// - Mines the mempool into a block whose shielded coinbase pays the faucet the reward plus `fee`.
 async fn mine_mempool_to_faucet(net: &MockNet, faucet_ua: &str, fee: u64) {
@@ -432,35 +429,10 @@ async fn propose_and_send_with_op_return_confirms_on_chain(
         .transparent_bundle()
         .expect("OP_RETURN send is a transparent transaction");
 
-    assert_eq!(bundle.vin.len(), 1, "spends the single deshield output");
-
-    assert_eq!(
-        bundle.vout.len(),
-        2,
-        "recipient + OP_RETURN, no change output"
-    );
-
-    let op_return_out = bundle
-        .vout
-        .iter()
-        .find(|out| out.value() == Zatoshis::ZERO)
-        .expect("a zero-value OP_RETURN output");
-    let script = op_return_out.script_pubkey().0.0.clone();
-    assert_eq!(script[0], 0x6a, "null-data script starts with OP_RETURN");
+    assert_null_data_send(bundle, PAYLOAD);
     assert!(
-        script.windows(PAYLOAD.len()).any(|w| w == PAYLOAD),
-        "the OP_RETURN carries the payload verbatim"
-    );
-
-    let recipient_out = bundle
-        .vout
-        .iter()
-        .find(|out| out.value() == amount)
-        .expect("a recipient output paying the amount");
-    assert_ne!(
-        recipient_out.value(),
-        Zatoshis::ZERO,
-        "the recipient output is the non-null-data output"
+        bundle.vout.iter().any(|out| out.value() == amount),
+        "a recipient output pays the amount"
     );
 }
 

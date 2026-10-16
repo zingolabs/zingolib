@@ -359,9 +359,6 @@ pub mod test {
     /// Bound on one mempool stream request while polling for a transaction.
     pub const MEMPOOL_STREAM_BOUND: Duration = Duration::from_secs(5);
 
-    /// Bound on the wallet record leaving Transmitted status after a sync.
-    pub const WALLET_RECORD_LAG_BOUND: Duration = Duration::from_secs(15);
-
     /// The simulated duration of a transmission in the CLI heartbeat tests.
     pub const SIMULATED_TRANSMIT: Duration = Duration::from_secs(5);
 

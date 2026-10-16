@@ -4,8 +4,10 @@ use std::time::Duration;
 use incrementalmerkletree::Position;
 use pepper_sync::error::SyncError;
 use pepper_sync::wallet::ShardTrees;
+use shardtree::ShardTree;
 use shardtree::store::ShardStore;
-use zingo_netutils::lightwallet_protocol::GetSubtreeRootsArg;
+use zcash_protocol::ShieldedPool;
+use zingo_netutils::lightwallet_protocol::{GetSubtreeRootsArg, ShieldedProtocol};
 use zingo_netutils::{GrpcIndexer, Indexer};
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::config::{ChainType, ClientConfig, WalletConfig, construct_indexer_uri};
@@ -20,98 +22,110 @@ use zingolib::testutils::{default_test_wallet_settings, tempfile::TempDir};
 use super::TESTNET_INDEXER;
 
 const BIRTHDAY_DEPTH: u32 = 100;
-const SAPLING_PROTOCOL: i32 = 0;
-const ORCHARD_PROTOCOL: i32 = 1;
 const SESSION_POLL: Duration = Duration::from_secs(1);
+const POOLS: [ShieldedPool; 3] = [
+    ShieldedPool::Sapling,
+    ShieldedPool::Orchard,
+    ShieldedPool::Ironwood,
+];
 
-fn assert_subtree_roots_match_server(
-    shard_trees: &mut ShardTrees,
-    sapling_subtree_roots_server: &[Vec<u8>],
-    orchard_subtree_roots_server: &[Vec<u8>],
-) {
-    let mut sapling_shard_addrs = shard_trees
-        .sapling
-        .store()
-        .get_shard_roots()
-        .expect("the in-memory shard store lists its roots");
-    if sapling_shard_addrs.len() > sapling_subtree_roots_server.len() {
-        sapling_shard_addrs.pop();
-    }
-    assert_eq!(
-        sapling_shard_addrs.len(),
-        sapling_subtree_roots_server.len(),
-        "sapling shard roots in the wallet versus on the server"
-    );
-    let sapling_subtree_roots_wallet: Vec<Vec<u8>> = sapling_shard_addrs
-        .into_iter()
-        .map(|addr| {
-            shard_trees
-                .sapling
-                .root(addr, Position::from(u64::MAX))
-                .expect("a stored shard has a root")
-                .to_bytes()
-                .to_vec()
-        })
-        .collect();
-    assert!(!sapling_subtree_roots_server.is_empty());
-    assert_eq!(
-        sapling_subtree_roots_wallet.len(),
-        sapling_subtree_roots_server.len()
-    );
-    for (wallet_root, server_root) in sapling_subtree_roots_wallet
-        .iter()
-        .zip(sapling_subtree_roots_server)
-    {
-        assert_eq!(wallet_root, server_root);
-    }
-
-    let mut orchard_shard_addrs = shard_trees
-        .orchard
-        .store()
-        .get_shard_roots()
-        .expect("the in-memory shard store lists its roots");
-    if orchard_shard_addrs.len() > orchard_subtree_roots_server.len() {
-        orchard_shard_addrs.pop();
-    }
-    assert_eq!(
-        orchard_shard_addrs.len(),
-        orchard_subtree_roots_server.len(),
-        "orchard shard roots in the wallet versus on the server"
-    );
-    let orchard_subtree_roots_wallet: Vec<Vec<u8>> = orchard_shard_addrs
-        .into_iter()
-        .map(|addr| {
-            shard_trees
-                .orchard
-                .root(addr, Position::from(u64::MAX))
-                .expect("a stored shard has a root")
-                .to_bytes()
-                .to_vec()
-        })
-        .collect();
-    assert!(!orchard_subtree_roots_server.is_empty());
-    assert_eq!(
-        orchard_subtree_roots_wallet.len(),
-        orchard_subtree_roots_server.len()
-    );
-    for (wallet_root, server_root) in orchard_subtree_roots_wallet
-        .iter()
-        .zip(orchard_subtree_roots_server)
-    {
-        assert_eq!(wallet_root, server_root);
+fn shielded_protocol(pool: ShieldedPool) -> ShieldedProtocol {
+    match pool {
+        ShieldedPool::Sapling => ShieldedProtocol::Sapling,
+        ShieldedPool::Orchard => ShieldedProtocol::Orchard,
+        ShieldedPool::Ironwood => ShieldedProtocol::Ironwood,
     }
 }
 
-async fn server_subtree_roots(
-    grpc_client: &mut GrpcIndexer,
-    shielded_protocol: i32,
-) -> Vec<Vec<u8>> {
+/// The wallet's shard roots for `tree`, encoded like the server's, with one
+/// trailing root above the server's count dropped: the wallet's open shard.
+fn wallet_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    tree: &ShardTree<S, DEPTH, SHARD_HEIGHT>,
+    server_count: usize,
+    encode: impl Fn(&S::H) -> Vec<u8>,
+) -> Vec<Vec<u8>>
+where
+    S: ShardStore,
+    S::Error: std::fmt::Debug,
+    S::H: incrementalmerkletree::Hashable + Clone + PartialEq,
+    S::CheckpointId: Clone + Ord + std::fmt::Debug,
+{
+    let mut addresses = tree
+        .store()
+        .get_shard_roots()
+        .expect("the in-memory shard store lists its roots");
+    if addresses.len() > server_count {
+        addresses.pop();
+    }
+    addresses
+        .into_iter()
+        .map(|address| {
+            encode(
+                &tree
+                    .root(address, Position::from(u64::MAX))
+                    .expect("a stored shard has a root"),
+            )
+        })
+        .collect()
+}
+
+/// - Truncates `tree` to half the server's roots, so the next session has to fetch the rest again.
+fn cut_to_half<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    tree: &mut ShardTree<S, DEPTH, SHARD_HEIGHT>,
+    server_count: usize,
+) -> usize
+where
+    S: ShardStore,
+    S::Error: std::fmt::Debug,
+    S::H: incrementalmerkletree::Hashable + Clone + PartialEq,
+    S::CheckpointId: Clone + Ord + std::fmt::Debug,
+{
+    tree.store_mut()
+        .truncate_shards((server_count / 2) as u64)
+        .expect("the in-memory shard store truncates");
+    tree.store()
+        .get_shard_roots()
+        .expect("the in-memory shard store lists its roots")
+        .len()
+}
+
+fn assert_roots_match_server(shard_trees: &ShardTrees, server: &[(ShieldedPool, Vec<Vec<u8>>)]) {
+    for (pool, server_roots) in server {
+        let wallet_roots = match pool {
+            ShieldedPool::Sapling => {
+                wallet_roots(&shard_trees.sapling, server_roots.len(), |root| {
+                    root.to_bytes().to_vec()
+                })
+            }
+            ShieldedPool::Orchard => {
+                wallet_roots(&shard_trees.orchard, server_roots.len(), |root| {
+                    root.to_bytes().to_vec()
+                })
+            }
+            ShieldedPool::Ironwood => {
+                wallet_roots(&shard_trees.ironwood, server_roots.len(), |root| {
+                    root.to_bytes().to_vec()
+                })
+            }
+        };
+        assert!(
+            !server_roots.is_empty(),
+            "the server serves at least one {pool:?} subtree root"
+        );
+        assert_eq!(
+            &wallet_roots, server_roots,
+            "{pool:?} shard roots in the wallet versus on the server"
+        );
+    }
+}
+
+async fn server_roots(grpc_client: &mut GrpcIndexer, pool: ShieldedPool) -> Vec<Vec<u8>> {
     let mut roots = Vec::new();
     let mut stream = grpc_client
         .get_subtree_roots(
             GetSubtreeRootsArg {
                 start_index: 0,
-                shielded_protocol,
+                shielded_protocol: shielded_protocol(pool) as i32,
                 max_entries: 0,
             },
             DEFAULT_REQUEST_TIMEOUT,
@@ -181,53 +195,29 @@ async fn add_subtree_roots() {
         .await
         .expect("a fresh testnet client opens");
 
-    let sapling_subtree_roots_server =
-        server_subtree_roots(&mut grpc_client, SAPLING_PROTOCOL).await;
-    let orchard_subtree_roots_server =
-        server_subtree_roots(&mut grpc_client, ORCHARD_PROTOCOL).await;
+    let mut server = Vec::new();
+    for pool in POOLS {
+        server.push((pool, server_roots(&mut grpc_client, pool).await));
+    }
 
     session_start_then_stop(&mut lightclient).await;
     {
         let shard_trees = &mut lightclient.wallet().write().await.shard_trees;
-        assert_subtree_roots_match_server(
-            shard_trees,
-            &sapling_subtree_roots_server,
-            &orchard_subtree_roots_server,
-        );
-
-        // Cut each tree to half the server's roots, so the next session has to
-        // fetch the rest again.
-        let sapling_cut = (sapling_subtree_roots_server.len() / 2) as u64;
-        shard_trees
-            .sapling
-            .store_mut()
-            .truncate_shards(sapling_cut)
-            .expect("the in-memory shard store truncates");
-        let sapling_shard_addrs = shard_trees
-            .sapling
-            .store()
-            .get_shard_roots()
-            .expect("the in-memory shard store lists its roots");
-        assert_ne!(
-            sapling_shard_addrs.len(),
-            sapling_subtree_roots_server.len()
-        );
-
-        let orchard_cut = (orchard_subtree_roots_server.len() / 2) as u64;
-        shard_trees
-            .orchard
-            .store_mut()
-            .truncate_shards(orchard_cut)
-            .expect("the in-memory shard store truncates");
-        let orchard_shard_addrs = shard_trees
-            .orchard
-            .store()
-            .get_shard_roots()
-            .expect("the in-memory shard store lists its roots");
-        assert_ne!(
-            orchard_shard_addrs.len(),
-            orchard_subtree_roots_server.len()
-        );
+        assert_roots_match_server(shard_trees, &server);
+        for (pool, server_roots) in &server {
+            let remaining = match pool {
+                ShieldedPool::Sapling => cut_to_half(&mut shard_trees.sapling, server_roots.len()),
+                ShieldedPool::Orchard => cut_to_half(&mut shard_trees.orchard, server_roots.len()),
+                ShieldedPool::Ironwood => {
+                    cut_to_half(&mut shard_trees.ironwood, server_roots.len())
+                }
+            };
+            assert_ne!(
+                remaining,
+                server_roots.len(),
+                "cutting the {pool:?} tree must leave it short of the server"
+            );
+        }
     }
 
     // A new block makes the next session fetch the subtree roots again.
@@ -237,12 +227,6 @@ async fn add_subtree_roots() {
         .await;
 
     session_start_then_stop(&mut lightclient).await;
-    {
-        let shard_trees = &mut lightclient.wallet().write().await.shard_trees;
-        assert_subtree_roots_match_server(
-            shard_trees,
-            &sapling_subtree_roots_server,
-            &orchard_subtree_roots_server,
-        );
-    }
+    let shard_trees = &lightclient.wallet().read().await.shard_trees;
+    assert_roots_match_server(shard_trees, &server);
 }

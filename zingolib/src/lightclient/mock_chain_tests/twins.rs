@@ -1,15 +1,19 @@
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::value::Zatoshis;
 
-use super::{continuous_sync_wallet_settings, external_address, fund};
+use super::{
+    DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, confirmed_balance, continuous_sync_wallet_settings,
+    external_address, external_transparent_address, fund, funded_client,
+};
 use crate::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind, ValueTransfers,
 };
-use crate::testutils::mock_indexer::{MockNet, faucet_funding_transaction_on};
 
 mod bound_note_reservation;
 mod faucet_recipient_default_in_one_chain;
 mod immediate_migration;
 mod mempool_spend_accounting;
+mod moved_from_regtest;
 mod received_mempool_status;
 mod rescan_self_send;
 mod rescan_value_transfers;
@@ -20,18 +24,8 @@ mod unified_address_discovery;
 mod untracked_history;
 mod watch_only;
 
-const HOSPITAL_MUSEUM: &str = zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
-const FUNDING: u64 = 100_000;
-const DEFERRED_NU6_3: u32 = 130;
-
-/// - Mines one block carrying a funding transaction built for the chain's own era at its next height.
-async fn fund_on_chain(net: &MockNet, receivers: Vec<(&str, u64, Option<&str>)>) {
-    let (activation_heights, height) = {
-        let chain = net.chain.read().await;
-        (chain.activation_heights(), chain.next_height())
-    };
-    let funding = faucet_funding_transaction_on(activation_heights, height, receivers).await;
-    net.chain.write().await.mine_block(vec![funding]);
+fn zatoshis(value: u64) -> Zatoshis {
+    Zatoshis::from_u64(value).expect("test values stay within the money range")
 }
 
 /// - Panics when a txid of `txids` has no migration value transfer.
