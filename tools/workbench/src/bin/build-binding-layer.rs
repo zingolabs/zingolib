@@ -1005,7 +1005,6 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
                 let hidden_archive = hidden(target.triple(), &archive_file);
                 let object = hidden(target.triple(), &object_file);
                 [
-                    Step::FreshDir(host_of(roots, &slice(target.triple(), HIDDEN_DIR))),
                     Step::Run {
                         workdir: roots.run.clone(),
                         env: env.clone(),
@@ -1153,6 +1152,9 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
                 Step::FreshDir(host(&headers)),
                 Step::FreshDir(host_of(roots, &slice_dir(UNIVERSAL_SIMULATOR_DIR))),
             ],
+            iter_ios_targets()
+                .map(|target| Step::FreshDir(host_of(roots, &slice(target.triple(), HIDDEN_DIR))))
+                .collect(),
             vec![bindgen(
                 binding_layer::Generation::Wallet,
                 &slice(IosTarget::Device.triple(), &wallet_static),
@@ -1861,6 +1863,46 @@ mod tests {
             .collect();
         let known: Vec<&str> = iter_ios_targets().map(|target| target.triple()).collect();
         assert_eq!(listed, known);
+        Ok(())
+    }
+
+    const OUTPUT_FLAGS: [&str; 2] = ["-o", "-output"];
+
+    fn written_paths(step: &Step) -> Vec<String> {
+        match step {
+            Step::Run { command, .. } => command
+                .windows(2)
+                .filter(|pair| OUTPUT_FLAGS.contains(&pair[0].as_str()))
+                .map(|pair| pair[1].clone())
+                .collect(),
+            Step::Copy { to, .. } | Step::Concatenate { to, .. } | Step::Describe { to, .. } => {
+                vec![to.to_string_lossy().to_string()]
+            }
+            Step::FreshDir(_) | Step::Remove(_) | Step::XcodeTest { .. } => vec![],
+        }
+    }
+
+    #[test]
+    fn no_plan_recreates_a_directory_an_earlier_step_wrote_into() -> Result<(), Vec<String>> {
+        let roots = host_roots()?;
+        let plans = [
+            ios_plan(&roots, IosPhase::Full),
+            ios_plan(&roots, IosPhase::Assembly),
+        ];
+        for plan in plans.iter().chain(every_plan()?.iter()) {
+            let mut written: Vec<String> = Vec::new();
+            for step in plan {
+                if let Step::FreshDir(dir) = step {
+                    let dir = format!("{}/", dir.to_string_lossy());
+                    let lost: Vec<&String> = written
+                        .iter()
+                        .filter(|path| path.starts_with(&dir))
+                        .collect();
+                    assert!(lost.is_empty(), "recreating {dir} discards {lost:?}");
+                }
+                written.extend(written_paths(step));
+            }
+        }
         Ok(())
     }
 
