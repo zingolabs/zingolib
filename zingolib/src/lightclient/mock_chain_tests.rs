@@ -174,6 +174,27 @@ async fn fund(net: &MockNet, receivers: Vec<(&str, u64, Option<&str>)>, extra_bl
     chain.mine_empty_blocks(extra_blocks);
 }
 
+/// - Mines one empty block, one block funding each `(pool, value)` at `client`'s base address
+///   for that pool, and `extra_blocks` empty blocks.
+async fn fund_client(
+    net: &MockNet,
+    client: &LightClient,
+    receivers: &[(PoolType, u64)],
+    extra_blocks: u32,
+) {
+    let mut addresses = Vec::with_capacity(receivers.len());
+    for (pool, _) in receivers {
+        addresses.push(get_base_address(client, *pool).await);
+    }
+    let payments = addresses
+        .iter()
+        .zip(receivers)
+        .map(|(address, (_, value))| (address.as_str(), *value, None))
+        .collect();
+    net.chain.write().await.mine_empty_blocks(1);
+    fund(net, payments, extra_blocks).await;
+}
+
 /// - Mines one empty block, one block funding each `(pool, value)` at the new client's base
 ///   address for that pool, and `extra_blocks` empty blocks.
 /// - Runs one sync session on the new client.
@@ -183,17 +204,7 @@ async fn funded_client(
     extra_blocks: u32,
 ) -> LightClient {
     let mut client = net.client(HOSPITAL_MUSEUM, None).await;
-    let mut addresses = Vec::with_capacity(receivers.len());
-    for (pool, _) in receivers {
-        addresses.push(get_base_address(&client, *pool).await);
-    }
-    let payments = addresses
-        .iter()
-        .zip(receivers)
-        .map(|(address, (_, value))| (address.as_str(), *value, None))
-        .collect();
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(net, payments, extra_blocks).await;
+    fund_client(net, &client, receivers, extra_blocks).await;
     client
         .sync_and_await()
         .await

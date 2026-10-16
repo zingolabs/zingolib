@@ -4,7 +4,7 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use zcash_protocol::PoolType;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use super::{external_address, funded_client};
+use super::{external_address, funded_client, zip317_fee};
 use crate::lightclient::LightClient;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::mock_indexer::MockNet;
@@ -16,6 +16,9 @@ const SMALL: u64 = 2_000;
 const BIG: u64 = 100_000;
 const STEADY_BLOCKS: u32 = 10;
 const STABILITY_BLOCKS: u32 = 9;
+// One ironwood spend, one sapling output, ironwood change: two logical
+// actions on each side of the ZIP-317 count.
+const BIG_SEND_LOGICAL_ACTIONS: u64 = 4;
 
 async fn assert_ironwood_split(client: &LightClient, total: u64, confirmed: u64, unconfirmed: u64) {
     let balance = client
@@ -141,9 +144,7 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     .await
     .expect("the cross-pool send builds and transmits");
     sync_into_mempool(&mut recipient, *big_txids.first()).await;
-    // One ironwood spend, one sapling output, ironwood change: two
-    // logical actions on each side of the ZIP-317 count.
-    let big_fee = 2 * u64::from(MINIMUM_FEE);
+    let big_fee = zip317_fee(BIG_SEND_LOGICAL_ACTIONS);
     let after_big = after_small - (BIG + big_fee);
     assert_ironwood_split(&recipient, after_big, 0, after_big).await;
     assert_ironwood_note_statuses(

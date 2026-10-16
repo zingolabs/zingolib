@@ -7,7 +7,7 @@ use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
-use super::{HOSPITAL_MUSEUM, untracked_history, zatoshis};
+use super::{HOSPITAL_MUSEUM, untracked_history, zatoshis, zip317_fee};
 use crate::check_client_balances;
 use crate::lightclient::LightClient;
 use crate::perspective::value_transfer::{
@@ -26,9 +26,15 @@ const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
 const SETUP_IRONWOOD_BLOCKS: u64 = 4;
 const BLOCK_ONE_SAPLING_COINBASE: u64 = REWARD_ZATS;
 const SAPLING_NOTE_STEP: u64 = 10_000;
+const SAPLING_NOTES: u64 = 3;
 const UNTOUCHED_SAPLING_NOTE: u64 = SAPLING_NOTE_STEP;
-/// One transparent input plus the padded two-action ironwood pair, at the ZIP-317 marginal fee.
-const TRANSPARENT_SHIELD_FEE: u64 = 15_000;
+const LARGEST_SAPLING_NOTE: u64 = SAPLING_NOTES * SAPLING_NOTE_STEP;
+// One transparent input plus the padded two-action ironwood pair.
+const TRANSPARENT_SHIELD_LOGICAL_ACTIONS: u64 = 3;
+const TRANSPARENT_FUNDING: u64 = 100_000;
+const UNIFIED_PAYMENT: u64 = 50_000;
+const OP_RETURN_FUNDING: u64 = 500_000;
+const OP_RETURN_PAYMENT: Zatoshis = Zatoshis::const_from_u64(100_000);
 const UNTRACKED_FUNDING: u64 = 100_000;
 
 /// - Mines the mempool into a block whose shielded coinbase pays the faucet the reward plus `fee`.
@@ -146,7 +152,7 @@ async fn multi_input_sapling_send_with_orchard_change_no_panic(
     let memos = ["1", "2", "3"];
     from_inputs::quick_send(
         faucet,
-        (1..=3)
+        (1..=SAPLING_NOTES)
             .map(|n| {
                 (
                     recipient_sapling.as_str(),
@@ -167,14 +173,14 @@ async fn multi_input_sapling_send_with_orchard_change_no_panic(
         .sync_and_await()
         .await
         .expect("the recipient syncs its three sapling notes");
-    // The largest single note the recipient holds is 30_000, so sending
-    // 30_000 back has to gather two notes to cover the payment plus the fee.
+    // Sending the largest single note the recipient holds back has to gather
+    // two notes to cover the payment plus the fee.
     let faucet_ua = get_base_address(faucet, PoolType::Shielded(ShieldedPool::Orchard)).await;
     from_inputs::quick_send(
         recipient,
         vec![(
             &faucet_ua,
-            30_000,
+            LARGEST_SAPLING_NOTE,
             Some("Sending back, should have 2 inputs"),
         )],
     )
@@ -198,7 +204,6 @@ async fn sends_to_self_handle_balance_properly(
     faucet: &mut LightClient,
     recipient: &mut LightClient,
 ) {
-    let transparent_funding = 100_000;
     let transfers_before_funding = recipient
         .value_transfers(true)
         .await
@@ -206,7 +211,7 @@ async fn sends_to_self_handle_balance_properly(
         .iter()
         .count();
     let recipient_taddr = get_base_address(recipient, PoolType::Transparent).await;
-    from_inputs::quick_send(faucet, vec![(&recipient_taddr, transparent_funding, None)])
+    from_inputs::quick_send(faucet, vec![(&recipient_taddr, TRANSPARENT_FUNDING, None)])
         .await
         .expect("the transparent funding builds and transmits");
     net.chain.write().await.mine_mempool();
@@ -233,7 +238,7 @@ async fn sends_to_self_handle_balance_properly(
     // The shield sweeps the whole transparent funding into the Ironwood
     // pool (a V6 shield's change lands in the ironwood bundle), less the
     // ZIP-317 fee.
-    let shielded_value = transparent_funding - TRANSPARENT_SHIELD_FEE;
+    let shielded_value = TRANSPARENT_FUNDING - zip317_fee(TRANSPARENT_SHIELD_LOGICAL_ACTIONS);
     check_client_balances!(recipient, i: shielded_value o: 0 s: UNTOUCHED_SAPLING_NOTE t: 0);
 
     let pre_rescan_summaries = recipient
@@ -253,7 +258,7 @@ async fn sends_to_self_handle_balance_properly(
     );
     assert!(pre_rescan_value_transfers.iter().any(|vt| {
         vt.kind == ValueTransferKind::Received
-            && vt.value == transparent_funding
+            && vt.value == TRANSPARENT_FUNDING
             && vt.pools_received == [PoolType::TRANSPARENT]
             && vt.pools_sent_from.is_empty()
     }));
@@ -266,7 +271,7 @@ async fn sends_to_self_handle_balance_properly(
                         SelfSendValueTransfer::Shield,
                     ))
                     && vt.value == shielded_value
-                    && vt.transaction_fee == Some(TRANSPARENT_SHIELD_FEE)
+                    && vt.transaction_fee == Some(zip317_fee(TRANSPARENT_SHIELD_LOGICAL_ACTIONS))
                     && vt.pools_sent_from == [PoolType::TRANSPARENT]
                     && vt.pools_received == [PoolType::IRONWOOD]
             })
@@ -304,10 +309,9 @@ async fn send_to_ua_saves_full_ua_in_wallet(
 ) {
     let recipient_unified_address =
         get_base_address(recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-    let sent_value = 50_000;
     let txid = *from_inputs::quick_send(
         faucet,
-        vec![(recipient_unified_address.as_str(), sent_value, None)],
+        vec![(recipient_unified_address.as_str(), UNIFIED_PAYMENT, None)],
     )
     .await
     .expect("the funded faucet sends to a unified address")
@@ -351,12 +355,12 @@ async fn propose_and_send_with_op_return_confirms_on_chain(
     faucet: &mut LightClient,
     recipient: &mut LightClient,
 ) {
-    /// A payload under the 80-byte limit.
+    // A payload under the 80-byte limit.
     const PAYLOAD: &[u8] = b"zingolib op_return payload";
-    let amount = Zatoshis::const_from_u64(100_000);
+    let amount = OP_RETURN_PAYMENT;
 
     let recipient_ua = get_base_address(recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-    from_inputs::quick_send(faucet, vec![(&recipient_ua, 500_000, None)])
+    from_inputs::quick_send(faucet, vec![(&recipient_ua, OP_RETURN_FUNDING, None)])
         .await
         .expect("the faucet's funding of the recipient builds and transmits");
     net.chain.write().await.mine_mempool();
