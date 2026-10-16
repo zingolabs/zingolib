@@ -485,8 +485,8 @@ mod package_selection_guard {
     // select zero tests.
     #[test]
     fn the_lite_libtonode_test_is_a_top_level_test_of_its_binary() -> Result<(), Vec<String>> {
-        let source_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../libtonode-tests/tests")
+        let source_path = workbench::repo_root()?
+            .join("libtonode-tests/tests")
             .join(format!("{LITE_LIBTONODE_BINARY}.rs"));
         let source = std::fs::read_to_string(&source_path)
             .map_err(|error| vec![format!("{}: {error}", source_path.display())])?;

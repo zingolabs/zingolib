@@ -528,10 +528,29 @@ pub const LIST_SEPARATOR: &str = ", ";
 /// - Reads every directory under `root`, skipping any directory named in `skipped_directories`
 ///   and never following symbolic links.
 pub fn files_under(root: &Path, skipped_directories: &[&str]) -> Result<Vec<PathBuf>, Vec<String>> {
-    unimplemented!(
-        "the files under {} outside {skipped_directories:?}",
-        root.display()
-    )
+    let mut files = Vec::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        let unreadable = |error: std::io::Error| vec![format!("{}: {error}", directory.display())];
+        for entry in std::fs::read_dir(&directory).map_err(unreadable)? {
+            let entry = entry.map_err(unreadable)?;
+            let file_type = entry.file_type().map_err(unreadable)?;
+            let path = entry.path();
+            if file_type.is_dir() {
+                let name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_default();
+                if !skipped_directories.contains(&name) {
+                    pending.push(path);
+                }
+            } else if file_type.is_file() {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
 }
 
 pub fn repo_root() -> Result<PathBuf, Vec<String>> {
