@@ -1,6 +1,7 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use toml_edit::{DocumentMut, Item};
+use crate::test_placement::Function;
 
 pub const NEXTEST_CONFIG: &str = ".config/nextest.toml";
 
@@ -8,126 +9,87 @@ pub const PROFILES: [&str; 2] = ["default", "ci"];
 
 const DIRECTORIES_WITHOUT_SOURCES: [&str; 4] = [".git", "target", "build", "node_modules"];
 
+/// How a `test()` predicate matches a test's nextest name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TestMatcher {
+    Contains(String),
+    Equals(String),
+    Regex(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FiltersetTerm {
     Binary(String),
     Package(String),
-    Test(String),
+    Test(TestMatcher),
 }
 
+/// A nextest filterset expression over the predicates the ceilings use.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Override {
-    pub terms: Vec<FiltersetTerm>,
-    pub terminate_after: Option<i64>,
+pub enum Filterset {
+    Term(FiltersetTerm),
+    Not(Box<Filterset>),
+    And(Vec<Filterset>),
+    Or(Vec<Filterset>),
 }
 
-pub fn terms(filter: &str) -> Result<Vec<FiltersetTerm>, String> {
-    filter
-        .split('|')
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .map(term)
-        .collect()
-}
-
-fn term(text: &str) -> Result<FiltersetTerm, String> {
-    let (predicate, rest) = text
-        .split_once('(')
-        .ok_or_else(|| format!("{text}: a filterset term is a predicate over one argument"))?;
-    let argument = rest
-        .strip_suffix(')')
-        .ok_or_else(|| format!("{text}: the predicate's argument is unclosed"))?
-        .to_string();
-    match predicate {
-        "binary" => Ok(FiltersetTerm::Binary(argument)),
-        "package" => Ok(FiltersetTerm::Package(argument)),
-        "test" => Ok(FiltersetTerm::Test(argument)),
-        other => Err(format!("{text}: the ceilings use no {other} predicate")),
-    }
-}
-
-pub fn overrides(config: &str, profile: &str) -> Result<Vec<Override>, String> {
-    let document: DocumentMut = config
-        .parse()
-        .map_err(|error| format!("{NEXTEST_CONFIG}: {error}"))?;
-    let overrides = document
-        .get("profile")
-        .and_then(|profiles| profiles.get(profile))
-        .and_then(|profile| profile.get("overrides"))
-        .and_then(Item::as_array_of_tables)
-        .ok_or_else(|| format!("profile.{profile}.overrides is not an array of tables"))?;
-    overrides
-        .iter()
-        .map(|table| {
-            let filter = table
-                .get("filter")
-                .and_then(Item::as_str)
-                .ok_or_else(|| format!("an override of profile.{profile} has no string filter"))?;
-            let terminate_after = table
-                .get("slow-timeout")
-                .and_then(|timeout| timeout.get("terminate-after"))
-                .and_then(Item::as_integer);
-            Ok(Override {
-                terms: terms(filter)?,
-                terminate_after,
-            })
-        })
-        .collect()
-}
-
-fn is_identifier_character(character: char) -> bool {
-    character.is_alphanumeric() || character == '_'
-}
-
-pub fn function_names(source: &str) -> Vec<String> {
-    source
-        .lines()
-        .filter_map(|line| {
-            let (_, rest) = line.split_once("fn ")?;
-            let name: String = rest
-                .chars()
-                .take_while(|&character| is_identifier_character(character))
-                .collect();
-            (!name.is_empty()).then_some(name)
-        })
-        .collect()
-}
-
-pub fn names_a_defined_test(test_term: &str, function_names: &[String]) -> bool {
-    function_names.iter().any(|name| name.contains(test_term))
-}
-
-/// - Reads every directory under `root` except the ones that hold no sources.
-pub fn rust_sources(root: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut sources = Vec::new();
-    let mut pending = vec![root.to_path_buf()];
-    while let Some(directory) = pending.pop() {
-        let entries = std::fs::read_dir(&directory)
-            .map_err(|error| format!("{}: {error}", directory.display()))?;
-        for entry in entries {
-            let path = entry
-                .map_err(|error| format!("{}: {error}", directory.display()))?
-                .path();
-            let name = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or_default();
-            if path.is_dir() {
-                if !DIRECTORIES_WITHOUT_SOURCES.contains(&name) {
-                    pending.push(path);
-                }
-            } else if path.extension().is_some_and(|extension| extension == "rs") {
-                sources.push(path);
+impl Filterset {
+    pub fn test_matchers(&self) -> Vec<&TestMatcher> {
+        match self {
+            Filterset::Term(FiltersetTerm::Test(matcher)) => vec![matcher],
+            Filterset::Term(_) => vec![],
+            Filterset::Not(inner) => inner.test_matchers(),
+            Filterset::And(parts) | Filterset::Or(parts) => {
+                parts.iter().flat_map(Filterset::test_matchers).collect()
             }
         }
     }
-    sources.sort();
-    Ok(sources)
+}
+
+/// One `[[profile.<name>.overrides]]` table: its filterset and every other key as TOML text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Override {
+    pub filter: Filterset,
+    pub settings: BTreeMap<String, String>,
+}
+
+pub fn filterset(text: &str) -> Result<Filterset, String> {
+    unimplemented!("the filterset {text:?}")
+}
+
+pub fn overrides(config: &str, profile: &str) -> Result<Vec<Override>, String> {
+    unimplemented!(
+        "the overrides of profile.{profile} in {} bytes of config",
+        config.len()
+    )
+}
+
+impl TestMatcher {
+    pub fn matches(&self, nextest_name: &str) -> Result<bool, String> {
+        unimplemented!("whether {self:?} matches {nextest_name}")
+    }
+}
+
+/// - Returns an error for a matcher the ceilings cannot evaluate, such as a regex.
+pub fn names_a_defined_test(matcher: &TestMatcher, functions: &[Function]) -> Result<bool, String> {
+    unimplemented!(
+        "whether {matcher:?} names one of {} harness tests",
+        functions.len()
+    )
+}
+
+/// - Reads every directory under `root` except the ones that hold no sources.
+pub fn rust_sources(root: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
+    Ok(crate::files_under(root, &DIRECTORIES_WITHOUT_SOURCES)?
+        .into_iter()
+        .filter(|path| path.extension().is_some_and(|extension| extension == "rs"))
+        .collect())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_placement;
 
     const CONFIG: &str = r#"
 [profile.default]
@@ -135,6 +97,7 @@ fail-fast = false
 
 [[profile.default.overrides]]
 filter = 'binary(testnet)'
+test-group = 'testnet'
 slow-timeout = { period = "60s", terminate-after = 60, grace-period = "30s" }
 
 [[profile.default.overrides]]
@@ -148,102 +111,189 @@ test(send_mined_ironwood_to_ironwood)
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
 "#;
 
+    fn test(name: &str) -> Filterset {
+        Filterset::Term(FiltersetTerm::Test(TestMatcher::Contains(name.to_string())))
+    }
+
     #[test]
     fn a_filter_splits_into_its_predicates_over_lines_and_spaces() -> Result<(), String> {
         assert_eq!(
-            terms("\ntest(a)\n| test(b_c)\n")?,
-            vec![
-                FiltersetTerm::Test("a".to_string()),
-                FiltersetTerm::Test("b_c".to_string()),
-            ]
+            filterset("\ntest(a)\n| test(b_c)\n")?,
+            Filterset::Or(vec![test("a"), test("b_c")])
         );
         assert_eq!(
-            terms("package(libtonode-tests) | package(zingo-cli)")?,
-            vec![
-                FiltersetTerm::Package("libtonode-tests".to_string()),
-                FiltersetTerm::Package("zingo-cli".to_string()),
-            ]
+            filterset("package(libtonode-tests) | package(zingo-cli)")?,
+            Filterset::Or(vec![
+                Filterset::Term(FiltersetTerm::Package("libtonode-tests".to_string())),
+                Filterset::Term(FiltersetTerm::Package("zingo-cli".to_string())),
+            ])
         );
         assert_eq!(
-            terms("binary(testnet)")?,
-            vec![FiltersetTerm::Binary("testnet".to_string())]
+            filterset("binary(testnet)")?,
+            Filterset::Term(FiltersetTerm::Binary("testnet".to_string()))
         );
         Ok(())
     }
 
     #[test]
-    fn a_predicate_the_ceilings_do_not_use_is_refused() {
-        assert!(terms("kind(test)").is_err());
-        assert!(terms("test(unclosed").is_err());
-        assert!(terms("bare_name").is_err());
+    fn and_binds_tighter_than_or_and_parentheses_and_not_group() -> Result<(), String> {
+        assert_eq!(
+            filterset("test(a) | test(b) & test(c)")?,
+            Filterset::Or(vec![test("a"), Filterset::And(vec![test("b"), test("c")])])
+        );
+        assert_eq!(
+            filterset("(test(a) | test(b)) & not test(c)")?,
+            Filterset::And(vec![
+                Filterset::Or(vec![test("a"), test("b")]),
+                Filterset::Not(Box::new(test("c"))),
+            ])
+        );
+        Ok(())
     }
 
     #[test]
-    fn overrides_carry_their_terms_and_their_ceiling() -> Result<(), String> {
+    fn a_test_argument_carries_its_matcher() -> Result<(), String> {
+        assert_eq!(
+            filterset("test(=exact::name)")?,
+            Filterset::Term(FiltersetTerm::Test(TestMatcher::Equals(
+                "exact::name".to_string()
+            )))
+        );
+        assert_eq!(
+            filterset("test(~part)")?,
+            Filterset::Term(FiltersetTerm::Test(TestMatcher::Contains(
+                "part".to_string()
+            )))
+        );
+        assert_eq!(
+            filterset("test(/^a.*z$/)")?,
+            Filterset::Term(FiltersetTerm::Test(TestMatcher::Regex(
+                "^a.*z$".to_string()
+            )))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_predicate_the_ceilings_do_not_use_or_a_malformed_filter_is_refused() {
+        assert!(filterset("kind(test)").is_err());
+        assert!(filterset("test(unclosed").is_err());
+        assert!(filterset("bare_name").is_err());
+        assert!(filterset("test(a) |").is_err());
+        assert!(filterset("(test(a)").is_err());
+        assert!(filterset("").is_err());
+    }
+
+    #[test]
+    fn the_test_matchers_of_a_filterset_are_collected_through_every_operator() -> Result<(), String>
+    {
+        let matchers = filterset("(test(a) | package(p)) & not test(=b)")?
+            .test_matchers()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            matchers,
+            [
+                TestMatcher::Contains("a".to_string()),
+                TestMatcher::Equals("b".to_string())
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn overrides_carry_their_filterset_and_every_other_key_as_text() -> Result<(), String> {
         let overrides = overrides(CONFIG, "default")?;
         assert_eq!(overrides.len(), 3);
-        assert_eq!(overrides[0].terminate_after, Some(60));
-        assert_eq!(overrides[1].terminate_after, None);
-        assert_eq!(overrides[2].terminate_after, Some(20));
         assert_eq!(
-            overrides[2].terms,
-            vec![
-                FiltersetTerm::Test("send_mined_ironwood_to_ironwood".to_string()),
-                FiltersetTerm::Test("drain_chunks_a_fragmented_wallet".to_string()),
-            ]
+            overrides[0].settings,
+            BTreeMap::from([
+                ("test-group".to_string(), "'testnet'".to_string()),
+                (
+                    "slow-timeout".to_string(),
+                    r#"{ period = "60s", terminate-after = 60, grace-period = "30s" }"#.to_string()
+                ),
+            ])
+        );
+        assert!(overrides[1].settings.is_empty());
+        assert_eq!(
+            overrides[2].filter,
+            Filterset::Or(vec![
+                test("send_mined_ironwood_to_ironwood"),
+                test("drain_chunks_a_fragmented_wallet"),
+            ])
+        );
+        assert_eq!(
+            overrides[2]
+                .settings
+                .get("slow-timeout")
+                .map(String::as_str),
+            Some(r#"{ period = "60s", terminate-after = 20, grace-period = "30s" }"#)
         );
         assert!(super::overrides(CONFIG, "ci").is_err());
         Ok(())
     }
 
     #[test]
-    fn function_names_are_read_from_every_fn_line() {
-        let source = "#[tokio::test]\nasync fn send_mined_ironwood_to_ironwood() {\n}\n\
-                      pub(super) fn helper<T>(value: T) {}\nlet closure = |x| x;\n";
-        assert_eq!(
-            function_names(source),
-            vec!["send_mined_ironwood_to_ironwood", "helper"]
-        );
-    }
-
-    #[test]
-    fn a_test_term_matches_a_function_name_by_substring_as_nextest_does() {
-        let names = vec!["send_shield_cycle_on_the_mock_chain".to_string()];
-        assert!(names_a_defined_test("send_shield_cycle", &names));
+    fn a_matcher_is_judged_against_the_nextest_name_of_a_harness_test() -> Result<(), String> {
+        let source = "fn send_shield_cycle_helper() {}\n\
+                      mod moved_from_regtest {\n    #[test]\n    fn send_mined_ironwood_to_ironwood() {}\n}\n\
+                      #[tokio::test]\nasync fn send_shield_cycle_on_the_mock_chain() {}\n";
+        let functions = test_placement::functions(source);
+        let contains = |name: &str| TestMatcher::Contains(name.to_string());
+        let equals = |name: &str| TestMatcher::Equals(name.to_string());
+        assert!(names_a_defined_test(
+            &contains("send_shield_cycle"),
+            &functions
+        )?);
+        assert!(names_a_defined_test(
+            &contains("moved_from_regtest"),
+            &functions
+        )?);
+        assert!(names_a_defined_test(
+            &equals("moved_from_regtest::send_mined_ironwood_to_ironwood"),
+            &functions
+        )?);
         assert!(!names_a_defined_test(
-            "drain_chunks_a_fragmented_wallet",
-            &names
-        ));
+            &equals("send_mined_ironwood_to_ironwood"),
+            &functions
+        )?);
+        assert!(!names_a_defined_test(&contains("helper"), &functions)?);
+        assert!(!names_a_defined_test(
+            &contains("drain_chunks_a_fragmented_wallet"),
+            &functions
+        )?);
+        assert!(names_a_defined_test(&TestMatcher::Regex("x".to_string()), &functions).is_err());
+        Ok(())
     }
 
-    fn repo_root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-    }
-
-    fn defined_function_names() -> Result<Vec<String>, String> {
-        let mut names = Vec::new();
-        for source in rust_sources(&repo_root())? {
+    fn defined_functions() -> Result<Vec<Function>, Vec<String>> {
+        let mut functions = Vec::new();
+        for source in rust_sources(&crate::repo_root()?)? {
             let text = std::fs::read_to_string(&source)
-                .map_err(|error| format!("{}: {error}", source.display()))?;
-            names.extend(function_names(&text));
+                .map_err(|error| vec![format!("{}: {error}", source.display())])?;
+            functions.extend(test_placement::functions(&text));
         }
-        Ok(names)
+        Ok(functions)
+    }
+
+    fn committed_config() -> Result<String, Vec<String>> {
+        std::fs::read_to_string(crate::repo_root()?.join(NEXTEST_CONFIG))
+            .map_err(|error| vec![format!("{NEXTEST_CONFIG}: {error}")])
     }
 
     #[test]
-    fn every_ceiling_term_names_a_defined_test() -> Result<(), String> {
-        let config = std::fs::read_to_string(repo_root().join(NEXTEST_CONFIG))
-            .map_err(|error| format!("{NEXTEST_CONFIG}: {error}"))?;
-        let names = defined_function_names()?;
+    fn every_ceiling_matcher_names_a_defined_harness_test() -> Result<(), Vec<String>> {
+        let config = committed_config()?;
+        let functions = defined_functions()?;
         for profile in PROFILES {
-            for ceiling in overrides(&config, profile)? {
-                for term in &ceiling.terms {
-                    if let FiltersetTerm::Test(test_term) = term {
-                        assert!(
-                            names_a_defined_test(test_term, &names),
-                            "profile.{profile} names test({test_term}), and no function name contains it"
-                        );
-                    }
+            for ceiling in overrides(&config, profile).map_err(|error| vec![error])? {
+                for matcher in ceiling.filter.test_matchers() {
+                    assert!(
+                        names_a_defined_test(matcher, &functions).map_err(|error| vec![error])?,
+                        "profile.{profile} names {matcher:?}, and no harness test's nextest name matches it"
+                    );
                 }
             }
         }
@@ -251,10 +301,10 @@ slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
     }
 
     #[test]
-    fn the_ci_profile_carries_the_overrides_of_the_default_profile() -> Result<(), String> {
-        let config = std::fs::read_to_string(repo_root().join(NEXTEST_CONFIG))
-            .map_err(|error| format!("{NEXTEST_CONFIG}: {error}"))?;
-        let [default, ci] = PROFILES.map(|profile| overrides(&config, profile));
+    fn the_ci_profile_carries_the_overrides_of_the_default_profile() -> Result<(), Vec<String>> {
+        let config = committed_config()?;
+        let [default, ci] =
+            PROFILES.map(|profile| overrides(&config, profile).map_err(|error| vec![error]));
         assert_eq!(default?, ci?);
         Ok(())
     }
