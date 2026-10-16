@@ -8,7 +8,6 @@ members = [
     "zingo-price",
     "zingo-status",
     "zingolib",
-    "zingolib_testutils",
     "zingo-ffi/lib",
     "zingo-ffi/uniffi-bindgen",
 ]
@@ -46,7 +45,6 @@ proptest = "1.6.0"
 tempfile = "3"
 quote = "1"
 syn = { version = "2", features = ["full"] }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "89cf104a2416144d1bbbae30aca02bec062d1492" }
 zingo_test_vectors = "0.0.1"
 
 ### Documentation
@@ -113,7 +111,6 @@ serde_json = "1"
 
 ### Network
 http = "1"
-reqwest = { version = "0.12.15", default-features = false }
 # aws-lc-rs is the workspace's sole rustls CryptoProvider (ring is excised);
 # prefer-post-quantum leads outbound handshakes with the X25519MLKEM768
 # hybrid group. Runtime installation is first-install-wins via

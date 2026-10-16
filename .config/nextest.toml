@@ -14,7 +14,7 @@ test-group = 'testnet'
 slow-timeout = { period = "60s", terminate-after = 60, grace-period = "30s" }
 
 [[profile.default.overrides]]
-filter = 'package(libtonode-tests) | package(zingo-cli)'
+filter = 'package(zingo-cli)'
 
 # Long-chain heavies run close to the default limit.
 [[profile.default.overrides]]
@@ -37,7 +37,7 @@ test-group = 'testnet'
 slow-timeout = { period = "60s", terminate-after = 60, grace-period = "30s" }
 
 [[profile.ci.overrides]]
-filter = 'package(libtonode-tests) | package(zingo-cli)'
+filter = 'package(zingo-cli)'
 
 # Long-chain heavies run close to the default limit.
 [[profile.ci.overrides]]

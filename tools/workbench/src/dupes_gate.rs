@@ -9,9 +9,7 @@ const MIN_LINES: &str = "0";
 const THRESHOLD: &str = "0.9";
 const MAX_EXACT: &str = "0";
 const MAX_NEAR: &str = "34";
-const EXCLUDE: [&str; 12] = [
-    "libtonode-tests/",
-    "zingolib_testutils/",
+const EXCLUDE: [&str; 10] = [
     "zingo-cli/tests/",
     "zingo-netutils/nym-proxy-ffi/tests/",
     "zingolib/src/testutils/",
@@ -201,12 +199,24 @@ fn gate(root: &Path) -> Result<(), Rejection> {
     no_stale_entry(root)
 }
 
-/// - Runs `cargo install` for the pinned cargo-dupes with empty `RUSTFLAGS`, which writes the binary under the cargo home.
+/// - Runs `cargo dupes --version` as a child process and waits for it.
+/// - Unless that is the pinned version, runs `cargo install --force` for the pinned cargo-dupes
+///   with empty `RUSTFLAGS`, which overwrites the binary under the cargo home.
 fn install() -> Result<(), Rejection> {
+    if pinned().is_ok() {
+        return Ok(());
+    }
     let package = format!("cargo-{SUBCOMMAND}");
     crate::run_streaming(
         crate::CARGO,
-        &["install", &package, "--version", VERSION, "--locked"],
+        &[
+            "install",
+            &package,
+            "--version",
+            VERSION,
+            "--locked",
+            "--force",
+        ],
         &[(RUSTFLAGS, NO_FLAGS)],
     )?;
     Ok(())
