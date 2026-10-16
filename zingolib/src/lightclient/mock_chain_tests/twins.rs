@@ -6,6 +6,7 @@ mod rescan_value_transfers;
 mod send_pre_ironwood;
 mod untracked_history;
 mod sync_all_expressible_epochs;
+mod unified_address_discovery;
 
 const HOSPITAL_MUSEUM: &str = zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 const FUNDING: u64 = 100_000;
