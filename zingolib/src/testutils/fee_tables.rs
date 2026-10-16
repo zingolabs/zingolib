@@ -5,6 +5,8 @@ use std::cmp::max;
 use zcash_primitives::transaction::fees::zip317::{GRACE_ACTIONS, MARGINAL_FEE};
 use zcash_protocol::{PoolType, ShieldedPool};
 
+const PADDED_BUNDLE_ACTIONS: usize = 2;
+
 /// Estimates the fee the proposer charges for a one-input send on an
 /// NU6.3-active chain (the default test era, ADR 0009), per ZIP 317
 /// (<https://zips.z.cash/zip-0317>) as the pinned zcash_client_backend
@@ -76,48 +78,46 @@ pub fn one_to_one(
         }
     }
 
-    let pad = |inputs: usize, outputs: usize| {
-        let actions = max(inputs, outputs);
-        if actions > 0 { max(actions, 2) } else { 0 }
-    };
     let contribution_transparent = max(transparent_outputs, transparent_inputs);
-    let contribution_sapling = pad(sapling_inputs, sapling_outputs);
-    let mut contribution_orchard = pad(orchard_inputs, orchard_outputs);
+    let contribution_sapling = padded_actions(sapling_inputs, sapling_outputs);
+    let mut contribution_orchard = padded_actions(orchard_inputs, orchard_outputs);
     if source_protocol == Some(ShieldedPool::Orchard) && target_pool == PoolType::ORCHARD {
         contribution_orchard *= 2;
     }
-    let contribution_ironwood = pad(ironwood_inputs, ironwood_outputs);
-    let total_fee = MARGINAL_FEE
-        * max(
-            contribution_transparent
-                + contribution_sapling
-                + contribution_orchard
-                + contribution_ironwood,
-            GRACE_ACTIONS,
-        );
-    total_fee
-        .expect("actions expected to be in numerical range")
-        .into_u64()
+    let contribution_ironwood = padded_actions(ironwood_inputs, ironwood_outputs);
+    conventional_fee(
+        contribution_transparent
+            + contribution_sapling
+            + contribution_orchard
+            + contribution_ironwood,
+    )
 }
 
 #[must_use]
 pub fn conventional_actions(logical_actions: usize) -> usize {
-    unimplemented!("the conventional action count of {logical_actions} logical actions")
+    max(logical_actions, GRACE_ACTIONS)
 }
 
 #[must_use]
 pub fn conventional_fee(logical_actions: usize) -> u64 {
-    unimplemented!("the conventional fee of {logical_actions} logical actions")
+    (MARGINAL_FEE * conventional_actions(logical_actions))
+        .expect("a transaction's action count keeps its fee within the money range")
+        .into_u64()
 }
 
 #[must_use]
 pub fn padded_actions(inputs: usize, outputs: usize) -> usize {
-    unimplemented!("the padded action count of {inputs} inputs and {outputs} outputs")
+    let actions = max(inputs, outputs);
+    if actions > 0 {
+        max(actions, PADDED_BUNDLE_ACTIONS)
+    } else {
+        0
+    }
 }
 
 #[must_use]
 pub fn shield(transparent_inputs: usize) -> u64 {
-    unimplemented!("the fee of shielding {transparent_inputs} transparent coins")
+    conventional_fee(transparent_inputs + padded_actions(0, 1))
 }
 
 #[cfg(test)]

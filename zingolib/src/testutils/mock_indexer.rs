@@ -48,7 +48,7 @@ use orchard::circuit::{OrchardCircuitVersion, VerifyingKey as OrchardVerifyingKe
 use orchard::tree::MerkleHashOrchard;
 use sapling_crypto::circuit::{OutputVerifyingKey, SpendVerifyingKey};
 use zcash_primitives::merkle_tree::{HashSer, read_commitment_tree, write_commitment_tree};
-use zcash_primitives::transaction::fees::zip317::{GRACE_ACTIONS, MARGINAL_FEE};
+use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_primitives::transaction::sighash::{SignableInput, signature_hash};
 use zcash_primitives::transaction::txid::TxIdDigester;
 use zcash_primitives::transaction::{Authorized, Transaction, TransactionData, TxId, TxVersion};
@@ -70,6 +70,7 @@ use crate::lightclient::LightClient;
 use crate::testutils::assertions::OP_RETURN;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::default_test_wallet_settings;
+use crate::testutils::fee_tables;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 use crate::wallet::WalletSettings;
@@ -380,7 +381,7 @@ pub fn check_zip317_mempool_policy(
     if fee < required {
         return Err(Rejection::FeeBelowMinimumRate { fee, required });
     }
-    let conventional_actions = logical_actions.max(GRACE_ACTIONS);
+    let conventional_actions = fee_tables::conventional_actions(logical_actions);
     let paid_actions = usize::try_from(fee.into_u64() / MARGINAL_FEE.into_u64())
         .expect("paid actions fit in usize");
     let unpaid = conventional_actions.saturating_sub(paid_actions);

@@ -38,7 +38,7 @@ const FUNDING: u64 = 100_000;
 const DEFERRED_NU6_3: u32 = 130;
 
 fn blocks_to_reach(tip: u32, target: u32) -> Option<u32> {
-    unimplemented!("the blocks that carry the tip from {tip} to {target}")
+    (tip < target).then(|| target - tip)
 }
 
 #[test]
@@ -253,11 +253,7 @@ async fn confirmed_balance(client: &LightClient, pool: ShieldedPool) -> u64 {
 async fn funded_send_confirms_on_the_mock_chain() {
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 100_000)], 1).await;
 
     recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
@@ -283,10 +279,7 @@ async fn max_send_value_to_tex_empties_the_wallet() {
     let funding = 100_000;
     let mut net = MockNet::launch().await;
     let mut sender = net.client(HOSPITAL_MUSEUM, None).await;
-    let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&sender_ua, funding, None)], 1).await;
+    fund_client(&net, &sender, &[(PoolType::ORCHARD, funding)], 1).await;
     sender.sync_and_await().await.unwrap();
     check_client_balances!(sender, i: funding o: 0 s: 0 t: 0);
 
@@ -383,14 +376,10 @@ async fn max_send_value_to_shielded_empties_the_wallet() {
 async fn list_value_transfers_check_fees() {
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
     let recipient_taddr = get_base_address(&recipient, PoolType::Transparent).await;
     let recipient_sapling =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Sapling)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 100_000)], 1).await;
     recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 
@@ -426,8 +415,7 @@ async fn self_send_to_t_displays_as_one_transaction() {
     let recipient_zaddr =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Sapling)).await;
 
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 80_000, None)], 0).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 80_000)], 0).await;
     recipient.sync_and_await().await.unwrap();
 
     let sent_to_taddr_value = 5_000;
@@ -1086,11 +1074,7 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
     recipient.set_transmit_retry_interval(std::time::Duration::ZERO);
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 100_000)], 1).await;
     recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 
@@ -1147,11 +1131,7 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
     recipient.set_transmit_retry_interval(std::time::Duration::ZERO);
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 100_000)], 1).await;
     recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 
@@ -2383,8 +2363,7 @@ mod perspective {
         let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
         let recipient_ua = get_base_address(&recipient, PoolType::IRONWOOD).await;
 
-        net.chain.write().await.mine_empty_blocks(1);
-        fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+        super::fund_client(&net, &recipient, &[(PoolType::IRONWOOD, 100_000)], 1).await;
         // The zero-value receipt, in its own block as on the live chain.
         fund(&net, vec![(&recipient_ua, 0, None)], 1).await;
 
@@ -2629,11 +2608,7 @@ async fn a_mock_chain_send_reports_the_mixnet_route() {
 
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 100_000)], 1).await;
     recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 
@@ -2687,11 +2662,7 @@ async fn the_nakednet_policy_reports_the_nakednet_route_over_a_ready_mixnet() {
 
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 100_000)], 1).await;
     recipient.sync_and_await().await.unwrap();
 
     assert!(recipient.read_mixnet_indicator().is_ready());
@@ -4632,10 +4603,11 @@ mod boundary_pruning {
             funded_tip < DEFERRED_NU6_3,
             "the funding must confirm before NU6.3 activates, but the chain is at {funded_tip}"
         );
-        net.chain
-            .write()
-            .await
-            .mine_empty_blocks(TARGET_TIP - funded_tip);
+        let runway = super::blocks_to_reach(funded_tip, TARGET_TIP).expect(
+            "TARGET_TIP sits at or past the activation, which the assertion above puts past \
+             the funded tip",
+        );
+        net.chain.write().await.mine_empty_blocks(runway);
         recipient.sync_and_await().await.unwrap();
         check_client_balances!(recipient, i: 0 o: funding s: 0 t: 0);
 

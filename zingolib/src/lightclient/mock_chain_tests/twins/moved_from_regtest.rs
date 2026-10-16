@@ -5,21 +5,18 @@ use zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS;
 use zcash_protocol::value::Zatoshis;
 use zip32::AccountId;
 
-use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use zcash_protocol::ShieldedPool;
 
-use super::{DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, external_address, fund, zip317_fee};
+use super::{DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, external_address, fund};
 use crate::check_client_balances;
+use crate::testutils::fee_tables;
 use crate::testutils::lightclient::{from_inputs, get_base_address, get_fees_paid_by_client};
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
 
 const REWARD_ZATS: u64 = 625_000;
 const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
-const COINBASES: u64 = 4;
-// Four transparent inputs and one shielded output: four transparent logical actions plus the
-// two-action shielded minimum.
-const SHIELD_LOGICAL_ACTIONS: u64 = 6;
+const COINBASES: usize = 4;
 
 #[tokio::test]
 async fn mine_to_transparent_and_shield() {
@@ -38,7 +35,10 @@ async fn mine_to_transparent_and_shield() {
         .sync_and_await()
         .await
         .expect("the mock chain serves every block the wallet requests");
-    check_client_balances!(miner, i: 0 o: 0 s: 0 t: (COINBASES * REWARD_ZATS));
+    let coinbase_total = (REWARD * COINBASES)
+        .expect("four rewards stay within the money range")
+        .into_u64();
+    check_client_balances!(miner, i: 0 o: 0 s: 0 t: coinbase_total);
 
     miner
         .quick_shield(AccountId::ZERO)
@@ -51,15 +51,15 @@ async fn mine_to_transparent_and_shield() {
         .expect("the mock chain serves every block the wallet requests");
 
     let fee = get_fees_paid_by_client(&miner).await;
-    assert_eq!(fee, zip317_fee(SHIELD_LOGICAL_ACTIONS));
-    check_client_balances!(miner, i: (COINBASES * REWARD_ZATS - fee) o: 0 s: 0 t: 0);
+    assert_eq!(fee, fee_tables::shield(COINBASES));
+    check_client_balances!(miner, i: (coinbase_total - fee) o: 0 s: 0 t: 0);
 }
 #[tokio::test]
 async fn sapling_dust_fee_collection() {
     const FEES_FOR_ORCHARD: u64 = 10;
     const DUST_DIVISOR: u64 = 10;
     const FEES_SENT: u64 = 5;
-    let fee = u64::from(MINIMUM_FEE);
+    let fee = fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::ORCHARD, true);
     let for_orchard = fee * FEES_FOR_ORCHARD;
     let for_sapling = fee / DUST_DIVISOR;
 
@@ -109,7 +109,7 @@ async fn sapling_dust_fee_collection() {
 async fn send_and_sync_with_multiple_notes_no_panic() {
     const NOTE: u64 = 40_000;
     const PAYMENT: u64 = 50_000;
-    let fee = u64::from(MINIMUM_FEE);
+    let fee = fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::ORCHARD, true);
 
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
@@ -320,7 +320,7 @@ async fn ironwood_miner_coinbase_distribution() {
 async fn send_mined_ironwood_to_ironwood() {
     const IRONWOOD_BLOCKS: u64 = 3;
     const AMOUNT_TO_SEND: u64 = 10_000;
-    let fee = u64::from(MINIMUM_FEE);
+    let fee = fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::IRONWOOD, true);
     let mut net = MockNet::launch().await;
     let mut miner = net.client(HOSPITAL_MUSEUM, None).await;
     let miner_ua = get_base_address(&miner, PoolType::Shielded(ShieldedPool::Orchard)).await;

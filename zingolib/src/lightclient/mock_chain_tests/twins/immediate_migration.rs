@@ -1,9 +1,7 @@
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
-use super::{
-    DEFERRED_NU6_3, blocks_past_activation, confirmed_balance, funded_client, migrated_value,
-};
+use super::{DEFERRED_NU6_3, blocks_to_reach, confirmed_balance, funded_client, migrated_value};
 use crate::lightclient::LightClient;
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
@@ -28,20 +26,20 @@ async fn pre_ironwood_funded_recipient(
         .map(|value| (PoolType::ORCHARD, value))
         .collect();
     let recipient = funded_client(&mut net, &receivers, 0).await;
-    let funded_tip = net.chain.read().await.tip();
-    assert!(
-        funded_tip < DEFERRED_NU6_3,
-        "the funding must confirm before NU6.3 activates, but the chain is at {funded_tip}"
-    );
     (net, recipient)
 }
 
 /// - Mines the chain across the deferred NU6.3 activation boundary and syncs the recipient past it.
 async fn cross_ironwood_activation(net: &MockNet, recipient: &mut LightClient) {
     let tip = net.chain.read().await.tip();
-    let runway = blocks_past_activation(tip, DEFERRED_NU6_3).unwrap_or_else(|| {
-        panic!("the chain has already crossed the activation boundary (tip {tip})")
-    });
+    let runway = blocks_to_reach(tip, DEFERRED_NU6_3)
+        .map(|to_activation| to_activation + 1)
+        .unwrap_or_else(|| {
+            panic!(
+                "the funding must confirm below the activation at {DEFERRED_NU6_3}, but the \
+                 chain is at {tip}"
+            )
+        });
     net.chain.write().await.mine_empty_blocks(runway);
     recipient
         .sync_and_await()

@@ -5,13 +5,13 @@ use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
 use super::{
-    DEFERRED_NU6_3, HOSPITAL_MUSEUM, continuous_sync_wallet_settings, fund_client, migrated_value,
+    DEFERRED_NU6_3, HOSPITAL_MUSEUM, blocks_to_reach, continuous_sync_wallet_settings, fund_client,
+    migrated_value,
 };
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
 use crate::wallet::migration::{MigrationParams, MigrationPhase, schedule};
 
-// An amount that quantizes into several denominations plus dust.
 const QUANTIZABLE_FUNDING: u64 = 1_250_000;
 const MINING_INTERVAL: Duration = Duration::from_millis(500);
 const MIGRATION_TIME_LIMIT: Duration = Duration::from_secs(300);
@@ -29,11 +29,12 @@ async fn mine_to_first_ironwood_window(net: &MockNet, bucket_modulus: u32) {
     let mut chain = net.chain.write().await;
     let tip = chain.tip();
     assert!(
-        tip < DEFERRED_NU6_3 && DEFERRED_NU6_3 < first_window,
-        "the funding at {tip} must sit below the activation at {DEFERRED_NU6_3}, which \
-         sits below the first window at {first_window}"
+        tip < DEFERRED_NU6_3,
+        "the funding at {tip} must confirm below the activation at {DEFERRED_NU6_3}"
     );
-    chain.mine_empty_blocks(first_window - tip);
+    let runway = blocks_to_reach(tip, first_window)
+        .expect("the first window lies past the activation, which lies past the tip");
+    chain.mine_empty_blocks(runway);
 }
 
 /// - Launches continuous sync on the recipient and mines the mock mempool every half second
