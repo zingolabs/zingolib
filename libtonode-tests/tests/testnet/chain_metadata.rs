@@ -1,7 +1,7 @@
 use pepper_sync::test_support::block;
-use zcash_protocol::ShieldedPool::{Ironwood, Orchard, Sapling};
+use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
-use zingo_netutils::lightwallet_protocol::{BlockId, BlockRange, ChainMetadata};
+use zingo_netutils::lightwallet_protocol::{BlockId, BlockRange, ChainMetadata, CompactBlock};
 use zingo_netutils::{GrpcIndexer, Indexer};
 use zingolib::config::{ChainType, construct_indexer_uri};
 use zingolib::lightclient::DEFAULT_REQUEST_TIMEOUT;
@@ -10,6 +10,41 @@ use super::TESTNET_INDEXER;
 
 const BLOCKS_BEFORE_ACTIVATION: u64 = 2;
 const BLOCKS_FROM_ACTIVATION: u64 = 200;
+const POOLS: [ShieldedPool; 3] = [
+    ShieldedPool::Sapling,
+    ShieldedPool::Orchard,
+    ShieldedPool::Ironwood,
+];
+
+fn commitment_tree_size(metadata: &ChainMetadata, pool: ShieldedPool) -> u32 {
+    match pool {
+        ShieldedPool::Sapling => metadata.sapling_commitment_tree_size,
+        ShieldedPool::Orchard => metadata.orchard_commitment_tree_size,
+        ShieldedPool::Ironwood => metadata.ironwood_commitment_tree_size,
+    }
+}
+
+fn pool_mismatches(
+    prev: &ChainMetadata,
+    metadata: &ChainMetadata,
+    block: &CompactBlock,
+) -> Vec<String> {
+    POOLS
+        .into_iter()
+        .filter_map(|pool| {
+            let served = u64::from(block::shielded_output_count(block, pool));
+            let metadata_delta = i64::from(commitment_tree_size(metadata, pool))
+                - i64::from(commitment_tree_size(prev, pool));
+            (metadata_delta != served as i64).then(|| {
+                format!(
+                    "height {}: {pool:?} metadata delta {metadata_delta} but {served} outputs \
+                     served in vtx",
+                    block.height
+                )
+            })
+        })
+        .collect()
+}
 
 #[tokio::test]
 async fn served_outputs_match_chain_metadata_deltas() {
@@ -66,49 +101,17 @@ async fn served_outputs_match_chain_metadata_deltas() {
                 block.height
             )
         });
-
-        let sapling_served = u64::from(block::shielded_output_count(&block, Sapling));
-        let orchard_served = u64::from(block::shielded_output_count(&block, Orchard));
-        let ironwood_served = u64::from(block::shielded_output_count(&block, Ironwood));
-
-        if metadata.ironwood_commitment_tree_size > 0 {
+        let ironwood_served =
+            u64::from(block::shielded_output_count(&block, ShieldedPool::Ironwood));
+        if commitment_tree_size(&metadata, ShieldedPool::Ironwood) > 0 {
             first_nonzero_ironwood_metadata.get_or_insert(block.height);
         }
         if ironwood_served > 0 {
             first_served_ironwood_action.get_or_insert(block.height);
         }
         ironwood_served_total += ironwood_served;
-
-        if let Some(prev) = prev {
-            for (pool, served, size, prev_size) in [
-                (
-                    "sapling",
-                    sapling_served,
-                    metadata.sapling_commitment_tree_size,
-                    prev.sapling_commitment_tree_size,
-                ),
-                (
-                    "orchard",
-                    orchard_served,
-                    metadata.orchard_commitment_tree_size,
-                    prev.orchard_commitment_tree_size,
-                ),
-                (
-                    "ironwood",
-                    ironwood_served,
-                    metadata.ironwood_commitment_tree_size,
-                    prev.ironwood_commitment_tree_size,
-                ),
-            ] {
-                let metadata_delta = i64::from(size) - i64::from(prev_size);
-                if metadata_delta != served as i64 {
-                    mismatches.push(format!(
-                        "height {}: {pool} metadata delta {metadata_delta} but \
-                         {served} outputs served in vtx",
-                        block.height
-                    ));
-                }
-            }
+        if let Some(prev) = &prev {
+            mismatches.extend(pool_mismatches(prev, &metadata, &block));
         }
         prev = Some(metadata);
     }

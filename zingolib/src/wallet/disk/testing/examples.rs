@@ -8,18 +8,17 @@ use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
 
 use crate::config::{ChainType, ClientConfig, WalletConfig};
+use crate::testutils::chain_generics::networked::TESTNET_INDEXER;
 
 /// The mainnet indexer these example wallets pin explicitly.
 const MAINNET_INDEXER: &str = "https://zec.rocks:443";
 
-/// The testnet indexer these example wallets pin explicitly.
 /// - Reads nothing at run time: the directory is zingolib's manifest directory at compile time, so the
 ///   example wallets resolve the same from every crate that runs a test.
 fn zingolib_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-const TESTNET_INDEXER: &str = "https://testnet.zec.rocks:443";
 use crate::lightclient::LightClient;
 
 /// `ExampleWalletNetworkCase` sorts first by Network, then seed, then last saved version.
