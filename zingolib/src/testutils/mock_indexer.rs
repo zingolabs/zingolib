@@ -1500,7 +1500,6 @@ impl MockChain {
         })
     }
 
-    /// - Decodes the three tree states the chain stored at the end of `height`.
     fn trees_at(&self, height: u32) -> (SaplingTree, OrchardTree, OrchardTree) {
         let (sapling_hex, orchard_hex, ironwood_hex) = &self.tree_states[height as usize];
         (
@@ -1525,7 +1524,6 @@ impl MockChain {
         self.block_hash_at(self.tip())
     }
 
-    /// - Decodes the stored genesis tree states.
     pub fn genesis_compact_block(&self) -> CompactBlock {
         let genesis = u32::from(GENESIS_HEIGHT);
         let (sapling_tree, orchard_tree, ironwood_tree) = self.trees_at(genesis);
@@ -2360,7 +2358,6 @@ pub struct MockNet {
 }
 
 impl MockNet {
-    /// The birthday [`MockNet::client`] gives every wallet.
     pub const DEFAULT_BIRTHDAY: u32 = 1;
 
     /// Launches the mock server on an ephemeral localhost port with an
@@ -2470,9 +2467,7 @@ impl MockNet {
         builder
     }
 
-    /// Builds a `LightClient` for `mnemonic` born at [`MockNet::DEFAULT_BIRTHDAY`]
-    /// dialed at the mock, with its wallet directory in a tempdir this net
-    /// keeps alive.
+    /// - Keeps the new wallet's directory alive in this net, as [`MockNet::client_with_birthday`] does.
     pub async fn client(
         &mut self,
         mnemonic: &str,
