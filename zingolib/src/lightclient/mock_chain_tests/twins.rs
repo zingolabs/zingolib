@@ -1,6 +1,7 @@
 use super::{external_address, fund};
 use crate::testutils::mock_indexer::{MockNet, faucet_funding_transaction_on};
 
+mod mempool_spend_accounting;
 mod received_mempool_status;
 mod rescan_self_send;
 mod rescan_value_transfers;

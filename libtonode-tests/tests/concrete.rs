@@ -3,7 +3,7 @@ use json::JsonValue;
 
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
-use pepper_sync::wallet::{IronwoodNote, OutputId, TransparentCoin};
+use pepper_sync::wallet::{OutputId, TransparentCoin};
 use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
 use zingolib::wallet::summary::data::TransactionSummary;
@@ -15,7 +15,6 @@ use zingolib_testutils::setup_metrics::MeteredNet;
 mod untracked_history;
 
 use pepper_sync::wallet::OutputInterface;
-use zingo_status::confirmation_status::ConfirmationStatus;
 use zingolib::testutils::lightclient::from_inputs;
 
 /// - Holds the wallet's read lock while it reads the transparent coins.
@@ -29,7 +28,6 @@ async fn sole_transparent_coin(client: &LightClient) -> (OutputId, SpendStatus) 
     (coin.output_id(), wallet.output_spend_status(*coin))
 }
 
-use pepper_sync::wallet::SaplingNote;
 use zingolib::lightclient::LightClient;
 use zingolib::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
@@ -324,200 +322,6 @@ async fn multi_input_sapling_send_with_orchard_change_no_panic(
     // 10_000 sapling note is the whole remaining balance and the
     // orchard change is zero-value.
     check_client_balances!(recipient, i: 0 o: 0 s: UNTOUCHED_SAPLING_NOTE t: 0);
-}
-
-/// Assert the recipient's three-way orchard balance split.
-async fn assert_ironwood_split(
-    client: &zingolib::lightclient::LightClient,
-    total: u64,
-    confirmed: u64,
-    unconfirmed: u64,
-) {
-    let balance = client
-        .account_balance(zip32::AccountId::ZERO)
-        .await
-        .unwrap();
-    assert_eq!(balance.total_ironwood_balance.unwrap().into_u64(), total);
-    assert_eq!(
-        balance.confirmed_ironwood_balance.unwrap().into_u64(),
-        confirmed
-    );
-    assert_eq!(
-        balance.unconfirmed_ironwood_balance.unwrap().into_u64(),
-        unconfirmed
-    );
-}
-
-/// Assert the recipient holds no sapling notes and exactly the
-/// expected ironwood notes, each with its expected `SpendStatus` and
-/// (where given) its transaction's confirmation state.
-async fn assert_ironwood_note_statuses(
-    client: &zingolib::lightclient::LightClient,
-    expected: &[(u64, SpendStatus, Option<bool>)],
-) {
-    let wallet = client.wallet().read().await;
-    assert_eq!(wallet.wallet_outputs::<SaplingNote>().len(), 0);
-    let ironwood_notes = wallet.wallet_outputs::<IronwoodNote>();
-    assert_eq!(ironwood_notes.len(), expected.len());
-    for (value, status, confirmed) in expected {
-        let note = (*ironwood_notes
-            .iter()
-            .find(|&&note| note.value() == *value)
-            .unwrap_or_else(|| panic!("no ironwood note of value {value}")))
-        .clone();
-        assert_eq!(wallet.output_spend_status(&note), *status, "note {value}");
-        if let Some(want_confirmed) = confirmed {
-            assert_eq!(
-                wallet.output_transaction(&note).status().is_confirmed(),
-                *want_confirmed,
-                "note {value} transaction confirmation"
-            );
-        }
-    }
-}
-
-/// Sync until the wallet records `txid` in the mempool. The mempool
-/// monitor only runs within a sync session, and a session can end
-/// before the indexer, which polls the validator's mempool, streams a
-/// freshly sent transaction.
-async fn sync_until_in_mempool(
-    client: &mut LightClient,
-    txid: zcash_primitives::transaction::TxId,
-) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    loop {
-        client.sync_and_await().await.unwrap();
-        let in_mempool = client
-            .wallet()
-            .read()
-            .await
-            .wallet_transactions
-            .get(&txid)
-            .is_some_and(|transaction| {
-                matches!(transaction.status(), ConfirmationStatus::Mempool(_))
-            });
-        if in_mempool {
-            return;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "transaction {txid} not observed in the mempool within 30 seconds"
-        );
-    }
-}
-
-/// Coalesced from the former `mempool_and_balance` and
-/// `mempool_spends_correctly_marked_pending_spent`
-/// (protection-dominance analysis): one funded recipient walks two
-/// complete mempool-then-confirmed spend cycles, asserted at BOTH
-/// granularities (the three-way orchard balance split and per-note
-/// `SpendStatus`) at every phase, including the pre-spend steady
-/// state and a post-confirmation stability window neither original
-/// covered at note level. Both former send amounts survive the
-/// merge deliberately: the 2_000-zat cycle preserves near-dust
-/// change arithmetic. The 100_000 cycle preserves the note-status
-/// shape of the original per-note test.
-#[tokio::test]
-async fn mempool_spend_balance_and_note_status_accounting() {
-    let funded = 1_000_000;
-    let (local_net, faucet, mut recipient, _txid) =
-        scenarios::faucet_funded_recipient_default(funded).await;
-
-    // Steady state, and its stability across an empty ten-block mine.
-    assert_ironwood_split(&recipient, funded, funded, 0).await;
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 10)
-        .await
-        .unwrap();
-    assert_ironwood_split(&recipient, funded, funded, 0).await;
-
-    // Cycle one: a small send whose change sits near the dust line.
-    let small = 2_000;
-    let small_txids = from_inputs::quick_send(
-        &mut recipient,
-        vec![(
-            &get_base_address_macro!(faucet, "unified"),
-            small,
-            Some("Outgoing Memo"),
-        )],
-    )
-    .await
-    .unwrap();
-    sync_until_in_mempool(&mut recipient, *small_txids.first()).await;
-    let after_small = funded - (small + u64::from(MINIMUM_FEE));
-    assert_ironwood_split(&recipient, after_small, 0, after_small).await;
-    assert_ironwood_note_statuses(
-        &recipient,
-        &[
-            (
-                funded,
-                SpendStatus::MempoolSpent(*small_txids.first()),
-                None,
-            ),
-            (after_small, SpendStatus::Unspent, Some(false)),
-        ],
-    )
-    .await;
-
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-        .await
-        .unwrap();
-    assert_ironwood_split(&recipient, after_small, after_small, 0).await;
-    assert_ironwood_note_statuses(
-        &recipient,
-        &[
-            (funded, SpendStatus::Spent(*small_txids.first()), None),
-            (after_small, SpendStatus::Unspent, Some(true)),
-        ],
-    )
-    .await;
-
-    // Cycle two: a larger cross-pool send, spending the change note.
-    let big = 100_000;
-    let big_txids = from_inputs::quick_send(
-        &mut recipient,
-        vec![(&get_base_address_macro!(faucet, "sapling"), big, None)],
-    )
-    .await
-    .unwrap();
-    sync_until_in_mempool(&mut recipient, *big_txids.first()).await;
-    // One orchard spend, one sapling output, orchard change: the
-    // ZIP-317 fee the former test pinned implicitly via its
-    // 880_000 post-state.
-    let big_fee = 2 * u64::from(MINIMUM_FEE);
-    let after_big = after_small - (big + big_fee);
-    assert_ironwood_split(&recipient, after_big, 0, after_big).await;
-    assert_ironwood_note_statuses(
-        &recipient,
-        &[
-            (funded, SpendStatus::Spent(*small_txids.first()), None),
-            (
-                after_small,
-                SpendStatus::MempoolSpent(*big_txids.first()),
-                None,
-            ),
-            (after_big, SpendStatus::Unspent, Some(false)),
-        ],
-    )
-    .await;
-
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-        .await
-        .unwrap();
-    assert_ironwood_split(&recipient, after_big, after_big, 0).await;
-    let settled = [
-        (funded, SpendStatus::Spent(*small_txids.first()), None),
-        (after_small, SpendStatus::Spent(*big_txids.first()), None),
-        (after_big, SpendStatus::Unspent, Some(true)),
-    ];
-    assert_ironwood_note_statuses(&recipient, &settled).await;
-
-    // Stability window: nine further blocks change nothing at
-    // either granularity.
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 9)
-        .await
-        .unwrap();
-    assert_ironwood_split(&recipient, after_big, after_big, 0).await;
-    assert_ironwood_note_statuses(&recipient, &settled).await;
 }
 
 // FIXME: add unified address discovery to pepper sync and add a test here
