@@ -51,20 +51,29 @@ jobs:
 
       # The action installs the toolchain rust-toolchain.toml pins, with
       # its components, and the builder adds the iOS target to it itself.
-      # The builder puts each crate's iOS target directory under
-      # target/binding-layer, so the list names those directories. The
-      # wallet crate resolves in the root workspace and the proxy crate in
-      # the zingo-netutils workspace, so each entry names the workspace
-      # whose lockfile keys the cache. The key segment keeps one entry per
-      # target, since the matrix jobs share one GITHUB_JOB.
-      - name: Setup Rust and the cargo cache (registry, git, iOS target)
+      - name: Setup Rust
         uses: ./.github/actions/rust-setup
         with:
-          key: ${{ matrix.target }}
-          workspaces: |
-            . -> target/binding-layer/ios/wallet
-            zingo-netutils -> ../target/binding-layer/ios/proxy
-            tools/workbench
+          cache: "false"
+
+      - name: Compute the cache key inputs
+        id: cache-key
+        shell: bash
+        run: echo "rust_hash=$(rustc -Vv | grep commit-hash | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the cargo registry, git database and target directories
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cargo/registry/index
+            .cargo/registry/cache
+            .cargo/git/db
+            target/binding-layer/ios/wallet
+            target/binding-layer/ios/proxy
+            tools/workbench/target
+          key: ios-${{ matrix.target }}-${{ steps.cache-key.outputs.rust_hash }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ios-${{ matrix.target }}-${{ steps.cache-key.outputs.rust_hash }}-
 
       - name: Install bindgen-cli
         run: cargo install --locked bindgen-cli
@@ -99,6 +108,23 @@ jobs:
           retention-days: 1
           overwrite: true
 
+      - name: Clear the cargo caches that cargo recreates
+        shell: bash
+        run: rm -rf -- .cargo/registry/src .cargo/git/checkouts
+
+      - name: Save the cargo registry, git database and target directories
+        if: github.ref == 'refs/heads/dev'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cargo/registry/index
+            .cargo/registry/cache
+            .cargo/git/db
+            target/binding-layer/ios/wallet
+            target/binding-layer/ios/proxy
+            tools/workbench/target
+          key: ios-${{ matrix.target }}-${{ steps.cache-key.outputs.rust_hash }}-${{ hashFiles('**/Cargo.lock') }}
+
   build:
     name: Build the XCFrameworks and the Swift sources
     needs: slices
@@ -114,13 +140,28 @@ jobs:
           ref: ${{ inputs.ref }}
           fetch-tags: true
 
-      - name: Setup Rust and the cargo cache (registry, git, host builds)
+      - name: Setup Rust
         uses: ./.github/actions/rust-setup
         with:
-          workspaces: |
-            . -> target/binding-layer/ios/wallet
-            zingo-netutils -> ../target/binding-layer/ios/proxy
-            tools/workbench
+          cache: "false"
+
+      - name: Compute the cache key inputs
+        id: cache-key
+        shell: bash
+        run: echo "rust_hash=$(rustc -Vv | grep commit-hash | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the cargo registry, git database and host target directories
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cargo/registry/index
+            .cargo/registry/cache
+            .cargo/git/db
+            target/binding-layer/ios/wallet
+            tools/workbench/target
+          key: ios-assembly-${{ steps.cache-key.outputs.rust_hash }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ios-assembly-${{ steps.cache-key.outputs.rust_hash }}-
 
       - name: Download the libraries of every target
         uses: actions/download-artifact@v4
@@ -148,3 +189,19 @@ jobs:
           path: ${{ inputs.out }}
           retention-days: 3
           overwrite: true
+
+      - name: Clear the cargo caches that cargo recreates
+        shell: bash
+        run: rm -rf -- .cargo/registry/src .cargo/git/checkouts
+
+      - name: Save the cargo registry, git database and host target directories
+        if: github.ref == 'refs/heads/dev'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cargo/registry/index
+            .cargo/registry/cache
+            .cargo/git/db
+            target/binding-layer/ios/wallet
+            tools/workbench/target
+          key: ios-assembly-${{ steps.cache-key.outputs.rust_hash }}-${{ hashFiles('**/Cargo.lock') }}

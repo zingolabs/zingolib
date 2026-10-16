@@ -457,6 +457,95 @@ mod tests {
             .collect()
     }
 
+    const IOS_WORKFLOW: &str = ".github/workflows/binding-layer-ios.yaml";
+    const STEP_MARK: &str = "- name:";
+    const CACHE_RESTORE: &str = "uses: actions/cache/restore@";
+    const CACHE_SAVE: &str = "uses: actions/cache/save@";
+    const PATHS_KEY: &str = "path: |";
+    const KEY_KEY: &str = "key:";
+    const SAVE_GUARD: &str = "if: github.ref == 'refs/heads/dev'";
+    const RUST_SETUP: &str = "uses: ./.github/actions/rust-setup";
+    const RUST_CACHE_OFF: &str = "cache: \"false\"";
+    const MATRIX_TARGET: &str = "matrix.target";
+
+    struct CacheStep {
+        paths: Vec<String>,
+        key: String,
+        guarded: bool,
+    }
+
+    fn steps(text: &str) -> Vec<Vec<&str>> {
+        let mut steps: Vec<Vec<&str>> = Vec::new();
+        for line in text.lines() {
+            if line.trim().starts_with(STEP_MARK) {
+                steps.push(vec![line]);
+            } else if let Some(step) = steps.last_mut() {
+                step.push(line);
+            }
+        }
+        steps
+    }
+
+    fn cache_steps(text: &str, uses: &str) -> Result<Vec<CacheStep>, Vec<String>> {
+        steps(text)
+            .into_iter()
+            .filter(|step| step.iter().any(|line| line.trim().starts_with(uses)))
+            .map(|step| {
+                let joined = step.join("\n");
+                let paths = blocks_under(&joined, PATHS_KEY)
+                    .into_iter()
+                    .flatten()
+                    .map(|line| line.trim().to_string())
+                    .collect();
+                let key = crate::required(
+                    step.iter()
+                        .map(|line| line.trim())
+                        .find_map(|line| line.strip_prefix(KEY_KEY)),
+                    "cache key",
+                )?
+                .trim()
+                .to_string();
+                let guarded = step.iter().any(|line| line.trim() == SAVE_GUARD);
+                Ok(CacheStep {
+                    paths,
+                    key,
+                    guarded,
+                })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_ios_workflow_caches_cargo_explicitly_and_saves_only_from_dev() -> Result<(), Vec<String>>
+    {
+        let workflow = repo_file(IOS_WORKFLOW)?;
+        let restores = cache_steps(&workflow, CACHE_RESTORE)?;
+        let saves = cache_steps(&workflow, CACHE_SAVE)?;
+        assert!(restores.len() >= 2, "one restore per job");
+        assert_eq!(restores.len(), saves.len());
+        for (restore, save) in restores.iter().zip(&saves) {
+            assert!(!restore.paths.is_empty());
+            assert_eq!(restore.paths, save.paths);
+            assert_eq!(restore.key, save.key);
+            assert!(!restore.guarded);
+            assert!(save.guarded, "{} saves off dev", save.key);
+        }
+        assert!(saves.iter().any(|save| save.key.contains(MATRIX_TARGET)));
+        let setups = workflow
+            .lines()
+            .filter(|line| line.trim() == RUST_SETUP)
+            .count();
+        let disabled = workflow
+            .lines()
+            .filter(|line| line.trim() == RUST_CACHE_OFF)
+            .count();
+        assert_eq!(
+            setups, disabled,
+            "every rust-setup use turns rust-cache off"
+        );
+        Ok(())
+    }
+
     #[test]
     fn the_publish_workflow_holds_the_permission_its_reactions_need() -> Result<(), Vec<String>> {
         let workflow = repo_file(PUBLISH_WORKFLOW)?;
