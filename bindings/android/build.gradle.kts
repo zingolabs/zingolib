@@ -6,7 +6,6 @@ plugins {
 
 val bindingCompileSdk = 36
 val bindingMinSdk = 26
-val bindingNdkVersion = "28.2.13676358"
 val jvmTargetVersion = JavaVersion.VERSION_17
 val jnaDependency = "net.java.dev.jna:jna:5.18.1@aar"
 val annotationDependency = "androidx.annotation:annotation:1.8.1"
@@ -67,7 +66,6 @@ val buildBindingLayer by tasks.registering(Exec::class) {
 android {
     namespace = "org.zingolabs.bindinglayer"
     compileSdk = bindingCompileSdk
-    ndkVersion = bindingNdkVersion
 
     defaultConfig {
         minSdk = bindingMinSdk
@@ -91,6 +89,12 @@ android {
     testOptions {
         unitTests.all {
             it.systemProperty("zingo.golden.dir", goldenDir.normalize().absolutePath)
+        }
+    }
+
+    packaging {
+        jniLibs {
+            keepDebugSymbols.add("**/*.so")
         }
     }
 
