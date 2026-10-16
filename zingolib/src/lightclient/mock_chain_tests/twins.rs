@@ -1,6 +1,6 @@
 use zcash_primitives::transaction::TxId;
 
-use super::{external_address, fund};
+use super::{continuous_sync_wallet_settings, external_address, fund};
 use crate::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind, ValueTransfers,
 };
@@ -15,6 +15,7 @@ mod rescan_self_send;
 mod rescan_value_transfers;
 mod send_pre_ironwood;
 mod sync_all_expressible_epochs;
+mod two_phase_migration;
 mod unified_address_discovery;
 mod untracked_history;
 mod watch_only;
