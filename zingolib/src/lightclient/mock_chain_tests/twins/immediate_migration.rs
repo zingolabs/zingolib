@@ -1,12 +1,8 @@
-use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
-use super::{DEFERRED_NU6_3, confirmed_balance, funded_client};
+use super::{DEFERRED_NU6_3, confirmed_balance, funded_client, migrated_value};
 use crate::lightclient::LightClient;
-use crate::perspective::value_transfer::{
-    SelfSendValueTransfer, SentValueTransfer, ValueTransferKind, ValueTransfers,
-};
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
 use crate::wallet::migration::MigrationParams;
@@ -15,28 +11,6 @@ const UNEQUAL_NOTES: [u64; 3] = [317_000, 1_250_000, 88_000];
 const FRAGMENT_BASE: u64 = 100_000;
 const FRAGMENTS_BEYOND_ONE_TRANSACTION: u64 = 3;
 const CHUNKED_TRANSACTIONS: usize = 2;
-
-/// - Panics when a txid of `txids` has no migration value transfer.
-fn migrated_value(value_transfers: &ValueTransfers, txids: &[TxId]) -> u64 {
-    txids
-        .iter()
-        .map(|txid| {
-            value_transfers
-                .iter()
-                .find(|vt| {
-                    vt.txid == *txid
-                        && vt.kind
-                            == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
-                                SelfSendValueTransfer::Migration,
-                            ))
-                })
-                .unwrap_or_else(|| {
-                    panic!("{txid:?} must be classified as a migration value transfer")
-                })
-                .value
-        })
-        .sum()
-}
 
 /// - Launches a chain whose NU6.3 activation still lies ahead and mines one funding block carrying
 ///   one pre-Ironwood Orchard note per value, then syncs the recipient below the activation.

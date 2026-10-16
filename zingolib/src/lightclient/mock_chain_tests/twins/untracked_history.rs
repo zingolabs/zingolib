@@ -2,6 +2,7 @@ use pepper_sync::error::SyncError;
 use zcash_protocol::{PoolType, ShieldedPool};
 
 use super::{DEFERRED_NU6_3, FUNDING, confirmed_balance, funded_client};
+use crate::lightclient::LightClient;
 use crate::lightclient::error::LightClientError;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
 use crate::testutils::{mock_activation_heights, mock_activation_heights_deferring_nu6_3};
@@ -9,18 +10,16 @@ use crate::testutils::{mock_activation_heights, mock_activation_heights_deferrin
 const HIDDEN_BLOCKS: u32 = 2;
 const RECOVERY_SESSIONS: usize = 5;
 
-async fn notes_in_untracked_history_are_recovered(pool: ShieldedPool) {
-    let activation_heights = match pool {
-        ShieldedPool::Ironwood => mock_activation_heights(),
-        ShieldedPool::Orchard => mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
-        ShieldedPool::Sapling => panic!("a unified-address funding never lands in Sapling"),
-    };
-    let mut net =
-        MockNet::launch_with(MockChain::with_activation_heights(activation_heights)).await;
-    let mut recipient = funded_client(&mut net, &[(PoolType::ORCHARD, FUNDING)], 0).await;
-    let funded_balance = confirmed_balance(&recipient, pool).await;
-    assert_eq!(
-        funded_balance, FUNDING,
+/// - Strips the recipient wallet's tracking of `pool` under the wallet's write lock.
+/// - Mines two blocks and runs sync sessions on the recipient until the note is recovered.
+pub(super) async fn recover_untracked_history(
+    net: &MockNet,
+    recipient: &mut LightClient,
+    pool: ShieldedPool,
+) {
+    let funded_balance = confirmed_balance(recipient, pool).await;
+    assert!(
+        funded_balance > 0,
         "the recipient must hold a {pool:?} note before its history is stripped"
     );
 
@@ -33,7 +32,7 @@ async fn notes_in_untracked_history_are_recovered(pool: ShieldedPool) {
             .expect("stripping a local wallet is infallible");
     }
     assert_eq!(
-        confirmed_balance(&recipient, pool).await,
+        confirmed_balance(recipient, pool).await,
         0,
         "stripping must actually remove the note that recovery is then judged by"
     );
@@ -60,16 +59,33 @@ async fn notes_in_untracked_history_are_recovered(pool: ShieldedPool) {
     let mut last_session = reopened;
     for _ in 0..RECOVERY_SESSIONS {
         last_session = recipient.sync_and_await().await;
-        if last_session.is_ok() && confirmed_balance(&recipient, pool).await == funded_balance {
+        if last_session.is_ok() && confirmed_balance(recipient, pool).await == funded_balance {
             break;
         }
     }
     assert_eq!(
-        confirmed_balance(&recipient, pool).await,
+        confirmed_balance(recipient, pool).await,
         funded_balance,
         "the {pool:?} note was left lost in history that was scanned without \
          {pool:?} tracking; the last session ended {last_session:?}",
     );
+}
+
+async fn notes_in_untracked_history_are_recovered(pool: ShieldedPool) {
+    let activation_heights = match pool {
+        ShieldedPool::Ironwood => mock_activation_heights(),
+        ShieldedPool::Orchard => mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
+        ShieldedPool::Sapling => panic!("a unified-address funding never lands in Sapling"),
+    };
+    let mut net =
+        MockNet::launch_with(MockChain::with_activation_heights(activation_heights)).await;
+    let mut recipient = funded_client(&mut net, &[(PoolType::ORCHARD, FUNDING)], 0).await;
+    assert_eq!(
+        confirmed_balance(&recipient, pool).await,
+        FUNDING,
+        "the recipient must hold its {pool:?} funding before its history is stripped"
+    );
+    recover_untracked_history(&net, &mut recipient, pool).await;
 }
 
 #[tokio::test]
