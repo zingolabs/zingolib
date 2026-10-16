@@ -4,17 +4,15 @@ use pepper_sync::wallet::PoolActivation;
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
-use super::{HOSPITAL_MUSEUM, continuous_sync_wallet_settings, fund, migrated_value};
-use crate::testutils::lightclient::get_base_address;
+use super::{
+    DEFERRED_NU6_3, HOSPITAL_MUSEUM, continuous_sync_wallet_settings, fund_client, migrated_value,
+};
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
 use crate::wallet::migration::{MigrationParams, MigrationPhase, schedule};
 
-/// The deferred NU6.3 activation height: past the funding, close enough that
-/// crossing the boundary stays cheap.
-const DEFERRED_NU6_3_HEIGHT: u32 = 16;
-/// An amount that quantizes into several denominations plus dust.
-const FUNDING: u64 = 1_250_000;
+// An amount that quantizes into several denominations plus dust.
+const QUANTIZABLE_FUNDING: u64 = 1_250_000;
 const MINING_INTERVAL: Duration = Duration::from_millis(500);
 const MIGRATION_TIME_LIMIT: Duration = Duration::from_secs(300);
 const BUCKETS_FROM_CONFIRMATION_TO_PART: u32 = 2;
@@ -31,8 +29,8 @@ async fn mine_to_first_ironwood_window(net: &MockNet, bucket_modulus: u32) {
     let mut chain = net.chain.write().await;
     let tip = chain.tip();
     assert!(
-        tip < DEFERRED_NU6_3_HEIGHT && DEFERRED_NU6_3_HEIGHT < first_window,
-        "the funding at {tip} must sit below the activation at {DEFERRED_NU6_3_HEIGHT}, which \
+        tip < DEFERRED_NU6_3 && DEFERRED_NU6_3 < first_window,
+        "the funding at {tip} must sit below the activation at {DEFERRED_NU6_3}, which \
          sits below the first window at {first_window}"
     );
     chain.mine_empty_blocks(first_window - tip);
@@ -43,7 +41,7 @@ async fn mine_to_first_ironwood_window(net: &MockNet, bucket_modulus: u32) {
 #[tokio::test]
 async fn two_phase_migration_end_to_end() {
     let mut net = MockNet::launch_with(MockChain::with_activation_heights(
-        mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3_HEIGHT),
+        mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
     ))
     .await;
     let bucket_modulus = MigrationParams::provisional(net.chain_type()).bucket_modulus;
@@ -53,10 +51,13 @@ async fn two_phase_migration_end_to_end() {
     recipient.set_transmit_retry_interval(Duration::ZERO);
     #[cfg(feature = "nym")]
     recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
-    let recipient_address =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_address, FUNDING, None)], 0).await;
+    fund_client(
+        &net,
+        &recipient,
+        &[(PoolType::ORCHARD, QUANTIZABLE_FUNDING)],
+        0,
+    )
+    .await;
     mine_to_first_ironwood_window(&net, bucket_modulus).await;
     recipient
         .sync_to_tip_and_await()
