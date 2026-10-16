@@ -5,7 +5,7 @@ use zcash_protocol::consensus::Parameters;
 use zcash_protocol::value::Zatoshis;
 use zip32::AccountId;
 
-use super::{external_transparent_address, funded_client};
+use super::{external_transparent_address, funded_client, zatoshis};
 use crate::check_client_balances;
 use crate::config::{ClientConfig, WalletConfig};
 use crate::lightclient::LightClient;
@@ -153,10 +153,6 @@ fn check_view_capability_bounds(
         assert_eq!(view.balance.confirmed_transparent_balance, None);
         assert_eq!(view.transparent_coins.len(), 0);
     }
-}
-
-fn zatoshis(value: u64) -> Zatoshis {
-    Zatoshis::from_u64(value).expect("test values stay within the money range")
 }
 
 #[tokio::test]
