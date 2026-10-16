@@ -1,10 +1,10 @@
 use zcash_protocol::PoolType;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use super::{FUNDING, funded_client};
+use super::{FUNDING, funded_client, funding_at_next_height};
 use crate::lightclient::LightClient;
 use crate::testutils::lightclient::get_base_address;
-use crate::testutils::mock_indexer::{MockNet, faucet_funding_transaction};
+use crate::testutils::mock_indexer::MockNet;
 
 const RECEIVED: u64 = 20_000;
 
@@ -26,10 +26,12 @@ async fn received_tx_status_pending_to_confirmed_with_mempool_monitor() {
     let mut recipient = funded_client(&mut net, &[(PoolType::ORCHARD, FUNDING)], 1).await;
     let recipient_ua = get_base_address(&recipient, PoolType::ORCHARD).await;
 
-    let incoming = faucet_funding_transaction(vec![(&recipient_ua, RECEIVED, None)]).await;
+    // The transaction is built for the very height it is then pinned to,
+    // under the one lock, so no mining can slip between the two.
     let mempool_target_height = {
         let mut chain = net.chain.write().await;
         let target = chain.next_height();
+        let incoming = funding_at_next_height(&chain, vec![(&recipient_ua, RECEIVED, None)]).await;
         chain.enter_mempool(incoming);
         target
     };

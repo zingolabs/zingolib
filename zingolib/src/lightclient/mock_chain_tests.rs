@@ -24,7 +24,7 @@ use crate::check_client_balances;
 use crate::lightclient::LightClient;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::mock_indexer::{
-    MockNet, faucet_funding_transaction, faucet_funding_transaction_on,
+    MockChain, MockNet, faucet_funding_transaction, faucet_funding_transaction_on,
 };
 use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 use crate::wallet::error::ProposeSendError;
@@ -82,17 +82,42 @@ fn external_tex_address() -> String {
     crate::testutils::interpret_taddr_as_tex_addr(taddr_bytes, &chain_type)
 }
 
-/// Mines one empty block, one funding block, and `extra_blocks` into every
-/// chain in `nets`.
+async fn funding_at_next_height(
+    chain: &MockChain,
+    receivers: Vec<(&str, u64, Option<&str>)>,
+) -> Vec<u8> {
+    faucet_funding_transaction_on(chain.activation_heights(), chain.next_height(), receivers).await
+}
+
+/// - Mines one empty block into every chain in `nets`, then one block carrying a funding
+///   transaction built for the first chain's era at its next height, then `extra_blocks`
+///   empty blocks.
+/// - Panics when a later chain's activation heights differ from the first chain's.
 async fn fund_mirrored(
     nets: &[&MockNet],
     receivers: Vec<(&str, u64, Option<&str>)>,
     extra_blocks: u32,
 ) {
-    let funding = faucet_funding_transaction(receivers).await;
+    let Some(first) = nets.first() else {
+        return;
+    };
+    for net in nets {
+        net.chain.write().await.mine_empty_blocks(1);
+    }
+    let (activation_heights, funding) = {
+        let chain = first.chain.read().await;
+        (
+            chain.activation_heights(),
+            funding_at_next_height(&chain, receivers).await,
+        )
+    };
     for net in nets {
         let mut chain = net.chain.write().await;
-        chain.mine_empty_blocks(1);
+        assert_eq!(
+            chain.activation_heights(),
+            activation_heights,
+            "mirrored chains share one activation schedule, so one funding fits them all"
+        );
         chain.mine_block(vec![funding.clone()]);
         chain.mine_empty_blocks(extra_blocks);
     }
@@ -101,12 +126,8 @@ async fn fund_mirrored(
 /// - Mines one block carrying a funding transaction built for the chain's own era at its next
 ///   height, then `extra_blocks` empty blocks.
 async fn fund(net: &MockNet, receivers: Vec<(&str, u64, Option<&str>)>, extra_blocks: u32) {
-    let (activation_heights, height) = {
-        let chain = net.chain.read().await;
-        (chain.activation_heights(), chain.next_height())
-    };
-    let funding = faucet_funding_transaction_on(activation_heights, height, receivers).await;
     let mut chain = net.chain.write().await;
+    let funding = funding_at_next_height(&chain, receivers).await;
     chain.mine_block(vec![funding]);
     chain.mine_empty_blocks(extra_blocks);
 }
