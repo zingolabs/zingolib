@@ -909,6 +909,16 @@ mod tests {
     }
 
     #[test]
+    fn the_android_unit_tests_gate_on_the_suite_result() {
+        let manifest = include_str!("../../../bindings/android/build.gradle.kts");
+        assert!(manifest.contains("finalizedBy(verifyContractTestsRan)"));
+        assert!(manifest
+            .contains("suite.parent == null && result.testCount != contractTestCount.toLong()"));
+        assert!(manifest.contains("it.state.executed && !(it.state.didWork || it.state.upToDate)"));
+        assert!(!manifest.contains("reports.junitXml"));
+    }
+
+    #[test]
     fn the_bundle_pin_package_names_the_maven_contract() {
         let reader = include_str!("../../../bindings/pin/lib/maven_repository.mjs");
         assert!(reader.contains(&format!("REPOSITORY = '{MAVEN_REPOSITORY_DIR}';")));

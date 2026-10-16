@@ -3,19 +3,24 @@
 //! - Dials the public testnet indexer and spends from the shared GloryGoddess testnet wallet.
 //! - Waits for real testnet blocks, so each test runs for minutes.
 
-mod testnet {
-    use zingolib::testutils::chain_generics::fixtures;
-    use zingolib::testutils::chain_generics::networked::NetworkedTestEnvironment;
+use zingolib::testutils::chain_generics::networked::TESTNET_INDEXER;
 
-    #[tokio::test]
-    async fn generate_a_range_of_value_transfers() {
-        tracing_subscriber::fmt().init();
-        fixtures::create_various_value_transfers::<NetworkedTestEnvironment>().await;
-    }
+#[path = "testnet/chain_generics.rs"]
+mod chain_generics;
+#[path = "testnet/chain_metadata.rs"]
+mod chain_metadata;
+#[path = "testnet/glory_goddess.rs"]
+mod glory_goddess;
+#[path = "testnet/mixnet.rs"]
+mod mixnet;
+#[path = "testnet/op_return.rs"]
+mod op_return;
+#[path = "testnet/reload.rs"]
+mod reload;
+#[path = "testnet/subtree_roots.rs"]
+mod subtree_roots;
+#[path = "testnet/zip318_canary.rs"]
+mod zip318_canary;
 
-    #[tokio::test]
-    async fn send_shield_cycle() {
-        tracing_subscriber::fmt().init();
-        fixtures::send_shield_cycle::<NetworkedTestEnvironment>(1).await;
-    }
-}
+/// The value every cell that pays the shared wallet back to itself spends.
+const SELF_SEND_VALUE: u64 = 20_000;
