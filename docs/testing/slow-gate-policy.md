@@ -40,9 +40,9 @@ expensive.
 
 ## Wiring
 
-`libtonode-tests` declares the empty `slow = []` feature, aggregated
-into `extra-credit-tests`. Other test crates adopt the same shape when
-their first outlier appears. Gate an entire file with
+No crate declares the feature today: `libtonode-tests` dropped its empty
+`slow = []` with the regtest removal. A test crate adopts the shape when
+its first outlier appears: an empty `slow = []` feature, off by default. Gate an entire file with
 `#![cfg(feature = "slow")]`, or a single test with
 `#[cfg(feature = "slow")]` on the test function.
 
