@@ -1,8 +1,13 @@
 //! This is a mod for data structs that will be used across all sections of zingolib.
 
+use std::any::Any;
+
+use tokio::task::JoinError;
 use zingo_netutils::lightwallet_protocol;
 
 pub mod proposal;
+
+const OPAQUE_PANIC_PAYLOAD: &str = "a panic payload that is neither &str nor String";
 
 /// Return type for fns that poll the status of task handles.
 pub enum PollReport<T, E> {
@@ -12,6 +17,43 @@ pub enum PollReport<T, E> {
     NotReady,
     /// Task has completed successfully or failed.
     Ready(Result<T, E>),
+    Panicked(String),
+}
+
+impl<T, E> PollReport<T, E> {
+    /// ```
+    /// use zingolib::data::PollReport;
+    ///
+    /// let runtime = tokio::runtime::Builder::new_current_thread()
+    ///     .build()
+    ///     .expect("a current-thread runtime needs no driver and always builds");
+    /// let task = runtime.spawn(async {
+    ///     let gives_up = true;
+    ///     if gives_up {
+    ///         panic!("the task gives up");
+    ///     }
+    ///     Ok::<(), ()>(())
+    /// });
+    /// let report = PollReport::from_join(runtime.block_on(task));
+    /// assert!(matches!(report, PollReport::Panicked(text) if text == "the task gives up"));
+    /// ```
+    pub fn from_join(joined: Result<Result<T, E>, JoinError>) -> Self {
+        match joined {
+            Ok(result) => PollReport::Ready(result),
+            Err(join_error) if join_error.is_panic() => {
+                PollReport::Panicked(panic_text(join_error.into_panic().as_ref()))
+            }
+            Err(join_error) => PollReport::Panicked(join_error.to_string()),
+        }
+    }
+}
+
+pub fn panic_text(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|text| (*text).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| OPAQUE_PANIC_PAYLOAD.to_string())
 }
 
 /// The connected Indexer's server diagnostics, as reported by its

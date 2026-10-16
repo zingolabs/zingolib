@@ -1,4 +1,5 @@
 use crate::binding_manifest;
+use std::path;
 
 /// The language of the Android bindings.
 pub const KOTLIN: &str = "kotlin";
@@ -119,9 +120,6 @@ pub const SWIFT_PACKAGE_OUTPUT_DIR: &str = "build";
 
 pub const SWIFT_CONTRACT_TESTS_DIR: &str = "zingo-netutils/nym-proxy-ffi/contract-tests";
 
-pub const SWIFT_CONTRACT_TESTS_MANIFEST: &str =
-    "zingo-netutils/nym-proxy-ffi/contract-tests/Package.swift";
-
 pub const SWIFT_CONTRACT_TESTS_PACKAGE: &str = "ZingoBindingsContractTests";
 
 pub const SWIFT_PACKAGE_FROM_CONTRACT_TESTS: &str = "../../../bindings/swift";
@@ -221,20 +219,6 @@ pub fn executed_tests(log: &str) -> Result<usize, Vec<String>> {
                 "xcodebuild reported no `{XCODEBUILD_EXECUTED}N tests` line"
             )]
         })
-}
-
-pub fn lexical(path: &std::path::Path) -> std::path::PathBuf {
-    let mut resolved = std::path::PathBuf::new();
-    for component in path.components() {
-        match component {
-            std::path::Component::ParentDir => {
-                resolved.pop();
-            }
-            std::path::Component::CurDir => {}
-            other => resolved.push(other),
-        }
-    }
-    resolved
 }
 
 /// The wallet's generated Swift source.
@@ -482,7 +466,7 @@ fn json_object(pairs: impl Iterator<Item = (String, String)>) -> String {
 }
 
 pub fn swift_package_output_dir() -> String {
-    let manifest = std::path::Path::new(SWIFT_PACKAGE_MANIFEST);
+    let manifest = path::Path::new(SWIFT_PACKAGE_MANIFEST);
     let dir = manifest.parent().unwrap_or(manifest);
     format!("{}/{SWIFT_PACKAGE_OUTPUT_DIR}", dir.display())
 }
@@ -905,7 +889,7 @@ mod tests {
         assert!(manifest.contains(&format!(
             "linkerSettings: [.linkedFramework(\"{SWIFT_LINKED_FRAMEWORK}\")]"
         )));
-        assert!(std::path::Path::new(SWIFT_PACKAGE_MANIFEST).ends_with("Package.swift"));
+        assert!(path::Path::new(SWIFT_PACKAGE_MANIFEST).ends_with("Package.swift"));
     }
 
     #[test]
@@ -921,7 +905,17 @@ mod tests {
             "layout.buildDirectory.dir(\"{MAVEN_REPOSITORY_DIR}\")"
         )));
         assert!(settings.contains(&format!("rootProject.name = \"{MAVEN_ARTIFACT}\"")));
-        assert!(std::path::Path::new(ANDROID_BUILD_DIR).starts_with("bindings/android"));
+        assert!(path::Path::new(ANDROID_BUILD_DIR).starts_with("bindings/android"));
+    }
+
+    #[test]
+    fn the_android_unit_tests_gate_on_the_suite_result() {
+        let manifest = include_str!("../../../bindings/android/build.gradle.kts");
+        assert!(manifest.contains("finalizedBy(verifyContractTestsRan)"));
+        assert!(manifest
+            .contains("suite.parent == null && result.testCount != contractTestCount.toLong()"));
+        assert!(manifest.contains("it.state.executed && !(it.state.didWork || it.state.upToDate)"));
+        assert!(!manifest.contains("reports.junitXml"));
     }
 
     #[test]
@@ -970,8 +964,22 @@ mod tests {
         assert!(diagnostic(&commit.to_uppercase()).contains("full lowercase"));
     }
 
-    fn resolved(base: &str, relative: &str) -> std::path::PathBuf {
-        lexical(&std::path::Path::new(base).join(relative))
+    fn lexical(path: &path::Path) -> path::PathBuf {
+        let mut resolved = path::PathBuf::new();
+        for component in path.components() {
+            match component {
+                path::Component::ParentDir => {
+                    resolved.pop();
+                }
+                path::Component::CurDir => {}
+                other => resolved.push(other),
+            }
+        }
+        resolved
+    }
+
+    fn resolved(base: &str, relative: &str) -> path::PathBuf {
+        lexical(&path::Path::new(base).join(relative))
     }
 
     #[test]
@@ -986,10 +994,8 @@ mod tests {
             ".product(name: \"{SWIFT_PACKAGE}\", package: \"{SWIFT_PACKAGE}\")"
         )));
         assert!(!manifest.contains("products:"));
-        assert!(std::path::Path::new(SWIFT_CONTRACT_TESTS_MANIFEST)
-            .starts_with(SWIFT_CONTRACT_TESTS_DIR));
         let shipped_package = crate::required(
-            std::path::Path::new(SWIFT_PACKAGE_MANIFEST).parent(),
+            path::Path::new(SWIFT_PACKAGE_MANIFEST).parent(),
             "parent of the shipped manifest",
         )?;
         assert_eq!(
@@ -1062,24 +1068,42 @@ mod tests {
         Ok(())
     }
 
+    const XCTEST_METHOD_PREFIX: &str = "func test";
+
+    const XCTEST_METHOD_PARAMETERS: &str = "()";
+
+    fn xctest_methods(suite: &str) -> usize {
+        suite
+            .lines()
+            .map(str::trim_start)
+            .filter(|line| line.starts_with(XCTEST_METHOD_PREFIX))
+            .filter(|line| line.contains(XCTEST_METHOD_PARAMETERS))
+            .count()
+    }
+
     #[test]
-    fn the_swift_contract_test_count_is_the_number_of_test_methods() {
+    fn the_swift_contract_test_count_is_the_number_of_xctest_methods() {
         let suite = include_str!(
             "../../../zingo-netutils/nym-proxy-ffi/contract-tests/swift/GoldenWireContractTests.swift"
         );
-        assert_eq!(
-            suite.matches("func test").count(),
-            SWIFT_CONTRACT_TEST_COUNT
-        );
+        assert_eq!(xctest_methods(suite), SWIFT_CONTRACT_TEST_COUNT);
+        let mixed = [
+            "    func testOne() throws {",
+            "    private func testFixture() -> [UInt8] {",
+            "    // func test in a comment",
+            "    func testTwo() {",
+        ]
+        .join("\n");
+        assert_eq!(xctest_methods(&mixed), 2);
     }
 
     #[test]
     fn lexical_resolution_drops_parent_and_current_components() {
         assert_eq!(
-            lexical(std::path::Path::new(
+            lexical(path::Path::new(
                 "/host/zingolib/bindings/android/../swift/./build"
             )),
-            std::path::Path::new("/host/zingolib/bindings/swift/build")
+            path::Path::new("/host/zingolib/bindings/swift/build")
         );
     }
 

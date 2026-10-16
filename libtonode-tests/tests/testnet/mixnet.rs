@@ -1,45 +1,55 @@
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use zcash_protocol::{PoolType, ShieldedPool};
 use zingolib::lightclient::send::TransmitRoute;
 use zingolib::mixnet::Indicator;
-use zingolib::mixnet::provision::NYM_PROXY_ENV;
+use zingolib::mixnet::provision::{SpawnHints, resolve_proxy_path};
 use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::chain_generics::networked::NetworkedTestEnvironment;
 use zingolib::testutils::lightclient::{from_inputs, get_base_address};
 
-const PAYMENT: u64 = 20_000;
-const READINESS_LIMIT: Duration = Duration::from_secs(300);
-const READINESS_POLL: Duration = Duration::from_secs(1);
+use super::SELF_SEND_VALUE;
 
-/// - Spawns the nym-proxy binary that `ZINGO_NYM_PROXY` names and attaches the wallet to it.
+const READINESS_LIMIT: Duration = Duration::from_secs(300);
+
+/// Whether the mixnet has stopped bootstrapping, in either direction.
+fn settled(mode: Indicator) -> bool {
+    match mode {
+        Indicator::Ready | Indicator::PreviouslyProvenThisEpoch => true,
+        Indicator::Unattached | Indicator::SwitchedOff | Indicator::Died => true,
+        Indicator::Bootstrapping => false,
+    }
+}
+
+/// - Spawns the nym-proxy binary the provisioning precedence resolves and attaches the wallet to it.
 /// - Sends over the real tunnel to the testnet indexer.
 #[tokio::test]
 async fn a_mixnet_send_crosses_a_real_proxy_to_the_node() {
-    let proxy = PathBuf::from(
-        std::env::var_os(NYM_PROXY_ENV)
-            .unwrap_or_else(|| panic!("{NYM_PROXY_ENV} must name the nym-proxy binary")),
-    );
+    let proxy = PathBuf::from(resolve_proxy_path(&SpawnHints::default()));
     let mut environment = NetworkedTestEnvironment::setup().await;
     let mut client = environment.create_faucet().await;
     client
         .enable_mixnet(&proxy)
         .await
         .expect("the proxy spawns and the wallet attaches to it");
-    let deadline = Instant::now() + READINESS_LIMIT;
-    while client.read_mixnet_indicator() != Indicator::Ready {
-        assert!(
-            Instant::now() < deadline,
-            "the mixnet did not reach Ready within {READINESS_LIMIT:?}: {:?}",
-            client.read_mixnet_indicator()
-        );
-        tokio::time::sleep(READINESS_POLL).await;
-    }
+    let mut status = client.subscribe_mixnet_status();
+    tokio::time::timeout(
+        READINESS_LIMIT,
+        status.wait_for(|status| settled(status.mode)),
+    )
+    .await
+    .unwrap_or_else(|_| panic!("the mixnet did not settle within {READINESS_LIMIT:?}"))
+    .expect("the status channel outlives the session");
+    let mode = status.borrow().mode;
+    assert!(
+        mode.is_ready(),
+        "the mixnet must settle in a routing state, found {mode:?}"
+    );
 
     let own_address = get_base_address(&client, PoolType::Shielded(ShieldedPool::Orchard)).await;
     let reports =
-        from_inputs::quick_send_reported(&mut client, vec![(&own_address, PAYMENT, None)])
+        from_inputs::quick_send_reported(&mut client, vec![(&own_address, SELF_SEND_VALUE, None)])
             .await
             .expect("the send crosses the tunnel and the node accepts it");
     assert!(

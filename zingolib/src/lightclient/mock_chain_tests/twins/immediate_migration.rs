@@ -1,16 +1,12 @@
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
-use super::{HOSPITAL_MUSEUM, fund_on_chain, migrated_value};
+use super::{DEFERRED_NU6_3, confirmed_balance, funded_client, migrated_value};
 use crate::lightclient::LightClient;
-use crate::testutils::lightclient::get_base_address;
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
 use crate::wallet::migration::MigrationParams;
 
-/// The deferred NU6.3 activation height: past the funding, close enough that
-/// crossing the boundary stays cheap.
-const DEFERRED_NU6_3_HEIGHT: u32 = 16;
 const UNEQUAL_NOTES: [u64; 3] = [317_000, 1_250_000, 88_000];
 const FRAGMENT_BASE: u64 = 100_000;
 const FRAGMENTS_BEYOND_ONE_TRANSACTION: u64 = 3;
@@ -22,26 +18,17 @@ async fn pre_ironwood_funded_recipient(
     values: impl FnOnce(&MigrationParams) -> Vec<u64>,
 ) -> (MockNet, LightClient) {
     let mut net = MockNet::launch_with(MockChain::with_activation_heights(
-        mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3_HEIGHT),
+        mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
     ))
     .await;
-    let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-    net.chain.write().await.mine_empty_blocks(1);
-    let note_values = values(&MigrationParams::provisional(recipient.chain_type()));
-    let payments: Vec<(&str, u64, Option<&str>)> = note_values
-        .iter()
-        .map(|&value| (recipient_ua.as_str(), value, None))
+    let receivers: Vec<(PoolType, u64)> = values(&MigrationParams::provisional(net.chain_type()))
+        .into_iter()
+        .map(|value| (PoolType::ORCHARD, value))
         .collect();
-    fund_on_chain(&net, payments).await;
-    recipient
-        .sync_and_await()
-        .await
-        .expect("the recipient syncs its pre-Ironwood notes");
+    let recipient = funded_client(&mut net, &receivers, 0).await;
     let funded_tip = net.chain.read().await.tip();
     assert!(
-        funded_tip < DEFERRED_NU6_3_HEIGHT,
+        funded_tip < DEFERRED_NU6_3,
         "the funding must confirm before NU6.3 activates, but the chain is at {funded_tip}"
     );
     (net, recipient)
@@ -51,50 +38,31 @@ async fn pre_ironwood_funded_recipient(
 async fn cross_ironwood_activation(net: &MockNet, recipient: &mut LightClient) {
     let tip = net.chain.read().await.tip();
     assert!(
-        tip < DEFERRED_NU6_3_HEIGHT,
+        tip < DEFERRED_NU6_3,
         "the chain has already crossed the activation boundary (tip {tip})"
     );
     net.chain
         .write()
         .await
-        .mine_empty_blocks(DEFERRED_NU6_3_HEIGHT - tip + 1);
+        .mine_empty_blocks(DEFERRED_NU6_3 - tip + 1);
     recipient
         .sync_and_await()
         .await
         .expect("the recipient syncs across the activation");
 }
 
-async fn confirmed_orchard_and_ironwood(client: &LightClient) -> (u64, u64) {
-    let balance = client
-        .wallet()
-        .read()
-        .await
-        .account_balance(AccountId::ZERO)
-        .expect("a synced wallet reports a balance");
-    (
-        balance
-            .confirmed_orchard_balance
-            .map(|zats| zats.into_u64())
-            .unwrap_or(0),
-        balance
-            .confirmed_ironwood_balance
-            .map(|zats| zats.into_u64())
-            .unwrap_or(0),
-    )
-}
-
-/// The immediate migration: every spendable Orchard note is spent into Ironwood in
-/// one pass, with no note splitting and no schedule. The Orchard pool empties
-/// down to the disclosed dust, and the same value less fees appears in the
-/// Ironwood pool. That second half is what proves the funds actually crossed.
 #[tokio::test]
 async fn migrate_all_orchard_to_ironwood() {
+    // The immediate migration: every spendable Orchard note is spent into Ironwood in
+    // one pass, with no note splitting and no schedule. The Orchard pool empties
+    // down to the disclosed dust, and the same value less fees appears in the
+    // Ironwood pool. That second half is what proves the funds actually crossed.
     // Several notes of unequal value: an immediate migration must sweep all of them, and
     // nothing here is a canonical denomination.
     let (net, mut recipient) = pre_ironwood_funded_recipient(|_| UNEQUAL_NOTES.to_vec()).await;
     cross_ironwood_activation(&net, &mut recipient).await;
 
-    let (orchard_before, _) = confirmed_orchard_and_ironwood(&recipient).await;
+    let orchard_before = confirmed_balance(&recipient, ShieldedPool::Orchard).await;
     assert_eq!(orchard_before, UNEQUAL_NOTES.iter().sum::<u64>());
 
     let plan = recipient
@@ -122,7 +90,8 @@ async fn migrate_all_orchard_to_ironwood() {
         .await
         .expect("the recipient syncs the mined migration");
 
-    let (orchard_after, ironwood_after) = confirmed_orchard_and_ironwood(&recipient).await;
+    let orchard_after = confirmed_balance(&recipient, ShieldedPool::Orchard).await;
+    let ironwood_after = confirmed_balance(&recipient, ShieldedPool::Ironwood).await;
     assert_eq!(
         orchard_after, summary.residual,
         "the Orchard pool must be empty but for the disclosed dust"
@@ -146,10 +115,10 @@ async fn migrate_all_orchard_to_ironwood() {
     );
 }
 
-/// An immediate migration of a fragmented wallet chunks into several independent transactions,
-/// all built and transmitted in the same pass, and still empties the pool.
 #[tokio::test]
 async fn immediate_migration_chunks_a_fragmented_wallet() {
+    // An immediate migration of a fragmented wallet chunks into several independent
+    // transactions, all built and transmitted in the same pass, and still empties the pool.
     // More notes than fit one transaction's action budget, funded in one
     // transaction. Distinct values keep every payment in the ZIP-321
     // request unique.
@@ -183,7 +152,8 @@ async fn immediate_migration_chunks_a_fragmented_wallet() {
         .await
         .expect("the recipient syncs the mined migration chunks");
 
-    let (orchard_after, ironwood_after) = confirmed_orchard_and_ironwood(&recipient).await;
+    let orchard_after = confirmed_balance(&recipient, ShieldedPool::Orchard).await;
+    let ironwood_after = confirmed_balance(&recipient, ShieldedPool::Ironwood).await;
     assert_eq!(orchard_after, summary.residual);
     assert_eq!(ironwood_after, summary.migrated);
 }

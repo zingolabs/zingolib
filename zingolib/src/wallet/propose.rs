@@ -43,6 +43,29 @@ use pepper_sync::sync::{ScanPriority, ScanRange};
 /// This may not be the best solution. The correct one would require a change upstream.
 const SEND_ALL_PROPOSAL_ATTEMPTS: u32 = 4;
 
+/// ```
+/// use zcash_protocol::ShieldedPool;
+/// use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
+/// use zingolib::config::ChainType;
+/// use zingolib::wallet::propose::payment_pool;
+///
+/// let activation = ChainType::Testnet
+///     .activation_height(NetworkUpgrade::Nu6_3)
+///     .expect("testnet activates NU6.3");
+/// assert_eq!(payment_pool(&ChainType::Testnet, activation), ShieldedPool::Ironwood);
+/// assert_eq!(payment_pool(&ChainType::Testnet, activation - 1), ShieldedPool::Orchard);
+/// ```
+pub fn payment_pool(chain: &ChainType, chain_height: BlockHeight) -> ShieldedPool {
+    if chain
+        .activation_height(NetworkUpgrade::Nu6_3)
+        .is_some_and(|ironwood_height| chain_height >= ironwood_height)
+    {
+        ShieldedPool::Ironwood
+    } else {
+        ShieldedPool::Orchard
+    }
+}
+
 impl LightWallet {
     /// Creates a proposal from a transaction request.
     pub(crate) fn create_send_proposal(
@@ -61,15 +84,7 @@ impl LightWallet {
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             Some(memo),
-            if self
-                .chain_type
-                .activation_height(NetworkUpgrade::Nu6_3)
-                .is_some_and(|ironwood_height| chain_height >= ironwood_height)
-            {
-                ShieldedPool::Ironwood
-            } else {
-                ShieldedPool::Orchard
-            },
+            payment_pool(&self.chain_type, chain_height),
             DustOutputPolicy::new(DustAction::AllowDustChange, None),
         );
         let chain_type = self.chain_type;
