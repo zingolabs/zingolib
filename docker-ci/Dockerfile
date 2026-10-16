@@ -5,33 +5,15 @@
 # value; a bare `docker build` without --build-args fails loudly
 # instead of assembling an image from stale duplicated defaults.
 ARG RUST_VERSION
-ARG ZAINO_IMAGE_TAG
-ARG ZEBRA_VERSION
 ARG NEXTEST_VERSION
-# Digests pin the CONTENT the tags merely point at; tag@digest fails
-# loudly if upstream repushes a tag, so every machine building from
-# the same commit provisions byte-identical binaries.
-ARG ZAINO_IMAGE_DIGEST
-ARG ZEBRA_IMAGE_DIGEST
-
-FROM docker.io/zingodevops/zaino:${ZAINO_IMAGE_TAG}@${ZAINO_IMAGE_DIGEST} AS zainod-downloader
-FROM docker.io/zfnd/zebra:${ZEBRA_VERSION}@${ZEBRA_IMAGE_DIGEST} AS zebrad-downloader
 
 FROM debian:trixie-slim AS runner
 
 ARG RUST_VERSION
-ARG ZAINO_IMAGE_TAG
-ARG ZEBRA_VERSION
 ARG NEXTEST_VERSION
 
 LABEL org.zingolib.test-artifacts.versions.rust="${RUST_VERSION}"
-LABEL org.zingolib.test-artifacts.versions.zaino="${ZAINO_IMAGE_TAG}"
-LABEL org.zingolib.test-artifacts.versions.zebra="${ZEBRA_VERSION}"
 LABEL org.zingolib.test-artifacts.versions.nextest="${NEXTEST_VERSION}"
-
-# Copy regtest binaries
-COPY --from=zainod-downloader /usr/local/bin/zainod /usr/bin/
-COPY --from=zebrad-downloader /usr/local/bin/zebrad /usr/bin/
 
 # Install dependencies and update ca certificates
 RUN apt update \

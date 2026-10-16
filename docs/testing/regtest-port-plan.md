@@ -6,7 +6,7 @@ holds the guarantee inventory, from inventory to execution. The decision
 record is the zingo-adrs entry "Chain tests run on the mock chain; live
 networks are testnet cells" (number assigned by its pull request).
 
-Vocabulary follows `zingolib_testutils/CONTEXT.md`: chain-bound test,
+Vocabulary follows `docs/testing/CONTEXT.md`: chain-bound test,
 mock chain, twin, guarantee, testnet cell.
 
 ## Rulings
