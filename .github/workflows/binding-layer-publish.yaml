@@ -20,7 +20,14 @@
 # would leave the recorded entry without its checks. The App's token is
 # minted in the publish job and lives one hour.
 #
-# An issue_comment run uses this file as it is on the default branch.
+# An issue_comment run uses this file as it is on the default branch, and
+# the build workflows it calls come from that same commit, while the
+# builder they run is the tool at the entry's commit. The two agree only
+# when they are one commit, so the request job refuses an entry that
+# names any commit but the default branch's head, and the build and
+# naming steps all run that head's tool. PR #2991's `/publish` showed
+# the alternative: the head's iOS workflow and an older entry's tool
+# disagreed on a flag, and the build failed.
 name: Publish the Binding Layer
 
 on:
@@ -132,19 +139,31 @@ jobs:
           workspaces: tools/workbench
 
       # The tool refuses an entry that is already published, so a stray
-      # comment cannot rebuild and re-push a recorded commit.
+      # comment cannot rebuild and re-push a recorded commit, and it
+      # refuses an entry that names any commit but github.sha, the default
+      # branch's head whose workflow this run is.
       - name: Read the newest manifest entry
         id: manifest
+        env:
+          BUILDS: ${{ github.sha }}
         run: |
-          commit="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --newest)"
+          commit="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --newest --publish-at "$BUILDS")"
           echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+
+      # The naming step below runs the builder of the commit it names, the
+      # same builder the build jobs check out, so the names and the flags
+      # come from one commit. The branch holds the commit, because the
+      # tool above refused it otherwise.
+      - name: Checkout the entry's commit
+        env:
+          COMMIT: ${{ steps.manifest.outputs.commit }}
+        run: git checkout --quiet --detach "$COMMIT"
 
       # The builder is the one source of every artifact name, of the ABI
       # list, and of the Maven version, which it reads from the wallet
       # manifest at the named commit through the full history fetched
-      # above. This one run, from the pull request's branch, feeds the
-      # build jobs and the publish job, so they agree whatever commit is
-      # built.
+      # above. This one run, at the entry's commit, feeds the build jobs
+      # and the publish job, so they agree on what is built.
       - name: Name the artifacts
         id: names
         env:

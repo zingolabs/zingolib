@@ -24,7 +24,6 @@ val proxyCrate: File = zingolibRoot.resolve("zingo-netutils/nym-proxy-ffi")
 val contractTests: File = proxyCrate.resolve("contract-tests/kotlin")
 val goldenDir: File = proxyCrate.resolve("test-data/golden")
 val testAnnotation = Regex("""@Test\b""")
-val junitSuiteSize = Regex("""<testsuite\b[^>]*\btests="(\d+)"""")
 
 listOf(contractTests, goldenDir).forEach { directory ->
     if (!directory.isDirectory) {
@@ -110,16 +109,23 @@ tasks.named("preBuild") {
     dependsOn(buildBindingLayer)
 }
 
-tasks.withType<Test>().configureEach {
-    val junitReports = reports.junitXml.outputLocation
+val verifyContractTestsRan by tasks.registering {
+    description = "Fails when a unit-test task ran no tests."
+    val unitTests = tasks.withType<Test>()
     doLast {
-        val executed = junitReports.get().asFile.walk()
-            .filter { it.extension == "xml" }
-            .sumOf { junitSuiteSize.find(it.readText())?.groupValues?.get(1)?.toInt() ?: 0 }
-        if (executed != contractTestCount) {
-            throw GradleException("executed $executed tests, and the Kotlin wire-contract suite holds $contractTestCount")
+        unitTests.firstOrNull { it.state.executed && !(it.state.didWork || it.state.upToDate) }?.let { idle ->
+            throw GradleException("${idle.name} ran no tests, and the Kotlin wire-contract suite holds $contractTestCount")
         }
     }
+}
+
+tasks.withType<Test>().configureEach {
+    afterSuite(KotlinClosure2<TestDescriptor, TestResult, Unit>({ suite, result ->
+        if (suite.parent == null && result.testCount != contractTestCount.toLong()) {
+            throw GradleException("$name executed ${result.testCount} tests, and the Kotlin wire-contract suite holds $contractTestCount")
+        }
+    }))
+    finalizedBy(verifyContractTestsRan)
 }
 
 val clearRepository by tasks.registering(Delete::class) {

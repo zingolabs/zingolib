@@ -229,7 +229,7 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let required = |flag: &str| crate::required_flag(args, flag, USAGE);
     let commit = crate::commit_of(root, required(COMMIT_FLAG)?)?;
     let bundles = Path::new(required(BUNDLES_FLAG)?);
-    let newest = binding_manifest::newest_awaiting(root)?;
+    let newest = binding_manifest::newest_awaiting(root, None)?;
     if newest != commit {
         return Err(vec![format!(
             "{commit} is not the newest entry awaiting `{}` in {}, which is {newest}",

@@ -67,6 +67,7 @@ use zingo_common_components::protocol::ActivationHeights;
 
 use crate::config::{ChainType, ClientConfig, ClientConfigBuilder, WalletConfig};
 use crate::lightclient::LightClient;
+use crate::testutils::assertions::OP_RETURN;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::default_test_wallet_settings;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
@@ -1668,7 +1669,6 @@ fn verify_orchard_bundle(
     }
 }
 
-const OP_RETURN: u8 = 0x6a;
 const OP_PUSHDATA1: u8 = 0x4c;
 const OP_DUP: u8 = 0x76;
 const OP_EQUAL: u8 = 0x87;

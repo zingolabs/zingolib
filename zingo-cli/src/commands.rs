@@ -137,6 +137,8 @@ pub enum CommandError {
     Network(#[from] NetworkCommandError),
     #[error("the `{0}` command runs only at the interactive prompt")]
     ReplOnly(String),
+    #[error("the sync task panicked: {0}")]
+    SyncPanicked(String),
     /// Transitional quarantine for commands whose failure is not yet
     /// typed, carrying the failure itself so the dispatch renderer still
     /// walks its whole source chain.
@@ -893,6 +895,7 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
         SyncSubCommand::Poll => match lightclient.poll_sync() {
             PollReport::NoHandle => Ok("Sync task has not been launched.".to_string()),
             PollReport::NotReady => Ok("Sync task is not complete.".to_string()),
+            PollReport::Panicked(text) => Err(CommandError::SyncPanicked(text)),
             PollReport::Ready(result) => match result {
                 Ok(sync_result) => Ok(sync_progress::SessionReport::from(sync_result).to_string()),
                 Err(e) => Err(not_yet_typed(e)),
