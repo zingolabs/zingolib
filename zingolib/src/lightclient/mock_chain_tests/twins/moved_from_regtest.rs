@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::PoolType;
 use zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS;
 use zcash_protocol::value::Zatoshis;
@@ -9,7 +8,7 @@ use zip32::AccountId;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use zcash_protocol::ShieldedPool;
 
-use super::{DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, external_address, fund};
+use super::{DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, external_address, fund, zip317_fee};
 use crate::check_client_balances;
 use crate::testutils::lightclient::{from_inputs, get_base_address, get_fees_paid_by_client};
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
@@ -52,12 +51,7 @@ async fn mine_to_transparent_and_shield() {
         .expect("the mock chain serves every block the wallet requests");
 
     let fee = get_fees_paid_by_client(&miner).await;
-    assert_eq!(
-        fee,
-        (MARGINAL_FEE * SHIELD_LOGICAL_ACTIONS)
-            .expect("six marginal fees stay within the money range")
-            .into_u64()
-    );
+    assert_eq!(fee, zip317_fee(SHIELD_LOGICAL_ACTIONS));
     check_client_balances!(miner, i: (COINBASES * REWARD_ZATS - fee) o: 0 s: 0 t: 0);
 }
 #[tokio::test]

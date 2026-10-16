@@ -4,7 +4,7 @@ use zcash_protocol::value::Zatoshis;
 
 use super::{
     DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, confirmed_balance, continuous_sync_wallet_settings,
-    external_address, external_transparent_address, fund, funded_client,
+    external_address, external_transparent_address, fund, fund_client, funded_client,
 };
 use crate::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind, ValueTransfers,
@@ -52,11 +52,12 @@ fn migrated_value(value_transfers: &ValueTransfers, txids: &[TxId]) -> u64 {
 }
 
 fn blocks_past_activation(tip: u32, activation: u32) -> Option<u32> {
-    unimplemented!("the blocks that carry tip {tip} one past the activation at {activation}")
+    (tip < activation).then(|| activation - tip + 1)
 }
 
 fn zip317_fee(logical_actions: u64) -> u64 {
-    unimplemented!("the ZIP-317 fee for {logical_actions} logical actions")
+    let grace = u64::try_from(GRACE_ACTIONS).expect("the grace action count is a small constant");
+    u64::from(MARGINAL_FEE) * logical_actions.max(grace)
 }
 
 #[test]

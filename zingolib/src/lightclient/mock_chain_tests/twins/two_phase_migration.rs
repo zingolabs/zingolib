@@ -1,19 +1,18 @@
 use std::time::{Duration, Instant};
 
-use zcash_protocol::{PoolType, ShieldedPool};
+use zcash_protocol::PoolType;
 use zip32::AccountId;
 
-use super::{HOSPITAL_MUSEUM, continuous_sync_wallet_settings, fund, migrated_value};
-use crate::testutils::lightclient::get_base_address;
+use super::{
+    DEFERRED_NU6_3, HOSPITAL_MUSEUM, blocks_past_activation, continuous_sync_wallet_settings,
+    fund_client, migrated_value,
+};
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
 use crate::wallet::migration::MigrationPhase;
 
-/// The deferred NU6.3 activation height: past the funding, close enough that
-/// crossing the boundary stays cheap.
-const DEFERRED_NU6_3_HEIGHT: u32 = 16;
-/// An amount that quantizes into several denominations plus dust.
-const FUNDING: u64 = 1_250_000;
+// An amount that quantizes into several denominations plus dust.
+const QUANTIZABLE_FUNDING: u64 = 1_250_000;
 const MINING_INTERVAL: Duration = Duration::from_millis(500);
 const MIGRATION_TIME_LIMIT: Duration = Duration::from_secs(300);
 
@@ -22,22 +21,27 @@ const MIGRATION_TIME_LIMIT: Duration = Duration::from_secs(300);
 #[tokio::test]
 async fn two_phase_migration_end_to_end() {
     let mut net = MockNet::launch_with(MockChain::with_activation_heights(
-        mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3_HEIGHT),
+        mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
     ))
     .await;
     let mut recipient = net
         .client(HOSPITAL_MUSEUM, Some(continuous_sync_wallet_settings()))
         .await;
     recipient.set_transmit_retry_interval(Duration::ZERO);
-    let recipient_address =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_address, FUNDING, None)], 0).await;
+    fund_client(
+        &net,
+        &recipient,
+        &[(PoolType::ORCHARD, QUANTIZABLE_FUNDING)],
+        0,
+    )
+    .await;
     {
         let mut chain = net.chain.write().await;
         let tip = chain.tip();
-        assert!(tip < DEFERRED_NU6_3_HEIGHT);
-        chain.mine_empty_blocks(DEFERRED_NU6_3_HEIGHT - tip + 1);
+        let runway = blocks_past_activation(tip, DEFERRED_NU6_3).unwrap_or_else(|| {
+            panic!("the funding at tip {tip} must confirm below the activation at {DEFERRED_NU6_3}")
+        });
+        chain.mine_empty_blocks(runway);
     }
     recipient
         .sync_to_tip_and_await()
