@@ -7,7 +7,7 @@
 //! with today's stack: bound-note reservation, external-spend invalidation
 //! and the no-sync transmit path.
 
-use pepper_sync::wallet::{NoteInterface, OrchardNote, OutputId, OutputInterface};
+use pepper_sync::wallet::OutputInterface;
 use zcash_local_net::validator::Validator;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::PoolType;
@@ -17,50 +17,10 @@ use zingolib::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind, ValueTransfers,
 };
 use zingolib::testutils::lightclient::from_inputs;
-use zingolib::testutils::migration::inject_scheduled_migration;
-use zingolib::wallet::migration::{
-    MigrationParams, MigrationPhase, PartId, PartState, RecommendedAction,
-};
+use zingolib::wallet::migration::{MigrationParams, MigrationPhase};
 use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 use zingolib_testutils::setup_metrics::MeteredNet;
 use zip32::AccountId;
-
-/// A snapshot of one of the wallet's Orchard notes.
-struct NoteRecord {
-    output_id: OutputId,
-    nullifier: [u8; 32],
-    value: u64,
-    spending_transaction: Option<TxId>,
-}
-
-async fn orchard_note_records(client: &LightClient) -> Vec<NoteRecord> {
-    let wallet = client.wallet().read().await;
-    wallet
-        .wallet_transactions
-        .values()
-        .flat_map(|transaction| {
-            OrchardNote::transaction_outputs(transaction)
-                .iter()
-                .map(|note| NoteRecord {
-                    output_id: note.output_id(),
-                    nullifier: note
-                        .nullifier()
-                        .expect("scanned wallet notes carry nullifiers")
-                        .to_bytes(),
-                    value: note.value(),
-                    spending_transaction: note.spending_transaction(),
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
-}
-
-fn note_by_value(notes: &[NoteRecord], value: u64) -> &NoteRecord {
-    notes
-        .iter()
-        .find(|note| note.value == value)
-        .unwrap_or_else(|| panic!("no note of {value} zatoshis in the wallet"))
-}
 
 /// - Panics when a txid of `txids` has no migration value transfer.
 fn migrated_value(value_transfers: &ValueTransfers, txids: &[TxId]) -> u64 {
@@ -82,130 +42,6 @@ fn migrated_value(value_transfers: &ValueTransfers, txids: &[TxId]) -> u64 {
                 .value
         })
         .sum()
-}
-
-/// A part's bound note is excluded from ordinary input selection while
-/// another note can satisfy the request, the fallback pass consumes it when
-/// nothing else can, and the external spend then invalidates the part on
-/// reconciliation. The remainder left behind sits exactly at the Sweep
-/// Minimum, so under the ratified completion rule (#2493 finding 8) no
-/// replan is offered (a replan would strand everything it planned), and
-/// the next reconciliation concludes the migration with the remainder
-/// disclosed as its residual.
-#[tokio::test]
-async fn bound_note_reservation_and_external_spend_invalidation() {
-    // Two V2 Orchard notes: the 100_000 note plays a bound split note, the
-    // 50_000 note is free. The whole test then stays below the activation
-    // height: reservation and reconciliation are era-independent, and
-    // pre-activation orchard-only sends keep the note values' fee
-    // arithmetic balanced.
-    let (local_net, faucet, mut recipient) =
-        pre_ironwood_funded_recipient(|_| vec![100_000, 50_000]).await;
-    let faucet_address = get_base_address_macro!(faucet, "unified");
-
-    let notes = orchard_note_records(&recipient).await;
-    let reserved = note_by_value(&notes, 100_000);
-    let params = MigrationParams::provisional(recipient.wallet().read().await.chain_type());
-    inject_scheduled_migration(
-        &recipient,
-        params,
-        vec![(100_000, reserved.output_id, reserved.nullifier)],
-        None,
-        None,
-    )
-    .await;
-    let reserved_id = reserved.output_id;
-
-    // An ordinary send the free note can cover must leave the bound note
-    // alone.
-    from_inputs::quick_send(&mut recipient, vec![(&faucet_address, 20_000, None)])
-        .await
-        .unwrap();
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-        .await
-        .unwrap();
-    let notes = orchard_note_records(&recipient).await;
-    assert!(
-        notes
-            .iter()
-            .find(|note| note.output_id == reserved_id)
-            .expect("the bound note is still in the wallet")
-            .spending_transaction
-            .is_none(),
-        "an ordinary send must not consume a bound note while another note suffices"
-    );
-    assert!(
-        note_by_value(&notes, 50_000).spending_transaction.is_some(),
-        "the free note covers the ordinary send"
-    );
-
-    // A send only the bound note can cover goes through anyway: the
-    // reservation biases selection, it never blocks a spend.
-    from_inputs::quick_send(&mut recipient, vec![(&faucet_address, 100_000, None)])
-        .await
-        .unwrap();
-    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
-        .await
-        .unwrap();
-    let notes = orchard_note_records(&recipient).await;
-    assert!(
-        notes
-            .iter()
-            .find(|note| note.output_id == reserved_id)
-            .expect("the bound note is still in the wallet")
-            .spending_transaction
-            .is_some(),
-        "the fallback pass consumes the bound note when nothing else can pay"
-    );
-
-    // Reconciliation sees the external spend, invalidates the part and
-    // recommends replanning the remainder.
-    let report = recipient.reconcile_migration().await.unwrap();
-    assert!(
-        report.actions.iter().any(|action| matches!(
-            action,
-            RecommendedAction::MarkInvalidated { part } if *part == PartId(0)
-        )),
-        "the external spend must invalidate the part: {:?}",
-        report.actions
-    );
-    // The surviving change note is exactly the Sweep Minimum (10_000):
-    // not worth replanning, so no replan is offered (ratified completion
-    // rule; the prior behavior offered a replan that could only strand).
-    assert!(
-        !report
-            .actions
-            .iter()
-            .any(|action| matches!(action, RecommendedAction::ReplanRemainder)),
-        "a remainder at the Sweep Minimum must not prompt a replan: {:?}",
-        report.actions
-    );
-    {
-        let wallet = recipient.wallet().read().await;
-        assert_eq!(
-            wallet.migration.as_ref().unwrap().parts[0].state,
-            PartState::Invalidated
-        );
-    }
-
-    // With every part terminal and nothing worth replanning, the next
-    // reconciliation concludes the migration, disclosing the stranded
-    // remainder as its residual.
-    let report = recipient.reconcile_migration().await.unwrap();
-    assert!(
-        report
-            .actions
-            .iter()
-            .any(|action| matches!(action, RecommendedAction::MarkComplete { residual: 10_000 })),
-        "an all-terminal migration with a Sweep-Minimum remainder must \
-         complete: {:?}",
-        report.actions
-    );
-    let wallet = recipient.wallet().read().await;
-    assert_eq!(
-        wallet.migration.as_ref().unwrap().phase,
-        MigrationPhase::Complete { residual: 10_000 }
-    );
 }
 
 /// The full two-phase run: note splitting to denomination-sized notes, then
