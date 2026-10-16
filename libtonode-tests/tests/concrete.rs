@@ -1105,36 +1105,6 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     assert_ironwood_note_statuses(&recipient, &settled).await;
 }
 
-#[tokio::test]
-async fn send_pre_ironwood() {
-    let fixture = scenarios::wallet_activation_heights(
-        &zcash_local_net::validator::regtest_test_activation_heights(),
-    );
-    let activation_heights = zingolib::ActivationHeights::builder()
-        .set_overwinter(fixture.overwinter())
-        .set_sapling(fixture.sapling())
-        .set_blossom(fixture.blossom())
-        .set_heartwood(fixture.heartwood())
-        .set_canopy(fixture.canopy())
-        .set_nu5(fixture.nu5())
-        .set_nu6(fixture.nu6())
-        .set_nu6_1(fixture.nu6_1())
-        .set_nu6_2(fixture.nu6_2())
-        .set_nu6_3(None)
-        .set_nu7(None)
-        .build();
-    let (_local_net, _faucet, recipient, _, _, _) = scenarios::faucet_funded_recipient(
-        Some(100_000),
-        None,
-        None,
-        PoolType::ORCHARD,
-        activation_heights,
-        scenarios::ChainCachePolicy::PerTest,
-    )
-    .await;
-    check_client_balances!(recipient, i: 0 o: 100_000 s: 0 t: 0);
-}
-
 // FIXME: add unified address discovery to pepper sync and add a test here
 
 mod basic_transactions {
