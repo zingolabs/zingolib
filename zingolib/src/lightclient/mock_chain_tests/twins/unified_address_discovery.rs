@@ -1,14 +1,18 @@
 use zcash_client_backend::encoding::encode_payment_address_p;
 use zip32::AccountId;
 
-use super::HOSPITAL_MUSEUM;
+use super::{FUNDING, HOSPITAL_MUSEUM, fund};
 use crate::lightclient::LightClient;
-use crate::testutils::mock_indexer::{MockNet, faucet_funding_transaction};
+use crate::testutils::mock_indexer::MockNet;
 use crate::wallet::keys::unified::{ReceiverSelection, UnifiedAddressId};
 
 const ORCHARD_ONLY_INDEX: u32 = 2;
 const SAPLING_ONLY_INDEX: u32 = 3;
 const ALL_SHIELDED_INDEX: u32 = 4;
+const ORCHARD_ONLY_PAYMENT: u64 = FUNDING;
+const SAPLING_ONLY_PAYMENT: u64 = 2 * FUNDING;
+const ALL_SHIELDED_PAYMENT: u64 = 3 * FUNDING;
+const ALL_SHIELDED_SAPLING_PAYMENT: u64 = 4 * FUNDING;
 
 async fn encoded_address_at(client: &LightClient, address_index: u32) -> Option<String> {
     let network = client.chain_type();
@@ -53,18 +57,33 @@ async fn unified_address_discovery() {
 
     // send to the UAs so they are recorded on chain
     net.chain.write().await.mine_empty_blocks(1);
-    let funding = faucet_funding_transaction(vec![
-        (&orchard_only_addr, 100_000, Some("orchard_only")),
-        (&sapling_only_addr, 200_000, Some("sapling_only")),
-        (&all_shielded_encoded, 300_000, Some("all_shielded")),
-        (
-            &all_shielded_sapling_addr,
-            400_000,
-            Some("all_shielded_sapling"),
-        ),
-    ])
+    fund(
+        &net,
+        vec![
+            (
+                &orchard_only_addr,
+                ORCHARD_ONLY_PAYMENT,
+                Some("orchard_only"),
+            ),
+            (
+                &sapling_only_addr,
+                SAPLING_ONLY_PAYMENT,
+                Some("sapling_only"),
+            ),
+            (
+                &all_shielded_encoded,
+                ALL_SHIELDED_PAYMENT,
+                Some("all_shielded"),
+            ),
+            (
+                &all_shielded_sapling_addr,
+                ALL_SHIELDED_SAPLING_PAYMENT,
+                Some("all_shielded_sapling"),
+            ),
+        ],
+        0,
+    )
     .await;
-    net.chain.write().await.mine_block(vec![funding]);
 
     // rebuild recipient and check the UAs don't exist in the wallet
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;

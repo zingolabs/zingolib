@@ -1,6 +1,6 @@
-use zcash_protocol::{PoolType, ShieldedPool};
+use zcash_protocol::PoolType;
 
-use super::{HOSPITAL_MUSEUM, fund};
+use super::funded_client;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::mock_indexer::MockNet;
 
@@ -10,16 +10,9 @@ const SELF_SEND: u64 = 100_000;
 #[tokio::test]
 async fn self_send() {
     let mut net = MockNet::launch().await;
-    let mut sender = net.client(HOSPITAL_MUSEUM, None).await;
-    let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&sender_ua, SENDER_FUNDING, None)], 1).await;
-    sender
-        .sync_and_await()
-        .await
-        .expect("the sender syncs its funding");
+    let mut sender = funded_client(&mut net, &[(PoolType::ORCHARD, SENDER_FUNDING)], 1).await;
 
-    let sender_sapling = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Sapling)).await;
+    let sender_sapling = get_base_address(&sender, PoolType::SAPLING).await;
     for memo in [None, Some("Second Transaction")] {
         from_inputs::quick_send(
             &mut sender,

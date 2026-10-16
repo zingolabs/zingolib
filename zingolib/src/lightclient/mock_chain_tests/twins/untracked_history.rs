@@ -1,28 +1,14 @@
-use zcash_protocol::value::Zatoshis;
+use pepper_sync::error::SyncError;
 use zcash_protocol::{PoolType, ShieldedPool};
 
-use super::{DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, fund_on_chain};
+use super::{DEFERRED_NU6_3, FUNDING, confirmed_balance, funded_client};
 use crate::lightclient::LightClient;
-use crate::testutils::lightclient::get_base_address;
+use crate::lightclient::error::LightClientError;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
 use crate::testutils::{mock_activation_heights, mock_activation_heights_deferring_nu6_3};
 
 const HIDDEN_BLOCKS: u32 = 2;
 const RECOVERY_SESSIONS: usize = 5;
-
-async fn confirmed_balance(client: &LightClient, pool: ShieldedPool) -> u64 {
-    let balance = client
-        .account_balance(zip32::AccountId::ZERO)
-        .await
-        .expect("a synced client reports a balance");
-    match pool {
-        ShieldedPool::Orchard => balance.confirmed_orchard_balance,
-        ShieldedPool::Ironwood => balance.confirmed_ironwood_balance,
-        ShieldedPool::Sapling => balance.confirmed_sapling_balance,
-    }
-    .map(Zatoshis::into_u64)
-    .unwrap_or(0)
-}
 
 /// - Strips the recipient wallet's tracking of `pool` under the wallet's write lock.
 /// - Mines two blocks and runs sync sessions on the recipient until the note is recovered.
@@ -59,16 +45,21 @@ pub(super) async fn recover_untracked_history(
     // left the notes lost.
     let reopened = recipient.sync_and_await().await;
     assert!(
-        reopened.is_err(),
-        "a wallet whose {pool:?} history cannot account for the chain must not \
-         report a successful sync: {reopened:?}"
+        matches!(
+            reopened,
+            Err(LightClientError::SyncError(
+                SyncError::PoolHistoryReopened { .. }
+            ))
+        ),
+        "a wallet whose {pool:?} history cannot account for the chain must end the \
+         session by reopening that history: {reopened:?}"
     );
 
     // The following sessions rescan the reopened history and recover the note.
+    let mut last_session = reopened;
     for _ in 0..RECOVERY_SESSIONS {
-        if recipient.sync_and_await().await.is_ok()
-            && confirmed_balance(recipient, pool).await == funded_balance
-        {
+        last_session = recipient.sync_and_await().await;
+        if last_session.is_ok() && confirmed_balance(recipient, pool).await == funded_balance {
             break;
         }
     }
@@ -76,7 +67,7 @@ pub(super) async fn recover_untracked_history(
         confirmed_balance(recipient, pool).await,
         funded_balance,
         "the {pool:?} note was left lost in history that was scanned without \
-         {pool:?} tracking",
+         {pool:?} tracking; the last session ended {last_session:?}",
     );
 }
 
@@ -88,16 +79,12 @@ async fn notes_in_untracked_history_are_recovered(pool: ShieldedPool) {
     };
     let mut net =
         MockNet::launch_with(MockChain::with_activation_heights(activation_heights)).await;
-    let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-    net.chain.write().await.mine_empty_blocks(1);
-    fund_on_chain(&net, vec![(&recipient_ua, FUNDING, None)]).await;
-    recipient
-        .sync_and_await()
-        .await
-        .expect("the funded recipient syncs");
-    assert_eq!(confirmed_balance(&recipient, pool).await, FUNDING);
+    let mut recipient = funded_client(&mut net, &[(PoolType::ORCHARD, FUNDING)], 0).await;
+    assert_eq!(
+        confirmed_balance(&recipient, pool).await,
+        FUNDING,
+        "the recipient must hold its {pool:?} funding before its history is stripped"
+    );
     recover_untracked_history(&net, &mut recipient, pool).await;
 }
 

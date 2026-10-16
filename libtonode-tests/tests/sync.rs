@@ -29,7 +29,6 @@ use zingolib::{
 const SYNC_TEST_INDEXER: &str = "https://zec.rocks:443";
 use zingolib_testutils::scenarios;
 
-
 // TODO: migrate to mock test as this test is long and connects to mainnet
 #[tokio::test]
 async fn add_subtree_roots() {

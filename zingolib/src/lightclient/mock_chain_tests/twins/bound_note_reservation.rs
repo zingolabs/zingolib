@@ -1,10 +1,10 @@
 use pepper_sync::wallet::{NoteInterface, OrchardNote, OutputId, OutputInterface};
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::{PoolType, ShieldedPool};
+use zcash_protocol::PoolType;
 
-use super::{DEFERRED_NU6_3, HOSPITAL_MUSEUM, external_address, fund_on_chain};
+use super::{DEFERRED_NU6_3, external_address, funded_client};
 use crate::lightclient::LightClient;
-use crate::testutils::lightclient::{from_inputs, get_base_address};
+use crate::testutils::lightclient::from_inputs;
 use crate::testutils::migration::inject_scheduled_migration;
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
@@ -17,7 +17,6 @@ const FREE_NOTE: u64 = 50_000;
 const ORDINARY_SEND: u64 = 20_000;
 const SWEEP_MINIMUM_REMAINDER: u64 = 10_000;
 
-/// A snapshot of one of the wallet's Orchard notes.
 struct NoteRecord {
     output_id: OutputId,
     nullifier: [u8; 32],
@@ -65,22 +64,15 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
         mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
     ))
     .await;
-    let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-    net.chain.write().await.mine_empty_blocks(1);
-    fund_on_chain(
-        &net,
-        vec![
-            (recipient_ua.as_str(), BOUND_NOTE, None),
-            (recipient_ua.as_str(), FREE_NOTE, None),
+    let mut recipient = funded_client(
+        &mut net,
+        &[
+            (PoolType::ORCHARD, BOUND_NOTE),
+            (PoolType::ORCHARD, FREE_NOTE),
         ],
+        0,
     )
     .await;
-    recipient
-        .sync_and_await()
-        .await
-        .expect("the recipient syncs its two Orchard notes");
     let faucet_address = external_address(PoolType::ORCHARD);
 
     let notes = orchard_note_records(&recipient).await;
