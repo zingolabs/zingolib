@@ -79,24 +79,14 @@ fn find_file(
     what: &str,
     wanted: impl Fn(&str) -> bool,
 ) -> Result<PathBuf, Vec<String>> {
-    let mut pending = vec![dir.to_path_buf()];
-    while let Some(current) = pending.pop() {
-        let entries = std::fs::read_dir(&current)
-            .map_err(|e| vec![format!("cannot read {}: {e}", current.display())])?;
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                pending.push(path);
-            } else if path
-                .file_name()
+    crate::files_under(dir, &[])?
+        .into_iter()
+        .find(|path| {
+            path.file_name()
                 .and_then(|name| name.to_str())
                 .is_some_and(&wanted)
-            {
-                return Ok(path);
-            }
-        }
-    }
-    Err(vec![format!("no {what} lies under {}", dir.display())])
+        })
+        .ok_or_else(|| vec![format!("no {what} lies under {}", dir.display())])
 }
 
 /// - Runs `orasust push` and then an anonymous `orasust resolve` as child processes.
@@ -239,7 +229,7 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let required = |flag: &str| crate::required_flag(args, flag, USAGE);
     let commit = crate::commit_of(root, required(COMMIT_FLAG)?)?;
     let bundles = Path::new(required(BUNDLES_FLAG)?);
-    let newest = binding_manifest::newest_awaiting(root)?;
+    let newest = binding_manifest::newest_awaiting(root, None)?;
     if newest != commit {
         return Err(vec![format!(
             "{commit} is not the newest entry awaiting `{}` in {}, which is {newest}",
