@@ -39,3 +39,6 @@ since = "6d037df7a4f4f72f219fbadd8c6fe34d8c8ea97c"
 audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
 android = "sha256:9c950b9c10ce62e85de894f73139d9770caa844705c01bfcde4154d2404a50de"
 ios = "sha256:045aa74c2bb591325969fcdbf6923bcd7c9b023665ea2c3cc8e2b2ffbacd1f41"
+
+[[entry]]
+commit = "7352787179763577820e50ced71bbb61889a4625"
