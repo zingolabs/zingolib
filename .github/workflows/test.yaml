@@ -49,10 +49,12 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    # The archive compiles the workspace's own crates at opt-level 3, which
-    # rustc parallelises across codegen units, so the job runs on a
-    # sixteen-core WarpBuild runner; the shards stay on the standard ones.
-    runs-on: warp-ubuntu-2404-x64-16x
+    # The archive build is compile-bound: cargo compiles independent crates
+    # in parallel, so the job runs on the Linux runner that the
+    # CI_LINUX_RUNNER repository variable names, falling back to WarpBuild's
+    # sixteen-core label. Measured on 2026-10-16: 10.8 minutes on four cores,
+    # 3.1 on sixteen. The shards stay on the standard runner.
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'warp-ubuntu-2404-x64-16x' }}
     timeout-minutes: 60
     env:
       RUSTFLAGS: -D warnings

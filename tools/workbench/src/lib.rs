@@ -26,6 +26,7 @@ pub mod dupes_gate;
 pub mod nextest_ceilings;
 pub mod orasust;
 pub mod panic_strategy;
+pub mod runner_labels;
 pub mod session;
 pub mod test_placement;
 

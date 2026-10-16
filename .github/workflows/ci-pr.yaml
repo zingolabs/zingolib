@@ -336,10 +336,11 @@ jobs:
   # about five minutes, so the timeout bounds a hang at four times that.
   nym-feature:
     name: nym feature (zingolib + zingo-cli)
-    # A compile-bound job: it builds zingolib and zingo-cli under the nym
-    # features for clippy and for the tests, so it runs on a sixteen-core
-    # WarpBuild runner.
-    runs-on: warp-ubuntu-2404-x64-16x
+    # Compile-bound: clippy and the doc tests build zingolib and zingo-cli
+    # under the nym features. On four cores the job took 8.3 minutes, longer
+    # than the archive and its shards; on the sixteen-core runner that the
+    # CI_LINUX_RUNNER repository variable names it took 2.5 (2026-10-16).
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'warp-ubuntu-2404-x64-16x' }}
     timeout-minutes: 20
     env:
       RUSTFLAGS: -D warnings
