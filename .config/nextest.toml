@@ -20,14 +20,9 @@ filter = 'package(libtonode-tests) | package(zingo-cli)'
 # Long-chain heavies run close to the default limit.
 [[profile.default.overrides]]
 filter = '''
-test(mempool_spend_balance_and_note_status_accounting)
-| test(sync_all_expressible_epochs)
-| test(send_mined_ironwood_to_ironwood)
+test(send_mined_ironwood_to_ironwood)
 | test(faucet_recipient_default_in_one_chain)
-| test(send_shield_cycle)
-| test(generate_a_range_of_value_transfers)
 | test(drain_chunks_a_fragmented_wallet)
-| test(immediate_migration_chunks_a_fragmented_wallet)
 '''
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
 
@@ -51,13 +46,8 @@ filter = 'package(libtonode-tests) | package(zingo-cli)'
 # Long-chain heavies run close to the default limit.
 [[profile.ci.overrides]]
 filter = '''
-test(mempool_spend_balance_and_note_status_accounting)
-| test(sync_all_expressible_epochs)
-| test(send_mined_ironwood_to_ironwood)
+test(send_mined_ironwood_to_ironwood)
 | test(faucet_recipient_default_in_one_chain)
-| test(send_shield_cycle)
-| test(generate_a_range_of_value_transfers)
 | test(drain_chunks_a_fragmented_wallet)
-| test(immediate_migration_chunks_a_fragmented_wallet)
 '''
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
