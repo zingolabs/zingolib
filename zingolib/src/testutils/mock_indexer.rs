@@ -26,7 +26,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use tokio::sync::{RwLock, mpsc};
@@ -44,9 +44,13 @@ use zingo_netutils::lightwallet_protocol::{
 };
 
 use incrementalmerkletree::frontier::CommitmentTree;
+use orchard::circuit::{OrchardCircuitVersion, VerifyingKey as OrchardVerifyingKey};
 use orchard::tree::MerkleHashOrchard;
+use sapling_crypto::circuit::{OutputVerifyingKey, SpendVerifyingKey};
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
 use zcash_primitives::transaction::fees::zip317::{GRACE_ACTIONS, MARGINAL_FEE};
+use zcash_primitives::transaction::sighash::{SignableInput, signature_hash};
+use zcash_primitives::transaction::txid::TxIdDigester;
 use zcash_primitives::transaction::{Authorized, Transaction, TransactionData, TxId, TxVersion};
 use zcash_protocol::consensus::{
     BlockHeight, BranchId, COINBASE_MATURITY_BLOCKS, NetworkUpgrade, Parameters,
@@ -55,8 +59,10 @@ use zcash_protocol::value::{ZatBalance, Zatoshis};
 use zcash_protocol::{PoolType, ShieldedPool};
 use zcash_transparent::address::Script;
 use zcash_transparent::bundle::{
-    Authorized as TransparentAuthorized, Bundle as TransparentBundle, OutPoint, TxIn, TxOut,
+    Authorization as TransparentAuthorization, Authorized as TransparentAuthorized,
+    Bundle as TransparentBundle, MapAuth as TransparentMapAuth, OutPoint, TxIn, TxOut,
 };
+use zcash_transparent::sighash::TransparentAuthorizingContext;
 use zingo_common_components::protocol::ActivationHeights;
 
 use crate::config::{ChainType, ClientConfig, ClientConfigBuilder, WalletConfig};
@@ -107,6 +113,9 @@ pub struct Rules {
     pub coinbase_maturity: bool,
     /// Whether the fee must satisfy the ZIP 317 mempool policy.
     pub fees: bool,
+    pub sapling_bundles: bool,
+    pub orchard_bundles: bool,
+    pub standard_scripts: bool,
 }
 
 impl Rules {
@@ -119,6 +128,9 @@ impl Rules {
         transparent_inputs: true,
         coinbase_maturity: true,
         fees: true,
+        sapling_bundles: true,
+        orchard_bundles: true,
+        standard_scripts: true,
     };
 
     /// The rule set with every check disabled.
@@ -130,6 +142,9 @@ impl Rules {
         transparent_inputs: false,
         coinbase_maturity: false,
         fees: false,
+        sapling_bundles: false,
+        orchard_bundles: false,
+        standard_scripts: false,
     };
 }
 
@@ -249,6 +264,14 @@ pub enum Rejection {
         /// The block limit on unpaid actions.
         limit: usize,
     },
+    InvalidSaplingBundle,
+    InvalidOrchardBundle(ShieldedPool),
+    NonStandardScript {
+        index: usize,
+    },
+    MultipleNullDataOutputs {
+        count: usize,
+    },
 }
 
 impl fmt::Display for Rejection {
@@ -315,6 +338,19 @@ impl fmt::Display for Rejection {
             Self::UnpaidActions { unpaid, limit } => write!(
                 f,
                 "transaction has {unpaid} unpaid actions, above the mempool limit of {limit}"
+            ),
+            Self::InvalidSaplingBundle => {
+                write!(f, "sapling bundle proofs or signatures do not verify")
+            }
+            Self::InvalidOrchardBundle(pool) => {
+                write!(f, "{pool:?} bundle proofs or signatures do not verify")
+            }
+            Self::NonStandardScript { index } => {
+                write!(f, "transparent output {index} has a non-standard script")
+            }
+            Self::MultipleNullDataOutputs { count } => write!(
+                f,
+                "transaction has {count} null-data outputs, above the limit of one"
             ),
         }
     }
@@ -1036,7 +1072,50 @@ impl MockChain {
             check_fee(&transaction, input_total, bytes.len())?;
         }
 
+        if self.rules.standard_scripts {
+            check_standard_scripts(&transaction)?;
+        }
+
+        let verifies_sapling = self.rules.sapling_bundles && transaction.sapling_bundle().is_some();
+        let verifies_orchard = self.rules.orchard_bundles
+            && (transaction.orchard_bundle().is_some() || transaction.ironwood_bundle().is_some());
+        if verifies_sapling || verifies_orchard {
+            let inputs = self.spent_outputs(&transaction, next_height, &mempool)?;
+            let sighash = shielded_sighash(self.parse_transaction(bytes, next_height), inputs);
+            if verifies_sapling {
+                verify_sapling_bundle(&transaction, sighash)?;
+            }
+            if verifies_orchard {
+                if let Some(bundle) = transaction.orchard_bundle() {
+                    verify_orchard_bundle(bundle, sighash, ShieldedPool::Orchard)?;
+                }
+                if let Some(bundle) = transaction.ironwood_bundle() {
+                    verify_orchard_bundle(bundle, sighash, ShieldedPool::Ironwood)?;
+                }
+            }
+        }
+
         Ok(transaction)
+    }
+
+    fn spent_outputs(
+        &self,
+        transaction: &Transaction,
+        next_height: BlockHeight,
+        mempool: &MempoolState,
+    ) -> Result<Vec<TxOut>, Rejection> {
+        let Some(bundle) = transaction.transparent_bundle() else {
+            return Ok(Vec::new());
+        };
+        bundle
+            .vin
+            .iter()
+            .map(|txin| {
+                let outpoint = txin.prevout();
+                self.previous_output(outpoint, next_height, mempool)?
+                    .ok_or_else(|| Rejection::UnknownInput(outpoint.clone()))
+            })
+            .collect()
     }
 
     fn mempool_state(&self, next_height: BlockHeight) -> MempoolState {
@@ -1441,6 +1520,187 @@ fn check_fee(
         Rejection::NegativeFee(Zatoshis::const_from_u64(i64::from(fee).unsigned_abs()))
     })?;
     check_zip317_mempool_policy(logical_actions(transaction), fee, size_bytes)
+}
+
+#[derive(Debug)]
+struct SighashInputs {
+    inputs: Vec<TxOut>,
+}
+
+impl TransparentAuthorization for SighashInputs {
+    type ScriptSig = ();
+}
+
+impl TransparentAuthorizingContext for SighashInputs {
+    fn input_amounts(&self) -> Vec<Zatoshis> {
+        self.inputs.iter().map(TxOut::value).collect()
+    }
+
+    fn input_scriptpubkeys(&self) -> Vec<Script> {
+        self.inputs
+            .iter()
+            .map(|input| input.script_pubkey().clone())
+            .collect()
+    }
+}
+
+#[derive(Debug)]
+struct SighashAuthorization;
+
+impl zcash_primitives::transaction::Authorization for SighashAuthorization {
+    type TransparentAuth = SighashInputs;
+    type SaplingAuth = sapling_crypto::bundle::Authorized;
+    type OrchardAuth = orchard::bundle::Authorized;
+}
+
+struct ToSighashInputs(Vec<TxOut>);
+
+impl TransparentMapAuth<TransparentAuthorized, SighashInputs> for ToSighashInputs {
+    fn map_script_sig(&self, _: Script) {}
+
+    fn map_authorization(&self, _: TransparentAuthorized) -> SighashInputs {
+        SighashInputs {
+            inputs: self.0.clone(),
+        }
+    }
+}
+
+fn shielded_sighash(transaction: Transaction, inputs: Vec<TxOut>) -> [u8; 32] {
+    let data: TransactionData<SighashAuthorization> =
+        transaction
+            .into_data()
+            .map_authorization(ToSighashInputs(inputs), (), ());
+    let parts = data.digest(TxIdDigester);
+    *signature_hash(&data, &SignableInput::Shielded, &parts).as_ref()
+}
+
+/// - Parses the embedded Sapling parameters on the first call and caches the verifying keys for the process.
+fn sapling_verifying_keys() -> &'static (SpendVerifyingKey, OutputVerifyingKey) {
+    static KEYS: OnceLock<(SpendVerifyingKey, OutputVerifyingKey)> = OnceLock::new();
+    KEYS.get_or_init(|| {
+        zcash_proofs::prover::LocalTxProver::from_bytes(
+            crate::SaplingParams::SPEND,
+            crate::SaplingParams::OUTPUT,
+        )
+        .verifying_keys()
+    })
+}
+
+/// - Builds the verifying key of `version` on its first call and caches it for the process.
+fn orchard_verifying_key(version: OrchardCircuitVersion) -> &'static OrchardVerifyingKey {
+    static INSECURE_PRE_NU6_2: OnceLock<OrchardVerifyingKey> = OnceLock::new();
+    static FIXED_POST_NU6_2: OnceLock<OrchardVerifyingKey> = OnceLock::new();
+    static POST_NU6_3: OnceLock<OrchardVerifyingKey> = OnceLock::new();
+    let key = match version {
+        OrchardCircuitVersion::InsecurePreNu6_2 => &INSECURE_PRE_NU6_2,
+        OrchardCircuitVersion::FixedPostNu6_2 => &FIXED_POST_NU6_2,
+        OrchardCircuitVersion::PostNu6_3 => &POST_NU6_3,
+    };
+    key.get_or_init(|| OrchardVerifyingKey::build(version))
+}
+
+fn verify_sapling_bundle(transaction: &Transaction, sighash: [u8; 32]) -> Result<(), Rejection> {
+    let Some(bundle) = transaction.sapling_bundle() else {
+        return Ok(());
+    };
+    let mut validator = sapling_crypto::BatchValidator::new();
+    if !validator.check_bundle(bundle.clone(), sighash) {
+        return Err(Rejection::InvalidSaplingBundle);
+    }
+    let (spend_key, output_key) = sapling_verifying_keys();
+    if validator.validate(spend_key, output_key, crate::utils::system_rng()) {
+        Ok(())
+    } else {
+        Err(Rejection::InvalidSaplingBundle)
+    }
+}
+
+fn verify_orchard_bundle(
+    bundle: &OrchardBundle,
+    sighash: [u8; 32],
+    pool: ShieldedPool,
+) -> Result<(), Rejection> {
+    let key = orchard_verifying_key(bundle.bundle_version().circuit_version());
+    let mut validator = orchard::bundle::BatchValidator::new(key);
+    let valid = validator.add_bundle(bundle, sighash).is_ok()
+        && validator.validate(crate::utils::system_rng());
+    if valid {
+        Ok(())
+    } else {
+        Err(Rejection::InvalidOrchardBundle(pool))
+    }
+}
+
+const OP_RETURN: u8 = 0x6a;
+const OP_PUSHDATA1: u8 = 0x4c;
+const OP_DUP: u8 = 0x76;
+const OP_EQUAL: u8 = 0x87;
+const OP_EQUALVERIFY: u8 = 0x88;
+const OP_HASH160: u8 = 0xa9;
+const OP_CHECKSIG: u8 = 0xac;
+const HASH160_PUSH: u8 = 20;
+const MAX_DIRECT_PUSH: u8 = 75;
+const P2PKH_SCRIPT_LEN: usize = 25;
+const P2SH_SCRIPT_LEN: usize = 23;
+const MAX_NULL_DATA_PAYLOAD: usize = 80;
+
+fn is_p2pkh(script: &[u8]) -> bool {
+    script.len() == P2PKH_SCRIPT_LEN
+        && script[0] == OP_DUP
+        && script[1] == OP_HASH160
+        && script[2] == HASH160_PUSH
+        && script[23] == OP_EQUALVERIFY
+        && script[24] == OP_CHECKSIG
+}
+
+fn is_p2sh(script: &[u8]) -> bool {
+    script.len() == P2SH_SCRIPT_LEN
+        && script[0] == OP_HASH160
+        && script[1] == HASH160_PUSH
+        && script[22] == OP_EQUAL
+}
+
+fn null_data_payload(script: &[u8]) -> Option<usize> {
+    let Some((&OP_RETURN, mut rest)) = script.split_first() else {
+        return None;
+    };
+    let mut payload = 0;
+    while let Some((&opcode, tail)) = rest.split_first() {
+        let (length, tail) = match opcode {
+            0..=MAX_DIRECT_PUSH => (usize::from(opcode), tail),
+            OP_PUSHDATA1 => {
+                let (&length, tail) = tail.split_first()?;
+                (usize::from(length), tail)
+            }
+            _ => return None,
+        };
+        rest = tail.get(length..)?;
+        payload += length;
+    }
+    Some(payload)
+}
+
+fn check_standard_scripts(transaction: &Transaction) -> Result<(), Rejection> {
+    let Some(bundle) = transaction.transparent_bundle() else {
+        return Ok(());
+    };
+    let mut null_data_outputs = 0;
+    for (index, output) in bundle.vout.iter().enumerate() {
+        let script = output.script_pubkey().0.0.as_slice();
+        if is_p2pkh(script) || is_p2sh(script) {
+            continue;
+        }
+        match null_data_payload(script) {
+            Some(payload) if payload <= MAX_NULL_DATA_PAYLOAD => null_data_outputs += 1,
+            _ => return Err(Rejection::NonStandardScript { index }),
+        }
+    }
+    if null_data_outputs > 1 {
+        return Err(Rejection::MultipleNullDataOutputs {
+            count: null_data_outputs,
+        });
+    }
+    Ok(())
 }
 
 fn bytes32(raw: &[u8]) -> [u8; 32] {
@@ -2917,5 +3177,212 @@ mod tests {
         assert_eq!(info.sapling_activation_height, 1);
         let expected: u32 = BranchId::Nu6_2.into();
         assert_eq!(info.consensus_branch_id, format!("{expected:08x}"));
+    }
+
+    fn with_expiry(chain: &MockChain, bytes: &[u8], expiry: BlockHeight) -> Vec<u8> {
+        let data = chain
+            .parse_transaction(bytes, chain.next_height())
+            .into_data();
+        let transparent = data
+            .transparent_bundle()
+            .cloned()
+            .unwrap_or(TransparentBundle {
+                vin: vec![],
+                vout: vec![],
+                authorization: TransparentAuthorized,
+            });
+        transaction_bytes_for_branch(
+            data.consensus_branch_id(),
+            expiry,
+            transparent,
+            data.sapling_bundle().cloned(),
+            data.orchard_bundle().cloned(),
+            data.ironwood_bundle().cloned(),
+        )
+    }
+
+    fn with_corrupted_slice(bytes: &[u8], slice: &[u8]) -> Vec<u8> {
+        let offset = bytes
+            .windows(slice.len())
+            .position(|window| window == slice)
+            .expect("a bundle's proof is serialized verbatim inside its transaction");
+        let mut corrupted = bytes.to_vec();
+        corrupted[offset] ^= 1;
+        corrupted
+    }
+
+    fn null_data_transaction(chain: &MockChain, payloads: &[usize]) -> Vec<u8> {
+        let outputs = payloads
+            .iter()
+            .map(|&payload| {
+                let mut script = vec![OP_RETURN, OP_PUSHDATA1, payload as u8];
+                script.extend(std::iter::repeat_n(0xab, payload));
+                let mut serialized = vec![script.len() as u8];
+                serialized.extend(&script);
+                TxOut::new(
+                    Zatoshis::ZERO,
+                    Script::read(serialized.as_slice())
+                        .expect("a length-prefixed byte vector reads as a script"),
+                )
+            })
+            .collect();
+        let input = TxIn::from_parts(
+            OutPoint::new([0; 32], 0),
+            Script::read([0u8].as_slice()).expect("an empty script reads"),
+            u32::MAX,
+        );
+        transparent_only_transaction(
+            &chain.chain_type(),
+            chain.next_height(),
+            vec![input],
+            outputs,
+        )
+    }
+
+    fn only_standard_scripts() -> MockChain {
+        let mut chain = MockChain::new();
+        chain.rules = Rules::LAX;
+        chain.rules.standard_scripts = true;
+        chain
+    }
+
+    #[tokio::test]
+    async fn orchard_bundle_signed_over_another_sighash_is_rejected() {
+        let mut chain = lax_anchors();
+        let bytes = funding_bytes().await;
+        let expiry = chain.parse_transaction(&bytes, HEIGHT_ONE).expiry_height();
+        let resigned = with_expiry(&chain, &bytes, expiry + 1);
+        let rejection = chain
+            .submit_transaction(resigned)
+            .expect_err("signatures over the old header do not verify over the new one");
+        assert!(
+            matches!(rejection, Rejection::InvalidOrchardBundle(_)),
+            "{rejection}"
+        );
+        assert_eq!(chain.mempool_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn orchard_bundle_with_corrupted_proof_is_rejected() {
+        let mut chain = lax_anchors();
+        let bytes = funding_bytes().await;
+        let transaction = chain.parse_transaction(&bytes, HEIGHT_ONE);
+        let bundle = transaction
+            .ironwood_bundle()
+            .or(transaction.orchard_bundle())
+            .expect("the faucet pays an orchard-family receiver through an orchard-family bundle");
+        let corrupted = with_corrupted_slice(&bytes, bundle.authorization().proof().as_ref());
+        let rejection = chain
+            .submit_transaction(corrupted)
+            .expect_err("a corrupted proof does not verify");
+        assert!(
+            matches!(rejection, Rejection::InvalidOrchardBundle(_)),
+            "{rejection}"
+        );
+    }
+
+    #[tokio::test]
+    async fn sapling_bundle_signed_over_another_sighash_is_rejected() {
+        let mut chain = lax_anchors();
+        let bytes = faucet_funding_transaction(vec![(
+            &synthetic_wallet::external_sapling_address(),
+            PAYMENT,
+            None,
+        )])
+        .await;
+        let expiry = chain.parse_transaction(&bytes, HEIGHT_ONE).expiry_height();
+        let resigned = with_expiry(&chain, &bytes, expiry + 1);
+        let rejection = chain
+            .submit_transaction(resigned)
+            .expect_err("the binding signature over the old header does not verify");
+        assert_eq!(rejection, Rejection::InvalidSaplingBundle);
+    }
+
+    #[tokio::test]
+    async fn sapling_bundle_with_corrupted_output_proof_is_rejected() {
+        let mut chain = lax_anchors();
+        let bytes = faucet_funding_transaction(vec![(
+            &synthetic_wallet::external_sapling_address(),
+            PAYMENT,
+            None,
+        )])
+        .await;
+        let transaction = chain.parse_transaction(&bytes, HEIGHT_ONE);
+        let output = transaction
+            .sapling_bundle()
+            .and_then(|bundle| bundle.shielded_outputs().first())
+            .expect("the faucet pays a sapling receiver through a sapling output");
+        let corrupted = with_corrupted_slice(&bytes, output.zkproof().as_slice());
+        let rejection = chain
+            .submit_transaction(corrupted)
+            .expect_err("a corrupted output proof does not verify");
+        assert_eq!(rejection, Rejection::InvalidSaplingBundle);
+    }
+
+    #[tokio::test]
+    async fn valid_sapling_and_orchard_bundles_are_accepted_under_verification() {
+        let mut chain = lax_anchors();
+        let bytes = faucet_funding_transaction(vec![(
+            &synthetic_wallet::external_sapling_address(),
+            PAYMENT,
+            None,
+        )])
+        .await;
+        chain
+            .submit_transaction(bytes)
+            .expect("the faucet's own proofs and signatures verify");
+        assert_eq!(chain.mempool_len(), 1);
+    }
+
+    #[test]
+    fn null_data_output_within_the_payload_limit_is_standard() {
+        let chain = only_standard_scripts();
+        let bytes = null_data_transaction(&chain, &[MAX_NULL_DATA_PAYLOAD]);
+        assert!(chain.validate(&bytes).is_ok());
+    }
+
+    #[test]
+    fn null_data_output_above_the_payload_limit_is_rejected() {
+        let chain = only_standard_scripts();
+        let bytes = null_data_transaction(&chain, &[MAX_NULL_DATA_PAYLOAD + 1]);
+        let rejection = chain
+            .validate(&bytes)
+            .expect_err("an oversized null-data output is non-standard");
+        assert_eq!(rejection, Rejection::NonStandardScript { index: 0 });
+    }
+
+    #[test]
+    fn two_null_data_outputs_are_rejected() {
+        let chain = only_standard_scripts();
+        let bytes = null_data_transaction(&chain, &[1, 1]);
+        let rejection = chain
+            .validate(&bytes)
+            .expect_err("a second null-data output is non-standard");
+        assert_eq!(rejection, Rejection::MultipleNullDataOutputs { count: 2 });
+    }
+
+    #[test]
+    fn pay_to_public_key_hash_outputs_are_standard() {
+        let chain = only_standard_scripts();
+        let output = TxOut::new(
+            REWARD,
+            taddr_script(
+                &synthetic_wallet::external_transparent_address(),
+                &chain.chain_type(),
+            )
+            .expect("a synthetic wallet's transparent address encodes a script"),
+        );
+        let input = TxIn::from_parts(
+            OutPoint::new([0; 32], 0),
+            Script::read([0u8].as_slice()).expect("an empty script reads"),
+            u32::MAX,
+        );
+        let bytes = transparent_only_transaction(
+            &chain.chain_type(),
+            chain.next_height(),
+            vec![input],
+            vec![output],
+        );
+        assert!(chain.validate(&bytes).is_ok());
     }
 }
