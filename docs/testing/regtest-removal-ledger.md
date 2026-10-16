@@ -505,3 +505,4 @@ faucet-economics fee.
 - migrate_all_orchard_to_ironwood (13): `immediate_migration::migrate_all_orchard_to_ironwood`.
 - immediate_migration_chunks_a_fragmented_wallet (14): `immediate_migration::immediate_migration_chunks_a_fragmented_wallet`.
 - wallet_mempool_record_trails_validator_acceptance (9): carried by the existing `transmitted_transaction_has_mempool_status_before_mining`; its time bound retires.
+- generate_a_range_of_value_transfers (1) and send_shield_cycle (2): carried by the existing `generate_a_range_of_value_transfers_on_the_mock_chain` and `send_shield_cycle_on_the_mock_chain`, which run the same fixtures; the `chain_generic_tests` feature goes with the file.

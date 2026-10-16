@@ -22,8 +22,6 @@ filter = 'package(libtonode-tests) | package(zingo-cli)'
 filter = '''
 test(send_mined_ironwood_to_ironwood)
 | test(faucet_recipient_default_in_one_chain)
-| test(send_shield_cycle)
-| test(generate_a_range_of_value_transfers)
 | test(drain_chunks_a_fragmented_wallet)
 '''
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
@@ -50,8 +48,6 @@ filter = 'package(libtonode-tests) | package(zingo-cli)'
 filter = '''
 test(send_mined_ironwood_to_ironwood)
 | test(faucet_recipient_default_in_one_chain)
-| test(send_shield_cycle)
-| test(generate_a_range_of_value_transfers)
 | test(drain_chunks_a_fragmented_wallet)
 '''
 slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
