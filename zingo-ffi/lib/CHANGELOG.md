@@ -71,3 +71,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which Nym's SOCKS5 tasks raise on a closed input channel (#2926). tokio
   now contains such a panic to its task, and UniFFI returns a panic at the
   FFI boundary as an error.
+- `poll_sync` returns `Panic` with the panic's message when the sync task
+  panicked, instead of re-raising the panic under the client lock and
+  poisoning it for the rest of the session.
+- The panic hook writes each panic's message, location and backtrace to the
+  `log` sink and to stderr, where it stored the report in silence before. On
+  iOS the two Binding Layer archives share one std and so one hook, so the
+  proxy's panics are logged by it as well. The hook is installed on the
+  first exported call of any kind; UniFFI offers no hook at library load.
+- The last panic's report lives in a thread-local, so a panic on another
+  thread, such as a Nym SOCKS5 task, no longer overwrites the report that the
+  `Panic` error of a guarded call carries.
+- The recovery contract after `Panic` or `LightclientLockPoisoned`: a panic
+  under the client's write guard poisons the lock, every later call fails
+  with `LightclientLockPoisoned`, and the next `init_*` call clears the
+  poison. A consumer recovers by re-initializing from its saved wallet bytes,
+  as a relaunch did under `panic = "abort"`. A lock-discipline test pins the
+  sequence.
