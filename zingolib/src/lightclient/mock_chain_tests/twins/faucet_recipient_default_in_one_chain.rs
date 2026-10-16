@@ -13,6 +13,7 @@ use crate::lightclient::LightClient;
 use crate::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
 };
+use crate::testutils::assertions::assert_null_data_send;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::mock_indexer::MockNet;
 use crate::wallet::output::SpendStatus;
@@ -432,35 +433,10 @@ async fn propose_and_send_with_op_return_confirms_on_chain(
         .transparent_bundle()
         .expect("OP_RETURN send is a transparent transaction");
 
-    assert_eq!(bundle.vin.len(), 1, "spends the single deshield output");
-
-    assert_eq!(
-        bundle.vout.len(),
-        2,
-        "recipient + OP_RETURN, no change output"
-    );
-
-    let op_return_out = bundle
-        .vout
-        .iter()
-        .find(|out| out.value() == Zatoshis::ZERO)
-        .expect("a zero-value OP_RETURN output");
-    let script = op_return_out.script_pubkey().0.0.clone();
-    assert_eq!(script[0], 0x6a, "null-data script starts with OP_RETURN");
+    assert_null_data_send(bundle, PAYLOAD);
     assert!(
-        script.windows(PAYLOAD.len()).any(|w| w == PAYLOAD),
-        "the OP_RETURN carries the payload verbatim"
-    );
-
-    let recipient_out = bundle
-        .vout
-        .iter()
-        .find(|out| out.value() == amount)
-        .expect("a recipient output paying the amount");
-    assert_ne!(
-        recipient_out.value(),
-        Zatoshis::ZERO,
-        "the recipient output is the non-null-data output"
+        bundle.vout.iter().any(|out| out.value() == amount),
+        "a recipient output pays the amount"
     );
 }
 

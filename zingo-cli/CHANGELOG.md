@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alone. An explicit `--seed` still outranks the variable, and a blank
   phrase from either names no seed. The variable is read once, where the
   flag is read, and never logged.
+- The prompt, `sync poll` and `sync await` report a sync task that panicked
+  as "the sync task panicked" with the panic's message, where the process
+  aborted before. `CommandError` gains `SyncPanicked(String)`.
 
 
 ### Deprecated
