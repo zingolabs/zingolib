@@ -411,6 +411,15 @@ pub fn entries_at(root: &Path, revision: Option<&str>) -> Result<Vec<Entry>, Vec
     Ok(entries)
 }
 
+pub fn published_entries(root: &Path) -> Result<Vec<Entry>, Vec<String>> {
+    let entries = parse_at(root, None)?;
+    structure(&entries)?;
+    Ok(entries
+        .into_iter()
+        .filter(|entry| awaited(entry).is_empty())
+        .collect())
+}
+
 /// - Runs `cargo metadata` as a child process in `checkout`, once per Binding Layer crate.
 pub fn audited_at(checkout: &Path) -> Result<Vec<AuditedCrate>, Vec<String>> {
     let checkout = &crate::canonical(checkout)?;
@@ -1336,9 +1345,12 @@ mod tests {
     }
 
     #[test]
-    fn the_committed_manifest_parses_and_validates() -> Result<(), Vec<String>> {
+    fn the_committed_manifest_parses_and_its_published_entries_are_complete(
+    ) -> Result<(), Vec<String>> {
         let root = crate::repo_root()?;
-        assert!(entries_at(&root, None).is_ok());
+        let published = published_entries(&root)?;
+        assert!(!published.is_empty());
+        assert_eq!(validate(&published), Ok(()));
         Ok(())
     }
 }
