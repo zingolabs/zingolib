@@ -1,13 +1,14 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{run_streaming, stdout_of_owned};
+use crate::{run_streaming, stdout_of_owned, GH};
 
-const GH: &str = "gh";
 const CACHE: &str = "cache";
 pub const SAVING_REF: &str = "refs/heads/dev";
 const LIST_LIMIT: &str = "500";
 const LISTING: &str = r#".[] | "\(.id)\t\(.key)\t\(.createdAt)""#;
+const RUST_CACHE_PREFIX: &str = "v0-rust-";
 const LOCKFILE_HASH_LEN: usize = 8;
+pub const KEPT_PER_FAMILY: usize = 2;
 
 pub fn list_args() -> Vec<String> {
     [
@@ -35,9 +36,13 @@ pub fn list_args() -> Vec<String> {
 pub struct Entry {
     pub id: String,
     pub key: String,
+    pub created_at: String,
 }
 
 pub fn family(key: &str) -> &str {
+    if !key.starts_with(RUST_CACHE_PREFIX) {
+        return key;
+    }
     let Some((prefix, suffix)) = key.rsplit_once('-') else {
         return key;
     };
@@ -56,24 +61,38 @@ pub fn entries(listing: &str) -> Result<Vec<Entry>, Vec<String>> {
         .filter(|line| !line.trim().is_empty())
         .map(|line| {
             let mut fields = line.split('\t');
-            match (fields.next(), fields.next()) {
-                (Some(id), Some(key)) if !id.is_empty() && !key.is_empty() => Ok(Entry {
-                    id: id.to_string(),
-                    key: key.to_string(),
-                }),
+            match (fields.next(), fields.next(), fields.next()) {
+                (Some(id), Some(key), Some(created_at))
+                    if !id.is_empty() && !key.is_empty() && !created_at.is_empty() =>
+                {
+                    Ok(Entry {
+                        id: id.to_string(),
+                        key: key.to_string(),
+                        created_at: created_at.to_string(),
+                    })
+                }
                 _ => Err(vec![format!(
-                    "cache listing line {line:?} lacks an id and a key"
+                    "cache listing line {line:?} lacks an id, a key and a creation time"
                 )]),
             }
         })
         .collect()
 }
 
-pub fn superseded(entries: Vec<Entry>) -> Vec<Entry> {
-    let mut seen = BTreeSet::new();
+pub fn newest_first(mut entries: Vec<Entry>) -> Vec<Entry> {
+    entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     entries
+}
+
+pub fn superseded(entries: Vec<Entry>) -> Vec<Entry> {
+    let mut kept: BTreeMap<String, usize> = BTreeMap::new();
+    newest_first(entries)
         .into_iter()
-        .filter(|entry| !seen.insert(family(&entry.key).to_string()))
+        .filter(|entry| {
+            let count = kept.entry(family(&entry.key).to_string()).or_default();
+            *count += 1;
+            *count > KEPT_PER_FAMILY
+        })
         .collect()
 }
 
@@ -84,10 +103,61 @@ pub fn settle(failed: Vec<Entry>, remaining: &[Entry]) -> (Vec<Entry>, Vec<Entry
         .partition(|entry| !listed.contains(entry.id.as_str()))
 }
 
+#[derive(PartialEq, Eq, Debug, Default)]
+pub struct Pruned {
+    pub deleted: Vec<Entry>,
+    pub gone: Vec<Entry>,
+}
+
+const DELETED: &str = "deleted";
+const GONE: &str = "gone";
+
+pub fn outcome_lines<'a>(
+    deleted: &'a [Entry],
+    gone: &'a [Entry],
+) -> impl Iterator<Item = String> + 'a {
+    std::iter::repeat(DELETED)
+        .zip(deleted)
+        .chain(std::iter::repeat(GONE).zip(gone))
+        .map(|(outcome, entry)| format!("{outcome} {} {}", entry.id, entry.key))
+}
+
+fn progress(deleted: &[Entry], gone: &[Entry], unsettled: usize) -> Vec<String> {
+    outcome_lines(deleted, gone)
+        .chain(std::iter::once(format!(
+            "deleted {}, found {} gone, left {} of {} superseded entries",
+            deleted.len(),
+            gone.len(),
+            unsettled,
+            deleted.len() + gone.len() + unsettled
+        )))
+        .collect()
+}
+
+pub fn report(
+    deleted: Vec<Entry>,
+    gone: Vec<Entry>,
+    stuck: Vec<Entry>,
+) -> Result<Pruned, Vec<String>> {
+    if stuck.is_empty() {
+        return Ok(Pruned { deleted, gone });
+    }
+    Err(stuck
+        .iter()
+        .map(|entry| {
+            format!(
+                "`gh cache delete {}` failed and the entry {} is still listed",
+                entry.id, entry.key
+            )
+        })
+        .chain(progress(&deleted, &gone, stuck.len()))
+        .collect())
+}
+
 /// - Runs `gh cache list` as a child process and waits for it.
 /// - Runs `gh cache delete` once per superseded entry, each as a child process.
 /// - Runs `gh cache list` again when a delete failed, and waits for it.
-pub fn prune() -> Result<Vec<Entry>, Vec<String>> {
+pub fn prune() -> Result<Pruned, Vec<String>> {
     let doomed = superseded(entries(&stdout_of_owned(GH, &list_args())?)?);
     let mut deleted = Vec::new();
     let mut failed = Vec::new();
@@ -98,27 +168,20 @@ pub fn prune() -> Result<Vec<Entry>, Vec<String>> {
         }
     }
     if failed.is_empty() {
-        return Ok(deleted);
+        return Ok(Pruned {
+            deleted,
+            gone: Vec::new(),
+        });
     }
-    let remaining = entries(&stdout_of_owned(GH, &list_args())?)?;
-    let (_gone, stuck) = settle(failed, &remaining);
-    if stuck.is_empty() {
-        return Ok(deleted);
-    }
-    Err(stuck
-        .iter()
-        .map(|entry| {
-            format!(
-                "`gh cache delete {}` failed and the entry {} is still listed",
-                entry.id, entry.key
-            )
-        })
-        .chain(std::iter::once(format!(
-            "deleted {} of {} superseded entries",
-            deleted.len(),
-            deleted.len() + stuck.len()
-        )))
-        .collect())
+    let remaining = match stdout_of_owned(GH, &list_args()).and_then(|listing| entries(&listing)) {
+        Ok(remaining) => remaining,
+        Err(mut diagnostics) => {
+            diagnostics.extend(progress(&deleted, &[], failed.len()));
+            return Err(diagnostics);
+        }
+    };
+    let (gone, stuck) = settle(failed, &remaining);
+    report(deleted, gone, stuck)
 }
 
 #[cfg(test)]
@@ -126,10 +189,19 @@ mod tests {
     use super::*;
 
     fn entry(id: &str, key: &str) -> Entry {
+        dated(id, key, "2026-10-16T03:00:00Z")
+    }
+
+    fn dated(id: &str, key: &str, created_at: &str) -> Entry {
         Entry {
             id: id.to_string(),
             key: key.to_string(),
+            created_at: created_at.to_string(),
         }
+    }
+
+    fn ids(entries: Vec<Entry>) -> Vec<String> {
+        entries.into_iter().map(|entry| entry.id).collect()
     }
 
     #[test]
@@ -148,6 +220,15 @@ mod tests {
     }
 
     #[test]
+    fn a_key_outside_rust_cache_is_its_own_family_whatever_its_suffix() {
+        assert_eq!(
+            family("foo-Linux-deadbeef"),
+            "foo-Linux-deadbeef",
+            "an exact-key cache may end in eight hex digits"
+        );
+    }
+
+    #[test]
     fn a_setup_gradle_key_is_its_own_family() {
         let home = "gradle-home-v1|Linux-X64|package[b8a35c2f917259958c9abe8f2ff1b5ff]-5d859920e0f6ab6fbc6e0d4c1a1b2c3d4e5f6071";
         assert_eq!(family(home), home, "the commit sha is not a lockfile hash");
@@ -160,19 +241,31 @@ mod tests {
     }
 
     #[test]
-    fn the_newest_entry_of_each_family_survives() {
+    fn the_two_newest_entries_of_each_family_survive() {
         let listing = vec![
             entry("1", "v0-rust-a-26e84094-c5b5aea0"),
             entry("2", "v0-rust-b-26e84094-c5b5aea0"),
             entry("3", "v0-rust-a-26e84094-2afa9efd"),
             entry("4", "v0-rust-a-26e84094-15153fd1"),
             entry("5", "v0-rust-b-26e84094-2afa9efd"),
+            entry("6", "v0-rust-a-26e84094-0badf00d"),
         ];
-        let doomed: Vec<String> = superseded(listing)
-            .into_iter()
-            .map(|entry| entry.id)
-            .collect();
-        assert_eq!(doomed, ["3", "4", "5"], "the listing is newest first");
+        assert_eq!(
+            ids(superseded(listing)),
+            ["4", "6"],
+            "the listing is newest first and a family keeps {KEPT_PER_FAMILY}"
+        );
+    }
+
+    #[test]
+    fn the_creation_time_orders_the_entries_not_the_listing() {
+        let listing = vec![
+            dated("old", "v0-rust-a-26e84094-c5b5aea0", "2026-10-14T03:00:00Z"),
+            dated("mid", "v0-rust-a-26e84094-2afa9efd", "2026-10-15T03:00:00Z"),
+            dated("new", "v0-rust-a-26e84094-15153fd1", "2026-10-16T03:00:00Z"),
+        ];
+        assert_eq!(ids(newest_first(listing.clone())), ["new", "mid", "old"]);
+        assert_eq!(ids(superseded(listing)), ["old"]);
     }
 
     #[test]
@@ -185,19 +278,57 @@ mod tests {
     }
 
     #[test]
-    fn a_listing_parses_into_ids_and_keys() {
-        let parsed = entries("11\tv0-rust-a-26e84094-c5b5aea0\t2026-10-16T03:00:00Z\n\n12\tk\tt\n")
-            .expect("both lines carry an id and a key");
+    fn a_report_without_stuck_entries_keeps_the_gone_ones() {
+        let pruned = report(vec![entry("1", "a")], vec![entry("2", "b")], Vec::new())
+            .expect("no entry is stuck");
+        assert_eq!(pruned.deleted, [entry("1", "a")]);
+        assert_eq!(pruned.gone, [entry("2", "b")]);
+    }
+
+    #[test]
+    fn a_report_with_a_stuck_entry_still_tells_the_progress() {
+        let error = report(
+            vec![entry("1", "a")],
+            vec![entry("2", "b")],
+            vec![entry("3", "c")],
+        )
+        .expect_err("one entry is stuck");
         assert_eq!(
-            parsed,
-            [entry("11", "v0-rust-a-26e84094-c5b5aea0"), entry("12", "k")]
+            error,
+            [
+                "`gh cache delete 3` failed and the entry c is still listed",
+                "deleted 1 a",
+                "gone 2 b",
+                "deleted 1, found 1 gone, left 1 of 3 superseded entries",
+            ]
         );
     }
 
     #[test]
-    fn a_line_without_a_key_is_a_diagnostic() {
+    fn a_listing_parses_into_ids_keys_and_creation_times() {
+        let parsed = entries("11\tv0-rust-a-26e84094-c5b5aea0\t2026-10-16T03:00:00Z\n\n12\tk\tt\n")
+            .expect("both lines carry an id, a key and a creation time");
+        assert_eq!(
+            parsed,
+            [
+                dated("11", "v0-rust-a-26e84094-c5b5aea0", "2026-10-16T03:00:00Z"),
+                dated("12", "k", "t")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_line_without_a_creation_time_is_a_diagnostic() {
+        let error = entries("11\tk\n").expect_err("the line lacks a creation time");
+        assert!(
+            error[0].contains("lacks an id, a key and a creation time"),
+            "{error:?}"
+        );
         let error = entries("11\n").expect_err("the line holds only an id");
-        assert!(error[0].contains("lacks an id and a key"), "{error:?}");
+        assert!(
+            error[0].contains("lacks an id, a key and a creation time"),
+            "{error:?}"
+        );
     }
 
     #[test]

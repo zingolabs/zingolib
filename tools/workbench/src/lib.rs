@@ -126,6 +126,7 @@ pub fn finished_in(
 }
 
 pub const CARGO: &str = "cargo";
+pub const GH: &str = "gh";
 const VERSION_FLAG: &str = "--version";
 
 /// - Runs `cargo <name> --version` as a child process, with stderr inherited, and waits for it.

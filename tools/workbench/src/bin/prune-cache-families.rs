@@ -6,9 +6,9 @@ use workbench::run;
 const PROG: &str = "prune-cache-families";
 
 fn main() {
-    run(PROG, cache_families::prune, |deleted| {
-        for entry in deleted {
-            println!("deleted {} {}", entry.id, entry.key);
+    run(PROG, cache_families::prune, |pruned| {
+        for line in cache_families::outcome_lines(&pruned.deleted, &pruned.gone) {
+            println!("{line}");
         }
     })
 }
