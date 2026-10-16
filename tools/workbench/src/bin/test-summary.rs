@@ -3,7 +3,7 @@
 //! Invoked as `makers hierarchy-test`, which runs
 //! `cargo run --bin test-summary -- <nextest args>`, or as
 //! `makers lite-hierarchy`, which adds `--lite` to narrow the libtonode
-//! phase to the `send_shield_cycle` fixture.
+//! phase to the `tip_note_to_orchard` cell.
 //! Runs the `packages`, `zingo-cli`, and `libtonode` phases (each in its own
 //! CI container via the `makers test` front door), streams each run's output
 //! while capturing it, parses the nextest summary line, and aggregates the
@@ -53,29 +53,29 @@ const PHASES: &[(&str, &str)] = &[
 /// The same phases with the libtonode one narrowed to a single fixture,
 /// selected by [`LITE_FLAG`] and run as `makers lite-hierarchy`.
 ///
-/// `send_shield_cycle` is the round trip that drives a proposal through
-/// `follow_proposal` from Transmitted to Confirmed against a real LocalNet,
+/// `tip_note_to_orchard` funds a recipient and spends a tip-block note
+/// to confirmation against a real LocalNet,
 /// so it is the cheapest phase that still proves the chain-level machinery
 /// the earlier phases cannot reach. The narrowing buys back the libtonode
 /// phase's run time, which is what makes the gate usable between commits
 /// rather than only before a push.
 ///
-/// The phase also carries `--test chain_generics`, which narrows what the
-/// phase BUILDS to that one of `libtonode-tests`' ten test binaries. It is
+/// The phase also carries `--test tip_spend_rejection`, which narrows what the
+/// phase BUILDS to that one of `libtonode-tests`' test binaries. It is
 /// a cargo target selection rather than a package selection, so cargo still
 /// resolves it against the whole workspace and the `--workspace` scope the
 /// front door appends survives: the feature unification stays identical to
 /// the other phases, and no distinct zingolib variant is compiled. On a
 /// cold run this saves nothing, because the packages phase precedes it
-/// under `--workspace` and has already built all ten; it saves the build
+/// under `--workspace` and has already built them all; it saves the build
 /// wherever this phase meets a tree the earlier phases did not compile.
 const LITE_PHASES: &[(&str, &str)] = &[
     ("packages", "packages"),
     ("zingo-cli", "-E 'package(zingo-cli)'"),
     (
         "libtonode",
-        "-E 'package(libtonode-tests) & test(chain_generics::send_shield_cycle)' \
-         --test chain_generics",
+        "-E 'package(libtonode-tests) & test(tip_spend_rejection::tip_note_to_orchard)' \
+         --test tip_spend_rejection",
     ),
 ];
 
@@ -446,7 +446,7 @@ mod package_selection_guard {
         )?;
         assert!(lite.contains("package(libtonode-tests)"), "{lite}");
         assert!(
-            lite.contains("test(chain_generics::send_shield_cycle)"),
+            lite.contains("test(tip_spend_rejection::tip_note_to_orchard)"),
             "{lite}"
         );
         Ok(())
@@ -465,7 +465,7 @@ mod package_selection_guard {
             LITE_PHASES.iter().find(|(phase, _)| *phase == "libtonode"),
             "libtonode phase in the lite set",
         )?;
-        assert!(lite.contains("--test chain_generics"), "{lite}");
+        assert!(lite.contains("--test tip_spend_rejection"), "{lite}");
         assert!(
             !is_package_selection_arg("--test"),
             "--test must stay a target selection, so the front door still appends --workspace"

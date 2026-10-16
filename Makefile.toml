@@ -57,9 +57,9 @@ per-phase summary:
   makers hierarchy-test
 
 Run the same three phases with the libtonode one narrowed to the
-chain_generics::send_shield_cycle fixture, which is the cheapest run
+tip_spend_rejection::tip_note_to_orchard cell, which is the cheapest run
 that still exercises the chain-level machinery. That phase also builds
-only the one test binary of libtonode-tests' ten, via a cargo target
+only one test binary of libtonode-tests, via a cargo target
 selection that leaves the shared --workspace scope intact:
   makers lite-hierarchy
 
@@ -459,7 +459,7 @@ args = [
 ]
 
 [tasks.lite-hierarchy]
-description = "Run the same three gated phases as hierarchy-test, with the libtonode phase narrowed to chain_generics::send_shield_cycle and built as that one test binary rather than all ten: the cheapest run that still proves the chain-level machinery, for gating between commits rather than before a push"
+description = "Run the same three gated phases as hierarchy-test, with the libtonode phase narrowed to tip_spend_rejection::tip_note_to_orchard and built as that one test binary rather than all of them: the cheapest run that still proves the chain-level machinery, for gating between commits rather than before a push"
 command = "cargo"
 args = [
   "run",
