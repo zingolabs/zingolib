@@ -127,8 +127,13 @@ jobs:
           retention-days: 3
           overwrite: true
 
+  # A push to dev or stable reruns ci-pr on the merge commit whose pull
+  # request already packaged the layout, so the push skips this job. The
+  # build job still runs on a push: its cargo cache lands on the base
+  # branch, which is the cache every pull request restores from.
   package:
-    name: Publish the Maven layout
+    name: Package the Maven layout
+    if: ${{ github.event_name != 'push' }}
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -176,9 +181,17 @@ jobs:
       # repository directory and runs the Kotlin wire-contract test of the
       # proxy crate in one task graph. The test compiles against the Kotlin
       # Binding Set that the AAR ships and asserts it against the crate's
-      # golden pins, which the Rust and Swift suites share.
-      - name: Publish the Maven layout and run the Kotlin wire-contract test
-        run: gradle --project-dir bindings/android publish testReleaseUnitTest
+      # golden pins, which the Rust and Swift suites share. The runner image
+      # preinstalls the platform and the build tools the library compiles
+      # against; sdkDownload=false makes the Android Gradle plugin fail on a
+      # missing component instead of downloading it, so a bump of
+      # bindingCompileSdk past the image shows as a missing component, never
+      # as a download that corrupts or rate-limits on every pull request.
+      - name: Package the Maven layout and run the Kotlin wire-contract test
+        run: |
+          gradle --project-dir bindings/android \
+            -Pandroid.builder.sdkDownload=false \
+            publish testReleaseUnitTest
 
       # The layout holds one AAR beside one POM, and the POM declares JNA,
       # which the AAR needs and does not contain.
