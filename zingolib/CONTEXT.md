@@ -327,7 +327,7 @@
 
 **RN Bridge** — A React Native app's native modules and app shell, which marshal calls between JavaScript and the Binding Layer. Beyond marshalling it owns one thing, the app-serviced host of the Mixnet Session: it holds the Nym proxy's handle, watches for the proxy's death, and releases the handle. Each React Native consumer keeps its own RN Bridge in its own repository. Ruled 2026-09-23, pending review. *Avoid*: native modules (names the mechanism, not the role), FFI. See `zingo-adrs zingolib/0054`.
 
-**Prebuilt Bundle** — The compiled and packaged Binding Layer for one platform, which zingolib builds and publishes and a consumer fetches without rebuilding it. The Android Prebuilt Bundle is an AAR holding the four ABIs' native libraries and the compiled Kotlin Binding Sets; the iOS Prebuilt Bundle is the `ZingoBindings` Swift package holding the two XCFrameworks and the Swift Binding Sets. Ruled 2026-09-23 as a loose `.so` set or XCFramework; restated 2026-10-12 to the packaged form that #2833 publishes. *Avoid*: bundle alone, and never "bundle" for grouping changes into one pull request. See `zingo-adrs zingolib/0054`.
+**Prebuilt Bundle** — The compiled and packaged Binding Layer for one platform, which zingolib builds and publishes and a consumer fetches without rebuilding it. The Android Prebuilt Bundle is a Maven repository directory holding one AAR, which carries the four ABIs' native libraries and the compiled Kotlin Binding Sets, and the POM that declares the AAR's dependencies, so a consumer adds the directory as a repository and declares the AAR by its coordinate; the iOS Prebuilt Bundle is the `ZingoBindings` Swift package holding the two XCFrameworks and the Swift Binding Sets. Ruled 2026-09-23 as a loose `.so` set or XCFramework; restated 2026-10-12 to the packaged form that #2833 publishes; restated 2026-10-15 to the Maven layout, so the POM carries the JNA dependency. *Avoid*: bundle alone, and never "bundle" for grouping changes into one pull request. See `zingo-adrs zingolib/0054` and `zingolib/0057`.
 
 **Binding Set** — The generated source code that projects one Binding Layer crate into one language: the Kotlin or the Swift output of UniFFI for the wallet crate or the Nym proxy crate. A Prebuilt Bundle carries one Binding Set per crate for its platform. Ruled 2026-10-12. *Avoid*: the bindings (ambiguous between one Binding Set and the whole Binding Layer).
 
@@ -353,13 +353,9 @@
 
 ## Testing
 
-**libtonode-tests** — Integration tests that run zingolib against a real local node stack (library-to-node). Uses `zcash_local_net` to spin up a `Validator` + `Indexer` pair; the pair is selected at compile time (the test-infrastructure glossary's "Network combo"). The only combo is `zainod+zebrad`; the legacy validator and indexer combos were removed in July 2026, the latter with the darkside-tests retirement.
+**libtonode-tests** — The crate of testnet cells: chain-bound tests behind the non-default `testnet` feature that drive the wallet in-process through `LightClient` against the zingolabs zainod testnet node. Its regtest suite, and the `zcash_local_net` network combos it ran against, left with the regtest removal of October 2026; every guarantee that suite pinned now lives in a mock-chain twin, a testnet cell, or zaino's own suite, per `docs/testing/regtest-removal-ledger.md`. The vocabulary (testnet cell, twin, guarantee, mock chain) is defined in `docs/testing/CONTEXT.md`.
 
 **darkside-tests** — Deterministic reorg and edge-case tests that inject arbitrary blocks without mining. Their authoritative home is the mock-indexer darkside module inside zingolib, which runs offline; the standalone `darkside-tests` crate (driving the legacy indexer's "darkside" mode) is retired by the package-simplification work, its nine tests having been long ignored.
-
-**Validator** — The consensus node in a test local net: `zebrad`.
-
-**DefaultValidator / DefaultIndexer** — Type aliases in `zingolib_testutils` that resolve to the active backend combo at compile time, allowing test code to remain backend-agnostic.
 
 ---
 

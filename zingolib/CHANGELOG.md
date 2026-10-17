@@ -8,8 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `data::PollReport::from_join` maps a tokio join outcome to a `PollReport`: a
+  finished task is `Ready`, a panicked task is `Panicked` with the panic's
+  message, and a cancelled task is `Panicked` with tokio's description.
+- `data::panic_text` renders a panic payload, `&str` or `String`, as text.
+- `LightClientError::SyncPanicked(String)` reports a sync task that panicked
+  from `await_sync` and from the launch wait in `sync`.
 
 ### Changed
+- **Breaking:** `data::PollReport` gains the `Panicked(String)` variant, which
+  `poll_sync` returns when the sync task panicked and tokio contained the
+  panic. Every exhaustive match on `PollReport` needs an arm for it.
 
 ### Deprecated
 
@@ -17,6 +26,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** remove `wallet::keys::legacy::extended_transparent` from the public API. The module is crate-private: its `ExtendedPrivKey` and `ExtendedPubKey` hold the 32 secret-key bytes or the 33 compressed-point bytes and the 32-byte chain code the wallet file stores, and each reader validates the scalar or the point through the `zcash_transparent` account key types before the wallet loads. `Debug` prints a BLAKE2b digest of both fields. The derivation API (`KeyIndex`, `with_seed`, `derive_private_key`, `derive_public_key`, `get_ext_taddr_from_bip39seed`), which nothing called, is gone. zingolib no longer depends on `secp256k1`, `hmac` or `sha2` directly.
 
 ### Fixed
+- `poll_sync`, the save poll, `shutdown_save_task` and the wallet write no
+  longer `expect` on a task's join handle. Under `panic = "unwind"` tokio
+  contains a task's panic, the join yields an error, and the old `expect`
+  re-raised the panic on the caller's thread, under the FFI's client lock,
+  which poisoned the lock for the rest of the session. A panicked save task
+  restarts, as a failed one does, and the poll reports the panic as an
+  `io::Error`.
+- `migrate_to_ironwood` reconciles once more after its last part confirms,
+  so the migration it returns reports the `Complete` phase. Reconciliation
+  judges completion on the persisted part states, and the pass that promotes
+  the parts to `Confirmed` cannot also complete the migration, so the one-call
+  returned with the phase still `PartsScheduled`.
+- The two-phase migration twin mines the mock chain to the first Ironwood-era
+  transmission window before the one-call and two buckets past each block that
+  confirms transactions, the spans the state machine requires between the
+  activation, a note's confirmation and a part that anchors on it. The twin's
+  regtest ancestor was ignored and never ran.
 
 ## [7.0.0] - 2026-10-15
 

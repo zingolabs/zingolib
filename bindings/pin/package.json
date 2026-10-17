@@ -1,6 +1,6 @@
 {
   "name": "zingolib-bundle-pin",
-  "version": "0.1.1",
+  "version": "0.2.1",
   "description": "Pins and fetches zingolib's published Prebuilt Bundles for a consumer of the Binding Layer.",
   "license": "MIT",
   "repository": {
@@ -18,7 +18,7 @@
     "lib"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=20.12"
   },
   "scripts": {
     "test": "node --test test/*.test.mjs"

@@ -11,6 +11,14 @@
 # binding-changelog takes the commits and the audited crates of
 # bindings/CHANGELOG.md from it.
 #
+# An incomplete entry names the head of dev. `/publish` runs the workflow
+# of that head and builds the entry's commit with the tool at that commit,
+# and the two agree only when they are one commit. The manifest check
+# refuses an incomplete entry that names another commit and names the
+# head to move it to; the publish workflow refuses it again. A merge to
+# dev after the entry is written moves the head, so the pull request
+# merges dev and points the entry at the new head before `/publish`.
+#
 # An entry names every platform that binding-manifest requires. The
 # required set lives in REQUIRED_PLATFORMS of
 # tools/workbench/src/binding_manifest.rs alone, and it names both
@@ -39,3 +47,9 @@ since = "6d037df7a4f4f72f219fbadd8c6fe34d8c8ea97c"
 audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
 android = "sha256:9c950b9c10ce62e85de894f73139d9770caa844705c01bfcde4154d2404a50de"
 ios = "sha256:045aa74c2bb591325969fcdbf6923bcd7c9b023665ea2c3cc8e2b2ffbacd1f41"
+
+[[entry]]
+commit = "502a453fe3329ecded1872f0c856b56f141c8d6a"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:edbd449168cc993635098a03388cddf3d078021b739cc6198a19ff64b71cf701"
+ios = "sha256:62c016314e10eb7dbb17fb35e4d20b47b4664df3ec4b9440d2981431a6a3df44"

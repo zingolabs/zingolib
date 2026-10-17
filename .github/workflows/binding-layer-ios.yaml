@@ -20,8 +20,9 @@ on:
         type: string
         default: ${{ github.sha }}
       # From one run of `build-binding-layer artifact` in the caller: the
-      # builder's output directory, which Package.swift expects, and the
-      # bundle this workflow uploads.
+      # directory the iOS plan writes, which this workflow uploads, and the
+      # bundle name it uploads under. The plan takes no output flag, because
+      # the shipped Package.swift reads one fixed directory.
       out:
         required: true
         type: string
@@ -30,10 +31,13 @@ on:
         type: string
 
 jobs:
-  build:
-    name: Build the XCFrameworks and the Swift sources
+  slices:
+    name: Build the ${{ matrix.target }} libraries
+    strategy:
+      matrix:
+        target: [aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios]
     runs-on: ${{ inputs.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 30
     env:
       RUSTUP_HOME: ${{ github.workspace }}/.rustup
       CARGO_HOME: ${{ github.workspace }}/.cargo
@@ -46,15 +50,17 @@ jobs:
           fetch-tags: true
 
       # The action installs the toolchain rust-toolchain.toml pins, with
-      # its components, and the builder adds the iOS targets to it itself.
+      # its components, and the builder adds the iOS target to it itself.
       # The builder puts each crate's iOS target directory under
       # target/binding-layer, so the list names those directories. The
       # wallet crate resolves in the root workspace and the proxy crate in
       # the zingo-netutils workspace, so each entry names the workspace
-      # whose lockfile keys the cache.
-      - name: Setup Rust and the cargo cache (registry, git, iOS targets)
+      # whose lockfile keys the cache. The key segment keeps one entry per
+      # target, since the matrix jobs share one GITHUB_JOB.
+      - name: Setup Rust and the cargo cache (registry, git, iOS target)
         uses: ./.github/actions/rust-setup
         with:
+          key: ${{ matrix.target }}
           workspaces: |
             . -> target/binding-layer/ios/wallet
             zingo-netutils -> ../target/binding-layer/ios/proxy
@@ -77,17 +83,63 @@ jobs:
             "CXXFLAGS_aarch64_apple_ios_sim=$flags" \
             >> "$GITHUB_ENV"
 
+      - name: Build the wallet and proxy libraries for the target
+        run: |
+          cargo run \
+            --manifest-path tools/workbench/Cargo.toml \
+            --bin build-binding-layer -- \
+            ios --target ${{ matrix.target }}
+
+      - name: Upload the libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.bundle }}-slice-${{ matrix.target }}
+          path: target/binding-layer/ios/slices
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
+  build:
+    name: Build the XCFrameworks and the Swift sources
+    needs: slices
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 30
+    env:
+      RUSTUP_HOME: ${{ github.workspace }}/.rustup
+      CARGO_HOME: ${{ github.workspace }}/.cargo
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-tags: true
+
+      - name: Setup Rust and the cargo cache (registry, git, host builds)
+        uses: ./.github/actions/rust-setup
+        with:
+          workspaces: |
+            . -> target/binding-layer/ios/wallet
+            zingo-netutils -> ../target/binding-layer/ios/proxy
+            tools/workbench
+
+      - name: Download the libraries of every target
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ inputs.bundle }}-slice-*
+          path: target/binding-layer/ios/slices
+          merge-multiple: true
+
       # The plan ends with the Swift wire-contract test of the proxy crate,
       # which compiles against the Swift Binding Set the package ships and
       # asserts it against the crate's golden pins, which the Rust and
       # Kotlin suites share. The XCFrameworks hold iOS slices only, so the
       # builder runs the test on an iOS simulator it picks.
-      - name: Build the Binding Layer and run the Swift wire-contract test
+      - name: Assemble the Binding Layer and run the Swift wire-contract test
         run: |
           cargo run \
             --manifest-path tools/workbench/Cargo.toml \
             --bin build-binding-layer -- \
-            ios --out "${{ inputs.out }}"
+            ios --assemble
 
       - name: Upload the Binding Layer
         uses: actions/upload-artifact@v4

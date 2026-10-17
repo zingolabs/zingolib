@@ -2,6 +2,8 @@
 
 use std::env;
 use std::fs;
+use std::io;
+use std::io::BufRead;
 use std::iter;
 use std::path;
 use std::process;
@@ -14,8 +16,9 @@ use workbench::MANIFEST;
 const PROGRAM: &str = "build-binding-layer";
 
 /// The invocation shape, reported when the arguments do not parse.
-const USAGE: &str = "usage: build-binding-layer <android|ios|kotlin> --out <directory> \
+const USAGE: &str = "usage: build-binding-layer <android|kotlin> --out <directory> \
     [android only: --abi <android abi>] [android only: --in-image] \
+    | build-binding-layer ios [--target <ios triple> | --assemble] \
     | build-binding-layer artifact --commit <commit> \
     | build-binding-layer image";
 
@@ -24,6 +27,8 @@ const ARTIFACT_COMMAND: &str = "artifact";
 const IMAGE_COMMAND: &str = "image";
 
 const COMMIT_FLAG: &str = "--commit";
+
+const REVISION_PATH_SEPARATOR: &str = ":";
 
 /// The flag that runs the Android plan directly, inside a job that already runs in the builder image.
 const IN_IMAGE_FLAG: &str = "--in-image";
@@ -42,6 +47,10 @@ const OUT_FLAG: &str = "--out";
 
 /// The flag that selects one Android ABI instead of all of them.
 const ABI_FLAG: &str = "--abi";
+
+const TARGET_FLAG: &str = "--target";
+
+const ASSEMBLE_FLAG: &str = "--assemble";
 
 /// The tag of the Android tool image that the builder builds and runs.
 const ANDROID_IMAGE: &str = "localhost/zingolib/binding-layer-android";
@@ -109,6 +118,19 @@ impl IosTarget {
     }
 }
 
+impl IosTarget {
+    fn from_triple(triple: &str) -> Option<IosTarget> {
+        iter_ios_targets().find(|target| target.triple() == triple)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum IosPhase {
+    Full,
+    Slice(IosTarget),
+    Assembly,
+}
+
 const IOS_SIMULATORS: [IosTarget; 2] = [
     IosTarget::Simulator(IosArch::Arm64),
     IosTarget::Simulator(IosArch::X86_64),
@@ -119,6 +141,8 @@ const UNIVERSAL_SIMULATOR_DIR: &str = "universal-sim";
 
 /// The directory, under a profile directory, that holds each hidden-symbol archive and its merged object.
 const HIDDEN_DIR: &str = "hidden";
+
+const SLICES_DIR: &str = "slices";
 
 const OBJECT_SUFFIX: &str = ".o";
 
@@ -190,7 +214,7 @@ enum Platform {
         in_image: bool,
     },
     /// The two XCFrameworks and Swift sources for the SwiftPM package.
-    Ios,
+    Ios(IosPhase),
     /// The Kotlin sources alone, generated on the host for the Gradle checks that compile against them.
     Kotlin,
 }
@@ -344,19 +368,6 @@ fn refuse_an_output_directory_holding_the_root(
     }
 }
 
-fn refuse_an_ios_output_the_swift_package_does_not_read(roots: &Roots) -> Result<(), Vec<String>> {
-    let consumed = roots.host_path(&binding_layer::swift_package_output_dir());
-    if binding_layer::lexical(&roots.out_host) == binding_layer::lexical(&consumed) {
-        Ok(())
-    } else {
-        Err(vec![format!(
-            "the Swift contract test compiles the package that reads {}, and this plan would write {}",
-            consumed.display(),
-            roots.out_host.display()
-        )])
-    }
-}
-
 fn main() {
     let args: Vec<String> = env::args().skip(PROGRAM_NAME_ARGUMENTS).collect();
     match args.split_first() {
@@ -374,10 +385,16 @@ fn main() {
     }
 }
 
+/// - Runs `git show` to read the wallet manifest at the commit.
 fn artifact(args: &[String]) -> Result<String, Vec<String>> {
     let commit = workbench::required_flag(args, COMMIT_FLAG, USAGE)?;
+    let manifest = workbench::git(&[
+        "show",
+        &[commit, binding_layer::WALLET_MANIFEST].join(REVISION_PATH_SEPARATOR),
+    ])?;
+    let crate_version = binding_layer::crate_version(&manifest)?;
     Ok(binding_layer::render_outputs(
-        &binding_layer::artifact_outputs(&binding_manifest::PLATFORMS, commit),
+        &binding_layer::artifact_outputs(&binding_manifest::PLATFORMS, commit, &crate_version)?,
     ))
 }
 
@@ -400,16 +417,20 @@ fn image(args: &[String]) -> Result<&'static str, Vec<String>> {
 
 /// Build the selected platform's packaging and return its output directory.
 fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
-    let (platform, out, abis) = parse(args)?;
+    let Arguments {
+        platform,
+        out,
+        abis,
+    } = parse(args)?;
     let root = workbench::repo_root()?;
     let roots = match platform {
         Platform::Android { in_image: true } => {
-            let roots = Roots::on_host(root, out)?;
+            let roots = Roots::on_host(root, required_out(out)?)?;
             execute(&Runner::Host, &android_plan(&roots, &abis))?;
             roots
         }
         Platform::Android { in_image: false } => {
-            let roots = Roots::in_container(root, out)?;
+            let roots = Roots::in_container(root, required_out(out)?)?;
             let engine = binding_layer::container_engine()?;
             build_android_image(engine, &roots.host, ANDROID_IMAGE)?;
             let id = start_container(engine, &roots.host)?;
@@ -424,17 +445,17 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
             outcome?;
             roots
         }
-        Platform::Ios => {
+        Platform::Ios(phase) => {
             if env::consts::OS != binding_layer::MACOS {
                 return Err(vec!["iOS packaging requires macOS with Xcode".to_string()]);
             }
+            let out = root.join(binding_layer::swift_package_output_dir());
             let roots = Roots::on_host(root, out)?;
-            refuse_an_ios_output_the_swift_package_does_not_read(&roots)?;
-            execute(&Runner::Host, &ios_plan(&roots))?;
+            execute(&Runner::Host, &ios_plan(&roots, phase))?;
             roots
         }
         Platform::Kotlin => {
-            let roots = Roots::on_host(root, out)?;
+            let roots = Roots::on_host(root, required_out(out)?)?;
             execute(&Runner::Host, &kotlin_plan(&roots))?;
             roots
         }
@@ -442,19 +463,21 @@ fn build(args: &[String]) -> Result<path::PathBuf, Vec<String>> {
     Ok(roots.out_host)
 }
 
-/// Parse the platform, the absolute output directory, and the selected Android ABIs.
-fn parse(
-    args: &[String],
-) -> Result<
-    (
-        Platform,
-        path::PathBuf,
-        Vec<&'static binding_layer::AndroidAbi>,
-    ),
-    Vec<String>,
-> {
+fn required_out(out: Option<path::PathBuf>) -> Result<path::PathBuf, Vec<String>> {
+    out.ok_or_else(|| vec![format!("missing {OUT_FLAG}"), USAGE.to_string()])
+}
+
+struct Arguments {
+    platform: Platform,
+    out: Option<path::PathBuf>,
+    abis: Vec<&'static binding_layer::AndroidAbi>,
+}
+
+fn parse(args: &[String]) -> Result<Arguments, Vec<String>> {
     let (selection, flags) = args.split_first().ok_or_else(|| vec![USAGE.to_string()])?;
     let in_image = flags.iter().any(|arg| arg == IN_IMAGE_FLAG);
+    let target = workbench::flag_value(flags, TARGET_FLAG)?;
+    let assemble = flags.iter().any(|arg| arg == ASSEMBLE_FLAG);
     let platform = match selection.as_str() {
         "android" => Platform::Android { in_image },
         "ios" | "kotlin" if in_image => {
@@ -463,7 +486,7 @@ fn parse(
                 USAGE.to_string(),
             ])
         }
-        "ios" => Platform::Ios,
+        "ios" => Platform::Ios(ios_phase(target, assemble)?),
         "kotlin" => Platform::Kotlin,
         other => {
             return Err(vec![
@@ -472,11 +495,27 @@ fn parse(
             ])
         }
     };
-    let out = workbench::flag_value(flags, OUT_FLAG)?
-        .ok_or_else(|| vec![format!("missing {OUT_FLAG}"), USAGE.to_string()])?;
-    let absolute_out = env::current_dir()
-        .map_err(|e| vec![format!("cannot read the current directory: {e}")])?
-        .join(out);
+    if (target.is_some() || assemble) && !matches!(platform, Platform::Ios(_)) {
+        return Err(vec![
+            format!("{TARGET_FLAG} and {ASSEMBLE_FLAG} apply only to ios"),
+            USAGE.to_string(),
+        ]);
+    }
+    let out = workbench::flag_value(flags, OUT_FLAG)?;
+    if out.is_some() && matches!(platform, Platform::Ios(_)) {
+        return Err(vec![
+            format!("{OUT_FLAG} applies only to android and kotlin"),
+            USAGE.to_string(),
+        ]);
+    }
+    let absolute_out = match out {
+        None => None,
+        Some(out) => Some(
+            env::current_dir()
+                .map_err(|e| vec![format!("cannot read the current directory: {e}")])?
+                .join(out),
+        ),
+    };
     let abis = match workbench::flag_value(flags, ABI_FLAG)? {
         None => binding_layer::ANDROID_ABIS.iter().collect(),
         Some(_) if !matches!(platform, Platform::Android { .. }) => {
@@ -490,7 +529,25 @@ fn parse(
             .find(|abi| abi.jni_dir == name)
             .ok_or_else(|| vec![format!("unknown Android ABI `{name}`")])?],
     };
-    Ok((platform, absolute_out, abis))
+    Ok(Arguments {
+        platform,
+        out: absolute_out,
+        abis,
+    })
+}
+
+fn ios_phase(target: Option<&str>, assemble: bool) -> Result<IosPhase, Vec<String>> {
+    match (target, assemble) {
+        (None, false) => Ok(IosPhase::Full),
+        (None, true) => Ok(IosPhase::Assembly),
+        (Some(_), true) => Err(vec![
+            format!("{TARGET_FLAG} and {ASSEMBLE_FLAG} exclude each other"),
+            USAGE.to_string(),
+        ]),
+        (Some(triple), false) => IosTarget::from_triple(triple)
+            .map(IosPhase::Slice)
+            .ok_or_else(|| vec![format!("unknown iOS target `{triple}`")]),
+    }
 }
 
 /// - Reads `rust-toolchain.toml` under `root`.
@@ -888,7 +945,7 @@ fn host_of(roots: &Roots, run_path: &str) -> path::PathBuf {
     roots.host_path(relative)
 }
 
-fn ios_plan(roots: &Roots) -> Vec<Step> {
+fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
     let env = vec![(
         "IPHONEOS_DEPLOYMENT_TARGET".to_string(),
         IOS_DEPLOYMENT_TARGET.to_string(),
@@ -920,21 +977,20 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
     };
     let wallet_static = static_library(binding_layer::WALLET_LIB_NAME);
     let proxy_static = static_library(binding_layer::PROXY_LIB_NAME);
-    let library = |target_dir: &str, triple: &str, file: &str| {
+    let built = |target_dir: &str, triple: &str, file: &str| {
         format!("{target_dir}/{triple}/{PROFILE_DIR}/{file}")
     };
-    let universal =
-        |target_dir: &str, file: &str| library(target_dir, UNIVERSAL_SIMULATOR_DIR, file);
-    let hidden = |target_dir: &str, triple: &str, file: &str| {
-        library(target_dir, triple, &format!("{HIDDEN_DIR}/{file}"))
-    };
+    let slices = roots.run_path(&format!("{BUILD_ROOT}/ios/{SLICES_DIR}"));
+    let slice_dir = |triple: &str| format!("{slices}/{triple}");
+    let slice = |triple: &str, file: &str| format!("{slices}/{triple}/{file}");
+    let hidden = |triple: &str, file: &str| slice(triple, &format!("{HIDDEN_DIR}/{file}"));
+    let universal = |file: &str| slice(UNIVERSAL_SIMULATOR_DIR, file);
     let generated_of =
         |generation: binding_layer::Generation| format!("{GENERATED_DIR}/{}", generation.label());
     let wallet_generated = generated_of(binding_layer::Generation::Wallet);
     let proxy_generated = generated_of(binding_layer::Generation::Proxy);
     let headers = format!("{GENERATED_DIR}/headers");
     let hide = |generation: binding_layer::Generation| {
-        let target_dir = target_dir_of(generation);
         let lib_name = generation.lib_name();
         let archive_file = static_library(lib_name);
         let object_file =
@@ -945,14 +1001,10 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
             .collect::<Vec<_>>();
         iter_ios_targets()
             .flat_map(|target| {
-                let archive = library(&target_dir, target.triple(), &archive_file);
-                let hidden_archive = hidden(&target_dir, target.triple(), &archive_file);
-                let object = hidden(&target_dir, target.triple(), &object_file);
+                let archive = slice(target.triple(), &archive_file);
+                let hidden_archive = hidden(target.triple(), &archive_file);
+                let object = hidden(target.triple(), &object_file);
                 [
-                    Step::FreshDir(host_of(
-                        roots,
-                        &library(&target_dir, target.triple(), HIDDEN_DIR),
-                    )),
                     Step::Run {
                         workdir: roots.run.clone(),
                         env: env.clone(),
@@ -1007,39 +1059,18 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
             &env,
         )
     };
-    let cargo_builds = |workdir: &str, target_dir: &str, package: &[&str]| {
-        iter_ios_targets()
-            .map(|target| {
-                cargo_step(
-                    workdir,
-                    &with_target(target_dir),
-                    &["build", "--target", target.triple()],
-                    BUILDER_PROFILE,
-                    package,
-                )
-            })
-            .collect::<Vec<_>>()
-    };
-    let lipo = |target_dir: &str, file: &str| {
-        [
-            Step::FreshDir(host_of(
-                roots,
-                &format!("{target_dir}/{UNIVERSAL_SIMULATOR_DIR}/{PROFILE_DIR}"),
-            )),
-            Step::Run {
-                workdir: roots.run.clone(),
-                env: env.clone(),
-                command: ["lipo".to_string(), "-create".to_string()]
-                    .into_iter()
-                    .chain(
-                        IOS_SIMULATORS
-                            .iter()
-                            .map(|target| hidden(target_dir, target.triple(), file)),
-                    )
-                    .chain(["-output".to_string(), universal(target_dir, file)])
-                    .collect(),
-            },
-        ]
+    let lipo = |file: &str| Step::Run {
+        workdir: roots.run.clone(),
+        env: env.clone(),
+        command: ["lipo".to_string(), "-create".to_string()]
+            .into_iter()
+            .chain(
+                IOS_SIMULATORS
+                    .iter()
+                    .map(|target| hidden(target.triple(), file)),
+            )
+            .chain(["-output".to_string(), universal(file)])
+            .collect(),
     };
     let xcframework = |name: &str, libraries: Vec<String>, with_headers: bool| {
         let output = roots.out_run_path(name);
@@ -1064,101 +1095,156 @@ fn ios_plan(roots: &Roots) -> Vec<Step> {
         ]
     };
     let host = |relative: &str| roots.out_host_path(relative);
-    let steps: Vec<Vec<Step>> = vec![
-        vec![
-            Step::FreshDir(host(&wallet_generated)),
-            Step::FreshDir(host(&proxy_generated)),
-            Step::FreshDir(host(&headers)),
-        ],
-        cargo_builds(&wallet_crate_dir, &wallet_target, &[]),
-        vec![bindgen(
-            binding_layer::Generation::Wallet,
-            &library(&wallet_target, IosTarget::Device.triple(), &wallet_static),
-            &wallet_generated,
-        )],
-        hide(binding_layer::Generation::Wallet),
-        lipo(&wallet_target, &wallet_static).into_iter().collect(),
-        cargo_builds(
-            &proxy_crate_dir,
-            &proxy_target,
-            &["-p", binding_layer::PROXY_PACKAGE],
-        ),
-        vec![bindgen(
-            binding_layer::Generation::Proxy,
-            &library(&proxy_target, IosTarget::Device.triple(), &proxy_static),
-            &proxy_generated,
-        )],
-        hide(binding_layer::Generation::Proxy),
-        lipo(&proxy_target, &proxy_static).into_iter().collect(),
-        vec![
+    let slice_steps = |target: IosTarget| {
+        let triple = target.triple();
+        let build = |workdir: &str, target_dir: &str, package: &[&str]| {
+            cargo_step(
+                workdir,
+                &with_target(target_dir),
+                &["build", "--target", triple],
+                BUILDER_PROFILE,
+                package,
+            )
+        };
+        let deliver = |generation: binding_layer::Generation, target_dir: &str| {
+            let file = static_library(generation.lib_name());
             Step::Copy {
-                from: host(&format!("{wallet_generated}/{WALLET_HEADER}")),
-                to: host(&format!("{headers}/{WALLET_HEADER}")),
-            },
-            Step::Copy {
-                from: host(&format!("{proxy_generated}/{PROXY_HEADER}")),
-                to: host(&format!("{headers}/{PROXY_HEADER}")),
-            },
-            Step::Concatenate {
-                sources: vec![
-                    host(&format!("{wallet_generated}/{WALLET_MODULEMAP}")),
-                    host(&format!("{proxy_generated}/{PROXY_MODULEMAP}")),
-                ],
-                separator: MODULEMAP_SEPARATOR,
-                to: host(&format!("{headers}/{COMBINED_MODULEMAP}")),
-            },
-        ],
-        xcframework(
-            binding_layer::WALLET_XCFRAMEWORK,
-            vec![
-                hidden(&wallet_target, IosTarget::Device.triple(), &wallet_static),
-                universal(&wallet_target, &wallet_static),
-            ],
-            true,
-        )
-        .into_iter()
-        .collect(),
-        xcframework(
-            binding_layer::PROXY_XCFRAMEWORK,
-            vec![
-                hidden(&proxy_target, IosTarget::Device.triple(), &proxy_static),
-                universal(&proxy_target, &proxy_static),
-            ],
-            false,
-        )
-        .into_iter()
-        .collect(),
+                from: host_of(roots, &built(target_dir, triple, &file)),
+                to: host_of(roots, &slice(triple, &file)),
+            }
+        };
+        let describe = (target == IosTarget::Device).then(|| {
+            describe_step(
+                &wallet_crate_dir,
+                &with_target(&wallet_target),
+                None,
+                triple,
+                BUILDER_PROFILE,
+                &[],
+                host_of(roots, &slice(triple, binding_layer::DESCRIPTOR_FILE)),
+            )
+        });
         [
-            (&wallet_generated, binding_layer::WALLET_SWIFT),
-            (&proxy_generated, binding_layer::PROXY_SWIFT),
+            vec![Step::FreshDir(host_of(roots, &slice_dir(triple)))],
+            vec![
+                build(&wallet_crate_dir, &wallet_target, &[]),
+                deliver(binding_layer::Generation::Wallet, &wallet_target),
+            ],
+            vec![
+                build(
+                    &proxy_crate_dir,
+                    &proxy_target,
+                    &["-p", binding_layer::PROXY_PACKAGE],
+                ),
+                deliver(binding_layer::Generation::Proxy, &proxy_target),
+            ],
+            describe.into_iter().collect(),
         ]
-        .map(|(generated, swift)| Step::Copy {
-            from: host(&format!("{generated}/{swift}")),
-            to: host(&format!("{}/{swift}", binding_layer::swift_sources_dir())),
-        })
         .into_iter()
-        .collect(),
-        vec![describe_step(
-            &wallet_crate_dir,
-            &with_target(&wallet_target),
-            None,
-            IosTarget::Device.triple(),
-            BUILDER_PROFILE,
-            &[],
-            host(binding_layer::DESCRIPTOR_FILE),
-        )],
-        vec![Step::XcodeTest {
-            workdir: roots.run_path(binding_layer::SWIFT_CONTRACT_TESTS_DIR),
-            scheme: binding_layer::swift_contract_tests_scheme(),
-        }],
-    ];
-    fresh_plan(
-        roots,
-        &iter_ios_targets()
-            .map(|target| target.triple())
-            .collect::<Vec<_>>(),
-        steps.into_iter().flatten().collect(),
-    )
+        .flatten()
+        .collect::<Vec<Step>>()
+    };
+    let assembly_steps = || {
+        let steps: Vec<Vec<Step>> = vec![
+            vec![
+                Step::FreshDir(host(&wallet_generated)),
+                Step::FreshDir(host(&proxy_generated)),
+                Step::FreshDir(host(&headers)),
+                Step::FreshDir(host_of(roots, &slice_dir(UNIVERSAL_SIMULATOR_DIR))),
+            ],
+            iter_ios_targets()
+                .map(|target| Step::FreshDir(host_of(roots, &slice(target.triple(), HIDDEN_DIR))))
+                .collect(),
+            vec![bindgen(
+                binding_layer::Generation::Wallet,
+                &slice(IosTarget::Device.triple(), &wallet_static),
+                &wallet_generated,
+            )],
+            hide(binding_layer::Generation::Wallet),
+            vec![lipo(&wallet_static)],
+            vec![bindgen(
+                binding_layer::Generation::Proxy,
+                &slice(IosTarget::Device.triple(), &proxy_static),
+                &proxy_generated,
+            )],
+            hide(binding_layer::Generation::Proxy),
+            vec![lipo(&proxy_static)],
+            vec![
+                Step::Copy {
+                    from: host(&format!("{wallet_generated}/{WALLET_HEADER}")),
+                    to: host(&format!("{headers}/{WALLET_HEADER}")),
+                },
+                Step::Copy {
+                    from: host(&format!("{proxy_generated}/{PROXY_HEADER}")),
+                    to: host(&format!("{headers}/{PROXY_HEADER}")),
+                },
+                Step::Concatenate {
+                    sources: vec![
+                        host(&format!("{wallet_generated}/{WALLET_MODULEMAP}")),
+                        host(&format!("{proxy_generated}/{PROXY_MODULEMAP}")),
+                    ],
+                    separator: MODULEMAP_SEPARATOR,
+                    to: host(&format!("{headers}/{COMBINED_MODULEMAP}")),
+                },
+            ],
+            xcframework(
+                binding_layer::WALLET_XCFRAMEWORK,
+                vec![
+                    hidden(IosTarget::Device.triple(), &wallet_static),
+                    universal(&wallet_static),
+                ],
+                true,
+            )
+            .into_iter()
+            .collect(),
+            xcframework(
+                binding_layer::PROXY_XCFRAMEWORK,
+                vec![
+                    hidden(IosTarget::Device.triple(), &proxy_static),
+                    universal(&proxy_static),
+                ],
+                false,
+            )
+            .into_iter()
+            .collect(),
+            [
+                (&wallet_generated, binding_layer::WALLET_SWIFT),
+                (&proxy_generated, binding_layer::PROXY_SWIFT),
+            ]
+            .map(|(generated, swift)| Step::Copy {
+                from: host(&format!("{generated}/{swift}")),
+                to: host(&format!("{}/{swift}", binding_layer::swift_sources_dir())),
+            })
+            .into_iter()
+            .collect(),
+            vec![Step::Copy {
+                from: host_of(
+                    roots,
+                    &slice(IosTarget::Device.triple(), binding_layer::DESCRIPTOR_FILE),
+                ),
+                to: host(binding_layer::DESCRIPTOR_FILE),
+            }],
+            vec![Step::XcodeTest {
+                workdir: roots.run_path(binding_layer::SWIFT_CONTRACT_TESTS_DIR),
+                scheme: binding_layer::swift_contract_tests_scheme(),
+            }],
+        ];
+        steps.into_iter().flatten().collect::<Vec<Step>>()
+    };
+    match phase {
+        IosPhase::Full => fresh_plan(
+            roots,
+            &iter_ios_targets()
+                .map(|target| target.triple())
+                .collect::<Vec<_>>(),
+            iter_ios_targets()
+                .flat_map(&slice_steps)
+                .chain(assembly_steps())
+                .collect(),
+        ),
+        IosPhase::Slice(target) => fresh_plan(roots, &[target.triple()], slice_steps(target)),
+        IosPhase::Assembly => fresh_plan(roots, &[], assembly_steps()),
+    }
 }
 
 /// The device target followed by the simulator targets.
@@ -1251,11 +1337,9 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
             let simulator = binding_layer::ios_simulator(&listing, IOS_DEPLOYMENT_TARGET)?;
             println!("testing on {} ({})", simulator.name, simulator.udid);
             let command = xcodebuild_test(scheme, &simulator.udid);
-            let output = output_of(runner, workdir, &[], &command)?;
-            let log = String::from_utf8_lossy(&output.stdout);
-            print!("{log}");
-            if !output.status.success() {
-                return Err(failure_of(&command, output.status));
+            let (log, status) = stream_command(runner, workdir, &[], &command)?;
+            if !status.success() {
+                return Err(failure_of(&command, status));
             }
             let executed = binding_layer::executed_tests(&log)?;
             if executed == binding_layer::SWIFT_CONTRACT_TEST_COUNT {
@@ -1381,6 +1465,42 @@ fn capture_command(
     })
 }
 
+/// - Prints every line of the command's standard output as it arrives.
+fn stream_command(
+    runner: &Runner,
+    workdir: &str,
+    env: &[(String, String)],
+    command: &[String],
+) -> Result<(String, process::ExitStatus), Vec<String>> {
+    let started = invocation(runner, workdir, env, command);
+    require_host_workdir(runner, &started)?;
+    let mut child = host_command(&started)
+        .stdout(process::Stdio::piped())
+        .stderr(process::Stdio::inherit())
+        .spawn()
+        .map_err(|e| vec![format!("cannot run {}: {e}", started.program)])?;
+    let piped = workbench::required(child.stdout.take(), "the piped standard output")?;
+    let mut reader = io::BufReader::new(piped);
+    let mut bytes = Vec::new();
+    let mut log = String::new();
+    loop {
+        bytes.clear();
+        let read = reader
+            .read_until(b'\n', &mut bytes)
+            .map_err(|e| vec![format!("cannot read from {}: {e}", started.program)])?;
+        if read == 0 {
+            break;
+        }
+        let line = String::from_utf8_lossy(&bytes);
+        print!("{line}");
+        log.push_str(&line);
+    }
+    let status = child
+        .wait()
+        .map_err(|e| vec![format!("cannot wait for {}: {e}", started.program)])?;
+    Ok((log, status))
+}
+
 /// Run one command on the runner, streaming its output, and fail if it fails.
 fn run_command(
     runner: &Runner,
@@ -1423,7 +1543,7 @@ mod tests {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
         Ok([
             android_plan(&roots()?, &abis),
-            ios_plan(&host_roots()?),
+            ios_plan(&host_roots()?, IosPhase::Full),
             kotlin_plan(&host_roots()?),
         ])
     }
@@ -1471,7 +1591,7 @@ mod tests {
     #[test]
     fn ios_plan_adds_the_device_and_simulator_targets_to_the_pinned_toolchain(
     ) -> Result<(), Vec<String>> {
-        let commands = commands(&ios_plan(&host_roots()?));
+        let commands = commands(&ios_plan(&host_roots()?, IosPhase::Full));
         let target_add =
             workbench::required(position_of(&commands, TARGET_ADD), "target add step")?;
         let targets: Vec<&str> = iter_ios_targets().map(|target| target.triple()).collect();
@@ -1493,18 +1613,17 @@ mod tests {
     #[test]
     fn the_ios_plan_hides_every_symbol_but_the_uniffi_exports_of_each_library(
     ) -> Result<(), Vec<String>> {
-        let commands = commands(&ios_plan(&host_roots()?));
+        let commands = commands(&ios_plan(&host_roots()?, IosPhase::Full));
         for generation in binding_layer::GENERATIONS {
             let lib_name = generation.lib_name();
-            let target_dir = format!("{HOST_ROOT}/{BUILD_ROOT}/ios/{}", generation.label());
             let archive_file = ios_static_library(lib_name);
             let object_file =
                 binding_layer::library_file(binding_layer::LIBRARY_PREFIX, lib_name, OBJECT_SUFFIX);
             for target in iter_ios_targets() {
-                let profile_dir = format!("{target_dir}/{}/{PROFILE_DIR}", target.triple());
-                let archive = format!("{profile_dir}/{archive_file}");
-                let hidden_archive = format!("{profile_dir}/{HIDDEN_DIR}/{archive_file}");
-                let object = format!("{profile_dir}/{HIDDEN_DIR}/{object_file}");
+                let slice_dir = format!("{}/{}", ios_slices(), target.triple());
+                let archive = format!("{slice_dir}/{archive_file}");
+                let hidden_archive = format!("{slice_dir}/{HIDDEN_DIR}/{archive_file}");
+                let object = format!("{slice_dir}/{HIDDEN_DIR}/{object_file}");
                 let link = format!(
                     "ld -r -arch {} -platform_version {} {IOS_DEPLOYMENT_TARGET} {IOS_DEPLOYMENT_TARGET} -force_load {archive} -exported_symbol _uniffi_{lib_name}_* -exported_symbol _ffi_{lib_name}_* -o {object}",
                     target.arch(), target.platform()
@@ -1551,7 +1670,7 @@ mod tests {
 
     #[test]
     fn the_ios_plan_ends_with_the_swift_contract_test() -> Result<(), Vec<String>> {
-        let plan = ios_plan(&host_roots()?);
+        let plan = ios_plan(&host_roots()?, IosPhase::Full);
         let Some(Step::XcodeTest { workdir, scheme }) = plan.last() else {
             return Err(vec![
                 "the iOS plan does not end with the Swift contract test".to_string(),
@@ -1565,28 +1684,249 @@ mod tests {
         Ok(())
     }
 
+    const IOS_WORKFLOW: &str = ".github/workflows/binding-layer-ios.yaml";
+    const MATRIX_TARGETS_KEY: &str = "target: [";
+    const CARGO_BUILD: &str = "cargo build";
+    const LIBRARY_FLAG: &str = "--library";
+    const ASSEMBLY_PROGRAMS: [&str; 3] = ["ld ", "lipo ", "xcodebuild "];
+
+    fn ios_slices() -> String {
+        format!("{HOST_ROOT}/{BUILD_ROOT}/ios/{SLICES_DIR}")
+    }
+
+    fn copies(plan: &[Step]) -> Vec<(String, String)> {
+        plan.iter()
+            .filter_map(|step| match step {
+                Step::Copy { from, to } => Some((
+                    from.to_string_lossy().to_string(),
+                    to.to_string_lossy().to_string(),
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn after_the_toolchain(commands: Vec<String>) -> Vec<String> {
+        let first = commands
+            .iter()
+            .rposition(|command| command.starts_with("rustup"))
+            .map_or(0, |at| at + 1);
+        commands[first..].to_vec()
+    }
+
     #[test]
-    fn an_ios_output_the_swift_package_does_not_read_is_refused_before_the_plan(
+    fn the_ios_slice_plan_builds_one_triple_and_delivers_its_archives() -> Result<(), Vec<String>> {
+        for target in iter_ios_targets() {
+            let triple = target.triple();
+            let plan = ios_plan(&host_roots()?, IosPhase::Slice(target));
+            let commands = commands(&plan);
+            let target_add =
+                workbench::required(position_of(&commands, TARGET_ADD), "target add step")?;
+            assert_eq!(commands[target_add], format!("{TARGET_ADD} {triple}"));
+            let builds: Vec<&String> = commands
+                .iter()
+                .filter(|command| command.starts_with(CARGO_BUILD))
+                .collect();
+            assert_eq!(builds.len(), GENERATIONS_PER_BUILD);
+            assert!(builds
+                .iter()
+                .all(|command| command.contains(&format!("--target {triple}"))));
+            assert!(commands.iter().all(|command| {
+                !command.contains(LIBRARY_FLAG)
+                    && ASSEMBLY_PROGRAMS
+                        .iter()
+                        .all(|program| !command.starts_with(program))
+            }));
+            let delivered: Vec<String> = copies(&plan).into_iter().map(|(_, to)| to).collect();
+            let expected: Vec<String> = binding_layer::GENERATIONS
+                .map(|generation| {
+                    format!(
+                        "{}/{triple}/{}",
+                        ios_slices(),
+                        ios_static_library(generation.lib_name())
+                    )
+                })
+                .to_vec();
+            assert_eq!(delivered, expected);
+            let describes = plan
+                .iter()
+                .filter(|step| matches!(step, Step::Describe { .. }))
+                .count();
+            assert_eq!(describes, usize::from(target == IosTarget::Device));
+            assert!(!matches!(plan.last(), Some(Step::XcodeTest { .. })));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn the_ios_assembly_plan_compiles_no_target_and_reads_only_the_slices(
     ) -> Result<(), Vec<String>> {
-        let diagnostic = workbench::refused(refuse_an_ios_output_the_swift_package_does_not_read(
-            &host_roots()?,
+        let plan = ios_plan(&host_roots()?, IosPhase::Assembly);
+        let commands = commands(&plan);
+        assert!(position_of(&commands, TARGET_ADD).is_none());
+        assert!(commands
+            .iter()
+            .all(|command| !command.starts_with(CARGO_BUILD)));
+        for generation in binding_layer::GENERATIONS {
+            for target in iter_ios_targets() {
+                let built = format!(
+                    "{HOST_ROOT}/{BUILD_ROOT}/ios/{}/{}",
+                    generation.label(),
+                    target.triple()
+                );
+                assert!(
+                    commands.iter().all(|command| !command.contains(&built)),
+                    "a command reads {built}"
+                );
+            }
+        }
+        assert!(plan
+            .iter()
+            .all(|step| !matches!(step, Step::Describe { .. })));
+        let descriptor = (
+            format!(
+                "{}/{}/{}",
+                ios_slices(),
+                IosTarget::Device.triple(),
+                binding_layer::DESCRIPTOR_FILE
+            ),
+            format!("{OUTSIDE_OUT}/{}", binding_layer::DESCRIPTOR_FILE),
+        );
+        assert!(copies(&plan).contains(&descriptor));
+        assert!(matches!(plan.last(), Some(Step::XcodeTest { .. })));
+        Ok(())
+    }
+
+    #[test]
+    fn the_full_ios_plan_is_every_slice_plan_followed_by_the_assembly() -> Result<(), Vec<String>> {
+        let roots = host_roots()?;
+        let mut expected = Vec::new();
+        for target in iter_ios_targets() {
+            expected.extend(after_the_toolchain(commands(&ios_plan(
+                &roots,
+                IosPhase::Slice(target),
+            ))));
+        }
+        expected.extend(after_the_toolchain(commands(&ios_plan(
+            &roots,
+            IosPhase::Assembly,
+        ))));
+        assert_eq!(
+            after_the_toolchain(commands(&ios_plan(&roots, IosPhase::Full))),
+            expected
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn the_ios_flags_select_one_slice_or_the_assembly() -> Result<(), Vec<String>> {
+        let simulator = IosTarget::Simulator(IosArch::Arm64);
+        let Arguments { platform, .. } =
+            parse(&["ios", TARGET_FLAG, simulator.triple()].map(String::from))?;
+        assert!(matches!(platform, Platform::Ios(IosPhase::Slice(target)) if target == simulator));
+        let Arguments { platform, .. } = parse(&["ios", ASSEMBLE_FLAG].map(String::from))?;
+        assert!(matches!(platform, Platform::Ios(IosPhase::Assembly)));
+        let both = workbench::refused(parse(
+            &["ios", TARGET_FLAG, simulator.triple(), ASSEMBLE_FLAG].map(String::from),
         ))?
         .concat();
-        assert!(diagnostic.contains(OUTSIDE_OUT));
-        assert!(diagnostic.contains(&binding_layer::swift_package_output_dir()));
-        let consumed = path::Path::new(HOST_ROOT).join(binding_layer::swift_package_output_dir());
-        refuse_an_ios_output_the_swift_package_does_not_read(&Roots::on_host(
-            path::PathBuf::from(HOST_ROOT),
-            consumed,
-        )?)?;
-        let roundabout = path::Path::new(HOST_ROOT)
-            .join(binding_layer::SWIFT_CONTRACT_TESTS_DIR)
-            .join(binding_layer::SWIFT_PACKAGE_FROM_CONTRACT_TESTS)
-            .join(binding_layer::SWIFT_PACKAGE_OUTPUT_DIR);
-        refuse_an_ios_output_the_swift_package_does_not_read(&Roots::on_host(
-            path::PathBuf::from(HOST_ROOT),
-            roundabout,
-        )?)
+        assert!(both.contains(TARGET_FLAG) && both.contains(ASSEMBLE_FLAG));
+        let android_triple = binding_layer::ANDROID_ABIS[FIRST_POSITION].triple;
+        let unknown = workbench::refused(parse(
+            &["ios", TARGET_FLAG, android_triple].map(String::from),
+        ))?
+        .concat();
+        assert!(unknown.contains(android_triple));
+        for other in ["android", "kotlin"] {
+            let diagnostic = workbench::refused(parse(
+                &[other, ASSEMBLE_FLAG, OUT_FLAG, "out"].map(String::from),
+            ))?
+            .concat();
+            assert!(diagnostic.contains(ASSEMBLE_FLAG));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn the_ios_workflow_matrix_names_every_ios_target() -> Result<(), Vec<String>> {
+        let workflow = workbench::read(&workbench::repo_root()?.join(IOS_WORKFLOW))?;
+        let line = workflow
+            .lines()
+            .map(str::trim)
+            .find(|line| line.starts_with(MATRIX_TARGETS_KEY))
+            .ok_or_else(|| vec![format!("{IOS_WORKFLOW} lists no matrix targets")])?;
+        let listed: Vec<&str> = line
+            .trim_start_matches(MATRIX_TARGETS_KEY)
+            .trim_end_matches(']')
+            .split(',')
+            .map(str::trim)
+            .collect();
+        let known: Vec<&str> = iter_ios_targets().map(|target| target.triple()).collect();
+        assert_eq!(listed, known);
+        Ok(())
+    }
+
+    const OUTPUT_FLAGS: [&str; 2] = ["-o", "-output"];
+
+    fn written_paths(step: &Step) -> Vec<String> {
+        match step {
+            Step::Run { command, .. } => command
+                .windows(2)
+                .filter(|pair| OUTPUT_FLAGS.contains(&pair[0].as_str()))
+                .map(|pair| pair[1].clone())
+                .collect(),
+            Step::Copy { to, .. } | Step::Concatenate { to, .. } | Step::Describe { to, .. } => {
+                vec![to.to_string_lossy().to_string()]
+            }
+            Step::FreshDir(_) | Step::Remove(_) | Step::XcodeTest { .. } => vec![],
+        }
+    }
+
+    #[test]
+    fn no_plan_recreates_a_directory_an_earlier_step_wrote_into() -> Result<(), Vec<String>> {
+        let roots = host_roots()?;
+        let plans = [
+            ios_plan(&roots, IosPhase::Full),
+            ios_plan(&roots, IosPhase::Assembly),
+        ];
+        for plan in plans.iter().chain(every_plan()?.iter()) {
+            let mut written: Vec<String> = Vec::new();
+            for step in plan {
+                if let Step::FreshDir(dir) = step {
+                    let dir = format!("{}/", dir.to_string_lossy());
+                    let lost: Vec<&String> = written
+                        .iter()
+                        .filter(|path| path.starts_with(&dir))
+                        .collect();
+                    assert!(lost.is_empty(), "recreating {dir} discards {lost:?}");
+                }
+                written.extend(written_paths(step));
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn the_ios_plan_takes_no_output_directory() -> Result<(), Vec<String>> {
+        let Arguments { platform, out, .. } = parse(&["ios".to_string()])?;
+        assert!(matches!(platform, Platform::Ios(IosPhase::Full)));
+        assert_eq!(out, None);
+        let diagnostic =
+            workbench::refused(parse(&["ios", OUT_FLAG, "out"].map(String::from)))?.concat();
+        assert!(diagnostic.contains(OUT_FLAG));
+        Ok(())
+    }
+
+    #[test]
+    fn the_other_plans_require_an_output_directory() -> Result<(), Vec<String>> {
+        for platform in ["android", "kotlin"] {
+            let Arguments { out, .. } = parse(&[platform, OUT_FLAG, "out"].map(String::from))?;
+            assert!(out.is_some_and(|out| out.ends_with("out")));
+            let Arguments { out, .. } = parse(&[platform.to_string()])?;
+            let diagnostic = workbench::refused(required_out(out))?.concat();
+            assert!(diagnostic.contains(OUT_FLAG));
+        }
+        Ok(())
     }
 
     #[test]
@@ -1677,7 +2017,10 @@ mod tests {
     fn the_android_and_ios_plans_describe_the_wallet_build_with_cargo_messages(
     ) -> Result<(), Vec<String>> {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
-        for plan in [android_plan(&roots()?, &abis), ios_plan(&host_roots()?)] {
+        for plan in [
+            android_plan(&roots()?, &abis),
+            ios_plan(&host_roots()?, IosPhase::Full),
+        ] {
             let describes: Vec<_> = plan
                 .iter()
                 .filter_map(|step| match step {
@@ -1976,7 +2319,7 @@ mod tests {
 
     #[test]
     fn the_host_takes_an_output_directory_outside_the_root() -> Result<(), Vec<String>> {
-        let plan = ios_plan(&host_roots()?);
+        let plan = ios_plan(&host_roots()?, IosPhase::Full);
         assert!(matches!(
             plan.first(),
             Some(Step::FreshDir(directory)) if directory == path::Path::new(OUTSIDE_OUT)

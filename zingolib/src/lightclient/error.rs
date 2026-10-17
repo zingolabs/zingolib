@@ -25,6 +25,8 @@ pub enum LightClientError {
     /// Sync error.
     #[error("Sync error.")]
     SyncError(#[from] SyncError<WalletError>),
+    #[error("The sync task panicked: {0}")]
+    SyncPanicked(String),
     /// Sync mode error.
     #[error("Sync mode error.")]
     SyncModeError(#[from] SyncModeError),

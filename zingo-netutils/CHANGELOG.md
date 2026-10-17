@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `time::test::WALLET_RECORD_LAG_BOUND`, behind `testutils`. The live test
+  that bounded the sender's wallet record reaching the mempool retired
+  with the regtest removal, and no other test enforced the bound.
+
 ### Fixed
 
 ## [6.0.0] - 2026-10-15
@@ -103,15 +107,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Socks5Indexer::get_latest_block`: the `GetLatestBlock` tip fetch through
   the local SOCKS5 proxy, the lightest liveness probe an indexer answers,
   used by the attach readiness round trip and by live-indexer discovery.
-- The `responsiveness` module partitions network operations at compile
-  time: the sealed `Responsiveness` trait with the `Critical` and
-  `NonCritical` marker types, the `ResponsivenessClass` enum with
-  `wire`, `parse`, and `launch_policy`, and the
-  `RESERVATION_CLUTCH_SIZE` constant.
-- `LaunchPolicy::Saturating` launches the full clutch at once; a
-  Critical acquisition races under it.
-- The proxy binary accepts `--responsiveness <critical|non-critical>`
-  and defaults a bare invocation to critical.
 - `time::TRANSMISSION_HEDGE_INTERVAL` names the send escalation's
   silence interval, derived as `PER_ATTEMPT_CONNECT_TIMEOUT +
   MIXNET_ROUND_TRIP_BOUND` so a responsive Destination's confirmed
@@ -122,9 +117,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: `rand` 0.10. `provider::rotation_interval` takes a `rand` 0.10
   generator, and the exit tiers shuffle with the thread-local generator
   where they drew `rand::rngs::OsRng`, a type `rand` 0.10 removed.
-- `lightwallet-protocol` moves to 0.4.0, the upstream rev whose committed
-  bindings carry the Ironwood proto fields. The workspace no longer enables
-  `rebuild-proto`, so a build of zingo-netutils no longer runs protoc.
+- `lightwallet-protocol` moves from 0.3.0 to 0.4.0, whose committed
+  bindings carry the Ironwood proto fields.
 - `time::MEMPOOL_DRAIN_SETTLE` is raised from 200 ms to 750 ms, and
   `time::MEMPOOL_DRAIN_CEILING` from 1 s to 1.5 s to keep the settle window
   inside it. zaino polls the validator's mempool every 500 ms by default, so
@@ -194,12 +188,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rendering now happens inside the connector, so callers pass the typed
   address they already hold and never render it.
 
-- BREAKING: `NymProxy::start` and `NymProxy::start_with_progress` take
-  a `R: Responsiveness` type parameter that names the acquisition's
-  responsiveness class.
-- BREAKING: the `MAX_PARALLEL_CONNECTS` constant is renamed
-  `RESERVATION_CLUTCH_SIZE`; the race width is the clutch of exit
-  reservations, never an independent parameter (ADR 0035).
 - BREAKING: the `arm_race` planner speaks ADR 0035's pull vocabulary.
   `PullFailure` (was `ArmFailure`) carries an `arm` field (was
   `candidate`), `RaceEvent::PullFailed` replaces `RaceEvent::ArmFailed`,
@@ -231,12 +219,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ATTACH_PROBE_INTERVAL`), and `ATTACH_LISTENER_RETRY_PAUSE` (was
   `ATTACH_HEALTH_RETRY_PAUSE`), and `ATTACH_READINESS_BUDGET` retunes
   from 61 s to 11 s.
-- BREAKING: the responsiveness classes are renamed for the tradeoff they
-  declare: `PrioritiseSpeed` (was `Critical`, saturating) and
-  `PrioritisePrivacy` (was `NonCritical`, hedged), across the marker
-  types, the `ResponsivenessClass` variants, and the wire tokens
-  (`--responsiveness <prioritise-speed|prioritise-privacy>`). A class
-  names the acquisition's declared priority, never who waits.
 - BREAKING: the Exit Node vocabulary replaces "provider" throughout the
   proxy API (ADR 0038's glossary; "provider" is Loopix's word for the
   gateway role, a false friend). `NymProxy::exit_node`,
@@ -250,30 +232,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- BREAKING: the responsiveness partition is retired. The `Responsiveness`
-  trait, the `PrioritiseSpeed` and `PrioritisePrivacy` marker types,
-  `ResponsivenessClass`, its wire token, and the proxy binary's
-  `--responsiveness` argument are gone; `NymProxy::start` and `start_over`
-  lose their type parameter. Every acquisition now races under the one
-  hedged launch policy (`arm_race::acquisition_launch_policy`), an
-  arm wins by binding, and the child-side Sentinel gate is deleted: proof
-  of the bound exit belongs to the layer above the SOCKS5 seam, which
-  probes once per birth instead of once per losing arm. The speed class's
-  in-race proving starved acquisitions whenever no arm could complete a
-  round trip quickly, stalling the session tunnel at `Bootstrapping`
-  past 90 seconds in three consecutive measured runs.
-- BREAKING: the retirement's residue is gone with it. The `responsiveness`
-  module is deleted, with `RESERVATION_CLUTCH_SIZE` and
-  `acquisition_launch_policy` re-homed in `arm_race` beside the policy they
-  configure; `LaunchPolicy::Saturating`, which nothing outside its own
-  tests constructed, is removed; and `NymProxyError::CarriesNothing`, whose
-  only mint left with the child-side Sentinel gate, is removed.
-
 - BREAKING: `live_indexer_discovery::DiscoveredIndexer` carries `tip: BlockId`
   where it carried `info: LightdInfo`, because discovery now probes the tip.
-- BREAKING: the `zingo-nym-proxy-ffi` crate and the `uniffi-bindgen`
-  helper leave this workspace; zingo-mobile now hosts the mobile UniFFI
-  proxy shim in its own `nym-host` workspace (zingo-mobile PR #1251).
 
 ### Fixed
 

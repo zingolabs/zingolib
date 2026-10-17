@@ -154,8 +154,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::traits::SyncWallet::get_transparent_addresses` and
   `get_transparent_addresses_mut` document that the returned addresses must be
   in use and must not include gap addresses.
-- `sync::SyncResult` `Display` output is headed "Sync result" instead of
-  "Sync completed succesfully", since sync may now return on explicit shutdown.
 - BREAKING: the truncation rescan announces itself. `error::SyncError::PoolHistoryReopened`
   is now a struct variant carrying the pool, the rescan height, the
   disagreeing block, and both tree sizes, and it renders one

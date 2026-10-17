@@ -43,12 +43,21 @@ export function serializePin({ commit, digests }) {
   return `${JSON.stringify({ commit, digests: sorted }, null, 2)}\n`;
 }
 
+export const ARCHIVE_MEDIA_TYPE = 'application/gzip';
+
+export function oldShape(found) {
+  return !found.layers.every(layer => layer.mediaType === ARCHIVE_MEDIA_TYPE);
+}
+
 export function checkTag(platform, commit, pinned, found) {
   if (found.kind !== 'bundle') {
     return { kind: found.kind, platform, commit };
   }
   if (found.digest !== pinned) {
     return { kind: 'movedTag', platform, commit, pinned, found: found.digest };
+  }
+  if (oldShape(found)) {
+    return { kind: 'oldShape', platform, commit };
   }
   return { kind: 'agrees' };
 }
@@ -64,6 +73,9 @@ function judge(current, platform, commit, found) {
       commit,
       revision: found.revision,
     };
+  }
+  if (oldShape(found)) {
+    return { kind: 'oldShape', platform, commit };
   }
   const pinned = current.kind === 'pin' && current.commit === commit;
   if (pinned && current.digests[platform]) {

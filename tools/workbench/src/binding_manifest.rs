@@ -20,7 +20,7 @@ const COMMIT_KEY: &str = "commit";
 const SINCE_KEY: &str = "since";
 const AUDITED_KEY: &str = "audited";
 const QUOTE: char = '"';
-const COMMIT_LENGTH: usize = 40;
+pub const COMMIT_LENGTH: usize = 40;
 const COMMIT_EXPECTATION: &str = "a full lowercase commit hash";
 const DIGEST_PREFIX: &str = "sha256:";
 const DIGEST_HEX_LENGTH: usize = 64;
@@ -30,8 +30,9 @@ const CHECK_FLAG: &str = "--check";
 const BASE_FLAG: &str = "--base";
 const ALL_DIGESTS_FLAG: &str = "--all-digests";
 const NEWEST_FLAG: &str = "--newest";
+const PUBLISH_AT_FLAG: &str = "--publish-at";
 const USAGE: &str =
-    "usage: binding-manifest --check [--base <ref>] [--all-digests] | binding-manifest --newest | binding-manifest --orasust-version";
+    "usage: binding-manifest --check [--base <ref>] [--all-digests] [--publish-at <ref>] | binding-manifest --newest [--publish-at <ref>] | binding-manifest --orasust-version";
 pub const PUBLISH_COMMAND: &str = "/publish";
 const CHECKOUTS_DIR: &str = "target/binding-manifest";
 const PACKAGE_DIR_OPEN: &str = " (";
@@ -123,7 +124,7 @@ fn hex_value(
     }
 }
 
-fn commit_value(key: &str, value: &str) -> Result<String, Vec<String>> {
+pub fn commit_value(key: &str, value: &str) -> Result<String, Vec<String>> {
     hex_value(key, value, value, COMMIT_LENGTH, COMMIT_EXPECTATION)
 }
 
@@ -279,6 +280,35 @@ pub fn validate(entries: &[Entry]) -> Result<(), Vec<String>> {
     crate::verdict(diagnostics)
 }
 
+pub fn names_the_built_commit(label: &str, commit: &str, builds: &str) -> Option<String> {
+    (commit != builds).then(|| {
+        format!(
+            "{label} names {commit}, not {builds}, the commit whose own workflow and tool `{PUBLISH_COMMAND}` runs; point the entry at {builds} and merge it into the branch"
+        )
+    })
+}
+
+pub fn awaiting_name_the_built_commit(entries: &[Entry], builds: &str) -> Result<(), Vec<String>> {
+    crate::verdict(
+        entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| !awaited(entry).is_empty())
+            .filter_map(|(index, entry)| {
+                names_the_built_commit(
+                    &format!(
+                        "entry {} ({}) awaits `{PUBLISH_COMMAND}` and",
+                        ordinal(index),
+                        entry.commit
+                    ),
+                    &entry.commit,
+                    builds,
+                )
+            })
+            .collect(),
+    )
+}
+
 pub fn structure(entries: &[Entry]) -> Result<(), Vec<String>> {
     let mut diagnostics = Vec::new();
     for (index, entry) in entries.iter().enumerate() {
@@ -379,6 +409,15 @@ pub fn entries_at(root: &Path, revision: Option<&str>) -> Result<Vec<Entry>, Vec
     let entries = parse_at(root, revision)?;
     validate(&entries).map_err(|diagnostics| located_at(revision, diagnostics))?;
     Ok(entries)
+}
+
+pub fn published_entries(root: &Path) -> Result<Vec<Entry>, Vec<String>> {
+    let entries = parse_at(root, None)?;
+    structure(&entries)?;
+    Ok(entries
+        .into_iter()
+        .filter(|entry| awaited(entry).is_empty())
+        .collect())
 }
 
 /// - Runs `cargo metadata` as a child process in `checkout`, once per Binding Layer crate.
@@ -538,6 +577,13 @@ fn merged_base<'a>(root: &Path, base: Option<&'a str>) -> Result<Option<&'a str>
     Ok(Some(base))
 }
 
+/// - Runs `git rev-parse` in `root` when `--publish-at` names a revision.
+fn publish_at(root: &Path, args: &[String]) -> Result<Option<String>, Vec<String>> {
+    crate::flag_value(args, PUBLISH_AT_FLAG)?
+        .map(|revision| crate::commit_of(root, revision))
+        .transpose()
+}
+
 pub fn private_package_hint(name: &str) -> String {
     format!(
         "{name} cannot be read without a token; a package that a workflow's first push creates \
@@ -594,6 +640,8 @@ fn registry_diagnostics(entries: &[Entry]) -> Result<Vec<String>, Vec<String>> {
 }
 
 /// - Reads `bindings/published.toml` and, with `--base`, its copy at that git revision.
+/// - Runs `git rev-parse` in `root` when `--publish-at` names a revision, and refuses an entry
+///   that awaits `/publish` and names another commit.
 /// - Runs `git` child processes in `root`, and `cargo metadata` in a detached worktree of each
 ///   entry appended after the base's.
 /// - Runs `orasust resolve` and `orasust manifest fetch` as child processes, in series, once per
@@ -604,7 +652,10 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     match args.first().map(String::as_str) {
         Some(CHECK_FLAG) => check(root, args),
         Some(NEWEST_FLAG) => {
-            println!("{}", newest_awaiting(root)?);
+            println!(
+                "{}",
+                newest_awaiting(root, publish_at(root, args)?.as_deref())?
+            );
             Ok(())
         }
         Some(crate::orasust::VERSION_FLAG) => {
@@ -616,7 +667,16 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
 }
 
 fn check(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
-    let head = entries_at(root, None)?;
+    let head = parse_at(root, None)?;
+    let mut diagnostics = validate(&head).err().unwrap_or_default();
+    if let Some(builds) = publish_at(root, args)? {
+        diagnostics.extend(
+            awaiting_name_the_built_commit(&head, &builds)
+                .err()
+                .unwrap_or_default(),
+        );
+    }
+    crate::verdict(diagnostics)?;
     commits_reachable(root, &head)?;
     let merged = match merged_base(root, crate::flag_value(args, BASE_FLAG)?)? {
         Some(base) => {
@@ -669,10 +729,16 @@ pub fn newest_publishable(entries: &[Entry]) -> Result<&str, Vec<String>> {
 /// - Reads `bindings/published.toml` under `root`.
 /// - Runs `git rev-parse` and `git merge-base --is-ancestor` in `root` over every commit the
 ///   manifest names.
-pub fn newest_awaiting(root: &Path) -> Result<String, Vec<String>> {
+pub fn newest_awaiting(root: &Path, builds: Option<&str>) -> Result<String, Vec<String>> {
     let entries = parse_at(root, None)?;
     commits_reachable(root, &entries)?;
-    newest_publishable(&entries).map(str::to_string)
+    let newest = newest_publishable(&entries)?;
+    if let Some(diagnostic) = builds.and_then(|builds| {
+        names_the_built_commit(&format!("the newest entry of {FILE}"), newest, builds)
+    }) {
+        return Err(vec![diagnostic]);
+    }
+    Ok(newest.to_string())
 }
 
 pub fn recorded(
@@ -1196,6 +1262,62 @@ mod tests {
     }
 
     #[test]
+    fn an_awaiting_entry_must_name_the_commit_publish_builds() -> Result<(), Vec<String>> {
+        let published = entry(FIRST, Some(ORIGIN), &PLATFORMS)?;
+        let awaiting = entry(SECOND, None, &[])?;
+        let entries = [published.clone(), awaiting];
+        assert_eq!(awaiting_name_the_built_commit(&entries, SECOND), Ok(()));
+        assert_eq!(
+            awaiting_name_the_built_commit(std::slice::from_ref(&published), SECOND),
+            Ok(())
+        );
+        let diagnostic = crate::refused(awaiting_name_the_built_commit(&entries, FIRST))?.concat();
+        assert!(
+            diagnostic.contains(SECOND)
+                && diagnostic.contains(FIRST)
+                && diagnostic.contains(PUBLISH_COMMAND),
+            "{diagnostic}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn the_newest_entry_is_refused_unless_it_names_the_commit_publish_builds(
+    ) -> Result<(), Vec<String>> {
+        let repo = crate::scratch_dir("newest-publish-at")?;
+        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"])?;
+        let origin = commit_on(&repo, "origin")?;
+        let first = commit_on(&repo, "first")?;
+        let tip = commit_on(&repo, "tip")?;
+        let file = repo.join(FILE);
+        let dir = crate::required(file.parent(), "parent directory")?;
+        std::fs::create_dir_all(dir).map_err(|e| vec![format!("{}: {e}", dir.display())])?;
+        std::fs::write(
+            &file,
+            manifest(&[
+                entry(&first, Some(&origin), &PLATFORMS)?,
+                entry(&tip, None, &[])?,
+            ]),
+        )
+        .map_err(|e| vec![format!("{}: {e}", file.display())])?;
+
+        assert_eq!(newest_awaiting(&repo, None), Ok(tip.clone()));
+        assert_eq!(newest_awaiting(&repo, Some(&tip)), Ok(tip.clone()));
+        let diagnostic = crate::refused(newest_awaiting(&repo, Some(&first)))?.concat();
+        assert!(
+            diagnostic.contains(&tip) && diagnostic.contains(&first),
+            "{diagnostic}"
+        );
+
+        let flag = [PUBLISH_AT_FLAG, crate::BRANCH_TIP].map(String::from);
+        assert_eq!(publish_at(&repo, &[]), Ok(None));
+        assert_eq!(publish_at(&repo, &flag), Ok(Some(tip)));
+        let unresolved = [PUBLISH_AT_FLAG, "no-such-ref"].map(String::from);
+        assert!(publish_at(&repo, &unresolved).is_err());
+        Ok(())
+    }
+
+    #[test]
     fn an_absent_base_checks_every_entry_and_a_present_one_is_kept() -> Result<(), Vec<String>> {
         let root = crate::repo_root()?;
         let no_commit_before = "0".repeat(COMMIT_LENGTH);
@@ -1223,9 +1345,12 @@ mod tests {
     }
 
     #[test]
-    fn the_committed_manifest_parses_and_validates() -> Result<(), Vec<String>> {
+    fn the_committed_manifest_parses_and_its_published_entries_are_complete(
+    ) -> Result<(), Vec<String>> {
         let root = crate::repo_root()?;
-        assert!(entries_at(&root, None).is_ok());
+        let published = published_entries(&root)?;
+        assert!(!published.is_empty());
+        assert_eq!(validate(&published), Ok(()));
         Ok(())
     }
 }

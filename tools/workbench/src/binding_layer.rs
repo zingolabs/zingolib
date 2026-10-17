@@ -1,3 +1,6 @@
+use crate::binding_manifest;
+use std::path;
+
 /// The language of the Android bindings.
 pub const KOTLIN: &str = "kotlin";
 
@@ -117,9 +120,6 @@ pub const SWIFT_PACKAGE_OUTPUT_DIR: &str = "build";
 
 pub const SWIFT_CONTRACT_TESTS_DIR: &str = "zingo-netutils/nym-proxy-ffi/contract-tests";
 
-pub const SWIFT_CONTRACT_TESTS_MANIFEST: &str =
-    "zingo-netutils/nym-proxy-ffi/contract-tests/Package.swift";
-
 pub const SWIFT_CONTRACT_TESTS_PACKAGE: &str = "ZingoBindingsContractTests";
 
 pub const SWIFT_PACKAGE_FROM_CONTRACT_TESTS: &str = "../../../bindings/swift";
@@ -221,20 +221,6 @@ pub fn executed_tests(log: &str) -> Result<usize, Vec<String>> {
         })
 }
 
-pub fn lexical(path: &std::path::Path) -> std::path::PathBuf {
-    let mut resolved = std::path::PathBuf::new();
-    for component in path.components() {
-        match component {
-            std::path::Component::ParentDir => {
-                resolved.pop();
-            }
-            std::path::Component::CurDir => {}
-            other => resolved.push(other),
-        }
-    }
-    resolved
-}
-
 /// The wallet's generated Swift source.
 pub const WALLET_SWIFT: &str = "zingo.swift";
 
@@ -324,11 +310,24 @@ pub const ABI_ARTIFACT: &str = "abi";
 pub const ARTIFACT_KINDS: [&str; 2] = [BUNDLE_ARTIFACT, ABI_ARTIFACT];
 pub const ARTIFACT_WILDCARD: &str = "*";
 const ARTIFACT_SEPARATOR: &str = "-";
-pub const AAR_SUFFIX: &str = "-release.aar";
+pub const ARCHIVE_SUFFIX: &str = ".tar.gz";
+pub const WALLET_MANIFEST: &str = "zingolib/Cargo.toml";
+const MANIFEST_VERSION_PATH: [&str; 2] = ["package", "version"];
+pub const ANDROID_BUILD_DIR: &str = "bindings/android/build";
+pub const MAVEN_REPOSITORY_DIR: &str = "repository";
+pub const MAVEN_GROUP: &str = "org.zingolabs";
+pub const MAVEN_ARTIFACT: &str = "zingo-binding-layer";
+pub const MAVEN_VERSION_PROPERTY: &str = "bindingLayerVersion";
+pub const MAVEN_METADATA_FILE: &str = "maven-metadata.xml";
+pub const MAVEN_PUBLISH_PLUGIN: &str = "maven-publish";
+pub const MAVEN_COMMIT_LENGTH: usize = 16;
+const MAVEN_VERSION_SEPARATOR: &str = "-";
+const MAVEN_COMMIT_KEY: &str = "commit";
 pub const ABIS_OUTPUT: &str = "abis";
 pub const ABI_ARTIFACTS_OUTPUT: &str = "abi_artifacts";
 pub const ABI_PATTERN_OUTPUT: &str = "abi_pattern";
-pub const AAR_GLOB_OUTPUT: &str = "aar_glob";
+pub const ANDROID_REPOSITORY_OUTPUT: &str = "android_repository";
+pub const MAVEN_VERSION_OUTPUT: &str = "maven_version";
 pub const BUNDLE_OUTPUT_PREFIX: &str = "bundle_";
 pub const BUNDLE_PATTERN_OUTPUT: &str = "bundle_pattern";
 pub const IOS_OUT_OUTPUT: &str = "ios_out";
@@ -467,12 +466,45 @@ fn json_object(pairs: impl Iterator<Item = (String, String)>) -> String {
 }
 
 pub fn swift_package_output_dir() -> String {
-    let manifest = std::path::Path::new(SWIFT_PACKAGE_MANIFEST);
+    let manifest = path::Path::new(SWIFT_PACKAGE_MANIFEST);
     let dir = manifest.parent().unwrap_or(manifest);
     format!("{}/{SWIFT_PACKAGE_OUTPUT_DIR}", dir.display())
 }
 
-pub fn artifact_outputs(platforms: &[&str], commit: &str) -> Vec<(String, String)> {
+pub fn maven_repository_dir() -> String {
+    format!("{ANDROID_BUILD_DIR}/{MAVEN_REPOSITORY_DIR}")
+}
+
+pub fn crate_version(manifest: &str) -> Result<String, Vec<String>> {
+    let document: toml_edit::DocumentMut = manifest
+        .parse()
+        .map_err(|error| vec![format!("{WALLET_MANIFEST} does not parse: {error}")])?;
+    MANIFEST_VERSION_PATH
+        .iter()
+        .try_fold(document.as_item(), |item, key| item.get(key))
+        .and_then(toml_edit::Item::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| {
+            vec![format!(
+                "{WALLET_MANIFEST} names no string at {}",
+                MANIFEST_VERSION_PATH.join(".")
+            )]
+        })
+}
+
+pub fn maven_version(crate_version: &str, commit: &str) -> Result<String, Vec<String>> {
+    let commit = binding_manifest::commit_value(MAVEN_COMMIT_KEY, commit.trim())?;
+    Ok(format!(
+        "{crate_version}{MAVEN_VERSION_SEPARATOR}{}",
+        &commit[..MAVEN_COMMIT_LENGTH]
+    ))
+}
+
+pub fn artifact_outputs(
+    platforms: &[&str],
+    commit: &str,
+    crate_version: &str,
+) -> Result<Vec<(String, String)>, Vec<String>> {
     let abis = ANDROID_ABIS.iter().map(|abi| abi.jni_dir);
     let mut outputs = vec![
         (
@@ -490,8 +522,12 @@ pub fn artifact_outputs(platforms: &[&str], commit: &str) -> Vec<(String, String
             artifact_name(ABI_ARTIFACT, ARTIFACT_WILDCARD, commit),
         ),
         (
-            AAR_GLOB_OUTPUT.to_string(),
-            format!("{ARTIFACT_WILDCARD}{AAR_SUFFIX}"),
+            ANDROID_REPOSITORY_OUTPUT.to_string(),
+            maven_repository_dir(),
+        ),
+        (
+            MAVEN_VERSION_OUTPUT.to_string(),
+            maven_version(crate_version, commit)?,
         ),
     ];
     outputs.extend(platforms.iter().map(|platform| {
@@ -505,7 +541,7 @@ pub fn artifact_outputs(platforms: &[&str], commit: &str) -> Vec<(String, String
         artifact_name(BUNDLE_ARTIFACT, ARTIFACT_WILDCARD, commit),
     ));
     outputs.push((IOS_OUT_OUTPUT.to_string(), swift_package_output_dir()));
-    outputs
+    Ok(outputs)
 }
 
 pub fn render_outputs(outputs: &[(String, String)]) -> String {
@@ -721,7 +757,7 @@ mod tests {
         let messages = format!(
             "{{\"reason\":\"build-finished\",\"success\":true}}\n{}{}",
             script(
-                "zingolib_testutils#0.1.0",
+                "zingo-status#0.1.0",
                 "[[\"ZINGOLIB_DESCRIPTOR\",\"wrong\"]]"
             ),
             script(
@@ -853,11 +889,97 @@ mod tests {
         assert!(manifest.contains(&format!(
             "linkerSettings: [.linkedFramework(\"{SWIFT_LINKED_FRAMEWORK}\")]"
         )));
-        assert!(std::path::Path::new(SWIFT_PACKAGE_MANIFEST).ends_with("Package.swift"));
+        assert!(path::Path::new(SWIFT_PACKAGE_MANIFEST).ends_with("Package.swift"));
     }
 
-    fn resolved(base: &str, relative: &str) -> std::path::PathBuf {
-        lexical(&std::path::Path::new(base).join(relative))
+    #[test]
+    fn the_android_gradle_files_name_the_maven_publication() {
+        let manifest = include_str!("../../../bindings/android/build.gradle.kts");
+        let settings = include_str!("../../../bindings/android/settings.gradle.kts");
+        assert!(manifest.contains(&format!("id(\"{MAVEN_PUBLISH_PLUGIN}\")")));
+        assert!(manifest.contains(&format!("group = \"{MAVEN_GROUP}\"")));
+        assert!(manifest.contains(&format!(
+            "providers.gradleProperty(\"{MAVEN_VERSION_PROPERTY}\")"
+        )));
+        assert!(manifest.contains(&format!(
+            "layout.buildDirectory.dir(\"{MAVEN_REPOSITORY_DIR}\")"
+        )));
+        assert!(settings.contains(&format!("rootProject.name = \"{MAVEN_ARTIFACT}\"")));
+        assert!(path::Path::new(ANDROID_BUILD_DIR).starts_with("bindings/android"));
+    }
+
+    #[test]
+    fn the_android_unit_tests_gate_on_the_suite_result() {
+        let manifest = include_str!("../../../bindings/android/build.gradle.kts");
+        assert!(manifest.contains("finalizedBy(verifyContractTestsRan)"));
+        assert!(manifest
+            .contains("suite.parent == null && result.testCount != contractTestCount.toLong()"));
+        assert!(manifest.contains("it.state.executed && !(it.state.didWork || it.state.upToDate)"));
+        assert!(!manifest.contains("reports.junitXml"));
+    }
+
+    #[test]
+    fn the_bundle_pin_package_names_the_maven_contract() {
+        let reader = include_str!("../../../bindings/pin/lib/maven_repository.mjs");
+        assert!(reader.contains(&format!("REPOSITORY = '{MAVEN_REPOSITORY_DIR}';")));
+        assert!(reader.contains(&format!("METADATA = '{MAVEN_METADATA_FILE}';")));
+        assert!(reader.contains(&format!("COMMIT_CHARACTERS = {MAVEN_COMMIT_LENGTH};")));
+        assert!(reader.contains(&format!("VERSION_SEPARATOR = '{MAVEN_VERSION_SEPARATOR}';")));
+        let fetch = include_str!("../../../bindings/pin/lib/fetch_binding_layer.mjs");
+        assert!(fetch.contains(&format!("ARCHIVE_SUFFIX = '{ARCHIVE_SUFFIX}';")));
+    }
+
+    #[test]
+    fn the_crate_version_reads_the_package_version_of_the_wallet_manifest(
+    ) -> Result<(), Vec<String>> {
+        assert_eq!(
+            crate_version("[package]\nname = \"zingolib\"\nversion = \"6.0.0\"\n"),
+            Ok("6.0.0".to_string())
+        );
+        assert!(
+            crate::refused(crate_version("[package]\nname = \"zingolib\"\n"))?
+                .concat()
+                .contains("package.version")
+        );
+        assert!(crate::refused(crate_version("[package"))?
+            .concat()
+            .contains("does not parse"));
+        Ok(())
+    }
+
+    #[test]
+    fn the_maven_version_joins_the_crate_version_and_sixteen_commit_characters() {
+        let commit = "ba7336710419c9ac1e9362ac1b4e5b0073ff477e";
+        assert_eq!(
+            maven_version("6.0.0", &format!("{commit}\n")),
+            Ok("6.0.0-ba7336710419c9ac".to_string())
+        );
+        let diagnostic = |commit: &str| {
+            maven_version("6.0.0", commit)
+                .err()
+                .unwrap_or_default()
+                .concat()
+        };
+        assert!(diagnostic("ba733").contains("full lowercase"));
+        assert!(diagnostic(&commit.to_uppercase()).contains("full lowercase"));
+    }
+
+    fn lexical(path: &path::Path) -> path::PathBuf {
+        let mut resolved = path::PathBuf::new();
+        for component in path.components() {
+            match component {
+                path::Component::ParentDir => {
+                    resolved.pop();
+                }
+                path::Component::CurDir => {}
+                other => resolved.push(other),
+            }
+        }
+        resolved
+    }
+
+    fn resolved(base: &str, relative: &str) -> path::PathBuf {
+        lexical(&path::Path::new(base).join(relative))
     }
 
     #[test]
@@ -872,10 +994,8 @@ mod tests {
             ".product(name: \"{SWIFT_PACKAGE}\", package: \"{SWIFT_PACKAGE}\")"
         )));
         assert!(!manifest.contains("products:"));
-        assert!(std::path::Path::new(SWIFT_CONTRACT_TESTS_MANIFEST)
-            .starts_with(SWIFT_CONTRACT_TESTS_DIR));
         let shipped_package = crate::required(
-            std::path::Path::new(SWIFT_PACKAGE_MANIFEST).parent(),
+            path::Path::new(SWIFT_PACKAGE_MANIFEST).parent(),
             "parent of the shipped manifest",
         )?;
         assert_eq!(
@@ -948,24 +1068,42 @@ mod tests {
         Ok(())
     }
 
+    const XCTEST_METHOD_PREFIX: &str = "func test";
+
+    const XCTEST_METHOD_PARAMETERS: &str = "()";
+
+    fn xctest_methods(suite: &str) -> usize {
+        suite
+            .lines()
+            .map(str::trim_start)
+            .filter(|line| line.starts_with(XCTEST_METHOD_PREFIX))
+            .filter(|line| line.contains(XCTEST_METHOD_PARAMETERS))
+            .count()
+    }
+
     #[test]
-    fn the_swift_contract_test_count_is_the_number_of_test_methods() {
+    fn the_swift_contract_test_count_is_the_number_of_xctest_methods() {
         let suite = include_str!(
             "../../../zingo-netutils/nym-proxy-ffi/contract-tests/swift/GoldenWireContractTests.swift"
         );
-        assert_eq!(
-            suite.matches("func test").count(),
-            SWIFT_CONTRACT_TEST_COUNT
-        );
+        assert_eq!(xctest_methods(suite), SWIFT_CONTRACT_TEST_COUNT);
+        let mixed = [
+            "    func testOne() throws {",
+            "    private func testFixture() -> [UInt8] {",
+            "    // func test in a comment",
+            "    func testTwo() {",
+        ]
+        .join("\n");
+        assert_eq!(xctest_methods(&mixed), 2);
     }
 
     #[test]
     fn lexical_resolution_drops_parent_and_current_components() {
         assert_eq!(
-            lexical(std::path::Path::new(
+            lexical(path::Path::new(
                 "/host/zingolib/bindings/android/../swift/./build"
             )),
-            std::path::Path::new("/host/zingolib/bindings/swift/build")
+            path::Path::new("/host/zingolib/bindings/swift/build")
         );
     }
 
@@ -1047,9 +1185,9 @@ mod tests {
     }
 
     #[test]
-    fn the_artifact_outputs_name_every_artifact_of_a_commit_once() {
+    fn the_artifact_outputs_name_every_artifact_of_a_commit_once() -> Result<(), Vec<String>> {
         let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let rendered = render_outputs(&artifact_outputs(&["android", "ios"], commit));
+        let rendered = render_outputs(&artifact_outputs(&["android", "ios"], commit, "6.0.0")?);
         assert_eq!(
             rendered,
             format!(
@@ -1059,13 +1197,15 @@ mod tests {
                  \"x86\":\"binding-layer-abi-x86-{commit}\",\
                  \"x86_64\":\"binding-layer-abi-x86_64-{commit}\"}}\n\
                  abi_pattern=binding-layer-abi-*-{commit}\n\
-                 aar_glob=*-release.aar\n\
+                 android_repository=bindings/android/build/repository\n\
+                 maven_version=6.0.0-aaaaaaaaaaaaaaaa\n\
                  bundle_android=binding-layer-bundle-android-{commit}\n\
                  bundle_ios=binding-layer-bundle-ios-{commit}\n\
                  bundle_pattern=binding-layer-bundle-*-{commit}\n\
                  ios_out=bindings/swift/build\n"
             )
         );
+        Ok(())
     }
 
     #[test]
