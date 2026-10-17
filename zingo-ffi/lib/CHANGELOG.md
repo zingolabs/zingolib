@@ -34,6 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server's before opening the wallet.
 - `ZingolibError::WalletChainMismatch`: `init_from_bytes` returns it, in
   place of `Init`, when the wallet bytes were written for another chain.
+- `ZingolibError::InitConnection`, `InitKey`, `InitBirthday` and
+  `InitWalletFile`, in place of `Init`, for the failures the user can act
+  on. `init_new`, `init_from_seed` and `init_from_ufvk` return
+  `InitConnection` when the server could not be reached. `init_from_seed`
+  and `init_from_ufvk` return `InitKey` when the seed or viewing key does
+  not parse or belongs to another network, and `InitBirthday` when the
+  birthday lies before sapling. `init_from_bytes` returns `InitWalletFile`
+  when the wallet bytes do not decode, and keeps that finding when an
+  offline open goes on to try the other chains. `Init` keeps every other
+  failure, a malformed server URI included.
 
 ### Changed
 - **Breaking:** the bindings come from `#[uniffi::export]` attributes and the
