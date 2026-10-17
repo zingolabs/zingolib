@@ -25,6 +25,10 @@ inputs:
     description: Whether the cache holds CARGO_HOME/bin; off where the image already holds the tools.
     required: false
     default: "true"
+  cache:
+    description: Whether the toolchain action runs rust-cache; off where the job caches cargo itself.
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -48,5 +52,6 @@ runs:
         cache-workspaces: ${{ inputs.workspaces }}
         cache-key: ${{ inputs.key }}
         cache-bin: ${{ inputs.cache-bin }}
+        cache: ${{ inputs.cache }}
         cache-on-failure: "false"
         cache-save-if: ${{ github.ref == 'refs/heads/dev' }}
