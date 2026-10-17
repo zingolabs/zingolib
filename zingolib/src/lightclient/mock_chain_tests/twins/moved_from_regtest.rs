@@ -7,15 +7,14 @@ use zip32::AccountId;
 
 use zcash_protocol::ShieldedPool;
 
-use super::{DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, external_address, fund};
+use super::{DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, REWARD, REWARD_ZATS, fund};
 use crate::check_client_balances;
 use crate::testutils::fee_tables;
 use crate::testutils::lightclient::{from_inputs, get_base_address, get_fees_paid_by_client};
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
+use crate::testutils::synthetic_wallet;
 
-const REWARD_ZATS: u64 = 625_000;
-const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
 const COINBASES: usize = 4;
 
 #[tokio::test]
@@ -90,7 +89,7 @@ async fn sapling_dust_fee_collection() {
     from_inputs::quick_send(
         &mut recipient,
         vec![(
-            &external_address(PoolType::ORCHARD),
+            &synthetic_wallet::external_address(PoolType::ORCHARD),
             fee * FEES_SENT,
             Some("Five times fee."),
         )],
@@ -126,7 +125,11 @@ async fn send_and_sync_with_multiple_notes_no_panic() {
 
     from_inputs::quick_send(
         &mut recipient,
-        vec![(&external_address(PoolType::ORCHARD), PAYMENT, None)],
+        vec![(
+            &synthetic_wallet::external_address(PoolType::ORCHARD),
+            PAYMENT,
+            None,
+        )],
     )
     .await
     .expect("the funded wallet covers the payment and its fee");
@@ -413,7 +416,7 @@ async fn verify_old_wallet_uses_server_height_in_send() {
     from_inputs::quick_send(
         &mut sender,
         vec![(
-            &external_address(PoolType::ORCHARD),
+            &synthetic_wallet::external_address(PoolType::ORCHARD),
             PAYMENT,
             Some("Interrupting sync!!"),
         )],

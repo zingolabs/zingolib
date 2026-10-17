@@ -3,9 +3,12 @@
 use std::cmp::max;
 
 use zcash_primitives::transaction::fees::zip317::{GRACE_ACTIONS, MARGINAL_FEE};
+use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
 
-const PADDED_BUNDLE_ACTIONS: usize = 2;
+use crate::wallet::migration::split;
+
+const PADDED_BUNDLE_ACTIONS: usize = split::MIN_BUNDLE_ACTIONS as usize;
 
 /// Estimates the fee the proposer charges for a one-input send on an
 /// NU6.3-active chain (the default test era, ADR 0009), per ZIP 317
@@ -42,9 +45,6 @@ pub fn one_to_one(
         change = false;
     }
 
-    // Flows per bundle view. Orchard and Ironwood sources both contribute
-    // inputs to the orchard view; shielded payments to Orchard receivers
-    // land in the ironwood view.
     let transparent_inputs: usize = 0;
     let mut transparent_outputs: usize = 0;
     let mut sapling_inputs: usize = 0;
@@ -81,11 +81,7 @@ pub fn one_to_one(
 
     let contribution_transparent = max(transparent_outputs, transparent_inputs);
     let contribution_sapling = padded_actions(sapling_inputs, sapling_outputs);
-    let mut contribution_orchard = padded_actions(orchard_inputs, orchard_outputs);
-    if source_protocol == Some(ShieldedPool::Orchard) && target_pool == PoolType::ORCHARD && change
-    {
-        contribution_orchard *= 2;
-    }
+    let contribution_orchard = padded_actions(orchard_inputs, orchard_outputs);
     let contribution_ironwood = padded_actions(ironwood_inputs, ironwood_outputs);
     conventional_fee(
         contribution_transparent
@@ -122,9 +118,21 @@ pub fn shield(transparent_inputs: usize) -> u64 {
     conventional_fee(transparent_inputs + padded_actions(0, 1))
 }
 
+#[must_use]
+pub fn deshield(transparent_outputs: usize) -> u64 {
+    conventional_fee(transparent_outputs + padded_actions(1, 1))
+}
+
+#[must_use]
+pub fn paid_actions(fee: Zatoshis) -> usize {
+    usize::try_from(fee.into_u64() / MARGINAL_FEE.into_u64())
+        .expect("a fee within the money range pays fewer actions than usize holds")
+}
+
 #[cfg(test)]
 mod tests {
     use zcash_primitives::transaction::fees::zip317;
+    use zcash_protocol::value::Zatoshis;
     use zcash_protocol::{PoolType, ShieldedPool};
 
     use crate::testutils::fee_tables;
@@ -185,33 +193,43 @@ mod tests {
     }
 
     #[test]
-    fn an_orchard_receiver_and_an_ironwood_receiver_are_one_cell_for_every_source_without_change() {
+    fn an_orchard_receiver_and_an_ironwood_receiver_are_one_cell_for_every_source() {
         for source in [
             None,
             Some(ShieldedPool::Sapling),
             Some(ShieldedPool::Orchard),
             Some(ShieldedPool::Ironwood),
         ] {
+            for change in [false, true] {
+                assert_eq!(
+                    fee_tables::one_to_one(source, PoolType::ORCHARD, change),
+                    fee_tables::one_to_one(source, PoolType::IRONWOOD, change),
+                    "source {source:?}, change {change}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_deshield_pays_one_action_per_transparent_output_plus_the_padded_shielded_spend() {
+        for transparent_outputs in 1..=4 {
             assert_eq!(
-                fee_tables::one_to_one(source, PoolType::ORCHARD, false),
-                fee_tables::one_to_one(source, PoolType::IRONWOOD, false),
-                "source {source:?}"
+                fee_tables::deshield(transparent_outputs),
+                fee_tables::conventional_fee(
+                    transparent_outputs + fee_tables::padded_actions(1, 1)
+                )
             );
         }
     }
 
     #[test]
-    fn an_orchard_receiver_and_an_ironwood_receiver_are_one_cell_for_every_non_orchard_source_with_change()
-     {
-        for source in [
-            None,
-            Some(ShieldedPool::Sapling),
-            Some(ShieldedPool::Ironwood),
-        ] {
+    fn the_paid_actions_invert_the_conventional_fee() {
+        for logical_actions in 0..=zip317::GRACE_ACTIONS + 4 {
+            let fee = Zatoshis::from_u64(fee_tables::conventional_fee(logical_actions))
+                .expect("a conventional fee stays within the money range");
             assert_eq!(
-                fee_tables::one_to_one(source, PoolType::ORCHARD, true),
-                fee_tables::one_to_one(source, PoolType::IRONWOOD, true),
-                "source {source:?}"
+                fee_tables::paid_actions(fee),
+                fee_tables::conventional_actions(logical_actions)
             );
         }
     }

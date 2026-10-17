@@ -57,10 +57,11 @@ async fn pre_ironwood_funded_recipient(
 /// - Mines the chain across the deferred NU6.3 activation boundary and syncs the recipient past it.
 async fn cross_ironwood_activation(net: &MockNet, recipient: &mut LightClient) {
     let tip = net.chain.read().await.tip();
-    let runway = runway_past_activation(tip, DEFERRED_NU6_3).unwrap_or_else(|| {
+    let activation = u32::from(super::ironwood_activation(net).height());
+    let runway = runway_past_activation(tip, activation).unwrap_or_else(|| {
         panic!(
-            "the funding must confirm below the activation at {DEFERRED_NU6_3}, but the chain \
-             is at {tip}"
+            "the funding must confirm below the activation at {activation}, but the chain is at \
+             {tip}"
         )
     });
     net.chain.write().await.mine_empty_blocks(runway);

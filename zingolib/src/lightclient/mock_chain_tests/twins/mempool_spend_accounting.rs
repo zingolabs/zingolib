@@ -3,7 +3,7 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedPool};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use super::{external_address, funded_client};
+use super::funded_client;
 use crate::lightclient::LightClient;
 use crate::testutils::fee_tables;
 use crate::testutils::lightclient::from_inputs;
@@ -95,7 +95,7 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     let small_txids = from_inputs::quick_send(
         &mut recipient,
         vec![(
-            &external_address(PoolType::ORCHARD),
+            &synthetic_wallet::external_address(PoolType::ORCHARD),
             SMALL,
             Some("Outgoing Memo"),
         )],
@@ -137,7 +137,11 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     // Cycle two: a larger cross-pool send, spending the change note.
     let big_txids = from_inputs::quick_send(
         &mut recipient,
-        vec![(&synthetic_wallet::external_sapling_address(), BIG, None)],
+        vec![(
+            &synthetic_wallet::external_address(PoolType::SAPLING),
+            BIG,
+            None,
+        )],
     )
     .await
     .expect("the cross-pool send builds and transmits");

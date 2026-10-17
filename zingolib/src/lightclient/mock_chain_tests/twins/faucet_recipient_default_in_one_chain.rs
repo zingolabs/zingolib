@@ -6,7 +6,7 @@ use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
-use super::{HOSPITAL_MUSEUM, untracked_history, zatoshis};
+use super::{HOSPITAL_MUSEUM, REWARD, REWARD_ZATS, untracked_history, zatoshis};
 use crate::check_client_balances;
 use crate::lightclient::LightClient;
 use crate::perspective::value_transfer::{
@@ -21,8 +21,6 @@ use crate::wallet::summary::data::TransactionSummary;
 use crate::wallet::transparent::OpReturnData;
 
 const FAUCET_SEED: &str = zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED;
-const REWARD_ZATS: u64 = 625_000;
-const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
 const SETUP_IRONWOOD_BLOCKS: u64 = 4;
 const BLOCK_ONE_SAPLING_COINBASE: u64 = REWARD_ZATS;
 const SAPLING_NOTE_STEP: u64 = 10_000;

@@ -2,9 +2,9 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::value::Zatoshis;
 
 use super::{
-    DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, blocks_to_reach, confirmed_balance,
-    continuous_sync_wallet_settings, external_address, external_transparent_address, fund,
-    fund_client, funded_client,
+    DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, REWARD, REWARD_ZATS, blocks_to_reach,
+    confirmed_balance, continuous_sync_wallet_settings, fund, fund_client, funded_client,
+    ironwood_activation,
 };
 use crate::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind, ValueTransfers,
