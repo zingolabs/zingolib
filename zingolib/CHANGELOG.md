@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `data::PollReport` gains the `Panicked(String)` variant, which
   `poll_sync` returns when the sync task panicked and tokio contained the
   panic. Every exhaustive match on `PollReport` needs an arm for it.
+- **Breaking:** `LightClient::start_mixnet_session` returns
+  `Result<mixnet::SessionStarted, mixnet::SessionStartError>` in place of
+  `Result<(), TransportError>`. `SessionStarted` reports what the driver did:
+  `OptedOut`, `Spawned { resolution }` with the `ProxyResolution` the one
+  precedence rule chose, or `Attached { socks5_addr }`. `SessionStartError`
+  carries the same provenance beside its cause, as `Spawn { resolution,
+  source }` or `Attach { socks5_addr, source }`, so a consumer names the path
+  and the rung of the precedence that chose it without resolving the path a
+  second time.
+- **Breaking:** `mixnet::provision::resolve_proxy_path` returns a
+  `ProxyResolution`, the chosen path with its `ProxySource` (`Explicit`,
+  `Environment`, `Bundled`, or `PathLookup { bundled_dir }`), in place of the
+  bare path. `ProxyResolution` renders the path and its provenance through
+  `Display`, and the `PathLookup` rendering names every source that was empty.
 
 ### Deprecated
 
