@@ -41,6 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation a second time to decide where log output goes.
 
 ### Changed
+- BREAKING: a `--server` value without a scheme now completes to `https://`,
+  and a value without a port to its scheme's default port (`:443` for
+  `https`, `:80` for `http`) instead of `http://` and `:9067`. A plaintext
+  regtest indexer needs an explicit `http://`.
 - BREAKING: moves to the librustzcash NU7 pre-release cohort zingolib
   pins. `parse_viewkey` lists a P2SH viewing key item as `transparent`
   beside a P2PKH one.
@@ -185,6 +189,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The interactive prompt and one-shot mode parse through one grammar,
   exactly once, at the process boundary. The command channel carries parsed
   values, so no string is re-parsed inside the process.
+
+### Fixed
+- `Failed to create lightclient.` renders the whole error chain, so a
+  refused indexer connection names its transport cause (`bad uri`,
+  connection refused, timeout) instead of the bare `gRPC client error.`
+  layer.
 
 ### Removed
 - **Breaking.** The `nym-diary` feature and the `--indexer-diary` flag are

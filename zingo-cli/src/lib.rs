@@ -1308,11 +1308,11 @@ async fn build_zingo_config(filled_template: &CliConfigTemplate) -> std::io::Res
             Some(server) => async move {
                 zingolib::netutils::GrpcIndexer::new(server)
                     .await
-                    .map_err(|e| format!("{e:?}"))?
+                    .map_err(|e| commands::render_error_chain(&e))?
                     .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
                     .await
                     .map(|block_id| block_id.height as u32)
-                    .map_err(|e| format!("{e:?}"))
+                    .map_err(|e| commands::render_error_chain(&e))
             }
             .await
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?,
@@ -1364,9 +1364,12 @@ async fn startup_async(
 ) -> std::io::Result<(LightClient, SyncRecovery)> {
     let config = build_zingo_config(filled_template).await?;
 
-    let mut lightclient = LightClient::new(config, false)
-        .await
-        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
+    let mut lightclient = LightClient::new(config, false).await.map_err(|e| {
+        std::io::Error::other(format!(
+            "Failed to create lightclient. {}",
+            commands::render_error_chain(&e)
+        ))
+    })?;
 
     if matches!(filled_template.mode, Operations::Interactive) {
         // Print startup Messages
