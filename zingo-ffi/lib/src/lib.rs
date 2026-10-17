@@ -785,7 +785,7 @@ fn build_connection_params(
         .ok_or_else(|| ZingolibError::init("Not a valid performance level!"))?;
     let wallet_settings = WalletSettings {
         sync_config: SyncConfig {
-            transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            transparent_address_discovery: TransparentAddressDiscovery::default(),
             performance_level: level,
             shutdown_on_completion: true,
         },
