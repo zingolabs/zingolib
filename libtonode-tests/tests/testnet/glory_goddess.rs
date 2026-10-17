@@ -37,43 +37,35 @@ async fn shield(environment: &mut NetworkedTestEnvironment, client: &mut LightCl
         .expect("the shield proposes, transmits and confirms on testnet");
 }
 
-#[tokio::test]
-async fn testnet_send_to_self_orchard_glory_goddess() {
+async fn faucet_self_send(pool: PoolType, value: u64) -> (NetworkedTestEnvironment, LightClient) {
     let mut environment = NetworkedTestEnvironment::setup().await;
     let mut client = environment.create_faucet().await;
-    self_send(
-        &mut environment,
-        &mut client,
-        PoolType::Shielded(ShieldedPool::Orchard),
-        SELF_SEND_VALUE,
-    )
-    .await;
+    self_send(&mut environment, &mut client, pool, value).await;
+    (environment, client)
 }
 
-#[tokio::test]
-async fn testnet_send_to_self_sapling_glory_goddess() {
-    let mut environment = NetworkedTestEnvironment::setup().await;
-    let mut client = environment.create_faucet().await;
-    self_send(
-        &mut environment,
-        &mut client,
-        PoolType::Shielded(ShieldedPool::Sapling),
-        SELF_SEND_VALUE,
-    )
-    .await;
+macro_rules! shielded_self_send_test {
+    ($name:ident, $pool:expr) => {
+        #[tokio::test]
+        async fn $name() {
+            faucet_self_send(PoolType::Shielded($pool), SELF_SEND_VALUE).await;
+        }
+    };
 }
+
+shielded_self_send_test!(
+    testnet_send_to_self_orchard_glory_goddess,
+    ShieldedPool::Orchard
+);
+shielded_self_send_test!(
+    testnet_send_to_self_sapling_glory_goddess,
+    ShieldedPool::Sapling
+);
 
 #[tokio::test]
 async fn testnet_send_to_self_transparent_and_then_shield_glory_goddess() {
-    let mut environment = NetworkedTestEnvironment::setup().await;
-    let mut client = environment.create_faucet().await;
-    self_send(
-        &mut environment,
-        &mut client,
-        PoolType::Transparent,
-        TRANSPARENT_SELF_SEND_THEN_SHIELD,
-    )
-    .await;
+    let (mut environment, mut client) =
+        faucet_self_send(PoolType::Transparent, TRANSPARENT_SELF_SEND_THEN_SHIELD).await;
     shield(&mut environment, &mut client).await;
 }
 

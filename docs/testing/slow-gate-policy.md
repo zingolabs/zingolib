@@ -4,20 +4,17 @@ Repository-wide policy, set 2026-07-08 by user direction: any test whose
 runtime exceeds **2× the median runtime of its crate's default suite**
 is gated behind a non-default `slow` cargo feature. The default suite
 stays tight enough to run habitually; the outliers remain one switch
-away (`--features slow`, or `extra-credit-tests` where a crate
-aggregates its non-default gates).
+away (`--features slow`).
 
 ## Metric
 
 The measure is **steady-state solo wall-clock** as recorded by nextest
 in the most recent full-suite run of that crate: the time a test takes
-alone on a warm machine, chain caches populated. One-time costs that
-the chain-cache framework amortizes (a first-run cache build, a
-`ZINGO_REGENERATE_CHAIN_CACHE` rebuild) are excluded. They are paid
-once per machine, not per run, and have their own budget mechanism
-(per-test nextest `slow-timeout` overrides). Parallelism stretch under
-container contention is likewise excluded; it distorts every test
-equally and is governed by the `local-net` test group's thread cap.
+alone on a warm machine. Parallelism stretch under container
+contention is excluded; it distorts every test equally. A testnet
+cell's wait for real blocks is likewise excluded; it has its own
+budget in the per-test nextest `slow-timeout` override and the
+`testnet` test group's thread cap.
 
 ## Procedure
 
@@ -32,17 +29,16 @@ recorded):
 4. Record the median, threshold, and resulting membership in this
    file's log below.
 
-A test whose slowness is *the point* (a sentinel pinning an
-environment contract, a cache builder) belongs behind its
-purpose-specific gate (`sentinels`, ignore-with-reason), not the slow
-gate; the slow gate is for ordinary coverage that happens to be
-expensive.
+A test whose slowness is *the point* (a testnet cell waiting for real
+blocks) belongs behind its purpose-specific gate (`testnet`,
+ignore-with-reason), not the slow gate; the slow gate is for ordinary
+coverage that happens to be expensive.
 
 ## Wiring
 
-`libtonode-tests` declares the empty `slow = []` feature, aggregated
-into `extra-credit-tests`. Other test crates adopt the same shape when
-their first outlier appears. Gate an entire file with
+No crate declares the feature today: `libtonode-tests` dropped its empty
+`slow = []` with the regtest removal. A test crate adopts the shape when
+its first outlier appears: an empty `slow = []` feature, off by default. Gate an entire file with
 `#![cfg(feature = "slow")]`, or a single test with
 `#[cfg(feature = "slow")]` on the test function.
 

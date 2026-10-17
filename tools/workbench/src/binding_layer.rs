@@ -310,6 +310,7 @@ pub const ABI_ARTIFACT: &str = "abi";
 pub const ARTIFACT_KINDS: [&str; 2] = [BUNDLE_ARTIFACT, ABI_ARTIFACT];
 pub const ARTIFACT_WILDCARD: &str = "*";
 const ARTIFACT_SEPARATOR: &str = "-";
+const SLICE_SEGMENT: &str = "slice";
 pub const ARCHIVE_SUFFIX: &str = ".tar.gz";
 pub const WALLET_MANIFEST: &str = "zingolib/Cargo.toml";
 const MANIFEST_VERSION_PATH: [&str; 2] = ["package", "version"];
@@ -445,6 +446,14 @@ pub fn artifact_name(kind: &str, segment: &str, commit: &str) -> String {
 
 pub fn artifact_name_without_commit(segment: &str) -> String {
     [ARTIFACT_PREFIX, segment].join(ARTIFACT_SEPARATOR)
+}
+
+pub fn ios_slice_artifact(bundle: &str, triple: &str) -> String {
+    [bundle, SLICE_SEGMENT, triple].join(ARTIFACT_SEPARATOR)
+}
+
+pub fn ios_slice_pattern(bundle: &str) -> String {
+    ios_slice_artifact(bundle, ARTIFACT_WILDCARD)
 }
 
 fn json_string(text: &str) -> String {
@@ -757,7 +766,7 @@ mod tests {
         let messages = format!(
             "{{\"reason\":\"build-finished\",\"success\":true}}\n{}{}",
             script(
-                "zingolib_testutils#0.1.0",
+                "zingo-status#0.1.0",
                 "[[\"ZINGOLIB_DESCRIPTOR\",\"wrong\"]]"
             ),
             script(
@@ -1181,6 +1190,26 @@ mod tests {
         assert_eq!(
             artifact_name(BUNDLE_ARTIFACT, ARTIFACT_WILDCARD, commit),
             format!("binding-layer-bundle-*-{commit}")
+        );
+    }
+
+    #[test]
+    fn an_ios_slice_artifact_is_never_a_bundle_of_its_commit() {
+        let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let bundle = artifact_name(BUNDLE_ARTIFACT, "ios", commit);
+        let slice = ios_slice_artifact(&bundle, "aarch64-apple-ios");
+        assert_eq!(
+            slice,
+            format!("binding-layer-bundle-ios-{commit}-slice-aarch64-apple-ios")
+        );
+        assert_eq!(
+            artifact_segment(&slice, BUNDLE_ARTIFACT, commit),
+            None,
+            "the publish downloads bundles by a pattern that ends in the commit"
+        );
+        assert_eq!(
+            ios_slice_pattern(&bundle),
+            format!("binding-layer-bundle-ios-{commit}-slice-*")
         );
     }
 

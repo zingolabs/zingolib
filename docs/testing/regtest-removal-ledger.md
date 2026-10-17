@@ -533,6 +533,17 @@ Guarantees with no home after the removal, by ruling 4 of the plan.
 - diagnose_subtree_root_stream (18): a diagnostic of the subtree-root stream truncation of issue #2440, closed on a stuck backend; the wallet-side guarantee is `subtree_roots::add_subtree_roots` (15) on testnet.
 - The time bounds of entries 8 and 9: operational latency measurements, not wallet guarantees.
 
-## Exported to zaino (pending)
+## Exported to zaino (landed 2026-10-15)
 
-indexer_mempool_view_trails_validator_acceptance (8), indexer_converges_with_validator_after_block_generation (19), and the eight tip_spend_rejection cells (23 to 30) remain in this crate until their zaino pull requests merge.
+indexer_mempool_view_trails_validator_acceptance (8), indexer_converges_with_validator_after_block_generation (19), and the eight tip_spend_rejection cells (23 to 30) are carried by `live-tests/e2e/tests/validator_acceptance.rs` in zaino, merged as zaino #1668, so the cut deletes them here.
+
+## The cut (2026-10-15, draft until the zaino exports land)
+
+`zingolib_testutils`, `zcash_local_net`, the regtest test files, the
+container job's binary symlinks, the libtonode phase of the hierarchy, the
+`sentinels` and `slow` features and the chain caches leave in one change.
+The `testnet` feature and its cells remain. The two external consumers the
+plan gated on had already moved: zingo-mobile consumes the Prebuilt Bundles
+and zaino's live tests run on its own `ztest` harness, so neither names
+`zingolib_testutils` any longer. The exported guarantees landed in
+zaino as #1668, so nothing gates the cut.

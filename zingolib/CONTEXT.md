@@ -353,13 +353,9 @@
 
 ## Testing
 
-**libtonode-tests** — Integration tests that run zingolib against a real local node stack (library-to-node). Uses `zcash_local_net` to spin up a `Validator` + `Indexer` pair; the pair is selected at compile time (the test-infrastructure glossary's "Network combo"). The only combo is `zainod+zebrad`; the legacy validator and indexer combos were removed in July 2026, the latter with the darkside-tests retirement.
+**libtonode-tests** — The crate of testnet cells: chain-bound tests behind the non-default `testnet` feature that drive the wallet in-process through `LightClient` against the zingolabs zainod testnet node. Its regtest suite, and the `zcash_local_net` network combos it ran against, left with the regtest removal of October 2026; every guarantee that suite pinned now lives in a mock-chain twin, a testnet cell, or zaino's own suite, per `docs/testing/regtest-removal-ledger.md`. The vocabulary (testnet cell, twin, guarantee, mock chain) is defined in `docs/testing/CONTEXT.md`.
 
 **darkside-tests** — Deterministic reorg and edge-case tests that inject arbitrary blocks without mining. Their authoritative home is the mock-indexer darkside module inside zingolib, which runs offline; the standalone `darkside-tests` crate (driving the legacy indexer's "darkside" mode) is retired by the package-simplification work, its nine tests having been long ignored.
-
-**Validator** — The consensus node in a test local net: `zebrad`.
-
-**DefaultValidator / DefaultIndexer** — Type aliases in `zingolib_testutils` that resolve to the active backend combo at compile time, allowing test code to remain backend-agnostic.
 
 ---
 
