@@ -13,26 +13,19 @@ const PADDED_BUNDLE_ACTIONS: usize = split::MIN_BUNDLE_ACTIONS as usize;
 /// Estimates the fee the proposer charges for a one-input send on an
 /// NU6.3-active chain (the default test era, ADR 0009), per ZIP 317
 /// (<https://zips.z.cash/zip-0317>) as the pinned zcash_client_backend
-/// implements it for V6 transactions. Adjudicated against real proposals
-/// (probe run, 2026-07-13):
+/// implements it for V6 transactions. Adjudicated against the proposer by
+/// the `pool_matrix` tests in `lightclient/propose.rs`:
 ///
 /// - A shielded payment to an Orchard receiver lands in the Ironwood
 ///   bundle (the Ironwood receiver of a UA *is* its Orchard receiver), so
 ///   `PoolType::ORCHARD` and `PoolType::IRONWOOD` targets are the same
 ///   cell.
-/// - Ironwood-note spends are counted in the *orchard* bundle view: the
-///   wallet labels V3 notes `PoolType::ORCHARD` for input selection (the
-///   builder detects Ironwood inputs by note version, see
-///   `wallet/zcb_traits.rs`), so Orchard and Ironwood sources price
-///   identically. The upstream fee view therefore charges an
-///   orchard-bundle contribution for the inputs *and* an ironwood-bundle
-///   contribution for the outputs. If upstream later folds these into one
-///   bundle's actions, this table (and the proposer) will drop in lockstep
-///   on the dependency bump.
-/// - Change follows upstream's `select_change_pool`: Orchard when any
-///   orchard-view flow exists (which includes Ironwood sources), else
-///   Sapling when a sapling flow exists. Orchard-pool change is then
-///   routed into the ironwood bundle.
+/// - An Orchard-note spend stays in the Orchard bundle, so an Orchard
+///   source paying an Orchard receiver builds two bundles, while an
+///   Ironwood source and its payment share one.
+/// - Change follows upstream's `select_change_pool` and stays in the
+///   source's own bundle: Orchard change for an Orchard source, Ironwood
+///   change when any Ironwood flow exists, else Sapling change.
 /// - Each shielded bundle with any flow pads to its own two-action floor, while
 ///   the transparent contribution is unpadded.
 #[must_use]
@@ -50,7 +43,7 @@ pub fn one_to_one(
     let mut sapling_inputs: usize = 0;
     let mut sapling_outputs: usize = 0;
     let mut orchard_inputs: usize = 0;
-    let orchard_outputs: usize = 0;
+    let mut orchard_outputs: usize = 0;
     let mut ironwood_inputs: usize = 0;
     let mut ironwood_outputs: usize = 0;
     match source_protocol {
@@ -68,8 +61,7 @@ pub fn one_to_one(
     }
     if change {
         if orchard_inputs > 0 {
-            // orchard migrated into ironwood
-            ironwood_outputs += 1;
+            orchard_outputs += 1;
         } else if ironwood_inputs + ironwood_outputs == 0 {
             // sapling change
             sapling_outputs += 1;
@@ -239,6 +231,27 @@ mod tests {
         assert_eq!(
             fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::ORCHARD, true),
             zip317::MINIMUM_FEE.into_u64()
+        );
+    }
+
+    #[test]
+    fn an_orchard_source_keeps_its_change_in_the_orchard_bundle() {
+        let orchard_spend_with_change = fee_tables::padded_actions(1, 1);
+        assert_eq!(
+            fee_tables::one_to_one(Some(ShieldedPool::Orchard), PoolType::TRANSPARENT, true),
+            fee_tables::conventional_fee(orchard_spend_with_change + 1)
+        );
+        assert_eq!(
+            fee_tables::one_to_one(Some(ShieldedPool::Orchard), PoolType::SAPLING, true),
+            fee_tables::conventional_fee(
+                orchard_spend_with_change + fee_tables::padded_actions(0, 1)
+            )
+        );
+        assert_eq!(
+            fee_tables::one_to_one(Some(ShieldedPool::Orchard), PoolType::ORCHARD, true),
+            fee_tables::conventional_fee(
+                orchard_spend_with_change + fee_tables::padded_actions(0, 1)
+            )
         );
     }
 }
