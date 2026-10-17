@@ -257,12 +257,7 @@ async fn multi_input_sapling_send_with_orchard_change_no_panic(
         .sync_and_await()
         .await
         .expect("the recipient syncs its mined two-input send");
-    let cost = LARGEST_SAPLING_NOTE + send_back_fee();
-    let spent = covering_notes(&sapling_note_values(), cost)
-        .expect("the ladder covers its largest note plus the fee");
-    let change = spent.iter().sum::<u64>() - cost;
-    let remaining = sapling_note_values().iter().sum::<u64>() - spent.iter().sum::<u64>();
-    check_client_balances!(recipient, i: change o: 0 s: remaining t: 0);
+    check_client_balances!(recipient, i: 0 o: 0 s: UNTOUCHED_SAPLING_NOTE t: 0);
 }
 
 async fn sends_to_self_handle_balance_properly(

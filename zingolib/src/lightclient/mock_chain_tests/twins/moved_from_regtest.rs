@@ -372,9 +372,13 @@ async fn verify_old_wallet_uses_server_height_in_send() {
 
     let mut net = MockNet::launch().await;
     let mut sender = net.client(HOSPITAL_MUSEUM, None).await;
-    let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&sender_ua, FUNDING, None)], SYNCED_BLOCKS).await;
+    super::fund_client(
+        &net,
+        &sender,
+        &[(PoolType::ORCHARD, FUNDING)],
+        SYNCED_BLOCKS,
+    )
+    .await;
     sender
         .sync_and_await()
         .await

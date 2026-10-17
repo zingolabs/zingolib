@@ -1,7 +1,7 @@
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
-use super::{DEFERRED_NU6_3, blocks_to_reach, confirmed_balance, funded_client, migrated_value};
+use super::{DEFERRED_NU6_3, confirmed_balance, funded_client, migrated_value};
 use crate::lightclient::LightClient;
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
@@ -11,6 +11,31 @@ const UNEQUAL_NOTES: [u64; 3] = [317_000, 1_250_000, 88_000];
 const FRAGMENT_BASE: u64 = 100_000;
 const FRAGMENTS_BEYOND_ONE_TRANSACTION: u64 = 3;
 const CHUNKED_TRANSACTIONS: usize = 2;
+const BLOCKS_PAST_ACTIVATION: u32 = 1;
+
+fn runway_past_activation(tip: u32, activation: u32) -> Option<u32> {
+    super::blocks_to_reach(tip, activation)
+        .map(|to_activation| to_activation + BLOCKS_PAST_ACTIVATION)
+}
+
+#[test]
+fn the_runway_lands_the_tip_one_block_past_the_activation() {
+    for (tip, activation) in [(2, 130), (101, 200), (5, 6)] {
+        let runway = runway_past_activation(tip, activation)
+            .expect("each tip in the table sits below its activation");
+        assert_eq!(
+            tip + runway,
+            activation + BLOCKS_PAST_ACTIVATION,
+            "tip {tip}, activation {activation}"
+        );
+    }
+}
+
+#[test]
+fn a_tip_at_or_past_the_activation_has_no_runway() {
+    assert_eq!(runway_past_activation(130, 130), None);
+    assert_eq!(runway_past_activation(131, 130), None);
+}
 
 /// - Launches a chain whose NU6.3 activation still lies ahead and mines one funding block carrying
 ///   one pre-Ironwood Orchard note per value, then syncs the recipient below the activation.
@@ -32,14 +57,12 @@ async fn pre_ironwood_funded_recipient(
 /// - Mines the chain across the deferred NU6.3 activation boundary and syncs the recipient past it.
 async fn cross_ironwood_activation(net: &MockNet, recipient: &mut LightClient) {
     let tip = net.chain.read().await.tip();
-    let runway = blocks_to_reach(tip, DEFERRED_NU6_3)
-        .map(|to_activation| to_activation + 1)
-        .unwrap_or_else(|| {
-            panic!(
-                "the funding must confirm below the activation at {DEFERRED_NU6_3}, but the \
-                 chain is at {tip}"
-            )
-        });
+    let runway = runway_past_activation(tip, DEFERRED_NU6_3).unwrap_or_else(|| {
+        panic!(
+            "the funding must confirm below the activation at {DEFERRED_NU6_3}, but the chain \
+             is at {tip}"
+        )
+    });
     net.chain.write().await.mine_empty_blocks(runway);
     recipient
         .sync_and_await()

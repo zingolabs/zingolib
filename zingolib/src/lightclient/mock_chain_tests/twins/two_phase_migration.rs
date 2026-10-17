@@ -4,10 +4,7 @@ use pepper_sync::wallet::PoolActivation;
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
-use super::{
-    DEFERRED_NU6_3, HOSPITAL_MUSEUM, blocks_to_reach, continuous_sync_wallet_settings, fund_client,
-    migrated_value,
-};
+use super::{DEFERRED_NU6_3, HOSPITAL_MUSEUM, continuous_sync_wallet_settings, migrated_value};
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
 use crate::wallet::migration::{MigrationParams, MigrationPhase, schedule};
@@ -32,8 +29,12 @@ async fn mine_to_first_ironwood_window(net: &MockNet, bucket_modulus: u32) {
         tip < DEFERRED_NU6_3,
         "the funding at {tip} must confirm below the activation at {DEFERRED_NU6_3}"
     );
-    let runway = blocks_to_reach(tip, first_window)
-        .expect("the first window lies past the activation, which lies past the tip");
+    assert!(
+        DEFERRED_NU6_3 < first_window,
+        "the first window at {first_window} must lie past the activation at {DEFERRED_NU6_3}"
+    );
+    let runway = super::blocks_to_reach(tip, first_window)
+        .expect("the two assertions above put the first window past the tip");
     chain.mine_empty_blocks(runway);
 }
 
@@ -52,7 +53,7 @@ async fn two_phase_migration_end_to_end() {
     recipient.set_transmit_retry_interval(Duration::ZERO);
     #[cfg(feature = "nym")]
     recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
-    fund_client(
+    super::fund_client(
         &net,
         &recipient,
         &[(PoolType::ORCHARD, QUANTIZABLE_FUNDING)],

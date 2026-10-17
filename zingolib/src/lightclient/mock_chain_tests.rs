@@ -314,15 +314,12 @@ async fn max_send_value_to_shielded_empties_the_wallet() {
     let sapling_funding = 50_000;
     let mut net = MockNet::launch().await;
     let mut sender = net.client(HOSPITAL_MUSEUM, None).await;
-    let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
-    let sender_sapling = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Sapling)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(
+    fund_client(
         &net,
-        vec![
-            (&sender_ua, ironwood_funding, None),
-            (&sender_sapling, sapling_funding, None),
+        &sender,
+        &[
+            (PoolType::ORCHARD, ironwood_funding),
+            (PoolType::SAPLING, sapling_funding),
         ],
         1,
     )
