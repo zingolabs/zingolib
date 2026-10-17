@@ -1,29 +1,27 @@
 # Triage Labels
 
 The skills speak in terms of five canonical triage roles. This repo tracks issues
-in **Linear** (Zingo Mobile team), so roles are expressed as a mix of Linear
-**statuses** (where one fits the role) and **labels** (for the two roles statuses
-can't express). See `issue-tracker.md` for the MCP tooling.
+in **GitHub Issues**, so every role is a GitHub **label**, with `wontfix` also
+closing the issue. See `issue-tracker.md` for the `gh` tooling.
 
-| Role in mattpocock/skills | How we express it in Linear            | Meaning                                  |
-| ------------------------- | -------------------------------------- | ---------------------------------------- |
-| `needs-triage`            | status **Backlog**                     | Maintainer needs to evaluate this issue  |
-| `needs-info`              | label **`needs-info`**                 | Waiting on reporter for more information |
-| `ready-for-agent`         | status **Todo** + label **`ready-for-agent`** | Fully specified, ready for an AFK agent  |
-| `ready-for-human`         | status **Todo**                        | Requires human implementation            |
-| `wontfix`                 | status **Canceled**                    | Will not be actioned                     |
+| Role in mattpocock/skills | How we express it on GitHub                  | Meaning                                  |
+| ------------------------- | -------------------------------------------- | ---------------------------------------- |
+| `needs-triage`            | label **`needs-triage`**                     | Maintainer needs to evaluate this issue  |
+| `needs-info`              | label **`needs-info`**                       | Waiting on reporter for more information |
+| `ready-for-agent`         | label **`ready-for-agent`**                  | Fully specified, ready for an AFK agent  |
+| `ready-for-human`         | label **`ready-for-human`**                  | Requires human implementation            |
+| `wontfix`                 | label **`wontfix`** + close as "not planned" | Will not be actioned                     |
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), translate
-it via this table: set the Linear **status** and/or apply the **label** shown.
+it via this table: apply the **label** shown with `gh issue edit --add-label`,
+and remove the role it replaces.
 
 Notes:
 
-- `needs-info` and `ready-for-agent` are labels that don't exist in the team yet.
-  Create them on first use with `mcp__linear-server__create_issue_label`
-  (`team: "Zingo Mobile"`), then apply via `save_issue`.
-- `ready-for-agent` and `ready-for-human` share the **Todo** status; the
-  `ready-for-agent` **label** is what distinguishes an AFK-ready issue from one
-  that needs a human. An issue in **Todo** with no `ready-for-agent` label is
-  `ready-for-human`.
+- `wontfix` exists in the repo. The other four are created on first use with
+  `gh label create <label> --description <meaning>`.
+- An issue carries one triage role at a time. Moving an issue from
+  `needs-triage` to `ready-for-agent` removes the first label and adds the
+  second.
 
 Edit this table if the workflow changes.
