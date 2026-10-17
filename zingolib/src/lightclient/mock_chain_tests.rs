@@ -12,7 +12,7 @@
 //! by their own replacement commits.
 
 use pepper_sync::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
-use pepper_sync::wallet::IronwoodNote;
+use pepper_sync::wallet::{IronwoodNote, PoolActivation};
 use shardtree::store::ShardStore;
 use zcash_address::ZcashAddress;
 use zcash_protocol::PoolType;
@@ -25,7 +25,7 @@ use crate::check_client_balances;
 use crate::lightclient::LightClient;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::mock_indexer::{MockNet, faucet_funding_transaction_on};
-use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+use crate::testutils::synthetic_wallet;
 use crate::wallet::error::ProposeSendError;
 use crate::wallet::keys::unified::ReceiverSelection;
 
@@ -33,52 +33,34 @@ mod twins;
 
 const HOSPITAL_MUSEUM: &str = zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 const FUNDING: u64 = 100_000;
+const REWARD_ZATS: u64 = 625_000;
+const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
 // Above every twin's funding height, and cheap to mine past when a twin
 // crosses the activation.
 const DEFERRED_NU6_3: u32 = 130;
 
-fn external_wallet() -> crate::wallet::LightWallet {
-    SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build()
+fn blocks_to_reach(tip: u32, target: u32) -> Option<u32> {
+    (tip < target).then(|| target - tip)
 }
 
-/// An address belonging to no wallet on the mock net, so sends to it
-/// are external.
-fn external_address(pool: PoolType) -> String {
-    let mut external_wallet = external_wallet();
-    let selection = match pool {
-        PoolType::ORCHARD | PoolType::IRONWOOD => ReceiverSelection::orchard_only(),
-        PoolType::SAPLING => ReceiverSelection::sapling_only(),
-        _ => unimplemented!("only shielded external destinations are needed here"),
-    };
-    let (_, unified_address) = external_wallet
-        .generate_unified_address(selection, zip32::AccountId::ZERO)
-        .unwrap();
-    unified_address.encode(&external_wallet.chain_type())
+#[test]
+fn the_blocks_to_reach_a_target_land_the_tip_on_it() {
+    for (tip, target) in [(2, 131), (101, 201), (5, 7)] {
+        let blocks =
+            blocks_to_reach(tip, target).expect("each tip in the table sits below its target");
+        assert_eq!(tip + blocks, target, "tip {tip}, target {target}");
+    }
 }
 
-fn external_transparent_address() -> String {
-    external_wallet()
-        .transparent_addresses()
-        .values()
-        .next()
-        .expect("a synthetic wallet derives its first transparent address when built")
-        .clone()
+#[test]
+fn a_tip_at_or_past_the_target_needs_no_blocks() {
+    assert_eq!(blocks_to_reach(130, 130), None);
+    assert_eq!(blocks_to_reach(131, 130), None);
 }
 
-/// Returns a TEX-encoded taddr from an external wallet.
-fn external_tex_address() -> String {
-    use pepper_sync::keys::decode_address;
-    use zcash_client_backend::address::Address;
-    use zcash_transparent::address::TransparentAddress;
-
-    let chain_type = external_wallet().chain_type();
-    let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) =
-        decode_address(&chain_type, &external_transparent_address())
-            .expect("a wallet-generated transparent address decodes on its own chain")
-    else {
-        panic!("a wallet-generated first taddr is p2pkh")
-    };
-    crate::testutils::interpret_taddr_as_tex_addr(taddr_bytes, &chain_type)
+fn ironwood_activation(net: &MockNet) -> PoolActivation {
+    PoolActivation::of(&net.chain_type(), ShieldedPool::Ironwood)
+        .expect("every mock activation schedule names an NU6.3 height")
 }
 
 /// The way a chain fails to mirror the chain one funding transaction was built for.
@@ -234,18 +216,18 @@ async fn confirmed_balance(client: &LightClient, pool: ShieldedPool) -> u64 {
 async fn funded_send_confirms_on_the_mock_chain() {
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 100_000)], 1).await;
 
     recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 
     from_inputs::quick_send(
         &mut recipient,
-        vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+        vec![(
+            &synthetic_wallet::external_address(PoolType::ORCHARD),
+            20_000,
+            None,
+        )],
     )
     .await
     .unwrap();
@@ -264,14 +246,11 @@ async fn max_send_value_to_tex_empties_the_wallet() {
     let funding = 100_000;
     let mut net = MockNet::launch().await;
     let mut sender = net.client(HOSPITAL_MUSEUM, None).await;
-    let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&sender_ua, funding, None)], 1).await;
+    fund_client(&net, &sender, &[(PoolType::ORCHARD, funding)], 1).await;
     sender.sync_and_await().await.unwrap();
     check_client_balances!(sender, i: funding o: 0 s: 0 t: 0);
 
-    let tex_address = external_tex_address();
+    let tex_address = synthetic_wallet::external_tex_address();
     let max_send_value = sender
         .max_send_value(
             ZcashAddress::try_from_encoded(&tex_address).unwrap(),
@@ -302,15 +281,12 @@ async fn max_send_value_to_shielded_empties_the_wallet() {
     let sapling_funding = 50_000;
     let mut net = MockNet::launch().await;
     let mut sender = net.client(HOSPITAL_MUSEUM, None).await;
-    let sender_ua = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Orchard)).await;
-    let sender_sapling = get_base_address(&sender, PoolType::Shielded(ShieldedPool::Sapling)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(
+    fund_client(
         &net,
-        vec![
-            (&sender_ua, ironwood_funding, None),
-            (&sender_sapling, sapling_funding, None),
+        &sender,
+        &[
+            (PoolType::ORCHARD, ironwood_funding),
+            (PoolType::SAPLING, sapling_funding),
         ],
         1,
     )
@@ -318,7 +294,7 @@ async fn max_send_value_to_shielded_empties_the_wallet() {
     sender.sync_and_await().await.unwrap();
     check_client_balances!(sender, i: ironwood_funding o: 0 s: sapling_funding t: 0);
 
-    let recipient = external_address(PoolType::ORCHARD);
+    let recipient = synthetic_wallet::external_address(PoolType::ORCHARD);
     let max_send_value = sender
         .max_send_value(
             ZcashAddress::try_from_encoded(&recipient).unwrap(),
@@ -364,14 +340,10 @@ async fn max_send_value_to_shielded_empties_the_wallet() {
 async fn list_value_transfers_check_fees() {
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
     let recipient_taddr = get_base_address(&recipient, PoolType::Transparent).await;
     let recipient_sapling =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Sapling)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 100_000)], 1).await;
     recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 
@@ -407,8 +379,7 @@ async fn self_send_to_t_displays_as_one_transaction() {
     let recipient_zaddr =
         get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Sapling)).await;
 
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 80_000, None)], 0).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 80_000)], 0).await;
     recipient.sync_and_await().await.unwrap();
 
     let sent_to_taddr_value = 5_000;
@@ -505,17 +476,8 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     let recipient_ua = get_base_address(&recipient, PoolType::IRONWOOD).await;
     // The external destinations: the abandon-art wallet's sapling UA and
     // first taddr, the same derivations the live faucet answers with.
-    let external_sapling = external_address(PoolType::SAPLING);
-    let external_taddr = {
-        let external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        external_wallet
-            .transparent_addresses()
-            .values()
-            .next()
-            .unwrap()
-            .clone()
-    };
+    let external_sapling = synthetic_wallet::external_address(PoolType::SAPLING);
+    let external_taddr = synthetic_wallet::external_address(PoolType::Transparent);
 
     // Funding at height 2, as in the live layout (one empty launch block).
     net.chain.write().await.mine_empty_blocks(1);
@@ -1067,11 +1029,7 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
     recipient.set_transmit_retry_interval(std::time::Duration::ZERO);
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 100_000)], 1).await;
     recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 
@@ -1079,7 +1037,11 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
 
     let txids = from_inputs::quick_send(
         &mut recipient,
-        vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+        vec![(
+            &synthetic_wallet::external_address(PoolType::ORCHARD),
+            20_000,
+            None,
+        )],
     )
     .await
     .expect("a duplicate-in-mempool rejection proves transmission succeeded");
@@ -1128,11 +1090,7 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
     recipient.set_transmit_retry_interval(std::time::Duration::ZERO);
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 100_000)], 1).await;
     recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 
@@ -1144,7 +1102,11 @@ async fn send_survives_lost_response_and_queued_duplicate_rejection() {
 
     let txids = from_inputs::quick_send(
         &mut recipient,
-        vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+        vec![(
+            &synthetic_wallet::external_address(PoolType::ORCHARD),
+            20_000,
+            None,
+        )],
     )
     .await
     .expect("probing resubmissions reach the storage-backed verdict");
@@ -2074,7 +2036,11 @@ async fn continuous_sync_with_refetched_nullifiers() -> (
     spender.sync_and_await().await.unwrap();
     from_inputs::quick_send(
         &mut spender,
-        vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+        vec![(
+            &synthetic_wallet::external_address(PoolType::ORCHARD),
+            20_000,
+            None,
+        )],
     )
     .await
     .unwrap();
@@ -2364,15 +2330,18 @@ mod perspective {
         let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
         let recipient_ua = get_base_address(&recipient, PoolType::IRONWOOD).await;
 
-        net.chain.write().await.mine_empty_blocks(1);
-        fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+        super::fund_client(&net, &recipient, &[(PoolType::IRONWOOD, 100_000)], 1).await;
         // The zero-value receipt, in its own block as on the live chain.
         fund(&net, vec![(&recipient_ua, 0, None)], 1).await;
 
         recipient.sync_and_await().await.unwrap();
         from_inputs::quick_send(
             &mut recipient,
-            vec![(&external_address(PoolType::IRONWOOD), 1_000, None)],
+            vec![(
+                &synthetic_wallet::external_address(PoolType::IRONWOOD),
+                1_000,
+                None,
+            )],
         )
         .await
         .unwrap();
@@ -2610,17 +2579,17 @@ async fn a_mock_chain_send_reports_the_mixnet_route() {
 
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 100_000)], 1).await;
     recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 
     let reports = from_inputs::quick_send_reported(
         &mut recipient,
-        vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+        vec![(
+            &synthetic_wallet::external_address(PoolType::ORCHARD),
+            20_000,
+            None,
+        )],
     )
     .await
     .unwrap();
@@ -2668,11 +2637,7 @@ async fn the_nakednet_policy_reports_the_nakednet_route_over_a_ready_mixnet() {
 
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
-    let recipient_ua =
-        get_base_address(&recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
-
-    net.chain.write().await.mine_empty_blocks(1);
-    fund(&net, vec![(&recipient_ua, 100_000, None)], 1).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 100_000)], 1).await;
     recipient.sync_and_await().await.unwrap();
 
     assert!(recipient.read_mixnet_indicator().is_ready());
@@ -2680,7 +2645,11 @@ async fn the_nakednet_policy_reports_the_nakednet_route_over_a_ready_mixnet() {
 
     let reports = from_inputs::quick_send_reported(
         &mut recipient,
-        vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+        vec![(
+            &synthetic_wallet::external_address(PoolType::ORCHARD),
+            20_000,
+            None,
+        )],
     )
     .await
     .unwrap();
@@ -2916,7 +2885,11 @@ mod strict_chain {
         let mut sender = funded_sender(&mut net).await;
         from_inputs::propose(
             &mut sender,
-            vec![(&external_address(PoolType::ORCHARD), PAYMENT, None)],
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                PAYMENT,
+                None,
+            )],
         )
         .await
         .unwrap();
@@ -2959,7 +2932,11 @@ mod strict_chain {
         let mut sender = funded_sender(&mut net).await;
         let txids = from_inputs::quick_send(
             &mut sender,
-            vec![(&external_address(PoolType::ORCHARD), PAYMENT, None)],
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                PAYMENT,
+                None,
+            )],
         )
         .await
         .unwrap();
@@ -3142,7 +3119,11 @@ mod strict_chain {
     async fn calculated_send(sender: &mut LightClient) -> NonEmpty<TxId> {
         from_inputs::propose(
             sender,
-            vec![(&external_address(PoolType::ORCHARD), PAYMENT, None)],
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                PAYMENT,
+                None,
+            )],
         )
         .await
         .unwrap();
@@ -3181,27 +3162,7 @@ mod strict_chain {
     }
 
     fn tex_request() -> TransactionRequest {
-        use pepper_sync::keys::decode_address;
-        use zcash_client_backend::address::Address;
-        use zcash_transparent::address::TransparentAddress;
-
-        let external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let taddr = external_wallet
-            .transparent_addresses()
-            .values()
-            .next()
-            .unwrap()
-            .clone();
-        let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) =
-            decode_address(&external_wallet.chain_type(), &taddr).unwrap()
-        else {
-            panic!("a wallet-generated first taddr is p2pkh")
-        };
-        let tex_address = crate::testutils::interpret_taddr_as_tex_addr(
-            taddr_bytes,
-            &external_wallet.chain_type(),
-        );
+        let tex_address = synthetic_wallet::external_tex_address();
         TransactionRequest::new(vec![Payment::without_memo(
             zcash_address::ZcashAddress::try_from_encoded(&tex_address).unwrap(),
             Zatoshis::const_from_u64(PAYMENT),
@@ -3273,7 +3234,11 @@ mod strict_chain {
         sender.sync_and_await().await.unwrap();
         let resent = from_inputs::quick_send(
             &mut sender,
-            vec![(&external_address(PoolType::ORCHARD), PAYMENT, None)],
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                PAYMENT,
+                None,
+            )],
         )
         .await
         .unwrap();
@@ -3517,7 +3482,11 @@ mod strict_chain {
         reloaded.sync_and_await().await.unwrap();
         from_inputs::quick_send(
             &mut reloaded,
-            vec![(&external_address(PoolType::ORCHARD), PAYMENT, None)],
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                PAYMENT,
+                None,
+            )],
         )
         .await
         .unwrap();
@@ -3688,7 +3657,11 @@ mod strict_chain {
         let mut sender = funded_sender(&mut net).await;
         let sent = from_inputs::quick_send(
             &mut sender,
-            vec![(&external_address(PoolType::ORCHARD), PAYMENT, None)],
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                PAYMENT,
+                None,
+            )],
         )
         .await
         .unwrap();
@@ -4059,7 +4032,11 @@ mod mainnet_broadcast_offline {
     ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
         from_inputs::quick_send_reported(
             recipient,
-            vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                20_000,
+                None,
+            )],
         )
         .await
     }
@@ -4250,7 +4227,11 @@ mod mixnet_wire_offline {
     ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
         from_inputs::quick_send_reported(
             recipient,
-            vec![(&external_address(PoolType::ORCHARD), 20_000, None)],
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                20_000,
+                None,
+            )],
         )
         .await
     }
@@ -4399,7 +4380,11 @@ mod mixnet_wire_offline {
         rejecting.chain.write().await.answer_sends_with_error_code = Some(REJECTION_CODE);
         relay.route(&uri(REJECTOR_URI), rejecting.addr());
         let part = accepting
-            .funding_transaction(vec![(&external_address(PoolType::ORCHARD), 20_000, None)])
+            .funding_transaction(vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                20_000,
+                None,
+            )])
             .await;
         let expiry = BlockHeight::from_u32(1);
         let client_for = |target: &str| {
@@ -4442,17 +4427,13 @@ mod mixnet_wire_offline {
 mod shielded_coinbase {
     use zcash_protocol::PoolType;
     use zcash_protocol::ShieldedPool;
-    use zcash_protocol::value::Zatoshis;
 
     use crate::check_client_balances;
     use crate::testutils::lightclient::get_base_address;
     use crate::testutils::mock_activation_heights_deferring_nu6_3;
     use crate::testutils::mock_indexer::{MockChain, MockNet};
 
-    use super::{DEFERRED_NU6_3, HOSPITAL_MUSEUM};
-
-    const REWARD_ZATS: u64 = 625_000;
-    const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
+    use super::{DEFERRED_NU6_3, HOSPITAL_MUSEUM, REWARD, REWARD_ZATS};
 
     #[tokio::test]
     async fn a_shielded_coinbase_pays_the_miner_in_ironwood_after_the_activation() {
@@ -4609,14 +4590,17 @@ mod boundary_pruning {
             .mine_empty_blocks(BIRTHDAY_CHECKPOINT_RUNWAY);
         fund(&net, vec![(&recipient_ua, funding, None)], 0).await;
         let funded_tip = net.chain.read().await.tip();
+        let activation = u32::from(super::ironwood_activation(&net).height());
         assert!(
-            funded_tip < DEFERRED_NU6_3,
-            "the funding must confirm before NU6.3 activates, but the chain is at {funded_tip}"
+            funded_tip < activation,
+            "the funding must confirm before NU6.3 activates at {activation}, but the chain is \
+             at {funded_tip}"
         );
-        net.chain
-            .write()
-            .await
-            .mine_empty_blocks(TARGET_TIP - funded_tip);
+        let runway = super::blocks_to_reach(funded_tip, TARGET_TIP).expect(
+            "TARGET_TIP sits at or past the activation, which the assertion above puts past \
+             the funded tip",
+        );
+        net.chain.write().await.mine_empty_blocks(runway);
         recipient.sync_and_await().await.unwrap();
         check_client_balances!(recipient, i: 0 o: funding s: 0 t: 0);
 

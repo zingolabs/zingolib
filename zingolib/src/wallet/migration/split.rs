@@ -46,7 +46,7 @@ pub(crate) const SWEEP_MIN: u64 = 2 * MARGINAL_FEE;
 /// Orchard pads every non-empty bundle to at least this many actions
 /// (`orchard::builder`'s `MIN_ACTIONS`, which is private). Pinned to
 /// `BundleType::num_actions` by test.
-const MIN_BUNDLE_ACTIONS: u64 = 2;
+pub(crate) const MIN_BUNDLE_ACTIONS: u64 = 2;
 
 /// The canonical ZIP-317 fee of one part. A part carries TWO bundles, an
 /// Orchard bundle (1 spend, padded to 2 actions) and an Ironwood bundle

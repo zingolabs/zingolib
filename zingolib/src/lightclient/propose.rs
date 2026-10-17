@@ -328,26 +328,11 @@ mod send_all {
     use zcash_protocol::PoolType;
     use zcash_protocol::value::Zatoshis;
 
-    use crate::{
-        lightclient::LightClient, testutils::synthetic_wallet::SyntheticWalletBuilder,
-        utils::conversion::address_from_str, wallet::error::ProposeSendError,
-        wallet::keys::unified::ReceiverSelection,
-    };
-
-    /// An address belonging to a different wallet, so the send is external.
-    fn external_address(pool: PoolType) -> zcash_address::ZcashAddress {
-        let mut external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let selection = match pool {
-            PoolType::ORCHARD | PoolType::IRONWOOD => ReceiverSelection::orchard_only(),
-            PoolType::SAPLING => ReceiverSelection::sapling_only(),
-            _ => unimplemented!("only shielded destinations are needed here"),
-        };
-        let (_, unified_address) = external_wallet
-            .generate_unified_address(selection, zip32::AccountId::ZERO)
-            .unwrap();
-        address_from_str(&unified_address.encode(&external_wallet.chain_type())).unwrap()
-    }
+    use crate::lightclient::LightClient;
+    use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
+    use crate::utils::conversion::address_from_str;
+    use crate::wallet::error::ProposeSendError;
+    use crate::wallet::keys::unified::ReceiverSelection;
 
     /// Migrated from libtonode `send_all::ptfm_insufficient_funds`: a
     /// send-all whose only note cannot cover the fee of a cross-pool spend
@@ -361,7 +346,7 @@ mod send_all {
 
         let proposal_error = client
             .propose_send_all(
-                external_address(PoolType::SAPLING),
+                synthetic_wallet::external_zcash_address(PoolType::SAPLING),
                 None,
                 zip32::AccountId::ZERO,
             )
@@ -395,7 +380,7 @@ mod send_all {
 
         let proposal_error = client
             .propose_send_all(
-                external_address(PoolType::ORCHARD),
+                synthetic_wallet::external_zcash_address(PoolType::ORCHARD),
                 None,
                 zip32::AccountId::ZERO,
             )
@@ -442,7 +427,7 @@ mod send_all {
 
         let proposal = client
             .propose_send_all(
-                external_address(PoolType::SAPLING),
+                synthetic_wallet::external_zcash_address(PoolType::SAPLING),
                 None,
                 zip32::AccountId::ZERO,
             )
@@ -518,12 +503,6 @@ mod send_all {
         assert_eq!(payment + fee, note_value);
     }
 
-    fn external_transparent_address() -> zcash_address::ZcashAddress {
-        let external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        address_from_str(&external_wallet.get_address(PoolType::Transparent)).unwrap()
-    }
-
     #[tokio::test]
     async fn send_all_to_transparent_recipient() {
         let mut client = LightClient::new_for_test(
@@ -535,7 +514,11 @@ mod send_all {
         .await;
 
         let proposal = client
-            .propose_send_all(external_transparent_address(), None, zip32::AccountId::ZERO)
+            .propose_send_all(
+                synthetic_wallet::external_zcash_address(PoolType::Transparent),
+                None,
+                zip32::AccountId::ZERO,
+            )
             .await
             .unwrap();
 
@@ -566,8 +549,8 @@ mod send_all {
         .await;
 
         for address in [
-            external_transparent_address(),
-            external_address(PoolType::ORCHARD),
+            synthetic_wallet::external_zcash_address(PoolType::Transparent),
+            synthetic_wallet::external_zcash_address(PoolType::ORCHARD),
         ] {
             assert_eq!(
                 client
@@ -594,7 +577,10 @@ mod send_all {
 
         assert!(matches!(
             client
-                .max_send_value(external_transparent_address(), zip32::AccountId::ZERO)
+                .max_send_value(
+                    synthetic_wallet::external_zcash_address(PoolType::Transparent),
+                    zip32::AccountId::ZERO
+                )
                 .await,
             Err(ProposeSendError::Proposal(
                 zcash_client_backend::data_api::error::Error::ScanRequired
@@ -613,7 +599,10 @@ mod send_all {
 
         assert_eq!(
             client
-                .max_send_value(external_address(PoolType::ORCHARD), zip32::AccountId::ZERO)
+                .max_send_value(
+                    synthetic_wallet::external_zcash_address(PoolType::ORCHARD),
+                    zip32::AccountId::ZERO
+                )
                 .await
                 .unwrap(),
             Zatoshis::ZERO
@@ -632,7 +621,7 @@ mod send_all {
 
         let proposal_error = client
             .propose_send_all(
-                external_transparent_address(),
+                synthetic_wallet::external_zcash_address(PoolType::Transparent),
                 Some(memo),
                 zip32::AccountId::ZERO,
             )
@@ -662,7 +651,7 @@ mod send_all {
 
         let proposal_error = client
             .propose_send_all(
-                external_address(PoolType::ORCHARD),
+                synthetic_wallet::external_zcash_address(PoolType::ORCHARD),
                 None,
                 zip32::AccountId::ZERO,
             )
@@ -675,31 +664,9 @@ mod send_all {
         ));
     }
 
-    /// Returns a TEX-encoded taddr from an external wallet, as a
-    /// `ZcashAddress` ready for a payment.
     fn external_tex_address() -> zcash_address::ZcashAddress {
-        use pepper_sync::keys::decode_address;
-        use zcash_client_backend::address::Address;
-        use zcash_transparent::address::TransparentAddress;
-
-        let external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let taddr = external_wallet
-            .transparent_addresses()
-            .values()
-            .next()
-            .unwrap()
-            .clone();
-        let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) =
-            decode_address(&external_wallet.chain_type(), &taddr).unwrap()
-        else {
-            panic!("a wallet-generated first taddr is p2pkh")
-        };
-        let tex_address = crate::testutils::interpret_taddr_as_tex_addr(
-            taddr_bytes,
-            &external_wallet.chain_type(),
-        );
-        zcash_address::ZcashAddress::try_from_encoded(&tex_address).unwrap()
+        zcash_address::ZcashAddress::try_from_encoded(&synthetic_wallet::external_tex_address())
+            .expect("a TEX address the stranger wallet just encoded parses")
     }
 
     /// Pins the zero-valued change note the send path always writes,
@@ -764,7 +731,7 @@ mod send_all {
                 .build(),
         )
         .await;
-        let destination = external_address(PoolType::ORCHARD);
+        let destination = synthetic_wallet::external_zcash_address(PoolType::ORCHARD);
 
         let max = client
             .max_send_value(destination.clone(), zip32::AccountId::ZERO)
@@ -846,30 +813,10 @@ mod send_all {
 mod simpool {
     use zcash_protocol::{PoolType, ShieldedPool};
 
-    use crate::{
-        lightclient::LightClient,
-        testutils::{
-            fee_tables, lightclient::from_inputs, synthetic_wallet::SyntheticWalletBuilder,
-        },
-        wallet::keys::unified::ReceiverSelection,
-    };
-
-    /// An encoded destination of the given pool type, belonging to a
-    /// different wallet so the send is external.
-    fn external_address(pool: PoolType) -> String {
-        let mut external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let selection = match pool {
-            PoolType::Shielded(ShieldedPool::Orchard)
-            | PoolType::Shielded(ShieldedPool::Ironwood) => ReceiverSelection::orchard_only(),
-            PoolType::Shielded(ShieldedPool::Sapling) => ReceiverSelection::sapling_only(),
-            PoolType::Transparent => return external_wallet.get_address(PoolType::Transparent),
-        };
-        let (_, unified_address) = external_wallet
-            .generate_unified_address(selection, zip32::AccountId::ZERO)
-            .unwrap();
-        unified_address.encode(&external_wallet.chain_type())
-    }
+    use crate::lightclient::LightClient;
+    use crate::testutils::fee_tables;
+    use crate::testutils::lightclient::from_inputs;
+    use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
 
     /// A wallet holding one `source`-pool note `underflow_amount` short of
     /// a 100_000 send to `pool` reports the exact shortfall.
@@ -889,7 +836,11 @@ mod simpool {
         assert_eq!(
             from_inputs::propose(
                 &mut client,
-                vec![(external_address(pool).as_str(), tertiary_fund, None)],
+                vec![(
+                    synthetic_wallet::external_address(pool).as_str(),
+                    tertiary_fund,
+                    None
+                )],
             )
             .await
             .unwrap_err()
@@ -912,7 +863,11 @@ mod simpool {
         assert_eq!(
             from_inputs::propose(
                 &mut client,
-                vec![(external_address(pool).as_str(), try_amount, None)],
+                vec![(
+                    synthetic_wallet::external_address(pool).as_str(),
+                    try_amount,
+                    None
+                )],
             )
             .await
             .unwrap_err()
@@ -1003,41 +958,17 @@ mod simpool {
 mod pool_matrix {
     use zcash_protocol::{PoolType, ShieldedPool};
 
-    use crate::{
-        lightclient::LightClient,
-        testutils::{
-            fee_tables, lightclient::from_inputs, synthetic_wallet::SyntheticWalletBuilder,
-        },
-        wallet::keys::unified::ReceiverSelection,
-    };
-
-    /// An encoded destination of the given pool type, belonging to a
-    /// different wallet so the send is external.
-    fn external_address(pool: PoolType) -> String {
-        let mut external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let selection = match pool {
-            PoolType::Shielded(ShieldedPool::Orchard)
-            | PoolType::Shielded(ShieldedPool::Ironwood) => ReceiverSelection::orchard_only(),
-            PoolType::Shielded(ShieldedPool::Sapling) => ReceiverSelection::sapling_only(),
-            PoolType::Transparent => return external_wallet.get_address(PoolType::Transparent),
-        };
-        let (_, unified_address) = external_wallet
-            .generate_unified_address(selection, zip32::AccountId::ZERO)
-            .unwrap();
-        unified_address.encode(&external_wallet.chain_type())
-    }
+    use crate::lightclient::LightClient;
+    use crate::testutils::fee_tables;
+    use crate::testutils::lightclient::from_inputs;
+    use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
 
     /// One matrix cell: a wallet holding a single `source` note of exactly
     /// `receiver_value + change + fee` proposes a `receiver_value` send to
     /// a `pool` destination, and the proposal's fee and change land on the
     /// fee table's prediction to the zatoshi.
     async fn matrix_case(source: ShieldedPool, pool: PoolType, receiver_value: u64, change: u64) {
-        let expected_fee = fee_tables::one_to_one(
-            Some(source),
-            pool,
-            !(source == ShieldedPool::Orchard && change == 0),
-        );
+        let expected_fee = fee_tables::one_to_one(Some(source), pool, change > 0);
         let funding = receiver_value + change + expected_fee;
         let builder = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED);
         let wallet = match source {
@@ -1048,7 +979,7 @@ mod pool_matrix {
         .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(pool);
+        let destination = synthetic_wallet::external_address(pool);
         let proposal = from_inputs::propose(
             &mut client,
             vec![(destination.as_str(), receiver_value, None)],
@@ -1189,6 +1120,69 @@ mod pool_matrix {
         10_000,
         0
     );
+    pool_matrix_case!(
+        ironwood_sends_to_ironwood_no_change,
+        ShieldedPool::Ironwood,
+        PoolType::IRONWOOD,
+        10_000,
+        0
+    );
+    pool_matrix_case!(
+        sapling_sends_to_orchard,
+        ShieldedPool::Sapling,
+        PoolType::ORCHARD,
+        10_000,
+        1_000
+    );
+    pool_matrix_case!(
+        sapling_sends_to_orchard_no_change,
+        ShieldedPool::Sapling,
+        PoolType::ORCHARD,
+        10_000,
+        0
+    );
+    pool_matrix_case!(
+        ironwood_sends_to_orchard,
+        ShieldedPool::Ironwood,
+        PoolType::ORCHARD,
+        10_000,
+        1_000
+    );
+    pool_matrix_case!(
+        ironwood_sends_to_orchard_no_change,
+        ShieldedPool::Ironwood,
+        PoolType::ORCHARD,
+        10_000,
+        0
+    );
+    pool_matrix_case!(
+        orchard_sends_to_transparent,
+        ShieldedPool::Orchard,
+        PoolType::TRANSPARENT,
+        10_000,
+        1_000
+    );
+    pool_matrix_case!(
+        orchard_sends_to_sapling,
+        ShieldedPool::Orchard,
+        PoolType::SAPLING,
+        10_000,
+        1_000
+    );
+    pool_matrix_case!(
+        orchard_sends_to_orchard,
+        ShieldedPool::Orchard,
+        PoolType::ORCHARD,
+        10_000,
+        1_000
+    );
+    pool_matrix_case!(
+        orchard_sends_to_ironwood,
+        ShieldedPool::Orchard,
+        PoolType::IRONWOOD,
+        10_000,
+        1_000
+    );
     // 546 zatoshis is the canonical transparent dust threshold. The
     // proposer permits it; whether a relay accepts it is the network's
     // business, and zebra's mempool dust rule was the reason this row's
@@ -1214,28 +1208,12 @@ mod pool_matrix {
 /// assertions were all propose-stage.
 #[cfg(test)]
 mod proposal_shape {
-    use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
     use zcash_protocol::{PoolType, ShieldedPool};
 
     use crate::lightclient::LightClient;
     use crate::testutils::fee_tables;
     use crate::testutils::lightclient::from_inputs;
-    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
-    use crate::wallet::keys::unified::ReceiverSelection;
-
-    fn external_address(pool: PoolType) -> String {
-        let mut external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let selection = match pool {
-            PoolType::ORCHARD | PoolType::IRONWOOD => ReceiverSelection::orchard_only(),
-            PoolType::SAPLING => ReceiverSelection::sapling_only(),
-            _ => unimplemented!("only shielded destinations are needed here"),
-        };
-        let (_, unified_address) = external_wallet
-            .generate_unified_address(selection, zip32::AccountId::ZERO)
-            .unwrap();
-        unified_address.encode(&external_wallet.chain_type())
-    }
+    use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
 
     /// A pool whose spendable list is exhausted mid-selection must still
     /// report the value it covered. The regression this pins: selecting the
@@ -1254,7 +1232,8 @@ mod proposal_shape {
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::Shielded(ShieldedPool::Ironwood));
+        let destination =
+            synthetic_wallet::external_address(PoolType::Shielded(ShieldedPool::Ironwood));
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), 20_000, None)])
                 .await
@@ -1336,7 +1315,8 @@ mod proposal_shape {
         });
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::Shielded(ShieldedPool::Ironwood));
+        let destination =
+            synthetic_wallet::external_address(PoolType::Shielded(ShieldedPool::Ironwood));
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), 20_000, None)])
                 .await
@@ -1371,7 +1351,7 @@ mod proposal_shape {
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::IRONWOOD);
+        let destination = synthetic_wallet::external_address(PoolType::IRONWOOD);
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), sent_value, None)])
                 .await
@@ -1409,7 +1389,7 @@ mod proposal_shape {
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::IRONWOOD);
+        let destination = synthetic_wallet::external_address(PoolType::IRONWOOD);
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), sent_value, None)])
                 .await
@@ -1458,7 +1438,7 @@ mod proposal_shape {
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::IRONWOOD);
+        let destination = synthetic_wallet::external_address(PoolType::IRONWOOD);
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), sent_value, None)])
                 .await
@@ -1565,7 +1545,7 @@ mod proposal_shape {
         let mut client = LightClient::new_for_test(wallet).await;
 
         let fee = fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::IRONWOOD, true);
-        let destination = external_address(PoolType::IRONWOOD);
+        let destination = synthetic_wallet::external_address(PoolType::IRONWOOD);
         let proposal = from_inputs::propose(
             &mut client,
             vec![(destination.as_str(), note_value - fee, None)],
@@ -1596,7 +1576,7 @@ mod proposal_shape {
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::SAPLING);
+        let destination = synthetic_wallet::external_address(PoolType::SAPLING);
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), sent_value, None)])
                 .await
@@ -1636,7 +1616,7 @@ mod proposal_shape {
 
         // Post-NU6.3 the payment itself routes through Ironwood (ZIP 318), but
         // that must not drag the change out of Orchard.
-        let destination = external_address(PoolType::IRONWOOD);
+        let destination = synthetic_wallet::external_address(PoolType::IRONWOOD);
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), sent_value, None)])
                 .await
@@ -1668,11 +1648,8 @@ mod proposal_shape {
     /// mined, three wallet records) retires with the LocalNet original.
     #[tokio::test]
     async fn send_to_tex() {
-        use pepper_sync::keys::decode_address;
-        use zcash_client_backend::address::Address;
         use zcash_client_backend::zip321::{Payment, TransactionRequest};
         use zcash_protocol::value::Zatoshis;
-        use zcash_transparent::address::TransparentAddress;
 
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .ironwood_note(5_000_000)
@@ -1681,23 +1658,7 @@ mod proposal_shape {
 
         // A TEX destination derived from an external wallet's first
         // transparent address, as ZIP 320 prescribes.
-        let external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let taddr = external_wallet
-            .transparent_addresses()
-            .values()
-            .next()
-            .unwrap()
-            .clone();
-        let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) =
-            decode_address(&external_wallet.chain_type(), &taddr).unwrap()
-        else {
-            panic!("a wallet-generated first taddr is p2pkh")
-        };
-        let tex_address = crate::testutils::interpret_taddr_as_tex_addr(
-            taddr_bytes,
-            &external_wallet.chain_type(),
-        );
+        let tex_address = synthetic_wallet::external_tex_address();
 
         let request = TransactionRequest::new(vec![Payment::without_memo(
             zcash_address::ZcashAddress::try_from_encoded(&tex_address).unwrap(),
@@ -1733,7 +1694,8 @@ mod proposal_shape {
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::Shielded(ShieldedPool::Ironwood));
+        let destination =
+            synthetic_wallet::external_address(PoolType::Shielded(ShieldedPool::Ironwood));
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), 10_000, None)])
                 .await
@@ -1755,7 +1717,7 @@ mod proposal_shape {
         );
         assert_eq!(
             u64::from(step.balance().fee_required()),
-            2 * u64::from(MARGINAL_FEE)
+            fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::IRONWOOD, true)
         );
     }
 
@@ -1772,7 +1734,8 @@ mod proposal_shape {
             .build();
         let mut client = LightClient::new_for_test(wallet).await;
 
-        let destination = external_address(PoolType::Shielded(ShieldedPool::Ironwood));
+        let destination =
+            synthetic_wallet::external_address(PoolType::Shielded(ShieldedPool::Ironwood));
         let proposal =
             from_inputs::propose(&mut client, vec![(destination.as_str(), 40_000, None)])
                 .await
@@ -1819,27 +1782,8 @@ mod sync_pause_contract {
 
     use crate::data::receivers::{Receiver, transaction_request_from_receivers};
     use crate::lightclient::LightClient;
-    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
     use crate::wallet::LightWallet;
-    use crate::wallet::keys::unified::ReceiverSelection;
-
-    /// An address belonging to a different wallet, so the send is external.
-    fn external_address(pool: PoolType) -> zcash_address::ZcashAddress {
-        let mut external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let selection = match pool {
-            PoolType::ORCHARD | PoolType::IRONWOOD => ReceiverSelection::orchard_only(),
-            PoolType::SAPLING => ReceiverSelection::sapling_only(),
-            _ => unimplemented!("only shielded destinations are needed here"),
-        };
-        let (_, unified_address) = external_wallet
-            .generate_unified_address(selection, zip32::AccountId::ZERO)
-            .unwrap();
-        crate::utils::conversion::address_from_str(
-            &unified_address.encode(&external_wallet.chain_type()),
-        )
-        .unwrap()
-    }
 
     /// A synthetic-wallet client whose sync-mode atomic reads `Running`,
     /// simulating a consumer whose background sync engine is between
@@ -1865,7 +1809,7 @@ mod sync_pause_contract {
             .build();
         let mut client = client_with_running_engine(wallet).await;
         let request = transaction_request_from_receivers(vec![Receiver::new(
-            external_address(PoolType::ORCHARD),
+            synthetic_wallet::external_zcash_address(PoolType::ORCHARD),
             Zatoshis::const_from_u64(50_000),
             None,
         )])
@@ -1948,7 +1892,7 @@ mod sync_pause_contract {
         let wallet_handle = client.wallet().clone();
         let engine_holds_wallet = wallet_handle.write().await;
 
-        let address = external_address(PoolType::ORCHARD);
+        let address = synthetic_wallet::external_zcash_address(PoolType::ORCHARD);
         let call = tokio::spawn(async move {
             client
                 .propose_send_all(address, None, zip32::AccountId::ZERO)
@@ -1976,7 +1920,7 @@ mod sync_pause_contract {
             .build();
         let mut client = client_with_running_engine(wallet).await;
         let request = transaction_request_from_receivers(vec![Receiver::new(
-            external_address(PoolType::ORCHARD),
+            synthetic_wallet::external_zcash_address(PoolType::ORCHARD),
             Zatoshis::const_from_u64(10_000),
             None,
         )])

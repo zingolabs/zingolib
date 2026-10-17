@@ -2,12 +2,13 @@ use pepper_sync::wallet::{NoteInterface, OrchardNote, OutputId, OutputInterface}
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::PoolType;
 
-use super::{DEFERRED_NU6_3, external_address, funded_client};
+use super::{DEFERRED_NU6_3, funded_client};
 use crate::lightclient::LightClient;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::migration::inject_scheduled_migration;
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
+use crate::testutils::synthetic_wallet;
 use crate::wallet::migration::{
     MigrationParams, MigrationPhase, PartId, PartState, RecommendedAction,
 };
@@ -73,7 +74,7 @@ async fn bound_note_reservation_and_external_spend_invalidation() {
         0,
     )
     .await;
-    let faucet_address = external_address(PoolType::ORCHARD);
+    let faucet_address = synthetic_wallet::external_address(PoolType::ORCHARD);
 
     let notes = orchard_note_records(&recipient).await;
     let reserved = note_by_value(&notes, BOUND_NOTE);

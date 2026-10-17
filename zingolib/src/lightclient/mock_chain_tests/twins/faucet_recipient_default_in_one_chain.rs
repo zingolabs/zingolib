@@ -1,19 +1,19 @@
 use std::time::Duration;
 
 use pepper_sync::wallet::{OutputId, OutputInterface, TransparentCoin};
-use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 
-use super::{HOSPITAL_MUSEUM, untracked_history, zatoshis, zip317_fee};
+use super::{HOSPITAL_MUSEUM, REWARD, REWARD_ZATS, untracked_history, zatoshis};
 use crate::check_client_balances;
 use crate::lightclient::LightClient;
 use crate::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind,
 };
 use crate::testutils::assertions::assert_null_data_send;
+use crate::testutils::fee_tables;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::mock_indexer::MockNet;
 use crate::wallet::output::SpendStatus;
@@ -21,21 +21,93 @@ use crate::wallet::summary::data::TransactionSummary;
 use crate::wallet::transparent::OpReturnData;
 
 const FAUCET_SEED: &str = zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED;
-const REWARD_ZATS: u64 = 625_000;
-const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
 const SETUP_IRONWOOD_BLOCKS: u64 = 4;
 const BLOCK_ONE_SAPLING_COINBASE: u64 = REWARD_ZATS;
 const SAPLING_NOTE_STEP: u64 = 10_000;
 const SAPLING_NOTES: u64 = 3;
 const UNTOUCHED_SAPLING_NOTE: u64 = SAPLING_NOTE_STEP;
 const LARGEST_SAPLING_NOTE: u64 = SAPLING_NOTES * SAPLING_NOTE_STEP;
-// One transparent input plus the padded two-action ironwood pair.
-const TRANSPARENT_SHIELD_LOGICAL_ACTIONS: u64 = 3;
+const TRANSPARENT_SHIELD_INPUTS: usize = 1;
 const TRANSPARENT_FUNDING: u64 = 100_000;
 const UNIFIED_PAYMENT: u64 = 50_000;
 const OP_RETURN_FUNDING: u64 = 500_000;
 const OP_RETURN_PAYMENT: Zatoshis = Zatoshis::const_from_u64(100_000);
 const UNTRACKED_FUNDING: u64 = 100_000;
+
+fn sapling_note_ladder(notes: u64, step: u64) -> Vec<(u64, String)> {
+    (1..=notes)
+        .map(|rung| (rung * step, rung.to_string()))
+        .collect()
+}
+
+fn sapling_note_values() -> Vec<u64> {
+    sapling_note_ladder(SAPLING_NOTES, SAPLING_NOTE_STEP)
+        .into_iter()
+        .map(|(value, _)| value)
+        .collect()
+}
+
+fn covering_notes(ladder: &[u64], cost: u64) -> Option<Vec<u64>> {
+    let mut largest_first = ladder.to_vec();
+    largest_first.sort_unstable_by(|a, b| b.cmp(a));
+    let spent: Vec<u64> = largest_first
+        .into_iter()
+        .scan(0u64, |covered, note| {
+            (*covered < cost).then(|| {
+                *covered += note;
+                note
+            })
+        })
+        .collect();
+    (spent.iter().sum::<u64>() >= cost).then_some(spent)
+}
+
+fn send_back_fee() -> u64 {
+    fee_tables::one_to_one(Some(ShieldedPool::Sapling), PoolType::ORCHARD, true)
+}
+
+#[test]
+fn the_sapling_note_ladder_climbs_one_step_per_note_and_numbers_each_memo() {
+    assert_eq!(
+        sapling_note_ladder(3, 10),
+        [
+            (10, "1".to_string()),
+            (20, "2".to_string()),
+            (30, "3".to_string())
+        ]
+    );
+}
+
+#[test]
+fn the_named_notes_sit_at_both_ends_of_the_ladder() {
+    let values = sapling_note_values();
+    assert_eq!(values.first().copied(), Some(UNTOUCHED_SAPLING_NOTE));
+    assert_eq!(values.last().copied(), Some(LARGEST_SAPLING_NOTE));
+}
+
+#[test]
+fn covering_notes_gathers_the_largest_notes_first_until_the_cost_is_met() {
+    assert_eq!(covering_notes(&[10, 20, 30], 50), Some(vec![30, 20]));
+    assert_eq!(covering_notes(&[10, 20, 30], 31), Some(vec![30, 20]));
+    assert_eq!(covering_notes(&[10, 20, 30], 30), Some(vec![30]));
+    assert_eq!(covering_notes(&[10, 20, 30], 61), None);
+}
+
+#[test]
+fn sending_the_largest_note_back_spends_the_two_largest_notes_with_no_change() {
+    let values = sapling_note_values();
+    let cost = LARGEST_SAPLING_NOTE + send_back_fee();
+    let spent =
+        covering_notes(&values, cost).expect("the ladder covers its largest note plus the fee");
+    assert_eq!(spent.len(), 2);
+    assert_eq!(spent.iter().sum::<u64>(), cost);
+    assert_eq!(values.iter().sum::<u64>() - cost, UNTOUCHED_SAPLING_NOTE);
+    assert_eq!(
+        fee_tables::padded_actions(spent.len(), 0),
+        fee_tables::padded_actions(1, 0),
+        "a second sapling input stays within the padded pair, so the one-input fee holds"
+    );
+}
 
 /// - Mines the mempool into a block whose shielded coinbase pays the faucet the reward plus `fee`.
 async fn mine_mempool_to_faucet(net: &MockNet, faucet_ua: &str, fee: u64) {
@@ -61,7 +133,7 @@ async fn send_orchard_back_and_forth(
 ) {
     let faucet_to_recipient_amount = 20_000u64;
     let recipient_to_faucet_amount = 10_000u64;
-    let fee = u64::from(MINIMUM_FEE);
+    let fee = fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::ORCHARD, true);
     // check start state
     faucet
         .sync_and_await()
@@ -148,18 +220,12 @@ async fn multi_input_sapling_send_with_orchard_change_no_panic(
 
     let recipient_sapling =
         get_base_address(recipient, PoolType::Shielded(ShieldedPool::Sapling)).await;
-    // Send three transfers in increasing 10_000 zat increments.
-    let memos = ["1", "2", "3"];
+    let ladder = sapling_note_ladder(SAPLING_NOTES, SAPLING_NOTE_STEP);
     from_inputs::quick_send(
         faucet,
-        (1..=SAPLING_NOTES)
-            .map(|n| {
-                (
-                    recipient_sapling.as_str(),
-                    n * SAPLING_NOTE_STEP,
-                    Some(memos[(n - 1) as usize]),
-                )
-            })
+        ladder
+            .iter()
+            .map(|(value, memo)| (recipient_sapling.as_str(), *value, Some(memo.as_str())))
             .collect(),
     )
     .await
@@ -173,8 +239,6 @@ async fn multi_input_sapling_send_with_orchard_change_no_panic(
         .sync_and_await()
         .await
         .expect("the recipient syncs its three sapling notes");
-    // Sending the largest single note the recipient holds back has to gather
-    // two notes to cover the payment plus the fee.
     let faucet_ua = get_base_address(faucet, PoolType::Shielded(ShieldedPool::Orchard)).await;
     from_inputs::quick_send(
         recipient,
@@ -191,11 +255,6 @@ async fn multi_input_sapling_send_with_orchard_change_no_panic(
         .sync_and_await()
         .await
         .expect("the recipient syncs its mined two-input send");
-    // Post-state, observed and pinned: the 30_000 payment plus its
-    // 20_000 ZIP-317 fee (two sapling spends, two orchard actions) is
-    // covered exactly by the 20_000 and 30_000 notes, so the untouched
-    // 10_000 sapling note is the whole remaining balance and the
-    // orchard change is zero-value.
     check_client_balances!(recipient, i: 0 o: 0 s: UNTOUCHED_SAPLING_NOTE t: 0);
 }
 
@@ -238,7 +297,7 @@ async fn sends_to_self_handle_balance_properly(
     // The shield sweeps the whole transparent funding into the Ironwood
     // pool (a V6 shield's change lands in the ironwood bundle), less the
     // ZIP-317 fee.
-    let shielded_value = TRANSPARENT_FUNDING - zip317_fee(TRANSPARENT_SHIELD_LOGICAL_ACTIONS);
+    let shielded_value = TRANSPARENT_FUNDING - fee_tables::shield(TRANSPARENT_SHIELD_INPUTS);
     check_client_balances!(recipient, i: shielded_value o: 0 s: UNTOUCHED_SAPLING_NOTE t: 0);
 
     let pre_rescan_summaries = recipient
@@ -271,7 +330,7 @@ async fn sends_to_self_handle_balance_properly(
                         SelfSendValueTransfer::Shield,
                     ))
                     && vt.value == shielded_value
-                    && vt.transaction_fee == Some(zip317_fee(TRANSPARENT_SHIELD_LOGICAL_ACTIONS))
+                    && vt.transaction_fee == Some(fee_tables::shield(TRANSPARENT_SHIELD_INPUTS))
                     && vt.pools_sent_from == [PoolType::TRANSPARENT]
                     && vt.pools_received == [PoolType::IRONWOOD]
             })
@@ -355,9 +414,7 @@ async fn propose_and_send_with_op_return_confirms_on_chain(
     faucet: &mut LightClient,
     recipient: &mut LightClient,
 ) {
-    // A payload under the 80-byte limit.
     const PAYLOAD: &[u8] = b"zingolib op_return payload";
-    let amount = OP_RETURN_PAYMENT;
 
     let recipient_ua = get_base_address(recipient, PoolType::Shielded(ShieldedPool::Orchard)).await;
     from_inputs::quick_send(faucet, vec![(&recipient_ua, OP_RETURN_FUNDING, None)])
@@ -373,7 +430,7 @@ async fn propose_and_send_with_op_return_confirms_on_chain(
     let data = OpReturnData::new(PAYLOAD.to_vec()).expect("the payload is under the limit");
 
     let proposal = recipient
-        .propose_send_with_op_return(&recipient_address, amount, data, AccountId::ZERO)
+        .propose_send_with_op_return(&recipient_address, OP_RETURN_PAYMENT, data, AccountId::ZERO)
         .await
         .expect("the OP_RETURN proposal builds");
     let op_return_fee = proposal.op_return_fee();
@@ -388,7 +445,7 @@ async fn propose_and_send_with_op_return_confirms_on_chain(
     assert_eq!(
         crate::data::proposal::total_payment_amount(proposal.deshield())
             .expect("the deshield pays one amount"),
-        (amount + op_return_fee).expect("the amount plus the fee stays within range"),
+        (OP_RETURN_PAYMENT + op_return_fee).expect("the amount plus the fee stays within range"),
         "the deshield pays the amount plus the OP_RETURN fee"
     );
 
@@ -435,7 +492,10 @@ async fn propose_and_send_with_op_return_confirms_on_chain(
 
     assert_null_data_send(bundle, PAYLOAD);
     assert!(
-        bundle.vout.iter().any(|out| out.value() == amount),
+        bundle
+            .vout
+            .iter()
+            .any(|out| out.value() == OP_RETURN_PAYMENT),
         "a recipient output pays the amount"
     );
 }

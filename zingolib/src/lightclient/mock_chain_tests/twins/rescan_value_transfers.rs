@@ -1,6 +1,6 @@
 use zcash_protocol::PoolType;
 
-use super::{FUNDING, external_address, funded_client};
+use super::{FUNDING, funded_client};
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::mock_indexer::MockNet;
 use crate::testutils::synthetic_wallet;
@@ -12,8 +12,8 @@ async fn check_list_value_transfers_across_rescan() {
     let mut net = MockNet::launch().await;
     let mut recipient = funded_client(&mut net, &[(PoolType::ORCHARD, FUNDING)], 1).await;
 
-    let faucet_sapling = synthetic_wallet::external_sapling_address();
-    let faucet_unified = external_address(PoolType::ORCHARD);
+    let faucet_sapling = synthetic_wallet::external_address(PoolType::SAPLING);
+    let faucet_unified = synthetic_wallet::external_address(PoolType::ORCHARD);
     from_inputs::quick_send(
         &mut recipient,
         vec![
