@@ -165,6 +165,7 @@ jobs:
           done
           test -f "$OUTPUT/kotlin/uniffi/zingo/zingo.kt"
           test -f "$OUTPUT/kotlin/uniffi/zingo_nym_proxy_ffi/zingo_nym_proxy_ffi.kt"
+          test -f "$OUTPUT/descriptor.txt"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
