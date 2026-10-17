@@ -929,45 +929,52 @@ impl LightClient {
         publish_slot(&self.mixnet_slot, &self.mixnet_status);
     }
 
-    /// The driver entry a session calls at its go-online moment, which under
-    /// [`MixnetStartPolicy::ForcedOn`](crate::mixnet::MixnetStartPolicy)
-    /// provisions the transport by `strategy` (the bundled binary spawned
-    /// from the consumer's platform hints, or an attach to a mobile-platform-hosted
-    /// endpoint) and blocks until the standing client is born proven, under
-    /// [`MixnetStartPolicy::OptedOutThisSession`](crate::mixnet::MixnetStartPolicy)
-    /// records the startup opt-out as the explicit act that reaches switched
-    /// off and sets the transmit policy to
-    /// [`TransmitPolicy::Nakednet`](crate::mixnet::TransmitPolicy), so the
-    /// session's sends travel over the indexer (ADR 0024, consent at start),
-    /// returns any provisioning failure typed while leaving the mode
-    /// unattached — refusal, never a silent nakednet — and never respawns on
-    /// its own, recovery staying explicit through
-    /// [`Indicator::needs_recovery`](crate::mixnet::Indicator::needs_recovery).
+    /// - Under `OptedOutThisSession`, vacates the transport slot and sets
+    ///   the session's transmit policy to nakednet.
+    /// - Under `ForcedOn` with `Spawn`, resolves the `nym-proxy` path from
+    ///   the hints, spawns the child, and blocks until the standing client
+    ///   is born proven.
+    /// - Under `ForcedOn` with `Attach`, attaches to the host's SOCKS5
+    ///   endpoint.
+    /// - Publishes the settled slot state to the session status channel.
     pub async fn start_mixnet_session(
         &mut self,
         strategy: crate::mixnet::ProvisionStrategy<'_>,
         policy: crate::mixnet::MixnetStartPolicy,
-    ) -> Result<(), crate::mixnet::acquire::TransportError> {
+    ) -> Result<crate::mixnet::SessionStarted, crate::mixnet::SessionStartError> {
+        use crate::mixnet;
         match policy {
-            crate::mixnet::MixnetStartPolicy::OptedOutThisSession => {
+            mixnet::MixnetStartPolicy::OptedOutThisSession => {
                 self.disable_mixnet().await;
                 // The opt-out is the user's explicit nakednet consent for
                 // this session, so it is the one production act that sets
                 // the policy. The price fetch stays mixnet-only regardless.
-                self.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
-                Ok(())
+                self.set_transmit_policy(mixnet::TransmitPolicy::Nakednet);
+                Ok(mixnet::SessionStarted::OptedOut)
             }
-            crate::mixnet::MixnetStartPolicy::ForcedOn => match strategy {
-                crate::mixnet::ProvisionStrategy::Spawn(hints) => {
-                    let path = crate::mixnet::provision::resolve_proxy_path(&hints);
-                    log::info!("mixnet session start: spawning nym-proxy at {path}");
+            mixnet::MixnetStartPolicy::ForcedOn => match strategy {
+                mixnet::ProvisionStrategy::Spawn(hints) => {
+                    let resolution = mixnet::provision::resolve_proxy_path(&hints);
+                    log::info!("mixnet session start: spawning nym-proxy at {resolution}");
                     // The go-online moment is a user act: someone is waiting.
-                    self.enable_mixnet(std::path::Path::new(&path)).await
+                    match self
+                        .enable_mixnet(std::path::Path::new(&resolution.path))
+                        .await
+                    {
+                        Ok(()) => Ok(mixnet::SessionStarted::Spawned { resolution }),
+                        Err(source) => Err(mixnet::SessionStartError::Spawn { resolution, source }),
+                    }
                 }
-                crate::mixnet::ProvisionStrategy::Attach { socks5_addr, exits } => self
+                mixnet::ProvisionStrategy::Attach { socks5_addr, exits } => self
                     .attach_mixnet(socks5_addr, exits)
                     .await
-                    .map_err(crate::mixnet::acquire::TransportError::from),
+                    .map(|()| mixnet::SessionStarted::Attached {
+                        socks5_addr: socks5_addr.to_string(),
+                    })
+                    .map_err(|source| mixnet::SessionStartError::Attach {
+                        socks5_addr: socks5_addr.to_string(),
+                        source,
+                    }),
             },
         }
     }
@@ -2148,9 +2155,10 @@ mod tests {
                 .expect_err("a malformed attach address must refuse");
             assert!(matches!(
                 error,
-                crate::mixnet::acquire::TransportError::Proxy(
-                    crate::mixnet::MixnetProxyError::InvalidAddress { .. }
-                )
+                crate::mixnet::SessionStartError::Attach {
+                    source: crate::mixnet::MixnetProxyError::InvalidAddress { .. },
+                    ..
+                }
             ));
 
             assert_eq!(

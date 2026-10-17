@@ -24,6 +24,8 @@ const USAGE: &str = "usage: build-binding-layer <android|kotlin> --out <director
 
 const ARTIFACT_COMMAND: &str = "artifact";
 
+const TRIPLE_LIST_SEPARATOR: &str = ", ";
+
 const IMAGE_COMMAND: &str = "image";
 
 const COMMIT_FLAG: &str = "--commit";
@@ -116,9 +118,7 @@ impl IosTarget {
             IosTarget::Simulator(_) => "ios-simulator",
         }
     }
-}
 
-impl IosTarget {
     fn from_triple(triple: &str) -> Option<IosTarget> {
         iter_ios_targets().find(|target| target.triple() == triple)
     }
@@ -250,6 +250,7 @@ enum Step {
     FreshDir(path::PathBuf),
     /// Remove a host directory if it exists.
     Remove(path::PathBuf),
+    Require(path::PathBuf),
     Describe {
         workdir: String,
         env: Vec<(String, String)>,
@@ -546,7 +547,18 @@ fn ios_phase(target: Option<&str>, assemble: bool) -> Result<IosPhase, Vec<Strin
         ]),
         (Some(triple), false) => IosTarget::from_triple(triple)
             .map(IosPhase::Slice)
-            .ok_or_else(|| vec![format!("unknown iOS target `{triple}`")]),
+            .ok_or_else(|| {
+                vec![
+                    format!(
+                        "unknown iOS target `{triple}`; the targets are {}",
+                        iter_ios_targets()
+                            .map(|target| target.triple())
+                            .collect::<Vec<_>>()
+                            .join(TRIPLE_LIST_SEPARATOR)
+                    ),
+                    USAGE.to_string(),
+                ]
+            }),
     }
 }
 
@@ -595,7 +607,7 @@ fn start_container(engine: &str, root: &path::Path) -> Result<String, Vec<String
     .map(|id| id.trim().to_string())
 }
 
-fn fresh_plan(roots: &Roots, targets: &[&str], steps: Vec<Step>) -> Vec<Step> {
+fn toolchain_plan(roots: &Roots, targets: &[&str], steps: Vec<Step>) -> Vec<Step> {
     let rustup = |words: &[&str]| Step::Run {
         workdir: roots.run.clone(),
         env: vec![],
@@ -613,10 +625,13 @@ fn fresh_plan(roots: &Roots, targets: &[&str], steps: Vec<Step>) -> Vec<Step> {
             rustup(&[&["target", "add"], targets].concat()),
         ]
     };
+    [toolchain, steps].into_iter().flatten().collect()
+}
+
+fn fresh_plan(roots: &Roots, targets: &[&str], steps: Vec<Step>) -> Vec<Step> {
     [
         vec![Step::FreshDir(roots.out_host.clone())],
-        toolchain,
-        steps,
+        toolchain_plan(roots, targets, steps),
     ]
     .into_iter()
     .flatten()
@@ -1005,7 +1020,6 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
                 let hidden_archive = hidden(target.triple(), &archive_file);
                 let object = hidden(target.triple(), &object_file);
                 [
-                    Step::FreshDir(host_of(roots, &slice(target.triple(), HIDDEN_DIR))),
                     Step::Run {
                         workdir: roots.run.clone(),
                         env: env.clone(),
@@ -1147,12 +1161,29 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
     };
     let assembly_steps = || {
         let steps: Vec<Vec<Step>> = vec![
+            iter_ios_targets()
+                .flat_map(|target| {
+                    binding_layer::GENERATIONS
+                        .map(|generation| static_library(generation.lib_name()))
+                        .into_iter()
+                        .chain(
+                            (target == IosTarget::Device)
+                                .then(|| binding_layer::DESCRIPTOR_FILE.to_string()),
+                        )
+                        .map(move |file| {
+                            Step::Require(host_of(roots, &slice(target.triple(), &file)))
+                        })
+                })
+                .collect(),
             vec![
                 Step::FreshDir(host(&wallet_generated)),
                 Step::FreshDir(host(&proxy_generated)),
                 Step::FreshDir(host(&headers)),
                 Step::FreshDir(host_of(roots, &slice_dir(UNIVERSAL_SIMULATOR_DIR))),
             ],
+            iter_ios_targets()
+                .map(|target| Step::FreshDir(host_of(roots, &slice(target.triple(), HIDDEN_DIR))))
+                .collect(),
             vec![bindgen(
                 binding_layer::Generation::Wallet,
                 &slice(IosTarget::Device.triple(), &wallet_static),
@@ -1240,7 +1271,7 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
                 .chain(assembly_steps())
                 .collect(),
         ),
-        IosPhase::Slice(target) => fresh_plan(roots, &[target.triple()], slice_steps(target)),
+        IosPhase::Slice(target) => toolchain_plan(roots, &[target.triple()], slice_steps(target)),
         IosPhase::Assembly => fresh_plan(roots, &[], assembly_steps()),
     }
 }
@@ -1295,6 +1326,12 @@ fn execute_step(runner: &Runner, step: &Step) -> Result<(), Vec<String>> {
                 Ok(())
             }
         }
+        Step::Require(file) => file.is_file().then_some(()).ok_or_else(|| {
+            vec![format!(
+                "{} is missing; build its slice before the assembly",
+                file.display()
+            )]
+        }),
         Step::Describe {
             workdir,
             env,
@@ -1686,7 +1723,7 @@ mod tests {
     const MATRIX_TARGETS_KEY: &str = "target: [";
     const CARGO_BUILD: &str = "cargo build";
     const LIBRARY_FLAG: &str = "--library";
-    const ASSEMBLY_PROGRAMS: [&str; 3] = ["ld ", "lipo ", "xcodebuild "];
+    const ASSEMBLY_PROGRAMS: [&str; 4] = ["ld ", "libtool ", "lipo ", "xcodebuild "];
 
     fn ios_slices() -> String {
         format!("{HOST_ROOT}/{BUILD_ROOT}/ios/{SLICES_DIR}")
@@ -1757,6 +1794,73 @@ mod tests {
     }
 
     #[test]
+    fn the_ios_slice_plan_leaves_the_package_output_alone() -> Result<(), Vec<String>> {
+        let roots = host_roots()?;
+        let output = format!("{}/", roots.out_host.to_string_lossy());
+        for target in iter_ios_targets() {
+            for step in ios_plan(&roots, IosPhase::Slice(target)) {
+                if let Step::FreshDir(dir) | Step::Remove(dir) = step {
+                    let dir = dir.to_string_lossy();
+                    assert!(
+                        !dir.starts_with(&output) && dir != roots.out_host.to_string_lossy(),
+                        "a slice clears {dir}"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn the_ios_assembly_plan_requires_every_slice_before_it_reads_one() -> Result<(), Vec<String>> {
+        let plan = ios_plan(&host_roots()?, IosPhase::Assembly);
+        let required: Vec<String> = plan
+            .iter()
+            .filter_map(|step| match step {
+                Step::Require(file) => Some(file.to_string_lossy().to_string()),
+                _ => None,
+            })
+            .collect();
+        let mut expected = Vec::new();
+        for target in iter_ios_targets() {
+            for generation in binding_layer::GENERATIONS {
+                expected.push(format!(
+                    "{}/{}/{}",
+                    ios_slices(),
+                    target.triple(),
+                    ios_static_library(generation.lib_name())
+                ));
+            }
+            if target == IosTarget::Device {
+                expected.push(format!(
+                    "{}/{}/{}",
+                    ios_slices(),
+                    target.triple(),
+                    binding_layer::DESCRIPTOR_FILE
+                ));
+            }
+        }
+        assert_eq!(required, expected);
+        let last_require = workbench::required(
+            plan.iter()
+                .rposition(|step| matches!(step, Step::Require(_))),
+            "a require step",
+        )?;
+        let first_read = workbench::required(
+            plan.iter().position(|step| {
+                matches!(step, Step::Run { command, .. } if !command[0].starts_with("rustup"))
+                    || matches!(step, Step::Copy { .. })
+            }),
+            "a step that reads a slice",
+        )?;
+        assert!(
+            last_require < first_read,
+            "a slice is read before every slice is required"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn the_ios_assembly_plan_compiles_no_target_and_reads_only_the_slices(
     ) -> Result<(), Vec<String>> {
         let plan = ios_plan(&host_roots()?, IosPhase::Assembly);
@@ -1795,22 +1899,48 @@ mod tests {
         Ok(())
     }
 
+    fn rendered(plan: &[Step]) -> Vec<String> {
+        let paths = |paths: &[path::PathBuf]| {
+            paths
+                .iter()
+                .map(|path| path.to_string_lossy().to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        plan.iter()
+            .map(|step| match step {
+                Step::Run { command, .. } => command.join(" "),
+                Step::Copy { from, to } => format!("copy {}", paths(&[from.clone(), to.clone()])),
+                Step::Concatenate { sources, to, .. } => {
+                    format!("concatenate {} {}", paths(sources), to.to_string_lossy())
+                }
+                Step::FreshDir(dir) => format!("fresh {}", dir.to_string_lossy()),
+                Step::Remove(dir) => format!("remove {}", dir.to_string_lossy()),
+                Step::Require(file) => format!("require {}", file.to_string_lossy()),
+                Step::Describe { command, to, .. } => {
+                    format!("describe {} {}", command.join(" "), to.to_string_lossy())
+                }
+                Step::XcodeTest { workdir, scheme } => format!("xcodetest {workdir} {scheme}"),
+            })
+            .collect()
+    }
+
     #[test]
     fn the_full_ios_plan_is_every_slice_plan_followed_by_the_assembly() -> Result<(), Vec<String>> {
         let roots = host_roots()?;
         let mut expected = Vec::new();
         for target in iter_ios_targets() {
-            expected.extend(after_the_toolchain(commands(&ios_plan(
+            expected.extend(after_the_toolchain(rendered(&ios_plan(
                 &roots,
                 IosPhase::Slice(target),
             ))));
         }
-        expected.extend(after_the_toolchain(commands(&ios_plan(
+        expected.extend(after_the_toolchain(rendered(&ios_plan(
             &roots,
             IosPhase::Assembly,
         ))));
         assert_eq!(
-            after_the_toolchain(commands(&ios_plan(&roots, IosPhase::Full))),
+            after_the_toolchain(rendered(&ios_plan(&roots, IosPhase::Full))),
             expected
         );
         Ok(())
@@ -1835,6 +1965,10 @@ mod tests {
         ))?
         .concat();
         assert!(unknown.contains(android_triple));
+        for target in iter_ios_targets() {
+            assert!(unknown.contains(target.triple()), "{unknown}");
+        }
+        assert!(unknown.contains(USAGE), "{unknown}");
         for other in ["android", "kotlin"] {
             let diagnostic = workbench::refused(parse(
                 &[other, ASSEMBLE_FLAG, OUT_FLAG, "out"].map(String::from),
@@ -1861,6 +1995,48 @@ mod tests {
             .collect();
         let known: Vec<&str> = iter_ios_targets().map(|target| target.triple()).collect();
         assert_eq!(listed, known);
+        Ok(())
+    }
+
+    const OUTPUT_FLAGS: [&str; 2] = ["-o", "-output"];
+
+    fn written_paths(step: &Step) -> Vec<String> {
+        match step {
+            Step::Run { command, .. } => command
+                .windows(2)
+                .filter(|pair| OUTPUT_FLAGS.contains(&pair[0].as_str()))
+                .map(|pair| pair[1].clone())
+                .collect(),
+            Step::Copy { to, .. } | Step::Concatenate { to, .. } | Step::Describe { to, .. } => {
+                vec![to.to_string_lossy().to_string()]
+            }
+            Step::FreshDir(_) | Step::Remove(_) | Step::Require(_) | Step::XcodeTest { .. } => {
+                vec![]
+            }
+        }
+    }
+
+    #[test]
+    fn no_plan_recreates_a_directory_an_earlier_step_wrote_into() -> Result<(), Vec<String>> {
+        let roots = host_roots()?;
+        let plans = [
+            ios_plan(&roots, IosPhase::Full),
+            ios_plan(&roots, IosPhase::Assembly),
+        ];
+        for plan in plans.iter().chain(every_plan()?.iter()) {
+            let mut written: Vec<String> = Vec::new();
+            for step in plan {
+                if let Step::FreshDir(dir) = step {
+                    let dir = format!("{}/", dir.to_string_lossy());
+                    let lost: Vec<&String> = written
+                        .iter()
+                        .filter(|path| path.starts_with(&dir))
+                        .collect();
+                    assert!(lost.is_empty(), "recreating {dir} discards {lost:?}");
+                }
+                written.extend(written_paths(step));
+            }
+        }
         Ok(())
     }
 

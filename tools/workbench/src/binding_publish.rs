@@ -457,6 +457,139 @@ mod tests {
             .collect()
     }
 
+    const IOS_WORKFLOW: &str = ".github/workflows/binding-layer-ios.yaml";
+    const STEP_MARK: &str = "- name:";
+    const CACHE_RESTORE: &str = "uses: actions/cache/restore@";
+    const CACHE_SAVE: &str = "uses: actions/cache/save@";
+    const PATHS_KEY: &str = "path: |";
+    const KEY_KEY: &str = "key:";
+    const SAVE_GUARD: &str = "if: github.ref == 'refs/heads/dev'";
+    const RUST_SETUP: &str = "uses: ./.github/actions/rust-setup";
+    const RUST_CACHE_OFF: &str = "cache: \"false\"";
+    const MATRIX_TARGET: &str = "matrix.target";
+    const BUNDLE_INPUT: &str = "${{ inputs.bundle }}";
+    const MATRIX_TARGET_EXPRESSION: &str = "${{ matrix.target }}";
+    const ARTIFACT_NAME_KEY: &str = "name: ";
+    const ARTIFACT_PATTERN_KEY: &str = "pattern: ";
+    const FAIL_FAST_OFF: &str = "fail-fast: false";
+    const FETCH_TAGS: &str = "fetch-tags: true";
+    const CARGO_BIN: &str = ".cargo/bin";
+
+    struct CacheStep {
+        paths: Vec<String>,
+        key: String,
+        guarded: bool,
+    }
+
+    fn steps(text: &str) -> Vec<Vec<&str>> {
+        let mut steps: Vec<Vec<&str>> = Vec::new();
+        for line in text.lines() {
+            if line.trim().starts_with(STEP_MARK) {
+                steps.push(vec![line]);
+            } else if let Some(step) = steps.last_mut() {
+                step.push(line);
+            }
+        }
+        steps
+    }
+
+    fn cache_steps(text: &str, uses: &str) -> Result<Vec<CacheStep>, Vec<String>> {
+        steps(text)
+            .into_iter()
+            .filter(|step| step.iter().any(|line| line.trim().starts_with(uses)))
+            .map(|step| {
+                let joined = step.join("\n");
+                let paths = blocks_under(&joined, PATHS_KEY)
+                    .into_iter()
+                    .flatten()
+                    .map(|line| line.trim().to_string())
+                    .collect();
+                let key = crate::required(
+                    step.iter()
+                        .map(|line| line.trim())
+                        .find_map(|line| line.strip_prefix(KEY_KEY)),
+                    "cache key",
+                )?
+                .trim()
+                .to_string();
+                let guarded = step.iter().any(|line| line.trim() == SAVE_GUARD);
+                Ok(CacheStep {
+                    paths,
+                    key,
+                    guarded,
+                })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_ios_workflow_caches_cargo_explicitly_and_saves_only_from_dev() -> Result<(), Vec<String>>
+    {
+        let workflow = repo_file(IOS_WORKFLOW)?;
+        let restores = cache_steps(&workflow, CACHE_RESTORE)?;
+        let saves = cache_steps(&workflow, CACHE_SAVE)?;
+        assert!(restores.len() >= 2, "one restore per job");
+        assert_eq!(restores.len(), saves.len());
+        for (restore, save) in restores.iter().zip(&saves) {
+            assert!(!restore.paths.is_empty());
+            assert_eq!(restore.paths, save.paths);
+            assert_eq!(restore.key, save.key);
+            assert!(!restore.guarded);
+            assert!(save.guarded, "{} saves off dev", save.key);
+        }
+        assert!(saves.iter().any(|save| save.key.contains(MATRIX_TARGET)));
+        let setups = workflow
+            .lines()
+            .filter(|line| line.trim() == RUST_SETUP)
+            .count();
+        let disabled = workflow
+            .lines()
+            .filter(|line| line.trim() == RUST_CACHE_OFF)
+            .count();
+        assert_eq!(
+            setups, disabled,
+            "every rust-setup use turns rust-cache off"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn the_ios_slice_jobs_follow_the_slice_naming_rule_and_run_to_the_end(
+    ) -> Result<(), Vec<String>> {
+        let workflow = repo_file(IOS_WORKFLOW)?;
+        let lines: Vec<&str> = workflow.lines().map(str::trim).collect();
+        let upload = format!(
+            "{ARTIFACT_NAME_KEY}{}",
+            binding_layer::ios_slice_artifact(BUNDLE_INPUT, MATRIX_TARGET_EXPRESSION)
+        );
+        let download = format!(
+            "{ARTIFACT_PATTERN_KEY}{}",
+            binding_layer::ios_slice_pattern(BUNDLE_INPUT)
+        );
+        assert!(lines.contains(&upload.as_str()), "{upload}");
+        assert!(lines.contains(&download.as_str()), "{download}");
+        assert!(
+            lines.contains(&FAIL_FAST_OFF),
+            "one failing slice must not cancel the others"
+        );
+        assert_eq!(
+            lines.iter().filter(|line| **line == FETCH_TAGS).count(),
+            1,
+            "only the slice job writes the descriptor, which reads the tags"
+        );
+        let slice_save = crate::required(
+            cache_steps(&workflow, CACHE_SAVE)?
+                .into_iter()
+                .find(|save| save.key.contains(MATRIX_TARGET)),
+            "the slice save",
+        )?;
+        assert!(
+            slice_save.paths.iter().any(|path| path == CARGO_BIN),
+            "the cache holds bindgen-cli, so cargo install skips the build on a hit"
+        );
+        Ok(())
+    }
+
     #[test]
     fn the_publish_workflow_holds_the_permission_its_reactions_need() -> Result<(), Vec<String>> {
         let workflow = repo_file(PUBLISH_WORKFLOW)?;

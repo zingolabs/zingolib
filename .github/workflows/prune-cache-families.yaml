@@ -4,13 +4,18 @@
 # retention removes it. On 2026-10-16 dev held up to eight lockfile
 # hashes per family, 53 GB in 201 entries against a 50 GB limit, so
 # GitHub evicted entries and runs built cold. The saves come only from
-# dev, so this workflow runs after each workflow that saves from dev and
-# hands the store to the workbench tool prune-cache-families, which
-# deletes every rust-cache entry whose family has a newer one. A delete
-# that fails does not stop the others; an entry that GitHub evicted in
-# the meantime counts as done. The tool leaves setup-gradle's entries
-# alone: its bundles are content-addressed and restored by exact key, and
-# the newest gradle-home entry may still name an older bundle.
+# dev, so this workflow runs after each workflow that saves from dev, and
+# once a day in case a new saver is missing from that list, and hands the
+# store to the workbench tool prune-cache-families. The tool keeps the
+# two newest entries of each rust-cache family and deletes the rest. The
+# newest entry is not always the one the next run needs: a re-run of an
+# older push saves after a newer push did, and a reverted lockfile needs
+# the entry before the newest, so the second survivor keeps those runs
+# warm. A delete that fails does not stop the others; an entry that
+# GitHub evicted in the meantime counts as done. The tool leaves every
+# entry outside rust-cache's `v0-rust-` keys alone: setup-gradle's
+# bundles are content-addressed and restored by exact key, and the
+# newest gradle-home entry may still name an older bundle.
 name: Prune the cache families
 
 on:
@@ -26,6 +31,8 @@ on:
       - Publish the Binding Layer
     types: [completed]
     branches: [dev]
+  schedule:
+    - cron: "0 10 * * *"
 
 permissions:
   actions: write
@@ -35,7 +42,7 @@ concurrency:
 
 jobs:
   prune:
-    name: Keep the newest entry of each family
+    name: Keep the two newest entries of each family
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
