@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alone. An explicit `--seed` still outranks the variable, and a blank
   phrase from either names no seed. The variable is read once, where the
   flag is read, and never logged.
+- The prompt, `sync poll` and `sync await` report a sync task that panicked
+  as "the sync task panicked" with the panic's message, where the process
+  aborted before. `CommandError` gains `SyncPanicked(String)`.
 
 
 ### Deprecated
@@ -45,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `clearnet-test-mode` is now `nakednet-test-mode`, and `network history`
   reports a direct route as `nakednet` where it reported `clearnet`.
 - `network off` stops an in-flight sync between batches and waits for it, where it used to abort the sync task.
+- A `nym-proxy` that fails to start is reported with its path, the source
+  that chose the path (the `--nym-proxy` flag, `$ZINGO_NYM_PROXY`, the bundled
+  binary beside the wallet, or the PATH lookup after every other source was
+  empty), the cause, and a remedy fit to that source. The `network on`
+  success line carries the same path and source. The session resolves the
+  path once, in zingolib's session driver, and the Server-Selection Sweep
+  and the automatic sync recovery reuse that one resolution.
 - `migrate`, `migration continue`, `migration execute` and `migration auto` sync to the chain tip and return when the wallet is configured for continuous sync. A sync already running before the command is stopped for it and relaunched after it.
 - Sync runs continuously: without `--waitsync`, the sync engine stays
   running after reaching the chain tip and scans newly mined blocks as they

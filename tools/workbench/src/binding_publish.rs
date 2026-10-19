@@ -7,11 +7,9 @@ use crate::binding_manifest;
 pub const BINARY: &str = "binding-publish";
 pub const USERNAME_VARIABLE: &str = "REGISTRY_USERNAME";
 pub const TOKEN_VARIABLE: &str = "REGISTRY_TOKEN";
-const ZIP_MEDIA_TYPE: &str = "application/zip";
-const GZIP_MEDIA_TYPE: &str = "application/gzip";
-const ARCHIVE_SUFFIX: &str = ".tar.gz";
+pub const GZIP_MEDIA_TYPE: &str = "application/gzip";
 const SHAPES: [(&str, &str); 2] = [
-    (binding_manifest::ANDROID, ZIP_MEDIA_TYPE),
+    (binding_manifest::ANDROID, GZIP_MEDIA_TYPE),
     (binding_manifest::IOS, GZIP_MEDIA_TYPE),
 ];
 const TAR: &str = "tar";
@@ -81,24 +79,14 @@ fn find_file(
     what: &str,
     wanted: impl Fn(&str) -> bool,
 ) -> Result<PathBuf, Vec<String>> {
-    let mut pending = vec![dir.to_path_buf()];
-    while let Some(current) = pending.pop() {
-        let entries = std::fs::read_dir(&current)
-            .map_err(|e| vec![format!("cannot read {}: {e}", current.display())])?;
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                pending.push(path);
-            } else if path
-                .file_name()
+    crate::files_under(dir, &[])?
+        .into_iter()
+        .find(|path| {
+            path.file_name()
                 .and_then(|name| name.to_str())
                 .is_some_and(&wanted)
-            {
-                return Ok(path);
-            }
-        }
-    }
-    Err(vec![format!("no {what} lies under {}", dir.display())])
+        })
+        .ok_or_else(|| vec![format!("no {what} lies under {}", dir.display())])
 }
 
 /// - Runs `orasust push` and then an anonymous `orasust resolve` as child processes.
@@ -148,11 +136,7 @@ fn bundle_of(root: &Path, platform: &str, dir: &Path, commit: &str) -> Result<Bu
     .to_string();
     let media_type = media_type_of(platform)?;
     let file = match platform {
-        binding_manifest::ANDROID => {
-            find_file(dir, &format!("*{}", binding_layer::AAR_SUFFIX), |name| {
-                name.ends_with(binding_layer::AAR_SUFFIX)
-            })?
-        }
+        binding_manifest::ANDROID => maven_repository_archive(dir)?,
         _ => swift_package_archive(root, dir, commit)?,
     };
     Ok(Bundle {
@@ -160,6 +144,35 @@ fn bundle_of(root: &Path, platform: &str, dir: &Path, commit: &str) -> Result<Bu
         descriptor,
         media_type,
     })
+}
+
+/// - Runs `tar` as a child process in `parent`, writing `<name>.tar.gz` beside `<name>`.
+fn archive(parent: &Path, name: &str) -> Result<PathBuf, Vec<String>> {
+    let archive_name = format!("{name}{}", binding_layer::ARCHIVE_SUFFIX);
+    let args = [TAR_ARGS.as_slice(), &[archive_name.as_str(), name]].concat();
+    crate::stdout_in(parent, TAR, &args, &[])?;
+    Ok(parent.join(archive_name))
+}
+
+/// - Runs `tar` as a child process to archive the Maven repository directory under `dir`.
+fn maven_repository_archive(dir: &Path) -> Result<PathBuf, Vec<String>> {
+    let metadata = find_file(dir, binding_layer::MAVEN_METADATA_FILE, |name| {
+        name == binding_layer::MAVEN_METADATA_FILE
+    })?;
+    let repository = crate::required(
+        metadata.ancestors().find(|ancestor| {
+            ancestor
+                .file_name()
+                .is_some_and(|name| name == binding_layer::MAVEN_REPOSITORY_DIR)
+        }),
+        &format!(
+            "directory named {} above {}",
+            binding_layer::MAVEN_REPOSITORY_DIR,
+            metadata.display()
+        ),
+    )?;
+    let parent = crate::required(repository.parent(), "parent of the Maven repository")?;
+    archive(parent, binding_layer::MAVEN_REPOSITORY_DIR)
 }
 
 fn swift_package_archive(root: &Path, dir: &Path, commit: &str) -> Result<PathBuf, Vec<String>> {
@@ -184,14 +197,7 @@ fn swift_package_archive(root: &Path, dir: &Path, commit: &str) -> Result<PathBu
     let manifest_file = package_dir.join(crate::file_name_of(manifest_path)?);
     std::fs::write(&manifest_file, manifest_text)
         .map_err(|e| vec![format!("cannot write {}: {e}", manifest_file.display())])?;
-    let archive_name = format!("{}{ARCHIVE_SUFFIX}", binding_layer::SWIFT_PACKAGE);
-    let args = [
-        TAR_ARGS.as_slice(),
-        &[archive_name.as_str(), binding_layer::SWIFT_PACKAGE],
-    ]
-    .concat();
-    crate::stdout_in(&staging, TAR, &args, &[])?;
-    Ok(staging.join(archive_name))
+    archive(&staging, binding_layer::SWIFT_PACKAGE)
 }
 
 /// - Runs `git add` and `git commit` in `root`, then `git pull --rebase` and `git push`, the
@@ -223,7 +229,7 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let required = |flag: &str| crate::required_flag(args, flag, USAGE);
     let commit = crate::commit_of(root, required(COMMIT_FLAG)?)?;
     let bundles = Path::new(required(BUNDLES_FLAG)?);
-    let newest = binding_manifest::newest_awaiting(root)?;
+    let newest = binding_manifest::newest_awaiting(root, None)?;
     if newest != commit {
         return Err(vec![format!(
             "{commit} is not the newest entry awaiting `{}` in {}, which is {newest}",
@@ -288,7 +294,10 @@ mod tests {
 
     #[test]
     fn every_platform_has_one_bundle_shape_and_nothing_else_does() {
-        assert_eq!(media_type_of(binding_manifest::ANDROID), Ok(ZIP_MEDIA_TYPE));
+        assert_eq!(
+            media_type_of(binding_manifest::ANDROID),
+            Ok(GZIP_MEDIA_TYPE)
+        );
         assert_eq!(media_type_of(binding_manifest::IOS), Ok(GZIP_MEDIA_TYPE));
         assert!(media_type_of("linux").is_err());
         assert_eq!(
@@ -446,6 +455,139 @@ mod tests {
                     .collect()
             })
             .collect()
+    }
+
+    const IOS_WORKFLOW: &str = ".github/workflows/binding-layer-ios.yaml";
+    const STEP_MARK: &str = "- name:";
+    const CACHE_RESTORE: &str = "uses: actions/cache/restore@";
+    const CACHE_SAVE: &str = "uses: actions/cache/save@";
+    const PATHS_KEY: &str = "path: |";
+    const KEY_KEY: &str = "key:";
+    const SAVE_GUARD: &str = "if: github.ref == 'refs/heads/dev'";
+    const RUST_SETUP: &str = "uses: ./.github/actions/rust-setup";
+    const RUST_CACHE_OFF: &str = "cache: \"false\"";
+    const MATRIX_TARGET: &str = "matrix.target";
+    const BUNDLE_INPUT: &str = "${{ inputs.bundle }}";
+    const MATRIX_TARGET_EXPRESSION: &str = "${{ matrix.target }}";
+    const ARTIFACT_NAME_KEY: &str = "name: ";
+    const ARTIFACT_PATTERN_KEY: &str = "pattern: ";
+    const FAIL_FAST_OFF: &str = "fail-fast: false";
+    const FETCH_TAGS: &str = "fetch-tags: true";
+    const CARGO_BIN: &str = ".cargo/bin";
+
+    struct CacheStep {
+        paths: Vec<String>,
+        key: String,
+        guarded: bool,
+    }
+
+    fn steps(text: &str) -> Vec<Vec<&str>> {
+        let mut steps: Vec<Vec<&str>> = Vec::new();
+        for line in text.lines() {
+            if line.trim().starts_with(STEP_MARK) {
+                steps.push(vec![line]);
+            } else if let Some(step) = steps.last_mut() {
+                step.push(line);
+            }
+        }
+        steps
+    }
+
+    fn cache_steps(text: &str, uses: &str) -> Result<Vec<CacheStep>, Vec<String>> {
+        steps(text)
+            .into_iter()
+            .filter(|step| step.iter().any(|line| line.trim().starts_with(uses)))
+            .map(|step| {
+                let joined = step.join("\n");
+                let paths = blocks_under(&joined, PATHS_KEY)
+                    .into_iter()
+                    .flatten()
+                    .map(|line| line.trim().to_string())
+                    .collect();
+                let key = crate::required(
+                    step.iter()
+                        .map(|line| line.trim())
+                        .find_map(|line| line.strip_prefix(KEY_KEY)),
+                    "cache key",
+                )?
+                .trim()
+                .to_string();
+                let guarded = step.iter().any(|line| line.trim() == SAVE_GUARD);
+                Ok(CacheStep {
+                    paths,
+                    key,
+                    guarded,
+                })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_ios_workflow_caches_cargo_explicitly_and_saves_only_from_dev() -> Result<(), Vec<String>>
+    {
+        let workflow = repo_file(IOS_WORKFLOW)?;
+        let restores = cache_steps(&workflow, CACHE_RESTORE)?;
+        let saves = cache_steps(&workflow, CACHE_SAVE)?;
+        assert!(restores.len() >= 2, "one restore per job");
+        assert_eq!(restores.len(), saves.len());
+        for (restore, save) in restores.iter().zip(&saves) {
+            assert!(!restore.paths.is_empty());
+            assert_eq!(restore.paths, save.paths);
+            assert_eq!(restore.key, save.key);
+            assert!(!restore.guarded);
+            assert!(save.guarded, "{} saves off dev", save.key);
+        }
+        assert!(saves.iter().any(|save| save.key.contains(MATRIX_TARGET)));
+        let setups = workflow
+            .lines()
+            .filter(|line| line.trim() == RUST_SETUP)
+            .count();
+        let disabled = workflow
+            .lines()
+            .filter(|line| line.trim() == RUST_CACHE_OFF)
+            .count();
+        assert_eq!(
+            setups, disabled,
+            "every rust-setup use turns rust-cache off"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn the_ios_slice_jobs_follow_the_slice_naming_rule_and_run_to_the_end(
+    ) -> Result<(), Vec<String>> {
+        let workflow = repo_file(IOS_WORKFLOW)?;
+        let lines: Vec<&str> = workflow.lines().map(str::trim).collect();
+        let upload = format!(
+            "{ARTIFACT_NAME_KEY}{}",
+            binding_layer::ios_slice_artifact(BUNDLE_INPUT, MATRIX_TARGET_EXPRESSION)
+        );
+        let download = format!(
+            "{ARTIFACT_PATTERN_KEY}{}",
+            binding_layer::ios_slice_pattern(BUNDLE_INPUT)
+        );
+        assert!(lines.contains(&upload.as_str()), "{upload}");
+        assert!(lines.contains(&download.as_str()), "{download}");
+        assert!(
+            lines.contains(&FAIL_FAST_OFF),
+            "one failing slice must not cancel the others"
+        );
+        assert_eq!(
+            lines.iter().filter(|line| **line == FETCH_TAGS).count(),
+            1,
+            "only the slice job writes the descriptor, which reads the tags"
+        );
+        let slice_save = crate::required(
+            cache_steps(&workflow, CACHE_SAVE)?
+                .into_iter()
+                .find(|save| save.key.contains(MATRIX_TARGET)),
+            "the slice save",
+        )?;
+        assert!(
+            slice_save.paths.iter().any(|path| path == CARGO_BIN),
+            "the cache holds bindgen-cli, so cargo install skips the build on a hit"
+        );
+        Ok(())
     }
 
     #[test]

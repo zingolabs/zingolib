@@ -25,16 +25,33 @@ inputs:
     description: Whether the cache holds CARGO_HOME/bin; off where the image already holds the tools.
     required: false
     default: "true"
+  cache:
+    description: Whether the toolchain action runs rust-cache; off where the job caches cargo itself.
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
     # The toolchain action runs rust-cache itself and exposes its inputs,
     # so a second cache step would restore and save a second entry.
-    - uses: actions-rust-lang/setup-rust-toolchain@v1
+    #
+    # The major version matters for the mobile builds. The v1 releases
+    # embed rust-cache 2.9.1, whose save step classifies a directory
+    # under a target directory as a profile unless it holds CACHEDIR.TAG,
+    # and empties every other directory down to build, deps and
+    # .fingerprint. The builder's target-triple directories hold neither,
+    # so every Android and iOS entry was saved without its cross-compiled
+    # dependencies and the builds compiled cold on every run. The v2
+    # releases embed rust-cache 2.9.2, which classifies by the presence of
+    # build, deps or .fingerprint and so descends into the triple
+    # directories. v2 also replaces the RUSTFLAGS=-D warnings default with
+    # CARGO_BUILD_WARNINGS=deny, which cargo 1.97 and later honour.
+    - uses: actions-rust-lang/setup-rust-toolchain@v2
       with:
         components: ${{ inputs.components }}
         cache-workspaces: ${{ inputs.workspaces }}
         cache-key: ${{ inputs.key }}
         cache-bin: ${{ inputs.cache-bin }}
+        cache: ${{ inputs.cache }}
         cache-on-failure: "false"
         cache-save-if: ${{ github.ref == 'refs/heads/dev' }}

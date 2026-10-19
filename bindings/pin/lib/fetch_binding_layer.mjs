@@ -1,20 +1,42 @@
 import { writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { checkTag, PLATFORMS, repository } from './bundle_pin.mjs';
 import { exists, replaceDirectory, text } from './disk.mjs';
+import { placeMavenRepository, versionNamesCommit } from './maven_repository.mjs';
 import { readPin } from './pin_file.mjs';
 import { access, download, resolveBundle } from './registry.mjs';
 import { placeSwiftPackage } from './swift_package.mjs';
 
 export const MARKER = 'bundle';
+export const ARCHIVE_SUFFIX = '.tar.gz';
+const EXTRACTED = 'extracted';
 
 async function held(home) {
   const file = await text(join(home, MARKER));
-  if (file === undefined) {
+  if (file === undefined || !file.endsWith(ARCHIVE_SUFFIX)) {
     return { kind: 'missing' };
   }
   const path = join(home, file);
   return (await exists(path)) ? { kind: 'held', path } : { kind: 'missing' };
+}
+
+function wrongVersion(commit) {
+  return ({ version }) =>
+    versionNamesCommit(version, commit)
+      ? undefined
+      : { kind: 'wrongVersion', platform: 'android', commit, version };
+}
+
+async function mavenCoordinate(archive, commit) {
+  const placed = await placeMavenRepository(
+    archive,
+    join(dirname(archive), EXTRACTED),
+    wrongVersion(commit),
+  );
+  if (placed.kind !== 'placed') {
+    return placed;
+  }
+  return { kind: 'fetched', path: placed.path, coordinate: placed.coordinate };
 }
 
 export async function fetchBundle(pin, platform, store, always, registry) {
@@ -79,8 +101,11 @@ export async function pinnedBundle(root, values) {
     values['check-tag'],
     { access, resolveBundle, download },
   );
-  if (fetched.kind !== 'fetched' || values.platform !== 'ios') {
+  if (fetched.kind !== 'fetched') {
     return fetched;
+  }
+  if (values.platform === 'android') {
+    return mavenCoordinate(fetched.path, pin.commit);
   }
   const placed = await placeSwiftPackage(
     fetched.path,

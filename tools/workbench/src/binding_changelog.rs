@@ -429,10 +429,13 @@ fn changelog_diff(root: &Path, since: &str, commit: &str, relative: &str) -> Res
 }
 
 fn regenerated(root: &Path) -> Result<String, Error> {
-    let entries = binding_manifest::entries_at(root, None)?;
-    let sections = binding_manifest::publication_commits(&entries)
+    regenerated_from(root, &binding_manifest::entries_at(root, None)?)
+}
+
+fn regenerated_from(root: &Path, entries: &[binding_manifest::Entry]) -> Result<String, Error> {
+    let sections = binding_manifest::publication_commits(entries)
         .iter()
-        .zip(&entries)
+        .zip(entries)
         .rev()
         .map(|((commit, since), entry)| {
             Ok(render_section(&gather(
@@ -804,8 +807,14 @@ mod tests {
     }
 
     #[test]
-    fn the_committed_file_passes_the_check_at_the_checked_out_commit() -> Result<(), Error> {
-        dispatch(&crate::repo_root()?, &[CHECK_FLAG.to_string()])
+    fn the_committed_file_matches_its_published_entries() -> Result<(), Error> {
+        let root = crate::repo_root()?;
+        let published = binding_manifest::published_entries(&root)?;
+        assert_eq!(
+            crate::read(&root.join(FILE))?,
+            regenerated_from(&root, &published)?
+        );
+        Ok(())
     }
 
     #[test]

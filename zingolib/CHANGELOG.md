@@ -8,6 +8,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `data::PollReport::from_join` maps a tokio join outcome to a `PollReport`: a
+  finished task is `Ready`, a panicked task is `Panicked` with the panic's
+  message, and a cancelled task is `Panicked` with tokio's description.
+- `data::panic_text` renders a panic payload, `&str` or `String`, as text.
+- `LightClientError::SyncPanicked(String)` reports a sync task that panicked
+  from `await_sync` and from the launch wait in `sync`.
+
+### Changed
+- **Breaking:** `data::PollReport` gains the `Panicked(String)` variant, which
+  `poll_sync` returns when the sync task panicked and tokio contained the
+  panic. Every exhaustive match on `PollReport` needs an arm for it.
+- **Breaking:** `LightClient::start_mixnet_session` returns
+  `Result<mixnet::SessionStarted, mixnet::SessionStartError>` in place of
+  `Result<(), TransportError>`. `SessionStarted` reports what the driver did:
+  `OptedOut`, `Spawned { resolution }` with the `ProxyResolution` the one
+  precedence rule chose, or `Attached { socks5_addr }`. `SessionStartError`
+  carries the same provenance beside its cause, as `Spawn { resolution,
+  source }` or `Attach { socks5_addr, source }`, so a consumer names the path
+  and the rung of the precedence that chose it without resolving the path a
+  second time.
+- **Breaking:** `mixnet::provision::resolve_proxy_path` returns a
+  `ProxyResolution`, the chosen path with its `ProxySource` (`Explicit`,
+  `Environment`, `Bundled`, or `PathLookup { bundled_dir }`), in place of the
+  bare path. `ProxyResolution` renders the path and its provenance through
+  `Display`, and the `PathLookup` rendering names every source that was empty.
+
+### Deprecated
+
+### Removed
+- **Breaking:** remove `wallet::keys::legacy::extended_transparent` from the public API. The module is crate-private: its `ExtendedPrivKey` and `ExtendedPubKey` hold the 32 secret-key bytes or the 33 compressed-point bytes and the 32-byte chain code the wallet file stores, and each reader validates the scalar or the point through the `zcash_transparent` account key types before the wallet loads. `Debug` prints a BLAKE2b digest of both fields. The derivation API (`KeyIndex`, `with_seed`, `derive_private_key`, `derive_public_key`, `get_ext_taddr_from_bip39seed`), which nothing called, is gone. zingolib no longer depends on `secp256k1`, `hmac` or `sha2` directly.
+
+### Fixed
+- `poll_sync`, the save poll, `shutdown_save_task` and the wallet write no
+  longer `expect` on a task's join handle. Under `panic = "unwind"` tokio
+  contains a task's panic, the join yields an error, and the old `expect`
+  re-raised the panic on the caller's thread, under the FFI's client lock,
+  which poisoned the lock for the rest of the session. A panicked save task
+  restarts, as a failed one does, and the poll reports the panic as an
+  `io::Error`.
+- `migrate_to_ironwood` reconciles once more after its last part confirms,
+  so the migration it returns reports the `Complete` phase. Reconciliation
+  judges completion on the persisted part states, and the pass that promotes
+  the parts to `Confirmed` cannot also complete the migration, so the one-call
+  returned with the phase still `PartsScheduled`.
+- The two-phase migration twin mines the mock chain to the first Ironwood-era
+  transmission window before the one-call and two buckets past each block that
+  confirms transactions, the spans the state machine requires between the
+  activation, a note's confirmation and a part that anchors on it. The twin's
+  regtest ancestor was ignored and never ran.
+
+## [7.0.0] - 2026-10-15
+
+### Added
+
 - `perspective::sync_progress`, the sync-progress editorial types.
   `SyncProgress`, built from a `pepper_sync::sync::SyncStatus`, derives the
   total block and output percentages the engine reported before: the exact
@@ -42,6 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `wallet::keys::WalletKind` and `LightWallet::kind`, the wallet's key material as one of `Mnemonic`, `SpendingKey`, `ViewingKey` with the receivers the key holds, or `NoKeys`, or `KeyError::NoAccountKeys` for a wallet without account zero. zingo-cli and the FFI each computed this themselves.
 
 ### Changed
+
 - `SaplingParams` is a plain struct whose `SPEND` and `OUTPUT` constants are
   the embedded Sapling proving parameters, read by `include_bytes!` straight
   from the parameter cache the build script downloads into. `SaplingParams::get`
@@ -119,7 +174,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ScanTarget::new(block_height, Option<TxId>)` and read through its
   accessors. A wallet file written before the change still loads.
 
+### Removed
+
+- **Breaking:** remove `LightWallet::get_filtered_balance_mut`, which no code called with a mutating filter. Use `LightWallet::get_filtered_balance`, which keeps its `Fn` bound.
+- **Breaking:** remove the `zennies_for_zingo` parameter from `LightClient::propose_send_all` and `LightClient::max_send_value`, since upstream send-max cannot carry a second payment.
+- **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
+- **Breaking:** remove the `sync::sync_status` re-export of `pepper_sync::sync_status`. Use `LightClient::latest_sync_status` or `pepper_sync::sync_status` directly.
+- **Breaking:** remove `PriceFetchRoute::Nakednet` and `LightClientError::ProbeRequiresMixnet`, both unreachable once the price fetch and the probe are mixnet-only.
+
 ### Fixed
+
 - `LightWallet::spendable_balance` and note selection require the anchor's
   shard to be scanned as well as the note's. The witness path's right-hand
   siblings are computed from the anchor's shard up to the anchor, so a note in
@@ -127,13 +191,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built. `InputSource::anchor_computable` checks the anchor's shard, where it
   checked the birthday shard, which is what the backend's canonical crossing
   proposal asks of it. (#2953)
-
-### Removed
-- **Breaking:** remove `LightWallet::get_filtered_balance_mut`, which no code called with a mutating filter. Use `LightWallet::get_filtered_balance`, which keeps its `Fn` bound.
-- **Breaking:** remove the `zennies_for_zingo` parameter from `LightClient::propose_send_all` and `LightClient::max_send_value`, since upstream send-max cannot carry a second payment.
-- **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
-- **Breaking:** remove the `sync::sync_status` re-export of `pepper_sync::sync_status`. Use `LightClient::latest_sync_status` or `pepper_sync::sync_status` directly.
-- **Breaking:** remove `PriceFetchRoute::Nakednet` and `LightClientError::ProbeRequiresMixnet`, both unreachable once the price fetch and the probe are mixnet-only.
 
 ## [6.0.0] - 2026-09-07
 

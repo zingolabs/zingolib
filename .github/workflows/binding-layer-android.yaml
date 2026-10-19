@@ -1,13 +1,16 @@
 name: Binding Layer for Android
 
 # Builds the Binding Layer's Android libraries and Kotlin Binding Sets on
-# the commit the caller names, and packages them into the AAR. The build
-# runs the builder of tools/workbench in the builder's own image. The
-# package job compiles no Rust. The Gradle library takes the prebuilt
-# output, compiles the Kotlin Binding Sets, and bundles the AAR. The
-# caller passes every artifact name from one run of `build-binding-layer
-# artifact`, so the jobs of one run agree on the names whatever commit
-# they build.
+# the commit the caller names, and publishes them as a Maven repository
+# layout. The build runs the builder of tools/workbench in the builder's
+# own image. The package job compiles no Rust and installs no NDK: the
+# builder strips every library, and the Gradle library packages them as
+# they are. The Gradle library takes the prebuilt output, compiles the
+# Kotlin Binding Sets, and publishes the AAR with its POM into a
+# repository directory, versioned by the caller.
+# The caller passes every artifact name and the Maven version from one run
+# of `build-binding-layer artifact`, so the jobs of one run agree on the
+# names whatever commit they build.
 
 on:
   workflow_call:
@@ -16,10 +19,17 @@ on:
       abis:
         required: true
         type: string
+      # The runner of the per-ABI build job: the Linux runner that the
+      # CI_LINUX_RUNNER repository variable names, falling back to
+      # WarpBuild's sixteen-core label. Each ABI compiles the wallet, the
+      # proxy and the bindgen for its target. cargo compiles independent
+      # crates in parallel; the mobile profile's codegen-units = 1 keeps each
+      # crate's own codegen serial. Measured on 2026-10-16: the x86_64 build
+      # took 7.3 minutes on sixteen cores against 11 to 17 on four.
       runner:
         required: false
         type: string
-        default: ubuntu-24.04
+        default: ${{ vars.CI_LINUX_RUNNER || 'warp-ubuntu-2404-x64-16x' }}
       # The commit to build. The publish workflow names a commit the
       # manifest lists, which is rarely the commit that triggered it.
       ref:
@@ -29,20 +39,32 @@ on:
       # The artifact names, from one run of `build-binding-layer artifact`
       # in the caller, so that every job of one run agrees on them whatever
       # commit it builds: the per-ABI artifact of each ABI as a JSON object,
-      # the pattern that matches them all, the glob of the AAR that Gradle
-      # writes, and the bundle this workflow uploads.
+      # the pattern that matches them all, the Maven repository directory
+      # that Gradle publishes into, the Maven version of the publication,
+      # and the bundle this workflow uploads.
       abi_artifacts:
         required: true
         type: string
       abi_pattern:
         required: true
         type: string
-      aar_glob:
+      repository:
+        required: true
+        type: string
+      version:
         required: true
         type: string
       bundle:
         required: true
         type: string
+      # Whether the package job runs. The nightly and the publish package
+      # the libraries into the Maven layout and run the Kotlin wire-contract
+      # test there; a pull request builds the libraries and the Kotlin
+      # Binding Sets alone.
+      package:
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   # The job runs in the image that bindings/android/docker/Dockerfile
@@ -114,14 +136,21 @@ jobs:
           overwrite: true
 
   package:
-    name: Package the AAR
+    name: Publish the Maven layout
+    if: ${{ inputs.package }}
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # Gradle reads ORG_GRADLE_PROJECT_<name> as the project property <name>.
+    # The prebuilt path makes the Binding Layer build skip its own build,
+    # and the version comes from the caller's run of the workbench, so
+    # Gradle never computes it.
     env:
       ABIS: ${{ join(fromJSON(inputs.abis), ' ') }}
       OUTPUT: bindings/android/build/binding-layer
-      AAR: bindings/android/build/outputs/aar/${{ inputs.aar_glob }}
+      REPOSITORY: ${{ inputs.repository }}
+      ORG_GRADLE_PROJECT_bindingLayerPrebuilt: ${{ github.workspace }}/bindings/android/build/binding-layer
+      ORG_GRADLE_PROJECT_bindingLayerVersion: ${{ inputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -146,31 +175,30 @@ jobs:
           test -f "$OUTPUT/kotlin/uniffi/zingo/zingo.kt"
           test -f "$OUTPUT/kotlin/uniffi/zingo_nym_proxy_ffi/zingo_nym_proxy_ffi.kt"
 
-      # Gradle reads ORG_GRADLE_PROJECT_<name> as the project property <name>,
-      # and the Binding Layer build then skips its own build.
-      - name: Point Gradle at the prebuilt Binding Layer
-        run: echo "ORG_GRADLE_PROJECT_bindingLayerPrebuilt=$GITHUB_WORKSPACE/$OUTPUT" >> "$GITHUB_ENV"
-
-      - name: Install the NDK that the AAR declares
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14.3'
 
-      # One Gradle invocation bundles the AAR and runs the Kotlin
-      # wire-contract test of the proxy crate in one task graph. The test
-      # compiles against the Kotlin Binding Set that the AAR ships and
-      # asserts it against the crate's golden pins, which the Rust and
-      # Swift suites share.
-      - name: Bundle the AAR and run the Kotlin wire-contract test
-        run: gradle --project-dir bindings/android bundleReleaseAar testReleaseUnitTest
+      # One Gradle invocation publishes the AAR and its POM into the Maven
+      # repository directory and runs the Kotlin wire-contract test of the
+      # proxy crate in one task graph. The test compiles against the Kotlin
+      # Binding Set that the AAR ships and asserts it against the crate's
+      # golden pins, which the Rust and Swift suites share.
+      - name: Publish the Maven layout and run the Kotlin wire-contract test
+        run: gradle --project-dir bindings/android publish testReleaseUnitTest
 
-      - name: Verify the AAR carries both libraries for every ABI
+      # The layout holds one AAR beside one POM, and the POM declares JNA,
+      # which the AAR needs and does not contain.
+      - name: Verify the layout holds the AAR, its POM, and every ABI
         run: |
           set -eu
-          aar="$(ls $AAR)"
+          aar="$(find "$REPOSITORY" -name '*.aar')"
+          test -n "$aar"
+          test "$(printf '%s\n' "$aar" | wc -l)" -eq 1
+          pom="${aar%.aar}.pom"
+          test -f "$pom"
+          grep --quiet '<artifactId>jna</artifactId>' "$pom"
           entries="$(unzip -Z1 "$aar")"
           for abi in $ABIS; do
             for library in libuniffi_zingo.so libzingo_nym_proxy_ffi.so; do
@@ -178,14 +206,15 @@ jobs:
             done
           done
 
-      # The publish workflow pushes this AAR, with the descriptor the
-      # builder read from the wallet build, as the Android Prebuilt Bundle.
-      - name: Upload the AAR and the descriptor
+      # The publish workflow archives this directory, with the descriptor
+      # the builder read from the wallet build, as the Android Prebuilt
+      # Bundle.
+      - name: Upload the Maven layout and the descriptor
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.bundle }}
           path: |
-            ${{ env.AAR }}
+            ${{ env.REPOSITORY }}
             ${{ env.OUTPUT }}/descriptor.txt
           retention-days: 3
           overwrite: true

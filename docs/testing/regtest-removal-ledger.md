@@ -61,8 +61,8 @@ own mempool holds the txid right after `send_transaction`, the indexer's
 This measures a real indexer's latency behind a real validator. Mock:
 lag is zero by construction, so nothing to assert. Testnet: the indexer
 half is measurable (send, poll `GetMempoolTx`), the validator half has no
-channel. Retire the validator half; the indexer half is a testnet probe
-if the latency bound matters.
+channel. Exported to zaino: the lag assertion lives in zaino's
+`validator_acceptance` cells; the time bound is retired.
 
 **9. wallet_mempool_record_trails_validator_acceptance.** Asserts the
 sender's record reaches `Mempool` status within a bound. Mock twin:
@@ -125,11 +125,12 @@ scaffold; build the dense chain with `mine_block` carrying sends. Not
 mockable: nothing.
 
 **18. diagnose_subtree_root_stream.** A diagnostic of a real indexer's
-stream truncation. Mock: `Fault::TruncateStream` reproduces the symptom,
-not the server. Testnet: the real question. Retire or move to testnet.
+subtree-root stream truncation, issue #2440. Retired: the issue closed
+on a stuck backend, and the wallet-side guarantee is the testnet cell
+of entry 15.
 
 **19. indexer_converges_with_validator_after_block_generation.** Asserts
-the harness's convergence barrier. Retire with regtest.
+the harness's convergence barrier. Exported to zaino.
 
 **20. ironwood_notes_in_untracked_history_are_recovered** and **21.
 orchard_…** Assert a wallet whose pool history was stripped reports a
@@ -228,6 +229,23 @@ of the null-data output. Keep on testnet.
 
 **62. reload_wallet_after_short_sync.** Already a testnet test, ignored by
 default.
+
+**Unified 2026-10-15.** Entries 42, 48, 49, 52, 54 and 60, and the
+Ironwood half of entry 20, started from the same fixture,
+`scenarios::faucet_recipient_default`, so they now run as the phases of
+one live test, `faucet_recipient_default_in_one_chain` in `concrete.rs`,
+in the order 52, 54, 48, 49, 60, 20. Each former test survives as a phase
+function of its own name and keeps its assertions. Entry 42 is folded into
+entry 48's phase, which performs the identical transparent funding and
+shield. Entry 49 now checks the transaction it sent by txid, because the
+first phase had already sent to the same unified address. Entry 48's
+"exactly two value transfers" became a delta over the transfers the
+earlier phases recorded, and its balance checks carry the Sapling note
+entry 54 leaves untouched. The Orchard half of entry 20 stays in `sync.rs`
+on its own pre-Ironwood chain; both halves share
+`tests/support/untracked_history.rs`. The dispositions above are
+unchanged, and the test runs under the long slow-timeout override that
+entry 54 held.
 
 ## Totals
 
@@ -475,3 +493,57 @@ zebrad + zainod pair. The twins' arithmetic matched the live pins
 without adjustment on first passing run, including every
 transaction-summary literal in test 7 except the documented
 faucet-economics fee.
+- send_post_ironwood (59): carried by the existing `funded_send_confirms_on_the_mock_chain`, whose first balance check is this guarantee.
+- send_pre_ironwood (58): `send_pre_ironwood::send_pre_ironwood`.
+- orchard_notes_in_untracked_history_are_recovered (21), and the Ironwood half of entry 20: `untracked_history::{orchard,ironwood}_notes_in_untracked_history_are_recovered`.
+- rescan_still_have_outgoing_notes::self_send (50): `rescan_self_send::self_send`, the first twin to rescan against the mock chain.
+- rescan_still_have_outgoing_notes::check_list_value_transfers_across_rescan (51): `rescan_value_transfers::check_list_value_transfers_across_rescan`.
+- unified_address_discovery (39): `unified_address_discovery::unified_address_discovery`.
+- test_scanning_in_watch_only_mode (47): `watch_only::test_scanning_in_watch_only_mode`, with its two balance-bound helpers.
+- received_tx_status_pending_to_confirmed_with_mempool_monitor (41): `received_mempool_status::received_tx_status_pending_to_confirmed_with_mempool_monitor`.
+- mempool_spend_balance_and_note_status_accounting (55): `mempool_spend_accounting::mempool_spend_balance_and_note_status_accounting`; the mock mempool is synchronous, so one sync session records each mempool status and no loop or timer remains.
+- bound_note_reservation_and_external_spend_invalidation (10): `bound_note_reservation::bound_note_reservation_and_external_spend_invalidation`.
+- migrate_all_orchard_to_ironwood (13): `immediate_migration::migrate_all_orchard_to_ironwood`.
+- immediate_migration_chunks_a_fragmented_wallet (14): `immediate_migration::immediate_migration_chunks_a_fragmented_wallet`.
+- wallet_mempool_record_trails_validator_acceptance (9): carried by the existing `transmitted_transaction_has_mempool_status_before_mining`; its time bound retires, and the `WALLET_RECORD_LAG_BOUND` constant that carried it goes with it.
+- generate_a_range_of_value_transfers (1) and send_shield_cycle (2): carried by the existing `generate_a_range_of_value_transfers_on_the_mock_chain` and `send_shield_cycle_on_the_mock_chain`, which run the same fixtures; the `chain_generic_tests` feature goes with the file.
+- faucet_recipient_default_in_one_chain (20, 42, 48, 49, 52, 54, 60): `faucet_recipient_default_in_one_chain::faucet_recipient_default_in_one_chain`, six phases on one mock chain whose faucet is a shielded-coinbase miner, so its reward arithmetic pins the mock's schedule rather than zebra's subsidy. The OP_RETURN phase's confirmation guarantee is the network's standardness policy and stays a testnet cell.
+- two_phase_migration_end_to_end (12), ignored on regtest pending node support: `two_phase_migration::two_phase_migration_end_to_end`, funded below a deferred activation and mined across it while the migration awaits confirmations.
+
+## Testnet cells (2026-10-15)
+
+Each line names a guarantee that needs a real network and the cell that
+carries it under `libtonode-tests/tests/testnet/`, behind the non-default
+`testnet` feature, compiled on every pull request and run only against the
+zingolabs zainod testnet node once it exists.
+
+- reload_wallet_after_short_sync (62) and the four GloryGoddess self-sends from zingolib's send.rs tests: `reload::reload_wallet_after_short_sync` and `glory_goddess::testnet_send_to_self_*`, no longer `#[ignore]`.
+- add_subtree_roots (15): `subtree_roots::add_subtree_roots`, against testnet instead of the mainnet indexer the default suite dialed; the mock chain serves no subtree roots, so both halves are the real indexer's.
+- served_outputs_match_chain_metadata_deltas (22): `chain_metadata::served_outputs_match_chain_metadata_deltas`, over the window around testnet's NU6.3 activation.
+- propose_and_send_with_op_return_confirms_on_chain (60), confirmation half: `op_return::propose_and_send_with_op_return_confirms_on_testnet`, the network's standardness verdict on the null-data output.
+- ZIP 318 enforcement canary (ruling 11, issue #2539): `zip318_canary::a_payment_to_an_orchard_receiver_lands_in_the_expected_pool`, whose expectation flips together with ADR 0009.
+- Mixnet Mode over a real proxy (ruling 10, issue #2591): `mixnet::a_mixnet_send_crosses_a_real_proxy_to_the_node`, asserting the reported route; the node-side assertion that no direct connection arrived waits on the node exposing connection sources.
+
+## Retired (2026-10-15)
+
+Guarantees with no home after the removal, by ruling 4 of the plan.
+
+- launch_mines_exactly_one_block_and_nothing_else_mines (5), transparent_launch_block_is_byte_deterministic (6), suppressed_launch_generate_leaves_genesis (7), chain_mutates_only_via_owned_rpc (4): contracts of the `zcash_local_net` launch and RPC log, which the removal deletes. The `sentinels` feature goes in the cut, by ruling 8 of the plan.
+- sync_test (16): no assertion beyond success; its steps are mock twins.
+- diagnose_subtree_root_stream (18): a diagnostic of the subtree-root stream truncation of issue #2440, closed on a stuck backend; the wallet-side guarantee is `subtree_roots::add_subtree_roots` (15) on testnet.
+- The time bounds of entries 8 and 9: operational latency measurements, not wallet guarantees.
+
+## Exported to zaino (landed 2026-10-15)
+
+indexer_mempool_view_trails_validator_acceptance (8), indexer_converges_with_validator_after_block_generation (19), and the eight tip_spend_rejection cells (23 to 30) are carried by `live-tests/e2e/tests/validator_acceptance.rs` in zaino, merged as zaino #1668, so the cut deletes them here.
+
+## The cut (2026-10-15, draft until the zaino exports land)
+
+`zingolib_testutils`, `zcash_local_net`, the regtest test files, the
+container job's binary symlinks, the libtonode phase of the hierarchy, the
+`sentinels` and `slow` features and the chain caches leave in one change.
+The `testnet` feature and its cells remain. The two external consumers the
+plan gated on had already moved: zingo-mobile consumes the Prebuilt Bundles
+and zaino's live tests run on its own `ztest` harness, so neither names
+`zingolib_testutils` any longer. The exported guarantees landed in
+zaino as #1668, so nothing gates the cut.

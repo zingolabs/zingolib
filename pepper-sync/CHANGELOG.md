@@ -7,9 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+- Scanning places a shard tree checkpoint only on the blocks the wallet
+  will hold one for: the top `MAX_SHARDTREE_CHECKPOINTS` blocks of a range
+  scanned above the highest scanned height, the blocks of a lower range
+  inside that window, and the anchor retention boundaries inside their
+  window. Every other block's checkpoint was built, inserted and pruned
+  from each pool's tree for nothing, a fixed cost per block per active
+  pool that grew with the ironwood pool. The heights come from one function,
+  `witness::checkpoint_heights`, which the shard tree update also uses to
+  decide the checkpoints it adds for blocks that leave a pool's tree
+  unchanged, so the two sides agree. A scan task carries the wallet's
+  highest scanned height from its selection for this.
+
 ### Deprecated
 
+### Removed
+
+### Fixed
+- The scan results of a task's loads are processed in block height order.
+  The loads of a scan range are scanned concurrently and returned in
+  completion order, so a load could be processed before a lower load of the
+  same range. When the nullifier map is capped by the performance level,
+  every processed load of a range above unscanned ranges is scanned without
+  mapping, and a note found in the lower load then recorded the higher load
+  as a range whose nullifiers must be re-fetched before the note is known to
+  be unspent. That re-fetch only runs once every range below is scanned, so a
+  note received at the chain tip stayed unspendable for the whole historic
+  sync. A result arriving above an unprocessed lower load of its task is now
+  held back until that load arrives, and a worker takes a new load only while
+  the scanning workers and held results together stay within the worker pool,
+  so the loads in memory never exceed the pool.
+
+## [0.6.0] - 2026-10-15
+
 ### Added
+
 - `sync::SyncStatus::total_blocks`, the block span from the wallet birthday to
   the last known chain height, the denominator `sync_status` already divided
   by and never reported.
@@ -95,17 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accessors.
 
 ### Changed
-- Scanning places a shard tree checkpoint only on the blocks the wallet
-  will hold one for: the top `MAX_SHARDTREE_CHECKPOINTS` blocks of a range
-  scanned above the highest scanned height, the blocks of a lower range
-  inside that window, and the anchor retention boundaries inside their
-  window. Every other block's checkpoint was built, inserted and pruned
-  from each pool's tree for nothing, a fixed cost per block per active
-  pool that grew with the ironwood pool. The heights come from one function,
-  `witness::checkpoint_heights`, which the shard tree update also uses to
-  decide the checkpoints it adds for blocks that leave a pool's tree
-  unchanged, so the two sides agree. A scan task carries the wallet's
-  highest scanned height from its selection for this.
+
 - Scanning reads version 2 zingo memos, which carry a recipient's unified
   address with its ZIP 316 revision and metadata, through
   `ParsedMemo::into_unified_addresses`.
@@ -140,8 +165,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::traits::SyncWallet::get_transparent_addresses` and
   `get_transparent_addresses_mut` document that the returned addresses must be
   in use and must not include gap addresses.
-- `sync::SyncResult` `Display` output is headed "Sync result" instead of
-  "Sync completed succesfully", since sync may now return on explicit shutdown.
 - BREAKING: the truncation rescan announces itself. `error::SyncError::PoolHistoryReopened`
   is now a struct variant carrying the pool, the rescan height, the
   disagreeing block, and both tree sizes, and it renders one
@@ -194,7 +217,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   records of the pool are wrong and the chain's are not, so one the server no
   longer serves is reported as an inconsistency.
 
+### Removed
+
+- **Breaking.** `sync::SyncStatus::percentage_total_blocks_scanned`,
+  `sync::SyncStatus::percentage_total_outputs_scanned`, and
+  `sync::SyncResult::percentage_total_outputs_scanned`. The engine reports the
+  counts and spans the percentages were derived from; the derivation, with its
+  clamp, its reading of an empty span as complete, and its one-step-short
+  reading while nullifiers await retrieval, now lives in
+  `zingolib::perspective::sync_progress`.
+- **Breaking.** The `Display` and `From<_> for json::JsonValue` implementations
+  of `sync::SyncStatus` and `sync::SyncResult`. `zingolib::perspective::sync_progress`
+  renders both, with the same text and the same JSON keys. pepper-sync no longer
+  depends on the `json` crate.
+- **Breaking.** `sync::SyncStatus::percentage_session_blocks_scanned` and
+  `sync::SyncStatus::percentage_session_outputs_scanned`. These were the only fields whose
+  computation could abort the process, and no consumer read them: the CLI's progress
+  surfaces take `total_outputs_scanned`, `total_outputs`, and `is_complete()`, and
+  `SyncResult` carries the total percentage only. A consumer that wants a session
+  percentage computes it from the session and total counts the struct still reports. The
+  two fields also leave the `json::JsonValue` rendering of a sync status.
+
 ### Fixed
+
 - `sync` makes the server requests of its session start, the chain height,
   the tree states that bound the session and the subtree roots, with the
   wallet lock released, and takes the lock only to apply what they return. A
@@ -384,26 +429,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the wallet's blocks, transactions, nullifiers and outpoints. A target
   above it names a transaction in a block the wallet no longer holds and asked
   the server for it when the replacing blocks were scanned. (#2960)
-
-### Removed
-- **Breaking.** `sync::SyncStatus::percentage_total_blocks_scanned`,
-  `sync::SyncStatus::percentage_total_outputs_scanned`, and
-  `sync::SyncResult::percentage_total_outputs_scanned`. The engine reports the
-  counts and spans the percentages were derived from; the derivation, with its
-  clamp, its reading of an empty span as complete, and its one-step-short
-  reading while nullifiers await retrieval, now lives in
-  `zingolib::perspective::sync_progress`.
-- **Breaking.** The `Display` and `From<_> for json::JsonValue` implementations
-  of `sync::SyncStatus` and `sync::SyncResult`. `zingolib::perspective::sync_progress`
-  renders both, with the same text and the same JSON keys. pepper-sync no longer
-  depends on the `json` crate.
-- **Breaking.** `sync::SyncStatus::percentage_session_blocks_scanned` and
-  `sync::SyncStatus::percentage_session_outputs_scanned`. These were the only fields whose
-  computation could abort the process, and no consumer read them: the CLI's progress
-  surfaces take `total_outputs_scanned`, `total_outputs`, and `is_complete()`, and
-  `SyncResult` carries the total percentage only. A consumer that wants a session
-  percentage computes it from the session and total counts the struct still reports. The
-  two fields also leave the `json::JsonValue` rendering of a sync status.
 
 ## [0.5.0] - 2026-06-10
 

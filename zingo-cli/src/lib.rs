@@ -11,7 +11,6 @@
 //! that come back.
 
 #![forbid(unsafe_code)]
-#![warn(missing_docs)]
 
 mod commands;
 mod examples;
@@ -290,6 +289,11 @@ async fn prompt_indicator(
                 " [Sync error]".to_string()
             }
         }
+        PollReport::Panicked(text) => {
+            eprintln!("Sync error: the sync task panicked: {text}");
+            eprintln!("Please restart sync with `sync run`.");
+            " [Sync error]".to_string()
+        }
         PollReport::Ready(Ok(sync_result)) => {
             #[cfg(feature = "nym")]
             {
@@ -324,6 +328,9 @@ async fn await_sync_narrated(lightclient: &mut LightClient) -> Result<String, St
                     "sync:{}",
                     syncing_indicator(scan_progress(lightclient).await)
                 );
+            }
+            PollReport::Panicked(text) => {
+                return Err(format!("Error: the sync task panicked: {text}"));
             }
             PollReport::Ready(result) => {
                 return result
@@ -680,14 +687,15 @@ const SYNC_RECOVERY_ATTEMPT_BUDGET: usize = 3;
 /// What the command loop needs to recover a dead sync without the user.
 #[cfg(feature = "nym")]
 pub(crate) struct SyncRecovery {
-    /// The census chain a redraw surveys; `None` withholds the redraw
-    /// (a pinned, offline, or regtest session), leaving only same-server
-    /// relaunches.
-    redraw_chain: Option<zingolib::indexers::IndexerChain>,
-    /// The `nym-proxy` binary a redraw's sweep spawns.
-    proxy_path: String,
+    redraw: Option<RedrawPlan>,
     /// The automatic recoveries left before the session parks.
     attempts_left: usize,
+}
+
+#[cfg(feature = "nym")]
+pub(crate) struct RedrawPlan {
+    chain: zingolib::indexers::IndexerChain,
+    proxy: zingolib::mixnet::provision::ProxyResolution,
 }
 
 /// What the command loop needs to recover a dead sync without the user.
@@ -1343,18 +1351,7 @@ async fn build_zingo_config(filled_template: &CliConfigTemplate) -> std::io::Res
 
 #[allow(clippy::disallowed_methods)]
 pub(crate) fn startup(filled_template: &CliConfigTemplate) -> std::io::Result<CommandChannel> {
-    let lightclient = RT.block_on(startup_async(filled_template))?;
-    #[cfg(feature = "nym")]
-    let sync_recovery = SyncRecovery {
-        redraw_chain: (matches!(filled_template.communications, Communications::Online)
-            && !filled_template.server_pinned)
-            .then(|| census_chain(&filled_template.chaintype))
-            .flatten(),
-        proxy_path: commands::resolve_proxy_path(filled_template.nym_proxy_path.as_deref()),
-        attempts_left: SYNC_RECOVERY_ATTEMPT_BUDGET,
-    };
-    #[cfg(not(feature = "nym"))]
-    let sync_recovery = SyncRecovery;
+    let (lightclient, sync_recovery) = RT.block_on(startup_async(filled_template))?;
     Ok(command_loop(
         lightclient,
         filled_template.communications,
@@ -1362,7 +1359,9 @@ pub(crate) fn startup(filled_template: &CliConfigTemplate) -> std::io::Result<Co
     ))
 }
 
-async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<LightClient> {
+async fn startup_async(
+    filled_template: &CliConfigTemplate,
+) -> std::io::Result<(LightClient, SyncRecovery)> {
     let config = build_zingo_config(filled_template).await?;
 
     let mut lightclient = LightClient::new(config, false)
@@ -1391,7 +1390,7 @@ async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<L
     // nakednet. Offline sessions never transmit and skip the driver
     // entirely.
     #[cfg(feature = "nym")]
-    if filled_template.communications == Communications::Online {
+    let proxy = if filled_template.communications == Communications::Online {
         use zingolib::mixnet::{MixnetStartPolicy, ProvisionStrategy};
         info!(
             "Mixnet Mode enabling; the nym proxy is bootstrapping. Send and price-fetch \
@@ -1439,7 +1438,7 @@ async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<L
                 }
             }
         });
-        lightclient
+        let resolution = lightclient
             .start_mixnet_session(
                 ProvisionStrategy::Spawn(commands::spawn_hints(
                     filled_template.nym_proxy_path.as_deref(),
@@ -1447,15 +1446,18 @@ async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<L
                 MixnetStartPolicy::ForcedOn,
             )
             .await
-            .map_err(|e| {
+            .map_err(|source| commands::NetworkCommandError::ProxyStart { source })
+            .and_then(commands::spawned_resolution)
+            .map_err(|failure| {
                 std::io::Error::other(format!(
-                    "Failed to start the Nym mixnet proxy: {}. Mixnet Mode is required for a \
-                     connected session; install the nym-proxy binary, pass --nym-proxy <path>, \
-                     or set $ZINGO_NYM_PROXY.",
-                    commands::render_error_chain(&e),
+                    "Mixnet Mode is required for a connected session: {}",
+                    commands::render_error_chain(&failure),
                 ))
             })?;
-    }
+        Some(resolution)
+    } else {
+        None
+    };
 
     // The sweep binds the session's indexer, so it runs for every online
     // session, not only a syncing one: a --nosync session still accepts
@@ -1463,10 +1465,11 @@ async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<L
     // server is bound at config time and surveyed here; an unpinned online
     // session has no indexer until the sweep selects one.
     #[cfg(feature = "nym")]
-    let indexer_ready = if filled_template.communications == Communications::Online {
-        sweep_select_sync_indexer(&mut lightclient, filled_template).await
-    } else {
-        true
+    let indexer_ready = match &proxy {
+        Some(resolution) => {
+            sweep_select_sync_indexer(&mut lightclient, filled_template, resolution).await
+        }
+        None => true,
     };
     #[cfg(not(feature = "nym"))]
     let indexer_ready = true;
@@ -1504,7 +1507,19 @@ async fn startup_async(filled_template: &CliConfigTemplate) -> std::io::Result<L
         eprintln!("error: {}", commands::render_error_chain(&e));
     }
 
-    Ok(lightclient)
+    #[cfg(feature = "nym")]
+    let sync_recovery = SyncRecovery {
+        redraw: proxy
+            .filter(|_| !filled_template.server_pinned)
+            .and_then(|proxy| {
+                census_chain(&filled_template.chaintype).map(|chain| RedrawPlan { chain, proxy })
+            }),
+        attempts_left: SYNC_RECOVERY_ATTEMPT_BUDGET,
+    };
+    #[cfg(not(feature = "nym"))]
+    let sync_recovery = SyncRecovery;
+
+    Ok((lightclient, sync_recovery))
 }
 
 /// Maps the session chain to its census chain; `None` for regtest, whose
@@ -1528,6 +1543,7 @@ fn census_chain(chain: &ChainType) -> Option<zingolib::indexers::IndexerChain> {
 async fn sweep_select_sync_indexer(
     lightclient: &mut LightClient,
     filled_template: &CliConfigTemplate,
+    proxy: &zingolib::mixnet::provision::ProxyResolution,
 ) -> bool {
     let Some(chain) = census_chain(&filled_template.chaintype) else {
         return true;
@@ -1553,10 +1569,9 @@ async fn sweep_select_sync_indexer(
     {
         candidates.push(pinned.clone());
     }
-    let proxy_path = commands::resolve_proxy_path(filled_template.nym_proxy_path.as_deref());
     let selection = lightclient
         .run_server_selection_sweep(
-            std::path::Path::new(&proxy_path),
+            std::path::Path::new(&proxy.path),
             &candidates,
             pin.as_ref(),
             narrate_sweep_progress,
@@ -1666,7 +1681,7 @@ async fn attempt_sync_recovery<E: std::fmt::Debug + std::fmt::Display>(
     let action = plan_recovery(
         error.recovery_recommendation(),
         recovery.attempts_left,
-        recovery.redraw_chain.is_some(),
+        recovery.redraw.is_some(),
     );
     let attempt = SYNC_RECOVERY_ATTEMPT_BUDGET - recovery.attempts_left + 1;
     match action {
@@ -1679,16 +1694,16 @@ async fn attempt_sync_recovery<E: std::fmt::Debug + std::fmt::Display>(
             );
         }
         RecoveryAction::Redraw => {
+            let Some(plan) = &recovery.redraw else {
+                return false;
+            };
             recovery.attempts_left -= 1;
             eprintln!(
                 "Sync's indexer {bound} failed and the error class condemns the server; \
                  abandoning it and redrawing \
                  (automatic recovery {attempt} of {SYNC_RECOVERY_ATTEMPT_BUDGET})..."
             );
-            let chain = recovery
-                .redraw_chain
-                .expect("plan_recovery only redraws when a census chain is present");
-            if !redraw_sync_indexer(lightclient, chain, &recovery.proxy_path, &bound).await {
+            if !redraw_sync_indexer(lightclient, plan.chain, &plan.proxy.path, &bound).await {
                 return false;
             }
         }
