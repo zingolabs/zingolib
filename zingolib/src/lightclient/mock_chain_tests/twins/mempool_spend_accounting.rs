@@ -1,11 +1,11 @@
 use pepper_sync::wallet::{IronwoodNote, OutputInterface, SaplingNote};
 use zcash_primitives::transaction::TxId;
-use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
-use zcash_protocol::PoolType;
+use zcash_protocol::{PoolType, ShieldedPool};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use super::{external_address, funded_client, zip317_fee};
+use super::funded_client;
 use crate::lightclient::LightClient;
+use crate::testutils::fee_tables;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::mock_indexer::MockNet;
 use crate::testutils::synthetic_wallet;
@@ -16,9 +16,6 @@ const SMALL: u64 = 2_000;
 const BIG: u64 = 100_000;
 const STEADY_BLOCKS: u32 = 10;
 const STABILITY_BLOCKS: u32 = 9;
-// One ironwood spend, one sapling output, ironwood change: two logical
-// actions on each side of the ZIP-317 count.
-const BIG_SEND_LOGICAL_ACTIONS: u64 = 4;
 
 async fn assert_ironwood_split(client: &LightClient, total: u64, confirmed: u64, unconfirmed: u64) {
     let balance = client
@@ -98,7 +95,7 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     let small_txids = from_inputs::quick_send(
         &mut recipient,
         vec![(
-            &external_address(PoolType::ORCHARD),
+            &synthetic_wallet::external_address(PoolType::ORCHARD),
             SMALL,
             Some("Outgoing Memo"),
         )],
@@ -106,7 +103,8 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     .await
     .expect("the small send builds and transmits");
     sync_into_mempool(&mut recipient, *small_txids.first()).await;
-    let after_small = FUNDED - (SMALL + u64::from(MINIMUM_FEE));
+    let small_fee = fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::ORCHARD, true);
+    let after_small = FUNDED - (SMALL + small_fee);
     assert_ironwood_split(&recipient, after_small, 0, after_small).await;
     assert_ironwood_note_statuses(
         &recipient,
@@ -139,12 +137,16 @@ async fn mempool_spend_balance_and_note_status_accounting() {
     // Cycle two: a larger cross-pool send, spending the change note.
     let big_txids = from_inputs::quick_send(
         &mut recipient,
-        vec![(&synthetic_wallet::external_sapling_address(), BIG, None)],
+        vec![(
+            &synthetic_wallet::external_address(PoolType::SAPLING),
+            BIG,
+            None,
+        )],
     )
     .await
     .expect("the cross-pool send builds and transmits");
     sync_into_mempool(&mut recipient, *big_txids.first()).await;
-    let big_fee = zip317_fee(BIG_SEND_LOGICAL_ACTIONS);
+    let big_fee = fee_tables::one_to_one(Some(ShieldedPool::Ironwood), PoolType::SAPLING, true);
     let after_big = after_small - (BIG + big_fee);
     assert_ironwood_split(&recipient, after_big, 0, after_big).await;
     assert_ironwood_note_statuses(

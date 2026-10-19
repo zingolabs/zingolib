@@ -1,10 +1,10 @@
 use zcash_primitives::transaction::TxId;
-use zcash_primitives::transaction::fees::zip317::{GRACE_ACTIONS, MARGINAL_FEE, MINIMUM_FEE};
 use zcash_protocol::value::Zatoshis;
 
 use super::{
-    DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, confirmed_balance, continuous_sync_wallet_settings,
-    external_address, external_transparent_address, fund, fund_client, funded_client,
+    DEFERRED_NU6_3, FUNDING, HOSPITAL_MUSEUM, REWARD, REWARD_ZATS, blocks_to_reach,
+    confirmed_balance, continuous_sync_wallet_settings, fund, fund_client, funded_client,
+    ironwood_activation,
 };
 use crate::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind, ValueTransfers,
@@ -49,53 +49,6 @@ fn migrated_value(value_transfers: &ValueTransfers, txids: &[TxId]) -> u64 {
                 .value
         })
         .sum()
-}
-
-fn blocks_past_activation(tip: u32, activation: u32) -> Option<u32> {
-    (tip < activation).then(|| activation - tip + 1)
-}
-
-fn zip317_fee(logical_actions: u64) -> u64 {
-    let grace = u64::try_from(GRACE_ACTIONS).expect("the grace action count is a small constant");
-    u64::from(MARGINAL_FEE) * logical_actions.max(grace)
-}
-
-#[test]
-fn the_runway_lands_the_tip_one_block_past_the_activation() {
-    for (tip, activation) in [(2, 130), (101, 200), (5, 6)] {
-        let runway = blocks_past_activation(tip, activation)
-            .expect("each tip in the table sits below its activation");
-        assert_eq!(
-            tip + runway,
-            activation + 1,
-            "tip {tip}, activation {activation}"
-        );
-    }
-}
-
-#[test]
-fn a_tip_at_or_past_the_activation_has_no_runway() {
-    assert_eq!(blocks_past_activation(130, 130), None);
-    assert_eq!(blocks_past_activation(131, 130), None);
-}
-
-#[test]
-fn the_zip317_fee_floors_at_the_grace_actions() {
-    let grace = u64::try_from(GRACE_ACTIONS).expect("the grace action count is a small constant");
-    for logical_actions in 0..=grace {
-        assert_eq!(zip317_fee(logical_actions), u64::from(MINIMUM_FEE));
-    }
-}
-
-#[test]
-fn the_zip317_fee_grows_by_one_marginal_fee_per_action_past_the_grace() {
-    let grace = u64::try_from(GRACE_ACTIONS).expect("the grace action count is a small constant");
-    for extra in 1..=4 {
-        assert_eq!(
-            zip317_fee(grace + extra),
-            u64::from(MINIMUM_FEE) + extra * u64::from(MARGINAL_FEE)
-        );
-    }
 }
 
 /// Where a wallet's rescan stands against the chain tip after one more sync session.

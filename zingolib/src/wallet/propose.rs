@@ -480,11 +480,9 @@ mod send_all_correction {
 mod test {
     use zcash_protocol::{PoolType, ShieldedPool};
 
-    use crate::{
-        testutils::lightclient::from_inputs::transaction_request_from_send_inputs,
-        testutils::synthetic_wallet::SyntheticWalletBuilder,
-        wallet::keys::unified::ReceiverSelection,
-    };
+    use crate::testutils::lightclient::from_inputs::transaction_request_from_send_inputs;
+    use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
+    use crate::wallet::keys::unified::ReceiverSelection;
 
     /// Paying a unified address must target its best receiver: Orchard
     /// whenever the UA carries an orchard receiver, Sapling only when that
@@ -556,12 +554,7 @@ mod test {
                 .orchard_note(4_000)
                 .build();
 
-        let mut external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let (_, sapling_destination) = external_wallet
-            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
-            .unwrap();
-        let sapling_destination = sapling_destination.encode(&external_wallet.chain_type());
+        let sapling_destination = synthetic_wallet::external_address(PoolType::SAPLING);
 
         let request = transaction_request_from_send_inputs(vec![(
             sapling_destination.as_str(),

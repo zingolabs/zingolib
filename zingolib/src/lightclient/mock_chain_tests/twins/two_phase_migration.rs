@@ -1,17 +1,13 @@
 use std::time::{Duration, Instant};
 
-use pepper_sync::wallet::PoolActivation;
-use zcash_protocol::{PoolType, ShieldedPool};
+use zcash_protocol::PoolType;
 use zip32::AccountId;
 
-use super::{
-    DEFERRED_NU6_3, HOSPITAL_MUSEUM, continuous_sync_wallet_settings, fund_client, migrated_value,
-};
+use super::{DEFERRED_NU6_3, HOSPITAL_MUSEUM, continuous_sync_wallet_settings, migrated_value};
 use crate::testutils::mock_activation_heights_deferring_nu6_3;
 use crate::testutils::mock_indexer::{MockChain, MockNet};
 use crate::wallet::migration::{MigrationParams, MigrationPhase, schedule};
 
-// An amount that quantizes into several denominations plus dust.
 const QUANTIZABLE_FUNDING: u64 = 1_250_000;
 const MINING_INTERVAL: Duration = Duration::from_millis(500);
 const MIGRATION_TIME_LIMIT: Duration = Duration::from_secs(300);
@@ -20,8 +16,8 @@ const BUCKETS_FROM_CONFIRMATION_TO_PART: u32 = 2;
 /// - Mines the chain to the first Ironwood-era transmission window boundary, the lowest height
 ///   at which the one-call places a part.
 async fn mine_to_first_ironwood_window(net: &MockNet, bucket_modulus: u32) {
-    let activation = PoolActivation::of(&net.chain_type(), ShieldedPool::Ironwood)
-        .expect("the deferred activation heights name NU6.3");
+    let activation = super::ironwood_activation(net);
+    let activation_height = u32::from(activation.height());
     let first_window = u32::from(schedule::first_ironwood_era_window_boundary(
         activation,
         bucket_modulus,
@@ -29,11 +25,16 @@ async fn mine_to_first_ironwood_window(net: &MockNet, bucket_modulus: u32) {
     let mut chain = net.chain.write().await;
     let tip = chain.tip();
     assert!(
-        tip < DEFERRED_NU6_3 && DEFERRED_NU6_3 < first_window,
-        "the funding at {tip} must sit below the activation at {DEFERRED_NU6_3}, which \
-         sits below the first window at {first_window}"
+        tip < activation_height,
+        "the funding at {tip} must confirm below the activation at {activation_height}"
     );
-    chain.mine_empty_blocks(first_window - tip);
+    assert!(
+        activation_height < first_window,
+        "the first window at {first_window} must lie past the activation at {activation_height}"
+    );
+    let runway = super::blocks_to_reach(tip, first_window)
+        .expect("the two assertions above put the first window past the tip");
+    chain.mine_empty_blocks(runway);
 }
 
 /// - Launches continuous sync on the recipient and mines the mock mempool every half second
@@ -51,7 +52,7 @@ async fn two_phase_migration_end_to_end() {
     recipient.set_transmit_retry_interval(Duration::ZERO);
     #[cfg(feature = "nym")]
     recipient.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
-    fund_client(
+    super::fund_client(
         &net,
         &recipient,
         &[(PoolType::ORCHARD, QUANTIZABLE_FUNDING)],

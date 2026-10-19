@@ -48,7 +48,8 @@ use orchard::circuit::{OrchardCircuitVersion, VerifyingKey as OrchardVerifyingKe
 use orchard::tree::MerkleHashOrchard;
 use sapling_crypto::circuit::{OutputVerifyingKey, SpendVerifyingKey};
 use zcash_primitives::merkle_tree::{HashSer, read_commitment_tree, write_commitment_tree};
-use zcash_primitives::transaction::fees::zip317::{GRACE_ACTIONS, MARGINAL_FEE};
+#[cfg(test)]
+use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_primitives::transaction::sighash::{SignableInput, signature_hash};
 use zcash_primitives::transaction::txid::TxIdDigester;
 use zcash_primitives::transaction::{Authorized, Transaction, TransactionData, TxId, TxVersion};
@@ -70,6 +71,7 @@ use crate::lightclient::LightClient;
 use crate::testutils::assertions::OP_RETURN;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::default_test_wallet_settings;
+use crate::testutils::fee_tables;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 use crate::wallet::WalletSettings;
@@ -380,9 +382,8 @@ pub fn check_zip317_mempool_policy(
     if fee < required {
         return Err(Rejection::FeeBelowMinimumRate { fee, required });
     }
-    let conventional_actions = logical_actions.max(GRACE_ACTIONS);
-    let paid_actions = usize::try_from(fee.into_u64() / MARGINAL_FEE.into_u64())
-        .expect("paid actions fit in usize");
+    let conventional_actions = fee_tables::conventional_actions(logical_actions);
+    let paid_actions = fee_tables::paid_actions(fee);
     let unpaid = conventional_actions.saturating_sub(paid_actions);
     if unpaid > BLOCK_UNPAID_ACTION_LIMIT {
         return Err(Rejection::UnpaidActions {
@@ -2730,7 +2731,7 @@ mod tests {
     async fn funding_bytes(chain: &MockChain) -> Vec<u8> {
         chain
             .funding_transaction(vec![(
-                &synthetic_wallet::external_orchard_address(),
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
                 PAYMENT,
                 None,
             )])
@@ -2876,7 +2877,11 @@ mod tests {
         let bytes = faucet_funding_transaction_on(
             crate::testutils::mock_activation_heights(),
             chain.next_height(),
-            vec![(&synthetic_wallet::external_orchard_address(), PAYMENT, None)],
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                PAYMENT,
+                None,
+            )],
         )
         .await;
         let rejection = chain.submit_transaction(bytes).unwrap_err();
@@ -2892,7 +2897,7 @@ mod tests {
     #[test]
     fn coinbase_outputs_mature_after_one_hundred_blocks() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_outpoint = first_output(txid_of(&chain, &coinbase));
         assert!(
@@ -2954,7 +2959,7 @@ mod tests {
     #[test]
     fn unknown_transparent_input_is_rejected() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let outpoint = OutPoint::new([7; 32], 0);
         let spend = transparent_spend(&chain, outpoint.clone(), SPEND_VALUE, &miner);
         assert_eq!(
@@ -2966,7 +2971,7 @@ mod tests {
     #[test]
     fn mempool_outputs_are_spendable_before_they_are_mined() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         chain.mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
         let first = transparent_spend(
@@ -2996,7 +3001,7 @@ mod tests {
     #[test]
     fn outputs_above_inputs_are_rejected() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_outpoint = first_output(txid_of(&chain, &coinbase));
         chain.mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
@@ -3015,7 +3020,7 @@ mod tests {
     #[test]
     fn unspent_outputs_exclude_spent_outpoints() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_txid = txid_of(&chain, &coinbase);
         let unspent = chain.unspent_outputs(&miner, HEIGHT_ONE).unwrap();
@@ -3096,7 +3101,7 @@ mod tests {
     #[tokio::test]
     async fn address_utxos_stream_applies_injected_stream_faults() {
         let chain = Arc::new(RwLock::new(MockChain::new()));
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         {
             let mut chain = chain.write().await;
             chain.mine_block_rewarding(&miner, REWARD, vec![]);
@@ -3350,7 +3355,7 @@ mod tests {
         let mut chain = lax_anchors();
         let bytes = chain
             .funding_transaction(vec![(
-                &synthetic_wallet::external_sapling_address(),
+                &synthetic_wallet::external_address(PoolType::SAPLING),
                 PAYMENT,
                 None,
             )])
@@ -3368,7 +3373,7 @@ mod tests {
         let mut chain = lax_anchors();
         let bytes = chain
             .funding_transaction(vec![(
-                &synthetic_wallet::external_sapling_address(),
+                &synthetic_wallet::external_address(PoolType::SAPLING),
                 PAYMENT,
                 None,
             )])
@@ -3390,7 +3395,7 @@ mod tests {
         let mut chain = lax_anchors();
         let bytes = chain
             .funding_transaction(vec![(
-                &synthetic_wallet::external_sapling_address(),
+                &synthetic_wallet::external_address(PoolType::SAPLING),
                 PAYMENT,
                 None,
             )])
@@ -3434,7 +3439,7 @@ mod tests {
         let output = TxOut::new(
             REWARD,
             taddr_script(
-                &synthetic_wallet::external_transparent_address(),
+                &synthetic_wallet::external_address(PoolType::Transparent),
                 &chain.chain_type(),
             )
             .expect("a synthetic wallet's transparent address encodes a script"),

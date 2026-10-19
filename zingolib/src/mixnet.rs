@@ -36,7 +36,9 @@ pub mod sweep;
 
 pub use acquire::TransportError;
 
-pub use driver::{MixnetStartPolicy, MixnetStatus, ProvisionStrategy};
+pub use driver::{
+    MixnetStartPolicy, MixnetStatus, ProvisionStrategy, SessionStartError, SessionStarted,
+};
 
 pub(crate) use driver::{StatusPublisher, status_publisher};
 

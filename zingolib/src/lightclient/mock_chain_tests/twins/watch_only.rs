@@ -5,13 +5,14 @@ use zcash_protocol::consensus::Parameters;
 use zcash_protocol::value::Zatoshis;
 use zip32::AccountId;
 
-use super::{external_transparent_address, funded_client, zatoshis};
+use super::{funded_client, zatoshis};
 use crate::check_client_balances;
 use crate::config::{ClientConfig, WalletConfig};
 use crate::lightclient::LightClient;
 use crate::lightclient::error::{LightClientError, SendError};
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::mock_indexer::MockNet;
+use crate::testutils::synthetic_wallet;
 use crate::testutils::{build_fvks_from_unified_keystore, default_test_wallet_settings, tempfile};
 use crate::wallet::balance::AccountBalance;
 use crate::wallet::error::CalculateTransactionError;
@@ -230,7 +231,7 @@ async fn test_scanning_in_watch_only_mode() {
         vec![o_fvk, s_fvk, t_fvk],
     ];
     let network_type = net.chain_type().network_type();
-    let external_taddr = external_transparent_address();
+    let external_taddr = synthetic_wallet::external_address(PoolType::Transparent);
     let mut wallet_dirs = Vec::new();
     for fvks in &fvks_sets {
         tracing::info!("testing UFVK containing:");

@@ -34,6 +34,9 @@ jobs:
   slices:
     name: Build the ${{ matrix.target }} libraries
     strategy:
+      # One failing slice must not cancel the others: the run then shows
+      # which targets break.
+      fail-fast: false
       matrix:
         target: [aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios]
     runs-on: ${{ inputs.runner }}
@@ -51,21 +54,35 @@ jobs:
 
       # The action installs the toolchain rust-toolchain.toml pins, with
       # its components, and the builder adds the iOS target to it itself.
-      # The builder puts each crate's iOS target directory under
-      # target/binding-layer, so the list names those directories. The
-      # wallet crate resolves in the root workspace and the proxy crate in
-      # the zingo-netutils workspace, so each entry names the workspace
-      # whose lockfile keys the cache. The key segment keeps one entry per
-      # target, since the matrix jobs share one GITHUB_JOB.
-      - name: Setup Rust and the cargo cache (registry, git, iOS target)
+      - name: Setup Rust
         uses: ./.github/actions/rust-setup
         with:
-          key: ${{ matrix.target }}
-          workspaces: |
-            . -> target/binding-layer/ios/wallet
-            zingo-netutils -> ../target/binding-layer/ios/proxy
-            tools/workbench
+          cache: "false"
 
+      - name: Compute the cache key inputs
+        id: cache-key
+        shell: bash
+        run: echo "rust_hash=$(rustc -Vv | grep commit-hash | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the cargo registry, git database and target directories
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cargo/bin
+            .cargo/.crates.toml
+            .cargo/.crates2.json
+            .cargo/registry/index
+            .cargo/registry/cache
+            .cargo/git/db
+            target/binding-layer/ios/wallet
+            target/binding-layer/ios/proxy
+            tools/workbench/target
+          key: ios-${{ matrix.target }}-${{ steps.cache-key.outputs.rust_hash }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ios-${{ matrix.target }}-${{ steps.cache-key.outputs.rust_hash }}-
+
+      # The cache holds the installed binary and cargo's install records,
+      # so a hit makes this a no-op.
       - name: Install bindgen-cli
         run: cargo install --locked bindgen-cli
 
@@ -90,6 +107,8 @@ jobs:
             --bin build-binding-layer -- \
             ios --target ${{ matrix.target }}
 
+      # The name ends in the target, never in the commit, so the publish
+      # workflow's bundle pattern skips it; binding_layer.rs pins the rule.
       - name: Upload the libraries
         uses: actions/upload-artifact@v4
         with:
@@ -98,6 +117,26 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           overwrite: true
+
+      - name: Clear the cargo caches that cargo recreates
+        shell: bash
+        run: rm -rf -- .cargo/registry/src .cargo/git/checkouts
+
+      - name: Save the cargo registry, git database and target directories
+        if: github.ref == 'refs/heads/dev'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cargo/bin
+            .cargo/.crates.toml
+            .cargo/.crates2.json
+            .cargo/registry/index
+            .cargo/registry/cache
+            .cargo/git/db
+            target/binding-layer/ios/wallet
+            target/binding-layer/ios/proxy
+            tools/workbench/target
+          key: ios-${{ matrix.target }}-${{ steps.cache-key.outputs.rust_hash }}-${{ hashFiles('**/Cargo.lock') }}
 
   build:
     name: Build the XCFrameworks and the Swift sources
@@ -108,19 +147,34 @@ jobs:
       RUSTUP_HOME: ${{ github.workspace }}/.rustup
       CARGO_HOME: ${{ github.workspace }}/.cargo
     steps:
+      # The device slice wrote the descriptor, so this job reads no tag.
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
-          fetch-tags: true
 
-      - name: Setup Rust and the cargo cache (registry, git, host builds)
+      - name: Setup Rust
         uses: ./.github/actions/rust-setup
         with:
-          workspaces: |
-            . -> target/binding-layer/ios/wallet
-            zingo-netutils -> ../target/binding-layer/ios/proxy
-            tools/workbench
+          cache: "false"
+
+      - name: Compute the cache key inputs
+        id: cache-key
+        shell: bash
+        run: echo "rust_hash=$(rustc -Vv | grep commit-hash | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the cargo registry, git database and host target directories
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cargo/registry/index
+            .cargo/registry/cache
+            .cargo/git/db
+            target/binding-layer/ios/wallet
+            tools/workbench/target
+          key: ios-assembly-${{ steps.cache-key.outputs.rust_hash }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ios-assembly-${{ steps.cache-key.outputs.rust_hash }}-
 
       - name: Download the libraries of every target
         uses: actions/download-artifact@v4
@@ -129,6 +183,8 @@ jobs:
           path: target/binding-layer/ios/slices
           merge-multiple: true
 
+      # The plan first requires every slice's archives and the device's
+      # descriptor, so a missing download fails by name before any build.
       # The plan ends with the Swift wire-contract test of the proxy crate,
       # which compiles against the Swift Binding Set the package ships and
       # asserts it against the crate's golden pins, which the Rust and
@@ -148,3 +204,19 @@ jobs:
           path: ${{ inputs.out }}
           retention-days: 3
           overwrite: true
+
+      - name: Clear the cargo caches that cargo recreates
+        shell: bash
+        run: rm -rf -- .cargo/registry/src .cargo/git/checkouts
+
+      - name: Save the cargo registry, git database and host target directories
+        if: github.ref == 'refs/heads/dev'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cargo/registry/index
+            .cargo/registry/cache
+            .cargo/git/db
+            target/binding-layer/ios/wallet
+            tools/workbench/target
+          key: ios-assembly-${{ steps.cache-key.outputs.rust_hash }}-${{ hashFiles('**/Cargo.lock') }}
