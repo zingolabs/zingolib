@@ -788,57 +788,59 @@ where
         'scan: loop {
             tokio::select! {
                 Some((load, scan_results)) = scan_results_receiver.recv() => {
-                    let mut wallet_guard = wallet.write().await;
-                    let ProcessedScanResults {
-                        new_transparent_inuse_addresses,
-                        new_transparent_gap_addresses,
-                        reorg_detection_start_height,
-                    } = process_scan_results(
-                        consensus_parameters,
-                        &mut *wallet_guard,
-                        fetch_request_sender.clone(),
-                        &ufvks,
-                        load,
-                        scanner.in_flight_tasks(),
-                        scan_results,
-                        initial_reorg_detection_start_height_opt,
-                        config.performance_level,
-                        &mut nullifier_map_limit_exceeded,
-                    )
-                    .await?;
-                    scanner.retire_finished_tasks(
-                        wallet_guard
-                            .get_sync_state()
-                            .map_err(SyncError::WalletError)?
-                            .scan_ranges(),
-                    );
-                    // only the changes to the gap addresses are applied. scan results without compact block
-                    // transparent data, such as re-fetched nullifiers, carry no changes and leave the gap addresses
-                    // as they are.
-                    // NOTE: this is safe in the current architecture as the correct set of gap addressses will be
-                    // determined before scanning begins and these changes will only come from the latest newly mined
-                    // block(s). If the sync engine is modified so there are cases where compact blocks may be scanned
-                    // for transparent data out-of-order, more checks must be applied here to ensure gap addresses are
-                    // not lost and correctly follow on from the wallets current in-use address list.
-                    scanner.update_transparent_gap_addresses(
-                        &new_transparent_inuse_addresses,
-                        new_transparent_gap_addresses,
-                    );
-                    if let Some(reorg_detection_start_height) = reorg_detection_start_height {
-                        // the scanner only scans ranges with `Verify` priority while verifying, and a new continuous
-                        // sync loop waits for it to finish.
-                        scanner.state.reverify();
-                        initial_reorg_detection_start_height_opt = Some(
-                            initial_reorg_detection_start_height_opt
-                                .map_or(reorg_detection_start_height, |height| {
-                                    height.min(reorg_detection_start_height)
-                                }),
+                    for (load, scan_results) in scanner.admit_scan_results(load, scan_results) {
+                        let mut wallet_guard = wallet.write().await;
+                        let ProcessedScanResults {
+                            new_transparent_inuse_addresses,
+                            new_transparent_gap_addresses,
+                            reorg_detection_start_height,
+                        } = process_scan_results(
+                            consensus_parameters,
+                            &mut *wallet_guard,
+                            fetch_request_sender.clone(),
+                            &ufvks,
+                            load,
+                            scanner.in_flight_tasks(),
+                            scan_results,
+                            initial_reorg_detection_start_height_opt,
+                            config.performance_level,
+                            &mut nullifier_map_limit_exceeded,
+                        )
+                        .await?;
+                        scanner.retire_finished_tasks(
+                            wallet_guard
+                                .get_sync_state()
+                                .map_err(SyncError::WalletError)?
+                                .scan_ranges(),
                         );
+                        // only the changes to the gap addresses are applied. scan results without compact block
+                        // transparent data, such as re-fetched nullifiers, carry no changes and leave the gap addresses
+                        // as they are.
+                        // NOTE: this is safe in the current architecture as the correct set of gap addressses will be
+                        // determined before scanning begins and these changes will only come from the latest newly mined
+                        // block(s). If the sync engine is modified so there are cases where compact blocks may be scanned
+                        // for transparent data out-of-order, more checks must be applied here to ensure gap addresses are
+                        // not lost and correctly follow on from the wallets current in-use address list.
+                        scanner.update_transparent_gap_addresses(
+                            &new_transparent_inuse_addresses,
+                            new_transparent_gap_addresses,
+                        );
+                        if let Some(reorg_detection_start_height) = reorg_detection_start_height {
+                            // the scanner only scans ranges with `Verify` priority while verifying, and a new continuous
+                            // sync loop waits for it to finish.
+                            scanner.state.reverify();
+                            initial_reorg_detection_start_height_opt = Some(
+                                initial_reorg_detection_start_height_opt
+                                    .map_or(reorg_detection_start_height, |height| {
+                                        height.min(reorg_detection_start_height)
+                                    }),
+                            );
+                        }
+                        expire_transactions(&mut *wallet_guard)?;
+                        publish_sync_status(&*wallet_guard, &progress).await?;
+                        wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
+                        drop(wallet_guard);
                     }
-                    expire_transactions(&mut *wallet_guard)?;
-                    publish_sync_status(&*wallet_guard, &progress).await?;
-                    wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
-                    drop(wallet_guard);
                 }
 
                 Some(mempool_message) = mempool_transaction_receiver.recv() => {
