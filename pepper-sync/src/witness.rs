@@ -16,7 +16,7 @@ use zcash_primitives::{block::BlockHash, merkle_tree::read_commitment_tree};
 use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::lightwallet_protocol::TreeState;
 
-use crate::sync::MAX_SHARDTREE_CHECKPOINTS;
+use crate::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 
 use {
     crate::error::ServerError, shardtree::store::ShardStore, subtle::CtOption,
@@ -424,16 +424,17 @@ pub(crate) fn anchor_retention_window(
     as_of.saturating_sub(span)..=as_of
 }
 
-// checkpoints are held for the top MAX_SHARDTREE_CHECKPOINTS scanned blocks only. the chain tip is scanned first
-// and a spend anchors close to the chain height, so no anchor or truncation needs a checkpoint below this window.
+// checkpoints are held for the top SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE scanned blocks only, the non-retained
+// budget of a shard tree. the chain tip is scanned first and a spend anchors close to the chain height, so no
+// anchor or truncation needs a checkpoint below this window. the pinned anchor boundaries are added separately.
 fn checkpoint_range(
     block_range: &Range<BlockHeight>,
     highest_scanned_height: BlockHeight,
 ) -> Range<BlockHeight> {
     let window_start = if block_range.start > highest_scanned_height {
-        block_range.end.saturating_sub(MAX_SHARDTREE_CHECKPOINTS)
+        block_range.end.saturating_sub(SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE)
     } else {
-        highest_scanned_height.saturating_sub(MAX_SHARDTREE_CHECKPOINTS) + 1
+        highest_scanned_height.saturating_sub(SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE) + 1
     };
 
     std::cmp::max(block_range.start, window_start)..block_range.end
@@ -593,14 +594,14 @@ mod tests {
 
             assert_eq!(
                 heights(range.clone(), HIGHEST_SCANNED, None),
-                (range.end - MAX_SHARDTREE_CHECKPOINTS..range.end).collect::<Vec<_>>()
+                (range.end - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE..range.end).collect::<Vec<_>>()
             );
         }
 
         /// A range inside the window below the highest scanned height holds checkpoints from the window start.
         #[test]
         fn a_range_below_the_highest_scanned_height_checkpoints_from_the_window_start() {
-            let window_start = HIGHEST_SCANNED - MAX_SHARDTREE_CHECKPOINTS + 1;
+            let window_start = HIGHEST_SCANNED - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1;
             let range = window_start - 10..window_start + 10;
 
             assert_eq!(
@@ -612,7 +613,7 @@ mod tests {
         /// A range below the window holds no checkpoint.
         #[test]
         fn a_range_below_the_window_holds_no_checkpoint() {
-            let window_start = HIGHEST_SCANNED - MAX_SHARDTREE_CHECKPOINTS + 1;
+            let window_start = HIGHEST_SCANNED - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1;
 
             assert!(
                 heights(window_start - 100..window_start - 50, HIGHEST_SCANNED, None).is_empty()
@@ -629,7 +630,7 @@ mod tests {
                 AnchorRetentionInterval::custom(NonZeroU32::new(INTERVAL).expect("nonzero")),
             );
             let range = HIGHEST_SCANNED + 1_000..HIGHEST_SCANNED + 2_000;
-            let top_window = range.end - MAX_SHARDTREE_CHECKPOINTS..range.end;
+            let top_window = range.end - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE..range.end;
             let retention_window =
                 anchor_retention_window(&policy, BlockHeight::from_u32(range.end - 1));
             let boundaries = (range.start..top_window.start)
