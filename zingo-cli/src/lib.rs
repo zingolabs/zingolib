@@ -1364,12 +1364,9 @@ async fn startup_async(
 ) -> std::io::Result<(LightClient, SyncRecovery)> {
     let config = build_zingo_config(filled_template).await?;
 
-    let mut lightclient = LightClient::new(config, false).await.map_err(|e| {
-        std::io::Error::other(format!(
-            "Failed to create lightclient. {}",
-            commands::render_error_chain(&e)
-        ))
-    })?;
+    let mut lightclient = LightClient::new(config, false)
+        .await
+        .map_err(|e| commands::io_error_with_chain("Failed to create lightclient.", &e))?;
 
     if matches!(filled_template.mode, Operations::Interactive) {
         // Print startup Messages
@@ -1452,10 +1449,10 @@ async fn startup_async(
             .map_err(|source| commands::NetworkCommandError::ProxyStart { source })
             .and_then(commands::spawned_resolution)
             .map_err(|failure| {
-                std::io::Error::other(format!(
-                    "Mixnet Mode is required for a connected session: {}",
-                    commands::render_error_chain(&failure),
-                ))
+                commands::io_error_with_chain(
+                    "Mixnet Mode is required for a connected session:",
+                    &failure,
+                )
             })?;
         Some(resolution)
     } else {
