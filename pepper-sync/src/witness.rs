@@ -432,7 +432,9 @@ fn checkpoint_range(
     highest_scanned_height: BlockHeight,
 ) -> Range<BlockHeight> {
     let window_start = if block_range.start > highest_scanned_height {
-        block_range.end.saturating_sub(SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE)
+        block_range
+            .end
+            .saturating_sub(SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE)
     } else {
         highest_scanned_height.saturating_sub(SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE) + 1
     };
@@ -594,7 +596,8 @@ mod tests {
 
             assert_eq!(
                 heights(range.clone(), HIGHEST_SCANNED, None),
-                (range.end - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE..range.end).collect::<Vec<_>>()
+                (range.end - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE..range.end)
+                    .collect::<Vec<_>>()
             );
         }
 
