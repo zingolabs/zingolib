@@ -295,8 +295,8 @@ jobs:
   # Binding Sets, the Maven layout and the Kotlin wire-contract test.
   # binding-layer-android.yaml runs the builder on this commit, here and in
   # the nightly, so one definition builds an ABI in both tiers. On a pull
-  # request that commit is the merge commit, and every push builds once, on
-  # a cargo cache keyed by the ABI.
+  # request that commit is the merge commit. A push builds once, on a cargo
+  # cache keyed by the ABI, and skips the package job the pull request ran.
   binding-layer-android:
     if: ${{ inputs.skip-binding-layer-build != true }}
     needs: binding-layer-names
