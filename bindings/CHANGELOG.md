@@ -23,6 +23,18 @@ Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netuti
 #### [Unreleased]
 
 ##### Added
+- `reserve_ephemeral_address` reserves one refund-scope (ZIP 320 ephemeral)
+  transparent address on account zero and reports it as JSON with the
+  `account`, `address_index`, `scope` and `encoded_address` fields. The swap
+  deposit flow gives the address to the provider as the wallet-controlled
+  refund destination.
+- `send` reads two optional fields on the first receiver of its JSON array:
+  `op_return`, a hex payload carried in a transparent OP_RETURN output (the
+  Maya / THORChain memo), and `route_via_ephemeral`, which routes a
+  transparent recipient through a wallet refund-scope address so the provider
+  observes a wallet-controlled `from_address`. Either field switches the send
+  to the two-transaction ZIP-320 flow, and `confirm` then reports the `txids`
+  in chronological order with the deposit transaction last.
 - The committed `src/exported_surface.txt` pins the exported surface: every
   uniffi item in the crate's sources, the `uniffi.toml` settings, the locked
   uniffi version and the package name. A test fails when the crate and the

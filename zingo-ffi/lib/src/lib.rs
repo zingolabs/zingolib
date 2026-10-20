@@ -3131,13 +3131,30 @@ enum NewTransparentAddress {
 
 impl NewTransparentAddress {
     /// - Adds the generated address to `wallet`.
-    fn of(wallet: &mut wallet::LightWallet) -> Self {
+    fn of_external(wallet: &mut wallet::LightWallet) -> Self {
         let network = wallet.chain_type();
         match wallet.generate_transparent_address(AccountId::ZERO, true) {
             Ok((id, transparent_address)) => Self::Created {
                 id,
                 encoded_address: transparent::encode_address(&network, transparent_address),
             },
+            Err(refusal) => Self::Refused(refusal),
+        }
+    }
+
+    /// Reserves the wallet's next refund-scope address on account zero.
+    fn of_refund(wallet: &mut wallet::LightWallet) -> Self {
+        let network = wallet.chain_type();
+        match wallet.generate_refund_addresses(1, AccountId::ZERO) {
+            Ok(mut refund_addresses) => {
+                let (id, refund_address) = refund_addresses
+                    .pop()
+                    .expect("a request for one refund address yields one address");
+                Self::Created {
+                    id,
+                    encoded_address: transparent::encode_address(&network, refund_address),
+                }
+            }
             Err(refusal) => Self::Refused(refusal),
         }
     }
@@ -3162,8 +3179,52 @@ impl Report for NewTransparentAddress {
 }
 
 wallet_report!(
-    pub fn create_new_transparent_address() => report_wallet_mut(NewTransparentAddress::of)
+    pub fn create_new_transparent_address() => report_wallet_mut(NewTransparentAddress::of_external)
 );
+
+// The swap deposit flow reserves one of these per swap. The provider sees
+// a wallet-controlled one-shot address as the refund destination instead of
+// the user's persistent external receiver.
+wallet_report!(
+    pub fn reserve_ephemeral_address() => report_wallet_mut(NewTransparentAddress::of_refund)
+);
+
+/// The report of a reserved address: the JSON the swap deposit flow parses
+/// `encoded_address` out of.
+#[cfg(test)]
+mod reserved_refund_address_tests {
+    use super::*;
+    use zcash_transparent::address::TransparentAddress;
+    use zcash_transparent::keys::NonHardenedChildIndex;
+
+    #[test]
+    fn a_reserved_refund_address_reports_the_ephemeral_scope() {
+        let id = transparent::TransparentAddressId::new(
+            AccountId::ZERO,
+            transparent::TransparentScope::Refund,
+            NonHardenedChildIndex::ZERO,
+        );
+        let encoded_address = transparent::encode_address(
+            &ChainType::Mainnet,
+            TransparentAddress::PublicKeyHash([7; 20]),
+        );
+        let report = NewTransparentAddress::Created {
+            id,
+            encoded_address,
+        }
+        .report()
+        .expect("a created address always reports");
+        let parsed = json::parse(&report).expect("the report is JSON");
+        assert_eq!(parsed["account"].as_u32(), Some(0));
+        assert_eq!(parsed["address_index"].as_u32(), Some(0));
+        assert_eq!(parsed["scope"].as_str(), Some("refund"));
+        assert!(
+            parsed["encoded_address"]
+                .as_str()
+                .is_some_and(|address| address.starts_with("t1"))
+        );
+    }
+}
 
 fn ownership_report(
     ownership: Result<Option<WalletAddressRef>, wallet::error::KeyError>,
@@ -3371,6 +3432,57 @@ fn proposal_destination_pools<FeeRuleT, NoteRef>(
     pools
 }
 
+fn send_op_return_payload(json_args: &json::JsonValue) -> Result<Option<Vec<u8>>, ZingolibError> {
+    match json_args[0]["op_return"].as_str() {
+        Some(hex_str) if !hex_str.is_empty() => {
+            let payload = hex::decode(hex_str)
+                .map_err(in_context(ZingolibError::InvalidInput, "invalid op_return"))?;
+            Ok(Some(payload))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn send_routes_via_ephemeral(json_args: &json::JsonValue) -> bool {
+    json_args[0]["route_via_ephemeral"]
+        .as_bool()
+        .unwrap_or(false)
+}
+
+fn parse_send_receiver(
+    member: &json::JsonValue,
+) -> Result<zingolib::data::receivers::Receiver, ZingolibError> {
+    let recipient_address = match member["address"].as_str() {
+        Some(addr) => ZcashAddress::try_from_encoded(addr)
+            .map_err(in_context(ZingolibError::InvalidInput, "invalid address"))?,
+        None => {
+            return Err(ZingolibError::InvalidInput("missing address".to_string()));
+        }
+    };
+
+    let amount = match member["amount"].as_u64() {
+        Some(a) => Zatoshis::from_u64(a)
+            .map_err(in_context(ZingolibError::InvalidInput, "invalid amount"))?,
+        None => {
+            return Err(ZingolibError::InvalidInput("missing amount".to_string()));
+        }
+    };
+
+    let memo = match member["memo"].as_str() {
+        Some(m) => Some(
+            interpret_memo_string(m.to_string())
+                .map_err(|e| ZingolibError::InvalidInput(format!("invalid memo: {e}")))?,
+        ),
+        None => None,
+    };
+
+    Ok(zingolib::data::receivers::Receiver {
+        recipient_address,
+        amount,
+        memo,
+    })
+}
+
 #[uniffi::export]
 pub fn send(send_json: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
@@ -3380,55 +3492,177 @@ pub fn send(send_json: String) -> Result<String, ZingolibError> {
                 "it is not a valid JSON",
             ))?;
 
-            let mut receivers = Receivers::new();
-            for j in json_args.members() {
-                let recipient_address = match j["address"].as_str() {
-                    Some(addr) => ZcashAddress::try_from_encoded(addr)
-                        .map_err(in_context(ZingolibError::InvalidInput, "invalid address"))?,
-                    None => {
-                        return Err(ZingolibError::InvalidInput("missing address".to_string()));
-                    }
+            // The transparent OP_RETURN payload and the ZIP-320 ephemeral
+            // indirection are transaction-wide concerns, not per-receiver
+            // fields. To keep the JSON contract an array, both ride on the
+            // first receiver; the swap deposit flow sends a single receiver
+            // and ordinary sends omit both.
+            let op_return = send_op_return_payload(&json_args)?;
+            let route_via_ephemeral = send_routes_via_ephemeral(&json_args);
+
+            let (fee, source_pools, destination_pools) = if op_return.is_some()
+                || route_via_ephemeral
+            {
+                let members = json_args.members().collect::<Vec<_>>();
+                let [member] = members.as_slice() else {
+                    return Err(ZingolibError::InvalidInput(
+                        "an op_return or ephemeral-routed send takes exactly one receiver"
+                            .to_string(),
+                    ));
                 };
+                let receiver = parse_send_receiver(member)?;
+                if receiver.memo.is_some() {
+                    return Err(ZingolibError::InvalidInput(
+                        "a transparent receiver takes no memo".to_string(),
+                    ));
+                }
+                if receiver.amount == Zatoshis::ZERO {
+                    return Err(ZingolibError::InvalidInput(
+                        "a transparent send takes a positive amount".to_string(),
+                    ));
+                }
+                let data = wallet::transparent::OpReturnData::new(op_return.unwrap_or_default())
+                    .map_err(|e| ZingolibError::InvalidInput(e.to_string()))?;
+                let proposal = lightclient
+                    .propose_send_with_op_return(
+                        &receiver.recipient_address.to_string(),
+                        receiver.amount,
+                        data,
+                        AccountId::ZERO,
+                    )
+                    .await
+                    .map_err(ffi_error)?;
+                (
+                    proposal
+                        .total_fee()
+                        .map_err(chained(ZingolibError::Send))?
+                        .into_u64(),
+                    proposal_source_pools(proposal.deshield()),
+                    proposal_destination_pools(proposal.deshield()),
+                )
+            } else {
+                let receivers = json_args
+                    .members()
+                    .map(parse_send_receiver)
+                    .collect::<Result<Receivers, ZingolibError>>()?;
+                let request = transaction_request_from_receivers(receivers)
+                    .map_err(in_context(ZingolibError::InvalidInput, "request error"))?;
 
-                let amount = match j["amount"].as_u64() {
-                    Some(a) => Zatoshis::from_u64(a)
-                        .map_err(in_context(ZingolibError::InvalidInput, "invalid amount"))?,
-                    None => {
-                        return Err(ZingolibError::InvalidInput("missing amount".to_string()));
-                    }
-                };
+                let proposal = lightclient
+                    .propose_send(request, AccountId::ZERO)
+                    .await
+                    .map_err(|e| ffi_error(SendError::from(e).into()))?;
+                (
+                    total_fee(&proposal)
+                        .map_err(chained(ZingolibError::Send))?
+                        .into_u64(),
+                    proposal_source_pools(&proposal),
+                    proposal_destination_pools(&proposal),
+                )
+            };
 
-                let memo =
-                    match j["memo"].as_str() {
-                        Some(m) => Some(interpret_memo_string(m.to_string()).map_err(|e| {
-                            ZingolibError::InvalidInput(format!("invalid memo: {e}"))
-                        })?),
-                        None => None,
-                    };
-
-                receivers.push(zingolib::data::receivers::Receiver {
-                    recipient_address,
-                    amount,
-                    memo,
-                });
-            }
-
-            let request = transaction_request_from_receivers(receivers)
-                .map_err(in_context(ZingolibError::InvalidInput, "request error"))?;
-
-            let proposal = lightclient
-                .propose_send(request, AccountId::ZERO)
-                .await
-                .map_err(|e| ffi_error(SendError::from(e).into()))?;
-            let fee = total_fee(&proposal).map_err(chained(ZingolibError::Send))?;
             Ok(object! {
-                "fee" => fee.into_u64(),
-                "source_pools" => proposal_source_pools(&proposal),
-                "destination_pools" => proposal_destination_pools(&proposal),
+                "fee" => fee,
+                "source_pools" => source_pools,
+                "destination_pools" => destination_pools,
             }
             .pretty(2))
         })
     })
+}
+
+/// The swap-deposit fields `send` reads beside the receiver list, both on the
+/// first member of the JSON array.
+#[cfg(test)]
+mod send_swap_fields_tests {
+    use super::*;
+
+    #[test]
+    fn an_ordinary_send_carries_neither_field() {
+        let parsed = json::parse(r#"[{"address": "t1example", "amount": 1000}]"#).unwrap();
+        assert_eq!(send_op_return_payload(&parsed).unwrap(), None);
+        assert!(!send_routes_via_ephemeral(&parsed));
+    }
+
+    #[test]
+    fn the_op_return_payload_is_hex_decoded_from_the_first_receiver() {
+        let parsed =
+            json::parse(r#"[{"address": "t1example", "amount": 1000, "op_return": "deadbeef"}]"#)
+                .unwrap();
+        assert_eq!(
+            send_op_return_payload(&parsed).unwrap(),
+            Some(vec![0xde, 0xad, 0xbe, 0xef])
+        );
+        assert!(!send_routes_via_ephemeral(&parsed));
+    }
+
+    #[test]
+    fn a_blank_op_return_is_no_payload() {
+        let parsed =
+            json::parse(r#"[{"address": "t1example", "amount": 1000, "op_return": ""}]"#).unwrap();
+        assert_eq!(send_op_return_payload(&parsed).unwrap(), None);
+    }
+
+    #[test]
+    fn a_malformed_op_return_is_a_typed_input_rejection() {
+        let parsed =
+            json::parse(r#"[{"address": "t1example", "amount": 1000, "op_return": "zz"}]"#)
+                .unwrap();
+        assert!(matches!(
+            send_op_return_payload(&parsed),
+            Err(ZingolibError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn the_ephemeral_route_flag_reads_the_first_receiver_alone() {
+        let parsed = json::parse(
+            r#"[{"address": "t1example", "amount": 1000, "route_via_ephemeral": true}, {"address": "t1other", "amount": 1000}]"#,
+        )
+        .unwrap();
+        assert!(send_routes_via_ephemeral(&parsed));
+        assert_eq!(send_op_return_payload(&parsed).unwrap(), None);
+    }
+
+    #[test]
+    fn a_non_boolean_route_flag_is_not_a_route() {
+        let parsed = json::parse(
+            r#"[{"address": "t1example", "amount": 1000, "route_via_ephemeral": "yes"}]"#,
+        )
+        .unwrap();
+        assert!(!send_routes_via_ephemeral(&parsed));
+    }
+
+    #[test]
+    fn an_empty_receiver_list_reads_neither_field() {
+        let parsed = json::parse("[]").unwrap();
+        assert_eq!(send_op_return_payload(&parsed).unwrap(), None);
+        assert!(!send_routes_via_ephemeral(&parsed));
+    }
+
+    #[test]
+    fn a_receiver_parses_amount_and_memo() {
+        let address = transparent::encode_address(
+            &ChainType::Mainnet,
+            zcash_transparent::address::TransparentAddress::PublicKeyHash([7; 20]),
+        );
+        let parsed = json::parse(&format!(
+            r#"[{{"address": "{address}", "amount": 1000, "memo": "0xdeadbeef"}}]"#
+        ))
+        .unwrap();
+        let receiver = parse_send_receiver(&parsed[0]).unwrap();
+        assert_eq!(receiver.amount.into_u64(), 1000);
+        assert!(receiver.memo.is_some());
+    }
+
+    #[test]
+    fn a_receiver_without_an_address_is_a_typed_input_rejection() {
+        let parsed = json::parse(r#"[{"amount": 1000}]"#).unwrap();
+        assert!(matches!(
+            parse_send_receiver(&parsed[0]),
+            Err(ZingolibError::InvalidInput(_))
+        ));
+    }
 }
 
 /// Proposes a transfer of the whole shielded spendable balance to

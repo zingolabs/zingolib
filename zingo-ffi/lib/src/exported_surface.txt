@@ -45,6 +45,7 @@ get_unified_addresses() -> Result<String, ZingolibError>
 get_transparent_addresses() -> Result<String, ZingolibError>
 create_new_unified_address(receivers: String) -> Result<String, ZingolibError>
 create_new_transparent_address() -> Result<String, ZingolibError>
+reserve_ephemeral_address() -> Result<String, ZingolibError>
 check_my_address(address: String) -> Result<String, ZingolibError>
 get_wallet_save_required() -> Result<String, ZingolibError>
 set_config_wallet_to_test() -> Result<String, ZingolibError>

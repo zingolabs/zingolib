@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `reserve_ephemeral_address` reserves one refund-scope (ZIP 320 ephemeral)
+  transparent address on account zero and reports it as JSON with the
+  `account`, `address_index`, `scope` and `encoded_address` fields. The swap
+  deposit flow gives the address to the provider as the wallet-controlled
+  refund destination.
+- `send` reads two optional fields on the first receiver of its JSON array:
+  `op_return`, a hex payload carried in a transparent OP_RETURN output (the
+  Maya / THORChain memo), and `route_via_ephemeral`, which routes a
+  transparent recipient through a wallet refund-scope address so the provider
+  observes a wallet-controlled `from_address`. Either field switches the send
+  to the two-transaction ZIP-320 flow, and `confirm` then reports the `txids`
+  in chronological order with the deposit transaction last.
 - `status_sync` reports `total_blocks`, the block span from the wallet birthday
   to the last known chain height, beside the `total_blocks_scanned` count. The
   `sync_complete` document of `poll_sync` reports `total_outputs_scanned` and

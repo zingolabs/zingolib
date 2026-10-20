@@ -34,3 +34,4 @@ name = "zingo"
 [dev-dependencies]
 quote = { workspace = true }
 syn = { workspace = true }
+zcash_transparent = { workspace = true }
