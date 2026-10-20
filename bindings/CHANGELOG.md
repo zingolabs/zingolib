@@ -12,6 +12,239 @@ publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
 
+## 502a453fe3329ecded1872f0c856b56f141c8d6a
+
+Since ba7336710419c9ac1e9362ac1b4e5b0073ff477e.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Added
+- `status_sync` reports `total_blocks`, the block span from the wallet birthday
+  to the last known chain height, beside the `total_blocks_scanned` count. The
+  `sync_complete` document of `poll_sync` reports `total_outputs_scanned` and
+  `total_outputs`, the session's final output totals. Every other key is
+  unchanged; both documents are now rendered by
+  `zingolib::perspective::sync_progress`.
+
+### pepper-sync
+
+#### [0.6.0] - 2026-10-15
+
+##### Added
+- `sync::SyncStatus::total_blocks`, the block span from the wallet birthday to
+  the last known chain height, the denominator `sync_status` already divided
+  by and never reported.
+- `sync::SyncStatus::nullifier_retrieval_pending`, whether any scan range still
+  awaits nullifier mapping or refetching.
+- `sync::SyncResult::total_outputs_scanned`, `sync::SyncResult::total_outputs`,
+  and `sync::SyncResult::nullifier_retrieval_pending`, copied from the final
+  sync status of the session, so a consumer can derive the session's total
+  progress from the result alone.
+- BREAKING: `error::ScanError::TransactionNotServed` variant, returned when
+  the server does not serve a transaction that its own data placed in the
+  chain: one the sync engine discovered through trial decryption, spend
+  detection or transparent address discovery. The served data is inconsistent,
+  so the error recommends `SyncRecoveryObservables::ServerUnavailable`, and
+  the consumer should switch to a different server and sync again. A
+  transaction a consumer's scan target names is not covered: that target is
+  dropped instead.
+- `wallet::ScanTarget::new`, the one constructor of a consumer's scan target
+  from a block height and an optional txid, and the `block_height` and `txid`
+  accessors.
+
+##### Changed
+- `sync::sync_status`: the session counts saturate against a stale initial
+  sync state, whose previously scanned counts stand at or above the wallet's
+  whole span, instead of underflowing. The pool totals and the block span are
+- The ironwood subtree roots are fetched on every chain. The wallet checks the
+  lightwallet protocol version to ensure ironwood is served, so a server that
+  does not serve them is an error rather than a chain without NU6.3.
+- BREAKING: `wallet::ScanTarget` has private fields. A consumer constructs a
+  target through `ScanTarget::new(block_height, Option<TxId>)` and reads it
+  through its accessors; the `narrow_scan_area` flag and the all-zero txid
+  standing for "no transaction" are gone. Two targets naming the same block
+  height and txid are the same target, and adding one merges it into the one
+  the sync state holds. A target also records, internally, the shielded pools
+  its transaction was found to hold notes of and whether the sync engine or
+  the consumer added it. `ScanTarget` is serialized as version 1, carrying the
+  optional txid, the pools and the origin; a version 0 target is read as a
+  consumer's target with no pool, a zero txid becoming none. (#2862)
+- The narrow range of blocks prioritised around a scan target is 1,000 blocks,
+  down from 10,000. A detected spend prioritises the narrow range around the
+  spending transaction rather than the whole shard of the spent note's pool: a
+  spent note needs no witness, and a change note in the spending transaction
+  prioritises its own pool's shard when it is found.
+- A pool rescan targets the wallet's transactions above the rescan height as
+  the sync engine's own rather than as a consumer's, since the wallet's
+  records of the pool are wrong and the chain's are not, so one the server no
+  longer serves is reported as an inconsistency.
+
+##### Removed
+- **Breaking.** `sync::SyncStatus::percentage_total_blocks_scanned`,
+  `sync::SyncStatus::percentage_total_outputs_scanned`, and
+  `sync::SyncResult::percentage_total_outputs_scanned`. The engine reports the
+  counts and spans the percentages were derived from; the derivation, with its
+  clamp, its reading of an empty span as complete, and its one-step-short
+  reading while nullifiers await retrieval, now lives in
+  `zingolib::perspective::sync_progress`.
+- **Breaking.** The `Display` and `From<_> for json::JsonValue` implementations
+  of `sync::SyncStatus` and `sync::SyncResult`. `zingolib::perspective::sync_progress`
+  renders both, with the same text and the same JSON keys. pepper-sync no longer
+  depends on the `json` crate.
+- **Breaking.** `sync::SyncStatus::percentage_session_blocks_scanned` and
+  `sync::SyncStatus::percentage_session_outputs_scanned`. These were the only fields whose
+  computation could abort the process, and no consumer read them: the CLI's progress
+  surfaces take `total_outputs_scanned`, `total_outputs`, and `is_complete()`, and
+  `SyncResult` carries the total percentage only. A consumer that wants a session
+  percentage computes it from the session and total counts the struct still reports. The
+  two fields also leave the `json::JsonValue` rendering of a sync status.
+
+##### Fixed
+- `sync` makes the server requests of its session start, the chain height,
+  the tree states that bound the session and the subtree roots, with the
+  wallet lock released, and takes the lock only to apply what they return. A
+  consumer reading the wallet, including `sync_status` and a save, no longer
+  waits for a slow server to answer them. Against zaino, whose
+  `GetSubtreeRoots` serves one block per subtree, a fresh wallet held the lock
+  for the whole fetch. (#2961)
+- `sync` observes a `SyncMode::Shutdown` request while a session-start server
+  request is pending, abandons the request and returns its result, instead of
+  shutting down only once the request is answered or fails. The abandoned
+  request is left to the fetcher, which is aborted at shutdown rather than
+  joined. (#2962)
+- A transaction request that zaino refuses with "retry with a fresh snapshot",
+  because it fell between two mempool snapshots, is sent again, at most three
+  times, instead of ending the sync session with a server error.
+- `sync` fetches subtree roots from the newest recorded shard range rather than
+  the shard tree's stored shard count. Scanning advances that count past the
+  roots the server holds, so after the first sync session the fetch returned
+  nothing and the shard range list never grew: every shard the wallet completed
+  by scanning had no shard range, and the trailing "incomplete shard" the
+  spendability check and the chain tip priority range start from reached back
+  to a root that could be months old. The ranges are now rebuilt from the fetch
+  index, so range `i` belongs to subtree root `i`, and the newest recorded root
+  is fetched again every session, which corrects a range whose completing block
+  a re-org moved. An existing wallet catches up on its next session. (#2951)
+- A fetched subtree root completing at or below the recorded newest height adds
+  no shard range. After a shard tree rollback refetched its bare roots, the
+  root completing at the recorded height pushed a degenerate one-block range.
+  Shard ranges are contiguous: each spans at least two blocks, each starts at
+  the completing block of the one before, and their ends strictly increase.
+  (#2952)
+- A fetched subtree root for a shard that scanning populated but left with a
+  gap becomes the cached annotation of the shard's root node, so the shard's
+  root is computable before the gap is scanned and the leaves scanned in
+  afterwards are checked against it. The root used to be skipped, leaving a
+  shard that completed on chain while partially scanned without a computable
+  root, and a witness that needed it failed although the note's shard and the
+  anchor's shard were scanned. (#2954)
+- The scan ranges prioritised around a scan target at the start of a sync
+  session follow the pools the target's transaction holds notes of, recorded
+  when the notes are found: the whole shard of each such pool, and the narrow
+  range of blocks around a target with none. Every target used to be
+  prioritised as an ironwood target, which `determine_block_range` resolved to
+  the orchard shard before NU6.3 and the ironwood shard after, so a sapling
+  note's shard, or an orchard note's shard once ironwood had completed shards,
+  could be left at `Historic` behind the whole unscanned history. (#2957)
+- A scan target that recorded a pool is kept until, for every such pool, its
+  block lies below the completing block of the pool's newest recorded shard
+  and every recorded shard range holding the block is scanned through its
+  completing block. The target used to be dropped as soon as the fully scanned
+  height passed it, so the rest of a shard mined while the wallet was closed
+  arrived as `Historic` with nothing left to prioritise it. A target on the
+  newest completing block is kept, as that block also holds the first
+  commitments of the incomplete shard. (#2958)
+- A consumer's scan target whose transaction the server does not serve is
+  dropped with a warning and the scan continues, where it used to fail every
+  scan of its range. A consumer's target whose block height lies below the
+  wallet birthday or above the chain height is dropped at the start of the
+  session. Network weather on any target is reported as the transient failure
+  it is and drops nothing. (#2959)
+- A re-org truncation removes the scan targets above the truncation height
+  with the wallet's blocks, transactions, nullifiers and outpoints. A target
+  above it names a transaction in a block the wallet no longer holds and asked
+  the server for it when the replacing blocks were scanned. (#2960)
+
+### zingolib
+
+#### [Unreleased]
+
+##### Removed
+- **Breaking:** remove `wallet::keys::legacy::extended_transparent` from the public API. The module is crate-private: its `ExtendedPrivKey` and `ExtendedPubKey` hold the 32 secret-key bytes or the 33 compressed-point bytes and the 32-byte chain code the wallet file stores, and each reader validates the scalar or the point through the `zcash_transparent` account key types before the wallet loads. `Debug` prints a BLAKE2b digest of both fields. The derivation API (`KeyIndex`, `with_seed`, `derive_private_key`, `derive_public_key`, `get_ext_taddr_from_bip39seed`), which nothing called, is gone. zingolib no longer depends on `secp256k1`, `hmac` or `sha2` directly.
+
+#### [7.0.0] - 2026-10-15
+
+##### Added
+- `perspective::sync_progress`, the sync-progress editorial types.
+  `SyncProgress`, built from a `pepper_sync::sync::SyncStatus`, derives the
+  total block and output percentages the engine reported before: the exact
+  ratio on a percentage scale, clamped, reading complete over an empty span
+  once sync has started and one step short while nullifiers await retrieval.
+  `SessionReport`, built from a `pepper_sync::sync::SyncResult`, derives the
+  session's total output percentage by the same rule. Both render the
+  `Display` text and the `json::JsonValue` document pepper-sync rendered
+  before, with `total_blocks` added to the status document and the two
+  output totals added to the result document.
+
+##### Changed
+- `SaplingParams` is a plain struct whose `SPEND` and `OUTPUT` constants are
+  the embedded Sapling proving parameters, read by `include_bytes!` straight
+  from the parameter cache the build script downloads into. `SaplingParams::get`
+  and the `rust-embed` dependency are gone, the build script no longer writes
+  into the source tree, and `zingolib/zcash-params/` is no longer a tracked
+  stub; delete any stale copy there by hand.
+- The Sapling prover is parsed from the embedded parameters on the first
+  Sapling proof of a transaction build and dropped with the build. A build
+  with no Sapling spend and no Sapling output never parses it, which removes
+  about a second from every Orchard-only and Ironwood-only send. A build with
+  one parses about 51 MB of parameters and frees them when the build ends.
+  Before, every build parsed the parameters, after copying them to the heap.
+- **Breaking:** the values of `LightWallet::outpoint_map`, and the scan
+  targets `LightWallet::clear_all` and the legacy wallet import add, are
+  `pepper_sync::wallet::ScanTarget` with private fields, constructed through
+  `ScanTarget::new(block_height, Option<TxId>)` and read through its
+  accessors. A wallet file written before the change still loads.
+
+##### Fixed
+- `LightWallet::spendable_balance` and note selection require the anchor's
+  shard to be scanned as well as the note's. The witness path's right-hand
+  siblings are computed from the anchor's shard up to the anchor, so a note in
+  a scanned shard could count as spendable while its witness could not be
+  built. `InputSource::anchor_computable` checks the anchor's shard, where it
+  checked the birthday shard, which is what the backend's canonical crossing
+  proposal asks of it. (#2953)
+
+### zingo-netutils
+
+#### [Unreleased]
+
+##### Removed
+- `time::test::WALLET_RECORD_LAG_BOUND`, behind `testutils`. The live test
+  that bounded the sender's wallet record reaching the mempool retired
+  with the regtest removal, and no other test enforced the bound.
+
+#### [6.0.0] - 2026-10-15
+
+##### Added
+- `nym_proxy::BootstrapEvent` and the observed lifecycle entries
+  `NymProxy::start_observed`, `NymProxy::start_over_observed`, and
+  `NymProxy::reconnect_observed`: every acquisition race — the first
+  bootstrap and each reconnect after a proxy death — reports its steps as
+  typed events naming the Exit Node each concerns, while `start`,
+  `start_over`, and `reconnect` remain thin silent renderings over the same
+  path, so the two narrations cannot drift. `PullFailed` carries the pull's
+  whole typed `zingo_net_diag::NetOpFailure` — the stage, the target, and
+  the cause chain — rather than a line rendered for a human, so a
+  diagnostics surface renders structure instead of parsing prose.
+
+##### Changed
+- `lightwallet-protocol` moves from 0.3.0 to 0.4.0, whose committed
+  bindings carry the Ironwood proto fields.
+
 ## ba7336710419c9ac1e9362ac1b4e5b0073ff477e
 
 Since 6d037df7a4f4f72f219fbadd8c6fe34d8c8ea97c.

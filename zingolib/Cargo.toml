@@ -48,11 +48,8 @@ orchard = { workspace = true }
 pepper-sync = { workspace = true }
 portpicker = { workspace = true, optional = true }
 prost = { workspace = true }
-hmac = { workspace = true }
 rand = { workspace = true }
 sapling-crypto.workspace = true
-sha2 = { workspace = true }
-secp256k1 = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 shardtree = { workspace = true, features = ["legacy-api"] }
@@ -73,7 +70,7 @@ zcash_primitives = { workspace = true }
 # only: build.rs fetches the sapling params; runtime code never downloads.
 zcash_proofs = { workspace = true }
 zcash_protocol = { workspace = true }
-zcash_transparent = { workspace = true }
+zcash_transparent = { workspace = true, features = ["transparent-inputs"] }
 zingo-memo = { workspace = true }
 zingo-netutils = { workspace = true }
 zingo-price = { workspace = true }

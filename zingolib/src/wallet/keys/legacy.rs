@@ -25,7 +25,9 @@ use crate::{
     wallet::{error::KeyError, legacy::WitnessTrees, traits::ReadableWriteable},
 };
 
-pub mod extended_transparent;
+pub(crate) mod extended_transparent;
+
+use extended_transparent::AccountKey;
 
 /// Interface to cryptographic capabilities that the library requires for
 /// various operations. <br>
@@ -289,10 +291,7 @@ pub(crate) fn legacy_fvks_to_ufvk<P: zcash_protocol::consensus::Parameters>(
         fvks.push(zcash_address::unified::Fvk::Sapling(fvk.to_bytes()));
     }
     if let Some(fvk) = transparent_fvk {
-        let mut fvk_bytes = [0u8; 65];
-        fvk_bytes[0..32].copy_from_slice(&fvk.chain_code[..]);
-        fvk_bytes[32..65].copy_from_slice(&fvk.public_key.serialize()[..]);
-        fvks.push(zcash_address::unified::Fvk::P2pkh(fvk_bytes));
+        fvks.push(zcash_address::unified::Fvk::P2pkh(fvk.account_key_bytes()));
     }
 
     let ufvk = zcash_address::unified::Ufvk::try_from_items(
@@ -334,32 +333,7 @@ pub(crate) fn legacy_sks_to_usk(
     CompactSize::write(&mut usk_bytes, sapling_key_bytes.len())?;
     usk_bytes.write_all(&sapling_key_bytes)?;
 
-    // the following code performs the same operations for calling `to_bytes()` on an AccountPrivKey in LRZ
-    let prefix = bip32::Prefix::XPRV;
-    let mut chain_code = [0u8; 32];
-    chain_code.copy_from_slice(&transparent_key.chain_code);
-    let attrs = bip32::ExtendedKeyAttrs {
-        depth: 4,
-        parent_fingerprint: [0xff, 0xff, 0xff, 0xff],
-        child_number: bip32::ChildNumber::new(0, true).expect("correct"),
-        chain_code,
-    };
-    // Add leading `0` byte
-    let mut key_bytes = [0u8; 33];
-    key_bytes[1..].copy_from_slice(transparent_key.private_key.as_secret_bytes());
-
-    let extended_key = bip32::ExtendedKey {
-        prefix,
-        attrs,
-        key_bytes,
-    };
-
-    let xprv_encoded = extended_key.to_string();
-    let account_tkey_bytes = bs58::decode(xprv_encoded)
-        .with_check(None)
-        .into_vec()
-        .expect("correct")
-        .split_off(bip32::Prefix::LENGTH);
+    let account_tkey_bytes = transparent_key.account_key_bytes();
 
     CompactSize::write(
         &mut usk_bytes,

@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use crate::mixnet::{DeathReport, Indicator};
+use crate::mixnet::{DeathReport, Indicator, acquire, provision, supervisor};
 
 /// One observation of Mixnet Mode for subscribers: the mode plus the
 /// evidence scoped to it. Every field beyond the mode is `None` outside
@@ -177,6 +177,49 @@ pub enum ProvisionStrategy<'a> {
         socks5_addr: &'a str,
         /// The Exit Node identities the mobile platform host reports as bound.
         exits: &'a [crate::mixnet::ExitNodeId],
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionStarted {
+    OptedOut,
+    Spawned {
+        resolution: provision::ProxyResolution,
+    },
+    Attached {
+        socks5_addr: String,
+    },
+}
+
+impl std::fmt::Display for SessionStarted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SessionStarted::OptedOut => {
+                f.write_str("the startup opt-out, which provisions nothing")
+            }
+            SessionStarted::Spawned { resolution } => {
+                write!(f, "a nym-proxy spawned at {resolution}")
+            }
+            SessionStarted::Attached { socks5_addr } => {
+                write!(f, "an attach to the host endpoint '{socks5_addr}'")
+            }
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SessionStartError {
+    #[error("the nym proxy at {resolution} did not start")]
+    Spawn {
+        resolution: provision::ProxyResolution,
+        #[source]
+        source: acquire::TransportError,
+    },
+    #[error("the attach to the host endpoint '{socks5_addr}' failed")]
+    Attach {
+        socks5_addr: String,
+        #[source]
+        source: supervisor::MixnetProxyError,
     },
 }
 

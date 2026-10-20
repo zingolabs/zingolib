@@ -990,6 +990,8 @@ mod config_template {
         // build never reaches an Online communication mode (ADR 0026).
         #[cfg(feature = "nym")]
         use crate::Communications;
+        #[cfg(feature = "nym")]
+        use zingolib::config::HTTPS_DEFAULT_PORT;
 
         /// An explicit `--server` is an online act, which only nym builds
         /// accept (ADR 0026).
@@ -1006,6 +1008,19 @@ mod config_template {
             assert!(config.ufvk.is_none());
             assert_eq!(config.birthday, 0);
             assert!(matches!(config.mode, Operations::Interactive));
+        }
+
+        #[cfg(feature = "nym")]
+        #[test]
+        fn portless_server_completes_to_the_https_default_port() {
+            let config = fill(&[examples::BIN_NAME, "--server", "https://example.com"])
+                .expect("a portless https URI completes to its scheme's default port");
+            let server = config
+                .server
+                .expect("an explicit --server pins a Server on the template");
+            assert_eq!(server.scheme_str(), Some("https"));
+            assert_eq!(server.port_u16(), Some(HTTPS_DEFAULT_PORT));
+            assert!(config.server_pinned);
         }
 
         /// `--online` exists as a consented act only in nym builds; the
@@ -1106,16 +1121,6 @@ mod config_template {
         fn invalid_chain_type() {
             let err = fill(&[examples::BIN_NAME, "--chain", "bogus"]).unwrap_err();
             assert!(err.contains("bogus"));
-        }
-
-        /// The URI shape check sits on the online resolution path, which
-        /// only nym builds reach: the offline-only build refuses the
-        /// `--server` act before any URI is inspected (ADR 0026).
-        #[cfg(feature = "nym")]
-        #[test]
-        fn server_missing_port() {
-            let err = fill(&[examples::BIN_NAME, "--server", "https://example.com"]).unwrap_err();
-            assert!(err.contains("scheme"));
         }
     }
 

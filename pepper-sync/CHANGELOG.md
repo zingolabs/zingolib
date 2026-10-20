@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 ### Fixed
+- The scan results of a task's loads are processed in block height order.
+  The loads of a scan range are scanned concurrently and returned in
+  completion order, so a load could be processed before a lower load of the
+  same range. When the nullifier map is capped by the performance level,
+  every processed load of a range above unscanned ranges is scanned without
+  mapping, and a note found in the lower load then recorded the higher load
+  as a range whose nullifiers must be re-fetched before the note is known to
+  be unspent. That re-fetch only runs once every range below is scanned, so a
+  note received at the chain tip stayed unspendable for the whole historic
+  sync. A result arriving above an unprocessed lower load of its task is now
+  held back until that load arrives, and a worker takes a new load only while
+  the scanning workers and held results together stay within the worker pool,
+  so the loads in memory never exceed the pool.
 
 ## [0.6.0] - 2026-10-15
 
@@ -141,8 +154,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::traits::SyncWallet::get_transparent_addresses` and
   `get_transparent_addresses_mut` document that the returned addresses must be
   in use and must not include gap addresses.
-- `sync::SyncResult` `Display` output is headed "Sync result" instead of
-  "Sync completed succesfully", since sync may now return on explicit shutdown.
 - BREAKING: the truncation rescan announces itself. `error::SyncError::PoolHistoryReopened`
   is now a struct variant carrying the pool, the rescan height, the
   disagreeing block, and both tree sizes, and it renders one

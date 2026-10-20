@@ -8,14 +8,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `data::PollReport::from_join` maps a tokio join outcome to a `PollReport`: a
+  finished task is `Ready`, a panicked task is `Panicked` with the panic's
+  message, and a cancelled task is `Panicked` with tokio's description.
+- `data::panic_text` renders a panic payload, `&str` or `String`, as text.
+- `LightClientError::SyncPanicked(String)` reports a sync task that panicked
+  from `await_sync` and from the launch wait in `sync`.
 
 ### Changed
+- **Breaking:** `config::construct_indexer_uri` completes a server string
+  without a scheme to `https://`, and a URI without a port to its scheme's
+  default port (`:443` for `https`, `:80` for `http`), named by the new
+  `config::HTTPS_DEFAULT_PORT`, `config::HTTP_DEFAULT_PORT`, and
+  `config::DEFAULT_INDEXER_SCHEME` constants. The old completion to `http://`
+  and `:9067` is gone: a bare `host` now reaches the indexer the census
+  lists instead of a dead legacy port, and an explicit port is never
+  rewritten.
+- **Breaking:** `data::PollReport` gains the `Panicked(String)` variant, which
+  `poll_sync` returns when the sync task panicked and tokio contained the
+  panic. Every exhaustive match on `PollReport` needs an arm for it.
+- **Breaking:** `LightClient::start_mixnet_session` returns
+  `Result<mixnet::SessionStarted, mixnet::SessionStartError>` in place of
+  `Result<(), TransportError>`. `SessionStarted` reports what the driver did:
+  `OptedOut`, `Spawned { resolution }` with the `ProxyResolution` the one
+  precedence rule chose, or `Attached { socks5_addr }`. `SessionStartError`
+  carries the same provenance beside its cause, as `Spawn { resolution,
+  source }` or `Attach { socks5_addr, source }`, so a consumer names the path
+  and the rung of the precedence that chose it without resolving the path a
+  second time.
+- **Breaking:** `mixnet::provision::resolve_proxy_path` returns a
+  `ProxyResolution`, the chosen path with its `ProxySource` (`Explicit`,
+  `Environment`, `Bundled`, or `PathLookup { bundled_dir }`), in place of the
+  bare path. `ProxyResolution` renders the path and its provenance through
+  `Display`, and the `PathLookup` rendering names every source that was empty.
 
 ### Deprecated
 
 ### Removed
+- **Breaking:** remove `wallet::keys::legacy::extended_transparent` from the public API. The module is crate-private: its `ExtendedPrivKey` and `ExtendedPubKey` hold the 32 secret-key bytes or the 33 compressed-point bytes and the 32-byte chain code the wallet file stores, and each reader validates the scalar or the point through the `zcash_transparent` account key types before the wallet loads. `Debug` prints a BLAKE2b digest of both fields. The derivation API (`KeyIndex`, `with_seed`, `derive_private_key`, `derive_public_key`, `get_ext_taddr_from_bip39seed`), which nothing called, is gone. zingolib no longer depends on `secp256k1`, `hmac` or `sha2` directly.
 
 ### Fixed
+- `poll_sync`, the save poll, `shutdown_save_task` and the wallet write no
+  longer `expect` on a task's join handle. Under `panic = "unwind"` tokio
+  contains a task's panic, the join yields an error, and the old `expect`
+  re-raised the panic on the caller's thread, under the FFI's client lock,
+  which poisoned the lock for the rest of the session. A panicked save task
+  restarts, as a failed one does, and the poll reports the panic as an
+  `io::Error`.
+- `migrate_to_ironwood` reconciles once more after its last part confirms,
+  so the migration it returns reports the `Complete` phase. Reconciliation
+  judges completion on the persisted part states, and the pass that promotes
+  the parts to `Confirmed` cannot also complete the migration, so the one-call
+  returned with the phase still `PartsScheduled`.
+- The two-phase migration twin mines the mock chain to the first Ironwood-era
+  transmission window before the one-call and two buckets past each block that
+  confirms transactions, the spans the state machine requires between the
+  activation, a note's confirmation and a part that anchors on it. The twin's
+  regtest ancestor was ignored and never ran.
 
 ## [7.0.0] - 2026-10-15
 

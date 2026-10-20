@@ -1,43 +1,37 @@
-# Issue tracker: Linear (via MCP)
+# Issue tracker: GitHub Issues (via `gh`)
 
-Issues and PRDs for this repo live in **Linear**, in the **Zingo Mobile** team
-(`team` id `e2a5ee38-9519-4447-bfec-581c2b9e838f`). All operations go through the
-`linear-server` MCP tools, not a CLI. Most tool schemas are deferred; load them
-with `ToolSearch` (e.g. `select:mcp__linear-server__save_issue`) before calling.
-
-There is no GitHub-style issue tracker for triage purposes. External pull
-requests on the `zingolabs/zingolib` GitHub repo are **not** a triage surface;
-`/triage` reads only from Linear.
+Issues for this repo live in **GitHub Issues** on `zingolabs/zingolib`. All
+operations go through the `gh` CLI. Linear holds the Zingo Mobile team's
+issues only, and nothing in this repo is filed there.
 
 ## Conventions
 
-Always scope to `team: "Zingo Mobile"`.
+Always pass `--repo zingolabs/zingolib` so a command run from a submodule or a
+worktree still reaches the right tracker.
 
-- **Create an issue**: `mcp__linear-server__save_issue` with `title`, `description`
-  (markdown, using real newlines, not `\n`), and `team`. Set `state` and `labels`
-  per `triage-labels.md`.
-- **Read an issue**: `mcp__linear-server__get_issue` by id, plus
-  `mcp__linear-server__list_comments` for the discussion thread.
-- **List issues**: `mcp__linear-server__list_issues` with `team: "Zingo Mobile"`
-  and filters (`state`, `label`, `query`, `assignee`, `updatedAt`).
-- **Comment on an issue**: `mcp__linear-server__save_comment` with the issue id
-  and `body`.
-- **Apply labels / change state**: `mcp__linear-server__save_issue` with the issue
-  id and updated `labels` / `state`. Create a missing label first with
-  `mcp__linear-server__create_issue_label`.
-- **List labels / statuses**: `mcp__linear-server__list_issue_labels` and
-  `mcp__linear-server__list_issue_statuses`, both scoped to the team.
+- **Create an issue**: `gh issue create --title <title> --body-file <file>
+  --label <label>`. Write the body to a file first (markdown, real newlines),
+  never inline through a heredoc. Apply the component label that fits
+  (`Pepper-Sync`, `sync`, `zingo-cli`, ...) beside `bug` or `enhancement`, and
+  a triage label per `triage-labels.md`.
+- **Read an issue**: `gh issue view <number> --comments`.
+- **List issues**: `gh issue list` with `--label`, `--state`, `--search`,
+  `--assignee`.
+- **Comment on an issue**: `gh issue comment <number> --body-file <file>`.
+- **Apply or remove labels**: `gh issue edit <number> --add-label <label>` and
+  `--remove-label <label>`. Create a missing label first with `gh label create
+  <label> --description <text>`.
+- **Close**: `gh issue close <number>`, with `--reason "not planned"` for
+  `wontfix`.
+- **List labels**: `gh label list --limit 100`.
 
-### Team facts (snapshot, re-list to confirm)
-
-- **Statuses**: Backlog, Todo, In Progress, In Review, Done, Duplicate, Canceled.
-- **Labels**: Design, Feature, Bug, Improvement. Triage labels
-  (`needs-info`, `ready-for-agent`) are created lazily (see `triage-labels.md`).
+A pull request that fixes an issue says so in its body (`Fixes #<number>`) so
+the merge closes it.
 
 ## When a skill says "publish to the issue tracker"
 
-Create a Linear issue in the Zingo Mobile team with `save_issue`.
+Create a GitHub issue on `zingolabs/zingolib` with `gh issue create`.
 
 ## When a skill says "fetch the relevant ticket"
 
-Resolve the Linear issue with `get_issue` and pull its thread with `list_comments`.
+Resolve the issue with `gh issue view <number> --comments`.
