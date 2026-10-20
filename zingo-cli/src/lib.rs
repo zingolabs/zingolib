@@ -1120,7 +1120,7 @@ enum ConfigTemplateError {
     /// A key-provided load arrived without the wallet birthday.
     #[error(
         "This should be the block height where the wallet was created.\
-If you don't remember the block height, you can pass '--birthday 0' to scan from the start of the blockchain."
+If you don't remember the block height, you can pass '--birthday 0' to scan from Sapling activation."
     )]
     BirthdayRequired,
     /// The birthday token is not a block number.
@@ -1177,7 +1177,7 @@ impl CliConfigTemplate {
         if from_provided && maybe_birthday.is_none() {
             eprintln!("ERROR!");
             eprintln!(
-                "Please specify the wallet birthday (eg. '--birthday 600000') to restore a wallet. (If you want to load the entire blockchain instead, you can use birthday 0. /this would require extensive time and computational resources)"
+                "Please specify the wallet birthday (eg. '--birthday 600000') to restore a wallet. (If you don't know it, pass '--birthday 0' to scan from Sapling activation, which takes a long time.)"
             );
             return Err(ConfigTemplateError::BirthdayRequired);
         }
