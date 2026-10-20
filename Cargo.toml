@@ -8,7 +8,6 @@ members = [
     "zingo-price",
     "zingo-status",
     "zingolib",
-    "zingolib_testutils",
     "zingo-ffi/lib",
     "zingo-ffi/uniffi-bindgen",
 ]
@@ -35,7 +34,7 @@ zingo-net-diag = { version = "0.1.0", path = "zingo-net-diag" }
 # builds and tests.
 zingo-price = { version = "0.2.0", path = "zingo-price", default-features = false }
 zingo-status = { version = "0.2.2", path = "zingo-status" }
-zingolib = { path = "zingolib" }
+zingolib = { version = "7.0.0", path = "zingolib" }
 
 ### Tests and Integration Tests
 portpicker = "0.1"
@@ -46,7 +45,6 @@ proptest = "1.6.0"
 tempfile = "3"
 quote = "1"
 syn = { version = "2", features = ["full"] }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "89cf104a2416144d1bbbae30aca02bec062d1492" }
 zingo_test_vectors = "0.0.1"
 
 ### Documentation
@@ -86,7 +84,6 @@ zcash_primitives = { version = "=0.31.0-pre.1", features = ["non-standard-fees"]
 zcash_proofs = "=0.31.0-pre.1"
 zcash_protocol = "=0.11.0-pre.0" # public API (TODO: remove from public API)
 zcash_transparent = "=0.11.0-pre.1"
-zcash_script = "0.6.0"
 
 ### Blockchain Protocol
 bip0039 = { version = "0.14", features = ["rand"] }
@@ -95,10 +92,7 @@ zip32 = "0.3.0"
 
 ### Cryptographic
 blake2b_simd = "1"
-hmac = "0.12"
 jubjub = "0.11.1"
-secp256k1 = "0.33.1"
-sha2 = "0.10"
 secrecy = "0.8"
 subtle = "2.6.1"
 bech32 = "0.11.0"
@@ -117,7 +111,6 @@ serde_json = "1"
 
 ### Network
 http = "1"
-reqwest = { version = "0.12.15", default-features = false }
 # aws-lc-rs is the workspace's sole rustls CryptoProvider (ring is excised);
 # prefer-post-quantum leads outbound handshakes with the X25519MLKEM768
 # hybrid group. Runtime installation is first-install-wins via
@@ -155,13 +148,18 @@ rand = "0.10"
 [profile.test]
 opt-level = 3
 
-# The profile that the Binding Layer builder uses for the mobile libraries,
-# carried unchanged from the zingo-ffi workspace that the crates came from.
+# The profile that the Binding Layer builder uses for the mobile libraries.
+# The panic strategy is unwind, the same as the `mobile` profile of the
+# standalone zingo-netutils workspace that builds the proxy library. The iOS
+# app links both static archives into one binary, and the two copies of std
+# resolve to one panic runtime at link time, so an abort here aborted the app
+# on every panic inside a tokio task of the proxy (issue #2926). The workbench
+# test `panic_strategy` holds both workspaces to one strategy.
 [profile.mobile]
 inherits = "release"
 debug = 1
 lto = "thin"
 codegen-units = 1
 overflow-checks = true
-panic = "abort"
+panic = "unwind"
 opt-level = "z"

@@ -54,7 +54,7 @@ async fn write_to_path(wallet_path: &std::path::Path, bytes: &[u8]) -> std::io::
         Ok(())
     })
     .await
-    .expect("write_to_path task panicked")
+    .map_err(std::io::Error::other)?
 }
 impl LightClient {
     /// Launches a task for saving the wallet data to persistance when the wallet's `save_required` flag is set.
@@ -101,7 +101,7 @@ impl LightClient {
     fn poll_save_task(&mut self) -> PollReport<(), std::io::Error> {
         if let Some(mut save_handle) = self.save_handle.take() {
             if let Some(save_result) = save_handle.borrow_mut().now_or_never() {
-                PollReport::Ready(save_result.expect("task panicked"))
+                PollReport::from_join(save_result)
             } else {
                 self.save_handle = Some(save_handle);
                 PollReport::NotReady
@@ -121,6 +121,10 @@ impl LightClient {
                 }
                 save_result
             }
+            PollReport::Panicked(text) => {
+                self.save_task().await;
+                Err(std::io::Error::other(text))
+            }
             _ => Ok(()),
         }
     }
@@ -129,7 +133,8 @@ impl LightClient {
     pub async fn shutdown_save_task(&mut self) -> std::io::Result<SaveShutdown> {
         self.save_active.store(false, atomic::Ordering::Release);
         if let Some(save_handle) = self.save_handle.take() {
-            save_handle.await.expect("task panicked")?;
+            let saved = save_handle.await.map_err(std::io::Error::other)?;
+            saved?;
             Ok(SaveShutdown::ShutDown)
         } else {
             Ok(SaveShutdown::NotRunning)

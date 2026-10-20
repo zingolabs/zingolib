@@ -137,6 +137,8 @@ pub enum CommandError {
     Network(#[from] NetworkCommandError),
     #[error("the `{0}` command runs only at the interactive prompt")]
     ReplOnly(String),
+    #[error("the sync task panicked: {0}")]
+    SyncPanicked(String),
     /// Transitional quarantine for commands whose failure is not yet
     /// typed, carrying the failure itself so the dispatch renderer still
     /// walks its whole source chain.
@@ -152,6 +154,13 @@ const DISPATCH_CHAIN_SEPARATOR: &str = "\ncaused by: ";
 /// by:` line per link, over the one sanctioned chain walk.
 pub(crate) fn render_error_chain(error: &(impl std::error::Error + 'static)) -> String {
     zingo_net_diag::chain_texts(error).join(DISPATCH_CHAIN_SEPARATOR)
+}
+
+pub(crate) fn io_error_with_chain(
+    context: &str,
+    error: &(impl std::error::Error + 'static),
+) -> std::io::Error {
+    std::io::Error::other(format!("{context} {}", render_error_chain(error)))
 }
 
 /// A usage failure carrying the standard "Try 'help `<command>`'" pointer,
@@ -893,6 +902,7 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
         SyncSubCommand::Poll => match lightclient.poll_sync() {
             PollReport::NoHandle => Ok("Sync task has not been launched.".to_string()),
             PollReport::NotReady => Ok("Sync task is not complete.".to_string()),
+            PollReport::Panicked(text) => Err(CommandError::SyncPanicked(text)),
             PollReport::Ready(result) => match result {
                 Ok(sync_result) => Ok(sync_progress::SessionReport::from(sync_result).to_string()),
                 Err(e) => Err(not_yet_typed(e)),
@@ -1174,11 +1184,41 @@ pub(crate) fn spawn_hints(explicit: Option<&str>) -> zingolib::mixnet::provision
     }
 }
 
-/// Resolve the `nym-proxy` binary path from this consumer's
-/// [`spawn_hints`], for the `network on` command's in-session enable.
 #[cfg(feature = "nym")]
-pub(crate) fn resolve_proxy_path(explicit: Option<&str>) -> String {
-    zingolib::mixnet::provision::resolve_proxy_path(&spawn_hints(explicit))
+pub(crate) fn spawned_resolution(
+    started: zingolib::mixnet::SessionStarted,
+) -> Result<zingolib::mixnet::provision::ProxyResolution, NetworkCommandError> {
+    use zingolib::mixnet::SessionStarted;
+    match started {
+        SessionStarted::Spawned { resolution } => Ok(resolution),
+        other @ (SessionStarted::OptedOut | SessionStarted::Attached { .. }) => {
+            Err(NetworkCommandError::NotSpawned { started: other })
+        }
+    }
+}
+
+#[cfg(feature = "nym")]
+fn provisioning_remedy(failure: &zingolib::mixnet::SessionStartError) -> String {
+    use zingolib::mixnet::SessionStartError;
+    use zingolib::mixnet::provision::{NYM_PROXY_ENV, ProxySource};
+    match failure {
+        SessionStartError::Spawn { resolution, .. } => match &resolution.source {
+            ProxySource::Explicit => {
+                ". Check the path given to --nym-proxy or `network on`".to_string()
+            }
+            ProxySource::Environment => format!(". Check the path in ${NYM_PROXY_ENV}"),
+            ProxySource::Bundled => {
+                ". The bundled binary did not start; rebuild it with `makers bundle-nym-proxy`"
+                    .to_string()
+            }
+            ProxySource::PathLookup { .. } => format!(
+                ". A plain cargo build never produces nym-proxy: run `makers bundle-nym-proxy` \
+                 (with --release for a release build) to place it beside the wallet, or pass \
+                 --nym-proxy <path>, or set ${NYM_PROXY_ENV}"
+            ),
+        },
+        SessionStartError::Attach { .. } => String::new(),
+    }
 }
 
 /// Typed failure of the `network` command family. The family exists only
@@ -1207,10 +1247,13 @@ pub enum NetworkCommandError {
         uri: String,
         source: zingolib::netutils::GetClientError,
     },
-    #[error("failed to start the nym proxy at '{path}'")]
+    #[error("Mixnet Mode could not start{}", provisioning_remedy(.source))]
     ProxyStart {
-        path: String,
-        source: zingolib::mixnet::acquire::TransportError,
+        source: zingolib::mixnet::SessionStartError,
+    },
+    #[error("the session driver reported {started} where a spawned nym-proxy was expected")]
+    NotSpawned {
+        started: zingolib::mixnet::SessionStarted,
     },
     /// The proxy spawned but its bootstrap reached a terminal failure while
     /// the command waited; re-enabling spawns a fresh proxy.
@@ -1547,16 +1590,16 @@ async fn network_command(
             };
             #[cfg(not(feature = "nakednet-test-mode"))]
             let went_online: Option<http::Uri> = None;
-            let path = resolve_proxy_path(path.as_deref());
             // `network on` waits out the standing client's proven birth: the
             // command returns with a client whose exit carried a round trip.
-            lightclient
-                .enable_mixnet(std::path::Path::new(&path))
+            let started = lightclient
+                .start_mixnet_session(
+                    zingolib::mixnet::ProvisionStrategy::Spawn(spawn_hints(path.as_deref())),
+                    zingolib::mixnet::MixnetStartPolicy::ForcedOn,
+                )
                 .await
-                .map_err(|source| NetworkCommandError::ProxyStart {
-                    path: path.clone(),
-                    source,
-                })?;
+                .map_err(|source| NetworkCommandError::ProxyStart { source })?;
+            let resolution = spawned_resolution(started)?;
             // The enable itself waited out the proven birth — the six-birth
             // budget bounds the wait, the supervisor's lifecycle timeout
             // bounds each bootstrap inside it, and the dispatch seam's
@@ -1565,7 +1608,7 @@ async fn network_command(
             let outcome = await_bootstrap_outcome(lightclient.subscribe_mixnet_status()).await;
             let readiness = match outcome {
                 BootstrapOutcome::Ready { exits } => format!(
-                    "Mixnet Mode ready; the nym proxy at '{path}' serves send and \
+                    "Mixnet Mode ready; the nym proxy at {resolution} serves send and \
                      price-fetch over the mixnet.{}",
                     render_exit_nodes(&exits)
                 ),

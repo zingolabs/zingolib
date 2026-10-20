@@ -1,0 +1,43 @@
+# A merge or a close ends a pull request, but not its runs. Every
+# concurrency group in this repository cancels only on a new pull_request
+# event in the pull request's own group, and a close raises none that any
+# workflow listens to, so the runs of a merged pull request hold their
+# runners until they finish on their own. This workflow listens to the
+# close and hands the head branch to the workbench tool
+# cancel-closed-pr-runs, which cancels every live pull_request run of that
+# branch except this one.
+#
+# The branch name reaches the tool through an environment variable, never
+# through an expression inside the script, so a branch named after shell
+# syntax cannot change the command.
+name: Cancel the runs of a closed pull request
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write
+
+jobs:
+  cancel:
+    name: Cancel the closed pull request's runs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+        with:
+          workspaces: tools/workbench
+
+      - name: Cancel the live runs of the head branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: >-
+          cargo run --quiet --manifest-path tools/workbench/Cargo.toml
+          --bin cancel-closed-pr-runs -- "$HEAD_BRANCH"

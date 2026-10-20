@@ -11,10 +11,10 @@ use log::Level;
 
 use std::any::Any;
 use std::backtrace::Backtrace;
+use std::cell::RefCell;
 use std::num::NonZeroU32;
 use std::panic::{self, PanicHookInfo, UnwindSafe};
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::sync::Once;
 use std::sync::RwLock;
 use std::time::Duration;
@@ -226,6 +226,7 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         | LightClientError::SyncNotRunning
         | LightClientError::SyncError(_)
         | LightClientError::SyncModeError(_) => ZingolibError::Sync(text),
+        LightClientError::SyncPanicked(panic_message) => ZingolibError::Panic(panic_message),
         LightClientError::SendError(inner) => match inner {
             SendError::ProposeShieldError(_) | SendError::CalculateShieldError(_) => {
                 ZingolibError::Shield(text)
@@ -296,43 +297,51 @@ struct PanicReport {
     backtrace: Option<String>,
 }
 
-static LAST_PANIC: Lazy<Mutex<PanicReport>> = Lazy::new(|| Mutex::new(PanicReport::default()));
+thread_local! {
+    static LAST_PANIC: RefCell<PanicReport> = RefCell::new(PanicReport::default());
+}
 
 fn set_last_panic(report: PanicReport) {
-    if let Ok(mut r) = LAST_PANIC.lock() {
-        *r = report;
-    }
+    LAST_PANIC.with(|last| *last.borrow_mut() = report);
 }
 
 fn take_last_panic() -> PanicReport {
-    if let Ok(mut r) = LAST_PANIC.lock() {
-        let out = r.clone();
-        *r = PanicReport::default();
-        out
-    } else {
-        PanicReport::default()
-    }
+    LAST_PANIC.with(|last| std::mem::take(&mut *last.borrow_mut()))
+}
+
+fn location_text(info: &PanicHookInfo<'_>) -> String {
+    info.location().map_or_else(
+        || "an unknown location".to_string(),
+        |location| {
+            format!(
+                "{}:{}:{}",
+                location.file(),
+                location.line(),
+                location.column()
+            )
+        },
+    )
 }
 
 static PANIC_HOOK_ONCE: Once = Once::new();
 
+/// - Replaces the process-wide panic hook once.
+/// - The hook writes each panic's message, location and backtrace to the `log` sink and to stderr.
+/// - The hook stores the report for the panicking thread alone.
 fn install_panic_hook_once() {
     PANIC_HOOK_ONCE.call_once(|| {
         panic::set_hook(Box::new(|info: &PanicHookInfo<'_>| {
-            let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
-                (*s).to_string()
-            } else if let Some(s) = info.payload().downcast_ref::<String>() {
-                s.clone()
-            } else {
-                info.to_string()
-            };
-
+            let payload = data::panic_text(info.payload());
+            let location = location_text(info);
             let (file, line, col) = info
                 .location()
                 .map(|l| (Some(l.file().to_string()), Some(l.line()), Some(l.column())))
                 .unwrap_or((None, None, None));
-
             let bt = Backtrace::force_capture().to_string();
+
+            let report_text = format!("panic at {location}: {payload}\n{}", clean_backtrace(&bt));
+            log::error!("{report_text}");
+            eprintln!("{report_text}");
 
             set_last_panic(PanicReport {
                 msg: payload,
@@ -368,14 +377,7 @@ fn clean_backtrace(bt_raw: &str) -> String {
 
 fn format_panic_text(payload: Box<dyn Any + Send>) -> String {
     let rpt = take_last_panic();
-
-    let fallback = if let Some(s) = payload.downcast_ref::<&str>() {
-        (*s).to_string()
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "unknown panic payload".to_string()
-    };
+    let fallback = data::panic_text(payload.as_ref());
 
     let mut out = String::new();
 
@@ -584,6 +586,8 @@ wallet_access!(
 
 #[cfg(test)]
 mod lock_discipline_tests;
+#[cfg(test)]
+mod panic_hook_tests;
 
 /// Parses the schedule suffix of a `regtest:<schedule>` chain hint into
 /// activation heights.
@@ -2245,6 +2249,7 @@ pub fn poll_sync() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| match lightclient.poll_sync() {
         PollReport::NoHandle => Ok("Sync task has not been launched.".to_string()),
         PollReport::NotReady => Ok("Sync task is not complete.".to_string()),
+        PollReport::Panicked(text) => Err(ZingolibError::Panic(text)),
         PollReport::Ready(result) => match result {
             Ok(sync_result) => {
                 // A bucket boundary's tree state is witnessable only while its

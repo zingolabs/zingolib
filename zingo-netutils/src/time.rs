@@ -336,11 +336,6 @@ pub mod test {
     /// listener.
     pub const LOCAL_TLS_TEST_BOUND: Duration = Duration::from_secs(10);
 
-    /// Idle window after which a quiet chain is declared genuinely quiet:
-    /// the sentinel tests sleep this long, re-query, and assert nothing
-    /// moved.
-    pub const IDLE_OBSERVATION_WINDOW: Duration = Duration::from_secs(5);
-
     /// Deadline for a log line to reach the log file on disk.
     pub const LOG_FLUSH_DEADLINE: Duration = Duration::from_secs(15);
 
@@ -358,9 +353,6 @@ pub mod test {
 
     /// Bound on one mempool stream request while polling for a transaction.
     pub const MEMPOOL_STREAM_BOUND: Duration = Duration::from_secs(5);
-
-    /// Bound on the wallet record leaving Transmitted status after a sync.
-    pub const WALLET_RECORD_LAG_BOUND: Duration = Duration::from_secs(15);
 
     /// The simulated duration of a transmission in the CLI heartbeat tests.
     pub const SIMULATED_TRANSMIT: Duration = Duration::from_secs(5);

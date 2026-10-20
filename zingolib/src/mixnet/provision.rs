@@ -35,6 +35,47 @@ pub struct SpawnHints<'a> {
     pub bundled_dir: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProxySource {
+    Explicit,
+    Environment,
+    Bundled,
+    PathLookup { bundled_dir: Option<PathBuf> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProxyResolution {
+    pub path: String,
+    pub source: ProxySource,
+}
+
+impl std::fmt::Display for ProxyResolution {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "'{}'", self.path)?;
+        match &self.source {
+            ProxySource::Explicit => write!(f, " (the explicit path for this session)"),
+            ProxySource::Environment => write!(f, " (from ${NYM_PROXY_ENV})"),
+            ProxySource::Bundled => write!(f, " (bundled beside the executable)"),
+            ProxySource::PathLookup { bundled_dir } => {
+                write!(
+                    f,
+                    " (left to the PATH lookup: no explicit path was given, \
+                     ${NYM_PROXY_ENV} is unset, and "
+                )?;
+                match bundled_dir {
+                    Some(dir) => write!(
+                        f,
+                        "no {NYM_PROXY_BINARY_NAME} is bundled in '{}'",
+                        dir.display()
+                    )?,
+                    None => write!(f, "the executable's directory is unknown")?,
+                }
+                write!(f, ")")
+            }
+        }
+    }
+}
+
 /// Resolves the `nym-proxy` binary path from a consumer's [`SpawnHints`]:
 /// the explicit override, then [`NYM_PROXY_ENV`], then the hinted bundled
 /// directory, then the bare [`NYM_PROXY_BINARY_NAME`] resolved on PATH.
@@ -42,11 +83,12 @@ pub struct SpawnHints<'a> {
 ///
 /// This is the one precedence rule of ADR 0024's provisioning decision;
 /// consumers pass hints and never re-derive the order.
-pub fn resolve_proxy_path(hints: &SpawnHints<'_>) -> String {
+pub fn resolve_proxy_path(hints: &SpawnHints<'_>) -> ProxyResolution {
     choose_proxy_path(
         hints.explicit,
         std::env::var(NYM_PROXY_ENV).ok(),
         bundled_proxy_path(hints.bundled_dir.as_deref()),
+        hints.bundled_dir.clone(),
     )
 }
 
@@ -61,17 +103,30 @@ fn choose_proxy_path(
     explicit: Option<&str>,
     env_value: Option<String>,
     bundled: Option<String>,
-) -> String {
+    bundled_dir: Option<PathBuf>,
+) -> ProxyResolution {
     if let Some(path) = explicit.filter(|path| !path.is_empty()) {
-        return path.to_string();
+        return ProxyResolution {
+            path: path.to_string(),
+            source: ProxySource::Explicit,
+        };
     }
     if let Some(path) = env_value.filter(|path| !path.is_empty()) {
-        return path;
+        return ProxyResolution {
+            path,
+            source: ProxySource::Environment,
+        };
     }
-    if let Some(bundled) = bundled {
-        return bundled;
+    if let Some(path) = bundled {
+        return ProxyResolution {
+            path,
+            source: ProxySource::Bundled,
+        };
     }
-    NYM_PROXY_BINARY_NAME.to_string()
+    ProxyResolution {
+        path: NYM_PROXY_BINARY_NAME.to_string(),
+        source: ProxySource::PathLookup { bundled_dir },
+    }
 }
 
 /// The proxy binary inside the hinted bundled directory, if present.
@@ -89,20 +144,28 @@ fn bundled_proxy_path(bundled_dir: Option<&Path>) -> Option<String> {
 mod precedence {
     use super::*;
 
+    fn resolved(path: &str, source: ProxySource) -> ProxyResolution {
+        ProxyResolution {
+            path: path.to_string(),
+            source,
+        }
+    }
+
     #[test]
     fn explicit_wins_over_everything() {
         let chosen = choose_proxy_path(
             Some("/explicit"),
             Some("/from-env".to_string()),
             Some("/bundled".to_string()),
+            None,
         );
-        assert_eq!(chosen, "/explicit");
+        assert_eq!(chosen, resolved("/explicit", ProxySource::Explicit));
     }
 
     #[test]
     fn empty_explicit_counts_as_absent() {
-        let chosen = choose_proxy_path(Some(""), Some("/from-env".to_string()), None);
-        assert_eq!(chosen, "/from-env");
+        let chosen = choose_proxy_path(Some(""), Some("/from-env".to_string()), None, None);
+        assert_eq!(chosen, resolved("/from-env", ProxySource::Environment));
     }
 
     #[test]
@@ -111,25 +174,63 @@ mod precedence {
             None,
             Some("/from-env".to_string()),
             Some("/bundled".to_string()),
+            None,
         );
-        assert_eq!(chosen, "/from-env");
+        assert_eq!(chosen, resolved("/from-env", ProxySource::Environment));
     }
 
     #[test]
     fn empty_env_counts_as_absent() {
-        let chosen = choose_proxy_path(None, Some(String::new()), Some("/bundled".to_string()));
-        assert_eq!(chosen, "/bundled");
+        let chosen = choose_proxy_path(
+            None,
+            Some(String::new()),
+            Some("/bundled".to_string()),
+            None,
+        );
+        assert_eq!(chosen, resolved("/bundled", ProxySource::Bundled));
     }
 
     #[test]
     fn bundled_wins_over_bare_name() {
-        let chosen = choose_proxy_path(None, None, Some("/bundled".to_string()));
-        assert_eq!(chosen, "/bundled");
+        let chosen = choose_proxy_path(None, None, Some("/bundled".to_string()), None);
+        assert_eq!(chosen, resolved("/bundled", ProxySource::Bundled));
     }
 
     #[test]
     fn bare_name_is_the_final_fallback() {
-        assert_eq!(choose_proxy_path(None, None, None), NYM_PROXY_BINARY_NAME);
+        let searched = PathBuf::from("/opt/wallet");
+        let chosen = choose_proxy_path(None, None, None, Some(searched.clone()));
+        assert_eq!(
+            chosen,
+            resolved(
+                NYM_PROXY_BINARY_NAME,
+                ProxySource::PathLookup {
+                    bundled_dir: Some(searched),
+                },
+            )
+        );
+    }
+
+    #[test]
+    fn the_fallback_trail_names_every_source_that_was_empty() {
+        let chosen = choose_proxy_path(None, None, None, Some(PathBuf::from("/opt/wallet")));
+        let trail = chosen.to_string();
+        assert!(
+            trail.starts_with("'nym-proxy' (left to the PATH lookup"),
+            "{trail}"
+        );
+        assert!(trail.contains("no explicit path was given"), "{trail}");
+        assert!(trail.contains("$ZINGO_NYM_PROXY is unset"), "{trail}");
+        assert!(
+            trail.contains("no nym-proxy is bundled in '/opt/wallet'"),
+            "{trail}"
+        );
+    }
+
+    #[test]
+    fn a_found_source_renders_the_path_and_its_origin() {
+        let chosen = choose_proxy_path(None, Some("/from-env".to_string()), None, None);
+        assert_eq!(chosen.to_string(), "'/from-env' (from $ZINGO_NYM_PROXY)");
     }
 
     #[test]

@@ -1232,6 +1232,7 @@ mod transmit_error_seam {
 
 #[cfg(test)]
 mod built_transaction_shape {
+    use zcash_protocol::PoolType;
     use zcash_protocol::consensus::{BlockHeight, BranchId};
     use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
@@ -1246,7 +1247,7 @@ mod built_transaction_shape {
         let mut client = LightClient::new_for_test(wallet).await;
         let proposal = client
             .propose_send_all(
-                synthetic_wallet::external_orchard_zcash_address(),
+                synthetic_wallet::external_zcash_address(PoolType::ORCHARD),
                 None,
                 zip32::AccountId::ZERO,
             )
@@ -1381,7 +1382,7 @@ mod built_transaction_shape {
         // the change, plus the ironwood payment pair) exceeds either note
         // alone, so both are gathered and 5_000 returns as sapling change.
         let request = TransactionRequest::new(vec![Payment::without_memo(
-            synthetic_wallet::external_orchard_zcash_address(),
+            synthetic_wallet::external_zcash_address(PoolType::ORCHARD),
             Zatoshis::const_from_u64(25_000),
         )])
         .unwrap();
@@ -1468,7 +1469,7 @@ mod built_transaction_shape {
         let mut client = LightClient::new_for_test(wallet).await;
 
         let request = TransactionRequest::new(vec![Payment::without_memo(
-            synthetic_wallet::external_orchard_zcash_address(),
+            synthetic_wallet::external_zcash_address(PoolType::ORCHARD),
             Zatoshis::const_from_u64(sent_value),
         )])
         .unwrap();
@@ -1538,8 +1539,6 @@ mod built_transaction_shape {
     /// mempool accepting the chained unmined pair.
     #[tokio::test]
     async fn tex_two_step_chains_ephemeral_output_offline() {
-        use pepper_sync::keys::decode_address;
-        use zcash_client_backend::address::Address;
         use zcash_client_backend::zip321::{Payment, TransactionRequest};
         use zcash_protocol::value::Zatoshis;
         use zcash_transparent::address::TransparentAddress;
@@ -1552,23 +1551,8 @@ mod built_transaction_shape {
 
         // A TEX destination derived from an external wallet's first
         // transparent address, as ZIP 320 prescribes.
-        let external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let taddr = external_wallet
-            .transparent_addresses()
-            .values()
-            .next()
-            .unwrap()
-            .clone();
-        let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) =
-            decode_address(&external_wallet.chain_type(), &taddr).unwrap()
-        else {
-            panic!("a wallet-generated first taddr is p2pkh")
-        };
-        let tex_address = crate::testutils::interpret_taddr_as_tex_addr(
-            taddr_bytes,
-            &external_wallet.chain_type(),
-        );
+        let taddr_bytes = synthetic_wallet::external_transparent_pubkey_hash();
+        let tex_address = synthetic_wallet::external_tex_address();
 
         let request = TransactionRequest::new(vec![Payment::without_memo(
             zcash_address::ZcashAddress::try_from_encoded(&tex_address).unwrap(),
@@ -1710,16 +1694,9 @@ mod test {
 
     use crate::{
         config::{ClientConfig, WalletConfig},
-        lightclient::{LightClient, error::LightClientError, sync::test::sync_example_wallet},
+        lightclient::{LightClient, error::LightClientError},
         mocks::proposal::ProposalBuilder,
-        testutils::{
-            chain_generics::{
-                conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment,
-                with_assertions,
-            },
-            default_test_wallet_settings,
-        },
-        wallet::disk::testing::examples,
+        testutils::default_test_wallet_settings,
     };
 
     async fn create_basic_client() -> LightClient {
@@ -1741,145 +1718,6 @@ mod test {
         let proposal = ProposalBuilder::default().build();
         let err = lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
         assert!(matches!(err, LightClientError::Offline));
-    }
-
-    /// live sync: execution time increases linearly until example wallet is upgraded
-    /// live send TESTNET: these assume the wallet has on-chain TAZ.
-    /// waits up to five blocks for confirmation per transaction. see [`zingolib/src/testutils/chain_generics/live_chain.rs`]
-    /// as of now, average block time is supposedly about 75 seconds
-    mod testnet {
-        use zcash_protocol::{PoolType, ShieldedPool};
-
-        use crate::testutils::lightclient::get_base_address;
-
-        use super::*;
-
-        #[ignore = "only one test can be run per testnet wallet at a time"]
-        #[tokio::test]
-        /// this is a networked sync test. its execution time scales linearly since last updated
-        /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
-        async fn testnet_send_to_self_orchard_glory_goddess() {
-            let case =
-                examples::NetworkSeedVersion::Testnet(examples::TestnetSeedVersion::GloryGoddess);
-
-            let mut client = sync_example_wallet(case).await;
-
-            let client_addr =
-                get_base_address(&client, PoolType::Shielded(ShieldedPool::Orchard)).await;
-
-            with_assertions::assure_propose_send_bump_sync_all_recipients(
-                &mut NetworkedTestEnvironment::setup().await,
-                &mut client,
-                vec![(&client_addr, 20_000, None)],
-                vec![],
-                true,
-            )
-            .await
-            .unwrap();
-        }
-        #[ignore = "only one test can be run per testnet wallet at a time"]
-        #[tokio::test]
-        /// this is a networked sync test. its execution time scales linearly since last updated
-        /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
-        async fn testnet_send_to_self_sapling_glory_goddess() {
-            let case =
-                examples::NetworkSeedVersion::Testnet(examples::TestnetSeedVersion::GloryGoddess);
-
-            let mut client = sync_example_wallet(case).await;
-
-            let client_addr =
-                get_base_address(&client, PoolType::Shielded(ShieldedPool::Sapling)).await;
-
-            with_assertions::assure_propose_send_bump_sync_all_recipients(
-                &mut NetworkedTestEnvironment::setup().await,
-                &mut client,
-                vec![(&client_addr, 20_000, None)],
-                vec![],
-                true,
-            )
-            .await
-            .unwrap();
-        }
-        #[ignore = "only one test can be run per testnet wallet at a time"]
-        #[tokio::test]
-        /// this is a networked sync test. its execution time scales linearly since last updated
-        /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
-        /// about 273 seconds
-        async fn testnet_send_to_self_transparent_and_then_shield_glory_goddess() {
-            let case =
-                examples::NetworkSeedVersion::Testnet(examples::TestnetSeedVersion::GloryGoddess);
-
-            let mut client = sync_example_wallet(case).await;
-
-            let client_addr = get_base_address(&client, PoolType::Transparent).await;
-
-            let environment = &mut NetworkedTestEnvironment::setup().await;
-            with_assertions::assure_propose_send_bump_sync_all_recipients(
-                environment,
-                &mut client,
-                vec![(&client_addr, 100_001, None)],
-                vec![],
-                true,
-            )
-            .await
-            .unwrap();
-
-            let _ =
-                with_assertions::assure_propose_shield_bump_sync(environment, &mut client, true)
-                    .await
-                    .unwrap();
-        }
-        #[ignore = "this needs to pass CI, but we arent there with testnet"]
-        #[tokio::test]
-        /// this is a networked sync test. its execution time scales linearly since last updated
-        /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
-        async fn testnet_send_to_self_all_pools_glory_goddess() {
-            let case =
-                examples::NetworkSeedVersion::Testnet(examples::TestnetSeedVersion::GloryGoddess);
-
-            let mut client = sync_example_wallet(case).await;
-            let environment = &mut NetworkedTestEnvironment::setup().await;
-
-            let client_addr =
-                get_base_address(&client, PoolType::Shielded(ShieldedPool::Orchard)).await;
-            with_assertions::assure_propose_send_bump_sync_all_recipients(
-                &mut NetworkedTestEnvironment::setup().await,
-                &mut client,
-                vec![(&client_addr, 14_000, None)],
-                vec![],
-                true,
-            )
-            .await
-            .unwrap();
-
-            let client_addr =
-                get_base_address(&client, PoolType::Shielded(ShieldedPool::Sapling)).await;
-            with_assertions::assure_propose_send_bump_sync_all_recipients(
-                &mut NetworkedTestEnvironment::setup().await,
-                &mut client,
-                vec![(&client_addr, 15_000, None)],
-                vec![],
-                true,
-            )
-            .await
-            .unwrap();
-
-            let client_addr = get_base_address(&client, PoolType::Transparent).await;
-            with_assertions::assure_propose_send_bump_sync_all_recipients(
-                environment,
-                &mut client,
-                vec![(&client_addr, 100_000, None)],
-                vec![],
-                true,
-            )
-            .await
-            .unwrap();
-
-            let _ =
-                with_assertions::assure_propose_shield_bump_sync(environment, &mut client, true)
-                    .await
-                    .unwrap();
-        }
     }
 }
 

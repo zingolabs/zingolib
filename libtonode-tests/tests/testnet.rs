@@ -1,0 +1,26 @@
+#![forbid(unsafe_code)]
+#![cfg(feature = "testnet")]
+//! - Dials the public testnet indexer and spends from the shared GloryGoddess testnet wallet.
+//! - Waits for real testnet blocks, so each test runs for minutes.
+
+use zingolib::testutils::chain_generics::networked::TESTNET_INDEXER;
+
+#[path = "testnet/chain_generics.rs"]
+mod chain_generics;
+#[path = "testnet/chain_metadata.rs"]
+mod chain_metadata;
+#[path = "testnet/glory_goddess.rs"]
+mod glory_goddess;
+#[path = "testnet/mixnet.rs"]
+mod mixnet;
+#[path = "testnet/op_return.rs"]
+mod op_return;
+#[path = "testnet/reload.rs"]
+mod reload;
+#[path = "testnet/subtree_roots.rs"]
+mod subtree_roots;
+#[path = "testnet/zip318_canary.rs"]
+mod zip318_canary;
+
+/// The value every cell that pays the shared wallet back to itself spends.
+const SELF_SEND_VALUE: u64 = 20_000;
