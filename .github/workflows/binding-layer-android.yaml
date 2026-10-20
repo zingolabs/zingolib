@@ -82,12 +82,10 @@ jobs:
     env:
       ABI: ${{ matrix.abi }}
     steps:
-      # The zl_ descriptor carries the first sixteen characters of the commit at HEAD.
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
-          fetch-tags: true
 
       # A container job's workspace belongs to another user, and git refuses
       # to read a repository it does not own.

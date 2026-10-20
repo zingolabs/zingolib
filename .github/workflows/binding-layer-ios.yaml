@@ -45,12 +45,10 @@ jobs:
       RUSTUP_HOME: ${{ github.workspace }}/.rustup
       CARGO_HOME: ${{ github.workspace }}/.cargo
     steps:
-      # The zl_ descriptor carries the first sixteen characters of the commit at HEAD.
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
-          fetch-tags: true
 
       # The action installs the toolchain rust-toolchain.toml pins, with
       # its components, and the builder adds the iOS target to it itself.

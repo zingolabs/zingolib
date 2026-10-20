@@ -574,8 +574,8 @@ mod tests {
         );
         assert_eq!(
             lines.iter().filter(|line| **line == FETCH_TAGS).count(),
-            1,
-            "only the slice job writes the descriptor, which reads the tags"
+            0,
+            "the descriptor names the commit, and nothing reads the tags"
         );
         let slice_save = crate::required(
             cache_steps(&workflow, CACHE_SAVE)?
