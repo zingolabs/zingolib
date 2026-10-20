@@ -10,6 +10,9 @@ import {
   serializePin,
 } from '../lib/bundle_pin.mjs';
 import { fetchBundle, MARKER, pinnedBundle } from '../lib/fetch_binding_layer.mjs';
+import { COMMIT_CHARACTERS } from '../lib/maven_repository.mjs';
+import { writePin } from '../lib/pin_file.mjs';
+import { archive, COMMIT as MAVEN_COMMIT, COORDINATE } from './maven_fixture.mjs';
 
 const COMMIT = 'a'.repeat(40);
 const NEXT = 'b'.repeat(40);
@@ -19,15 +22,22 @@ const LAYER = `sha256:${'3'.repeat(64)}`;
 const FILE = 'repository.tar.gz';
 const OLD_FILE = 'binding-layer.aar';
 const OLD_MEDIA_TYPE = 'application/zip';
+const coordinateOf = commit =>
+  `org.zingolabs:zingo-binding-layer:6.0.0-${commit.slice(0, COMMIT_CHARACTERS)}`;
 
-const pin = { kind: 'pin', commit: COMMIT, digests: { android: ANDROID } };
+const pin = {
+  kind: 'pin',
+  commit: COMMIT,
+  digests: { android: ANDROID },
+  coordinates: { android: COORDINATE },
+};
 
 function bundle(digest, revision, layer = { file: FILE, mediaType: ARCHIVE_MEDIA_TYPE }) {
   return {
     kind: 'bundle',
     digest,
     revision,
-    descriptor: 'zl_3.0.0_aaaaa',
+    coordinate: COORDINATE,
     layers: [{ digest: LAYER, ...layer }],
   };
 }
@@ -65,15 +75,112 @@ async function storeWithBundle() {
 }
 
 test('parsePin reads the pin that serializePin wrote', () => {
-  const written = { commit: COMMIT, digests: { ios: IOS, android: ANDROID } };
+  const written = {
+    commit: COMMIT,
+    digests: { ios: IOS, android: ANDROID },
+    coordinates: { android: coordinateOf(COMMIT) },
+  };
   assert.deepEqual(parsePin(serializePin(written)), { kind: 'pin', ...written });
 });
 
-test('serializePin writes the commit first and the platforms in order', () => {
+test('serializePin writes the commit, the digests in order, then the coordinates', () => {
   assert.equal(
-    serializePin({ commit: COMMIT, digests: { ios: IOS, android: ANDROID } }),
-    `{\n  "commit": "${COMMIT}",\n  "digests": {\n    "android": "${ANDROID}",\n    "ios": "${IOS}"\n  }\n}\n`,
+    serializePin({
+      commit: COMMIT,
+      digests: { ios: IOS, android: ANDROID },
+      coordinates: { android: COORDINATE },
+    }),
+    `{\n  "commit": "${COMMIT}",\n  "digests": {\n    "android": "${ANDROID}",\n    "ios": "${IOS}"\n  },\n  "coordinates": {\n    "android": "${COORDINATE}"\n  }\n}\n`,
   );
+});
+
+test('serializePin writes no coordinates for a pin of platforms without a Maven layout', () => {
+  assert.equal(
+    serializePin({ commit: COMMIT, digests: { ios: IOS }, coordinates: {} }),
+    `{\n  "commit": "${COMMIT}",\n  "digests": {\n    "ios": "${IOS}"\n  }\n}\n`,
+  );
+});
+
+test('parsePin reads a pin of platforms without a Maven layout and no coordinates', () => {
+  const text = JSON.stringify({ commit: COMMIT, digests: { ios: IOS } });
+  assert.deepEqual(parsePin(text), {
+    kind: 'pin',
+    commit: COMMIT,
+    digests: { ios: IOS },
+    coordinates: {},
+  });
+});
+
+test('parsePin reads a pin of an earlier version, whose android digest has no coordinate, as old', () => {
+  const text = JSON.stringify({ commit: COMMIT, digests: { android: ANDROID } });
+  assert.deepEqual(parsePin(text), {
+    kind: 'oldPin',
+    commit: COMMIT,
+    digests: { android: ANDROID },
+    coordinates: {},
+  });
+});
+
+test('movePin moves the platforms an old pin holds', async () => {
+  const old = { kind: 'oldPin', commit: COMMIT, digests: { android: ANDROID }, coordinates: {} };
+  const moved = await movePin(old, NEXT, [], async () => bundle(IOS, NEXT));
+  assert.deepEqual(moved.pin, {
+    commit: NEXT,
+    digests: { android: IOS },
+    coordinates: { android: COORDINATE },
+  });
+});
+
+test('movePin checks the tag of an old pin at its own commit', async () => {
+  const old = { kind: 'oldPin', commit: COMMIT, digests: { android: ANDROID }, coordinates: {} };
+  const moved = await movePin(old, COMMIT, [], async () => bundle(IOS, COMMIT));
+  assert.equal(moved.kind, 'movedTag');
+});
+
+test('pinnedBundle refuses an old pin and names its commit', async () => {
+  const root = await store();
+  const path = join(root, 'binding-layer.json');
+  await writeFile(path, JSON.stringify({ commit: COMMIT, digests: { android: ANDROID } }));
+  const outcome = await pinnedBundle(root, { platform: 'android', pin: path });
+  assert.equal(outcome.kind, 'oldPin');
+  assert.equal(outcome.commit, COMMIT);
+});
+
+test('parsePin names the android coordinate when it is not group, artifact and version', () => {
+  const text = JSON.stringify({
+    commit: COMMIT,
+    digests: { android: ANDROID },
+    coordinates: { android: 'org.zingolabs:zingo-binding-layer' },
+  });
+  assert.deepEqual(parsePin(text), { kind: 'malformedPin', field: 'coordinates.android' });
+});
+
+test('parsePin names the android coordinate when its version names another commit', () => {
+  const text = JSON.stringify({
+    commit: COMMIT,
+    digests: { android: ANDROID },
+    coordinates: { android: 'org.zingolabs:zingo-binding-layer:6.0.0-cafecafecafecafe' },
+  });
+  assert.deepEqual(parsePin(text), { kind: 'malformedPin', field: 'coordinates.android' });
+});
+
+test('parsePin names the coordinates when the file holds null for them', () => {
+  const text = JSON.stringify({ commit: COMMIT, digests: { android: ANDROID }, coordinates: null });
+  assert.deepEqual(parsePin(text), {
+    kind: 'oldPin',
+    commit: COMMIT,
+    digests: { android: ANDROID },
+    coordinates: {},
+  });
+});
+
+test('parsePin names a coordinate of a platform without a Maven layout', () => {
+  const text = JSON.stringify({
+    commit: COMMIT,
+    digests: { android: ANDROID, ios: IOS },
+    coordinates: { android: coordinateOf(COMMIT), ios: coordinateOf(COMMIT) },
+  });
+  assert.deepEqual(parsePin(text), { kind: 'malformedPin', field: 'coordinates.ios' });
 });
 
 test('parsePin names the commit when the commit is abbreviated', () => {
@@ -99,7 +206,39 @@ test('movePin moves every listed platform when each has a bundle for the commit'
   const moved = await movePin(current, NEXT, [], async platform =>
     bundle(platform === 'android' ? IOS : ANDROID, NEXT),
   );
-  assert.deepEqual(moved.pin, { commit: NEXT, digests: { android: IOS, ios: ANDROID } });
+  assert.deepEqual(moved.pin, {
+    commit: NEXT,
+    digests: { android: IOS, ios: ANDROID },
+    coordinates: { android: COORDINATE },
+  });
+});
+
+test('movePin records the coordinate the manifest of a Maven bundle names, and none for the other platforms', async () => {
+  const resolve = mock.fn(async platform => bundle(platform === 'ios' ? IOS : ANDROID, NEXT));
+  const moved = await movePin({ kind: 'unpinned' }, NEXT, ['ios'], resolve);
+  assert.deepEqual(moved.pin, { commit: NEXT, digests: { ios: IOS }, coordinates: {} });
+  assert.equal(resolve.mock.callCount(), 1);
+});
+
+test('movePin refuses a Maven bundle whose manifest names no coordinate', async () => {
+  const moved = await movePin(pin, NEXT, [], async () => ({
+    ...bundle(ANDROID, NEXT),
+    coordinate: undefined,
+  }));
+  assert.deepEqual(moved, { kind: 'unannotated', platform: 'android', commit: NEXT });
+});
+
+test('movePin refuses a Maven bundle whose manifest coordinate is not group, artifact and version', async () => {
+  const moved = await movePin(pin, NEXT, [], async () => ({
+    ...bundle(ANDROID, NEXT),
+    coordinate: 'org.zingolabs:zingo-binding-layer',
+  }));
+  assert.deepEqual(moved, {
+    kind: 'badCoordinate',
+    platform: 'android',
+    commit: NEXT,
+    coordinate: 'org.zingolabs:zingo-binding-layer',
+  });
 });
 
 test('movePin returns no pin when one listed platform has no bundle for the commit', async () => {
@@ -242,4 +381,40 @@ test('fetchBundle asks the registry again when the checkout holds a bundle of th
   const fetched = await fetchBundle(pin, 'android', root, false, requests);
   assert.equal(fetched.kind, 'oldShape');
   assert.equal(requests.resolveBundle.mock.callCount(), 1);
+});
+
+const mavenPin = { commit: MAVEN_COMMIT, digests: { android: ANDROID } };
+
+async function checkoutWithPin(coordinate) {
+  const root = await store();
+  const path = join(root, 'binding-layer.json');
+  await writePin(path, { ...mavenPin, coordinates: { android: coordinate } });
+  const home = join(root, 'android', 'build', 'binding-layer', ANDROID.slice('sha256:'.length));
+  await mkdir(home, { recursive: true });
+  await writeFile(join(home, FILE), await readFile(await archive([COORDINATE.split(':')[2]])));
+  await writeFile(join(home, MARKER), `${FILE}\n`);
+  return { root, path, home };
+}
+
+test('pinnedBundle prints the repository and the coordinate the pin holds', async () => {
+  const { root, path, home } = await checkoutWithPin(COORDINATE);
+  const outcome = await pinnedBundle(root, { platform: 'android', pin: path });
+  assert.deepEqual(outcome, {
+    kind: 'fetched',
+    path: join(home, 'extracted', 'repository'),
+    coordinate: COORDINATE,
+  });
+});
+
+test('pinnedBundle refuses a bundle whose coordinate differs from the pin', async () => {
+  const pinned = 'org.zingolabs:zingo-binding-layer:5.0.0-ba7336710419c9ac';
+  const { root, path } = await checkoutWithPin(pinned);
+  const outcome = await pinnedBundle(root, { platform: 'android', pin: path });
+  assert.deepEqual(outcome, {
+    kind: 'wrongCoordinate',
+    platform: 'android',
+    commit: MAVEN_COMMIT,
+    pinned,
+    found: COORDINATE,
+  });
 });
