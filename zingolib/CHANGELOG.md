@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `LightWallet::birthday_adjusted_from` reports the height a wallet was given
+  when the wallet raised it to Sapling activation. It lives in memory for the
+  process lifetime. `RecoveryInfo` and the FFI viewing-key report carry it as
+  `birthday_adjusted_from` when it is set.
 - `data::PollReport::from_join` maps a tokio join outcome to a `PollReport`: a
   finished task is `Ready`, a panicked task is `Panicked` with the panic's
   message, and a cancelled task is `Panicked` with tokio's description.
@@ -16,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from `await_sync` and from the launch wait in `sync`.
 
 ### Changed
+- **Breaking:** `LightWallet::new` and `LightWallet::read` raise a birthday
+  below Sapling activation to the activation height instead of failing, and a
+  raise on read marks the wallet for saving. `WalletError::BirthdayBelowSapling`
+  is removed.
 - **Breaking:** `git_description`, and with it the Binding Layer's
   `get_version`, returns `zl_<crate version>_<sixteen characters>` on every
   commit, where the sixteen characters are the prefix of the Published Commit
