@@ -1308,11 +1308,11 @@ async fn build_zingo_config(filled_template: &CliConfigTemplate) -> std::io::Res
             Some(server) => async move {
                 zingolib::netutils::GrpcIndexer::new(server)
                     .await
-                    .map_err(|e| format!("{e:?}"))?
+                    .map_err(|e| commands::render_error_chain(&e))?
                     .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
                     .await
                     .map(|block_id| block_id.height as u32)
-                    .map_err(|e| format!("{e:?}"))
+                    .map_err(|e| commands::render_error_chain(&e))
             }
             .await
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?,
@@ -1366,7 +1366,7 @@ async fn startup_async(
 
     let mut lightclient = LightClient::new(config, false)
         .await
-        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
+        .map_err(|e| commands::io_error_with_chain("Failed to create lightclient.", &e))?;
 
     if matches!(filled_template.mode, Operations::Interactive) {
         // Print startup Messages
@@ -1449,10 +1449,10 @@ async fn startup_async(
             .map_err(|source| commands::NetworkCommandError::ProxyStart { source })
             .and_then(commands::spawned_resolution)
             .map_err(|failure| {
-                std::io::Error::other(format!(
-                    "Mixnet Mode is required for a connected session: {}",
-                    commands::render_error_chain(&failure),
-                ))
+                commands::io_error_with_chain(
+                    "Mixnet Mode is required for a connected session:",
+                    &failure,
+                )
             })?;
         Some(resolution)
     } else {
