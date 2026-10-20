@@ -41,6 +41,17 @@
 //! notes where a fundless one only discards, so reproducing someone's
 //! measurement means giving the comparison their wallet.
 //!
+//! Two readings ride beside the rate. The session's peak resident memory
+//! is the CLI process's high-water mark, read from `/proc` once the span
+//! closes and before the session quits, so it spans the boot and the
+//! whole scan and leaves out the proxy, which runs as a process of its
+//! own. The wallet file's size is read after the session quits, so it
+//! carries the save the shutdown wrote. A platform without `/proc`
+//! reports the memory as unavailable and the rest of the comparison
+//! stands. Both readings grow with the span scanned, so a bounded run
+//! compares them only as far as its arms scanned alike, and a comparison
+//! that means to measure them runs to completion.
+//!
 //! Usage: `makers sync-ab [cli] <arm> <arm> --birthday <height>
 //! [--runs <n>] [--seconds <n>] [--seed <mnemonic>]`. The reserved first word names the session
 //! kind, as `makers test packages` and `makers test live` name their
@@ -128,6 +139,41 @@ const LOG_POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// The degree of freedom a sample standard deviation gives up to its mean.
 const BESSEL_CORRECTION: usize = 1;
 
+/// The directory under the scratch space the session keeps its wallet in.
+const WALLETS_DIR: &str = "wallets";
+
+/// The extension the wallet file carries in every era.
+const WALLET_FILE_EXTENSION: &str = "dat";
+
+/// The process name the memory reading follows, as the kernel reports it.
+const CLI_COMM: &str = "zingo-cli";
+
+/// Where the kernel publishes each process's group and memory.
+const PROC: &str = "/proc";
+
+/// The file under a process's `/proc` entry that names it and its group.
+const STAT_FILE: &str = "stat";
+
+/// The file under a process's `/proc` entry that carries its memory.
+const STATUS_FILE: &str = "status";
+
+/// The position of the process group among the stat fields after the
+/// command name: the state, the parent, then the group.
+const GROUP_FIELD: usize = 2;
+
+/// The status line that carries the peak resident set, and its unit.
+const HIGH_WATER_FIELD: &str = "VmHWM:";
+const HIGH_WATER_UNIT: &str = "kB";
+
+/// The units the readings print in.
+const KIB: u64 = 1024;
+const MIB: u64 = KIB * KIB;
+const KIB_NAME: &str = "KiB";
+const MIB_NAME: &str = "MiB";
+
+/// The word for a reading the platform did not give.
+const UNAVAILABLE: &str = "unavailable";
+
 /// How far the arms' output counts may differ before the comparison is
 /// reported as drifted: the tip advances during a run, so a later run scans
 /// a few more outputs than an earlier one.
@@ -210,6 +256,10 @@ struct Arm {
     outputs: Vec<u64>,
     boots: Vec<Duration>,
     syncs: Vec<Duration>,
+    /// The CLI's peak resident set per session, in bytes.
+    peaks: Vec<u64>,
+    /// The wallet file's size per session, in bytes.
+    wallet_files: Vec<u64>,
 }
 
 /// One session's reading, taken from the engine's span but for the boot.
@@ -217,6 +267,10 @@ struct Reading {
     boot: Duration,
     sync: Duration,
     outputs: u64,
+    /// The CLI's peak resident set in bytes, when the platform publishes it.
+    peak_rss: Option<u64>,
+    /// The wallet file's size in bytes once the session has quit, when it wrote one.
+    wallet_file: Option<u64>,
 }
 
 impl Reading {
@@ -336,18 +390,23 @@ fn compare() -> Result<(), Vec<String>> {
         for index in order {
             let reading = measure_again(&arms[index], &request, RUN_BUDGET)?;
             eprintln!(
-                "sync-ab: {round}/{} {} boot {:.1}s, {:.0} outputs/s over {} outputs",
+                "sync-ab: {round}/{} {} boot {:.1}s, {:.0} outputs/s over {} outputs, \
+                 peak RSS {}, wallet file {}",
                 request.runs,
                 arms[index].spec.label(),
                 reading.boot.as_secs_f64(),
                 reading.rate(),
-                reading.outputs
+                reading.outputs,
+                sized(reading.peak_rss, MIB, MIB_NAME),
+                sized(reading.wallet_file, KIB, KIB_NAME)
             );
             let arm = &mut arms[index];
             arm.rates.push(reading.rate());
             arm.outputs.push(reading.outputs);
             arm.boots.push(reading.boot);
             arm.syncs.push(reading.sync);
+            arm.peaks.extend(reading.peak_rss);
+            arm.wallet_files.extend(reading.wallet_file);
         }
     }
 
@@ -408,6 +467,8 @@ fn prepare(root: &Path, spec: &Spec) -> Result<Arm, Vec<String>> {
         outputs: Vec::new(),
         boots: Vec::new(),
         syncs: Vec::new(),
+        peaks: Vec::new(),
+        wallet_files: Vec::new(),
     })
 }
 
@@ -530,7 +591,7 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
         .arg("--birthday")
         .arg(request.birthday.to_string())
         .arg("--data-dir")
-        .arg(scratch.join("wallets"))
+        .arg(scratch.join(WALLETS_DIR))
         .arg("--log-file")
         .arg(&log_path)
         .stdin(Stdio::piped())
@@ -574,11 +635,11 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
         }
         if let Some((millis, outputs)) = closing_span(&log) {
             break match launched {
-                Some(at) => Ok(Reading {
-                    boot: at.duration_since(spawned),
-                    sync: Duration::from_millis(millis),
+                Some(at) => Ok((
+                    at.duration_since(spawned),
+                    Duration::from_millis(millis),
                     outputs,
-                }),
+                )),
                 None => Err(vec!["the span closed without opening".to_string()]),
             };
         }
@@ -591,8 +652,18 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
         std::thread::sleep(LOG_POLL_INTERVAL);
     };
 
+    // The high-water mark is read while the session still stands at its
+    // prompt, and the wallet file once the shutdown has saved it.
+    let peak_rss = cli_high_water(child.id());
     session::quit(&mut child);
-    outcome
+    let wallet_file = wallet_file_size(&scratch.join(WALLETS_DIR));
+    outcome.map(|(boot, sync, outputs)| Reading {
+        boot,
+        sync,
+        outputs,
+        peak_rss,
+        wallet_file,
+    })
 }
 
 /// The command that builds and launches one arm's CLI.
@@ -661,6 +732,69 @@ fn closed_segment(tail: &str) -> Option<(u64, u64)> {
     Some((digits.parse().ok()?, counted.parse().ok()?))
 }
 
+/// The peak resident set of the CLI running in the session's process
+/// `group`, in bytes.
+/// - reads every process's stat, and the CLI's status, under `/proc`
+fn cli_high_water(group: u32) -> Option<u64> {
+    std::fs::read_dir(PROC)
+        .ok()?
+        .flatten()
+        .filter(|entry| {
+            std::fs::read_to_string(entry.path().join(STAT_FILE))
+                .is_ok_and(|stat| in_group(&stat, group))
+        })
+        .filter_map(|entry| {
+            high_water(&std::fs::read_to_string(entry.path().join(STATUS_FILE)).ok()?)
+        })
+        .max()
+}
+
+/// Whether one process's stat names the CLI inside `group`.
+// The command name sits in parentheses and may hold spaces or parentheses
+// of its own, so the fields are counted from its closing parenthesis.
+fn in_group(stat: &str, group: u32) -> bool {
+    let Some((_, named)) = stat.split_once('(') else {
+        return false;
+    };
+    let Some((name, fields)) = named.rsplit_once(')') else {
+        return false;
+    };
+    name == CLI_COMM
+        && fields
+            .split_whitespace()
+            .nth(GROUP_FIELD)
+            .and_then(|field| field.parse::<u32>().ok())
+            == Some(group)
+}
+
+/// The high-water mark a process's status reports, in bytes.
+fn high_water(status: &str) -> Option<u64> {
+    let kibibytes: u64 = status
+        .lines()
+        .find_map(|line| line.strip_prefix(HIGH_WATER_FIELD))?
+        .trim()
+        .strip_suffix(HIGH_WATER_UNIT)?
+        .trim()
+        .parse()
+        .ok()?;
+    Some(kibibytes * KIB)
+}
+
+/// The size of the largest wallet file under `wallets`, in bytes.
+/// - reads the directory tree under `wallets`
+fn wallet_file_size(wallets: &Path) -> Option<u64> {
+    workbench::files_under(wallets, &[])
+        .ok()?
+        .into_iter()
+        .filter(|file| {
+            file.extension()
+                .is_some_and(|extension| extension == WALLET_FILE_EXTENSION)
+        })
+        .filter_map(|file| std::fs::metadata(file).ok())
+        .map(|metadata| metadata.len())
+        .max()
+}
+
 /// Prints both arms, their spread, and whether the window held.
 fn report(arms: &[Arm; 2], bounded: bool) {
     println!(
@@ -686,6 +820,12 @@ fn report(arms: &[Arm; 2], bounded: bool) {
             "{:>22}  boot {:.1}s mean (build and bootstrap, wall clock)",
             "",
             mean(&boots)
+        );
+        println!(
+            "{:>22}  peak RSS {} mean  wallet file {} mean",
+            "",
+            sized(mean_bytes(&arm.peaks), MIB, MIB_NAME),
+            sized(mean_bytes(&arm.wallet_files), KIB, KIB_NAME)
         );
     }
 
@@ -728,11 +868,7 @@ fn report(arms: &[Arm; 2], bounded: bool) {
     }
 
     let (left, right) = (mean(&arms[0].rates), mean(&arms[1].rates));
-    let gap = if left == 0.0 {
-        0.0
-    } else {
-        (right - left) / left * 100.0
-    };
+    let gap = change(left, right);
     let noise = deviation(&arms[0].rates)
         .into_iter()
         .chain(deviation(&arms[1].rates))
@@ -745,6 +881,51 @@ fn report(arms: &[Arm; 2], bounded: bool) {
     if (right - left).abs() < noise {
         println!("  within the noisier arm's own deviation, so indistinguishable");
     }
+    for (what, left, right) in [
+        (
+            "peak RSS",
+            mean_bytes(&arms[0].peaks),
+            mean_bytes(&arms[1].peaks),
+        ),
+        (
+            "wallet file",
+            mean_bytes(&arms[0].wallet_files),
+            mean_bytes(&arms[1].wallet_files),
+        ),
+    ] {
+        if let (Some(left), Some(right)) = (left, right) {
+            println!("{what}: {:+.1}%", change(left as f64, right as f64));
+        }
+    }
+    if bounded {
+        println!("  the memory and the file follow the span scanned as well as the arm");
+    }
+}
+
+/// The change from `left` to `right` as a percentage of `left`.
+fn change(left: f64, right: f64) -> f64 {
+    if left == 0.0 {
+        return 0.0;
+    }
+    (right - left) / left * 100.0
+}
+
+/// The arithmetic mean of sampled byte counts, which no sample leaves
+/// undefined.
+fn mean_bytes(samples: &[u64]) -> Option<u64> {
+    if samples.is_empty() {
+        return None;
+    }
+    Some(samples.iter().sum::<u64>() / samples.len() as u64)
+}
+
+/// A byte count in `unit`, or the word for a reading the platform did
+/// not give.
+fn sized(bytes: Option<u64>, unit: u64, name: &str) -> String {
+    bytes.map_or_else(
+        || UNAVAILABLE.to_string(),
+        |bytes| format!("{:.0} {name}", bytes as f64 / unit as f64),
+    )
 }
 
 /// The lowest and highest of a sampled series.
@@ -914,5 +1095,29 @@ mod tests {
     fn a_bare_close_before_the_counted_one_is_skipped() {
         let log = "INFO sync: SYNC_SPAN=close 1250ms ok\nINFO sync: SYNC_SPAN=close 1250ms ok outputs=8192\n";
         assert_eq!(closing_span(log), Some((1250, 8192)));
+    }
+
+    /// HYPOTHESIS: a stat line is matched on the command name and the
+    /// group behind it, and on nothing else in the session's tree.
+    /// Falsified if the proxy, the builder, or another group's CLI matches.
+    #[test]
+    fn a_stat_line_names_the_cli_in_its_group() {
+        const GROUP: u32 = 4100;
+        assert!(in_group("4242 (zingo-cli) S 4200 4100 4100 0 -1", GROUP));
+        assert!(!in_group("4242 (zingo-cli) S 4200 4100 4100 0 -1", 4200));
+        assert!(!in_group("4243 (nym-proxy) S 4242 4243 4100 0 -1", GROUP));
+        assert!(!in_group("4244 (cargo) S 4200 4100 4100 0 -1", GROUP));
+        assert!(!in_group("no fields at all", GROUP));
+    }
+
+    /// HYPOTHESIS: the high-water mark is read in bytes off its own status
+    /// line. Falsified if another memory line is taken for it or a status
+    /// without one yields a reading.
+    #[test]
+    fn the_high_water_mark_is_read_in_bytes() {
+        let status =
+            "Name:\tzingo-cli\nVmPeak:\t    2048 kB\nVmHWM:\t    1536 kB\nVmRSS:\t    1024 kB\n";
+        assert_eq!(high_water(status), Some(1536 * KIB));
+        assert_eq!(high_water("Name:\tzingo-cli\nVmRSS:\t 1024 kB\n"), None);
     }
 }
