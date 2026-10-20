@@ -424,37 +424,42 @@ pub(crate) fn anchor_retention_window(
     as_of.saturating_sub(span)..=as_of
 }
 
-// checkpoints are held for the top SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE scanned blocks only, the non-retained
-// budget of a shard tree. the chain tip is scanned first and a spend anchors close to the chain height, so no
-// anchor or truncation needs a checkpoint below this window. the pinned anchor boundaries are added separately.
-// the window hangs from `scan_horizon`, the highest block the wallet holds as scanned once the load's task
-// completes, so the loads of a task below its top window place no checkpoint for the next load to prune.
+// checkpoints are held for the top SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE blocks of the chain only, the
+// non-retained budget of a shard tree: a re-org is measured from the chain height and a spend anchors close to
+// it, so no anchor or truncation needs a checkpoint below this window once the chain tip is scanned. the pinned
+// anchor boundaries are added separately.
 fn checkpoint_range(
     block_range: &Range<BlockHeight>,
-    scan_horizon: BlockHeight,
+    chain_height: BlockHeight,
 ) -> Range<BlockHeight> {
-    let window_start = scan_horizon.saturating_sub(SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE - 1);
+    let window_start = chain_height.saturating_sub(SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE - 1);
 
     std::cmp::max(block_range.start, window_start)..block_range.end
 }
 
-// the blocks of `block_range` the shard trees hold a checkpoint for: the blocks inside the checkpoint window
-// hanging from `scan_horizon`, and the anchor retention boundaries of `policy` inside its window as of the
-// horizon. the scan places a leaf checkpoint on these blocks and on no other, and the shard tree update adds a
+// the blocks of `block_range`, one load of a scan task, the shard trees hold a checkpoint for: the blocks inside
+// the rolling window hanging from `chain_height`, the load's last block, so a session stopped after this load
+// anchors a spend there, and the anchor retention boundaries of `policy` inside its window as of the load's
+// last block, or `highest_scanned_height` when that is higher, so such a session anchors a pool crossing too.
+// the scan places a leaf checkpoint on these blocks and on no other, and the shard tree update adds a
 // checkpoint to every tree the block leaves unchanged.
 pub(crate) fn checkpoint_heights(
     block_range: &Range<BlockHeight>,
-    scan_horizon: BlockHeight,
+    chain_height: BlockHeight,
+    highest_scanned_height: BlockHeight,
     policy: Option<&AnchorRetention>,
 ) -> BTreeSet<BlockHeight> {
-    let window = checkpoint_range(block_range, scan_horizon);
+    let last_block = block_range.end - 1;
+    let window = checkpoint_range(block_range, chain_height);
     let mut heights = (u32::from(window.start)..u32::from(window.end))
         .map(BlockHeight::from_u32)
         .collect::<BTreeSet<_>>();
+    heights.insert(last_block);
     if let Some(policy) = policy {
-        let retention_window = anchor_retention_window(policy, scan_horizon);
+        let retention_window =
+            anchor_retention_window(policy, std::cmp::max(highest_scanned_height, last_block));
         let start = std::cmp::max(*retention_window.start(), block_range.start);
-        let end = std::cmp::min(*retention_window.end(), block_range.end - 1);
+        let end = std::cmp::min(*retention_window.end(), last_block);
         heights.extend(policy.retained_in_range(start..=end));
     }
 
@@ -567,18 +572,20 @@ mod tests {
 
         use super::*;
 
+        const CHAIN_HEIGHT: u32 = 20_000;
+        const WINDOW_START: u32 = CHAIN_HEIGHT - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1;
         const HIGHEST_SCANNED: u32 = 10_000;
-        // twice the window, so a range holds blocks below its top window
-        const RANGE_LENGTH: u32 = 2 * SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
+        const INTERVAL: u32 = 50;
 
         fn heights(
             block_range: Range<u32>,
-            scan_horizon: u32,
+            highest_scanned_height: u32,
             policy: Option<&AnchorRetention>,
         ) -> Vec<u32> {
             checkpoint_heights(
                 &(BlockHeight::from_u32(block_range.start)..BlockHeight::from_u32(block_range.end)),
-                BlockHeight::from_u32(scan_horizon),
+                BlockHeight::from_u32(CHAIN_HEIGHT),
+                BlockHeight::from_u32(highest_scanned_height),
                 policy,
             )
             .into_iter()
@@ -586,83 +593,90 @@ mod tests {
             .collect()
         }
 
-        /// A task above the highest scanned height, whose horizon is its last block, holds checkpoints for its
-        /// top window of blocks.
-        #[test]
-        fn a_task_above_the_highest_scanned_height_checkpoints_its_top_window() {
-            let range = HIGHEST_SCANNED + 1_000..HIGHEST_SCANNED + 1_000 + RANGE_LENGTH;
-
-            assert_eq!(
-                heights(range.clone(), range.end - 1, None),
-                (range.end - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE..range.end)
-                    .collect::<Vec<_>>()
-            );
+        fn policy() -> AnchorRetention {
+            AnchorRetention::new(
+                BlockHeight::from_u32(1),
+                AnchorRetentionInterval::custom(NonZeroU32::new(INTERVAL).expect("nonzero")),
+            )
         }
 
-        /// The loads of a task hang their checkpoints from the task's last block: a load below the task's top
-        /// window holds none, and a load reaching into it holds checkpoints from the window start.
+        /// A load inside the top window of the chain holds a checkpoint on every block from the window start.
         #[test]
-        fn a_load_hangs_its_checkpoints_from_its_task() {
-            let task = HIGHEST_SCANNED + 1_000..HIGHEST_SCANNED + 1_000 + RANGE_LENGTH;
-            let horizon = task.end - 1;
-            let window_start = task.end - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
-            let below = task.start..window_start - 10;
-            let reaching = window_start - 10..window_start + 10;
-
-            assert!(heights(below, horizon, None).is_empty());
-            assert_eq!(
-                heights(reaching.clone(), horizon, None),
-                (window_start..reaching.end).collect::<Vec<_>>()
-            );
-        }
-
-        /// A range inside the window below the highest scanned height holds checkpoints from the window start.
-        #[test]
-        fn a_range_below_the_highest_scanned_height_checkpoints_from_the_window_start() {
-            let window_start = HIGHEST_SCANNED - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1;
-            let range = window_start - 10..window_start + 10;
+        fn a_load_inside_the_window_checkpoints_every_block_from_the_window_start() {
+            let range = WINDOW_START - 10..WINDOW_START + 10;
 
             assert_eq!(
                 heights(range.clone(), HIGHEST_SCANNED, None),
-                (window_start..range.end).collect::<Vec<_>>()
+                (WINDOW_START..range.end).collect::<Vec<_>>()
             );
         }
 
-        /// A range below the window holds no checkpoint.
+        /// A load below the window holds a checkpoint on its last block and on no other, whether it lies above
+        /// or below the highest scanned height.
         #[test]
-        fn a_range_below_the_window_holds_no_checkpoint() {
-            let window_start = HIGHEST_SCANNED - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1;
+        fn a_load_below_the_window_checkpoints_its_last_block_only() {
+            let above = HIGHEST_SCANNED + 1_000..HIGHEST_SCANNED + 2_000;
+            let below = HIGHEST_SCANNED - 2_000..HIGHEST_SCANNED - 1_000;
 
-            assert!(
-                heights(window_start - 100..window_start - 50, HIGHEST_SCANNED, None).is_empty()
+            assert_eq!(
+                heights(above.clone(), HIGHEST_SCANNED, None),
+                vec![above.end - 1]
+            );
+            assert_eq!(
+                heights(below.clone(), HIGHEST_SCANNED, None),
+                vec![below.end - 1]
             );
         }
 
-        /// The anchor retention boundaries inside the retention window are held below the top window, and nothing
-        /// else is.
+        /// A load above the highest scanned height holds the anchor retention boundaries inside the retention
+        /// window as of its last block, beside the last block.
         #[test]
-        fn anchor_boundaries_in_the_retention_window_are_held() {
-            // the retention span of ANCHOR_RETENTION_INTERVALS intervals must reach below the top window for
-            // a boundary to be held there
-            const INTERVAL: u32 =
-                2 * SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE.div_ceil(ANCHOR_RETENTION_INTERVALS);
-            let policy = AnchorRetention::new(
-                BlockHeight::from_u32(1),
-                AnchorRetentionInterval::custom(NonZeroU32::new(INTERVAL).expect("nonzero")),
-            );
-            let range = HIGHEST_SCANNED + 1_000..HIGHEST_SCANNED + 1_000 + RANGE_LENGTH;
-            let top_window = range.end - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE..range.end;
+        fn anchor_boundaries_as_of_the_last_block_are_held() {
+            let policy = policy();
+            let range = HIGHEST_SCANNED + 1_000..HIGHEST_SCANNED + 2_000;
             let retention_window =
                 anchor_retention_window(&policy, BlockHeight::from_u32(range.end - 1));
-            let boundaries = (range.start..top_window.start)
+            let boundaries = range
+                .clone()
                 .filter(|height| height % INTERVAL == 0)
                 .filter(|height| retention_window.contains(&BlockHeight::from_u32(*height)))
                 .collect::<Vec<_>>();
             assert!(!boundaries.is_empty(), "the test range holds a boundary");
 
             assert_eq!(
-                heights(range.clone(), range.end - 1, Some(&policy)),
-                boundaries.into_iter().chain(top_window).collect::<Vec<_>>()
+                heights(range.clone(), HIGHEST_SCANNED, Some(&policy)),
+                boundaries
+                    .into_iter()
+                    .chain(std::iter::once(range.end - 1))
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        /// A load below the highest scanned height holds the boundaries as of that height, so a load below
+        /// that retention window holds none.
+        #[test]
+        fn anchor_boundaries_below_the_highest_scanned_height_are_as_of_it() {
+            let policy = policy();
+            let retention_start = u32::from(
+                *anchor_retention_window(&policy, BlockHeight::from_u32(HIGHEST_SCANNED)).start(),
+            );
+            let outside = HIGHEST_SCANNED - 5_000..HIGHEST_SCANNED - 4_000;
+            let inside = retention_start..retention_start + 2 * INTERVAL;
+            let boundaries = inside
+                .clone()
+                .filter(|height| height % INTERVAL == 0)
+                .collect::<Vec<_>>();
+
+            assert_eq!(
+                heights(outside.clone(), HIGHEST_SCANNED, Some(&policy)),
+                vec![outside.end - 1]
+            );
+            assert_eq!(
+                heights(inside.clone(), HIGHEST_SCANNED, Some(&policy)),
+                boundaries
+                    .into_iter()
+                    .chain(std::iter::once(inside.end - 1))
+                    .collect::<Vec<_>>()
             );
         }
     }

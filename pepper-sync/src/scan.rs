@@ -156,7 +156,8 @@ where
         mut transparent_inuse_addresses,
         transparent_gap_addresses,
         transparent_scan_floor,
-        scan_horizon,
+        chain_height,
+        highest_scanned_height,
     } = scan_task;
 
     if compact_blocks
@@ -212,7 +213,8 @@ where
 
     let checkpoint_heights = witness::checkpoint_heights(
         scan_range.block_range(),
-        scan_horizon,
+        chain_height,
+        highest_scanned_height,
         witness::anchor_retention_policy(consensus_parameters).as_ref(),
     );
     let consensus_parameters_clone = consensus_parameters.clone();

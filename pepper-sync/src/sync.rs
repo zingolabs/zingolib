@@ -1519,7 +1519,8 @@ where
     let ScanLoad {
         task_id,
         scan_range,
-        scan_horizon,
+        chain_height,
+        highest_scanned_height,
     } = load;
     let task = in_flight_tasks
         .get(&task_id)
@@ -1751,7 +1752,8 @@ where
                     fetch_request_sender,
                     ufvks,
                     &scan_range,
-                    scan_horizon,
+                    chain_height,
+                    highest_scanned_height,
                     if map_nullifiers {
                         Some(&mut nullifiers)
                     } else {
@@ -2386,7 +2388,8 @@ async fn update_wallet_data<W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: &ScanRange,
-    scan_horizon: BlockHeight,
+    chain_height: BlockHeight,
+    highest_scanned_height: BlockHeight,
     nullifiers: Option<&mut NullifierMap>,
     outpoints: &mut BTreeMap<OutputId, ScanTarget>,
     mut transactions: HashMap<TxId, WalletTransaction>,
@@ -2415,7 +2418,8 @@ where
             consensus_parameters,
             fetch_request_sender,
             scan_range,
-            scan_horizon,
+            chain_height,
+            highest_scanned_height,
             witness::anchor_retention_policy(consensus_parameters),
             sapling_located_trees,
             orchard_located_trees,
@@ -5070,7 +5074,8 @@ mod test {
                 &HashMap::new(),
                 ScanLoad {
                     task_id,
-                    scan_horizon: scan_range.block_range().end - 1,
+                    chain_height: scan_range.block_range().end - 1,
+                    highest_scanned_height: scan_range.block_range().start - 1,
                     scan_range,
                 },
                 &in_flight_tasks,
@@ -5186,12 +5191,15 @@ mod test {
             error::SyncError,
             mocks::{MockWallet, MockWalletBuilder, MockWalletError},
             shardtree_ext::ShardTreeExt,
-            sync::{ScanPriority, ScanRange},
+            sync::{SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE, ScanPriority, ScanRange},
             wallet::{ShardTrees, traits::SyncShardTrees},
         };
 
         use super::NETWORK;
         const HIGHEST_SCANNED: u32 = 10;
+        /// A chain height whose rolling window lies above the scanned blocks.
+        const CHAIN_HEIGHT_ABOVE_THE_WINDOW: u32 =
+            SECOND_SCANNED_BLOCK + 2 * SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
         const FIRST_SCANNED_BLOCK: u32 = HIGHEST_SCANNED + 1;
         const SECOND_SCANNED_BLOCK: u32 = FIRST_SCANNED_BLOCK + 1;
         const SHIELDED_POOLS: usize = 3;
@@ -5199,7 +5207,7 @@ mod test {
         const ORCHARD_TREE_SIZE: u64 = 3;
 
         /// Updates the wallet's shard trees with the scan of the two blocks above the highest scanned height, which
-        /// hold no note commitments of any pool. The task's horizon is its last block.
+        /// hold no note commitments of any pool. The chain height is the second block.
         async fn update_shard_trees(
             wallet: &mut MockWallet,
             fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
@@ -5214,6 +5222,7 @@ mod test {
                         ScanPriority::ChainTip,
                     ),
                     BlockHeight::from_u32(SECOND_SCANNED_BLOCK),
+                    BlockHeight::from_u32(HIGHEST_SCANNED),
                     None,
                     Vec::new(),
                     Vec::new(),
@@ -5295,6 +5304,51 @@ mod test {
                     .unwrap(),
             ]
             .map(|checkpoint| checkpoint.map(|checkpoint| checkpoint.tree_state()))
+        }
+
+        /// A load below the chain's rolling window places a checkpoint on its last block and on no other, in every
+        /// pool. The block below holds no checkpoint, so each pool fetches the tree state once, and a session
+        /// stopped after the load anchors a spend there.
+        #[tokio::test]
+        async fn a_load_below_the_window_checkpoints_its_last_block_in_every_pool() {
+            let mut wallet = wallet(ShardTrees::new());
+            let (fetch_request_sender, request_count) = spawn_counting_fetcher();
+            wallet
+                .update_shard_trees(
+                    &NETWORK,
+                    fetch_request_sender,
+                    &ScanRange::from_parts(
+                        BlockHeight::from_u32(FIRST_SCANNED_BLOCK)
+                            ..BlockHeight::from_u32(SECOND_SCANNED_BLOCK + 1),
+                        ScanPriority::Historic,
+                    ),
+                    BlockHeight::from_u32(CHAIN_HEIGHT_ABOVE_THE_WINDOW),
+                    BlockHeight::from_u32(HIGHEST_SCANNED),
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                checkpoint_tree_states(&mut wallet, FIRST_SCANNED_BLOCK),
+                [None, None, None]
+            );
+            assert_eq!(
+                checkpoint_tree_states(&mut wallet, SECOND_SCANNED_BLOCK),
+                [
+                    Some(store::TreeState::Empty),
+                    Some(store::TreeState::AtPosition(Position::from(
+                        ORCHARD_TREE_SIZE - 1,
+                    ))),
+                    Some(store::TreeState::Empty),
+                ]
+            );
+            assert_eq!(
+                request_count.load(atomic::Ordering::Acquire),
+                SHIELDED_POOLS
+            );
         }
 
         /// Every shard tree holds the checkpoint of the highest scanned block, so the checkpoints of the scanned
@@ -5694,7 +5748,8 @@ mod test {
                 &ufvks,
                 ScanLoad {
                     task_id,
-                    scan_horizon: scan_range.block_range().end - 1,
+                    chain_height: scan_range.block_range().end - 1,
+                    highest_scanned_height: scan_range.block_range().start - 1,
                     scan_range,
                 },
                 &in_flight_tasks,
@@ -6069,7 +6124,8 @@ mod test {
                 &HashMap::new(),
                 ScanLoad {
                     task_id,
-                    scan_horizon: scan_range.block_range().end - 1,
+                    chain_height: scan_range.block_range().end - 1,
+                    highest_scanned_height: scan_range.block_range().start - 1,
                     scan_range,
                 },
                 &in_flight_tasks,

@@ -912,6 +912,10 @@ where
             .get_sync_state()?
             .highest_scanned_height()
             .expect("the scan ranges hold the selected range");
+        let chain_height = wallet
+            .get_sync_state()?
+            .last_known_chain_height()
+            .expect("the chain height is known before a range is selected");
         if selected_range.priority() == ScanPriority::ScannedWithoutMapping {
             // all continuity checks and scanning is already complete, the scan worker will only re-fetch the nullifiers
             // for final spend detection.
@@ -924,6 +928,7 @@ where
                 HashMap::new(),
                 HashMap::new(),
                 transparent_scan_floor,
+                chain_height,
                 highest_scanned_height,
             )))
         } else {
@@ -974,6 +979,7 @@ where
                 transparent_inuse_addresses,
                 transparent_gap_addresses,
                 transparent_scan_floor,
+                chain_height,
                 highest_scanned_height,
             )))
         }

@@ -258,16 +258,18 @@ pub trait SyncShardTrees: SyncWallet {
 
     /// Update wallet shard trees with new shard tree data.
     ///
-    /// `scan_horizon` is the highest block the wallet holds as scanned once the task of `scan_range` completes: the
-    /// greater of its highest scanned block when the task was selected and the task's last block. The scan placed
-    /// the leaf checkpoints of the located trees from the same horizon.
+    /// `chain_height` is the session's chain height when the task of `scan_range` was selected, which the
+    /// rolling checkpoint window hangs from, and `highest_scanned_height` the wallet's highest scanned block
+    /// then, which places the anchor boundaries with the load's last block. The scan placed the leaf
+    /// checkpoints of the located trees from the same two heights.
     #[allow(clippy::too_many_arguments)]
     fn update_shard_trees(
         &mut self,
         consensus_parameters: &(impl consensus::Parameters + Sync),
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         scan_range: &ScanRange,
-        scan_horizon: BlockHeight,
+        chain_height: BlockHeight,
+        highest_scanned_height: BlockHeight,
         anchor_retention: Option<AnchorRetention>,
         sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
         orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
@@ -287,12 +289,16 @@ pub trait SyncShardTrees: SyncWallet {
             let anchor_retention_window = anchor_retention.as_ref().map(|retention| {
                 (
                     retention,
-                    witness::anchor_retention_window(retention, scan_horizon),
+                    witness::anchor_retention_window(
+                        retention,
+                        std::cmp::max(highest_scanned_height, scan_range.block_range().end - 1),
+                    ),
                 )
             });
             let checkpoint_heights = witness::checkpoint_heights(
                 scan_range.block_range(),
-                scan_horizon,
+                chain_height,
+                highest_scanned_height,
                 anchor_retention.as_ref(),
             );
 
