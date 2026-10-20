@@ -2,8 +2,9 @@
 
 The package that a consumer of the Binding Layer installs to hold its Bundle
 Pin and to fetch the pinned Prebuilt Bundles. zingolib publishes it to npm
-from this directory, so every consumer runs one definition of the scripts, and
-the scripts and the bundle layout they read change in one pull request.
+from [`bindings/pin`][pin], so every consumer runs one definition of the
+scripts, and the scripts and the bundle layout they read change in one pull
+request.
 
 ## Install
 
@@ -155,8 +156,11 @@ node --test test/*.test.mjs
 
 ## Publish
 
-The workflow "Bundle Pin package" publishes this directory to npm on a push
-to `dev` whenever npm lacks the version that `package.json` names, so every
-published version is a merged commit and its provenance names that commit. A
-pull request that changes `bin`, `lib`, or `package.json` must raise the
-version, and the same workflow fails the pull request when it does not.
+The workflow "Bundle Pin package" publishes [`bindings/pin`][pin] to npm on
+a push to `dev` whenever npm lacks the version that `package.json` names, so
+every published version is a merged commit and its provenance names that
+commit. A pull request that changes `bin`, `lib`, or `package.json` must
+raise the version, and the same workflow fails the pull request when it does
+not.
+
+[pin]: https://github.com/zingolabs/zingolib/tree/14405155a52f47a9ab690ba99197a3422e5445c9/bindings/pin#zingolib-bundle-pin
