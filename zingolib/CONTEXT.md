@@ -335,6 +335,14 @@
 
 **Bundle Pin** — A consumer's fixed choice of zingolib's Prebuilt Bundles: one zingolib commit, and the digest of that commit's bundle for each platform the consumer uses, kept in one lock file in the consumer's repository. The commit's tag in the registry never moves, and the pin holds the commit to its recorded digests. Ruled 2026-10-12. *Avoid*: the submodule pin (the pin zingo-mobile held before #2930), the lock alone.
 
+**Published Commit** — The zingolib commit a Prebuilt Bundle was built from, and the one identity of a published build: every other reference to the build derives from it or is recorded against it, and no record, pin, check or message names a build by anything else. Ruled 2026-10-20. *Avoid*: the version, the build, the tag (the registry's spelling of the commit), the descriptor.
+
+**Descriptor** — The display spelling of a build that `get_version` returns and a consumer shows beside its own: the zingolib crate version and the same sixteen-character prefix of the Published Commit that the Coordinate's version carries, on a release as on any other commit. A derived string for humans, never a reference, spelled by the one abbreviation rule the Coordinate uses. Ruled 2026-10-20. *Avoid*: the version string, git describe.
+
+**Coordinate** — The Maven `group:artifact:version` of the Android Prebuilt Bundle, whose version is the zingolib crate version and a prefix of the Published Commit. A derived literal that Gradle must see before any fetch, which the Bundle Pin therefore holds, never a reference. Ruled 2026-10-20. *Avoid*: the Maven version alone, the dependency string. See `zingo-adrs zingolib/0057`.
+
+**Publication Record** — zingolib's own record of the Prebuilt Bundles it has published, one entry per Published Commit with the digest of each platform's bundle and the crates the build audited, kept in the repository and reconciled against the registry by a required check. A consumer never reads it; the registry is the one source a consumer reads. Ruled 2026-10-20. *Avoid*: the manifest (which names the registry's OCI image manifest, where a bundle's digest and annotations live), the ledger, `published.toml` in prose.
+
 ---
 
 ## Decision Records
