@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { checkTag, MAVEN_PLATFORMS, PLATFORMS, repository } from './bundle_pin.mjs';
+import { checkTag, PLATFORMS, repository } from './bundle_pin.mjs';
 import { exists, replaceDirectory, text } from './disk.mjs';
 import { placeMavenRepository, versionNamesCommit } from './maven_repository.mjs';
 import { readPin } from './pin_file.mjs';
@@ -11,7 +11,7 @@ export const MARKER = 'bundle';
 export const ARCHIVE_SUFFIX = '.tar.gz';
 const EXTRACTED = 'extracted';
 
-export function storePath(root, platform, store) {
+function storePath(root, platform, store) {
   return store ?? join(root, platform, 'build', 'binding-layer');
 }
 
@@ -85,25 +85,6 @@ export async function fetchBundle(pin, platform, store, always, registry) {
   return replaced.kind === 'replaced'
     ? { kind: 'fetched', path: join(home, file) }
     : replaced;
-}
-
-// The pin command reads each Maven platform's coordinate from the bundle
-// itself, downloaded into the store the fetch reads, so the fetch after a
-// pin move downloads nothing.
-export async function coordinates(pin, storeOf, registry) {
-  const found = {};
-  for (const platform of MAVEN_PLATFORMS.filter(named => pin.digests[named])) {
-    const fetched = await fetchBundle(pin, platform, storeOf(platform), false, registry);
-    if (fetched.kind !== 'fetched') {
-      return fetched;
-    }
-    const placed = await mavenCoordinate(fetched.path, pin.commit);
-    if (placed.kind !== 'fetched') {
-      return placed;
-    }
-    found[platform] = placed.coordinate;
-  }
-  return { kind: 'described', coordinates: found };
 }
 
 export async function pinnedBundle(root, values) {

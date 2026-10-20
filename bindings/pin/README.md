@@ -45,12 +45,13 @@ and `--pin <file>` another pin file.
 `pin-binding-layer <commit> [--platform <platform>]` moves the pin. It asks
 the registry for the digest of each pinned platform's bundle at that commit
 and rewrites the pin for every platform or for none. The first move names the
-platforms with `--platform`. For the Android platform the command downloads
-the bundle into the store the fetch reads, `--store <dir>` or
-`android/build/binding-layer`, reads the coordinate from the Maven metadata
-in it, and writes the coordinate into the pin, so the fetch after a move
-downloads nothing. The command prints one line per platform: the platform,
-the descriptor, the digest, and the coordinate where there is one.
+platforms with `--platform`. For each platform whose bundle is a Maven
+repository the command takes the coordinate from the bundle's manifest, where
+zingolib's publish annotates it from the Maven metadata in the bundle, and
+writes it into the pin. The command downloads nothing, and it refuses a Maven
+bundle published before zingolib annotated the coordinate. It prints one line
+per platform: the platform, the descriptor, the digest, and the coordinate
+where there is one.
 
 `fetch-binding-layer --platform <platform> [--check-tag]` prints the path of
 the pinned bundle, downloading it first when the checkout does not hold it.

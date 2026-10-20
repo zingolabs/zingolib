@@ -77,6 +77,16 @@ export function failureMessage(failure) {
         `The ${failure.platform} bundle tagged ${failure.commit} is not a gzip archive. ` +
         'zingolib published it before the Maven repository layout. Pin a commit published later.'
       );
+    case 'unannotated':
+      return (
+        `The ${failure.platform} bundle tagged ${failure.commit} names no Maven coordinate in its manifest. ` +
+        'zingolib published it before it annotated the coordinate. Pin a commit published later.'
+      );
+    case 'badCoordinate':
+      return (
+        `The ${failure.platform} bundle tagged ${failure.commit} names the coordinate "${failure.coordinate}" ` +
+        `in its manifest, which is not group, artifact and version. ${REPORT}`
+      );
     case 'badRepository':
       return `The ${failure.platform} bundle holds no Maven repository with one artifact at one version. ${REPORT}`;
     case 'wrongCoordinate':

@@ -103,6 +103,14 @@ function judge(current, platform, commit, found) {
   if (oldShape(found)) {
     return { kind: 'oldShape', platform, commit };
   }
+  if (MAVEN_PLATFORMS.includes(platform)) {
+    if (found.coordinate === undefined) {
+      return { kind: 'unannotated', platform, commit };
+    }
+    if (!COORDINATE.test(found.coordinate)) {
+      return { kind: 'badCoordinate', platform, commit, coordinate: found.coordinate };
+    }
+  }
   const pinned = holdsPlatforms(current) && current.commit === commit;
   if (pinned && current.digests[platform]) {
     return checkTag(platform, commit, current.digests[platform], found);
@@ -141,6 +149,11 @@ export async function movePin(current, commit, added, resolve) {
       commit,
       digests: Object.fromEntries(
         bundles.map(({ platform, found }) => [platform, found.digest]),
+      ),
+      coordinates: Object.fromEntries(
+        bundles
+          .filter(({ platform }) => MAVEN_PLATFORMS.includes(platform))
+          .map(({ platform, found }) => [platform, found.coordinate]),
       ),
     },
     descriptors: Object.fromEntries(

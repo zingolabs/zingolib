@@ -9,12 +9,7 @@ import {
   parsePin,
   serializePin,
 } from '../lib/bundle_pin.mjs';
-import {
-  coordinates,
-  fetchBundle,
-  MARKER,
-  pinnedBundle,
-} from '../lib/fetch_binding_layer.mjs';
+import { fetchBundle, MARKER, pinnedBundle } from '../lib/fetch_binding_layer.mjs';
 import { writePin } from '../lib/pin_file.mjs';
 import { archive, COMMIT as MAVEN_COMMIT, COORDINATE } from './maven_fixture.mjs';
 
@@ -40,6 +35,7 @@ function bundle(digest, revision, layer = { file: FILE, mediaType: ARCHIVE_MEDIA
     digest,
     revision,
     descriptor: 'zl_3.0.0_aaaaa',
+    coordinate: COORDINATE,
     layers: [{ digest: LAYER, ...layer }],
   };
 }
@@ -126,7 +122,11 @@ test('parsePin reads a pin of an earlier version, whose android digest has no co
 test('movePin moves the platforms an old pin holds', async () => {
   const old = { kind: 'oldPin', commit: COMMIT, digests: { android: ANDROID }, coordinates: {} };
   const moved = await movePin(old, NEXT, [], async () => bundle(IOS, NEXT));
-  assert.deepEqual(moved.pin, { commit: NEXT, digests: { android: IOS } });
+  assert.deepEqual(moved.pin, {
+    commit: NEXT,
+    digests: { android: IOS },
+    coordinates: { android: COORDINATE },
+  });
 });
 
 test('movePin checks the tag of an old pin at its own commit', async () => {
@@ -185,7 +185,39 @@ test('movePin moves every listed platform when each has a bundle for the commit'
   const moved = await movePin(current, NEXT, [], async platform =>
     bundle(platform === 'android' ? IOS : ANDROID, NEXT),
   );
-  assert.deepEqual(moved.pin, { commit: NEXT, digests: { android: IOS, ios: ANDROID } });
+  assert.deepEqual(moved.pin, {
+    commit: NEXT,
+    digests: { android: IOS, ios: ANDROID },
+    coordinates: { android: COORDINATE },
+  });
+});
+
+test('movePin records the coordinate the manifest of a Maven bundle names, and none for the other platforms', async () => {
+  const resolve = mock.fn(async platform => bundle(platform === 'ios' ? IOS : ANDROID, NEXT));
+  const moved = await movePin({ kind: 'unpinned' }, NEXT, ['ios'], resolve);
+  assert.deepEqual(moved.pin, { commit: NEXT, digests: { ios: IOS }, coordinates: {} });
+  assert.equal(resolve.mock.callCount(), 1);
+});
+
+test('movePin refuses a Maven bundle whose manifest names no coordinate', async () => {
+  const moved = await movePin(pin, NEXT, [], async () => ({
+    ...bundle(ANDROID, NEXT),
+    coordinate: undefined,
+  }));
+  assert.deepEqual(moved, { kind: 'unannotated', platform: 'android', commit: NEXT });
+});
+
+test('movePin refuses a Maven bundle whose manifest coordinate is not group, artifact and version', async () => {
+  const moved = await movePin(pin, NEXT, [], async () => ({
+    ...bundle(ANDROID, NEXT),
+    coordinate: 'org.zingolabs:zingo-binding-layer',
+  }));
+  assert.deepEqual(moved, {
+    kind: 'badCoordinate',
+    platform: 'android',
+    commit: NEXT,
+    coordinate: 'org.zingolabs:zingo-binding-layer',
+  });
 });
 
 test('movePin returns no pin when one listed platform has no bundle for the commit', async () => {
@@ -330,39 +362,7 @@ test('fetchBundle asks the registry again when the checkout holds a bundle of th
   assert.equal(requests.resolveBundle.mock.callCount(), 1);
 });
 
-function mavenRegistry(found, tarball) {
-  const requests = registry(found);
-  requests.download = mock.fn(async (_granted, _digest, path) => {
-    await writeFile(path, await readFile(tarball));
-    return { kind: 'downloaded', path };
-  });
-  return requests;
-}
-
 const mavenPin = { commit: MAVEN_COMMIT, digests: { android: ANDROID } };
-
-test('coordinates reads the android coordinate from the bundle it downloads into the store', async () => {
-  const root = await store();
-  const requests = mavenRegistry(bundle(ANDROID, MAVEN_COMMIT), await archive([COORDINATE.split(':')[2]]));
-  const described = await coordinates(mavenPin, () => root, requests);
-  assert.deepEqual(described, { kind: 'described', coordinates: { android: COORDINATE } });
-  const fetched = await fetchBundle(mavenPin, 'android', root, false, requests);
-  assert.equal(fetched.kind, 'fetched');
-  assert.equal(requests.download.mock.callCount(), 1);
-});
-
-test('coordinates reads nothing for a pin of platforms without a Maven layout', async () => {
-  const requests = registry(bundle(IOS, COMMIT));
-  const described = await coordinates({ commit: COMMIT, digests: { ios: IOS } }, () => undefined, requests);
-  assert.deepEqual(described, { kind: 'described', coordinates: {} });
-  assert.equal(requests.access.mock.callCount(), 0);
-});
-
-test('coordinates returns the fetch failure when the registry holds no bundle', async () => {
-  const root = await store();
-  const described = await coordinates(mavenPin, () => root, registry({ kind: 'absent' }));
-  assert.deepEqual(described, { kind: 'absent', platform: 'android', commit: MAVEN_COMMIT });
-});
 
 async function checkoutWithPin(coordinate) {
   const root = await store();

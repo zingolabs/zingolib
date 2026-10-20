@@ -14,9 +14,10 @@ The versions before 0.3.0 predate this file.
 
 ### Added
 
-- `pin-binding-layer` downloads the Android bundle into the store the fetch
-  reads, writes the coordinate it finds there into the pin, and prints the
-  coordinate after the digest. The command takes `--store <dir>` as the
-  fetch does.
+- `pin-binding-layer` writes the coordinate the Android bundle's manifest
+  names into the pin and prints it after the digest. zingolib's publish
+  annotates the manifest with the coordinate it reads from the Maven
+  metadata in the bundle. The command refuses a Maven bundle whose manifest
+  names no coordinate, which zingolib published before the annotation.
 - `fetch-binding-layer` refuses a layout whose coordinate differs from the
   pin with a message that names both.

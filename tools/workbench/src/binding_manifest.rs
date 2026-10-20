@@ -25,6 +25,7 @@ const COMMIT_EXPECTATION: &str = "a full lowercase commit hash";
 const DIGEST_PREFIX: &str = "sha256:";
 const DIGEST_HEX_LENGTH: usize = 64;
 pub const DESCRIPTOR_ANNOTATION: &str = "org.zingolabs.zingolib.descriptor";
+pub const COORDINATE_ANNOTATION: &str = "org.zingolabs.zingolib.coordinate";
 pub const TITLE_ANNOTATION: &str = "org.opencontainers.image.title";
 const CHECK_FLAG: &str = "--check";
 const BASE_FLAG: &str = "--base";
