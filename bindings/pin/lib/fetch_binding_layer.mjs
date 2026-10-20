@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { checkTag, PLATFORMS, repository } from './bundle_pin.mjs';
+import { checkTag, MAVEN_PLATFORMS, PLATFORMS, repository } from './bundle_pin.mjs';
 import { exists, replaceDirectory, text } from './disk.mjs';
 import { placeMavenRepository, versionNamesCommit } from './maven_repository.mjs';
 import { readPin } from './pin_file.mjs';
@@ -10,6 +10,10 @@ import { placeSwiftPackage } from './swift_package.mjs';
 export const MARKER = 'bundle';
 export const ARCHIVE_SUFFIX = '.tar.gz';
 const EXTRACTED = 'extracted';
+
+export function storePath(root, platform, store) {
+  return store ?? join(root, platform, 'build', 'binding-layer');
+}
 
 async function held(home) {
   const file = await text(join(home, MARKER));
@@ -83,6 +87,25 @@ export async function fetchBundle(pin, platform, store, always, registry) {
     : replaced;
 }
 
+// The pin command reads each Maven platform's coordinate from the bundle
+// itself, downloaded into the store the fetch reads, so the fetch after a
+// pin move downloads nothing.
+export async function coordinates(pin, storeOf, registry) {
+  const found = {};
+  for (const platform of MAVEN_PLATFORMS.filter(named => pin.digests[named])) {
+    const fetched = await fetchBundle(pin, platform, storeOf(platform), false, registry);
+    if (fetched.kind !== 'fetched') {
+      return fetched;
+    }
+    const placed = await mavenCoordinate(fetched.path, pin.commit);
+    if (placed.kind !== 'fetched') {
+      return placed;
+    }
+    found[platform] = placed.coordinate;
+  }
+  return { kind: 'described', coordinates: found };
+}
+
 export async function pinnedBundle(root, values) {
   if (values.platform === undefined) {
     return { kind: 'unnamedPlatform' };
@@ -97,7 +120,7 @@ export async function pinnedBundle(root, values) {
   const fetched = await fetchBundle(
     pin,
     values.platform,
-    values.store ?? join(root, values.platform, 'build', 'binding-layer'),
+    storePath(root, values.platform, values.store),
     values['check-tag'],
     { access, resolveBundle, download },
   );
@@ -105,7 +128,18 @@ export async function pinnedBundle(root, values) {
     return fetched;
   }
   if (values.platform === 'android') {
-    return mavenCoordinate(fetched.path, pin.commit);
+    const placed = await mavenCoordinate(fetched.path, pin.commit);
+    const pinned = pin.coordinates.android;
+    if (placed.kind === 'fetched' && placed.coordinate !== pinned) {
+      return {
+        kind: 'wrongCoordinate',
+        platform: 'android',
+        commit: pin.commit,
+        pinned,
+        found: placed.coordinate,
+      };
+    }
+    return placed;
   }
   const placed = await placeSwiftPackage(
     fetched.path,

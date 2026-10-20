@@ -9,7 +9,14 @@ import {
   parsePin,
   serializePin,
 } from '../lib/bundle_pin.mjs';
-import { fetchBundle, MARKER, pinnedBundle } from '../lib/fetch_binding_layer.mjs';
+import {
+  coordinates,
+  fetchBundle,
+  MARKER,
+  pinnedBundle,
+} from '../lib/fetch_binding_layer.mjs';
+import { writePin } from '../lib/pin_file.mjs';
+import { archive, COMMIT as MAVEN_COMMIT, COORDINATE } from './maven_fixture.mjs';
 
 const COMMIT = 'a'.repeat(40);
 const NEXT = 'b'.repeat(40);
@@ -20,7 +27,12 @@ const FILE = 'repository.tar.gz';
 const OLD_FILE = 'binding-layer.aar';
 const OLD_MEDIA_TYPE = 'application/zip';
 
-const pin = { kind: 'pin', commit: COMMIT, digests: { android: ANDROID } };
+const pin = {
+  kind: 'pin',
+  commit: COMMIT,
+  digests: { android: ANDROID },
+  coordinates: { android: COORDINATE },
+};
 
 function bundle(digest, revision, layer = { file: FILE, mediaType: ARCHIVE_MEDIA_TYPE }) {
   return {
@@ -65,15 +77,89 @@ async function storeWithBundle() {
 }
 
 test('parsePin reads the pin that serializePin wrote', () => {
-  const written = { commit: COMMIT, digests: { ios: IOS, android: ANDROID } };
+  const written = {
+    commit: COMMIT,
+    digests: { ios: IOS, android: ANDROID },
+    coordinates: { android: COORDINATE },
+  };
   assert.deepEqual(parsePin(serializePin(written)), { kind: 'pin', ...written });
 });
 
-test('serializePin writes the commit first and the platforms in order', () => {
+test('serializePin writes the commit, the digests in order, then the coordinates', () => {
   assert.equal(
-    serializePin({ commit: COMMIT, digests: { ios: IOS, android: ANDROID } }),
-    `{\n  "commit": "${COMMIT}",\n  "digests": {\n    "android": "${ANDROID}",\n    "ios": "${IOS}"\n  }\n}\n`,
+    serializePin({
+      commit: COMMIT,
+      digests: { ios: IOS, android: ANDROID },
+      coordinates: { android: COORDINATE },
+    }),
+    `{\n  "commit": "${COMMIT}",\n  "digests": {\n    "android": "${ANDROID}",\n    "ios": "${IOS}"\n  },\n  "coordinates": {\n    "android": "${COORDINATE}"\n  }\n}\n`,
   );
+});
+
+test('serializePin writes no coordinates for a pin of platforms without a Maven layout', () => {
+  assert.equal(
+    serializePin({ commit: COMMIT, digests: { ios: IOS }, coordinates: {} }),
+    `{\n  "commit": "${COMMIT}",\n  "digests": {\n    "ios": "${IOS}"\n  }\n}\n`,
+  );
+});
+
+test('parsePin reads a pin of platforms without a Maven layout and no coordinates', () => {
+  const text = JSON.stringify({ commit: COMMIT, digests: { ios: IOS } });
+  assert.deepEqual(parsePin(text), {
+    kind: 'pin',
+    commit: COMMIT,
+    digests: { ios: IOS },
+    coordinates: {},
+  });
+});
+
+test('parsePin reads a pin of an earlier version, whose android digest has no coordinate, as old', () => {
+  const text = JSON.stringify({ commit: COMMIT, digests: { android: ANDROID } });
+  assert.deepEqual(parsePin(text), {
+    kind: 'oldPin',
+    commit: COMMIT,
+    digests: { android: ANDROID },
+    coordinates: {},
+  });
+});
+
+test('movePin moves the platforms an old pin holds', async () => {
+  const old = { kind: 'oldPin', commit: COMMIT, digests: { android: ANDROID }, coordinates: {} };
+  const moved = await movePin(old, NEXT, [], async () => bundle(IOS, NEXT));
+  assert.deepEqual(moved.pin, { commit: NEXT, digests: { android: IOS } });
+});
+
+test('movePin checks the tag of an old pin at its own commit', async () => {
+  const old = { kind: 'oldPin', commit: COMMIT, digests: { android: ANDROID }, coordinates: {} };
+  const moved = await movePin(old, COMMIT, [], async () => bundle(IOS, COMMIT));
+  assert.equal(moved.kind, 'movedTag');
+});
+
+test('pinnedBundle refuses an old pin and names its commit', async () => {
+  const root = await store();
+  const path = join(root, 'binding-layer.json');
+  await writeFile(path, JSON.stringify({ commit: COMMIT, digests: { android: ANDROID } }));
+  const outcome = await pinnedBundle(root, { platform: 'android', pin: path });
+  assert.equal(outcome.kind, 'oldPin');
+  assert.equal(outcome.commit, COMMIT);
+});
+
+test('parsePin names the android coordinate when it is not group, artifact and version', () => {
+  const text = JSON.stringify({
+    commit: COMMIT,
+    digests: { android: ANDROID },
+    coordinates: { android: 'org.zingolabs:zingo-binding-layer' },
+  });
+  assert.deepEqual(parsePin(text), { kind: 'malformedPin', field: 'coordinates.android' });
+});
+
+test('parsePin names a coordinate of a platform without a Maven layout', () => {
+  const text = JSON.stringify({
+    commit: COMMIT,
+    digests: { android: ANDROID, ios: IOS },
+    coordinates: { android: COORDINATE, ios: COORDINATE },
+  });
+  assert.deepEqual(parsePin(text), { kind: 'malformedPin', field: 'coordinates.ios' });
 });
 
 test('parsePin names the commit when the commit is abbreviated', () => {
@@ -242,4 +328,72 @@ test('fetchBundle asks the registry again when the checkout holds a bundle of th
   const fetched = await fetchBundle(pin, 'android', root, false, requests);
   assert.equal(fetched.kind, 'oldShape');
   assert.equal(requests.resolveBundle.mock.callCount(), 1);
+});
+
+function mavenRegistry(found, tarball) {
+  const requests = registry(found);
+  requests.download = mock.fn(async (_granted, _digest, path) => {
+    await writeFile(path, await readFile(tarball));
+    return { kind: 'downloaded', path };
+  });
+  return requests;
+}
+
+const mavenPin = { commit: MAVEN_COMMIT, digests: { android: ANDROID } };
+
+test('coordinates reads the android coordinate from the bundle it downloads into the store', async () => {
+  const root = await store();
+  const requests = mavenRegistry(bundle(ANDROID, MAVEN_COMMIT), await archive([COORDINATE.split(':')[2]]));
+  const described = await coordinates(mavenPin, () => root, requests);
+  assert.deepEqual(described, { kind: 'described', coordinates: { android: COORDINATE } });
+  const fetched = await fetchBundle(mavenPin, 'android', root, false, requests);
+  assert.equal(fetched.kind, 'fetched');
+  assert.equal(requests.download.mock.callCount(), 1);
+});
+
+test('coordinates reads nothing for a pin of platforms without a Maven layout', async () => {
+  const requests = registry(bundle(IOS, COMMIT));
+  const described = await coordinates({ commit: COMMIT, digests: { ios: IOS } }, () => undefined, requests);
+  assert.deepEqual(described, { kind: 'described', coordinates: {} });
+  assert.equal(requests.access.mock.callCount(), 0);
+});
+
+test('coordinates returns the fetch failure when the registry holds no bundle', async () => {
+  const root = await store();
+  const described = await coordinates(mavenPin, () => root, registry({ kind: 'absent' }));
+  assert.deepEqual(described, { kind: 'absent', platform: 'android', commit: MAVEN_COMMIT });
+});
+
+async function checkoutWithPin(coordinate) {
+  const root = await store();
+  const path = join(root, 'binding-layer.json');
+  await writePin(path, { ...mavenPin, coordinates: { android: coordinate } });
+  const home = join(root, 'android', 'build', 'binding-layer', ANDROID.slice('sha256:'.length));
+  await mkdir(home, { recursive: true });
+  await writeFile(join(home, FILE), await readFile(await archive([COORDINATE.split(':')[2]])));
+  await writeFile(join(home, MARKER), `${FILE}\n`);
+  return { root, path, home };
+}
+
+test('pinnedBundle prints the repository and the coordinate the pin holds', async () => {
+  const { root, path, home } = await checkoutWithPin(COORDINATE);
+  const outcome = await pinnedBundle(root, { platform: 'android', pin: path });
+  assert.deepEqual(outcome, {
+    kind: 'fetched',
+    path: join(home, 'extracted', 'repository'),
+    coordinate: COORDINATE,
+  });
+});
+
+test('pinnedBundle refuses a bundle whose coordinate differs from the pin', async () => {
+  const pinned = 'org.zingolabs:zingo-binding-layer:6.0.0-cafecafecafecafe';
+  const { root, path } = await checkoutWithPin(pinned);
+  const outcome = await pinnedBundle(root, { platform: 'android', pin: path });
+  assert.deepEqual(outcome, {
+    kind: 'wrongCoordinate',
+    platform: 'android',
+    commit: MAVEN_COMMIT,
+    pinned,
+    found: COORDINATE,
+  });
 });
