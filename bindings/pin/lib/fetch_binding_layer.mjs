@@ -11,6 +11,10 @@ export const MARKER = 'bundle';
 export const ARCHIVE_SUFFIX = '.tar.gz';
 const EXTRACTED = 'extracted';
 
+function storePath(root, platform, store) {
+  return store ?? join(root, platform, 'build', 'binding-layer');
+}
+
 async function held(home) {
   const file = await text(join(home, MARKER));
   if (file === undefined || !file.endsWith(ARCHIVE_SUFFIX)) {
@@ -97,7 +101,7 @@ export async function pinnedBundle(root, values) {
   const fetched = await fetchBundle(
     pin,
     values.platform,
-    values.store ?? join(root, values.platform, 'build', 'binding-layer'),
+    storePath(root, values.platform, values.store),
     values['check-tag'],
     { access, resolveBundle, download },
   );
@@ -105,7 +109,18 @@ export async function pinnedBundle(root, values) {
     return fetched;
   }
   if (values.platform === 'android') {
-    return mavenCoordinate(fetched.path, pin.commit);
+    const placed = await mavenCoordinate(fetched.path, pin.commit);
+    const pinned = pin.coordinates.android;
+    if (placed.kind === 'fetched' && placed.coordinate !== pinned) {
+      return {
+        kind: 'wrongCoordinate',
+        platform: 'android',
+        commit: pin.commit,
+        pinned,
+        found: placed.coordinate,
+      };
+    }
+    return placed;
   }
   const placed = await placeSwiftPackage(
     fetched.path,

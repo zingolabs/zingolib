@@ -21,6 +21,10 @@ const COMMIT_FLAG: &str = "--commit";
 const BUNDLES_FLAG: &str = "--bundles";
 const USAGE: &str = "usage: binding-publish --commit <commit> \
     --bundles <directory holding each downloaded bundle artifact of the commit>";
+const COORDINATE_SEPARATOR: &str = ":";
+const GROUP_ELEMENT: &str = "groupId";
+const ARTIFACT_ELEMENT: &str = "artifactId";
+const VERSION_ELEMENT: &str = "version";
 
 pub struct Credentials {
     pub username: String,
@@ -29,8 +33,8 @@ pub struct Credentials {
 
 struct Bundle {
     file: PathBuf,
-    descriptor: String,
     media_type: &'static str,
+    coordinate: Option<String>,
 }
 
 pub fn media_type_of(platform: &str) -> Result<&'static str, Vec<String>> {
@@ -41,17 +45,46 @@ pub fn media_type_of(platform: &str) -> Result<&'static str, Vec<String>> {
         .ok_or_else(|| vec![format!("no bundle shape is known for {platform}")])
 }
 
-pub fn manifest_annotations(commit: &str, descriptor: &str) -> Vec<(String, String)> {
-    vec![
+pub fn manifest_annotations(commit: &str, coordinate: Option<&str>) -> Vec<(String, String)> {
+    let mut annotations = vec![(
+        binding_manifest::REVISION_ANNOTATION.to_string(),
+        commit.to_string(),
+    )];
+    annotations.extend(coordinate.map(|coordinate| {
         (
-            binding_manifest::REVISION_ANNOTATION.to_string(),
-            commit.to_string(),
-        ),
-        (
-            binding_manifest::DESCRIPTOR_ANNOTATION.to_string(),
-            descriptor.to_string(),
-        ),
+            binding_manifest::COORDINATE_ANNOTATION.to_string(),
+            coordinate.to_string(),
+        )
+    }));
+    annotations
+}
+
+fn elements<'a>(xml: &'a str, name: &str) -> Vec<&'a str> {
+    let open = format!("<{name}>");
+    let close = format!("</{name}>");
+    xml.match_indices(&open)
+        .filter_map(|(start, _)| {
+            let rest = &xml[start + open.len()..];
+            rest.find(&close).map(|end| rest[..end].trim())
+        })
+        .collect()
+}
+
+pub fn maven_coordinate(metadata: &str) -> Result<String, Vec<String>> {
+    let one = |name: &str| match elements(metadata, name).as_slice() {
+        [value] if !value.is_empty() => Ok(value.to_string()),
+        found => Err(vec![format!(
+            "{} holds {} {name} elements, and the coordinate needs one",
+            binding_layer::MAVEN_METADATA_FILE,
+            found.len()
+        )]),
+    };
+    Ok([
+        one(GROUP_ELEMENT)?,
+        one(ARTIFACT_ELEMENT)?,
+        one(VERSION_ELEMENT)?,
     ]
+    .join(COORDINATE_SEPARATOR))
 }
 
 pub fn built_platforms(bundles: &Path, commit: &str) -> Vec<(&'static str, PathBuf)> {
@@ -101,7 +134,7 @@ fn push(
         &name,
         &bundle.file,
         bundle.media_type,
-        &manifest_annotations(commit, &bundle.descriptor),
+        &manifest_annotations(commit, bundle.coordinate.as_deref()),
         &credentials.username,
         &credentials.token,
     )?;
@@ -125,24 +158,22 @@ fn credentials() -> Result<Credentials, Vec<String>> {
     })
 }
 
-/// - Reads the descriptor file under `dir`.
 /// - For iOS, moves `dir` under a sibling staging directory, writes the commit's `Package.swift`
 ///   beside it from `git show`, and runs `tar` as a child process to archive the package.
 fn bundle_of(root: &Path, platform: &str, dir: &Path, commit: &str) -> Result<Bundle, Vec<String>> {
-    let descriptor = crate::read(&find_file(dir, binding_layer::DESCRIPTOR_FILE, |name| {
-        name == binding_layer::DESCRIPTOR_FILE
-    })?)?
-    .trim()
-    .to_string();
     let media_type = media_type_of(platform)?;
-    let file = match platform {
-        binding_manifest::ANDROID => maven_repository_archive(dir)?,
-        _ => swift_package_archive(root, dir, commit)?,
+    let (file, coordinate) = match platform {
+        binding_manifest::ANDROID => {
+            let metadata = maven_metadata(dir)?;
+            let coordinate = maven_coordinate(&crate::read(&metadata)?)?;
+            (maven_repository_archive(&metadata)?, Some(coordinate))
+        }
+        _ => (swift_package_archive(root, dir, commit)?, None),
     };
     Ok(Bundle {
         file,
-        descriptor,
         media_type,
+        coordinate,
     })
 }
 
@@ -154,11 +185,14 @@ fn archive(parent: &Path, name: &str) -> Result<PathBuf, Vec<String>> {
     Ok(parent.join(archive_name))
 }
 
-/// - Runs `tar` as a child process to archive the Maven repository directory under `dir`.
-fn maven_repository_archive(dir: &Path) -> Result<PathBuf, Vec<String>> {
-    let metadata = find_file(dir, binding_layer::MAVEN_METADATA_FILE, |name| {
+fn maven_metadata(dir: &Path) -> Result<PathBuf, Vec<String>> {
+    find_file(dir, binding_layer::MAVEN_METADATA_FILE, |name| {
         name == binding_layer::MAVEN_METADATA_FILE
-    })?;
+    })
+}
+
+/// - Runs `tar` as a child process to archive the Maven repository directory above `metadata`.
+fn maven_repository_archive(metadata: &Path) -> Result<PathBuf, Vec<String>> {
     let repository = crate::required(
         metadata.ancestors().find(|ancestor| {
             ancestor
@@ -307,21 +341,60 @@ mod tests {
     }
 
     #[test]
-    fn the_annotations_carry_the_commit_the_descriptor_and_the_file_name() {
+    fn the_annotations_carry_the_commit_and_the_coordinate_of_a_maven_bundle() {
         let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let revision = (
+            "org.opencontainers.image.revision".to_string(),
+            commit.to_string(),
+        );
         assert_eq!(
-            manifest_annotations(commit, "zl_6.0.0_aaaaaaaaaaaaaaaa"),
+            manifest_annotations(commit, None),
+            std::slice::from_ref(&revision)
+        );
+        assert_eq!(
+            manifest_annotations(
+                commit,
+                Some("org.zingolabs:zingo-binding-layer:6.0.0-aaaaaaaaaaaaaaaa")
+            ),
             [
+                revision,
                 (
-                    "org.opencontainers.image.revision".to_string(),
-                    commit.to_string()
-                ),
-                (
-                    "org.zingolabs.zingolib.descriptor".to_string(),
-                    "zl_6.0.0_aaaaaaaaaaaaaaaa".to_string()
+                    "org.zingolabs.zingolib.coordinate".to_string(),
+                    "org.zingolabs:zingo-binding-layer:6.0.0-aaaaaaaaaaaaaaaa".to_string()
                 ),
             ]
         );
+    }
+
+    fn metadata(versions: &[&str]) -> String {
+        let listed: String = versions
+            .iter()
+            .map(|version| format!("      <version>{version}</version>\n"))
+            .collect();
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<metadata>\n  <groupId>org.zingolabs</groupId>\n  \
+             <artifactId>zingo-binding-layer</artifactId>\n  <versioning>\n    <latest>{}</latest>\n    \
+             <versions>\n{listed}    </versions>\n  </versioning>\n</metadata>\n",
+            versions.first().unwrap_or(&"")
+        )
+    }
+
+    #[test]
+    fn the_maven_coordinate_is_the_one_group_artifact_and_version_of_the_metadata() {
+        assert_eq!(
+            maven_coordinate(&metadata(&["6.0.0-aaaaaaaaaaaaaaaa"])),
+            Ok("org.zingolabs:zingo-binding-layer:6.0.0-aaaaaaaaaaaaaaaa".to_string())
+        );
+    }
+
+    #[test]
+    fn a_metadata_with_two_versions_or_no_group_yields_no_coordinate() -> Result<(), Vec<String>> {
+        let two =
+            crate::refused(maven_coordinate(&metadata(&["6.0.0-aaaa", "6.0.0-bbbb"])))?.concat();
+        assert!(two.contains("2 version"), "{two}");
+        let none = crate::refused(maven_coordinate("<metadata></metadata>"))?.concat();
+        assert!(none.contains("0 groupId"), "{none}");
+        Ok(())
     }
 
     #[test]
