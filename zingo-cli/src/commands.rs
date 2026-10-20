@@ -156,6 +156,13 @@ pub(crate) fn render_error_chain(error: &(impl std::error::Error + 'static)) -> 
     zingo_net_diag::chain_texts(error).join(DISPATCH_CHAIN_SEPARATOR)
 }
 
+pub(crate) fn io_error_with_chain(
+    context: &str,
+    error: &(impl std::error::Error + 'static),
+) -> std::io::Error {
+    std::io::Error::other(format!("{context} {}", render_error_chain(error)))
+}
+
 /// A usage failure carrying the standard "Try 'help `<command>`'" pointer,
 /// with the command name drawn from the caller instead of re-typed prose.
 fn usage(command: &str, detail: impl std::fmt::Display) -> CommandError {

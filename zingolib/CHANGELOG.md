@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from `await_sync` and from the launch wait in `sync`.
 
 ### Changed
+- **Breaking:** `config::construct_indexer_uri` completes a server string
+  without a scheme to `https://`, and a URI without a port to its scheme's
+  default port (`:443` for `https`, `:80` for `http`), named by the new
+  `config::HTTPS_DEFAULT_PORT`, `config::HTTP_DEFAULT_PORT`, and
+  `config::DEFAULT_INDEXER_SCHEME` constants. The old completion to `http://`
+  and `:9067` is gone: a bare `host` now reaches the indexer the census
+  lists instead of a dead legacy port, and an explicit port is never
+  rewritten.
 - **Breaking:** `data::PollReport` gains the `Panicked(String)` variant, which
   `poll_sync` returns when the sync task panicked and tokio contained the
   panic. Every exhaustive match on `PollReport` needs an arm for it.

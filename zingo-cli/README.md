@@ -290,12 +290,13 @@ Regtest runs against a local network you launch yourself:
 ```bash
 ./target/release/zingo-cli \
   --chain regtest \
-  --server 127.0.0.1:8137 \
+  --server http://127.0.0.1:8137 \
   --data-dir ~/tmp/regtest_temp
 ```
 
-A `--server` value without a scheme is normalized to `http://…`, and a value
-without a port has `:9067` appended.
+A `--server` value without a scheme is normalized to `https://…`, and a value
+without a port gets its scheme's default port (`:443` for `https`, `:80` for
+`http`). A plaintext regtest indexer therefore needs an explicit `http://`.
 
 ---
 

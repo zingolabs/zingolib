@@ -15,8 +15,10 @@ The package depends on nothing beyond Node 20 and `tar`.
 
 ## The Bundle Pin
 
-`binding-layer.json` at the consumer's root names one zingolib commit and the
-digest of that commit's Prebuilt Bundle for each platform the consumer uses:
+`binding-layer.json` at the consumer's root names one zingolib commit, the
+digest of that commit's Prebuilt Bundle for each platform the consumer uses,
+and, for each platform whose bundle is a Maven repository, the coordinate of
+the artifact in it:
 
 ```json
 {
@@ -24,9 +26,16 @@ digest of that commit's Prebuilt Bundle for each platform the consumer uses:
   "digests": {
     "android": "sha256:<64 hexadecimal characters>",
     "ios": "sha256:<64 hexadecimal characters>"
+  },
+  "coordinates": {
+    "android": "org.zingolabs:zingo-binding-layer:<version>"
   }
 }
 ```
+
+The pin is the one source of the coordinate. A Gradle build reads the group
+and the dependency from the pin without running the fetch, and the fetch
+refuses a bundle whose coordinate differs from the pin.
 
 ## Commands
 
@@ -36,7 +45,13 @@ and `--pin <file>` another pin file.
 `pin-binding-layer <commit> [--platform <platform>]` moves the pin. It asks
 the registry for the digest of each pinned platform's bundle at that commit
 and rewrites the pin for every platform or for none. The first move names the
-platforms with `--platform`.
+platforms with `--platform`. For each platform whose bundle is a Maven
+repository the command takes the coordinate from the bundle's manifest, where
+zingolib's publish annotates it from the Maven metadata in the bundle, and
+writes it into the pin. The command downloads nothing, and it refuses a Maven
+bundle published before zingolib annotated the coordinate. It prints one line
+per platform: the platform, the digest, and the coordinate where there is
+one.
 
 `fetch-binding-layer --platform <platform> [--check-tag]` prints the path of
 the pinned bundle, downloading it first when the checkout does not hold it.
@@ -47,32 +62,42 @@ pinned commit still resolves to the pinned digest.
 
 The Android bundle lands under `android/build/binding-layer/<digest>/`, beside
 a marker file that names the archive, and is extracted there as a Maven
-repository in canonical layout: the AAR, the POM that declares the AAR's
-dependencies, and `maven-metadata.xml`. The command prints two lines, the
-repository root and then the coordinate it reads from the metadata, such as
-`org.zingolabs:zingo-binding-layer:6.0.0-ba7336710419c9ac`. The version is
-the zingolib crate version and the first sixteen characters of the pinned
-commit, and the command refuses a layout whose version names another commit.
+repository in canonical layout: the AAR, the Gradle Module Metadata and the
+POM that declare the AAR's dependencies, and `maven-metadata.xml`. The command
+prints two lines, the repository root and then the coordinate it reads from
+the metadata, such as `org.zingolabs:zingo-binding-layer:6.0.0-ba7336710419c9ac`.
+The version is the zingolib crate version and the first sixteen characters of
+the pinned commit. The command refuses a layout whose version names another
+commit, and a layout whose coordinate differs from the pin.
 
 The iOS bundle is extracted to `ios/binding-layer/ZingoBindings`, beside a
 marker file that names its digest, and the command prints that package path.
 
 ## Consumers
 
-A Gradle build runs the fetch at configuration time, adds the first printed
-line as a Maven repository and the second as a dependency, and Gradle resolves
-what the POM declares, JNA among it, from Maven Central:
+A Gradle build reads the coordinate from the pin, declares it as a
+dependency, and adds the repository root the fetch prints as a Maven
+repository that serves the coordinate's group alone. The fetch runs when
+Gradle resolves the repository, not at configuration, and Gradle resolves
+what the module metadata declares, JNA among it, from Maven Central:
 
 ```groovy
-def bindingLayer = providers.exec {
+def bindingLayerPin = new groovy.json.JsonSlurper().parse(rootProject.file("../binding-layer.json"))
+def bindingLayerCoordinate = bindingLayerPin.coordinates.android
+def bindingLayerRepository = providers.exec {
     workingDir rootProject.file("..")
     commandLine "node_modules/.bin/fetch-binding-layer", "--platform", "android"
-}.standardOutput.asText.map { it.trim().split("\n") }
+}.standardOutput.asText.map { it.trim().split("\n")[0] }
 repositories {
-    maven { url = uri(bindingLayer.get()[0]) }
+    exclusiveContent {
+        forRepository {
+            maven { url = bindingLayerRepository.map { uri(it) } }
+        }
+        filter { includeGroup(bindingLayerCoordinate.split(":")[0]) }
+    }
 }
 dependencies {
-    implementation(bindingLayer.get()[1])
+    implementation(bindingLayerCoordinate)
 }
 ```
 
