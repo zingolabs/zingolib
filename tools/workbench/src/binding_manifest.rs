@@ -102,13 +102,6 @@ pub struct Entry {
     pub audited: Vec<AuditedCrate>,
 }
 
-fn is_hex(text: &str, length: usize) -> bool {
-    text.len() == length
-        && text
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
 fn hex_value(
     key: &str,
     value: &str,
@@ -116,7 +109,7 @@ fn hex_value(
     length: usize,
     expected: &str,
 ) -> Result<String, Vec<String>> {
-    if is_hex(hex, length) {
+    if short_commit::is_hex(hex, length) {
         Ok(value.to_string())
     } else {
         Err(vec![format!(
