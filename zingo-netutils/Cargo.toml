@@ -70,11 +70,9 @@ nym-socks5-proxy-helpers = { version = "1.21.4", optional = true }
 futures-channel = { version = "0.3", optional = true }
 
 # The following are not needed as direct dependencies.
-# We need to pin specific versions, features, etc,
+# We need to pin specific versions,
 # as nym-sdk is only at version 1.21.6, and
 # newer versions of its dependencies broke semver guarentees and removed needed aliases
-#
-# TODO: these should all be optional behind the nym feature
 nym-client-core-config-types = {version = "=1.21.6", optional = true }
 nym-crypto = {version = "=1.21.6", optional = true }
 nym-sphinx-types = {version = "=1.21.6", optional = true }

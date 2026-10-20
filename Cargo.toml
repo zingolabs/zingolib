@@ -191,13 +191,3 @@ codegen-units = 1
 overflow-checks = true
 panic = "unwind"
 opt-level = "z"
-
-[patch.crates-io]
-# ADR 0021 (zingolib#2531, amended 2026-08-10): this workspace's nym-stack
-# TLS verifies against the compiled-in Mozilla bundle instead of
-# rustls-platform-verifier's OS-trust-store integration, keeping
-# verification byte-identical on every platform and the workspace free of
-# hand-written unsafe. The stand-in lives in this workspace under the
-# upstream crate's name; see the ADR for the update policy that keeps it
-# tracking upstream.
-# rustls-platform-verifier = { path = "webpki-verifier-shim" }
