@@ -278,22 +278,56 @@ impl WalletConfig {
     }
 }
 
-/// Constructs an `http::Uri` from `server`, adding an `http://` prefix and a
-/// `:9067` port when they are missing.
+/// The port an `https` URI names when it carries none.
+pub const HTTPS_DEFAULT_PORT: u16 = 443;
+/// The port an `http` URI names when it carries none.
+pub const HTTP_DEFAULT_PORT: u16 = 80;
+/// The scheme a bare `host[:port]` server string completes to: every
+/// indexer is reached over TLS.
+pub const DEFAULT_INDEXER_SCHEME: &str = "https";
+
+/// ```
+/// use zingolib::config::{construct_indexer_uri, HTTPS_DEFAULT_PORT, HTTP_DEFAULT_PORT};
+///
+/// // A bare host completes to https on the scheme's default port.
+/// let bare = construct_indexer_uri("mainnet.zainod.zingolabs.dev".to_string())?;
+/// assert_eq!(bare.scheme_str(), Some("https"));
+/// assert_eq!(bare.port_u16(), Some(HTTPS_DEFAULT_PORT));
+///
+/// // A scheme without a port gets that scheme's default port, path intact.
+/// let plain = construct_indexer_uri("http://127.0.0.1/lightwalletd".to_string())?;
+/// assert_eq!(plain.port_u16(), Some(HTTP_DEFAULT_PORT));
+/// assert_eq!(plain.path(), "/lightwalletd");
+///
+/// // An explicit port is never rewritten.
+/// let pinned = construct_indexer_uri("http://127.0.0.1:8137".to_string())?;
+/// assert_eq!(pinned.port_u16(), Some(8137));
+/// assert_eq!(pinned.scheme_str(), Some("http"));
+///
+/// // An empty string is the Indexerless URI.
+/// assert_eq!(construct_indexer_uri(String::new())?, http::Uri::default());
+/// # Ok::<(), http::uri::InvalidUri>(())
+/// ```
 pub fn construct_indexer_uri(server: String) -> Result<http::Uri, InvalidUri> {
     if server.is_empty() {
         return Ok(http::Uri::default());
     }
-    let mut s = if server.starts_with("http") {
+    let with_scheme = if server.contains("://") {
         server
     } else {
-        "http://".to_string() + &server
+        format!("{DEFAULT_INDEXER_SCHEME}://{server}")
     };
-    let uri: http::Uri = s.parse()?;
-    if uri.port().is_none() {
-        s += ":9067";
-    }
-    s.parse()
+    let uri: http::Uri = with_scheme.parse()?;
+    let (Some(scheme), Some(authority), None) = (uri.scheme_str(), uri.authority(), uri.port())
+    else {
+        return Ok(uri);
+    };
+    let port = match scheme {
+        "http" => HTTP_DEFAULT_PORT,
+        _ => HTTPS_DEFAULT_PORT,
+    };
+    let path_and_query = uri.path_and_query().map_or("", |path| path.as_str());
+    format!("{scheme}://{authority}:{port}{path_and_query}").parse()
 }
 
 /// Configuration data for the construction of a [`crate::lightclient::LightClient`].
