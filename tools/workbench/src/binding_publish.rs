@@ -13,7 +13,7 @@ const SHAPES: [(&str, &str); 2] = [
     (binding_manifest::IOS, GZIP_MEDIA_TYPE),
 ];
 const TAR: &str = "tar";
-const TAR_ARGS: [&str; 3] = ["--create", "--gzip", "--file"];
+const TAR_ARGS: [&str; 4] = ["--create", "--gzip", "--format=pax", "--file"];
 const PACKAGE_STAGING_SUFFIX: &str = "-package";
 const PUSH_ATTEMPTS: usize = 2;
 const COMMIT_MESSAGE_PREFIX: &str = "chore(bindings): record the publication of ";
