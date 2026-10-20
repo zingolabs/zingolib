@@ -8,11 +8,11 @@ use bip0039::Mnemonic;
 use pepper_sync::sync::MAX_REORG_ALLOWANCE;
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::consensus::{BlockHeight, Parameters};
+use zcash_protocol::consensus::BlockHeight;
 use zcash_transparent::keys::NonHardenedChildIndex;
 
 use pepper_sync::keys::transparent::{TransparentScope, encode_address};
-use pepper_sync::wallet::{KeyIdInterface, ScanTarget, ShardTrees};
+use pepper_sync::wallet::{KeyIdInterface, PoolActivation, ScanTarget, ShardTrees};
 use pepper_sync::{
     keys::transparent::TransparentAddressId,
     wallet::{NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
@@ -256,10 +256,12 @@ impl LightWallet {
     /// - Raises `birthday` to the chain's Sapling activation height and keeps the given height in `birthday_adjusted_from`.
     /// - Sets `save_required` when it raises.
     fn raise_birthday_to_sapling_activation(&mut self) {
-        let sapling_activation_height = self
-            .chain_type
-            .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
-            .expect("every ChainType names a Sapling activation height");
+        let Some(sapling_activation) =
+            PoolActivation::of(&self.chain_type, zcash_protocol::ShieldedPool::Sapling)
+        else {
+            return;
+        };
+        let sapling_activation_height = sapling_activation.height();
         if self.birthday < sapling_activation_height {
             self.birthday_adjusted_from = Some(self.birthday);
             self.birthday = sapling_activation_height;
