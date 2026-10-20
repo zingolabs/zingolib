@@ -14,7 +14,8 @@ const { values, positionals } = parseArgs({
     pin: { type: 'string' },
   },
 });
-const path = pinPath(resolve(values.root), values.pin);
+const root = resolve(values.root);
+const path = pinPath(root, values.pin);
 const current = await readPin(path);
 const outcome =
   current.kind === 'malformedPin'
@@ -31,8 +32,9 @@ if (outcome.kind !== 'moved') {
 } else {
   await writePin(path, outcome.pin);
   for (const [platform, digest] of Object.entries(outcome.pin.digests)) {
+    const coordinate = outcome.pin.coordinates[platform];
     process.stdout.write(
-      `${platform} ${outcome.descriptors[platform]} ${digest}\n`,
+      `${platform} ${digest}${coordinate ? ` ${coordinate}` : ''}\n`,
     );
   }
 }
