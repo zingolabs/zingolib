@@ -2854,6 +2854,94 @@ async fn store_all_checkpoints_in_verification_window_on_the_mock_chain() {
     }
 }
 
+/// A session stopped between the loads of one scan task leaves the wallet able to spend: the last processed load
+/// placed a checkpoint on its last block in every pool, the proposal anchors there, and the next session completes
+/// the task.
+#[tokio::test]
+async fn a_session_stopped_between_the_loads_of_a_task_spends_from_the_last_load() {
+    // at the lowest performance level a load holds 2048 outputs, so four filler blocks fill a load and the rest of
+    // the chain splits into further loads whose scan outlasts the stop
+    const FILLER_ACTIONS_PER_BLOCK: usize = 512;
+    const FILLER_BLOCKS: u32 = 48;
+    const FUNDING: u64 = 100_000;
+    const PAYMENT: u64 = 20_000;
+    // the funding minus the payment and its 10_000 one-orchard-spend, two-logical-action ZIP-317 fee
+    const REMAINING: u64 = FUNDING - PAYMENT - 10_000;
+
+    let mut net = MockNet::launch().await;
+    let mut settings = crate::testutils::default_test_wallet_settings();
+    settings.sync_config.performance_level = pepper_sync::config::PerformanceLevel::Low;
+    let mut recipient = net.client(HOSPITAL_MUSEUM, Some(settings)).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, FUNDING)], 0).await;
+    {
+        let mut chain = net.chain.write().await;
+        for _ in 0..FILLER_BLOCKS {
+            chain.mine_filler_orchard_block(FILLER_ACTIONS_PER_BLOCK);
+        }
+    }
+    let tip = net.chain.read().await.tip();
+
+    recipient.sync().await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        loop {
+            if recipient
+                .wallet()
+                .read()
+                .await
+                .sync_state
+                .scan_ranges()
+                .iter()
+                .any(|range| range.priority() == pepper_sync::sync::ScanPriority::Scanned)
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the first load is processed");
+    recipient.stop_sync().unwrap();
+    recipient.await_sync().await.unwrap();
+
+    let highest_scanned_height = recipient
+        .wallet()
+        .read()
+        .await
+        .sync_state
+        .highest_scanned_height()
+        .unwrap();
+    assert!(
+        highest_scanned_height < BlockHeight::from_u32(tip),
+        "the session must stop before the task completes, raise FILLER_BLOCKS if it does not"
+    );
+    {
+        let wallet = recipient.wallet().read().await;
+        let shard_trees = &wallet.shard_trees;
+        let last_scanned = u32::from(highest_scanned_height);
+        assert!(checkpoint_exists(shard_trees.sapling.store(), last_scanned));
+        assert!(checkpoint_exists(shard_trees.orchard.store(), last_scanned));
+        assert!(checkpoint_exists(
+            shard_trees.ironwood.store(),
+            last_scanned
+        ));
+    }
+
+    from_inputs::quick_send(
+        &mut recipient,
+        vec![(
+            &synthetic_wallet::external_address(PoolType::ORCHARD),
+            PAYMENT,
+            None,
+        )],
+    )
+    .await
+    .expect("the stopped wallet spends from the last processed load");
+
+    net.chain.write().await.mine_mempool();
+    recipient.sync_and_await().await.unwrap();
+    check_client_balances!(recipient, i: REMAINING o: 0 s: 0 t: 0);
+}
+
 mod strict_chain {
     use std::time::Duration;
 

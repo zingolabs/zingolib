@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `testutils::mock_indexer::MockChain::mine_filler_orchard_block` mines a block
+  of orchard actions no wallet decrypts, so a scan task over the mock chain
+  splits into loads by output count.
 - `data::PollReport::from_join` maps a tokio join outcome to a `PollReport`: a
   finished task is `Ready`, a panicked task is `Panicked` with the panic's
   message, and a cancelled task is `Panicked` with tokio's description.
