@@ -32,9 +32,9 @@ tokio-stream = { workspace = true, optional = true }
 # backend). This workspace otherwise uses aws-lc-rs only. The ring is a ratified,
 # unavoidable transitive exception (ADR 0011), confined to this standalone nym
 # build and never the main wallet lock; upstream removal is tracked separately.
-nym-sdk = { version = "1.21.2", optional = true }
-nym-http-api-client = { version = "1.21.3", optional = true }
-nym-validator-client = { version = "1.21.3", optional = true, default-features = false, features = [
+nym-sdk = { version = "1.21.6", optional = true }
+nym-http-api-client = { version = "=1.21.6", optional = true }
+nym-validator-client = { version = "1.21.6", optional = true, default-features = false, features = [
     "http-client",
 ] }
 tokio-socks = { version = "0.5", optional = true }
@@ -71,14 +71,20 @@ futures-channel = { version = "0.3", optional = true }
 
 # The following are not needed as direct dependencies.
 # We need to pin specific versions, features, etc,
-# as 1.22.2 broke semver guarentees and removed needed aliases
-nym-client-core-config-types = "=1.22.1"
-nym-crypto = "=1.22.1"
-nym-sphinx-types = "=1.22.1"
-nym-client-core = "=1.21.6"
-# Exact version number not needed. Semver violation
-# was feature-gating of needed code
-nym-bandwidth-fetcher = { version = "1.22.1", features = ["credentials"] }
+# as nym-sdk is only at version 1.21.6, and
+# newer versions of its dependencies broke semver guarentees and removed needed aliases
+#
+# TODO: these should all be optional behind the nym feature
+nym-client-core-config-types = {version = "=1.21.6", optional = true }
+nym-crypto = {version = "=1.21.6", optional = true }
+nym-sphinx-types = {version = "=1.21.6", optional = true }
+nym-sphinx = {version = "=1.21.6", optional = true }
+nym-statistics-common = {version = "=1.21.6", optional = true }
+nym-client-core = {version = "=1.21.6", optional = true }
+nym-topology = {version = "=1.21.6", optional = true }
+nym-bandwidth-fetcher = {version = "=1.21.6", optional = true }
+nym-coconut-dkg-common = {version = "=1.21.6", optional = true }
+nym-lp-data = {version = "=1.21.6", optional = true }
 
 [features]
 globally-public-transparent = ["dep:tokio-stream"]
@@ -128,6 +134,17 @@ nym = [
     # zingo-net-diag records (issue #2562). Std-only and zero-dependency, so
     # it resolves in this crate's own lockfile without coupling.
     "dep:zingo-net-diag",
+    # The following are pinned versions, we don't directly depend on them
+    "dep:nym-client-core-config-types",
+    "dep:nym-crypto",
+    "dep:nym-sphinx-types",
+    "dep:nym-sphinx",
+    "dep:nym-statistics-common",
+    "dep:nym-client-core",
+    "dep:nym-topology",
+    "dep:nym-bandwidth-fetcher",
+    "dep:nym-coconut-dkg-common",
+    "dep:nym-lp-data",
 ]
 
 # The spawnable mixnet proxy process (ADR 0011, consumption model A). Built
