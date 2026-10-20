@@ -52,10 +52,7 @@ fn bundle(args: &[String]) -> Result<PathBuf, Vec<String>> {
         return Err(vec![format!("cargo build of nym-proxy failed ({status})")]);
     }
 
-    let source = root
-        .join("zingo-netutils/target")
-        .join(profile)
-        .join(&binary);
+    let source = root.join("target").join(profile).join(&binary);
     if !source.is_file() {
         return Err(vec![format!(
             "built binary not found at {}",

@@ -1,10 +1,10 @@
 use std::path::Path;
 
-use crate::{at_path, MANIFEST};
+use crate::{MANIFEST, at_path};
 
 pub const MOBILE_PROFILE: &str = "mobile";
 
-pub const PROXY_WORKSPACE_MANIFEST: &str = "zingo-netutils/Cargo.toml";
+pub const PROXY_WORKSPACE_MANIFEST: &str = "Cargo.toml";
 
 pub const WALLET_WORKSPACE: &str = "wallet";
 
@@ -115,7 +115,7 @@ pub fn profile_panic_strategy(
             None => {
                 return Err(vec![format!(
                     "{manifest_name} defines no profile.{current}, and it is not a built-in profile"
-                )])
+                )]);
             }
         }
     }
@@ -144,7 +144,7 @@ mod tests {
     use std::path::Path;
     use std::process::Command;
 
-    use super::{mobile_strategies, profile_panic_strategy, PanicStrategy, WorkspaceStrategy};
+    use super::{PanicStrategy, WorkspaceStrategy, mobile_strategies, profile_panic_strategy};
     use crate::{refused, repo_root, scratch_dir, utf8};
 
     const MANIFEST_NAME: &str = "Cargo.toml";
