@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- `sync::MAX_REORG_ALLOWANCE` is 1000, following zebra's
+  `MAX_BLOCK_REORG_HEIGHT`, which zebra 5.2.0 raised from 100 and has kept
+  since. A re-org up to 1000 blocks deep is truncated and scanned again,
+  where a re-org deeper than 100 blocks cleared the wallet's chain data
+  before. The wallet keeps the wallet blocks and, through
+  `SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE` and `MAX_SHARDTREE_CHECKPOINTS`,
+  the shard tree checkpoints of the last 1000 scanned blocks, and
+  transparent address discovery searches the 1000 blocks below the last
+  known chain height at the start of a sync session. A wallet whose last
+  known chain height is more than 1000 blocks above the server's chain
+  height returns `SyncError::ChainError`, where the bound was 100.
 - Scanning places a shard tree checkpoint only on the blocks the wallet
   will hold one for: the top `SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE`
   blocks of a range scanned above the highest scanned height, the blocks of

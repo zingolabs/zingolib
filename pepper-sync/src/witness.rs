@@ -573,6 +573,8 @@ mod tests {
         use super::*;
 
         const HIGHEST_SCANNED: u32 = 10_000;
+        // twice the window, so a range holds blocks below its top window
+        const RANGE_LENGTH: u32 = 2 * SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 
         fn heights(
             block_range: Range<u32>,
@@ -592,7 +594,7 @@ mod tests {
         /// A range above the highest scanned height holds checkpoints for its top window of blocks.
         #[test]
         fn a_range_above_the_highest_scanned_height_checkpoints_its_top_window() {
-            let range = HIGHEST_SCANNED + 1_000..HIGHEST_SCANNED + 2_000;
+            let range = HIGHEST_SCANNED + 1_000..HIGHEST_SCANNED + 1_000 + RANGE_LENGTH;
 
             assert_eq!(
                 heights(range.clone(), HIGHEST_SCANNED, None),
@@ -627,12 +629,15 @@ mod tests {
         /// else is.
         #[test]
         fn anchor_boundaries_in_the_retention_window_are_held() {
-            const INTERVAL: u32 = 50;
+            // the retention span of ANCHOR_RETENTION_INTERVALS intervals must reach below the top window for
+            // a boundary to be held there
+            const INTERVAL: u32 =
+                2 * SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE.div_ceil(ANCHOR_RETENTION_INTERVALS);
             let policy = AnchorRetention::new(
                 BlockHeight::from_u32(1),
                 AnchorRetentionInterval::custom(NonZeroU32::new(INTERVAL).expect("nonzero")),
             );
-            let range = HIGHEST_SCANNED + 1_000..HIGHEST_SCANNED + 2_000;
+            let range = HIGHEST_SCANNED + 1_000..HIGHEST_SCANNED + 1_000 + RANGE_LENGTH;
             let top_window = range.end - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE..range.end;
             let retention_window =
                 anchor_retention_window(&policy, BlockHeight::from_u32(range.end - 1));
@@ -653,6 +658,17 @@ mod tests {
     /// them.
     #[test]
     fn pinned_boundaries_survive_pruning_until_released() {
+        const INTERVAL: u32 = 144;
+        // holds the four boundaries the assertions name
+        const HEIGHTS_WITH_BOUNDARIES: u32 = 600;
+        const TOP: u32 = SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + HEIGHTS_WITH_BOUNDARIES;
+        // a pinned boundary inside the rolling window holds no rolling slot, so the window spans up to one
+        // more height per boundary it crosses
+        const OLDEST_ROLLING: u32 = TOP
+            - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE
+            - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE / INTERVAL
+            - 1;
+
         let policy =
             AnchorRetention::new(BlockHeight::from_u32(1), AnchorRetentionInterval::default());
         let mut tree = empty_shard_tree::<
@@ -661,7 +677,7 @@ mod tests {
             SHARD_HEIGHT,
         >();
 
-        for height in 1..=600u32 {
+        for height in 1..=TOP {
             let height = BlockHeight::from_u32(height);
             if policy.retains(height) {
                 tree.store_mut()
@@ -684,9 +700,9 @@ mod tests {
         let count = tree.store().checkpoint_count().expect("infallible");
         tree.store()
             .for_each_checkpoint(count, |id, _| {
-                if u32::from(*id) < 494 {
+                if u32::from(*id) < OLDEST_ROLLING {
                     assert_eq!(
-                        u32::from(*id) % 144,
+                        u32::from(*id) % INTERVAL,
                         0,
                         "old checkpoint {id} is not a boundary"
                     );
@@ -710,7 +726,7 @@ mod tests {
         let window = anchor_retention_window(&policy, BlockHeight::from_u32(1200));
         assert_eq!(*window.start(), BlockHeight::from_u32(336));
         repin_anchor_checkpoints(&policy, &window, tree.store_mut());
-        tree.append_checkpoint(BlockHeight::from_u32(601))
+        tree.append_checkpoint(BlockHeight::from_u32(TOP + 1))
             .expect("infallible");
         assert!(!checkpoint_exists(tree.store(), 144));
         assert!(!checkpoint_exists(tree.store(), 288));

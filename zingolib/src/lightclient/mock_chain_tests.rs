@@ -2832,7 +2832,10 @@ async fn store_all_checkpoints_in_verification_window_on_the_mock_chain() {
     recipient.sync_and_await().await.unwrap();
 
     let tip = net.chain.read().await.tip();
-    let window_start = tip - pepper_sync::sync::MAX_REORG_ALLOWANCE + 1;
+    // the chain is shorter than the re-org allowance, so the window reaches the birthday
+    let window_start = tip
+        .saturating_sub(pepper_sync::sync::MAX_REORG_ALLOWANCE - 1)
+        .max(MockNet::DEFAULT_BIRTHDAY);
     let wallet = recipient.wallet().read().await;
     let shard_trees = &wallet.shard_trees;
     for height in window_start..=tip {

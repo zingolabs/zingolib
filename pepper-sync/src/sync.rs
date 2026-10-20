@@ -62,12 +62,13 @@ pub mod truncate;
 /// The deepest chain reorganization the wallet tolerates, and the
 /// repository's single source of truth for that depth. It mirrors the
 /// validator's finalization boundary, zebra's
-/// `zebra_state::MAX_BLOCK_REORG_HEIGHT` (100), below which blocks are
-/// final and no deeper reorg can occur. Zebra crates are not
-/// dependencies of this workspace, so the value is pinned to its
-/// upstream by documentation rather than import. If zebra ever moves
-/// its boundary, this constant is the one place that follows it.
-pub const MAX_REORG_ALLOWANCE: u32 = 100;
+/// `zebra_chain::parameters::constants::MAX_BLOCK_REORG_HEIGHT` (1000 since
+/// zebra 5.2.0), the depth below its tip at which zebra finalizes a block
+/// and follows no fork beneath it. Zebra crates are not dependencies of
+/// this workspace, so the value is pinned to its upstream by documentation
+/// rather than import. If zebra ever moves its boundary, this constant is
+/// the one place that follows it.
+pub const MAX_REORG_ALLOWANCE: u32 = 1000;
 
 /// The maximum number of checkpoints in the rolling window for re-org handling and chain tip anchor spends.
 pub const SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE: u32 = MAX_REORG_ALLOWANCE + 1;
@@ -4600,9 +4601,11 @@ mod test {
             use super::*;
             #[tokio::test]
             async fn above_allowance() {
-                const LAST_KNOWN_HEIGHT: BlockHeight = BlockHeight::from_u32(211);
+                // the scan range ends one above the last known chain height, which sits the whole allowance
+                // above the chain height
+                let last_known_height = DEFAULT_CHAIN_HEIGHT + MAX_REORG_ALLOWANCE + 1;
                 let lkch = vec![ScanRange::from_parts(
-                    DEFAULT_START_HEIGHT..LAST_KNOWN_HEIGHT,
+                    DEFAULT_START_HEIGHT..last_known_height,
                     crate::sync::ScanPriority::Scanned,
                 )];
                 let state = SyncState {
@@ -4618,7 +4621,7 @@ mod test {
                         e.to_string(),
                         format!(
                             "wallet height {} is more than {} blocks ahead of best chain height {}",
-                            LAST_KNOWN_HEIGHT - 1,
+                            last_known_height - 1,
                             MAX_REORG_ALLOWANCE,
                             DEFAULT_CHAIN_HEIGHT
                         )

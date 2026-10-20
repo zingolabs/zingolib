@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from `await_sync` and from the launch wait in `sync`.
 
 ### Changed
+- `wallet::legacy::MAX_REORG` follows `pepper_sync::sync::MAX_REORG_ALLOWANCE`
+  to 1000, so a legacy witness tree keeps 1000 checkpoints, and
+  `LightWallet::clear_all` re-targets only the transactions confirmed more
+  than 1000 blocks below the last known chain height.
 - **Breaking:** `data::PollReport` gains the `Panicked(String)` variant, which
   `poll_sync` returns when the sync task panicked and tokio contained the
   panic. Every exhaustive match on `PollReport` needs an arm for it.
