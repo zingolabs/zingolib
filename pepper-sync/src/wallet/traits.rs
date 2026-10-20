@@ -258,14 +258,16 @@ pub trait SyncShardTrees: SyncWallet {
 
     /// Update wallet shard trees with new shard tree data.
     ///
-    /// `highest_scanned_height` is the height of the highest scanned block in the wallet not including the `scan_range` we are updating.
+    /// `scan_horizon` is the highest block the wallet holds as scanned once the task of `scan_range` completes: the
+    /// greater of its highest scanned block when the task was selected and the task's last block. The scan placed
+    /// the leaf checkpoints of the located trees from the same horizon.
     #[allow(clippy::too_many_arguments)]
     fn update_shard_trees(
         &mut self,
         consensus_parameters: &(impl consensus::Parameters + Sync),
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         scan_range: &ScanRange,
-        highest_scanned_height: BlockHeight,
+        scan_horizon: BlockHeight,
         anchor_retention: Option<AnchorRetention>,
         sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
         orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
@@ -283,15 +285,14 @@ pub trait SyncShardTrees: SyncWallet {
             // the scan placed a leaf checkpoint on exactly these heights, so a block the located trees hold no
             // checkpoint for left the pool's tree unchanged.
             let anchor_retention_window = anchor_retention.as_ref().map(|retention| {
-                let as_of = std::cmp::max(highest_scanned_height, scan_range.block_range().end - 1);
                 (
                     retention,
-                    witness::anchor_retention_window(retention, as_of),
+                    witness::anchor_retention_window(retention, scan_horizon),
                 )
             });
             let checkpoint_heights = witness::checkpoint_heights(
                 scan_range.block_range(),
-                highest_scanned_height,
+                scan_horizon,
                 anchor_retention.as_ref(),
             );
 

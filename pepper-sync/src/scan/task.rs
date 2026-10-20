@@ -845,6 +845,7 @@ where
                 let load = ScanLoad {
                     task_id: scan_task.task_id,
                     scan_range: scan_task.scan_range.clone(),
+                    scan_horizon: scan_task.scan_horizon,
                 };
                 let scan_results = scan(
                     fetch_request_sender.clone(),
@@ -929,6 +930,8 @@ impl TaskId {
 pub(crate) struct ScanLoad {
     pub(crate) task_id: TaskId,
     pub(crate) scan_range: ScanRange,
+    // the horizon the task hung the load's checkpoint window from, for the shard tree update to look there
+    pub(crate) scan_horizon: BlockHeight,
 }
 
 // a held result occupies the place of the compact blocks its lower load's worker still holds, so the loads in
@@ -1007,9 +1010,11 @@ pub(crate) struct ScanTask {
     pub(crate) transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
     pub(crate) transparent_gap_addresses: HashMap<String, TransparentAddressId>,
     pub(crate) transparent_scan_floor: BlockHeight,
-    // the wallet's highest scanned block when the task was selected, which places the checkpoint window of each
-    // load where the shard tree update will look for it.
-    pub(crate) highest_scanned_height: BlockHeight,
+    // the highest block the wallet holds as scanned once the task completes: the greater of its highest scanned
+    // block when the task was selected and the task's last block. the checkpoint window of every load hangs from
+    // it, so the loads below the task's top window place no checkpoint for the next load to prune, and the shard
+    // tree update looks where the scan placed them.
+    pub(crate) scan_horizon: BlockHeight,
 }
 
 impl ScanTask {
@@ -1025,6 +1030,7 @@ impl ScanTask {
         transparent_scan_floor: BlockHeight,
         highest_scanned_height: BlockHeight,
     ) -> Self {
+        let scan_horizon = std::cmp::max(highest_scanned_height, scan_range.block_range().end - 1);
         Self {
             task_id,
             compact_blocks: Vec::new(),
@@ -1035,7 +1041,7 @@ impl ScanTask {
             transparent_inuse_addresses,
             transparent_gap_addresses,
             transparent_scan_floor,
-            highest_scanned_height,
+            scan_horizon,
         }
     }
 
@@ -1107,7 +1113,7 @@ impl ScanTask {
                 transparent_inuse_addresses: self.transparent_inuse_addresses.clone(),
                 transparent_gap_addresses: self.transparent_gap_addresses.clone(),
                 transparent_scan_floor: self.transparent_scan_floor,
-                highest_scanned_height: self.highest_scanned_height,
+                scan_horizon: self.scan_horizon,
             },
             ScanTask {
                 task_id: self.task_id,
@@ -1122,7 +1128,7 @@ impl ScanTask {
                 transparent_inuse_addresses: self.transparent_inuse_addresses,
                 transparent_gap_addresses: self.transparent_gap_addresses,
                 transparent_scan_floor: self.transparent_scan_floor,
-                highest_scanned_height: self.highest_scanned_height,
+                scan_horizon: self.scan_horizon,
             },
         ))
     }
@@ -1284,6 +1290,7 @@ mod tests {
                 BlockHeight::from_u32(start)..BlockHeight::from_u32(end),
                 ScanPriority::ChainTip,
             ),
+            scan_horizon: BlockHeight::from_u32(end - 1),
         }
     }
 

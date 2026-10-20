@@ -1519,6 +1519,7 @@ where
     let ScanLoad {
         task_id,
         scan_range,
+        scan_horizon,
     } = load;
     let task = in_flight_tasks
         .get(&task_id)
@@ -1750,6 +1751,7 @@ where
                     fetch_request_sender,
                     ufvks,
                     &scan_range,
+                    scan_horizon,
                     if map_nullifiers {
                         Some(&mut nullifiers)
                     } else {
@@ -2384,6 +2386,7 @@ async fn update_wallet_data<W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: &ScanRange,
+    scan_horizon: BlockHeight,
     nullifiers: Option<&mut NullifierMap>,
     outpoints: &mut BTreeMap<OutputId, ScanTarget>,
     mut transactions: HashMap<TxId, WalletTransaction>,
@@ -2401,12 +2404,6 @@ where
         + SyncShardTrees
         + Send,
 {
-    let highest_scanned_height = wallet
-        .get_sync_state()
-        .map_err(SyncError::WalletError)?
-        .highest_scanned_height()
-        .expect("scan ranges should not be empty in this scope");
-
     // the updates that may fail are applied before any other, so a failure leaves the wallet without the rest of
     // the scan results. address discovery only adds addresses of the wallet's own keys, and the shard trees fetch
     // every checkpoint they are missing before they are updated.
@@ -2418,7 +2415,7 @@ where
             consensus_parameters,
             fetch_request_sender,
             scan_range,
-            highest_scanned_height,
+            scan_horizon,
             witness::anchor_retention_policy(consensus_parameters),
             sapling_located_trees,
             orchard_located_trees,
@@ -5073,6 +5070,7 @@ mod test {
                 &HashMap::new(),
                 ScanLoad {
                     task_id,
+                    scan_horizon: scan_range.block_range().end - 1,
                     scan_range,
                 },
                 &in_flight_tasks,
@@ -5201,7 +5199,7 @@ mod test {
         const ORCHARD_TREE_SIZE: u64 = 3;
 
         /// Updates the wallet's shard trees with the scan of the two blocks above the highest scanned height, which
-        /// hold no note commitments of any pool.
+        /// hold no note commitments of any pool. The task's horizon is its last block.
         async fn update_shard_trees(
             wallet: &mut MockWallet,
             fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
@@ -5215,7 +5213,7 @@ mod test {
                             ..BlockHeight::from_u32(SECOND_SCANNED_BLOCK + 1),
                         ScanPriority::ChainTip,
                     ),
-                    BlockHeight::from_u32(HIGHEST_SCANNED),
+                    BlockHeight::from_u32(SECOND_SCANNED_BLOCK),
                     None,
                     Vec::new(),
                     Vec::new(),
@@ -5696,6 +5694,7 @@ mod test {
                 &ufvks,
                 ScanLoad {
                     task_id,
+                    scan_horizon: scan_range.block_range().end - 1,
                     scan_range,
                 },
                 &in_flight_tasks,
@@ -6070,6 +6069,7 @@ mod test {
                 &HashMap::new(),
                 ScanLoad {
                     task_id,
+                    scan_horizon: scan_range.block_range().end - 1,
                     scan_range,
                 },
                 &in_flight_tasks,

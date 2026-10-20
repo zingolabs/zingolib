@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   known chain height at the start of a sync session. A wallet whose last
   known chain height is more than 1000 blocks above the server's chain
   height returns `SyncError::ChainError`, where the bound was 100.
+- BREAKING: `wallet::traits::SyncShardTrees::update_shard_trees` takes the
+  scan horizon of the load's task, the greater of the wallet's highest
+  scanned block when the task was selected and the task's last block, in
+  place of the wallet's highest scanned block. The checkpoint window of a
+  load hangs from that horizon on the scan side and the update side alike,
+  so the loads of a task below its top window place no checkpoint. Before,
+  every load of a task above the highest scanned height placed a full
+  window hanging from its own last block, which the next load's inserts
+  pruned, and the two sides could disagree once another task moved the
+  wallet's highest scanned block between a load's scan and its update.
 - Scanning places a shard tree checkpoint only on the blocks the wallet
   will hold one for: the top `SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE`
   blocks of a range scanned above the highest scanned height, the blocks of
