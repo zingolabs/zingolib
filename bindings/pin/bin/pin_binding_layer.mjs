@@ -34,7 +34,7 @@ if (outcome.kind !== 'moved') {
   for (const [platform, digest] of Object.entries(outcome.pin.digests)) {
     const coordinate = outcome.pin.coordinates[platform];
     process.stdout.write(
-      `${platform} ${outcome.descriptors[platform]} ${digest}${coordinate ? ` ${coordinate}` : ''}\n`,
+      `${platform} ${digest}${coordinate ? ` ${coordinate}` : ''}\n`,
     );
   }
 }

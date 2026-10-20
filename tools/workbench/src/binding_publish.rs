@@ -33,7 +33,6 @@ pub struct Credentials {
 
 struct Bundle {
     file: PathBuf,
-    descriptor: String,
     media_type: &'static str,
     coordinate: Option<String>,
 }
@@ -46,21 +45,11 @@ pub fn media_type_of(platform: &str) -> Result<&'static str, Vec<String>> {
         .ok_or_else(|| vec![format!("no bundle shape is known for {platform}")])
 }
 
-pub fn manifest_annotations(
-    commit: &str,
-    descriptor: &str,
-    coordinate: Option<&str>,
-) -> Vec<(String, String)> {
-    let mut annotations = vec![
-        (
-            binding_manifest::REVISION_ANNOTATION.to_string(),
-            commit.to_string(),
-        ),
-        (
-            binding_manifest::DESCRIPTOR_ANNOTATION.to_string(),
-            descriptor.to_string(),
-        ),
-    ];
+pub fn manifest_annotations(commit: &str, coordinate: Option<&str>) -> Vec<(String, String)> {
+    let mut annotations = vec![(
+        binding_manifest::REVISION_ANNOTATION.to_string(),
+        commit.to_string(),
+    )];
     annotations.extend(coordinate.map(|coordinate| {
         (
             binding_manifest::COORDINATE_ANNOTATION.to_string(),
@@ -145,7 +134,7 @@ fn push(
         &name,
         &bundle.file,
         bundle.media_type,
-        &manifest_annotations(commit, &bundle.descriptor, bundle.coordinate.as_deref()),
+        &manifest_annotations(commit, bundle.coordinate.as_deref()),
         &credentials.username,
         &credentials.token,
     )?;
@@ -169,15 +158,9 @@ fn credentials() -> Result<Credentials, Vec<String>> {
     })
 }
 
-/// - Reads the descriptor file under `dir`.
 /// - For iOS, moves `dir` under a sibling staging directory, writes the commit's `Package.swift`
 ///   beside it from `git show`, and runs `tar` as a child process to archive the package.
 fn bundle_of(root: &Path, platform: &str, dir: &Path, commit: &str) -> Result<Bundle, Vec<String>> {
-    let descriptor = crate::read(&find_file(dir, binding_layer::DESCRIPTOR_FILE, |name| {
-        name == binding_layer::DESCRIPTOR_FILE
-    })?)?
-    .trim()
-    .to_string();
     let media_type = media_type_of(platform)?;
     let (file, coordinate) = match platform {
         binding_manifest::ANDROID => {
@@ -189,7 +172,6 @@ fn bundle_of(root: &Path, platform: &str, dir: &Path, commit: &str) -> Result<Bu
     };
     Ok(Bundle {
         file,
-        descriptor,
         media_type,
         coordinate,
     })
@@ -359,29 +341,23 @@ mod tests {
     }
 
     #[test]
-    fn the_annotations_carry_the_commit_the_descriptor_and_the_coordinate_of_a_maven_bundle() {
+    fn the_annotations_carry_the_commit_and_the_coordinate_of_a_maven_bundle() {
         let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         let revision = (
             "org.opencontainers.image.revision".to_string(),
             commit.to_string(),
         );
-        let descriptor = (
-            "org.zingolabs.zingolib.descriptor".to_string(),
-            "zl_6.0.0_2691e".to_string(),
-        );
         assert_eq!(
-            manifest_annotations(commit, "zl_6.0.0_2691e", None),
-            [revision.clone(), descriptor.clone()]
+            manifest_annotations(commit, None),
+            std::slice::from_ref(&revision)
         );
         assert_eq!(
             manifest_annotations(
                 commit,
-                "zl_6.0.0_2691e",
                 Some("org.zingolabs:zingo-binding-layer:6.0.0-aaaaaaaaaaaaaaaa")
             ),
             [
                 revision,
-                descriptor,
                 (
                     "org.zingolabs.zingolib.coordinate".to_string(),
                     "org.zingolabs:zingo-binding-layer:6.0.0-aaaaaaaaaaaaaaaa".to_string()

@@ -50,8 +50,8 @@ repository the command takes the coordinate from the bundle's manifest, where
 zingolib's publish annotates it from the Maven metadata in the bundle, and
 writes it into the pin. The command downloads nothing, and it refuses a Maven
 bundle published before zingolib annotated the coordinate. It prints one line
-per platform: the platform, the descriptor, the digest, and the coordinate
-where there is one.
+per platform: the platform, the digest, and the coordinate where there is
+one.
 
 `fetch-binding-layer --platform <platform> [--check-tag]` prints the path of
 the pinned bundle, downloading it first when the checkout does not hold it.

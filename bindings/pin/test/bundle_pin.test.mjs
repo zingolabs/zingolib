@@ -34,7 +34,6 @@ function bundle(digest, revision, layer = { file: FILE, mediaType: ARCHIVE_MEDIA
     kind: 'bundle',
     digest,
     revision,
-    descriptor: 'zl_3.0.0_aaaaa',
     coordinate: COORDINATE,
     layers: [{ digest: LAYER, ...layer }],
   };
@@ -151,6 +150,25 @@ test('parsePin names the android coordinate when it is not group, artifact and v
     coordinates: { android: 'org.zingolabs:zingo-binding-layer' },
   });
   assert.deepEqual(parsePin(text), { kind: 'malformedPin', field: 'coordinates.android' });
+});
+
+test('parsePin names the android coordinate when its version names another commit', () => {
+  const text = JSON.stringify({
+    commit: COMMIT,
+    digests: { android: ANDROID },
+    coordinates: { android: 'org.zingolabs:zingo-binding-layer:6.0.0-cafecafecafecafe' },
+  });
+  assert.deepEqual(parsePin(text), { kind: 'malformedPin', field: 'coordinates.android' });
+});
+
+test('parsePin names the coordinates when the file holds null for them', () => {
+  const text = JSON.stringify({ commit: COMMIT, digests: { android: ANDROID }, coordinates: null });
+  assert.deepEqual(parsePin(text), {
+    kind: 'oldPin',
+    commit: COMMIT,
+    digests: { android: ANDROID },
+    coordinates: {},
+  });
 });
 
 test('parsePin names a coordinate of a platform without a Maven layout', () => {

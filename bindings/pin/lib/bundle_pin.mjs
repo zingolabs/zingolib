@@ -1,3 +1,5 @@
+import { versionNamesCommit } from './maven_repository.mjs';
+
 export const REGISTRY = 'ghcr.io';
 export const PLATFORMS = ['android', 'ios'];
 // The platforms whose bundle is a Maven repository, so whose pin carries the
@@ -29,7 +31,8 @@ export function parsePin(text) {
   } catch {
     return { kind: 'malformedPin', field: 'JSON' };
   }
-  const { commit, digests, coordinates = {} } = parsed ?? {};
+  const { commit, digests } = parsed ?? {};
+  const coordinates = parsed?.coordinates ?? {};
   if (!COMMIT.test(commit)) {
     return { kind: 'malformedPin', field: 'commit' };
   }
@@ -44,7 +47,8 @@ export function parsePin(text) {
   const unpaired = Object.keys(coordinates).find(
     platform =>
       !(MAVEN_PLATFORMS.includes(platform) && platform in digests) ||
-      !COORDINATE.test(coordinates[platform]),
+      !COORDINATE.test(coordinates[platform]) ||
+      !versionNamesCommit(coordinates[platform].split(':')[2], commit),
   );
   if (unpaired) {
     return { kind: 'malformedPin', field: `coordinates.${unpaired}` };
@@ -156,8 +160,5 @@ export async function movePin(current, commit, added, resolve) {
           .map(({ platform, found }) => [platform, found.coordinate]),
       ),
     },
-    descriptors: Object.fromEntries(
-      bundles.map(({ platform, found }) => [platform, found.descriptor]),
-    ),
   };
 }
