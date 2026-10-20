@@ -1,6 +1,9 @@
 use crate::binding_manifest;
 use std::path;
 
+#[path = "../../../zingolib/short_commit.rs"]
+pub mod short_commit;
+
 /// The language of the Android bindings.
 pub const KOTLIN: &str = "kotlin";
 
@@ -321,7 +324,7 @@ pub const MAVEN_ARTIFACT: &str = "zingo-binding-layer";
 pub const MAVEN_VERSION_PROPERTY: &str = "bindingLayerVersion";
 pub const MAVEN_METADATA_FILE: &str = "maven-metadata.xml";
 pub const MAVEN_PUBLISH_PLUGIN: &str = "maven-publish";
-pub const MAVEN_COMMIT_LENGTH: usize = 16;
+pub const MAVEN_COMMIT_LENGTH: usize = short_commit::LENGTH;
 const MAVEN_VERSION_SEPARATOR: &str = "-";
 const MAVEN_COMMIT_KEY: &str = "commit";
 pub const ABIS_OUTPUT: &str = "abis";
@@ -503,10 +506,12 @@ pub fn crate_version(manifest: &str) -> Result<String, Vec<String>> {
 
 pub fn maven_version(crate_version: &str, commit: &str) -> Result<String, Vec<String>> {
     let commit = binding_manifest::commit_value(MAVEN_COMMIT_KEY, commit.trim())?;
-    Ok(format!(
-        "{crate_version}{MAVEN_VERSION_SEPARATOR}{}",
-        &commit[..MAVEN_COMMIT_LENGTH]
-    ))
+    let short = short_commit::abbreviate(&commit).ok_or_else(|| {
+        vec![format!(
+            "{MAVEN_COMMIT_KEY} {commit} has no {MAVEN_COMMIT_LENGTH}-character abbreviation"
+        )]
+    })?;
+    Ok(format!("{crate_version}{MAVEN_VERSION_SEPARATOR}{short}"))
 }
 
 pub fn artifact_outputs(
@@ -753,6 +758,7 @@ mod tests {
             "const DESCRIPTOR_ENV: &str = \"{DESCRIPTOR_ENV}\";"
         )));
         assert!(build_script.contains("cargo:rustc-env={DESCRIPTOR_ENV}={description}"));
+        assert!(build_script.contains("#[path = \"short_commit.rs\"]\nmod short_commit;"));
     }
 
     #[test]
@@ -771,12 +777,12 @@ mod tests {
             ),
             script(
                 "zingolib#6.0.0",
-                "[[\"OTHER\",\"1\"],[\"ZINGOLIB_DESCRIPTOR\",\"zl_6.0.0_2691e\"]]"
+                "[[\"OTHER\",\"1\"],[\"ZINGOLIB_DESCRIPTOR\",\"zl_6.0.0_ba7336710419c9ac\"]]"
             )
         );
         assert_eq!(
             descriptor_in_messages(&messages),
-            Ok(Some("zl_6.0.0_2691e".to_string()))
+            Ok(Some("zl_6.0.0_ba7336710419c9ac".to_string()))
         );
         assert_eq!(
             descriptor_in_messages("{\"reason\":\"build-finished\",\"success\":true}\n"),
