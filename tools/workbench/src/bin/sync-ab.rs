@@ -36,6 +36,12 @@
 //! blocks affordable to measure, and it measures the early phase a user
 //! actually waits through.
 //!
+//! A run to completion passes `--waitsync`, which sets the session's sync
+//! to shut down once the wallet is up to date, so the span closes on its
+//! own. A continuous session would go on scanning each new block and
+//! never return. A bounded run leaves the sync continuous and stops it,
+//! since a session waiting for its sync reads no command until then.
+//!
 //! The wallet is the caller's too. `--seed` restores a named mnemonic in
 //! every arm, defaulting to a fundless one. A wallet with history decrypts
 //! notes where a fundless one only discards, so reproducing someone's
@@ -61,7 +67,7 @@
 use std::io::Write as _;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use workbench::session;
@@ -96,6 +102,9 @@ const SYNC_SPAN_CLOSE: &str = "SYNC_SPAN=close";
 
 /// The key on the closing marker carrying the outputs the span scanned.
 const SYNC_SPAN_OUTPUTS: &str = "outputs=";
+
+/// The word a span closes on when the sync failed.
+const SPAN_FAILED: &str = "err";
 
 /// The unit suffix the closing marker's duration carries.
 const MILLIS_SUFFIX: &str = "ms";
@@ -372,6 +381,19 @@ fn compare() -> Result<(), Vec<String>> {
         prepare(&root, &request.specs[1])?,
     ];
 
+    // A failed comparison leaves no checkout behind either: the arms are
+    // rebuilt from scratch by the next one anyway.
+    let measured = rounds(&mut arms, &request);
+    for arm in &arms {
+        retire(&root, &arm.worktree);
+    }
+    measured?;
+    report(&arms, request.seconds > 0);
+    Ok(())
+}
+
+/// Warms both arms up, then measures them in alternating rounds.
+fn rounds(arms: &mut [Arm; 2], request: &Request) -> Result<(), Vec<String>> {
     // The warm-up pays for each arm's build and is discarded: a first run
     // reads slower than its successors, and both arms deserve the same
     // treatment.
@@ -379,8 +401,8 @@ fn compare() -> Result<(), Vec<String>> {
         "sync-ab: warming up both arms at birthday {}",
         request.birthday
     );
-    for arm in &arms {
-        let _ = measure_again(arm, &request, WARMUP_BUDGET)?;
+    for arm in arms.iter() {
+        let _ = measure_again(arm, request, WARMUP_BUDGET)?;
     }
 
     for round in 1..=request.runs {
@@ -388,7 +410,7 @@ fn compare() -> Result<(), Vec<String>> {
         // falls on each arm equally instead of on whichever went last.
         let order: [usize; 2] = if round % 2 == 1 { [0, 1] } else { [1, 0] };
         for index in order {
-            let reading = measure_again(&arms[index], &request, RUN_BUDGET)?;
+            let reading = measure_again(&arms[index], request, RUN_BUDGET)?;
             eprintln!(
                 "sync-ab: {round}/{} {} boot {:.1}s, {:.0} outputs/s over {} outputs, \
                  peak RSS {}, wallet file {}",
@@ -408,11 +430,6 @@ fn compare() -> Result<(), Vec<String>> {
             arm.peaks.extend(reading.peak_rss);
             arm.wallet_files.extend(reading.wallet_file);
         }
-    }
-
-    report(&arms, request.seconds > 0);
-    for arm in &arms {
-        retire(&root, &arm.worktree);
     }
     Ok(())
 }
@@ -583,6 +600,13 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
     if arm.consents {
         command.arg("--online");
     }
+    // A run to completion asks the session to shut its sync down once the
+    // wallet is up to date, so the span closes on its own. A bounded run
+    // keeps the sync continuous and stops it, since a session waiting for
+    // its sync reads no command until then.
+    if request.seconds == 0 {
+        command.arg("--waitsync");
+    }
     let mut child = command
         .arg("--server")
         .arg(PINNED_INDEXER)
@@ -604,10 +628,7 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
     // A session that cannot consent never launches sync on its own, so it
     // is told to, the way the user does.
     if !arm.consents {
-        if let Some(stdin) = child.stdin.as_mut() {
-            let _ = writeln!(stdin, "sync run");
-            let _ = stdin.flush();
-        }
+        tell(&mut child, "sync run");
     }
 
     let spawned = Instant::now();
@@ -625,10 +646,7 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
         if !stopped && request.seconds > 0 {
             if let Some(at) = launched {
                 if at.elapsed() >= Duration::from_secs(request.seconds) {
-                    if let Some(stdin) = child.stdin.as_mut() {
-                        let _ = writeln!(stdin, "sync stop");
-                        let _ = stdin.flush();
-                    }
+                    tell(&mut child, "sync stop");
                     stopped = true;
                 }
             }
@@ -642,6 +660,11 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
                 )),
                 None => Err(vec!["the span closed without opening".to_string()]),
             };
+        }
+        // A span that closes on an error carries no count, and waiting for
+        // one would run the budget out on a failure already written down.
+        if failed_span(&log) {
+            break Err(vec![format!("the sync failed, see {}", log_path.display())]);
         }
         if let Ok(Some(status)) = child.try_wait() {
             break Err(vec![format!("the session exited early ({status})")]);
@@ -664,6 +687,15 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
         peak_rss,
         wallet_file,
     })
+}
+
+/// Writes one line to the session's prompt.
+/// - writes to the child's stdin
+fn tell(child: &mut Child, line: &str) {
+    if let Some(stdin) = child.stdin.as_mut() {
+        let _ = writeln!(stdin, "{line}");
+        let _ = stdin.flush();
+    }
 }
 
 /// The command that builds and launches one arm's CLI.
@@ -697,6 +729,13 @@ fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
         )]);
     }
     Ok(Command::new(arm.worktree.join("target/release/zingo-cli")))
+}
+
+/// Whether a span closed on an error, which the engine logs as `err`.
+fn failed_span(log: &str) -> bool {
+    log.split(SYNC_SPAN_CLOSE)
+        .skip(1)
+        .any(|tail| tail.split_whitespace().nth(1) == Some(SPAN_FAILED))
 }
 
 /// The engine's own duration and output count, from the closing line.
@@ -1089,6 +1128,18 @@ mod tests {
         );
         assert_eq!(closing_span("SYNC_SPAN=close 12"), None);
         assert_eq!(closing_span("SYNC_SPAN=close 1250ms err\n"), None);
+    }
+
+    /// HYPOTHESIS: a span that closed on an error is told apart from one
+    /// that finished, one still open, and one whose close is cut short.
+    #[test]
+    fn a_failed_close_is_read_as_a_failure() {
+        assert!(failed_span("INFO sync: SYNC_SPAN=close 137361ms err\n"));
+        assert!(!failed_span(
+            "INFO sync: SYNC_SPAN=close 1250ms ok outputs=8192\n"
+        ));
+        assert!(!failed_span("INFO sync: SYNC_SPAN=open\n"));
+        assert!(!failed_span("INFO sync: SYNC_SPAN=close 1250ms er"));
     }
 
     #[test]
