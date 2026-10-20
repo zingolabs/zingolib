@@ -82,7 +82,7 @@ jobs:
     env:
       ABI: ${{ matrix.abi }}
     steps:
-      # The zl_ descriptor names the release tag that points at HEAD.
+      # The zl_ descriptor carries the first sixteen characters of the commit at HEAD.
       - name: Checkout repository
         uses: actions/checkout@v6
         with:

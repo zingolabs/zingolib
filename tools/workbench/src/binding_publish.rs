@@ -310,7 +310,7 @@ mod tests {
     fn the_annotations_carry_the_commit_the_descriptor_and_the_file_name() {
         let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         assert_eq!(
-            manifest_annotations(commit, "zl_6.0.0_2691e"),
+            manifest_annotations(commit, "zl_6.0.0_aaaaaaaaaaaaaaaa"),
             [
                 (
                     "org.opencontainers.image.revision".to_string(),
@@ -318,7 +318,7 @@ mod tests {
                 ),
                 (
                     "org.zingolabs.zingolib.descriptor".to_string(),
-                    "zl_6.0.0_2691e".to_string()
+                    "zl_6.0.0_aaaaaaaaaaaaaaaa".to_string()
                 ),
             ]
         );

@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::binding_layer;
+use crate::binding_layer::short_commit;
 
 pub const BINARY: &str = "binding-manifest";
 pub const FILE: &str = "bindings/published.toml";
@@ -20,7 +21,7 @@ const COMMIT_KEY: &str = "commit";
 const SINCE_KEY: &str = "since";
 const AUDITED_KEY: &str = "audited";
 const QUOTE: char = '"';
-pub const COMMIT_LENGTH: usize = 40;
+pub const COMMIT_LENGTH: usize = short_commit::FULL_LENGTH;
 const COMMIT_EXPECTATION: &str = "a full lowercase commit hash";
 const DIGEST_PREFIX: &str = "sha256:";
 const DIGEST_HEX_LENGTH: usize = 64;

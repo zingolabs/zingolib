@@ -27,7 +27,7 @@ function bundle(digest, revision, layer = { file: FILE, mediaType: ARCHIVE_MEDIA
     kind: 'bundle',
     digest,
     revision,
-    descriptor: 'zl_3.0.0_aaaaa',
+    descriptor: 'zl_3.0.0_aaaaaaaaaaaaaaaa',
     layers: [{ digest: LAYER, ...layer }],
   };
 }
