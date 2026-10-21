@@ -8,12 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+<<<<<<< HEAD
 - `LightWallet::pending_op_return_deshield` reports the deshield txid of a
   stored OP_RETURN proposal that waits for `send_stored_proposal` to resume
   it.
 - `SendError::OpReturnResumePending`: `propose_send_with_op_return` returns it
   while such a proposal is stored, since a new proposal would drop the one
   the resume needs.
+=======
+- `testutils::mock_indexer::MockChain::mine_filler_orchard_block` mines a block
+  of orchard actions no wallet decrypts, so a scan task over the mock chain
+  splits into loads by output count.
+>>>>>>> origin/dev
 - `LightWallet::birthday_adjusted_from` reports the height a wallet was given
   when the wallet raised it to Sapling activation. It lives in memory for the
   process lifetime. `RecoveryInfo` and the FFI viewing-key report carry it as
@@ -26,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from `await_sync` and from the launch wait in `sync`.
 
 ### Changed
+- `wallet::legacy::MAX_REORG` follows `pepper_sync::sync::MAX_REORG_ALLOWANCE`
+  to 1000, so a legacy witness tree keeps 1000 checkpoints, and
+  `LightWallet::clear_all` re-targets only the transactions confirmed more
+  than 1000 blocks below the last known chain height.
 - **Breaking:** `LightWallet::new` and `LightWallet::read` raise a birthday
   below Sapling activation to the activation height instead of failing, and a
   raise on read marks the wallet for saving. `WalletError::BirthdayBelowSapling`
