@@ -1,7 +1,7 @@
 # The workbench tool binding-manifest reads bindings/published.toml and fails
-# when an entry is malformed, awaits `/publish`, names a commit this
-# repository lacks, changed after its merge, records audited crates that
-# `cargo metadata` at its commit does not report, or names a digest that the
+# when an entry is malformed or incomplete, names a commit this repository
+# lacks, changed after its merge, records audited crates that `cargo
+# metadata` at its commit does not report, or names a digest that the
 # registry does not serve for that commit.
 #
 # The check has its own workflow with no `paths` filter, for the reason
@@ -54,19 +54,11 @@ jobs:
       # published bundle. A branch's first push has no commit before it,
       # and a force-push names one the checkout no longer holds; the tool
       # checks every entry in both cases.
-      #
-      # On a pull request an entry that awaits `/publish` must name the
-      # base branch's head: `/publish` runs the workflow of that head and
-      # builds the entry's commit with that commit's own tool, and the two
-      # agree only when they are one commit. The tool names the head the
-      # entry must move to, so the pull request learns it before anyone
-      # comments.
       - name: Check bindings/published.toml
         env:
           BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || github.event.before }}
           ALL_DIGESTS: ${{ github.event_name == 'push' && '--all-digests' || '' }}
-          PUBLISH_AT: ${{ github.base_ref && format('--publish-at origin/{0}', github.base_ref) || '' }}
         run: |
           cargo run --manifest-path tools/workbench/Cargo.toml \
             --bin binding-manifest -- \
-            --check --base "$BASE" $ALL_DIGESTS $PUBLISH_AT
+            --check --base "$BASE" $ALL_DIGESTS
