@@ -81,9 +81,24 @@ fn bundle(args: &[String]) -> Result<PathBuf, Vec<String>> {
     let Some(dest_dir) = explicit_dest else {
         return Ok(source);
     };
+    // A relative --dest is read against the repo root, and both sides are
+    // canonicalized before the comparison, so any spelling of cargo's own
+    // directory takes the no-copy path.
+    let dest_dir = if dest_dir.is_absolute() {
+        dest_dir
+    } else {
+        root.join(dest_dir)
+    };
     std::fs::create_dir_all(&dest_dir)
         .map_err(|e| vec![format!("cannot create {}: {e}", dest_dir.display())])?;
-    if source.parent() == Some(dest_dir.as_path()) {
+    let canonical = |path: &std::path::Path| {
+        path.canonicalize()
+            .map_err(|e| vec![format!("cannot resolve {}: {e}", path.display())])
+    };
+    let source_dir = source
+        .parent()
+        .ok_or_else(|| vec![format!("{} has no parent directory", source.display())])?;
+    if canonical(source_dir)? == canonical(&dest_dir)? {
         return Ok(source);
     }
 
