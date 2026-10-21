@@ -156,14 +156,16 @@ fn push(
         &manifest_annotations(commit, bundle.coordinate.as_deref()),
         credentials,
     )?;
-    let seen = crate::orasust::resolve(&name)
-        .map_err(|_| vec![binding_manifest::private_package_hint(&name)])?;
-    if seen != digest {
-        return Err(vec![format!(
+    match orasust::resolve(&name)? {
+        orasust::Resolution::Found(seen) if seen == digest => Ok(digest),
+        orasust::Resolution::Found(seen) => Err(vec![format!(
             "{name} was pushed as {digest} and resolves anonymously to {seen}"
-        )]);
+        )]),
+        orasust::Resolution::Absent => Err(vec![format!(
+            "{name} was pushed as {digest} and resolves anonymously to nothing"
+        )]),
+        orasust::Resolution::Private => Err(vec![binding_manifest::private_package_hint(&name)]),
     }
-    Ok(digest)
 }
 
 /// - Reads `REGISTRY_USERNAME` and `REGISTRY_TOKEN` from the environment.
