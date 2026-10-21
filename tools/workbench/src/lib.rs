@@ -877,6 +877,49 @@ mod tests {
         Ok(())
     }
 
+    const VERIFIER_SHIM: &str = "rustls-platform-verifier";
+    const PACKAGE_KEY: &str = "package";
+    const NAME_KEY: &str = "name";
+    const SOURCE_KEY: &str = "source";
+
+    #[test]
+    fn the_verifier_shim_patch_is_in_effect() -> Result<(), Vec<String>> {
+        let lockfile = repo_root()?.join(LOCKFILE);
+        let text = at_path(&lockfile, "read", |path| std::fs::read_to_string(path))?;
+        let document: toml_edit::DocumentMut = text
+            .parse()
+            .map_err(|error| vec![format!("{} does not parse: {error}", lockfile.display())])?;
+        let packages = document
+            .get(PACKAGE_KEY)
+            .and_then(|item| item.as_array_of_tables())
+            .ok_or_else(|| {
+                vec![format!(
+                    "{} holds no [[package]] tables",
+                    lockfile.display()
+                )]
+            })?;
+        let verifiers: Vec<&toml_edit::Table> = packages
+            .iter()
+            .filter(|package| {
+                package.get(NAME_KEY).and_then(|name| name.as_str()) == Some(VERIFIER_SHIM)
+            })
+            .collect();
+        let shim = match verifiers.as_slice() {
+            [shim] => shim,
+            other => {
+                return Err(vec![format!(
+                    "the lockfile holds {} entries for {VERIFIER_SHIM}, not one: the zingo-adrs zingolib/0021 patch table is not in effect",
+                    other.len()
+                )]);
+            }
+        };
+        assert!(
+            shim.get(SOURCE_KEY).is_none(),
+            "the lockfile resolves {VERIFIER_SHIM} from a registry, so the zingo-adrs zingolib/0021 patch table is not in effect"
+        );
+        Ok(())
+    }
+
     #[test]
     fn a_deleted_file_resolves_through_its_nearest_existing_directory() -> Result<(), Vec<String>> {
         let root = repo_root()?;
