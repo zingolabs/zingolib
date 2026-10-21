@@ -427,7 +427,7 @@ fn plan(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
                 others.join(crate::LIST_SEPARATOR)
             )]);
         }
-        if pending.iter().any(|branch| *branch == own) {
+        if pending.contains(&own) {
             eprintln!(
                 "{ORIGIN} holds {own}, so the record phase reuses it and opens its pull request"
             );
