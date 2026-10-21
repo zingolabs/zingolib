@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::binding_changelog;
 use crate::binding_layer;
 use crate::binding_manifest;
-use crate::orasust::Credentials;
+use crate::orasust;
 
 pub const BINARY: &str = "binding-publish";
 pub const USERNAME_VARIABLE: &str = "REGISTRY_USERNAME";
@@ -146,7 +146,7 @@ fn push(
     platform: &str,
     commit: &str,
     bundle: &Bundle,
-    credentials: &Credentials,
+    credentials: &orasust::Credentials,
 ) -> Result<String, Vec<String>> {
     let name = binding_manifest::reference(platform, commit);
     let digest = crate::orasust::push(
@@ -167,15 +167,15 @@ fn push(
 }
 
 /// - Reads `REGISTRY_USERNAME` and `REGISTRY_TOKEN` from the environment.
-fn credentials_if_set() -> Option<Credentials> {
-    Some(Credentials {
+fn credentials_if_set() -> Option<orasust::Credentials> {
+    Some(orasust::Credentials {
         username: std::env::var(USERNAME_VARIABLE).ok()?,
         token: std::env::var(TOKEN_VARIABLE).ok()?,
     })
 }
 
 /// - Reads the environment through [`credentials_if_set`].
-fn credentials() -> Result<Credentials, Vec<String>> {
+fn credentials() -> Result<orasust::Credentials, Vec<String>> {
     credentials_if_set().ok_or_else(|| {
         vec![format!(
             "{USERNAME_VARIABLE} and {TOKEN_VARIABLE} are not both set"
@@ -343,6 +343,7 @@ pub struct Plan {
     pub tag: String,
     pub relay: bool,
     pub recorded: bool,
+    pub entries: Vec<binding_manifest::Entry>,
 }
 
 /// - Runs `git rev-parse`, `git merge-base --is-ancestor`, `git ls-tree` and `git show` in `root`,
@@ -382,13 +383,14 @@ pub fn planned(
         commit,
         relay,
         recorded,
+        entries,
     })
 }
 
 /// - Runs `orasust` child processes through [`binding_manifest::held_digest`], once per platform.
 fn held_digests(
     commit: &str,
-    credentials: Option<&Credentials>,
+    credentials: Option<&orasust::Credentials>,
 ) -> Result<Vec<(&'static str, String)>, Vec<String>> {
     let mut held = Vec::new();
     for platform in binding_manifest::PLATFORMS {
@@ -400,23 +402,20 @@ fn held_digests(
 }
 
 /// - Runs `git` child processes in `root` through [`planned`].
-/// - Reads `bindings/published.toml` at the default branch through `git show`, and runs
-///   `git ls-remote` against `origin` through [`pending_records`] and, when the run is not at
-///   the commit, through [`remote_tag_commit`].
+/// - Runs `git ls-remote` against `origin` through [`pending_records`] and, when the run is not
+///   at the commit, through [`remote_tag_commit`].
 /// - Writes the plan to stdout, one `<name>=<value>` line per output.
 fn plan(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let required = |flag: &str| crate::required_flag(args, flag, USAGE);
-    let default_branch = required(DEFAULT_BRANCH_FLAG)?;
-    let mut plan = planned(
+    let plan = planned(
         root,
         required(COMMIT_FLAG)?,
         required(RUN_AT_FLAG)?,
-        default_branch,
+        required(DEFAULT_BRANCH_FLAG)?,
     )?;
     if !plan.recorded {
-        let entries = binding_manifest::entries_at(root, Some(default_branch))?;
         let own = record_branch(&plan.commit);
-        let pending = pending_records(root, &entries)?;
+        let pending = pending_records(root, &plan.entries)?;
         let others: Vec<&str> = pending
             .iter()
             .map(String::as_str)
@@ -424,16 +423,14 @@ fn plan(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
             .collect();
         if !others.is_empty() {
             return Err(vec![format!(
-                "record pull requests are pending for {}; merge or close them before another publication, so the record stays oldest first",
+                "record branches are pending for {}; merge their pull requests, or delete the branches of the ones closed unmerged, before another publication, so the record stays oldest first",
                 others.join(crate::LIST_SEPARATOR)
             )]);
         }
-        if pending.len() > others.len() {
+        if pending.iter().any(|branch| *branch == own) {
             eprintln!(
-                "{ORIGIN} holds {own}, whose pull request records {}",
-                plan.commit
+                "{ORIGIN} holds {own}, so the record phase reuses it and opens its pull request"
             );
-            plan.recorded = true;
         }
     }
     let tagged = if plan.relay && !plan.recorded {

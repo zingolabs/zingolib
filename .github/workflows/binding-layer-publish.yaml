@@ -54,14 +54,17 @@ permissions:
   actions: write
   packages: write
 
+# One publication at a time, so the plan's view of the pending records
+# holds until the record is pushed. A relayed run queues behind the run
+# that dispatched it, which ends a moment later.
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.commit || github.sha }}
+  group: ${{ github.workflow }}
 
 jobs:
   request:
     name: Plan the publication
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     outputs:
       commit: ${{ steps.plan.outputs.commit }}
       relay: ${{ steps.plan.outputs.relay }}
@@ -78,7 +81,6 @@ jobs:
       ios_out: ${{ steps.names.outputs.ios_out }}
     env:
       GH_TOKEN: ${{ github.token }}
-      COMMIT: ${{ steps.plan.outputs.commit }}
     steps:
       - name: Require the publish App
         env:
@@ -122,6 +124,8 @@ jobs:
 
       - name: Report a recorded commit
         if: steps.plan.outputs.recorded == 'true'
+        env:
+          COMMIT: ${{ steps.plan.outputs.commit }}
         run: echo "The record names ${COMMIT}, or a record pull request for it is pending. Nothing to publish." >> "$GITHUB_STEP_SUMMARY"
 
       # The annotated tag records who asked and from which run. The relayed
@@ -131,6 +135,7 @@ jobs:
       - name: Tag the commit and dispatch this workflow at the tag
         if: steps.plan.outputs.relay == 'true' && steps.plan.outputs.recorded != 'true'
         env:
+          COMMIT: ${{ steps.plan.outputs.commit }}
           TAG: ${{ steps.plan.outputs.tag }}
           TAGGED: ${{ steps.plan.outputs.tagged }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -168,6 +173,7 @@ jobs:
         if: steps.plan.outputs.relay != 'true' && steps.plan.outputs.recorded != 'true'
         id: held
         env:
+          COMMIT: ${{ steps.plan.outputs.commit }}
           REGISTRY_USERNAME: ${{ github.actor }}
           REGISTRY_TOKEN: ${{ github.token }}
         run: |
@@ -183,6 +189,8 @@ jobs:
       - name: Name the artifacts
         if: steps.held.outputs.held == 'false'
         id: names
+        env:
+          COMMIT: ${{ steps.plan.outputs.commit }}
         run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$COMMIT" >> "$GITHUB_OUTPUT"
 
   android:
