@@ -1,7 +1,7 @@
 #[derive(uniffi::Enum)] IndexerChoice = Offline | Default | Named { uri: String }
 #[derive(uniffi::Record)] IndexerConnection { indexer: IndexerChoice, chain_hint: String, sync: SyncSettings }
 #[derive(uniffi::Record)] SyncSettings { performance_level: String, min_confirmations: u32 }
-#[derive(uniffi::Error)] #[uniffi(flat_error)] ZingolibError = LightclientNotInitialized | LightclientLockPoisoned | Panic(String) | Save(String) | Init(String) | Sync(String) | Rescan(String) | Read(String) | Send(String) | Shield(String) | InvalidInput(String) | Wallet(String) | Indexer(String) | Offline | SideChannelPoisoned | MigrationNotInProgress | MigrationAlreadyInProgress | MigrationConsentStale(String) | MigrationCadenceFixed(String) | MigrationSplit(String) | Migration(String) | Mixnet(String) | WalletChainMismatch(String)
+#[derive(uniffi::Error)] #[uniffi(flat_error)] ZingolibError = LightclientNotInitialized | LightclientLockPoisoned | Panic(String) | Save(String) | Init(String) | Sync(String) | Rescan(String) | Read(String) | Send(String) | Shield(String) | SendAfterDeshield(String) | InvalidInput(String) | Wallet(String) | Indexer(String) | Offline | SideChannelPoisoned | MigrationNotInProgress | MigrationAlreadyInProgress | MigrationConsentStale(String) | MigrationCadenceFixed(String) | MigrationSplit(String) | Migration(String) | Mixnet(String) | WalletChainMismatch(String)
 init_logging() -> Result<String, ZingolibError>
 init_new(connection: IndexerConnection, birthday: u32) -> Result<String, ZingolibError>
 init_from_seed(seed: String, birthday: u32, connection: IndexerConnection) -> Result<String, ZingolibError>
@@ -45,6 +45,8 @@ get_unified_addresses() -> Result<String, ZingolibError>
 get_transparent_addresses() -> Result<String, ZingolibError>
 create_new_unified_address(receivers: String) -> Result<String, ZingolibError>
 create_new_transparent_address() -> Result<String, ZingolibError>
+reserve_refund_address() -> Result<String, ZingolibError>
+derive_refund_address() -> Result<String, ZingolibError>
 check_my_address(address: String) -> Result<String, ZingolibError>
 get_wallet_save_required() -> Result<String, ZingolibError>
 set_config_wallet_to_test() -> Result<String, ZingolibError>
@@ -55,6 +57,7 @@ send(send_json: String) -> Result<String, ZingolibError>
 send_all(address: String, memo: String) -> Result<String, ZingolibError>
 shield() -> Result<String, ZingolibError>
 confirm() -> Result<String, ZingolibError>
+send_swap_deposit(vault_address: String, amount: u64, memo_hex: String) -> Result<String, ZingolibError>
 plan_orchard_drain() -> Result<String, ZingolibError>
 drain_orchard_to_ironwood() -> Result<String, ZingolibError>
 drain_status() -> Result<String, ZingolibError>

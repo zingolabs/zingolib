@@ -185,6 +185,15 @@ pub enum SendError {
         #[source]
         source: Box<LightClientError>,
     },
+    /// The stored OP_RETURN proposal transmitted its deshield and waits for
+    /// `send_stored_proposal` to resume it. A new proposal would drop it.
+    #[error(
+        "An OP_RETURN send waits to resume after the deshield {deshield_txid}. Send the stored proposal."
+    )]
+    OpReturnResumePending {
+        /// The transmitted deshield.
+        deshield_txid: TxId,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
