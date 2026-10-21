@@ -45,12 +45,10 @@ jobs:
       RUSTUP_HOME: ${{ github.workspace }}/.rustup
       CARGO_HOME: ${{ github.workspace }}/.cargo
     steps:
-      # The zl_ descriptor names the release tag that points at HEAD.
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
-          fetch-tags: true
 
       # The action installs the toolchain rust-toolchain.toml pins, with
       # its components, and the builder adds the iOS target to it itself.
@@ -147,7 +145,7 @@ jobs:
       RUSTUP_HOME: ${{ github.workspace }}/.rustup
       CARGO_HOME: ${{ github.workspace }}/.cargo
     steps:
-      # The device slice wrote the descriptor, so this job reads no tag.
+      # The device slice wrote the descriptor, so this job reads it from that slice.
       - name: Checkout repository
         uses: actions/checkout@v6
         with:

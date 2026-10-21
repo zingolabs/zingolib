@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `testutils::mock_indexer::MockChain::mine_filler_orchard_block` mines a block
   of orchard actions no wallet decrypts, so a scan task over the mock chain
   splits into loads by output count.
+- `LightWallet::birthday_adjusted_from` reports the height a wallet was given
+  when the wallet raised it to Sapling activation. It lives in memory for the
+  process lifetime. `RecoveryInfo` and the FFI viewing-key report carry it as
+  `birthday_adjusted_from` when it is set.
 - `data::PollReport::from_join` maps a tokio join outcome to a `PollReport`: a
   finished task is `Ready`, a panicked task is `Panicked` with the panic's
   message, and a cancelled task is `Panicked` with tokio's description.
@@ -23,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to 1000, so a legacy witness tree keeps 1000 checkpoints, and
   `LightWallet::clear_all` re-targets only the transactions confirmed more
   than 1000 blocks below the last known chain height.
+- **Breaking:** `LightWallet::new` and `LightWallet::read` raise a birthday
+  below Sapling activation to the activation height instead of failing, and a
+  raise on read marks the wallet for saving. `WalletError::BirthdayBelowSapling`
+  is removed.
+- **Breaking:** `git_description`, and with it the Binding Layer's
+  `get_version`, returns `zl_<crate version>_<sixteen characters>` on every
+  commit, where the sixteen characters are the prefix of the Published Commit
+  that the Maven version of the Android Prebuilt Bundle also carries. A build
+  from a modified tree still appends `_dirty`. The five-character abbreviation
+  is gone, and so is the release form `zl_<tag version>` that a `zingolib_v*`
+  tag at HEAD produced. A consumer that parses or matches the descriptor must
+  accept the new form. The build script and the workbench take the length and
+  the abbreviation from one source file, `zingolib/short_commit.rs`.
 - **Breaking:** `config::construct_indexer_uri` completes a server string
   without a scheme to `https://`, and a URI without a port to its scheme's
   default port (`:443` for `https`, `:80` for `http`), named by the new
