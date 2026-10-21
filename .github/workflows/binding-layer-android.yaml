@@ -30,8 +30,8 @@ on:
         required: false
         type: string
         default: ${{ vars.CI_LINUX_RUNNER || 'warp-ubuntu-2404-x64-16x' }}
-      # The commit to build. The publish workflow names a commit the
-      # manifest lists, which is rarely the commit that triggered it.
+      # The commit to build. The publish workflow passes the commit it was
+      # dispatched at, which its relay makes the commit that triggered it.
       ref:
         required: false
         type: string
@@ -57,14 +57,6 @@ on:
       bundle:
         required: true
         type: string
-      # Whether the package job runs. The nightly and the publish package
-      # the libraries into the Maven layout and run the Kotlin wire-contract
-      # test there; a pull request builds the libraries and the Kotlin
-      # Binding Sets alone.
-      package:
-        required: false
-        type: boolean
-        default: true
 
 jobs:
   # The job runs in the image that bindings/android/docker/Dockerfile
@@ -90,12 +82,10 @@ jobs:
     env:
       ABI: ${{ matrix.abi }}
     steps:
-      # The zl_ descriptor names the release tag that points at HEAD.
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
-          fetch-tags: true
 
       # A container job's workspace belongs to another user, and git refuses
       # to read a repository it does not own.
@@ -135,9 +125,13 @@ jobs:
           retention-days: 3
           overwrite: true
 
+  # A push to dev or stable reruns ci-pr on the merge commit whose pull
+  # request already packaged the layout, so the push skips this job. The
+  # build job still runs on a push: its cargo cache lands on the base
+  # branch, which is the cache every pull request restores from.
   package:
-    name: Publish the Maven layout
-    if: ${{ inputs.package }}
+    name: Package the Maven layout
+    if: ${{ github.event_name != 'push' }}
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -174,6 +168,7 @@ jobs:
           done
           test -f "$OUTPUT/kotlin/uniffi/zingo/zingo.kt"
           test -f "$OUTPUT/kotlin/uniffi/zingo_nym_proxy_ffi/zingo_nym_proxy_ffi.kt"
+          test -f "$OUTPUT/descriptor.txt"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -184,9 +179,17 @@ jobs:
       # repository directory and runs the Kotlin wire-contract test of the
       # proxy crate in one task graph. The test compiles against the Kotlin
       # Binding Set that the AAR ships and asserts it against the crate's
-      # golden pins, which the Rust and Swift suites share.
-      - name: Publish the Maven layout and run the Kotlin wire-contract test
-        run: gradle --project-dir bindings/android publish testReleaseUnitTest
+      # golden pins, which the Rust and Swift suites share. The runner image
+      # preinstalls the platform and the build tools the library compiles
+      # against; sdkDownload=false makes the Android Gradle plugin fail on a
+      # missing component instead of downloading it, so a bump of
+      # bindingCompileSdk past the image shows as a missing component, never
+      # as a download that corrupts or rate-limits on every pull request.
+      - name: Package the Maven layout and run the Kotlin wire-contract test
+        run: |
+          gradle --project-dir bindings/android \
+            -Pandroid.builder.sdkDownload=false \
+            publish testReleaseUnitTest
 
       # The layout holds one AAR beside one POM, and the POM declares JNA,
       # which the AAR needs and does not contain.

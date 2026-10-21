@@ -1,6 +1,9 @@
 use crate::binding_manifest;
 use std::path;
 
+#[path = "../../../zingolib/short_commit.rs"]
+pub mod short_commit;
+
 /// The language of the Android bindings.
 pub const KOTLIN: &str = "kotlin";
 
@@ -310,6 +313,7 @@ pub const ABI_ARTIFACT: &str = "abi";
 pub const ARTIFACT_KINDS: [&str; 2] = [BUNDLE_ARTIFACT, ABI_ARTIFACT];
 pub const ARTIFACT_WILDCARD: &str = "*";
 const ARTIFACT_SEPARATOR: &str = "-";
+const SLICE_SEGMENT: &str = "slice";
 pub const ARCHIVE_SUFFIX: &str = ".tar.gz";
 pub const WALLET_MANIFEST: &str = "zingolib/Cargo.toml";
 const MANIFEST_VERSION_PATH: [&str; 2] = ["package", "version"];
@@ -320,7 +324,7 @@ pub const MAVEN_ARTIFACT: &str = "zingo-binding-layer";
 pub const MAVEN_VERSION_PROPERTY: &str = "bindingLayerVersion";
 pub const MAVEN_METADATA_FILE: &str = "maven-metadata.xml";
 pub const MAVEN_PUBLISH_PLUGIN: &str = "maven-publish";
-pub const MAVEN_COMMIT_LENGTH: usize = 16;
+pub const MAVEN_COMMIT_LENGTH: usize = short_commit::LENGTH;
 const MAVEN_VERSION_SEPARATOR: &str = "-";
 const MAVEN_COMMIT_KEY: &str = "commit";
 pub const ABIS_OUTPUT: &str = "abis";
@@ -447,6 +451,14 @@ pub fn artifact_name_without_commit(segment: &str) -> String {
     [ARTIFACT_PREFIX, segment].join(ARTIFACT_SEPARATOR)
 }
 
+pub fn ios_slice_artifact(bundle: &str, triple: &str) -> String {
+    [bundle, SLICE_SEGMENT, triple].join(ARTIFACT_SEPARATOR)
+}
+
+pub fn ios_slice_pattern(bundle: &str) -> String {
+    ios_slice_artifact(bundle, ARTIFACT_WILDCARD)
+}
+
 fn json_string(text: &str) -> String {
     format!("{JSON_QUOTE}{text}{JSON_QUOTE}")
 }
@@ -494,10 +506,12 @@ pub fn crate_version(manifest: &str) -> Result<String, Vec<String>> {
 
 pub fn maven_version(crate_version: &str, commit: &str) -> Result<String, Vec<String>> {
     let commit = binding_manifest::commit_value(MAVEN_COMMIT_KEY, commit.trim())?;
-    Ok(format!(
-        "{crate_version}{MAVEN_VERSION_SEPARATOR}{}",
-        &commit[..MAVEN_COMMIT_LENGTH]
-    ))
+    let short = short_commit::abbreviate(&commit).ok_or_else(|| {
+        vec![format!(
+            "{MAVEN_COMMIT_KEY} {commit} has no {MAVEN_COMMIT_LENGTH}-character abbreviation"
+        )]
+    })?;
+    Ok(format!("{crate_version}{MAVEN_VERSION_SEPARATOR}{short}"))
 }
 
 pub fn artifact_outputs(
@@ -744,6 +758,7 @@ mod tests {
             "const DESCRIPTOR_ENV: &str = \"{DESCRIPTOR_ENV}\";"
         )));
         assert!(build_script.contains("cargo:rustc-env={DESCRIPTOR_ENV}={description}"));
+        assert!(build_script.contains("#[path = \"short_commit.rs\"]\nmod short_commit;"));
     }
 
     #[test]
@@ -762,12 +777,12 @@ mod tests {
             ),
             script(
                 "zingolib#6.0.0",
-                "[[\"OTHER\",\"1\"],[\"ZINGOLIB_DESCRIPTOR\",\"zl_6.0.0_2691e\"]]"
+                "[[\"OTHER\",\"1\"],[\"ZINGOLIB_DESCRIPTOR\",\"zl_6.0.0_ba7336710419c9ac\"]]"
             )
         );
         assert_eq!(
             descriptor_in_messages(&messages),
-            Ok(Some("zl_6.0.0_2691e".to_string()))
+            Ok(Some("zl_6.0.0_ba7336710419c9ac".to_string()))
         );
         assert_eq!(
             descriptor_in_messages("{\"reason\":\"build-finished\",\"success\":true}\n"),
@@ -1181,6 +1196,26 @@ mod tests {
         assert_eq!(
             artifact_name(BUNDLE_ARTIFACT, ARTIFACT_WILDCARD, commit),
             format!("binding-layer-bundle-*-{commit}")
+        );
+    }
+
+    #[test]
+    fn an_ios_slice_artifact_is_never_a_bundle_of_its_commit() {
+        let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let bundle = artifact_name(BUNDLE_ARTIFACT, "ios", commit);
+        let slice = ios_slice_artifact(&bundle, "aarch64-apple-ios");
+        assert_eq!(
+            slice,
+            format!("binding-layer-bundle-ios-{commit}-slice-aarch64-apple-ios")
+        );
+        assert_eq!(
+            artifact_segment(&slice, BUNDLE_ARTIFACT, commit),
+            None,
+            "the publish downloads bundles by a pattern that ends in the commit"
+        );
+        assert_eq!(
+            ios_slice_pattern(&bundle),
+            format!("binding-layer-bundle-ios-{commit}-slice-*")
         );
     }
 

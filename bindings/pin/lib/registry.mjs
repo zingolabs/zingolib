@@ -7,7 +7,7 @@ import { REGISTRY } from './bundle_pin.mjs';
 
 const MANIFEST = 'application/vnd.oci.image.manifest.v1+json';
 const REVISION = 'org.opencontainers.image.revision';
-const DESCRIPTOR = 'org.zingolabs.zingolib.descriptor';
+const COORDINATE = 'org.zingolabs.zingolib.coordinate';
 const TITLE = 'org.opencontainers.image.title';
 const REFUSALS = [401, 403];
 const NOT_FOUND = [404];
@@ -56,7 +56,7 @@ export async function resolveBundle(granted, tag) {
     kind: 'bundle',
     digest: sha256(createHash('sha256').update(body)),
     revision: annotations[REVISION],
-    descriptor: annotations[DESCRIPTOR],
+    coordinate: annotations[COORDINATE],
     layers: layers.map(layer => ({
       digest: layer.digest,
       mediaType: layer.mediaType,

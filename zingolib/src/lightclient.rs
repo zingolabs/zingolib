@@ -133,6 +133,14 @@ pub enum PriceFetchRoute {
     },
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ChooseIndexerError {
+    #[error(transparent)]
+    NoDefaultIndexer(#[from] crate::config::NoDefaultIndexer),
+    #[error(transparent)]
+    Connect(#[from] zingo_netutils::GetClientError),
+}
+
 /// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
 /// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
 ///
@@ -622,6 +630,21 @@ impl LightClient {
     ) -> Result<(), zingo_netutils::GetClientError> {
         self.indexer = Some(zingo_netutils::GrpcIndexer::new(server).await?);
         Ok(())
+    }
+
+    /// - Offline tears every network capability down, as [`Self::go_offline`] does.
+    /// - Default and Named replace the session's indexer connection.
+    pub async fn choose_indexer(
+        &mut self,
+        choice: crate::config::IndexerChoice,
+    ) -> Result<(), ChooseIndexerError> {
+        match choice.resolve(&self.chain_type())? {
+            None => {
+                self.go_offline().await;
+                Ok(())
+            }
+            Some(uri) => Ok(self.set_indexer_uri(uri).await?),
+        }
     }
 
     /// Points the client at `server` without connecting.

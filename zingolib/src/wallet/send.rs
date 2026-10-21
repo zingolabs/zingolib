@@ -356,6 +356,7 @@ mod tests {
 
     use zcash_address::ZcashAddress;
     use zcash_client_backend::zip321::TransactionRequest;
+    use zcash_protocol::PoolType;
     use zcash_protocol::memo::{Memo, MemoBytes};
     use zcash_protocol::value::Zatoshis;
 
@@ -379,7 +380,11 @@ mod tests {
         let mut client = LightClient::new_for_test(wallet).await;
         let proposal = from_inputs::propose(
             &mut client,
-            vec![(&synthetic_wallet::external_orchard_address(), PAYMENT, None)],
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                PAYMENT,
+                None,
+            )],
         )
         .await
         .expect("an Orchard-only wallet proposes an Orchard payment");

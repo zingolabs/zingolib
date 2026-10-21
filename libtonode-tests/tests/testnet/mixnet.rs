@@ -26,7 +26,7 @@ fn settled(mode: Indicator) -> bool {
 /// - Sends over the real tunnel to the testnet indexer.
 #[tokio::test]
 async fn a_mixnet_send_crosses_a_real_proxy_to_the_node() {
-    let proxy = PathBuf::from(resolve_proxy_path(&SpawnHints::default()));
+    let proxy = PathBuf::from(resolve_proxy_path(&SpawnHints::default()).path);
     let mut environment = NetworkedTestEnvironment::setup().await;
     let mut client = environment.create_faucet().await;
     client

@@ -41,6 +41,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation a second time to decide where log output goes.
 
 ### Changed
+- BREAKING: a `--server` value without a scheme now completes to `https://`,
+  and a value without a port to its scheme's default port (`:443` for
+  `https`, `:80` for `http`) instead of `http://` and `:9067`. A plaintext
+  regtest indexer needs an explicit `http://`.
+- BREAKING: consent to go online without `--server` attaches to the
+  chain's Default Indexer (`https://mainnet.zainod.zingolabs.dev:443` on
+  mainnet) instead of surveying the census, and a chain without a Default
+  Indexer refuses the launch with a typed error naming the chain. A named
+  or Default server binds the session, so the sweep surveys it alone.
+- BREAKING: `change_server` takes `offline`, `default`, or a URI; the
+  bare and empty forms, which bound an invalid URI, are refused at the
+  parse (zingo-adrs zingolib/0063).
 - BREAKING: moves to the librustzcash NU7 pre-release cohort zingolib
   pins. `parse_viewkey` lists a P2SH viewing key item as `transparent`
   beside a P2PKH one.
@@ -48,6 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `clearnet-test-mode` is now `nakednet-test-mode`, and `network history`
   reports a direct route as `nakednet` where it reported `clearnet`.
 - `network off` stops an in-flight sync between batches and waits for it, where it used to abort the sync task.
+- A `nym-proxy` that fails to start is reported with its path, the source
+  that chose the path (the `--nym-proxy` flag, `$ZINGO_NYM_PROXY`, the bundled
+  binary beside the wallet, or the PATH lookup after every other source was
+  empty), the cause, and a remedy fit to that source. The `network on`
+  success line carries the same path and source. The session resolves the
+  path once, in zingolib's session driver, and the Server-Selection Sweep
+  and the automatic sync recovery reuse that one resolution.
 - `migrate`, `migration continue`, `migration execute` and `migration auto` sync to the chain tip and return when the wallet is configured for continuous sync. A sync already running before the command is stopped for it and relaunched after it.
 - Sync runs continuously: without `--waitsync`, the sync engine stays
   running after reaching the chain tip and scans newly mined blocks as they
@@ -178,6 +197,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The interactive prompt and one-shot mode parse through one grammar,
   exactly once, at the process boundary. The command channel carries parsed
   values, so no string is re-parsed inside the process.
+
+### Fixed
+- `Failed to create lightclient.` renders the whole error chain, so a
+  refused indexer connection names its transport cause (`bad uri`,
+  connection refused, timeout) instead of the bare `gRPC client error.`
+  layer.
 
 ### Removed
 - **Breaking.** The `nym-diary` feature and the `--indexer-diary` flag are

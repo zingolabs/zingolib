@@ -43,12 +43,14 @@ use zingo_netutils::lightwallet_protocol::{
     TxOut as CompactTxOut,
 };
 
+use incrementalmerkletree::Hashable as _;
 use incrementalmerkletree::frontier::CommitmentTree;
 use orchard::circuit::{OrchardCircuitVersion, VerifyingKey as OrchardVerifyingKey};
 use orchard::tree::MerkleHashOrchard;
 use sapling_crypto::circuit::{OutputVerifyingKey, SpendVerifyingKey};
 use zcash_primitives::merkle_tree::{HashSer, read_commitment_tree, write_commitment_tree};
-use zcash_primitives::transaction::fees::zip317::{GRACE_ACTIONS, MARGINAL_FEE};
+#[cfg(test)]
+use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_primitives::transaction::sighash::{SignableInput, signature_hash};
 use zcash_primitives::transaction::txid::TxIdDigester;
 use zcash_primitives::transaction::{Authorized, Transaction, TransactionData, TxId, TxVersion};
@@ -70,6 +72,7 @@ use crate::lightclient::LightClient;
 use crate::testutils::assertions::OP_RETURN;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::default_test_wallet_settings;
+use crate::testutils::fee_tables;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 use crate::wallet::WalletSettings;
@@ -380,9 +383,8 @@ pub fn check_zip317_mempool_policy(
     if fee < required {
         return Err(Rejection::FeeBelowMinimumRate { fee, required });
     }
-    let conventional_actions = logical_actions.max(GRACE_ACTIONS);
-    let paid_actions = usize::try_from(fee.into_u64() / MARGINAL_FEE.into_u64())
-        .expect("paid actions fit in usize");
+    let conventional_actions = fee_tables::conventional_actions(logical_actions);
+    let paid_actions = fee_tables::paid_actions(fee);
     let unpaid = conventional_actions.saturating_sub(paid_actions);
     if unpaid > BLOCK_UNPAID_ACTION_LIMIT {
         return Err(Rejection::UnpaidActions {
@@ -664,6 +666,12 @@ fn reduce_to_nullifiers(block: &mut CompactBlock) {
 fn fabricated_block_hash(height: u32) -> Vec<u8> {
     fabricated_branch_hash(height, 0)
 }
+
+/// The bytes of a note ciphertext a compact output carries.
+const COMPACT_CIPHERTEXT_LENGTH: usize = 52;
+
+/// The branch seed the filler transactions' ids are fabricated under, apart from any block's.
+const FILLER_TXID_SEED: u32 = 0xF111;
 
 fn block_time(height: u32) -> u32 {
     BLOCK_TIME_BASE + height
@@ -1334,6 +1342,12 @@ impl MockChain {
             self.transactions
                 .insert(transaction.txid(), Mined { height, bytes });
         }
+        self.push_block(height, vtx);
+    }
+
+    /// - Appends the block of `vtx` at `height` to the chain, with the tree states and roots as of it.
+    /// - Drops the mempool subscribers and the expired mempool transactions.
+    fn push_block(&mut self, height: BlockHeight, vtx: Vec<CompactTx>) {
         // Chain from the stored predecessor hash rather than recomputing
         // it: after a reorg the predecessor may belong to a different
         // branch seed than this block.
@@ -1384,6 +1398,49 @@ impl MockChain {
         for _ in 0..count {
             self.mine_block(vec![]);
         }
+    }
+
+    /// Mines one block of `actions` orchard actions no wallet decrypts, so a scan task over the chain splits
+    /// into loads by output count. Each action carries the empty leaf as its commitment and its nullifier, both
+    /// valid field elements, the ephemeral key of an earlier real action so trial decryption runs, and a random
+    /// ciphertext so it fails.
+    /// - Appends the commitments to the orchard tree.
+    /// - Appends one block to the chain.
+    pub fn mine_filler_orchard_block(&mut self, actions: usize) {
+        let ephemeral_key = self
+            .blocks
+            .iter()
+            .flat_map(|block| block.vtx.iter())
+            .flat_map(|tx| tx.actions.iter().chain(tx.ironwood_actions.iter()))
+            .map(|action| action.ephemeral_key.clone())
+            .next()
+            .expect("a real orchard or ironwood action precedes the filler blocks");
+        let leaf = MerkleHashOrchard::empty_leaf().to_bytes().to_vec();
+        let filler = (0..actions)
+            .map(|_| CompactOrchardAction {
+                nullifier: leaf.clone(),
+                cmx: leaf.clone(),
+                ephemeral_key: ephemeral_key.clone(),
+                ciphertext: rand::random_iter()
+                    .take(COMPACT_CIPHERTEXT_LENGTH)
+                    .collect(),
+            })
+            .collect();
+        for _ in 0..actions {
+            self.orchard_tree
+                .append(MerkleHashOrchard::empty_leaf())
+                .expect("the fabricated chain stays far below tree capacity");
+        }
+        let height = self.next_height();
+        self.push_block(
+            height,
+            vec![CompactTx {
+                index: 0,
+                txid: fabricated_branch_hash(u32::from(height), FILLER_TXID_SEED),
+                actions: filler,
+                ..Default::default()
+            }],
+        );
     }
 
     /// Rewinds the chain to `height`, discarding every block above it,
@@ -1765,7 +1822,7 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
         .map(|output| CompactSaplingOutput {
             cmu: output.cmu().to_bytes().to_vec(),
             ephemeral_key: output.ephemeral_key().0.to_vec(),
-            ciphertext: output.enc_ciphertext()[..52].to_vec(),
+            ciphertext: output.enc_ciphertext()[..COMPACT_CIPHERTEXT_LENGTH].to_vec(),
         })
         .collect();
     let actions = transaction
@@ -1776,7 +1833,9 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
             nullifier: action.nullifier().to_bytes().to_vec(),
             cmx: action.cmx().to_bytes().to_vec(),
             ephemeral_key: action.encrypted_note().epk_bytes.to_vec(),
-            ciphertext: action.encrypted_note().enc_ciphertext.as_ref()[..52].to_vec(),
+            ciphertext: action.encrypted_note().enc_ciphertext.as_ref()
+                [..COMPACT_CIPHERTEXT_LENGTH]
+                .to_vec(),
         })
         .collect();
     let ironwood_actions = transaction
@@ -1787,7 +1846,9 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
             nullifier: action.nullifier().to_bytes().to_vec(),
             cmx: action.cmx().to_bytes().to_vec(),
             ephemeral_key: action.encrypted_note().epk_bytes.to_vec(),
-            ciphertext: action.encrypted_note().enc_ciphertext.as_ref()[..52].to_vec(),
+            ciphertext: action.encrypted_note().enc_ciphertext.as_ref()
+                [..COMPACT_CIPHERTEXT_LENGTH]
+                .to_vec(),
         })
         .collect();
     let vin = transaction
@@ -2730,7 +2791,7 @@ mod tests {
     async fn funding_bytes(chain: &MockChain) -> Vec<u8> {
         chain
             .funding_transaction(vec![(
-                &synthetic_wallet::external_orchard_address(),
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
                 PAYMENT,
                 None,
             )])
@@ -2876,7 +2937,11 @@ mod tests {
         let bytes = faucet_funding_transaction_on(
             crate::testutils::mock_activation_heights(),
             chain.next_height(),
-            vec![(&synthetic_wallet::external_orchard_address(), PAYMENT, None)],
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                PAYMENT,
+                None,
+            )],
         )
         .await;
         let rejection = chain.submit_transaction(bytes).unwrap_err();
@@ -2892,7 +2957,7 @@ mod tests {
     #[test]
     fn coinbase_outputs_mature_after_one_hundred_blocks() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_outpoint = first_output(txid_of(&chain, &coinbase));
         assert!(
@@ -2954,7 +3019,7 @@ mod tests {
     #[test]
     fn unknown_transparent_input_is_rejected() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let outpoint = OutPoint::new([7; 32], 0);
         let spend = transparent_spend(&chain, outpoint.clone(), SPEND_VALUE, &miner);
         assert_eq!(
@@ -2966,7 +3031,7 @@ mod tests {
     #[test]
     fn mempool_outputs_are_spendable_before_they_are_mined() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         chain.mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
         let first = transparent_spend(
@@ -2996,7 +3061,7 @@ mod tests {
     #[test]
     fn outputs_above_inputs_are_rejected() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_outpoint = first_output(txid_of(&chain, &coinbase));
         chain.mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
@@ -3015,7 +3080,7 @@ mod tests {
     #[test]
     fn unspent_outputs_exclude_spent_outpoints() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_txid = txid_of(&chain, &coinbase);
         let unspent = chain.unspent_outputs(&miner, HEIGHT_ONE).unwrap();
@@ -3096,7 +3161,7 @@ mod tests {
     #[tokio::test]
     async fn address_utxos_stream_applies_injected_stream_faults() {
         let chain = Arc::new(RwLock::new(MockChain::new()));
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         {
             let mut chain = chain.write().await;
             chain.mine_block_rewarding(&miner, REWARD, vec![]);
@@ -3350,7 +3415,7 @@ mod tests {
         let mut chain = lax_anchors();
         let bytes = chain
             .funding_transaction(vec![(
-                &synthetic_wallet::external_sapling_address(),
+                &synthetic_wallet::external_address(PoolType::SAPLING),
                 PAYMENT,
                 None,
             )])
@@ -3368,7 +3433,7 @@ mod tests {
         let mut chain = lax_anchors();
         let bytes = chain
             .funding_transaction(vec![(
-                &synthetic_wallet::external_sapling_address(),
+                &synthetic_wallet::external_address(PoolType::SAPLING),
                 PAYMENT,
                 None,
             )])
@@ -3390,7 +3455,7 @@ mod tests {
         let mut chain = lax_anchors();
         let bytes = chain
             .funding_transaction(vec![(
-                &synthetic_wallet::external_sapling_address(),
+                &synthetic_wallet::external_address(PoolType::SAPLING),
                 PAYMENT,
                 None,
             )])
@@ -3434,7 +3499,7 @@ mod tests {
         let output = TxOut::new(
             REWARD,
             taddr_script(
-                &synthetic_wallet::external_transparent_address(),
+                &synthetic_wallet::external_address(PoolType::Transparent),
                 &chain.chain_type(),
             )
             .expect("a synthetic wallet's transparent address encodes a script"),

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { mock, test } from 'node:test';
 import { promisify } from 'node:util';
 import { MARKER, PACKAGE, placeSwiftPackage, placement } from '../lib/swift_package.mjs';
@@ -21,7 +21,7 @@ async function archive(withManifest) {
     await writeFile(join(root, PACKAGE, 'Package.swift'), '// swift-tools-version:5.9\n');
   }
   const tarball = join(root, 'ZingoBindings.tar.gz');
-  await promisify(execFile)('tar', ['-czf', tarball, '-C', root, PACKAGE]);
+  await promisify(execFile)('tar', ['--create', '--gzip', '--format=pax', '--file', tarball, '-C', root, PACKAGE]);
   return tarball;
 }
 
@@ -63,5 +63,5 @@ test('placeSwiftPackage reports a bundle that holds no package manifest', async 
   const home = join(await scratch(), 'binding-layer');
   const placed = await placeSwiftPackage(await archive(false), DIGEST, home);
   assert.deepEqual(placed, { kind: 'badPackage', platform: 'ios' });
-  assert.deepEqual(await readdir(dirname(home)), []);
+  assert.deepEqual(await readdir(home), []);
 });

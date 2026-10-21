@@ -283,7 +283,9 @@ mod mode_of_operation {
             assert_command(
                 &[examples::BIN_NAME, "change_server", examples::SERVER_URI],
                 CliCommand::ChangeServer {
-                    uri: Some(examples::SERVER_URI.parse().expect("a valid example uri")),
+                    choice: zingolib::config::IndexerChoice::Named(
+                        examples::SERVER_URI.parse().expect("a valid example uri"),
+                    ),
                 },
             );
         }
@@ -990,6 +992,8 @@ mod config_template {
         // build never reaches an Online communication mode (ADR 0026).
         #[cfg(feature = "nym")]
         use crate::Communications;
+        #[cfg(feature = "nym")]
+        use zingolib::config::HTTPS_DEFAULT_PORT;
 
         /// An explicit `--server` is an online act, which only nym builds
         /// accept (ADR 0026).
@@ -1006,6 +1010,19 @@ mod config_template {
             assert!(config.ufvk.is_none());
             assert_eq!(config.birthday, 0);
             assert!(matches!(config.mode, Operations::Interactive));
+        }
+
+        #[cfg(feature = "nym")]
+        #[test]
+        fn portless_server_completes_to_the_https_default_port() {
+            let config = fill(&[examples::BIN_NAME, "--server", "https://example.com"])
+                .expect("a portless https URI completes to its scheme's default port");
+            let server = config
+                .server
+                .expect("an explicit --server pins a Server on the template");
+            assert_eq!(server.scheme_str(), Some("https"));
+            assert_eq!(server.port_u16(), Some(HTTPS_DEFAULT_PORT));
+            assert!(config.server_pinned);
         }
 
         /// `--online` exists as a consented act only in nym builds; the
@@ -1108,14 +1125,28 @@ mod config_template {
             assert!(err.contains("bogus"));
         }
 
-        /// The URI shape check sits on the online resolution path, which
-        /// only nym builds reach: the offline-only build refuses the
-        /// `--server` act before any URI is inspected (ADR 0026).
-        #[cfg(feature = "nym")]
+        /// Consent without `--server` binds the chain's Default Indexer, and
+        /// the resolved server pins the session (zingo-adrs zingolib/0063).
+        #[cfg(all(feature = "nym", not(feature = "nakednet-test-mode")))]
         #[test]
-        fn server_missing_port() {
-            let err = fill(&[examples::BIN_NAME, "--server", "https://example.com"]).unwrap_err();
-            assert!(err.contains("scheme"));
+        fn online_without_server_binds_the_default_indexer() {
+            let config = fill(&[examples::BIN_NAME, "--online"])
+                .expect("mainnet has a Default Indexer, so consent alone resolves");
+            assert_eq!(
+                config.server,
+                zingolib::config::default_indexer_for(&ChainType::Mainnet)
+            );
+            assert!(config.server_pinned);
+        }
+
+        /// A chain without a Default Indexer refuses consent that names no
+        /// server, with the chain in the error (zingo-adrs zingolib/0063).
+        #[cfg(all(feature = "nym", not(feature = "nakednet-test-mode")))]
+        #[test]
+        fn online_without_server_on_testnet_refuses() {
+            let err = fill(&[examples::BIN_NAME, "--online", "--chain", "testnet"])
+                .expect_err("testnet has no Default Indexer, so consent alone refuses");
+            assert!(err.contains("Default Indexer"), "{err}");
         }
     }
 
@@ -1136,9 +1167,10 @@ mod config_template {
         /// so the propagation contract exists only in nym builds.
         #[cfg(feature = "nym")]
         #[test]
-        fn unpinned_online_configures_no_indexer() {
-            // --online is the consent act; with no --server there is no
-            // default to fill in, and the sweep selects the sync indexer.
+        fn unpinned_online_configures_the_default_indexer() {
+            // --online is the consent act; with no --server the chain's
+            // Default Indexer fills in and binds the session (zingo-adrs
+            // zingolib/0063).
             let zc = fill_and_build(&[
                 examples::BIN_NAME,
                 "--online",
@@ -1147,10 +1179,10 @@ mod config_template {
                 "--birthday",
                 "1",
             ]);
-            assert!(
-                zc.indexer_uri().is_none(),
-                "an unpinned online session must configure no indexer, got: {:?}",
-                zc.indexer_uri()
+            assert_eq!(
+                zc.indexer_uri(),
+                zingolib::config::default_indexer_for(&ChainType::Mainnet),
+                "an unpinned online session must configure the Default Indexer"
             );
         }
 
@@ -1308,7 +1340,9 @@ mod offline_mode_pin {
     /// One sample per network-requiring shape the gate must refuse.
     fn network_requiring() -> Vec<CliCommand> {
         vec![
-            CliCommand::ChangeServer { uri: None },
+            CliCommand::ChangeServer {
+                choice: zingolib::config::IndexerChoice::Default,
+            },
             CliCommand::Confirm,
             CliCommand::CurrentPrice,
             CliCommand::Info,

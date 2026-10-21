@@ -11130,6 +11130,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_keys",
  "zcash_protocol",
+ "zcash_transparent",
  "zingo_common_components",
  "zingolib",
  "zip32",

@@ -1232,6 +1232,7 @@ mod transmit_error_seam {
 
 #[cfg(test)]
 mod built_transaction_shape {
+    use zcash_protocol::PoolType;
     use zcash_protocol::consensus::{BlockHeight, BranchId};
     use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
@@ -1246,7 +1247,7 @@ mod built_transaction_shape {
         let mut client = LightClient::new_for_test(wallet).await;
         let proposal = client
             .propose_send_all(
-                synthetic_wallet::external_orchard_zcash_address(),
+                synthetic_wallet::external_zcash_address(PoolType::ORCHARD),
                 None,
                 zip32::AccountId::ZERO,
             )
@@ -1381,7 +1382,7 @@ mod built_transaction_shape {
         // the change, plus the ironwood payment pair) exceeds either note
         // alone, so both are gathered and 5_000 returns as sapling change.
         let request = TransactionRequest::new(vec![Payment::without_memo(
-            synthetic_wallet::external_orchard_zcash_address(),
+            synthetic_wallet::external_zcash_address(PoolType::ORCHARD),
             Zatoshis::const_from_u64(25_000),
         )])
         .unwrap();
@@ -1468,7 +1469,7 @@ mod built_transaction_shape {
         let mut client = LightClient::new_for_test(wallet).await;
 
         let request = TransactionRequest::new(vec![Payment::without_memo(
-            synthetic_wallet::external_orchard_zcash_address(),
+            synthetic_wallet::external_zcash_address(PoolType::ORCHARD),
             Zatoshis::const_from_u64(sent_value),
         )])
         .unwrap();
@@ -1538,8 +1539,6 @@ mod built_transaction_shape {
     /// mempool accepting the chained unmined pair.
     #[tokio::test]
     async fn tex_two_step_chains_ephemeral_output_offline() {
-        use pepper_sync::keys::decode_address;
-        use zcash_client_backend::address::Address;
         use zcash_client_backend::zip321::{Payment, TransactionRequest};
         use zcash_protocol::value::Zatoshis;
         use zcash_transparent::address::TransparentAddress;
@@ -1552,23 +1551,8 @@ mod built_transaction_shape {
 
         // A TEX destination derived from an external wallet's first
         // transparent address, as ZIP 320 prescribes.
-        let external_wallet =
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::ABANDON_ART_SEED).build();
-        let taddr = external_wallet
-            .transparent_addresses()
-            .values()
-            .next()
-            .unwrap()
-            .clone();
-        let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) =
-            decode_address(&external_wallet.chain_type(), &taddr).unwrap()
-        else {
-            panic!("a wallet-generated first taddr is p2pkh")
-        };
-        let tex_address = crate::testutils::interpret_taddr_as_tex_addr(
-            taddr_bytes,
-            &external_wallet.chain_type(),
-        );
+        let taddr_bytes = synthetic_wallet::external_transparent_pubkey_hash();
+        let tex_address = synthetic_wallet::external_tex_address();
 
         let request = TransactionRequest::new(vec![Payment::without_memo(
             zcash_address::ZcashAddress::try_from_encoded(&tex_address).unwrap(),
