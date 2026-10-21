@@ -360,10 +360,6 @@ zingo-memo v0.1.1 (/repo/zingo-memo)
         Ok(())
     }
 
-    /// HYPOTHESIS: the graph reaches crates that are not workspace members,
-    /// because the audit reads the resolved tree and not the member list;
-    /// the fixture's zingo-netutils stands in for such a crate. Falsified
-    /// if a members-only view is what gets compared.
     #[test]
     fn a_non_member_crate_is_audited() {
         let graph = resolve(LISTING);

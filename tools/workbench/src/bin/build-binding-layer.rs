@@ -75,16 +75,12 @@ const BUILD_ROOT: &str = "target/binding-layer";
 /// The directory of the workspace that holds the wallet crate and the bindgen package, which is the zingolib root.
 const WALLET_WORKSPACE_DIR: &str = ".";
 
-/// The profile that the builder builds the wallet library and runs the bindgen with.
 const BUILDER_PROFILE: binding_layer::Profile = binding_layer::Profile::Mobile;
 
-/// The profile that the builder builds the proxy library with.
 const PROXY_PROFILE: binding_layer::Profile = binding_layer::Profile::Proxy;
 
-/// The directory under a target directory that the builder profile writes to.
 const PROFILE_DIR: &str = BUILDER_PROFILE.directory();
 
-/// The directory under a target directory that the proxy profile writes to.
 const PROXY_PROFILE_DIR: &str = PROXY_PROFILE.directory();
 
 /// The iOS output subdirectory that holds intermediate generated files.
