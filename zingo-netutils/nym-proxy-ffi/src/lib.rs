@@ -2,13 +2,13 @@
 //! mobile amendment, CP-3).
 //!
 //! iOS cannot spawn the `nym-proxy` child process the desktop model relies on,
-//! and nym-sdk cannot link into the wallet's compile unit (the crypto-common
-//! conflict). So on mobile the proxy is a dynamic library the app hosts: it
-//! brings up a [`NymProxy`], exposes its local SOCKS5 address, and the app
-//! hands that address to the wallet's `attach_mixnet` seam (CP-2). This crate
-//! is that library's UniFFI surface — `start`, `stop`, and a death callback —
-//! built from the standalone netutils workspace so nym-sdk resolves in its own
-//! lockfile.
+//! and the proxy stays a separate artifact from the wallet library on every
+//! platform (ADR 0011, mobile amendment). So on mobile the proxy is a dynamic
+//! library the app hosts: it brings up a [`NymProxy`], exposes its local
+//! SOCKS5 address, and the app hands that address to the wallet's
+//! `attach_mixnet` seam (CP-2). This crate is that library's UniFFI surface —
+//! `start`, `stop`, and a death callback — a member of the root workspace,
+//! where its `nym` feature of netutils resolves in the shared lockfile.
 //!
 //! The boundary is UniFFI rather than a hand-written C ABI specifically to
 //! preserve `#![forbid(unsafe_code)]`: uniffi's proc-macros generate the FFI

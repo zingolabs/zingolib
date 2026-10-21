@@ -629,8 +629,10 @@ pub enum Profile {
     Debug,
     /// Cargo's `--release` profile, which writes to the `release` directory.
     Release,
-    /// The `mobile` profile of the root workspace, which the builder ships.
+    /// The `mobile` profile of the root workspace, which the builder ships the wallet library under.
     Mobile,
+    /// The `proxy` profile of the root workspace, the plain release profile the proxy library ships under.
+    Proxy,
 }
 
 impl Profile {
@@ -640,6 +642,7 @@ impl Profile {
             Profile::Debug => &[],
             Profile::Release => &["--release"],
             Profile::Mobile => &["--profile", "mobile"],
+            Profile::Proxy => &["--profile", "proxy"],
         }
     }
 
@@ -649,6 +652,7 @@ impl Profile {
             Profile::Debug => "debug",
             Profile::Release => "release",
             Profile::Mobile => "mobile",
+            Profile::Proxy => "proxy",
         }
     }
 }
