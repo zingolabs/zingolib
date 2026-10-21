@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `LightWallet::pending_op_return_deshield` reports the deshield txid of a
+  stored OP_RETURN proposal that waits for `send_stored_proposal` to resume
+  it.
+- `SendError::OpReturnResumePending`: `propose_send_with_op_return` returns it
+  while such a proposal is stored, since a new proposal would drop the one
+  the resume needs.
 - `LightWallet::birthday_adjusted_from` reports the height a wallet was given
   when the wallet raised it to Sapling activation. It lives in memory for the
   process lifetime. `RecoveryInfo` and the FFI viewing-key report carry it as

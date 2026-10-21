@@ -12,7 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries a memo: a deshield to a reserved wallet-owned transparent address,
   then that address paying the vault with the memo in an OP_RETURN. It sends
   outright and answers `{ txids }` in order, the vault payment last, the shape
-  `confirm` answers with.
+  `confirm` answers with. When the deshield was transmitted and the OP_RETURN
+  step failed, it answers `ZingolibError::SendAfterDeshield` and the proposal
+  stays stored with the deshield's txid: `confirm` resumes it and answers the
+  vault payment's txid alone, and proposing again is refused until then.
+- `ZingolibError::SendAfterDeshield(String)`, the answer above. Its text
+  names the deshield's txid.
 - `reserve_refund_address()` reserves the wallet's next refund address and
   reports it in the shape of `create_new_transparent_address`, for a swap
   provider to refund a deposit to.

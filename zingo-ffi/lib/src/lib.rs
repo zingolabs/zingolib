@@ -94,6 +94,10 @@ pub enum ZingolibError {
     Send(String),
     #[error("Error: shield: {0}")]
     Shield(String),
+    /// A swap deposit's deshield was transmitted and its OP_RETURN step
+    /// waits in the stored proposal, which `confirm` resumes.
+    #[error("Error: send after deshield: {0}")]
+    SendAfterDeshield(String),
     #[error("Error: invalid input: {0}")]
     InvalidInput(String),
     #[error("Error: wallet: {0}")]
@@ -239,8 +243,10 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
             | SendError::TransmissionError(_)
             | SendError::OpReturn(_)
             | SendError::OpReturnNotCalculable
-            | SendError::OpReturnSourceAddressStale
-            | SendError::OpReturnAfterDeshield { .. } => ZingolibError::Send(text),
+            | SendError::OpReturnSourceAddressStale => ZingolibError::Send(text),
+            SendError::OpReturnAfterDeshield { .. } | SendError::OpReturnResumePending { .. } => {
+                ZingolibError::SendAfterDeshield(text)
+            }
         },
         LightClientError::ClientError(_) | LightClientError::IndexerError(_) => {
             ZingolibError::Indexer(text)
@@ -3212,6 +3218,42 @@ wallet_report!(
     pub fn reserve_refund_address() => report_wallet_mut(NewTransparentAddress::refund)
 );
 
+#[cfg(test)]
+mod refund_address_tests {
+    use super::*;
+    use zcash_transparent::keys::NonHardenedChildIndex;
+
+    /// Tests that a reserved refund address reports the `refund` scope and a
+    /// transparent encoding.
+    #[test]
+    fn a_reserved_refund_address_reports_the_refund_scope() {
+        let id = transparent::TransparentAddressId::new(
+            AccountId::ZERO,
+            transparent::TransparentScope::Refund,
+            NonHardenedChildIndex::ZERO,
+        );
+        let encoded_address = transparent::encode_address(
+            &zingolib::config::ChainType::Mainnet,
+            TransparentAddress::PublicKeyHash([7; 20]),
+        );
+        let report = NewTransparentAddress::Created {
+            id,
+            encoded_address,
+        }
+        .report()
+        .expect("a created address always reports");
+        let parsed = json::parse(&report).expect("the report is JSON");
+        assert_eq!(parsed["account"].as_u32(), Some(0));
+        assert_eq!(parsed["address_index"].as_u32(), Some(0));
+        assert_eq!(parsed["scope"].as_str(), Some("refund"));
+        assert!(
+            parsed["encoded_address"]
+                .as_str()
+                .is_some_and(|address| address.starts_with("t1"))
+        );
+    }
+}
+
 fn ownership_report(
     ownership: Result<Option<WalletAddressRef>, wallet::error::KeyError>,
 ) -> Result<String, ZingolibError> {
@@ -3590,6 +3632,11 @@ pub fn confirm() -> Result<String, ZingolibError> {
 /// wallet-owned transparent address, then that address paying `vault_address`
 /// with `memo_hex` in an OP_RETURN. Sends outright and answers both txids,
 /// the vault payment last.
+///
+/// When the deshield was transmitted and the OP_RETURN step failed, the
+/// answer is `SendAfterDeshield` and the proposal stays stored with the
+/// deshield's txid. `confirm` resumes it and answers the vault payment's
+/// txid alone. Proposing again is refused until then.
 #[uniffi::export]
 pub fn send_swap_deposit(
     vault_address: String,
