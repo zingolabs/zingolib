@@ -947,24 +947,26 @@ impl LightClient {
             .ok_or(MigrationError::NoMigration)?
     }
 
-    /// The transmit-only client parts are submitted through: the Session
-    /// Indexer over the wire the session's transmit policy resolves (ADR
-    /// 0011, amendments 2026-07-23 and 2026-09-11; zingo-adrs zingolib/0063).
     fn migration_transmission_client(
         &self,
     ) -> Result<transmission_route::RoutedTransmissionClient, LightClientError> {
         use transmission_route::MigrationWire;
 
-        let indexer = self.indexer_uri().ok_or(LightClientError::Offline)?;
+        // The same resolution the send path runs, so an Indexerless session
+        // and a not-ready mixnet refuse a part exactly as they refuse a send.
         #[cfg(feature = "nym")]
-        let wire = match self.send_route()? {
-            // The guard travels into the client, which dials on every
-            // submission long after this function returns.
-            crate::mixnet::MixnetRoute::Mixnet(conduit) => MigrationWire::Mixnet(conduit.dial()),
-            crate::mixnet::MixnetRoute::Nakednet => MigrationWire::Nakednet,
+        let wire = {
+            use crate::lightclient::send;
+            match send::resolve_transmit_route(self.indexer_uri().is_some(), self.send_route())? {
+                // The guard travels into the client, which dials on every
+                // submission long after this function returns.
+                Some(dial) => MigrationWire::Mixnet(dial),
+                None => MigrationWire::Nakednet,
+            }
         };
         #[cfg(not(feature = "nym"))]
         let wire = MigrationWire::Nakednet;
+        let indexer = self.indexer_uri().ok_or(LightClientError::Offline)?;
         Ok(transmission_route::RoutedTransmissionClient { wire, indexer })
     }
 

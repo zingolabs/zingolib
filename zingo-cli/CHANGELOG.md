@@ -43,7 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `network probe` without a target probes the Session Indexer, the one
   indexer the session holds, instead of every mixnet-reachable census entry
-  (zingo-adrs zingolib/0063).
+  (zingo-adrs zingolib/0063). An Indexerless session is refused as offline,
+  and a Session Indexer that is not `https` on port 443 is refused as an
+  ineligible probe target, where the command used to print nothing.
+- The Server-Selection Sweep's bind notice names the live cohort only; it no
+  longer counts transmit candidates, which no surface draws from.
 - BREAKING: a `--server` value without a scheme now completes to `https://`,
   and a value without a port to its scheme's default port (`:443` for
   `https`, `:80` for `http`) instead of `http://` and `:9067`. A plaintext

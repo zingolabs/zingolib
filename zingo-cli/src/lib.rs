@@ -1867,11 +1867,9 @@ fn judge_sweep_outcome(
             SweepVerdict::BindWinner {
                 chosen: selection.sync_indexer.clone(),
                 notice: format!(
-                    "Server-Selection Sweep: sync attaches to {} (live cohort of {}, \
-                     {} transmit candidates exclude its operator).",
+                    "Server-Selection Sweep: sync attaches to {} (live cohort of {}).",
                     selection.sync_indexer,
                     selection.cohort.len(),
-                    selection.transmit_candidates.len(),
                 ),
             }
         }

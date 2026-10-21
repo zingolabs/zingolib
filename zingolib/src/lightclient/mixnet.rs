@@ -1149,33 +1149,34 @@ impl LightClient {
         // work as outstanding until every leg has finished.
         let dial = self.mixnet_only_route()?.dial();
         let socks5_addr = dial.socks5();
-        if let Some(uri) = &target
-            && !crate::mixnet::probe::probe_eligible(uri)
-        {
+        // An Indexerless session has nothing to probe, and an indexer outside
+        // the exit policy's endpoint shape is refused whether the caller
+        // named it or the session holds it, never answered with silence.
+        let indexer = target
+            .or_else(|| self.indexer_uri())
+            .ok_or(crate::lightclient::error::LightClientError::Offline)?;
+        if !crate::mixnet::probe::probe_eligible(&indexer) {
             return Err(
-                crate::lightclient::error::LightClientError::IneligibleProbeTarget(uri.clone()),
+                crate::lightclient::error::LightClientError::IneligibleProbeTarget(indexer),
             );
         }
-        let targets: Vec<http::Uri> = target
-            .or_else(|| self.indexer_uri())
-            .into_iter()
-            .filter(crate::mixnet::probe::probe_eligible)
-            .collect();
-        let history = self.indexer_history.clone();
-        let probes = futures::future::join_all(targets.iter().map(|indexer| {
-            crate::mixnet::probe::probe_indexer(indexer, socks5_addr, timeout, &history)
-        }))
+        let probe = crate::mixnet::probe::probe_indexer(
+            &indexer,
+            socks5_addr,
+            timeout,
+            &self.indexer_history,
+        )
         .await;
-        // Any answered probe is a completed round trip through the Standing
-        // Client, promoting stale proof to earned; a wave nobody answered
-        // raises the suspicion the standing exit is dead, and the arbiter
-        // probe adjudicates.
-        if probes.iter().any(|probe| probe.leg.outcome.is_ok()) {
+        // An answered probe is a completed round trip through the Standing
+        // Client, promoting stale proof to earned; an unanswered one raises
+        // the suspicion the standing exit is dead, and the arbiter probe
+        // adjudicates.
+        if probe.leg.outcome.is_ok() {
             self.note_standing_round_trip();
-        } else if !probes.is_empty() {
+        } else {
             self.note_standing_exit_suspicion();
         }
-        Ok(probes)
+        Ok(vec![probe])
     }
 
     /// Update and return the current ZEC price in USD by racing the price

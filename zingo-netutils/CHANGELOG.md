@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- `time::TRANSMISSION_HEDGE_INTERVAL`: the send's hedged race across
+- BREAKING: `time::TRANSMISSION_HEDGE_INTERVAL`. The send's hedged race across
   Destinations retired with zingo-adrs zingolib/0063.
 - `time::test::WALLET_RECORD_LAG_BOUND`, behind `testutils`. The live test
   that bounded the sender's wallet record reaching the mempool retired

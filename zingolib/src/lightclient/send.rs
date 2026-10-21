@@ -51,17 +51,11 @@ fn record_send_attempt(
     });
 }
 
-/// Why one transaction's transmission failed.
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum TransmitError {
-    /// The Session Indexer did not confirm delivery, reported whole.
-    #[error("{destination}: {failure}")]
-    Failed {
-        /// The Session Indexer's host.
-        destination: String,
-        /// The typed failure, untouched.
-        failure: zingo_net_diag::NetOpFailure,
-    },
+#[error("{host}: {failure}")]
+pub(crate) struct TransmitError {
+    host: String,
+    failure: zingo_net_diag::NetOpFailure,
 }
 
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
@@ -87,17 +81,8 @@ pub struct TransmitReport {
     pub round_trip: std::time::Duration,
 }
 
-/// Resolves whether a transmission runs over the mixnet tunnel (`Some`
-/// SOCKS5 address) or nakednet (`None`) to the Session Indexer, from the
-/// session's connectivity and its send route.
-///
-/// An Indexerless session has nothing to transmit to on any wire
-/// (zingo-adrs zingolib/0063), so it keeps the typed
-/// [`LightClientError::Offline`] refusal, while attached-but-not-ready
-/// states (bootstrapping, died) surface their own typed error, so the
-/// caller learns to wait or repair rather than to connect an indexer.
 #[cfg(feature = "nym")]
-fn resolve_transmit_route(
+pub(crate) fn resolve_transmit_route(
     has_indexer: bool,
     route: Result<crate::mixnet::MixnetRoute, crate::mixnet::MixnetNotReady>,
 ) -> Result<Option<zingo_netutils::conduit::ConduitDial>, LightClientError> {
@@ -180,20 +165,6 @@ fn retarget_for_offline_signing<NoteRef: Clone>(
 struct NakednetTarget(zingo_netutils::GrpcIndexer);
 
 impl NakednetTarget {
-    /// A target for `destination`, connecting on first use.
-    fn lazy(destination: http::Uri) -> Result<Self, zingo_net_diag::NetOpFailure> {
-        let host = crate::destination::Host::of_uri(&destination);
-        zingo_netutils::GrpcIndexer::new_lazy(destination)
-            .map(NakednetTarget)
-            .map_err(|error| {
-                zingo_net_diag::NetOpFailure::from_error(
-                    zingo_net_diag::NetOpStage::RouteResolution,
-                    &host,
-                    &error,
-                )
-            })
-    }
-
     fn failure(
         status: &zingo_netutils::Status,
         host: &crate::destination::Host,
@@ -318,21 +289,46 @@ struct TransmitContext<'a> {
     retry_interval: std::time::Duration,
 }
 
+enum SessionTarget {
+    Nakednet(NakednetTarget),
+    #[cfg(feature = "nym")]
+    Mixnet(zingo_netutils::Socks5Indexer),
+}
+
+impl SessionTarget {
+    fn of(wire: Wire, indexer: zingo_netutils::GrpcIndexer) -> Self {
+        match wire {
+            Wire::Nakednet => SessionTarget::Nakednet(NakednetTarget(indexer)),
+            #[cfg(feature = "nym")]
+            Wire::Mixnet { shared_socks5 } => {
+                SessionTarget::Mixnet(zingo_netutils::Socks5Indexer::new(
+                    shared_socks5,
+                    indexer.uri().clone(),
+                    DEFAULT_REQUEST_TIMEOUT,
+                ))
+            }
+            #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
+            Wire::MixnetOverMock { .. } => SessionTarget::Nakednet(NakednetTarget(indexer)),
+        }
+    }
+}
+
 /// - Records one attempt against the Session Indexer in the session's history.
 async fn transmit_one_transaction(
     wire: Wire,
-    indexer: &http::Uri,
+    target: &SessionTarget,
+    host: &crate::destination::Host,
     tx_bytes: &[u8],
     height: u64,
     txid: &TxId,
     context: &TransmitContext<'_>,
 ) -> Result<(String, TransmitRoute), TransmitError> {
-    match wire {
-        Wire::Nakednet => {
+    match target {
+        SessionTarget::Nakednet(target) => {
             transmit_to(
                 wire,
-                indexer,
-                NakednetTarget::lazy,
+                host,
+                target,
                 NakednetTarget::failure,
                 tx_bytes,
                 height,
@@ -342,32 +338,12 @@ async fn transmit_one_transaction(
             .await
         }
         #[cfg(feature = "nym")]
-        Wire::Mixnet { shared_socks5 } => {
+        SessionTarget::Mixnet(target) => {
             transmit_to(
                 wire,
-                indexer,
-                |destination| {
-                    Ok(zingo_netutils::Socks5Indexer::new(
-                        shared_socks5,
-                        destination,
-                        DEFAULT_REQUEST_TIMEOUT,
-                    ))
-                },
+                host,
+                target,
                 |error, host| crate::mixnet::socks5_transmit_failure(error, host),
-                tx_bytes,
-                height,
-                txid,
-                context,
-            )
-            .await
-        }
-        #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
-        Wire::MixnetOverMock { .. } => {
-            transmit_to(
-                wire,
-                indexer,
-                NakednetTarget::lazy,
-                NakednetTarget::failure,
                 tx_bytes,
                 height,
                 txid,
@@ -380,10 +356,10 @@ async fn transmit_one_transaction(
 
 /// - Records the attempt in the session's indexer history.
 #[allow(clippy::too_many_arguments)]
-async fn transmit_to<T, M, F>(
+async fn transmit_to<T, F>(
     wire: Wire,
-    indexer: &http::Uri,
-    make_target: M,
+    host: &crate::destination::Host,
+    target: &T,
     describe_failure: F,
     tx_bytes: &[u8],
     height: u64,
@@ -392,27 +368,22 @@ async fn transmit_to<T, M, F>(
 ) -> Result<(String, TransmitRoute), TransmitError>
 where
     T: TransmitTarget + Sync,
-    M: Fn(http::Uri) -> Result<T, zingo_net_diag::NetOpFailure>,
     F: Fn(&T::Failure, &crate::destination::Host) -> zingo_net_diag::NetOpFailure,
 {
-    let host = crate::destination::Host::of_uri(indexer);
     let started = std::time::Instant::now();
-    let outcome = match make_target(indexer.clone()) {
-        Ok(target) => resilient_transmit(
-            &target,
-            tx_bytes,
-            height,
-            txid,
-            move |_| tokio::time::sleep(context.retry_interval),
-            |event| context.progress.set(format!("destination {host}: {event}")),
-        )
-        .await
-        .map_err(|TransmitFailed(failure)| describe_failure(&failure, &host)),
-        Err(failure) => Err(failure),
-    };
+    let outcome = resilient_transmit(
+        target,
+        tx_bytes,
+        height,
+        txid,
+        move |_| tokio::time::sleep(context.retry_interval),
+        |event| context.progress.set(format!("destination {host}: {event}")),
+    )
+    .await
+    .map_err(|TransmitFailed(failure)| describe_failure(&failure, host));
     record_send_attempt(
         context.history,
-        &host,
+        host,
         wire.attempt_route(),
         started,
         &outcome,
@@ -422,9 +393,9 @@ where
             .map(|failure| fault_domain(&failure.stage)),
     );
     match outcome {
-        Ok(server_txid) => Ok((server_txid, wire.route_to(&host))),
-        Err(failure) => Err(TransmitError::Failed {
-            destination: host.to_string(),
+        Ok(server_txid) => Ok((server_txid, wire.route_to(host))),
+        Err(failure) => Err(TransmitError {
+            host: host.to_string(),
             failure,
         }),
     }
@@ -906,10 +877,11 @@ impl LightClient {
         #[cfg(not(feature = "nym"))]
         let wire = Wire::Nakednet;
         // Every wire reaches the Session Indexer (zingo-adrs zingolib/0063).
-        let indexer_uri = indexer
-            .as_ref()
-            .map(|indexer| indexer.uri())
-            .ok_or(LightClientError::Offline)?;
+        let indexer = indexer.ok_or(LightClientError::Offline)?;
+        let host = crate::destination::Host::of_uri(indexer.uri());
+        // One target serves the whole send: the session's live indexer
+        // client on nakednet, one SOCKS5 client over the mixnet.
+        let target = SessionTarget::of(wire, indexer);
 
         // Narrate the transmission into the side channel; the scope clears it
         // on every exit so no stale line outlives this call.
@@ -955,7 +927,8 @@ impl LightClient {
             };
             let transmit_outcome = transmit_one_transaction(
                 wire,
-                indexer_uri,
+                &target,
+                &host,
                 &transaction_bytes,
                 height.into(),
                 txid,
