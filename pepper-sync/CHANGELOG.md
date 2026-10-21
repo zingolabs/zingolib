@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 ### Fixed
+- The mempool stream is opened without a call deadline. It was opened with
+  the 20 s bound meant for a finite download, sent to the server as
+  `grpc-timeout`, so on mainnet almost every stream ended with
+  `DEADLINE_EXCEEDED` before the next block, logged a warning, and was
+  reopened with the whole mempool resent. The stream now ends when the
+  server ends it at the next block, which is the signal the monitor
+  already treats as a mined block.
+- The finite streams (block ranges, subtree roots, transparent address
+  transactions) are bounded at 120 s for the whole download in place of
+  20 s. A stall between messages is still caught after 15 s.
 - The scan results of a task's loads are processed in block height order.
   The loads of a scan range are scanned concurrently and returned in
   completion order, so a load could be processed before a lower load of the

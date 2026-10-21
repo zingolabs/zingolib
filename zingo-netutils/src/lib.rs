@@ -281,10 +281,12 @@ pub trait Indexer {
     /// Return a stream of raw mempool transactions.
     ///
     /// The stream remains open while there are mempool transactions and
-    /// closes when a new block is mined.
+    /// closes when a new block is mined. It is a subscription with no
+    /// natural end time, so it carries no call deadline: the server ends it,
+    /// and [`crate::time::INDEXER_CONNECT_TIMEOUT`] bounds the connection
+    /// it is opened on.
     fn get_mempool_stream(
         &mut self,
-        timeout: Duration,
     ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>> + Send;
 
     /// Return the note commitment tree state at the chain tip.
@@ -620,13 +622,10 @@ impl Indexer for GrpcIndexer {
 
     async fn get_mempool_stream(
         &mut self,
-        timeout: Duration,
     ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
-        let mut request = Request::new(Empty {});
-        request.set_timeout(timeout);
         Ok(self
             .clear_net_client
-            .get_mempool_stream(request)
+            .get_mempool_stream(Request::new(Empty {}))
             .await?
             .into_inner())
     }

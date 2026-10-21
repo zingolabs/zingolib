@@ -185,10 +185,13 @@ pub const STREAM_MSG_TIMEOUT: Duration = Duration::from_secs(15);
 /// Bound on one light unary RPC issued by pepper-sync's fetcher.
 pub const UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Bound on one heavy unary RPC issued by pepper-sync's fetcher, whose
-/// responses are large enough to deserve more patience than
-/// [`UNARY_RPC_TIMEOUT`].
-pub const HEAVY_UNARY_TIMEOUT: Duration = Duration::from_secs(20);
+/// Bound on one finite server stream issued by pepper-sync's fetcher (a
+/// block range, the subtree roots, a transparent address's transactions),
+/// from the request leaving to the last message arriving. A stall between
+/// messages is caught sooner by [`STREAM_MSG_TIMEOUT`], so this only has to
+/// outlast a legitimately long download. The mempool stream is a
+/// subscription and carries no such bound.
+pub const FINITE_STREAM_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// How long pepper-sync's scanner waits for its workers to wind down before
 /// abandoning a clean shutdown.
