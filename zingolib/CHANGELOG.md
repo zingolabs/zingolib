@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `LightWallet::pending_op_return_deshield` reports the deshield txid of a
+  stored OP_RETURN proposal that waits for `send_stored_proposal` to resume
+  it.
+- `SendError::OpReturnResumePending`: `propose_send_with_op_return` returns it
+  while such a proposal is stored, since a new proposal would drop the one
+  the resume needs.
 - `testutils::mock_indexer::MockChain::mine_filler_orchard_block` mines a block
   of orchard actions no wallet decrypts, so a scan task over the mock chain
   splits into loads by output count.

@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `send_swap_deposit(vault_address, amount, memo_hex)` pays a swap deposit that
+  carries a memo: a deshield to a reserved wallet-owned transparent address,
+  then that address paying the vault with the memo in an OP_RETURN. It sends
+  outright and answers `{ txids }` in order, the vault payment last, the shape
+  `confirm` answers with. When the deshield was transmitted and the OP_RETURN
+  step failed, it answers `ZingolibError::SendAfterDeshield` and the proposal
+  stays stored with the deshield's txid: `confirm` resumes it and answers the
+  vault payment's txid alone, and proposing again is refused until then.
+- `ZingolibError::SendAfterDeshield(String)`, the answer above. Its text
+  names the deshield's txid.
+- `reserve_refund_address()` reserves the wallet's next refund address and
+  reports it in the shape of `create_new_transparent_address`, for a swap
+  provider to refund a deposit to.
+- `derive_refund_address()` reports that same address without reserving it,
+  for a quote to name while the swap is still being chosen: a dropped quote
+  leaves the refund index where it was, and the commit reserves it.
 - `status_sync` reports `total_blocks`, the block span from the wallet birthday
   to the last known chain height, beside the `total_blocks_scanned` count. The
   `sync_complete` document of `poll_sync` reports `total_outputs_scanned` and
