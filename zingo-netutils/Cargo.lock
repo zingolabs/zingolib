@@ -9205,6 +9205,7 @@ dependencies = [
  "rustls 0.23.43",
  "rustls-pemfile 2.2.0",
  "serde",
+ "sha2 0.10.9",
  "thiserror 2.0.20",
  "tokio",
  "tokio-rustls 0.26.4",

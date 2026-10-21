@@ -53,7 +53,7 @@ reqwest = { workspace = true, optional = true, default-features = false, feature
 # `indexer_connector`). tonic already depends on it with these features, so
 # nothing new enters the lockfile.
 hyper-util = { version = "0.1.20", features = ["client-legacy", "tokio"] }
-tower = { version = "0.5", optional = true }
+tower = { version = "0.5" }
 tokio = { workspace = true, optional = true, features = [
     "time",
     "rt-multi-thread",
@@ -68,6 +68,9 @@ rand = "0.10"
 serde = { version = "1.0.229", features = ["derive"] }
 nym-socks5-proxy-helpers = { version = "1.21.4", optional = true }
 futures-channel = { version = "0.3", optional = true }
+x509-parser.workspace = true
+sha2 = "0.10"
+hyper-rustls = { version = "0.27", default-features = false, features = ["aws-lc-rs", "http2"] }
 
 [features]
 globally-public-transparent = ["dep:tokio-stream"]
@@ -81,7 +84,6 @@ testutils = []
 # SOCKS5 port.
 socks5-transmit = [
     "dep:tokio-socks",
-    "dep:tower",
     "dep:tokio",
     # Transmit failures render their cause chains over the one sanctioned
     # chain walk rather than a private copy of it. Std-only and
@@ -140,7 +142,6 @@ rustls-pemfile.workspace = true
 # timeout regression test; dev-only, so the shipped graph is unchanged.
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
 http-body-util.workspace = true
-x509-parser.workspace = true
 
 # zingo-netutils is its own workspace root (excluded from the parent's
 # members) so that it owns a separate Cargo.lock. That independent
