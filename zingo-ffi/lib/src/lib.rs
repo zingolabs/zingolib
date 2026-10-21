@@ -3505,33 +3505,33 @@ pub fn send(send_json: String) -> Result<String, ZingolibError> {
             let op_return = send_op_return_payload(&json_args)?;
             let route_via_ephemeral = send_routes_via_ephemeral(&json_args);
 
+            // Both fields describe the whole transaction, so a send that
+            // carries either takes exactly one receiver.
+            if (op_return.is_some() || route_via_ephemeral) && json_args.members().count() != 1 {
+                return Err(ZingolibError::InvalidInput(
+                    "an op_return or ephemeral-routed send takes exactly one receiver".to_string(),
+                ));
+            }
+
             let (fee, source_pools, destination_pools) = if op_return.is_some()
                 || route_via_ephemeral
             {
-                let members = json_args.members().collect::<Vec<_>>();
-                let [member] = members.as_slice() else {
-                    return Err(ZingolibError::InvalidInput(
-                        "an op_return or ephemeral-routed send takes exactly one receiver"
-                            .to_string(),
-                    ));
+                let receiver = parse_send_receiver(&json_args[0])?;
+                let request = transaction_request_from_receivers(vec![receiver])
+                    .map_err(in_context(ZingolibError::InvalidInput, "request error"))?;
+                let payment = request
+                    .payments()
+                    .get(&0)
+                    .expect("a one-receiver request holds payment 0");
+                let Some(amount) = payment.amount() else {
+                    return Err(ZingolibError::InvalidInput("missing amount".to_string()));
                 };
-                let receiver = parse_send_receiver(member)?;
-                if receiver.memo.is_some() {
-                    return Err(ZingolibError::InvalidInput(
-                        "a transparent receiver takes no memo".to_string(),
-                    ));
-                }
-                if receiver.amount == Zatoshis::ZERO {
-                    return Err(ZingolibError::InvalidInput(
-                        "a transparent send takes a positive amount".to_string(),
-                    ));
-                }
                 let data = wallet::transparent::OpReturnData::new(op_return.unwrap_or_default())
                     .map_err(|e| ZingolibError::InvalidInput(e.to_string()))?;
                 let proposal = lightclient
                     .propose_send_with_op_return(
-                        &receiver.recipient_address.to_string(),
-                        receiver.amount,
+                        &payment.recipient_address().to_string(),
+                        amount,
                         data,
                         AccountId::ZERO,
                     )
