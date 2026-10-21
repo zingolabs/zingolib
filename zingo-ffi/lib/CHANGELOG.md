@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `reserve_refund_address()` reserves the wallet's next refund address and
   reports it in the shape of `create_new_transparent_address`, for a swap
   provider to refund a deposit to.
+- `derive_refund_address()` reports that same address without reserving it,
+  for a quote to name while the swap is still being chosen: a dropped quote
+  leaves the refund index where it was, and the commit reserves it.
 - `status_sync` reports `total_blocks`, the block span from the wallet birthday
   to the last known chain height, beside the `total_blocks_scanned` count. The
   `sync_complete` document of `poll_sync` reports `total_outputs_scanned` and

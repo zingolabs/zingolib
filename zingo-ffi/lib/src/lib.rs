@@ -3161,14 +3161,30 @@ impl NewTransparentAddress {
     ///   provider refunds a deposit to.
     fn refund(wallet: &mut wallet::LightWallet) -> Self {
         Self::generated(wallet, |wallet| {
-            wallet
-                .generate_refund_addresses(1, AccountId::ZERO)
-                .map(|addresses| {
-                    addresses
-                        .into_iter()
-                        .next()
-                        .expect("a request for one address yields one address")
-                })
+            Self::first(wallet.generate_refund_addresses(1, AccountId::ZERO))
+        })
+    }
+
+    /// Derives the next refund address in `wallet` without reserving it, so
+    /// a quote can name it and a dropped quote leaves the index where it was.
+    fn derived_refund(wallet: &mut wallet::LightWallet) -> Self {
+        Self::generated(wallet, |wallet| {
+            Self::first(wallet.derive_refund_addresses(1, AccountId::ZERO))
+        })
+    }
+
+    fn first(
+        addresses: Result<
+            Vec<(transparent::TransparentAddressId, TransparentAddress)>,
+            wallet::error::KeyError,
+        >,
+    ) -> Result<(transparent::TransparentAddressId, TransparentAddress), wallet::error::KeyError>
+    {
+        addresses.map(|addresses| {
+            addresses
+                .into_iter()
+                .next()
+                .expect("a request for one address yields one address")
         })
     }
 
@@ -3216,6 +3232,10 @@ wallet_report!(
 
 wallet_report!(
     pub fn reserve_refund_address() => report_wallet_mut(NewTransparentAddress::refund)
+);
+
+wallet_report!(
+    pub fn derive_refund_address() => report_wallet_mut(NewTransparentAddress::derived_refund)
 );
 
 #[cfg(test)]
