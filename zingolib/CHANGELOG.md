@@ -21,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `data::panic_text` renders a panic payload, `&str` or `String`, as text.
 - `LightClientError::SyncPanicked(String)` reports a sync task that panicked
   from `await_sync` and from the launch wait in `sync`.
+- `config::IndexerChoice`, the typed three-way indexer choice `Offline`,
+  `Default`, or `Named(uri)`, with `resolve(chain)` answering the URI a
+  session attaches to and `config::NoDefaultIndexer` when the chain has
+  no Default Indexer. `ClientConfigBuilder::set_indexer_choice` takes it,
+  `set_indexer_uri` is now `set_indexer_choice(Named(uri))`, and
+  `ClientConfigError::NoDefaultIndexer` is the build-time refusal.
+  `config::default_indexer_for(chain)` answers the chain's Default Indexer
+  (zingo-adrs zingolib/0062).
+- `LightClient::choose_indexer`, which applies an `IndexerChoice` to a
+  running session: `Offline` goes offline, `Default` and `Named` replace
+  the indexer connection, with `lightclient::ChooseIndexerError` naming
+  the missing default or the failed connection.
+- The crate re-exports `zingo_netutils::default_indexer`.
 
 ### Changed
 - `wallet::legacy::MAX_REORG` follows `pepper_sync::sync::MAX_REORG_ALLOWANCE`

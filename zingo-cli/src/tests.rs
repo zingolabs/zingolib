@@ -283,7 +283,9 @@ mod mode_of_operation {
             assert_command(
                 &[examples::BIN_NAME, "change_server", examples::SERVER_URI],
                 CliCommand::ChangeServer {
-                    uri: Some(examples::SERVER_URI.parse().expect("a valid example uri")),
+                    choice: zingolib::config::IndexerChoice::Named(
+                        examples::SERVER_URI.parse().expect("a valid example uri"),
+                    ),
                 },
             );
         }
@@ -1122,6 +1124,30 @@ mod config_template {
             let err = fill(&[examples::BIN_NAME, "--chain", "bogus"]).unwrap_err();
             assert!(err.contains("bogus"));
         }
+
+        /// Consent without `--server` binds the chain's Default Indexer, and
+        /// the resolved server pins the session (zingo-adrs zingolib/0062).
+        #[cfg(all(feature = "nym", not(feature = "nakednet-test-mode")))]
+        #[test]
+        fn online_without_server_binds_the_default_indexer() {
+            let config = fill(&[examples::BIN_NAME, "--online"])
+                .expect("mainnet has a Default Indexer, so consent alone resolves");
+            assert_eq!(
+                config.server,
+                zingolib::config::default_indexer_for(&ChainType::Mainnet)
+            );
+            assert!(config.server_pinned);
+        }
+
+        /// A chain without a Default Indexer refuses consent that names no
+        /// server, with the chain in the error (zingo-adrs zingolib/0062).
+        #[cfg(all(feature = "nym", not(feature = "nakednet-test-mode")))]
+        #[test]
+        fn online_without_server_on_testnet_refuses() {
+            let err = fill(&[examples::BIN_NAME, "--online", "--chain", "testnet"])
+                .expect_err("testnet has no Default Indexer, so consent alone refuses");
+            assert!(err.contains("Default Indexer"), "{err}");
+        }
     }
 
     mod zingo_config {
@@ -1313,7 +1339,9 @@ mod offline_mode_pin {
     /// One sample per network-requiring shape the gate must refuse.
     fn network_requiring() -> Vec<CliCommand> {
         vec![
-            CliCommand::ChangeServer { uri: None },
+            CliCommand::ChangeServer {
+                choice: zingolib::config::IndexerChoice::Default,
+            },
             CliCommand::Confirm,
             CliCommand::CurrentPrice,
             CliCommand::Info,

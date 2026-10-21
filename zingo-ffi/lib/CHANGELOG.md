@@ -36,6 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   place of `Init`, when the wallet bytes were written for another chain.
 
 ### Changed
+- BREAKING: `IndexerConnection.server_uri: String` is now
+  `IndexerConnection.indexer: IndexerChoice`, a uniffi enum of `Offline`,
+  `Default`, and `Named { uri }`. `Offline` replaces the empty string,
+  `Default` attaches to the chain's Default Indexer (mainnet's is
+  `https://mainnet.zainod.zingolabs.dev:443`; a chain without one fails
+  `Init`), and `Named` carries the URI the string carried before.
+- BREAKING: `change_server(serveruri: String)` is now
+  `change_server(choice: IndexerChoice)`. `Offline` disconnects the
+  session through `go_offline` instead of binding a never-dialed
+  placeholder URI, and a `Default` on a chain without a Default Indexer
+  fails `InvalidInput` (zingo-adrs zingolib/0062).
 - **Breaking:** the bindings come from `#[uniffi::export]` attributes and the
   uniffi derives on uniffi 0.32.2 in place of `zingo.udl`. The UDL, the
   `build.rs` and the crate's `uniffi-bindgen` binary target are gone, and

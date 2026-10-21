@@ -1143,6 +1143,10 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
     #[cfg(not(feature = "nakednet-test-mode"))]
     #[error("invalid --server URI.")]
     IndexerUri(#[from] http::uri::InvalidUri),
+    /// Consent arrived without `--server` on a chain that has no Default Indexer.
+    #[cfg(not(feature = "nakednet-test-mode"))]
+    #[error(transparent)]
+    NoDefaultIndexer(#[from] zingolib::config::NoDefaultIndexer),
     /// The pinned server misses its scheme, host, or port.
     #[error(
         "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
@@ -1203,6 +1207,11 @@ impl CliConfigTemplate {
 
         let data_dir = data_dir_from(&matches);
         log::info!("data_dir: {}", data_dir.to_str().unwrap());
+        let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
+            ChainType::try_from(chain.as_str()).map_err(ConfigTemplateError::from)?
+        } else {
+            ChainType::Mainnet
+        };
         // Offline mode never resolves a server: the session's contract is
         // that no Indexer is ever configured.
         #[cfg(feature = "nakednet-test-mode")]
@@ -1215,18 +1224,20 @@ impl CliConfigTemplate {
                 (Some(server), ranked_servers)
             }
         };
-        // Without the quarantined sweep, resolution is pure: the typed
-        // `--server` pin or nothing, never a probe and never a default.
+        // Resolution is pure: the named `--server`, or the chain's Default
+        // Indexer when consent arrives without one (zingo-adrs
+        // zingolib/0062). A chain without a Default Indexer refuses typed.
         #[cfg(not(feature = "nakednet-test-mode"))]
         let server = match communications {
             Communications::DeliberateOffline | Communications::UnconsentedOffline => None,
-            Communications::Online => matches
-                .get_one::<http::Uri>("server")
-                .map(|server| {
+            Communications::Online => match matches.get_one::<http::Uri>("server") {
+                Some(server) => zingolib::config::IndexerChoice::Named(
                     zingolib::config::construct_indexer_uri(server.to_string())
-                        .map_err(ConfigTemplateError::from)
-                })
-                .transpose()?,
+                        .map_err(ConfigTemplateError::from)?,
+                ),
+                None => zingolib::config::IndexerChoice::Default,
+            }
+            .resolve(&chaintype)?,
         };
         if let Some(server) = &server {
             // Test to make sure the server has all of scheme, host and port
@@ -1236,14 +1247,9 @@ impl CliConfigTemplate {
                 });
             }
         }
-        let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
-            ChainType::try_from(chain.as_str()).map_err(ConfigTemplateError::from)?
-        } else {
-            ChainType::Mainnet
-        };
-
-        let server_pinned =
-            matches.value_source("server") == Some(clap::parser::ValueSource::CommandLine);
+        // A resolved server, named or Default, binds the session: the sweep
+        // surveys it alone and never substitutes another (zingolib/0062).
+        let server_pinned = server.is_some();
         let sync = !matches.get_flag("nosync") && communications == Communications::Online;
         let waitsync = matches.get_flag("waitsync");
         let nym_proxy_path = matches.get_one::<String>("nym-proxy").cloned();

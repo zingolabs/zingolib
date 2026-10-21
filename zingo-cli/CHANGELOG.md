@@ -45,6 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a value without a port to its scheme's default port (`:443` for
   `https`, `:80` for `http`) instead of `http://` and `:9067`. A plaintext
   regtest indexer needs an explicit `http://`.
+- BREAKING: consent to go online without `--server` attaches to the
+  chain's Default Indexer (`https://mainnet.zainod.zingolabs.dev:443` on
+  mainnet) instead of surveying the census, and a chain without a Default
+  Indexer refuses the launch with a typed error naming the chain. A named
+  or Default server binds the session, so the sweep surveys it alone.
+- BREAKING: `change_server` takes `offline`, `default`, or a URI; the
+  bare and empty forms, which bound an invalid URI, are refused at the
+  parse (zingo-adrs zingolib/0062).
 - BREAKING: moves to the librustzcash NU7 pre-release cohort zingolib
   pins. `parse_viewkey` lists a P2SH viewing key item as `transparent`
   beside a P2PKH one.
