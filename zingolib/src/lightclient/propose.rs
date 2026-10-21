@@ -120,6 +120,9 @@ impl LightClient {
         data: OpReturnData,
         account_id: zip32::AccountId,
     ) -> Result<OpReturnProposal, LightClientError> {
+        if let Some(deshield_txid) = self.wallet().read().await.pending_op_return_deshield() {
+            return Err(SendError::OpReturnResumePending { deshield_txid }.into());
+        }
         let minted = self.hold_proposal_pause();
         let result = self
             .create_op_return_proposal(recipient, amount, data, account_id)
@@ -1984,6 +1987,7 @@ mod sync_pause_contract {
 #[cfg(test)]
 mod op_return {
     use pepper_sync::keys::transparent::TransparentScope;
+    use zcash_protocol::TxId;
     use zcash_protocol::value::Zatoshis;
 
     use crate::data::proposal::{ZingoProposal, total_payment_amount};
@@ -2048,6 +2052,46 @@ mod op_return {
             !wallet.transparent_addresses().contains_key(&next_id),
             "proposing does not reserve the address"
         );
+    }
+
+    /// A stored proposal whose deshield was transmitted is kept: proposing
+    /// again is refused until `send_stored_proposal` resumes it.
+    #[tokio::test]
+    async fn proposing_is_refused_while_a_deshielded_proposal_waits() {
+        let mut client = client().await;
+        let amount = Zatoshis::const_from_u64(100_000);
+        let proposal = client
+            .propose_send_with_op_return(zingo_test_vectors::EXT_TADDR, amount, data(), ACCOUNT)
+            .await
+            .expect("a funded wallet proposes to a transparent recipient");
+        let deshield_txid = TxId::from_bytes([9; 32]);
+        client
+            .wallet()
+            .write()
+            .await
+            .store_proposal(ZingoProposal::OpReturn(
+                proposal.with_deshield_txid(deshield_txid),
+            ));
+
+        let refused = client
+            .propose_send_with_op_return(zingo_test_vectors::EXT_TADDR, amount, data(), ACCOUNT)
+            .await;
+
+        assert!(matches!(
+            refused,
+            Err(LightClientError::SendError(SendError::OpReturnResumePending { deshield_txid: txid }))
+                if txid == deshield_txid
+        ));
+        let stored = client
+            .wallet()
+            .write()
+            .await
+            .take_proposal()
+            .expect("the refusal leaves the waiting proposal stored");
+        assert!(matches!(
+            stored,
+            ZingoProposal::OpReturn(kept) if kept.deshield_txid() == Some(deshield_txid)
+        ));
     }
 
     /// Proposing twice derives the same source address. Neither call
