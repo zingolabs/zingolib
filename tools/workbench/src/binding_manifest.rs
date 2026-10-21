@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::binding_layer;
 use crate::binding_layer::short_commit;
+use crate::orasust;
 
 pub const BINARY: &str = "binding-manifest";
 pub const FILE: &str = "bindings/published.toml";
@@ -549,25 +550,34 @@ pub fn missing_platforms(digests: &[(&str, String)]) -> Vec<&'static str> {
     missing_required(&present)
 }
 
-/// - Runs `orasust resolve` as a child process, anonymously and then, when that fails and
-///   credentials are given, with them.
+/// - Runs `orasust resolve` as a child process, anonymously and then, when the registry refuses
+///   the anonymous read and credentials are given, with them.
 /// - Runs `orasust manifest fetch` as a child process when the registry serves the reference.
 pub fn held_digest(
     platform: &str,
     commit: &str,
-    credentials: Option<&crate::orasust::Credentials>,
+    credentials: Option<&orasust::Credentials>,
 ) -> Result<Option<String>, Vec<String>> {
     let name = reference(platform, commit);
-    let Ok(digest) = crate::orasust::resolve(&name) else {
-        let private = credentials
-            .is_some_and(|credentials| crate::orasust::resolve_as(&name, credentials).is_ok());
-        return if private {
-            Err(vec![private_package_hint(&name)])
-        } else {
-            Ok(None)
-        };
+    let digest = match orasust::resolve(&name)? {
+        orasust::Resolution::Found(digest) => digest,
+        orasust::Resolution::Absent => return Ok(None),
+        orasust::Resolution::Private => {
+            let with_token = credentials
+                .map(|credentials| orasust::resolve_as(&name, credentials))
+                .transpose()?;
+            return match with_token {
+                None | Some(orasust::Resolution::Found(_)) => {
+                    Err(vec![private_package_hint(&name)])
+                }
+                Some(orasust::Resolution::Absent) => Ok(None),
+                Some(orasust::Resolution::Private) => Err(vec![format!(
+                    "{name} refuses the token as it refuses an anonymous read"
+                )]),
+            };
+        }
     };
-    let manifest = crate::orasust::manifest(&name)?;
+    let manifest = orasust::manifest(&name)?;
     match revision_mismatch(&name, &manifest, commit) {
         Some(mismatch) => Err(vec![mismatch]),
         None => Ok(Some(digest)),
@@ -576,12 +586,15 @@ pub fn held_digest(
 
 /// - Runs `orasust resolve` and `orasust manifest fetch` as child processes, once per recorded digest.
 fn manifest_diagnostics(name: &str, commit: &str, digest: &str) -> Vec<String> {
-    let found = match crate::orasust::resolve(name) {
-        Ok(found) => found,
-        Err(mut diagnostics) => {
-            diagnostics.push(private_package_hint(name));
-            return diagnostics;
+    let found = match orasust::resolve(name) {
+        Ok(orasust::Resolution::Found(found)) => found,
+        Ok(orasust::Resolution::Absent) => {
+            return vec![format!(
+                "{name} is not in the registry, and the entry names {digest}"
+            )]
         }
+        Ok(orasust::Resolution::Private) => return vec![private_package_hint(name)],
+        Err(diagnostics) => return diagnostics,
     };
     let mut diagnostics = Vec::new();
     if found != digest {
@@ -589,7 +602,7 @@ fn manifest_diagnostics(name: &str, commit: &str, digest: &str) -> Vec<String> {
             "{name} resolves to {found}, and the entry names {digest}"
         ));
     }
-    match crate::orasust::manifest(name) {
+    match orasust::manifest(name) {
         Ok(manifest) => diagnostics.extend(revision_mismatch(name, &manifest, commit)),
         Err(mut failed) => diagnostics.append(&mut failed),
     }

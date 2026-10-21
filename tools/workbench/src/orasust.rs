@@ -22,6 +22,10 @@ const MEDIA_TYPE_SEPARATOR: char = ':';
 const QUOTE: char = '"';
 const KEY_VALUE_SEPARATOR: char = ':';
 const CURRENT_DIR: &str = ".";
+const STDOUT: &str = "stdout";
+const STDERR: &str = "stderr";
+const CREDENTIAL_NOT_FOUND: &str = "basic credential not found";
+const NOT_FOUND: &str = "not found";
 
 pub fn version() -> Result<String, Vec<String>> {
     let manifest: toml_edit::DocumentMut = MANIFEST
@@ -97,35 +101,91 @@ pub struct Credentials {
     pub token: String,
 }
 
-/// - Runs `orasust <args>` as a child process in `dir`, with the token written to its stdin and
-///   its stderr inherited.
-fn stdout_with_token(dir: &Path, args: &[&str], token: &str) -> Result<String, Vec<String>> {
-    let mut child = Command::new(BINARY)
+pub struct Outcome {
+    pub success: bool,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+/// - Runs `orasust <args>` as a child process in `dir`, with `token` written to its stdin when
+///   one is given, and with its stdout and stderr captured.
+fn outcome(dir: &Path, args: &[&str], token: Option<&str>) -> Result<Outcome, Vec<String>> {
+    let mut command = Command::new(BINARY);
+    command
         .args(args)
         .current_dir(dir)
-        .stdin(Stdio::piped())
+        .stdin(if token.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped());
+    let mut child = command
         .spawn()
         .map_err(|e| vec![format!("failed to run {BINARY}: {e}")])?;
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| vec![format!("{BINARY} took no stdin")])?;
-    stdin
-        .write_all(token.as_bytes())
-        .map_err(|e| vec![format!("cannot hand {BINARY} the token: {e}")])?;
-    drop(stdin);
+    if let Some(token) = token {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| vec![format!("{BINARY} took no stdin")])?;
+        stdin
+            .write_all(token.as_bytes())
+            .map_err(|e| vec![format!("cannot hand {BINARY} the token: {e}")])?;
+    }
     let output = child
         .wait_with_output()
         .map_err(|e| vec![format!("failed to wait for {BINARY}: {e}")])?;
-    if !output.status.success() {
-        return Err(vec![format!("`{BINARY} {}` failed", args.join(" "))]);
-    }
-    String::from_utf8(output.stdout).map_err(|e| vec![format!("{BINARY} output not utf-8: {e}")])
+    let text = |bytes: Vec<u8>, stream: &str| {
+        String::from_utf8(bytes).map_err(|e| vec![format!("{BINARY} {stream} not utf-8: {e}")])
+    };
+    Ok(Outcome {
+        success: output.status.success(),
+        stdout: text(output.stdout, STDOUT)?,
+        stderr: text(output.stderr, STDERR)?,
+    })
 }
 
-/// - Runs `orasust push` as a child process through [`stdout_with_token`].
+/// - Runs `orasust <args>` through [`outcome`] and writes its stderr to this process's stderr.
+fn stdout_or_failure(
+    dir: &Path,
+    args: &[&str],
+    token: Option<&str>,
+) -> Result<String, Vec<String>> {
+    let outcome = outcome(dir, args, token)?;
+    eprint!("{}", outcome.stderr);
+    if !outcome.success {
+        return Err(vec![format!("`{BINARY} {}` failed", args.join(" "))]);
+    }
+    Ok(outcome.stdout)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Resolution {
+    Found(String),
+    Absent,
+    Private,
+}
+
+pub fn resolution(outcome: &Outcome) -> Result<Resolution, Vec<String>> {
+    if outcome.success {
+        return Ok(Resolution::Found(outcome.stdout.trim().to_string()));
+    }
+    if outcome.stderr.contains(CREDENTIAL_NOT_FOUND) {
+        return Ok(Resolution::Private);
+    }
+    if outcome.stderr.contains(NOT_FOUND) {
+        return Ok(Resolution::Absent);
+    }
+    let lines: Vec<String> = outcome.stderr.lines().map(str::to_string).collect();
+    Err(if lines.is_empty() {
+        vec![format!("`{BINARY} {RESOLVE}` failed without a message")]
+    } else {
+        lines
+    })
+}
+
+/// - Runs `orasust push` as a child process through [`stdout_or_failure`].
 pub fn push(
     reference: &str,
     file: &Path,
@@ -152,16 +212,20 @@ pub fn push(
     args.push(reference);
     args.push(&layer);
     let dir = file.parent().unwrap_or_else(|| Path::new(CURRENT_DIR));
-    pushed_digest(&stdout_with_token(dir, &args, &credentials.token)?)
+    pushed_digest(&stdout_or_failure(dir, &args, Some(&credentials.token))?)
 }
 
-/// - Runs `orasust resolve` as a child process.
-pub fn resolve(reference: &str) -> Result<String, Vec<String>> {
-    crate::stdout_of(BINARY, &[RESOLVE, reference]).map(|digest| digest.trim().to_string())
+/// - Runs `orasust resolve` as a child process, anonymously, through [`outcome`].
+pub fn resolve(reference: &str) -> Result<Resolution, Vec<String>> {
+    resolution(&outcome(
+        Path::new(CURRENT_DIR),
+        &[RESOLVE, reference],
+        None,
+    )?)
 }
 
-/// - Runs `orasust resolve` as a child process through [`stdout_with_token`].
-pub fn resolve_as(reference: &str, credentials: &Credentials) -> Result<String, Vec<String>> {
+/// - Runs `orasust resolve` as a child process with the credentials, through [`outcome`].
+pub fn resolve_as(reference: &str, credentials: &Credentials) -> Result<Resolution, Vec<String>> {
     let args = [
         RESOLVE,
         USERNAME_FLAG,
@@ -169,14 +233,17 @@ pub fn resolve_as(reference: &str, credentials: &Credentials) -> Result<String, 
         PASSWORD_STDIN_FLAG,
         reference,
     ];
-    stdout_with_token(Path::new(CURRENT_DIR), &args, &credentials.token)
-        .map(|digest| digest.trim().to_string())
+    resolution(&outcome(
+        Path::new(CURRENT_DIR),
+        &args,
+        Some(&credentials.token),
+    )?)
 }
 
-/// - Runs `orasust manifest fetch` as a child process.
+/// - Runs `orasust manifest fetch` as a child process through [`stdout_or_failure`].
 pub fn manifest(reference: &str) -> Result<String, Vec<String>> {
     let args = [MANIFEST_FETCH.as_slice(), &[reference]].concat();
-    crate::stdout_of(BINARY, &args)
+    stdout_or_failure(Path::new(CURRENT_DIR), &args, None)
 }
 
 #[cfg(test)]
@@ -217,6 +284,43 @@ mod tests {
             annotation(compact, "org.zingolabs.zingolib.descriptor"),
             None
         );
+    }
+
+    fn failed(stderr: &str) -> Outcome {
+        Outcome {
+            success: false,
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_resolve_is_found_absent_private_or_a_failure_by_what_the_client_printed(
+    ) -> Result<(), Vec<String>> {
+        let found = Outcome {
+            success: true,
+            stdout: "sha256:abc\n".to_string(),
+            stderr: String::new(),
+        };
+        assert_eq!(
+            resolution(&found),
+            Ok(Resolution::Found("sha256:abc".to_string()))
+        );
+        assert_eq!(
+            resolution(&failed(
+                "Error response from registry: failed to resolve digest: r.io/a:b: not found\n"
+            )),
+            Ok(Resolution::Absent)
+        );
+        assert_eq!(
+            resolution(&failed("Error: basic credential not found\n")),
+            Ok(Resolution::Private)
+        );
+        let unavailable = "Error response from registry: \"https://r.io/v2/a/manifests/b\": response status code 503: Service Unavailable\n";
+        let diagnostic = crate::refused(resolution(&failed(unavailable)))?.concat();
+        assert!(diagnostic.contains("503"), "{diagnostic}");
+        assert!(!crate::refused(resolution(&failed("")))?.is_empty());
+        Ok(())
     }
 
     #[test]
