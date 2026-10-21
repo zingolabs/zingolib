@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answers the zingolabs endpoint a session attaches to when the consumer
   goes online without naming one, `MAINNET_DEFAULT_INDEXER`
   (`https://mainnet.zainod.zingolabs.dev:443`) for mainnet and nothing for
-  testnet until a zingolabs testnet host exists (zingo-adrs zingolib/0062).
+  testnet until a zingolabs testnet host exists (zingo-adrs zingolib/0063).
 
 ### Changed
 

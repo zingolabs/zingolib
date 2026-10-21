@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `set_indexer_uri` is now `set_indexer_choice(Named(uri))`, and
   `ClientConfigError::NoDefaultIndexer` is the build-time refusal.
   `config::default_indexer_for(chain)` answers the chain's Default Indexer
-  (zingo-adrs zingolib/0062).
+  (zingo-adrs zingolib/0063).
 - `LightClient::choose_indexer`, which applies an `IndexerChoice` to a
   running session: `Offline` goes offline, `Default` and `Named` replace
   the indexer connection, with `lightclient::ChooseIndexerError` naming

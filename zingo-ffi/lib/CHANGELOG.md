@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `change_server(choice: IndexerChoice)`. `Offline` disconnects the
   session through `go_offline` instead of binding a never-dialed
   placeholder URI, and a `Default` on a chain without a Default Indexer
-  fails `InvalidInput` (zingo-adrs zingolib/0062).
+  fails `InvalidInput` (zingo-adrs zingolib/0063).
 - **Breaking:** the bindings come from `#[uniffi::export]` attributes and the
   uniffi derives on uniffi 0.32.2 in place of `zingo.udl`. The UDL, the
   `build.rs` and the crate's `uniffi-bindgen` binary target are gone, and

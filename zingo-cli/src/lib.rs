@@ -1226,7 +1226,7 @@ impl CliConfigTemplate {
         };
         // Resolution is pure: the named `--server`, or the chain's Default
         // Indexer when consent arrives without one (zingo-adrs
-        // zingolib/0062). A chain without a Default Indexer refuses typed.
+        // zingolib/0063). A chain without a Default Indexer refuses typed.
         #[cfg(not(feature = "nakednet-test-mode"))]
         let server = match communications {
             Communications::DeliberateOffline | Communications::UnconsentedOffline => None,
@@ -1248,7 +1248,7 @@ impl CliConfigTemplate {
             }
         }
         // A resolved server, named or Default, binds the session: the sweep
-        // surveys it alone and never substitutes another (zingolib/0062).
+        // surveys it alone and never substitutes another (zingolib/0063).
         let server_pinned = server.is_some();
         let sync = !matches.get_flag("nosync") && communications == Communications::Online;
         let waitsync = matches.get_flag("waitsync");
