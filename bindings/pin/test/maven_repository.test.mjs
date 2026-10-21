@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { mock, test } from 'node:test';
-import { promisify } from 'node:util';
 import {
   coordinateIn,
   coordinateOf,
@@ -12,43 +9,7 @@ import {
   REPOSITORY,
   versionNamesCommit,
 } from '../lib/maven_repository.mjs';
-
-const COMMIT = 'ba7336710419c9ac1e9362ac1b4e5b0073ff477e';
-const VERSION = '6.0.0-ba7336710419c9ac';
-const COORDINATE = `org.zingolabs:zingo-binding-layer:${VERSION}`;
-
-function metadata(versions) {
-  return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<metadata>',
-    '  <groupId>org.zingolabs</groupId>',
-    '  <artifactId>zingo-binding-layer</artifactId>',
-    '  <versioning>',
-    `    <latest>${versions[0] ?? ''}</latest>`,
-    '    <versions>',
-    ...versions.map(version => `      <version>${version}</version>`),
-    '    </versions>',
-    '  </versioning>',
-    '</metadata>',
-  ].join('\n');
-}
-
-async function scratch() {
-  return mkdtemp(join(tmpdir(), 'bundle-pin-maven-'));
-}
-
-async function archive(versions) {
-  const root = await scratch();
-  const artifact = join(root, REPOSITORY, 'org', 'zingolabs', 'zingo-binding-layer');
-  await mkdir(join(artifact, VERSION), { recursive: true });
-  if (versions !== undefined) {
-    await writeFile(join(artifact, 'maven-metadata.xml'), metadata(versions));
-  }
-  await writeFile(join(artifact, VERSION, `zingo-binding-layer-${VERSION}.aar`), 'aar');
-  const tarball = join(root, 'repository.tar.gz');
-  await promisify(execFile)('tar', ['-czf', tarball, '-C', root, REPOSITORY]);
-  return tarball;
-}
+import { archive, COMMIT, COORDINATE, metadata, scratch, VERSION } from './maven_fixture.mjs';
 
 test('coordinateIn reads the one version of the artifact metadata', () => {
   assert.deepEqual(coordinateIn(metadata([VERSION])), {

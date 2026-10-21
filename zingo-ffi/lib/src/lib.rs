@@ -2475,6 +2475,7 @@ enum ViewingKey {
     Encoded {
         ufvk: String,
         birthday: u32,
+        birthday_adjusted_from: Option<u32>,
         chain: ChainType,
     },
     Unavailable(wallet::error::KeyError),
@@ -2492,6 +2493,7 @@ impl ViewingKey {
             Ok(ufvk) => Self::Encoded {
                 ufvk: wallet::keys::unified::encode_ufvk(&ufvk, &wallet.chain_type()),
                 birthday: u32::from(wallet.birthday()),
+                birthday_adjusted_from: wallet.birthday_adjusted_from().map(u32::from),
                 chain: wallet.chain_type(),
             },
             Err(unavailable) => Self::Unavailable(unavailable),
@@ -2505,13 +2507,19 @@ impl Report for ViewingKey {
             Self::Encoded {
                 ufvk,
                 birthday,
+                birthday_adjusted_from,
                 chain,
-            } => Ok(object! {
-                "ufvk" => ufvk,
-                "birthday" => birthday,
-                "chain_name" => chain_name_short(chain)
+            } => {
+                let mut val = object! {
+                    "ufvk" => ufvk,
+                    "birthday" => birthday,
+                    "chain_name" => chain_name_short(chain)
+                };
+                if let Some(from) = birthday_adjusted_from {
+                    val["birthday_adjusted_from"] = from.into();
+                }
+                Ok(val.pretty(2))
             }
-            .pretty(2)),
             Self::Unavailable(unavailable) => Err(ZingolibError::Read(chain_text(&unavailable))),
         }
     }
