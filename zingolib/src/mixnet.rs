@@ -12,7 +12,7 @@ pub mod acquire;
 /// Exit identity, defined below the seam (ADR 0046).
 pub use zingo_netutils::exit::{BlankExitNodeId, ExitNodeId};
 
-pub(crate) use crate::destination::health::fault_domain;
+pub(crate) use crate::lightclient::indexer_history::fault_domain;
 
 pub mod driver;
 
@@ -94,7 +94,7 @@ pub fn mixnet_timing() -> MixnetTiming {
 /// The taxonomy stage of a SOCKS5 transmit failure
 /// (`docs/agents/net-diag-design.md`): a pure, typed match over the error's
 /// variants — no substring inspection anywhere. This is the one classifier
-/// for [`zingo_netutils::Socks5TransmitError`], shared by the escalation, the
+/// for [`zingo_netutils::Socks5TransmitError`], shared by the send, the
 /// mixnet probe leg, and the attach readiness gate.
 pub(crate) fn socks5_transmit_stage(
     error: &zingo_netutils::Socks5TransmitError,

@@ -947,15 +947,15 @@ impl LightClient {
             .ok_or(MigrationError::NoMigration)?
     }
 
-    /// The transmit-only client parts are submitted through, resolved by the
-    /// session's transmit policy (ADR 0011, amendments 2026-07-23 and
-    /// 2026-09-11) like every other transmitting surface.
+    /// The transmit-only client parts are submitted through: the Session
+    /// Indexer over the wire the session's transmit policy resolves (ADR
+    /// 0011, amendments 2026-07-23 and 2026-09-11; zingo-adrs zingolib/0063).
     fn migration_transmission_client(
         &self,
     ) -> Result<transmission_route::RoutedTransmissionClient, LightClientError> {
         use transmission_route::MigrationWire;
 
-        let sync_indexer = self.indexer_uri();
+        let indexer = self.indexer_uri().ok_or(LightClientError::Offline)?;
         #[cfg(feature = "nym")]
         let wire = match self.send_route()? {
             // The guard travels into the client, which dials on every
@@ -965,34 +965,8 @@ impl LightClient {
         };
         #[cfg(not(feature = "nym"))]
         let wire = MigrationWire::Nakednet;
-        if matches!(wire, MigrationWire::Nakednet)
-            && sync_indexer.is_none()
-            && self.migration_transmission_uri.is_none()
-        {
-            return Err(LightClientError::Offline);
-        }
-        let candidates = transmission_route::candidates(
-            self.migration_transmission_uri.clone(),
-            sync_indexer.as_ref(),
-            &self.destination_servers,
-            wire.transport(),
-            &self.indexer_history.health().lock().expect("health mutex"),
-        )?;
-        let reaches_untrusted_sync = matches!(wire, MigrationWire::Nakednet)
-            && sync_indexer.as_ref().is_some_and(|sync| {
-                candidates.contains(sync)
-                    && self.destination_servers.trust_of(sync)
-                        == crate::destination::servers::Trust::Untrusted
-            });
-        if reaches_untrusted_sync {
-            log::warn!(
-                "no dedicated migration transmission endpoint configured; parts will be \
-                 transmitted to the synchronization endpoint, which lets that server \
-                 correlate synchronization with migration activity"
-            );
-        }
         Ok(transmission_route::RoutedTransmissionClient::new(
-            wire, candidates,
+            wire, indexer,
         ))
     }
 

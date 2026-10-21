@@ -36,6 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The crate re-exports `zingo_netutils::default_indexer`.
 
 ### Changed
+- **Breaking:** every Transmission and every migration part goes to the Session
+  Indexer over the resolved wire, as one pull under the existing retry policy
+  (zingo-adrs zingolib/0063). The Destination draw, the hedged race across
+  Destinations, and the per-Destination Health filter are gone. An Indexerless
+  session refuses a send with `LightClientError::Offline` on every wire, where
+  a ready mixnet once carried it to drawn Destinations.
+- **Breaking:** `lightclient::indexer_history::FaultDomain` and the attribution
+  of a failed attempt move from `destination::health`, which is removed. The
+  history no longer folds attempts into a Health.
+- `LightClient::probe_destinations` probes the Session Indexer when no target
+  is named, in place of the census's mixnet-reachable entries.
 - `wallet::legacy::MAX_REORG` follows `pepper_sync::sync::MAX_REORG_ALLOWANCE`
   to 1000, so a legacy witness tree keeps 1000 checkpoints, and
   `LightWallet::clear_all` re-targets only the transactions confirmed more
@@ -82,6 +93,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Removed
+- **Breaking:** `destination::servers` (`DestinationServerSet`, `IndexerConfig`,
+  `Trust`, `Role`, `Location`, `Transport`, `Draw`, `NoEligibleDestinations`),
+  `destination::rotation`, `destination::health`, and
+  `destination::same_operator`; the `config::{IndexerConfig, Location, Role,
+  Trust}` re-exports; `ClientConfigBuilder::{add_indexer,
+  set_remote_indexer_trust, set_migration_transmission_uri}` and
+  `ClientConfig::{indexers, remote_indexer_trust, migration_transmission_uri}`;
+  `LightClient::{add_indexer, set_destination_servers_for_tests}`; and
+  `LightClientError::{NoEligibleDestination,
+  MigrationTransmissionTargetIsSyncEndpoint}` (zingo-adrs zingolib/0063).
 - **Breaking:** remove `wallet::keys::legacy::extended_transparent` from the public API. The module is crate-private: its `ExtendedPrivKey` and `ExtendedPubKey` hold the 32 secret-key bytes or the 33 compressed-point bytes and the 32-byte chain code the wallet file stores, and each reader validates the scalar or the point through the `zcash_transparent` account key types before the wallet loads. `Debug` prints a BLAKE2b digest of both fields. The derivation API (`KeyIndex`, `with_seed`, `derive_private_key`, `derive_public_key`, `get_ext_taddr_from_bip39seed`), which nothing called, is gone. zingolib no longer depends on `secp256k1`, `hmac` or `sha2` directly.
 
 ### Fixed

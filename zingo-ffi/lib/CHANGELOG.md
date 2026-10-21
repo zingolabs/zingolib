@@ -73,6 +73,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on zcash_client_backend, the runtime features on tokio), and its release
   profile is the root workspace's `[profile.mobile]`, which the builder ships.
 
+### Removed
+- BREAKING: `set_broadcast_candidates`. Migration parts go to the Session
+  Indexer like every Transmission (zingo-adrs zingolib/0063), so there is no
+  dedicated migration transmission endpoint to set.
+
 ### Fixed
 - The `mobile` profile of the root workspace builds with `panic = "unwind"`,
   the strategy the standalone zingo-netutils workspace already uses for the

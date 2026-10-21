@@ -1013,7 +1013,7 @@ impl LightClient {
     /// Switch Mixnet Mode on for a chain-mock test, with the slot reporting
     /// [`Indicator::Ready`](crate::mixnet::Indicator) at `socks5_addr` while
     /// no child, watcher, or probe stands behind it, so the test walks the
-    /// same fail-closed route resolver and escalation orchestration a live
+    /// same fail-closed route resolver and retry policy a live
     /// Ready session does and the transmit path submits over the mock
     /// indexer's channel without ever dialing the address.
     #[cfg(any(test, feature = "testutils"))]
@@ -1136,8 +1136,8 @@ impl LightClient {
 
     /// Runs the mixnet liveness probe — concurrent `GetLightdInfo` calls
     /// through the session's SOCKS5 proxy, each appending its outcome to the
-    /// cross-session indexer history — against `target`, or against every
-    /// Destination when `target` is `None`, with no nakednet leg and a
+    /// cross-session indexer history — against `target`, or against the
+    /// Session Indexer when `target` is `None`, with no nakednet leg and a
     /// refusal while the mixnet transport is not ready.
     pub async fn probe_destinations(
         &self,
@@ -1157,13 +1157,7 @@ impl LightClient {
             );
         }
         let targets: Vec<http::Uri> = target
-            .map_or_else(
-                || {
-                    self.destination_servers
-                        .registry_reachable(crate::destination::servers::Transport::Mixnet)
-                },
-                |uri| vec![uri],
-            )
+            .or_else(|| self.indexer_uri())
             .into_iter()
             .filter(crate::mixnet::probe::probe_eligible)
             .collect();

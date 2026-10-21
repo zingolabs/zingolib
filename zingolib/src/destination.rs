@@ -23,7 +23,7 @@ use http::Uri;
 pub trait Correspondable {
     /// Where a Transmission addresses it.
     fn address(&self) -> Uri;
-    /// The accountable operator: the draw key and the Health aggregation key.
+    /// The accountable operator, where one is known.
     fn operator(&self) -> Option<String>;
 }
 
@@ -52,21 +52,11 @@ impl Correspondable for zingo_price::PriceSource {
     }
 }
 
-pub mod health;
-pub mod rotation;
-pub mod servers;
-
-/// Whether two hosts belong to the same accumulating operator: their
-/// operator keys match. This is the one predicate every transmission
-/// surface uses to compare a candidate against the sync indexer (ADR 0022).
-pub(crate) fn same_operator(host_a: &str, host_b: &str) -> bool {
-    Operator::of_host(host_a) == Operator::of_host(host_b)
-}
-
 /// The accumulating administrative authority behind a Destination host, keyed by its registrable parent domain.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Operator(String);
 
+#[cfg_attr(not(feature = "nym"), allow(dead_code))]
 impl Operator {
     /// The Operator of `host`, approximated as the lowercased last two dot-separated labels (the whole host when it has fewer) — an approximation that can only over-exclude, never letting the sync indexer's operator through.
     pub(crate) fn of_host(host: &str) -> Self {
@@ -150,11 +140,5 @@ mod tests {
             Operator::of_host("zec.rockz")
         );
         assert_eq!(Operator::of_host("localhost").to_string(), "localhost");
-    }
-
-    #[test]
-    fn same_operator_compares_by_operator_key() {
-        assert!(same_operator("eu.zec.rocks", "na.zec.rocks"));
-        assert!(!same_operator("eu.zec.rocks", "l.ombie.cash"));
     }
 }

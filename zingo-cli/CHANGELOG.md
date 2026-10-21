@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation a second time to decide where log output goes.
 
 ### Changed
+- `network probe` without a target probes the Session Indexer, the one
+  indexer the session holds, instead of every mixnet-reachable census entry
+  (zingo-adrs zingolib/0063).
 - BREAKING: a `--server` value without a scheme now completes to `https://`,
   and a value without a port to its scheme's default port (`:443` for
   `https`, `:80` for `http`) instead of `http://` and `:9067`. A plaintext
