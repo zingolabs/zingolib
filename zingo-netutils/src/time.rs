@@ -296,10 +296,6 @@ pub const CLIENT_ROTATION_MIN: Duration = Duration::from_secs(5 * 60);
 /// ```
 pub const CLIENT_ROTATION_MAX: Duration = Duration::from_secs(10 * 60);
 
-/// Per-server bound on the ranking `get_info` sweep, deliberately tight so
-/// one slow server cannot block the fastest-first ordering.
-pub const SERVER_RANKING_TIMEOUT: Duration = Duration::from_secs(5);
-
 /// Temporal parameters owned by tests. Gated so production code cannot
 /// reference it: this crate's own unit tests see it via `cfg(test)`, and
 /// downstream crates' test code opts in through the `testutils` feature

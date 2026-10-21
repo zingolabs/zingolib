@@ -215,6 +215,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   layer.
 
 ### Removed
+- The quarantined nakednet server-selection sweep behind
+  `nakednet-test-mode`: the launch probe of the uptime leaderboard, the
+  ranked server list the `servers` command printed, and the `network on`
+  resolution that drew an indexer from the probe. A `nakednet-test-mode`
+  build now resolves its Session Indexer the way every build does, from
+  `--server` or the chain's Default Indexer, and the feature keeps only
+  its other role: it suspends the go-online refusal of a build without
+  the mixnet so a measurement can run (zingo-adrs zingolib/0063).
 - **Breaking.** The `nym-diary` feature and the `--indexer-diary` flag are
   gone, because the indexer diary no longer touches disk. `network history`
   needs neither: it now shows the attempts this session recorded, and nothing

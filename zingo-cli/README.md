@@ -376,7 +376,7 @@ you the corrected invocation.)
 | Feature | Default | Effect on launch |
 | --- | --- | --- |
 | `nym` | **on** | Compiles in the mixnet transport, so a session can go online. Opting out (`makers run-cli --nakednet`) builds without the transport and bundles no proxy, which makes **Offline Mode the only mode**: the online consent acts refuse loudly and a stored standing consent is reported as inert. |
-| `nakednet-test-mode` | off | Re-enables the quarantined nakednet server-selection sweep. A deliberate, review-gated test build — never for ordinary use. |
+| `nakednet-test-mode` | off | Suspends the go-online refusal of a build without the mixnet, so a measurement can run an Online session with no mixnet beside it. A deliberate, review-gated test build — never for ordinary use. |
 
 The [build procedure](#the-build-procedure) selects features through its
 launcher flags, for example:
