@@ -3160,31 +3160,35 @@ impl NewTransparentAddress {
     /// - Reserves the next refund address in `wallet`, the address a swap
     ///   provider refunds a deposit to.
     fn refund(wallet: &mut wallet::LightWallet) -> Self {
-        Self::generated(wallet, |wallet| {
-            Self::first(wallet.generate_refund_addresses(1, AccountId::ZERO))
-        })
+        Self::next_refund(wallet, wallet::LightWallet::generate_refund_addresses)
     }
 
     /// Derives the next refund address in `wallet` without reserving it, so
     /// a quote can name it and a dropped quote leaves the index where it was.
     fn derived_refund(wallet: &mut wallet::LightWallet) -> Self {
-        Self::generated(wallet, |wallet| {
-            Self::first(wallet.derive_refund_addresses(1, AccountId::ZERO))
+        Self::next_refund(wallet, |wallet, n, account| {
+            wallet.derive_refund_addresses(n, account)
         })
     }
 
-    fn first(
-        addresses: Result<
+    fn next_refund(
+        wallet: &mut wallet::LightWallet,
+        addresses: impl FnOnce(
+            &mut wallet::LightWallet,
+            usize,
+            AccountId,
+        ) -> Result<
             Vec<(transparent::TransparentAddressId, TransparentAddress)>,
             wallet::error::KeyError,
         >,
-    ) -> Result<(transparent::TransparentAddressId, TransparentAddress), wallet::error::KeyError>
-    {
-        addresses.map(|addresses| {
-            addresses
-                .into_iter()
-                .next()
-                .expect("a request for one address yields one address")
+    ) -> Self {
+        Self::generated(wallet, |wallet| {
+            addresses(wallet, 1, AccountId::ZERO).map(|addresses| {
+                addresses
+                    .into_iter()
+                    .next()
+                    .expect("a request for one address yields one address")
+            })
         })
     }
 
