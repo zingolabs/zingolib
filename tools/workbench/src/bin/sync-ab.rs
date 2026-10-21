@@ -117,13 +117,19 @@ const MILLIS_SUFFIX: &str = "ms";
 /// markers this reads.
 const LOG_FILTER: &str = "info";
 
-/// The indexer every run on a chain pins, so no arm meets a different
-/// server.
-const MAINNET_INDEXER: &str = "https://zec.rocks:443";
-const TESTNET_INDEXER: &str = "https://testnet.zec.rocks:443";
+/// The chains an arm can sync, each with the indexer every run on it
+/// pins.
+const MAINNET: Chain = Chain {
+    name: "mainnet",
+    indexer: "https://zec.rocks:443",
+};
+const TESTNET: Chain = Chain {
+    name: "testnet",
+    indexer: "https://testnet.zec.rocks:443",
+};
 
 /// The chain every arm syncs, when `--chain` names no other.
-const DEFAULT_CHAIN: Chain = Chain::Main;
+const DEFAULT_CHAIN: Chain = MAINNET;
 
 /// The BIP-39 mnemonic every arm restores, when `--seed` names no other.
 // A fundless wallet measures pure scanning: every output is trial
@@ -253,34 +259,21 @@ impl Spec {
 /// The chain the arms sync, which fixes the indexer they meet and the
 /// chain the CLI expects.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Chain {
-    Main,
-    Test,
+struct Chain {
+    /// The name the CLI's `--chain` takes.
+    name: &'static str,
+    /// The indexer every run on this chain pins, so no arm meets a
+    /// different server.
+    indexer: &'static str,
 }
 
 impl Chain {
     /// Reads the chain off its name, in the CLI's spelling or the short one.
     fn parse(raw: &str) -> Result<Self, Vec<String>> {
         match raw {
-            "main" | "mainnet" => Ok(Chain::Main),
-            "test" | "testnet" => Ok(Chain::Test),
+            "main" | "mainnet" => Ok(MAINNET),
+            "test" | "testnet" => Ok(TESTNET),
             other => Err(vec![format!("--chain {other}: main or test")]),
-        }
-    }
-
-    /// The name the CLI's `--chain` takes.
-    fn name(self) -> &'static str {
-        match self {
-            Chain::Main => "mainnet",
-            Chain::Test => "testnet",
-        }
-    }
-
-    /// The indexer every arm on this chain is pinned to.
-    fn indexer(self) -> &'static str {
-        match self {
-            Chain::Main => MAINNET_INDEXER,
-            Chain::Test => TESTNET_INDEXER,
         }
     }
 }
@@ -447,8 +440,7 @@ fn rounds(arms: &mut [Arm; 2], request: &Request) -> Result<(), Vec<String>> {
     // treatment.
     eprintln!(
         "sync-ab: warming up both arms on {} at birthday {}",
-        request.chain.name(),
-        request.birthday
+        request.chain.name, request.birthday
     );
     for arm in arms.iter() {
         let _ = measure_again(arm, request, WARMUP_BUDGET)?;
@@ -658,9 +650,9 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
     }
     let mut child = command
         .arg("--chain")
-        .arg(request.chain.name())
+        .arg(request.chain.name)
         .arg("--server")
-        .arg(request.chain.indexer())
+        .arg(request.chain.indexer)
         .arg("--seed")
         .arg(&request.seed)
         .arg("--birthday")
@@ -892,7 +884,7 @@ fn report(arms: &[Arm; 2], chain: Chain, bounded: bool) {
         arms[0].spec.label(),
         arms[1].spec.label()
     );
-    println!("chain: {} through {}", chain.name(), chain.indexer());
+    println!("chain: {} through {}", chain.name, chain.indexer);
     for arm in arms {
         let rate = mean(&arm.rates);
         print!("{:>22}  mean {rate:>7.0} outputs/s", arm.spec.label());
@@ -1200,18 +1192,17 @@ mod tests {
     /// is pinned.
     #[test]
     fn a_chain_reads_its_name_and_pins_its_indexer() -> Result<(), Vec<String>> {
-        assert_eq!(Chain::parse("main")?, Chain::Main);
-        assert_eq!(Chain::parse("mainnet")?, Chain::Main);
-        assert_eq!(Chain::parse("test")?, Chain::Test);
-        assert_eq!(Chain::parse("testnet")?, Chain::Test);
+        assert_eq!(Chain::parse("main")?, MAINNET);
+        assert_eq!(Chain::parse("mainnet")?, MAINNET);
+        assert_eq!(Chain::parse("test")?, TESTNET);
+        assert_eq!(Chain::parse("testnet")?, TESTNET);
         assert!(
             Chain::parse("regtest").is_err(),
             "no indexer is pinned for regtest"
         );
-        assert_eq!(Chain::Main.name(), "mainnet");
-        assert_eq!(Chain::Test.name(), "testnet");
-        assert_eq!(Chain::Main.indexer(), MAINNET_INDEXER);
-        assert_eq!(Chain::Test.indexer(), TESTNET_INDEXER);
+        assert_eq!(MAINNET.name, "mainnet");
+        assert_eq!(TESTNET.name, "testnet");
+        assert_ne!(MAINNET.indexer, TESTNET.indexer);
         Ok(())
     }
 
