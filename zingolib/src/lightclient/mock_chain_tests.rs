@@ -11,7 +11,7 @@
 //! twins of 2026-07-08 predate that rule; their originals were removed
 //! by their own replacement commits.
 
-use pepper_sync::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
+use pepper_sync::sync::{MAX_SHARDTREE_CHECKPOINTS, SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE};
 use pepper_sync::wallet::{IronwoodNote, PoolActivation};
 use shardtree::store::ShardStore;
 use zcash_address::ZcashAddress;
@@ -38,6 +38,19 @@ const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
 // Above every twin's funding height, and cheap to mine past when a twin
 // crosses the activation.
 const DEFERRED_NU6_3: u32 = 130;
+/// The ZIP 318 anchor bucket interval, the block count of
+/// `AnchorRetentionInterval::default()`, which is not a `const fn`.
+const ANCHOR_RETENTION_INTERVAL: u32 = 144;
+
+#[test]
+fn the_anchor_retention_interval_is_the_default_one() {
+    use zcash_client_backend::data_api::anchor_retention::AnchorRetentionInterval;
+
+    assert_eq!(
+        ANCHOR_RETENTION_INTERVAL,
+        AnchorRetentionInterval::default().block_count().get()
+    );
+}
 
 fn blocks_to_reach(tip: u32, target: u32) -> Option<u32> {
     (tip < target).then(|| target - tip)
@@ -2673,45 +2686,42 @@ where
         .is_some()
 }
 
+/// The rolling window's checkpoints and the pinned anchor boundaries survive a save and a reload, and the
+/// reloaded wallet's first sync prunes against the restored retained set.
 #[tokio::test]
 async fn shardtree_roundtrip_restores_retained_checkpoints() {
+    // the boundaries below the rolling window are pruned, so the retained set is the policy's pinned grid
+    // rather than every boundary of the chain
+    const BOUNDARIES_BELOW_THE_WINDOW: u32 = 3;
+    // the pinned anchor boundaries are the checkpoints a tree holds beyond its rolling window
+    const PINNED_BOUNDARIES: u32 =
+        MAX_SHARDTREE_CHECKPOINTS - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
+
     fn all_checkpoints_stored<S>(store: &S, chain_height: u32) -> bool
     where
         S: ShardStore<CheckpointId = BlockHeight>,
     {
-        for boundary in [144, 288] {
-            if !checkpoint_exists(store, boundary) {
-                return false;
-            }
-        }
-        for rolling_window in
-            (chain_height - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1)..=chain_height
-        {
-            if !checkpoint_exists(store, rolling_window) {
-                return false;
-            }
-        }
-
-        true
+        ((chain_height - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1)..=chain_height)
+            .all(|height| checkpoint_exists(store, height))
     }
 
-    fn all_boundaries_retained<S>(store: &S, chain_height: u32) -> bool
+    /// The retained set is the pinned grid as of `chain_height`: the boundaries within
+    /// `PINNED_BOUNDARIES` intervals below it.
+    fn pinned_boundaries_retained<S>(store: &S, chain_height: u32) -> bool
     where
         S: ShardStore<CheckpointId = BlockHeight>,
     {
-        let retained = store.retained_checkpoints().unwrap();
-        let no_of_boundaries = chain_height / 144;
-        for boundary_index in 0..no_of_boundaries {
-            let boundary = (boundary_index + 1) * 144;
-            if !retained.contains(&BlockHeight::from_u32(boundary)) {
-                return false;
-            }
-        }
-
-        true
+        let oldest = chain_height - PINNED_BOUNDARIES * ANCHOR_RETENTION_INTERVAL;
+        let expected: std::collections::BTreeSet<BlockHeight> = (oldest..=chain_height)
+            .filter(|height| height % ANCHOR_RETENTION_INTERVAL == 0)
+            .map(BlockHeight::from_u32)
+            .collect();
+        store.retained_checkpoints().unwrap() == expected
     }
 
-    let mut chain_height = 500;
+    let mut chain_height = BOUNDARIES_BELOW_THE_WINDOW * ANCHOR_RETENTION_INTERVAL
+        + SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE
+        + 1;
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
 
@@ -2738,15 +2748,15 @@ async fn shardtree_roundtrip_restores_retained_checkpoints() {
             shard_trees.ironwood.store(),
             chain_height
         ));
-        assert!(all_boundaries_retained(
+        assert!(pinned_boundaries_retained(
             shard_trees.sapling.store(),
             chain_height
         ));
-        assert!(all_boundaries_retained(
+        assert!(pinned_boundaries_retained(
             shard_trees.orchard.store(),
             chain_height
         ));
-        assert!(all_boundaries_retained(
+        assert!(pinned_boundaries_retained(
             shard_trees.ironwood.store(),
             chain_height
         ));
@@ -2776,15 +2786,15 @@ async fn shardtree_roundtrip_restores_retained_checkpoints() {
             shard_trees.ironwood.store(),
             chain_height
         ));
-        assert!(all_boundaries_retained(
+        assert!(pinned_boundaries_retained(
             shard_trees.sapling.store(),
             chain_height
         ));
-        assert!(all_boundaries_retained(
+        assert!(pinned_boundaries_retained(
             shard_trees.orchard.store(),
             chain_height
         ));
-        assert!(all_boundaries_retained(
+        assert!(pinned_boundaries_retained(
             shard_trees.ironwood.store(),
             chain_height
         ));
@@ -4589,7 +4599,11 @@ mod boundary_pruning {
     const WINDOW_BUCKET: u64 = ANCHOR_BUCKET + 1;
     const ANCHOR_BOUNDARY: u32 = ANCHOR_BUCKET as u32 * PRUNED_BUCKET_MODULUS;
     const BIRTHDAY_CHECKPOINT_RUNWAY: u32 = MAX_SHARDTREE_CHECKPOINTS;
-    const DEFERRED_NU6_3: u32 = 2 * BIRTHDAY_CHECKPOINT_RUNWAY;
+    // NU6.3 activates above the last ZIP 318 boundary at or below the anchor boundary, so the
+    // retention grid pins no checkpoint there and the anchor boundary's checkpoint is pruned with
+    // the rest of the blocks below the rolling window
+    const DEFERRED_NU6_3: u32 =
+        ANCHOR_BOUNDARY - ANCHOR_BOUNDARY % super::ANCHOR_RETENTION_INTERVAL + 1;
     const _: () = assert!(
         BIRTHDAY_CHECKPOINT_RUNWAY + 2 < DEFERRED_NU6_3,
         "the funding must sit above every checkpoint the birthday verification leaves and still confirm before NU6.3 activates"
