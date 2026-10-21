@@ -2699,15 +2699,13 @@ mod tests {
     /// so this twin proves the skip logic alone. It cannot prove that
     /// pepper-sync's real pruning produces the state, nor that the
     /// transmission path performs no hidden synchronization while a reachable
-    /// Indexer exists. Both belong to the live libtonode twin. The tip
-    /// still sits more than the checkpoint retention past the boundary, so
-    /// the fabricated state matches one a synced wallet can genuinely
-    /// reach.
+    /// Indexer exists. Both belong to the live libtonode twin. The
+    /// fabricated state stands in for a wallet whose boundary checkpoint is
+    /// gone, whatever removed it.
     #[tokio::test]
     async fn boundary_tree_state_unavailable_skips_the_part() {
         // Past the current bucket's boundary (288 under the provisional
-        // M = 144) by more than pepper-sync's 100-block checkpoint
-        // retention.
+        // M = 144).
         const TIP: u32 = 400;
 
         let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
