@@ -538,21 +538,40 @@ pub fn private_package_hint(name: &str) -> String {
     )
 }
 
-/// - Runs `orasust resolve` and, when the registry serves the reference, `orasust manifest fetch`
-///   as child processes.
-pub fn held_digest(platform: &str, commit: &str) -> Result<Option<String>, Vec<String>> {
+pub fn revision_mismatch(name: &str, manifest: &str, commit: &str) -> Option<String> {
+    let revision = crate::orasust::annotation(manifest, REVISION_ANNOTATION);
+    (revision != Some(commit))
+        .then(|| format!("{name} carries {REVISION_ANNOTATION} {revision:?}, not its commit"))
+}
+
+pub fn missing_platforms(digests: &[(&str, String)]) -> Vec<&'static str> {
+    let present: Vec<&str> = digests.iter().map(|(platform, _)| *platform).collect();
+    missing_required(&present)
+}
+
+/// - Runs `orasust resolve` as a child process, anonymously and then, when that fails and
+///   credentials are given, with them.
+/// - Runs `orasust manifest fetch` as a child process when the registry serves the reference.
+pub fn held_digest(
+    platform: &str,
+    commit: &str,
+    credentials: Option<&crate::orasust::Credentials>,
+) -> Result<Option<String>, Vec<String>> {
     let name = reference(platform, commit);
     let Ok(digest) = crate::orasust::resolve(&name) else {
-        return Ok(None);
+        let private = credentials
+            .is_some_and(|credentials| crate::orasust::resolve_as(&name, credentials).is_ok());
+        return if private {
+            Err(vec![private_package_hint(&name)])
+        } else {
+            Ok(None)
+        };
     };
     let manifest = crate::orasust::manifest(&name)?;
-    let revision = crate::orasust::annotation(&manifest, REVISION_ANNOTATION);
-    if revision != Some(commit) {
-        return Err(vec![format!(
-            "{name} carries {REVISION_ANNOTATION} {revision:?}, not its commit"
-        )]);
+    match revision_mismatch(&name, &manifest, commit) {
+        Some(mismatch) => Err(vec![mismatch]),
+        None => Ok(Some(digest)),
     }
-    Ok(Some(digest))
 }
 
 /// - Runs `orasust resolve` and `orasust manifest fetch` as child processes, once per recorded digest.
@@ -570,18 +589,9 @@ fn manifest_diagnostics(name: &str, commit: &str, digest: &str) -> Vec<String> {
             "{name} resolves to {found}, and the entry names {digest}"
         ));
     }
-    let manifest = match crate::orasust::manifest(name) {
-        Ok(manifest) => manifest,
-        Err(mut failed) => {
-            diagnostics.append(&mut failed);
-            return diagnostics;
-        }
-    };
-    let revision = crate::orasust::annotation(&manifest, REVISION_ANNOTATION);
-    if revision != Some(commit) {
-        diagnostics.push(format!(
-            "{name} carries {REVISION_ANNOTATION} {revision:?}, not its commit"
-        ));
+    match crate::orasust::manifest(name) {
+        Ok(manifest) => diagnostics.extend(revision_mismatch(name, &manifest, commit)),
+        Err(mut failed) => diagnostics.append(&mut failed),
     }
     diagnostics
 }

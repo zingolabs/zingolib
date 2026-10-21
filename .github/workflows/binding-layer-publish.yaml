@@ -15,12 +15,17 @@
 # the commit publish/<commit>, dispatches this workflow at the tag and
 # stops, and the second run builds. PR #2991's publication showed why: the
 # head's iOS workflow and an older commit's tool disagreed on a flag, and
-# the build failed. A commit from before this trigger existed cannot be
-# dispatched, and the plan refuses it by name.
+# the build failed. The publish job pushes the bundles with the commit's
+# tool, which named and shaped them, and then records the entry with the
+# default branch's tool, which the record's own checks regenerate with. A
+# commit from before this trigger existed cannot be dispatched, and the
+# plan refuses it by name.
 #
-# A commit the registry already holds is not rebuilt. The tool reads its
-# digests from the registry and records them, or reports the record that
-# names them already, so a repeated dispatch costs two short jobs.
+# The record is oldest first, so the plan refuses a commit older than the
+# last entry, and it refuses a publication while another record's pull
+# request is pending. A commit the registry already holds is not rebuilt,
+# and a commit the record names already, or whose record is pending, ends
+# the run after the plan.
 #
 # The record's push and its pull request use an installation token of the
 # GitHub App that the secrets BINDING_PUBLISH_APP_ID and
@@ -60,7 +65,8 @@ jobs:
     outputs:
       commit: ${{ steps.plan.outputs.commit }}
       relay: ${{ steps.plan.outputs.relay }}
-      held: ${{ steps.plan.outputs.held }}
+      recorded: ${{ steps.plan.outputs.recorded }}
+      held: ${{ steps.held.outputs.held }}
       abis: ${{ steps.names.outputs.abis }}
       abi_artifacts: ${{ steps.names.outputs.abi_artifacts }}
       abi_pattern: ${{ steps.names.outputs.abi_pattern }}
@@ -72,6 +78,7 @@ jobs:
       ios_out: ${{ steps.names.outputs.ios_out }}
     env:
       GH_TOKEN: ${{ github.token }}
+      COMMIT: ${{ steps.plan.outputs.commit }}
     steps:
       - name: Require the publish App
         env:
@@ -84,7 +91,7 @@ jobs:
           fi
 
       # The plan resolves the commit against the default branch and reads
-      # the tag, so the checkout needs the whole history.
+      # its record there, so the checkout needs the whole history.
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
@@ -95,39 +102,35 @@ jobs:
         with:
           workspaces: tools/workbench
 
-      # The registry client is the orasust crate, whose release the
-      # workbench manifest pins under [package.metadata.orasust]. The cargo
-      # cache above hashes that manifest into its key and keeps the installed
-      # binary, so a bump misses the cache once and the build runs once per
-      # release.
-      - name: Install orasust
-        run: |
-          version="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --orasust-version)"
-          cargo install --locked "orasust@${version}"
-
-      # The tool refuses a commit off the default branch and a commit whose
-      # publish workflow has no dispatch trigger. It reports whether this
-      # run is at the commit, whether the tag exists already, and whether
-      # the registry holds both bundles.
+      # The tool refuses a commit off the default branch, one older than the
+      # last entry, one whose publish workflow has no dispatch trigger, and
+      # a publication while another record is pending. It reports whether
+      # this run is at the commit, whether the tag exists already, and
+      # whether the record names the commit.
       - name: Plan the publication
         id: plan
         env:
-          COMMIT: ${{ inputs.commit || github.sha }}
+          REQUESTED: ${{ inputs.commit || github.sha }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           cargo run --quiet --manifest-path tools/workbench/Cargo.toml \
             --bin binding-publish -- --plan \
-            --commit "$COMMIT" \
+            --commit "$REQUESTED" \
             --run-at "$GITHUB_SHA" \
             --default-branch "origin/${DEFAULT_BRANCH}" \
             >> "$GITHUB_OUTPUT"
 
+      - name: Report a recorded commit
+        if: steps.plan.outputs.recorded == 'true'
+        run: echo "The record names ${COMMIT}, or a record pull request for it is pending. Nothing to publish." >> "$GITHUB_STEP_SUMMARY"
+
       # The annotated tag records who asked and from which run. The relayed
-      # run finds its head at the commit, so it plans no second relay.
+      # run finds its head at the commit, so it plans no second relay. The
+      # dispatch retries, because a ref pushed a moment earlier may not yet
+      # be indexed for workflows.
       - name: Tag the commit and dispatch this workflow at the tag
-        if: steps.plan.outputs.relay == 'true'
+        if: steps.plan.outputs.relay == 'true' && steps.plan.outputs.recorded != 'true'
         env:
-          COMMIT: ${{ steps.plan.outputs.commit }}
           TAG: ${{ steps.plan.outputs.tag }}
           TAGGED: ${{ steps.plan.outputs.tagged }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -136,14 +139,41 @@ jobs:
           GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          DISPATCH_ATTEMPTS: 6
+          DISPATCH_PAUSE_SECONDS: 10
         run: |
           set -eu
           if [ "$TAGGED" != true ]; then
             git tag --annotate "$TAG" "$COMMIT" --message "Publication of ${COMMIT}, requested by ${GITHUB_ACTOR} from ${RUN_URL}"
             git push --quiet origin "refs/tags/${TAG}"
           fi
-          gh workflow run binding-layer-publish.yaml --ref "refs/tags/${TAG}" --field "commit=${COMMIT}"
+          attempt=1
+          until gh workflow run binding-layer-publish.yaml --ref "refs/tags/${TAG}" --field "commit=${COMMIT}"; do
+            if [ "$attempt" -ge "$DISPATCH_ATTEMPTS" ]; then
+              echo "::error::the dispatch at ${TAG} failed ${DISPATCH_ATTEMPTS} times"
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            sleep "$DISPATCH_PAUSE_SECONDS"
+          done
           echo "Dispatched the publication of ${COMMIT} at ${TAG}. The run appears at ${RUNS_URL}." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install orasust
+        if: steps.plan.outputs.relay != 'true' && steps.plan.outputs.recorded != 'true'
+        uses: ./.github/actions/install-orasust
+
+      # The registry is read with the token, so a private package is named
+      # as such instead of being rebuilt.
+      - name: Read what the registry holds
+        if: steps.plan.outputs.relay != 'true' && steps.plan.outputs.recorded != 'true'
+        id: held
+        env:
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          cargo run --quiet --manifest-path tools/workbench/Cargo.toml \
+            --bin binding-publish -- --held --commit "$COMMIT" \
+            >> "$GITHUB_OUTPUT"
 
       # The builder is the one source of every artifact name, of the ABI
       # list, and of the Maven version, which it reads from the wallet
@@ -151,15 +181,13 @@ jobs:
       # one run, at the commit, feeds the build jobs and the publish job, so
       # they agree on what is built.
       - name: Name the artifacts
-        if: steps.plan.outputs.relay != 'true'
+        if: steps.held.outputs.held == 'false'
         id: names
-        env:
-          COMMIT: ${{ steps.plan.outputs.commit }}
         run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$COMMIT" >> "$GITHUB_OUTPUT"
 
   android:
     needs: request
-    if: ${{ needs.request.outputs.relay != 'true' && needs.request.outputs.held != 'true' }}
+    if: ${{ needs.request.outputs.held == 'false' }}
     uses: ./.github/workflows/binding-layer-android.yaml
     with:
       ref: ${{ needs.request.outputs.commit }}
@@ -172,7 +200,7 @@ jobs:
 
   ios:
     needs: request
-    if: ${{ needs.request.outputs.relay != 'true' && needs.request.outputs.held != 'true' }}
+    if: ${{ needs.request.outputs.held == 'false' }}
     uses: ./.github/workflows/binding-layer-ios.yaml
     with:
       ref: ${{ needs.request.outputs.commit }}
@@ -181,14 +209,15 @@ jobs:
 
   # The job downloads every bundle artifact of the commit by the pattern
   # the builder names, so a build that failed simply uploaded none. The
-  # tool pushes every bundle the registry lacks and refuses when a platform
-  # the record requires has none, before it pushes anything. When the
-  # registry holds both bundles the build jobs were skipped, and the tool
-  # records the digests it reads there.
+  # commit's tool pushes every bundle the registry lacks and refuses when a
+  # platform the record requires has none, before it pushes anything. The
+  # default branch's tool then records the digests it reads from the
+  # registry. When the registry held both bundles the build jobs were
+  # skipped, and only the record runs.
   publish:
     name: Publish and record
     needs: [request, android, ios]
-    if: ${{ !cancelled() && needs.request.result == 'success' && needs.request.outputs.relay != 'true' }}
+    if: ${{ !cancelled() && needs.request.result == 'success' && needs.request.outputs.relay != 'true' && needs.request.outputs.recorded != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -223,14 +252,11 @@ jobs:
             echo "GIT_COMMITTER_EMAIL=${id}+${bot}@users.noreply.github.com"
           } >> "$GITHUB_ENV"
 
-      # The record branch starts at the default branch's head of this
-      # moment, so the record merges without conflict whatever landed
-      # during the builds. The commit lies in that history, because the
-      # plan refused it otherwise.
-      - name: Checkout the default branch
+      # The checkout is the commit, which is this run's head. The App's
+      # token stays in the checkout for the record's push.
+      - name: Checkout the commit
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
           token: ${{ steps.publish-token.outputs.token }}
 
@@ -239,33 +265,39 @@ jobs:
         with:
           workspaces: tools/workbench
 
+      - name: Install orasust
+        uses: ./.github/actions/install-orasust
+
       # Each artifact lands in its own directory under BUNDLES, named as
       # the artifact, and the tool reads the platform back from that name.
       - name: Download the bundles
-        if: ${{ needs.request.outputs.held != 'true' }}
+        if: ${{ needs.request.outputs.held == 'false' }}
         uses: actions/download-artifact@v4
         with:
           pattern: ${{ needs.request.outputs.bundle_pattern }}
           path: ${{ env.BUNDLES }}
 
-      - name: Install orasust
+      - name: Push the bundles with the commit's tool
+        if: ${{ needs.request.outputs.held == 'false' }}
         run: |
-          version="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --orasust-version)"
-          cargo install --locked "orasust@${version}"
+          cargo run --quiet --manifest-path tools/workbench/Cargo.toml \
+            --bin binding-publish -- --push --commit "$COMMIT" --bundles "$BUNDLES"
+
+      # The record branch starts at the default branch's head of this
+      # moment, so the record merges without conflict whatever landed
+      # during the builds, and the tool that writes it is the one the
+      # record's checks run.
+      - name: Switch to the default branch
+        run: git switch --quiet --detach "origin/${DEFAULT_BRANCH}"
 
       # The tool writes `branch=<record branch>` when it pushed the record,
       # or when the branch existed already, and `recorded=true` when the
       # default branch records the commit.
-      - name: Publish the bundles and record the entry
+      - name: Record the entry with the default branch's tool
         id: record
         run: |
-          set -eu
-          bundles=""
-          if [ -d "$BUNDLES" ]; then
-            bundles="--bundles ${BUNDLES}"
-          fi
           cargo run --quiet --manifest-path tools/workbench/Cargo.toml \
-            --bin binding-publish -- --commit "$COMMIT" $bundles \
+            --bin binding-publish -- --record --commit "$COMMIT" \
             >> "$GITHUB_OUTPUT"
 
       - name: Open the record pull request

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::binding_changelog;
 use crate::binding_layer;
 use crate::binding_manifest;
+use crate::orasust::Credentials;
 
 pub const BINARY: &str = "binding-publish";
 pub const USERNAME_VARIABLE: &str = "REGISTRY_USERNAME";
@@ -19,11 +20,16 @@ const COMMIT_MESSAGE_PREFIX: &str = "chore(bindings): record the publication of 
 const COMMIT_FLAG: &str = "--commit";
 const BUNDLES_FLAG: &str = "--bundles";
 const PLAN_FLAG: &str = "--plan";
+const HELD_FLAG: &str = "--held";
+const PUSH_FLAG: &str = "--push";
+const RECORD_FLAG: &str = "--record";
 const RUN_AT_FLAG: &str = "--run-at";
 const DEFAULT_BRANCH_FLAG: &str = "--default-branch";
-const USAGE: &str = "usage: binding-publish --commit <commit> \
-    [--bundles <directory holding each downloaded bundle artifact of the commit>] \
-    | binding-publish --plan --commit <commit> --run-at <commit> --default-branch <ref>";
+const USAGE: &str = "usage: binding-publish --plan --commit <commit> --run-at <commit> --default-branch <ref> \
+    | binding-publish --held --commit <commit> \
+    | binding-publish --push --commit <commit> --bundles <directory holding each downloaded bundle artifact of the commit> \
+    | binding-publish --record --commit <commit>";
+const HEADS_NAMESPACE: &str = "refs/heads/";
 pub const PUBLISH_WORKFLOW: &str = ".github/workflows/binding-layer-publish.yaml";
 const DISPATCH_TRIGGER: &str = "workflow_dispatch:";
 pub const TAG_PREFIX: &str = "publish/";
@@ -43,11 +49,6 @@ const COORDINATE_SEPARATOR: &str = ":";
 const GROUP_ELEMENT: &str = "groupId";
 const ARTIFACT_ELEMENT: &str = "artifactId";
 const VERSION_ELEMENT: &str = "version";
-
-pub struct Credentials {
-    pub username: String,
-    pub token: String,
-}
 
 struct Bundle {
     file: PathBuf,
@@ -153,8 +154,7 @@ fn push(
         &bundle.file,
         bundle.media_type,
         &manifest_annotations(commit, bundle.coordinate.as_deref()),
-        &credentials.username,
-        &credentials.token,
+        credentials,
     )?;
     let seen = crate::orasust::resolve(&name)
         .map_err(|_| vec![binding_manifest::private_package_hint(&name)])?;
@@ -166,13 +166,20 @@ fn push(
     Ok(digest)
 }
 
+/// - Reads `REGISTRY_USERNAME` and `REGISTRY_TOKEN` from the environment.
+fn credentials_if_set() -> Option<Credentials> {
+    Some(Credentials {
+        username: std::env::var(USERNAME_VARIABLE).ok()?,
+        token: std::env::var(TOKEN_VARIABLE).ok()?,
+    })
+}
+
+/// - Reads the environment through [`credentials_if_set`].
 fn credentials() -> Result<Credentials, Vec<String>> {
-    let read = |variable: &str| {
-        std::env::var(variable).map_err(|_| vec![format!("{variable} is not set")])
-    };
-    Ok(Credentials {
-        username: read(USERNAME_VARIABLE)?,
-        token: read(TOKEN_VARIABLE)?,
+    credentials_if_set().ok_or_else(|| {
+        vec![format!(
+            "{USERNAME_VARIABLE} and {TOKEN_VARIABLE} are not both set"
+        )]
     })
 }
 
@@ -266,6 +273,33 @@ fn branch_exists(root: &Path, branch: &str) -> Result<bool, Vec<String>> {
         .map(|listed| !listed.trim().is_empty())
 }
 
+/// - Runs `git ls-remote --heads origin` in `root`.
+fn remote_record_branches(root: &Path) -> Result<Vec<String>, Vec<String>> {
+    let pattern = format!("{RECORD_BRANCH_PREFIX}*");
+    let listed = crate::git_in(root, &["ls-remote", "--heads", ORIGIN, &pattern])?;
+    Ok(listed
+        .lines()
+        .filter_map(|line| line.split_whitespace().nth(1))
+        .filter_map(|name| name.strip_prefix(HEADS_NAMESPACE))
+        .map(str::to_string)
+        .collect())
+}
+
+/// - Runs `git ls-remote` against `origin` through [`remote_record_branches`].
+pub fn pending_records(
+    root: &Path,
+    recorded: &[binding_manifest::Entry],
+) -> Result<Vec<String>, Vec<String>> {
+    Ok(remote_record_branches(root)?
+        .into_iter()
+        .filter(|branch| {
+            branch
+                .strip_prefix(RECORD_BRANCH_PREFIX)
+                .is_none_or(|commit| !recorded.iter().any(|entry| entry.commit == commit))
+        })
+        .collect())
+}
+
 /// - Runs `git switch --create`, `git add`, `git commit` and `git push --set-upstream` in `root`.
 fn commit_and_push(root: &Path, commit: &str) -> Result<String, Vec<String>> {
     let branch = record_branch(commit);
@@ -308,9 +342,11 @@ pub struct Plan {
     pub commit: String,
     pub tag: String,
     pub relay: bool,
+    pub recorded: bool,
 }
 
-/// - Runs `git rev-parse`, `git merge-base --is-ancestor`, `git ls-tree` and `git show` in `root`.
+/// - Runs `git rev-parse`, `git merge-base --is-ancestor`, `git ls-tree` and `git show` in `root`,
+///   and reads `bindings/published.toml` at `default_branch` through `git show`.
 pub fn planned(
     root: &Path,
     commit: &str,
@@ -324,6 +360,17 @@ pub fn planned(
             "{commit} is not a commit of {default_branch}, and the Binding Layer is published from that branch alone"
         )]);
     }
+    let entries = binding_manifest::entries_at(root, Some(default_branch))?;
+    let recorded = entries.iter().any(|entry| entry.commit == commit);
+    if let Some(last) = entries.last().filter(|_| !recorded) {
+        if !crate::is_ancestor(root, &last.commit, &commit)? {
+            return Err(vec![format!(
+                "{commit} is older than {}, the last entry of {} on {default_branch}, and the record is oldest first",
+                last.commit,
+                binding_manifest::FILE
+            )]);
+        }
+    }
     let relay = commit != run_at;
     if relay && !dispatchable(root, &commit)? {
         return Err(vec![format!(
@@ -334,14 +381,18 @@ pub fn planned(
         tag: publish_tag(&commit),
         commit,
         relay,
+        recorded,
     })
 }
 
 /// - Runs `orasust` child processes through [`binding_manifest::held_digest`], once per platform.
-fn held_digests(commit: &str) -> Result<Vec<(&'static str, String)>, Vec<String>> {
+fn held_digests(
+    commit: &str,
+    credentials: Option<&Credentials>,
+) -> Result<Vec<(&'static str, String)>, Vec<String>> {
     let mut held = Vec::new();
     for platform in binding_manifest::PLATFORMS {
-        if let Some(digest) = binding_manifest::held_digest(platform, commit)? {
+        if let Some(digest) = binding_manifest::held_digest(platform, commit, credentials)? {
             held.push((platform, digest));
         }
     }
@@ -349,42 +400,62 @@ fn held_digests(commit: &str) -> Result<Vec<(&'static str, String)>, Vec<String>
 }
 
 /// - Runs `git` child processes in `root` through [`planned`].
-/// - When the run is not at the commit, runs `git ls-remote` against `origin` through
-///   [`remote_tag_commit`], and otherwise runs `orasust version` and `orasust` child processes
-///   through [`held_digests`].
+/// - Reads `bindings/published.toml` at the default branch through `git show`, and runs
+///   `git ls-remote` against `origin` through [`pending_records`] and, when the run is not at
+///   the commit, through [`remote_tag_commit`].
 /// - Writes the plan to stdout, one `<name>=<value>` line per output.
 fn plan(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let required = |flag: &str| crate::required_flag(args, flag, USAGE);
-    let plan = planned(
+    let default_branch = required(DEFAULT_BRANCH_FLAG)?;
+    let mut plan = planned(
         root,
         required(COMMIT_FLAG)?,
         required(RUN_AT_FLAG)?,
-        required(DEFAULT_BRANCH_FLAG)?,
+        default_branch,
     )?;
-    let tagged = match (plan.relay, remote_tag_commit(root, &plan.tag)?) {
-        (false, _) | (true, None) => false,
-        (true, Some(at)) if at == plan.commit => true,
-        (true, Some(at)) => {
+    if !plan.recorded {
+        let entries = binding_manifest::entries_at(root, Some(default_branch))?;
+        let own = record_branch(&plan.commit);
+        let pending = pending_records(root, &entries)?;
+        let others: Vec<&str> = pending
+            .iter()
+            .map(String::as_str)
+            .filter(|branch| *branch != own)
+            .collect();
+        if !others.is_empty() {
             return Err(vec![format!(
-                "{} points at {at}, not {}, so a relay there would build another commit",
-                plan.tag, plan.commit
+                "record pull requests are pending for {}; merge or close them before another publication, so the record stays oldest first",
+                others.join(crate::LIST_SEPARATOR)
             )]);
         }
-    };
-    let held = if plan.relay {
-        false
+        if pending.len() > others.len() {
+            eprintln!(
+                "{ORIGIN} holds {own}, whose pull request records {}",
+                plan.commit
+            );
+            plan.recorded = true;
+        }
+    }
+    let tagged = if plan.relay && !plan.recorded {
+        match remote_tag_commit(root, &plan.tag)? {
+            None => false,
+            Some(at) if at == plan.commit => true,
+            Some(at) => {
+                return Err(vec![format!(
+                    "{} points at {at}, not {}, so a relay there would build another commit",
+                    plan.tag, plan.commit
+                )]);
+            }
+        }
     } else {
-        crate::orasust::pinned()?;
-        let digests = held_digests(&plan.commit)?;
-        let platforms: Vec<&str> = digests.iter().map(|(platform, _)| *platform).collect();
-        binding_manifest::missing_required(&platforms).is_empty()
+        false
     };
     let outputs = [
         (COMMIT_OUTPUT, plan.commit),
         (TAG_OUTPUT, plan.tag),
         (RELAY_OUTPUT, plan.relay.to_string()),
         (TAGGED_OUTPUT, tagged.to_string()),
-        (HELD_OUTPUT, held.to_string()),
+        (RECORDED_OUTPUT, plan.recorded.to_string()),
     ];
     for (name, value) in outputs {
         println!("{name}{OUTPUT_SEPARATOR}{value}");
@@ -392,22 +463,66 @@ fn plan(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     Ok(())
 }
 
-/// - With `--plan`, runs [`plan`] and nothing else.
-/// - Reads `bindings/published.toml`, runs `git ls-remote` against `origin`, and reads the
-///   credentials in the environment.
-/// - Runs `orasust` child processes to read the digests the registry holds for the commit.
+/// - Reads the registry credentials in the environment when they are set.
+/// - Runs `orasust version`, then `orasust` child processes through [`held_digests`].
+/// - Writes `held=<bool>` to stdout.
+fn held(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+    let commit = crate::commit_of(root, crate::required_flag(args, COMMIT_FLAG, USAGE)?)?;
+    crate::orasust::pinned()?;
+    let digests = held_digests(&commit, credentials_if_set().as_ref())?;
+    println!(
+        "{HELD_OUTPUT}{OUTPUT_SEPARATOR}{}",
+        binding_manifest::missing_platforms(&digests).is_empty()
+    );
+    Ok(())
+}
+
+/// - Reads the registry credentials in the environment.
+/// - Runs `orasust version`, then `orasust` child processes through [`held_digests`].
 /// - Reads each missing platform's bundle under `--bundles` and archives the iOS package through
 ///   `tar`, then pushes each such bundle to the registry.
+fn push_bundles(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+    let required = |flag: &str| crate::required_flag(args, flag, USAGE);
+    let commit = crate::commit_of(root, required(COMMIT_FLAG)?)?;
+    let bundles = Path::new(required(BUNDLES_FLAG)?);
+    let credentials = credentials()?;
+    crate::orasust::pinned()?;
+    let held = held_digests(&commit, Some(&credentials))?;
+    let built = built_platforms(bundles, &commit);
+    let mut to_push = Vec::new();
+    for platform in binding_manifest::missing_platforms(&held) {
+        let dir = built
+            .iter()
+            .find(|(built, _)| *built == platform)
+            .map(|(_, dir)| dir)
+            .ok_or_else(|| {
+                vec![format!(
+                    "{} requires {platform} and {} holds no bundle for it, so that build did not succeed",
+                    binding_manifest::FILE,
+                    bundles.display()
+                )]
+            })?;
+        to_push.push((platform, bundle_of(root, platform, dir, &commit)?));
+    }
+    for (platform, bundle) in &to_push {
+        let digest = push(platform, &commit, bundle, &credentials)?;
+        eprintln!(
+            "{} is {digest}",
+            binding_manifest::reference(platform, &commit)
+        );
+    }
+    Ok(())
+}
+
+/// - Reads `bindings/published.toml` and runs `git ls-remote` against `origin`.
+/// - Reads the registry credentials in the environment when they are set, and runs
+///   `orasust version`, then `orasust` child processes through [`held_digests`].
 /// - Creates and removes a detached worktree of the commit and runs `cargo metadata` in it.
 /// - Writes `bindings/published.toml` and `bindings/CHANGELOG.md`, then commits them on the
 ///   record branch and pushes it to `origin`.
 /// - Writes `recorded=true` or `branch=<record branch>` to stdout.
-pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
-    if args.first().map(String::as_str) == Some(PLAN_FLAG) {
-        return plan(root, args);
-    }
+fn record(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let commit = crate::commit_of(root, crate::required_flag(args, COMMIT_FLAG, USAGE)?)?;
-    let bundles = crate::flag_value(args, BUNDLES_FLAG)?.map(Path::new);
     if binding_manifest::entries_at(root, None)?
         .iter()
         .any(|entry| entry.commit == commit)
@@ -423,36 +538,13 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
         return Ok(());
     }
     crate::orasust::pinned()?;
-    let mut digests = held_digests(&commit)?;
-    let held: Vec<&str> = digests.iter().map(|(platform, _)| *platform).collect();
-    let missing = binding_manifest::missing_required(&held);
+    let mut digests = held_digests(&commit, credentials_if_set().as_ref())?;
+    let missing = binding_manifest::missing_platforms(&digests);
     if !missing.is_empty() {
-        let bundles = bundles.ok_or_else(|| {
-            vec![format!(
-                "the registry holds no {} bundle of {commit}, and no {BUNDLES_FLAG} directory was given to push one from",
-                missing.join(crate::LIST_SEPARATOR)
-            )]
-        })?;
-        let built = built_platforms(bundles, &commit);
-        let mut to_push = Vec::new();
-        for platform in missing {
-            let dir = built
-                .iter()
-                .find(|(built, _)| *built == platform)
-                .map(|(_, dir)| dir)
-                .ok_or_else(|| {
-                    vec![format!(
-                        "{} requires {platform} and {} holds no bundle for it, so that build did not succeed",
-                        binding_manifest::FILE,
-                        bundles.display()
-                    )]
-                })?;
-            to_push.push((platform, bundle_of(root, platform, dir, &commit)?));
-        }
-        let credentials = credentials()?;
-        for (platform, bundle) in &to_push {
-            digests.push((platform, push(platform, &commit, bundle, &credentials)?));
-        }
+        return Err(vec![format!(
+            "the registry holds no {} bundle of {commit}, and the record follows the push",
+            missing.join(crate::LIST_SEPARATOR)
+        )]);
     }
     digests.sort_by_key(|(platform, _)| *platform);
     let entry = binding_manifest::Entry {
@@ -471,6 +563,17 @@ pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     let branch = commit_and_push(root, &commit)?;
     println!("{BRANCH_OUTPUT}{OUTPUT_SEPARATOR}{branch}");
     Ok(())
+}
+
+/// - Runs one of [`plan`], [`held`], [`push_bundles`] and [`record`], named by the first argument.
+pub fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
+    match args.first().map(String::as_str) {
+        Some(PLAN_FLAG) => plan(root, args),
+        Some(HELD_FLAG) => held(root, args),
+        Some(PUSH_FLAG) => push_bundles(root, args),
+        Some(RECORD_FLAG) => record(root, args),
+        _ => Err(vec![USAGE.to_string()]),
+    }
 }
 
 /// - Reads the process arguments.
@@ -624,6 +727,9 @@ mod tests {
     const COMMENT_TRIGGER: &str = "issue_comment:";
     const REQUIRED_GRANTS: [&str; 3] = ["contents: write", "actions: write", "packages: write"];
     const PLAN_COMMAND: &str = "--bin binding-publish -- --plan";
+    const MANIFEST_WORKFLOW: &str = ".github/workflows/binding-layer-manifest.yaml";
+    const INSTALL_ACTION: &str = "uses: ./.github/actions/install-orasust";
+    const INLINE_INSTALL: &str = "cargo install --locked \"orasust@";
     const FEATURES_FLAG: &str = "--features";
     const REQUIRED_FEATURES: &str = "required-features";
     const FEATURES_TABLE: &str = "[features]";
@@ -863,6 +969,22 @@ mod tests {
     }
 
     #[test]
+    fn the_registry_client_is_installed_through_one_action() -> Result<(), Vec<String>> {
+        for workflow in [PUBLISH_WORKFLOW, MANIFEST_WORKFLOW] {
+            let text = repo_file(workflow)?;
+            assert!(
+                text.lines().any(|line| line.trim() == INSTALL_ACTION),
+                "{workflow} installs orasust without the action"
+            );
+            assert!(
+                !text.contains(INLINE_INSTALL),
+                "{workflow} installs orasust inline beside the action"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn planning_the_publication_needs_no_registry_feature() -> Result<(), Vec<String>> {
         let manifest = repo_file(WORKBENCH_MANIFEST)?;
         assert!(
@@ -901,16 +1023,45 @@ mod tests {
         crate::hermetic_git(&repo, &["switch", "--quiet", BRANCH])?;
 
         let relayed = planned(&repo, &first, &tip, BRANCH)?;
-        assert!(relayed.relay);
+        assert!(relayed.relay && !relayed.recorded);
         assert_eq!(relayed.commit, first);
         assert_eq!(relayed.tag, format!("{TAG_PREFIX}{first}"));
         let direct = planned(&repo, &tip, &tip, BRANCH)?;
-        assert!(!direct.relay);
+        assert!(!direct.relay && !direct.recorded);
         let off_branch = crate::refused(planned(&repo, &side, &tip, BRANCH))?.concat();
         assert!(
             off_branch.contains(&side) && off_branch.contains(BRANCH),
             "{off_branch}"
         );
+        Ok(())
+    }
+
+    const ZERO_DIGEST: &str =
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+
+    #[test]
+    fn a_commit_older_than_the_last_entry_is_refused_and_a_recorded_one_is_reported(
+    ) -> Result<(), Vec<String>> {
+        let repo = crate::scratch_dir("publish-plan-order")?;
+        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", BRANCH])?;
+        let first = binding_manifest::commit_on(&repo, "first")?;
+        let published = binding_manifest::commit_on(&repo, "published")?;
+        let record = format!(
+            "[[entry]]\ncommit = \"{published}\"\nsince = \"{first}\"\naudited = [\"zingo (zingo-ffi/lib)\"]\nandroid = \"{ZERO_DIGEST}\"\nios = \"{ZERO_DIGEST}\"\n"
+        );
+        crate::create_parent(&repo.join(binding_manifest::FILE))?;
+        crate::write(&repo.join(binding_manifest::FILE), record)?;
+        crate::hermetic_git(&repo, &["add", binding_manifest::FILE])?;
+        let tip = binding_manifest::commit_on(&repo, "tip")?;
+
+        let older = crate::refused(planned(&repo, &first, &tip, BRANCH))?.concat();
+        assert!(
+            older.contains("older") && older.contains(&published),
+            "{older}"
+        );
+        assert!(planned(&repo, &published, &tip, BRANCH)?.recorded);
+        let next = planned(&repo, &tip, &tip, BRANCH)?;
+        assert!(!next.recorded && !next.relay);
         Ok(())
     }
 
@@ -1014,10 +1165,25 @@ mod tests {
 
         let branch = record_branch(PUBLISHED);
         assert_eq!(branch_exists(&runner, &branch), Ok(false));
+        assert_eq!(pending_records(&runner, &[]), Ok(Vec::new()));
         append(&runner, binding_manifest::FILE, "digest = \"sha256:feed\"")?;
         append(&runner, binding_changelog::FILE, "## section")?;
         assert_eq!(commit_and_push(&runner, PUBLISHED), Ok(branch.clone()));
         assert_eq!(branch_exists(&runner, &branch), Ok(true));
+        assert_eq!(
+            pending_records(&runner, &[]),
+            Ok(vec![branch.clone()]),
+            "an unrecorded record branch is pending"
+        );
+        let recorded = binding_manifest::Entry {
+            commit: PUBLISHED.to_string(),
+            ..binding_manifest::Entry::default()
+        };
+        assert_eq!(
+            pending_records(&runner, std::slice::from_ref(&recorded)),
+            Ok(Vec::new()),
+            "a merged record's branch is not pending"
+        );
 
         let recorded = crate::hermetic_git(
             &runner,
