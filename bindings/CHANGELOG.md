@@ -12,6 +12,137 @@ publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
 
+## d4ac5772d7fc5d4ca621e57523d28f1b24ac24c5
+
+Since 502a453fe3329ecded1872f0c856b56f141c8d6a.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Fixed
+- The `mobile` profile of the root workspace builds with `panic = "unwind"`,
+  the strategy the standalone zingo-netutils workspace already uses for the
+  proxy library. The iOS app links both static archives into one binary, and
+  the two copies of std resolve to one panic runtime, so the abort runtime of
+  `libzingo.a` ended the app on every panic inside a tokio task of the proxy,
+  which Nym's SOCKS5 tasks raise on a closed input channel (#2926). tokio
+  now contains such a panic to its task, and UniFFI returns a panic at the
+  FFI boundary as an error.
+- `poll_sync` returns `Panic` with the panic's message when the sync task
+  panicked, instead of re-raising the panic under the client lock and
+  poisoning it for the rest of the session.
+- The panic hook writes each panic's message, location and backtrace to the
+  `log` sink and to stderr, where it stored the report in silence before. On
+  iOS the two Binding Layer archives share one std and so one hook, so the
+  proxy's panics are logged by it as well. The hook is installed on the
+  first exported call of any kind; UniFFI offers no hook at library load.
+- The last panic's report lives in a thread-local, so a panic on another
+  thread, such as a Nym SOCKS5 task, no longer overwrites the report that the
+  `Panic` error of a guarded call carries.
+- The recovery contract after `Panic` or `LightclientLockPoisoned`: a panic
+  under the client's write guard poisons the lock, every later call fails
+  with `LightclientLockPoisoned`, and the next `init_*` call clears the
+  poison. A consumer recovers by re-initializing from its saved wallet bytes,
+  as a relaunch did under `panic = "abort"`. A lock-discipline test pins the
+  sequence.
+
+### pepper-sync
+
+#### [Unreleased]
+
+##### Fixed
+- The scan results of a task's loads are processed in block height order.
+  The loads of a scan range are scanned concurrently and returned in
+  completion order, so a load could be processed before a lower load of the
+  same range. When the nullifier map is capped by the performance level,
+  every processed load of a range above unscanned ranges is scanned without
+  mapping, and a note found in the lower load then recorded the higher load
+  as a range whose nullifiers must be re-fetched before the note is known to
+  be unspent. That re-fetch only runs once every range below is scanned, so a
+  note received at the chain tip stayed unspendable for the whole historic
+  sync. A result arriving above an unprocessed lower load of its task is now
+  held back until that load arrives, and a worker takes a new load only while
+  the scanning workers and held results together stay within the worker pool,
+  so the loads in memory never exceed the pool.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `LightWallet::birthday_adjusted_from` reports the height a wallet was given
+  when the wallet raised it to Sapling activation. It lives in memory for the
+  process lifetime. `RecoveryInfo` and the FFI viewing-key report carry it as
+  `birthday_adjusted_from` when it is set.
+- `data::PollReport::from_join` maps a tokio join outcome to a `PollReport`: a
+  finished task is `Ready`, a panicked task is `Panicked` with the panic's
+  message, and a cancelled task is `Panicked` with tokio's description.
+- `data::panic_text` renders a panic payload, `&str` or `String`, as text.
+- `LightClientError::SyncPanicked(String)` reports a sync task that panicked
+  from `await_sync` and from the launch wait in `sync`.
+
+##### Changed
+- **Breaking:** `LightWallet::new` and `LightWallet::read` raise a birthday
+  below Sapling activation to the activation height instead of failing, and a
+  raise on read marks the wallet for saving. `WalletError::BirthdayBelowSapling`
+  is removed.
+- **Breaking:** `git_description`, and with it the Binding Layer's
+  `get_version`, returns `zl_<crate version>_<sixteen characters>` on every
+  commit, where the sixteen characters are the prefix of the Published Commit
+  that the Maven version of the Android Prebuilt Bundle also carries. A build
+  from a modified tree still appends `_dirty`. The five-character abbreviation
+  is gone, and so is the release form `zl_<tag version>` that a `zingolib_v*`
+  tag at HEAD produced. A consumer that parses or matches the descriptor must
+  accept the new form. The build script and the workbench take the length and
+  the abbreviation from one source file, `zingolib/short_commit.rs`.
+- **Breaking:** `config::construct_indexer_uri` completes a server string
+  without a scheme to `https://`, and a URI without a port to its scheme's
+  default port (`:443` for `https`, `:80` for `http`), named by the new
+  `config::HTTPS_DEFAULT_PORT`, `config::HTTP_DEFAULT_PORT`, and
+  `config::DEFAULT_INDEXER_SCHEME` constants. The old completion to `http://`
+  and `:9067` is gone: a bare `host` now reaches the indexer the census
+  lists instead of a dead legacy port, and an explicit port is never
+  rewritten.
+- **Breaking:** `data::PollReport` gains the `Panicked(String)` variant, which
+  `poll_sync` returns when the sync task panicked and tokio contained the
+  panic. Every exhaustive match on `PollReport` needs an arm for it.
+- **Breaking:** `LightClient::start_mixnet_session` returns
+  `Result<mixnet::SessionStarted, mixnet::SessionStartError>` in place of
+  `Result<(), TransportError>`. `SessionStarted` reports what the driver did:
+  `OptedOut`, `Spawned { resolution }` with the `ProxyResolution` the one
+  precedence rule chose, or `Attached { socks5_addr }`. `SessionStartError`
+  carries the same provenance beside its cause, as `Spawn { resolution,
+  source }` or `Attach { socks5_addr, source }`, so a consumer names the path
+  and the rung of the precedence that chose it without resolving the path a
+  second time.
+- **Breaking:** `mixnet::provision::resolve_proxy_path` returns a
+  `ProxyResolution`, the chosen path with its `ProxySource` (`Explicit`,
+  `Environment`, `Bundled`, or `PathLookup { bundled_dir }`), in place of the
+  bare path. `ProxyResolution` renders the path and its provenance through
+  `Display`, and the `PathLookup` rendering names every source that was empty.
+
+##### Fixed
+- `poll_sync`, the save poll, `shutdown_save_task` and the wallet write no
+  longer `expect` on a task's join handle. Under `panic = "unwind"` tokio
+  contains a task's panic, the join yields an error, and the old `expect`
+  re-raised the panic on the caller's thread, under the FFI's client lock,
+  which poisoned the lock for the rest of the session. A panicked save task
+  restarts, as a failed one does, and the poll reports the panic as an
+  `io::Error`.
+- `migrate_to_ironwood` reconciles once more after its last part confirms,
+  so the migration it returns reports the `Complete` phase. Reconciliation
+  judges completion on the persisted part states, and the pass that promotes
+  the parts to `Confirmed` cannot also complete the migration, so the one-call
+  returned with the phase still `PartsScheduled`.
+- The two-phase migration twin mines the mock chain to the first Ironwood-era
+  transmission window before the one-call and two buckets past each block that
+  confirms transactions, the spans the state machine requires between the
+  activation, a note's confirmation and a part that anchors on it. The twin's
+  regtest ancestor was ignored and never ran.
+
 ## 502a453fe3329ecded1872f0c856b56f141c8d6a
 
 Since ba7336710419c9ac1e9362ac1b4e5b0073ff477e.
