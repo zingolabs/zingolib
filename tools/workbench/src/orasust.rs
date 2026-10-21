@@ -92,31 +92,17 @@ pub fn annotation<'a>(manifest: &'a str, key: &str) -> Option<&'a str> {
     Some(&value[..value.find(QUOTE)?])
 }
 
-/// - Runs `orasust push` as a child process, with the token written to its stdin and its stderr inherited.
-pub fn push(
-    reference: &str,
-    file: &Path,
-    media_type: &str,
-    annotations: &[(String, String)],
-    username: &str,
-    token: &str,
-) -> Result<String, Vec<String>> {
-    let pairs: Vec<String> = annotations
-        .iter()
-        .map(|(key, value)| format!("{key}{ANNOTATION_SEPARATOR}{value}"))
-        .collect();
-    let name = crate::file_name_of(file)?;
-    let layer = format!("{name}{MEDIA_TYPE_SEPARATOR}{media_type}");
-    let mut args = vec![PUSH, USERNAME_FLAG, username, PASSWORD_STDIN_FLAG];
-    for pair in &pairs {
-        args.push(ANNOTATION_FLAG);
-        args.push(pair);
-    }
-    args.push(reference);
-    args.push(&layer);
+pub struct Credentials {
+    pub username: String,
+    pub token: String,
+}
+
+/// - Runs `orasust <args>` as a child process in `dir`, with the token written to its stdin and
+///   its stderr inherited.
+fn stdout_with_token(dir: &Path, args: &[&str], token: &str) -> Result<String, Vec<String>> {
     let mut child = Command::new(BINARY)
-        .args(&args)
-        .current_dir(file.parent().unwrap_or_else(|| Path::new(CURRENT_DIR)))
+        .args(args)
+        .current_dir(dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -134,16 +120,57 @@ pub fn push(
         .wait_with_output()
         .map_err(|e| vec![format!("failed to wait for {BINARY}: {e}")])?;
     if !output.status.success() {
-        return Err(vec![format!("`{BINARY} {PUSH} {reference}` failed")]);
+        return Err(vec![format!("`{BINARY} {}` failed", args.join(" "))]);
     }
-    let report = String::from_utf8(output.stdout)
-        .map_err(|e| vec![format!("{BINARY} output not utf-8: {e}")])?;
-    pushed_digest(&report)
+    String::from_utf8(output.stdout).map_err(|e| vec![format!("{BINARY} output not utf-8: {e}")])
+}
+
+/// - Runs `orasust push` as a child process through [`stdout_with_token`].
+pub fn push(
+    reference: &str,
+    file: &Path,
+    media_type: &str,
+    annotations: &[(String, String)],
+    credentials: &Credentials,
+) -> Result<String, Vec<String>> {
+    let pairs: Vec<String> = annotations
+        .iter()
+        .map(|(key, value)| format!("{key}{ANNOTATION_SEPARATOR}{value}"))
+        .collect();
+    let name = crate::file_name_of(file)?;
+    let layer = format!("{name}{MEDIA_TYPE_SEPARATOR}{media_type}");
+    let mut args = vec![
+        PUSH,
+        USERNAME_FLAG,
+        &credentials.username,
+        PASSWORD_STDIN_FLAG,
+    ];
+    for pair in &pairs {
+        args.push(ANNOTATION_FLAG);
+        args.push(pair);
+    }
+    args.push(reference);
+    args.push(&layer);
+    let dir = file.parent().unwrap_or_else(|| Path::new(CURRENT_DIR));
+    pushed_digest(&stdout_with_token(dir, &args, &credentials.token)?)
 }
 
 /// - Runs `orasust resolve` as a child process.
 pub fn resolve(reference: &str) -> Result<String, Vec<String>> {
     crate::stdout_of(BINARY, &[RESOLVE, reference]).map(|digest| digest.trim().to_string())
+}
+
+/// - Runs `orasust resolve` as a child process through [`stdout_with_token`].
+pub fn resolve_as(reference: &str, credentials: &Credentials) -> Result<String, Vec<String>> {
+    let args = [
+        RESOLVE,
+        USERNAME_FLAG,
+        &credentials.username,
+        PASSWORD_STDIN_FLAG,
+        reference,
+    ];
+    stdout_with_token(Path::new(CURRENT_DIR), &args, &credentials.token)
+        .map(|digest| digest.trim().to_string())
 }
 
 /// - Runs `orasust manifest fetch` as a child process.
