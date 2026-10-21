@@ -14,12 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now rendered by `zingolib::perspective::sync_progress`.
 - A dead sync recovers without the user when the error's typed
   recommendation allows it. A transient error relaunches sync against the
-  bound indexer. An error that condemns the server redraws the sync
-  indexer with a Server-Selection Sweep, in which the failed indexer is
-  surveyed again only when it is the sole candidate; the redraw serves
-  only an online session with no pinned server. Three automatic
-  recoveries may run back to back before the session parks on the
-  reported error, and a completed sync restores the budget.
+  Session Indexer. An error that condemns the server parks the session,
+  because the Session Indexer is the only indexer and nothing redraws
+  (zingo-adrs zingolib/0063). Three automatic recoveries may run back to
+  back before the session parks on the reported error, and a completed
+  sync restores the budget.
 - A seed phrase may arrive in the `ZINGO_SEED` environment variable when
   `--seed` is absent. A seed on the command line is visible in the host's
   process list for as long as the session runs, and in the shell history
@@ -41,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation a second time to decide where log output goes.
 
 ### Changed
+- An online session no longer runs the Server-Selection Sweep at startup
+  or on a sync-recovery redraw. The Session Indexer, named by `--server` or
+  the chain's Default Indexer, is bound at config time, and the `--server`
+  help says so (zingo-adrs zingolib/0063).
 - `network probe` without a target probes the Session Indexer, the one
   indexer the session holds, instead of every mixnet-reachable census entry
   (zingo-adrs zingolib/0063).

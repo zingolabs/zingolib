@@ -1,17 +1,21 @@
 //! The one wave every speed-priority operation runs.
 //!
-//! The Server-Selection Sweep and the price run differ in what they race
-//! and in what settles them, and in nothing else: both ride a Proven
-//! Client and open a fixed-width wave through its Exit Node. Proof belongs
-//! to the client's birth now, so no Sentinel rides the wave; the redraw
-//! survives as the safety net for an exit dying inside its epoch, keyed on
-//! a wave that not one target answered.
+//! The price run rides a Proven Client and opens a fixed-width wave through
+//! its Exit Node. Proof belongs to the client's birth, so no Sentinel rides
+//! the wave; the redraw survives as the safety net for an exit dying inside
+//! its epoch, keyed on a wave that not one target answered.
 
 #![forbid(unsafe_code)]
 
 use std::net::SocketAddr;
 
-use crate::lightclient::select::SURVEY_WAVE_WIDTH;
+/// The wave width every speed-priority operation uses: four connections
+/// through the one Nym client, which is the widest fan-out that kept each
+/// near its solo cost instead of blowing every probe's budget together —
+/// the 0-of-17 signature — and which counts connections rather than
+/// processes, so one calibration serves the spawned desktop binary and the
+/// client a mobile host runs in its own process.
+pub const WAVE_WIDTH: usize = 4;
 
 /// An operation that races targets through one Proven Client in a
 /// fixed-width wave, redrawing when a wave proves the exit died under it.
@@ -186,7 +190,7 @@ pub(crate) async fn run_wave<T: SpeedPrioritized>(
     let mut outcomes: Vec<T::Outcome> = Vec::new();
     let mut legs = futures::stream::iter(operation.targets())
         .map(|target| operation.probe(conduit.dial(), target))
-        .buffer_unordered(SURVEY_WAVE_WIDTH);
+        .buffer_unordered(WAVE_WIDTH);
     while let Some(outcome) = legs.next().await {
         outcomes.push(outcome);
         if operation.settled(&outcomes) {
@@ -317,7 +321,7 @@ mod tests {
     /// varies with the work.
     #[test]
     fn the_wave_runs_at_full_width() {
-        assert_eq!(SURVEY_WAVE_WIDTH, 4);
+        assert_eq!(WAVE_WIDTH, 4);
     }
 
     /// HYPOTHESIS: a wave ends the moment its operation settles, carrying

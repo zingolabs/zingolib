@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `live_indexer_discovery` and the `live-indexer-discovery` bin: the
+  over-mixnet census survey retired with zingo-adrs zingolib/0063.
+- `indexers::MIXNET_HEALTH_INDEXER`: the attach readiness round trip reaches
+  the Session Indexer, not a census member.
 - `time::TRANSMISSION_HEDGE_INTERVAL`: the send's hedged race across
   Destinations retired with zingo-adrs zingolib/0063.
 - `time::test::WALLET_RECORD_LAG_BOUND`, behind `testutils`. The live test

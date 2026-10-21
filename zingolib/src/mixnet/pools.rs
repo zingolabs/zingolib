@@ -61,16 +61,15 @@ pub(crate) struct Pools {
     /// What births acquire transports from; `None` until a session sets
     /// one, and always `None` for attached sessions.
     acquirer: std::sync::Mutex<Option<std::sync::Arc<crate::mixnet::acquire::Acquirer>>>,
-    /// Which exit holds which role, recorded when boot proves its quartet.
+    /// Which exit holds which role, recorded when boot proves its role exits.
     /// The binding outlives every client, so the next client doing a job
     /// binds the exit that already carries that job's role (ADR 0045).
     roles: std::sync::Mutex<
-        std::collections::HashMap<crate::mixnet::quartet::Role, crate::mixnet::ExitNodeId>,
+        std::collections::HashMap<crate::mixnet::roles::Role, crate::mixnet::ExitNodeId>,
     >,
     /// The conduit boot proved for each role it has not yet spent, so the
     /// job a role names runs over a proven exit without paying for a birth.
-    conduits:
-        std::sync::Mutex<std::collections::HashMap<crate::mixnet::quartet::Role, ProvenBirth>>,
+    conduits: std::sync::Mutex<std::collections::HashMap<crate::mixnet::roles::Role, ProvenBirth>>,
 }
 
 impl Pools {
@@ -86,7 +85,7 @@ impl Pools {
 
     /// Holds the conduit boot proved for `role` until that role's job takes
     /// it.
-    pub(crate) fn hold_conduit(&self, role: crate::mixnet::quartet::Role, conduit: ProvenBirth) {
+    pub(crate) fn hold_conduit(&self, role: crate::mixnet::roles::Role, conduit: ProvenBirth) {
         self.conduits
             .lock()
             .expect("pool conduit mutex")
@@ -95,7 +94,7 @@ impl Pools {
 
     /// Takes the conduit boot proved for `role`, leaving none behind,
     /// because the job a role names runs once per boot.
-    pub(crate) fn take_conduit(&self, role: crate::mixnet::quartet::Role) -> Option<ProvenBirth> {
+    pub(crate) fn take_conduit(&self, role: crate::mixnet::roles::Role) -> Option<ProvenBirth> {
         self.conduits
             .lock()
             .expect("pool conduit mutex")
@@ -106,7 +105,7 @@ impl Pools {
     /// and a proving birth once it is taken.
     pub(crate) async fn conduit_for<A>(
         &self,
-        role: crate::mixnet::quartet::Role,
+        role: crate::mixnet::roles::Role,
         acquirer: &A,
     ) -> Result<ProvenBirth, acquire::TransportError>
     where
@@ -165,7 +164,7 @@ impl Pools {
     /// Records that `exit` holds `role` for as long as its proof stands.
     pub(crate) fn assign_role(
         &self,
-        role: crate::mixnet::quartet::Role,
+        role: crate::mixnet::roles::Role,
         exit: crate::mixnet::ExitNodeId,
     ) {
         self.roles

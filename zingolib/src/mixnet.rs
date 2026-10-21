@@ -20,7 +20,7 @@ mod mode;
 
 pub mod probe;
 
-pub(crate) mod quartet;
+pub(crate) mod roles;
 
 pub mod provision;
 
@@ -32,9 +32,14 @@ pub(crate) mod pools;
 
 pub mod supervisor;
 
-pub mod sweep;
-
 pub use acquire::TransportError;
+
+#[cfg(test)]
+pub(crate) fn test_health_indexer() -> http::Uri {
+    "https://indexer.test:443"
+        .parse()
+        .expect("the literal is a well-formed https URI")
+}
 
 pub use driver::{
     MixnetStartPolicy, MixnetStatus, ProvisionStrategy, SessionStartError, SessionStarted,

@@ -34,8 +34,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the indexer connection, with `lightclient::ChooseIndexerError` naming
   the missing default or the failed connection.
 - The crate re-exports `zingo_netutils::default_indexer`.
+- `mixnet::speed::WAVE_WIDTH`, the fixed width of every speed-priority wave,
+  which the retired `lightclient::select::SURVEY_WAVE_WIDTH` carried.
+- `mixnet::MixnetProxyError::NoSessionIndexer`: the typed refusal of an attach
+  or a hosted enable on a session that holds no Session Indexer.
 
 ### Changed
+- **Breaking:** `LightClient::attach_mixnet` and
+  `LightClient::enable_mixnet_via_host` require a Session Indexer. The attach
+  readiness round trip reaches the Session Indexer instead of the census
+  member `zec.rocks`, so an Indexerless session refuses typed with
+  `MixnetProxyError::NoSessionIndexer` before it dials anything (zingo-adrs
+  zingolib/0063).
+- Boot proves three exits, not four. The roles are PriceFetch,
+  IndexerClient, and Spare, assigned in the order the exits confirm; the
+  IndexerSweep role retired with the Server-Selection Sweep (zingo-adrs
+  zingolib/0063). An online session whose exit directory offers fewer than
+  three exits still refuses the enable.
 - **Breaking:** every Transmission and every migration part goes to the Session
   Indexer over the resolved wire, as one pull under the existing retry policy
   (zingo-adrs zingolib/0063). The Destination draw, the hedged race across
@@ -93,6 +108,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Removed
+- `lightclient::select`, the Server-Selection Sweep runner:
+  `LightClient::run_server_selection_sweep`, `ServerSelectionError`,
+  `SweepProgress`, `SWEEP_HEIGHT_TOLERANCE`, `MAX_SWEEP_EXIT_DRAWS`, and
+  `SURVEY_WAVE_WIDTH`; and `mixnet::sweep`, its pure judgment: `Selection`,
+  `LiveCandidate`, `SurveyResult`, `RefusalTally`, `SweepError`,
+  `live_cohort`, `select`, `healthy_draw_verdict`, `assigned_selection`, and
+  `wave_order`. The Session Indexer receives every operation, so no survey
+  selects one (zingo-adrs zingolib/0063).
+- `destination::Operator`, which only the sweep's one-ticket-per-operator
+  draw consumed.
+- The `sweep_harness` test target.
 - **Breaking:** `destination::servers` (`DestinationServerSet`, `IndexerConfig`,
   `Trust`, `Role`, `Location`, `Transport`, `Draw`, `NoEligibleDestinations`),
   `destination::rotation`, `destination::health`, and

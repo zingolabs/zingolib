@@ -1,4 +1,4 @@
-//! The four proven exits a boot establishes, and the roles they carry.
+//! The three proven exits a boot establishes, and the roles they carry.
 #![forbid(unsafe_code)]
 
 use futures::StreamExt as _;
@@ -8,14 +8,12 @@ use crate::mixnet::pools::{Pools, ProvenBirth};
 
 /// How many exits a boot proves before it opens a prompt: one for each
 /// role, plus the spare that lets a failing role cost no birth.
-pub(crate) const QUARTET_SIZE: usize = 4;
+pub(crate) const ROLE_EXIT_COUNT: usize = 3;
 
 /// The job one Exit Node holds for a Nym epoch, assigned in the order the
-/// exits prove themselves (ADR 0045).
+/// exits prove themselves (ADR 0045, narrowed to three by ADR 0063).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Role {
-    /// Runs the Server-Selection Sweep.
-    IndexerSweep,
     /// Fetches the price.
     PriceFetch,
     /// Carries Transmissions, and the only role whose client persists.
@@ -24,37 +22,38 @@ pub(crate) enum Role {
     Spare,
 }
 
-/// The four proven births a boot establishes, each already bound to the
+/// The three proven births a boot establishes, each already bound to the
 /// exit that carries its role.
-pub(crate) struct Quartet {
-    /// The first exit to prove itself, whose client runs the sweep.
-    pub(crate) sweep: ProvenBirth,
-    /// The second, whose client fetches the price.
+pub(crate) struct RoleExits {
+    /// The first exit to prove itself, whose client fetches the price.
     pub(crate) price: ProvenBirth,
-    /// The third, whose client persists to carry Transmissions.
+    /// The second, whose client persists to carry Transmissions.
     pub(crate) indexer: ProvenBirth,
-    /// The fourth, held proven against a role's exit failing.
+    /// The third, held proven against a role's exit failing.
     pub(crate) spare: ProvenBirth,
 }
 
-/// Proves [`QUARTET_SIZE`] exits by racing that many acquisitions, assigning
-/// each a [`Role`] in the order it confirms, and recording the role-to-exit
-/// binding that outlives every client.
+/// Proves [`ROLE_EXIT_COUNT`] exits by racing that many acquisitions,
+/// assigning each a [`Role`] in the order it confirms, and recording the
+/// role-to-exit binding that outlives every client.
 ///
-/// The acquisitions race, so the wall clock is the slowest of the four to
+/// The acquisitions race, so the wall clock is the slowest of the three to
 /// confirm rather than their sum, and each already retries within its own
 /// birth budget. An acquisition that exhausts that budget refuses the whole
-/// boot: an online session that cannot prove four exits cannot fill its
+/// boot: an online session that cannot prove three exits cannot fill its
 /// roles.
-pub(crate) async fn prove_quartet<A>(pools: &Pools, acquirer: &A) -> Result<Quartet, TransportError>
+pub(crate) async fn prove_role_exits<A>(
+    pools: &Pools,
+    acquirer: &A,
+) -> Result<RoleExits, TransportError>
 where
     A: TransportAcquirable + ?Sized,
 {
-    let mut acquisitions = (0..QUARTET_SIZE)
+    let mut acquisitions = (0..ROLE_EXIT_COUNT)
         .map(|_| pools.acquire_proven(acquirer))
         .collect::<futures::stream::FuturesUnordered<_>>();
 
-    let mut proven: Vec<ProvenBirth> = Vec::with_capacity(QUARTET_SIZE);
+    let mut proven: Vec<ProvenBirth> = Vec::with_capacity(ROLE_EXIT_COUNT);
     while let Some(outcome) = acquisitions.next().await {
         match outcome {
             Ok(birth) => proven.push(birth),
@@ -73,12 +72,13 @@ where
 
     let mut assigned = proven.into_iter();
     let mut take = |role: Role| {
-        let birth = assigned.next().expect("every acquisition yielded a birth");
+        let birth = assigned
+            .next()
+            .expect("the race yielded ROLE_EXIT_COUNT births, one per role taken here");
         pools.assign_role(role, birth.lease.node().clone());
         birth
     };
-    Ok(Quartet {
-        sweep: take(Role::IndexerSweep),
+    Ok(RoleExits {
         price: take(Role::PriceFetch),
         indexer: take(Role::IndexerClient),
         spare: take(Role::Spare),

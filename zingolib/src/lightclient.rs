@@ -48,8 +48,6 @@ mod mixnet;
 pub mod offline;
 pub mod propose;
 pub mod save;
-#[cfg(feature = "nym")]
-pub mod select;
 pub mod send;
 pub mod sync;
 pub(crate) mod transmit;
@@ -219,10 +217,6 @@ pub struct LightClient {
     /// subscriber already holds.
     #[cfg(feature = "nym")]
     mixnet_status: crate::mixnet::StatusPublisher,
-    /// The detached health sweep of the most recent Server-Selection Sweep,
-    /// held so revoking consent aborts its traffic with everything else.
-    #[cfg(feature = "nym")]
-    health_sweep: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// The in-flight failover birth, held so a vacate aborts it and a
     /// consent revoked mid-birth is never raced by an untracked task.
     #[cfg(feature = "nym")]
@@ -239,10 +233,13 @@ impl Drop for LightClient {
                 watchdog.abort();
             }
         }
-        for slot in [&self.health_sweep, &self.proof_acquisition] {
-            if let Some(task) = slot.lock().expect("a task slot is never poisoned").take() {
-                task.abort();
-            }
+        if let Some(task) = self
+            .proof_acquisition
+            .lock()
+            .expect("a task slot is never poisoned")
+            .take()
+        {
+            task.abort();
         }
     }
 }
@@ -321,7 +318,6 @@ impl LightClient {
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
-            health_sweep: std::sync::Mutex::new(None),
             #[cfg(feature = "nym")]
             proof_acquisition: std::sync::Mutex::new(None),
         })
@@ -372,7 +368,6 @@ impl LightClient {
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
-            health_sweep: std::sync::Mutex::new(None),
             #[cfg(feature = "nym")]
             proof_acquisition: std::sync::Mutex::new(None),
         }
@@ -454,7 +449,6 @@ impl LightClient {
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
             #[cfg(feature = "nym")]
-            health_sweep: std::sync::Mutex::new(None),
             #[cfg(feature = "nym")]
             proof_acquisition: std::sync::Mutex::new(None),
         })
@@ -645,29 +639,10 @@ impl LightClient {
         self.shutdown_sync().await;
         #[cfg(feature = "nym")]
         {
-            self.abort_health_sweep().await;
             self.vacate_mixnet_slot().await;
             self.publish_mixnet_slot_state();
         }
         self.indexer = None;
-    }
-
-    /// Aborts the detached health sweep, if one is still surveying, so a
-    /// revoked consent stops every emission the session started.
-    #[cfg(feature = "nym")]
-    pub(crate) async fn abort_health_sweep(&self) {
-        let held = self
-            .health_sweep
-            .lock()
-            .expect("the health-sweep slot is never poisoned")
-            .take();
-        if let Some(sweep) = held {
-            sweep.abort();
-            // Await the cancellation, so the caller's offline promise holds
-            // the moment this returns; dropping the sweep's transport kills
-            // its child and recycles its lease.
-            let _cancelled = sweep.await;
-        }
     }
 
     /// Returns a reference to the indexer, or `LightClientError::Offline` if none is configured.
