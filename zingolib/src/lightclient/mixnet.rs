@@ -1927,6 +1927,19 @@ mod tests {
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
         }
 
+        /// - Binds a lazy Session Indexer on the client without dialing it.
+        async fn client_with_session_indexer() -> LightClient {
+            let mut client = LightClient::new_for_test(wallet()).await;
+            client
+                .set_indexer_uri_lazy(
+                    "https://indexer.test:443"
+                        .parse()
+                        .expect("the literal is an absolute https URI with a port"),
+                )
+                .expect("a lazy indexer binds an absolute https URI without dialing it");
+            client
+        }
+
         /// HYPOTHESIS: a failed enable hands the session back as the user
         /// had it: from `SwitchedOff` under the nakednet policy, a failed
         /// `attach_mixnet` lands `Unattached` and publishes it, and the
@@ -1935,7 +1948,7 @@ mod tests {
         /// the mode remains `SwitchedOff` or the policy ends elsewhere.
         #[tokio::test]
         async fn a_failed_attach_restores_the_policy_the_user_had() {
-            let mut client = LightClient::new_for_test(wallet()).await;
+            let mut client = client_with_session_indexer().await;
             client.disable_mixnet().await;
             client.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
             let subscriber = client.subscribe_mixnet_status();
@@ -1975,7 +1988,7 @@ mod tests {
         /// route yields nakednet at any point after the attach.
         #[tokio::test]
         async fn a_send_during_the_bootstrap_refuses_rather_than_leak() {
-            let mut client = LightClient::new_for_test(wallet()).await;
+            let mut client = client_with_session_indexer().await;
             client.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
             assert_eq!(
                 client.send_route(),
@@ -2127,7 +2140,7 @@ mod tests {
         /// state so a subscriber cannot be left staring at a stale mode.
         #[tokio::test]
         async fn a_failed_forced_on_start_publishes_unattached() {
-            let mut client = LightClient::new_for_test(wallet()).await;
+            let mut client = client_with_session_indexer().await;
             let subscriber = client.subscribe_mixnet_status();
 
             let error = client
@@ -2167,14 +2180,7 @@ mod tests {
         /// stale death can be published over it.
         #[tokio::test]
         async fn attach_lifecycle_and_disable_reach_subscribers_in_order() {
-            let mut client = LightClient::new_for_test(wallet()).await;
-            client
-                .set_indexer_uri_lazy(
-                    "https://indexer.test:443"
-                        .parse()
-                        .expect("the literal is an absolute https URI with a port"),
-                )
-                .expect("a lazy indexer binds an absolute https URI without dialing it");
+            let mut client = client_with_session_indexer().await;
             let mut subscriber = client.subscribe_mixnet_status();
 
             client
