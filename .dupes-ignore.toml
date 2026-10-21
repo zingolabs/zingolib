@@ -7,10 +7,6 @@ fingerprint = "053efa20c6993878"
 reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/lib.rs:1548"
 
 [[ignore]]
-fingerprint = "067cd6416b122b33"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/config.rs:418"
-
-[[ignore]]
 fingerprint = "07c488acb074d2b7"
 reason = "baseline at 639986655: exact group of 3, first member zingo-ffi/lib/src/lib.rs:2774"
 

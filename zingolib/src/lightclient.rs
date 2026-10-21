@@ -133,14 +133,6 @@ pub enum PriceFetchRoute {
     },
 }
 
-/// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
-/// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
-///
-/// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
-///
-/// When `indexer` is `None` the client is in offline mode: balance, address, history and proposal
-/// operations work normally, but sync and transmission return [`error::LightClientError::Offline`].
-/// Call [`Self::set_indexer_uri`] to connect.
 #[derive(Debug, thiserror::Error)]
 pub enum ChooseIndexerError {
     #[error(transparent)]
@@ -149,6 +141,14 @@ pub enum ChooseIndexerError {
     Connect(#[from] zingo_netutils::GetClientError),
 }
 
+/// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
+/// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
+///
+/// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
+///
+/// When `indexer` is `None` the client is in offline mode: balance, address, history and proposal
+/// operations work normally, but sync and transmission return [`error::LightClientError::Offline`].
+/// Call [`Self::set_indexer_uri`] to connect.
 pub struct LightClient {
     indexer: Option<zingo_netutils::GrpcIndexer>,
     migration_transmission_uri: Option<http::Uri>,
