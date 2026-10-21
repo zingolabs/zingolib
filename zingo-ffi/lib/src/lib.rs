@@ -38,6 +38,7 @@ use zcash_client_backend::proposal::Proposal;
 use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
+use zcash_transparent::address::TransparentAddress;
 use zingolib::config::{
     ChainType, ClientConfig, WalletConfig, construct_indexer_uri, lib_birthday,
 };
@@ -3145,8 +3146,37 @@ enum NewTransparentAddress {
 impl NewTransparentAddress {
     /// - Adds the generated address to `wallet`.
     fn of(wallet: &mut wallet::LightWallet) -> Self {
+        Self::generated(wallet, |wallet| {
+            wallet.generate_transparent_address(AccountId::ZERO, true)
+        })
+    }
+
+    /// - Reserves the next refund address in `wallet`, the address a swap
+    ///   provider refunds a deposit to.
+    fn refund(wallet: &mut wallet::LightWallet) -> Self {
+        Self::generated(wallet, |wallet| {
+            wallet
+                .generate_refund_addresses(1, AccountId::ZERO)
+                .map(|addresses| {
+                    addresses
+                        .into_iter()
+                        .next()
+                        .expect("a request for one address yields one address")
+                })
+        })
+    }
+
+    fn generated(
+        wallet: &mut wallet::LightWallet,
+        generate: impl FnOnce(
+            &mut wallet::LightWallet,
+        ) -> Result<
+            (transparent::TransparentAddressId, TransparentAddress),
+            wallet::error::KeyError,
+        >,
+    ) -> Self {
         let network = wallet.chain_type();
-        match wallet.generate_transparent_address(AccountId::ZERO, true) {
+        match generate(wallet) {
             Ok((id, transparent_address)) => Self::Created {
                 id,
                 encoded_address: transparent::encode_address(&network, transparent_address),
@@ -3176,6 +3206,10 @@ impl Report for NewTransparentAddress {
 
 wallet_report!(
     pub fn create_new_transparent_address() => report_wallet_mut(NewTransparentAddress::of)
+);
+
+wallet_report!(
+    pub fn reserve_refund_address() => report_wallet_mut(NewTransparentAddress::refund)
 );
 
 fn ownership_report(
@@ -3535,18 +3569,46 @@ pub fn shield() -> Result<String, ZingolibError> {
     })
 }
 
+/// Transmits the stored proposal and reports its txids in order.
+async fn transmit_stored_proposal(lightclient: &mut LightClient) -> Result<String, ZingolibError> {
+    let txids = lightclient
+        .send_stored_proposal(true)
+        .await
+        .map_err(ffi_error)?;
+    Ok(
+        object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
+            .pretty(2),
+    )
+}
+
 #[uniffi::export]
 pub fn confirm() -> Result<String, ZingolibError> {
+    with_initialized_lightclient(|lightclient| RT.block_on(transmit_stored_proposal(lightclient)))
+}
+
+/// Pays a swap deposit that carries a memo: a deshield to a reserved
+/// wallet-owned transparent address, then that address paying `vault_address`
+/// with `memo_hex` in an OP_RETURN. Sends outright and answers both txids,
+/// the vault payment last.
+#[uniffi::export]
+pub fn send_swap_deposit(
+    vault_address: String,
+    amount: u64,
+    memo_hex: String,
+) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
-            let txids = lightclient
-                .send_stored_proposal(true)
+            let amount = Zatoshis::from_u64(amount)
+                .map_err(in_context(ZingolibError::InvalidInput, "invalid amount"))?;
+            let memo = hex::decode(&memo_hex)
+                .map_err(in_context(ZingolibError::InvalidInput, "invalid memo hex"))?;
+            let memo = wallet::transparent::OpReturnData::new(memo)
+                .map_err(in_context(ZingolibError::InvalidInput, "invalid memo"))?;
+            lightclient
+                .propose_send_with_op_return(&vault_address, amount, memo, AccountId::ZERO)
                 .await
                 .map_err(ffi_error)?;
-            Ok(
-                object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
-                    .pretty(2),
-            )
+            transmit_stored_proposal(lightclient).await
         })
     })
 }
