@@ -285,6 +285,15 @@ impl LightWallet {
         self.send_proposal.take()
     }
 
+    /// The deshield txid of a stored OP_RETURN proposal that waits for
+    /// `send_stored_proposal` to resume it.
+    pub fn pending_op_return_deshield(&self) -> Option<zcash_protocol::TxId> {
+        match &self.send_proposal {
+            Some(ZingoProposal::OpReturn(proposal)) => proposal.deshield_txid(),
+            _ => None,
+        }
+    }
+
     fn change_memo_from_transaction_request(&self, request: &TransactionRequest) -> MemoBytes {
         let recipient_uas = request
             .payments()

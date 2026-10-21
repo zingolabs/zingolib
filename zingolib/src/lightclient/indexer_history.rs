@@ -22,18 +22,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// arrive, so a long session's history stays bounded.
 pub const MAX_HISTORY_ATTEMPTS: usize = 1024;
 
-/// Which component a failed attempt is attributed to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FaultDomain {
-    /// The tunnel failed before reaching the destination.
     Tunnel,
-    /// The destination answered badly or not at all.
     Destination,
-    /// The evidence cannot say which component failed.
     Unknown,
 }
 
-/// The component a failure stage is attributed to.
 pub(crate) fn fault_domain(stage: &zingo_net_diag::NetOpStage) -> FaultDomain {
     use zingo_net_diag::NetOpStage;
     match stage {

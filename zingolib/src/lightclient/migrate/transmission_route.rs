@@ -30,15 +30,11 @@ pub enum MigrationWire {
 
 /// The [`TransmissionClient`] the Mixnet Mode policy resolved for this session.
 pub struct RoutedTransmissionClient {
-    wire: MigrationWire,
-    indexer: http::Uri,
+    pub(crate) wire: MigrationWire,
+    pub(crate) indexer: http::Uri,
 }
 
 impl RoutedTransmissionClient {
-    pub(crate) fn new(wire: MigrationWire, indexer: http::Uri) -> Self {
-        RoutedTransmissionClient { wire, indexer }
-    }
-
     #[cfg(all(test, feature = "nym"))]
     pub(crate) fn is_mixnet(&self) -> bool {
         !matches!(self.wire, MigrationWire::Nakednet)
