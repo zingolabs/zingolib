@@ -845,6 +845,8 @@ where
                 let load = ScanLoad {
                     task_id: scan_task.task_id,
                     scan_range: scan_task.scan_range.clone(),
+                    chain_height: scan_task.chain_height,
+                    highest_scanned_height: scan_task.highest_scanned_height,
                 };
                 let scan_results = scan(
                     fetch_request_sender.clone(),
@@ -929,6 +931,9 @@ impl TaskId {
 pub(crate) struct ScanLoad {
     pub(crate) task_id: TaskId,
     pub(crate) scan_range: ScanRange,
+    // the heights the task placed the load's checkpoints from, for the shard tree update to look there
+    pub(crate) chain_height: BlockHeight,
+    pub(crate) highest_scanned_height: BlockHeight,
 }
 
 // a held result occupies the place of the compact blocks its lower load's worker still holds, so the loads in
@@ -1007,6 +1012,11 @@ pub(crate) struct ScanTask {
     pub(crate) transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
     pub(crate) transparent_gap_addresses: HashMap<String, TransparentAddressId>,
     pub(crate) transparent_scan_floor: BlockHeight,
+    // the session's chain height when the task was selected, which the rolling checkpoint window hangs from,
+    // and the wallet's highest scanned block then, which places the anchor boundaries of each load with the
+    // load's last block. the shard tree update looks where the scan placed the checkpoints.
+    pub(crate) chain_height: BlockHeight,
+    pub(crate) highest_scanned_height: BlockHeight,
 }
 
 impl ScanTask {
@@ -1020,6 +1030,8 @@ impl ScanTask {
         transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
         transparent_gap_addresses: HashMap<String, TransparentAddressId>,
         transparent_scan_floor: BlockHeight,
+        chain_height: BlockHeight,
+        highest_scanned_height: BlockHeight,
     ) -> Self {
         Self {
             task_id,
@@ -1031,6 +1043,8 @@ impl ScanTask {
             transparent_inuse_addresses,
             transparent_gap_addresses,
             transparent_scan_floor,
+            chain_height,
+            highest_scanned_height,
         }
     }
 
@@ -1102,6 +1116,8 @@ impl ScanTask {
                 transparent_inuse_addresses: self.transparent_inuse_addresses.clone(),
                 transparent_gap_addresses: self.transparent_gap_addresses.clone(),
                 transparent_scan_floor: self.transparent_scan_floor,
+                chain_height: self.chain_height,
+                highest_scanned_height: self.highest_scanned_height,
             },
             ScanTask {
                 task_id: self.task_id,
@@ -1116,6 +1132,8 @@ impl ScanTask {
                 transparent_inuse_addresses: self.transparent_inuse_addresses,
                 transparent_gap_addresses: self.transparent_gap_addresses,
                 transparent_scan_floor: self.transparent_scan_floor,
+                chain_height: self.chain_height,
+                highest_scanned_height: self.highest_scanned_height,
             },
         ))
     }
@@ -1277,6 +1295,8 @@ mod tests {
                 BlockHeight::from_u32(start)..BlockHeight::from_u32(end),
                 ScanPriority::ChainTip,
             ),
+            chain_height: BlockHeight::from_u32(end - 1),
+            highest_scanned_height: BlockHeight::from_u32(start - 1),
         }
     }
 
