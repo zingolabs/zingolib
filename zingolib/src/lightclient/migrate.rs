@@ -965,9 +965,7 @@ impl LightClient {
         };
         #[cfg(not(feature = "nym"))]
         let wire = MigrationWire::Nakednet;
-        Ok(transmission_route::RoutedTransmissionClient::new(
-            wire, indexer,
-        ))
+        Ok(transmission_route::RoutedTransmissionClient { wire, indexer })
     }
 
     /// Materializes and transmits every part whose bucket window is open.

@@ -4366,11 +4366,9 @@ mod mixnet_wire_offline {
             )])
             .await;
         let expiry = BlockHeight::from_u32(1);
-        let client_for = |target: &str| {
-            RoutedTransmissionClient::new(
-                MigrationWire::Mixnet(crate::mixnet::MixnetConduit::over(relay.addr()).dial()),
-                uri(target),
-            )
+        let client_for = |target: &str| RoutedTransmissionClient {
+            wire: MigrationWire::Mixnet(crate::mixnet::MixnetConduit::over(relay.addr()).dial()),
+            indexer: uri(target),
         };
 
         let receipt = client_for(ACCEPTOR_URI)
