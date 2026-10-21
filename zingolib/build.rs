@@ -8,8 +8,11 @@
 //!   files, and the git state behind the descriptor; the package tree
 //!   itself is never watched and never written.
 
+#[path = "short_commit.rs"]
+mod short_commit;
+
 use std::path::{Path, PathBuf};
-use std::{env, process::Command};
+use std::{env, io, process::Command};
 
 const BUILD_SCRIPT: &str = "build.rs";
 const DESCRIPTOR_TEXT_FILE: &str = "git_description.txt";
@@ -20,12 +23,11 @@ const DESCRIPTOR_SOURCE_FILE: &str = "git_description.rs";
 ///   behind the descriptor.
 fn register_rerun_watches() {
     println!("cargo:rerun-if-changed={BUILD_SCRIPT}");
-    // The git state behind the descriptor: HEAD moves live in the
-    // worktree's own git dir; tags and packed refs live in the common
-    // dir (they differ in linked worktrees). The `--dirty` suffix is
-    // deliberately NOT kept live — that would require watching the
-    // whole tree, which is exactly the every-run rebuild this watch
-    // set exists to end; it reflects the state at the last rerun.
+    // HEAD moves live in the worktree's own git dir. Branch refs and
+    // packed refs live in the common dir, which differs from the git dir
+    // in a linked worktree. The `_dirty` suffix reflects the tree at the
+    // last rerun, because keeping it live would mean watching the whole
+    // tree, and this watch set exists to end that every-run rebuild.
     if let Some(git_dir) = git_path_query("--git-dir") {
         println!("cargo:rerun-if-changed={}", git_dir.join("HEAD").display());
     }
@@ -74,19 +76,6 @@ fn git_stdout(args: &[&str]) -> Option<String> {
         .filter(|stdout| !stdout.is_empty())
 }
 
-/// The highest `zingolib_v*` tag that points at HEAD, which a depth-one fetch with tags carries.
-fn tag_at_head() -> Option<String> {
-    git_stdout(&[
-        "tag",
-        "--points-at",
-        "HEAD",
-        "--list",
-        "zingolib_v*",
-        "--sort=-version:refname",
-    ])
-    .and_then(|tags| tags.lines().next().map(str::to_string))
-}
-
 /// Whether a tracked file differs from HEAD, as `git describe --dirty` judges it.
 fn dirty() -> bool {
     Command::new("git")
@@ -96,17 +85,16 @@ fn dirty() -> bool {
         .unwrap_or(false)
 }
 
-/// The five-character abbreviation of HEAD.
-fn hash5() -> Option<String> {
-    git_stdout(&["rev-parse", "HEAD"]).map(|hash| hash.chars().take(5).collect())
+/// - Runs `git rev-parse HEAD`.
+fn short_head() -> Option<String> {
+    git_stdout(&["rev-parse", "HEAD"])
+        .and_then(|head| short_commit::abbreviate(&head).map(str::to_string))
 }
 
-/// `zl_<tag ver>` on a release tag, else `zl_<crate ver>_<hash5>`, with `_dirty` for a modified tree.
-fn descriptor(tag: Option<&str>, crate_version: &str, hash5: Option<&str>, dirty: bool) -> String {
-    let formatted = match (tag, hash5) {
-        (Some(tag), _) => format!("zl_{}", tag.strip_prefix("zingolib_v").unwrap_or(tag)),
-        (None, Some(hash5)) => format!("zl_{crate_version}_{hash5}"),
-        (None, None) => format!("zl_{crate_version}"),
+fn descriptor(crate_version: &str, short_head: Option<&str>, dirty: bool) -> String {
+    let formatted = match short_head {
+        Some(short_head) => format!("zl_{crate_version}_{short_head}"),
+        None => format!("zl_{crate_version}"),
     };
     if dirty {
         format!("{formatted}_dirty")
@@ -115,23 +103,17 @@ fn descriptor(tag: Option<&str>, crate_version: &str, hash5: Option<&str>, dirty
     }
 }
 
-fn git_description() {
-    // No network here: a build describes the state it builds from, and
-    // the tags already fetched are part of that state. A tag that points
-    // at HEAD needs no history, so a depth-one checkout with tags gives
-    // the release form.
+/// - Runs `git rev-parse HEAD` and `git diff-index`.
+/// - Prints `cargo:rustc-env=ZINGOLIB_DESCRIPTOR`.
+/// - Writes `git_description.txt` and `git_description.rs` into `OUT_DIR`.
+fn git_description() -> Result<(), io::Error> {
     let crate_version = env::var("CARGO_PKG_VERSION").unwrap_or_default();
-    let description = descriptor(
-        tag_at_head().as_deref(),
-        &crate_version,
-        hash5().as_deref(),
-        dirty(),
-    );
+    let description = descriptor(&crate_version, short_head().as_deref(), dirty());
 
     println!("cargo:rustc-env={DESCRIPTOR_ENV}={description}");
 
-    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    std::fs::write(out_dir.join(DESCRIPTOR_TEXT_FILE), &description).unwrap();
+    let out_dir = PathBuf::from(env::var("OUT_DIR").map_err(io::Error::other)?);
+    std::fs::write(out_dir.join(DESCRIPTOR_TEXT_FILE), &description)?;
     std::fs::write(
         out_dir.join(DESCRIPTOR_SOURCE_FILE),
         format!(
@@ -140,7 +122,6 @@ fn git_description() {
              }}\n"
         ),
     )
-    .unwrap();
 }
 
 /// - Downloads the Sapling parameters into the user's parameter cache
@@ -180,6 +161,6 @@ fn publish_param_path(variable: &str, path: &Path) {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     register_rerun_watches();
     get_zcash_params();
-    git_description();
+    git_description()?;
     Ok(())
 }

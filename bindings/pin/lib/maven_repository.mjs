@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { exists, replaceDirectory, text } from './disk.mjs';
-import { untar } from './swift_package.mjs';
+import { untar } from './tar_archive.mjs';
 
 export const REPOSITORY = 'repository';
 export const METADATA = 'maven-metadata.xml';
@@ -64,7 +64,10 @@ export async function placeMavenRepository(
   }
   let found;
   const replaced = await replaceDirectory(home, async partial => {
-    await extract(archive, partial);
+    const extracted = await extract(archive, partial);
+    if (extracted.kind !== 'extracted') {
+      return { ...extracted, platform: 'android' };
+    }
     found = await coordinateOf(join(partial, REPOSITORY));
     if (!found) {
       return { kind: 'badRepository', platform: 'android' };

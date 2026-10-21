@@ -13,7 +13,7 @@ const SHAPES: [(&str, &str); 2] = [
     (binding_manifest::IOS, GZIP_MEDIA_TYPE),
 ];
 const TAR: &str = "tar";
-const TAR_ARGS: [&str; 3] = ["--create", "--gzip", "--file"];
+const TAR_ARGS: [&str; 4] = ["--create", "--gzip", "--format=pax", "--file"];
 const PACKAGE_STAGING_SUFFIX: &str = "-package";
 const PUSH_ATTEMPTS: usize = 2;
 const COMMIT_MESSAGE_PREFIX: &str = "chore(bindings): record the publication of ";
@@ -647,8 +647,8 @@ mod tests {
         );
         assert_eq!(
             lines.iter().filter(|line| **line == FETCH_TAGS).count(),
-            1,
-            "only the slice job writes the descriptor, which reads the tags"
+            0,
+            "the descriptor names the commit, and nothing reads the tags"
         );
         let slice_save = crate::required(
             cache_steps(&workflow, CACHE_SAVE)?

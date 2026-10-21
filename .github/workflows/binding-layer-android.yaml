@@ -82,12 +82,10 @@ jobs:
     env:
       ABI: ${{ matrix.abi }}
     steps:
-      # The zl_ descriptor names the release tag that points at HEAD.
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
-          fetch-tags: true
 
       # A container job's workspace belongs to another user, and git refuses
       # to read a repository it does not own.
