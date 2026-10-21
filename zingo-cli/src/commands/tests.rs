@@ -483,21 +483,31 @@ mod typed_argument_parsing {
         assert!(parse(&["remove_transaction"]).is_err());
     }
 
-    /// HYPOTHESIS: `change_server` takes a uri, and an empty argument
-    /// still names the default one.
+    /// HYPOTHESIS: `change_server` takes exactly one of `offline`,
+    /// `default`, or a URI, and nothing else.
     #[test]
-    fn change_server_parses_its_uri() {
+    fn change_server_parses_its_choice() {
+        use zingolib::config::IndexerChoice;
+
+        assert!(parse(&["change_server"]).is_err());
+        assert!(parse(&["change_server", ""]).is_err());
         assert!(matches!(
-            parse(&["change_server"]).expect("a bare change_server parses"),
-            CliCommand::ChangeServer { uri: None }
+            parse(&["change_server", "offline"]).expect("offline parses"),
+            CliCommand::ChangeServer {
+                choice: IndexerChoice::Offline
+            }
         ));
         assert!(matches!(
-            parse(&["change_server", ""]).expect("an empty uri parses"),
-            CliCommand::ChangeServer { uri: Some(uri) } if uri == http::Uri::default()
+            parse(&["change_server", "default"]).expect("default parses"),
+            CliCommand::ChangeServer {
+                choice: IndexerChoice::Default
+            }
         ));
         assert!(matches!(
             parse(&["change_server", "https://zec.rocks:443"]).expect("a uri parses"),
-            CliCommand::ChangeServer { uri: Some(_) }
+            CliCommand::ChangeServer {
+                choice: IndexerChoice::Named(_)
+            }
         ));
         assert!(parse(&["change_server", "zec rocks"]).is_err());
     }
