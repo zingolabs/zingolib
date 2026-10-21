@@ -1,18 +1,18 @@
 use std::path::Path;
 
-use crate::{MANIFEST, at_path};
+use crate::{at_path, MANIFEST};
 
 pub const MOBILE_PROFILE: &str = "mobile";
 
-pub const PROXY_WORKSPACE_MANIFEST: &str = "Cargo.toml";
+pub const PROXY_PROFILE: &str = "proxy";
 
-pub const WALLET_WORKSPACE: &str = "wallet";
+pub const WALLET_ARCHIVE: &str = "wallet";
 
-pub const PROXY_WORKSPACE: &str = "proxy";
+pub const PROXY_ARCHIVE: &str = "proxy";
 
-pub const BUILT_WORKSPACES: [(&str, &str); 2] = [
-    (WALLET_WORKSPACE, MANIFEST),
-    (PROXY_WORKSPACE, PROXY_WORKSPACE_MANIFEST),
+pub const BUILT_PROFILES: [(&str, &str); 2] = [
+    (WALLET_ARCHIVE, MOBILE_PROFILE),
+    (PROXY_ARCHIVE, PROXY_PROFILE),
 ];
 
 const PROFILE_KEY: &str = "profile";
@@ -54,9 +54,9 @@ impl PanicStrategy {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct WorkspaceStrategy {
-    pub workspace: &'static str,
-    pub manifest: &'static str,
+pub struct ProfileStrategy {
+    pub archive: &'static str,
+    pub profile: &'static str,
     pub strategy: PanicStrategy,
 }
 
@@ -121,18 +121,18 @@ pub fn profile_panic_strategy(
     }
 }
 
-/// - Reads the two workspace manifests under `root`.
-pub fn mobile_strategies(root: &Path) -> Result<Vec<WorkspaceStrategy>, Vec<String>> {
-    BUILT_WORKSPACES
+/// - Reads the root workspace manifest under `root`.
+pub fn built_strategies(root: &Path) -> Result<Vec<ProfileStrategy>, Vec<String>> {
+    let text = at_path(&root.join(MANIFEST), "read", |path| {
+        std::fs::read_to_string(path)
+    })?;
+    BUILT_PROFILES
         .into_iter()
-        .map(|(workspace, manifest)| {
-            let text = at_path(&root.join(manifest), "read", |path| {
-                std::fs::read_to_string(path)
-            })?;
-            let strategy = profile_panic_strategy(manifest, &text, MOBILE_PROFILE)?;
-            Ok(WorkspaceStrategy {
-                workspace,
-                manifest,
+        .map(|(archive, profile)| {
+            let strategy = profile_panic_strategy(MANIFEST, &text, profile)?;
+            Ok(ProfileStrategy {
+                archive,
+                profile,
                 strategy,
             })
         })
@@ -144,7 +144,7 @@ mod tests {
     use std::path::Path;
     use std::process::Command;
 
-    use super::{PanicStrategy, WorkspaceStrategy, mobile_strategies, profile_panic_strategy};
+    use super::{built_strategies, profile_panic_strategy, PanicStrategy, ProfileStrategy};
     use crate::{refused, repo_root, scratch_dir, utf8};
 
     const MANIFEST_NAME: &str = "Cargo.toml";
@@ -153,8 +153,8 @@ mod tests {
     const EDITION: &str = "2021";
     const STATICLIB: &str = "staticlib";
     const LINK_LIBRARIES: [&str; 3] = ["-lpthread", "-ldl", "-lm"];
-    const WALLET_ARCHIVE: &str = "libwallet.a";
-    const PROXY_ARCHIVE: &str = "libproxy.a";
+    const WALLET_ARCHIVE_FILE: &str = "libwallet.a";
+    const PROXY_ARCHIVE_FILE: &str = "libproxy.a";
     const CLOSED_INPUT_PANIC: &str = "BatchRealMessageReceiver has stopped receiving!";
 
     const WALLET_SOURCE: &str = r#"
@@ -200,17 +200,13 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
     }
 
     fn strategy_of<'a>(
-        strategies: &'a [WorkspaceStrategy],
-        workspace: &str,
-    ) -> Result<&'a WorkspaceStrategy, Vec<String>> {
+        strategies: &'a [ProfileStrategy],
+        archive: &str,
+    ) -> Result<&'a ProfileStrategy, Vec<String>> {
         strategies
             .iter()
-            .find(|found| found.workspace == workspace)
-            .ok_or_else(|| {
-                vec![format!(
-                    "no {workspace} workspace among the built workspaces"
-                )]
-            })
+            .find(|found| found.archive == archive)
+            .ok_or_else(|| vec![format!("no {archive} archive among the built profiles")])
     }
 
     /// - Runs `rustc` in the zingolib root, so rustup applies the pinned toolchain.
@@ -291,17 +287,29 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
     }
 
     #[test]
-    fn both_built_workspaces_ship_the_unwind_strategy() -> Result<(), Vec<String>> {
-        let strategies = mobile_strategies(&repo_root()?)?;
+    fn both_built_profiles_ship_the_unwind_strategy() -> Result<(), Vec<String>> {
+        let strategies = built_strategies(&repo_root()?)?;
         let aborting: Vec<String> = strategies
             .iter()
             .filter(|found| found.strategy != PanicStrategy::Unwind)
-            .map(|found| format!("{} ({})", found.manifest, found.strategy))
+            .map(|found| format!("{} ({})", found.profile, found.strategy))
             .collect();
         assert!(
             aborting.is_empty(),
-            "the mobile profile aborts on panic in {}; both archives link into one iOS binary and share one panic runtime, so a panic in a tokio task of either crate aborts the app (issue #2926)",
+            "the profile aborts on panic for {}; both archives link into one iOS binary and share one panic runtime, so a panic in a tokio task of either crate aborts the app (issue #2926)",
             aborting.join(", ")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn the_two_archives_build_under_distinct_profiles() -> Result<(), Vec<String>> {
+        let strategies = built_strategies(&repo_root()?)?;
+        let wallet = strategy_of(&strategies, super::WALLET_ARCHIVE)?;
+        let proxy = strategy_of(&strategies, super::PROXY_ARCHIVE)?;
+        assert_ne!(
+            wallet.profile, proxy.profile,
+            "the guard compares one profile against itself and can never detect divergence"
         );
         Ok(())
     }
@@ -311,9 +319,9 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
     #[test]
     fn a_proxy_panic_is_contained_whichever_archive_links_first() -> Result<(), Vec<String>> {
         let root = repo_root()?;
-        let strategies = mobile_strategies(&root)?;
-        let wallet = strategy_of(&strategies, super::WALLET_WORKSPACE)?.strategy;
-        let proxy = strategy_of(&strategies, super::PROXY_WORKSPACE)?.strategy;
+        let strategies = built_strategies(&root)?;
+        let wallet = strategy_of(&strategies, super::WALLET_ARCHIVE)?.strategy;
+        let proxy = strategy_of(&strategies, super::PROXY_ARCHIVE)?.strategy;
 
         let scratch = scratch_dir("panic-strategy")?;
         let wallet_source = scratch.join("wallet.rs");
@@ -324,8 +332,8 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
         write(&host_source, HOST_SOURCE)?;
         assert!(PROXY_SOURCE.contains(CLOSED_INPUT_PANIC));
 
-        let wallet_archive = scratch.join(WALLET_ARCHIVE);
-        let proxy_archive = scratch.join(PROXY_ARCHIVE);
+        let wallet_archive = scratch.join(WALLET_ARCHIVE_FILE);
+        let proxy_archive = scratch.join(PROXY_ARCHIVE_FILE);
         build_archive(&root, &wallet_source, &wallet_archive, wallet)?;
         build_archive(&root, &proxy_source, &proxy_archive, proxy)?;
 

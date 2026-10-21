@@ -20,21 +20,23 @@ tonic.workspace = true
 lightwallet-protocol.workspace = true
 tokio-stream = { workspace = true, optional = true }
 
-# Nym mixnet transport (ADR 0011), optional. These resolve ONLY in this
-# crate's own lockfile — never the parent workspace's — because nym-sdk's
-# transitive graph needs `crypto-common ^0.2`, irreconcilable with the
-# parent's `crypto-common =0.2.0-rc.1` pin. That is why zingo-netutils is
-# its own workspace (see [workspace] below and the root manifest's exclude).
+# Nym mixnet transport (zingo-adrs zingolib/0011), optional. The stack
+# resolves in the root lockfile since PR #3037; members build with `nym`
+# off, and only the proxy crate and ci-pr.yaml's nym feature job turn it on.
 #
 # TLS-backend note: nym-sdk transitively links `ring` (via its cosmos
 # credential core: nym-client-core -> cosmrs -> tendermint-rpc -> reqwest 0.11
 # -> hyper-rustls 0.24 -> rustls 0.21, which predates rustls's aws-lc-rs
-# backend). This workspace otherwise uses aws-lc-rs only. The ring is a ratified,
-# unavoidable transitive exception (ADR 0011), confined to this standalone nym
-# build and never the main wallet lock; upstream removal is tracked separately.
-nym-sdk = { version = "1.21.6", optional = true }
+# backend). The workspace otherwise uses aws-lc-rs only. The ring is a
+# ratified, unavoidable transitive exception (ADR 0011) that compiles only
+# under the `nym` feature; upstream removal is tracked separately.
+#
+# Every nym crate is pinned with `=`. nym-sdk stands at 1.21.6, and the 1.22
+# releases of its sibling crates removed aliases it still needs, so a caret
+# requirement on any one of them lets `cargo update` break the build.
+nym-sdk = { version = "=1.21.6", optional = true }
 nym-http-api-client = { version = "=1.21.6", optional = true }
-nym-validator-client = { version = "1.21.6", optional = true, default-features = false, features = [
+nym-validator-client = { version = "=1.21.6", optional = true, default-features = false, features = [
     "http-client",
 ] }
 tokio-socks = { version = "0.5", optional = true }
@@ -66,13 +68,12 @@ tokio = { workspace = true, optional = true, features = [
 zingo-net-diag = { version = "0.1.0", path = "../zingo-net-diag", optional = true }
 rand = "0.10"
 serde = { version = "1.0.229", features = ["derive"] }
-nym-socks5-proxy-helpers = { version = "1.21.4", optional = true }
+nym-socks5-proxy-helpers = { version = "=1.21.6", optional = true }
 futures-channel = { version = "0.3", optional = true }
 
-# The following are not needed as direct dependencies.
-# We need to pin specific versions,
-# as nym-sdk is only at version 1.21.6, and
-# newer versions of its dependencies broke semver guarentees and removed needed aliases
+# Not used directly. Each is a transitive of nym-sdk whose 1.22 release
+# broke the 1.21.6 build, and the `=` requirement here holds it at the
+# cohort that compiles. The `nym` feature lists them so they stay optional.
 nym-client-core-config-types = {version = "=1.21.6", optional = true }
 nym-crypto = {version = "=1.21.6", optional = true }
 nym-sphinx-types = {version = "=1.21.6", optional = true }
