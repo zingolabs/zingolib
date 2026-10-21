@@ -2168,6 +2168,13 @@ mod tests {
         #[tokio::test]
         async fn attach_lifecycle_and_disable_reach_subscribers_in_order() {
             let mut client = LightClient::new_for_test(wallet()).await;
+            client
+                .set_indexer_uri_lazy(
+                    "https://indexer.test:443"
+                        .parse()
+                        .expect("the literal is an absolute https URI with a port"),
+                )
+                .expect("a lazy indexer binds an absolute https URI without dialing it");
             let mut subscriber = client.subscribe_mixnet_status();
 
             client
