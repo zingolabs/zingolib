@@ -8,7 +8,7 @@ const MIN_NODES: &str = "10";
 const MIN_LINES: &str = "0";
 const THRESHOLD: &str = "0.9";
 const MAX_EXACT: &str = "0";
-const MAX_NEAR: &str = "32";
+const MAX_NEAR: &str = "31";
 const EXCLUDE: [&str; 10] = [
     "zingo-cli/tests/",
     "zingo-netutils/nym-proxy-ffi/tests/",
