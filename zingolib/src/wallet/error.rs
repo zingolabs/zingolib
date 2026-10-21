@@ -129,11 +129,6 @@ pub enum WalletError {
     // TODO: move to lightclient?
     #[error("Conversion failed. {0}")]
     ConversionFailed(#[from] crate::utils::error::ConversionError),
-    /// Birthday below sapling error.
-    #[error(
-        "birthday {0} below sapling activation height {1}. pre-sapling wallets are not supported!"
-    )]
-    BirthdayBelowSapling(u32, u32),
     /// Cannot create a new wallet when a wallet file already exists at this path.
     #[error(
         "Cannot create a new wallet: a wallet file already exists at this path. Use WalletConfig::Read to load the existing wallet."

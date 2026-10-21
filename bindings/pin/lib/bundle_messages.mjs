@@ -70,6 +70,15 @@ export function failureMessage(failure) {
       return `The ${failure.platform} bundle is not one named file in one layer. ${REPORT}`;
     case 'corrupt':
       return `The downloaded content hashes to ${failure.found}, and the bundle's layer is ${failure.expected}.`;
+    case 'badArchive':
+      return `The ${failure.platform} bundle is not a readable pax archive: ${failure.reason}. ${REPORT}`;
+    case 'refusedEntry':
+      return (
+        `The ${failure.platform} bundle holds the entry "${failure.path}" of tar type "${failure.type}", ` +
+        `and the fetch extracts regular files and directories only. ${REPORT}`
+      );
+    case 'escapedPath':
+      return `The ${failure.platform} bundle holds the entry "${failure.path}", which does not sit under the archive root. ${REPORT}`;
     case 'badPackage':
       return `The ${failure.platform} bundle holds no ZingoBindings/Package.swift. ${REPORT}`;
     case 'oldShape':
