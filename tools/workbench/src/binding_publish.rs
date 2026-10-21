@@ -372,7 +372,7 @@ pub fn planned(
         }
     }
     let relay = commit != run_at;
-    if relay && !dispatchable(root, &commit)? {
+    if relay && !recorded && !dispatchable(root, &commit)? {
         return Err(vec![format!(
             "{commit} holds no `{DISPATCH_TRIGGER}` trigger in {PUBLISH_WORKFLOW}, so it predates publication by dispatch and cannot be published"
         )]);
