@@ -58,8 +58,12 @@
 //! compares them only as far as its arms scanned alike, and a comparison
 //! that means to measure them runs to completion.
 //!
+//! The chain is the caller's as well. `--chain test` runs every arm over
+//! testnet against its pinned indexer, with a testnet birthday, and
+//! `--chain main`, the default, over mainnet.
+//!
 //! Usage: `makers sync-ab [cli] <arm> <arm> --birthday <height>
-//! [--runs <n>] [--seconds <n>] [--seed <mnemonic>]`. The reserved first word names the session
+//! [--chain main|test] [--runs <n>] [--seconds <n>] [--seed <mnemonic>]`. The reserved first word names the session
 //! kind, as `makers test packages` and `makers test live` name their
 //! scopes, and omitting it names the same kind.
 #![forbid(unsafe_code)]
@@ -113,8 +117,13 @@ const MILLIS_SUFFIX: &str = "ms";
 /// markers this reads.
 const LOG_FILTER: &str = "info";
 
-/// The indexer every run pins, so no arm meets a different server.
-const PINNED_INDEXER: &str = "https://zec.rocks:443";
+/// The indexer every run on a chain pins, so no arm meets a different
+/// server.
+const MAINNET_INDEXER: &str = "https://zec.rocks:443";
+const TESTNET_INDEXER: &str = "https://testnet.zec.rocks:443";
+
+/// The chain every arm syncs, when `--chain` names no other.
+const DEFAULT_CHAIN: Chain = Chain::Main;
 
 /// The BIP-39 mnemonic every arm restores, when `--seed` names no other.
 // A fundless wallet measures pure scanning: every output is trial
@@ -241,9 +250,45 @@ impl Spec {
     }
 }
 
+/// The chain the arms sync, which fixes the indexer they meet and the
+/// chain the CLI expects.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Chain {
+    Main,
+    Test,
+}
+
+impl Chain {
+    /// Reads the chain off its name, in the CLI's spelling or the short one.
+    fn parse(raw: &str) -> Result<Self, Vec<String>> {
+        match raw {
+            "main" | "mainnet" => Ok(Chain::Main),
+            "test" | "testnet" => Ok(Chain::Test),
+            other => Err(vec![format!("--chain {other}: main or test")]),
+        }
+    }
+
+    /// The name the CLI's `--chain` takes.
+    fn name(self) -> &'static str {
+        match self {
+            Chain::Main => "mainnet",
+            Chain::Test => "testnet",
+        }
+    }
+
+    /// The indexer every arm on this chain is pinned to.
+    fn indexer(self) -> &'static str {
+        match self {
+            Chain::Main => MAINNET_INDEXER,
+            Chain::Test => TESTNET_INDEXER,
+        }
+    }
+}
+
 /// What the invocation asked for.
 struct Request {
     specs: [Spec; 2],
+    chain: Chain,
     birthday: u32,
     runs: usize,
     seconds: u64,
@@ -303,6 +348,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
         arguments.next();
     }
     let mut positional: Vec<String> = Vec::new();
+    let mut chain = DEFAULT_CHAIN;
     let mut birthday = None;
     let mut runs = DEFAULT_RUNS;
     let mut seconds = DEFAULT_SECONDS;
@@ -321,6 +367,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
                         .map_err(|e| vec![format!("--birthday {raw}: {e}")])?,
                 );
             }
+            "--chain" => chain = Chain::parse(&value("--chain")?)?,
             "--runs" => {
                 let raw = value("--runs")?;
                 runs = raw
@@ -365,6 +412,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
     })?;
     Ok(Request {
         specs,
+        chain,
         birthday,
         runs,
         seconds,
@@ -388,7 +436,7 @@ fn compare() -> Result<(), Vec<String>> {
         retire(&root, &arm.worktree);
     }
     measured?;
-    report(&arms, request.seconds > 0);
+    report(&arms, request.chain, request.seconds > 0);
     Ok(())
 }
 
@@ -398,7 +446,8 @@ fn rounds(arms: &mut [Arm; 2], request: &Request) -> Result<(), Vec<String>> {
     // reads slower than its successors, and both arms deserve the same
     // treatment.
     eprintln!(
-        "sync-ab: warming up both arms at birthday {}",
+        "sync-ab: warming up both arms on {} at birthday {}",
+        request.chain.name(),
         request.birthday
     );
     for arm in arms.iter() {
@@ -608,8 +657,10 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
         command.arg("--waitsync");
     }
     let mut child = command
+        .arg("--chain")
+        .arg(request.chain.name())
         .arg("--server")
-        .arg(PINNED_INDEXER)
+        .arg(request.chain.indexer())
         .arg("--seed")
         .arg(&request.seed)
         .arg("--birthday")
@@ -835,12 +886,13 @@ fn wallet_file_size(wallets: &Path) -> Option<u64> {
 }
 
 /// Prints both arms, their spread, and whether the window held.
-fn report(arms: &[Arm; 2], bounded: bool) {
+fn report(arms: &[Arm; 2], chain: Chain, bounded: bool) {
     println!(
         "\nSYNC_AB_TAG: {} vs {}",
         arms[0].spec.label(),
         arms[1].spec.label()
     );
+    println!("chain: {} through {}", chain.name(), chain.indexer());
     for arm in arms {
         let rate = mean(&arm.rates);
         print!("{:>22}  mean {rate:>7.0} outputs/s", arm.spec.label());
@@ -1140,6 +1192,27 @@ mod tests {
         ));
         assert!(!failed_span("INFO sync: SYNC_SPAN=open\n"));
         assert!(!failed_span("INFO sync: SYNC_SPAN=close 1250ms er"));
+    }
+
+    /// HYPOTHESIS: a chain is read in either spelling, names itself the
+    /// way the CLI takes it, and pins its own indexer. Falsified if a
+    /// spelling is refused, the names cross, or another chain's indexer
+    /// is pinned.
+    #[test]
+    fn a_chain_reads_its_name_and_pins_its_indexer() -> Result<(), Vec<String>> {
+        assert_eq!(Chain::parse("main")?, Chain::Main);
+        assert_eq!(Chain::parse("mainnet")?, Chain::Main);
+        assert_eq!(Chain::parse("test")?, Chain::Test);
+        assert_eq!(Chain::parse("testnet")?, Chain::Test);
+        assert!(
+            Chain::parse("regtest").is_err(),
+            "no indexer is pinned for regtest"
+        );
+        assert_eq!(Chain::Main.name(), "mainnet");
+        assert_eq!(Chain::Test.name(), "testnet");
+        assert_eq!(Chain::Main.indexer(), MAINNET_INDEXER);
+        assert_eq!(Chain::Test.indexer(), TESTNET_INDEXER);
+        Ok(())
     }
 
     #[test]
