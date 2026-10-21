@@ -12,6 +12,145 @@ publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
 
+## 4f04d38c16cb032edffe1823d07bfc75bcf9103b
+
+Since d4ac5772d7fc5d4ca621e57523d28f1b24ac24c5.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Added
+- `send_swap_deposit(vault_address, amount, memo_hex)` pays a swap deposit that
+  carries a memo: a deshield to a reserved wallet-owned transparent address,
+  then that address paying the vault with the memo in an OP_RETURN. It sends
+  outright and answers `{ txids }` in order, the vault payment last, the shape
+  `confirm` answers with. When the deshield was transmitted and the OP_RETURN
+  step failed, it answers `ZingolibError::SendAfterDeshield` and the proposal
+  stays stored with the deshield's txid: `confirm` resumes it and answers the
+  vault payment's txid alone, and proposing again is refused until then.
+- `ZingolibError::SendAfterDeshield(String)`, the answer above. Its text
+  names the deshield's txid.
+- `reserve_refund_address()` reserves the wallet's next refund address and
+  reports it in the shape of `create_new_transparent_address`, for a swap
+  provider to refund a deposit to.
+- `derive_refund_address()` reports that same address without reserving it,
+  for a quote to name while the swap is still being chosen: a dropped quote
+  leaves the refund index where it was, and the commit reserves it.
+
+##### Changed
+- BREAKING: `IndexerConnection.server_uri: String` is now
+  `IndexerConnection.indexer: IndexerChoice`, a uniffi enum of `Offline`,
+  `Default`, and `Named { uri }`. `Offline` replaces the empty string,
+  `Default` attaches to the chain's Default Indexer (mainnet's is
+  `https://mainnet.zainod.zingolabs.dev:443`; a chain without one fails
+  `Init`), and `Named` carries the URI the string carried before.
+- BREAKING: `change_server(serveruri: String)` is now
+  `change_server(choice: IndexerChoice)`. `Offline` disconnects the
+  session through `go_offline` instead of binding a never-dialed
+  placeholder URI, and a `Default` on a chain without a Default Indexer
+  fails `InvalidInput` (zingo-adrs zingolib/0063).
+
+### pepper-sync
+
+#### [Unreleased]
+
+##### Changed
+- `sync::MAX_REORG_ALLOWANCE` is 1000, following zebra's
+  `MAX_BLOCK_REORG_HEIGHT`, which zebra 5.2.0 raised from 100 and has kept
+  since. A re-org up to 1000 blocks deep is truncated and scanned again,
+  where a re-org deeper than 100 blocks cleared the wallet's chain data
+  before. The wallet keeps the wallet blocks and, through
+  `SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE` and `MAX_SHARDTREE_CHECKPOINTS`,
+  the shard tree checkpoints of the last 1000 scanned blocks, and
+  transparent address discovery searches the 1000 blocks below the last
+  known chain height at the start of a sync session. A wallet whose last
+  known chain height is more than 1000 blocks above the server's chain
+  height returns `SyncError::ChainError`, where the bound was 100.
+- BREAKING: `wallet::traits::SyncShardTrees::update_shard_trees` takes the
+  session's chain height and the wallet's highest scanned block as of the
+  task's selection, in place of the wallet's highest scanned block at
+  processing time. A load's rolling checkpoint window hangs from the chain
+  height, so only the loads inside the top window of the chain place it,
+  whatever task they belong to. Every load also places a checkpoint at its
+  own last block, so a session stopped after it anchors a spend there, and
+  the anchor retention boundaries as of that block or the highest scanned
+  block when that is higher, so such a session anchors a pool crossing
+  too. Before, every load of a task above the highest scanned height placed
+  a full window hanging from its own last block, which the next load's
+  inserts pruned, and the scan and the update could disagree once another
+  task moved the wallet's highest scanned block between a load's scan and
+  its update.
+- A block hash that disagrees more than `MAX_REORG_ALLOWANCE` below the
+  chain height the wallet's scanned state was formed against is a
+  different chain: the wallet is cleared and
+  `ServerError::ChainVerificationError` returned, as for a re-org deeper
+  than the allowance. The depth was measured from the wallet's highest
+  scanned block, so a wallet stopped between the loads of a task that met
+  such a disagreement attempted a truncation, found no checkpoint at the
+  fork, and was cleared with `SyncError::TruncationError` instead.
+- Scanning places a shard tree checkpoint only on the blocks the wallet
+  will hold one for: the top `SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE`
+  blocks of a range scanned above the highest scanned height, the blocks of
+  a lower range inside that window, and the anchor retention boundaries
+  inside their window. Every other block's checkpoint was built, inserted
+  and pruned from each pool's tree for nothing, a fixed cost per block per
+  active pool that grew with the ironwood pool. The window was sized by
+  `MAX_SHARDTREE_CHECKPOINTS` before, which counts the pinned anchor
+  boundaries the rolling budget excludes, so the bottom six blocks of every
+  window were checkpointed and pruned as well. The heights come from one function,
+  `witness::checkpoint_heights`, which the shard tree update also uses to
+  decide the checkpoints it adds for blocks that leave a pool's tree
+  unchanged, so the two sides agree. A scan task carries the wallet's
+  highest scanned height from its selection for this.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `LightWallet::pending_op_return_deshield` reports the deshield txid of a
+  stored OP_RETURN proposal that waits for `send_stored_proposal` to resume
+  it.
+- `SendError::OpReturnResumePending`: `propose_send_with_op_return` returns it
+  while such a proposal is stored, since a new proposal would drop the one
+  the resume needs.
+- `testutils::mock_indexer::MockChain::mine_filler_orchard_block` mines a block
+  of orchard actions no wallet decrypts, so a scan task over the mock chain
+  splits into loads by output count.
+- `config::IndexerChoice`, the typed three-way indexer choice `Offline`,
+  `Default`, or `Named(uri)`, with `resolve(chain)` answering the URI a
+  session attaches to and `config::NoDefaultIndexer` when the chain has
+  no Default Indexer. `ClientConfigBuilder::set_indexer_choice` takes it,
+  `set_indexer_uri` is now `set_indexer_choice(Named(uri))`, and
+  `ClientConfigError::NoDefaultIndexer` is the build-time refusal.
+  `config::default_indexer_for(chain)` answers the chain's Default Indexer
+  (zingo-adrs zingolib/0063).
+- `LightClient::choose_indexer`, which applies an `IndexerChoice` to a
+  running session: `Offline` goes offline, `Default` and `Named` replace
+  the indexer connection, with `lightclient::ChooseIndexerError` naming
+  the missing default or the failed connection.
+- The crate re-exports `zingo_netutils::default_indexer`.
+
+##### Changed
+- `wallet::legacy::MAX_REORG` follows `pepper_sync::sync::MAX_REORG_ALLOWANCE`
+  to 1000, so a legacy witness tree keeps 1000 checkpoints, and
+  `LightWallet::clear_all` re-targets only the transactions confirmed more
+  than 1000 blocks below the last known chain height.
+
+### zingo-netutils
+
+#### [Unreleased]
+
+##### Added
+- `default_indexer`, the Default Indexer per chain: `default_indexer(chain)`
+  answers the zingolabs endpoint a session attaches to when the consumer
+  goes online without naming one, `MAINNET_DEFAULT_INDEXER`
+  (`https://mainnet.zainod.zingolabs.dev:443`) for mainnet and nothing for
+  testnet until a zingolabs testnet host exists (zingo-adrs zingolib/0063).
+
 ## d4ac5772d7fc5d4ca621e57523d28f1b24ac24c5
 
 Since 502a453fe3329ecded1872f0c856b56f141c8d6a.
