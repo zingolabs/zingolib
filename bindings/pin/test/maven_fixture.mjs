@@ -38,6 +38,6 @@ export async function archive(versions) {
   }
   await writeFile(join(artifact, VERSION, `zingo-binding-layer-${VERSION}.aar`), 'aar');
   const tarball = join(root, 'repository.tar.gz');
-  await promisify(execFile)('tar', ['-czf', tarball, '-C', root, REPOSITORY]);
+  await promisify(execFile)('tar', ['--create', '--gzip', '--format=pax', '--file', tarball, '-C', root, REPOSITORY]);
   return tarball;
 }

@@ -304,7 +304,7 @@ impl LightWallet {
     pub fn read<R: Read>(mut reader: R, chain_type: ChainType) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         info!("Reading wallet version {version}");
-        match version {
+        let mut wallet = match version {
             ..32 => Self::read_v0(reader, chain_type, version),
             // 43 is a burned version number with the final 42 layout; see
             // the `serialized_version` docs and ADR 0015.
@@ -316,7 +316,9 @@ impl LightWallet {
                     version, "Note: wallet files from zecwallet or beta zingo are not compatible"
                 ),
             )),
-        }
+        }?;
+        wallet.raise_birthday_to_sapling_activation();
+        Ok(wallet)
     }
 
     /// The chain a wallet file was written for. Version 32 and later store
@@ -564,6 +566,7 @@ impl LightWallet {
             read_version: version,
             mnemonic,
             birthday,
+            birthday_adjusted_from: None,
             unified_key_store,
             price_list: PriceList::new(),
             wallet_blocks: BTreeMap::new(),
@@ -852,6 +855,7 @@ impl LightWallet {
             chain_type,
             mnemonic,
             birthday,
+            birthday_adjusted_from: None,
             unified_key_store,
             unified_addresses,
             transparent_addresses,
@@ -997,6 +1001,7 @@ impl LightWallet {
             seed_phrase: mnemonic.phrase().to_string(),
             birthday: u64::from(birthday),
             no_of_accounts,
+            birthday_adjusted_from: None,
         })
     }
 }
