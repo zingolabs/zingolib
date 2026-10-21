@@ -35,6 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inserts pruned, and the scan and the update could disagree once another
   task moved the wallet's highest scanned block between a load's scan and
   its update.
+- A block hash that disagrees more than `MAX_REORG_ALLOWANCE` below the
+  chain height the wallet's scanned state was formed against is a
+  different chain: the wallet is cleared and
+  `ServerError::ChainVerificationError` returned, as for a re-org deeper
+  than the allowance. The depth was measured from the wallet's highest
+  scanned block, so a wallet stopped between the loads of a task that met
+  such a disagreement attempted a truncation, found no checkpoint at the
+  fork, and was cleared with `SyncError::TruncationError` instead.
 - Scanning places a shard tree checkpoint only on the blocks the wallet
   will hold one for: the top `SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE`
   blocks of a range scanned above the highest scanned height, the blocks of
