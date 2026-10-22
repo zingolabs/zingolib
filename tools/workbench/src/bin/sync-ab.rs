@@ -58,8 +58,14 @@
 //! compares them only as far as its arms scanned alike, and a comparison
 //! that means to measure them runs to completion.
 //!
+//! The chain is the caller's as well. `--chain test` runs every arm over
+//! testnet against its pinned indexer, with a testnet birthday, and
+//! `--chain main`, the default, over mainnet. A mixnet arm still proves its
+//! attach against mainnet's Default Indexer before it syncs, so only a
+//! comparison of `:nakednet` arms keeps mainnet out of the picture.
+//!
 //! Usage: `makers sync-ab [cli] <arm> <arm> --birthday <height>
-//! [--runs <n>] [--seconds <n>] [--seed <mnemonic>]`. The reserved first word names the session
+//! [--chain main|test] [--runs <n>] [--seconds <n>] [--seed <mnemonic>]`. The reserved first word names the session
 //! kind, as `makers test packages` and `makers test live` name their
 //! scopes, and omitting it names the same kind.
 #![forbid(unsafe_code)]
@@ -70,6 +76,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use workbench::chain;
 use workbench::session;
 use workbench::{repo_root, run};
 
@@ -118,8 +125,11 @@ const MILLIS_SUFFIX: &str = "ms";
 /// markers this reads.
 const LOG_FILTER: &str = "info";
 
-/// The indexer every run pins, so no arm meets a different server.
-const PINNED_INDEXER: &str = "https://zec.rocks:443";
+// The attach health proof dials a fixed mainnet indexer whatever chain the
+// session syncs, so a testnet comparison with a mixnet arm touches mainnet
+// on every boot. The note says so where the report is read.
+const MIXNET_HEALTH_NOTE: &str = "a mixnet arm proves its attach against mainnet's \
+     Default Indexer before it syncs; only :nakednet arms keep mainnet out of the picture";
 
 /// The BIP-39 mnemonic every arm restores, when `--seed` names no other.
 // A fundless wallet measures pure scanning: every output is trial
@@ -255,6 +265,7 @@ impl Spec {
 /// What the invocation asked for.
 struct Request {
     specs: [Spec; 2],
+    chain: chain::Chain,
     birthday: u32,
     runs: usize,
     seconds: u64,
@@ -315,6 +326,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
         arguments.next();
     }
     let mut positional: Vec<String> = Vec::new();
+    let mut chain = chain::Chain::default();
     let mut birthday = None;
     let mut runs = DEFAULT_RUNS;
     let mut seconds = DEFAULT_SECONDS;
@@ -333,6 +345,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
                         .map_err(|e| vec![format!("--birthday {raw}: {e}")])?,
                 );
             }
+            "--chain" => chain = chain::Chain::parse(&value("--chain")?).map_err(|e| vec![e])?,
             "--runs" => {
                 let raw = value("--runs")?;
                 runs = raw
@@ -377,6 +390,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
     })?;
     Ok(Request {
         specs,
+        chain,
         birthday,
         runs,
         seconds,
@@ -400,7 +414,7 @@ fn compare() -> Result<(), Vec<String>> {
     for arm in &arms {
         retire(&root, &arm.worktree);
     }
-    report(&arms, request.seconds > 0);
+    report(&arms, &request);
     Ok(())
 }
 
@@ -410,9 +424,13 @@ fn rounds(arms: &mut [Arm; 2], request: &Request) -> Result<(), Vec<String>> {
     // reads slower than its successors, and both arms deserve the same
     // treatment.
     eprintln!(
-        "sync-ab: warming up both arms at birthday {}",
+        "sync-ab: warming up both arms on {} at birthday {}",
+        request.chain.name(),
         request.birthday
     );
+    if touches_mainnet_from_testnet(request) {
+        eprintln!("sync-ab: {MIXNET_HEALTH_NOTE}");
+    }
     for arm in arms.iter() {
         let _ = measure_again(arm, request, WARMUP_BUDGET)?;
     }
@@ -620,8 +638,10 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
         command.arg("--waitsync");
     }
     let mut child = command
+        .arg("--chain")
+        .arg(request.chain.name())
         .arg("--server")
-        .arg(PINNED_INDEXER)
+        .arg(request.chain.indexer())
         .arg("--seed")
         .arg(&request.seed)
         .arg("--birthday")
@@ -856,13 +876,28 @@ fn wallet_file_size(wallets: &Path) -> Option<u64> {
         .map(|metadata| metadata.len())
 }
 
+// Whether a testnet comparison carries a mixnet arm, whose attach proof
+// dials mainnet.
+fn touches_mainnet_from_testnet(request: &Request) -> bool {
+    request.chain == chain::Chain::Test && request.specs.iter().any(|spec| !spec.nakednet)
+}
+
 /// Prints both arms, their spread, and whether the window held.
-fn report(arms: &[Arm; 2], bounded: bool) {
+fn report(arms: &[Arm; 2], request: &Request) {
+    let bounded = request.seconds > 0;
     println!(
         "\nSYNC_AB_TAG: {} vs {}",
         arms[0].spec.label(),
         arms[1].spec.label()
     );
+    println!(
+        "chain: {} through {}",
+        request.chain.name(),
+        request.chain.indexer()
+    );
+    if touches_mainnet_from_testnet(request) {
+        println!("note: {MIXNET_HEALTH_NOTE}");
+    }
     for arm in arms {
         let rate = mean(&arm.rates);
         print!("{:>22}  mean {rate:>7.0} outputs/s", arm.spec.label());
