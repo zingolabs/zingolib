@@ -60,7 +60,9 @@
 //!
 //! The chain is the caller's as well. `--chain test` runs every arm over
 //! testnet against its pinned indexer, with a testnet birthday, and
-//! `--chain main`, the default, over mainnet.
+//! `--chain main`, the default, over mainnet. A mixnet arm still proves its
+//! attach against mainnet's Default Indexer before it syncs, so only a
+//! comparison of `:nakednet` arms keeps mainnet out of the picture.
 //!
 //! Usage: `makers sync-ab [cli] <arm> <arm> --birthday <height>
 //! [--chain main|test] [--runs <n>] [--seconds <n>] [--seed <mnemonic>]`. The reserved first word names the session
@@ -74,6 +76,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use workbench::chain;
 use workbench::session;
 use workbench::{repo_root, run};
 
@@ -117,19 +120,11 @@ const MILLIS_SUFFIX: &str = "ms";
 /// markers this reads.
 const LOG_FILTER: &str = "info";
 
-/// The chains an arm can sync, each with the indexer every run on it
-/// pins.
-const MAINNET: Chain = Chain {
-    name: "mainnet",
-    indexer: "https://mainnet.zainod.zingolabs.dev:443",
-};
-const TESTNET: Chain = Chain {
-    name: "testnet",
-    indexer: "https://testnet.zec.rocks:443",
-};
-
-/// The chain every arm syncs, when `--chain` names no other.
-const DEFAULT_CHAIN: Chain = MAINNET;
+// The attach health proof dials a fixed mainnet indexer whatever chain the
+// session syncs, so a testnet comparison with a mixnet arm touches mainnet
+// on every boot. The note says so where the report is read.
+const MIXNET_HEALTH_NOTE: &str = "a mixnet arm proves its attach against mainnet's \
+     Default Indexer before it syncs; only :nakednet arms keep mainnet out of the picture";
 
 /// The BIP-39 mnemonic every arm restores, when `--seed` names no other.
 // A fundless wallet measures pure scanning: every output is trial
@@ -256,32 +251,10 @@ impl Spec {
     }
 }
 
-/// The chain the arms sync, which fixes the indexer they meet and the
-/// chain the CLI expects.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct Chain {
-    /// The name the CLI's `--chain` takes.
-    name: &'static str,
-    /// The indexer every run on this chain pins, so no arm meets a
-    /// different server.
-    indexer: &'static str,
-}
-
-impl Chain {
-    /// Reads the chain off its name, in the CLI's spelling or the short one.
-    fn parse(raw: &str) -> Result<Self, Vec<String>> {
-        match raw {
-            "main" | "mainnet" => Ok(MAINNET),
-            "test" | "testnet" => Ok(TESTNET),
-            other => Err(vec![format!("--chain {other}: main or test")]),
-        }
-    }
-}
-
 /// What the invocation asked for.
 struct Request {
     specs: [Spec; 2],
-    chain: Chain,
+    chain: chain::Chain,
     birthday: u32,
     runs: usize,
     seconds: u64,
@@ -341,7 +314,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
         arguments.next();
     }
     let mut positional: Vec<String> = Vec::new();
-    let mut chain = DEFAULT_CHAIN;
+    let mut chain = chain::Chain::default();
     let mut birthday = None;
     let mut runs = DEFAULT_RUNS;
     let mut seconds = DEFAULT_SECONDS;
@@ -360,7 +333,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
                         .map_err(|e| vec![format!("--birthday {raw}: {e}")])?,
                 );
             }
-            "--chain" => chain = Chain::parse(&value("--chain")?)?,
+            "--chain" => chain = chain::Chain::parse(&value("--chain")?).map_err(|e| vec![e])?,
             "--runs" => {
                 let raw = value("--runs")?;
                 runs = raw
@@ -429,7 +402,7 @@ fn compare() -> Result<(), Vec<String>> {
         retire(&root, &arm.worktree);
     }
     measured?;
-    report(&arms, request.chain, request.seconds > 0);
+    report(&arms, &request);
     Ok(())
 }
 
@@ -440,8 +413,12 @@ fn rounds(arms: &mut [Arm; 2], request: &Request) -> Result<(), Vec<String>> {
     // treatment.
     eprintln!(
         "sync-ab: warming up both arms on {} at birthday {}",
-        request.chain.name, request.birthday
+        request.chain.name(),
+        request.birthday
     );
+    if touches_mainnet_from_testnet(request) {
+        eprintln!("sync-ab: {MIXNET_HEALTH_NOTE}");
+    }
     for arm in arms.iter() {
         let _ = measure_again(arm, request, WARMUP_BUDGET)?;
     }
@@ -650,9 +627,9 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
     }
     let mut child = command
         .arg("--chain")
-        .arg(request.chain.name)
+        .arg(request.chain.name())
         .arg("--server")
-        .arg(request.chain.indexer)
+        .arg(request.chain.indexer())
         .arg("--seed")
         .arg(&request.seed)
         .arg("--birthday")
@@ -877,14 +854,28 @@ fn wallet_file_size(wallets: &Path) -> Option<u64> {
         .max()
 }
 
+// Whether a testnet comparison carries a mixnet arm, whose attach proof
+// dials mainnet.
+fn touches_mainnet_from_testnet(request: &Request) -> bool {
+    request.chain == chain::Chain::Test && request.specs.iter().any(|spec| !spec.nakednet)
+}
+
 /// Prints both arms, their spread, and whether the window held.
-fn report(arms: &[Arm; 2], chain: Chain, bounded: bool) {
+fn report(arms: &[Arm; 2], request: &Request) {
+    let bounded = request.seconds > 0;
     println!(
         "\nSYNC_AB_TAG: {} vs {}",
         arms[0].spec.label(),
         arms[1].spec.label()
     );
-    println!("chain: {} through {}", chain.name, chain.indexer);
+    println!(
+        "chain: {} through {}",
+        request.chain.name(),
+        request.chain.indexer()
+    );
+    if touches_mainnet_from_testnet(request) {
+        println!("note: {MIXNET_HEALTH_NOTE}");
+    }
     for arm in arms {
         let rate = mean(&arm.rates);
         print!("{:>22}  mean {rate:>7.0} outputs/s", arm.spec.label());
@@ -1184,26 +1175,6 @@ mod tests {
         ));
         assert!(!failed_span("INFO sync: SYNC_SPAN=open\n"));
         assert!(!failed_span("INFO sync: SYNC_SPAN=close 1250ms er"));
-    }
-
-    /// HYPOTHESIS: a chain is read in either spelling, names itself the
-    /// way the CLI takes it, and pins its own indexer. Falsified if a
-    /// spelling is refused, the names cross, or another chain's indexer
-    /// is pinned.
-    #[test]
-    fn a_chain_reads_its_name_and_pins_its_indexer() -> Result<(), Vec<String>> {
-        assert_eq!(Chain::parse("main")?, MAINNET);
-        assert_eq!(Chain::parse("mainnet")?, MAINNET);
-        assert_eq!(Chain::parse("test")?, TESTNET);
-        assert_eq!(Chain::parse("testnet")?, TESTNET);
-        assert!(
-            Chain::parse("regtest").is_err(),
-            "no indexer is pinned for regtest"
-        );
-        assert_eq!(MAINNET.name, "mainnet");
-        assert_eq!(TESTNET.name, "testnet");
-        assert_ne!(MAINNET.indexer, TESTNET.indexer);
-        Ok(())
     }
 
     #[test]
