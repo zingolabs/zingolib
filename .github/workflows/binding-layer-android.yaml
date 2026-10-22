@@ -22,11 +22,10 @@ on:
       # The runner of the per-ABI build job: the Linux runner that the
       # CI_LINUX_RUNNER repository variable names, falling back to
       # WarpBuild's sixteen-core label. Each ABI compiles the wallet, the
-      # proxy and the bindgen for its target. cargo compiles independent
-      # crates in parallel; the wallet's mobile profile sets codegen-units
-      # to 1, which keeps each of its crates' own codegen serial, while the
-      # proxy builds under the release-like proxy profile. Measured on
-      # 2026-10-16, before the proxy profile existed: the x86_64 build took
+      # proxy and the bindgen for its target, all under the mobile profile.
+      # cargo compiles independent crates in parallel; the profile sets
+      # codegen-units to 1, which keeps each crate's own codegen serial.
+      # Measured on 2026-10-16 under that profile: the x86_64 build took
       # 7.3 minutes on sixteen cores against 11 to 17 on four.
       runner:
         required: false

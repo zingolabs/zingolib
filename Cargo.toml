@@ -176,21 +176,19 @@ x509-parser = "0.18"
 [profile.test]
 opt-level = 3
 
-# The profile that the Binding Layer builder uses for the wallet library,
-# which on iOS carries the proxy crate as well, under the wallet crate's
-# `zingo-nym-proxy-ffi` feature, so the app links one Rust std. The panic
-# strategy is unwind, the same as the `proxy` profile below. The iOS app
-# once linked two static archives into one binary, and the two copies of
-# std resolved to one panic runtime at link time, so an abort in either
-# aborted the app on every panic inside a tokio task of the proxy (issue
-# #2926). The workbench test `panic_strategy` holds both profiles to one
-# strategy. On iOS the proxy crate and the nym stack beneath it compile
-# under this profile too, with its size optimization and overflow checks,
-# while Android builds them under the `proxy` profile below: the nym
-# stack's arithmetic is checked on iOS and wraps on Android. A profile
-# override names one package or every dependency, never a family, and
-# the stack is 78 packages, so the divergence stands until a ruling
-# changes it.
+# The one profile of the Binding Layer: the wallet library on both
+# platforms, the proxy library on Android, and the iOS archive that carries
+# both crates under the wallet crate's `zingo-nym-proxy-ffi` feature. The
+# nym stack beneath the proxy therefore compiles with the same size
+# optimization and overflow checks on both platforms. Ruled 2026-10-22:
+# the proxy once kept a plain release profile of its own, inherited from
+# the standalone zingo-netutils workspace and never measured, and the
+# one-archive iOS build left the two platforms running the proxy under two
+# profiles, so the profile the wallet ships under is the profile for all.
+# The panic strategy is unwind: a panic inside a tokio task of the proxy
+# unwinds to the task and reaches the app as an error, where an abort
+# runtime ended the app (issue #2926). The workbench test `panic_strategy`
+# holds the profile to it.
 [profile.mobile]
 inherits = "release"
 debug = 1
@@ -199,17 +197,6 @@ codegen-units = 1
 overflow-checks = true
 panic = "unwind"
 opt-level = "z"
-
-# The profile that the Binding Layer builder uses for the Android proxy
-# library. It is the plain release profile the proxy shipped under from the standalone
-# zingo-netutils workspace before PR #3037 made the crate a member: the
-# `mobile` profile's size optimization and overflow checks were chosen for
-# the wallet, not for the nym stack's packet crypto, and a profile is
-# workspace-wide, so the proxy keeps its own. The panic strategy is spelled
-# out because it is the one setting the two profiles must share.
-[profile.proxy]
-inherits = "release"
-panic = "unwind"
 
 # zingo-adrs zingolib/0021: the nym stack's TLS verifies against the
 # compiled-in Mozilla bundle instead of rustls-platform-verifier's OS trust

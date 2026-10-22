@@ -77,11 +77,7 @@ const WALLET_WORKSPACE_DIR: &str = ".";
 
 const BUILDER_PROFILE: binding_layer::Profile = binding_layer::Profile::Mobile;
 
-const PROXY_PROFILE: binding_layer::Profile = binding_layer::Profile::Proxy;
-
 const PROFILE_DIR: &str = BUILDER_PROFILE.directory();
-
-const PROXY_PROFILE_DIR: &str = PROXY_PROFILE.directory();
 
 /// The iOS output subdirectory that holds intermediate generated files.
 const GENERATED_DIR: &str = "generated";
@@ -783,10 +779,7 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
         format!("{wallet_target}/{}/{PROFILE_DIR}/{wallet_file}", abi.triple)
     };
     let proxy_library = |abi: &binding_layer::AndroidAbi| {
-        format!(
-            "{proxy_target}/{}/{PROXY_PROFILE_DIR}/{proxy_file}",
-            abi.triple
-        )
+        format!("{proxy_target}/{}/{PROFILE_DIR}/{proxy_file}", abi.triple)
     };
     let wallet_crate_dir = roots.run_path(binding_layer::WALLET_CRATE_DIR);
     let proxy_crate_dir = roots.run_path(binding_layer::PROXY_CRATE_DIR);
@@ -858,7 +851,7 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
             abi,
             &proxy_crate_dir,
             &proxy_target,
-            PROXY_PROFILE,
+            BUILDER_PROFILE,
             &["--package", binding_layer::PROXY_PACKAGE],
         )]
         .into_iter()
@@ -2448,6 +2441,26 @@ mod tests {
         assert!(parse(&args("kotlin")).is_err());
         assert!(parse(&args("ios")).is_err());
         assert!(parse(&args("android")).is_ok());
+    }
+
+    #[test]
+    fn every_android_library_builds_under_the_one_mobile_profile() -> Result<(), Vec<String>> {
+        let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
+        let builds: Vec<String> = commands(&android_plan(&roots()?, &abis))
+            .into_iter()
+            .filter(|command| command.split(' ').any(|word| word == "build"))
+            .collect();
+        assert_eq!(
+            builds.len(),
+            abis.len() * GENERATIONS_PER_BUILD,
+            "{builds:?}"
+        );
+        let profile = BUILDER_PROFILE.cargo_args().join(" ");
+        assert!(
+            builds.iter().all(|command| command.contains(&profile)),
+            "a library builds under another profile than {profile}: {builds:?}"
+        );
+        Ok(())
     }
 
     #[test]
