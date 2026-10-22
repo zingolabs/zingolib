@@ -3,8 +3,7 @@
 //! Transmission arms and diagnostic probes record one entry per attempt, so
 //! indexer reliability accumulates instead of dying with each error message:
 //! which hosts deliver, over which route, how fast, and which category of
-//! failure presented. Every entry also folds into the session's Health, which
-//! the draws consult when they choose a Destination.
+//! failure presented.
 //!
 //! # Privacy contract
 //!
@@ -19,11 +18,30 @@
 use std::sync;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::destination::health;
-
 /// The most attempts one session keeps, the oldest dropping out as newer ones
 /// arrive, so a long session's history stays bounded.
 pub const MAX_HISTORY_ATTEMPTS: usize = 1024;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FaultDomain {
+    Tunnel,
+    Destination,
+    Unknown,
+}
+
+pub(crate) fn fault_domain(stage: &zingo_net_diag::NetOpStage) -> FaultDomain {
+    use zingo_net_diag::NetOpStage;
+    match stage {
+        NetOpStage::RouteResolution
+        | NetOpStage::LocalProxyConnect
+        | NetOpStage::SocksHandshake
+        | NetOpStage::TunnelTransport => FaultDomain::Tunnel,
+        NetOpStage::RemoteTls | NetOpStage::RemoteHttp | NetOpStage::PayloadDecode => {
+            FaultDomain::Destination
+        }
+        _ => FaultDomain::Unknown,
+    }
+}
 
 /// The network route an attempt used.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -123,7 +141,7 @@ pub struct IndexerAttempt {
     /// `Ok(())` on success, or the sanitized failure category.
     pub outcome: Result<(), FailureKind>,
     /// Which component a failure is attributed to, when the evidence says.
-    pub fault_domain: Option<health::FaultDomain>,
+    pub fault_domain: Option<FaultDomain>,
 }
 
 /// The current time as seconds since the Unix epoch.
@@ -135,32 +153,18 @@ pub(crate) fn now_unix_secs() -> u64 {
 }
 
 /// A cloneable recorder and reader of this session's indexer history, whose
-/// clones all share the one store and the one Health.
+/// clones all share the one store.
 #[derive(Clone, Debug, Default)]
 pub struct IndexerHistoryHandle {
     /// This session's attempts, oldest first, bounded by
     /// [`MAX_HISTORY_ATTEMPTS`].
     attempts: sync::Arc<sync::Mutex<Vec<IndexerAttempt>>>,
-    /// The session's Health, updated by every attempt, which the draws
-    /// consult when they choose a Destination.
-    health: sync::Arc<sync::Mutex<health::Health>>,
 }
 
 impl IndexerHistoryHandle {
-    /// The session's Health, for the draws that consult it.
-    #[cfg_attr(not(feature = "nym"), allow(dead_code))]
-    pub(crate) fn health(&self) -> &sync::Mutex<health::Health> {
-        &self.health
-    }
-
-    /// Keeps one finished attempt in this session's store and folds it into
-    /// the session's Health, dropping the oldest once the store is full.
+    /// Appends one finished attempt to this session's store, dropping the
+    /// oldest once the store is full.
     pub(crate) fn record(&self, attempt: &IndexerAttempt) {
-        self.health.lock().expect("health mutex").note(
-            &attempt.host,
-            attempt.outcome.is_err(),
-            attempt.fault_domain,
-        );
         let mut attempts = self.attempts.lock().expect("attempts mutex");
         if attempts.len() >= MAX_HISTORY_ATTEMPTS {
             attempts.remove(0);
@@ -177,10 +181,10 @@ impl IndexerHistoryHandle {
 #[cfg(test)]
 mod tests {
     use super::{
-        AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, IndexerHistoryHandle,
+        AttemptKind, AttemptRoute, FailureKind, FaultDomain, IndexerAttempt, IndexerHistoryHandle,
         MAX_HISTORY_ATTEMPTS,
     };
-    use crate::destination::{Host, health};
+    use crate::destination::Host;
 
     fn an_attempt(host: &str, outcome: Result<(), FailureKind>) -> IndexerAttempt {
         IndexerAttempt {
@@ -189,7 +193,7 @@ mod tests {
             route: AttemptRoute::Mixnet,
             kind: AttemptKind::Send,
             millis: 1234,
-            fault_domain: outcome.is_err().then_some(health::FaultDomain::Destination),
+            fault_domain: outcome.is_err().then_some(FaultDomain::Destination),
             outcome,
         }
     }
@@ -254,34 +258,6 @@ mod tests {
             loaded.first().expect("nonempty").unix_secs > 0,
             "the oldest entries are the ones dropped"
         );
-    }
-
-    /// HYPOTHESIS: recording reaches the session's Health, so attributed failures
-    /// accumulate there until the host crosses the threshold. Falsified if the
-    /// standing is unchanged by recording, which would leave the draws blind
-    /// to every attempt the reporters made.
-    #[test]
-    fn recording_attributes_the_failure_to_the_host_in_health() {
-        let handle = IndexerHistoryHandle::default();
-        let host = Host::of_host_str("carover0.xyz");
-        let healthy = |handle: &IndexerHistoryHandle| {
-            handle
-                .health()
-                .lock()
-                .expect("health mutex")
-                .is_healthy(&host)
-        };
-
-        for _ in 0..health::UNHEALTHY_FAILURE_THRESHOLD - 1 {
-            handle.record(&an_attempt("carover0.xyz", Err(FailureKind::Unreachable)));
-            assert!(
-                healthy(&handle),
-                "one attributed failure short of the threshold holds"
-            );
-        }
-        handle.record(&an_attempt("carover0.xyz", Err(FailureKind::Unreachable)));
-
-        assert!(!healthy(&handle), "the threshold failure lands");
     }
 
     /// HYPOTHESIS: a probe that exhausts its leg budget classifies as a

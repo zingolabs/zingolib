@@ -1586,7 +1586,6 @@ mod sweep_pin_policy {
     fn success_without_the_pin(alternative: &http::Uri) -> zingolib::mixnet::sweep::Selection {
         zingolib::mixnet::sweep::Selection {
             sync_indexer: alternative.clone(),
-            transmit_candidates: Vec::new(),
             cohort: vec![zingolib::mixnet::sweep::LiveCandidate {
                 uri: alternative.clone(),
                 height: LIVE_HEIGHT,

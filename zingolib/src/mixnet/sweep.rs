@@ -105,16 +105,10 @@ pub enum SweepError {
     DeadPin(Uri),
 }
 
-/// A sweep's verdict: the chosen sync indexer, the transmit candidates that
-/// exclude it, and the live cohort in height-descending failover order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Selection {
     /// The sync indexer this Sync Session attaches to.
     pub sync_indexer: Uri,
-    /// The live candidates that serve transmit operations: the cohort minus
-    /// every endpoint of the sync indexer's operator (ADR 0034 — the sync
-    /// operator is never also a transmit target).
-    pub transmit_candidates: Vec<Uri>,
     /// The full live cohort, height-descending, the sync-attach failover
     /// sequence and the report order.
     pub cohort: Vec<LiveCandidate>,
@@ -197,16 +191,8 @@ pub fn select(
         }
     };
 
-    let sync_operator = Operator::of_uri(&sync_indexer);
-    let transmit_candidates = cohort
-        .iter()
-        .filter(|c| Operator::of_uri(&c.uri) != sync_operator)
-        .map(|c| c.uri.clone())
-        .collect();
-
     Ok(Selection {
         sync_indexer,
-        transmit_candidates,
         cohort,
     })
 }
@@ -249,9 +235,6 @@ pub fn healthy_draw_verdict(
     }
 }
 
-/// The [`Selection`] a verdict yields: the verdict as the sync indexer,
-/// every healthy answer as the height-descending cohort, and the transmit
-/// candidates that exclude the verdict's operator.
 pub fn assigned_selection(results: &[SurveyResult], chain: &str, sync_indexer: Uri) -> Selection {
     let mut cohort: Vec<LiveCandidate> = results
         .iter()
@@ -266,15 +249,8 @@ pub fn assigned_selection(results: &[SurveyResult], chain: &str, sync_indexer: U
         })
         .collect();
     cohort.sort_by_key(|candidate| std::cmp::Reverse(candidate.height));
-    let sync_operator = Operator::of_uri(&sync_indexer);
-    let transmit_candidates = cohort
-        .iter()
-        .filter(|candidate| Operator::of_uri(&candidate.uri) != sync_operator)
-        .map(|candidate| candidate.uri.clone())
-        .collect();
     Selection {
         sync_indexer,
-        transmit_candidates,
         cohort,
     }
 }
@@ -417,32 +393,6 @@ mod tests {
         let hosts: Vec<&str> = cohort.iter().filter_map(|c| c.uri.host()).collect();
         assert!(hosts.contains(&"lag.example"), "two blocks off is live");
         assert!(!hosts.contains(&"old.example"), "three blocks off is not");
-    }
-
-    /// The selected sync indexer's whole operator is excluded from the
-    /// transmit candidates, not merely the one chosen endpoint.
-    #[test]
-    fn the_sync_operator_is_excluded_from_transmit_candidates() {
-        let results = vec![
-            answered("https://na.zec.rocks:443", "main", 100),
-            answered("https://eu.zec.rocks:443", "main", 100),
-            answered("https://other.example:443", "main", 100),
-        ];
-        // Seed chosen so the draw lands on the zec.rocks operator; the test
-        // asserts the exclusion regardless by checking the operator of the
-        // winner against the transmit set.
-        let selection = select(&results, "main", 2, None, &mut StdRng::seed_from_u64(1))
-            .expect("a live cohort selects");
-        let sync_op = Operator::of_uri(&selection.sync_indexer);
-        for candidate in &selection.transmit_candidates {
-            assert_ne!(
-                Operator::of_uri(candidate),
-                sync_op,
-                "no transmit candidate shares the sync operator"
-            );
-        }
-        // The cohort itself still holds every live endpoint.
-        assert_eq!(selection.cohort.len(), 3);
     }
 
     /// The draw gives one ticket per operator: a two-endpoint operator is no
@@ -651,8 +601,7 @@ mod tests {
     }
 
     /// HYPOTHESIS: the assigned selection carries every healthy answer
-    /// as its height-descending cohort and excludes the verdict's operator
-    /// from the transmit candidates. Falsified if either property drifts.
+    /// as its height-descending cohort. Falsified if the order drifts.
     #[test]
     fn the_assigned_selection_reports_its_evidence() {
         let results = vec![
@@ -668,10 +617,6 @@ mod tests {
                 .map(|candidate| candidate.height)
                 .collect::<Vec<_>>(),
             vec![102, 101]
-        );
-        assert_eq!(
-            selection.transmit_candidates,
-            vec![uri("https://other.example:443")]
         );
     }
 

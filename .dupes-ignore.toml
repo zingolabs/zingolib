@@ -203,10 +203,6 @@ fingerprint = "4c5cbce858d6a433"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/migrate.rs:148"
 
 [[ignore]]
-fingerprint = "4ce06e1dcb8539e0"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/mixnet/sweep.rs:203"
-
-[[ignore]]
 fingerprint = "4d02a8f27798edf7"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/transmit.rs:83"
 
